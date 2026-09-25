@@ -1955,7 +1955,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 const senderUrl = String(sender?.url || sender?.tab?.url || '');
                 const allowedPages = [
                     chrome.runtime.getURL('result_new.html'),
-                    chrome.runtime.getURL('pipeline_panel.html')
+                    chrome.runtime.getURL('pipeline_panel.html'),
+                    chrome.runtime.getURL('automation.html')
                 ];
                 if (sender?.id !== chrome.runtime.id || !allowedPages.some((url) => senderUrl.startsWith(url))) {
                     sendResponse({ success: false, error: 'b1_capture_sender_not_authorized' });

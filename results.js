@@ -186,7 +186,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     clearDebateTranscriptOnReload().catch?.((err) => console.warn('[RESULTS] debate transcript reload clear failed', err));
     try {
         const currentPage = (window.location.pathname.split('/').pop() || '').toLowerCase();
-        const currentView = currentPage === 'pipeline_panel.html' ? 'pipeline' : 'main';
+        const currentView = ['pipeline_panel.html', 'automation.html'].includes(currentPage) ? 'pipeline' : 'main';
         if (chrome?.storage?.local) {
             chrome.storage.local.set({ llmComparatorLastPipelineView: currentView });
         }
@@ -2046,9 +2046,11 @@ document.addEventListener('click', (event) => {
     // Remember which panel is open so the extension action reopens the last-used
     // page next time (defaults to this main page on a fresh install).
     try {
-        const currentPanelPage = document.body.classList.contains('pipeline-page')
-            ? 'pipeline_panel.html'
-            : 'result_new.html';
+        const currentPanelPage = (window.location.pathname.split('/').pop() || '').toLowerCase() === 'automation.html'
+            ? 'automation.html'
+            : document.body.classList.contains('pipeline-page')
+                ? 'pipeline_panel.html'
+                : 'result_new.html';
         chrome?.storage?.local?.set?.({ lastOpenedPage: currentPanelPage });
     } catch (err) {
         console.warn('[RESULTS] Failed to record last opened page', err);
@@ -2664,7 +2666,7 @@ document.addEventListener('click', (event) => {
         rightSidebarToggleBtn.addEventListener('click', async (event) => {
             event.preventDefault();
             const currentPage = (window.location.pathname.split('/').pop() || '').toLowerCase();
-            const targetPage = currentPage === 'pipeline_panel.html' ? 'result_new.html' : 'pipeline_panel.html';
+            const targetPage = ['pipeline_panel.html', 'automation.html'].includes(currentPage) ? 'result_new.html' : 'pipeline_panel.html';
             try {
                 if (chrome?.storage?.local) {
                     const targetView = targetPage === 'pipeline_panel.html' ? 'pipeline' : 'main';

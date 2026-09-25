@@ -198,6 +198,23 @@
     align-self: center;
 }
 
+.automation-page-link {
+    width: 42px;
+    height: 46px;
+    align-self: center;
+    color: #111827;
+    text-decoration: none;
+}
+
+.automation-page-icon {
+    display: block;
+    flex: 0 0 auto;
+    line-height: 1;
+    width: 28px;
+    height: 28px;
+    font-size: 28px;
+}
+
 .telemetry-toggle-icon {
     display: block;
     flex: 0 0 auto;

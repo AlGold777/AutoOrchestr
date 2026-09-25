@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-09-25 — Add Automation test page, version 2.81.491
+
+- Added `automation.html` as a copy of the Pipeline panel with a dedicated toolbar icon for navigation.
+- Kept the state map workspace empty on first load so test runs start without existing map cards.
+- Registered the new page with extension tab handling and allowed-page checks.
+
 ### 2026-09-23 — Bound provider send transactions, version 2.81.490
 
 - Bound Qwen's shortcut/button fallback ladder so an unconfirmed send cannot hold the dispatch queue for tens of seconds.

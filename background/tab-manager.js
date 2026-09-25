@@ -216,7 +216,8 @@ function isAppUiUrl(url = '') {
   if (typeof url !== 'string' || !url) return false;
   try {
     return url.startsWith(chrome.runtime.getURL('result_new.html'))
-      || url.startsWith(chrome.runtime.getURL('pipeline_panel.html'));
+      || url.startsWith(chrome.runtime.getURL('pipeline_panel.html'))
+      || url.startsWith(chrome.runtime.getURL('automation.html'));
   } catch (_) {
     return false;
   }
@@ -1322,7 +1323,8 @@ async function findExistingResultsTab() {
     const tabs = await chrome.tabs.query({
       url: [
         chrome.runtime.getURL('result_new.html'),
-        chrome.runtime.getURL('pipeline_panel.html')
+        chrome.runtime.getURL('pipeline_panel.html'),
+        chrome.runtime.getURL('automation.html')
       ]
     });
     return tabs.find((t) => t?.id) || null;
@@ -1336,7 +1338,7 @@ async function getPreferredResultsPageName() {
   try {
     const data = await chrome.storage.local.get('llmComparatorLastPipelineView');
     const view = data?.llmComparatorLastPipelineView;
-    return view === 'pipeline' ? 'pipeline_panel.html' : 'result_new.html';
+    return view === 'automation' ? 'automation.html' : view === 'pipeline' ? 'pipeline_panel.html' : 'result_new.html';
   } catch (err) {
     console.warn('[BACKGROUND] Failed to read pipeline view preference', err);
     return 'result_new.html';
@@ -1346,7 +1348,7 @@ async function getPreferredResultsPageName() {
 async function openOrFocusResultsTab() {
   const preferredPage = await getPreferredResultsPageName();
   const preferredUrl = chrome.runtime.getURL(preferredPage);
-  const fallbackUrl = chrome.runtime.getURL(preferredPage === 'pipeline_panel.html' ? 'result_new.html' : 'pipeline_panel.html');
+  const fallbackUrl = chrome.runtime.getURL(['pipeline_panel.html', 'automation.html'].includes(preferredPage) ? 'result_new.html' : 'pipeline_panel.html');
   const current = await getTabSafe(resultsTabId);
   let existing = current;
   if (!existing) {

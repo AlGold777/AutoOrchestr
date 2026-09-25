@@ -108,7 +108,7 @@ const codexResolveStartPage = (callback) => {
   const done = (file) => {
     if (settled) return;
     settled = true;
-    callback(file === 'pipeline_panel.html' ? 'pipeline_panel.html' : 'result_new.html');
+    callback(['pipeline_panel.html', 'automation.html'].includes(file) ? file : 'result_new.html');
   };
   try {
     if (chrome?.storage?.local?.get) {
@@ -136,6 +136,7 @@ self.codexProtectExtensionPageTab = codexProtectExtensionPageTab;
 
 const codexExtensionPageUrls = () => [
   chrome.runtime.getURL('pipeline_panel.html'),
+  chrome.runtime.getURL('automation.html'),
   chrome.runtime.getURL('result_new.html')
 ];
 
