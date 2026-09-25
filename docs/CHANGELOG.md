@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-09-25 — Keep Automation state map free of groups, version 2.81.493
+
+- Disabled state-map group rendering on Automation so sections such as “Текущие позиции” do not appear in the test copy.
+
 ### 2026-09-25 — Remove stray Pipeline label, version 2.81.492
 
 - Removed the redundant hidden Pipeline text node from its icon button; the button keeps its accessible `aria-label`.
@@ -7,7 +11,7 @@
 ### 2026-09-25 — Add Automation test page, version 2.81.491
 
 - Added `automation.html` as a copy of the Pipeline panel with a dedicated toolbar icon for navigation.
-- Kept the state map workspace empty on first load so test runs start without existing map cards.
+- Left the state map workspace empty in the copied page markup.
 - Registered the new page with extension tab handling and allowed-page checks.
 
 ### 2026-09-23 — Bound provider send transactions, version 2.81.490
