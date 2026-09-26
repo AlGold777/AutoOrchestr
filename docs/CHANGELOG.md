@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-09-26 — Use card content when prompt is empty in export filenames, version 2.81.496
+
+- Use the first 50 prompt characters for export names, falling back to the exported card content when the prompt field is empty; all-responses exports now omit the model label.
+
 ### 2026-09-26 — Replace view mode buttons with one toggle, version 2.81.495
 
 - Replaced the separate grid and list controls with one stateful view-mode button whose icon and accessible action update with the active layout.

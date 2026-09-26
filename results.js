@@ -18084,8 +18084,7 @@ function formatModelCardExportStamp(date = new Date()) {
 function getExportPromptSource() {
     const promptValues = [
         document.getElementById('prompt-input')?.value,
-        document.getElementById('modTa')?.value,
-        window.__lastExportPromptText
+        document.getElementById('modTa')?.value
     ];
     return promptValues.map((value) => String(value || '').trim()).find(Boolean) || '';
 }
@@ -18101,6 +18100,12 @@ function formatExportPromptName(promptText = getExportPromptSource()) {
     return `${prefix}${chars.length > 30 ? '…' : ''}` || 'Prompt';
 }
 
+function buildAllResponsesExportFilename(extension, date = new Date()) {
+    return `${formatExportPromptExcerpt()} - ${formatNamedExportStamp(date)}.${extension}`;
+}
+
+// Kept for compatibility with older diagnostics/tests; active all-responses
+// downloads use buildAllResponsesExportFilename above.
 function buildResponseExportFilename(modelName, extension, date = new Date()) {
     const promptName = formatExportPromptName();
     const subject = modelName ? String(modelName).replace(/[\\/:?<>|*"']/g, '').trim() : 'LLMs';
@@ -18115,11 +18120,12 @@ function formatExportPromptExcerpt(promptText = getExportPromptSource()) {
     return Array.from(normalized).slice(0, 50).join('').trim() || 'Prompt';
 }
 
-function buildSingleCardExportFilename(subject, extension, date = new Date()) {
+function buildSingleCardExportFilename(subject, extension, date = new Date(), fallbackText = '') {
     const safeSubject = String(subject || 'Model')
         .replace(/[\\/:?<>|*"']/g, '')
         .trim() || 'Model';
-    return `${safeSubject} - ${formatExportPromptExcerpt()} - ${formatNamedExportStamp(date)}.${extension}`;
+    const promptSource = getExportPromptSource() || String(fallbackText || '').trim();
+    return `${safeSubject} - ${formatExportPromptExcerpt(promptSource)} - ${formatNamedExportStamp(date)}.${extension}`;
 }
 
 function buildFavoriteExportText(entries) {
@@ -18351,6 +18357,8 @@ if (
         buildSessionResponsesText,
         formatExportPromptName,
         buildResponseExportFilename,
+        buildAllResponsesExportFilename,
+        buildSingleCardExportFilename,
         favoriteState
     };
 }
@@ -18372,7 +18380,7 @@ document.addEventListener('click', (event) => {
     a.href = url;
 
     const now = new Date();
-    a.download = buildResponseExportFilename(null, 'html', now);
+    a.download = buildAllResponsesExportFilename('html', now);
 
     document.body.appendChild(a);
     a.click();
@@ -18398,7 +18406,7 @@ document.addEventListener('click', (event) => {
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = buildResponseExportFilename(null, 'txt', now);
+    anchor.download = buildAllResponsesExportFilename('txt', now);
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
@@ -18422,7 +18430,7 @@ document.addEventListener('click', (event) => {
     const anchor = document.createElement('a');
     const now = new Date();
     anchor.href = url;
-    anchor.download = buildSingleCardExportFilename('Favourite', 'txt', now);
+    anchor.download = buildSingleCardExportFilename('Favourite', 'txt', now, favoriteText);
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
@@ -18475,6 +18483,7 @@ document.addEventListener('click', (event) => {
             flashButtonFeedback(btn, 'warn');
             return;
         }
+        const favoriteFallbackText = plainTextFromHtml(sanitizeInlineHtml(favoriteHtml));
 
         const htmlContent = `<!DOCTYPE html>
 <html lang="en">
@@ -18509,7 +18518,7 @@ document.addEventListener('click', (event) => {
         anchor.href = url;
 
         const now = new Date();
-        anchor.download = buildSingleCardExportFilename('Favourite', 'html', now);
+        anchor.download = buildSingleCardExportFilename('Favourite', 'html', now, favoriteFallbackText);
 
         document.body.appendChild(anchor);
         anchor.click();
@@ -18585,7 +18594,7 @@ document.addEventListener('click', (event) => {
 
     const modelForFile = String(modelName || 'Model').replace(/[\/\\:?<>|*"']/g, '').trim() || 'Model';
     const now = new Date();
-    anchor.download = buildSingleCardExportFilename(modelForFile, 'html', now);
+    anchor.download = buildSingleCardExportFilename(modelForFile, 'html', now, text);
 
     document.body.appendChild(anchor);
     anchor.click();
@@ -18612,7 +18621,7 @@ document.addEventListener('click', (event) => {
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = buildSingleCardExportFilename(modelName, 'txt');
+    anchor.download = buildSingleCardExportFilename(modelName, 'txt', new Date(), text);
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
@@ -21326,7 +21335,6 @@ function checkCompareButtonState() {
                 showNotification('Please enter a prompt.');
                 return;
             }
-            window.__lastExportPromptText = String(finalPrompt).trim();
             if (!(await ensureNoOtherViewRun())) {
                 return;
             }
