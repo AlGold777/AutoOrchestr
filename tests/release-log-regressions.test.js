@@ -25,12 +25,21 @@ describe('release log regression guards', () => {
     expect(controlsCss).toMatch(/\.top-control-bar\s*\{[^}]*position:\s*sticky;[^}]*top:\s*12px;/s);
     expect(controlsCss).toMatch(/\.top-control-bar::before\s*\{[^}]*top:\s*-12px;[^}]*height:\s*12px;[^}]*background:\s*#F3F4F6;/s);
     expect(controlsCss).toMatch(/\.pipeline-page \.app-main \.input-section:has\(\.prompt-container\.is-pipeline-composer-raised\)\s*\{[^}]*padding-top:\s*5px;/s);
+    expect(controlsCss).toContain(':not(:has(.prompt-container.has-selected-models))');
     const source = fs.readFileSync(path.join(__dirname, '..', 'results.js'), 'utf8');
+    expect(source).toContain("container.classList.toggle('has-selected-models', Boolean(document.querySelector('.llm-button.active')))");
     expect(source).not.toContain('alignSubmittedPromptWithHeader');
     expect(source).not.toContain('submittedPromptAlignmentFrame');
     expect(source).toContain("mainPromptContainer.classList.add('is-pipeline-composer-raised');");
     expect(source).toContain("promptContainer?.classList.toggle('is-pipeline-composer-raised', !collapsed);");
     expect(source).toContain("if (!pipelinePanel.classList.contains('is-collapsed')) {");
+  });
+
+  test('response find and replace is available on every results page', () => {
+    ['result_new.html', 'pipeline_panel.html', 'automation.html'].forEach((file) => {
+      const html = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
+      expect(html).toContain('<script src="results/response-find-replace.js"></script>');
+    });
   });
 
   test('Favourite card exposes TXT export immediately after its HTML export', () => {

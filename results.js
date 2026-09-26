@@ -16114,6 +16114,11 @@ document.addEventListener('click', (event) => {
         promptInput.style.overflowY = promptInput.scrollHeight > maxHeight ? 'auto' : 'hidden';
         // Контейнер расширяется вместе с полем (только когда поле выросло выше дефолта).
         if (container) {
+            // Keep the layout state local to the input event as well. A model can
+            // already be active while the selection synchronizer is still waiting
+            // for its storage callback; without this mirror, the autogrow rule
+            // briefly restores the centered layout and drops the composer.
+            container.classList.toggle('has-selected-models', Boolean(document.querySelector('.llm-button.active')));
             container.classList.toggle('is-prompt-autogrown', next > baseHeight + 1);
         }
     };

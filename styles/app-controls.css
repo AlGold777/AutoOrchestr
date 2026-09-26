@@ -166,7 +166,7 @@
 .top-bar-right {
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: 3px;
     flex: 0 0 auto;
     margin-left: auto;
     margin-right: 0;
@@ -442,7 +442,13 @@ body.left-sidebar-open .mode-pill .pill-dot {
 
 /* После открытия Pro или запуска Pipeline поднимаем composer к sticky header. */
 .pipeline-page .app-main .input-section:has(.prompt-container.is-pipeline-composer-raised) {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    min-height: 0;
     padding-top: 5px;
+    overflow-anchor: none;
 }
 .pipeline-page .prompt-group:has(.prompt-container.prompt-sandwich.debate-composer.is-pipeline-composer-raised:not(.has-debate-feed)) {
     margin-top: 0;
@@ -964,11 +970,11 @@ body:not(.pipeline-page) .app-main .container:has(#prefix-container:not(:empty),
    наезду растущего .prompt-container на блоки ниже. Переходим к естественному
    потоку — как в режиме с чипами. (После отправки действуют .prompt-submitted
    правила, поэтому ограничиваемся :not(.prompt-submitted).) */
-body:not(.pipeline-page):not(.prompt-submitted) .app-main .container:has(.prompt-container.is-prompt-autogrown) + .llm-controls {
+body:not(.pipeline-page):not(.prompt-submitted) .app-main .container:has(.prompt-container.is-prompt-autogrown):not(:has(.prompt-container.has-selected-models)) + .llm-controls {
     margin-top: 20px;
 }
 
-body:not(.pipeline-page):not(.prompt-submitted) .app-main .container:has(.prompt-container.is-prompt-autogrown) .input-section {
+body:not(.pipeline-page):not(.prompt-submitted) .app-main .container:has(.prompt-container.is-prompt-autogrown):not(:has(.prompt-container.has-selected-models)) .input-section {
     display: block;
     min-height: 0;
     padding-top: clamp(120px, calc(50dvh - 164px), 260px);

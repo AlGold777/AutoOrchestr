@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-09-26 — Keep answer search and pinned composer stable, version 2.81.494
+
+- Restored find-and-replace scope tracking across all results pages, including dynamically replaced answer nodes.
+- Prevented large pasted prompts from re-entering the centered layout after a model is selected or the pipeline composer is raised.
+
 ### 2026-09-25 — Keep Automation state map free of groups, version 2.81.493
 
 - Disabled state-map group rendering on Automation so sections such as “Текущие позиции” do not appear in the test copy.

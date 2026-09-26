@@ -4,11 +4,66 @@
     const SCOPE_SELECTOR = '.output, .debate-model-card-output';
     let panel = null;
     let activeScope = null;
+    let activeScopeKey = null;
+    let lastScope = null;
     let currentMatch = -1;
     let matches = [];
 
     const textOf = (scope) => String(scope?.innerText || scope?.textContent || '');
     const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    function scopeFromNode(node) {
+        const element = node?.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+        return element?.closest?.(SCOPE_SELECTOR) || null;
+    }
+
+    function scopeFromSelection() {
+        const selection = window.getSelection?.();
+        return scopeFromNode(selection?.anchorNode) || scopeFromNode(selection?.focusNode);
+    }
+
+    function rememberScope(scope) {
+        if (!scope || !scope.matches?.(SCOPE_SELECTOR) || !scope.isConnected) return;
+        const card = scope.closest('.llm-panel, .debate-model-card');
+        activeScopeKey = {
+            scopeId: scope.id || '',
+            cardId: card?.id || '',
+            entryId: card?.dataset?.entryId || card?.dataset?.messageId || '',
+            sessionId: card?.dataset?.sessionId || '',
+            llmName: card?.dataset?.llmName || ''
+        };
+        lastScope = scope;
+    }
+
+    function findRememberedScope() {
+        if (lastScope?.isConnected && lastScope.matches?.(SCOPE_SELECTOR)) return lastScope;
+        const key = activeScopeKey;
+        if (!key) return null;
+        if (key.scopeId) {
+            const byId = document.getElementById(key.scopeId);
+            if (byId?.matches?.(SCOPE_SELECTOR)) return byId;
+        }
+        if (key.cardId) {
+            const card = document.getElementById(key.cardId);
+            const scope = card?.querySelector?.(SCOPE_SELECTOR);
+            if (scope) return scope;
+        }
+        const cards = Array.from(document.querySelectorAll('.llm-panel, .debate-model-card'));
+        const card = cards.find((candidate) => {
+            const data = candidate.dataset || {};
+            return (!key.entryId || data.entryId === key.entryId || data.messageId === key.entryId)
+                && (!key.sessionId || data.sessionId === key.sessionId)
+                && (!key.llmName || data.llmName === key.llmName);
+        });
+        return card?.querySelector?.(SCOPE_SELECTOR) || null;
+    }
+
+    function currentScope() {
+        if (activeScope?.isConnected && activeScope.matches?.(SCOPE_SELECTOR)) return activeScope;
+        const resolved = findRememberedScope();
+        if (resolved) activeScope = resolved;
+        return activeScope;
+    }
 
     function ensurePanel() {
         if (panel) return panel;
@@ -58,11 +113,12 @@
 
     function collectMatches() {
         const find = String(input('find')?.value || '');
-        if (!activeScope || !find) return [];
+        const scope = currentScope();
+        if (!scope || !find) return [];
         const matchCase = panel?.querySelector('[data-fr-case]')?.getAttribute('aria-pressed') === 'true';
         const regex = new RegExp(escapeRegExp(find), matchCase ? 'g' : 'gi');
         const found = [];
-        const walker = document.createTreeWalker(activeScope, NodeFilter.SHOW_TEXT);
+        const walker = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT);
         let node;
         while ((node = walker.nextNode())) {
             let match;
@@ -99,10 +155,11 @@
     }
 
     function dispatchChange() {
-        if (!activeScope) return;
-        activeScope.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertReplacementText' }));
-        if (activeScope.matches('.debate-model-card-output')) {
-            activeScope.closest('.debate-model-card')?.dispatchEvent(new CustomEvent('response-find-replace-change', { bubbles: true }));
+        const scope = currentScope();
+        if (!scope) return;
+        scope.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertReplacementText' }));
+        if (scope.matches('.debate-model-card-output')) {
+            scope.closest('.debate-model-card')?.dispatchEvent(new CustomEvent('response-find-replace-change', { bubbles: true }));
         }
     }
 
@@ -117,12 +174,13 @@
 
     function replaceAll() {
         const find = String(input('find')?.value || '');
-        if (!activeScope || !find) return;
+        const scope = currentScope();
+        if (!scope || !find) return;
         const replacement = String(input('replace')?.value || '');
         const matchCase = panel?.querySelector('[data-fr-case]')?.getAttribute('aria-pressed') === 'true';
         const regex = new RegExp(escapeRegExp(find), matchCase ? 'g' : 'gi');
         let count = 0;
-        const walker = document.createTreeWalker(activeScope, NodeFilter.SHOW_TEXT);
+        const walker = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT);
         const nodes = [];
         let node;
         while ((node = walker.nextNode())) nodes.push(node);
@@ -170,17 +228,22 @@
     }
 
     function selectionRectForScope(scope) {
+        scope = currentScope();
         const selection = window.getSelection?.();
         if (!selection || !selection.rangeCount || selection.isCollapsed) return null;
         const range = selection.getRangeAt(0);
-        if (!scope.contains(range.commonAncestorContainer)) return null;
-        const rect = range.getBoundingClientRect();
+        if (!scope?.contains(range.commonAncestorContainer)) return null;
+        const rect = typeof range.getBoundingClientRect === 'function'
+            ? range.getBoundingClientRect()
+            : null;
         return rect && (rect.width || rect.height) ? rect : null;
     }
 
     function positionPanel(scope) {
         if (!panel) return;
-        const selectionRect = selectionRectForScope(scope);
+        const liveScope = currentScope();
+        if (!liveScope) return;
+        const selectionRect = selectionRectForScope(liveScope);
         const formattingToolbar = document.querySelector('#responseSelTb.vis, #debateSelTb.vis');
         const formattingRect = formattingToolbar?.getBoundingClientRect?.();
         const anchorRect = formattingRect && (formattingRect.width || formattingRect.height)
@@ -203,12 +266,15 @@
     function close() {
         if (panel) panel.hidden = true;
         activeScope = null;
+        lastScope = null;
+        activeScopeKey = null;
         matches = [];
         currentMatch = -1;
     }
 
     function open(scope) {
         if (!scope) return;
+        rememberScope(scope);
         activeScope = scope;
         const view = ensurePanel();
         if (view.parentElement !== document.body) document.body.appendChild(view);
@@ -221,18 +287,23 @@
     }
 
     function resolveScope(target) {
-        const direct = target?.closest?.(SCOPE_SELECTOR);
+        const direct = scopeFromNode(target);
         if (direct) return direct;
+        const selected = scopeFromSelection();
+        if (selected) return selected;
         const card = target?.closest?.('.llm-panel, .debate-model-card');
-        return card?.querySelector?.(SCOPE_SELECTOR) || activeScope;
+        return card?.querySelector?.(SCOPE_SELECTOR) || findRememberedScope() || currentScope();
     }
 
     function init() {
         const reposition = () => {
-            if (panel && !panel.hidden && activeScope) positionPanel(activeScope);
+            if (panel && !panel.hidden && currentScope()) positionPanel(currentScope());
         };
         window.addEventListener('scroll', reposition, { passive: true });
         window.addEventListener('resize', reposition);
+        document.addEventListener('pointerdown', (event) => rememberScope(scopeFromNode(event.target)), true);
+        document.addEventListener('focusin', (event) => rememberScope(scopeFromNode(event.target)), true);
+        document.addEventListener('selectionchange', () => rememberScope(scopeFromSelection()));
         document.addEventListener('keydown', (event) => {
             if (event.key === 'Escape' && panel && !panel.hidden) {
                 event.preventDefault();
