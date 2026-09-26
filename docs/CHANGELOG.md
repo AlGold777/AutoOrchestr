@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-09-26 — Remove legacy LLMs label from all-responses filenames, version 2.81.498
+
+- Route legacy all-responses filename calls to the prompt-only format with up to 50 prompt characters and no `LLMs` label.
+
 ### 2026-09-26 — Preserve prompt for all-responses export filenames, version 2.81.497
 
 - Use the last submitted prompt when the prompt field is empty while exporting all responses.

@@ -18105,9 +18105,10 @@ function buildAllResponsesExportFilename(extension, date = new Date()) {
     return `${formatExportPromptExcerpt(promptSource)} - ${formatNamedExportStamp(date)}.${extension}`;
 }
 
-// Kept for compatibility with older diagnostics/tests; active all-responses
-// downloads use buildAllResponsesExportFilename above.
+// Compatibility wrapper: all-responses callers without a model name use the
+// current prompt-only filename format.
 function buildResponseExportFilename(modelName, extension, date = new Date()) {
+    if (!modelName) return buildAllResponsesExportFilename(extension, date);
     const promptName = formatExportPromptName();
     const subject = modelName ? String(modelName).replace(/[\\/:?<>|*"']/g, '').trim() : 'LLMs';
     return `${promptName} - ${subject} ${formatNamedExportStamp(date)}.${extension}`;
