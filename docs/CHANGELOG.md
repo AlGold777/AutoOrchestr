@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-09-26 — Preserve prompt for all-responses export filenames, version 2.81.497
+
+- Use the last submitted prompt when the prompt field is empty while exporting all responses.
+
 ### 2026-09-26 — Use card content when prompt is empty in export filenames, version 2.81.496
 
 - Use the first 50 prompt characters for export names, falling back to the exported card content when the prompt field is empty; all-responses exports now omit the model label.

@@ -18101,7 +18101,8 @@ function formatExportPromptName(promptText = getExportPromptSource()) {
 }
 
 function buildAllResponsesExportFilename(extension, date = new Date()) {
-    return `${formatExportPromptExcerpt()} - ${formatNamedExportStamp(date)}.${extension}`;
+    const promptSource = getExportPromptSource() || String(window.__lastExportPromptText || '').trim();
+    return `${formatExportPromptExcerpt(promptSource)} - ${formatNamedExportStamp(date)}.${extension}`;
 }
 
 // Kept for compatibility with older diagnostics/tests; active all-responses
@@ -21335,6 +21336,7 @@ function checkCompareButtonState() {
                 showNotification('Please enter a prompt.');
                 return;
             }
+            window.__lastExportPromptText = String(finalPrompt).trim();
             if (!(await ensureNoOtherViewRun())) {
                 return;
             }
