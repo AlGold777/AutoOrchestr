@@ -475,12 +475,16 @@
     display: block;
 }
 
-.modifiers-toggle-label #view-grid-btn > .view-icon {
+.modifiers-toggle-label .view-mode-btn > .view-icon[hidden] {
+    display: none;
+}
+
+.modifiers-toggle-label .view-icon-grid {
     width: 18px;
     height: 15.6px;
 }
 
-.modifiers-toggle-label #view-stack-btn > .view-icon {
+.modifiers-toggle-label .view-icon-stack {
     width: 16px;
     height: 18px;
 }

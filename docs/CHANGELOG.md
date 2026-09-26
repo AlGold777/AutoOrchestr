@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-09-26 — Replace view mode buttons with one toggle, version 2.81.495
+
+- Replaced the separate grid and list controls with one stateful view-mode button whose icon and accessible action update with the active layout.
+
 ### 2026-09-26 — Keep answer search and pinned composer stable, version 2.81.494
 
 - Restored find-and-replace scope tracking across all results pages, including dynamically replaced answer nodes.

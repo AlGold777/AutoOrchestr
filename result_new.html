@@ -3,7 +3,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LLM Comparison</title>
-    <link rel="stylesheet" href="styles.css?v=2.81.494">
+    <link rel="stylesheet" href="styles.css?v=2.81.495">
 </head>
 <body>
     <div class="app-shell">
@@ -236,16 +236,14 @@
             <div class="pro-toggle-top-row">
                 <span class="modifiers-toggle-label">
                 <span class="view-toggle-group">
-                        <button type="button" id="view-grid-btn" class="view-mode-btn" title="Grid outline" aria-label="Grid outline">
-                            <svg class="view-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true" focusable="false">
+                        <button type="button" id="view-mode-toggle-btn" class="view-mode-btn" data-view-mode="grid" title="Switch to list view" aria-label="Switch to list view" aria-pressed="false">
+                            <svg class="view-icon view-icon-grid" viewBox="0 0 16 16" fill="none" aria-hidden="true" focusable="false">
                                 <rect x="2" y="2" width="5" height="5" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"></rect>
                                 <rect x="9" y="2" width="5" height="5" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"></rect>
                                 <rect x="2" y="9" width="5" height="5" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"></rect>
                                 <rect x="9" y="9" width="5" height="5" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"></rect>
                             </svg>
-                        </button>
-                        <button type="button" id="view-stack-btn" class="view-mode-btn" title="List outline" aria-label="List outline">
-                            <svg class="view-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true" focusable="false">
+                            <svg class="view-icon view-icon-stack" viewBox="0 0 16 16" fill="none" aria-hidden="true" focusable="false" hidden>
                                 <rect x="2" y="3" width="12" height="3.5" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" rx="1"></rect>
                                 <rect x="2" y="9.5" width="12" height="3.5" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" rx="1"></rect>
                             </svg>

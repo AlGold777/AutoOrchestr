@@ -42,6 +42,21 @@ describe('release log regression guards', () => {
     });
   });
 
+  test('results view mode uses one stateful toggle button', () => {
+    const html = fs.readFileSync(path.join(__dirname, '..', 'result_new.html'), 'utf8');
+    const source = fs.readFileSync(path.join(__dirname, '..', 'results.js'), 'utf8');
+
+    expect(html).toContain('id="view-mode-toggle-btn"');
+    expect(html).toContain('class="view-icon view-icon-grid"');
+    expect(html).toContain('class="view-icon view-icon-stack"');
+    expect(html).not.toContain('id="view-grid-btn"');
+    expect(html).not.toContain('id="view-stack-btn"');
+    expect(source).toContain("const viewModeToggleBtn = document.getElementById('view-mode-toggle-btn');");
+    expect(source).toContain("viewModeToggleBtn.addEventListener('click'");
+    expect(source).toContain("viewModeToggleBtn.querySelector('.view-icon-grid')");
+    expect(source).toContain("viewModeToggleBtn.querySelector('.view-icon-stack')");
+  });
+
   test('Favourite card exposes TXT export immediately after its HTML export', () => {
     const source = fs.readFileSync(path.join(__dirname, '..', 'results.js'), 'utf8');
     const htmlButtonIndex = source.indexOf('class="panel-action-btn panel-export-html-btn favorite-export-btn"');

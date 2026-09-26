@@ -1651,8 +1651,7 @@ document.addEventListener('click', (event) => {
     const smartCompareButton = document.getElementById('smart-compare-button');
     const judgeSystemPromptSelect = document.getElementById('judge-system-prompt-select');
     const evaluatorSelect = document.getElementById('evaluator-select');
-    const viewGridBtn = document.getElementById('view-grid-btn');
-    const viewStackBtn = document.getElementById('view-stack-btn');
+    const viewModeToggleBtn = document.getElementById('view-mode-toggle-btn');
     const crossViewUiStateKey = 'llmComparatorCrossViewUiState';
     const crossViewNavigationIntentKey = 'llmComparatorCrossViewNavigationIntent';
     const crossViewNavigationIntentTtlMs = 15000;
@@ -11890,8 +11889,16 @@ document.addEventListener('click', (event) => {
         const useStack = mode === 'stack';
         llmResultsContainer.classList.remove('view-grid', 'view-stack');
         llmResultsContainer.classList.add(useStack ? 'view-stack' : 'view-grid');
-        if (viewGridBtn) viewGridBtn.classList.toggle('is-active', !useStack);
-        if (viewStackBtn) viewStackBtn.classList.toggle('is-active', useStack);
+        if (viewModeToggleBtn) {
+            const currentMode = useStack ? 'stack' : 'grid';
+            const nextMode = useStack ? 'grid' : 'stack';
+            viewModeToggleBtn.dataset.viewMode = currentMode;
+            viewModeToggleBtn.setAttribute('aria-pressed', String(useStack));
+            viewModeToggleBtn.title = nextMode === 'stack' ? 'Switch to list view' : 'Switch to grid view';
+            viewModeToggleBtn.setAttribute('aria-label', viewModeToggleBtn.title);
+            viewModeToggleBtn.querySelector('.view-icon-grid')?.toggleAttribute('hidden', useStack);
+            viewModeToggleBtn.querySelector('.view-icon-stack')?.toggleAttribute('hidden', !useStack);
+        }
     };
 
     setResultsViewMode('grid');
@@ -11961,11 +11968,11 @@ document.addEventListener('click', (event) => {
     ensureMainCardFavoriteButtons();
     ensureResponseSelectionToolbar();
 
-    if (viewGridBtn) {
-        viewGridBtn.addEventListener('click', () => setResultsViewMode('grid'));
-    }
-    if (viewStackBtn) {
-        viewStackBtn.addEventListener('click', () => setResultsViewMode('stack'));
+    if (viewModeToggleBtn) {
+        viewModeToggleBtn.addEventListener('click', () => {
+            const nextMode = llmResultsContainer?.classList.contains('view-stack') ? 'grid' : 'stack';
+            setResultsViewMode(nextMode);
+        });
     }
 
     const getPanelByLLMName = (llmName) => {
