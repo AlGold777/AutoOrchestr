@@ -1,0 +1,339 @@
+{
+  "type": "object",
+  "required": [
+    "project_id",
+    "manifest_version",
+    "revision",
+    "workflow_state",
+    "registry",
+    "baselines",
+    "stage_runs",
+    "gate_results",
+    "questionnaire_sessions",
+    "human_tasks",
+    "budget"
+  ],
+  "properties": {
+    "project_id": {
+      "type": "string"
+    },
+    "manifest_version": {
+      "type": "string"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "workflow_state": {
+      "type": "string",
+      "enum": [
+        "NEW",
+        "RUNNING",
+        "WAITING_FOR_SELECTION",
+        "WAITING_FOR_EVIDENCE",
+        "WAITING_FOR_HUMAN_TEST",
+        "SCOPE_CHANGE_REQUIRED",
+        "UNRESOLVABLE",
+        "EXECUTION_FAILED",
+        "BUDGET_EXCEEDED",
+        "COMPLETED"
+      ]
+    },
+    "registry": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "code",
+          "object_id",
+          "version",
+          "schema_version",
+          "status",
+          "blocking",
+          "authority_class",
+          "created_stage",
+          "created_by_run",
+          "payload",
+          "provenance",
+          "stale",
+          "content_hash"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "AD",
+              "AEV",
+              "ASM",
+              "BSL",
+              "CAP",
+              "CHG",
+              "CMP",
+              "CON",
+              "DPL",
+              "EVD",
+              "FCT",
+              "FND",
+              "HRES",
+              "HTSK",
+              "IDEA",
+              "PCON",
+              "PD",
+              "PRP",
+              "QANS",
+              "QST",
+              "REQ",
+              "RSK",
+              "UNK"
+            ]
+          },
+          "object_id": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]*-[0-9A-Za-z._-]+$"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "schema_version": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "blocking": {
+            "type": "boolean"
+          },
+          "authority_class": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "A0",
+                  "A1",
+                  "A2",
+                  "A3",
+                  "A4"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_stage": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 30
+          },
+          "created_by_run": {
+            "type": "string"
+          },
+          "payload": {
+            "type": "object"
+          },
+          "provenance": {
+            "type": "object",
+            "required": [
+              "input_refs",
+              "stage_run_id",
+              "authority_refs",
+              "evidence_refs"
+            ],
+            "properties": {
+              "input_refs": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "object_id",
+                    "version"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "object_id": {
+                      "type": "string",
+                      "pattern": "^[A-Z][A-Z0-9_]*-[0-9A-Za-z._-]+$"
+                    },
+                    "version": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "stage_run_id": {
+                "type": "string"
+              },
+              "authority_refs": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "object_id",
+                    "version"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "object_id": {
+                      "type": "string",
+                      "pattern": "^[A-Z][A-Z0-9_]*-[0-9A-Za-z._-]+$"
+                    },
+                    "version": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "evidence_refs": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "object_id",
+                    "version"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "object_id": {
+                      "type": "string",
+                      "pattern": "^[A-Z][A-Z0-9_]*-[0-9A-Za-z._-]+$"
+                    },
+                    "version": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          "supersedes": {
+            "anyOf": [
+              {
+                "type": "object",
+                "required": [
+                  "code",
+                  "object_id",
+                  "version"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string"
+                  },
+                  "object_id": {
+                    "type": "string",
+                    "pattern": "^[A-Z][A-Z0-9_]*-[0-9A-Za-z._-]+$"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stale": {
+            "type": "boolean"
+          },
+          "content_hash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "baselines": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "code",
+          "object_id",
+          "version"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "object_id": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]*-[0-9A-Za-z._-]+$"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "stage_runs": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "gate_results": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "questionnaire_sessions": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "human_tasks": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "budget": {
+      "type": "object",
+      "required": [
+        "max_total_model_calls",
+        "max_total_cost",
+        "max_total_tokens"
+      ],
+      "properties": {
+        "max_total_model_calls": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_total_cost": {
+          "type": "number",
+          "minimum": 0
+        },
+        "max_total_tokens": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

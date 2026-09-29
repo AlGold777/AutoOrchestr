@@ -1,0 +1,25 @@
+{
+  "version": "2.2.0",
+  "order": [
+    "RULES",
+    "STATE",
+    "ACTIVE",
+    "DELTA",
+    "TASK"
+  ],
+  "RULES": "immutable stage/contract/policy instructions + inline AL-STRUCT-1 schema/enums/schema_example",
+  "STATE": "machine-owned project state + reference-first Registry projection",
+  "ACTIVE": "exact input_refs + input_snapshot_id/hash + stage-permitted prior outputs",
+  "DELTA": "new/changed refs relative to known state; not a global delta-only mutation protocol",
+  "TASK": "concrete current-call task",
+  "untrusted_data": [
+    "Registry payload",
+    "imported text",
+    "IDEA",
+    "model-generated object",
+    "external content",
+    "prior_output"
+  ],
+  "audit_schema": "ContextAssemblyAudit",
+  "context_policy": "contextPolicy@2.2.0"
+}

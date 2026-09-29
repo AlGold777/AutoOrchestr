@@ -1,0 +1,760 @@
+{
+  "type": "object",
+  "required": [
+    "response_id",
+    "run_id",
+    "stage",
+    "step_id",
+    "executor_type",
+    "executor_id",
+    "schema_version",
+    "contract_identity",
+    "input_snapshot_id",
+    "input_snapshot_hash",
+    "semantic_response",
+    "completion",
+    "integrity",
+    "normalized_mutations",
+    "source_message_id"
+  ],
+  "properties": {
+    "response_id": {
+      "type": "string"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "stage": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 30
+    },
+    "step_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "executor_type": {
+      "type": "string",
+      "enum": [
+        "MODEL",
+        "TOOL",
+        "POLICY_ENGINE",
+        "ORCHESTRATOR"
+      ]
+    },
+    "executor_id": {
+      "type": "string"
+    },
+    "schema_version": {
+      "type": "string"
+    },
+    "contract_identity": {
+      "type": "object",
+      "required": [
+        "manifest_version",
+        "stage_contract_hash",
+        "prompt_hash",
+        "response_schema_id",
+        "response_schema_hash"
+      ],
+      "properties": {
+        "manifest_version": {
+          "type": "string"
+        },
+        "stage_contract_hash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "prompt_hash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "response_schema_id": {
+          "type": "string"
+        },
+        "response_schema_hash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "input_snapshot_id": {
+      "type": "string"
+    },
+    "input_snapshot_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "semantic_response": {
+      "$id": "AL-STRUCT-1",
+      "title": "Automation Layer v2.2.1 model semantic response",
+      "type": "object",
+      "required": [
+        "passport",
+        "outputs",
+        "annotations",
+        "trace",
+        "input_fate",
+        "changes",
+        "completion"
+      ],
+      "properties": {
+        "passport": {
+          "type": "object",
+          "required": [
+            "contract",
+            "stage",
+            "input_snapshot_id",
+            "input_snapshot_hash",
+            "input_refs"
+          ],
+          "properties": {
+            "contract": {
+              "const": "AL-STRUCT-1"
+            },
+            "stage": {
+              "oneOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 30
+                },
+                {
+                  "type": "string",
+                  "minLength": 1
+                }
+              ]
+            },
+            "input_snapshot_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "input_snapshot_hash": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$",
+              "description": "Canonical lowercase bare SHA-256 hex; no sha256: prefix."
+            },
+            "input_refs": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "object_id",
+                  "version"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string"
+                  },
+                  "object_id": {
+                    "type": "string",
+                    "pattern": "^[A-Z][A-Z0-9_]*-[0-9A-Za-z._-]+$"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "additionalProperties": false
+              },
+              "uniqueItems": true
+            }
+          },
+          "additionalProperties": false
+        },
+        "outputs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "type",
+              "version",
+              "content"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^OUT-[A-Za-z0-9._-]+$"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "ANSWER",
+                  "QUESTION",
+                  "REJECT"
+                ]
+              },
+              "version": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "content": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "annotations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "FACT",
+                  "ASSUMPTION",
+                  "CONSTRAINT",
+                  "DECISION",
+                  "RISK",
+                  "EVIDENCE",
+                  "FINDING",
+                  "CONFLICT",
+                  "OPEN",
+                  "DEFERRED",
+                  "CHANGE",
+                  "BASELINE",
+                  "VERIFIED",
+                  "REJECTED",
+                  "SUPERSEDED"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "description": "Diagnostic label only; no target semantics are inferred from annotation position."
+          },
+          "description": "Diagnostic-only labels for UI/audit. They are non-authoritative and MUST NOT affect validation, mutation normalization, policy, gates or commit."
+        },
+        "trace": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "output_id",
+              "source_ids"
+            ],
+            "properties": {
+              "output_id": {
+                "type": "string",
+                "pattern": "^OUT-[A-Za-z0-9._-]+$"
+              },
+              "source_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "uniqueItems": true
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "input_fate": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "input_id",
+              "disposition",
+              "output_ids"
+            ],
+            "properties": {
+              "input_id": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[A-Z][A-Z0-9_]*-[0-9A-Za-z._-]+@v[1-9][0-9]*$",
+                "description": "Canonical input key derived from passport.input_refs: <object_id>@v<version>; not a domain disposition."
+              },
+              "disposition": {
+                "type": "string",
+                "enum": [
+                  "CONSUMED",
+                  "PRESERVED",
+                  "TRANSFORMED",
+                  "REJECTED",
+                  "SUPERSEDED",
+                  "NOT_USED"
+                ]
+              },
+              "output_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^OUT-[A-Za-z0-9._-]+$"
+                },
+                "uniqueItems": true
+              }
+            },
+            "additionalProperties": false,
+            "description": "Bookkeeping only. For TRANSFORMATION stages domain coverage disposition is derived deterministically by CoverageDeriver; input_fate itself is not the coverage disposition."
+          }
+        },
+        "changes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "op",
+              "object_type",
+              "source_output_id"
+            ],
+            "properties": {
+              "op": {
+                "type": "string",
+                "enum": [
+                  "CREATE",
+                  "UPDATE",
+                  "SUPERSEDE",
+                  "MERGE"
+                ]
+              },
+              "object_type": {
+                "type": "string",
+                "enum": [
+                  "AD",
+                  "AEV",
+                  "ASM",
+                  "BSL",
+                  "CAP",
+                  "CHG",
+                  "CMP",
+                  "CON",
+                  "DPL",
+                  "EVD",
+                  "FCT",
+                  "FND",
+                  "HRES",
+                  "HTSK",
+                  "IDEA",
+                  "PCON",
+                  "PD",
+                  "PRP",
+                  "QANS",
+                  "QST",
+                  "REQ",
+                  "RSK",
+                  "UNK"
+                ]
+              },
+              "temp_id": {
+                "type": "string",
+                "pattern": "^tmp-[a-z0-9][a-z0-9._-]*$"
+              },
+              "target_ref": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "object_id",
+                  "version"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string"
+                  },
+                  "object_id": {
+                    "type": "string",
+                    "pattern": "^[A-Z][A-Z0-9_]*-[0-9A-Za-z._-]+$"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "additionalProperties": false
+              },
+              "source_output_id": {
+                "type": "string",
+                "pattern": "^OUT-[A-Za-z0-9._-]+$"
+              },
+              "source_refs": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "object_id",
+                    "version"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "object_id": {
+                      "type": "string",
+                      "pattern": "^[A-Z][A-Z0-9_]*-[0-9A-Za-z._-]+$"
+                    },
+                    "version": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "uniqueItems": true
+              },
+              "payload": {
+                "type": "object",
+                "description": "Domain object payload only. RegistryEntry state fields status/blocking/authority_class belong in state_patch, not payload."
+              },
+              "state_patch": {
+                "type": "object",
+                "description": "Optional proposed RegistryEntry state changes. status is normalized to SET_STATUS; blocking/authority_class are normalized as policy-checked REVISE metadata. Domain payload remains in payload.",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "blocking": {
+                    "type": "boolean"
+                  },
+                  "authority_class": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "A0",
+                          "A1",
+                          "A2",
+                          "A3",
+                          "A4"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": false,
+                "minProperties": 1
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "op": {
+                      "const": "CREATE"
+                    }
+                  }
+                },
+                "then": {
+                  "required": [
+                    "temp_id"
+                  ],
+                  "not": {
+                    "required": [
+                      "target_ref"
+                    ]
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "op": {
+                      "enum": [
+                        "UPDATE",
+                        "SUPERSEDE"
+                      ]
+                    }
+                  }
+                },
+                "then": {
+                  "required": [
+                    "target_ref"
+                  ],
+                  "not": {
+                    "required": [
+                      "temp_id"
+                    ]
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "op": {
+                      "const": "MERGE"
+                    }
+                  }
+                },
+                "then": {
+                  "required": [
+                    "temp_id",
+                    "source_refs"
+                  ],
+                  "properties": {
+                    "source_refs": {
+                      "minItems": 2
+                    }
+                  }
+                }
+              }
+            ],
+            "additionalProperties": false
+          }
+        },
+        "completion": {
+          "type": "object",
+          "required": [
+            "status",
+            "output_ids",
+            "output_count",
+            "empty_by_design",
+            "anomalies"
+          ],
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": [
+                "COMPLETE",
+                "PARTIAL",
+                "FAILED"
+              ]
+            },
+            "output_ids": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^OUT-[A-Za-z0-9._-]+$"
+              },
+              "uniqueItems": true
+            },
+            "output_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "empty_by_design": {
+              "type": "boolean"
+            },
+            "reason": {
+              "type": "string",
+              "enum": [
+                "NO_MATERIAL_DELTA"
+              ]
+            },
+            "anomalies": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "empty_by_design": {
+                    "const": true
+                  }
+                }
+              },
+              "then": {
+                "required": [
+                  "reason"
+                ],
+                "properties": {
+                  "output_count": {
+                    "const": 0
+                  },
+                  "output_ids": {
+                    "maxItems": 0
+                  }
+                }
+              }
+            }
+          ],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false,
+      "x-semantic-rules": [
+        "completion.output_count MUST equal len(outputs)",
+        "completion.output_ids MUST equal the set of outputs[].id",
+        "trace.output_id MUST reference outputs[].id",
+        "trace.source_ids MUST reference canonical input keys, partition item keys, or contract-allowed response-local sources",
+        "input_fate.input_id MUST equal <object_id>@v<version> for an item in passport.input_refs",
+        "changes.source_output_id MUST refer to outputs[].id",
+        "input_snapshot_hash MUST byte-for-byte equal ACTIVE.input_snapshot_hash and is lowercase bare 64-hex",
+        "reserved runtime fields are prohibited anywhere in model-controlled payload",
+        "CONSUMED means processed only; it does not imply closed/verified/resolved",
+        "annotations are diagnostic-only and have zero commit/gate authority",
+        "for TRANSFORMATION stages accountable inputs MUST derive exactly one domain coverage disposition via CoverageDeriver"
+      ]
+    },
+    "completion": {
+      "type": "object",
+      "required": [
+        "transport_complete",
+        "parse_complete",
+        "semantic_schema_valid",
+        "policy_valid",
+        "integrity_valid",
+        "semantic_status"
+      ],
+      "properties": {
+        "transport_complete": {
+          "type": "boolean"
+        },
+        "parse_complete": {
+          "type": "boolean"
+        },
+        "semantic_schema_valid": {
+          "type": "boolean"
+        },
+        "policy_valid": {
+          "type": "boolean"
+        },
+        "integrity_valid": {
+          "type": "boolean"
+        },
+        "semantic_status": {
+          "type": "string",
+          "enum": [
+            "COMPLETE",
+            "EMPTY_VALID",
+            "INVALID",
+            "PARTIAL",
+            "FAILED"
+          ]
+        },
+        "failure_code": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "integrity": {
+      "type": "object",
+      "required": [
+        "semantic_payload_hash",
+        "normalized_mutation_hash",
+        "operation_count",
+        "disposition_count"
+      ],
+      "properties": {
+        "semantic_payload_hash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "normalized_mutation_hash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "operation_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "disposition_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "transformation_balance": {
+          "type": "object",
+          "required": [
+            "accountable_input_count",
+            "preserved",
+            "merged",
+            "split",
+            "superseded",
+            "deferred",
+            "rejected",
+            "unaccounted"
+          ],
+          "properties": {
+            "accountable_input_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "preserved": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "merged": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "split": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "superseded": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "deferred": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "rejected": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "unaccounted": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "normalized_mutations": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "allocated_refs": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "code",
+          "object_id",
+          "version"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "object_id": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]*-[0-9A-Za-z._-]+$"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "source_message_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Transport-owned provider message identity used for source-message idempotency."
+    },
+    "context_audit_ref": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,47 @@
+{
+  "version": "2.2.1",
+  "input_contract": "AL-STRUCT-1 changes[] + frozen Registry snapshot + stage contract",
+  "output_contract": "internal normalized mutations CREATE|REVISE|SET_STATUS|SUPERSEDE|MERGE",
+  "rules": [
+    {
+      "when": "change.op == CREATE",
+      "emit": [
+        "CREATE"
+      ],
+      "details": "payload -> domain payload; state_patch supplies proposed initial status/blocking/authority_class when present; missing state fields come only from stage/system defaults, never guessed."
+    },
+    {
+      "when": "change.op == UPDATE",
+      "emit": [
+        "REVISE",
+        "SET_STATUS?"
+      ],
+      "details": "payload delta and state_patch.blocking/authority_class -> REVISE; state_patch.status -> separate SET_STATUS. If both are present, emit both in one atomic mutation set."
+    },
+    {
+      "when": "change.op == SUPERSEDE",
+      "emit": [
+        "SUPERSEDE"
+      ],
+      "details": "target_ref is required; replacement is resolved from change payload/temp refs; any status transition is runtime-owned consequence of SUPERSEDE."
+    },
+    {
+      "when": "change.op == MERGE",
+      "emit": [
+        "MERGE"
+      ],
+      "details": "source_refs >=2; new canonical target ID is allocated only by StateCommitter."
+    }
+  ],
+  "state_field_policy": {
+    "status": "model may propose through state_patch.status; Policy Engine validates from_status -> to_status and authority/evidence before SET_STATUS",
+    "blocking": "model may propose through state_patch.blocking; normalized as REVISE metadata and stage/policy validated",
+    "authority_class": "model may propose through state_patch.authority_class; normalized as REVISE metadata and authority validator MUST reject self-expansion or unsupported escalation"
+  },
+  "forbidden": [
+    "putting RegistryEntry status/blocking/authority_class inside domain payload",
+    "model-generated canonical ID/version/hash/run metadata",
+    "implicit status change inferred from prose or annotations"
+  ],
+  "atomicity": "all emitted mutations from one accepted response are validated and committed in one IndexedDB readwrite transaction or none are committed"
+}

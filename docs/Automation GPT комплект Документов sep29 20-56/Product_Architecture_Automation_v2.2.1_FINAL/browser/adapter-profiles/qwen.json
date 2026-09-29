@@ -1,0 +1,7 @@
+{
+  "provider": "qwen",
+  "selector_ownership": "existing MyOrchestrator provider adapter/content script",
+  "v2_2_requirement": "must implement browser/adapter-contract.json; do not duplicate provider DOM logic inside Automation Layer",
+  "dom_selectors": "INHERIT_EXISTING_MYORCHESTRATOR",
+  "status": "integration binding; provider-specific selector inventory must be taken from current MyOrchestrator source at implementation time"
+}

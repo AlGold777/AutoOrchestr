@@ -1,0 +1,55 @@
+{
+  "version": "2.2.1",
+  "runtime_owned_accountable_set": true,
+  "domain_transformation_dispositions": [
+    "PRESERVE",
+    "MERGE",
+    "SPLIT",
+    "SUPERSEDE",
+    "DEFER",
+    "REJECT"
+  ],
+  "input_key": "<object_id>@v<version>",
+  "note": "Domain coverage dispositions remain distinct from AL-STRUCT-1 input_fate bookkeeping and are never supplied as a second model vocabulary.",
+  "derivation_order": [
+    "REJECT",
+    "SUPERSEDE",
+    "DEFER",
+    "MERGE",
+    "SPLIT",
+    "PRESERVE"
+  ],
+  "derivation_rules": [
+    {
+      "outcome": "REJECT",
+      "if": "input_fate == REJECTED AND no surviving successor change references the input"
+    },
+    {
+      "outcome": "SUPERSEDE",
+      "if": "input_fate == SUPERSEDED AND exactly one SUPERSEDE change targets the input"
+    },
+    {
+      "outcome": "DEFER",
+      "if": "an UPDATE for the input proposes state_patch.status == DEFERRED and that transition is permitted by the stage status enum/policy"
+    },
+    {
+      "outcome": "MERGE",
+      "if": "a MERGE change contains the input in source_refs"
+    },
+    {
+      "outcome": "SPLIT",
+      "if": "input_fate == TRANSFORMED AND the input is referenced as source by two or more distinct successor changes and no MERGE rule matched"
+    },
+    {
+      "outcome": "PRESERVE",
+      "if": "input remains accounted with one-or-zero successor cardinality and none of REJECT/SUPERSEDE/DEFER/MERGE/SPLIT matched; UPDATE/REVISE may occur without removing the input identity"
+    }
+  ],
+  "transformation_stage_constraints": [
+    "for every accountable input input_fate MUST be present exactly once",
+    "CONSUMED and NOT_USED are insufficient for accountable inputs on TRANSFORMATION stages",
+    "ambiguous multiple derivations are validation failure",
+    "no derived outcome is inferred from annotations or narrative"
+  ],
+  "commit_condition": "accountable == derived_disposition_inputs AND foreign==0 AND duplicates==0 AND ambiguous==0"
+}

@@ -1,0 +1,44 @@
+{
+  "A0": {
+    "meaning": "Reversible low-risk decision inside committed scope.",
+    "default_mode": "AUTO_POLICY",
+    "requires": [
+      "active_DPL",
+      "risk_within_policy"
+    ],
+    "normal_after_G1": true
+  },
+  "A1": {
+    "meaning": "Decision depends on an external or empirical fact.",
+    "default_mode": "REQUIRE_EVIDENCE",
+    "requires": [
+      "verifiable_EVD",
+      "active_DPL"
+    ],
+    "normal_after_G1": true
+  },
+  "A2": {
+    "meaning": "Value/preference decision not derivable from evidence alone.",
+    "default_mode": "REQUIRE_OWNER_SELECTION",
+    "requires": [
+      "owner_authority_event"
+    ],
+    "normal_after_G1": false,
+    "rule": "Before G1 it must be resolved by selection or explicitly deferred non-blocking. After G1 a newly discovered A2 is a product-baseline reopening condition."
+  },
+  "A3": {
+    "meaning": "Changes scope, contract, Decision Policy or committed baseline.",
+    "default_mode": "REQUIRE_OWNER_SELECTION",
+    "requires": [
+      "baseline_reopen_authority_event"
+    ],
+    "normal_after_G1": false,
+    "rule": "Never auto-closed. After G1 normal pipeline halts with SCOPE_CHANGE_REQUIRED."
+  },
+  "A4": {
+    "meaning": "Decision/action outside permitted risk or prohibited by policy.",
+    "default_mode": "PROHIBITED",
+    "requires": [],
+    "normal_after_G1": false
+  }
+}
