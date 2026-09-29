@@ -1,5 +1,5 @@
 {
-  "version": "2.2.3",
+  "version": "2.2.4",
   "input_contract": "AL-STRUCT-1 changes[] + frozen Registry snapshot + stage contract",
   "output_contract": "internal normalized mutations CREATE|REVISE|SET_STATUS|SUPERSEDE|MERGE",
   "rules": [
@@ -43,5 +43,8 @@
     "model-generated canonical ID/version/hash/run metadata",
     "implicit status change inferred from prose or annotations"
   ],
-  "atomicity": "all emitted mutations from one accepted response are validated and committed in one IndexedDB readwrite transaction or none are committed"
+  "atomicity": "all emitted mutations from one accepted response are validated and committed in one IndexedDB readwrite transaction or none are committed",
+  "temp_ref_resolution": "payload TempRef {code,temp_id} -> ObjectRef {code,object_id,version:1} of the object allocated for that temp_id in the same StateCommit",
+  "runtime_injected_fields": "stage.contract.runtime_injected_fields are filled by the runtime (e.g. PRP.source_model = dispatching provider) after the model value was verified absent",
+  "initial_status": "CREATE without state_patch.status gets stage.contract.initial_statuses[code]; a proposed status is accepted only when listed in stage.contract.model_status_proposals[code] and approved by the Policy Engine"
 }

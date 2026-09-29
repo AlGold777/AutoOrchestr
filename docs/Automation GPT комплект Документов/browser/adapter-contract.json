@@ -44,6 +44,6 @@
   "version": "2.2.3",
   "provider_matrix_ref": "browser/provider-matrix.json",
   "provider_matrix_rule": "all enabled MyOrchestrator providers must have a binding and pass provider-specific M1 extraction/correlation tests before production use",
-  "structured_response_extraction": "correlated assistant textContent/raw text -> deterministic WHOLE_TEXT_JSON or SINGLE_FENCED_JSON extraction; outer wrapper prose is non-authoritative; innerHTML reconstruction forbidden",
+  "structured_response_extraction": "correlated assistant textContent/raw text -> deterministic WHOLE_TEXT_JSON, SINGLE_FENCED_JSON or SINGLE_BALANCED_JSON inside the token-located PAF_RESPONSE frame; innerHTML never authoritative",
   "structured_response_extraction_ref": "browser/structured-response-extraction.json"
 }

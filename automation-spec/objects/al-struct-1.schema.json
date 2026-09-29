@@ -1,6 +1,6 @@
 {
   "$id": "AL-STRUCT-1",
-  "title": "Automation Layer v2.2.3 model semantic response",
+  "title": "Automation Layer v2.2.4 model semantic response",
   "type": "object",
   "required": [
     "passport",
@@ -567,6 +567,9 @@
     "if stage.response_contract.dispositions_required=false then dispositions MUST be []",
     "if stage.response_contract.dispositions_required=true then each accountable input MUST appear exactly once in dispositions and action MUST be allowed by coverage_obligation",
     "dispositions MUST reconcile deterministically with changes and input_fate; declared semantic intent never overrides an inconsistent mutation proposal",
-    "MERGE requires a matching MERGE change whose source_refs include input_ref; SPLIT requires >=2 declared result_temp_ids matching successor changes; SUPERSEDE requires matching SUPERSEDE target_ref; DEFER requires policy-valid state_patch.status=DEFERRED; REJECT requires REJECTED input_fate and no surviving successor; PRESERVE must not conflict with a terminal transformation"
+    "MERGE requires a matching MERGE change whose source_refs include input_ref; SPLIT requires >=2 declared result_temp_ids matching successor changes; SUPERSEDE requires matching SUPERSEDE target_ref; DEFER requires policy-valid state_patch.status=DEFERRED; REJECT requires REJECTED input_fate and no surviving successor; PRESERVE must not conflict with a terminal transformation",
+    "payload references to objects created in the same response use a TempRef {\"code\":<CODE>,\"temp_id\":\"tmp-...\"}; StateCommitter resolves it to the allocated ObjectRef before object-schema validation",
+    "fields listed in stage.contract.runtime_injected_fields are owned by the runtime; a model value for them is rejected",
+    "every change that lists an accountable input in source_refs must be declared in that input's disposition result_temp_ids (no hidden transformation)"
   ]
 }

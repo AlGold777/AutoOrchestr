@@ -1,8 +1,8 @@
 # Automation Layer v2.2.3 — Implementation / Integration Specification
 
 **Status:** implementation source of truth  
-**Version:** 2.2.3  
-**Target:** existing `AlGold777/MyOrchestrator` Web/DOM runtime  
+**Version:** 2.2.4  
+**Target:** existing Web/DOM runtime of this repository (`AlGold777/AutoOrchestr`, extension `A_Fable`; earlier drafts called it MyOrchestrator)  
 **Inputs:**  
 1. `product_architecture_framework_system_model_final.json`  
 2. `Automation Layer v2.2.3 — Web Runtime for Product→Architecture Framework`  
@@ -122,8 +122,8 @@ Minimum project controller state:
   "project_revision": 0,
   "workflow_state": "NEW",
   "current_stage": 1,
-  "manifest_version": "2.0.0",
-  "automation_layer_version": "2.2.0",
+  "framework_manifest_version": "2.0.0",
+  "automation_layer_version": "2.2.4",
   "active_baselines": {},
   "registry": {},
   "accepted_message_ids": [],
@@ -562,6 +562,28 @@ Production `automation.html` should expose only controller actions/state:
 The UI may project AL-STRUCT metadata, but editing the display must never change canonical project state.
 
 ---
+
+## 19a. Pilot implementation (v2.2.4, stages 1–5)
+
+The pilot runs as a separate page and does not modify the Debate pipeline:
+
+| Module | Responsibility |
+|---|---|
+| `automation_lab.html`, `automation/lab-ui.js`, `automation/lab.css` | UI only; every view is re-rendered from IndexedDB |
+| `automation/al-spec.js` | loads `automation-spec/` (runtime copy of this bundle) and runs `manifest_lint`; the engine refuses to start on any problem |
+| `automation/al-canonical.js` | JCS, SHA-256 (bare 64-hex), transport text canonicalization |
+| `automation/al-schema.js` | CSP-safe JSON Schema interpreter, cross-checked against Ajv in jest |
+| `automation/al-snapshot.js` | input selectors → frozen InputSnapshot + `input_snapshot_hash` |
+| `automation/al-prompt-compiler.js` | RULES → STATE → ACTIVE → DELTA → TASK, compact contract, context budget, `[OBJ:TRUNC]` |
+| `automation/al-response-parser.js` | token-located frame + three deterministic JSON modes |
+| `automation/al-validator.js` | AL-STRUCT-1 pipeline, reference-first, TempRef, dispositions, Policy Engine |
+| `automation/al-committer.js` | StateCommitter, answer compiler, routing (only canonical writer) |
+| `automation/al-store.js` | IndexedDB stores; one commit = one readwrite transaction |
+| `automation/al-engine.js` | restartable controller: attempts, repair, fresh attempt, failover, fan-in, recovery |
+| `automation/al-transport.js` | bridge to `START_FULLPAGE_PROCESS` (`useApiFallback:false`, `sourceView:"automation"`) |
+| `automation/al-simulator.js` | offline model simulator + fault injection |
+
+Verification: `tests/automation-lab.test.js` (jest) and `tests/automation-lab-e2e.js` (real Chromium with the unpacked extension). `node scripts/automation-spec-sync.js` regenerates the monolith, the SHA manifest and `automation-spec/`.
 
 ## 20. Implementation sequence
 

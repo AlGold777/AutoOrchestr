@@ -1,5 +1,5 @@
 {
-  "version": "2.2.3",
+  "version": "2.2.4",
   "scope": "M1 transport-boundary measurements; no Registry/StateCommit mutations",
   "required_per_call": [
     "provider",
@@ -22,6 +22,7 @@
   "extraction_mode_enum": [
     "WHOLE_TEXT_JSON",
     "SINGLE_FENCED_JSON",
+    "SINGLE_BALANCED_JSON",
     "FAILED"
   ],
   "aggregate_per_provider": [

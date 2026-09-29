@@ -622,5 +622,83 @@
     "given": "implementation attempts to use disput scheduler/vocabulary/commit as Product→Architecture authority",
     "expect": "integration boundary validator/review rejects; only adapter-scoped infrastructure reuse allowed",
     "version": "2.2.3"
+  },
+  {
+    "id": "TRANSPORT_SINGLE_BALANCED_JSON_ACCEPTED",
+    "given": "rendered code block leaves \"json\"/\"Copy code\" labels around exactly one JSON object inside the frame",
+    "expect": "extract SINGLE_BALANCED_JSON; labels stay RAW only",
+    "version": "2.2.4"
+  },
+  {
+    "id": "FRAME_MARKERS_TOKEN_LOCATED",
+    "given": "renderer strips punctuation around PAF_RESPONSE_BEGIN/END markers",
+    "expect": "frame is still located by CALL/ATTEMPT tokens",
+    "version": "2.2.4"
+  },
+  {
+    "id": "FRAME_FOREIGN_TOKEN_REJECTED",
+    "given": "assistant text contains a frame with another call token (stale answer)",
+    "expect": "FRAME_TOKEN_MISMATCH; zero commits",
+    "version": "2.2.4"
+  },
+  {
+    "id": "JSON_CONTROL_CHARS_ESCAPED_LOSSLESS",
+    "given": "string literal contains a raw newline",
+    "expect": "deterministic escape, then parse; no other repair",
+    "version": "2.2.4"
+  },
+  {
+    "id": "STAGE1_EMPTY_RESULT_REJECTED",
+    "given": "stage 1 returns empty_by_design",
+    "expect": "rejected: stage 1 requires exactly one DPL",
+    "version": "2.2.4"
+  },
+  {
+    "id": "DPL_APPROVAL_QST_RUNTIME_GENERATED",
+    "given": "stage 1 committed a DRAFT DPL",
+    "expect": "runtime creates DPL_APPROVAL QST; WAITING_FOR_SELECTION; no model can activate DPL",
+    "version": "2.2.4"
+  },
+  {
+    "id": "DPL_ACTIVATED_ONLY_BY_OWNER_ANSWER",
+    "given": "owner selects APPROVE",
+    "expect": "QANS + AEV(AUTHORIZE_POLICY) + DPL SET_STATUS ACTIVE in one transaction",
+    "version": "2.2.4"
+  },
+  {
+    "id": "PCON_COMMITTED_ACTIVE_FOR_STAGE5",
+    "given": "stage 4 accepted",
+    "expect": "PCON ACTIVE so stage 5 input selectors resolve",
+    "version": "2.2.4"
+  },
+  {
+    "id": "TEMP_REF_RESOLVED_AT_COMMIT",
+    "given": "QST.decision_ref = TempRef of a PD created in the same response",
+    "expect": "resolved to the allocated PD ObjectRef",
+    "version": "2.2.4"
+  },
+  {
+    "id": "RUNTIME_INJECTED_FIELD_FROM_MODEL_REJECTED",
+    "given": "model sets PRP.source_model",
+    "expect": "rejected as runtime-owned field",
+    "version": "2.2.4"
+  },
+  {
+    "id": "NO_HIDDEN_TRANSFORMATION",
+    "given": "PD lists a PRP in source_refs but the PRP disposition does not declare that PD",
+    "expect": "disposition reconciliation failure",
+    "version": "2.2.4"
+  },
+  {
+    "id": "PD_AUTHORITY_ROUTING_DETERMINISTIC",
+    "given": "stage 3 PDs with A0..A4",
+    "expect": "A0 closable; A1 NEEDS_EVIDENCE; A2/A3 OPEN with QST; A4 DEFERRED",
+    "version": "2.2.4"
+  },
+  {
+    "id": "FANOUT_ATOMIC_FAN_IN_COMMIT",
+    "given": "two independent runs accepted, third failed after retries",
+    "expect": "accepted runs commit in one transaction only when min_distinct_models is satisfied",
+    "version": "2.2.4"
   }
 ]

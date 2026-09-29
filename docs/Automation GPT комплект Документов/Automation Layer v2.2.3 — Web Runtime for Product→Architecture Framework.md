@@ -1,7 +1,7 @@
 Automation Layer v2.2.3 — Web Runtime for Product→Architecture Framework
 
 Статус: Final
-Версия: 2.2.3
+Версия: 2.2.4 (имя файла сохранено от 2.2.3; изменения — раздел 85)
 Назначение: надёжное автоматизированное исполнение полного Product→Architecture Framework через обычные веб-интерфейсы LLM с DOM-управлением, без зависимости от model API, structured output API, function calling или finish_reason.
 
 Профиль v2.2.3: финальная pre-implementation консолидация после внешних review. Сохраняются закрытые ранее state_patch/SET_STATUS, diagnostic-only annotations, deterministic decomposition, IndexedDB StateCommit, CSP-safe schema validation, Evidence Collector и 10-provider matrix. v2.2.3 добавляет explicit transformation dispositions, единый hash contract, compact model-facing contract, transport-tolerant deterministic JSON extraction, измеримый zero-commit M1 и жёсткую границу с существующим disput/ runtime.
@@ -603,11 +603,12 @@ take last assistant message
 
 Transport frame v2.1 сохраняется. Внутри него v2.2 требует один JSON-object по AL-STRUCT-1:
 
-<<<PAF_RESPONSE W7K9-Q2F4 A02-X71P>>>
+PAF_RESPONSE_BEGIN CW7K9Q2F4 AA02X71P
+```json
 {
   "passport": {
     "contract": "AL-STRUCT-1",
-    "stage": "SXX",
+    "stage": 18,
     "input_snapshot_id": "SNAP-...",
     "input_snapshot_hash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
     "input_refs": []
@@ -626,26 +627,30 @@ Transport frame v2.1 сохраняется. Внутри него v2.2 треб
     "anomalies": []
   }
 }
-<<<END_PAF_RESPONSE W7K9-Q2F4 A02-X71P>>>
+```
+PAF_RESPONSE_END CW7K9Q2F4 AA02X71P
 
 Разрешена ровно одна response frame и ровно один AL-STRUCT-1 response-object.
 
 Транспортные CALL_TOKEN/ATTEMPT_TOKEN остаются transport-owned и не переносятся в model-controlled semantic payload.
 
+v2.2.4: маркеры рамки — голые слова `PAF_RESPONSE_BEGIN` / `PAF_RESPONSE_END` с токенами, без угловых скобок. Форма `<<<...>>>` из v2.2.3 выглядит для markdown/HTML-санитайзеров как тег и может быть вырезана из отрендеренного ответа вместе с токенами. Рамка находится по случайным токенам, окружающая пунктуация (`**`, `<<<`, `>>>`) игнорируется.
+
 15. Transport Parser
 
 Parser выполняет:
 
-1. find exact opening marker
-2. validate CALL_TOKEN
-3. validate ATTEMPT_TOKEN
-4. find exact closing marker
-5. require exactly one matching frame
-6. extract frame interior from correlated assistant `textContent` / raw text
-7. try `WHOLE_TEXT_JSON`: trimmed interior must parse as exactly one JSON object
-8. otherwise try `SINGLE_FENCED_JSON`: exactly one fenced code block inside the frame must parse as exactly one JSON object
-9. reject zero, multiple or ambiguous JSON candidates
-10. canonicalize only the parsed JSON object; wrapper prose/fences remain RAW audit data
+1. apply transport text canonicalization (BOM, CRLF, zero-width, NBSP)
+2. locate `PAF_RESPONSE_BEGIN <CALL_TOKEN> <ATTEMPT_TOKEN>` by its tokens; a frame with other tokens → FRAME_TOKEN_MISMATCH
+3. locate `PAF_RESPONSE_END <CALL_TOKEN> <ATTEMPT_TOKEN>`; missing → FRAME_INCOMPLETE
+4. require exactly one matching frame (FRAME_AMBIGUOUS otherwise)
+5. extract frame interior from correlated assistant `textContent` / raw text
+6. try `WHOLE_TEXT_JSON`: trimmed interior must parse as exactly one JSON object
+7. otherwise `SINGLE_FENCED_JSON`: exactly one fenced code block parses as one JSON object and no other parseable object exists outside it
+8. otherwise `SINGLE_BALANCED_JSON`: exactly one balanced top-level `{...}` span parses (rendered code blocks lose their fences and add chrome such as `json` / `Copy code`)
+9. the only JSON repair is lossless escaping of raw control characters inside string literals
+10. reject zero, multiple or ambiguous JSON candidates
+11. canonicalize only the parsed JSON object; wrapper prose/fences remain RAW audit data
 
 Text before/after the exact PAF frame is non-authoritative and may be ignored by semantic parsing, but a second PAF frame or a second parseable JSON candidate is an ambiguity failure.
 
@@ -2089,9 +2094,11 @@ Canonical runtime hash format v2.2.3: lowercase bare SHA-256 hex, ровно 64 
 
 Для Chrome MV3 JSON Schema validators компилируются на build-time как Ajv standalone (`strict:false`, `allErrors:true`) либо эквивалентным CSP-safe способом. Runtime `new Function`/`eval` запрещён. Custom `x-*` metadata не должно ломать validator compilation.
 
+Реализация v2.2.4 выбирает эквивалентный способ: интерпретатор используемого подмножества draft-07 (`automation/al-schema.js`) без build-шага. Его вердикты сверяются с Ajv в jest на валидных и мутированных ответах всех пилотных стадий.
+
 71.4. DOM JSON Extraction
 
-Structured response извлекается из correlated assistant message через DOM `textContent` / raw text по `browser/structured-response-extraction.json`. Принимаются два deterministic mode: `WHOLE_TEXT_JSON` и `SINGLE_FENCED_JSON`. Wrapper prose остаётся только в RAW. Ноль или более одного parseable candidate → reject. Reconstruction из rendered markdown/`innerHTML` запрещена. Provider matrix обязан тестировать оба acceptance mode и ambiguity rejection для каждого enabled Web UI.
+Structured response извлекается из correlated assistant message через DOM `textContent` / raw text по `browser/structured-response-extraction.json`. Принимаются три deterministic mode: `WHOLE_TEXT_JSON`, `SINGLE_FENCED_JSON` и `SINGLE_BALANCED_JSON` (v2.2.4, раздел 15). Wrapper prose остаётся только в RAW. Ноль или более одного parseable candidate → reject. Reconstruction из rendered markdown/`innerHTML` запрещена. Provider matrix обязан тестировать все acceptance mode и ambiguity rejection для каждого enabled Web UI.
 
 72. Provider Failure
 
@@ -2848,3 +2855,21 @@ M1 собирает фактическую provider telemetry и не меняе
 - debate commit semantics вместо AL StateCommitter.
 
 Каноническая machine-граница: `integration/existing-runtime-boundary.json`.
+
+85. Delta v2.2.4 — устранение противоречий по результатам исполнимого пилота (стадии 1–5)
+
+Пилот `automation_lab.html` исполнил стадии 1–5 и вскрыл противоречия, которые делали v2.2.3 неисполнимой. Все исправления внесены в split-бандл. Монолит пересобирается из него скриптом `scripts/automation-spec-sync.js`. Там же `--check` проверяет синхронность.
+
+1. Тупик DPL. Стадия 4 требует `DPL ACTIVE`, стадия 1 создаёт только `DRAFT`, и ни одна стадия её не активировала. Теперь после commit стадии 1 runtime создаёт `DPL_APPROVAL` QST. Эффекты `ACTIVATE_DPL` и `RERUN_STAGE` зарезервированы за runtime-опросниками и применяются только компилятором ответов владельца: QANS + AEV(AUTHORIZE_POLICY). REGENERATE переводит в SUPERSEDED всё, что создала стадия 1.
+2. Тупик PCON. Стадия 5 требует `PCON ACTIVE`, стадия 4 не задавала статус. `initial_statuses` теперь объявлены для каждого создаваемого кода стадий 1–5, PCON коммитится ACTIVE.
+3. Пустой результат стадий 1, 2, 4 запрещён: `requires_material_output=true`, `allows_empty_by_design=false`, добавлена `cardinality` (DPL ровно 1, PCON ровно 1, PRP ≥ 1).
+4. Правило DEFER в coverage-контракте требовало `PRP.status=DEFERRED`, которого нет в status-enums. Правила сверки переписаны: MERGE/SPLIT/SUPERSEDE/DEFER проверяются по lineage (`source_refs`) successor-изменений, включая межтиповую трансформацию PRP → PD. Статусы входов — runtime-owned последствия диспозиций. Добавлено правило no hidden transformation.
+5. Бюджет ремонта: в `stages.json` было `repair_attempts: 2`, в repair-policy — `max_repairs_per_call: 1`. Теперь везде 1 ремонт на вызов в той же беседе, `max_attempts` считает свежие беседы. Lint отклоняет расхождение.
+6. `full_schema_hash` считался от байтов файла, а все остальные хеши — от JCS. Теперь `sha256(JCS(schema))`, и переформатирование файла не ломает контракт.
+7. Ссылки внутри ответа: payload не мог сослаться на объект, создаваемый тем же ответом (ObjectRef требует канонический ID). Введён TempRef `{"code","temp_id"}`, который StateCommitter разрешает в выделенный ObjectRef. Цели эффектов QST по temp_id тоже разрешаются при commit.
+8. Поля, принадлежащие runtime, объявлены явно (`runtime_injected_fields`): `PRP.source_model` и `QST.session_id`. Значение от модели отклоняется.
+9. Policy Engine стадии 3 детерминирован. `state_patch.authority_class` обязателен для PD. Правила по классам: A0 — может быть закрыт моделью; A1 → NEEDS_EVIDENCE; A2/A3 → OPEN, обязателен QST; A4 → DEFERRED. DPL не может расширить A2/A3 до AUTO_POLICY.
+10. Рамка ответа без угловых скобок и третий режим извлечения `SINGLE_BALANCED_JSON` (раздел 15).
+11. Удалены дубликаты в корне бандла, которые расходились с каноническими файлами: копия статического раннера (падала из-за неверного корня), `contract-tests.v2.2.3.json`, `al-struct-1.schema.v2.2.3.json`, копия прототипа.
+12. Fan-in атомарен. Принятые ответы независимой стадии фиксируются одной транзакцией только при выполнении `min_distinct_models`. Каждый ответ валидируется и сохраняется сразу по приходу, поэтому падение страницы посреди батча не теряет уже принятые ответы и не вызывает модели повторно.
+

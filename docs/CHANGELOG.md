@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-09-29 — Automation Lab: executable Product→Architecture stages 1–5, version 2.81.492
+
+- Add `automation_lab.html`, a separate page (linked from the Pipeline top bar) that runs framework stages 1–5 through the existing Web transport without API fallback. Its outputs are an owner-approved Decision Policy, independent multi-model expansion, decision synthesis with owner questions, a product concept and an independent adversarial review.
+- Every answer goes through token-located frame extraction, AL-STRUCT-1 validation, snapshot-hash acknowledgement, reference/authority/disposition checks and an atomic IndexedDB commit; representation errors get one same-conversation repair, semantic errors a fresh conversation, and single-model stages fail over to the next selected model.
+- Answers are persisted per model as they arrive, so a page reload never re-calls accepted models. A built-in simulator runs the whole pilot offline.
+- Consolidate the Automation Layer bundle to v2.2.4: remove the DPL/PCON activation dead ends, the non-existent PRP DEFERRED rule, the repair-budget and hash-method contradictions and drifting duplicate files; the monolith is now generated from the split files (`npm run spec:sync`).
+
 ### 2026-09-29 — Preserve unlimited attachment batches in distributions, version 2.81.491
 
 - Rebuild tracked provider adapters and content bundles from the current sources so generated outputs no longer carry the stale five-file cap.

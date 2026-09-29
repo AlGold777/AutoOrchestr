@@ -329,7 +329,7 @@
       "AL_STRUCT_1.dispositions",
       "coverageContracts"
     ],
-    "logic": "resolve accountable_set in runtime; accountable_set == dispositions.input_ref set; duplicates/foreign==0; actions allowed by stage contract."
+    "logic": "resolve accountable_set in runtime; accountable_set == dispositions.input_ref set; duplicates/foreign==0; actions allowed by stage contract. Every successor change listing an accountable input in source_refs is declared in that input's result_temp_ids."
   },
   "transformation_balance_valid": {
     "description": "Declared dispositions reconcile exactly with input_fate + changes + frozen snapshot and produce unaccounted=0.",
@@ -507,6 +507,6 @@
       "raw correlated assistant text",
       "browser/structured-response-extraction.json"
     ],
-    "logic": "accept WHOLE_TEXT_JSON or SINGLE_FENCED_JSON only; reject zero/multiple/ambiguous candidates; never parse authoritative JSON from innerHTML."
+    "logic": "accept WHOLE_TEXT_JSON, SINGLE_FENCED_JSON or SINGLE_BALANCED_JSON only; reject zero/multiple/ambiguous candidates; never parse authoritative JSON from innerHTML"
   }
 }

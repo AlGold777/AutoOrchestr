@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Automation Lab</title>
+  <link rel="stylesheet" href="automation/lab.css">
+</head>
+<body>
+  <header class="lab-header">
+    <div class="lab-brand">
+      <strong>Automation Lab</strong>
+      <span class="lab-sub">Product→Architecture · пилот стадий 1–5</span>
+    </div>
+    <div class="lab-header-meta">
+      <span id="specBadge" class="badge">spec …</span>
+      <label class="mode-switch" title="Симулятор отвечает валидными AL-STRUCT-1 без веб-моделей">
+        <input type="checkbox" id="simulatorToggle"> Симулятор
+      </label>
+      <a class="link-button" href="pipeline_panel.html">← Pipeline</a>
+    </div>
+  </header>
+
+  <div id="lintBanner" class="banner banner-error" hidden></div>
+
+  <main class="lab-layout">
+    <aside class="lab-sidebar">
+      <section class="panel">
+        <h2>Новый проект</h2>
+        <form id="newProjectForm" class="stack">
+          <label for="ideaInput">Идея продукта (IDEA)</label>
+          <textarea id="ideaInput" rows="7" required placeholder="Опишите продуктовую идею свободным текстом: кто пользователь, какую проблему решаем, какой результат нужен."></textarea>
+          <fieldset class="models">
+            <legend>Модели (fan-out: 2–4)</legend>
+            <div id="modelChoices" class="model-grid"></div>
+          </fieldset>
+          <label for="primarySelect">Основная модель (стадии 1, 3, 4)</label>
+          <select id="primarySelect"></select>
+          <label for="timeoutInput">Таймаут ответа, сек</label>
+          <input id="timeoutInput" type="number" min="60" max="1800" step="30" value="600">
+          <button type="submit" class="primary">Создать и запустить</button>
+        </form>
+      </section>
+      <section class="panel">
+        <h2>Проекты</h2>
+        <ul id="projectList" class="project-list"></ul>
+      </section>
+    </aside>
+
+    <section class="lab-main" id="projectView" hidden>
+      <div class="project-head">
+        <div>
+          <h1 id="projectTitle"></h1>
+          <div class="project-meta">
+            <span id="stateBadge" class="badge"></span>
+            <span id="projectMeta"></span>
+          </div>
+        </div>
+        <div class="actions">
+          <button id="runBtn" class="primary">Запустить</button>
+          <button id="stopBtn">Остановить</button>
+          <button id="retryBtn" hidden>Повторить стадию</button>
+          <button id="exportMdBtn">Экспорт .md</button>
+          <button id="exportJsonBtn">Экспорт .json</button>
+          <button id="deleteBtn" class="danger">Удалить</button>
+        </div>
+      </div>
+
+      <ol id="stageTrack" class="stage-track"></ol>
+      <div id="liveProgress" class="live-progress" hidden></div>
+      <div id="errorPanel" class="banner banner-error" hidden></div>
+
+      <section id="ownerPanel" class="panel owner-panel" hidden>
+        <h2>Решение владельца</h2>
+        <p class="hint">Выбор только из вариантов. Выбранные эффекты применяются детерминированным компилятором ответов, без интерпретации моделью.</p>
+        <form id="ownerForm" class="stack"></form>
+      </section>
+
+      <nav class="tabs" role="tablist">
+        <button role="tab" data-tab="results" aria-selected="true">Результаты</button>
+        <button role="tab" data-tab="registry">Реестр</button>
+        <button role="tab" data-tab="calls">Вызовы</button>
+        <button role="tab" data-tab="telemetry">Телеметрия</button>
+        <button role="tab" data-tab="events">События</button>
+      </nav>
+      <div id="tabResults" class="tab-panel"></div>
+      <div id="tabRegistry" class="tab-panel" hidden></div>
+      <div id="tabCalls" class="tab-panel" hidden></div>
+      <div id="tabTelemetry" class="tab-panel" hidden></div>
+      <div id="tabEvents" class="tab-panel" hidden></div>
+    </section>
+
+    <section class="lab-main lab-empty" id="emptyView">
+      <h1>Автоматизация стадий 1–5</h1>
+      <p>Идея → Decision Policy (одобряет владелец) → независимое расширение несколькими моделями → синтез решений и вопросы владельцу → концепция продукта → независимое adversarial-ревью.</p>
+      <p>Каждый ответ модели проходит извлечение из рамки, валидацию AL-STRUCT-1, проверку хеша снимка и политики полномочий, и только затем атомарно фиксируется в IndexedDB.</p>
+    </section>
+  </main>
+
+  <dialog id="textDialog" class="text-dialog">
+    <form method="dialog">
+      <header><strong id="textDialogTitle"></strong><button value="close" aria-label="Закрыть">✕</button></header>
+      <pre id="textDialogBody"></pre>
+    </form>
+  </dialog>
+
+  <script src="tos-consent.js"></script>
+  <script src="automation/al-canonical.js"></script>
+  <script src="automation/al-schema.js"></script>
+  <script src="automation/al-response-parser.js"></script>
+  <script src="automation/al-spec.js"></script>
+  <script src="automation/al-store.js"></script>
+  <script src="automation/al-snapshot.js"></script>
+  <script src="automation/al-prompt-compiler.js"></script>
+  <script src="automation/al-validator.js"></script>
+  <script src="automation/al-committer.js"></script>
+  <script src="automation/al-engine.js"></script>
+  <script src="automation/al-simulator.js"></script>
+  <script src="automation/al-transport.js"></script>
+  <script src="automation/lab-ui.js"></script>
+</body>
+</html>

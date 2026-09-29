@@ -216,7 +216,8 @@ function isAppUiUrl(url = '') {
   if (typeof url !== 'string' || !url) return false;
   try {
     return url.startsWith(chrome.runtime.getURL('result_new.html'))
-      || url.startsWith(chrome.runtime.getURL('pipeline_panel.html'));
+      || url.startsWith(chrome.runtime.getURL('pipeline_panel.html'))
+      || url.startsWith(chrome.runtime.getURL('automation_lab.html'));
   } catch (_) {
     return false;
   }

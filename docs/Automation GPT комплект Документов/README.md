@@ -1,6 +1,6 @@
-# Product→Architecture Automation — v2.2.3 COMPLETE
+# Product→Architecture Automation — v2.2.4
 
-Status: final pre-code implementation package after multi-model review consolidation.
+Status: v2.2.4, consolidated after an executable pilot of stages 1–5 (`automation_lab.html` in the repository root). See `FINAL_CHANGESET_v2.2.4.md`. File names that still say `v2.2.3` contain v2.2.4 content.
 
 This archive is self-contained. No manual patching is required. Files from v2.2.2 are superseded by the v2.2.3 files included here.
 
@@ -12,16 +12,16 @@ This archive is self-contained. No manual patching is required. Files from v2.2.
 ## Runtime source of truth
 
 - `Automation Layer v2.2.3 — Web Runtime for Product→Architecture Framework.md` — full normative runtime specification.
-- `product_architecture_framework_automation_layer_v2.2.3.json` — full machine-executable monolith.
+- `product_architecture_framework_automation_layer_v2.2.3.json` — full machine monolith, **generated** from the split files by `scripts/automation-spec-sync.js` (do not edit by hand).
 - `manifest.json` + split directories — canonical split machine bundle.
 - `IMPLEMENTATION_INTEGRATION_SPEC_v2.2.3.md` — production integration specification for MyOrchestrator.
-- `FINAL_CHANGESET_v2.2.3.md` — final accepted change list; changelog only, not a patch instruction.
+- `FINAL_CHANGESET_v2.2.4.md` — contradictions removed after the pilot; `FINAL_CHANGESET_v2.2.3.md` — previous change list.
 
 ## Contract / verification
 
-- `objects/al-struct-1.schema.json` and `al-struct-1.schema.v2.2.3.json` — full validator schema.
+- `objects/al-struct-1.schema.json` — full validator schema.
 - `execution/al-struct-1.prompt-contract.json` — compact model-facing contract.
-- `runtime/contract-tests.json` and `contract-tests.v2.2.3.json` — normative contract-test inventory.
+- `runtime/contract-tests.json` — normative contract-test inventory.
 - `tests/automation-static-contracts.mjs` — static package integrity runner.
 - `tests/m1-transport-stage.json` — synthetic zero-commit M1 probe.
 - `runtime/m1-telemetry-contract.json` — M1 provider compliance telemetry.
@@ -48,4 +48,10 @@ This archive is self-contained. No manual patching is required. Files from v2.2.
 - **M5:** stages 18–30 + G3/G4/CAB.
 - **M6:** browser/runtime hardening, failover, crash matrix, export/replay.
 
-Contract test count in this package: **98**.
+Contract test count in this package: **111**.
+
+## Pilot (stages 1–5)
+
+- Page: `automation_lab.html` (link in the Pipeline top bar).
+- Runtime copy of the spec: `automation-spec/` (synced by `node scripts/automation-spec-sync.js`).
+- Tests: `npx jest tests/automation-lab.test.js`, `node tests/automation-lab-e2e.js`.

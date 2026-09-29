@@ -2992,7 +2992,7 @@
     },
     "ModelSemanticResponse": {
       "$id": "AL-STRUCT-1",
-      "title": "Automation Layer v2.2.3 model semantic response",
+      "title": "Automation Layer v2.2.4 model semantic response",
       "type": "object",
       "required": [
         "passport",
@@ -3559,7 +3559,10 @@
         "if stage.response_contract.dispositions_required=false then dispositions MUST be []",
         "if stage.response_contract.dispositions_required=true then each accountable input MUST appear exactly once in dispositions and action MUST be allowed by coverage_obligation",
         "dispositions MUST reconcile deterministically with changes and input_fate; declared semantic intent never overrides an inconsistent mutation proposal",
-        "MERGE requires a matching MERGE change whose source_refs include input_ref; SPLIT requires >=2 declared result_temp_ids matching successor changes; SUPERSEDE requires matching SUPERSEDE target_ref; DEFER requires policy-valid state_patch.status=DEFERRED; REJECT requires REJECTED input_fate and no surviving successor; PRESERVE must not conflict with a terminal transformation"
+        "MERGE requires a matching MERGE change whose source_refs include input_ref; SPLIT requires >=2 declared result_temp_ids matching successor changes; SUPERSEDE requires matching SUPERSEDE target_ref; DEFER requires policy-valid state_patch.status=DEFERRED; REJECT requires REJECTED input_fate and no surviving successor; PRESERVE must not conflict with a terminal transformation",
+        "payload references to objects created in the same response use a TempRef {\"code\":<CODE>,\"temp_id\":\"tmp-...\"}; StateCommitter resolves it to the allocated ObjectRef before object-schema validation",
+        "fields listed in stage.contract.runtime_injected_fields are owned by the runtime; a model value for them is rejected",
+        "every change that lists an accountable input in source_refs must be declared in that input's disposition result_temp_ids (no hidden transformation)"
       ]
     },
     "ResponseEnvelope": {
@@ -4391,7 +4394,7 @@
     },
     "AL_STRUCT_1": {
       "$id": "AL-STRUCT-1",
-      "title": "Automation Layer v2.2.3 model semantic response",
+      "title": "Automation Layer v2.2.4 model semantic response",
       "type": "object",
       "required": [
         "passport",
@@ -4958,7 +4961,10 @@
         "if stage.response_contract.dispositions_required=false then dispositions MUST be []",
         "if stage.response_contract.dispositions_required=true then each accountable input MUST appear exactly once in dispositions and action MUST be allowed by coverage_obligation",
         "dispositions MUST reconcile deterministically with changes and input_fate; declared semantic intent never overrides an inconsistent mutation proposal",
-        "MERGE requires a matching MERGE change whose source_refs include input_ref; SPLIT requires >=2 declared result_temp_ids matching successor changes; SUPERSEDE requires matching SUPERSEDE target_ref; DEFER requires policy-valid state_patch.status=DEFERRED; REJECT requires REJECTED input_fate and no surviving successor; PRESERVE must not conflict with a terminal transformation"
+        "MERGE requires a matching MERGE change whose source_refs include input_ref; SPLIT requires >=2 declared result_temp_ids matching successor changes; SUPERSEDE requires matching SUPERSEDE target_ref; DEFER requires policy-valid state_patch.status=DEFERRED; REJECT requires REJECTED input_fate and no surviving successor; PRESERVE must not conflict with a terminal transformation",
+        "payload references to objects created in the same response use a TempRef {\"code\":<CODE>,\"temp_id\":\"tmp-...\"}; StateCommitter resolves it to the allocated ObjectRef before object-schema validation",
+        "fields listed in stage.contract.runtime_injected_fields are owned by the runtime; a model value for them is rejected",
+        "every change that lists an accountable input in source_refs must be declared in that input's disposition result_temp_ids (no hidden transformation)"
       ]
     },
     "ModelSemanticResponse_v2_1_legacy": {
@@ -7581,7 +7587,9 @@
                         "SET_DPL_FIELD",
                         "SET_SCOPE_FLAG",
                         "CREATE_ASM",
-                        "CREATE_PD"
+                        "CREATE_PD",
+                        "ACTIVATE_DPL",
+                        "RERUN_STAGE"
                       ]
                     },
                     "target": {
@@ -7622,7 +7630,8 @@
           "type": "null"
         }
       },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "description": "Selection-only Owner question. Model-authored QST may use only the stage contract qst_allowed_effects; ACTIVATE_DPL and RERUN_STAGE are reserved for runtime-generated questionnaires (DPL_APPROVAL)."
     },
     "QANS": {
       "type": "object",
@@ -8782,7 +8791,7 @@
         "AL_STRUCT_1.dispositions",
         "coverageContracts"
       ],
-      "logic": "resolve accountable_set in runtime; accountable_set == dispositions.input_ref set; duplicates/foreign==0; actions allowed by stage contract."
+      "logic": "resolve accountable_set in runtime; accountable_set == dispositions.input_ref set; duplicates/foreign==0; actions allowed by stage contract. Every successor change listing an accountable input in source_refs is declared in that input's result_temp_ids."
     },
     "transformation_balance_valid": {
       "description": "Declared dispositions reconcile exactly with input_fate + changes + frozen snapshot and produce unaccounted=0.",
@@ -8960,7 +8969,7 @@
         "raw correlated assistant text",
         "browser/structured-response-extraction.json"
       ],
-      "logic": "accept WHOLE_TEXT_JSON or SINGLE_FENCED_JSON only; reject zero/multiple/ambiguous candidates; never parse authoritative JSON from innerHTML."
+      "logic": "accept WHOLE_TEXT_JSON, SINGLE_FENCED_JSON or SINGLE_BALANCED_JSON only; reject zero/multiple/ambiguous candidates; never parse authoritative JSON from innerHTML"
     }
   },
   "gates": {
@@ -9351,7 +9360,19 @@
             "UNK",
             "ASM"
           ]
-        }
+        },
+        "initial_statuses": {
+          "DPL": "DRAFT",
+          "UNK": "OPEN",
+          "ASM": "UNVERIFIED"
+        },
+        "cardinality": {
+          "DPL": {
+            "min": 1,
+            "max": 1
+          }
+        },
+        "runtime_questionnaire": "DPL_APPROVAL"
       },
       "execution": {
         "mode": "LLM",
@@ -9361,8 +9382,10 @@
         ],
         "timeout_seconds": 300,
         "max_attempts": 3,
-        "repair_attempts": 2,
-        "transaction": "PROPOSE_VALIDATE_ATOMIC_COMMIT"
+        "repair_attempts": 1,
+        "transaction": "PROPOSE_VALIDATE_ATOMIC_COMMIT",
+        "repair_attempts_scope": "per_call_same_conversation",
+        "max_attempts_scope": "fresh_conversation_attempts_per_call"
       },
       "escalation_rules": [
         {
@@ -9510,14 +9533,24 @@
         }
       ],
       "next": {
-        "on_success": {
-          "action": "RUN_STAGE",
-          "stage": 2
-        }
+        "on_success": [
+          {
+            "when": "exists_visible_required_QST",
+            "action": "WAIT",
+            "state": "WAITING_FOR_SELECTION",
+            "resume_stage": 2
+          },
+          {
+            "when": "otherwise",
+            "action": "RUN_STAGE",
+            "stage": 2
+          }
+        ]
       },
       "special_rules": [
         "IDEA already exists as immutable input before stage 1.",
-        "Stage 1 may draft DPL but cannot activate it without QANS+OWNER AEV.",
+        "Stage 1 must create exactly one DPL in DRAFT; an empty stage-1 result is invalid because stage 4 requires an ACTIVE DPL.",
+        "After the stage-1 commit the runtime (never a model) creates the DPL_APPROVAL QST. Only the answer compiler applies ACTIVATE_DPL from an OWNER QANS + AEV(AUTHORIZE_POLICY).",
         "No technical architecture proposals."
       ],
       "response_contract": {
@@ -9535,11 +9568,9 @@
           "exact_by_reference": true
         },
         "dispositions_required": false,
-        "requires_material_output": false,
-        "allows_empty_by_design": true,
-        "allowed_empty_reason_codes": [
-          "NO_MATERIAL_DELTA"
-        ],
+        "requires_material_output": true,
+        "allows_empty_by_design": false,
+        "allowed_empty_reason_codes": [],
         "semantic_contract": "AL-STRUCT-1",
         "snapshot_ack_required": true,
         "reference_first_existing_objects": true,
@@ -9637,6 +9668,21 @@
             "RSK",
             "UNK"
           ]
+        },
+        "initial_statuses": {
+          "PRP": "PROPOSED",
+          "RSK": "OPEN",
+          "UNK": "OPEN"
+        },
+        "cardinality": {
+          "PRP": {
+            "min": 1
+          }
+        },
+        "runtime_injected_fields": {
+          "PRP": [
+            "source_model"
+          ]
         }
       },
       "execution": {
@@ -9646,7 +9692,7 @@
         ],
         "timeout_seconds": 300,
         "max_attempts": 3,
-        "repair_attempts": 2,
+        "repair_attempts": 1,
         "transaction": "PROPOSE_VALIDATE_ATOMIC_COMMIT",
         "fanout": {
           "min_runs": 2,
@@ -9655,7 +9701,9 @@
           "isolation": "IDENTICAL_SNAPSHOT_NO_SIBLING_OUTPUTS",
           "fan_in": "next synthesis/review step",
           "failure_if_capability_missing": true
-        }
+        },
+        "repair_attempts_scope": "per_call_same_conversation",
+        "max_attempts_scope": "fresh_conversation_attempts_per_call"
       },
       "escalation_rules": [
         {
@@ -9825,11 +9873,9 @@
           "exact_by_reference": true
         },
         "dispositions_required": false,
-        "requires_material_output": false,
-        "allows_empty_by_design": true,
-        "allowed_empty_reason_codes": [
-          "NO_MATERIAL_DELTA"
-        ],
+        "requires_material_output": true,
+        "allows_empty_by_design": false,
+        "allowed_empty_reason_codes": [],
         "semantic_contract": "AL-STRUCT-1",
         "snapshot_ack_required": true,
         "reference_first_existing_objects": true,
@@ -9841,7 +9887,10 @@
           "NO_DELTA",
           "NO_NEW_OBJECTS"
         ]
-      }
+      },
+      "special_rules": [
+        "PRP.source_model is runtime-injected from the dispatching provider; a model never asserts its own identity."
+      ]
     },
     {
       "n": 3,
@@ -9943,7 +9992,36 @@
             "UNK",
             "QST"
           ]
-        }
+        },
+        "initial_statuses": {
+          "PD": "OPEN",
+          "UNK": "OPEN",
+          "QST": "READY"
+        },
+        "model_status_proposals": {
+          "PD": [
+            "OPEN",
+            "CLOSED",
+            "DEFERRED",
+            "NEEDS_EVIDENCE"
+          ]
+        },
+        "required_state_patch": {
+          "PD": [
+            "authority_class"
+          ]
+        },
+        "runtime_injected_fields": {
+          "QST": [
+            "session_id"
+          ]
+        },
+        "qst_allowed_effects": [
+          "CLOSE_PD",
+          "DEFER_PD",
+          "CREATE_ASM"
+        ],
+        "modifies_semantics": "PRP is modified only through runtime-owned status consequences of dispositions[] (MERGED/SUPERSEDED/REJECTED); a model never UPDATEs PRP directly."
       },
       "execution": {
         "mode": "COMPOSITE_LLM",
@@ -9953,7 +10031,7 @@
         ],
         "timeout_seconds": 300,
         "max_attempts": 3,
-        "repair_attempts": 2,
+        "repair_attempts": 1,
         "transaction": "PROPOSE_VALIDATE_ATOMIC_COMMIT",
         "steps": [
           {
@@ -9973,7 +10051,10 @@
             ],
             "rule": "A0/A1 per DPL/bootstrap; A2/A3 -> QST before G1"
           }
-        ]
+        ],
+        "repair_attempts_scope": "per_call_same_conversation",
+        "max_attempts_scope": "fresh_conversation_attempts_per_call",
+        "steps_execution": "SINGLE_CALL_THEN_POLICY_ENGINE: one model call authors synthesize+decision_route output; the Policy Engine deterministically applies the A0..A4 routing rule before commit."
       },
       "escalation_rules": [
         {
@@ -10148,6 +10229,7 @@
       },
       "special_rules": [
         "Questionnaire is generated only from unresolved preference/authority questions.",
+        "Every PD declares state_patch.authority_class. Policy Engine: A0 may be CLOSED by MODEL_POLICY; A1 becomes NEEDS_EVIDENCE; A2/A3 stay OPEN and require a QST whose decision_ref is that PD; A4 becomes DEFERRED.",
         "QST branches are JSONLogic over prior selected option IDs.",
         "Answer compiler, not an LLM, applies selected effects."
       ],
@@ -10181,6 +10263,10 @@
             "SUPERSEDE",
             "DEFER",
             "REJECT"
+          ],
+          "result_codes": [
+            "PD",
+            "UNK"
           ]
         },
         "dispositions_required": true,
@@ -10202,7 +10288,7 @@
           "NO_NEW_OBJECTS"
         ],
         "input_fate_is_not_domain_disposition": true,
-        "coverage_reconciliation": "coverageContracts@2.2.3",
+        "coverage_reconciliation": "coverageContracts@2.2.4",
         "model_authored_dispositions": true
       }
     },
@@ -10301,6 +10387,15 @@
           "MODEL": [
             "PCON"
           ]
+        },
+        "initial_statuses": {
+          "PCON": "ACTIVE"
+        },
+        "cardinality": {
+          "PCON": {
+            "min": 1,
+            "max": 1
+          }
         }
       },
       "execution": {
@@ -10310,8 +10405,10 @@
         ],
         "timeout_seconds": 300,
         "max_attempts": 3,
-        "repair_attempts": 2,
-        "transaction": "PROPOSE_VALIDATE_ATOMIC_COMMIT"
+        "repair_attempts": 1,
+        "transaction": "PROPOSE_VALIDATE_ATOMIC_COMMIT",
+        "repair_attempts_scope": "per_call_same_conversation",
+        "max_attempts_scope": "fresh_conversation_attempts_per_call"
       },
       "escalation_rules": [
         {
@@ -10475,11 +10572,9 @@
           "exact_by_reference": true
         },
         "dispositions_required": false,
-        "requires_material_output": false,
-        "allows_empty_by_design": true,
-        "allowed_empty_reason_codes": [
-          "NO_MATERIAL_DELTA"
-        ],
+        "requires_material_output": true,
+        "allows_empty_by_design": false,
+        "allowed_empty_reason_codes": [],
         "semantic_contract": "AL-STRUCT-1",
         "snapshot_ack_required": true,
         "reference_first_existing_objects": true,
@@ -10491,7 +10586,10 @@
           "NO_DELTA",
           "NO_NEW_OBJECTS"
         ]
-      }
+      },
+      "special_rules": [
+        "PCON is committed ACTIVE: stage 5 input selectors require an ACTIVE PCON and no other stage activates it (v2.2.3 gap)."
+      ]
     },
     {
       "n": 5,
@@ -10574,6 +10672,20 @@
             "FND",
             "UNK"
           ]
+        },
+        "initial_statuses": {
+          "FND": "OPEN",
+          "UNK": "OPEN"
+        },
+        "payload_ref_constraints": {
+          "FND": {
+            "target": {
+              "codes": [
+                "PCON"
+              ],
+              "from": "SNAPSHOT"
+            }
+          }
         }
       },
       "execution": {
@@ -10583,7 +10695,7 @@
         ],
         "timeout_seconds": 300,
         "max_attempts": 3,
-        "repair_attempts": 2,
+        "repair_attempts": 1,
         "transaction": "PROPOSE_VALIDATE_ATOMIC_COMMIT",
         "fanout": {
           "min_runs": 2,
@@ -10592,7 +10704,9 @@
           "isolation": "IDENTICAL_SNAPSHOT_NO_SIBLING_OUTPUTS",
           "fan_in": "next synthesis/review step",
           "failure_if_capability_missing": true
-        }
+        },
+        "repair_attempts_scope": "per_call_same_conversation",
+        "max_attempts_scope": "fresh_conversation_attempts_per_call"
       },
       "escalation_rules": [
         {
@@ -10876,7 +10990,7 @@
         ],
         "timeout_seconds": 300,
         "max_attempts": 3,
-        "repair_attempts": 2,
+        "repair_attempts": 1,
         "transaction": "PROPOSE_VALIDATE_ATOMIC_COMMIT",
         "steps": [
           {
@@ -10895,7 +11009,9 @@
             ],
             "condition": "only closed PD/FND-backed changes"
           }
-        ]
+        ],
+        "repair_attempts_scope": "per_call_same_conversation",
+        "max_attempts_scope": "fresh_conversation_attempts_per_call"
       },
       "escalation_rules": [
         {
@@ -11181,10 +11297,12 @@
         ],
         "timeout_seconds": 300,
         "max_attempts": 3,
-        "repair_attempts": 2,
+        "repair_attempts": 1,
         "transaction": "PROPOSE_VALIDATE_ATOMIC_COMMIT",
         "decomposition_ref": "decompositionPolicy.stages.7",
-        "max_items_per_partition": 6
+        "max_items_per_partition": 6,
+        "repair_attempts_scope": "per_call_same_conversation",
+        "max_attempts_scope": "fresh_conversation_attempts_per_call"
       },
       "escalation_rules": [
         {
@@ -11471,7 +11589,7 @@
         ],
         "timeout_seconds": 300,
         "max_attempts": 3,
-        "repair_attempts": 2,
+        "repair_attempts": 1,
         "transaction": "PROPOSE_VALIDATE_ATOMIC_COMMIT",
         "steps": [
           {
@@ -11490,7 +11608,9 @@
             ],
             "condition": "only explicit FND; no new product decision"
           }
-        ]
+        ],
+        "repair_attempts_scope": "per_call_same_conversation",
+        "max_attempts_scope": "fresh_conversation_attempts_per_call"
       },
       "escalation_rules": [
         {
@@ -11768,7 +11888,7 @@
         ],
         "timeout_seconds": 300,
         "max_attempts": 3,
-        "repair_attempts": 2,
+        "repair_attempts": 1,
         "transaction": "PROPOSE_VALIDATE_ATOMIC_COMMIT",
         "steps": [
           {
@@ -11788,7 +11908,9 @@
             ],
             "rule": "method_kind=MODEL_ANALYSIS; cannot confer VERIFIED"
           }
-        ]
+        ],
+        "repair_attempts_scope": "per_call_same_conversation",
+        "max_attempts_scope": "fresh_conversation_attempts_per_call"
       },
       "escalation_rules": [
         {
@@ -12070,7 +12192,7 @@
         ],
         "timeout_seconds": 300,
         "max_attempts": 3,
-        "repair_attempts": 2,
+        "repair_attempts": 1,
         "transaction": "PROPOSE_VALIDATE_ATOMIC_COMMIT",
         "steps": [
           {
@@ -12088,7 +12210,9 @@
               "CAP revision"
             ]
           }
-        ]
+        ],
+        "repair_attempts_scope": "per_call_same_conversation",
+        "max_attempts_scope": "fresh_conversation_attempts_per_call"
       },
       "escalation_rules": [
         {
@@ -12368,10 +12492,12 @@
         ],
         "timeout_seconds": 300,
         "max_attempts": 3,
-        "repair_attempts": 2,
+        "repair_attempts": 1,
         "transaction": "PROPOSE_VALIDATE_ATOMIC_COMMIT",
         "decomposition_ref": "decompositionPolicy.stages.11",
-        "max_items_per_partition": 4
+        "max_items_per_partition": 4,
+        "repair_attempts_scope": "per_call_same_conversation",
+        "max_attempts_scope": "fresh_conversation_attempts_per_call"
       },
       "escalation_rules": [
         {
@@ -12658,7 +12784,7 @@
         ],
         "timeout_seconds": 300,
         "max_attempts": 3,
-        "repair_attempts": 2,
+        "repair_attempts": 1,
         "transaction": "PROPOSE_VALIDATE_ATOMIC_COMMIT",
         "steps": [
           {
@@ -12679,7 +12805,9 @@
           }
         ],
         "decomposition_ref": "decompositionPolicy.stages.12",
-        "max_items_per_partition": 6
+        "max_items_per_partition": 6,
+        "repair_attempts_scope": "per_call_same_conversation",
+        "max_attempts_scope": "fresh_conversation_attempts_per_call"
       },
       "escalation_rules": [
         {
@@ -13155,7 +13283,7 @@
         ],
         "timeout_seconds": 300,
         "max_attempts": 3,
-        "repair_attempts": 2,
+        "repair_attempts": 1,
         "transaction": "PROPOSE_VALIDATE_ATOMIC_COMMIT",
         "fanout": {
           "min_runs": 2,
@@ -13164,7 +13292,9 @@
           "isolation": "IDENTICAL_SNAPSHOT_NO_SIBLING_OUTPUTS",
           "fan_in": "next synthesis/review step",
           "failure_if_capability_missing": true
-        }
+        },
+        "repair_attempts_scope": "per_call_same_conversation",
+        "max_attempts_scope": "fresh_conversation_attempts_per_call"
       },
       "escalation_rules": [
         {
@@ -13439,10 +13569,12 @@
         ],
         "timeout_seconds": 300,
         "max_attempts": 3,
-        "repair_attempts": 2,
+        "repair_attempts": 1,
         "transaction": "PROPOSE_VALIDATE_ATOMIC_COMMIT",
         "decomposition_ref": "decompositionPolicy.stages.15",
-        "max_items_per_partition": 6
+        "max_items_per_partition": 6,
+        "repair_attempts_scope": "per_call_same_conversation",
+        "max_attempts_scope": "fresh_conversation_attempts_per_call"
       },
       "escalation_rules": [
         {
@@ -13663,7 +13795,7 @@
           "NO_NEW_OBJECTS"
         ],
         "input_fate_is_not_domain_disposition": true,
-        "coverage_reconciliation": "coverageContracts@2.2.3",
+        "coverage_reconciliation": "coverageContracts@2.2.4",
         "model_authored_dispositions": true
       }
     },
@@ -13768,9 +13900,11 @@
         ],
         "timeout_seconds": 900,
         "max_attempts": 3,
-        "repair_attempts": 2,
+        "repair_attempts": 1,
         "transaction": "PROPOSE_VALIDATE_ATOMIC_COMMIT",
-        "tool_policy_ref": "stage_tool_policy"
+        "tool_policy_ref": "stage_tool_policy",
+        "repair_attempts_scope": "per_call_same_conversation",
+        "max_attempts_scope": "fresh_conversation_attempts_per_call"
       },
       "escalation_rules": [
         {
@@ -14205,7 +14339,7 @@
         ],
         "timeout_seconds": 300,
         "max_attempts": 3,
-        "repair_attempts": 2,
+        "repair_attempts": 1,
         "transaction": "PROPOSE_VALIDATE_ATOMIC_COMMIT",
         "fanout": {
           "min_runs": 2,
@@ -14214,7 +14348,9 @@
           "isolation": "IDENTICAL_SNAPSHOT_NO_SIBLING_OUTPUTS",
           "fan_in": "next synthesis/review step",
           "failure_if_capability_missing": true
-        }
+        },
+        "repair_attempts_scope": "per_call_same_conversation",
+        "max_attempts_scope": "fresh_conversation_attempts_per_call"
       },
       "escalation_rules": [
         {
@@ -14502,7 +14638,7 @@
         ],
         "timeout_seconds": 300,
         "max_attempts": 3,
-        "repair_attempts": 2,
+        "repair_attempts": 1,
         "transaction": "PROPOSE_VALIDATE_ATOMIC_COMMIT",
         "fanout": {
           "min_runs": 2,
@@ -14511,7 +14647,9 @@
           "isolation": "IDENTICAL_SNAPSHOT_NO_SIBLING_OUTPUTS",
           "fan_in": "next synthesis/review step",
           "failure_if_capability_missing": true
-        }
+        },
+        "repair_attempts_scope": "per_call_same_conversation",
+        "max_attempts_scope": "fresh_conversation_attempts_per_call"
       },
       "escalation_rules": [
         {
@@ -14806,7 +14944,7 @@
         ],
         "timeout_seconds": 300,
         "max_attempts": 3,
-        "repair_attempts": 2,
+        "repair_attempts": 1,
         "transaction": "PROPOSE_VALIDATE_ATOMIC_COMMIT",
         "fanout": {
           "min_runs": 2,
@@ -14833,7 +14971,9 @@
             ],
             "condition": "only own candidate and explicit findings"
           }
-        ]
+        ],
+        "repair_attempts_scope": "per_call_same_conversation",
+        "max_attempts_scope": "fresh_conversation_attempts_per_call"
       },
       "escalation_rules": [
         {
@@ -15120,7 +15260,7 @@
         ],
         "timeout_seconds": 300,
         "max_attempts": 3,
-        "repair_attempts": 2,
+        "repair_attempts": 1,
         "transaction": "PROPOSE_VALIDATE_ATOMIC_COMMIT",
         "steps": [
           {
@@ -15140,7 +15280,9 @@
             ],
             "condition": "must not select direction"
           }
-        ]
+        ],
+        "repair_attempts_scope": "per_call_same_conversation",
+        "max_attempts_scope": "fresh_conversation_attempts_per_call"
       },
       "escalation_rules": [
         {
@@ -15431,7 +15573,7 @@
         ],
         "timeout_seconds": 300,
         "max_attempts": 3,
-        "repair_attempts": 2,
+        "repair_attempts": 1,
         "transaction": "PROPOSE_VALIDATE_ATOMIC_COMMIT",
         "steps": [
           {
@@ -15450,7 +15592,9 @@
             ],
             "condition": "reproducible from active DPL; no Owner click on normal post-G1 path"
           }
-        ]
+        ],
+        "repair_attempts_scope": "per_call_same_conversation",
+        "max_attempts_scope": "fresh_conversation_attempts_per_call"
       },
       "escalation_rules": [
         {
@@ -15738,8 +15882,10 @@
         ],
         "timeout_seconds": 300,
         "max_attempts": 3,
-        "repair_attempts": 2,
-        "transaction": "PROPOSE_VALIDATE_ATOMIC_COMMIT"
+        "repair_attempts": 1,
+        "transaction": "PROPOSE_VALIDATE_ATOMIC_COMMIT",
+        "repair_attempts_scope": "per_call_same_conversation",
+        "max_attempts_scope": "fresh_conversation_attempts_per_call"
       },
       "escalation_rules": [
         {
@@ -16001,8 +16147,10 @@
         ],
         "timeout_seconds": 300,
         "max_attempts": 3,
-        "repair_attempts": 2,
-        "transaction": "PROPOSE_VALIDATE_ATOMIC_COMMIT"
+        "repair_attempts": 1,
+        "transaction": "PROPOSE_VALIDATE_ATOMIC_COMMIT",
+        "repair_attempts_scope": "per_call_same_conversation",
+        "max_attempts_scope": "fresh_conversation_attempts_per_call"
       },
       "escalation_rules": [
         {
@@ -16286,7 +16434,7 @@
         ],
         "timeout_seconds": 900,
         "max_attempts": 3,
-        "repair_attempts": 2,
+        "repair_attempts": 1,
         "transaction": "PROPOSE_VALIDATE_ATOMIC_COMMIT",
         "tool_policy_ref": "stage_tool_policy",
         "steps": [
@@ -16307,7 +16455,9 @@
             ],
             "condition": "verification requires HUMAN_TEST"
           }
-        ]
+        ],
+        "repair_attempts_scope": "per_call_same_conversation",
+        "max_attempts_scope": "fresh_conversation_attempts_per_call"
       },
       "escalation_rules": [
         {
@@ -16618,7 +16768,7 @@
         ],
         "timeout_seconds": 300,
         "max_attempts": 3,
-        "repair_attempts": 2,
+        "repair_attempts": 1,
         "transaction": "PROPOSE_VALIDATE_ATOMIC_COMMIT",
         "steps": [
           {
@@ -16637,7 +16787,9 @@
             ],
             "condition": "within active DPL + evidence"
           }
-        ]
+        ],
+        "repair_attempts_scope": "per_call_same_conversation",
+        "max_attempts_scope": "fresh_conversation_attempts_per_call"
       },
       "escalation_rules": [
         {
@@ -16911,7 +17063,7 @@
         ],
         "timeout_seconds": 300,
         "max_attempts": 3,
-        "repair_attempts": 2,
+        "repair_attempts": 1,
         "transaction": "PROPOSE_VALIDATE_ATOMIC_COMMIT",
         "fanout": {
           "min_runs": 2,
@@ -16920,7 +17072,9 @@
           "isolation": "IDENTICAL_SNAPSHOT_NO_SIBLING_OUTPUTS",
           "fan_in": "next synthesis/review step",
           "failure_if_capability_missing": true
-        }
+        },
+        "repair_attempts_scope": "per_call_same_conversation",
+        "max_attempts_scope": "fresh_conversation_attempts_per_call"
       },
       "escalation_rules": [
         {
@@ -17201,8 +17355,10 @@
         ],
         "timeout_seconds": 300,
         "max_attempts": 3,
-        "repair_attempts": 2,
-        "transaction": "PROPOSE_VALIDATE_ATOMIC_COMMIT"
+        "repair_attempts": 1,
+        "transaction": "PROPOSE_VALIDATE_ATOMIC_COMMIT",
+        "repair_attempts_scope": "per_call_same_conversation",
+        "max_attempts_scope": "fresh_conversation_attempts_per_call"
       },
       "escalation_rules": [
         {
@@ -17480,7 +17636,7 @@
         ],
         "timeout_seconds": 300,
         "max_attempts": 3,
-        "repair_attempts": 2,
+        "repair_attempts": 1,
         "transaction": "PROPOSE_VALIDATE_ATOMIC_COMMIT",
         "steps": [
           {
@@ -17499,7 +17655,9 @@
             ],
             "condition": "no target mutation"
           }
-        ]
+        ],
+        "repair_attempts_scope": "per_call_same_conversation",
+        "max_attempts_scope": "fresh_conversation_attempts_per_call"
       },
       "escalation_rules": [
         {
@@ -19088,7 +19246,7 @@
       "rule": "on otherwise-valid response with copied snapshot hash mismatch, issue one bounded repair on same frozen snapshot; second mismatch fails the call"
     },
     "dom_json_extraction": {
-      "version": "2.2.3",
+      "version": "2.2.4",
       "source": "correlated assistant message textContent/raw text only",
       "authoritative_input_forbidden": [
         "innerHTML",
@@ -19097,10 +19255,11 @@
       ],
       "frame": {
         "required": true,
-        "opening": "<<<PAF_RESPONSE <CALL_TOKEN> <ATTEMPT_TOKEN>>>",
-        "closing": "<<<END_PAF_RESPONSE <CALL_TOKEN> <ATTEMPT_TOKEN>>>",
+        "opening": "PAF_RESPONSE_BEGIN <CALL_TOKEN> <ATTEMPT_TOKEN>",
+        "closing": "PAF_RESPONSE_END <CALL_TOKEN> <ATTEMPT_TOKEN>",
+        "location_rule": "markers are located by their random tokens; surrounding punctuation is ignored so markdown/HTML rendering cannot erase a marker (v2.2.3 used <<<...>>>, which sanitizers can strip as an HTML tag)",
         "exactly_one_matching_frame": true,
-        "outside_frame_text": "ignored for semantic parsing but preserved in RAW; any second response frame is ambiguity failure"
+        "outside_frame_text": "ignored for semantic parsing but preserved in RAW; any second matching frame is ambiguity failure"
       },
       "interior_modes": [
         {
@@ -19109,7 +19268,11 @@
         },
         {
           "mode": "SINGLE_FENCED_JSON",
-          "accept_if": "frame interior contains exactly one fenced code block whose textContent parses as exactly one JSON object; surrounding prose is ignored only if it contains no second fenced block or additional parseable JSON object"
+          "accept_if": "frame interior contains exactly one fenced code block whose text parses as exactly one JSON object and no other parseable JSON object exists outside it"
+        },
+        {
+          "mode": "SINGLE_BALANCED_JSON",
+          "accept_if": "no fence markers survived rendering and exactly one balanced top-level {...} span parses as a JSON object; rendered code-block chrome such as a language label or \"Copy code\" is ignored as wrapper text"
         }
       ],
       "reject_if": [
@@ -19124,10 +19287,14 @@
       "error_codes": [
         "FRAME_MISSING",
         "FRAME_TOKEN_MISMATCH",
+        "FRAME_AMBIGUOUS",
         "FRAME_INCOMPLETE",
         "STRUCTURE_NO_JSON",
         "STRUCTURE_AMBIGUOUS_JSON",
         "STRUCTURE_INVALID_JSON"
+      ],
+      "deterministic_json_repairs": [
+        "raw control characters inside JSON string literals are escaped (lossless); no other repair is applied"
       ]
     },
     "evidence_collector": "evidenceCollector@2.2.2",
@@ -19244,7 +19411,7 @@
     },
     "provider_matrix_ref": "browser/provider-matrix.json",
     "structured_response_extraction": {
-      "version": "2.2.3",
+      "version": "2.2.4",
       "source": "correlated assistant message textContent/raw text only",
       "authoritative_input_forbidden": [
         "innerHTML",
@@ -19253,10 +19420,11 @@
       ],
       "frame": {
         "required": true,
-        "opening": "<<<PAF_RESPONSE <CALL_TOKEN> <ATTEMPT_TOKEN>>>",
-        "closing": "<<<END_PAF_RESPONSE <CALL_TOKEN> <ATTEMPT_TOKEN>>>",
+        "opening": "PAF_RESPONSE_BEGIN <CALL_TOKEN> <ATTEMPT_TOKEN>",
+        "closing": "PAF_RESPONSE_END <CALL_TOKEN> <ATTEMPT_TOKEN>",
+        "location_rule": "markers are located by their random tokens; surrounding punctuation is ignored so markdown/HTML rendering cannot erase a marker (v2.2.3 used <<<...>>>, which sanitizers can strip as an HTML tag)",
         "exactly_one_matching_frame": true,
-        "outside_frame_text": "ignored for semantic parsing but preserved in RAW; any second response frame is ambiguity failure"
+        "outside_frame_text": "ignored for semantic parsing but preserved in RAW; any second matching frame is ambiguity failure"
       },
       "interior_modes": [
         {
@@ -19265,7 +19433,11 @@
         },
         {
           "mode": "SINGLE_FENCED_JSON",
-          "accept_if": "frame interior contains exactly one fenced code block whose textContent parses as exactly one JSON object; surrounding prose is ignored only if it contains no second fenced block or additional parseable JSON object"
+          "accept_if": "frame interior contains exactly one fenced code block whose text parses as exactly one JSON object and no other parseable JSON object exists outside it"
+        },
+        {
+          "mode": "SINGLE_BALANCED_JSON",
+          "accept_if": "no fence markers survived rendering and exactly one balanced top-level {...} span parses as a JSON object; rendered code-block chrome such as a language label or \"Copy code\" is ignored as wrapper text"
         }
       ],
       "reject_if": [
@@ -19280,14 +19452,18 @@
       "error_codes": [
         "FRAME_MISSING",
         "FRAME_TOKEN_MISMATCH",
+        "FRAME_AMBIGUOUS",
         "FRAME_INCOMPLETE",
         "STRUCTURE_NO_JSON",
         "STRUCTURE_AMBIGUOUS_JSON",
         "STRUCTURE_INVALID_JSON"
+      ],
+      "deterministic_json_repairs": [
+        "raw control characters inside JSON string literals are escaped (lossless); no other repair is applied"
       ]
     },
     "m1_telemetry": {
-      "version": "2.2.3",
+      "version": "2.2.4",
       "scope": "M1 transport-boundary measurements; no Registry/StateCommit mutations",
       "required_per_call": [
         "provider",
@@ -19310,6 +19486,7 @@
       "extraction_mode_enum": [
         "WHOLE_TEXT_JSON",
         "SINGLE_FENCED_JSON",
+        "SINGLE_BALANCED_JSON",
         "FAILED"
       ],
       "aggregate_per_provider": [
@@ -19419,10 +19596,10 @@
     },
     "compact_prompt_contract": {
       "contract": "AL-STRUCT-1",
-      "version": "2.2.3",
+      "version": "2.2.4",
       "purpose": "Compact model-facing contract. Full JSON Schema is validator-side only.",
       "full_schema_ref": "objects/al-struct-1.schema.json",
-      "full_schema_hash": "bc41a4759df2683c0aa3c3841fff5ee96b64f67e82bc2e5fd263eeb2263f686e",
+      "full_schema_hash": "1041b74aa868c40700e85d1462d83d41cacc768472479cc3bc7486c51684febe",
       "top_level_required": [
         "passport",
         "outputs",
@@ -19488,12 +19665,13 @@
         ]
       },
       "rules": [
-        "Return one AL-STRUCT-1 semantic object inside the requested PAF response frame. Do not invent canonical IDs, versions, hashes, run IDs or transport metadata.",
+        "Return exactly one AL-STRUCT-1 JSON object between the PAF_RESPONSE_BEGIN and PAF_RESPONSE_END marker lines, inside one ```json fenced block. Answer inline: no canvas, artifacts or attachments.",
+        "Do not invent canonical IDs, versions, hashes, run IDs or transport metadata.",
         "Copy passport.input_snapshot_hash exactly; format is lowercase bare 64-hex.",
-        "Existing objects may be referenced only from passport.input_refs. New objects use tmp-* in changes.",
+        "Existing objects may be referenced only from passport.input_refs. New objects use tmp-* temp_id in changes; reference them from payloads as {\"code\":\"<CODE>\",\"temp_id\":\"tmp-...\"}.",
         "CONSUMED means processed only, never closed/verified/resolved.",
         "For dispositions_required=false return dispositions:[]. For dispositions_required=true provide exactly one disposition per accountable input; it must reconcile with changes/input_fate.",
-        "Use changes[].state_patch for status/blocking/authority_class; do not hide registry state in payload.",
+        "Use changes[].state_patch for status/blocking/authority_class; do not hide registry state in payload. Omit runtime-injected fields.",
         "annotations are diagnostic only and do not create evidence/authority/status.",
         "completion.output_count and completion.output_ids must exactly match outputs."
       ],
@@ -19502,9 +19680,9 @@
         "response": {
           "passport": {
             "contract": "AL-STRUCT-1",
-            "stage": "<stage>",
+            "stage": 1,
             "input_snapshot_id": "<snapshot_id>",
-            "input_snapshot_hash": "<64hex>",
+            "input_snapshot_hash": "0000000000000000000000000000000000000000000000000000000000000000",
             "input_refs": []
           },
           "outputs": [
@@ -19534,8 +19712,10 @@
             "empty_by_design": false,
             "anomalies": []
           }
-        }
-      }
+        },
+        "note": "Placeholders only. The prompt compiler substitutes the real stage, snapshot id/hash and input_refs before dispatch."
+      },
+      "full_schema_hash_method": "sha256(JCS/RFC8785(schema)); file formatting does not change the hash"
     }
   },
   "toolPolicy": {
@@ -20315,6 +20495,84 @@
       "given": "implementation attempts to use disput scheduler/vocabulary/commit as Product→Architecture authority",
       "expect": "integration boundary validator/review rejects; only adapter-scoped infrastructure reuse allowed",
       "version": "2.2.3"
+    },
+    {
+      "id": "TRANSPORT_SINGLE_BALANCED_JSON_ACCEPTED",
+      "given": "rendered code block leaves \"json\"/\"Copy code\" labels around exactly one JSON object inside the frame",
+      "expect": "extract SINGLE_BALANCED_JSON; labels stay RAW only",
+      "version": "2.2.4"
+    },
+    {
+      "id": "FRAME_MARKERS_TOKEN_LOCATED",
+      "given": "renderer strips punctuation around PAF_RESPONSE_BEGIN/END markers",
+      "expect": "frame is still located by CALL/ATTEMPT tokens",
+      "version": "2.2.4"
+    },
+    {
+      "id": "FRAME_FOREIGN_TOKEN_REJECTED",
+      "given": "assistant text contains a frame with another call token (stale answer)",
+      "expect": "FRAME_TOKEN_MISMATCH; zero commits",
+      "version": "2.2.4"
+    },
+    {
+      "id": "JSON_CONTROL_CHARS_ESCAPED_LOSSLESS",
+      "given": "string literal contains a raw newline",
+      "expect": "deterministic escape, then parse; no other repair",
+      "version": "2.2.4"
+    },
+    {
+      "id": "STAGE1_EMPTY_RESULT_REJECTED",
+      "given": "stage 1 returns empty_by_design",
+      "expect": "rejected: stage 1 requires exactly one DPL",
+      "version": "2.2.4"
+    },
+    {
+      "id": "DPL_APPROVAL_QST_RUNTIME_GENERATED",
+      "given": "stage 1 committed a DRAFT DPL",
+      "expect": "runtime creates DPL_APPROVAL QST; WAITING_FOR_SELECTION; no model can activate DPL",
+      "version": "2.2.4"
+    },
+    {
+      "id": "DPL_ACTIVATED_ONLY_BY_OWNER_ANSWER",
+      "given": "owner selects APPROVE",
+      "expect": "QANS + AEV(AUTHORIZE_POLICY) + DPL SET_STATUS ACTIVE in one transaction",
+      "version": "2.2.4"
+    },
+    {
+      "id": "PCON_COMMITTED_ACTIVE_FOR_STAGE5",
+      "given": "stage 4 accepted",
+      "expect": "PCON ACTIVE so stage 5 input selectors resolve",
+      "version": "2.2.4"
+    },
+    {
+      "id": "TEMP_REF_RESOLVED_AT_COMMIT",
+      "given": "QST.decision_ref = TempRef of a PD created in the same response",
+      "expect": "resolved to the allocated PD ObjectRef",
+      "version": "2.2.4"
+    },
+    {
+      "id": "RUNTIME_INJECTED_FIELD_FROM_MODEL_REJECTED",
+      "given": "model sets PRP.source_model",
+      "expect": "rejected as runtime-owned field",
+      "version": "2.2.4"
+    },
+    {
+      "id": "NO_HIDDEN_TRANSFORMATION",
+      "given": "PD lists a PRP in source_refs but the PRP disposition does not declare that PD",
+      "expect": "disposition reconciliation failure",
+      "version": "2.2.4"
+    },
+    {
+      "id": "PD_AUTHORITY_ROUTING_DETERMINISTIC",
+      "given": "stage 3 PDs with A0..A4",
+      "expect": "A0 closable; A1 NEEDS_EVIDENCE; A2/A3 OPEN with QST; A4 DEFERRED",
+      "version": "2.2.4"
+    },
+    {
+      "id": "FANOUT_ATOMIC_FAN_IN_COMMIT",
+      "given": "two independent runs accepted, third failed after retries",
+      "expect": "accepted runs commit in one transaction only when min_distinct_models is satisfied",
+      "version": "2.2.4"
     }
   ],
   "migrations": {
@@ -20362,7 +20620,7 @@
     }
   },
   "automation_layer_name": "Automation Layer v2.2.3 — Web Runtime for Product→Architecture Framework",
-  "automation_layer_version": "2.2.3",
+  "automation_layer_version": "2.2.4",
   "structuralProtocol": {
     "version": "2.2.3",
     "contract": "AL-STRUCT-1",
@@ -20488,7 +20746,7 @@
     "rule": "framework stages/objects/gates/control flow are inherited; Automation Layer may add execution contracts but must not silently redefine framework semantics"
   },
   "contextPolicy": {
-    "version": "2.2.0",
+    "version": "2.2.4",
     "maxPromptChars": 60000,
     "maxOutputContentChars": 8000,
     "representations": [
@@ -20521,9 +20779,9 @@
     "historical_chat_transcript_as_context": false,
     "hash_format": "lowercase bare 64-hex SHA-256"
   },
-  "contract_patch_version": "2.2.3",
+  "contract_patch_version": "2.2.4",
   "mutationNormalizer": {
-    "version": "2.2.3",
+    "version": "2.2.4",
     "input_contract": "AL-STRUCT-1 changes[] + frozen Registry snapshot + stage contract",
     "output_contract": "internal normalized mutations CREATE|REVISE|SET_STATUS|SUPERSEDE|MERGE",
     "rules": [
@@ -20567,10 +20825,13 @@
       "model-generated canonical ID/version/hash/run metadata",
       "implicit status change inferred from prose or annotations"
     ],
-    "atomicity": "all emitted mutations from one accepted response are validated and committed in one IndexedDB readwrite transaction or none are committed"
+    "atomicity": "all emitted mutations from one accepted response are validated and committed in one IndexedDB readwrite transaction or none are committed",
+    "temp_ref_resolution": "payload TempRef {code,temp_id} -> ObjectRef {code,object_id,version:1} of the object allocated for that temp_id in the same StateCommit",
+    "runtime_injected_fields": "stage.contract.runtime_injected_fields are filled by the runtime (e.g. PRP.source_model = dispatching provider) after the model value was verified absent",
+    "initial_status": "CREATE without state_patch.status gets stage.contract.initial_statuses[code]; a proposed status is accepted only when listed in stage.contract.model_status_proposals[code] and approved by the Policy Engine"
   },
   "coverageContracts": {
-    "version": "2.2.3",
+    "version": "2.2.4",
     "runtime_owned_accountable_set": true,
     "domain_transformation_dispositions": [
       "PRESERVE",
@@ -20599,36 +20860,43 @@
     "reconciliation_rules": [
       {
         "action": "PRESERVE",
-        "require": "input remains represented without MERGE/SPLIT/SUPERSEDE/REJECT/DEFER conflict; UPDATE/REVISE of the same semantic identity is allowed"
+        "require": "result_temp_ids is empty; no successor change lists the input in source_refs; the input keeps its status (an UPDATE of the same identity is allowed)",
+        "runtime_consequence": "none"
       },
       {
         "action": "MERGE",
-        "require": "a MERGE change contains input_ref in source_refs and at least one declared result_temp_id equals the MERGE temp_id"
+        "require": "exactly one result_temp_id; it is a MERGE change whose source_refs include input_ref",
+        "runtime_consequence": "input -> MERGED when the code has MERGED, else SUPERSEDED"
       },
       {
         "action": "SPLIT",
-        "require": "at least two distinct result_temp_ids exist and each resolves to an allowed successor change with lineage to input_ref"
+        "require": "at least two distinct result_temp_ids; each is a CREATE or MERGE change whose source_refs include input_ref",
+        "runtime_consequence": "input -> SUPERSEDED"
       },
       {
         "action": "SUPERSEDE",
-        "require": "a SUPERSEDE change targets input_ref; result_temp_ids, when present, resolve to the replacement proposal"
+        "require": "either a SUPERSEDE change targets input_ref (same-type replacement) or exactly one result_temp_id is a CREATE whose source_refs include input_ref (cross-type transformation such as PRP -> PD)",
+        "runtime_consequence": "input -> SUPERSEDED"
       },
       {
         "action": "DEFER",
-        "require": "an UPDATE targeting input_ref proposes state_patch.status=DEFERRED and the transition is permitted by stage/policy"
+        "require": "either an UPDATE targeting input_ref proposes state_patch.status=DEFERRED (codes that have DEFERRED) or exactly one result_temp_id is a successor with lineage to input_ref and state_patch.status=DEFERRED (codes without DEFERRED, e.g. PRP)",
+        "runtime_consequence": "input -> DEFERRED when the code has it, else SUPERSEDED"
       },
       {
         "action": "REJECT",
-        "require": "input_fate is REJECTED, contract permits rejection, and no surviving successor preserves the input identity"
+        "require": "result_temp_ids is empty; no successor change lists the input in source_refs; input_fate, when present, is REJECTED",
+        "runtime_consequence": "input -> REJECTED when the code has it, else SUPERSEDED"
       }
     ],
     "input_fate_cross_checks": [
-      "CONSUMED and NOT_USED never satisfy transformation coverage",
-      "TRANSFORMED must reconcile with MERGE/SPLIT or a stage-allowed transforming update",
-      "SUPERSEDED must reconcile with SUPERSEDE",
-      "REJECTED must reconcile with REJECT",
-      "PRESERVED must not reconcile with terminal removal actions"
-    ]
+      "input_fate is bookkeeping and may be omitted for an input; when present it must not contradict the disposition",
+      "REJECTED input_fate requires REJECT; REJECT forbids PRESERVED/TRANSFORMED input_fate",
+      "PRESERVED input_fate requires PRESERVE",
+      "CONSUMED and NOT_USED never satisfy transformation coverage by themselves"
+    ],
+    "no_hidden_transformation": "every change whose source_refs include an accountable input must appear in that input's declared result_temp_ids",
+    "status_consequences_owner": "StateCommitter (runtime); models never UPDATE a transformed input directly"
   },
   "decompositionPolicy": {
     "version": "2.2.3",
@@ -20754,7 +21022,7 @@
     ],
     "on_unavailable": "create/route HTSK when real-world evidence is required; never upgrade MODEL_ANALYSIS to VERIFIED"
   },
-  "bundle_version": "2.2.3",
+  "bundle_version": "2.2.4",
   "release": {
     "version": "2.2.3",
     "contract": "AL-STRUCT-1",
