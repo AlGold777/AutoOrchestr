@@ -159,15 +159,9 @@
     const form = composer.closest?.('form');
     let button = findFirst(SEND_SELECTORS);
     if (button?.disabled) {
-      // The control is recreated after React accepts the draft. Re-read it
-      // once, but keep the foreground slot bounded so a disabled stale node
-      // cannot make the queue wait behind an already inserted prompt.
-      await sleep(180);
+      await sleep(250);
       button = findFirst(SEND_SELECTORS);
     }
-    const sendMethod = button && !button.disabled
-      ? 'send_button'
-      : (form?.requestSubmit ? 'form_request_submit' : 'enter');
     if (button && !button.disabled) {
       button.click();
     } else if (form?.requestSubmit) {
@@ -176,15 +170,15 @@
       composer.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }));
       composer.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', bubbles: true }));
     }
-    const deadline = Date.now() + 3500;
+    const deadline = Date.now() + 5000;
     while (!stopped && Date.now() < deadline) {
       const value = String(composer?.value || composer?.textContent || '').trim();
       const userTurns = document.querySelectorAll('[data-message-author-role="user"], [data-role="user"], .chat-user').length;
       const generating = !!document.querySelector('button[aria-label*="stop" i], [data-generating="true"], [data-streaming="true"], [aria-busy="true"]');
-      if (!value || userTurns > beforeUserTurns || generating) return { confirmed: true, method: sendMethod };
+      if (!value || userTurns > beforeUserTurns || generating) return true;
       await sleep(120);
     }
-    return { confirmed: false, method: sendMethod };
+    return false;
   };
 
   const waitForStableResponse = async (baseline, timeoutMs = 180000) => {
@@ -278,31 +272,8 @@
       throw { type: 'prompt_injection_failed', message: `Z.ai prompt preparation failed: ${prepared.reason}` };
     }
     window.ContentUtils?.reportDispatchStage?.(MODEL, meta, 'send_action_requested');
-    const sendStartedAt = Date.now();
-    let sendResult;
-    try {
-      sendResult = await sendPrompt(composer);
-    } catch (error) {
-      window.ContentUtils?.reportDispatchStage?.(MODEL, meta, 'send_action_failed', {
-        outcome: 'failed',
-        reason: error?.type || error?.message || 'send_exception',
-        elapsedMs: Date.now() - sendStartedAt
-      });
-      throw error;
-    }
-    if (!sendResult?.confirmed) {
-      window.ContentUtils?.reportDispatchStage?.(MODEL, meta, 'send_action_failed', {
-        outcome: 'failed',
-        reason: 'send_not_confirmed',
-        elapsedMs: Date.now() - sendStartedAt
-      });
-      throw { type: 'send_failed', message: 'Z.ai send not confirmed' };
-    }
-    window.ContentUtils?.reportDispatchStage?.(MODEL, meta, 'send_action_completed', {
-      outcome: 'confirmed',
-      reason: sendResult.method || null,
-      elapsedMs: Date.now() - sendStartedAt
-    });
+    const sendConfirmed = await sendPrompt(composer);
+    if (!sendConfirmed) throw { type: 'send_failed', message: 'Z.ai send not confirmed' };
     try { chrome.runtime.sendMessage({ type: 'PROMPT_SUBMITTED', llmName: MODEL, ts: Date.now(), meta }); } catch (_) {}
     const pipelineResult = await runPipeline(baseline);
     if (pipelineResult) {

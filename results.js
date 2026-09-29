@@ -186,7 +186,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     clearDebateTranscriptOnReload().catch?.((err) => console.warn('[RESULTS] debate transcript reload clear failed', err));
     try {
         const currentPage = (window.location.pathname.split('/').pop() || '').toLowerCase();
-        const currentView = ['pipeline_panel.html', 'automation-pipeline.html'].includes(currentPage) ? 'pipeline' : 'main';
+        const currentView = currentPage === 'pipeline_panel.html' ? 'pipeline' : 'main';
         if (chrome?.storage?.local) {
             chrome.storage.local.set({ llmComparatorLastPipelineView: currentView });
         }
@@ -1651,7 +1651,8 @@ document.addEventListener('click', (event) => {
     const smartCompareButton = document.getElementById('smart-compare-button');
     const judgeSystemPromptSelect = document.getElementById('judge-system-prompt-select');
     const evaluatorSelect = document.getElementById('evaluator-select');
-    const viewModeToggleBtn = document.getElementById('view-mode-toggle-btn');
+    const viewGridBtn = document.getElementById('view-grid-btn');
+    const viewStackBtn = document.getElementById('view-stack-btn');
     const crossViewUiStateKey = 'llmComparatorCrossViewUiState';
     const crossViewNavigationIntentKey = 'llmComparatorCrossViewNavigationIntent';
     const crossViewNavigationIntentTtlMs = 15000;
@@ -2045,11 +2046,9 @@ document.addEventListener('click', (event) => {
     // Remember which panel is open so the extension action reopens the last-used
     // page next time (defaults to this main page on a fresh install).
     try {
-        const currentPanelPage = (window.location.pathname.split('/').pop() || '').toLowerCase() === 'automation-pipeline.html'
-            ? 'automation-pipeline.html'
-            : document.body.classList.contains('pipeline-page')
-                ? 'pipeline_panel.html'
-                : 'result_new.html';
+        const currentPanelPage = document.body.classList.contains('pipeline-page')
+            ? 'pipeline_panel.html'
+            : 'result_new.html';
         chrome?.storage?.local?.set?.({ lastOpenedPage: currentPanelPage });
     } catch (err) {
         console.warn('[RESULTS] Failed to record last opened page', err);
@@ -2665,7 +2664,7 @@ document.addEventListener('click', (event) => {
         rightSidebarToggleBtn.addEventListener('click', async (event) => {
             event.preventDefault();
             const currentPage = (window.location.pathname.split('/').pop() || '').toLowerCase();
-            const targetPage = ['pipeline_panel.html', 'automation-pipeline.html'].includes(currentPage) ? 'result_new.html' : 'pipeline_panel.html';
+            const targetPage = currentPage === 'pipeline_panel.html' ? 'result_new.html' : 'pipeline_panel.html';
             try {
                 if (chrome?.storage?.local) {
                     const targetView = targetPage === 'pipeline_panel.html' ? 'pipeline' : 'main';
@@ -11889,16 +11888,8 @@ document.addEventListener('click', (event) => {
         const useStack = mode === 'stack';
         llmResultsContainer.classList.remove('view-grid', 'view-stack');
         llmResultsContainer.classList.add(useStack ? 'view-stack' : 'view-grid');
-        if (viewModeToggleBtn) {
-            const currentMode = useStack ? 'stack' : 'grid';
-            const nextMode = useStack ? 'grid' : 'stack';
-            viewModeToggleBtn.dataset.viewMode = currentMode;
-            viewModeToggleBtn.setAttribute('aria-pressed', String(useStack));
-            viewModeToggleBtn.title = nextMode === 'stack' ? 'Switch to list view' : 'Switch to grid view';
-            viewModeToggleBtn.setAttribute('aria-label', viewModeToggleBtn.title);
-            viewModeToggleBtn.querySelector('.view-icon-grid')?.toggleAttribute('hidden', useStack);
-            viewModeToggleBtn.querySelector('.view-icon-stack')?.toggleAttribute('hidden', !useStack);
-        }
+        if (viewGridBtn) viewGridBtn.classList.toggle('is-active', !useStack);
+        if (viewStackBtn) viewStackBtn.classList.toggle('is-active', useStack);
     };
 
     setResultsViewMode('grid');
@@ -11968,11 +11959,11 @@ document.addEventListener('click', (event) => {
     ensureMainCardFavoriteButtons();
     ensureResponseSelectionToolbar();
 
-    if (viewModeToggleBtn) {
-        viewModeToggleBtn.addEventListener('click', () => {
-            const nextMode = llmResultsContainer?.classList.contains('view-stack') ? 'grid' : 'stack';
-            setResultsViewMode(nextMode);
-        });
+    if (viewGridBtn) {
+        viewGridBtn.addEventListener('click', () => setResultsViewMode('grid'));
+    }
+    if (viewStackBtn) {
+        viewStackBtn.addEventListener('click', () => setResultsViewMode('stack'));
     }
 
     const getPanelByLLMName = (llmName) => {
@@ -15027,11 +15018,7 @@ document.addEventListener('click', (event) => {
         storeNewPagesState(false);
     };
     if (newPagesCheckbox) {
-        // After a page reload the provider tabs have just been cleaned up. Reuse
-        // those tabs on the next prompt instead of reopening every model tab in
-        // the sequential force-new-tabs path, which can delay the first send by
-        // the full Round 0 binding budget.
-        newPagesCheckbox.checked = !isPageReloadNavigation();
+        newPagesCheckbox.checked = true;
         newPagesCheckbox.addEventListener('change', () => {
             storeNewPagesState(newPagesCheckbox.checked);
         });
@@ -16125,11 +16112,6 @@ document.addEventListener('click', (event) => {
         promptInput.style.overflowY = promptInput.scrollHeight > maxHeight ? 'auto' : 'hidden';
         // Контейнер расширяется вместе с полем (только когда поле выросло выше дефолта).
         if (container) {
-            // Keep the layout state local to the input event as well. A model can
-            // already be active while the selection synchronizer is still waiting
-            // for its storage callback; without this mirror, the autogrow rule
-            // briefly restores the centered layout and drops the composer.
-            container.classList.toggle('has-selected-models', Boolean(document.querySelector('.llm-button.active')));
             container.classList.toggle('is-prompt-autogrown', next > baseHeight + 1);
         }
     };
@@ -18088,7 +18070,8 @@ function formatModelCardExportStamp(date = new Date()) {
 function getExportPromptSource() {
     const promptValues = [
         document.getElementById('prompt-input')?.value,
-        document.getElementById('modTa')?.value
+        document.getElementById('modTa')?.value,
+        window.__lastExportPromptText
     ];
     return promptValues.map((value) => String(value || '').trim()).find(Boolean) || '';
 }
@@ -18104,15 +18087,7 @@ function formatExportPromptName(promptText = getExportPromptSource()) {
     return `${prefix}${chars.length > 30 ? '…' : ''}` || 'Prompt';
 }
 
-function buildAllResponsesExportFilename(extension, date = new Date()) {
-    const promptSource = getExportPromptSource() || String(window.__lastExportPromptText || '').trim();
-    return `${formatExportPromptExcerpt(promptSource)} - ${formatNamedExportStamp(date)}.${extension}`;
-}
-
-// Compatibility wrapper: all-responses callers without a model name use the
-// current prompt-only filename format.
 function buildResponseExportFilename(modelName, extension, date = new Date()) {
-    if (!modelName) return buildAllResponsesExportFilename(extension, date);
     const promptName = formatExportPromptName();
     const subject = modelName ? String(modelName).replace(/[\\/:?<>|*"']/g, '').trim() : 'LLMs';
     return `${promptName} - ${subject} ${formatNamedExportStamp(date)}.${extension}`;
@@ -18126,12 +18101,11 @@ function formatExportPromptExcerpt(promptText = getExportPromptSource()) {
     return Array.from(normalized).slice(0, 50).join('').trim() || 'Prompt';
 }
 
-function buildSingleCardExportFilename(subject, extension, date = new Date(), fallbackText = '') {
+function buildSingleCardExportFilename(subject, extension, date = new Date()) {
     const safeSubject = String(subject || 'Model')
         .replace(/[\\/:?<>|*"']/g, '')
         .trim() || 'Model';
-    const promptSource = getExportPromptSource() || String(fallbackText || '').trim();
-    return `${safeSubject} - ${formatExportPromptExcerpt(promptSource)} - ${formatNamedExportStamp(date)}.${extension}`;
+    return `${safeSubject} - ${formatExportPromptExcerpt()} - ${formatNamedExportStamp(date)}.${extension}`;
 }
 
 function buildFavoriteExportText(entries) {
@@ -18363,8 +18337,6 @@ if (
         buildSessionResponsesText,
         formatExportPromptName,
         buildResponseExportFilename,
-        buildAllResponsesExportFilename,
-        buildSingleCardExportFilename,
         favoriteState
     };
 }
@@ -18386,7 +18358,7 @@ document.addEventListener('click', (event) => {
     a.href = url;
 
     const now = new Date();
-    a.download = buildAllResponsesExportFilename('html', now);
+    a.download = buildResponseExportFilename(null, 'html', now);
 
     document.body.appendChild(a);
     a.click();
@@ -18412,7 +18384,7 @@ document.addEventListener('click', (event) => {
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = buildAllResponsesExportFilename('txt', now);
+    anchor.download = buildResponseExportFilename(null, 'txt', now);
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
@@ -18436,7 +18408,7 @@ document.addEventListener('click', (event) => {
     const anchor = document.createElement('a');
     const now = new Date();
     anchor.href = url;
-    anchor.download = buildSingleCardExportFilename('Favourite', 'txt', now, favoriteText);
+    anchor.download = buildSingleCardExportFilename('Favourite', 'txt', now);
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
@@ -18489,7 +18461,6 @@ document.addEventListener('click', (event) => {
             flashButtonFeedback(btn, 'warn');
             return;
         }
-        const favoriteFallbackText = plainTextFromHtml(sanitizeInlineHtml(favoriteHtml));
 
         const htmlContent = `<!DOCTYPE html>
 <html lang="en">
@@ -18524,7 +18495,7 @@ document.addEventListener('click', (event) => {
         anchor.href = url;
 
         const now = new Date();
-        anchor.download = buildSingleCardExportFilename('Favourite', 'html', now, favoriteFallbackText);
+        anchor.download = buildSingleCardExportFilename('Favourite', 'html', now);
 
         document.body.appendChild(anchor);
         anchor.click();
@@ -18600,7 +18571,7 @@ document.addEventListener('click', (event) => {
 
     const modelForFile = String(modelName || 'Model').replace(/[\/\\:?<>|*"']/g, '').trim() || 'Model';
     const now = new Date();
-    anchor.download = buildSingleCardExportFilename(modelForFile, 'html', now, text);
+    anchor.download = buildSingleCardExportFilename(modelForFile, 'html', now);
 
     document.body.appendChild(anchor);
     anchor.click();
@@ -18627,7 +18598,7 @@ document.addEventListener('click', (event) => {
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = buildSingleCardExportFilename(modelName, 'txt', new Date(), text);
+    anchor.download = buildSingleCardExportFilename(modelName, 'txt');
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();

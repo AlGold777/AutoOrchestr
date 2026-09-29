@@ -6,9 +6,8 @@ The project is optimized for unstable provider UIs. Its core design assumes sele
 
 ## Status
 
-- Current version: `2.81.500`, synchronized in `manifest.json`, `package.json`,
-  the root package entries in `package-lock.json`, and root page stylesheet
-  cache-busters
+- Current version: `2.81.487`, synchronized in `manifest.json`, `package.json`
+  and the root package entry in `package-lock.json`
 - Extension type: Chrome Manifest V3
 - Package name: `llm-selector-manager`
 - Stability: internal / advanced local use
@@ -140,7 +139,7 @@ chrome://extensions
 3. Enable Developer Mode.
 4. Choose "Load unpacked".
 5. Select the project root directory.
-6. Open the extension action or the result/pipeline panel. Use Automation to run the two-round model workflow. The copied Pipeline test surface is available as `automation-pipeline.html`.
+6. Open the extension action or the result/pipeline panel.
 
 ### Required Accounts
 
@@ -156,13 +155,6 @@ The canonical timing ownership map and complete current values are maintained
 in [`timings-settings.md`](timings-settings.md). Any runtime timing change must
 update that document and keep `tests/timing-ladder.test.js` green where the
 profile ladder is affected.
-
-For cross-file runtime changes, generated outputs, merge checks, release
-metadata and browser reload verification, follow
-[`development-workflow.md`](development-workflow.md). The root manifest is the
-authority for the active extension injection path; `dist/` may contain generated
-outputs for other supported setups and must not be assumed active without
-checking that setup.
 
 ```bash
 npm test -- --runInBand
@@ -192,7 +184,7 @@ shared/              Cross-context contracts and pure logic
 results/             Extracted results-page helper modules (boot/dom/attachments/tooltips)
 styles/              Modular CSS loaded via the styles.css @import loader
 selectors/           Static selector profiles per provider
-dist/                Generated adapters and optional content bundles
+dist/                Built adapter bundles
 pipeline/            Pipeline flow/runtime helpers
 disput/              Debate protocol FSMs, presets, prompts, registry, run store and projections
 Modifiers/           Prompt modifier presets

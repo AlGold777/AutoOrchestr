@@ -73,7 +73,7 @@
 .models-row-header .llm-buttons {
     justify-content: flex-start;
     flex-wrap: nowrap;
-    gap: 4px;
+    gap: 4.65px;
     margin-top: 4px;
     margin-left: 5px;
 }
@@ -475,16 +475,12 @@
     display: block;
 }
 
-.modifiers-toggle-label .view-mode-btn > .view-icon[hidden] {
-    display: none;
-}
-
-.modifiers-toggle-label .view-icon-grid {
+.modifiers-toggle-label #view-grid-btn > .view-icon {
     width: 18px;
     height: 15.6px;
 }
 
-.modifiers-toggle-label .view-icon-stack {
+.modifiers-toggle-label #view-stack-btn > .view-icon {
     width: 16px;
     height: 18px;
 }

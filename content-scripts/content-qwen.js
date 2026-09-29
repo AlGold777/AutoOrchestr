@@ -1712,30 +1712,20 @@ const keepAliveMutex = (() => {
       return false;
     };
 
-    // A provider send is a foreground transaction.  Do not keep the tab (and
-    // therefore the global dispatch queue) inside a ladder of fallbacks for
-    // tens of seconds: on Qwen a synthetic shortcut can be ignored while the
-    // visible Send control is already usable.  One shortcut, one live button
-    // click, and one platform fallback are enough; the supervisor can repair a
-    // genuinely stalled send later using the preserved draft.
-    const sendDeadline = Date.now() + 8000;
-    const remaining = (fallbackMs) => Math.max(0, Math.min(fallbackMs, sendDeadline - Date.now()));
-    const failSend = (message) => { throw { type: 'send_failed', message }; };
-
     const isMac = typeof navigator !== 'undefined'
       && /Mac/i.test(navigator.userAgentData?.platform || navigator.platform || '');
     if (isMac) {
       input.focus?.({ preventScroll: true });
       dispatchEnter({ metaKey: true });
-      if (await confirmQwenSend(null, remaining(1200))) return true;
+      if (await confirmQwenSend(null, 2000)) return true;
       // Do not click Send again if the shortcut consumed or changed the draft.
       // A new user turn may become visible only after a delayed UI update.
       const expected = normalizeForComparison(options.prompt || '');
       if (!input.isConnected || !expected
         || normalizeForComparison(readComposerValue(input)) !== expected
         || getUserMessages(document).length !== baselineUserCount) {
-        if (await waitForLateSendSignals(remaining(1200))) return true;
-        failSend('Qwen Cmd+Enter send not confirmed');
+        if (await waitForLateSendSignals(6000)) return true;
+        throw { type: 'send_failed', message: 'Qwen Cmd+Enter send not confirmed' };
       }
     }
 
@@ -1745,26 +1735,46 @@ const keepAliveMutex = (() => {
     let confirmed = false;
     if (isSafeQwenSendControl(sendBtn) && !sendBtn.disabled) {
       sendBtn.click();
-      confirmed = await confirmQwenSend(sendBtn, remaining(2200));
+      confirmed = await confirmQwenSend(sendBtn, 6000);
       // A slow acknowledgement must not trigger another click on the draft.
-      if (confirmed) return true;
+      if (!confirmed) throw { type: 'send_failed', message: 'Qwen button send not confirmed' };
+      return true;
     } else {
       dispatchEnter({ ctrlKey: true });
-      confirmed = await confirmQwenSend(null, remaining(1500));
+      confirmed = await confirmQwenSend(null);
     }
     if (!confirmed) {
-      // The button may have appeared while the first lookup was running.  Give
-      // it one live re-read, but never click a second time after a completed
-      // click whose acknowledgement is merely late.
       sendBtn = await resolveSendButton(input);
-      if (isSafeQwenSendControl(sendBtn) && !sendBtn.disabled && remaining(1200) > 0) {
+      if (isSafeQwenSendControl(sendBtn) && !sendBtn.disabled) {
         await qwenHumanClick(sendBtn);
         console.log('[content-qwen] Send button clicked');
-        confirmed = await confirmQwenSend(sendBtn, remaining(1200));
+        confirmed = await confirmQwenSend(sendBtn);
       }
     }
     if (!confirmed) {
-      const lateSignals = await waitForLateSendSignals(remaining(800));
+      dispatchEnter();
+      confirmed = await confirmQwenSend(sendBtn, 2500);
+    }
+    if (!confirmed) {
+      dispatchEnter({ metaKey: true });
+      confirmed = await confirmQwenSend(sendBtn, 2200);
+    }
+    if (!confirmed && requestSubmitNearComposer(input)) {
+      confirmed = await confirmQwenSend(sendBtn, 2500);
+    }
+    if (!confirmed) {
+      // Emergency: perform gesture scroll (helps when sticky overlays block click synthesis),
+      // then retry the same composer-scoped, fail-closed send-button discovery.
+      startDriftFallback('medium');
+      await sleep(220);
+      const emergencySend = await resolveSendButton(input);
+      if (isSafeQwenSendControl(emergencySend) && !emergencySend.disabled) {
+        await qwenHumanClick(emergencySend);
+        confirmed = await confirmQwenSend(emergencySend, 3000);
+      }
+    }
+    if (!confirmed) {
+      const lateSignals = await waitForLateSendSignals(7000);
       if (lateSignals) {
         emitDiagnostic({
           type: 'SEND',
@@ -1776,7 +1786,7 @@ const keepAliveMutex = (() => {
       }
     }
     if (!confirmed) {
-      failSend('Qwen send not confirmed');
+      throw { type: 'send_failed', message: 'Qwen send not confirmed' };
     }
     return true;
   }
@@ -2795,7 +2805,6 @@ const keepAliveMutex = (() => {
             meta: { dispatchId: dispatchMeta?.dispatchId || null, baselineUserCount }
           });
           window.ContentUtils?.reportDispatchStage?.(MODEL, dispatchMeta, 'send_action_requested');
-          const sendStartedAt = Date.now();
           try {
             await sendComposer(composer, {
               prompt,
@@ -2804,11 +2813,6 @@ const keepAliveMutex = (() => {
             });
             submissionConfirmed = true;
           } catch (err) {
-            window.ContentUtils?.reportDispatchStage?.(MODEL, dispatchMeta, 'send_action_failed', {
-              outcome: 'failed',
-              reason: err?.type || err?.message || 'send_exception',
-              elapsedMs: Date.now() - sendStartedAt
-            });
             emitDiagnostic({
               type: 'DISPATCH',
               label: 'Qwen send failed',
@@ -2819,8 +2823,7 @@ const keepAliveMutex = (() => {
             throw err;
           }
           window.ContentUtils?.reportDispatchStage?.(MODEL, dispatchMeta, 'send_action_completed', {
-            outcome: 'confirmed',
-            elapsedMs: Date.now() - sendStartedAt
+            outcome: 'confirmed'
           });
           activity.heartbeat(0.5, { phase: 'send-dispatched' });
           emitDiagnostic({

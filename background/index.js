@@ -108,7 +108,7 @@ const codexResolveStartPage = (callback) => {
   const done = (file) => {
     if (settled) return;
     settled = true;
-    callback(file === 'pipeline_panel.html' ? file : 'result_new.html');
+    callback(file === 'pipeline_panel.html' ? 'pipeline_panel.html' : 'result_new.html');
   };
   try {
     if (chrome?.storage?.local?.get) {
@@ -136,15 +136,6 @@ self.codexProtectExtensionPageTab = codexProtectExtensionPageTab;
 
 const codexExtensionPageUrls = () => [
   chrome.runtime.getURL('pipeline_panel.html'),
-  chrome.runtime.getURL('automation.html'),
-  chrome.runtime.getURL('automation-pipeline.html'),
-  chrome.runtime.getURL('result_new.html')
-];
-
-// The toolbar action opens only the comparator; Automation is reached through
-// its explicit in-app link.
-const codexActionPageUrls = () => [
-  chrome.runtime.getURL('pipeline_panel.html'),
   chrome.runtime.getURL('result_new.html')
 ];
 
@@ -171,7 +162,7 @@ try {
 try {
   if (chrome?.action?.onClicked && chrome?.tabs && chrome?.runtime?.getURL) {
     chrome.action.onClicked.addListener(() => {
-      const urls = codexActionPageUrls();
+      const urls = codexExtensionPageUrls();
       chrome.tabs.query({ url: urls }, (tabs = []) => {
         const existing = Array.isArray(tabs) ? tabs.find((tab) => tab?.id) : null;
         if (existing?.id) {

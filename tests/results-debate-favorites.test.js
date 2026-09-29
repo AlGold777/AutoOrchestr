@@ -816,7 +816,7 @@ describe('Pipeline debate favorites view', () => {
     document.getElementById('modTa').value = 'Разработка адаптера для новой версии провайдера';
     expect(window.__resultsExportDebug.formatExportPromptName()).toBe('Разработка адаптера для новой…');
     expect(window.__resultsExportDebug.buildResponseExportFilename(null, 'txt', new Date(2026, 7, 26, 10, 45)))
-      .toBe('Разработка адаптера для новой версии провайдера - aug26 10-45.txt');
+      .toBe('Разработка адаптера для новой… - LLMs aug26 10-45.txt');
     expect(window.__resultsExportDebug.buildResponseExportFilename('GPT', 'html', new Date(2026, 7, 26, 10, 45)))
       .toBe('Разработка адаптера для новой… - GPT aug26 10-45.html');
     expect(favoriteText).toBe('--- GPT ---\n[12:00]\nBase model response.');

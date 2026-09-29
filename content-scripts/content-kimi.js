@@ -208,11 +208,12 @@
     await requestTrustedInput(prompt);
   };
 
-  const waitForSendConfirmation = async (_composer, beforeUserTurns, timeoutMs) => {
+  const waitForSendConfirmation = async (composer, beforeUserTurns, timeoutMs) => {
     const deadline = Date.now() + timeoutMs;
     while (!stopped && Date.now() < deadline) {
+      const value = readComposerText(composer);
       const userTurns = document.querySelectorAll(USER_TURN_SELECTOR).length;
-      if (userTurns > beforeUserTurns || isGenerating()) return true;
+      if (!value || userTurns > beforeUserTurns || isGenerating()) return true;
       await sleep(120);
     }
     return false;

@@ -25,36 +25,12 @@ describe('release log regression guards', () => {
     expect(controlsCss).toMatch(/\.top-control-bar\s*\{[^}]*position:\s*sticky;[^}]*top:\s*12px;/s);
     expect(controlsCss).toMatch(/\.top-control-bar::before\s*\{[^}]*top:\s*-12px;[^}]*height:\s*12px;[^}]*background:\s*#F3F4F6;/s);
     expect(controlsCss).toMatch(/\.pipeline-page \.app-main \.input-section:has\(\.prompt-container\.is-pipeline-composer-raised\)\s*\{[^}]*padding-top:\s*5px;/s);
-    expect(controlsCss).toContain(':not(:has(.prompt-container.has-selected-models))');
     const source = fs.readFileSync(path.join(__dirname, '..', 'results.js'), 'utf8');
-    expect(source).toContain("container.classList.toggle('has-selected-models', Boolean(document.querySelector('.llm-button.active')))");
     expect(source).not.toContain('alignSubmittedPromptWithHeader');
     expect(source).not.toContain('submittedPromptAlignmentFrame');
     expect(source).toContain("mainPromptContainer.classList.add('is-pipeline-composer-raised');");
     expect(source).toContain("promptContainer?.classList.toggle('is-pipeline-composer-raised', !collapsed);");
     expect(source).toContain("if (!pipelinePanel.classList.contains('is-collapsed')) {");
-  });
-
-  test('response find and replace is available on every results page', () => {
-    ['result_new.html', 'pipeline_panel.html', 'automation-pipeline.html'].forEach((file) => {
-      const html = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
-      expect(html).toContain('<script src="results/response-find-replace.js"></script>');
-    });
-  });
-
-  test('results view mode uses one stateful toggle button', () => {
-    const html = fs.readFileSync(path.join(__dirname, '..', 'result_new.html'), 'utf8');
-    const source = fs.readFileSync(path.join(__dirname, '..', 'results.js'), 'utf8');
-
-    expect(html).toContain('id="view-mode-toggle-btn"');
-    expect(html).toContain('class="view-icon view-icon-grid"');
-    expect(html).toContain('class="view-icon view-icon-stack"');
-    expect(html).not.toContain('id="view-grid-btn"');
-    expect(html).not.toContain('id="view-stack-btn"');
-    expect(source).toContain("const viewModeToggleBtn = document.getElementById('view-mode-toggle-btn');");
-    expect(source).toContain("viewModeToggleBtn.addEventListener('click'");
-    expect(source).toContain("viewModeToggleBtn.querySelector('.view-icon-grid')");
-    expect(source).toContain("viewModeToggleBtn.querySelector('.view-icon-stack')");
   });
 
   test('Favourite card exposes TXT export immediately after its HTML export', () => {
@@ -67,7 +43,7 @@ describe('release log regression guards', () => {
     expect(txtButtonIndex).toBeGreaterThan(htmlButtonIndex);
     expect(clearButtonIndex).toBeGreaterThan(txtButtonIndex);
     expect(source).toContain("event.target.closest('#favorite-export-txt-btn')");
-    expect(source).toContain("anchor.download = buildSingleCardExportFilename('Favourite', 'txt', now);");
+    expect(source).toContain('anchor.download = `Favourite ${dateStr}.txt`;');
     expect(source).toContain('const textContent = `=== Favourite ===\\n${favoriteText}`;');
   });
 

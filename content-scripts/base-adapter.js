@@ -172,13 +172,6 @@
 
     handleMessage(message, sender, sendResponse) {
       if (!message || typeof message !== 'object') return false;
-      if (message.type === 'ROUND1_FAST_ABORT') {
-        window.ContentUtils?.abortFastDispatch?.(message?.meta || {});
-        if (typeof sendResponse === 'function') {
-          sendResponse({ status: 'round1_fast_abort_ack', dispatchId: message?.meta?.dispatchId || null });
-        }
-        return false;
-      }
       if (message.type === 'STOP_AND_CLEANUP') {
         this._cleanup(message.reason || 'stop_request');
         if (typeof sendResponse === 'function') {

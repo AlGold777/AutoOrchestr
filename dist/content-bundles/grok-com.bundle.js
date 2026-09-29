@@ -7994,7 +7994,7 @@
 (function (global) {
   if (global.AttachmentHandler) return;
 
-  const DEFAULT_MAX_FILES = Infinity;
+  const DEFAULT_MAX_FILES = 5;
   // `typeof X?.y` still evaluates X, so it throws ReferenceError on a global that
   // was never declared -- it does not fall back to the literal below. TimingConfig
   // comes from config/timing.js, a separate manifest entry: if that file ever
@@ -32651,7 +32651,7 @@ this.humanSession.on?.('session-stop', () => clearInterval(textStabilityMonitor)
 
   async function attachFilesToComposer(target, attachments = []) {
     if (!attachments || !attachments.length) return false;
-    const files = hydrateAttachments(attachments);
+    const files = hydrateAttachments(attachments).slice(0, 5);
     if (!files.length) return false;
 
     const makeDataTransfer = () => {

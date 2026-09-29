@@ -216,9 +216,7 @@ function isAppUiUrl(url = '') {
   if (typeof url !== 'string' || !url) return false;
   try {
     return url.startsWith(chrome.runtime.getURL('result_new.html'))
-      || url.startsWith(chrome.runtime.getURL('pipeline_panel.html'))
-      || url.startsWith(chrome.runtime.getURL('automation.html'))
-      || url.startsWith(chrome.runtime.getURL('automation-pipeline.html'));
+      || url.startsWith(chrome.runtime.getURL('pipeline_panel.html'));
   } catch (_) {
     return false;
   }
@@ -1324,9 +1322,7 @@ async function findExistingResultsTab() {
     const tabs = await chrome.tabs.query({
       url: [
         chrome.runtime.getURL('result_new.html'),
-        chrome.runtime.getURL('pipeline_panel.html'),
-        chrome.runtime.getURL('automation.html'),
-        chrome.runtime.getURL('automation-pipeline.html')
+        chrome.runtime.getURL('pipeline_panel.html')
       ]
     });
     return tabs.find((t) => t?.id) || null;
@@ -1340,7 +1336,7 @@ async function getPreferredResultsPageName() {
   try {
     const data = await chrome.storage.local.get('llmComparatorLastPipelineView');
     const view = data?.llmComparatorLastPipelineView;
-    return view === 'automation' ? 'automation.html' : view === 'pipeline' ? 'pipeline_panel.html' : 'result_new.html';
+    return view === 'pipeline' ? 'pipeline_panel.html' : 'result_new.html';
   } catch (err) {
     console.warn('[BACKGROUND] Failed to read pipeline view preference', err);
     return 'result_new.html';
@@ -1350,7 +1346,7 @@ async function getPreferredResultsPageName() {
 async function openOrFocusResultsTab() {
   const preferredPage = await getPreferredResultsPageName();
   const preferredUrl = chrome.runtime.getURL(preferredPage);
-  const fallbackUrl = chrome.runtime.getURL(['pipeline_panel.html', 'automation-pipeline.html'].includes(preferredPage) ? 'result_new.html' : 'pipeline_panel.html');
+  const fallbackUrl = chrome.runtime.getURL(preferredPage === 'pipeline_panel.html' ? 'result_new.html' : 'pipeline_panel.html');
   const current = await getTabSafe(resultsTabId);
   let existing = current;
   if (!existing) {
@@ -1404,12 +1400,6 @@ function hasEnoughMemoryForPrewarm() {
   }
 }
 
-function isPrewarmBlockedByActiveRun() {
-  return self.isRound1SprintActive?.() === true
-    || jobState?.session?.roundsInProgress === true
-    || promptDispatchInProgress > 0;
-}
-
 async function createTabQuietly(url) {
   return new Promise((resolve) => {
     chrome.tabs.create({ url, active: false }, (tab) => {
@@ -1441,15 +1431,14 @@ async function smartPrewarmTabs() {
     return;
   }
 
-  if (isPrewarmBlockedByActiveRun()) {
-    globalThis.LLMLog?.debug?.('[PREWARM] Active dispatch or round in progress, skipping pre-warm');
+  if (promptDispatchInProgress > 0) {
+    globalThis.LLMLog?.debug?.('[PREWARM] Dispatch in progress, skipping pre-warm');
     return;
   }
 
   globalThis.LLMLog?.debug?.('[PREWARM] Starting smart tab pre-warming...');
 
   for (const llmName of PREWARM_MODELS) {
-    if (isPrewarmBlockedByActiveRun()) return;
     const existingTabId = TabMapManager.get(llmName);
 
     if (existingTabId) {
@@ -1458,14 +1447,12 @@ async function smartPrewarmTabs() {
       if (discarded) {
         globalThis.LLMLog?.debug?.(`[PREWARM] Tab ${existingTabId} for ${llmName} is discarded, reloading...`);
         try {
-          if (isPrewarmBlockedByActiveRun()) return;
           await chrome.tabs.reload(existingTabId);
           globalThis.LLMLog?.debug?.(`[PREWARM] Reloaded tab ${existingTabId} for ${llmName}`);
         } catch (err) {
           console.error(`[PREWARM] Failed to reload tab for ${llmName}:`, err);
           await TabMapManager.removeByTabId(existingTabId);
           if (PREWARM_CREATE_MISSING_TABS) {
-            if (isPrewarmBlockedByActiveRun()) return;
             await prewarmSingleModel(llmName);
           } else {
             globalThis.LLMLog?.debug?.(`[PREWARM] Skip creating missing tab for ${llmName} (disabled)`);
@@ -1476,7 +1463,6 @@ async function smartPrewarmTabs() {
       }
     } else {
       if (PREWARM_CREATE_MISSING_TABS) {
-        if (isPrewarmBlockedByActiveRun()) return;
         await prewarmSingleModel(llmName);
       } else {
         globalThis.LLMLog?.debug?.(`[PREWARM] Skip creating tab for ${llmName} (disabled)`);
