@@ -4,17 +4,11 @@
 
 Repository: `AlGold777/MyOrchestrator`
 
-Implementation branch: `automation-gpt`
+Implementation branch: `GPT-automation-layer` (integrates the final implementation from `automation-gpt`).
 
-The implementation branch is isolated for the GPT architecture experiment and contains only this implementation's changes on top of the project baseline.
+`Automation_GPT` and `MyOrchestrator` may be separate working copies of the same GitHub repository. Updating one folder does not update the other. The final Automation Layer in this branch uses a dedicated three-lane `automation.html` workspace; a different local copy may still contain an older page with the same filename.
 
-Important repository observation made during implementation: `automation.html` was not present in `main` or the other existing working branches. The implementation therefore created `automation.html` using the established UI contract from `popup.html`:
-
-- prompt: `#prompt`
-- send button: `#send-button`
-- model selection: `input[name="llm"]`
-
-If another physical working copy contains an older `automation.html`, preserve its existing controls and port the controller bindings to its actual selectors instead of duplicating the controls.
+The Automation workspace is opened from its explicit in-app link. Clicking the browser extension action opens or focuses the main results or pipeline page, even if an Automation page was used previously.
 
 ## Architecture
 
@@ -55,7 +49,7 @@ The new controller is responsible for:
 
 ## Files
 
-- `automation.html` — automation page using the established prompt/send/model-selection controls.
+- `automation.html` — dedicated three-lane Automation workspace.
 - `automation.css` — feed/status/diagnostics presentation.
 - `automation.js` — browser-side controller.
 - `automation/automation-core.js` — pure correlation/fan-in/artifact helpers.
@@ -64,6 +58,8 @@ The new controller is responsible for:
 - `docs/automation-layer-structural-elements-report.md` — architecture-element report.
 
 ## Real runtime integration
+
+The browser toolbar action does not treat `automation.html` as the general extension start page. This prevents a saved Automation tab from replacing the main extension view; the Automation page remains available through its explicit link.
 
 Round dispatch uses the existing background message:
 

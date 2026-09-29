@@ -108,7 +108,7 @@ const codexResolveStartPage = (callback) => {
   const done = (file) => {
     if (settled) return;
     settled = true;
-    callback(['pipeline_panel.html', 'automation.html', 'automation-pipeline.html'].includes(file) ? file : 'result_new.html');
+    callback(file === 'pipeline_panel.html' ? file : 'result_new.html');
   };
   try {
     if (chrome?.storage?.local?.get) {
@@ -141,6 +141,13 @@ const codexExtensionPageUrls = () => [
   chrome.runtime.getURL('result_new.html')
 ];
 
+// The toolbar action opens only the comparator; Automation is reached through
+// its explicit in-app link.
+const codexActionPageUrls = () => [
+  chrome.runtime.getURL('pipeline_panel.html'),
+  chrome.runtime.getURL('result_new.html')
+];
+
 // Re-assert on startup and whenever such a page finishes loading: the flag is
 // per-tab and does not survive a reload or a browser restart.
 try {
@@ -164,7 +171,7 @@ try {
 try {
   if (chrome?.action?.onClicked && chrome?.tabs && chrome?.runtime?.getURL) {
     chrome.action.onClicked.addListener(() => {
-      const urls = codexExtensionPageUrls();
+      const urls = codexActionPageUrls();
       chrome.tabs.query({ url: urls }, (tabs = []) => {
         const existing = Array.isArray(tabs) ? tabs.find((tab) => tab?.id) : null;
         if (existing?.id) {

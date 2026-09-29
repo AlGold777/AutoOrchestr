@@ -1,6 +1,7 @@
 # Automation Layer — Final
 
-Branch: `automation-gpt`  
+Branch: `GPT-automation-layer` (integrates `automation-gpt`)
+
 Semantic contract: `AL-STRUCT-1`  
 Controller/Core: `1.4.0`
 
