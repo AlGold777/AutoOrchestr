@@ -1,0 +1,8 @@
+@import url("https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css");
+@import url("styles/base.css");
+@import url("styles/notes-sidebar.css");
+@import url("styles/pipeline.css?v=2.81.18");
+@import url("styles/app-controls.css");
+@import url("styles/devtools-selectors.css");
+@import url("styles/results-debate.css");
+@import url("styles/modals-responsive.css");

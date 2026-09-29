@@ -31,7 +31,7 @@
 
 ### 2026-09-25 — Add Automation test page, version 2.81.491
 
-- Added `automation.html` as a copy of the Pipeline panel with a dedicated toolbar icon for navigation.
+- Added `automation-pipeline.html` as a copy of the Pipeline panel with a dedicated toolbar icon for navigation.
 - Left the state map workspace empty in the copied page markup.
 - Registered the new page with extension tab handling and allowed-page checks.
 

@@ -217,7 +217,8 @@ function isAppUiUrl(url = '') {
   try {
     return url.startsWith(chrome.runtime.getURL('result_new.html'))
       || url.startsWith(chrome.runtime.getURL('pipeline_panel.html'))
-      || url.startsWith(chrome.runtime.getURL('automation.html'));
+      || url.startsWith(chrome.runtime.getURL('automation.html'))
+      || url.startsWith(chrome.runtime.getURL('automation-pipeline.html'));
   } catch (_) {
     return false;
   }
@@ -1324,7 +1325,8 @@ async function findExistingResultsTab() {
       url: [
         chrome.runtime.getURL('result_new.html'),
         chrome.runtime.getURL('pipeline_panel.html'),
-        chrome.runtime.getURL('automation.html')
+        chrome.runtime.getURL('automation.html'),
+        chrome.runtime.getURL('automation-pipeline.html')
       ]
     });
     return tabs.find((t) => t?.id) || null;
@@ -1348,7 +1350,7 @@ async function getPreferredResultsPageName() {
 async function openOrFocusResultsTab() {
   const preferredPage = await getPreferredResultsPageName();
   const preferredUrl = chrome.runtime.getURL(preferredPage);
-  const fallbackUrl = chrome.runtime.getURL(['pipeline_panel.html', 'automation.html'].includes(preferredPage) ? 'result_new.html' : 'pipeline_panel.html');
+  const fallbackUrl = chrome.runtime.getURL(['pipeline_panel.html', 'automation-pipeline.html'].includes(preferredPage) ? 'result_new.html' : 'pipeline_panel.html');
   const current = await getTabSafe(resultsTabId);
   let existing = current;
   if (!existing) {

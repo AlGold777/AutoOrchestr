@@ -139,7 +139,7 @@ chrome://extensions
 3. Enable Developer Mode.
 4. Choose "Load unpacked".
 5. Select the project root directory.
-6. Open the extension action or the result/pipeline panel. Use the Automation page to run UI tests from a copy of the Pipeline panel.
+6. Open the extension action or the result/pipeline panel. Use Automation to run the two-round model workflow. The copied Pipeline test surface is available as `automation-pipeline.html`.
 
 ### Required Accounts
 

@@ -1,0 +1,186 @@
+:root {
+  --automation-bg: #f5f6f8;
+  --automation-panel: #ffffff;
+  --automation-border: #dfe3e8;
+  --automation-text: #17191c;
+  --automation-muted: #747b86;
+  --automation-soft: #f8f9fb;
+  --automation-accent: #111827;
+  --automation-danger: #b42318;
+}
+
+html,
+body.automation-body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--automation-bg);
+  color: var(--automation-text);
+}
+
+body.automation-body {
+  overflow: hidden;
+}
+
+.automation-page {
+  width: 100%;
+  height: 100vh;
+  max-width: none;
+  margin: 0;
+  padding: 10px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  box-sizing: border-box;
+  background: var(--automation-bg);
+}
+
+.automation-topbar {
+  min-height: 66px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 10px;
+  background: var(--automation-panel);
+  border: 1px solid var(--automation-border);
+  border-radius: 12px;
+}
+
+.automation-actions {
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding-left: 10px;
+  background: var(--automation-panel);
+}
+
+.automation-actions button {
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 1px solid #d6dae0;
+  border-radius: 8px;
+  background: #fff;
+  color: #252a31;
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.automation-actions button:disabled {
+  opacity: .48;
+  cursor: default;
+}
+
+@media (max-width: 1180px) {
+  body.automation-body { overflow-x: auto; }
+  .automation-page { min-width: 1180px; }
+}
+
+
+.model-navigation {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 4.65px;
+  margin: 0;
+  padding: 3px 0;
+  background: #fff;
+  overflow-x: auto;
+  min-width: 0;
+  scrollbar-width: none;
+}
+.model-navigation::-webkit-scrollbar { display: none; }
+.model-nav-button {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 58px;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: #8c98a3;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: color 0.2s ease, transform 0.2s ease;
+}
+.model-nav-button:hover { color: #8c98a3; transform: translateY(-1px); }
+.model-nav-icon {
+  width: 34px;
+  height: 34px;
+  display: block;
+  background-color: rgba(39, 37, 30, 0.446);
+  -webkit-mask: var(--model-icon) center / contain no-repeat;
+  mask: var(--model-icon) center / contain no-repeat;
+  transition: background-color 0.2s ease, transform 0.2s ease;
+}
+.model-nav-label { line-height: 1; text-align: center; }
+.model-nav-button:hover .model-nav-icon { transform: scale(1.04); }
+.model-nav-button.is-active,
+.model-nav-button.is-active:hover { color: #27251eeb; }
+.model-nav-button.is-active .model-nav-icon { background-color: #27251eeb; }
+.model-selector-input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+
+.automation-results-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(20, 27, 35, .28);
+}
+.automation-results-modal[hidden] { display: none; }
+.automation-results-panel {
+  width: min(900px, 92vw);
+  max-height: 82vh;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--automation-border);
+  border-radius: 14px;
+  background: var(--automation-panel);
+  box-shadow: 0 22px 60px rgba(15, 23, 42, .18);
+}
+.automation-results-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--automation-border);
+}
+.automation-results-head h2 { margin: 0; font-size: 16px; }
+.automation-results-head button {
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 1px solid #d6dae0;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+}
+#automation-results-body {
+  margin: 0;
+  padding: 14px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  background: #fafbfc;
+}

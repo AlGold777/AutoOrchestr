@@ -36,7 +36,7 @@ describe('release log regression guards', () => {
   });
 
   test('response find and replace is available on every results page', () => {
-    ['result_new.html', 'pipeline_panel.html', 'automation.html'].forEach((file) => {
+    ['result_new.html', 'pipeline_panel.html', 'automation-pipeline.html'].forEach((file) => {
       const html = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
       expect(html).toContain('<script src="results/response-find-replace.js"></script>');
     });

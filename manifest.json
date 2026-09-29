@@ -259,6 +259,7 @@
       "resources": [
         "result_new.html",
         "automation.html",
+        "automation-pipeline.html",
         "styles.css",
         "styles/*.css",
         "results.js",
