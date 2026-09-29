@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-09-29 — Bound attachment and provider send delays, version 2.81.490
+
+- Cap Grok's unobservable bridge confirmation window at 2.5 seconds so a failed bridge does not delay prompt insertion for the full file-scaled timeout.
+- Bound Qwen and Z.ai send confirmation and record elapsed send-action telemetry.
+
 ### 2026-09-23 — Remove the five-file attachment cap, version 2.81.489
 
 - Accept and pass through all selected, dropped, or pasted attachments instead of truncating each request to five files.

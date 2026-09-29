@@ -91,6 +91,10 @@
       ]
     },
     Grok: {
+      // Grok's bridge dispatch may never produce an observable chip even when
+      // the content-side input vector succeeds. Do not let that unobservable
+      // bridge hold prompt insertion for the full file-scaled cascade budget.
+      bridgeConfirmTimeoutMs: 2500,
       attachSelectors: [
         'button[aria-label*="Attach"]',
         'button[data-testid*="attach"]',
@@ -556,6 +560,9 @@
       timeoutMs: Number.isFinite(overrides.timeoutMs)
         ? overrides.timeoutMs
         : (Number.isFinite(base.timeoutMs) ? base.timeoutMs : DEFAULT_TIMEOUT_MS),
+      bridgeConfirmTimeoutMs: Number.isFinite(overrides.bridgeConfirmTimeoutMs)
+        ? overrides.bridgeConfirmTimeoutMs
+        : (Number.isFinite(base.bridgeConfirmTimeoutMs) ? base.bridgeConfirmTimeoutMs : null),
       pollMs: Number.isFinite(overrides.pollMs) ? overrides.pollMs : DEFAULT_POLL_MS,
       maxFiles: Number.isFinite(overrides.maxFiles) ? overrides.maxFiles : DEFAULT_MAX_FILES
     };
@@ -1222,8 +1229,13 @@
       // fast-failing vector rolls forward. Only confirmation waiting is charged.
       const minConfirmSliceMs = minConfirmSliceFor(allowInputFileCountEvidence);
       const cascadeRemainingMs = Math.max(0, cascadeBudgetMs - confirmSpentMs);
+      const bridgeConfirmCapMs = strategy.endsWith(':bridge')
+        && Number.isFinite(config.bridgeConfirmTimeoutMs)
+        ? Math.max(0, Number(config.bridgeConfirmTimeoutMs))
+        : null;
       const confirmBudgetMs = Math.min(
         cascadeRemainingMs,
+        ...(bridgeConfirmCapMs !== null ? [bridgeConfirmCapMs] : []),
         vectorsLeftAfterThis > 0
           ? Math.max(minConfirmSliceMs, Math.floor(cascadeRemainingMs / (vectorsLeftAfterThis + 1)))
           : cascadeRemainingMs

@@ -43,7 +43,7 @@ describe('release log regression guards', () => {
     expect(txtButtonIndex).toBeGreaterThan(htmlButtonIndex);
     expect(clearButtonIndex).toBeGreaterThan(txtButtonIndex);
     expect(source).toContain("event.target.closest('#favorite-export-txt-btn')");
-    expect(source).toContain('anchor.download = `Favourite ${dateStr}.txt`;');
+    expect(source).toContain("anchor.download = buildSingleCardExportFilename('Favourite', 'txt', now);");
     expect(source).toContain('const textContent = `=== Favourite ===\\n${favoriteText}`;');
   });
 

@@ -609,4 +609,18 @@ describe('attachment bridge authentication', () => {
     expect(HANDLER_SRC).toContain('inputFileCount');
     expect(HANDLER_SRC).toContain("config.confirmationMode === 'batch' ? 1 : expectedCount");
   });
+
+  test('Grok bridge confirmation cannot consume the full file-scaled cascade budget', () => {
+    const grokConfig = HANDLER_SRC.slice(
+      HANDLER_SRC.indexOf('Grok: {'),
+      HANDLER_SRC.indexOf('Claude: {')
+    );
+    expect(grokConfig).toContain('bridgeConfirmTimeoutMs: 2500');
+    const tryVia = HANDLER_SRC.slice(
+      HANDLER_SRC.indexOf('const tryVia = async'),
+      HANDLER_SRC.indexOf('const runStrategy = async')
+    );
+    expect(tryVia).toContain("strategy.endsWith(':bridge')");
+    expect(tryVia).toContain('config.bridgeConfirmTimeoutMs');
+  });
 });
