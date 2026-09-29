@@ -13,7 +13,7 @@ function setup(text, onDispatch = () => {}) {
     ContentUtils: { ensureMainWorldBridge: async () => true, getMainBridgeToken: () => 'test', reportDispatchStage() {} },
     chrome: { runtime: { sendMessage() {} } },
     document: { body, querySelectorAll: () => [], querySelector: () => null },
-    dispatchEvent: event => onDispatch(body, event.detail.mode)
+    dispatchEvent: event => onDispatch(body, event.detail.mode, event.detail)
   };
   c.window = c; c.self = c;
   vm.runInNewContext(source, c);
@@ -48,6 +48,24 @@ test('two copies of one filename cannot stand in for a different missing file', 
   const pending = c.AttachmentHandler.attach('DeepSeek', [file('a.txt'), file('b.txt')], options);
   await jest.advanceTimersByTimeAsync(5000);
   expect((await pending).success).toBe(false);
+});
+
+test('passes every attachment to the provider when the batch is larger than five files', async () => {
+  let deliveredCount = 0;
+  const files = Array.from({ length: 8 }, (_, index) => file(`evidence-${index + 1}.txt`));
+  const c = setup('', (body, _mode, detail) => {
+    deliveredCount = detail.attachments.length;
+    body.innerText = detail.attachments.map(item => item.name).join(' ');
+  });
+  const pending = c.AttachmentHandler.attach('DeepSeek', files, {
+    timeoutMs: 1000,
+    settleMs: 100,
+    pollMs: 25
+  });
+  await jest.advanceTimersByTimeAsync(10000);
+  const result = await pending;
+  expect(deliveredCount).toBe(8);
+  expect(result).toEqual(expect.objectContaining({ success: true, uploadedCount: 8 }));
 });
 
 test('a filename arriving between vectors is still compared to the original baseline', async () => {

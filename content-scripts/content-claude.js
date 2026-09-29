@@ -2,7 +2,7 @@
 // LLM: Claude Sonnet 4.5
 // Created: 2025-10-17, 15:42
 // ENHANCED VERSION: Combines Claude-specific logic with extended functionality from Grok v6
-// Extended Features: HTTP 429 with retry, Metrics Collection, UI Version Detection, 
+// Extended Features: HTTP 429 with retry, Metrics Collection, UI Version Detection,
 // Self-Healing with exponential backoff, Enhanced ContentCleaner, SmartScroll/KeepAlive
 // Core Claude Features: Tab opening, prompt injection, message sending - PRESERVED
 

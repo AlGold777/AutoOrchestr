@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-09-29 — Preserve unlimited attachment batches in distributions, version 2.81.491
+
+- Rebuild tracked provider adapters and content bundles from the current sources so generated outputs no longer carry the stale five-file cap.
+- Add a provider-boundary regression check proving that all eight files in a batch reach the bridge and are confirmed.
+
 ### 2026-09-29 — Bound attachment and provider send delays, version 2.81.490
 
 - Cap Grok's unobservable bridge confirmation window at 2.5 seconds so a failed bridge does not delay prompt insertion for the full file-scaled timeout.
