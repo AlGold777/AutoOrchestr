@@ -243,5 +243,85 @@
     "given": "Reviewer/Synthesizer output attempts to override sibling decision solely because of role",
     "expect": "reject authority escalation unless stage contract explicitly permits",
     "version": "2.2"
+  },
+  {
+    "id": "TRANSFORMATION_DISPOSITION_DERIVED_STAGE3",
+    "given": "stage3 accountable PRP inputs with valid input_fate + changes",
+    "expect": "CoverageDeriver emits exactly one PRESERVE/MERGE/SPLIT/SUPERSEDE/DEFER/REJECT per accountable PRP; no model-supplied dispositions field"
+  },
+  {
+    "id": "TRANSFORMATION_CONSUMED_ONLY_REJECTED",
+    "given": "stage3/15 accountable input has input_fate=CONSUMED and no derivable transformation outcome",
+    "expect": "disposition_complete fails; no commit"
+  },
+  {
+    "id": "DEFER_DERIVED_FROM_STATE_PATCH",
+    "given": "accountable object UPDATE proposes state_patch.status=DEFERRED and policy permits transition",
+    "expect": "CoverageDeriver emits DEFER and MutationNormalizer emits SET_STATUS"
+  },
+  {
+    "id": "UPDATE_NORMALIZES_TO_REVISE",
+    "given": "UPDATE has domain payload and no status change",
+    "expect": "MutationNormalizer emits REVISE only"
+  },
+  {
+    "id": "UPDATE_STATUS_SPLITS_REVISE_SET_STATUS",
+    "given": "UPDATE has payload plus state_patch.status",
+    "expect": "MutationNormalizer emits REVISE + SET_STATUS in same atomic mutation set"
+  },
+  {
+    "id": "STATE_FIELDS_NOT_IN_DOMAIN_PAYLOAD",
+    "given": "model places status/blocking/authority_class inside changes.payload instead of state_patch",
+    "expect": "mutation normalization/schema-policy validation rejects authoritative use; no implicit state transition"
+  },
+  {
+    "id": "ANNOTATIONS_DIAGNOSTIC_ONLY",
+    "given": "annotation says VERIFIED/REJECTED but no authoritative change/evidence exists",
+    "expect": "annotation has zero effect on Registry, gates, statuses and validation outcome"
+  },
+  {
+    "id": "DECOMPOSITION_STAGE7_COVERS_SCENARIOS",
+    "given": "stage7 PCON has >6 scenarios",
+    "expect": "deterministic scenario partitions <=6; union complete; every scenario traced to CAP or UNK"
+  },
+  {
+    "id": "DECOMPOSITION_STAGE11_COVERS_CAPS",
+    "given": "stage11 has >4 CAP refs",
+    "expect": "deterministic CAP partitions <=4; every CAP yields at least one REQ.capability_ref or stage fails"
+  },
+  {
+    "id": "DECOMPOSITION_STAGE12_COVERS_REQS",
+    "given": "stage12 has >6 REQ refs",
+    "expect": "deterministic REQ partitions <=6; every REQ has one input_fate and explicit review outcome"
+  },
+  {
+    "id": "DECOMPOSITION_STAGE15_COVERS_CONSTRAINTS",
+    "given": "stage15 has >6 CON refs",
+    "expect": "deterministic CON partitions <=6; every CON derives exactly one coverage disposition"
+  },
+  {
+    "id": "HASH_FORMAT_BARE_HEX_ONLY",
+    "given": "model echoes sha256:<64hex> instead of bare 64hex",
+    "expect": "schema/hash validation rejects and bounded repair may run once"
+  },
+  {
+    "id": "SNAPSHOT_HASH_COPY_REPAIR_ONCE",
+    "given": "otherwise-valid response has wrong snapshot hash",
+    "expect": "one repair with same frozen snapshot; second mismatch is terminal for that call"
+  },
+  {
+    "id": "INDEXEDDB_ATOMIC_STATE_COMMIT",
+    "given": "failure occurs between Registry and Event updates",
+    "expect": "single IndexedDB readwrite transaction aborts all writes; replay sees no partial commit"
+  },
+  {
+    "id": "UI_CONTROLLER_RESTARTABLE",
+    "given": "automation.html closes or MV3 service worker suspends mid-stage",
+    "expect": "rehydrated FSM resumes from IndexedDB without duplicate commit"
+  },
+  {
+    "id": "EVIDENCE_REQUIRES_ARTIFACT",
+    "given": "model claims external fact without TOOL/HUMAN artifact",
+    "expect": "target cannot become VERIFIED; stage routes to evidence collector or HTSK"
   }
 ]

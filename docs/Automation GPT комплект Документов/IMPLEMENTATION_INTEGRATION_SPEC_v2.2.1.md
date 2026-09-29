@@ -1,12 +1,13 @@
-# Automation Layer v2.2 — Implementation / Integration Specification
+# Automation Layer v2.2.1 — Implementation / Integration Specification
 
 **Status:** implementation source of truth  
+**Version:** 2.2.1  
 **Target:** existing `AlGold777/MyOrchestrator` Web/DOM runtime  
 **Inputs:**  
 1. `product_architecture_framework_system_model_final.json`  
-2. `Automation Layer v2.2 — Web Runtime for Product→Architecture Framework`  
-3. `product_architecture_framework_automation_layer_v2.2.json` and split bundle  
-4. `automation_prototype_v2.2.html` as a test surface only
+2. `Automation Layer v2.2.1 — Web Runtime for Product→Architecture Framework`  
+3. `product_architecture_framework_automation_layer_v2.2.1.json` and split bundle  
+4. `automation_prototype_v2.2.1.html` as a test surface only
 
 ---
 
@@ -97,7 +98,7 @@ automation/
   export.js
 
 automation-spec/
-  [contents of Product_Architecture_Automation_v2.2 bundle]
+  [contents of Product_Architecture_Automation_v2.2.1 bundle]
 
 tests/
   automation-static-contracts.mjs
@@ -536,7 +537,7 @@ Ambiguous recovery state fails closed into `WAITING_FOR_OPERATOR` / technical fa
 
 ## 19. UI
 
-`automation_prototype_v2.2.html` is not production state.
+`automation_prototype_v2.2.1.html` is not production state.
 
 Production `automation.html` should expose only controller actions/state:
 
@@ -666,3 +667,27 @@ Do not add these while implementing the v2.2 baseline:
 - a second provider automation stack.
 
 They can be evaluated only after the baseline runtime passes its contract tests.
+
+
+## Production contract requirements v2.2.1
+
+This bundle supersedes ambiguous v2.2 implementation details with the following concrete decisions:
+
+1. **Transformation coverage** — AL-STRUCT-1 does not gain a second `dispositions` field. `CoverageDeriver` deterministically derives `PRESERVE|MERGE|SPLIT|SUPERSEDE|DEFER|REJECT` from `input_fate + changes + frozen snapshot`. `CONSUMED` remains bookkeeping only and is insufficient for accountable transformation inputs.
+2. **Mutation normalization** — model-facing `changes.op` stays `CREATE|UPDATE|SUPERSEDE|MERGE`. Optional `state_patch` carries proposed `status`, `blocking`, `authority_class`. `UPDATE` normalizes into `REVISE` and, when `status` changes, a separate `SET_STATUS`; all emitted mutations commit atomically.
+3. **Annotations** — `annotations[]` are diagnostic-only. They are retained for RAW/audit/UI and ignored by authoritative validation, policy, gates and StateCommit.
+4. **Decomposition** — stages 7/11/12/15 have deterministic partition selectors and hard `max_items_per_partition` in `execution/decomposition-policy.json`; coverage is checked before fan-in.
+5. **MV3 schema validation** — use Ajv standalone validators compiled at build time (`strict:false`, `allErrors:true`). Do not compile schemas at runtime with `new Function`/`eval`.
+6. **Authoritative persistence** — Registry/Ledger/run state live in IndexedDB. One StateCommit is one IndexedDB `readwrite` transaction. `chrome.storage.local` is non-authoritative.
+7. **Controller lifetime** — `automation.html` is UI only. The coordinator is restartable and reconstructs the FSM from IndexedDB after page close/service-worker suspension.
+8. **Hash format** — all canonical and echoed SHA-256 values are lowercase bare 64-hex. The `sha256:` prefix is not accepted.
+9. **DOM JSON extraction** — extract from correlated response/code-block `textContent`, never reconstructed rendered markdown/`innerHTML`; provider matrix tests are required.
+10. **Evidence** — external facts become verifiable only through a persisted TOOL/HUMAN evidence artifact. Model statements alone remain `MODEL_ANALYSIS`; if no collector path exists, route to HTSK.
+
+### Milestone order
+
+- **M0**: load manifest + precompiled validators + IndexedDB stores.
+- **M1**: IDEA → stage 1 → stage 2 fan-out ×2; parse/validate only, no StateCommit. Measure first-pass AL-STRUCT compliance and snapshot-hash-copy failure rate.
+- **M2**: MutationNormalizer + CoverageDeriver + atomic IndexedDB StateCommit + replay/idempotency.
+- **M3**: stages 3–13 + QST/QANS + G1/PFB, only after M1/M2 contract suite is green.
+- **M4+**: stages 14–30 + evidence collector/HUMAN_TEST routing.

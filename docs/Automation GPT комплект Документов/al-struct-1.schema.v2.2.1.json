@@ -1,6 +1,6 @@
 {
   "$id": "AL-STRUCT-1",
-  "title": "Automation Layer v2.2 model semantic response",
+  "title": "Automation Layer v2.2.1 model semantic response",
   "type": "object",
   "required": [
     "passport",
@@ -44,7 +44,8 @@
         },
         "input_snapshot_hash": {
           "type": "string",
-          "pattern": "^(sha256:)?[a-f0-9]{64}$"
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "Canonical lowercase bare SHA-256 hex; no sha256: prefix."
         },
         "input_refs": {
           "type": "array",
@@ -138,8 +139,10 @@
             ]
           }
         },
-        "additionalProperties": false
-      }
+        "additionalProperties": false,
+        "description": "Diagnostic label only; no target semantics are inferred from annotation position."
+      },
+      "description": "Diagnostic-only labels for UI/audit. They are non-authoritative and MUST NOT affect validation, mutation normalization, policy, gates or commit."
     },
     "trace": {
       "type": "array",
@@ -178,7 +181,9 @@
         "properties": {
           "input_id": {
             "type": "string",
-            "minLength": 1
+            "minLength": 1,
+            "pattern": "^[A-Z][A-Z0-9_]*-[0-9A-Za-z._-]+@v[1-9][0-9]*$",
+            "description": "Canonical input key derived from passport.input_refs: <object_id>@v<version>; not a domain disposition."
           },
           "disposition": {
             "type": "string",
@@ -200,7 +205,8 @@
             "uniqueItems": true
           }
         },
-        "additionalProperties": false
+        "additionalProperties": false,
+        "description": "Bookkeeping only. For TRANSFORMATION stages domain coverage disposition is derived deterministically by CoverageDeriver; input_fate itself is not the coverage disposition."
       }
     },
     "changes": {
@@ -307,7 +313,40 @@
             "uniqueItems": true
           },
           "payload": {
-            "type": "object"
+            "type": "object",
+            "description": "Domain object payload only. RegistryEntry state fields status/blocking/authority_class belong in state_patch, not payload."
+          },
+          "state_patch": {
+            "type": "object",
+            "description": "Optional proposed RegistryEntry state changes. status is normalized to SET_STATUS; blocking/authority_class are normalized as policy-checked REVISE metadata. Domain payload remains in payload.",
+            "properties": {
+              "status": {
+                "type": "string",
+                "minLength": 1
+              },
+              "blocking": {
+                "type": "boolean"
+              },
+              "authority_class": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "A0",
+                      "A1",
+                      "A2",
+                      "A3",
+                      "A4"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "minProperties": 1
           }
         },
         "allOf": [
@@ -454,11 +493,13 @@
     "completion.output_count MUST equal len(outputs)",
     "completion.output_ids MUST equal the set of outputs[].id",
     "trace.output_id MUST reference outputs[].id",
-    "trace.source_ids MUST reference ids available in passport.input_refs or contract-allowed response-local sources",
-    "input_fate.input_id MUST refer to an input passed in passport.input_refs",
+    "trace.source_ids MUST reference canonical input keys, partition item keys, or contract-allowed response-local sources",
+    "input_fate.input_id MUST equal <object_id>@v<version> for an item in passport.input_refs",
     "changes.source_output_id MUST refer to outputs[].id",
-    "input_snapshot_hash MUST byte-for-byte equal ACTIVE.input_snapshot_hash",
+    "input_snapshot_hash MUST byte-for-byte equal ACTIVE.input_snapshot_hash and is lowercase bare 64-hex",
     "reserved runtime fields are prohibited anywhere in model-controlled payload",
-    "CONSUMED means processed only; it does not imply closed/verified/resolved"
+    "CONSUMED means processed only; it does not imply closed/verified/resolved",
+    "annotations are diagnostic-only and have zero commit/gate authority",
+    "for TRANSFORMATION stages accountable inputs MUST derive exactly one domain coverage disposition via CoverageDeriver"
   ]
 }
