@@ -323,5 +323,91 @@
     "id": "EVIDENCE_REQUIRES_ARTIFACT",
     "given": "model claims external fact without TOOL/HUMAN artifact",
     "expect": "target cannot become VERIFIED; stage routes to evidence collector or HTSK"
+  },
+  {
+    "id": "PROVIDER_MATRIX_MATCHES_MYORCHESTRATOR",
+    "given": "current automation-gpt popup/manifest provider set",
+    "expect": "exact required binding set is chatgpt, claude, gemini, grok, lechat, qwen, deepseek, perplexity, zai, kimi; no enabled provider lacks a profile",
+    "version": "2.2.2"
+  },
+  {
+    "id": "PROVIDER_TEXTCONTENT_JSON_CHATGPT",
+    "provider": "chatgpt",
+    "given": "provider returns AL-STRUCT-1 JSON inside its normal rendered assistant response/code block",
+    "expect": "adapter correlates the correct assistant message, extracts JSON through textContent/raw text, parses one object, preserves source_message_id, and never reconstructs authoritative JSON from innerHTML",
+    "phase": "M1",
+    "version": "2.2.2"
+  },
+  {
+    "id": "PROVIDER_TEXTCONTENT_JSON_CLAUDE",
+    "provider": "claude",
+    "given": "provider returns AL-STRUCT-1 JSON inside its normal rendered assistant response/code block",
+    "expect": "adapter correlates the correct assistant message, extracts JSON through textContent/raw text, parses one object, preserves source_message_id, and never reconstructs authoritative JSON from innerHTML",
+    "phase": "M1",
+    "version": "2.2.2"
+  },
+  {
+    "id": "PROVIDER_TEXTCONTENT_JSON_GEMINI",
+    "provider": "gemini",
+    "given": "provider returns AL-STRUCT-1 JSON inside its normal rendered assistant response/code block",
+    "expect": "adapter correlates the correct assistant message, extracts JSON through textContent/raw text, parses one object, preserves source_message_id, and never reconstructs authoritative JSON from innerHTML",
+    "phase": "M1",
+    "version": "2.2.2"
+  },
+  {
+    "id": "PROVIDER_TEXTCONTENT_JSON_GROK",
+    "provider": "grok",
+    "given": "provider returns AL-STRUCT-1 JSON inside its normal rendered assistant response/code block",
+    "expect": "adapter correlates the correct assistant message, extracts JSON through textContent/raw text, parses one object, preserves source_message_id, and never reconstructs authoritative JSON from innerHTML",
+    "phase": "M1",
+    "version": "2.2.2"
+  },
+  {
+    "id": "PROVIDER_TEXTCONTENT_JSON_LECHAT",
+    "provider": "lechat",
+    "given": "provider returns AL-STRUCT-1 JSON inside its normal rendered assistant response/code block",
+    "expect": "adapter correlates the correct assistant message, extracts JSON through textContent/raw text, parses one object, preserves source_message_id, and never reconstructs authoritative JSON from innerHTML",
+    "phase": "M1",
+    "version": "2.2.2"
+  },
+  {
+    "id": "PROVIDER_TEXTCONTENT_JSON_QWEN",
+    "provider": "qwen",
+    "given": "provider returns AL-STRUCT-1 JSON inside its normal rendered assistant response/code block",
+    "expect": "adapter correlates the correct assistant message, extracts JSON through textContent/raw text, parses one object, preserves source_message_id, and never reconstructs authoritative JSON from innerHTML",
+    "phase": "M1",
+    "version": "2.2.2"
+  },
+  {
+    "id": "PROVIDER_TEXTCONTENT_JSON_DEEPSEEK",
+    "provider": "deepseek",
+    "given": "provider returns AL-STRUCT-1 JSON inside its normal rendered assistant response/code block",
+    "expect": "adapter correlates the correct assistant message, extracts JSON through textContent/raw text, parses one object, preserves source_message_id, and never reconstructs authoritative JSON from innerHTML",
+    "phase": "M1",
+    "version": "2.2.2"
+  },
+  {
+    "id": "PROVIDER_TEXTCONTENT_JSON_PERPLEXITY",
+    "provider": "perplexity",
+    "given": "provider returns AL-STRUCT-1 JSON inside its normal rendered assistant response/code block",
+    "expect": "adapter correlates the correct assistant message, extracts JSON through textContent/raw text, parses one object, preserves source_message_id, and never reconstructs authoritative JSON from innerHTML",
+    "phase": "M1",
+    "version": "2.2.2"
+  },
+  {
+    "id": "PROVIDER_TEXTCONTENT_JSON_ZAI",
+    "provider": "zai",
+    "given": "provider returns AL-STRUCT-1 JSON inside its normal rendered assistant response/code block",
+    "expect": "adapter correlates the correct assistant message, extracts JSON through textContent/raw text, parses one object, preserves source_message_id, and never reconstructs authoritative JSON from innerHTML",
+    "phase": "M1",
+    "version": "2.2.2"
+  },
+  {
+    "id": "PROVIDER_TEXTCONTENT_JSON_KIMI",
+    "provider": "kimi",
+    "given": "provider returns AL-STRUCT-1 JSON inside its normal rendered assistant response/code block",
+    "expect": "adapter correlates the correct assistant message, extracts JSON through textContent/raw text, parses one object, preserves source_message_id, and never reconstructs authoritative JSON from innerHTML",
+    "phase": "M1",
+    "version": "2.2.2"
   }
 ]

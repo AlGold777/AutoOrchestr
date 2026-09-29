@@ -1,0 +1,491 @@
+{
+  "manifest_lint": {
+    "kind": "structural",
+    "inputs": [
+      "manifest"
+    ],
+    "logic": "All stage numbers unique; all role/code/gate/validator refs exist; all schemas parse; status enum exists for every object code; graph has no dangling/duplicate direct edges; cycles require declared loop policy; split-plan keys unique.",
+    "failure": "EXECUTION_FAILED"
+  },
+  "object_schema_valid": {
+    "kind": "structural",
+    "inputs": [
+      "RegistryEntry",
+      "objects[code]",
+      "statusEnums[code]"
+    ],
+    "logic": "Validate RegistryEntry; validate payload against objects[code]; status in statusEnums[code]; object_id prefix matches code; content_hash matches canonical payload; additionalProperties policy respected.",
+    "failure": "REPAIRABLE"
+  },
+  "typed_refs_exist": {
+    "kind": "referential",
+    "inputs": [
+      "proposed mutations",
+      "registry"
+    ],
+    "logic": "Every ObjectRef resolves to exact immutable object_id+version and target is not hard-deleted; referenced code matches entry code.",
+    "failure": "REPAIRABLE"
+  },
+  "mutation_permission": {
+    "kind": "authority",
+    "inputs": [
+      "stage",
+      "role",
+      "mutation envelope"
+    ],
+    "logic": "Every operation is allowed by active role and stage contract; Reviewer cannot revise reviewed target; model cannot create AEV/HRES/BSL directly.",
+    "failure": "REJECT_RUN"
+  },
+  "authority_within_policy": {
+    "kind": "authority",
+    "inputs": [
+      "decision object",
+      "active DPL",
+      "authority refs"
+    ],
+    "logic": "A0/A1 closure matches applicable DPL rule and evidence requirements; A2/A3 closure requires OWNER AEV originating from selected QANS; A4 cannot close.",
+    "failure": "ROUTE"
+  },
+  "questionnaire_valid": {
+    "kind": "interaction",
+    "inputs": [
+      "QST",
+      "referenced PD/DPL",
+      "questionnairePolicy"
+    ],
+    "logic": "Selection-only; >=2 unique option_ids; default=null; JSONLogic condition only references prior answers; effects touch only referenced PD/DPL/scope fields and use allowlisted effect types; no hidden free-text input.",
+    "failure": "REPAIRABLE"
+  },
+  "answers_valid": {
+    "kind": "interaction",
+    "inputs": [
+      "QANS",
+      "QST"
+    ],
+    "logic": "Selected option ids exist, cardinality matches SINGLE/MULTI, all required visible questions answered exactly once.",
+    "failure": "WAITING_FOR_SELECTION"
+  },
+  "answer_effects_valid": {
+    "kind": "interaction",
+    "inputs": [
+      "QST",
+      "QANS",
+      "compiled mutations"
+    ],
+    "logic": "Compiled mutations equal the selected option effects byte-for-byte after canonicalization; creates OWNER AEV; no unselected effect applied.",
+    "failure": "EXECUTION_FAILED"
+  },
+  "stage_ready_to_run": {
+    "kind": "scheduler",
+    "inputs": [
+      "stage.input_selectors",
+      "registry",
+      "baselines",
+      "workflow state"
+    ],
+    "logic": "Resolve each typed selector against one immutable input snapshot; meet required/min_count/status/version/stale constraints; required gate/baseline is committed.",
+    "failure": "BLOCKED"
+  },
+  "independence_satisfied": {
+    "kind": "scheduler",
+    "inputs": [
+      "stage.fanout",
+      "stage runs"
+    ],
+    "logic": "min_runs met; required distinct models met; all runs used identical input snapshot hash; isolated runs did not receive sibling outputs before fan-in.",
+    "failure": "BLOCKED"
+  },
+  "dod_complete": {
+    "kind": "stage_postcondition",
+    "inputs": [
+      "stage.postconditions",
+      "registry diff",
+      "routes"
+    ],
+    "logic": "Evaluate all declared postcondition validators; every finding/escalation has an explicit route; no manual checkbox is source of truth.",
+    "failure": "ROUTE_OR_REPAIR"
+  },
+  "gate_checklist_complete": {
+    "kind": "gate",
+    "inputs": [
+      "gate.checks",
+      "snapshot"
+    ],
+    "logic": "Execute each check validator/params; persisted checklist is only the result cache. pass iff all blocking checks pass.",
+    "failure": "GATE_FAILED"
+  },
+  "no_open_blockers": {
+    "kind": "gate",
+    "inputs": [
+      "snapshot",
+      "policy"
+    ],
+    "logic": "No matching entry has blocking=true and a status listed by the gate's per-code blocking_statuses.",
+    "failure": "GATE_FAILED"
+  },
+  "all_required_statused": {
+    "kind": "gate",
+    "inputs": [
+      "codes",
+      "allowed_statuses",
+      "snapshot"
+    ],
+    "logic": "Every selected object has a status in allowed_statuses; no required CANDIDATE/UNVERIFIED/PENDING remains.",
+    "failure": "GATE_FAILED"
+  },
+  "trace_complete": {
+    "kind": "traceability",
+    "inputs": [
+      "from_codes",
+      "to_codes",
+      "required_path",
+      "snapshot"
+    ],
+    "logic": "For every in-scope source object there is at least one typed-ref path satisfying required_path and all path entries are non-stale.",
+    "failure": "GATE_FAILED"
+  },
+  "package_hash_identical": {
+    "kind": "reproducibility",
+    "inputs": [
+      "snapshot_id",
+      "stage_runs"
+    ],
+    "logic": "All independent runs in the fan-out reference identical snapshot_id and snapshot_hash.",
+    "failure": "GATE_FAILED"
+  },
+  "baseline_snapshot_valid": {
+    "kind": "baseline",
+    "inputs": [
+      "baseline definition",
+      "snapshot",
+      "gate result"
+    ],
+    "logic": "All selectors resolve; gate passed on same snapshot; snapshot immutable; BSL content_refs exactly equal resolved selector set; canonical hash matches.",
+    "failure": "EXECUTION_FAILED"
+  },
+  "evidence_verifiable": {
+    "kind": "evidence",
+    "inputs": [
+      "EVD",
+      "target refs",
+      "evidencePolicy"
+    ],
+    "logic": "VERIFIED/FALSIFIED EVD has allowed method_kind, artifact_refs when required, exact target refs, executor compatible with method_kind. MODEL_ANALYSIS cannot confer VERIFIED.",
+    "failure": "GATE_FAILED_OR_REPAIR"
+  },
+  "human_test_execution_only": {
+    "kind": "evidence",
+    "inputs": [
+      "HTSK",
+      "HRES",
+      "AEV",
+      "EVD"
+    ],
+    "logic": "Every HUMAN_TEST EVD has HRES+AEV from actor_type HUMAN_TESTER; model/tool runs cannot create HRES or claim HUMAN_TEST execution.",
+    "failure": "EXECUTION_FAILED"
+  },
+  "post_g1_autonomy_covered": {
+    "kind": "authority",
+    "inputs": [
+      "DPL",
+      "known decision kinds from stages 14-30",
+      "PFB snapshot"
+    ],
+    "logic": "Every known normal-path decision kind that may occur after G1 maps to AUTO_POLICY or REQUIRE_EVIDENCE with deterministic closer; A2/A3 product/scope changes map to STOP/REOPEN, never silent continuation.",
+    "failure": "GATE_FAILED"
+  },
+  "no_unresolved_blocking_findings": {
+    "kind": "review",
+    "inputs": [
+      "FND",
+      "snapshot"
+    ],
+    "logic": "No FND with blocking=true and status OPEN remains in scope.",
+    "failure": "GATE_FAILED"
+  },
+  "no_stale_inputs": {
+    "kind": "consistency",
+    "inputs": [
+      "snapshot"
+    ],
+    "logic": "No selected RegistryEntry has stale=true.",
+    "failure": "GATE_FAILED"
+  },
+  "chg_propagated": {
+    "kind": "change",
+    "inputs": [
+      "CHG",
+      "registry"
+    ],
+    "logic": "For each APPLIED CHG, propagated_to covers computed impact_set and no dependent entry on superseded input remains non-stale.",
+    "failure": "GATE_FAILED"
+  },
+  "falsified_assumption_has_change": {
+    "kind": "change",
+    "inputs": [
+      "ASM",
+      "CHG"
+    ],
+    "logic": "Every FALSIFIED ASM with dependents has an APPLIED/APPROVED CHG or all dependents have been superseded through the same invalidation event.",
+    "failure": "GATE_FAILED"
+  },
+  "architecture_leakage_clear": {
+    "kind": "semantic-via-findings",
+    "inputs": [
+      "FND",
+      "product stages"
+    ],
+    "logic": "No blocking OPEN FND class=architecture_leakage created by stages 5/8/12 remains.",
+    "failure": "GATE_FAILED"
+  },
+  "scope_coverage_complete": {
+    "kind": "product",
+    "inputs": [
+      "IDEA",
+      "PCON",
+      "CAP",
+      "REQ",
+      "PD",
+      "UNK"
+    ],
+    "logic": "Every required in-scope scenario/capability derived from IDEA/closed PD has CAP and at least one REQ; any excluded/deferred scope has explicit PD/UNK with non-blocking status.",
+    "failure": "GATE_FAILED"
+  },
+  "direction_rationale_present": {
+    "kind": "architecture",
+    "inputs": [
+      "AD kind=DIRECTION",
+      "CMP",
+      "DPL"
+    ],
+    "logic": "Accepted direction references CMP candidates/criteria, has non-empty rationale, and selection is reproducible from active DPL or evidence rule.",
+    "failure": "GATE_FAILED"
+  },
+  "adr_trace_complete": {
+    "kind": "architecture",
+    "inputs": [
+      "REQ",
+      "AD",
+      "EVD"
+    ],
+    "logic": "Each in-scope REQ has path to accepted AD/ADR; evidence-dependent claims have path to EVD; non-evidence architectural choices have DPL authority path.",
+    "failure": "GATE_FAILED"
+  },
+  "model_semantic_response_valid": {
+    "description": "Raw parsed LLM semantic response conforms to ModelSemanticResponse; reserved machine-owned fields are impossible because additionalProperties=false.",
+    "inputs": [
+      "parsed_semantic_response",
+      "ModelSemanticResponse"
+    ],
+    "logic": "JSON Schema validation; reject unknown/reserved fields."
+  },
+  "response_envelope_valid": {
+    "description": "Orchestrator-generated trusted envelope matches ResponseEnvelope and identity fields agree with the active run.",
+    "inputs": [
+      "response_envelope",
+      "active_run"
+    ],
+    "logic": "schema valid AND envelope.run_id/stage/snapshot/contract identity == active_run."
+  },
+  "transport_completion_valid": {
+    "description": "Commit requires complete transport and parser completion; model self-reported EOF/TRUNCATED is ignored.",
+    "inputs": [
+      "response_envelope.completion"
+    ],
+    "logic": "transport_complete AND parse_complete."
+  },
+  "semantic_payload_hash_valid": {
+    "description": "Recompute SHA-256 over RFC8785/JCS canonical semantic_response and normalized mutations and compare with trusted integrity hashes.",
+    "inputs": [
+      "semantic_response",
+      "normalized_mutations",
+      "integrity"
+    ],
+    "logic": "sha256(JCS(semantic_response))==semantic_payload_hash AND sha256(JCS(normalized_mutations))==normalized_mutation_hash."
+  },
+  "stable_identity_valid": {
+    "description": "Models may use temp_id only for new same-response objects; canonical IDs are allocated by orchestrator, versions are monotonic and IDs are never reused.",
+    "inputs": [
+      "semantic_response",
+      "registry",
+      "allocated_refs"
+    ],
+    "logic": "all temp_id unique within response; all persisted refs canonical; revisions target current expected version; no canonical ID reuse."
+  },
+  "provenance_complete": {
+    "description": "Every CREATE/MERGE/REVISE has semantic provenance refs; committed RegistryEntry provenance includes exact versioned inputs + trusted stage_run_id.",
+    "inputs": [
+      "operations",
+      "committed_entries",
+      "input_snapshot"
+    ],
+    "logic": "all semantic provenance refs exist in snapshot/allowed evidence; committed provenance is exact superset + stage_run_id."
+  },
+  "disposition_complete": {
+    "description": "CoverageDeriver deterministically derives exactly one domain disposition for every accountable input ObjectRef; no foreign/duplicate/ambiguous input.",
+    "inputs": [
+      "stage.response_contract.coverage_obligation",
+      "input_snapshot",
+      "AL_STRUCT_1.input_fate",
+      "AL_STRUCT_1.changes",
+      "coverageContracts"
+    ],
+    "logic": "derive dispositions by coverageContracts@2.2.2; accountable set == derived disposition set; duplicates/foreign/ambiguous == 0."
+  },
+  "transformation_balance_valid": {
+    "description": "Orchestrator-computed balance must reconcile dispositions and contain unaccounted=0 for transformation stages.",
+    "inputs": [
+      "derived_dispositions",
+      "integrity.transformation_balance"
+    ],
+    "logic": "recompute counts from dispositions; equality AND unaccounted==0."
+  },
+  "empty_result_valid": {
+    "description": "EMPTY_VALID is accepted only when stage contract permits empty semantic output, empty_reason_code is allowlisted and no required coverage/postcondition is violated.",
+    "inputs": [
+      "semantic_response",
+      "stage.response_contract",
+      "input_snapshot"
+    ],
+    "logic": "if EMPTY_VALID then operations empty AND reason allowlisted AND required obligations still satisfied."
+  },
+  "preservation_contract_valid": {
+    "description": "EXACT inputs are referenced, not regenerated; SEMANTIC transformations require explicit mutation/provenance; NONE imposes no content preservation.",
+    "inputs": [
+      "stage.response_contract.preservation",
+      "operations",
+      "registry"
+    ],
+    "logic": "EXACT => no payload rewrite of protected ref; SEMANTIC => any rewrite is explicit versioned mutation with provenance."
+  },
+  "contract_identity_valid": {
+    "description": "Manifest, stage contract, prompt and response schema hashes in envelope equal the artifacts actually used for the executor call.",
+    "inputs": [
+      "response_envelope.contract_identity",
+      "compiled_call_record"
+    ],
+    "logic": "all identity/hash fields equal trusted compiled_call_record."
+  },
+  "al_struct_1_valid": {
+    "description": "Exactly one JSON object conforms to AL-STRUCT-1; no prose outside JSON; additionalProperties=false.",
+    "inputs": [
+      "canonical_response",
+      "AL_STRUCT_1 schema"
+    ],
+    "logic": "schema validate + single-object framing"
+  },
+  "al_struct_enums_closed": {
+    "description": "Critical AL-STRUCT-1 enum fields contain only declared values.",
+    "inputs": [
+      "semantic_response"
+    ],
+    "logic": "schema-enforced closed vocabulary"
+  },
+  "al_struct_internal_consistency": {
+    "description": "output_count/output_ids, trace refs, input_fate refs and changes.source_output_id are internally consistent.",
+    "inputs": [
+      "semantic_response",
+      "input_snapshot"
+    ],
+    "logic": "deterministic cross-reference validation"
+  },
+  "snapshot_hash_ack_valid": {
+    "description": "passport.input_snapshot_hash exactly equals the trusted ACTIVE input_snapshot_hash.",
+    "inputs": [
+      "semantic_response.passport",
+      "trusted_snapshot_hash"
+    ],
+    "logic": "exact equality after trusted normalization; model never computes hash"
+  },
+  "reference_first_valid": {
+    "description": "Existing canonical IDs/versions used by the model are present in passport.input_refs; new domain objects use tmp-*.",
+    "inputs": [
+      "semantic_response",
+      "passport.input_refs"
+    ],
+    "logic": "reject invented canonical IDs/versions and out-of-snapshot references"
+  },
+  "reserved_runtime_fields_absent": {
+    "description": "Model-controlled response contains no runtime-owned fields such as run_id/response_id/object_id/content_hash/prompt_hash/transport_complete.",
+    "inputs": [
+      "semantic_response"
+    ],
+    "logic": "recursive reserved-key denylist"
+  },
+  "empty_by_design_valid": {
+    "description": "Empty outputs accepted only when stage allows it, reason is allowlisted, output_count=0 and stage postconditions/coverage hold.",
+    "inputs": [
+      "stage.response_contract",
+      "semantic_response.completion",
+      "coverage"
+    ],
+    "logic": "stage-specific; no global NO_CHANGE"
+  },
+  "context_budget_valid": {
+    "description": "Rendered prompt fits policy after allowed context-only compaction; required refs/fields were never silently evicted.",
+    "inputs": [
+      "compiled_context",
+      "contextPolicy",
+      "stage contract"
+    ],
+    "logic": "used_chars<=limit_chars OR fail PROMPT_TOO_LARGE"
+  },
+  "source_message_idempotent": {
+    "description": "A transport-owned provider source_message_id can be accepted at most once.",
+    "inputs": [
+      "source_message_id",
+      "accepted_message_ids"
+    ],
+    "logic": "duplicate => NO_OP before semantic acceptance"
+  },
+  "context_audit_reproducible": {
+    "description": "Stored assembly recipe deterministically reproduces included/omitted/truncated refs, budget, snapshot hash and prompt hash.",
+    "inputs": [
+      "ContextAssemblyAudit",
+      "project snapshot",
+      "contextPolicy"
+    ],
+    "logic": "re-run context assembler and compare recipe/hashes"
+  },
+  "role_no_arbitration": {
+    "description": "A model role constrains permitted output but never authorizes overriding/evaluating sibling authority absent explicit stage contract.",
+    "inputs": [
+      "stage roles",
+      "semantic_response"
+    ],
+    "logic": "reject authority escalation inferred solely from role"
+  },
+  "annotation_non_authoritative": {
+    "description": "annotations[] are diagnostic-only and cannot change validation, policy, mutations, status, gates or commit.",
+    "inputs": [
+      "AL_STRUCT_1.annotations"
+    ],
+    "logic": "ignore annotations for all authoritative computations; preserve only in RAW/audit/UI."
+  },
+  "mutation_normalization_valid": {
+    "description": "Every accepted AL-STRUCT-1 change normalizes deterministically into permitted internal mutations.",
+    "inputs": [
+      "changes",
+      "frozen Registry snapshot",
+      "stage contract",
+      "mutationNormalizer"
+    ],
+    "logic": "apply mutationNormalizer@2.2.2; reject ambiguous/unauthorized state_patch; no prose/annotation inference."
+  },
+  "decomposition_coverage_valid": {
+    "description": "For decomposed stages, persisted partitions cover the full selector set exactly as declared and each partition satisfies its coverage obligation.",
+    "inputs": [
+      "decompositionPolicy",
+      "context audit",
+      "partition responses"
+    ],
+    "logic": "deterministic partition union/overlap checks + stage-specific coverage obligation."
+  },
+  "hash_format_valid": {
+    "description": "All canonical SHA-256 identity/integrity fields use lowercase bare 64-hex.",
+    "inputs": [
+      "snapshot/prompt/content/schema hashes"
+    ],
+    "logic": "regex ^[a-f0-9]{64}$; reject sha256: prefix in canonical/model-echo fields."
+  }
+}

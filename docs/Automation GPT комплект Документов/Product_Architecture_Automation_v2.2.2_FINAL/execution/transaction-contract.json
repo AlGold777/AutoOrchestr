@@ -1,0 +1,31 @@
+{
+  "protocol": "two-phase propose -> validate -> atomic commit",
+  "idempotency_key": "run_id",
+  "optimistic_version_check": "project.revision + expected object version",
+  "on_conflict": "discard proposal and rerun against new snapshot",
+  "partial_commit": false,
+  "commit_preconditions": [
+    "completion.transport_complete==true",
+    "completion.parse_complete==true",
+    "completion.semantic_schema_valid==true",
+    "completion.policy_valid==true",
+    "completion.integrity_valid==true",
+    "response_envelope_valid",
+    "contract_identity_valid",
+    "stable_identity_valid",
+    "provenance_complete",
+    "preservation_contract_valid",
+    "if stage coverage obligation exists: disposition_complete && transformation_balance_valid",
+    "al_struct_1_valid",
+    "snapshot_hash_ack_valid",
+    "source_message_not_previously_accepted",
+    "context_assembly_audit_persisted"
+  ],
+  "model_output_is_commit_record": false,
+  "commit_record": "orchestrator-normalized trusted mutations inside ResponseEnvelope",
+  "source_message_idempotency": {
+    "identity_owner": "transport/provider adapter",
+    "accepted_message_ids": "persistent per project/run",
+    "duplicate_effect": "NO_OP; do not create a second semantic response or changes set"
+  }
+}

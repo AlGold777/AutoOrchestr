@@ -1,13 +1,13 @@
-# Automation Layer v2.2.1 — Implementation / Integration Specification
+# Automation Layer v2.2.2 — Implementation / Integration Specification
 
 **Status:** implementation source of truth  
-**Version:** 2.2.1  
+**Version:** 2.2.2  
 **Target:** existing `AlGold777/MyOrchestrator` Web/DOM runtime  
 **Inputs:**  
 1. `product_architecture_framework_system_model_final.json`  
-2. `Automation Layer v2.2.1 — Web Runtime for Product→Architecture Framework`  
-3. `product_architecture_framework_automation_layer_v2.2.1.json` and split bundle  
-4. `automation_prototype_v2.2.1.html` as a test surface only
+2. `Automation Layer v2.2.2 — Web Runtime for Product→Architecture Framework`  
+3. `product_architecture_framework_automation_layer_v2.2.2.json` and split bundle  
+4. `automation_prototype_v2.2.2.html` as a test surface only
 
 ---
 
@@ -98,7 +98,7 @@ automation/
   export.js
 
 automation-spec/
-  [contents of Product_Architecture_Automation_v2.2.1 bundle]
+  [contents of Product_Architecture_Automation_v2.2.2 bundle]
 
 tests/
   automation-static-contracts.mjs
@@ -537,7 +537,7 @@ Ambiguous recovery state fails closed into `WAITING_FOR_OPERATOR` / technical fa
 
 ## 19. UI
 
-`automation_prototype_v2.2.1.html` is not production state.
+`automation_prototype_v2.2.2.html` is not production state.
 
 Production `automation.html` should expose only controller actions/state:
 
@@ -669,7 +669,7 @@ Do not add these while implementing the v2.2 baseline:
 They can be evaluated only after the baseline runtime passes its contract tests.
 
 
-## Production contract requirements v2.2.1
+## Production contract requirements v2.2.2
 
 This bundle supersedes ambiguous v2.2 implementation details with the following concrete decisions:
 
@@ -691,3 +691,20 @@ This bundle supersedes ambiguous v2.2 implementation details with the following 
 - **M2**: MutationNormalizer + CoverageDeriver + atomic IndexedDB StateCommit + replay/idempotency.
 - **M3**: stages 3–13 + QST/QANS + G1/PFB, only after M1/M2 contract suite is green.
 - **M4+**: stages 14–30 + evidence collector/HUMAN_TEST routing.
+
+
+## M1 Provider Matrix Acceptance (v2.2.2)
+
+M1 больше не проверяется на произвольных двух моделях. Для production-enabled provider set используется `browser/provider-matrix.json`. Текущий MyOrchestrator `automation-gpt` содержит 10 Web-провайдеров: ChatGPT, Claude, Gemini, Grok, Le Chat, Qwen, DeepSeek, Perplexity, Z.ai и Kimi.
+
+Для каждого enabled provider M1 обязан подтвердить:
+
+1. существующий MyOrchestrator adapter/content script найден и используется без дублирования DOM-логики Automation Layer;
+2. prompt доставлен и сопоставлен с `call_id/attempt_id`;
+3. выбран именно correlated terminal assistant message, а не «последний ответ на странице»;
+4. AL-STRUCT-1 извлекается через `textContent`/raw text; `innerHTML` и reconstruction rendered markdown не являются parser input;
+5. `source_message_id` стабилен для duplicate suppression;
+6. проходит fixture extraction test;
+7. проходит минимум один live Web smoke call.
+
+Если конкретный provider не проходит matrix, он отключается/карантинируется; это не разрешает считать его поддержанным. M1 может быть объявлен зелёным только для явно зафиксированного enabled provider set, где все его участники прошли эти проверки.

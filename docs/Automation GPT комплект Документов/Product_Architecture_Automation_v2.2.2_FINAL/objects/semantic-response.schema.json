@@ -1,6 +1,6 @@
 {
   "$id": "AL-STRUCT-1",
-  "title": "Automation Layer v2.2.1 model semantic response",
+  "title": "Automation Layer v2.2.2 model semantic response",
   "type": "object",
   "required": [
     "passport",

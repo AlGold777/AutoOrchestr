@@ -1,0 +1,42 @@
+{
+  "default": "DENY",
+  "capabilities": {
+    "SOURCE_RETRIEVAL": {
+      "allowed_stages": [
+        16,
+        25
+      ],
+      "produces_evidence_method": "EXTERNAL_SOURCE"
+    },
+    "STATIC_ANALYSIS": {
+      "allowed_stages": [
+        16,
+        25,
+        29
+      ],
+      "produces_evidence_method": "STATIC_ANALYSIS"
+    },
+    "SANDBOX_EXECUTION": {
+      "allowed_stages": [
+        25
+      ],
+      "produces_evidence_method": "SANDBOX_EXPERIMENT"
+    },
+    "FILE_READ": {
+      "allowed_stages": [
+        16,
+        25,
+        29
+      ],
+      "produces_evidence_method": null
+    },
+    "HUMAN_TEST_UI": {
+      "allowed_stages": [
+        25
+      ],
+      "executor": "Human Tester",
+      "produces_evidence_method": "HUMAN_TEST"
+    }
+  },
+  "verification_rule": "No adapter result can set target VERIFIED directly; it creates EVD, then Verifier/Policy Engine applies status transition after evidence_verifiable."
+}

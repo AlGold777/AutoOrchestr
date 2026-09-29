@@ -1,0 +1,133 @@
+{
+  "IDEA": [
+    "ACTIVE",
+    "SUPERSEDED"
+  ],
+  "DPL": [
+    "DRAFT",
+    "ACTIVE",
+    "SUPERSEDED"
+  ],
+  "PRP": [
+    "PROPOSED",
+    "MERGED",
+    "REJECTED",
+    "SUPERSEDED"
+  ],
+  "PD": [
+    "OPEN",
+    "NEEDS_EVIDENCE",
+    "DEFERRED",
+    "CLOSED",
+    "SUPERSEDED"
+  ],
+  "PCON": [
+    "DRAFT",
+    "ACTIVE",
+    "SUPERSEDED"
+  ],
+  "CAP": [
+    "OPEN",
+    "CLOSED",
+    "SUPERSEDED"
+  ],
+  "REQ": [
+    "OPEN",
+    "CLOSED",
+    "SUPERSEDED"
+  ],
+  "CON": [
+    "CANDIDATE",
+    "VERIFIED",
+    "FALSIFIED",
+    "UNCERTAIN",
+    "SUPERSEDED"
+  ],
+  "FCT": [
+    "VERIFIED",
+    "FALSIFIED",
+    "UNCERTAIN",
+    "SUPERSEDED"
+  ],
+  "ASM": [
+    "UNVERIFIED",
+    "VERIFIED",
+    "FALSIFIED",
+    "SUPERSEDED"
+  ],
+  "UNK": [
+    "OPEN",
+    "ROUTED",
+    "DEFERRED",
+    "CLOSED",
+    "SUPERSEDED"
+  ],
+  "RSK": [
+    "OPEN",
+    "MITIGATED",
+    "ACCEPTED",
+    "CLOSED",
+    "SUPERSEDED"
+  ],
+  "EVD": [
+    "PENDING",
+    "VERIFIED",
+    "FALSIFIED",
+    "INCONCLUSIVE",
+    "SUPERSEDED"
+  ],
+  "AD": [
+    "PROPOSED",
+    "ACCEPTED",
+    "REJECTED",
+    "SUPERSEDED"
+  ],
+  "CMP": [
+    "DRAFT",
+    "READY",
+    "SUPERSEDED"
+  ],
+  "FND": [
+    "OPEN",
+    "RESOLVED",
+    "WAIVED",
+    "SUPERSEDED"
+  ],
+  "CHG": [
+    "PROPOSED",
+    "APPROVED",
+    "APPLIED",
+    "REJECTED"
+  ],
+  "QST": [
+    "READY",
+    "ASKED",
+    "ANSWERED",
+    "CANCELLED"
+  ],
+  "QANS": [
+    "RECORDED",
+    "COMPILED",
+    "INVALIDATED"
+  ],
+  "AEV": [
+    "RECORDED",
+    "REVOKED"
+  ],
+  "BSL": [
+    "COMMITTED",
+    "SUPERSEDED"
+  ],
+  "HTSK": [
+    "PENDING",
+    "WAITING_HUMAN",
+    "COMPLETED",
+    "BLOCKED",
+    "CANCELLED"
+  ],
+  "HRES": [
+    "PASS",
+    "FAIL",
+    "BLOCKED"
+  ]
+}

@@ -1,0 +1,169 @@
+{
+  "type": "object",
+  "required": [
+    "run_id",
+    "attempt_id",
+    "stage",
+    "layers",
+    "included_refs",
+    "omitted_refs",
+    "truncated_refs",
+    "context_policy_version",
+    "budget",
+    "snapshot_hash",
+    "prompt_hash"
+  ],
+  "properties": {
+    "run_id": {
+      "type": "string"
+    },
+    "attempt_id": {
+      "type": "string"
+    },
+    "stage": {
+      "oneOf": [
+        {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "layers": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "RULES",
+          "STATE",
+          "ACTIVE",
+          "DELTA",
+          "TASK"
+        ]
+      },
+      "minItems": 5,
+      "maxItems": 5
+    },
+    "included_refs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "code",
+          "object_id",
+          "version"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "object_id": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]*-[0-9A-Za-z._-]+$"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "omitted_refs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "code",
+          "object_id",
+          "version"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "object_id": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]*-[0-9A-Za-z._-]+$"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "truncated_refs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "ref",
+          "marker"
+        ],
+        "properties": {
+          "ref": {
+            "type": "object",
+            "required": [
+              "code",
+              "object_id",
+              "version"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "object_id": {
+                "type": "string",
+                "pattern": "^[A-Z][A-Z0-9_]*-[0-9A-Za-z._-]+$"
+              },
+              "version": {
+                "type": "integer",
+                "minimum": 1
+              }
+            },
+            "additionalProperties": false
+          },
+          "marker": {
+            "const": "[OBJ:TRUNC]"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "context_policy_version": {
+      "type": "string"
+    },
+    "budget": {
+      "type": "object",
+      "required": [
+        "limit_chars",
+        "used_chars"
+      ],
+      "properties": {
+        "limit_chars": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "used_chars": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "snapshot_hash": {
+      "type": "string",
+      "pattern": "^(sha256:)?[a-f0-9]{64}$"
+    },
+    "prompt_hash": {
+      "type": "string",
+      "pattern": "^(sha256:)?[a-f0-9]{64}$"
+    }
+  },
+  "additionalProperties": false
+}

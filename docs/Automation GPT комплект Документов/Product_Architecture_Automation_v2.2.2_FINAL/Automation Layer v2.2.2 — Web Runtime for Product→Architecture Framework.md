@@ -1,17 +1,17 @@
-Automation Layer v2.2 — Web Runtime for Product→Architecture Framework
+Automation Layer v2.2.2 — Web Runtime for Product→Architecture Framework
 
 Статус: Final
-Версия: 2.2
+Версия: 2.2.2
 Назначение: надёжное автоматизированное исполнение полного Product→Architecture Framework через обычные веб-интерфейсы LLM с DOM-управлением, без зависимости от model API, structured output API, function calling или finish_reason.
 
-Профиль v2.2: additive release поверх v2.1. Все неизменённые trust boundaries, browser-runtime правила, authority/evidence model, transactional StateCommit, recovery, gates и baselines сохраняются. Изменения v2.2 сосредоточены в структурном semantic response protocol, сборке контекста, snapshot integrity и машинной проверяемости межмодельного обмена.
+Профиль v2.2.2: consolidated patch release поверх v2.2; четыре implementation blockers закрыты непосредственно в нормативном контракте. Все неизменённые trust boundaries, browser-runtime правила, authority/evidence model, transactional StateCommit, recovery, gates и baselines сохраняются. Изменения v2.2 сосредоточены в структурном semantic response protocol, сборке контекста, snapshot integrity и машинной проверяемости межмодельного обмена.
 
 Нормативный semantic contract: AL-STRUCT-1.
 Принцип совместимости: v2.2 не удаляет элементы v2.1 без явной замены; новое поведение добавляется поверх существующей архитектуры.
 
 1. Назначение системы
 
-Automation Layer v2.2 превращает декларативный Product→Architecture Framework в исполняемую систему, способную:
+Automation Layer v2.2.2 превращает декларативный Product→Architecture Framework в исполняемую систему, способную:
 
 -
 принять свободную продуктовую идею;
@@ -449,7 +449,7 @@ ATTEMPT_TOKEN
 run_id             = RUN-0193
 attempt_id         = ATT-02
 input_snapshot_id  = SNAP-0193-S11
-input_snapshot_hash = sha256:...
+input_snapshot_hash = <64 lowercase hex>
 CALL_TOKEN         = W7K9-Q2F4
 ATTEMPT_TOKEN      = A02-X71P
 
@@ -609,7 +609,7 @@ Transport frame v2.1 сохраняется. Внутри него v2.2 треб
     "contract": "AL-STRUCT-1",
     "stage": "SXX",
     "input_snapshot_id": "SNAP-...",
-    "input_snapshot_hash": "sha256:...",
+    "input_snapshot_hash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
     "input_refs": []
   },
   "outputs": [],
@@ -692,45 +692,63 @@ fragment 1
 
 18. Stage Decomposition
 
-Запрет continuation не означает запрет decomposition.
+Запрет continuation не означает запрет decomposition. Decomposition является runtime-owned механизмом и задаётся детерминированной политикой до вызова модели.
 
-Stage, потенциально превышающий безопасный output size, должен объявлять:
+Stage, потенциально превышающий безопасный output/context budget, обязан объявлять:
 
 decomposable: true
 partition_selector
+ordering
 max_items_per_partition
 coverage_obligation
 fan_in_mode
 
-Пример S11:
+Нормативные политики v2.2.2:
 
-Functional Specification
-│
-├─ CAP group 1 → sub-run A
-├─ CAP group 2 → sub-run B
-├─ CAP group 3 → sub-run C
-└─ deterministic coverage/fan-in
+Stage 7 — Functional Map Draft
+selector: PCON.scenarios
+ordering: canonical ObjectRef ascending, затем stable source order
+max_items_per_partition: 6
+coverage: каждый selected scenario должен попасть ровно в одну partition
+fan_in: deterministic union + duplicate/ref coverage validation
 
-Каждый sub-run является отдельной законченной semantic transaction.
+Stage 11 — Functional Specification
+selector: CAP
+ordering: canonical ObjectRef ascending
+max_items_per_partition: 4
+coverage: каждый CAP должен быть покрыт хотя бы одним REQ-set и ровно одной partition execution
+fan_in: deterministic append by partition ordinal + requirement/reference validation
+
+Stage 12 — Functional Specification Audit
+selector: REQ
+ordering: canonical ObjectRef ascending
+max_items_per_partition: 6
+coverage: каждый accountable REQ должен быть reviewed ровно один раз
+fan_in: deterministic FND/UNK merge with source-ref preservation
+
+Stage 15 — Constraint Synthesis
+selector: CON
+ordering: canonical ObjectRef ascending
+max_items_per_partition: 6
+coverage: каждый accountable CON должен получить derived domain disposition
+fan_in: deterministic canonicalization + CoverageDeriver validation
+
+Если required material не помещается даже после разрешённой context compaction, Runner не удаляет его молча, а запускает declared decomposition.
+
+Каждый sub-run является отдельной законченной semantic transaction с собственными run_id, snapshot binding и audit entry.
 
 19. Partition Invariants
 
-До model call Runner вычисляет полное source set:
-
-S
-
-и partitions:
-
-P1 ... Pn
+До model call Runner вычисляет полное source set S и partitions P1...Pn.
 
 Обязательные проверки:
 
 UNION(P1...Pn) == S
 INTERSECTION(Pi,Pj) == ∅
 
-если stage contract не разрешает overlap.
+если stage contract явно не разрешает overlap.
 
-Stage закрывается только после успешного coverage всех partitions.
+Stage закрывается только после успешного coverage всех partitions и deterministic fan-in. Модель не определяет partition membership и не может исключать элементы из accountable set.
 
 20. ModelSemanticResponse — AL-STRUCT-1
 
@@ -779,7 +797,7 @@ OUT-* является response-local identity и не является canonica
 
 20.3. annotations
 
-annotations — единый компактный typed layer вместо множества разрозненных служебных секций.
+annotations — diagnostic-only typed layer.
 
 Допустимые type:
 
@@ -799,7 +817,16 @@ VERIFIED
 REJECTED
 SUPERSEDED
 
-Annotation не становится authority/evidence только из-за собственного type; downstream validators по-прежнему применяют правила v2.1.
+Annotation не имеет target semantics и не является authority/evidence signal. Она может храниться в RAW/audit representation и отображаться в UI, но запрещено использовать annotations для:
+
+- mutation normalization;
+- status transition;
+- authority decision;
+- evidence verification;
+- gate predicate;
+- StateCommit.
+
+Если authoritative решение требуется downstream, оно должно быть выражено через outputs/changes/input_fate и пройти соответствующий validator/policy.
 
 20.4. trace
 
@@ -847,6 +874,18 @@ UPDATE
 SUPERSEDE
 MERGE
 
+Каждый change содержит domain payload отдельно от proposed Registry state.
+
+`payload` содержит только domain content.
+
+Опциональный `state_patch` содержит только:
+
+status
+blocking
+authority_class
+
+Registry state запрещено прятать в domain payload.
+
 Новый domain object создаётся через response-local temp_id, например:
 
 tmp-pd-1
@@ -855,6 +894,8 @@ tmp-rsk-1
 Canonical ID назначает только Orchestrator/StateCommitter.
 
 Существующие IDEA/PD/REQ/CON/FCT/ASM/UNK/RSK/EVD/AD/FND/CHG IDs и версии модель может использовать только из passport.input_refs.
+
+`state_patch` является только proposal. Его применение требует schema/reference/authority/evidence/status-transition validation.
 
 20.7. completion
 
@@ -960,7 +1001,7 @@ changes source_output_id, если используется, ссылается 
 
 22. Mutation Protocol
 
-Внутренний domain mutation protocol v2.1 сохраняется:
+Внутренний canonical mutation protocol:
 
 CREATE
 REVISE
@@ -970,16 +1011,25 @@ MERGE
 
 Hard delete отсутствует.
 
-AL-STRUCT-1 использует более компактный response-level changes vocabulary:
+Model-facing AL-STRUCT-1 vocabulary остаётся компактным:
 
 CREATE
 UPDATE
 SUPERSEDE
 MERGE
 
-Это semantic proposal layer. Наличие changes не означает commit.
+Между ними работает deterministic MutationNormalizer. Нормативное отображение:
 
-Любой model result сначала проходит schema/reference/authority/evidence/provenance/coverage validation и только затем может быть преобразован StateCommitter в canonical mutation transaction.
+- model CREATE → internal CREATE;
+- model UPDATE без status change → internal REVISE;
+- model UPDATE + state_patch.status → internal REVISE + SET_STATUS;
+- model UPDATE + state_patch.blocking/authority_class → policy-checked REVISE metadata mutation;
+- model SUPERSEDE → internal SUPERSEDE;
+- model MERGE → internal MERGE с полным source_refs/provenance.
+
+Если один model change нормализуется в несколько internal mutations, они входят в одну StateCommit transaction. Частичный commit запрещён.
+
+Наличие changes не означает commit. Любой model result сначала проходит schema/reference/authority/evidence/provenance/coverage validation.
 
 23. Temporary References
 
@@ -1134,9 +1184,9 @@ accountable_set
 
 Модель не определяет это множество.
 
-29. Dispositions
+29. Transformation Coverage / Derived Dispositions
 
-Domain coverage dispositions v2.1 сохраняются:
+Domain transformation dispositions:
 
 PRESERVE
 MERGE
@@ -1145,37 +1195,44 @@ SUPERSEDE
 DEFER
 REJECT
 
-Каждый accountable input получает ровно один domain disposition там, где stage contract этого требует.
+AL-STRUCT-1 не получает отдельное model-authored поле `dispositions`. Domain disposition вычисляется Runtime-компонентом CoverageDeriver из:
+
+- frozen accountable_set;
+- input_fate;
+- changes;
+- validated target/source refs;
+- разрешённых status transitions.
+
+Это исключает два конкурирующих словаря, написанных моделью.
+
+Базовые правила derivation:
+
+- PRESERVED без transforming change → PRESERVE;
+- TRANSFORMED + один UPDATE/REVISE target для того же accountable input → PRESERVE semantic identity с revision;
+- несколько accountable source_refs → один MERGE temp/output → MERGE для каждого source;
+- один accountable source → несколько CREATE outputs с явной trace/source linkage → SPLIT;
+- SUPERSEDED + validated SUPERSEDE change → SUPERSEDE;
+- policy-valid transition status→DEFERRED → DEFER;
+- REJECTED + разрешённый contract rejection → REJECT.
+
+`CONSUMED` означает только «обработан» и никогда не удовлетворяет transformation coverage сам по себе.
+
+Для stages 3 и 15 каждый accountable input обязан получить ровно один derived domain disposition.
 
 Runner вычисляет:
 
 expected = accountable_set
-received = disposition.input_refs
+received = derived_disposition.input_refs
 
 unaccounted = expected - received
-foreign     = received - expected
-duplicates  = refs with count != 1
+foreign = received - expected
+duplicates = refs with count != 1
 
 Commit разрешён только если:
 
 unaccounted = ∅
 foreign = ∅
 duplicates = ∅
-
-Отдельно AL-STRUCT-1 использует input_fate:
-
-CONSUMED
-PRESERVED
-TRANSFORMED
-REJECTED
-SUPERSEDED
-NOT_USED
-
-Эти два словаря не должны смешиваться.
-
-input_fate отвечает на вопрос «что модель сделала с входом в рамках response».
-
-Domain disposition отвечает на вопрос «каково canonical semantic disposition accountable object по stage contract».
 
 30. Empty Review / Empty Output
 
@@ -1437,7 +1494,7 @@ LLM interpretation может помогать найти evidence, но не я
 
 не является evidence.
 
-Evidence materialизуется только из реально доступного runtime artifact.
+Evidence материализуется только из реально доступного и сохранённого runtime artifact. Минимальный Evidence Collector обязан сохранять source identity/URL, captured bytes or deterministic extracted text, timestamp и SHA-256 artifact hash. Текст модели «я поискал» без такого artifact не может повысить claim до VERIFIED.
 
 44. Human Test
 
@@ -1696,17 +1753,31 @@ canonical run commit.
 
 58. Ledger Durability Contract
 
-Абстрактного «atomic» недостаточно.
+Production Web/MV3 profile использует IndexedDB как authoritative persistent store для Registry, Ledger, run/stage state, accepted-message IDs и baseline metadata.
 
-Storage implementation обязана предоставлять transaction semantics для всего StateCommit.
+`chrome.storage.local` может использоваться только для non-authoritative UI/preferences/cache/checkpoint hints и не является commit database.
 
-Deployment не считается production-capable, если storage backend не может гарантировать:
+Каждый StateCommit выполняется одной IndexedDB `readwrite` transaction и обязан атомарно включать:
+
+- optimistic project revision check;
+- unique run_id check;
+- source-message dedup check;
+- canonical ID allocation;
+- Registry mutations;
+- Ledger append;
+- baseline/gate materialization, если применимо;
+- increment project revision.
+
+Deployment не считается production-capable без:
 
 atomicity
 durability
 unique run constraint
 monotonic project revision
 transactional ID allocation
+replay-safe idempotency
+
+Controller не полагается на lifetime `automation.html` или service worker. После page close/suspension FSM должен восстанавливаться из authoritative IndexedDB state.
 
 59. Project State Machine
 
@@ -1957,6 +2028,20 @@ PROMPT_TOO_LARGE
 и stage должен использовать предусмотренную decomposition/representation policy.
 
 Молчаливое удаление required material запрещено.
+
+71.1. Hash Canonicalization
+
+Canonical runtime hash format v2.2.2: lowercase bare SHA-256 hex, ровно 64 символа `[0-9a-f]`. Префикс `sha256:` запрещён в persisted/runtime contracts.
+
+Модель не вычисляет snapshot hash; она копирует его из ACTIVE/passport. Для snapshot-hash mismatch разрешён один bounded structural repair с тем же frozen snapshot. Повторное несовпадение завершает attempt ошибкой.
+
+71.2. MV3 Schema Validation Profile
+
+Для Chrome MV3 JSON Schema validators компилируются на build-time как Ajv standalone (`strict:false`, `allErrors:true`) либо эквивалентным CSP-safe способом. Runtime `new Function`/`eval` запрещён. Custom `x-*` metadata не должно ломать validator compilation.
+
+71.3. DOM JSON Extraction
+
+Structured response извлекается из correlated assistant message/code block через DOM `textContent`. Reconstruction из rendered markdown/`innerHTML` запрещена как authoritative parser input. Provider adapter matrix обязан тестировать это поведение для каждого поддерживаемого Web UI.
 
 72. Provider Failure
 
@@ -2427,9 +2512,9 @@ context-audit.schema.json
 contract-tests.json
 schema-migrations.json
 
-81. Граница гарантии v2.2
+81. Граница гарантии v2.2.2
 
-Automation Layer v2.2 гарантирует, если underlying storage и browser adapter удовлетворяют их контрактам:
+Automation Layer v2.2.2 гарантирует, если underlying storage и browser adapter удовлетворяют их контрактам:
 
 -
 invalid transport не меняет project state;
@@ -2500,7 +2585,7 @@ context overflow required material приводит к fail-closed, а не sile
 -
 можно воспроизвести, какие refs вошли в каждый prompt и какие были omitted/truncated.
 
-82. Что v2.2 сознательно не обещает
+82. Что v2.2.2 сознательно не обещает
 
 Система не заявляет, что способна доказать:
 
@@ -2637,50 +2722,51 @@ LLM разрешено ошибаться, Web UI разрешено ломат�
 -
 transactional canonical runtime.
 
-84. Delta v2.2 относительно v2.1
+84. Delta v2.2.2 относительно v2.2
 
-v2.2 является additive/minimal-diff release.
+v2.2.2 является consolidated patch release. Все изменения уже встроены в настоящий документ и не требуют ручного применения patch-файла.
 
-Добавлено:
+Исправлено:
 
-1. AL-STRUCT-1 как физически обязательная структура model response:
-passport · outputs · annotations · trace · input_fate · changes · completion.
+1. Transformation coverage больше не зависит от отсутствующего model-authored `dispositions`: CoverageDeriver детерминированно выводит PRESERVE/MERGE/SPLIT/SUPERSEDE/DEFER/REJECT из frozen accountable set + input_fate + changes.
 
-2. Closed enums для output, annotations, input_fate, changes и completion.
+2. Model-facing changes получили `state_patch` для status/blocking/authority_class; MutationNormalizer детерминированно переводит CREATE/UPDATE/SUPERSEDE/MERGE во внутренние CREATE/REVISE/SET_STATUS/SUPERSEDE/MERGE.
 
-3. Явная семантика CONSUMED = «обработан», а не «решён/проверен/закрыт».
+3. annotations закреплены как diagnostic-only и не участвуют в authoritative validation/gates/commit.
 
-4. Schema example, отличимый от prior_output.
+4. Для stages 7/11/12/15 заданы конкретные deterministic decomposition policies и max_items_per_partition.
 
-5. Запрет model-generated canonical IDs; новые domain objects используют response-local temp_id.
+5. Production persistence закреплена за IndexedDB; StateCommit выполняется одной readwrite transaction, `chrome.storage.local` не является authoritative store.
 
-6. Reference-first использование существующих canonical IDs/version из passport.input_refs.
+6. MV3 schema validation использует build-time Ajv standalone или эквивалентный CSP-safe validator.
 
-7. input_snapshot_hash в дополнение к input_snapshot_id.
+7. Canonical hash format унифицирован: lowercase bare SHA-256 hex без `sha256:`.
 
-8. Stable snapshot serialization и отдельный prompt_hash.
+8. DOM structured response извлекается через correlated node `textContent`, а не rendered markdown/innerHTML.
 
-9. Layered prompt assembly:
-RULES → STATE → ACTIVE → DELTA → TASK.
+9. Evidence Collector обязан материализовать сохраняемый artifact; model-reported search не является evidence.
 
-10. Machine-owned Registry projection в STATE.
+10. Snapshot-hash mismatch получает максимум один bounded repair на том же frozen snapshot.
 
-11. Centralized context budget.
+Все остальные механизмы v2.2 сохраняются.
 
-12. Разделение RAW / CANONICAL / CONTEXT representations.
 
-13. Safe context-only truncation с marker [OBJ:TRUNC].
+## 85. Provider Matrix Contract (v2.2.2)
 
-14. Fail-closed при невозможности вместить required context.
+Automation Layer не владеет provider-specific DOM selectors: они остаются в существующих адаптерах MyOrchestrator. Однако Automation Layer обязан явно знать набор Web-провайдеров, которые разрешено использовать в production run.
 
-15. Deterministic transport-text canonicalization.
+Для текущей ветки `automation-gpt` канонический provider set: **ChatGPT, Claude, Gemini, Grok, Le Chat, Qwen, DeepSeek, Perplexity, Z.ai, Kimi**. Источник — существующие `popup.html` и `manifest.json` MyOrchestrator.
 
-16. Source-message idempotency.
+Для каждого enabled provider обязательны:
 
-17. Stage-specific empty-by-design policy вместо глобального NO_CHANGE.
+- binding к существующему MyOrchestrator content script / adapter;
+- prompt delivery correlation;
+- terminal assistant-message correlation;
+- extraction structured response только из correlated DOM node/code block через `textContent`/raw text;
+- запрет authoritative reconstruction из `innerHTML`/rendered markdown;
+- стабильный `source_message_id` для idempotency;
+- fixture test и хотя бы один live M1 smoke test.
 
-18. Roles ограничивают ожидаемый output, но не дают права арбитража над другими моделями.
+Provider, не прошедший эти проверки, переводится в `QUARANTINED`/disabled для Automation runs. Наличие профиля само по себе не означает health. M1 считается зелёным только для явно enabled provider set, у которого каждый provider имеет PASS по fixture + live smoke.
 
-19. Context-assembly audit: included / omitted / truncated refs + budget + snapshot/prompt hashes.
-
-Все остальные механизмы v2.1 сохраняются, если выше явно не указано изменение.
+Каноническая machine-спецификация: `browser/provider-matrix.json`.

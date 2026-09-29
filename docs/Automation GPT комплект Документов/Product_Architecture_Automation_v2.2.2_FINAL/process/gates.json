@@ -1,0 +1,324 @@
+{
+  "G1": {
+    "name": "Product Functional Baseline Gate",
+    "trigger": "after_stage_12_or_delta_loop",
+    "checks": [
+      {
+        "id": "g1.no_blocking_decisions",
+        "validator": "no_open_blockers",
+        "params": {
+          "codes": [
+            "PD",
+            "UNK",
+            "FND"
+          ],
+          "blocking_statuses": {
+            "PD": [
+              "OPEN",
+              "NEEDS_EVIDENCE"
+            ],
+            "UNK": [
+              "OPEN",
+              "ROUTED"
+            ],
+            "FND": [
+              "OPEN"
+            ]
+          }
+        }
+      },
+      {
+        "id": "g1.scope_coverage",
+        "validator": "scope_coverage_complete",
+        "params": {}
+      },
+      {
+        "id": "g1.trace_pd_cap_req",
+        "validator": "trace_complete",
+        "params": {
+          "required_path": [
+            "PD",
+            "CAP",
+            "REQ"
+          ],
+          "allow_source_without_PD_if_direct_IDEA_trace": true
+        }
+      },
+      {
+        "id": "g1.no_arch_leakage",
+        "validator": "architecture_leakage_clear",
+        "params": {}
+      },
+      {
+        "id": "g1.no_stale",
+        "validator": "no_stale_inputs",
+        "params": {}
+      },
+      {
+        "id": "g1.autonomy_coverage",
+        "validator": "post_g1_autonomy_covered",
+        "params": {}
+      },
+      {
+        "id": "g1.questionnaire_closed",
+        "validator": "answers_valid",
+        "params": {
+          "scope": "all_required_visible_QST_before_G1"
+        }
+      },
+      {
+        "id": "g1.schemas",
+        "validator": "object_schema_valid",
+        "params": {
+          "codes": [
+            "IDEA",
+            "DPL",
+            "PD",
+            "PCON",
+            "CAP",
+            "REQ",
+            "UNK",
+            "FND"
+          ]
+        }
+      }
+    ],
+    "on_pass": {
+      "action": "COMMIT_BASELINE",
+      "baseline": "PFB",
+      "create_code": "BSL"
+    },
+    "on_fail": {
+      "action": "ROUTE_BY_FAILED_CHECK"
+    }
+  },
+  "G2": {
+    "name": "Architecture Input Package Gate",
+    "trigger": "stage_17",
+    "checks": [
+      {
+        "id": "g2.constraint_status",
+        "validator": "all_required_statused",
+        "params": {
+          "codes": [
+            "CON"
+          ],
+          "allowed_statuses": [
+            "VERIFIED",
+            "FALSIFIED",
+            "UNCERTAIN"
+          ]
+        }
+      },
+      {
+        "id": "g2.evidence_integrity",
+        "validator": "evidence_verifiable",
+        "params": {
+          "scope": "all_EVD_and_verified_FCT_CON"
+        }
+      },
+      {
+        "id": "g2.no_blockers",
+        "validator": "no_open_blockers",
+        "params": {
+          "codes": [
+            "CON",
+            "ASM",
+            "UNK",
+            "FND"
+          ],
+          "blocking_statuses": {
+            "CON": [
+              "CANDIDATE",
+              "UNCERTAIN"
+            ],
+            "ASM": [
+              "UNVERIFIED"
+            ],
+            "UNK": [
+              "OPEN",
+              "ROUTED"
+            ],
+            "FND": [
+              "OPEN"
+            ]
+          }
+        }
+      },
+      {
+        "id": "g2.no_stale",
+        "validator": "no_stale_inputs",
+        "params": {}
+      },
+      {
+        "id": "g2.package_consistency",
+        "validator": "package_hash_identical",
+        "params": {
+          "scope": "AIP_fanout_consumers"
+        }
+      },
+      {
+        "id": "g2.schemas",
+        "validator": "object_schema_valid",
+        "params": {
+          "codes": [
+            "CON",
+            "FCT",
+            "ASM",
+            "EVD",
+            "UNK"
+          ]
+        }
+      }
+    ],
+    "on_pass": {
+      "action": "COMMIT_BASELINE",
+      "baseline": "AIP",
+      "create_code": "BSL"
+    },
+    "on_fail": {
+      "action": "ROUTE_TO_STAGE",
+      "stage": 16
+    }
+  },
+  "G3": {
+    "name": "Architecture Direction Gate",
+    "trigger": "stage_22",
+    "checks": [
+      {
+        "id": "g3.direction",
+        "validator": "direction_rationale_present",
+        "params": {}
+      },
+      {
+        "id": "g3.authority",
+        "validator": "authority_within_policy",
+        "params": {
+          "scope": "accepted_direction"
+        }
+      },
+      {
+        "id": "g3.evidence_routes",
+        "validator": "no_open_blockers",
+        "params": {
+          "codes": [
+            "UNK",
+            "ASM",
+            "CON"
+          ],
+          "blocking_statuses": {
+            "UNK": [
+              "OPEN"
+            ],
+            "ASM": [
+              "UNVERIFIED"
+            ],
+            "CON": [
+              "CANDIDATE",
+              "UNCERTAIN"
+            ]
+          },
+          "allow_if_route": "ARCH_BACKLOG_or_EVIDENCE"
+        }
+      },
+      {
+        "id": "g3.product_baseline_unchanged",
+        "validator": "no_stale_inputs",
+        "params": {
+          "baseline": "PFB"
+        }
+      }
+    ],
+    "on_pass": {
+      "action": "CONTINUE",
+      "stage": 23
+    },
+    "on_fail": {
+      "action": "ROUTE_BY_FAILED_CHECK"
+    }
+  },
+  "G4": {
+    "name": "Conceptual Architecture Baseline Gate",
+    "trigger": "stage_30",
+    "checks": [
+      {
+        "id": "g4.no_blockers",
+        "validator": "no_open_blockers",
+        "params": {
+          "codes": [
+            "FND",
+            "UNK",
+            "ASM",
+            "CON",
+            "RSK",
+            "HTSK"
+          ],
+          "blocking_statuses": {
+            "FND": [
+              "OPEN"
+            ],
+            "UNK": [
+              "OPEN",
+              "ROUTED"
+            ],
+            "ASM": [
+              "UNVERIFIED"
+            ],
+            "CON": [
+              "CANDIDATE",
+              "UNCERTAIN"
+            ],
+            "RSK": [
+              "OPEN"
+            ],
+            "HTSK": [
+              "PENDING",
+              "WAITING_HUMAN",
+              "BLOCKED"
+            ]
+          }
+        }
+      },
+      {
+        "id": "g4.trace",
+        "validator": "adr_trace_complete",
+        "params": {}
+      },
+      {
+        "id": "g4.assumption_changes",
+        "validator": "falsified_assumption_has_change",
+        "params": {}
+      },
+      {
+        "id": "g4.change_propagation",
+        "validator": "chg_propagated",
+        "params": {}
+      },
+      {
+        "id": "g4.human_test_integrity",
+        "validator": "human_test_execution_only",
+        "params": {
+          "scope": "all_HUMAN_TEST_EVD"
+        }
+      },
+      {
+        "id": "g4.no_stale",
+        "validator": "no_stale_inputs",
+        "params": {}
+      },
+      {
+        "id": "g4.findings",
+        "validator": "no_unresolved_blocking_findings",
+        "params": {}
+      }
+    ],
+    "on_pass": {
+      "action": "COMMIT_BASELINE",
+      "baseline": "CAB",
+      "create_code": "BSL"
+    },
+    "on_fail": {
+      "action": "ROUTE_BY_FAILED_CHECK"
+    }
+  }
+}

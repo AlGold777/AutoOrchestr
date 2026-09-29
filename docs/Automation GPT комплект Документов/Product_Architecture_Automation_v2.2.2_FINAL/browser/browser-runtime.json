@@ -1,0 +1,49 @@
+{
+  "transport": "ordinary provider Web UI via DOM/browser automation",
+  "ui_is_untrusted": true,
+  "health_sequence": [
+    "page-ready check",
+    "primary selectors",
+    "alternate selectors current profile",
+    "structural/accessibility lookup",
+    "reload",
+    "fresh tab",
+    "canary interaction",
+    "repeat to health_retry_limit"
+  ],
+  "on_persistent_ambiguity": [
+    "WEB_UI_CHANGED",
+    "adapter=QUARANTINED"
+  ],
+  "conversation_default": "FRESH_CONVERSATION for independent semantic run",
+  "isolation_assurance": [
+    "CONVERSATION_ONLY",
+    "PROVIDER_MEMORY_CONTROLLED",
+    "FULL_PROFILE_ISOLATED"
+  ],
+  "tab_lifecycle": [
+    "CREATED",
+    "READY",
+    "PROMPT_INSERTED",
+    "PROMPT_VERIFIED",
+    "SUBMITTED",
+    "INPUT_VERIFIED",
+    "GENERATING",
+    "TERMINAL",
+    "EXTRACTED",
+    "VALIDATED",
+    "COMMITTED",
+    "DONE",
+    "FAILED"
+  ],
+  "transport_text_canonicalization": {
+    "operations": [
+      "normalize line endings",
+      "remove BOM",
+      "remove zero-width transport noise",
+      "trim outer whitespace",
+      "normalize excessive blank lines under configured policy"
+    ],
+    "purpose": "verify delivered prompt and normalize extracted transport text without changing semantic archive"
+  }
+}

@@ -1,0 +1,272 @@
+{
+  "interaction": {
+    "selection_only": true,
+    "free_text_allowed": false,
+    "question_schema": "QST",
+    "answer_schema": "QANS",
+    "branching": "JSONLogic over prior selected option IDs",
+    "compiler": "deterministic answer compiler",
+    "delta_rounds": "Allowed only before G1 on normal flow; max from controlFlow.loop_limits."
+  },
+  "policy": {
+    "interaction": "SELECTION_ONLY",
+    "free_text": false,
+    "question_sources": [
+      "unresolved A2/A3 PD",
+      "product preference UNK",
+      "DPL fields required for post-G1 autonomy"
+    ],
+    "branch_language": "JSONLogic",
+    "default_rule": "default MUST be null",
+    "effects": "Only declared QST option effects may be applied; answer compiler is deterministic.",
+    "delta_loop_before_G1": true,
+    "max_rounds": 5
+  },
+  "objects": {
+    "QST": {
+      "type": "object",
+      "required": [
+        "session_id",
+        "decision_ref",
+        "question",
+        "input_type",
+        "options",
+        "when",
+        "required",
+        "authority_class",
+        "blocking"
+      ],
+      "properties": {
+        "session_id": {
+          "type": "string"
+        },
+        "decision_ref": {
+          "anyOf": [
+            {
+              "type": "object",
+              "required": [
+                "code",
+                "object_id",
+                "version"
+              ],
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "object_id": {
+                  "type": "string",
+                  "pattern": "^[A-Z][A-Z0-9_]*-[0-9A-Za-z._-]+$"
+                },
+                "version": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "question": {
+          "type": "string"
+        },
+        "input_type": {
+          "type": "string",
+          "enum": [
+            "SINGLE",
+            "MULTI"
+          ]
+        },
+        "options": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "object",
+            "required": [
+              "option_id",
+              "label",
+              "semantic_value",
+              "effects"
+            ],
+            "properties": {
+              "option_id": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "semantic_value": {},
+              "effects": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "effect_type",
+                    "target",
+                    "value"
+                  ],
+                  "properties": {
+                    "effect_type": {
+                      "type": "string",
+                      "enum": [
+                        "CLOSE_PD",
+                        "DEFER_PD",
+                        "SET_DPL_FIELD",
+                        "SET_SCOPE_FLAG",
+                        "CREATE_ASM",
+                        "CREATE_PD"
+                      ]
+                    },
+                    "target": {
+                      "type": "string"
+                    },
+                    "value": {}
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "when": {
+          "type": [
+            "object",
+            "boolean"
+          ]
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "authority_class": {
+          "type": "string",
+          "enum": [
+            "A0",
+            "A1",
+            "A2",
+            "A3",
+            "A4"
+          ]
+        },
+        "blocking": {
+          "type": "boolean"
+        },
+        "default": {
+          "type": "null"
+        }
+      },
+      "additionalProperties": false
+    },
+    "QANS": {
+      "type": "object",
+      "required": [
+        "question_ref",
+        "selected_option_ids",
+        "answered_at"
+      ],
+      "properties": {
+        "question_ref": {
+          "type": "object",
+          "required": [
+            "code",
+            "object_id",
+            "version"
+          ],
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "object_id": {
+              "type": "string",
+              "pattern": "^[A-Z][A-Z0-9_]*-[0-9A-Za-z._-]+$"
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "selected_option_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "answered_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false
+    },
+    "AEV": {
+      "type": "object",
+      "required": [
+        "actor_type",
+        "actor_id",
+        "action",
+        "subject_refs",
+        "authorization_scope",
+        "occurred_at"
+      ],
+      "properties": {
+        "actor_type": {
+          "type": "string",
+          "enum": [
+            "OWNER",
+            "HUMAN_TESTER"
+          ]
+        },
+        "actor_id": {
+          "type": "string"
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "QUESTIONNAIRE_ANSWER",
+            "AUTHORIZE_POLICY",
+            "HUMAN_TEST_RESULT",
+            "BASELINE_REOPEN"
+          ]
+        },
+        "subject_refs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "code",
+              "object_id",
+              "version"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "object_id": {
+                "type": "string",
+                "pattern": "^[A-Z][A-Z0-9_]*-[0-9A-Za-z._-]+$"
+              },
+              "version": {
+                "type": "integer",
+                "minimum": 1
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "authorization_scope": {
+          "type": "string"
+        },
+        "occurred_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

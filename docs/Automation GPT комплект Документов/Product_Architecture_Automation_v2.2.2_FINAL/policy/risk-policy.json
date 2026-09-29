@@ -1,0 +1,10 @@
+{
+  "scale": [
+    "LOW",
+    "MEDIUM",
+    "HIGH",
+    "CRITICAL"
+  ],
+  "default_gate_blocking_threshold": "HIGH",
+  "critical_requires": "explicit mitigation plus applicable DPL authority; otherwise halt"
+}
