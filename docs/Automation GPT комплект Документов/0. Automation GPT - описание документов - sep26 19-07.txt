@@ -1,0 +1,15 @@
+рабочий комплект так:
+
+product_architecture_framework_human — человеческое представление самого Product→Architecture Framework: 30 этапов, логика процесса, артефакты, baselines, gates, роли. Это слой для человека.
+
+product_architecture_framework_system_model_final.json — машинное представление того же Framework. Это не дубль human-версии, а фактически исполняемая модель процесса: stages, object schemas, roles, authority ladder, baselines, gates, validators, dependency graph, prompt builder и т. д. У нас такой файл действительно был разработан. Он прямо обозначен как слой для machine/orchestrator consumption, не для UI. Automation Layer v2.1 — Web Ru……
+
+Automation Layer v2.2 — Web Runtime for Product→Architecture Framework — нормативная спецификация движка: как исполнять этот machine framework через web-LLM, как работать с Registry/Ledger, snapshots, AL-STRUCT-1, validation, commits, recovery, browser runtime и т. д. То есть пункт 2 говорит что исполнять, а этот документ — как исполнять.
+
+product_architecture_framework_automation_layer_v2.2.json + split bundle — вот этого в актуальной версии у нас сейчас фактически нет, и это, на мой взгляд, следующий обязательный артефакт. Раньше мы сделали product_architecture_framework_automation_layer_v2.0.json и bundle примерно из двух десятков machine-файлов. Там были schemas, control-flow, validators, structural protocol, runtime contracts, policies, contract tests и т. д. Но после v2.2 этот bundle устарел. Его нужно не чинить вручную, а заново скомпилировать из system_model_final + Automation Layer v2.2.
+
+automation_prototype_v2.2.html — тестовый стенд/прототип поведения Automation Layer. Он нужен для проверки exchange protocol, prompt composition, structural markup, fan-out/fan-in, отображения состояний и UX до подключения всего 30-stage процесса. В нём уже реально присутствуют closed enums, snapshot hash, RULES → STATE → ACTIVE → DELTA → TASK, changes, input_fate и т. д. automation_prototype_v2.2 automation_prototype_v2.2
+
+automation-layer-implementation.md — такой документ мы тоже действительно делали. Это уже не архитектурная спецификация, а карта интеграции с реальным MyOrchestrator: какие существующие механизмы остаются владельцами DOM/Web transport, какие файлы появляются (automation.html, automation.css, automation.js, automation-core.js), как происходит dispatch, correlation, persistence/recovery и field testing. Но существующая версия относится ещё к раннему двухраундовому implementation experiment, поэтому её надо переписать под финальную v2.2 и полный 30-stage Framework.
+
+contract-tests / acceptance suite — здесь я бы не делал ещё один большой «умный документ». Нужен практически исполняемый набор тестов. В самой v2.1/v2.2 архитектуре уже заложена идея contract-tests.json, а структура Automation Layer предусматривает отдельные runtime/schema/contracts файлы. Automation Layer v2.1 — Web Ru…… Его задача очень конкретная: доказать, что IDEA → stages → QST → gates → PFB/AIP/CAB, crash/retry, invalid model response, stale response, bad snapshot, authority violation и т. п. реально работаю

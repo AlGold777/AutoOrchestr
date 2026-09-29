@@ -1,0 +1,1179 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Framework разработки архитектуры</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  color-scheme:light dark;
+  --bg:#f5f7f9; --panel:#fff; --panel2:#f9fafb; --text:#18212b; --muted:#66717f;
+  --line:#d9e0e7; --line2:#c6d0db; --shadow:0 10px 28px rgba(26,35,45,.09);
+  --product:#168b8f; --discovery:#b07a18; --generation:#5b52b9; --evidence:#ad5545;
+  --producer:#3273dc; --reviewer:#a9632f; --synthesizer:#7351b8; --decision:#2f8d63; --verifier:#8c7a24; --owner:#515b66;
+  --accent:#c52e6b; --danger:#c84b4b; --change:#3a73c7; --evidenceLine:#8b7a2d; --finding:#a65c2a; --authority:#2f8d63; --mode:#6c57b8; --baseline:#4d6876;
+  --rowlabel:192px; --gap:44px; --stage:250px; --stageOpen:930px; --radius:12px;
+}
+html[data-theme="dark"]{
+  --bg:#0f141a; --panel:#161d25; --panel2:#111820; --text:#e6ebf0; --muted:#99a5b2;
+  --line:#2a3541; --line2:#394757; --shadow:0 14px 30px rgba(0,0,0,.28);
+  --product:#31a8aa; --discovery:#d2a142; --generation:#8d83df; --evidence:#d27a68;
+  --producer:#6ba2ef; --reviewer:#cf8a51; --synthesizer:#9c83d7; --decision:#63b68d; --verifier:#b9a956; --owner:#9ca6b0;
+  --accent:#ee5b9b; --danger:#e57373; --change:#6a9ee6; --evidenceLine:#baa94c; --finding:#cd8451; --authority:#63b68d; --mode:#9c83d7; --baseline:#8fa5b2;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font-family:"IBM Plex Sans",system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+button,input{font:inherit}
+button{color:inherit}
+.mono,pre,code{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
+.app-header{
+  position:sticky;top:0;z-index:80;background:color-mix(in srgb,var(--bg) 91%,transparent);
+  backdrop-filter:blur(13px);border-bottom:1px solid var(--line);padding:10px 14px 9px;
+}
+.head-top{display:flex;align-items:center;gap:10px;min-height:38px}
+h1{font-size:18px;line-height:1.1;margin:0;font-weight:700;letter-spacing:-.01em;white-space:nowrap}
+.head-spacer{flex:1}
+.toolbar{display:flex;align-items:center;gap:7px}
+.icon-btn,.chip-btn,.phase-btn,.layer-btn,.principle-btn,.nav-btn,.tiny-btn{
+  border:1px solid var(--line2);background:var(--panel);border-radius:9px;cursor:pointer;transition:.13s ease;
+}
+.icon-btn:hover,.chip-btn:hover,.phase-btn:hover,.layer-btn:hover,.principle-btn:hover,.nav-btn:hover,.tiny-btn:hover{border-color:var(--accent);transform:translateY(-1px)}
+ .icon-btn{width:34px;height:34px;display:grid;place-items:center;padding:0}
+.icon-btn svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+.top-actions{display:flex;align-items:center;gap:6px}
+.layer-menu-wrap{position:relative;display:flex;align-items:center}
+.layer-menu{
+  position:absolute;top:calc(100% + 7px);right:0;z-index:120;min-width:250px;max-height:min(520px,70vh);overflow:auto;
+  padding:8px;background:var(--panel);border:1px solid var(--line2);border-radius:10px;box-shadow:var(--shadow);display:none
+}
+.layer-menu.open{display:block}
+.layer-menu label{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:7px;font-size:11px;cursor:pointer;white-space:nowrap}
+.layer-menu label:hover{background:var(--panel2)}
+.layer-menu input{accent-color:var(--accent);margin:0}
+.layer-menu .menu-title{padding:3px 8px 6px;font-size:9.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+.phase-separator{position:absolute;z-index:9;width:0;border-left:5px dashed var(--decision);opacity:.82;pointer-events:auto;cursor:help}
+.phase-separator::after{
+  content:attr(data-tooltip);position:absolute;left:10px;top:50%;transform:translateY(-50%);z-index:30;
+  width:max-content;max-width:310px;padding:7px 9px;border:1px solid var(--line2);border-radius:8px;
+  background:var(--panel);color:var(--text);box-shadow:var(--shadow);font-size:10.5px;line-height:1.35;font-weight:500;
+  white-space:normal;opacity:0;visibility:hidden;pointer-events:none;transition:opacity .12s ease,visibility .12s ease
+}
+.phase-separator:hover::after{opacity:1;visibility:visible}
+.search-wrap{display:flex;align-items:center;gap:6px;min-width:300px}
+.search-wrap input{
+  width:270px;height:34px;border:1px solid var(--line2);border-radius:9px;background:var(--panel);color:var(--text);padding:0 10px;outline:none
+}
+.search-wrap input:focus{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 15%,transparent)}
+.search-count{font-size:11px;color:var(--muted);min-width:34px}
+.head-row{display:flex;align-items:center;gap:7px;margin-top:7px;min-height:30px;overflow-x:auto;scrollbar-width:none}
+.head-row::-webkit-scrollbar{display:none}
+.row-title{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;min-width:62px}
+.principle-btn,.layer-btn,.phase-btn,.chip-btn{padding:5px 9px;font-size:11px;white-space:nowrap}
+.principle-btn.active{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent);color:var(--accent)}
+.layer-btn.off{opacity:.43;text-decoration:line-through}
+.phase-btn[data-phase="product"]{border-bottom:2px solid var(--product)}
+.phase-btn[data-phase="discovery"]{border-bottom:2px solid var(--discovery)}
+.phase-btn[data-phase="generation"]{border-bottom:2px solid var(--generation)}
+.phase-btn[data-phase="evidence"]{border-bottom:2px solid var(--evidence)}
+.nav-btn{width:30px;height:28px}
+.position{width:180px;accent-color:var(--accent)}
+.stage-indicator{font-size:11px;color:var(--muted);min-width:54px}
+.timeline-shell{position:relative;overflow-x:auto;overflow-y:visible;scrollbar-width:none;cursor:grab}
+.timeline-shell::-webkit-scrollbar{display:none}
+.timeline-shell.dragging{cursor:grabbing;user-select:none}
+.timeline{position:relative;padding:12px 18px 22px;min-width:max-content}
+.phase-row,.grid-row{display:grid;column-gap:var(--gap);position:relative;align-items:start;transition:grid-template-columns .18s ease}
+.phase-row{height:64px;align-items:stretch}
+.phase-band{
+  border-top:4px solid currentColor;border-radius:8px 8px 0 0;padding:8px 11px 0;background:linear-gradient(180deg,color-mix(in srgb,currentColor 7%,transparent),transparent);
+  font-size:12px;font-weight:700
+}
+.phase-band span{display:block;font-weight:500;font-size:10px;color:var(--muted);margin-top:2px}
+.phase-band.product{color:var(--product)} .phase-band.discovery{color:var(--discovery)}
+.phase-band.generation{color:var(--generation)} .phase-band.evidence{color:var(--evidence)}
+.grid-row{
+  border-top:1px solid var(--line);min-height:64px;padding:9px 0 10px;
+}
+.grid-row.compact{min-height:50px;padding:7px 0}
+.grid-row.stages-row{min-height:368px;padding-top:8px;padding-bottom:14px;border-top:0;border-bottom:0}
+.grid-row.stages-row + .grid-row{border-top:0}
+.grid-row.baselines-row{min-height:82px}
+.grid-row.infra-head{min-height:56px;padding:7px 0;background:color-mix(in srgb,var(--baseline) 3%,transparent)}
+.grid-row.infra-row{min-height:54px;padding:6px 0}
+.grid-row.layer-collapsed{min-height:32px;height:32px;padding:3px 0;overflow:hidden}
+.grid-row.layer-collapsed .node,.grid-row.layer-collapsed .baseline-segment,.grid-row.layer-collapsed .infra-note{display:none!important}
+.grid-row.layer-hidden{display:none}
+.layer-label{
+  position:sticky;left:8px;z-index:18;align-self:start;justify-self:start;width:184px;min-height:28px;
+  display:flex;align-items:center;gap:7px;padding:6px 8px;border:1px solid var(--line);border-left:4px solid var(--labelColor,var(--baseline));
+  border-radius:8px;background:color-mix(in srgb,var(--panel) 94%,transparent);box-shadow:0 4px 12px rgba(0,0,0,.04);cursor:pointer;
+  user-select:none
+}
+.layer-label .caret{font-size:11px;color:var(--muted);width:10px}
+.layer-label strong{display:block;font-size:10.5px;line-height:1.05}
+.layer-label small{display:block;font-size:8.8px;color:var(--muted);line-height:1.1;margin-top:2px}
+.layer-collapsed .layer-label small{display:none}
+.layer-collapsed .layer-label{min-height:24px;padding-top:4px;padding-bottom:4px}
+.node{
+  position:relative;z-index:6;background:var(--panel);border:1px solid var(--line2);border-radius:9px;box-shadow:0 3px 10px rgba(0,0,0,.035);
+  transition:opacity .14s ease,border-color .14s ease,box-shadow .14s ease,transform .14s ease
+}
+.node:hover{border-color:color-mix(in srgb,var(--accent) 55%,var(--line2));box-shadow:0 7px 18px rgba(0,0,0,.09)}
+.small-node{padding:7px 8px;font-size:10px;line-height:1.17;min-height:36px;align-self:start}
+.compact-node{padding:6px 7px;font-size:10px;line-height:1.14;min-height:32px}
+.authority-node{border-left:3px solid var(--authority)}
+.mode-node{border-left:3px solid var(--mode);padding:7px 8px;font-size:9.5px;line-height:1.17}
+.mode-node strong{font-size:10px;display:block;margin-bottom:4px}
+.mode-line{display:grid;grid-template-columns:58px 1fr;gap:4px;margin-top:2px}
+.mode-line span:first-child{color:var(--muted)}
+.stage-card{
+  padding:12px 12px 11px;border-top:4px solid var(--phaseColor);cursor:default;overflow:hidden;height:auto;
+}
+.stage-card:not(.expanded){height:var(--collapsed-stage-height,auto)}
+.stage-card:focus{outline:2px solid var(--accent);outline-offset:2px}
+.stage-prompt{
+  position:absolute;right:8px;top:7px;z-index:9;width:25px;height:25px;padding:4px;border:1px solid var(--line2);border-radius:7px;
+  display:grid;place-items:center;background:var(--panel);color:var(--muted);cursor:pointer
+}
+.stage-prompt:hover,.stage-prompt:focus-visible{color:var(--accent);border-color:var(--accent);outline:none}
+.stage-prompt svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.stage-top{display:flex;align-items:center;gap:6px;margin-bottom:8px}
+.stage-num{font-family:"IBM Plex Mono",monospace;font-weight:600;font-size:12px;color:var(--muted)}
+.gate-badge,.multi-badge,.status-badge{
+  padding:2px 6px;border:1px solid var(--line2);border-radius:999px;font-size:9px;font-weight:700;background:var(--panel2);cursor:pointer
+}
+.gate-badge{border-color:color-mix(in srgb,var(--accent) 65%,var(--line2));color:var(--accent)}
+.multi-badge{color:var(--mode)}
+.stage-title{font-weight:700;font-size:14px;line-height:1.18;margin:0 0 7px}
+.stage-summary{font-size:10.5px;line-height:1.35;color:var(--muted)}
+.stage-io-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;margin-top:10px;padding-top:9px;border-top:1px solid var(--line)}
+.stage-io-block{min-width:0}
+.stage-io-label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px}
+.stage-io-value{font-size:10px;line-height:1.3;overflow-wrap:anywhere}
+.chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:9px}
+.role-chip,.rule-chip,.object-chip{
+  border:1px solid var(--line2);border-radius:999px;padding:3px 6px;background:var(--panel2);font-size:8.8px;line-height:1.1;cursor:pointer
+}
+.rule-chip{border-style:dashed;color:var(--muted)}
+.role-chip[data-role="Producer"]{border-color:var(--producer);color:var(--producer)}
+.role-chip[data-role="Reviewer"]{border-color:var(--reviewer);color:var(--reviewer)}
+.role-chip[data-role="Synthesizer"]{border-color:var(--synthesizer);color:var(--synthesizer)}
+.role-chip[data-role="Decision Closer"]{border-color:var(--decision);color:var(--decision)}
+.role-chip[data-role="Verifier"]{border-color:var(--verifier);color:var(--verifier)}
+.role-chip[data-role="Owner"]{border-color:var(--owner);color:var(--owner)}
+.stage-hint{position:static;margin-top:9px;color:var(--muted);font-size:8.8px}
+.stage-card.expanded{height:max-content}
+.stage-card.expanded .stage-num{font-size:14px}
+.stage-card.expanded .stage-title{font-size:18px;line-height:1.2;margin-bottom:9px}
+.stage-card.expanded .stage-summary{min-height:0;font-size:13px;line-height:1.45}
+.stage-card.expanded .stage-io-label{font-size:10.5px}
+.stage-card.expanded .stage-io-value{font-size:12px;line-height:1.4}
+.stage-card.expanded .role-chip,.stage-card.expanded .rule-chip{font-size:10.5px;padding:4px 7px}
+.stage-card.expanded .stage-hint{font-size:10.5px}
+.stage-card.expanded .detail-block h4{font-size:11px}
+.stage-card.expanded .detail-block p,.stage-card.expanded .detail-block li{font-size:12px;line-height:1.45}
+.stage-card.expanded .io-line{font-size:12px;line-height:1.55}
+.stage-card.expanded .io-line b{font-size:10.5px;min-width:82px}
+.stage-card.expanded .object-chip{font-size:10.5px;padding:4px 7px}
+.stage-card.expanded .triad-box h4{font-size:10.5px}
+.stage-card.expanded .triad-box li{font-size:11.5px;line-height:1.4}
+.stage-card.expanded .contract summary{font-size:12px;padding:9px 10px}
+.stage-card.expanded .contract pre{font-size:10px;line-height:1.45}
+.stage-details{display:none;margin-top:13px;padding-top:11px;border-top:1px solid var(--line)}
+.stage-card.expanded .stage-details{display:block}
+.detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 14px}
+.detail-block h4{font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 4px}
+.detail-block p,.detail-block li{font-size:10px;line-height:1.35;margin:0}
+.detail-block ul{margin:0;padding-left:16px}
+.detail-block.full{grid-column:1/-1}
+.io-line{font-size:10px;line-height:1.5;margin:2px 0}
+.io-line b{font-size:9px;text-transform:uppercase;color:var(--muted);display:inline-block;min-width:66px}
+.object-chip{font-size:9px;margin:2px 2px 2px 0;border-radius:6px}
+.triad{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:10px}
+.triad-box{padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--panel2)}
+.triad-box h4{font-size:9px;margin:0 0 5px}
+.triad-box ul{margin:0;padding-left:15px}.triad-box li{font-size:9.5px;line-height:1.32}
+.contract{margin-top:10px;border:1px solid var(--line);border-radius:8px;background:var(--panel2)}
+.contract summary{padding:7px 8px;cursor:pointer;font-size:10px;font-weight:700}
+.contract-inner{padding:0 8px 8px;position:relative}
+.contract pre{white-space:pre-wrap;word-break:break-word;margin:0;max-height:320px;overflow:auto;font-size:8.5px;line-height:1.35;color:var(--text);background:var(--bg);border-radius:6px;padding:8px}
+.copy-contract{position:absolute;right:14px;top:6px;padding:3px 7px;font-size:8.5px}
+.decision-node{border-left:3px solid var(--decision)}
+.finding-node{border-left:3px solid var(--finding)}
+.evidence-node{border-left:3px solid var(--evidenceLine)}
+.change-node{border-left:3px solid var(--change)}
+.baseline-segment{
+  position:relative;z-index:5;height:62px;border:1px solid var(--line2);border-radius:9px;overflow:hidden;
+  background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--baseline) 7%,var(--panel)) 0 8px,color-mix(in srgb,var(--baseline) 12%,var(--panel)) 8px 16px)
+}
+.baseline-fill{height:100%;padding:8px 215px 8px 10px;font-size:9px;line-height:1.22;color:var(--muted)}
+.baseline-head{
+  position:absolute;right:0;top:0;bottom:0;width:205px;background:var(--panel);border-left:1px solid var(--line2);padding:7px 9px
+}
+.baseline-head strong{display:block;font-size:10.5px}
+.baseline-head span{display:block;font-size:8.6px;color:var(--muted);margin-top:2px}
+.baseline-head em{display:block;font-size:8px;color:var(--change);font-style:normal;margin-top:4px}
+.infra-note{font-size:9.6px;color:var(--muted);padding:6px 0 2px;align-self:center}
+.infra-node{font-size:9px;line-height:1.18;padding:6px 7px;border-radius:7px;cursor:pointer;background:var(--panel2)}
+.infra-node:hover{transform:translateY(-1px)}
+.infra-role{color:var(--muted);font-size:8.6px;margin-top:2px}
+.reconstructed{font-size:7.6px;color:var(--accent);font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+#links{position:absolute;left:18px;top:12px;pointer-events:none;z-index:4;overflow:visible}
+#links path{fill:none;stroke-width:1.35;opacity:.72;transition:opacity .14s ease,stroke-width .14s ease}
+#links path.main{stroke-width:2.2;opacity:.78}
+#links path.return{stroke-width:1.8}
+#links path.change{stroke-dasharray:5 4}
+#links path.authority-chain{stroke-dasharray:4 4}
+#links path.artifact{display:none}
+#links path.claim{stroke-dasharray:4 3}
+#links path.converge,#links path.authority-scope,#links path.reference{stroke-dasharray:4 4}
+#links path.commit{stroke-width:1.8;opacity:.9}
+body.has-highlight .node,body.has-highlight .baseline-segment{opacity:.16}
+body.has-highlight .node.hl,body.has-highlight .baseline-segment.hl{opacity:1;border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 20%,transparent)}
+body.has-highlight #links path{opacity:.08}
+body.has-highlight #links path.hl{opacity:1;stroke-width:2.7}
+.search-hit{box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 42%,transparent)!important;border-color:var(--accent)!important}
+.popup{
+  position:fixed;z-index:150;width:min(420px,calc(100vw - 22px));max-height:min(580px,calc(100vh - 22px));overflow:auto;
+  background:var(--panel);border:1px solid var(--line2);border-radius:12px;box-shadow:var(--shadow);padding:12px;display:none
+}
+.popup.open{display:block}
+.popup-close{position:absolute;right:8px;top:8px;z-index:3;width:27px;height:27px;border:0;background:transparent;cursor:pointer;color:var(--muted);font-size:17px;pointer-events:auto}
+.popup h3{font-size:13px;margin:0 30px 5px 0}
+.popup .sub{font-size:9px;color:var(--muted);margin-bottom:10px}
+.popup p,.popup li{font-size:10px;line-height:1.4}
+.popup ul{padding-left:17px;margin:5px 0 9px}
+.popup table{width:100%;border-collapse:collapse;font-size:9.5px}
+.popup th,.popup td{border-bottom:1px solid var(--line);padding:5px;text-align:left;vertical-align:top}
+.popup .jump{color:var(--accent);text-decoration:underline;cursor:pointer}
+.popup pre{white-space:pre-wrap;word-break:break-word;background:var(--bg);padding:8px;border-radius:7px;font-size:8.4px;line-height:1.3}
+.popup.prompt-popup{width:min(720px,calc(100vw - 22px))}
+.prompt-editor{width:100%;min-height:390px;resize:vertical;border:1px solid var(--line2);border-radius:8px;background:var(--bg);color:var(--text);padding:10px;font:10.5px/1.45 "IBM Plex Mono",ui-monospace,monospace;outline:none}
+.prompt-editor:focus{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 16%,transparent)}
+.prompt-actions{display:flex;justify-content:flex-end;gap:7px;margin-top:9px}
+.prompt-actions button{padding:6px 10px;border:1px solid var(--line2);border-radius:7px;background:var(--panel2);color:var(--text);font-size:9.5px;cursor:pointer}
+.prompt-actions button.primary{border-color:var(--accent);color:var(--accent)}
+.toast{
+  position:fixed;right:14px;bottom:14px;z-index:200;background:var(--text);color:var(--bg);padding:8px 11px;border-radius:8px;font-size:10px;
+  opacity:0;transform:translateY(8px);pointer-events:none;transition:.18s ease
+}
+.toast.show{opacity:1;transform:translateY(0)}
+
+@media (prefers-color-scheme:dark){
+  html:not([data-theme]){
+    --bg:#0f141a; --panel:#161d25; --panel2:#111820; --text:#e6ebf0; --muted:#99a5b2;
+    --line:#2a3541; --line2:#394757; --shadow:0 14px 30px rgba(0,0,0,.28);
+    --product:#31a8aa; --discovery:#d2a142; --generation:#8d83df; --evidence:#d27a68;
+    --producer:#6ba2ef; --reviewer:#cf8a51; --synthesizer:#9c83d7; --decision:#63b68d; --verifier:#b9a956; --owner:#9ca6b0;
+    --accent:#ee5b9b; --danger:#e57373; --change:#6a9ee6; --evidenceLine:#baa94c; --finding:#cd8451; --authority:#63b68d; --mode:#9c83d7; --baseline:#8fa5b2;
+  }
+}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{scroll-behavior:auto!important;transition:none!important;animation:none!important}
+}
+@media (max-width:900px){
+  .search-wrap{min-width:0}.search-wrap input{width:170px}.row-title{min-width:54px}.app-header{padding-left:8px;padding-right:8px}
+}
+</style>
+</head>
+<body>
+<header class="app-header">
+  <div class="head-top">
+    <h1>Framework разработки архитектуры</h1>
+    <div class="head-spacer"></div>
+    <div class="search-wrap">
+      <input id="search" type="search" aria-label="Поиск по framework" placeholder="Поиск по framework…">
+      <span id="searchCount" class="search-count"></span>
+    </div>
+    <div class="toolbar top-actions" aria-label="Навигация и проектные действия">
+      <button class="icon-btn" id="relationLegend" aria-label="Связи" title="Связи">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 7H6a4 4 0 0 0 0 8h3"/><path d="M15 7h3a4 4 0 0 1 0 8h-3"/><path d="M8 12h8"/></svg>
+      </button>
+      <div class="layer-menu-wrap">
+        <button class="icon-btn" id="layerMenuButton" aria-label="Слои" title="Слои" aria-haspopup="true" aria-expanded="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 4 8 4-8 4-8-4 8-4Z"/><path d="m4 12 8 4 8-4"/><path d="m4 16 8 4 8-4"/></svg>
+        </button>
+        <div id="layerMenu" class="layer-menu" role="menu" aria-label="Выбор слоёв"></div>
+      </div>
+      <button class="icon-btn" id="timelineView" aria-label="Лента" title="Лента">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/><path d="M7 4v4M12 10v4M17 16v4"/></svg>
+      </button>
+      <button class="icon-btn" id="overviewView" aria-label="Обзор" title="Обзор">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/></svg>
+      </button>
+      <button class="icon-btn" id="traceabilityView" aria-label="Трассировка" title="Трассировка">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="6" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="12" cy="18" r="2"/><path d="M7 6h10M6.5 7.5l4.2 8.5M17.5 7.5 13.3 16"/></svg>
+      </button>
+      <button class="icon-btn" id="exportProject" aria-label="Экспорт проекта" title="Экспорт проекта">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4"/><path d="m8 8 4-4 4 4"/><path d="M5 12v7h14v-7"/></svg>
+      </button>
+      <button class="icon-btn" id="importProject" aria-label="Импорт проекта" title="Импорт проекта">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11"/><path d="m8 11 4 4 4-4"/><path d="M5 12v7h14v-7"/></svg>
+      </button>
+      <input id="importProjectFile" type="file" accept="application/json,.json" hidden>
+    </div>
+  </div>
+</header>
+
+<div id="scroll" class="timeline-shell" tabindex="0" aria-label="Горизонтальная лента framework">
+  <main id="timeline" class="timeline">
+    <svg id="links" aria-hidden="true"></svg>
+    <div id="rows"></div>
+  </main>
+</div>
+
+
+<div id="popup" class="popup" role="dialog" aria-modal="false">
+  <button type="button" class="popup-close" id="popupClose" aria-label="Закрыть">×</button>
+  <div id="popupBody"></div>
+</div>
+<div id="toast" class="toast"></div>
+
+<script>
+const DATA = {"stages":[{"n":1,"phase":"product","title":"Product Idea & Decision Policy","summary":"Фиксирует продуктовую проблему, результат и границы полномочий.","roles":["Producer","Owner"],"independent":false,"inputs":["Исходная продуктовая идея"],"artifacts":["Product Idea","Decision Policy","Initial Known Unknowns"],"creates":["неизвестное","предположение"],"modifies":[],"reads":[],"allowed":["Зафиксировать пользователя, проблему и ожидаемый результат","Определить классы решений и пороги риска","Явно записать known unknowns"],"forbidden":["Предлагать технические решения","Расширять полномочия моделей без решения владельца"],"escalation":["Целевой пользователь не определён","Класс риска решения не определён Decision Policy"],"rules":["No Authority Expansion","No Architecture Leakage","No Silent Completion"]},{"n":2,"phase":"product","title":"Independent Concept / Functional Expansion","summary":"Независимо расширяет пространство сценариев, capabilities и продуктовых вопросов.","roles":["Producer"],"independent":true,"inputs":["Product Idea","Decision Policy"],"artifacts":["Independent proposal sets"],"creates":["предложение модели","риск","неизвестное"],"modifies":[],"reads":["неизвестное"],"allowed":["Искать сценарии, capabilities, edge cases и продуктовые риски","Формулировать альтернативные трактовки и открытые вопросы"],"forbidden":["Видеть результаты других моделей до закрытия этапа","Проектировать реализацию","Объявлять proposal решением"],"escalation":["Предложение выходит за scope Product Idea"],"rules":["No Architecture Leakage","No Authority Expansion"]},{"n":3,"phase":"product","title":"Decision Closure Review","summary":"Преобразует proposals в управляемые product decisions с provenance.","roles":["Synthesizer","Decision Closer"],"independent":false,"inputs":["Independent proposal sets","Decision Policy"],"artifacts":["Decision Register"],"creates":["продуктовое решение","неизвестное"],"modifies":["предложение модели"],"reads":["предложение модели"],"allowed":["Дедуплицировать семантически","Разделять составные предложения","Проверять класс полномочий и маршрутизировать решение"],"forbidden":["Закрывать решение выше своего класса","Сливать предложения с разными последствиями","Терять ссылки на исходные proposals"],"escalation":["Решение класса A2 и выше","Решение зависит от внешнего факта"],"rules":["No Hidden Merge","No Authority Expansion","Provenance Preservation"]},{"n":4,"phase":"product","title":"Product Concept Synthesis","summary":"Собирает принятые решения в целостную продуктовую концепцию.","roles":["Synthesizer"],"independent":false,"inputs":["Decision Register"],"artifacts":["Product Concept"],"creates":["возможность продукта"],"modifies":[],"reads":["продуктовое решение","неизвестное"],"allowed":["Собрать сценарии, capabilities, scope и существенные правила в единое целое"],"forbidden":["Принимать новые решения","Заполнять OPEN правдоподобным поведением","Терять deferred scope"],"escalation":["Closed decisions противоречат друг другу"],"rules":["No Silent Completion","No Silent Reinterpretation","No Hidden Deletion"]},{"n":5,"phase":"product","title":"Adversarial Concept Review","summary":"Независимо ищет противоречия, пропуски и скрытые допущения.","roles":["Reviewer"],"independent":true,"inputs":["Product Concept","Decision Register"],"artifacts":["Findings","New Open Decisions"],"creates":["замечание проверки","неизвестное"],"modifies":[],"reads":["возможность продукта","продуктовое решение"],"allowed":["Находить contradictions, missing scenarios, hidden assumptions и undefined behavior"],"forbidden":["Исправлять концепцию","Закрывать решения"],"escalation":["Finding затрагивает Decision Policy"],"rules":["Review Discipline"]},{"n":6,"phase":"product","title":"Delta Decision Closure","summary":"Закрывает только новые решения из review, не пересматривая остальное.","roles":["Decision Closer"],"independent":false,"inputs":["Findings","New Open Decisions","Decision Policy"],"artifacts":["Delta Closed Decisions","Updated Product Concept"],"creates":["продуктовое решение"],"modifies":["возможность продукта"],"reads":["замечание проверки","неизвестное"],"allowed":["Рассматривать только delta из review","Обновлять концепцию по закрытым delta decisions"],"forbidden":["Переоткрывать закрытое без основания","Менять смысл закрытого решения без change event"],"escalation":["Delta требует класса полномочий выше доступного"],"rules":["Delta Discipline","No Silent Reinterpretation","No Authority Expansion"]},{"n":7,"phase":"product","title":"Functional Map Draft","summary":"Декомпозирует концепцию в формальную карту того, что продукт должен уметь.","roles":["Producer"],"independent":false,"inputs":["Updated Product Concept"],"artifacts":["Functional Map Draft","Discovered OPEN items"],"creates":["возможность продукта","неизвестное"],"modifies":[],"reads":["продуктовое решение"],"allowed":["Декомпозировать продуктовую концепцию в capabilities и функции","Оставлять новую неопределённость видимой"],"forbidden":["Заполнять неопределённость догадкой","Вводить компоненты или технологии"],"escalation":["Функция не имеет основания в концепции"],"rules":["No Silent Completion","No Architecture Leakage"]},{"n":8,"phase":"product","title":"Functional Map Audit","summary":"Reviewer формирует audit findings; Producer применяет только трассируемые исправления к Functional Map.","roles":["Reviewer","Producer"],"independent":false,"inputs":["Functional Map Draft"],"artifacts":["Corrected Functional Map","Audit Findings"],"creates":["замечание проверки","неизвестное"],"modifies":["возможность продукта"],"reads":["возможность продукта","продуктовое решение"],"allowed":["Reviewer проверяет coverage, дубли, missing states и architecture leakage","Producer применяет исправления только по явным findings","Новые продуктовые решения маршрутизируются в delta closure"],"forbidden":["Молча править карту","Удалять функции без trace"],"escalation":["Найдено новое продуктовое решение"],"rules":["Review Discipline","No Hidden Deletion","No Architecture Leakage"]},{"n":9,"phase":"product","title":"Scenario / Prototype Validation","summary":"Прогоняет функциональную модель по реальным сценариям и прототипу.","roles":["Reviewer","Verifier"],"independent":false,"inputs":["Corrected Functional Map","Product Concept"],"artifacts":["Scenario Findings","Prototype Findings"],"creates":["замечание проверки","неизвестное","evidence"],"modifies":[],"reads":["возможность продукта"],"allowed":["Проверять достижимость целей, flows, состояния и transitions","Использовать prototype как проверку продуктовой модели"],"forbidden":["Превращать prototype в технический выбор"],"escalation":["Обнаружено undefined behavior или новое продуктовое решение"],"rules":["No Architecture Leakage","Review Discipline"]},{"n":10,"phase":"product","title":"Delta Decision Closure","summary":"Закрывает новые решения из аудита и сценарной проверки.","roles":["Decision Closer"],"independent":false,"inputs":["Audit Findings","Scenario / Prototype Findings","Decision Policy"],"artifacts":["Updated Decisions","Updated Functional Map"],"creates":["продуктовое решение"],"modifies":["возможность продукта"],"reads":["замечание проверки","неизвестное"],"allowed":["Закрывать только выявленную delta","Обновлять функциональную карту по решениям"],"forbidden":["Пересматривать ранее закрытое без основания","Выходить за полномочия"],"escalation":["Решение требует A2+"],"rules":["Delta Discipline","No Authority Expansion"]},{"n":11,"phase":"product","title":"Functional Specification","summary":"Формализует наблюдаемое поведение без определения реализации.","roles":["Producer"],"independent":false,"inputs":["Updated Functional Map","Updated Decisions"],"artifacts":["Functional Specification"],"creates":["требование к поведению"],"modifies":[],"reads":["возможность продукта","продуктовое решение"],"allowed":["Описать scenarios, states, transitions, pre/postconditions и failure behavior"],"forbidden":["Определять реализацию","Придумывать недостающие правила"],"escalation":["Правило поведения не определено продуктовым решением"],"rules":["No Silent Completion","No Architecture Leakage","Traceability Preservation"]},{"n":12,"phase":"product","title":"Functional Specification Audit","summary":"Reviewer формирует findings по спецификации; Producer применяет только трассируемые исправления.","roles":["Reviewer","Producer"],"independent":false,"inputs":["Functional Specification"],"artifacts":["Corrected Functional Specification","Findings","Remaining Unknowns"],"creates":["замечание проверки","неизвестное"],"modifies":["требование к поведению"],"reads":["требование к поведению","продуктовое решение"],"allowed":["Reviewer проверяет completeness, consistency, testability и failure paths","Producer применяет исправления только по явным findings","Новое продуктовое решение маршрутизируется обратно в этап 10"],"forbidden":["Молча принимать продуктовые решения","Заполнять undefined states"],"escalation":["Новое продуктовое решение → этап 10"],"rules":["Review Discipline","No Silent Completion","No Architecture Leakage"]},{"n":13,"phase":"product","title":"Product Functional Baseline","summary":"Фиксирует контролируемый WHAT-контракт продукта.","roles":["Decision Closer","Owner"],"independent":false,"inputs":["Product Idea","Decision Policy","Product Concept","Functional Map","Functional Specification","Closed Product Decisions","Known Unknowns","Deferred Scope"],"artifacts":["Product Functional Baseline"],"creates":[],"modifies":[],"reads":["продуктовое решение","возможность продукта","требование к поведению","неизвестное"],"allowed":["Зафиксировать версию продуктового baseline после проверки gate"],"forbidden":["Фиксировать при blocking OPEN","Менять после фиксации без change event"],"escalation":["Gate G1 не пройден"],"rules":["Baseline Discipline"],"gate":"G1"},{"n":14,"phase":"discovery","title":"Independent Constraint Discovery","summary":"Независимо ищет технически значимые ограничения, не объявляя их фактами.","roles":["Producer"],"independent":true,"inputs":["Product Functional Baseline"],"artifacts":["Candidate Constraints"],"creates":["ограничение","предположение"],"modifies":[],"reads":["требование к поведению","неизвестное"],"allowed":["Искать platform, OS/API, hardware, network, security, privacy и lifecycle constraints"],"forbidden":["Объявлять candidate фактом","Предлагать архитектуру"],"escalation":["Ограничение делает требование невыполнимым"],"rules":["Assumption Is Not Fact","Provenance Preservation"]},{"n":15,"phase":"discovery","title":"Constraint Synthesis & Normalization","summary":"Создаёт единый реестр ограничений с provenance и статусами.","roles":["Synthesizer"],"independent":false,"inputs":["Candidate Constraints"],"artifacts":["Constraint Registry"],"creates":["ограничение"],"modifies":["ограничение"],"reads":["ограничение"],"allowed":["Дедуплицировать и нормализовать без потери условий","Фиксировать provenance и противоречия"],"forbidden":["Сливать ограничения с разными условиями","Повышать статус из-за консенсуса моделей","Терять кандидатов"],"escalation":["Обнаружено противоречие, требующее проверки"],"rules":["No Hidden Merge","Consensus Is Not Evidence","Provenance Preservation","No Hidden Deletion"]},{"n":16,"phase":"discovery","title":"Fact Verification / Validation Registry","summary":"Присваивает epistemic status только на основании evidence.","roles":["Verifier"],"independent":false,"inputs":["Constraint Registry"],"artifacts":["Validation Registry","Verified Facts","Evidence Gaps"],"creates":["проверенный факт","evidence","неизвестное"],"modifies":["ограничение","предположение"],"reads":["ограничение"],"allowed":["Присваивать VERIFIED, FALSIFIED, UNCERTAIN, NEEDS_RESEARCH, NEEDS_EXPERIMENT"],"forbidden":["Подтверждать мнение модели как факт","Принимать архитектурные решения"],"escalation":["Нужен эксперимент → backlog этапа 24"],"rules":["Consensus Is Not Evidence","Assumption Is Not Fact"]},{"n":17,"phase":"discovery","title":"Architecture Input Package","summary":"Фиксирует единый версионированный вход для всех архитектурных моделей.","roles":["Synthesizer","Decision Closer"],"independent":false,"inputs":["Product Functional Baseline","Verified constraints","Validation Registry","Quality attributes","Invariants","Known unknowns","Decision boundaries"],"artifacts":["Architecture Input Package"],"creates":[],"modifies":[],"reads":["проверенный факт","ограничение","неизвестное","требование к поведению"],"allowed":["Собрать один пакет одной версии для всех моделей","Зафиксировать decision boundaries и invariants"],"forbidden":["Давать разным моделям разные входы","Передавать непроверенное как факт"],"escalation":["Gate G2 не пройден"],"rules":["Baseline Discipline","Assumption Is Not Fact"],"gate":"G2"},{"n":18,"phase":"generation","title":"Independent Architecture Proposals","summary":"Независимо формирует проверяемые architecture candidates.","roles":["Producer"],"independent":true,"inputs":["Architecture Input Package"],"artifacts":["Independent Architecture Candidates"],"creates":["архитектурное решение","предположение","неизвестное","риск"],"modifies":[],"reads":["требование к поведению","ограничение","проверенный факт"],"allowed":["Формировать независимые candidates с явными assumptions и trade-offs"],"forbidden":["Менять продуктовый контракт","Смотреть чужие candidates"],"escalation":["Candidate требует изменить Product Functional Baseline"],"rules":["No Product Redefinition by Architecture","Assumption Is Not Fact"]},{"n":19,"phase":"generation","title":"Independent Candidate Review","summary":"Независимо проверяет каждый candidate; reviewer не является автором.","roles":["Reviewer"],"independent":true,"inputs":["Architecture candidates","Architecture Input Package"],"artifacts":["Review Report per Candidate"],"creates":["замечание проверки","риск","неизвестное"],"modifies":[],"reads":["архитектурное решение","предположение","требование к поведению"],"allowed":["Проверять coverage, feasibility, consistency, failure modes и security"],"forbidden":["Исправлять candidate","Переопределять продукт"],"escalation":["Gap в продукте → изменение к Product Functional Baseline"],"rules":["Review Discipline","No Product Redefinition by Architecture"]},{"n":20,"phase":"generation","title":"Cross-Critique & Candidate Revision","summary":"Делает trade-offs явными и разрешает автору ревизовать свой candidate.","roles":["Reviewer","Producer"],"independent":true,"inputs":["Architecture candidates","Review Reports"],"artifacts":["Revised Candidates","Cross-Critique","Remaining Architectural Decisions"],"creates":["замечание проверки","архитектурное решение","неизвестное"],"modifies":["архитектурное решение","предположение"],"reads":["замечание проверки"],"allowed":["Критиковать любой candidate","Ревизовать candidate только его автору","Фиксировать trade-offs и несовместимые assumptions"],"forbidden":["Скрыто сливать candidates","Удалять слабые стороны без следа"],"escalation":["Ревизия требует изменения продуктового baseline"],"rules":["No Hidden Deletion","No Hidden Merge","No Product Redefinition by Architecture"]},{"n":21,"phase":"generation","title":"Architecture Comparison","summary":"Сравнивает candidates по общей основе, рискам и доступному evidence.","roles":["Synthesizer","Reviewer"],"independent":false,"inputs":["Revised Candidates","Architecture Input Package"],"artifacts":["Architecture Comparison","Explicit Trade-offs","Evidence-dependent Decisions"],"creates":["неизвестное","риск"],"modifies":[],"reads":["архитектурное решение","evidence","проверенный факт"],"allowed":["Сравнивать по requirements, constraints, quality attributes и рискам"],"forbidden":["Считать голоса моделей evidence","Скрыто объединять несовместимые решения"],"escalation":["Решение зависит от отсутствующего evidence"],"rules":["Consensus Is Not Evidence","No Hidden Merge"]},{"n":22,"phase":"generation","title":"Architecture Direction Decision","summary":"Выбирает направление или совместимую комбинацию решений с rationale.","roles":["Decision Closer","Owner"],"independent":false,"inputs":["Architecture Comparison","Decision Policy","Available evidence"],"artifacts":["Architecture Direction","Rationale","Unresolved Blockers"],"creates":["архитектурное решение","неизвестное"],"modifies":[],"reads":["архитектурное решение","evidence","риск"],"allowed":["Выбрать направление в пределах authority","Зафиксировать rationale и unresolved blockers"],"forbidden":["Подменять evidence консенсусом","Менять продуктовый baseline"],"escalation":["A2+ → владелец","Evidence-dependent blocker"],"rules":["No Authority Expansion","Consensus Is Not Evidence","No Product Redefinition by Architecture"],"gate":"G3"},{"n":23,"phase":"generation","title":"Preliminary Conceptual Architecture","summary":"Оформляет выбранное направление как единую conceptual architecture.","roles":["Synthesizer"],"independent":false,"inputs":["Architecture Direction","Rationale"],"artifacts":["Preliminary Conceptual Architecture"],"creates":["архитектурное решение","предположение","неизвестное"],"modifies":[],"reads":["архитектурное решение","требование к поведению"],"allowed":["Описать части, responsibilities, boundaries, interactions, flows и invariants"],"forbidden":["Скрыто закрывать open decisions","Превращать assumption в факт"],"escalation":["Нужно evidence для значимого assumption"],"rules":["No Silent Completion","Assumption Is Not Fact","No Hidden Deletion"]},{"n":24,"phase":"evidence","title":"Decision & Verification Backlog","summary":"Превращает архитектурные неизвестные в управляемые verification items.","roles":["Synthesizer"],"independent":false,"inputs":["Evidence-dependent Decisions","Architecture Assumptions","Evidence Gaps"],"artifacts":["Decision & Verification Backlog"],"creates":["неизвестное"],"modifies":["неизвестное"],"reads":["предположение","архитектурное решение"],"allowed":["Для каждого unknown указать impact, требуемое evidence и blocking status"],"forbidden":["Оставлять архитектурно значимое неизвестное вне backlog"],"escalation":["Blocking unknown не имеет способа проверки"],"rules":["Traceability Preservation","No Silent Completion"]},{"n":25,"phase":"evidence","title":"Spikes / Platform Verification / Technology Research","summary":"Получает внешнее или экспериментальное evidence на конкретный вопрос.","roles":["Verifier"],"independent":false,"inputs":["Decision & Verification Backlog"],"artifacts":["Evidence","Measurements","Verified/Falsified Assumptions"],"creates":["evidence","проверенный факт"],"modifies":["предположение","ограничение","неизвестное"],"reads":["неизвестное","предположение"],"allowed":["Проводить исследование или эксперимент, привязанный к вопросу","Фиксировать воспроизводимый метод и результат"],"forbidden":["Исследовать без вопроса","Выдавать мнение за измерение"],"escalation":["Constraint или assumption опровергнут"],"rules":["Assumption Is Not Fact","Consensus Is Not Evidence"]},{"n":26,"phase":"evidence","title":"Close Architecture-Blocking Decisions","summary":"Закрывает blocking decisions на основании полученного evidence.","roles":["Decision Closer"],"independent":false,"inputs":["Evidence","Measurements","Decision Policy"],"artifacts":["Closed Blocking Decisions","Remaining Non-blocking Unknowns","Required Changes"],"creates":["архитектурное решение","изменение"],"modifies":["архитектурное решение","предположение"],"reads":["evidence","неизвестное"],"allowed":["Закрывать blocking decisions в пределах authority","Явно инициировать изменение при опровержении assumption"],"forbidden":["Закрывать выше полномочий","Скрыто переинтерпретировать архитектуру"],"escalation":["Если сломано направление → этап 22"],"rules":["No Authority Expansion","No Silent Reinterpretation","Delta Discipline"]},{"n":27,"phase":"evidence","title":"Premortem / Missed-Failure Search","summary":"Независимо ищет существенные классы отказа архитектуры.","roles":["Reviewer"],"independent":true,"inputs":["Preliminary Conceptual Architecture","Closed Blocking Decisions"],"artifacts":["Failure Findings","Risks","Possible New Decisions"],"creates":["замечание проверки","риск","неизвестное"],"modifies":[],"reads":["архитектурное решение","предположение"],"allowed":["Искать failure classes, blind spots и новые риски"],"forbidden":["Исправлять архитектуру или самостоятельно закрывать решения"],"escalation":["Новый blocking unknown → backlog"],"rules":["Review Discipline"]},{"n":28,"phase":"evidence","title":"Conceptual Architecture Revision","summary":"Обновляет архитектуру по evidence, decisions и premortem findings с trace.","roles":["Producer"],"independent":false,"inputs":["Closed Blocking Decisions","Failure Findings","Evidence"],"artifacts":["Revised Conceptual Architecture"],"creates":["изменение"],"modifies":["архитектурное решение","предположение"],"reads":["evidence","замечание проверки","архитектурное решение"],"allowed":["Вносить только трассируемые изменения по evidence и findings"],"forbidden":["Удалять без trace","Менять продуктовый baseline","Скрыто менять смысл решения"],"escalation":["Изменение затрагивает baseline или direction"],"rules":["No Hidden Deletion","Traceability Preservation","No Product Redefinition by Architecture","No Silent Reinterpretation"]},{"n":29,"phase":"evidence","title":"ADR + Consistency + Traceability Audit","summary":"Фиксирует ADR и проверяет сквозную согласованность requirement → decision → evidence.","roles":["Reviewer","Verifier"],"independent":false,"inputs":["Revised Conceptual Architecture"],"artifacts":["ADR Set","Consistency Report","Traceability Report"],"creates":["архитектурное решение","замечание проверки"],"modifies":[],"reads":["требование к поведению","архитектурное решение","evidence"],"allowed":["Зафиксировать ключевые ADR","Проверить происхождение и сквозную трассировку"],"forbidden":["Молча исправлять архитектуру","Игнорировать разрывы traceability"],"escalation":["Blocker → этап 26 или 30"],"rules":["Traceability Preservation","Provenance Preservation","Review Discipline"]},{"n":30,"phase":"evidence","title":"Conceptual Architecture Baseline","summary":"Фиксирует контролируемый HOW-baseline при отсутствии blocking issues.","roles":["Decision Closer","Owner"],"independent":false,"inputs":["Revised Conceptual Architecture","ADR Set","Traceability Report","Non-blocking Unknowns","Change history"],"artifacts":["Conceptual Architecture Baseline"],"creates":[],"modifies":[],"reads":["архитектурное решение","неизвестное","изменение"],"allowed":["Зафиксировать conceptual architecture baseline после G4"],"forbidden":["Фиксировать при blocking issues","Менять CAB без controlled change"],"escalation":["Gate G4 не пройден"],"rules":["Baseline Discipline"],"gate":"G4"}],"objects":{"предложение модели":{"code":"PRP","what":"Предложение модели; ещё не решение.","fields":["id","source_model","kind","statement","rationale","open_questions"]},"продуктовое решение":{"code":"PD","what":"Ответ на продуктовый вопрос.","fields":["id@v","question","decision","status","authority_class","decided_by","provenance","affects"]},"возможность продукта":{"code":"CAP","what":"Capability продукта.","fields":["id@v","name","user_goal","derived_from","scope","open_items"]},"требование к поведению":{"code":"REQ","what":"Наблюдаемое поведение продукта.","fields":["id@v","capability","preconditions","rule","postconditions","failure_behavior","acceptance"]},"ограничение":{"code":"CON","what":"Техническое ограничение.","fields":["id","statement","domain","verification_status","provenance","contradicts"]},"проверенный факт":{"code":"FCT","what":"Утверждение с доказательством.","fields":["id","claim","status","evidence","valid_for"]},"предположение":{"code":"ASM","what":"Принято без доказательства.","fields":["id","statement","status","needed_evidence","blocking","relied_on_by"]},"неизвестное":{"code":"UNK","what":"Открытый вопрос.","fields":["id","question","impacts","evidence_required","blocking","route"]},"риск":{"code":"RSK","what":"Возможный отказ.","fields":["id","failure_class","likelihood","impact","linked_to","mitigation"]},"evidence":{"code":"EVD","what":"Результат проверки.","fields":["id","answers","method","result","verifies","falsifies","reproducible"]},"архитектурное решение":{"code":"AD","what":"Выбор с обоснованием.","fields":["id@v","context","options","decision","rationale","satisfies","relies_on","authority_class"]},"замечание проверки":{"code":"FND","what":"Finding; обнаруженная проблема, не исправление.","fields":["id","target","class","severity","description","proposed_route","fix_applied"]},"изменение":{"code":"CHG","what":"Change event.","fields":["id","target","result","reason","trigger","impact_set","authority_class","approved_by","propagated_to"]}},"rules":{"No Silent Completion":"Не заполнять отсутствующее правдоподобной догадкой.","No Silent Reinterpretation":"Не менять смысл принятого решения без change event.","No Hidden Deletion":"Объект не исчезает без причины и trace.","No Hidden Merge":"Слияние не уничтожает значимых различий.","No Authority Expansion":"Модель не расширяет свои полномочия.","Consensus Is Not Evidence":"Совпадение мнений не меняет epistemic status.","Assumption Is Not Fact":"Предположение остаётся предположением до evidence.","No Architecture Leakage":"До архитектуры нельзя подменять проблему техническим решением.","No Product Redefinition by Architecture":"Архитектура не меняет продуктовый baseline без controlled change.","Provenance Preservation":"Происхождение каждого значимого объекта сохраняется.","Traceability Preservation":"Связи сохраняются или явно обновляются.","Delta Discipline":"Повторный review рассматривает delta, а не пересматривает всё закрытое.","Baseline Discipline":"Изменение baseline — только через явный механизм.","Review Discipline":"Обнаружение и исправление — разные операции; reviewer не становится producer или decision maker."},"roles":{"Producer":{"can":"Создаёт proposals, черновики и ревизии своих артефактов.","cannot":"Не получает автоматически полномочия принимать решения или подтверждать факты."},"Reviewer":{"can":"Находит, классифицирует и маршрутизирует проблемы.","cannot":"Не исправляет reviewed artifact и не закрывает решения."},"Synthesizer":{"can":"Объединяет, нормализует и дедуплицирует с сохранением различий и provenance.","cannot":"Не принимает решения только потому, что объединяет материалы."},"Decision Closer":{"can":"Закрывает решения в пределах Decision Policy и маршрутизирует остальные.","cannot":"Не выходит за доступный authority class."},"Verifier":{"can":"Присваивает epistemic status на основании evidence.","cannot":"Не принимает проектные решения."},"Owner":{"can":"Источник продуктовых полномочий; утверждает решения и baselines, требующие владельца.","cannot":"Не является ролью модели."}},"phases":{"product":{"name":"Product Definition","subtitle":"WHAT the product must do","range":[1,13]},"discovery":{"name":"Architecture Discovery","subtitle":"WHAT candidates may assume","range":[14,17]},"generation":{"name":"Architecture Generation","subtitle":"варианты, проверка, выбор","range":[18,23]},"evidence":{"name":"Evidence Closure","subtitle":"HOW the system is organised","range":[24,30]}},"authority":{"1":"Decision Policy создана · A0 → A4","3":"Проверка класса решения","6":"Проверка класса для delta","10":"Проверка класса для delta","13":"Владелец утверждает Product Functional Baseline","17":"Границы архитектурных решений","22":"A2+ утверждает владелец","26":"Проверка класса blocking-решений","30":"Владелец утверждает Conceptual Architecture Baseline"},"decisionBlocks":{"1":"Initial Known Unknowns","3":"Decision Register · CLOSED · DELEGATED · DEFERRED · OPEN · NEEDS_EVIDENCE","6":"Δ Closed Decisions","10":"Updated Decisions","13":"Closed Product Decisions · Known Unknowns · Deferred Scope","17":"Decision boundaries","20":"Remaining Architectural Decisions","22":"Architecture Direction · Rationale · Unresolved Blockers","26":"Closed Blocking Decisions · Non-blocking Unknowns","29":"ADR Set"},"findings":{"5":["Findings + New Open Decisions","6"],"7":["Discovered OPEN items","8"],"8":["Audit Findings","10"],"9":["Scenario / Prototype Findings","10"],"12":["Findings + Remaining Unknowns","13"],"19":["Review Report per Candidate","20"],"20":["Cross-Critique","21"],"21":["Evidence-dependent Decisions","24"],"27":["Failure Findings + Risks","28"],"29":["Consistency / Traceability Report","26 или 30"]},"evidenceBlocks":{"9":"Prototype как evidence продуктовой модели","14":"Candidate Constraints · CANDIDATE: найдено моделью ≠ факт","15":"Constraint Registry","16":"Validation Registry · VERIFIED · FALSIFIED · UNCERTAIN · NEEDS_RESEARCH · NEEDS_EXPERIMENT","21":"Consensus ≠ Evidence · 3 из 3 моделей согласны — статус не меняется","23":"Architecture Assumptions · ASSUMPTION до evidence","24":"Decision & Verification Backlog","25":"Evidence + Measurements · VERIFIED / FALSIFIED"},"changes":{"6":"Пересмотр закрытого только через изменение","12":"Возврат в delta closure","19":"Gap продукта → изменение к Product Functional Baseline","25":"Опровергнут constraint → изменение к Architecture Input Package","26":"FALSIFIED → изменение архитектуры; если сломано направление — назад к 22","27":"Новые неизвестные → backlog","29":"Blockers → closure","30":"После Conceptual Architecture Baseline — только controlled change"},"modeInfo":{"2":{"title":"Независимое расширение · N ≥ 2 моделей","input":"Product Idea + Decision Policy одинаковы","isolation":"чужие proposals скрыты","result":"proposal содержит source_model","merge":"сведение только на этапе 3"},"5":{"title":"Независимый adversarial review · N ≥ 2 моделей","input":"Product Concept одинаковый","isolation":"reviewers не видят чужие findings","result":"findings разделены по reviewer","merge":"delta closure на этапе 6"},"14":{"title":"Независимый поиск ограничений · N ≥ 2 моделей","input":"Product Functional Baseline одинаковый","isolation":"чужие candidate constraints скрыты","result":"каждый candidate хранит provenance","merge":"нормализация на этапе 15"},"18":{"title":"Независимые candidates · N ≥ 2 моделей","input":"Architecture Input Package одной версии","isolation":"чужие candidates скрыты","result":"candidate автономно проверяем","merge":"сравнение после review/revision"},"19":{"title":"Независимый candidate review · N ≥ 2 моделей","input":"candidate + AIP","isolation":"reviewer не автор candidate","result":"отдельный Review Report","merge":"cross-critique на этапе 20"},"20":{"title":"Cross-critique · N ≥ 2 моделей","input":"candidates + review reports","isolation":"критиковать может любой","result":"ревизует только автор candidate","merge":"сведение на этапе 21"},"27":{"title":"Независимый premortem · N ≥ 2 моделей","input":"conceptual architecture","isolation":"поиск failure classes независимо","result":"findings + risks с provenance","merge":"revision на этапе 28"}},"gates":{"G1":["Все blocking product decisions закрыты или явно отложены","OPEN помечены non-blocking и видны в Known Unknowns","Deferred scope перечислен явно","Трасса «решение → возможность → требование» полная"],"G2":["У каждого ограничения есть verification status","Фактами названы только VERIFIED","Все модели получают идентичный пакет одной версии","Decision boundaries и invariants зафиксированы"],"G3":["У направления есть явный rationale","Класс полномочий соответствует Decision Policy","Evidence-зависимое вынесено как blockers"],"G4":["Нет blocking issues","ADR записаны","Трасса «требование → архитектурное решение → evidence» без разрывов","Опровергнутые assumptions отражены через change events"]},"authorityLadder":[["A0","модель закрывает сама: обратимое, низкий риск, внутри scope"],["A1","только с evidence: решение зависит от внешнего факта"],["A2","нужно новое продуктовое предпочтение: выбор между ценностями"],["A3","только владелец: меняет scope, контракт или baseline"],["A4","запрещено модели: риск выше допустимого"]],"baselines":[{"key":"PFB","name":"Product Functional Baseline","start":1,"end":13,"subtitle":"WHAT the product must do","included":["Product Idea","Decision Policy","Product Concept","Functional Map","Functional Specification","Closed Product Decisions","Known Unknowns","Deferred Scope"],"formation_start":1,"formation_end":13,"commit_stage":13},{"key":"AIP","name":"Architecture Input Package","start":14,"end":17,"subtitle":"WHAT candidates may assume","included":["Product Functional Baseline","verified constraints","Validation Registry","quality attributes","invariants","decision boundaries"],"formation_start":14,"formation_end":17,"commit_stage":17},{"key":"CAB","name":"Conceptual Architecture Baseline","start":18,"end":30,"subtitle":"HOW the system is organised","included":["Revised Conceptual Architecture","ADR Set","Traceability Report","Non-blocking Unknowns","история изменений"],"formation_start":18,"formation_end":30,"commit_stage":30}],"principles":{"Product ≠ Architecture":{"text":"Продуктовый контракт фиксируется до архитектуры; архитектура не переопределяет WHAT без controlled change.","stages":[13,14,17,18,19,20,28],"nodes":["baseline-PFB","baseline-AIP","change-19","authority-13","authority-17"]},"Divergence ≠ Convergence":{"text":"Независимая генерация и независимый review отделены от synthesis и decision closure.","stages":[2,3,5,6,14,15,18,19,20,21,22,27],"nodes":["mode-2","mode-5","mode-14","mode-18","mode-19","mode-20","mode-27"]},"Proposal ≠ Decision":{"text":"Proposal становится decision только через явный closure с проверкой authority.","stages":[2,3,18,22],"nodes":["decision-3","authority-3"]},"Consensus ≠ Evidence":{"text":"Совпадение моделей не подтверждает внешний факт; epistemic status меняет только evidence.","stages":[16,21,25,26],"nodes":["claim-16","stage-21","evidence-25","claim-25"]},"Baseline ≠ Immutable":{"text":"Baseline — контролируемая версия, а не запрет изменений. Изменения идут через CHG и impact propagation.","stages":[13,17,30,6,10,19,25,26,28],"nodes":["baseline-PFB","baseline-AIP","baseline-CAB","change-19","change-25","change-26","change-28","change-30"]}}};
+
+
+// Semantic graph: activities, transfer artifacts, persistent state, evidence and controlled change are distinct node classes.
+const SYSTEM_MODEL = {
+  decisionBlocks:{
+    3:"Decision Register · CLOSED · DELEGATED · DEFERRED · OPEN · NEEDS_EVIDENCE",
+    6:"Δ Closed Product Decisions",
+    10:"Updated Product Decisions",
+    13:"Closed Product Decisions",
+    17:"Decision boundaries",
+    20:"Remaining Architectural Decisions",
+    22:"Architecture Direction · Rationale",
+    26:"Closed Blocking Decisions",
+    29:"ADR Set"
+  },
+  workBlocks:{
+    1:["Initial Known Unknowns","2 / 3"],
+    5:["Findings + New Open Decisions","6"],
+    7:["Discovered OPEN items","8"],
+    8:["Audit Findings","10"],
+    9:["Scenario / Prototype Findings","10"],
+    12:["Findings + Remaining Unknowns","10; non-blocking → 13"],
+    13:["Known Unknowns + Deferred Scope","в составе Product Functional Baseline"],
+    19:["Review Report per Candidate","20; product gap → controlled change"],
+    20:["Cross-Critique","21"],
+    21:["Evidence-dependent Decisions","24"],
+    22:["Unresolved Blockers","24"],
+    24:["Decision & Verification Backlog","25"],
+    26:["Remaining Non-blocking Unknowns","30"],
+    27:["Failure Findings + Risks","24 / 28 по типу"],
+    29:["Consistency / Traceability Findings","26 / 28 / 30 по исходу"]
+  },
+  claimBlocks:{
+    14:"Candidate Constraints · CANDIDATE · найдено моделью ≠ факт",
+    15:"Constraint Registry · нормализованные claims + provenance",
+    16:"Validation Registry · VERIFIED · FALSIFIED · UNCERTAIN · NEEDS_RESEARCH · NEEDS_EXPERIMENT",
+    23:"Architecture Assumptions · ASSUMPTION до evidence",
+    25:"Epistemic status обновлён по Evidence / Measurements"
+  },
+  evidenceBlocks:{
+    9:"Scenario / Prototype observations · evidence продуктовой модели",
+    16:"Source evidence / verification references, использованные для статуса claims",
+    25:"Evidence + Measurements · воспроизводимый результат проверки"
+  },
+  changeBlocks:{
+    19:"CHG proposal → Product Functional Baseline; сначала product delta closure + повторный G1",
+    25:"CHG proposal → Architecture Input Package; сначала re-validation + повторный G2",
+    26:"Required Change Set · architecture revision; direction invalidation → G3",
+    28:"Applied change / revision trace · только по закрытым decisions и evidence",
+    30:"После Conceptual Architecture Baseline любое изменение начинается с CHG"
+  },
+  artifactRoutes:[
+    [1,2,"Product Idea + Decision Policy"],[1,3,"Decision Policy"],[2,3,"Independent proposal sets"],
+    [3,4,"Decision Register"],[3,5,"Decision Register"],[4,5,"Product Concept"],[4,9,"Product Concept"],
+    [5,6,"Findings + New Open Decisions"],[6,7,"Updated Product Concept"],[7,8,"Functional Map Draft"],
+    [8,9,"Corrected Functional Map"],[8,10,"Audit Findings"],[9,10,"Scenario / Prototype Findings"],
+    [10,11,"Updated Functional Map + Decisions"],[11,12,"Functional Specification"],[12,13,"Corrected Functional Specification"],
+    [13,14,"Product Functional Baseline"],[13,17,"Product Functional Baseline"],[14,15,"Candidate Constraints"],
+    [15,16,"Constraint Registry"],[16,17,"Validation Registry + Verified Facts"],[16,24,"Evidence Gaps"],
+    [17,18,"Architecture Input Package"],[17,19,"Architecture Input Package"],[17,21,"Architecture Input Package"],
+    [18,19,"Independent Architecture Candidates"],[19,20,"Review Report per Candidate"],[20,21,"Revised Candidates + Cross-Critique"],
+    [21,22,"Architecture Comparison"],[21,24,"Evidence-dependent Decisions"],[22,23,"Architecture Direction + Rationale"],
+    [22,24,"Unresolved Blockers"],[23,24,"Architecture Assumptions"],[23,27,"Preliminary Conceptual Architecture"],
+    [24,25,"Decision & Verification Backlog"],[25,26,"Evidence + Measurements"],[26,27,"Closed Blocking Decisions"],
+    [26,28,"Closed Decisions + Required Changes"],[27,28,"Failure Findings"],[28,29,"Revised Conceptual Architecture"],
+    [29,30,"ADR Set + Traceability Report"]
+  ],
+  decisionRoutes:[[3,4],[3,5],[6,7],[10,11],[10,13],[17,18],[20,21],[20,22],[22,23],[26,27],[26,28],[29,30]],
+  workRoutes:[
+    [1,2,"finding"],[1,3,"finding"],[5,6,"finding"],[7,8,"finding"],[8,10,"finding"],[9,10,"finding"],
+    [12,10,"return"],[12,13,"finding"],[19,20,"finding"],[20,21,"finding"],[21,24,"finding"],[22,24,"finding"],
+    [24,25,"finding"],[26,30,"finding"],[27,24,"return"],[27,28,"finding"],[29,26,"return"],[29,28,"return"],[29,30,"finding"]
+  ],
+  claimRoutes:[[14,15],[15,16],[16,17],[23,24],[25,26]],
+  evidenceRoutes:[[9,10],[16,"claim-16"],[25,"claim-25"],[25,26]],
+  changeRoutes:[
+    [19,"stage-10","return"],[19,"baseline-PFB","change"],
+    [25,"stage-16","return"],[25,"baseline-AIP","change"],
+    [26,"stage-28","change"],[26,"stage-22","return"],
+    [28,"stage-29","change"],[30,"baseline-CAB","change"]
+  ],
+  modeConvergence:{2:3,5:6,14:15,18:21,19:20,20:21,27:28},
+  baselineReferences:[
+    ["baseline-PFB","stage-14"],["baseline-PFB","stage-17"],
+    ["baseline-PFB","baseline-AIP"],["baseline-AIP","stage-18"],["baseline-AIP","stage-19"],["baseline-AIP","stage-21"]
+  ]
+};
+
+const state = {
+  expandedStage:null,
+  hiddenLayers:new Set(),
+  collapsedLayers:new Set(),
+  activePrinciple:null,
+  currentStage:1,
+  popupKey:null,
+  popupAnchor:null,
+  prompts:{},
+  drag:null
+};
+const STORE_KEY="architecture-framework-workbench-v5-system-model";
+const ROWS = [
+  {key:"authority",name:"Полномочия",desc:"governance checkpoints под одной Decision Policy",color:"var(--authority)",height:""},
+  {key:"models",name:"Режим моделей",desc:"независимое исполнение и точка convergence",color:"var(--mode)"},
+  {key:"stages",name:"Этапы",desc:"порядок activities; стрелки показывают реальные зависимости, не соседство",color:"var(--accent)",fixed:true},
+  {key:"decisions",name:"Решения",desc:"persistent decision state и closure",color:"var(--decision)"},
+  {key:"findings",name:"Findings и work queue",desc:"findings, unknowns, blockers и маршрутизация",color:"var(--finding)",compact:true},
+  {key:"claims",name:"Утверждения и epistemic status",desc:"constraints, facts, assumptions и verification status",color:"var(--evidenceLine)",compact:true},
+  {key:"evidence",name:"Evidence",desc:"наблюдения и measurements, меняющие epistemic status",color:"var(--evidenceLine)",compact:true},
+  {key:"changes",name:"Изменения",desc:"CHG targets, propagation и re-gating",color:"var(--change)",compact:true},
+  {key:"baselines",name:"Baselines",desc:"окно формирования → commit на gate → версионированное состояние",color:"var(--baseline)"},
+  {key:"infra",name:"Process infrastructure",desc:"инварианты управления, действующие на activities",color:"var(--baseline)"}
+];
+const ENGINE_RULES={
+  phases:DATA.phases,
+  principles:DATA.principles,
+  phaseBoundaries:[13,17,23]
+};
+const phaseColors={product:"var(--product)",discovery:"var(--discovery)",generation:"var(--generation)",evidence:"var(--evidence)"};
+
+function loadState(){
+  try{
+    const s=JSON.parse(localStorage.getItem(STORE_KEY)||"{}");
+    if(s.theme) document.documentElement.dataset.theme=s.theme;
+    if(Array.isArray(s.hiddenLayers)) state.hiddenLayers=new Set(s.hiddenLayers);
+    if(Array.isArray(s.collapsedLayers)) state.collapsedLayers=new Set(s.collapsedLayers);
+    if(Number.isInteger(s.expandedStage)) state.expandedStage=s.expandedStage;
+    if(Number.isInteger(s.currentStage)) state.currentStage=s.currentStage;
+    if(s.prompts&&typeof s.prompts==="object"&&!Array.isArray(s.prompts)) state.prompts={...s.prompts};
+    if(Number.isFinite(s.scrollLeft)) requestAnimationFrame(()=>document.getElementById("scroll").scrollLeft=s.scrollLeft);
+  }catch(e){}
+}
+function saveState(){
+  try{
+    localStorage.setItem(STORE_KEY,JSON.stringify({
+      theme:document.documentElement.dataset.theme||"",
+      hiddenLayers:[...state.hiddenLayers],collapsedLayers:[...state.collapsedLayers],
+      expandedStage:state.expandedStage,currentStage:state.currentStage,
+      prompts:state.prompts,
+      scrollLeft:document.getElementById("scroll").scrollLeft
+    }));
+  }catch(e){}
+}
+function esc(s){return String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]))}
+function stageByN(n){return DATA.stages.find(s=>s.n===Number(n))}
+function rowTemplate(){return DATA.stages.map(s=>(state.expandedStage===s.n?930:250)+"px").join(" ")}
+function applyGridTemplate(){
+  const t=rowTemplate();
+  document.querySelectorAll(".grid-row").forEach(el=>el.style.gridTemplateColumns=t);
+  requestAnimationFrame(drawLinks);
+}
+function phaseFor(n){return stageByN(n).phase}
+function roleColor(role){return {"Producer":"var(--producer)","Reviewer":"var(--reviewer)","Synthesizer":"var(--synthesizer)","Decision Closer":"var(--decision)","Verifier":"var(--verifier)","Owner":"var(--owner)"}[role]||"var(--muted)"}
+
+function renderHeader(){
+  const menu=document.getElementById("layerMenu");
+  menu.innerHTML='<div class="menu-title">Слои</div>';
+  ROWS.filter(r=>!r.fixed).forEach(r=>{
+    const label=document.createElement("label");
+    const checked=!state.hiddenLayers.has(r.key);
+    label.innerHTML=`<input type="checkbox" data-layer-check="${esc(r.key)}" ${checked?"checked":""}> <span>${esc(r.name)}</span>`;
+    const cb=label.querySelector("input");
+    cb.addEventListener("change",()=>{
+      const shouldShow=cb.checked;
+      if(shouldShow) state.hiddenLayers.delete(r.key); else state.hiddenLayers.add(r.key);
+      document.querySelectorAll(`[data-layer="${r.key}"]`).forEach(row=>row.classList.toggle("layer-hidden",!shouldShow));
+      saveState();requestAnimationFrame(()=>requestAnimationFrame(drawLinks));
+    });
+    menu.appendChild(label);
+  });
+}
+function makeRow(meta, cls=""){
+  const row=document.createElement("section");
+  row.className="grid-row "+cls+(meta.compact?" compact":"");
+  row.dataset.layer=meta.key; row.id="row-"+meta.key;
+  if(state.hiddenLayers.has(meta.key)&&!meta.fixed) row.classList.add("layer-hidden");
+  if(state.collapsedLayers.has(meta.key)&&!meta.fixed) row.classList.add("layer-collapsed");
+  row.style.gridTemplateColumns=rowTemplate();
+  if(meta.key!=="stages"){
+    const lab=document.createElement("div");lab.className="layer-label";lab.style.setProperty("--labelColor",meta.color);
+    lab.innerHTML=`<span class="caret">${state.collapsedLayers.has(meta.key)?"▸":"▾"}</span><span><strong>${esc(meta.name)}</strong><small>${esc(meta.desc)}</small></span>`;
+    lab.addEventListener("dblclick",e=>{e.preventDefault();window.getSelection()?.removeAllRanges(); if(!meta.fixed) toggleLayerCollapse(meta.key)});
+    row.appendChild(lab);
+  }
+  return row;
+}
+function nodeAt(row,stage,cls,html,id){
+  const d=document.createElement("div");d.className=`node ${cls}`;d.style.gridColumn=String(stage);d.dataset.node=id;d.innerHTML=html;
+  installNodeHover(d);row.appendChild(d);return d;
+}
+function renderAuthority(){
+  const row=makeRow(ROWS.find(r=>r.key==="authority"));
+  Object.entries(DATA.authority).forEach(([n,text])=>{
+    const d=nodeAt(row,+n,"small-node authority-node",esc(text),`authority-${n}`);
+    d.addEventListener("click",()=>openAuthority(+n,d));
+  });return row;
+}
+function renderModels(){
+  const row=makeRow(ROWS.find(r=>r.key==="models"));
+  Object.entries(DATA.modeInfo).forEach(([n,m])=>{
+    let h=`<strong>${esc(m.title)}</strong>`;
+    [["вход",m.input],["изоляция",m.isolation],["результат",m.result],["сведение",m.merge]].forEach(x=>h+=`<div class="mode-line"><span>${esc(x[0])}</span><b>${esc(x[1])}</b></div>`);
+    nodeAt(row,+n,"mode-node",h,`mode-${n}`);
+  });return row;
+}
+function roleChip(r){return `<button class="role-chip" data-role="${esc(r)}">${esc(r)}</button>`}
+function ruleChip(r){return `<button class="rule-chip" data-rule="${esc(r)}">${esc(r)}</button>`}
+function objectChip(o){return `<button class="object-chip" data-object="${esc(o)}">${esc(o)}</button>`}
+function defaultStagePrompt(s){
+  const lines=[
+    `Этап ${s.n}. ${s.title}`,
+    "",
+    `Цель этапа: ${s.summary}`,
+    `Действующая роль: ${s.roles.join(", ")}.`,
+    `Вход: ${s.inputs.length?s.inputs.join("; "):"нет отдельного входного артефакта"}.`,
+    `Ожидаемый выход: ${s.artifacts.length?s.artifacts.join("; "):"нет отдельного выходного артефакта"}.`,
+    "",
+    "Работай строго в границах этого этапа framework. Не выполняй операции следующего этапа заранее.",
+    s.independent?"Режим независимости: N ≥ 2 моделей; не используй результаты других моделей до закрытия этапа.":"Режим независимости: не требуется.",
+    "",
+    "Разрешено:",
+    ...s.allowed.map(x=>`- ${x}`),
+    "",
+    "Запрещено:",
+    ...s.forbidden.map(x=>`- ${x}`),
+    "",
+    "Условия эскалации:",
+    ...(s.escalation.length?s.escalation:["нет специальных условий"]).map(x=>`- ${x}`),
+    "",
+    "Global Discipline под нагрузкой:",
+    ...s.rules.map(x=>`- ${x}: ${DATA.rules[x]||""}`),
+    "",
+    `Создаваемые объекты: ${s.creates.length?s.creates.join(", "):"—"}.`,
+    `Изменяемые объекты: ${s.modifies.length?s.modifies.join(", "):"—"}.`,
+    `Читаемые объекты: ${s.reads.length?s.reads.join(", "):"—"}.`,
+    "",
+    "Ответ должен сохранять provenance и traceability. Narrative не является источником решений. Любое новое решение, факт или изменение должно получить соответствующий статус и маршрут согласно Decision Policy и Stage Discipline."
+  ];
+  return lines.join("\n");
+}
+function stagePromptText(s){
+  const custom=state.prompts[String(s.n)];
+  return typeof custom==="string"?custom:defaultStagePrompt(s);
+}
+async function copyText(text){
+  try{
+    if(navigator.clipboard?.writeText){await navigator.clipboard.writeText(text);return true}
+  }catch(_){}
+  const ta=document.createElement("textarea");ta.value=text;ta.setAttribute("readonly","");ta.style.position="fixed";ta.style.opacity="0";document.body.appendChild(ta);ta.select();
+  let ok=false;try{ok=document.execCommand("copy")}catch(_){}ta.remove();return ok;
+}
+function openPromptEditor(stage,anchor){
+  const current=stagePromptText(stage);
+  openPopup(`<h3>Prompt · этап ${String(stage.n).padStart(2,"0")}</h3><div class="sub">${esc(stage.title)} · текст сохраняется для этого проекта</div>
+    <textarea class="prompt-editor" id="promptEditorText" spellcheck="false">${esc(current)}</textarea>
+    <div class="prompt-actions"><button id="promptReset">Сбросить</button><button id="promptCopy">Копировать</button><button class="primary" id="promptSave">Сохранить</button></div>`,anchor,"prompt:"+stage.n);
+  const popup=document.getElementById("popup");popup.classList.add("prompt-popup");placePopup(anchor);
+  const ta=document.getElementById("promptEditorText");
+  document.getElementById("promptSave").addEventListener("click",()=>{state.prompts[String(stage.n)]=ta.value;saveState();toast("Prompt сохранён")});
+  document.getElementById("promptCopy").addEventListener("click",async()=>{const ok=await copyText(ta.value);toast(ok?"Prompt скопирован":"Не удалось скопировать")});
+  document.getElementById("promptReset").addEventListener("click",()=>{ta.value=defaultStagePrompt(stage);delete state.prompts[String(stage.n)];saveState();toast("Prompt сброшен")});
+  requestAnimationFrame(()=>{ta.focus();ta.setSelectionRange(0,0)});
+}
+function stageContract(s){
+  const produces=s.creates.map(name=>({type:DATA.objects[name]?.code||name,fields:DATA.objects[name]?.fields||[]}));
+  const modifies=s.modifies.map(name=>({target:(DATA.objects[name]?.code||name)+"-…@current",operation:"update",trace_ref:"CHG or FND as required",reason:"explicit stage input"}));
+  return {
+    stage:s.n,active_roles:s.roles,
+    input_artifacts:s.inputs.map(x=>({ref:x+"@current"})),
+    independence:s.independent?{"N":">=2","shared_context":"none until stage close"}:null,
+    produces,modifies,
+    must_preserve:["provenance","dependent_links","ids_of_removed_or_merged_objects"],
+    escalations:s.escalation,
+    narrative:"не источник решений"
+  };
+}
+function addPhaseSeparators(row){
+  ENGINE_RULES.phaseBoundaries.forEach(after=>{
+    const line=document.createElement("div");
+    line.className="phase-separator";
+    line.dataset.afterStage=String(after);
+    const fromStage=stageByN(after),toStage=stageByN(after+1);
+    const fromPhase=fromStage?DATA.phases[fromStage.phase]:null,toPhase=toStage?DATA.phases[toStage.phase]:null;
+    line.dataset.tooltip=fromPhase&&toPhase
+      ? `Граница фаз: ${fromPhase.name} — ${fromPhase.subtitle} → ${toPhase.name} — ${toPhase.subtitle}`
+      : `Граница фаз после этапа ${after}`;
+    row.appendChild(line);
+  });
+  requestAnimationFrame(positionPhaseSeparators);
+}
+function positionPhaseSeparators(){
+  const row=document.getElementById("row-stages");
+  if(!row)return;
+  row.querySelectorAll(".phase-separator").forEach(line=>{
+    const n=Number(line.dataset.afterStage);
+    const left=nodeEl("stage-"+n),right=nodeEl("stage-"+(n+1));
+    if(!left||!right){line.style.display="none";return}
+    line.style.display="block";
+    const x=(left.offsetLeft+left.offsetWidth+right.offsetLeft)/2;
+    const top=Math.min(left.offsetTop,right.offsetTop)+14;
+    const height=Math.max(40,Math.min(left.offsetHeight,right.offsetHeight)-28);
+    line.style.left=x+"px";line.style.top=top+"px";line.style.height=height+"px";
+  });
+}
+function renderStages(){
+  const row=makeRow(ROWS.find(r=>r.key==="stages"),"stages-row");
+  DATA.stages.forEach(s=>{
+    const expanded=state.expandedStage===s.n;
+    const phaseColor=phaseColors[s.phase];
+    let top=`<button class="stage-prompt" data-prompt-stage="${s.n}" aria-label="Prompt этапа ${s.n}" title="Один клик — копировать prompt · двойной — редактировать"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7l4 5-4 5"/><path d="M12 17h7"/></svg></button><div class="stage-top"><span class="stage-num">${String(s.n).padStart(2,"0")}</span>`;
+    if(s.gate) top+=`<button class="gate-badge" data-gate="${s.gate}">${s.gate}</button>`;
+    if(s.independent) top+=`<span class="multi-badge">×N моделей</span>`;
+    top+=`</div><h3 class="stage-title">${esc(s.title)}</h3><div class="stage-summary">${esc(s.summary)}</div>`;
+    top+=`<div class="stage-io-grid">
+      <div class="stage-io-block"><div class="stage-io-label">Вход</div><div class="stage-io-value">${s.inputs.length?s.inputs.map(esc).join(" · "):"—"}</div></div>
+      <div class="stage-io-block"><div class="stage-io-label">Выход</div><div class="stage-io-value">${s.artifacts.length?s.artifacts.map(esc).join(" · "):"—"}</div></div>
+    </div>`;
+    top+=`<div class="chips">${s.roles.map(roleChip).join("")}</div><div class="chips">${s.rules.map(ruleChip).join("")}</div>`;
+    if(expanded){
+      const io=(label,arr)=>`<div class="io-line"><b>${label}</b>${arr.length?arr.map(objectChip).join(""):"—"}</div>`;
+      const contract=esc(JSON.stringify(stageContract(s),null,2));
+      top+=`<div class="stage-details">
+        <div class="detail-grid">
+          <div class="detail-block full"><h4>Описание</h4><p>${esc(s.summary)}</p></div>
+          <div class="detail-block full"><h4>Объекты</h4>${io("создаёт",s.creates)}${io("изменяет",s.modifies)}${io("читает",s.reads)}</div>
+        </div>
+        <div class="triad">
+          <div class="triad-box"><h4>✓ Разрешено</h4><ul>${s.allowed.map(x=>`<li>${esc(x)}</li>`).join("")}</ul></div>
+          <div class="triad-box"><h4>✕ Запрещено</h4><ul>${s.forbidden.map(x=>`<li>${esc(x)}</li>`).join("")}</ul></div>
+          <div class="triad-box"><h4>↑ Эскалация</h4><ul>${s.escalation.map(x=>`<li>${esc(x)}</li>`).join("")}</ul></div>
+        </div>
+        <details class="contract"><summary>Response Contract</summary><div class="contract-inner">
+          <button class="tiny-btn copy-contract">копировать JSON</button><pre>${contract}</pre>
+        </div></details>
+      </div>`;
+    }
+    top+=`<div class="stage-hint">двойной клик — подробности</div>`;
+    const d=nodeAt(row,s.n,"stage-card"+(expanded?" expanded":""),top,`stage-${s.n}`);d.style.setProperty("--phaseColor",phaseColor);d.tabIndex=0;
+    d.addEventListener("dblclick",e=>{
+      if(e.target.closest("button,summary,pre,.contract")) return;
+      e.preventDefault();window.getSelection()?.removeAllRanges();toggleStage(s.n);
+    });
+    d.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.target.closest("button,summary")){e.preventDefault();toggleStage(s.n)}});
+    const promptBtn=d.querySelector("[data-prompt-stage]");let promptClickTimer=null;
+    promptBtn.addEventListener("click",e=>{
+      e.stopPropagation();clearTimeout(promptClickTimer);
+      promptClickTimer=setTimeout(async()=>{const ok=await copyText(stagePromptText(s));toast(ok?`Prompt этапа ${String(s.n).padStart(2,"0")} скопирован`:"Не удалось скопировать")},230);
+    });
+    promptBtn.addEventListener("dblclick",e=>{
+      e.stopPropagation();e.preventDefault();clearTimeout(promptClickTimer);window.getSelection()?.removeAllRanges();openPromptEditor(s,promptBtn);
+    });
+    d.querySelectorAll("[data-role]").forEach(b=>b.addEventListener("click",e=>{e.stopPropagation();openRole(b.dataset.role,b)}));
+    d.querySelectorAll("[data-rule]").forEach(b=>b.addEventListener("click",e=>{e.stopPropagation();openRule(b.dataset.rule,b)}));
+    d.querySelectorAll("[data-gate]").forEach(b=>b.addEventListener("click",e=>{e.stopPropagation();openGate(b.dataset.gate,b)}));
+    d.querySelectorAll("[data-object]").forEach(b=>b.addEventListener("dblclick",e=>{e.stopPropagation();e.preventDefault();toggleObjectPopup(b.dataset.object,b)}));
+    d.querySelectorAll(".copy-contract").forEach(b=>b.addEventListener("click",async e=>{
+      e.stopPropagation();const txt=b.parentElement.querySelector("pre").textContent;try{await navigator.clipboard.writeText(txt);toast("JSON скопирован")}catch(_){toast("Не удалось скопировать")}
+    }));
+  });addPhaseSeparators(row);return row;
+}
+function renderSimpleBlocks(key, source, cls, formatter){
+  const row=makeRow(ROWS.find(r=>r.key===key),ROWS.find(r=>r.key===key).compact?"compact":"");
+  const prefix={decisions:"decision",findings:"finding",claims:"claim",evidence:"evidence",changes:"change"}[key]||key.replace(/s$/,"");
+  Object.entries(source).forEach(([n,val])=>{
+    const text=formatter?formatter(val,+n):esc(val);
+    nodeAt(row,+n,`compact-node ${cls}`,text,`${prefix}-${n}`);
+  });return row;
+}
+function renderDecisions(){
+  return renderSimpleBlocks("decisions",SYSTEM_MODEL.decisionBlocks,"decision-node",(v,n)=>{
+    if(n===3) return `<strong>Decision Register</strong><div class="chips"><span class="status-badge">CLOSED</span><span class="status-badge">DELEGATED</span><span class="status-badge">DEFERRED</span><span class="status-badge">OPEN</span><span class="status-badge">NEEDS_EVIDENCE</span></div>`;
+    return esc(v);
+  });
+}
+function renderFindings(){
+  return renderSimpleBlocks("findings",SYSTEM_MODEL.workBlocks,"finding-node",(v)=>`${esc(v[0])} <span style="color:var(--muted)">→ ${esc(v[1])}</span>`);
+}
+function renderClaims(){
+  return renderSimpleBlocks("claims",SYSTEM_MODEL.claimBlocks,"evidence-node",(v)=>esc(v));
+}
+function renderEvidence(){
+  return renderSimpleBlocks("evidence",SYSTEM_MODEL.evidenceBlocks,"evidence-node",(v)=>esc(v));
+}
+function renderChanges(){
+  return renderSimpleBlocks("changes",SYSTEM_MODEL.changeBlocks,"change-node",(v)=>esc(v));
+}
+function renderBaselines(){
+  const row=makeRow(ROWS.find(r=>r.key==="baselines"),"baselines-row");
+  DATA.baselines.forEach(b=>{
+    const d=document.createElement("div");d.className="baseline-segment";d.dataset.node=`baseline-${b.key}`;
+    d.style.gridColumn=`${b.start} / ${b.end+1}`;
+    const gate=b.key==="PFB"?"G1":b.key==="AIP"?"G2":"G4";
+    d.innerHTML=`<div class="baseline-fill">окно формирования · ${b.included.map(esc).join(" · ")}</div>
+      <div class="baseline-head"><strong>${esc(b.name)}</strong><span>commit @ ${gate} · ${esc(b.subtitle)}</span><em>после commit действует как версия · изменение только через CHG</em></div>`;
+    installNodeHover(d);row.appendChild(d);
+  });return row;
+}
+const infraDefs=[
+  {key:"ids",name:"Устойчивая идентичность",q:"какие объекты с устойчивым ID выдаёт этап",reconstructed:false},
+  {key:"contract",name:"Response Contract",q:"структура ответа модели на этом этапе",reconstructed:false},
+  {key:"discipline",name:"Model Discipline",q:"главный запрет этапа",reconstructed:false},
+  {key:"roles",name:"Roles & Authority",q:"кто исполняет этап и проверяются ли полномочия",reconstructed:false},
+  {key:"trace",name:"Traceability & Provenance",q:"на что обязан ссылаться каждый созданный объект",reconstructed:false},
+  {key:"change",name:"Change Control",q:"где изменение возможно только через change event",reconstructed:true},
+  {key:"gates",name:"Gates & Baselines",q:"где стоит gate",reconstructed:true},
+  {key:"escalation",name:"Escalation & Return Loops",q:"что этап не вправе решить сам",reconstructed:true},
+];
+function infraText(def,s){
+  if(def.key==="ids"){
+    const xs=[...new Set([...s.creates,...s.modifies])]; return xs.length?`выдаёт / версионирует: ${xs.join(", ")}`:"";
+  }
+  if(def.key==="contract") return "открыть контракт ответа";
+  if(def.key==="discipline"){
+    const f=s.forbidden[0]||"соблюдать Stage Discipline";const extra=Math.max(0,s.forbidden.length-1);return `✕ ${f}${extra?` (+${extra})`:""}`;
+  }
+  if(def.key==="roles") return `исполняет: ${s.roles.join(", ")}${s.roles.includes("Decision Closer")?" · проверка класса решения":""}`;
+  if(def.key==="trace"){
+    if(!s.creates.length||!s.reads.length) return "";
+    return `${s.creates.slice(0,2).join(", ")} ← ${s.reads.slice(0,2).join(", ")}`;
+  }
+  if(def.key==="change") return [6,10,13,17,26,28,30].includes(s.n)?"изменение только через change event":"";
+  if(def.key==="gates") return s.gate?`${s.gate}: ${s.n===13?"вход в Product Functional Baseline":s.n===17?"вход в Architecture Input Package":s.n===22?"выбор Architecture Direction":"вход в Conceptual Architecture Baseline"}`:"";
+  if(def.key==="escalation"){
+    if(!s.escalation.length) return "";const extra=Math.max(0,s.escalation.length-1);return `↑ ${s.escalation[0]}${extra?` (+${extra})`:""}`;
+  }
+  return "";
+}
+function renderInfrastructure(){
+  const frag=document.createDocumentFragment();
+  const headMeta=ROWS.find(r=>r.key==="infra");
+  const head=makeRow(headMeta,"infra-head");head.dataset.layer="infra";
+  const intro=document.createElement("div");intro.className="infra-note";intro.style.gridColumn="1 / -1";
+  intro.textContent="Механизмы действуют на всех этапах. В колонке показано требование именно к этому этапу; клик открывает детали, hover связывает отметку с этапом.";
+  head.appendChild(intro);frag.appendChild(head);
+  infraDefs.forEach(def=>{
+    const row=document.createElement("section");row.className="grid-row infra-row";row.dataset.layer="infra";row.dataset.infra=def.key;
+    if(state.hiddenLayers.has("infra")) row.classList.add("layer-hidden");
+    if(state.collapsedLayers.has("infra")) row.classList.add("layer-collapsed");
+    row.style.gridTemplateColumns=rowTemplate();
+    const lab=document.createElement("div");lab.className="layer-label";lab.style.setProperty("--labelColor","var(--baseline)");
+    lab.innerHTML=`<span class="caret">•</span><span><strong>${esc(def.name)}</strong><small>${esc(def.q)} ${def.reconstructed?'<span class="reconstructed">реконструировано</span>':""}</small></span>`;
+    lab.addEventListener("dblclick",e=>{e.preventDefault();window.getSelection()?.removeAllRanges();toggleLayerCollapse("infra")});row.appendChild(lab);
+    DATA.stages.forEach(s=>{
+      const t=infraText(def,s);if(!t)return;
+      const d=nodeAt(row,s.n,"infra-node",esc(t),`infra-${def.key}-${s.n}`);
+      d.addEventListener("click",()=>openInfra(def,s,d));
+      d.addEventListener("mouseenter",()=>highlightSet([`infra-${def.key}-${s.n}`,`stage-${s.n}`],[]));
+      d.addEventListener("mouseleave",clearHighlight);
+    });
+    frag.appendChild(row);
+  });
+  return frag;
+}
+function syncCollapsedStageHeights(){
+  const row=document.getElementById("row-stages");
+  if(!row)return;
+  const cards=[...row.querySelectorAll(".stage-card")];
+  if(!cards.length)return;
+  let max=0;
+  cards.forEach(card=>{
+    const clone=card.cloneNode(true);
+    clone.classList.remove("expanded");
+    clone.querySelector(".stage-details")?.remove();
+    clone.style.position="absolute";
+    clone.style.visibility="hidden";
+    clone.style.pointerEvents="none";
+    clone.style.left="-10000px";
+    clone.style.top="0";
+    clone.style.width="250px";
+    clone.style.height="auto";
+    clone.style.minHeight="0";
+    clone.style.maxHeight="none";
+    document.body.appendChild(clone);
+    max=Math.max(max,Math.ceil(clone.getBoundingClientRect().height));
+    clone.remove();
+  });
+  if(max>0)document.documentElement.style.setProperty("--collapsed-stage-height",max+"px");
+}
+
+function renderRows(){
+  const rows=document.getElementById("rows");rows.innerHTML="";
+  rows.appendChild(renderAuthority());rows.appendChild(renderModels());rows.appendChild(renderStages());
+  rows.appendChild(renderDecisions());rows.appendChild(renderFindings());rows.appendChild(renderClaims());rows.appendChild(renderEvidence());rows.appendChild(renderChanges());rows.appendChild(renderBaselines());
+  rows.appendChild(renderInfrastructure());
+  applyGridTemplate();
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{syncCollapsedStageHeights();positionPhaseSeparators();drawLinks();restoreSearch()}));
+}
+function toggleStage(n){
+  state.expandedStage=state.expandedStage===n?null:n;renderRows();saveState();requestAnimationFrame(()=>scrollToStage(n,{behavior:"smooth",align:"center"}));
+}
+function toggleLayerVisibility(key){
+  if(state.hiddenLayers.has(key))state.hiddenLayers.delete(key);else state.hiddenLayers.add(key);
+  document.querySelectorAll(`[data-layer="${key}"]`).forEach(r=>r.classList.toggle("layer-hidden",state.hiddenLayers.has(key)));
+  const cb=document.querySelector(`[data-layer-check="${key}"]`);if(cb)cb.checked=!state.hiddenLayers.has(key);saveState();requestAnimationFrame(drawLinks)
+}
+function toggleAllLayers(){
+  const keys=ROWS.filter(r=>!r.fixed).map(r=>r.key);
+  const allOff=keys.every(k=>state.hiddenLayers.has(k));
+  keys.forEach(k=>allOff?state.hiddenLayers.delete(k):state.hiddenLayers.add(k));
+  keys.forEach(k=>{
+    document.querySelectorAll(`[data-layer="${k}"]`).forEach(r=>r.classList.toggle("layer-hidden",state.hiddenLayers.has(k)));
+    const cb=document.querySelector(`[data-layer-check="${k}"]`);if(cb)cb.checked=!state.hiddenLayers.has(k);
+  });saveState();requestAnimationFrame(drawLinks)
+}
+function toggleLayerCollapse(key){
+  if(state.collapsedLayers.has(key))state.collapsedLayers.delete(key);else state.collapsedLayers.add(key);
+  document.querySelectorAll(`[data-layer="${key}"]`).forEach(r=>{
+    r.classList.toggle("layer-collapsed",state.collapsedLayers.has(key));
+    r.querySelectorAll(".layer-label .caret").forEach(c=>{if(c.textContent!=="•")c.textContent=state.collapsedLayers.has(key)?"▸":"▾"})
+  });saveState();requestAnimationFrame(()=>requestAnimationFrame(drawLinks))
+}
+
+function openPopup(html,anchor,key){
+  state.popupKey=key;state.popupAnchor=anchor;document.getElementById("popupBody").innerHTML=html;
+  const p=document.getElementById("popup");p.classList.add("open");placePopup(anchor);
+}
+function closePopup(){
+  const p=document.getElementById("popup");
+  p.classList.remove("open","prompt-popup");
+  p.style.display="";
+  p.style.visibility="";
+  state.popupKey=null;state.popupAnchor=null;
+  if(!state.activePrinciple)clearHighlight();
+}
+function placePopup(anchor){
+  const p=document.getElementById("popup");if(!anchor||!p.classList.contains("open"))return;
+  const a=anchor.getBoundingClientRect();p.style.visibility="hidden";
+  const r=p.getBoundingClientRect(), pad=10, gap=8;let left=a.left,top=a.bottom+gap;
+  if(top+r.height>innerHeight-pad) top=a.top-r.height-gap;
+  if(top<pad){top=Math.max(pad,Math.min(a.top,innerHeight-r.height-pad));left=a.right+gap;if(left+r.width>innerWidth-pad)left=a.left-r.width-gap}
+  left=Math.max(pad,Math.min(left,innerWidth-r.width-pad));top=Math.max(pad,Math.min(top,innerHeight-r.height-pad));
+  p.style.left=left+"px";p.style.top=top+"px";p.style.visibility="visible";
+}
+function stageLinksHtml(nums){
+  return nums.length?nums.map(n=>`<span class="jump" data-jump="${n}">этап ${n}</span>`).join(" · "):"—";
+}
+function attachPopupJumps(){document.getElementById("popupBody").querySelectorAll("[data-jump]").forEach(x=>x.addEventListener("click",()=>{scrollToStage(+x.dataset.jump);closePopup()}))}
+function exampleId(name){
+  const c=DATA.objects[name]?.code||"OBJ";return `${c}-${String(Math.floor((Object.keys(DATA.objects).indexOf(name)+1)*7)).padStart(3,"0")}@3`;
+}
+function toggleObjectPopup(name,anchor){
+  const key="object:"+name;if(state.popupKey===key){closePopup();return}
+  const o=DATA.objects[name];if(!o)return;
+  const created=DATA.stages.filter(s=>s.creates.includes(name)).map(s=>s.n),modified=DATA.stages.filter(s=>s.modifies.includes(name)).map(s=>s.n),read=DATA.stages.filter(s=>s.reads.includes(name)).map(s=>s.n);
+  openPopup(`<h3>${esc(name)}</h3><div class="sub">${esc(o.what)}</div>
+    <p><b>Пример ID:</b> <span class="mono">${esc(exampleId(name))}</span></p>
+    <table><tr><th>создаётся</th><td>${stageLinksHtml(created)}</td></tr><tr><th>изменяется</th><td>${stageLinksHtml(modified)}</td></tr><tr><th>читается</th><td>${stageLinksHtml(read)}</td></tr></table>
+    <p><b>Обязательные поля</b></p><ul>${o.fields.map(f=>`<li class="mono">${esc(f)}</li>`).join("")}</ul>`,anchor,key);attachPopupJumps()
+}
+function openRole(role,anchor){
+  const r=DATA.roles[role],st=DATA.stages.filter(s=>s.roles.includes(role)).map(s=>s.n);
+  openPopup(`<h3>${esc(role)}</h3><p><b>Может:</b> ${esc(r.can)}</p><p><b>Не может:</b> ${esc(r.cannot)}</p><p><b>Этапы:</b> ${stageLinksHtml(st)}</p>`,anchor,"role:"+role);attachPopupJumps()
+}
+function openRule(rule,anchor){
+  const st=DATA.stages.filter(s=>s.rules.includes(rule)).map(s=>s.n);
+  const violationExamples={
+    "No Silent Completion":"Модель встречает незаполненное правило поведения и придумывает «разумный default» вместо OPEN.",
+    "No Silent Reinterpretation":"Закрытое решение меняет смысл в новой версии документа без CHG.",
+    "No Hidden Deletion":"Finding или requirement исчезает после synthesis без причины и trace.",
+    "No Hidden Merge":"Два предложения с разными последствиями превращены в одно нейтральное.",
+    "No Authority Expansion":"Decision Closer закрывает A3 без владельца.",
+    "Consensus Is Not Evidence":"Три модели согласились с API-ограничением, и оно помечено VERIFIED без источника.",
+    "Assumption Is Not Fact":"Архитектура опирается на предположение как на подтверждённый факт.",
+    "No Architecture Leakage":"На product stage проблема формулируется через конкретную технологию.",
+    "No Product Redefinition by Architecture":"Candidate упрощает обязательное поведение вместо change к PFB.",
+    "Provenance Preservation":"После dedup невозможно восстановить, из каких proposals получено решение.",
+    "Traceability Preservation":"После ревизии ADR больше не связан с requirement и evidence.",
+    "Delta Discipline":"Новый review переоткрывает все закрытые решения без основания.",
+    "Baseline Discipline":"Baseline редактируется напрямую без change event и impact propagation.",
+    "Review Discipline":"Reviewer сразу переписывает artifact, скрывая finding и автора исправления."
+  };
+  openPopup(`<h3>${esc(rule)}</h3><p>${esc(DATA.rules[rule])}</p><p><b>Пример нарушения:</b> ${esc(violationExamples[rule]||"Нарушение правила меняет состояние framework без явного trace.")}</p><p><b>Под нагрузкой на этапах:</b> ${stageLinksHtml(st)}</p>`,anchor,"rule:"+rule);attachPopupJumps();
+  highlightSet(st.map(n=>"stage-"+n),[])
+}
+function openGate(gate,anchor){
+  openPopup(`<h3>${gate}</h3><div class="sub">критерии прохождения · предложение</div><ul>${DATA.gates[gate].map(x=>`<li>${esc(x)}</li>`).join("")}</ul>`,anchor,"gate:"+gate)
+}
+function openAuthority(n,anchor){
+  if(n===1){
+    openPopup(`<h3>Decision Policy · лестница полномочий</h3><div class="sub">предложение</div><table>${DATA.authorityLadder.map(x=>`<tr><th>${esc(x[0])}</th><td>${esc(x[1])}</td></tr>`).join("")}</table>`,anchor,"authority:"+n)
+  }else{
+    const s=stageByN(n);openPopup(`<h3>${esc(DATA.authority[n])}</h3><p><b>Этап:</b> <span class="jump" data-jump="${n}">${n} · ${esc(s.title)}</span></p><p>Decision Policy ограничивает полномочия роли на этом этапе; выход за класс маршрутизируется через escalation, а не закрывается молча.</p>`,anchor,"authority:"+n);attachPopupJumps()
+  }
+}
+function openInfra(def,s,anchor){
+  let body=`<h3>${esc(def.name)} · этап ${s.n}</h3><div class="sub">${esc(def.q)} ${def.reconstructed?"· реконструировано":""}</div>`;
+  if(def.key==="contract")body+=`<pre>${esc(JSON.stringify(stageContract(s),null,2))}</pre>`;
+  else if(def.key==="discipline")body+=`<p><b>Разрешено</b></p><ul>${s.allowed.map(x=>`<li>${esc(x)}</li>`).join("")}</ul><p><b>Запрещено</b></p><ul>${s.forbidden.map(x=>`<li>${esc(x)}</li>`).join("")}</ul><p><b>Global Discipline</b></p><ul>${s.rules.map(x=>`<li>${esc(x)} — ${esc(DATA.rules[x])}</li>`).join("")}</ul>`;
+  else if(def.key==="roles")body+=s.roles.map(r=>`<p><b>${esc(r)}</b> — ${esc(DATA.roles[r].can)}<br><span style="color:var(--muted)">${esc(DATA.roles[r].cannot)}</span></p>`).join("");
+  else if(def.key==="ids")body+=`<p>${esc(infraText(def,s))}</p><p>Формат идентичности: <span class="mono">тип-номер@версия</span>. Номер не переиспользуется; новая версия возникает только через изменение.</p>`;
+  else if(def.key==="trace")body+=`<p>${esc(infraText(def,s))}</p><p>Для значимого объекта сохраняются source, basis, decided/verified by, dependents и replacement/change trace.</p>`;
+  else if(def.key==="change")body+=`<p>${esc(infraText(def,s))}</p><p>Change event фиксирует target+version, result, reason, trigger, impact set, authority class, approval и propagation. Delta closure ограничен impact set.</p>`;
+  else if(def.key==="gates")body+=`<p>${esc(infraText(def,s))}</p>${s.gate?`<ul>${DATA.gates[s.gate].map(x=>`<li>${esc(x)}</li>`).join("")}</ul>`:""}`;
+  else if(def.key==="escalation")body+=`<ul>${s.escalation.map(x=>`<li>${esc(x)}</li>`).join("")}</ul><p>Маршрут: владелец, Validation Registry / backlog, delta closure или change event — в зависимости от причины.</p>`;
+  openPopup(body,anchor,`infra:${def.key}:${s.n}`);
+}
+function activatePrinciple(name,btn){
+  if(state.activePrinciple===name){state.activePrinciple=null;document.querySelectorAll(".principle-btn").forEach(b=>b.classList.remove("active"));clearHighlight();return}
+  state.activePrinciple=name;document.querySelectorAll(".principle-btn").forEach(b=>b.classList.toggle("active",b.dataset.principle===name));
+  const p=DATA.principles[name], nodes=[...p.stages.map(n=>"stage-"+n),...p.nodes];
+  highlightSet(nodes,[]);
+  const first=p.stages[0];scrollToStage(first,{behavior:"smooth"});
+  openPopup(`<h3>${esc(name)}</h3><p>${esc(p.text)}</p><p><b>Первый контрольный этап:</b> <span class="jump" data-jump="${first}">этап ${first}</span></p>`,btn,"principle:"+name);attachPopupJumps()
+}
+
+let edges=[];
+function E(a,b,type="relation",opts={}){edges.push({a,b,type,...opts})}
+function buildEdges(){
+  edges.length=0;
+
+  // Transfer artifacts are displayed inside stage cards; package dependencies connect producer stage directly to consumer stage.
+  SYSTEM_MODEL.artifactRoutes.forEach(([a,b,label])=>E(`stage-${a}`,`stage-${b}`,"artifact",{relation:"transfers",label}));
+
+  // Governance: one Decision Policy governs all later authority checkpoints; checkpoints govern their activities.
+  const authNs=Object.keys(DATA.authority).map(Number);
+  authNs.forEach(n=>E(`authority-${n}`,`stage-${n}`,"authority",{relation:"governs"}));
+  authNs.filter(n=>n!==1).forEach(n=>E("authority-1",`authority-${n}`,"authority-scope",{relation:"policy_scope"}));
+
+  // Independent execution is attached to its activity and explicitly converges later.
+  Object.keys(DATA.modeInfo).forEach(n=>E(`mode-${n}`,`stage-${n}`,"mode",{relation:"execution_mode"}));
+  Object.entries(SYSTEM_MODEL.modeConvergence).forEach(([a,b])=>E(`mode-${a}`,`stage-${b}`,"converge",{relation:"converges_at"}));
+
+  // Persistent state writes.
+  Object.keys(SYSTEM_MODEL.decisionBlocks).forEach(n=>E(`stage-${n}`,`decision-${n}`,"decision",{relation:"writes_decision_state"}));
+  Object.keys(SYSTEM_MODEL.workBlocks).forEach(n=>E(`stage-${n}`,`finding-${n}`,"finding",{relation:"writes_work_state"}));
+  Object.keys(SYSTEM_MODEL.claimBlocks).forEach(n=>E(`stage-${n}`,`claim-${n}`,"claim",{relation:"writes_epistemic_state"}));
+  Object.keys(SYSTEM_MODEL.evidenceBlocks).forEach(n=>E(`stage-${n}`,`evidence-${n}`,"evidence",{relation:"records_evidence"}));
+  Object.keys(SYSTEM_MODEL.changeBlocks).forEach(n=>E(`stage-${n}`,`change-${n}`,"change",{relation:"creates_or_applies_change"}));
+
+  // State consumers and routes.
+  SYSTEM_MODEL.decisionRoutes.forEach(([a,b])=>E(`decision-${a}`,`stage-${b}`,"decision",{relation:"decision_input"}));
+  SYSTEM_MODEL.workRoutes.forEach(([a,b,t])=>E(`finding-${a}`,`stage-${b}`,t||"finding",{relation:t==="return"?"conditional_feedback":"work_route"}));
+  SYSTEM_MODEL.claimRoutes.forEach(([a,b])=>E(`claim-${a}`,`stage-${b}`,"claim",{relation:"claim_input"}));
+  SYSTEM_MODEL.evidenceRoutes.forEach(([a,b])=>E(`evidence-${a}`,typeof b==="string"?b:`stage-${b}`,"evidence",{relation:"validates_or_informs"}));
+  SYSTEM_MODEL.changeRoutes.forEach(([a,b,t])=>E(`change-${a}`,b,t||"change",{relation:t==="return"?"reopen_or_regate":"change_target"}));
+
+  // Baseline commits and downstream references. Formation windows are not treated as already-existing baselines.
+  E("stage-13","baseline-PFB","commit",{relation:"commits"});
+  E("stage-17","baseline-AIP","commit",{relation:"commits"});
+  E("stage-30","baseline-CAB","commit",{relation:"commits"});
+  SYSTEM_MODEL.baselineReferences.forEach(([a,b])=>E(a,b,"reference",{relation:"references_or_includes"}));
+}
+function nodeEl(id){return document.querySelector(`[data-node="${CSS.escape(id)}"]`)}
+const edgeColors={relation:"var(--muted)",artifact:"var(--muted)",authority:"var(--authority)","authority-scope":"var(--authority)",mode:"var(--mode)",converge:"var(--mode)",decision:"var(--decision)",finding:"var(--finding)",claim:"var(--evidenceLine)",evidence:"var(--evidenceLine)",return:"var(--danger)",change:"var(--change)",commit:"var(--baseline)",reference:"var(--baseline)"};
+function markerId(type){return "arrow-"+type.replace(/[^a-z]/g,"")}
+function setupSvg(){
+  const svg=document.getElementById("links");let defs="<defs>";
+  Object.keys(edgeColors).forEach(t=>{defs+=`<marker id="${markerId(t)}" markerWidth="8" markerHeight="8" refX="6.6" refY="3.5" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L7,3.5 L0,7 z" fill="${edgeColors[t]}"/></marker>`});
+  defs+="</defs>";svg.innerHTML=defs;
+}
+function rectInTimeline(el){
+  if(el.classList?.contains("baseline-segment")) el=el.querySelector(".baseline-head")||el;
+  const r=el.getBoundingClientRect(),t=document.getElementById("timeline").getBoundingClientRect();
+  return {left:r.left-t.left,top:r.top-t.top,right:r.right-t.left,bottom:r.bottom-t.top,width:r.width,height:r.height,cx:(r.left+r.right)/2-t.left,cy:(r.top+r.bottom)/2-t.top}
+}
+function pathFor(a,b,type){
+  const ra=rectInTimeline(a),rb=rectInTimeline(b);
+  const aAbove=ra.cy<rb.cy;
+  if(type==="authority"||type==="mode"){
+    return `M ${ra.right-8} ${ra.bottom} V ${rb.top-8} Q ${ra.right-8} ${rb.top} ${ra.right-16} ${rb.top} H ${rb.right-8}`;
+  }
+  if(["artifact","decision","finding","claim","evidence","change","commit"].includes(type) && Math.abs(ra.cx-rb.cx)<80){
+    const x=Math.min(ra.left,rb.left)-12;
+    return `M ${ra.left+9} ${aAbove?ra.bottom:ra.top} H ${x} V ${aAbove?rb.top:rb.bottom} H ${rb.left+9}`;
+  }
+  const sy=aAbove?ra.bottom:ra.top, ey=aAbove?rb.top:rb.bottom;
+  const sx=ra.cx, ex=rb.cx;
+  const mid=(sx+ex)/2;
+  return `M ${sx} ${sy} H ${mid} V ${ey} H ${ex}`;
+}
+function drawLinks(){
+  const svg=document.getElementById("links"),tl=document.getElementById("timeline");if(!svg||!tl)return;
+  svg.setAttribute("width",tl.scrollWidth);svg.setAttribute("height",tl.scrollHeight);
+  svg.setAttribute("viewBox",`0 0 ${tl.scrollWidth} ${tl.scrollHeight}`);
+  setupSvg();
+  edges.forEach((e,i)=>{
+    const a=nodeEl(e.a),b=nodeEl(e.b);if(!a||!b||a.offsetParent===null||b.offsetParent===null)return;
+    const p=document.createElementNS("http://www.w3.org/2000/svg","path");p.setAttribute("d",pathFor(a,b,e.type));p.setAttribute("class",e.type);p.dataset.edge=String(i);
+    p.style.stroke=edgeColors[e.type]||edgeColors.relation;p.setAttribute("marker-end",`url(#${markerId(e.type)})`);svg.appendChild(p)
+  });
+}
+function installNodeHover(el){
+  el.addEventListener("mouseenter",()=>{if(state.activePrinciple)return;const id=el.dataset.node;const related=new Set([id]);const ei=[];edges.forEach((e,i)=>{if(e.a===id||e.b===id){related.add(e.a);related.add(e.b);ei.push(i)}});highlightSet([...related],ei)});
+  el.addEventListener("mouseleave",()=>{if(!state.activePrinciple)clearHighlight()});
+}
+function highlightSet(nodes,edgeIndexes){
+  document.body.classList.add("has-highlight");document.querySelectorAll(".hl").forEach(x=>x.classList.remove("hl"));
+  nodes.forEach(id=>nodeEl(id)?.classList.add("hl"));
+  if(edgeIndexes.length)edgeIndexes.forEach(i=>document.querySelector(`#links path[data-edge="${i}"]`)?.classList.add("hl"));
+  else edges.forEach((e,i)=>{if(nodes.includes(e.a)&&nodes.includes(e.b))document.querySelector(`#links path[data-edge="${i}"]`)?.classList.add("hl")})
+}
+function clearHighlight(){document.body.classList.remove("has-highlight");document.querySelectorAll(".hl").forEach(x=>x.classList.remove("hl"))}
+
+function scrollToStage(n,opts={}){
+  n=Math.max(1,Math.min(30,+n));const el=nodeEl("stage-"+n);if(!el)return;
+  state.currentStage=n;updatePosition();
+  const sc=document.getElementById("scroll"),r=el.getBoundingClientRect(),sr=sc.getBoundingClientRect();
+  const desired=sc.scrollLeft+(r.left-sr.left)-Math.max(12,(sr.width-r.width)/2);
+  sc.scrollTo({left:Math.max(0,desired),behavior:opts.behavior||"smooth"});saveState()
+}
+function updateCurrentFromScroll(){
+  const sc=document.getElementById("scroll"),sr=sc.getBoundingClientRect(),x=sr.left+sr.width*.48;let best=1,dist=1e9;
+  DATA.stages.forEach(s=>{const el=nodeEl("stage-"+s.n);if(!el)return;const r=el.getBoundingClientRect(),d=Math.abs((r.left+r.right)/2-x);if(d<dist){dist=d;best=s.n}});
+  state.currentStage=best;updatePosition()
+}
+function updatePosition(){
+  const pos=document.getElementById("position"),ind=document.getElementById("stageIndicator");
+  if(pos) pos.value=state.currentStage;
+  if(ind) ind.textContent="этап "+state.currentStage;
+}
+function toast(msg){const t=document.getElementById("toast");t.textContent=msg;t.classList.add("show");clearTimeout(t._tm);t._tm=setTimeout(()=>t.classList.remove("show"),1400)}
+
+let searchMatches=[],searchIndex=0;
+function runSearch(q,cycle=false){
+  document.querySelectorAll(".search-hit").forEach(x=>x.classList.remove("search-hit"));searchMatches=[];searchIndex=0;
+  q=q.trim().toLowerCase();if(!q){document.getElementById("searchCount").textContent="";return}
+  document.querySelectorAll(".node,.baseline-segment").forEach(el=>{if(el.textContent.toLowerCase().includes(q)){el.classList.add("search-hit");searchMatches.push(el)}});
+  document.getElementById("searchCount").textContent=searchMatches.length?`${searchMatches.length}`:"0";
+  if(searchMatches.length){searchMatches[0].scrollIntoView({behavior:"smooth",block:"center",inline:"center"})}
+}
+function cycleSearch(){if(!searchMatches.length)return;searchIndex=(searchIndex+1)%searchMatches.length;searchMatches[searchIndex].scrollIntoView({behavior:"smooth",block:"center",inline:"center"})}
+function restoreSearch(){const q=document.getElementById("search").value;if(q)runSearch(q)}
+
+function openOverview(anchor){
+  const phaseRows=Object.values(DATA.phases).map(p=>`<tr><td><b>${esc(p.name)}</b></td><td>${p.range[0]}–${p.range[1]}</td><td>${esc(p.subtitle)}</td></tr>`).join("");
+  openPopup(`<h3>Обзор</h3><div class="sub">структура framework по фазам</div><table><tr><th>Фаза</th><th>Этапы</th><th>Результат</th></tr>${phaseRows}</table>`,anchor,"overview");
+}
+function openTraceability(anchor){
+  openPopup(`<h3>Трассировка</h3><div class="sub">сквозная логика зависимостей</div>
+    <p><b>Продукт:</b> решение → возможность продукта → требование к поведению.</p>
+    <p><b>Архитектура:</b> требование → архитектурное решение → evidence.</p>
+    <p><b>Изменение:</b> finding / evidence / owner decision → CHG → impact set → затронутый closure → повторный gate.</p>`,anchor,"traceability");
+}
+function exportProjectState(){
+  const payload={
+    format:"architecture-framework-project",version:1,exported_at:new Date().toISOString(),
+    state:{hiddenLayers:[...state.hiddenLayers],collapsedLayers:[...state.collapsedLayers],expandedStage:state.expandedStage,currentStage:state.currentStage,prompts:state.prompts,scrollLeft:document.getElementById("scroll").scrollLeft}
+  };
+  const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
+  const url=URL.createObjectURL(blob),a=document.createElement("a");
+  a.href=url;a.download="architecture-framework-project.json";document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
+  toast("Проект экспортирован");
+}
+function importProjectState(file){
+  if(!file)return;
+  const reader=new FileReader();
+  reader.onload=()=>{
+    try{
+      const data=JSON.parse(reader.result),v=data?.state||data;
+      if(Array.isArray(v.hiddenLayers)) state.hiddenLayers=new Set(v.hiddenLayers);
+      if(Array.isArray(v.collapsedLayers)) state.collapsedLayers=new Set(v.collapsedLayers);
+      if(Number.isInteger(v.expandedStage)) state.expandedStage=v.expandedStage;
+      if(Number.isInteger(v.currentStage)) state.currentStage=Math.max(1,Math.min(30,v.currentStage));
+      if(v.prompts&&typeof v.prompts==="object"&&!Array.isArray(v.prompts)) state.prompts={...v.prompts};
+      renderRows();updatePosition();saveState();
+      requestAnimationFrame(()=>{const sc=document.getElementById("scroll");if(Number.isFinite(v.scrollLeft))sc.scrollLeft=v.scrollLeft;drawLinks()});
+      toast("Проект импортирован");
+    }catch(_){toast("Не удалось импортировать проект")}
+  };
+  reader.readAsText(file);
+}
+
+function openRelationLegend(anchor){
+  openPopup(`<h3>Семантика связей</h3><div class="sub">каждая стрелка означает один тип отношения; соседство этапов само по себе стрелку не создаёт</div>
+    <table>
+      <tr><th>Связь</th><th>Смысл</th></tr>
+      <tr><td>Artifact dependency</td><td>activity создаёт output package; другой activity потребляет этот package.</td></tr>
+      <tr><td>Decision / work / claim state</td><td>activity записывает persistent state; следующий activity читает или закрывает именно это состояние.</td></tr>
+      <tr><td>Evidence → claim</td><td>evidence меняет epistemic status claim; consensus моделей этого не делает.</td></tr>
+      <tr><td>Governance</td><td>Decision Policy и authority checkpoint ограничивают допустимую операцию, но не являются data flow.</td></tr>
+      <tr><td>Convergence</td><td>показывает, где независимые результаты впервые разрешено сводить.</td></tr>
+      <tr><td>Return</td><td>условный feedback: finding/blocker требует вернуться в конкретный closure/verification activity.</td></tr>
+      <tr><td>CHG</td><td>target/propagation контролируемого изменения; стрелка не означает прямое редактирование baseline.</td></tr>
+      <tr><td>Baseline commit/reference</td><td>baseline возникает на gate; последующие activities ссылаются на его конкретную версию.</td></tr>
+    </table>`,anchor,"relation-legend");
+}
+
+function bindUI(){
+  const popup=document.getElementById("popup");
+  const popupClose=document.getElementById("popupClose");
+  // Close immediately on pointer-down. This avoids click/double-click handlers
+  // elsewhere in the diagram reopening or swallowing the close action.
+  popupClose.addEventListener("pointerdown",e=>{
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    closePopup();
+  });
+  popupClose.addEventListener("click",e=>{
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    closePopup();
+  });
+  document.getElementById("relationLegend").addEventListener("click",e=>{e.stopPropagation();openRelationLegend(e.currentTarget)});
+  const layerButton=document.getElementById("layerMenuButton"),layerMenu=document.getElementById("layerMenu");
+  layerButton.addEventListener("click",e=>{
+    e.stopPropagation();const open=layerMenu.classList.toggle("open");layerButton.setAttribute("aria-expanded",String(open));
+  });
+  layerMenu.addEventListener("click",e=>e.stopPropagation());
+  document.getElementById("timelineView").addEventListener("click",()=>{closePopup();document.getElementById("scroll").focus({preventScroll:true});scrollToStage(state.currentStage)});
+  document.getElementById("overviewView").addEventListener("click",e=>{e.stopPropagation();openOverview(e.currentTarget)});
+  document.getElementById("traceabilityView").addEventListener("click",e=>{e.stopPropagation();openTraceability(e.currentTarget)});
+  document.getElementById("exportProject").addEventListener("click",exportProjectState);
+  document.getElementById("importProject").addEventListener("click",()=>document.getElementById("importProjectFile").click());
+  document.getElementById("importProjectFile").addEventListener("change",e=>{importProjectState(e.target.files?.[0]);e.target.value=""});
+  // Capture-phase outside-close: works even when diagram controls stop bubbling.
+  // Any pointer press outside the popup closes it; there are no anchor exceptions.
+  document.addEventListener("pointerdown",e=>{
+    const menuWrap=layerButton.closest(".layer-menu-wrap");
+    if(menuWrap&&!menuWrap.contains(e.target)){layerMenu.classList.remove("open");layerButton.setAttribute("aria-expanded","false")}
+    if(!popup.classList.contains("open"))return;
+    if(e.target===popupClose||popupClose.contains(e.target))return;
+    if(!popup.contains(e.target))closePopup();
+  },true);
+  document.addEventListener("keydown",e=>{
+    if(e.key==="Escape"){closePopup();layerMenu.classList.remove("open");layerButton.setAttribute("aria-expanded","false");if(state.activePrinciple){state.activePrinciple=null;clearHighlight()}}
+    if(e.key==="/"&&!["INPUT","TEXTAREA"].includes(document.activeElement.tagName)){e.preventDefault();document.getElementById("search").focus()}
+    if(e.key==="ArrowLeft"&&document.activeElement===document.body)scrollToStage(state.currentStage-1);
+    if(e.key==="ArrowRight"&&document.activeElement===document.body)scrollToStage(state.currentStage+1);
+  });
+  const search=document.getElementById("search");let st;
+  search.addEventListener("input",()=>{clearTimeout(st);st=setTimeout(()=>runSearch(search.value),120)});
+  search.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();cycleSearch()}});
+  const sc=document.getElementById("scroll");let sct;
+  sc.addEventListener("scroll",()=>{closePopup();clearTimeout(sct);sct=setTimeout(()=>{updateCurrentFromScroll();saveState()},90);requestAnimationFrame(drawLinks)},{passive:true});
+  sc.addEventListener("pointerdown",e=>{
+    if(e.button!==0||e.target.closest("button,input,.node,.layer-label,summary,.popup"))return;
+    state.drag={x:e.clientX,left:sc.scrollLeft};sc.classList.add("dragging");sc.setPointerCapture(e.pointerId)
+  });
+  sc.addEventListener("pointermove",e=>{if(!state.drag)return;sc.scrollLeft=state.drag.left-(e.clientX-state.drag.x)});
+  sc.addEventListener("pointerup",e=>{state.drag=null;sc.classList.remove("dragging");try{sc.releasePointerCapture(e.pointerId)}catch(_){}});
+  window.addEventListener("resize",()=>{placePopup(state.popupAnchor);requestAnimationFrame(()=>requestAnimationFrame(()=>{syncCollapsedStageHeights();positionPhaseSeparators();drawLinks()}))});
+  if(document.fonts?.ready)document.fonts.ready.then(()=>{requestAnimationFrame(()=>requestAnimationFrame(()=>{positionPhaseSeparators();drawLinks()}))});
+  new ResizeObserver(()=>requestAnimationFrame(()=>{positionPhaseSeparators();drawLinks()})).observe(document.getElementById("timeline"));
+}
+function init(){
+  loadState();renderHeader();buildEdges();renderRows();bindUI();updatePosition();
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{syncCollapsedStageHeights();positionPhaseSeparators();drawLinks()}));
+  if(document.fonts?.ready)document.fonts.ready.then(()=>requestAnimationFrame(()=>{syncCollapsedStageHeights();positionPhaseSeparators();drawLinks()}));
+}
+init();
+</script>
+</body>
+</html>
