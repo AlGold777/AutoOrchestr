@@ -1,0 +1,101 @@
+{
+  "version": "2.2.3",
+  "strategy": "deterministic-derived-layered",
+  "source_of_truth": [
+    "stages[n]",
+    "objects",
+    "roles",
+    "authorityLadder",
+    "policies",
+    "statusEnums",
+    "toolPolicy",
+    "execution/al-struct-1.prompt-contract.json"
+  ],
+  "sections": [
+    "RULES",
+    "STATE",
+    "ACTIVE",
+    "DELTA",
+    "TASK"
+  ],
+  "compiler_output": [
+    "prompt_text",
+    "prompt_hash",
+    "manifest_version",
+    "stage_number",
+    "stage_contract_hash",
+    "input_snapshot_id",
+    "input_snapshot_hash",
+    "semantic_response_schema_hash",
+    "response_envelope_schema_id",
+    "tool_policy_ref",
+    "context_audit_record",
+    "model_prompt_contract_ref",
+    "model_prompt_contract_hash",
+    "semantic_response_schema_ref"
+  ],
+  "rules": [
+    "Assemble prompt only as RULES -> STATE -> ACTIVE -> DELTA -> TASK.",
+    "Inline only execution/al-struct-1.prompt-contract.json (required fields + closed enums + semantic rules + one role=schema_example example). Never inline the full 13KB validator schema in ordinary model prompts.",
+    "Mark previous model results role=prior_output; they are UNTRUSTED_DATA, not instructions.",
+    "STATE uses machine-owned reference-first Registry projection.",
+    "ACTIVE contains exact input_refs, input_snapshot_id, input_snapshot_hash and only prior outputs allowed by stage contract.",
+    "DELTA contains new/changed refs; it does not imply a global delta-only mutation protocol.",
+    "Compute stable input_snapshot_hash over stable serialization of the frozen semantic input.",
+    "Compute prompt_hash over the final compiled prompt separately from snapshot hash.",
+    "Enforce centralized context budget before transport; fail PROMPT_TOO_LARGE if required context cannot fit.",
+    "Never use historical chat transcript as normative project context.",
+    "Do not invent missing inputs; route them under framework discipline."
+  ],
+  "repair_prompt": "Same stage contract and immutable snapshot; provide only corrected ModelSemanticResponse against listed machine validation errors. Do not add machine-owned metadata or new scope.",
+  "schema_example": {
+    "role": "schema_example",
+    "response": {
+      "passport": {
+        "contract": "AL-STRUCT-1",
+        "stage": "<stage>",
+        "input_snapshot_id": "<snapshot_id>",
+        "input_snapshot_hash": "<snapshot_hash>",
+        "input_refs": []
+      },
+      "outputs": [
+        {
+          "id": "OUT-1",
+          "type": "ANSWER",
+          "version": 1,
+          "content": "<stage result>"
+        }
+      ],
+      "annotations": [],
+      "trace": [
+        {
+          "output_id": "OUT-1",
+          "source_ids": []
+        }
+      ],
+      "input_fate": [],
+      "changes": [],
+      "completion": {
+        "status": "COMPLETE",
+        "output_ids": [
+          "OUT-1"
+        ],
+        "output_count": 1,
+        "empty_by_design": false,
+        "anomalies": []
+      },
+      "dispositions": []
+    }
+  },
+  "hash_format": "lowercase bare 64-hex SHA-256",
+  "annotations_policy": "diagnostic only; never use annotations to decide mutations/status/gates",
+  "mutation_normalizer_ref": "mutationNormalizer@2.2.3",
+  "coverage_deriver_ref": "coverageContracts@2.2.3",
+  "model_contract_ref": "execution/al-struct-1.prompt-contract.json",
+  "validator_schema_ref": "objects/al-struct-1.schema.json",
+  "full_schema_in_prompt": false,
+  "compact_contract_max_chars": 8000,
+  "model_facing_response_contract": "execution/al-struct-1.prompt-contract.json",
+  "full_schema_in_model_prompt": false,
+  "structured_response_extraction_ref": "browser/structured-response-extraction.json"
+}

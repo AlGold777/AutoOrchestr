@@ -1,0 +1,61 @@
+{
+  "version": "2.2.3",
+  "runtime_owned_accountable_set": true,
+  "domain_transformation_dispositions": [
+    "PRESERVE",
+    "MERGE",
+    "SPLIT",
+    "SUPERSEDE",
+    "DEFER",
+    "REJECT"
+  ],
+  "input_key": "<object_id>@v<version>",
+  "note": "Domain dispositions are explicit model semantic intent and remain distinct from input_fate bookkeeping. Runtime owns accountable_set and validates/reconciles every declared disposition against changes, state_patch, trace and the frozen snapshot; model declarations never bypass mutation/policy validation.",
+  "transformation_stage_constraints": [
+    "runtime resolves accountable_set before model call",
+    "each accountable input appears exactly once in dispositions",
+    "no foreign disposition input_ref is allowed",
+    "each action is allowed by stage.response_contract.coverage_obligation",
+    "declared disposition and actual changes/input_fate must reconcile without ambiguity",
+    "annotations and narrative are never disposition sources"
+  ],
+  "commit_condition": "accountable_set == declared_disposition_inputs AND foreign==0 AND duplicates==0 AND reconciliation_errors==0",
+  "model_authored_dispositions": true,
+  "required_for_stage_contract": "response_contract.dispositions_required == true",
+  "non_transformation_rule": "dispositions MUST be [] when dispositions_required=false",
+  "component": "CoverageReconciler",
+  "mode": "DECLARATION_RECONCILIATION_VALIDATOR",
+  "reconciliation_rules": [
+    {
+      "action": "PRESERVE",
+      "require": "input remains represented without MERGE/SPLIT/SUPERSEDE/REJECT/DEFER conflict; UPDATE/REVISE of the same semantic identity is allowed"
+    },
+    {
+      "action": "MERGE",
+      "require": "a MERGE change contains input_ref in source_refs and at least one declared result_temp_id equals the MERGE temp_id"
+    },
+    {
+      "action": "SPLIT",
+      "require": "at least two distinct result_temp_ids exist and each resolves to an allowed successor change with lineage to input_ref"
+    },
+    {
+      "action": "SUPERSEDE",
+      "require": "a SUPERSEDE change targets input_ref; result_temp_ids, when present, resolve to the replacement proposal"
+    },
+    {
+      "action": "DEFER",
+      "require": "an UPDATE targeting input_ref proposes state_patch.status=DEFERRED and the transition is permitted by stage/policy"
+    },
+    {
+      "action": "REJECT",
+      "require": "input_fate is REJECTED, contract permits rejection, and no surviving successor preserves the input identity"
+    }
+  ],
+  "input_fate_cross_checks": [
+    "CONSUMED and NOT_USED never satisfy transformation coverage",
+    "TRANSFORMED must reconcile with MERGE/SPLIT or a stage-allowed transforming update",
+    "SUPERSEDED must reconcile with SUPERSEDE",
+    "REJECTED must reconcile with REJECT",
+    "PRESERVED must not reconcile with terminal removal actions"
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "version": "2.2.3",
+  "source": "correlated assistant message textContent/raw text only",
+  "authoritative_input_forbidden": [
+    "innerHTML",
+    "rendered-markdown reconstruction",
+    "uncorrelated last assistant message"
+  ],
+  "frame": {
+    "required": true,
+    "opening": "<<<PAF_RESPONSE <CALL_TOKEN> <ATTEMPT_TOKEN>>>",
+    "closing": "<<<END_PAF_RESPONSE <CALL_TOKEN> <ATTEMPT_TOKEN>>>",
+    "exactly_one_matching_frame": true,
+    "outside_frame_text": "ignored for semantic parsing but preserved in RAW; any second response frame is ambiguity failure"
+  },
+  "interior_modes": [
+    {
+      "mode": "WHOLE_TEXT_JSON",
+      "accept_if": "trim(frame interior) parses as exactly one JSON object"
+    },
+    {
+      "mode": "SINGLE_FENCED_JSON",
+      "accept_if": "frame interior contains exactly one fenced code block whose textContent parses as exactly one JSON object; surrounding prose is ignored only if it contains no second fenced block or additional parseable JSON object"
+    }
+  ],
+  "reject_if": [
+    "zero parseable JSON objects",
+    "more than one parseable JSON object",
+    "more than one fenced candidate",
+    "mismatched CALL_TOKEN/ATTEMPT_TOKEN",
+    "frame missing/incomplete"
+  ],
+  "canonical_output": "parsed JSON object only; wrapper prose/fences never enter CANONICAL representation",
+  "raw_output": "full correlated assistant text is retained unchanged for audit",
+  "error_codes": [
+    "FRAME_MISSING",
+    "FRAME_TOKEN_MISMATCH",
+    "FRAME_INCOMPLETE",
+    "STRUCTURE_NO_JSON",
+    "STRUCTURE_AMBIGUOUS_JSON",
+    "STRUCTURE_INVALID_JSON"
+  ]
+}

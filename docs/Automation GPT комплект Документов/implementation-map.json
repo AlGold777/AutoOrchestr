@@ -1,0 +1,67 @@
+{
+  "version": "2.2.3",
+  "target": "AlGold777/MyOrchestrator",
+  "existing_runtime_owns": [
+    "provider tabs",
+    "provider DOM",
+    "prompt insertion/submission",
+    "terminal state detection",
+    "stale-answer protection",
+    "assistant extraction",
+    "provider recovery",
+    "compressed jobState"
+  ],
+  "automation_layer_owns": [
+    "30-stage scheduler",
+    "immutable snapshots",
+    "context assembly",
+    "prompt compiler",
+    "AL-STRUCT-1 validation",
+    "registry/ledger/baselines",
+    "atomic commit",
+    "fanout/fanin",
+    "questionnaire",
+    "human test routing",
+    "recovery",
+    "exports"
+  ],
+  "reuse_dispatch": {
+    "message": "START_FULLPAGE_PROCESS",
+    "forceNewTabs": true,
+    "useApiFallback": false,
+    "sourceView": "automation",
+    "correlation": "stage/run-scoped pipelineRunId"
+  },
+  "modules": [
+    "manifest-loader.js",
+    "project-store.js",
+    "stage-scheduler.js",
+    "input-snapshot.js",
+    "context-assembler.js",
+    "prompt-compiler.js",
+    "dispatch-bridge.js",
+    "response-parser.js",
+    "al-struct-validator.js",
+    "semantic-validator.js",
+    "mutation-normalizer.js",
+    "state-committer.js",
+    "gate-engine.js",
+    "baseline-service.js",
+    "interaction-engine.js",
+    "recovery.js",
+    "export.js"
+  ],
+  "milestones": [
+    "M0 bundle loader/lint + precompiled validators",
+    "M1 synthetic zero-commit transport probe across enabled provider matrix",
+    "M2 IndexedDB state core + MutationNormalizer + StateCommitter + replay",
+    "M3 stages 1-13 + questionnaire + G1/PFB",
+    "M4 stages 14-17 + evidence + G2/AIP",
+    "M5 stages 18-30 + G4/CAB",
+    "M6 hardening/failover/export/crash matrix"
+  ],
+  "m1_probe_ref": "tests/m1-transport-stage.json",
+  "integration_boundary_ref": "integration/existing-runtime-boundary.json",
+  "m1_telemetry_ref": "runtime/m1-telemetry-contract.json",
+  "cost_telemetry_ref": "runtime/cost-telemetry-contract.json"
+}

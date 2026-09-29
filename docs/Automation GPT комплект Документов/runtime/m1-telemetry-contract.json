@@ -1,0 +1,41 @@
+{
+  "version": "2.2.3",
+  "scope": "M1 transport-boundary measurements; no Registry/StateCommit mutations",
+  "required_per_call": [
+    "provider",
+    "call_id",
+    "attempt_id",
+    "source_message_id",
+    "prompt_chars",
+    "compact_contract_chars",
+    "response_chars",
+    "extraction_mode",
+    "first_pass_valid",
+    "repair_attempted",
+    "repair_success",
+    "parse_error_code",
+    "schema_error_count",
+    "snapshot_hash_mismatch",
+    "duration_ms",
+    "transport_complete"
+  ],
+  "extraction_mode_enum": [
+    "WHOLE_TEXT_JSON",
+    "SINGLE_FENCED_JSON",
+    "FAILED"
+  ],
+  "aggregate_per_provider": [
+    "calls",
+    "first_pass_valid_rate",
+    "repair_recovery_rate",
+    "final_accept_rate",
+    "extraction_failure_rate",
+    "schema_failure_rate",
+    "snapshot_hash_mismatch_rate",
+    "duplicate_message_rate",
+    "median_duration_ms",
+    "p95_duration_ms"
+  ],
+  "decision_rule": "Do not increase repair count or weaken the semantic contract from estimates; use measured M1 provider data.",
+  "storage": "telemetry only; not canonical project truth"
+}

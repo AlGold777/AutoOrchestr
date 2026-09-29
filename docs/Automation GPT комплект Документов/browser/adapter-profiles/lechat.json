@@ -1,0 +1,26 @@
+{
+  "version": "2.2.3",
+  "provider": "lechat",
+  "model_key": "lechat",
+  "display_name": "Le Chat",
+  "selector_ownership": "existing MyOrchestrator provider adapter/content script",
+  "content_script": "content-scripts/content-lechat.js",
+  "host_patterns": [
+    "*://chat.mistral.ai/*"
+  ],
+  "automation_layer_requirement": "must implement browser/adapter-contract.json; Automation Layer MUST NOT duplicate provider DOM selector logic",
+  "structured_response_extraction": "use browser/structured-response-extraction.json over correlated assistant textContent/raw text; accept one unambiguous JSON object only; never authoritative innerHTML/rendered markdown",
+  "m1_required_tests": [
+    "provider profile binding",
+    "prompt delivery correlation",
+    "terminal assistant correlation",
+    "AL-STRUCT-1 JSON text extraction",
+    "source_message_id stability/dedup",
+    "whole-frame JSON extraction",
+    "single fenced JSON extraction",
+    "ambiguous multi-JSON rejection",
+    "M1 telemetry emission"
+  ],
+  "dom_selectors": "INHERIT_EXISTING_MYORCHESTRATOR",
+  "status": "required binding for current automation-gpt provider matrix"
+}

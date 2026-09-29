@@ -1,47 +1,29 @@
-# Source Alignment Report — Automation Bundle v2.2
+# SOURCE ALIGNMENT REPORT — v2.2.3
+
+Status: PASS after static verification.
 
 ## Framework preservation
 
-The generated bundle was checked against `product_architecture_framework_system_model_final.json`.
+- Canonical process remains 30 stages.
+- Human framework and `product_architecture_framework_system_model_final.json` are included unchanged as source artifacts.
+- PFB / AIP / CAB, gates G1–G4, roles, authority ladder and dependency/control-flow sources are preserved.
 
-Preserved exactly at the framework/domain level:
+## v2.2.3 runtime changes
 
-- 30 stage identities (number/title/phase)
-- 9 roles
-- authority ladder A0–A4
-- 23 object definitions
-- 23 status-enum families
-- 3 baselines: PFB / AIP / CAB
-- 4 gates: G1–G4
-- dependency graph
-- control flow
+- Explicit domain `dispositions[]` added to AL-STRUCT-1 for required transformation stages.
+- Coverage runtime changed to declaration reconciliation rather than inferred semantic disposition.
+- Canonical hashes are lowercase bare 64-hex throughout runtime schemas.
+- Compact prompt-facing AL-STRUCT contract is bound to the full validator schema by SHA-256.
+- Structured response extraction accepts whole-text JSON or one fenced JSON candidate and rejects ambiguity.
+- M1 is a zero-domain-commit synthetic probe with provider telemetry.
+- Runtime call/cost telemetry is measured rather than assumed.
+- `disput/` is explicitly excluded as Product→Architecture scheduler/state authority.
 
-## Intentional Automation Layer changes
+## Provider alignment
 
-The execution boundary is upgraded to v2.2:
+Ten Web providers are represented: ChatGPT, Claude, Gemini, Grok, Le Chat, Qwen, DeepSeek, Perplexity, Z.ai and Kimi. Production enablement still requires fixture + live M1 PASS per provider.
 
-- external model response → `AL-STRUCT-1`
-- snapshot hash acknowledgement
-- layered prompt assembly
-- reference-first Registry projection
-- context budget and context audit
-- RAW/CANONICAL/CONTEXT separation
-- context-only `[OBJ:TRUNC]`
-- source-message idempotency
-- stage-specific empty-by-design policy
-- role does not imply arbitration
+## Verification
 
-The internal canonical mutation / validation / atomic commit machinery is retained.
-
-## Static verification
-
-`tests/automation-static-contracts.mjs` validates:
-
-- 30 stages exist
-- model stages reference `AL_STRUCT_1`
-- required AL-STRUCT-1 fields/enums
-- context policy values/order
-- mandatory v2.2 validators
-- mandatory v2.2 contract tests
-
-All generated JSON files were parsed successfully after generation.
+Static integrity runner: `tests/automation-static-contracts.mjs`.
+Contract tests in bundle: 98.

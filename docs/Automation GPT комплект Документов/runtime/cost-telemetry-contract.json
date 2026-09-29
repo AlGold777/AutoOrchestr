@@ -1,0 +1,27 @@
+{
+  "version": "2.2.3",
+  "scope": "actual runtime cost/performance measurement; estimates such as 70-100 calls are non-normative",
+  "per_project": [
+    "model_calls_total",
+    "first_pass_calls",
+    "repair_calls",
+    "semantic_retry_calls",
+    "fanout_calls",
+    "tool_calls",
+    "human_waits",
+    "wall_clock_ms",
+    "completed_stages",
+    "terminal_state"
+  ],
+  "per_stage": [
+    "stage",
+    "model_calls",
+    "repair_calls",
+    "semantic_retry_calls",
+    "fanout_width",
+    "duration_ms",
+    "provider_set",
+    "terminal_state"
+  ],
+  "reporting_rule": "Use observed runs to estimate full-project call count and duration; do not encode a fixed expected call count in scheduling policy."
+}

@@ -1,0 +1,43 @@
+{
+  "id": "M1-TRANSPORT-PROBE",
+  "version": "2.2.3",
+  "canonical_framework_stage": false,
+  "purpose": "Validate Web transport/correlation/extraction/AL-STRUCT-1/schema/snapshot acknowledgement before any canonical mutation machinery is exercised.",
+  "input": {
+    "objects": [
+      "IDEA@v1"
+    ],
+    "provider_set_ref": "browser/provider-matrix.json"
+  },
+  "pipeline": [
+    "freeze snapshot",
+    "stable serialize",
+    "compute bare 64-hex input_snapshot_hash",
+    "compile RULES->STATE->ACTIVE->DELTA->TASK with compact prompt contract",
+    "dispatch via existing MyOrchestrator transport",
+    "receive correlated terminal result",
+    "extract one unambiguous JSON object",
+    "validate AL-STRUCT-1",
+    "validate snapshot acknowledgement",
+    "persist RAW/CANONICAL response and ContextAssemblyAudit/telemetry only",
+    "stop"
+  ],
+  "commit_policy": "ZERO_CANONICAL_COMMIT",
+  "forbidden": [
+    "Registry mutation",
+    "Ledger domain mutation",
+    "baseline mutation",
+    "gate mutation",
+    "canonical ID allocation"
+  ],
+  "done_when": [
+    "delivered prompt equals compiled prompt under transport canonicalization",
+    "response belongs to exact conversation/call/attempt",
+    "exactly one semantic JSON object extracted",
+    "AL-STRUCT-1 schema valid",
+    "snapshot hash acknowledgement valid",
+    "source_message_id dedup works",
+    "one bounded representation repair is exercised in negative fixture",
+    "M1 telemetry emitted"
+  ]
+}

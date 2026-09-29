@@ -1,0 +1,120 @@
+{
+  "contract": "AL-STRUCT-1",
+  "version": "2.2.3",
+  "purpose": "Compact model-facing contract. Full JSON Schema is validator-side only.",
+  "full_schema_ref": "objects/al-struct-1.schema.json",
+  "full_schema_hash": "bc41a4759df2683c0aa3c3841fff5ee96b64f67e82bc2e5fd263eeb2263f686e",
+  "top_level_required": [
+    "passport",
+    "outputs",
+    "annotations",
+    "trace",
+    "input_fate",
+    "dispositions",
+    "changes",
+    "completion"
+  ],
+  "closed_enums": {
+    "outputs.type": [
+      "ANSWER",
+      "QUESTION",
+      "REJECT"
+    ],
+    "annotations.type": [
+      "FACT",
+      "ASSUMPTION",
+      "CONSTRAINT",
+      "DECISION",
+      "RISK",
+      "EVIDENCE",
+      "FINDING",
+      "CONFLICT",
+      "OPEN",
+      "DEFERRED",
+      "CHANGE",
+      "BASELINE",
+      "VERIFIED",
+      "REJECTED",
+      "SUPERSEDED"
+    ],
+    "input_fate.disposition": [
+      "CONSUMED",
+      "PRESERVED",
+      "TRANSFORMED",
+      "REJECTED",
+      "SUPERSEDED",
+      "NOT_USED"
+    ],
+    "dispositions.action": [
+      "PRESERVE",
+      "MERGE",
+      "SPLIT",
+      "SUPERSEDE",
+      "DEFER",
+      "REJECT"
+    ],
+    "changes.op": [
+      "CREATE",
+      "UPDATE",
+      "SUPERSEDE",
+      "MERGE"
+    ],
+    "completion.status": [
+      "COMPLETE",
+      "PARTIAL",
+      "FAILED"
+    ],
+    "completion.reason": [
+      "NO_MATERIAL_DELTA"
+    ]
+  },
+  "rules": [
+    "Return one AL-STRUCT-1 semantic object inside the requested PAF response frame. Do not invent canonical IDs, versions, hashes, run IDs or transport metadata.",
+    "Copy passport.input_snapshot_hash exactly; format is lowercase bare 64-hex.",
+    "Existing objects may be referenced only from passport.input_refs. New objects use tmp-* in changes.",
+    "CONSUMED means processed only, never closed/verified/resolved.",
+    "For dispositions_required=false return dispositions:[]. For dispositions_required=true provide exactly one disposition per accountable input; it must reconcile with changes/input_fate.",
+    "Use changes[].state_patch for status/blocking/authority_class; do not hide registry state in payload.",
+    "annotations are diagnostic only and do not create evidence/authority/status.",
+    "completion.output_count and completion.output_ids must exactly match outputs."
+  ],
+  "example": {
+    "role": "schema_example",
+    "response": {
+      "passport": {
+        "contract": "AL-STRUCT-1",
+        "stage": "<stage>",
+        "input_snapshot_id": "<snapshot_id>",
+        "input_snapshot_hash": "<64hex>",
+        "input_refs": []
+      },
+      "outputs": [
+        {
+          "id": "OUT-1",
+          "type": "ANSWER",
+          "version": 1,
+          "content": "<stage result>"
+        }
+      ],
+      "annotations": [],
+      "trace": [
+        {
+          "output_id": "OUT-1",
+          "source_ids": []
+        }
+      ],
+      "input_fate": [],
+      "dispositions": [],
+      "changes": [],
+      "completion": {
+        "status": "COMPLETE",
+        "output_ids": [
+          "OUT-1"
+        ],
+        "output_count": 1,
+        "empty_by_design": false,
+        "anomalies": []
+      }
+    }
+  }
+}

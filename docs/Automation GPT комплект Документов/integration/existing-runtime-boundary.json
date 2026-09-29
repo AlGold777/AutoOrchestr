@@ -1,0 +1,20 @@
+{
+  "version": "2.2.3",
+  "target": "AlGold777/MyOrchestrator",
+  "principle": "Automation Layer and disput/ are separate orchestration domains. disput/ is not a drop-in execution engine for Product→Architecture Framework.",
+  "may_reuse_via_explicit_adapter": [
+    "provider dispatch/transport primitives",
+    "assistant correlation/completion primitives",
+    "selector/provider lifecycle utilities",
+    "generic restart/recovery utilities that do not own Product→Architecture canonical state"
+  ],
+  "must_not_reuse_as_authority": [
+    "disput debate scheduler",
+    "disput claim/objection/evidence/revision/synthesis vocabulary",
+    "disput artifact model as Product→Architecture Registry schema",
+    "disput stage/gate semantics",
+    "disput commit semantics as a substitute for AL StateCommitter"
+  ],
+  "integration_rule": "Any reused module must cross a narrow adapter whose output matches Automation Layer contracts; no shared mutable canonical state between debate and Product→Architecture runtimes.",
+  "reason": "Avoid dual schedulers, vocabulary leakage and two competing commit/state machines."
+}
