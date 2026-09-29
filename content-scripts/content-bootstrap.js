@@ -154,7 +154,10 @@
           // explicit warning below.
           const bridgeUrl = chrome.runtime?.getURL('content-scripts/content-bridge.js');
           const bridgeSource = await fetch(bridgeUrl).then((resp) => resp.text());
-          const bridgedSource = bridgeSource.replaceAll('__LLM_BRIDGE_TOKEN__', JSON.stringify(bridgeToken));
+          // Replace the complete quoted literal. Replacing only the token text
+          // produces `const raw = '"bridge_..."'` and authenticates the MAIN
+          // bridge with quote characters that ContentUtils never sends.
+          const bridgedSource = bridgeSource.replaceAll("'__LLM_BRIDGE_TOKEN__'", JSON.stringify(bridgeToken));
           const s = document.createElement('script');
           s.textContent = bridgedSource;
           s.onload = () => { try { s.remove(); } catch (_) {} };

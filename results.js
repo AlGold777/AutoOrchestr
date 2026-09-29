@@ -15027,7 +15027,11 @@ document.addEventListener('click', (event) => {
         storeNewPagesState(false);
     };
     if (newPagesCheckbox) {
-        newPagesCheckbox.checked = true;
+        // After a page reload the provider tabs have just been cleaned up. Reuse
+        // those tabs on the next prompt instead of reopening every model tab in
+        // the sequential force-new-tabs path, which can delay the first send by
+        // the full Round 0 binding budget.
+        newPagesCheckbox.checked = !isPageReloadNavigation();
         newPagesCheckbox.addEventListener('change', () => {
             storeNewPagesState(newPagesCheckbox.checked);
         });

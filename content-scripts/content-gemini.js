@@ -657,7 +657,8 @@ async function geminiHumanType(element, text, options = {}) {
   // character-paced; run 1786287946831 spent ~5 minutes inserting 11.8K chars,
   // long enough for background to schedule a repair. Use the same native
   // setter/input transaction atomically for long payloads.
-  if (String(text || '').length > 2000) {
+  const forceAtomic = options?.atomic === true;
+  if (forceAtomic || String(text || '').length > 2000) {
     await fallbackTypeGemini(element, text);
     return;
   }
@@ -1306,7 +1307,10 @@ async function injectAndGetResponse(prompt, attachments = [], meta = null) {
         // Avoid double-typing if the main-world setter already populated the composer.
         const afterSetter = readComposerText(inputField);
         if (!pasteOk && (!afterSetter || afterSetter.slice(0, Math.min(afterSetter.length, 24)) !== String(prompt || '').slice(0, Math.min(24, String(prompt || '').length)))) {
-            await geminiHumanType(inputField, prompt, { wpm: 115 });
+            await geminiHumanType(inputField, prompt, {
+                wpm: 115,
+                atomic: dispatchMeta?.round1FastDispatch === true
+            });
         }
         const promptHead = normalizeGeminiComposerText(prompt).slice(0, 120);
         let preparedText = normalizeGeminiComposerText(readComposerText(inputField));
@@ -1319,7 +1323,10 @@ async function injectAndGetResponse(prompt, attachments = [], meta = null) {
             if (!inputField?.isConnected) {
                 throw { type: 'selector_not_found', message: 'Gemini live composer not found after attachment' };
             }
-            await geminiHumanType(inputField, prompt, { wpm: 115 });
+            await geminiHumanType(inputField, prompt, {
+                wpm: 115,
+                atomic: dispatchMeta?.round1FastDispatch === true
+            });
             preparedText = normalizeGeminiComposerText(readComposerText(inputField));
         }
         const geminiPromptInserted = Boolean(promptHead && preparedText.includes(promptHead));

@@ -1401,6 +1401,9 @@ async function insertPerplexityDraft(composer, prompt, options = {}) {
   const token = `pplx_comp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const attr = 'data-llm-perplexity-composer-token';
   try {
+    try { composer.focus?.({ preventScroll: true }); } catch (_) { try { composer.focus?.(); } catch (_) {} }
+    try { composer.click?.(); } catch (_) {}
+    await sleep(50);
     composer.setAttribute(attr, token);
     const bridgeReady = await ensureMainWorldBridge();
     if (bridgeReady) {

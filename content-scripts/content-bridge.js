@@ -1,33 +1,59 @@
 (function () {
-  if (window.__ExtMainBridge) return;
-  window.__ExtMainBridge = true;
+  const BRIDGE_VERSION = 2;
   let bridgeToken = (() => {
     try {
       const raw = '__LLM_BRIDGE_TOKEN__';
       // Inline injection templates the placeholder with the real token. When the
       // file is injected verbatim via chrome.scripting.executeScript (CSP-safe
-      // MAIN-world path) the placeholder survives untouched and the token
-      // arrives through the one-shot setter below instead.
+      // MAIN-world path) the placeholder survives untouched and the token arrives
+      // through the re-keyable setter below instead.
       const placeholder = ['__LLM_BRIDGE', 'TOKEN__'].join('_');
       return raw === placeholder ? null : raw;
     } catch (_) {
       return null;
     }
   })();
-  if (!bridgeToken) {
-    // One-shot setter for the file-based MAIN-world injection: the token
-    // travels through chrome.scripting args (extension API), never the DOM.
-    // Returns false when already consumed, letting the background detect a
-    // page script that raced to hijack the setter.
-    let tokenConsumed = false;
-    window.__LLM_BRIDGE_SET_TOKEN__ = (token) => {
-      if (tokenConsumed || typeof token !== 'string' || !token) return false;
-      tokenConsumed = true;
-      bridgeToken = token;
-      try { delete window.__LLM_BRIDGE_SET_TOKEN__; } catch (_) {}
-      return true;
-    };
+
+  const existingBridge = window.__ExtMainBridge;
+  if (existingBridge
+    && typeof existingBridge === 'object'
+    && existingBridge.version === BRIDGE_VERSION
+    && typeof existingBridge.rekey === 'function') {
+    // MV3 service-worker / extension reloads create a new isolated-world token
+    // while the page's MAIN world survives. Re-key the existing listener rather
+    // than leaving it permanently bound to the stale token.
+    window.__LLM_BRIDGE_SET_TOKEN__ = existingBridge.rekey;
+    if (bridgeToken) existingBridge.rekey(bridgeToken);
+    return;
   }
+
+  if (existingBridge === true && typeof window.__LLM_BRIDGE_SET_TOKEN__ === 'function') {
+    // Compatibility with a legacy bridge that has not consumed its one-shot
+    // token yet. If this is an inline recovery, hand the token to that bridge;
+    // otherwise let the background call the setter after executeScript returns.
+    if (!bridgeToken || window.__LLM_BRIDGE_SET_TOKEN__(bridgeToken) === true) return;
+  }
+
+  const rekeyBridge = (token) => {
+    const nextToken = typeof token === 'string' ? token.trim() : '';
+    if (!nextToken) return false;
+    bridgeToken = nextToken;
+    if (window.__ExtMainBridgeTestHooks) {
+      window.__ExtMainBridgeTestHooks.bridgeToken = bridgeToken;
+    }
+    return true;
+  };
+
+  // Keep this setter available for the lifetime of the page. A bridge token is
+  // a session credential, not a one-shot initialization value: extension reload
+  // must be able to rotate it without accumulating another set of MAIN listeners.
+  window.__LLM_BRIDGE_SET_TOKEN__ = rekeyBridge;
+  window.__ExtMainBridge = Object.freeze({
+    version: BRIDGE_VERSION,
+    rekey: rekeyBridge
+  });
+  if (bridgeToken) rekeyBridge(bridgeToken);
+
   const isTrustedBridgeEvent = (ev) => {
     const detail = ev?.detail && typeof ev.detail === 'object' ? ev.detail : null;
     if (!detail) return false;
