@@ -6,8 +6,9 @@ The project is optimized for unstable provider UIs. Its core design assumes sele
 
 ## Status
 
-- Current version: `2.81.495`, synchronized in `manifest.json`, `package.json`
-  and the root package entry in `package-lock.json`
+- Current version: `2.81.500`, synchronized in `manifest.json`, `package.json`,
+  the root package entries in `package-lock.json`, and root page stylesheet
+  cache-busters
 - Extension type: Chrome Manifest V3
 - Package name: `llm-selector-manager`
 - Stability: internal / advanced local use
@@ -156,6 +157,13 @@ in [`timings-settings.md`](timings-settings.md). Any runtime timing change must
 update that document and keep `tests/timing-ladder.test.js` green where the
 profile ladder is affected.
 
+For cross-file runtime changes, generated outputs, merge checks, release
+metadata and browser reload verification, follow
+[`development-workflow.md`](development-workflow.md). The root manifest is the
+authority for the active extension injection path; `dist/` may contain generated
+outputs for other supported setups and must not be assumed active without
+checking that setup.
+
 ```bash
 npm test -- --runInBand
 npm run test:telemetry
@@ -184,7 +192,7 @@ shared/              Cross-context contracts and pure logic
 results/             Extracted results-page helper modules (boot/dom/attachments/tooltips)
 styles/              Modular CSS loaded via the styles.css @import loader
 selectors/           Static selector profiles per provider
-dist/                Built adapter bundles
+dist/                Generated adapters and optional content bundles
 pipeline/            Pipeline flow/runtime helpers
 disput/              Debate protocol FSMs, presets, prompts, registry, run store and projections
 Modifiers/           Prompt modifier presets

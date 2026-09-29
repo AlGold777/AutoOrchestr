@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-09-29 — Remove stale attachment caps and document runtime verification, version 2.81.500
+
+- Remove five-file truncation from tracked distribution adapters and provider bundles to match the source adapters.
+- Document the incident and a workflow for tracing the active runtime, rebuilding generated outputs, checking provider-boundary behavior, and verifying the loaded extension.
+- The source fix predates this build-output refresh; the current manifest loads raw content scripts, so stale `dist/` output alone does not establish the cause of a live five-file limit.
+
 ### 2026-09-29 — Integrate Automation Layer and provider runtime branches, version 2.81.499
 
 - Set `automation.html` to the Automation Layer v2.2 workspace and retain the copied Pipeline test surface as `automation-pipeline.html`.
@@ -7216,6 +7222,3 @@ Backlog `what-to-do.md`, батч 1 (UI + Финализация).
 - Re-resolve live composer nodes during prompt preparation and avoid DOM-clearing that can restore stale framework state.
 - Respect editor-owned `beforeinput` handling and prevent duplicate native insertion/fallback paths.
 - Verify the replacement composer before accepting prompt preparation, including Kimi and Perplexity flows.
-### 2026-09-29 — Remove the five-file attachment cap again, version 2.81.500
-
-- Remove stale five-file truncation from tracked distribution adapters and provider bundles so they pass every selected attachment through, matching the source adapters.
