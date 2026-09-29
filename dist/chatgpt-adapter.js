@@ -464,7 +464,7 @@ const hydrateAttachments = (raw = []) => {
 
 async function attachFilesToComposer(target, attachments = []) {
   if (!attachments || !attachments.length) return false;
-  const files = hydrateAttachments(attachments).slice(0, 5);
+  const files = hydrateAttachments(attachments);
   if (!files.length) return false;
 
   const makeDataTransfer = () => {

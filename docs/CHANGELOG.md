@@ -7216,3 +7216,6 @@ Backlog `what-to-do.md`, батч 1 (UI + Финализация).
 - Re-resolve live composer nodes during prompt preparation and avoid DOM-clearing that can restore stale framework state.
 - Respect editor-owned `beforeinput` handling and prevent duplicate native insertion/fallback paths.
 - Verify the replacement composer before accepting prompt preparation, including Kimi and Perplexity flows.
+### 2026-09-29 — Remove the five-file attachment cap again, version 2.81.500
+
+- Remove stale five-file truncation from tracked distribution adapters and provider bundles so they pass every selected attachment through, matching the source adapters.
