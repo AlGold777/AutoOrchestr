@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-09-29 — Integrate Automation Layer and provider runtime branches, version 2.81.499
+
+- Set `automation.html` to the Automation Layer v2.2 workspace and retain the copied Pipeline test surface as `automation-pipeline.html`.
+- Preserve explicit in-app navigation to both Automation pages while keeping the extension action on the comparator views.
+- Integrate provider bridge re-keying and reload hardening from the dispatch branch.
+
 ### 2026-09-26 — Remove legacy LLMs label from all-responses filenames, version 2.81.498
 
 - Route legacy all-responses filename calls to the prompt-only format with up to 50 prompt characters and no `LLMs` label.
