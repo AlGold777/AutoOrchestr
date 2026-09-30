@@ -2256,14 +2256,34 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         AMBIGUOUS: 'uncertain',
                         CONTEXT_LOST: 'uncertain'
                     })[terminalResult.status] || 'uncertain';
-                    const finalize = () => handleLLMResponse(message.llmName, '', {
-                        type: errorType,
-                        message: terminalResult.reason || terminalResult.status
-                    }, {
-                        ...(message.meta || {}),
-                        completionTerminalResult: terminalResult,
-                        completionRolloutMode: authority.rolloutMode
-                    }, '');
+                    const finalize = () => {
+                        // A deferred uncertain terminal that ends without a final answer
+                        // must not discard text the model already produced: commit it as
+                        // a PARTIAL answer ("неполный"), the user decides what to do.
+                        const live = jobState?.llms?.[message.llmName];
+                        const snapshotText = String(live?.pendingFinalAnswer || live?.answer || '').trim();
+                        if (snapshotText && DEFERRABLE_COMPLETION_TERMINALS.has(terminalResult.status)) {
+                            handleLLMResponse(message.llmName, snapshotText, null, {
+                                ...(message.meta || {}),
+                                completionTerminalResult: terminalResult,
+                                completionRolloutMode: authority.rolloutMode,
+                                responseMeta: {
+                                    partial: true,
+                                    source: 'deferred_terminal_snapshot',
+                                    completionReason: 'deferred_terminal_snapshot'
+                                }
+                            }, String(live?.pendingFinalAnswerHtml || live?.answerHtml || ''));
+                            return;
+                        }
+                        handleLLMResponse(message.llmName, '', {
+                            type: errorType,
+                            message: terminalResult.reason || terminalResult.status
+                        }, {
+                            ...(message.meta || {}),
+                            completionTerminalResult: terminalResult,
+                            completionRolloutMode: authority.rolloutMode
+                        }, '');
+                    };
                     const liveEntry = jobState?.llms?.[message.llmName];
                     if (DEFERRABLE_COMPLETION_TERMINALS.has(terminalResult.status) && liveEntry?.promptSubmittedAt) {
                         deferUncertainCompletionTerminal(message.llmName, liveEntry, finalize, terminalResult);
