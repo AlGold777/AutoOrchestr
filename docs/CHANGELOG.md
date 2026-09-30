@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-09-30 — Automation: prototype page, in-memory session, version 2.81.494
+
+- Rebuild the Automation page strictly on `automation_prototype_v2.2.3.html`: model bar (first selected = moderator), two model columns, center feed with inline owner questions, Results / Save / Cancel.
+- Keep session state in memory only; a reload starts clean and cancels a running batch. The telemetry window's Automation tab reads a live mirror in `chrome.storage.session`.
+
 ### 2026-09-30 — Automation Lab: prototype layout, clean answers, diagnostics, result routing, version 2.81.493
 
 - Route Automation Lab results only to the tab that started the run and stamp them `sourceView: automation`. The Pipeline/Results feed ignores them: raw framed answers could previously land in an open Pipeline page while the lab waited until timeout.

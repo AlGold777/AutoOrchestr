@@ -5,7 +5,7 @@
     <!-- LLM Discus: hidden search marker for developers -->
     <meta name="keywords" content="LLM Discus">
     <title>LLM Comparison</title>
-    <link rel="stylesheet" href="styles.css?v=2.81.493">
+    <link rel="stylesheet" href="styles.css?v=2.81.494">
 </head>
 <body class="pipeline-page">
     <div class="app-shell">
@@ -701,12 +701,7 @@
 
                         <section class="devtools-tabpanel" id="automation-tabpanel" role="tabpanel" aria-labelledby="automation-tab" tabindex="0" hidden="">
                             <div class="ald-toolbar">
-                                <label class="sr-only" for="automation-project-select">Automation project</label>
-                                <select id="automation-project-select" class="devtools-select"><option value="">Нет проектов</option></select>
-                                <button type="button" class="ald-btn" id="automation-refresh">Обновить</button>
-                                <button type="button" class="ald-btn" id="automation-export-report" title="JSON копируется в буфер и сохраняется файлом">Отчёт для Claude</button>
-                                <button type="button" class="ald-btn" id="automation-open-lab">Открыть Automation Lab</button>
-                                <span class="ald-meta" id="automation-diag-status"></span>
+                                <button type="button" class="ald-btn" id="automation-export-report" disabled>Отчёт для Claude</button>
                             </div>
                             <div class="ald-root" id="automation-diagnostics"><p class="ald-empty">Загрузка…</p></div>
                         </section>
@@ -981,8 +976,6 @@
     <script src="automation/al-canonical.js"></script>
     <script src="automation/al-schema.js"></script>
     <script src="automation/al-spec.js"></script>
-    <script src="automation/al-store.js"></script>
-    <script src="automation/al-snapshot.js"></script>
     <script src="automation/al-diagnostics.js"></script>
     <script src="automation/al-diagnostics-view.js"></script>
     <script src="automation/automation-devtools.js"></script>

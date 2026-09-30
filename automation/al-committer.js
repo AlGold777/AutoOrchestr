@@ -113,8 +113,8 @@
   const DPL_APPROVAL_TEXT = {
     ru: {
       question: 'Утвердить Decision Policy (DPL), составленную на стадии 1? Она определяет, какие решения модели закрывают сами, а какие требуют вашего выбора.',
-      approve: 'Утвердить и активировать Decision Policy',
-      regenerate: 'Отклонить и пересоздать стадию 1'
+      approve: 'Утвердить',
+      regenerate: 'Пересоздать'
     },
     en: {
       question: 'Approve the Decision Policy (DPL) drafted in stage 1? It defines which decisions models may close automatically and which ones require your selection.',

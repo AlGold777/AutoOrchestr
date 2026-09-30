@@ -3,113 +3,65 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Automation Lab</title>
+  <title>Automation</title>
   <link rel="stylesheet" href="automation/lab.css">
   <link rel="stylesheet" href="automation/diagnostics-view.css">
 </head>
 <body>
   <div class="page">
     <section class="runbar">
-      <nav class="model-navigation" id="modelNav" aria-label="Выбор моделей"></nav>
+      <nav class="model-navigation" id="modelNav" aria-label="Модели"></nav>
       <div class="run-actions">
-        <select id="projectSelect" aria-label="Проект"></select>
-        <button type="button" class="secondary" id="newBtn" title="Новый проект">Новый</button>
-        <button type="button" class="primary" id="runBtn">Продолжить</button>
-        <button type="button" class="secondary" id="stopBtn">Стоп</button>
-        <button type="button" class="secondary" id="retryBtn" hidden>Повторить стадию</button>
-        <button type="button" class="secondary" id="resultsBtn">Результаты</button>
-        <button type="button" class="secondary" id="diagBtn">Диагностика <span id="diagCount" class="count" hidden></span></button>
-        <button type="button" class="secondary" id="reportBtn" title="Скопировать полный отчёт для анализа в Claude">Отчёт для Claude</button>
-        <label class="sim-switch" title="Проверить механику без веб-моделей: ответы генерирует встроенный симулятор">
-          <input type="checkbox" id="simulatorToggle"> Симулятор
-        </label>
+        <button class="secondary" id="resultsBtn" disabled>Results</button>
+        <button class="secondary" id="saveBtn" disabled>Save</button>
+        <button class="secondary" id="resetBtn">Cancel</button>
+        <button class="icon-btn" id="diagBtn" title="Диагностика" aria-label="Диагностика">⚙<span class="alert-dot" id="diagDot" hidden></span></button>
       </div>
     </section>
 
-    <div id="lintBanner" class="banner banner-error" hidden></div>
-
     <section class="workspace">
-      <article class="column model-column" id="leftColumn">
-        <div class="head"><div class="col-tabs" id="leftTabs"></div><small id="leftStatus" class="col-status">ожидание</small></div>
+      <article class="column">
+        <div class="head"><div class="col-tabs" id="leftTabs"></div><small id="leftStatus">ожидание</small></div>
         <div class="body">
-          <div class="chat empty" id="leftChat"><p class="placeholder">Здесь появится лента первой модели: что ей отправлено и что она ответила.</p></div>
-          <div class="request-view empty" id="leftRequest">запрос к модели</div>
+          <div id="leftChat" class="chat"></div>
+          <div id="leftRequest" class="request-view empty"></div>
         </div>
       </article>
 
-      <section class="column center-column">
-        <div class="head">
-          <h2>Automation</h2>
-          <ol class="stage-strip" id="stageStrip"></ol>
-          <small id="stateChip" class="chip">нет проекта</small>
-        </div>
+      <section class="column">
+        <div class="head"><h2>Automation</h2><small id="centerStatus"></small></div>
         <div class="body">
-          <div class="chat center-chat empty" id="centerChat">
-            <div class="placeholder">
-              <p><strong>Стадии 1–5 Product→Architecture.</strong></p>
-              <ol>
-                <li>Выберите модели вверху (минимум 2). Первая выбранная — основная: она одна работает на стадиях 1, 3 и 4.</li>
-                <li>Опишите идею продукта внизу и нажмите «Запустить».</li>
-                <li>На стадиях 2 и 5 все выбранные модели отвечают параллельно, каждая в своей новой вкладке.</li>
-                <li>Дважды система спросит вас: утвердить Decision Policy и выбрать варианты решений — вопросы появятся здесь.</li>
-              </ol>
-            </div>
-          </div>
+          <div id="centerChat" class="chat center-chat"></div>
           <form class="composer" id="composer">
-            <textarea id="ideaInput" placeholder="Опишите идею продукта: кто пользователь, какую проблему решаем, какой результат нужен."></textarea>
-            <button type="submit" class="primary" id="sendBtn">Запустить</button>
+            <textarea id="ideaInput" placeholder="Идея продукта"></textarea>
+            <label class="sim" title="Ответы генерирует встроенный симулятор"><input type="checkbox" id="simToggle"> Симулятор</label>
+            <button id="sendBtn" class="primary" type="submit">Send</button>
           </form>
         </div>
       </section>
 
-      <article class="column model-column" id="rightColumn">
-        <div class="head"><div class="col-tabs" id="rightTabs"></div><small id="rightStatus" class="col-status">ожидание</small></div>
+      <article class="column">
+        <div class="head"><div class="col-tabs" id="rightTabs"></div><small id="rightStatus">ожидание</small></div>
         <div class="body">
-          <div class="chat empty" id="rightChat"><p class="placeholder">Здесь появится лента второй модели.</p></div>
-          <div class="request-view empty" id="rightRequest">запрос к модели</div>
+          <div id="rightChat" class="chat"></div>
+          <div id="rightRequest" class="request-view empty"></div>
         </div>
       </article>
     </section>
   </div>
 
-  <div class="modal" id="resultsModal" hidden>
-    <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="resultsTitle">
-      <div class="modal-head">
-        <h2 id="resultsTitle">Результаты</h2>
-        <nav class="tabs" role="tablist">
-          <button role="tab" data-tab="results" aria-selected="true">Итог</button>
-          <button role="tab" data-tab="diagnostics">Диагностика</button>
-          <button role="tab" data-tab="calls">Вызовы</button>
-          <button role="tab" data-tab="telemetry">Телеметрия</button>
-          <button role="tab" data-tab="registry">Реестр</button>
-          <button role="tab" data-tab="events">События</button>
-        </nav>
-        <div class="modal-actions">
-          <button type="button" class="secondary" id="exportMdBtn">Экспорт .md</button>
-          <button type="button" class="secondary" id="exportJsonBtn">Экспорт .json</button>
-          <button type="button" class="secondary danger" id="deleteBtn">Удалить проект</button>
-          <button type="button" class="secondary" id="closeResultsBtn">Закрыть</button>
+  <div id="resultsModal" class="results-modal" hidden>
+    <div class="results-panel" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div class="results-panel-head">
+        <h2 id="modalTitle">Results</h2>
+        <div class="run-actions">
+          <button class="secondary" id="reportBtn" hidden>Отчёт для Claude</button>
+          <button class="secondary" id="closeModalBtn">Close</button>
         </div>
       </div>
-      <div class="modal-body">
-        <div id="tabResults" class="tab-panel"></div>
-        <div id="tabDiagnostics" class="tab-panel" hidden></div>
-        <div id="tabCalls" class="tab-panel" hidden></div>
-        <div id="tabTelemetry" class="tab-panel" hidden></div>
-        <div id="tabRegistry" class="tab-panel" hidden></div>
-        <div id="tabEvents" class="tab-panel" hidden></div>
-      </div>
+      <div id="modalBody" class="results-body"></div>
     </div>
   </div>
-
-  <dialog id="textDialog" class="text-dialog">
-    <form method="dialog">
-      <header><strong id="textDialogTitle"></strong><span class="modal-actions"><button type="button" class="secondary" id="textDialogCopy">Копировать</button><button value="close" class="secondary" aria-label="Закрыть">✕</button></span></header>
-      <pre id="textDialogBody"></pre>
-    </form>
-  </dialog>
-
-  <div id="toast" class="toast" hidden></div>
 
   <script src="tos-consent.js"></script>
   <script src="automation/al-canonical.js"></script>
@@ -125,8 +77,8 @@
   <script src="automation/al-simulator.js"></script>
   <script src="automation/al-transport.js"></script>
   <script src="automation/al-diagnostics.js"></script>
-  <script src="automation/model-icons.js"></script>
   <script src="automation/al-diagnostics-view.js"></script>
+  <script src="automation/model-icons.js"></script>
   <script src="automation/lab-ui.js"></script>
 </body>
 </html>

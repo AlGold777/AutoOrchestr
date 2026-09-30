@@ -126,31 +126,6 @@
     container.replaceChildren(...blocks);
   }
 
-  // Reads the Automation Lab IndexedDB directly (same extension origin) for pages that do not host
-  // the engine, e.g. the telemetry window of the Pipeline page. Read-only.
-  async function readProjects(indexedDB = root.indexedDB) {
-    const Store = root.AlStore;
-    if (!Store || !indexedDB) return { store: null, projects: [] };
-    const store = await Store.createIdbStore({ indexedDB });
-    const projects = await store.transaction('*', 'readonly', (t) => t.all('projects'));
-    projects.sort((a, b) => String(b.updated_at || b.created_at).localeCompare(String(a.updated_at || a.created_at)));
-    return { store, projects };
-  }
-
-  async function readState(store, projectId) {
-    return store.transaction('*', 'readonly', async (t) => {
-      const project = await t.get('projects', projectId);
-      if (!project) return null;
-      const records = await t.byProject('registry', projectId);
-      const latest = root.AlSnapshot ? root.AlSnapshot.latestEntries(records) : [];
-      const execs = (await t.byProject('execs', projectId)).sort((a, b) => a.seq - b.seq);
-      const calls = await t.byProject('calls', projectId);
-      const events = (await t.byProject('events', projectId)).sort((a, b) => a.seq - b.seq).map((item) => item.event);
-      const diag = (await t.byProject('diag', projectId)).sort((a, b) => (a.diag_id < b.diag_id ? -1 : 1));
-      return { project, records, latest, execs, calls, events, diag };
-    });
-  }
-
-  const api = Object.freeze({ render, readProjects, readState, h });
+  const api = Object.freeze({ render, h });
   root.AlDiagnosticsView = api;
 })(typeof window !== 'undefined' ? window : globalThis);
