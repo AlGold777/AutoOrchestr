@@ -1573,7 +1573,7 @@
 
     const setupTelemetryCollapsibles = () => {
         const collapsibleCards = Array.from(document.querySelectorAll(
-            '#telemetry-tabpanel .devtools-card[data-collapsible], #disput-tabpanel .devtools-card[data-collapsible]'
+            '#telemetry-tabpanel .devtools-card[data-collapsible], #disput-tabpanel .devtools-card[data-collapsible], #automation-tabpanel .devtools-card[data-collapsible]'
         ));
         collapsibleCards.forEach((card) => {
             const header = card.querySelector('.devtools-card-header');

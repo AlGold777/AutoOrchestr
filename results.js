@@ -5466,6 +5466,7 @@ document.addEventListener('click', (event) => {
 
             const resolvedTimeoutMs = resolvePipelineWaitTimeoutMs(models, timeoutMs);
             const batchResult = await pipelineWaiter.waitForModels(models, { timeoutMs: resolvedTimeoutMs, context: pipelineContext, signal });
+            window.MessageDelivery?.closeBatch({ models: batchResult.missing || [], timedOut: batchResult.timedOut, failed: batchResult.failed || {} });
             batchResult.pipelineContext ||= pipelineContext;
             if (activePipelineRunContext?.anonymizationMap && window.DebateAnonymization) {
                 Object.keys(batchResult.responses || {}).forEach((model) => {
@@ -16426,6 +16427,9 @@ document.addEventListener('click', (event) => {
     // races with the background service worker for content-script RPC messages.
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (!RESULTS_RUNTIME_MESSAGE_TYPES.has(message?.type)) return false;
+        if (window.MessageDelivery && (message.type === 'STATUS_UPDATE' || message.type === 'GLOBAL_STATE_BROADCAST')) {
+            window.MessageDelivery.observeRuntime(message);
+        }
         if (window.MessageDelivery && ['LLM_PARTIAL_RESPONSE', 'LLM_FINAL_RESPONSE', 'FINAL_LLM_RESPONSE'].includes(message.type)) {
             message = window.MessageDelivery.receive(message, { final: isTerminalPipelineMessage(message) });
             if (!message) return false; // stale answer of an earlier request

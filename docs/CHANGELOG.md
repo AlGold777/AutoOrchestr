@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-09-30 — Full Automation tab in the telemetry window, version 2.81.496
+
+- Record tabs, model statuses, first text, empty answers and batches that never answered in the delivery journal.
+- Rebuild the Automation tab in the style of the Disput tab: delivery health per model, problems with a next step, per-message timeline, raw events, model filter, "only problems", clear and JSON export.
+
 ### 2026-09-30 — Pipeline message delivery and Judge, version 2.81.495
 
 - Remove the separate Automation Lab page and the architecture runtime; keep the Pipeline page as the only surface.

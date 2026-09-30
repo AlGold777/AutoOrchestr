@@ -5,7 +5,7 @@
     <!-- LLM Discus: hidden search marker for developers -->
     <meta name="keywords" content="LLM Discus">
     <title>LLM Comparison</title>
-    <link rel="stylesheet" href="styles.css?v=2.81.495">
+    <link rel="stylesheet" href="styles.css?v=2.81.496">
 </head>
 <body class="pipeline-page">
     <div class="app-shell">
@@ -700,13 +700,37 @@
                         </section>
 
                         <section class="devtools-tabpanel" id="automation-tabpanel" role="tabpanel" aria-labelledby="automation-tab" tabindex="0" hidden="">
-                            <div class="devtools-card-grid">
-                                <article class="devtools-card telemetry-card">
-                                    <div class="devtools-card-header">
-                                        <h2>Message delivery</h2>
-                                        <button type="button" class="diag-icon-btn diag-export-all-logs-btn" id="delivery-report-btn" title="Report for Claude (JSON)">JSON</button>
+                            <div class="devtools-toolbar">
+                                <div class="devtools-toolbar-actions">
+                                    <div class="telemetry-filters">
+                                        <select id="automation-model-filter" class="devtools-select" aria-label="Filter Automation by model"><option value="all">All models</option></select>
+                                        <label class="disput-only-problems-label"><input type="checkbox" id="automation-only-problems"> Only problems</label>
                                     </div>
-                                    <div class="devtools-card-body"><div class="telemetry-rounds-table-wrapper" id="delivery-journal"><p class="diag-empty">No messages yet.</p></div></div>
+                                    <div class="telemetry-actions">
+                                        <button type="button" class="diag-icon-btn" id="automation-clear" title="Clear Automation journal" aria-label="Clear Automation journal"><i class="ti ti-trash" aria-hidden="true"></i></button>
+                                        <button type="button" class="diag-icon-btn" id="automation-export-json" title="Export Automation telemetry as JSON" aria-label="Export Automation telemetry as JSON"><i class="ti ti-download" aria-hidden="true"></i></button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="devtools-card-grid">
+                                <article class="devtools-card telemetry-rounds-card" data-collapsible="automation-health">
+                                    <div class="devtools-card-header">
+                                        <h2>Delivery Health Summary</h2>
+                                        <span class="devtools-meta" id="automation-status"></span>
+                                    </div>
+                                    <div class="devtools-card-body"><div class="telemetry-rounds-table-wrapper" id="automation-health"><p class="diag-empty">No messages yet.</p></div></div>
+                                </article>
+                                <article class="devtools-card telemetry-card" data-collapsible="automation-problems">
+                                    <div class="devtools-card-header"><h2>Problems &amp; Recovery</h2></div>
+                                    <div class="devtools-card-body"><div class="telemetry-rounds-table-wrapper" id="automation-problems"><p class="diag-empty">No diagnoses yet.</p></div></div>
+                                </article>
+                                <article class="devtools-card telemetry-rounds-card" data-collapsible="automation-messages">
+                                    <div class="devtools-card-header"><h2>Message Timeline</h2></div>
+                                    <div class="devtools-card-body"><div class="telemetry-rounds-table-wrapper" id="automation-messages"><p class="diag-empty">No messages yet.</p></div></div>
+                                </article>
+                                <article class="devtools-card telemetry-card is-collapsed" data-collapsible="automation-raw">
+                                    <div class="devtools-card-header"><h2>Raw Delivery Events</h2></div>
+                                    <div class="devtools-card-body"><div class="telemetry-rounds-table-wrapper" id="automation-raw"><p class="diag-empty">No journal events.</p></div></div>
                                 </article>
                             </div>
                         </section>
@@ -956,7 +980,9 @@
     <script src="results/debate-plan-view-model.js"></script>
     <script src="shared/run-error.js"></script>
     <script src="shared/judge-prompt-builder.js"></script>
+    <link rel="stylesheet" href="shared/message-delivery-view.css">
     <script src="shared/message-delivery.js"></script>
+    <script src="shared/message-delivery-diagnosis.js"></script>
     <script src="shared/message-delivery-view.js"></script>
     <script src="results-shared.js"></script>
     <script src="notes/notes-constants.js"></script>

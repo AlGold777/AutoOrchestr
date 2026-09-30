@@ -1,0 +1,4 @@
+.ad-problem { border-left: 3px solid #d0d5dd; padding: 6px 10px; margin-bottom: 8px; font-size: 12px; line-height: 1.45; }
+.ad-problem[data-severity="critical"] { border-left-color: #b42318; }
+.ad-problem[data-severity="warning"] { border-left-color: #b54708; }
+.ad-hint { font-weight: 600; }
