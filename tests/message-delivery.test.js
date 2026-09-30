@@ -107,9 +107,13 @@ describe('delivery diagnosis', () => {
     expect(matrix.find((r) => r.model === 'E')).toMatchObject({ delivered: 1, stale: 1, medianMs: 3000 });
   });
 
-  test('a failed terminal status is an error even with a token', () => {
-    const journal = [sent('A', 't1'), { at: at(2), kind: 'verified', model: 'A', token: 't1', chars: 4, ms: 2000, status: 'TIMEOUT', reason: 'x' }];
-    expect(Diagnosis.diagnose(journal).sends[0].result).toBe('error');
+  test('a failed terminal status is an error even with a token; a timeout with text is partial', () => {
+    const failed = [sent('A', 't1'), { at: at(2), kind: 'verified', model: 'A', token: 't1', chars: 4, ms: 2000, status: 'ERROR', reason: 'x' }];
+    expect(Diagnosis.diagnose(failed).sends[0].result).toBe('error');
+    const cut = [sent('A', 't1'), { at: at(2), kind: 'verified', model: 'A', token: 't1', chars: 4, ms: 2000, status: 'TIMEOUT', reason: 'x' }];
+    expect(Diagnosis.diagnose(cut).sends[0].result).toBe('partial');
+    const hidden = [sent('A', 't1'), { at: at(2), kind: 'verified', model: 'A', token: 't1', chars: 4, ms: 2000, status: 'PARTIAL' }];
+    expect(Diagnosis.diagnose(hidden).problems.map((p) => p.code)).toEqual(['partial']);
   });
 
   test('closeBatch records models that never answered, once', () => {

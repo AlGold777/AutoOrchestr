@@ -1,5 +1,13 @@
 # CHANGELOG — Project
 
+### 2026-09-30 — Automation tab: full delivery diagnosis, version 2.81.508
+
+- Diagnose every message from the full journal: dispatch phases (sent, accepted, submitted, blocked with reason), request and dispatch ids, completion, recovery source, revisions and answers rejected by identity.
+- New results: `partial` (text without completed generation — no longer shown as delivered), `not_submitted` (dispatch started but the send was never confirmed, with the block reason), `cancelled`; an error status with text stays an error.
+- New problems: identity rejections, unconfirmed provider stop, refused or rejected batch start, batch timeout.
+- New **Batches** card: stage, models, start refusals and reasons, time to start, outcome, duration and deadline, models without an answer, completion per model.
+- Delivery Health adds Partial, Not submitted, Error, Cancelled, Rejected and median time to submit; the timeline shows request/dispatch ids, the dispatch path and the provider stop result; the JSON report carries the transport contract version.
+
 ### 2026-09-30 — Pipeline transport journal, version 2.81.507
 
 - The Automation journal now records batch start/refusal/end, background dispatch phases, provider stop results, and rejected or revised terminal answers with their request and dispatch identifiers.

@@ -1,15 +1,26 @@
 // shared/message-delivery-view.js
-// Telemetry window → Automation tab: delivery health, problems with next steps, every message's
-// timeline, per-model matrix, raw journal and a JSON report. Style follows the Disput tab.
+// Telemetry window → Automation tab: delivery health, batches, problems with next steps,
+// every message's timeline (request id, dispatch phases, completion), per-model matrix,
+// raw journal and a JSON report. Style follows the Disput tab.
 (function initMessageDeliveryView(root) {
   'use strict';
 
   const KEY = () => root.MessageDelivery?.JOURNAL_KEY || 'messageDelivery.journal';
   const $ = (id) => document.getElementById(id);
-  const RESULT = { delivered: 'доставлено ✓', no_token: 'без метки', empty: 'пустой ответ', no_answer: 'нет ответа', no_tab: 'нет вкладки', error: 'ошибка', waiting: 'ждём…' };
+  const RESULT = {
+    delivered: 'доставлено ✓', partial: 'неполный', no_token: 'без метки', empty: 'пустой ответ', no_answer: 'нет ответа',
+    not_submitted: 'не отправлен', no_tab: 'нет вкладки', error: 'ошибка', cancelled: 'отменён', waiting: 'ждём…'
+  };
+  const OUTCOME = { settled: 'завершён', timeout: 'таймаут', cancelled: 'отменён', rejected: 'не стартовал' };
+  const PHASE = {
+    dispatch_started: 'отправка', command_accepted: 'команда принята', submitted: 'отправлено',
+    submit_unconfirmed: 'отправка не подтверждена', command_not_delivered: 'команда не доставлена', blocked: 'заблокировано'
+  };
   const SEV = { critical: 'Критично', warning: 'Внимание', info: 'Инфо' };
   const time = (at) => (at ? new Date(at).toLocaleTimeString() : '—');
   const secs = (ms) => (ms == null ? '—' : ms < 1000 ? `${ms} мс` : `${(ms / 1000).toFixed(1)} с`);
+  const shortId = (id) => (id ? String(id).replace(/^treq-/, '').slice(0, 8) : '—');
+  const join = (parts, sep = ' · ') => parts.filter((part) => part != null && part !== false && part !== '').join(sep);
 
   function el(tag, attrs, ...kids) {
     const node = document.createElement(tag);
@@ -36,23 +47,75 @@
     const keep = (item) => model === 'all' || item.model === model;
     return {
       journal, diagnosis,
-      sends: diagnosis.sends.filter((s) => keep(s) && (!only || s.result !== 'delivered' || s.stale)),
-      problems: diagnosis.problems.filter(keep),
+      sends: diagnosis.sends.filter((s) => keep(s) && (!only || s.result !== 'delivered' || s.stale || s.rejections.length)),
+      batches: diagnosis.batches.filter((b) => (model === 'all' || b.models.includes(model)) && (!only || b.outcome !== 'settled' || b.refusals.length)),
+      problems: diagnosis.problems.filter((p) => model === 'all' || !p.model || p.model === model),
       matrix: diagnosis.matrix.filter(keep),
-      raw: journal.filter(keep)
+      raw: journal.filter((e) => model === 'all' || !e.model || e.model === model || (e.models || []).includes(model))
     };
   }
 
+  function dispatchPath(send) {
+    if (!send.dispatch.length) return null;
+    return send.dispatch.map((d) => join([PHASE[d.phase] || d.phase, d.ms != null ? secs(d.ms) : null, d.reason ? `(${d.reason})` : null], ' ')).join(' → ');
+  }
+
   function sendRow(send) {
-    const flow = [
+    const flow = join([
       send.tab != null ? `вкладка ${send.tab}` : 'вкладки нет',
+      dispatchPath(send),
       send.statuses.length ? send.statuses.join(' → ') : null,
-      send.firstTextMs != null ? `текст через ${secs(send.firstTextMs)}` : 'текста нет'
-    ].filter(Boolean).join(' · ');
+      send.firstTextMs != null ? `текст через ${secs(send.firstTextMs)}` : 'текста нет',
+      send.providerStop ? `стоп: ${send.providerStop.stopped ? 'подтверждён' : send.providerStop.reason}` : null
+    ]);
     const t = send.terminal;
-    const end = t ? `${secs(t.ms)}${t.chars != null ? ` · ${t.chars} симв.` : ''}${t.status ? ` · ${t.status}` : ''}${t.reason ? ` · ${t.reason}` : ''}` : '—';
-    const row = el('tr', null, el('td', null, time(send.at)), el('td', null, send.model), el('td', null, send.batchId || '—'), el('td', null, flow), el('td', null, end), el('td', null, RESULT[send.result]));
-    if (!['delivered', 'waiting'].includes(send.result)) row.style.color = 'var(--danger, #b42318)';
+    const end = t ? join([
+      secs(t.ms),
+      t.chars != null ? `${t.chars} симв.` : null,
+      t.status || null,
+      t.completion || null,
+      t.source && t.source !== 'live' ? t.source : null,
+      t.reason || null,
+      send.revisions ? `ревизий: ${send.revisions}` : null,
+      send.rejections.length ? `отклонено: ${send.rejections.length}` : null
+    ]) : '—';
+    const dispatchTail = send.dispatchIds.map((id) => String(id).split(':').pop()).join(',');
+    const ids = `${shortId(send.requestId)}${dispatchTail ? ` / #${dispatchTail}` : ''}`;
+    const row = el('tr', null,
+      el('td', null, time(send.at)),
+      el('td', null, send.model),
+      el('td', { title: [send.requestId, ...send.dispatchIds].filter(Boolean).join('\n') }, ids),
+      el('td', null, send.batchId || '—'),
+      el('td', null, flow),
+      el('td', null, end),
+      el('td', null, RESULT[send.result] || send.result));
+    if (!['delivered', 'waiting', 'cancelled'].includes(send.result)) row.style.color = 'var(--danger, #b42318)';
+    return row;
+  }
+
+  function batchRow(batch) {
+    const refusalReasons = [...new Set(batch.refusals.map((r) => join([r.reason || r.errorCode, r.blockingModel], ' ')))].join(', ');
+    const start = join([
+      batch.refusals.length ? `отказов: ${batch.refusals.length} (${refusalReasons})` : null,
+      batch.accepted ? `${batch.accepted.confirmed ? 'принят' : 'без подтверждения'} через ${secs(batch.accepted.waitedMs)}` : null
+    ]) || '—';
+    const answered = Object.entries(batch.completion || {}).map(([model, completion]) => `${model}: ${completion}`).join(', ');
+    const end = join([
+      batch.durationMs != null ? secs(batch.durationMs) : null,
+      batch.timeoutMs != null ? `срок ${secs(batch.timeoutMs)}` : null,
+      batch.missing?.length ? `без ответа: ${batch.missing.join(', ')}` : null,
+      answered || null,
+      batch.reason || null
+    ]) || '—';
+    const stage = join([batch.stageAttemptId || batch.batchId, batch.judge ? 'judge' : null, batch.manual ? 'moderator' : null, batch.generationProfile]);
+    const row = el('tr', null,
+      el('td', null, time(batch.at)),
+      el('td', null, stage || '—'),
+      el('td', null, batch.models.join(', ') || '—'),
+      el('td', null, start),
+      el('td', null, OUTCOME[batch.outcome] || batch.outcome || 'идёт…'),
+      el('td', null, end));
+    if (['timeout', 'rejected'].includes(batch.outcome)) row.style.color = 'var(--danger, #b42318)';
     return row;
   }
 
@@ -61,29 +124,43 @@
     if (!panel || panel.hidden) return;
     const journal = await readJournal();
     const view = filtered(journal);
-    const models = [...new Set(view.diagnosis.sends.map((s) => s.model))];
+    const models = [...new Set(view.diagnosis.sends.map((s) => s.model).filter(Boolean))];
     const select = $('automation-model-filter');
     const current = select.value;
     select.replaceChildren(new Option('All models', 'all'), ...models.map((m) => new Option(m, m)));
     select.value = models.includes(current) ? current : 'all';
 
     const all = view.diagnosis.sends;
+    const count = (result) => all.filter((s) => s.result === result).length;
     const crit = view.diagnosis.problems.filter((p) => p.severity === 'critical').length;
-    $('automation-status').textContent = all.length ? `${all.length} sent · ${all.filter((s) => s.result === 'delivered').length} delivered · ${crit} critical` : '';
+    $('automation-status').textContent = all.length
+      ? `${all.length} sent · ${count('delivered')} delivered · ${count('partial')} partial · ${count('waiting')} waiting · ${crit} critical`
+      : '';
 
     $('automation-health').replaceChildren(all.length ? table(
-      ['Model', 'Sent', 'Delivered', 'No token', 'Empty', 'No answer', 'No tab', 'Stale dropped', 'Median time'],
-      view.matrix.map((r) => el('tr', null, el('td', null, r.model), el('td', null, r.sent), el('td', null, r.delivered), el('td', null, r.no_token), el('td', null, r.empty), el('td', null, r.no_answer), el('td', null, r.no_tab), el('td', null, r.stale), el('td', null, secs(r.medianMs))))) : empty('No messages yet.'));
+      ['Model', 'Sent', 'Delivered', 'Partial', 'No token', 'Empty', 'No answer', 'Not submitted', 'No tab', 'Error', 'Cancelled', 'Rejected', 'Stale dropped', 'Median submit', 'Median answer'],
+      view.matrix.map((r) => el('tr', null,
+        el('td', null, r.model), el('td', null, r.sent), el('td', null, r.delivered), el('td', null, r.partial),
+        el('td', null, r.no_token), el('td', null, r.empty), el('td', null, r.no_answer), el('td', null, r.not_submitted),
+        el('td', null, r.no_tab), el('td', null, r.error), el('td', null, r.cancelled), el('td', null, r.rejected),
+        el('td', null, r.stale), el('td', null, secs(r.medianSubmitMs)), el('td', null, secs(r.medianMs)))))
+      : empty('No messages yet.'));
+
+    $('automation-batches')?.replaceChildren(view.batches.length
+      ? table(['Started', 'Stage', 'Models', 'Start', 'Outcome', 'Finish'], view.batches.slice().reverse().map(batchRow))
+      : empty(view.diagnosis.batches.length ? 'Nothing matches the filter.' : 'No batches yet.'));
 
     $('automation-problems').replaceChildren(view.problems.length
       ? el('div', null, view.problems.map((p) => el('div', { class: 'ad-problem', 'data-severity': p.severity },
-        el('div', { class: 'ad-problem-head' }, el('strong', null, `[${SEV[p.severity]}] ${p.title}`), el('span', { class: 'devtools-meta' }, ` ${time(p.at)}${p.batchId ? ` · ${p.batchId}` : ''}${p.reason ? ` · ${p.reason}` : ''}`)),
+        el('div', { class: 'ad-problem-head' },
+          el('strong', null, `[${SEV[p.severity]}] ${p.title}`),
+          el('span', { class: 'devtools-meta' }, ` ${join([time(p.at), p.batchId, p.count > 1 ? `×${p.count}` : null, p.reason])}`)),
         el('div', null, p.detail),
         p.hint ? el('div', { class: 'ad-hint' }, `Что делать: ${p.hint}`) : null)))
       : empty(all.length ? 'No problems.' : 'No diagnoses yet.'));
 
     $('automation-messages').replaceChildren(view.sends.length
-      ? table(['Sent', 'Model', 'Batch', 'Path', 'Finish', 'Result'], view.sends.slice().reverse().map(sendRow))
+      ? table(['Sent', 'Model', 'Request / dispatch', 'Batch', 'Path', 'Finish', 'Result'], view.sends.slice().reverse().map(sendRow))
       : empty(all.length ? 'Nothing matches the filter.' : 'No messages yet.'));
 
     $('automation-raw').replaceChildren(view.raw.length
@@ -100,6 +177,7 @@
       report: 'message-delivery',
       generated_at: new Date().toISOString(),
       extension_version: root.chrome?.runtime?.getManifest?.().version,
+      transport_contract_version: root.TransportContract?.VERSION || null,
       diagnosis: root.MessageDeliveryDiagnosis.diagnose(journal),
       journal
     }, null, 2);

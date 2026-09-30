@@ -12,7 +12,7 @@ function setup(names, send) {
       {tabId:i+1, lastDispatchMeta:{dispatchId:name, runSessionId:1}}]))},
     dispatchSleepMs: ms => new Promise(resolve => setTimeout(resolve,ms)),
     prepareReusableTabReceiver: jest.fn(async tabId => ({ ok: true, tabId })),
-    saveJobState: async () => {}, emitTelemetry: jest.fn(),
+    saveJobState: async () => {}, emitTelemetry: jest.fn(), reportDispatchPhase: jest.fn(),
     activateTabForDispatch: async id => {events.push(['focus',id,Date.now()]);return true;},
     chrome: {runtime:{}, storage: {session: {
       set: jest.fn(async values => Object.assign(sessionStorage, structuredClone(values))),

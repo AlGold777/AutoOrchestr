@@ -15,9 +15,24 @@
 - Ответ со своей меткой — доставлен. Ответ с чужой меткой (устаревший) не показывается. Ответ без метки показывается с пометкой «Без метки доставки».
 - Из текста вырезаются только служебные элементы: метки `[[AO-…]]`, строка инструкции и разделители судьи `<<<RESPONSE … START|END>>>`. Остальное содержимое вида `<<<…>>>` (код, шаблоны) сохраняется.
 - **Judge** (слева от Moderator): после ответов моделей выбранная модель получает их все и даёт итог; её карточка помечена «Judge». Ответы для судьи и карточек отбираются по статусу результата, а не по тексту, начинающемуся с «Error:».
-- Окно телеметрии → **Automation**: сводка по моделям, проблемы с пояснением и что делать, путь каждого сообщения (подготовка → вкладка → статусы → первый текст → итог), сырой журнал, фильтры, JSON-отчёт. Запрос открывается событием `prepared` (в журналах до 2.81.503 — `sent`). Журнал живёт до перезагрузки страницы и хранит не более 3000 событий.
-- В журнал попадают начало и исход пакета (`batch_start`, `batch_end`), отказы старта (`start_refused`), наблюдаемые фазы отправки (`dispatch`), результат остановки провайдера (`provider_stop`) и отклонённые/повторные финальные ответы (`identity_rejected`, `revision`). События включают доступные ID запроса и отправки, модель и причину; они служат диагностике и не меняют результат пакета.
-- Отмена пакета записывается как `cancelled`, отсутствие финального ответа — как `no_answer`; журнал сохраняет причину закрытия.
+
+## Окно телеметрии → Automation
+
+Журнал (`chrome.storage.session`, до 3000 событий, живёт до перезагрузки страницы) собирает факты трёх источников:
+
+| Источник | События |
+| --- | --- |
+| Панель | `batch_start` (модели, `transportRequestId`, срок, этап, профиль), `start_refused` (код, причина, модель, которая ещё генерирует), `start_accepted` / `start_unconfirmed`, `batch_end` (`settled` / `timeout` / `cancelled` / `rejected`, длительность, без ответа, завершённость по моделям), `prepared`, `identity_rejected` (ответ не принят: `no_request_id`, `unknown_request`, `model_mismatch`, `batch_settled`, `duplicate_terminal`, `revision_after_terminal`), `cancelled`, `no_answer` |
+| Фон (`TRANSPORT_DISPATCH_PHASE`) | `dispatch` с фазой: `dispatch_started`, `command_accepted`, `submitted`, `submit_unconfirmed`, `command_not_delivered`, `blocked` (`circuit_open`, `tab_not_ready`, `ack_timeout`, `page_not_ready`, `focus_unavailable`, …) — с `dispatchId`, вкладкой и временем от подготовки |
+| Ответы и вкладка | `first_text`, `verified` / `missing_token` / `empty_answer` (статус, `completion`, `dispatchId`, источник `live` или `GLOBAL_STATE_ANSWER_RECOVERY`), `revision`, `stale_dropped`, `status`, `tab`, `provider_stop` (результат нажатия «Стоп» у провайдера) |
+
+Вкладка показывает:
+
+- **Delivery Health Summary** — по моделям: отправлено, доставлено, неполные, без метки, пустые, нет ответа, не отправлено, нет вкладки, ошибки, отменено, отклонено по принадлежности, устаревшие; медианы времени до отправки и до ответа.
+- **Batches** — каждый пакет: этап, модели, отказы старта с причиной, время до старта, исход, длительность и срок, модели без ответа, завершённость по моделям.
+- **Problems & Recovery** — проблемы с пояснением и что делать: `not_submitted` и `no_tab` с причиной блокировки, `partial`, `identity`, `stop_unconfirmed`, `start_refused` / `start_rejected`, `batch_timeout` и прежние коды.
+- **Message Timeline** — каждое сообщение: `transportRequestId` и номера отправок, путь (вкладка → фазы отправки → статусы → первый текст → остановка), итог (время, размер, статус, завершённость, источник, ревизии, отклонённые ответы).
+- **Raw Delivery Events** и JSON-отчёт (с версией транспортного контракта).
 
 Код: `shared/transport-contract.js`, `shared/message-delivery.js`, `shared/message-delivery-diagnosis.js`, `shared/message-delivery-view.js`, точки подключения в `results.js` (`pipelineWaiter`, `runModelBatch`, обработчик сообщений, `syncStatusFromGlobalState`), `background/job-orchestrator.js` (`transportIdentityFor`), `background/dispatch-coordinator.js`, `content-scripts/content-utils.js`.
 
