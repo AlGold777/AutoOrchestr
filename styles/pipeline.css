@@ -1025,6 +1025,17 @@ body.is-resizing {
 
 .disput-state-map-workspace[hidden] { display: none; }
 body.pipeline-page .disput-state-map-workspace { right: 24px; }
+.disput-state-map-workspace.disput-state-map-workspace-shell {
+    bottom: auto;
+    min-width: 0;
+    background: #fff;
+}
+.disput-state-map-workspace-shell .disput-state-map-header {
+    border-bottom: 0;
+}
+.disput-state-map-header-shell > strong {
+    font-size: 13px;
+}
 .disput-state-map-header, .disput-state-map-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; border-bottom: 1px solid #dce3ec; background: #fff; }
 .disput-state-map-header > div:first-child { display: grid; gap: 2px; }
 .disput-state-map-header span { color: #657186; font-size: 11px; }
