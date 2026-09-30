@@ -5352,6 +5352,10 @@ document.addEventListener('click', (event) => {
                     ]));
                 }
             }
+            // Delivery proof: each model gets its own token to repeat on the last line.
+            if (window.MessageDelivery) {
+                promptsByModel = window.MessageDelivery.prepare({ prompt, promptsByModel, models, batchId: context?.pipelineBatchId || context?.stageAttemptId || '' });
+            }
             if (!(await ensureNoOtherViewRun())) {
                 throw new Error('Another page has an active request.');
             }
@@ -5491,6 +5495,26 @@ document.addEventListener('click', (event) => {
             return batchResult;
         };
 
+        // Judge: the model chosen in #judge-select receives every answer to the moderator's
+        // message and returns a verdict, shown as its card with the "Judge" role.
+        const runJudgeForModeratorTurn = async (moderatorText, responses) => {
+            const judge = String(document.getElementById('judge-select')?.value || '').trim();
+            const answers = Object.fromEntries(Object.entries(responses).filter(([, answer]) => !isErrorOutput(answer)));
+            if (!judge || !Object.keys(answers).length || !window.JudgePromptBuilder?.buildResponsesList) return;
+            const list = window.JudgePromptBuilder.buildResponsesList(answers, { isErrorOutput }).list;
+            renderDebateModelCards('Judge', [judge], { approvalSelectable: false });
+            const verdict = await runModelBatch({
+                prompt: `Вопрос модератора:\n${moderatorText}\n\nОтветы моделей:\n${list}\n\nТы судья. Сравни ответы, отметь сильные и слабые стороны и дай итоговый ответ.`,
+                models: [judge],
+                forceNewTabs: false,
+                useApiFallback: apiModeCheckbox ? apiModeCheckbox.checked : true,
+                context: { manualModeratorDispatch: true, judge: true, sessionId: debateTabsState.activeSessionId },
+                generationProfile: 'long'
+            });
+            const answer = verdict?.responses?.[judge];
+            if (!isErrorOutput(answer)) updateDebateModelCardOutput(judge, String(answer || ''), '', { status: 'SUCCESS', source: 'judge', role: 'Judge' });
+        };
+
         let manualModeratorDispatchActive = false;
         const startManualModeratorDispatch = async () => {
             if (manualModeratorDispatchActive) {
@@ -5534,6 +5558,7 @@ document.addEventListener('click', (event) => {
                     });
                 });
                 if (forceNewTabs) resetNewPagesCheckboxAfterOpen();
+                await runJudgeForModeratorTurn(moderatorText, result?.responses || {}, attachments);
                 return true;
             } catch (error) {
                 console.error('[RESULTS] Manual moderator dispatch failed', error);
@@ -16384,8 +16409,10 @@ document.addEventListener('click', (event) => {
     // races with the background service worker for content-script RPC messages.
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (!RESULTS_RUNTIME_MESSAGE_TYPES.has(message?.type)) return false;
-        // Automation Lab runs own their results; their raw framed answers never enter this feed.
-        if (message?.sourceView === 'automation') return false;
+        if (window.MessageDelivery && ['LLM_PARTIAL_RESPONSE', 'LLM_FINAL_RESPONSE', 'FINAL_LLM_RESPONSE'].includes(message.type)) {
+            message = window.MessageDelivery.receive(message, { final: isTerminalPipelineMessage(message) });
+            if (!message) return false; // stale answer of an earlier request
+        }
         try {
             switch (message.type) {
                 case 'LLM_JOB_CREATED':
@@ -20352,7 +20379,7 @@ function checkCompareButtonState() {
     }
     function appendModeratorFeedEntry(text) {
         if (!debateModelCards) return;
-        const normalizedText = String(text || '').trim();
+        const normalizedText = cleanFeedText(text);
         if (!normalizedText) return;
         const session = ensureDebateSession(debateTabsState.activeSessionId);
         const card = document.createElement('div');
@@ -20409,7 +20436,7 @@ function checkCompareButtonState() {
     }
     function appendVerdictFeedEntry(text, { title = 'Verdict', source = 'Moderator' } = {}) {
         if (!debateModelCards) return;
-        const normalizedText = String(text || '').trim();
+        const normalizedText = cleanFeedText(text);
         if (!normalizedText) return;
         const session = ensureDebateSession(debateTabsState.activeSessionId);
         const card = document.createElement('div');
@@ -20469,6 +20496,7 @@ function checkCompareButtonState() {
     }
     function updateCardRole(card, roleValue) {
         if (!card) return;
+        if (roleValue) card.dataset.role = String(roleValue).trim();
         const roleEl = card.querySelector('.debate-model-card-role');
         if (roleEl) {
             roleEl.textContent = roleValue ? String(roleValue).trim() : '';
@@ -20566,10 +20594,12 @@ function checkCompareButtonState() {
         targetCard.dataset.hasPostTerminalRevision = 'true';
         return true;
     }
+    const cleanFeedText = (value) => (window.MessageDelivery ? window.MessageDelivery.clean(value) : String(value || '').trim());
+    const cleanFeedHtml = (value) => (window.MessageDelivery ? window.MessageDelivery.cleanHtml(value) : String(value || ''));
     function appendDebateFeedEntry(llmName, text, html = '', meta = {}) {
         if (!debateModelCards || !llmName) return;
-        const normalizedText = String(text || '').trim();
-        const normalizedHtml = sanitizeInlineHtml(String(html || '').trim());
+        const normalizedText = cleanFeedText(text);
+        const normalizedHtml = sanitizeInlineHtml(cleanFeedHtml(String(html || '').trim()));
         if (!normalizedText && !normalizedHtml) return;
         const session = ensureDebateSession(debateTabsState.activeSessionId);
         const modelKey = `${session.id}:${toModelKey(llmName)}`;
@@ -20593,7 +20623,7 @@ function checkCompareButtonState() {
             const mm = String(now.getMinutes()).padStart(2, '0');
             const timeEl = liveCard.querySelector('.debate-model-card-time');
             if (timeEl) timeEl.textContent = `${hh}:${mm}`;
-            updateCardRole(liveCard, meta.role || '');
+            updateCardRole(liveCard, meta.role || liveCard.dataset.role || '');
             const body = liveCard.querySelector('.debate-model-card-output');
             if (body) {
                 body.classList.remove('debate-model-card-empty');
@@ -20938,6 +20968,14 @@ function checkCompareButtonState() {
             const hasPrevValue = Array.from(debateSenderSelect.options).some((opt) => opt.value === prevValue && !opt.disabled);
             debateSenderSelect.value = preserveRoute && hasPrevValue ? prevValue : 'Moderator';
             saveDebateSelectorState();
+        }
+        const judgeSelect = document.getElementById('judge-select');
+        if (judgeSelect) {
+            const prevJudge = judgeSelect.value;
+            judgeSelect.innerHTML = ['<option value="">Judge</option>']
+                .concat(selected.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`))
+                .join('');
+            judgeSelect.value = selected.includes(prevJudge) ? prevJudge : '';
         }
         if (debateReceiverSelect) {
             const prevValue = debateReceiverSelect.value;

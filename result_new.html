@@ -3,7 +3,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LLM Comparison</title>
-    <link rel="stylesheet" href="styles.css?v=2.81.494">
+    <link rel="stylesheet" href="styles.css?v=2.81.495">
 </head>
 <body>
     <div class="app-shell">
@@ -592,9 +592,6 @@
                         <button class="devtools-tab" id="disput-tab" role="tab" aria-selected="false" aria-controls="disput-tabpanel" data-tab-target="disput-tabpanel">
                             Disput
                         </button>
-                        <button class="devtools-tab" id="automation-tab" role="tab" aria-selected="false" aria-controls="automation-tabpanel" data-tab-target="automation-tabpanel">
-                            Automation
-                        </button>
                         <button class="devtools-tab" id="selectors0-tab" role="tab" aria-selected="false" aria-controls="selectors0-tabpanel" data-tab-target="selectors0-tabpanel">
                             Selectors
                         </button>
@@ -766,13 +763,6 @@
                                     <div class="devtools-card-body"><div class="telemetry-rounds-table-wrapper" id="disput-raw-events"><p class="diag-empty">No trace events.</p></div></div>
                                 </article>
                             </div>
-                        </section>
-
-                        <section class="devtools-tabpanel" id="automation-tabpanel" role="tabpanel" aria-labelledby="automation-tab" tabindex="0" hidden="">
-                            <div class="ald-toolbar">
-                                <button type="button" class="ald-btn" id="automation-export-report" disabled>Отчёт для Claude</button>
-                            </div>
-                            <div class="ald-root" id="automation-diagnostics"><p class="ald-empty">Загрузка…</p></div>
                         </section>
 
                         <section class="devtools-tabpanel" id="selectors0-tabpanel" role="tabpanel" aria-labelledby="selectors0-tab" tabindex="0" hidden="">
@@ -1164,13 +1154,6 @@
     <script src="results/disput-state-map-view.js"></script>
     <script src="results/pipeline-profile-view.js"></script>
     <script src="results-telemetry-export-bootstrap.js"></script>
-    <link rel="stylesheet" href="automation/diagnostics-view.css">
-    <script src="automation/al-canonical.js"></script>
-    <script src="automation/al-schema.js"></script>
-    <script src="automation/al-spec.js"></script>
-    <script src="automation/al-diagnostics.js"></script>
-    <script src="automation/al-diagnostics-view.js"></script>
-    <script src="automation/automation-devtools.js"></script>
     <script src="results.js"></script>
     <!-- results-devtools.js (telemetry/devtools tab) is NOT loaded here: it is
          lazy-loaded by results.js (ensureTelemetryDevtoolsLoaded) just after

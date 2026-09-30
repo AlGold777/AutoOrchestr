@@ -71,45 +71,19 @@ function buildGlobalStateSnapshot(options = {}) {
   };
 }
 
-// Automation Lab runs (sourceView "automation") deliver results only to the tab that started
-// them. Their messages are stamped so other result pages can ignore them if a runtime-wide
-// fallback broadcast ever happens.
-function automationRoute() {
-  const session = jobState?.session;
-  if (session?.sourceView !== 'automation') return null;
-  return {
-    tabId: isValidTabId(session.originTabId) ? session.originTabId : null,
-    pipelineRunId: session.pipelineRunId || null
-  };
-}
-
 function broadcastGlobalState() {
   const state = buildGlobalStateSnapshot();
   TabMapManager.entries().forEach(([llmName, tabId]) => {
     if (!isValidTabId(tabId)) return;
     chrome.tabs.sendMessage(tabId, { type: 'GLOBAL_STATE_BROADCAST', state }).catch(() => {});
   });
-  const automation = automationRoute();
-  const resultsState = (isValidTabId(resultsTabId) || automation?.tabId) ? buildGlobalStateSnapshot({ includeAnswers: true }) : null;
-  if (automation?.tabId) {
-    chrome.tabs.sendMessage(automation.tabId, { type: 'GLOBAL_STATE_BROADCAST', state: resultsState, sourceView: 'automation', pipelineRunId: automation.pipelineRunId }).catch(() => {});
-  }
-  if (isValidTabId(resultsTabId) && resultsTabId !== automation?.tabId) {
+  if (isValidTabId(resultsTabId)) {
+    const resultsState = buildGlobalStateSnapshot({ includeAnswers: true });
     chrome.tabs.sendMessage(resultsTabId, { type: 'GLOBAL_STATE_BROADCAST', state: resultsState }).catch(() => {});
   }
 }
 
 function sendMessageToResultsTab(message) {
-  const automation = automationRoute();
-  if (automation) {
-    const stamped = { ...message, sourceView: 'automation', pipelineRunId: message.pipelineRunId || automation.pipelineRunId };
-    const broadcast = () => chrome.runtime.sendMessage(stamped, () => void chrome.runtime.lastError);
-    if (!automation.tabId) { broadcast(); return; }
-    chrome.tabs.sendMessage(automation.tabId, stamped, () => {
-      if (chrome.runtime.lastError) broadcast();
-    });
-    return;
-  }
   const isNoReceiverError = (errorMessage = '') =>
     errorMessage.toLowerCase().includes('receiving end does not exist');
 

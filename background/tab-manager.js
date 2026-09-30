@@ -216,8 +216,7 @@ function isAppUiUrl(url = '') {
   if (typeof url !== 'string' || !url) return false;
   try {
     return url.startsWith(chrome.runtime.getURL('result_new.html'))
-      || url.startsWith(chrome.runtime.getURL('pipeline_panel.html'))
-      || url.startsWith(chrome.runtime.getURL('automation_lab.html'));
+      || url.startsWith(chrome.runtime.getURL('pipeline_panel.html'));
   } catch (_) {
     return false;
   }
@@ -1345,15 +1344,6 @@ async function getPreferredResultsPageName() {
 }
 
 async function openOrFocusResultsTab() {
-  // An Automation Lab run returns focus to the Automation Lab tab, never to Pipeline.
-  const automationTab = jobState?.session?.sourceView === 'automation' ? await getTabSafe(jobState.session.originTabId) : null;
-  if (automationTab?.id) {
-    try {
-      chrome.windows.update(automationTab.windowId, { focused: true }, () => chrome.runtime.lastError);
-      chrome.tabs.update(automationTab.id, { active: true }, () => chrome.runtime.lastError);
-    } catch (_) { /* focus is best effort */ }
-    return automationTab;
-  }
   const preferredPage = await getPreferredResultsPageName();
   const preferredUrl = chrome.runtime.getURL(preferredPage);
   const fallbackUrl = chrome.runtime.getURL(preferredPage === 'pipeline_panel.html' ? 'result_new.html' : 'pipeline_panel.html');

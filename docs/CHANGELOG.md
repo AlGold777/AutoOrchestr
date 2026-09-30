@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-09-30 — Pipeline message delivery and Judge, version 2.81.495
+
+- Remove the separate Automation Lab page and the architecture runtime; keep the Pipeline page as the only surface.
+- Tag every outgoing prompt with a per-model delivery token; drop stale answers carrying another token, mark answers without a token, and strip tokens and `<<< >>>` markers from the feed.
+- Add a Judge selector left of Moderator: the chosen model receives all answers to the moderator's message and replies as a "Judge" card.
+- Show the delivery journal in the telemetry window (Automation tab) with a JSON report.
+
 ### 2026-09-30 — Automation: prototype page, in-memory session, version 2.81.494
 
 - Rebuild the Automation page strictly on `automation_prototype_v2.2.3.html`: model bar (first selected = moderator), two model columns, center feed with inline owner questions, Results / Save / Cancel.

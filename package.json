@@ -1,6 +1,6 @@
 {
   "name": "llm-selector-manager",
-  "version": "2.81.494",
+  "version": "2.81.495",
   "private": true,
   "description": "Selector management and content scripts for multi-LLM browser extension",
   "scripts": {
@@ -20,10 +20,7 @@
     "build:content-bundle": "node scripts/build-content-bundle.js",
     "scroll:stress": "node tests/scroll-coordinator.stress.js",
     "selectors:keygen": "node scripts/sign-selectors.js keygen",
-    "selectors:sign": "node scripts/sign-selectors.js sign",
-    "spec:sync": "node scripts/automation-spec-sync.js",
-    "test:automation": "jest --config tests/jest.config.js tests/automation-lab.test.js",
-    "test:automation-e2e": "node tests/automation-lab-e2e.js"
+    "selectors:sign": "node scripts/sign-selectors.js sign"
   },
   "devDependencies": {
     "@jest/test-sequencer": "^30.2.0",
