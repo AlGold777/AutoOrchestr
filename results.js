@@ -4554,11 +4554,6 @@ document.addEventListener('click', (event) => {
             });
             const synthesisLabel = synthesisColumn?.querySelector('.stage-label');
             if (synthesisLabel) {
-                const badge = synthesisLabel.querySelector('.round-badge');
-                const labelText = ' Synthesis';
-                const textNode = Array.from(synthesisLabel.childNodes).find((node) => node.nodeType === Node.TEXT_NODE);
-                if (textNode) textNode.textContent = labelText;
-                else if (badge) badge.after(document.createTextNode(labelText));
                 synthesisLabel.title = 'After the last wave, Final Synthesis runs only when a synthesizer is selected.';
             }
         };
@@ -7036,6 +7031,15 @@ document.addEventListener('click', (event) => {
             event.preventDefault();
             event.stopPropagation();
             showPipelineBlockInfo(block);
+        });
+
+        const stageDialog = document.getElementById('pipeline-stage-dialog');
+        stageDialog?.addEventListener('click', (event) => {
+            if (event.target !== stageDialog) return;
+            const rect = stageDialog.getBoundingClientRect();
+            const outside = event.clientX < rect.left || event.clientX > rect.right
+                || event.clientY < rect.top || event.clientY > rect.bottom;
+            if (outside) stageDialog.close();
         });
 
         pipelinePanel.addEventListener('dblclick', (event) => {
