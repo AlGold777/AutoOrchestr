@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-01 — Automatic recovery runs the full Get it (scroll and re-read), version 2.81.519
+
+- The system-started "pull the page down" (2.81.517–518) reused only the scroll half of the status-indicator double click. The double click also asks the page adapter to re-read and emit the latest answer (manual latest recovery). The automatic recovery (deferred terminal, visits with unchanged text, visits that give up) now runs the same path for one model (`runAutomaticGetItForModel` → `handleManualResponsePing` with `getIt` and `manualLatestRecovery`) and returns to the results page afterwards; it never overlaps the first send pass, a running Get-it batch or a finished model.
+- Finding from report 6: the project already had an automatic Get-it pass, but it runs once per session after rounds 1–3 (~45 s after the start) — that is what finished Perplexity at 51 s although its full text had been on the page since 17 s. The new triggers start the same thing as soon as the text stops changing.
+
 ### 2026-10-01 — Forced commit of incomplete answers that really lands; reports name the background build, version 2.81.518
 
 - Field report 6 (Le Chat, Perplexity, 2.81.517): Perplexity's full answer was on the page after 17 s, but the final came only at 51 s — three seconds after the last automatic "focus + scroll" poke; Le Chat's deferral ended (`answer_quiet`) without any final, and no `bottom_nudge` was journaled.

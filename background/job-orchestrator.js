@@ -9948,6 +9948,32 @@ async function runAutomaticGetItPass(selectedModels, sessionId) {
   }
 }
 
+// The full status-indicator double click for one model, started by the system:
+// pull the conversation to the bottom AND ask the page adapter to re-read and emit
+// the latest answer (manual latest recovery). The scroll alone is only half of it.
+// Reuses handleManualResponsePing, the path the double click and the automatic
+// Get-it pass already use; it never overlaps a running batch or the first send pass.
+async function runAutomaticGetItForModel(llmName, reason = 'automatic_get_it') {
+  if (!llmName) return { status: 'get_it_unavailable' };
+  if (self.isInitialPromptPassActive?.()) return { status: 'get_it_busy' };
+  if (getItBatchInFlight) return { status: 'get_it_busy' };
+  const entry = jobState?.llms?.[llmName];
+  if (!entry || isFinalizedEntry(entry)) return { status: 'get_it_skipped_terminal' };
+  let result;
+  try {
+    result = await handleManualResponsePing(llmName, {
+      getIt: true, manualLatestRecovery: true, manualRecovery: true, advanceStrategy: false, reason
+    });
+  } catch (err) {
+    result = { status: 'manual_ping_failed', error: err?.message || String(err) };
+  } finally {
+    // The page visit moved the focus to the model tab; return to the results page
+    // like the automatic batch does.
+    try { await openOrFocusResultsTab(); } catch (_) { /* best effort */ }
+  }
+  return result;
+}
+
 function collectGetItBatch(selectedModels = [], options = {}) {
   if (getItBatchInFlight) return getItBatchInFlight;
   if (options.failedOnly === true) {

@@ -204,7 +204,7 @@ describe('transport fixes behind the field report', () => {
       routerRegisterSessionTimer: (id) => id,
       routerDeregisterSessionTimer: () => {},
       setTimeout: (fn, ms) => { timers.push({ fn, ms }); return timers.length; },
-      runPreCollectScrollNudge: nudge,
+      runAutomaticGetItForModel: nudge,
       resolveBoundTabIdForOrchestrator: () => 7,
       Date
     };
@@ -473,7 +473,7 @@ describe('the bottom nudge (what the status-indicator double click does) in auto
       routerRegisterSessionTimer: (id) => id,
       routerDeregisterSessionTimer: () => {},
       setTimeout: (fn, ms) => { timers.push({ fn, ms }); return timers.length; },
-      runPreCollectScrollNudge: nudge,
+      runAutomaticGetItForModel: nudge,
       resolveBoundTabIdForOrchestrator: () => 7,
       Date
     };
@@ -504,8 +504,8 @@ describe('the bottom nudge (what the status-indicator double click does) in auto
       Date.now = realNow;
     }
     expect(nudge).toHaveBeenCalledTimes(2);
-    expect(nudge).toHaveBeenCalledWith('X', 7, 1, 'deferred_terminal_early', { getIt: true });
-    expect(nudge).toHaveBeenCalledWith('X', 7, 1, 'deferred_terminal_before_commit', { getIt: true });
+    expect(nudge).toHaveBeenCalledWith('X', 'deferred_terminal_early');
+    expect(nudge).toHaveBeenCalledWith('X', 'deferred_terminal_before_commit');
     const phases = context.reportDispatchPhase.mock.calls.map((c) => c[2]);
     expect(phases.filter((p) => p === 'bottom_nudge')).toHaveLength(2);
     expect(phases[phases.length - 1]).toBe('terminal_deferral_ended');
@@ -542,7 +542,7 @@ describe('the bottom nudge (what the status-indicator double click does) in auto
   test('visits that give up on static text pull the page down first; growth resumes the visits, otherwise the text is kept', () => {
     const presence = read('background/human-presence.js');
     const block = presence.slice(presence.indexOf('async function settleStaticAnswerAfterVisits('), presence.indexOf('function raiseHumanVisitAlert('));
-    expect(block).toContain("'visits_give_up_bottom_nudge', { getIt: true }");
+    expect(block).toContain("runAutomaticGetItForModel(llmName, 'visits_give_up_get_it')");
     expect(block).toContain('if (lengthAfter > lengthBefore) {');
     expect(block).toContain('scheduleHumanPresenceLoop(true);');
     expect(block).toContain('commitStaticAnswerAfterVisits(llmName, live);');
@@ -608,6 +608,7 @@ describe('forced commit shape, stale background, skipped nudges', () => {
     const router = read('background/message-router.js');
     expect(router).toContain("'bottom_nudge_skipped'");
     expect(router).toContain("skip('no_nudge_function')");
+    expect(router).toContain('runAutomaticGetItForModel(llmName, ');
     expect(router).toContain("skip('no_bound_tab')");
   });
 });
@@ -618,7 +619,51 @@ describe('visits pull the page down when the text stopped changing', () => {
     const loop = presence.slice(presence.indexOf('const progress = trackVisitAnswerProgress(liveEntry);'), presence.indexOf('await visitTabWithHumanity(llmName, boundTabId);'));
     expect(loop).toContain('progress.length > 0 && progress.staticVisits >= 1');
     expect(loop).toContain('liveEntry.staticTextNudgedFor !== sendKey');
-    expect(loop).toContain("'static_text_bottom_nudge', { getIt: true }");
+    expect(loop).toContain("runAutomaticGetItForModel(llmName, 'static_text_get_it')");
     expect(loop).toContain("reason: 'static_text'");
+  });
+});
+
+describe('the automatic recovery is the full double click, not half of it', () => {
+  const orchestrator = read('background/job-orchestrator.js');
+  function loadGetIt(context) {
+    const start = orchestrator.indexOf('async function runAutomaticGetItForModel(');
+    const end = orchestrator.indexOf('function collectGetItBatch(');
+    // eslint-disable-next-line no-new-func
+    const factory = new Function(...Object.keys(context), `${orchestrator.slice(start, end)}\nreturn runAutomaticGetItForModel;`);
+    return factory(...Object.values(context));
+  }
+
+  test('it runs the manual latest-answer path (scroll and re-read), then returns to the results page', async () => {
+    const context = {
+      self: { isInitialPromptPassActive: () => false },
+      getItBatchInFlight: null,
+      jobState: { llms: { X: { status: 'RECEIVING' } } },
+      isFinalizedEntry: (e) => Boolean(e?.finalStatusRecorded),
+      handleManualResponsePing: jest.fn(async () => ({ status: 'manual_ping_sent' })),
+      openOrFocusResultsTab: jest.fn(async () => {})
+    };
+    const run = loadGetIt(context);
+    await expect(run('X', 'deferred_terminal_early')).resolves.toEqual({ status: 'manual_ping_sent' });
+    expect(context.handleManualResponsePing).toHaveBeenCalledWith('X', {
+      getIt: true, manualLatestRecovery: true, manualRecovery: true, advanceStrategy: false, reason: 'deferred_terminal_early'
+    });
+    expect(context.openOrFocusResultsTab).toHaveBeenCalledTimes(1);
+  });
+
+  test('it stays out of the way of the first send pass, a running batch and finished models', async () => {
+    const base = () => ({
+      self: { isInitialPromptPassActive: () => false }, getItBatchInFlight: null,
+      jobState: { llms: { X: { status: 'RECEIVING' }, Y: { finalStatusRecorded: true } } },
+      isFinalizedEntry: (e) => Boolean(e?.finalStatusRecorded),
+      handleManualResponsePing: jest.fn(async () => ({})), openOrFocusResultsTab: jest.fn(async () => {})
+    });
+    const a = base(); a.self.isInitialPromptPassActive = () => true;
+    await expect(loadGetIt(a)('X')).resolves.toEqual({ status: 'get_it_busy' });
+    const b = base(); b.getItBatchInFlight = Promise.resolve();
+    await expect(loadGetIt(b)('X')).resolves.toEqual({ status: 'get_it_busy' });
+    const c = base();
+    await expect(loadGetIt(c)('Y')).resolves.toEqual({ status: 'get_it_skipped_terminal' });
+    for (const ctx of [a, b, c]) expect(ctx.handleManualResponsePing).not.toHaveBeenCalled();
   });
 });

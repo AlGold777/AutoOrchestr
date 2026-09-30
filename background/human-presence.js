@@ -329,7 +329,7 @@ const HUMAN_VISIT_NUDGE_SETTLE_MS = 6000;
 async function settleStaticAnswerAfterVisits(llmName, entry) {
   const sessionId = jobState?.session?.startTime || null;
   const lengthBefore = String(entry?.pendingFinalAnswer || entry?.answer || '').length;
-  if (lengthBefore > 0 && typeof runPreCollectScrollNudge === 'function' && !entry.bottomNudgedAfterVisits) {
+  if (lengthBefore > 0 && typeof runAutomaticGetItForModel === 'function' && !entry.bottomNudgedAfterVisits) {
     entry.bottomNudgedAfterVisits = true;
     const tabId = typeof resolveBoundTabIdForHuman === 'function' ? resolveBoundTabIdForHuman(llmName, entry) : null;
     if (isValidTabId(tabId)) {
@@ -339,7 +339,7 @@ async function settleStaticAnswerAfterVisits(llmName, entry) {
             dispatchId: entry.lastDispatchMeta?.dispatchId || null, tabId, reason: 'after_visits', attempt: 1
           });
         }
-        await runPreCollectScrollNudge(llmName, tabId, sessionId, 'visits_give_up_bottom_nudge', { getIt: true });
+        await runAutomaticGetItForModel(llmName, 'visits_give_up_get_it');
         await new Promise((resolve) => setTimeout(resolve, HUMAN_VISIT_NUDGE_SETTLE_MS));
       } catch (_) { /* a failed nudge must not block the decision */ }
     }
@@ -1100,7 +1100,7 @@ async function runHumanPresenceCycle() {
     const sendKey = liveEntry.lastDispatchMeta?.dispatchId || 'send';
     if (progress.length > 0 && progress.staticVisits >= 1
       && liveEntry.staticTextNudgedFor !== sendKey
-      && typeof runPreCollectScrollNudge === 'function') {
+      && typeof runAutomaticGetItForModel === 'function') {
       liveEntry.staticTextNudgedFor = sendKey;
       try {
         if (typeof reportDispatchPhase === 'function') {
@@ -1108,7 +1108,7 @@ async function runHumanPresenceCycle() {
             dispatchId: liveEntry.lastDispatchMeta?.dispatchId || null, tabId: boundTabId, reason: 'static_text', attempt: 1, answerChars: progress.length
           });
         }
-        await runPreCollectScrollNudge(llmName, boundTabId, jobState?.session?.startTime || null, 'static_text_bottom_nudge', { getIt: true });
+        await runAutomaticGetItForModel(llmName, 'static_text_get_it');
       } catch (_) { /* a failed nudge falls back to the ordinary visit next cycle */ }
       broadcastHumanVisitStatus();
       continue;

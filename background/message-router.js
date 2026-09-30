@@ -1251,11 +1251,10 @@ const recordCompletionAuthorityAttempt = (llmName, meta = {}) => {
 const UNCERTAIN_TERMINAL_QUIET_MS = 30000;
 const UNCERTAIN_TERMINAL_MAX_DEFER_MS = 180000;
 const UNCERTAIN_TERMINAL_POLL_MS = 5000;
-// The same "pull the page to the bottom" that the status-indicator double click
-// does (getIt): it makes the provider's page scripts finish their own generation
-// bookkeeping, which often turns a stuck completion into a real final. Tried
-// early, and once more before the terminal is committed; after a nudge the
-// answer gets a short settle window to grow or finish.
+// The full status-indicator double click (Get it): pull the page to the bottom so
+// the provider's page scripts finish their generation, then re-read and emit the
+// latest answer. Tried early, and once more before the terminal is committed;
+// after it the answer gets a short settle window to grow or finish.
 const UNCERTAIN_TERMINAL_EARLY_NUDGE_MS = 10000;
 const UNCERTAIN_TERMINAL_NUDGE_SETTLE_MS = 8000;
 const DEFERRABLE_COMPLETION_TERMINALS = new Set(['AMBIGUOUS', 'CONTEXT_LOST']);
@@ -1296,7 +1295,7 @@ const deferUncertainCompletionTerminal = (llmName, entry, finalize, terminalResu
             }
             return false;
         };
-        if (typeof runPreCollectScrollNudge !== 'function') return skip('no_nudge_function');
+        if (typeof runAutomaticGetItForModel !== 'function') return skip('no_nudge_function');
         const tabId = typeof resolveBoundTabIdForOrchestrator === 'function'
             ? resolveBoundTabIdForOrchestrator(llmName, live) : null;
         if (!tabId) return skip('no_bound_tab');
@@ -1308,7 +1307,7 @@ const deferUncertainCompletionTerminal = (llmName, entry, finalize, terminalResu
             });
         }
         Promise.resolve()
-            .then(() => runPreCollectScrollNudge(llmName, tabId, sessionId, `deferred_terminal_${why}`, { getIt: true }))
+            .then(() => runAutomaticGetItForModel(llmName, `deferred_terminal_${why}`))
             .catch(() => false)
             .finally(() => {
                 nudgeInFlight = false;
