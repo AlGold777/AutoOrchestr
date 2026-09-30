@@ -10506,6 +10506,11 @@ function sendCleanupCommand(llmName) {
   self.initRequestMetadata = initRequestMetadata;
   self.persistRequestMetadata = persistRequestMetadata;
   self.handleManualResponsePing = handleManualResponsePing;
+  // Declarations inside this initialization block are not global: other
+  // background files can only reach what is exported on self.
+  self.runAutomaticGetItForModel = runAutomaticGetItForModel;
+  self.resolveBoundTabIdForOrchestrator = resolveBoundTabIdForOrchestrator;
+  self.resolvePromptForDispatch = resolvePromptForDispatch;
   self.handleManualResendRequest = handleManualResendRequest;
   self.lateCollectAnswer = lateCollectAnswer;
   self.acceptLateCollectResult = acceptLateCollectResult;

@@ -437,6 +437,15 @@ function reportDispatchPhase(llmName, entry, phase, extra = {}) {
   } catch (_) {}
 }
 
+// The delivery token ([[AO-xxxxxx]]) is the last line the model is asked to write:
+// once the model's own text contains the token of THIS request's prompt, the
+// model finished writing — whatever the page's completion signals say.
+function answerHasDeliveryToken(llmName, text) {
+  const prompt = String(jobState?.session?.promptsByModel?.[llmName] || '');
+  const token = (prompt.match(/\[\[AO-[a-z0-9]{6}\]\]/i) || [])[0];
+  return Boolean(token && String(text || '').toLowerCase().includes(token.toLowerCase()));
+}
+
 // Commit the text the model already produced as an incomplete answer ("неполный"),
 // through the same gate-passing shape the automation deadline uses for a pending
 // answer (lastResortTerminal / lateCollectFinal / forceTerminalSuccess), so the
@@ -447,6 +456,8 @@ function commitIncompleteAnswer(llmName, entry, { text, html = '', source, compl
   if (!entry || !body || typeof handleLLMResponse !== 'function') return false;
   const sessionId = jobState?.session?.startTime || undefined;
   const dispatchId = entry.lastDispatchMeta?.dispatchId || entry.confirmedDispatchId || null;
+  // With its own delivery token the text is complete: commit it as a success.
+  const complete = answerHasDeliveryToken(llmName, body);
   handleLLMResponse(llmName, body, null, {
     ...(entry.lastDispatchMeta || {}),
     dispatchId,
@@ -458,8 +469,8 @@ function commitIncompleteAnswer(llmName, entry, { text, html = '', source, compl
     ...extraMeta,
     responseMeta: {
       source,
-      completionReason,
-      partial: true,
+      completionReason: complete ? `${completionReason}:delivery_token` : completionReason,
+      partial: !complete,
       lateCollectFinal: true,
       forceTerminalSuccess: true,
       manualRecoveryAvailable: true
@@ -1088,7 +1099,10 @@ async function runPromptDispatchSupervisor() {
     // be correlated and turns valid confirmations into dispatch_mismatch.
     // Resend the exact per-model prompt (role, delivery token), never the
     // shared fallback prompt.
-    await dispatchPromptToTab(llmName, tabId, resolvePromptForDispatch(llmName, jobState.prompt), jobState.attachments || [], 'retry_supervisor', {
+    const retryPrompt = self.TransportPolicy?.resolvePromptForModel
+      ? self.TransportPolicy.resolvePromptForModel(jobState?.session?.promptsByModel, llmName, jobState.prompt)
+      : jobState.prompt;
+    await dispatchPromptToTab(llmName, tabId, retryPrompt, jobState.attachments || [], 'retry_supervisor', {
       deferSendMs: 500,
       minFocusHoldMs: RETRY_FOCUS_HOLD_MS
     });

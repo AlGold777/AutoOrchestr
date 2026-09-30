@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-01 — Background scope fix; the delivery token marks a finished answer, version 2.81.520
+
+- Field report 7 (Grok, Le Chat, Perplexity, 2.81.519): `bottom_nudge_skipped: no_nudge_function`. Cause: `job-orchestrator.js` runs inside `if (…) { (function initJobOrchestrator() { 'use strict'; … })(); }`, so its declarations are visible to other background files only when exported on `self`. The Get-it trigger (`runAutomaticGetItForModel`, `resolveBoundTabIdForOrchestrator`) was never reachable from the router and the visits, and the retry supervisor's per-model prompt (2.81.504) referenced `resolvePromptForDispatch`, a ReferenceError that stopped the supervisor. They are now exported and called through `self`; the supervisor uses `TransportPolicy.resolvePromptForModel`. New test `background-global-scope` loads the real service worker and fails on any bare reference to a name hidden in the orchestrator (it finds all 9 on 2.81.519).
+- The delivery token is the model's own end-of-answer marker. Text that contains this request's token is complete: a forced commit of such text is a success, not "неполный"; the uncertain-terminal deferral commits after 5 s of quiet instead of 30 s (`delivery_token_seen`); the visits commit unchanged text with the token at once instead of visiting further.
+- While a batch is open, an answer kept without the token (possibly cut off, e.g. Grok's 143 characters) is replaced by the same request's answer that carries it (Grok's 470 characters arrived as a revision and were rejected before); journaled as `unproven_replaced` and counted as delivered.
+
 ### 2026-10-01 — Automatic recovery runs the full Get it (scroll and re-read), version 2.81.519
 
 - The system-started "pull the page down" (2.81.517–518) reused only the scroll half of the status-indicator double click. The double click also asks the page adapter to re-read and emit the latest answer (manual latest recovery). The automatic recovery (deferred terminal, visits with unchanged text, visits that give up) now runs the same path for one model (`runAutomaticGetItForModel` → `handleManualResponsePing` with `getIt` and `manualLatestRecovery`) and returns to the results page afterwards; it never overlaps the first send pass, a running Get-it batch or a finished model.

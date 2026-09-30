@@ -155,3 +155,27 @@ describe('pipelineWaiter — request identity', () => {
     await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
   });
 });
+
+describe('pipelineWaiter — the delivery token upgrades an unproven answer', () => {
+  test('a kept answer without the token is replaced by the same request\'s answer with it, while the batch is open', async () => {
+    const waiter = loadPipelineWaiter();
+    const promise = waiter.waitForModels(['A', 'B'], { timeoutMs: 60000, requestIds: ids(['A', 'B']) });
+    waiter.handleFinal(final('A', 'обрезанный текст', { metadata: { attributionState: 'unproven' } }));
+    expect(waiter.handleFinal(final('A', 'полный текст ответа', { metadata: { revision: true } }))).toBe(true);
+    waiter.handleFinal(final('B', 'ok'));
+    const result = await promise;
+    expect(result.responses.A).toBe('полный текст ответа');
+    expect(result.results.A).toMatchObject({ attribution: 'verified', replacedUnproven: true });
+  });
+
+  test('a verified answer stays immutable; an unproven revision does not replace an unproven answer', async () => {
+    const waiter = loadPipelineWaiter();
+    const promise = waiter.waitForModels(['A', 'B'], { timeoutMs: 60000, requestIds: ids(['A', 'B']) });
+    waiter.handleFinal(final('A', 'первый', { metadata: { attributionState: 'unproven' } }));
+    expect(waiter.handleFinal(final('A', 'второй', { metadata: { attributionState: 'unproven', revision: true } }))).toBe(false);
+    waiter.handleFinal(final('B', 'ok'));
+    expect(waiter.handleFinal(final('B', 'другое', { metadata: { revision: true } }))).toBe(false);
+    const result = await promise;
+    expect(result.responses).toEqual({ A: 'первый', B: 'ok' });
+  });
+});

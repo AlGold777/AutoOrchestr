@@ -1251,6 +1251,9 @@ const recordCompletionAuthorityAttempt = (llmName, meta = {}) => {
 const UNCERTAIN_TERMINAL_QUIET_MS = 30000;
 const UNCERTAIN_TERMINAL_MAX_DEFER_MS = 180000;
 const UNCERTAIN_TERMINAL_POLL_MS = 5000;
+// With the request's own delivery token in the text the model has finished
+// writing: a short quiet window is enough.
+const UNCERTAIN_TERMINAL_TOKEN_QUIET_MS = 5000;
 // The full status-indicator double click (Get it): pull the page to the bottom so
 // the provider's page scripts finish their generation, then re-read and emit the
 // latest answer. Tried early, and once more before the terminal is committed;
@@ -1295,9 +1298,11 @@ const deferUncertainCompletionTerminal = (llmName, entry, finalize, terminalResu
             }
             return false;
         };
-        if (typeof runAutomaticGetItForModel !== 'function') return skip('no_nudge_function');
-        const tabId = typeof resolveBoundTabIdForOrchestrator === 'function'
-            ? resolveBoundTabIdForOrchestrator(llmName, live) : null;
+        // job-orchestrator.js declares these inside its initialization block:
+        // they are reachable only through self.
+        if (typeof self.runAutomaticGetItForModel !== 'function') return skip('no_nudge_function');
+        const tabId = typeof self.resolveBoundTabIdForOrchestrator === 'function'
+            ? self.resolveBoundTabIdForOrchestrator(llmName, live) : null;
         if (!tabId) return skip('no_bound_tab');
         nudgeInFlight = true;
         nudges += 1;
@@ -1307,7 +1312,7 @@ const deferUncertainCompletionTerminal = (llmName, entry, finalize, terminalResu
             });
         }
         Promise.resolve()
-            .then(() => runAutomaticGetItForModel(llmName, `deferred_terminal_${why}`))
+            .then(() => self.runAutomaticGetItForModel(llmName, `deferred_terminal_${why}`))
             .catch(() => false)
             .finally(() => {
                 nudgeInFlight = false;
@@ -1328,7 +1333,13 @@ const deferUncertainCompletionTerminal = (llmName, entry, finalize, terminalResu
             lastGrowthAt = now;
         }
         if (nudgeInFlight) return; // the nudge reschedules the check itself
-        const quiet = now - lastGrowthAt >= UNCERTAIN_TERMINAL_QUIET_MS;
+        const tokenSeen = typeof answerHasDeliveryToken === 'function'
+            && answerHasDeliveryToken(llmName, live?.pendingFinalAnswer || live?.answer || '');
+        const quiet = now - lastGrowthAt >= (tokenSeen ? UNCERTAIN_TERMINAL_TOKEN_QUIET_MS : UNCERTAIN_TERMINAL_QUIET_MS);
+        if (tokenSeen && quiet) {
+            // Complete by the model's own marker: no Get it needed.
+            nudges = Math.max(nudges, 2);
+        }
         const capped = now - deferredAt >= UNCERTAIN_TERMINAL_MAX_DEFER_MS;
         if (nudges === 0 && now - deferredAt >= UNCERTAIN_TERMINAL_EARLY_NUDGE_MS && !capped && bottomNudge(live, 'early')) return;
         if (quiet && nudges < 2 && !capped && bottomNudge(live, 'before_commit')) return;
@@ -1339,7 +1350,7 @@ const deferUncertainCompletionTerminal = (llmName, entry, finalize, terminalResu
         if (typeof reportDispatchPhase === 'function') {
             reportDispatchPhase(llmName, live, 'terminal_deferral_ended', {
                 dispatchId: entry.deferredUncertainTerminal.dispatchId,
-                reason: capped && !quiet ? 'max_defer_reached' : 'answer_quiet',
+                reason: capped && !quiet ? 'max_defer_reached' : (tokenSeen ? 'delivery_token_seen' : 'answer_quiet'),
                 answerChars: length
             });
         }

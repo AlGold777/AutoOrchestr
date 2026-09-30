@@ -81,6 +81,7 @@
       else if (event.kind === 'completion_terminal') send.completionTerminals.push({ status: event.status, reason: event.reason, ms: event.ms });
       else if (event.kind === 'navigation') send.navigations.push({ from: event.from, to: event.to, reason: event.reason, ms: event.ms });
       else if (event.kind === 'text_progress') send.textProgress = { chars: event.chars, ms: event.ms };
+      else if (event.kind === 'unproven_replaced') send.replacedUnproven = { chars: event.chars, previousChars: event.previousChars };
       else if (event.kind === 'late_text') send.lateText = { chars: event.chars, ms: event.ms };
       else if (event.kind === 'focus') {
         send.focus.count = Math.max(send.focus.count + 1, event.n || 0);
@@ -134,6 +135,8 @@
     if (!t) return 'waiting';
     if (t.kind === 'cancelled') return 'cancelled';
     const seen = send.tab != null || send.statuses.length || send.firstTextMs != null || send.dispatch.length;
+    // An answer without the token was replaced by the same request's complete answer with it.
+    if (t.kind === 'missing_token' && send.replacedUnproven) return 'delivered';
     if (t.kind === 'verified' || (t.kind === 'missing_token' && t.chars)) {
       // A failure status with text (e.g. an error page captured as the answer) is an error;
       // an incomplete generation (timeout, cut stream) is partial.

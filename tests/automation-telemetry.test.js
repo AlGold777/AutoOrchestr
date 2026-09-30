@@ -204,8 +204,7 @@ describe('transport fixes behind the field report', () => {
       routerRegisterSessionTimer: (id) => id,
       routerDeregisterSessionTimer: () => {},
       setTimeout: (fn, ms) => { timers.push({ fn, ms }); return timers.length; },
-      runAutomaticGetItForModel: nudge,
-      resolveBoundTabIdForOrchestrator: () => 7,
+      self: { runAutomaticGetItForModel: nudge, resolveBoundTabIdForOrchestrator: () => 7 },
       Date
     };
     // eslint-disable-next-line no-new-func
@@ -473,8 +472,7 @@ describe('the bottom nudge (what the status-indicator double click does) in auto
       routerRegisterSessionTimer: (id) => id,
       routerDeregisterSessionTimer: () => {},
       setTimeout: (fn, ms) => { timers.push({ fn, ms }); return timers.length; },
-      runAutomaticGetItForModel: nudge,
-      resolveBoundTabIdForOrchestrator: () => 7,
+      self: { runAutomaticGetItForModel: nudge, resolveBoundTabIdForOrchestrator: () => 7 },
       Date
     };
     // eslint-disable-next-line no-new-func
@@ -554,7 +552,7 @@ describe('forced commit shape, stale background, skipped nudges', () => {
   const coordinator = read('background/dispatch-coordinator.js');
 
   function loadCommit() {
-    const start = coordinator.indexOf('function commitIncompleteAnswer(');
+    const start = coordinator.indexOf('function answerHasDeliveryToken(');
     const end = coordinator.indexOf('function scheduleDispatchRetry(');
     const timers = [];
     const context = {
@@ -665,5 +663,58 @@ describe('the automatic recovery is the full double click, not half of it', () =
     const c = base();
     await expect(loadGetIt(c)('Y')).resolves.toEqual({ status: 'get_it_skipped_terminal' });
     for (const ctx of [a, b, c]) expect(ctx.handleManualResponsePing).not.toHaveBeenCalled();
+  });
+});
+
+describe('the delivery token is the model\'s own end-of-answer marker', () => {
+  const coordinator = read('background/dispatch-coordinator.js');
+  function loadToken(promptsByModel) {
+    const start = coordinator.indexOf('function answerHasDeliveryToken(');
+    const end = coordinator.indexOf('function scheduleDispatchRetry(');
+    const timers = [];
+    const context = {
+      jobState: { session: { startTime: 5, promptsByModel }, llms: {} },
+      handleLLMResponse: jest.fn(), reportDispatchPhase: jest.fn(),
+      setTimeout: (fn) => { timers.push(fn); return timers.length; }
+    };
+    // eslint-disable-next-line no-new-func
+    const factory = new Function(...Object.keys(context), `${coordinator.slice(start, end)}\nreturn { answerHasDeliveryToken, commitIncompleteAnswer };`);
+    return { ...factory(...Object.values(context)), context };
+  }
+
+  test('only this request\'s token counts', () => {
+    const { answerHasDeliveryToken } = loadToken({ 'Le Chat': 'Q\n\nПоследней строкой ответа напиши только метку [[AO-924htt]]' });
+    expect(answerHasDeliveryToken('Le Chat', 'анекдот...\n\n[[AO-924htt]]\n\n12:53am')).toBe(true);
+    expect(answerHasDeliveryToken('Le Chat', 'анекдот...\n[[AO-zzzzzz]]')).toBe(false);
+    expect(answerHasDeliveryToken('Le Chat', 'анекдот без метки')).toBe(false);
+    expect(answerHasDeliveryToken('Grok', 'x [[AO-924htt]]')).toBe(false);
+  });
+
+  test('a committed text with the token is a complete answer, without it an incomplete one', () => {
+    const { commitIncompleteAnswer, context } = loadToken({ X: 'Q [[AO-abcdef]]' });
+    const entry = { lastDispatchMeta: { dispatchId: 'X:1:1' } };
+    commitIncompleteAnswer('X', entry, { text: 'ответ [[AO-abcdef]]', source: 's', completionReason: 'c' });
+    expect(context.handleLLMResponse.mock.calls[0][3].responseMeta).toMatchObject({ partial: false, completionReason: 'c:delivery_token' });
+    commitIncompleteAnswer('X', entry, { text: 'обрыв', source: 's', completionReason: 'c' });
+    expect(context.handleLLMResponse.mock.calls[1][3].responseMeta).toMatchObject({ partial: true, completionReason: 'c' });
+  });
+
+  test('the deferral and the visits act on the token without waiting for the page', () => {
+    const router = read('background/message-router.js');
+    expect(router).toContain('const UNCERTAIN_TERMINAL_TOKEN_QUIET_MS = 5000;');
+    expect(router).toContain("(tokenSeen ? 'delivery_token_seen' : 'answer_quiet')");
+    const presence = read('background/human-presence.js');
+    expect(presence).toContain("completionReason: 'static_text_with_delivery_token'");
+  });
+
+  test('the report counts an unproven answer replaced by its complete version as delivered', () => {
+    const { Delivery, Diagnosis } = loadModules();
+    Delivery.reset();
+    Delivery.prepare({ prompt: 'Q', models: ['Grok'], requestIds: { Grok: 'treq-g' } });
+    Delivery.receive({ llmName: 'Grok', transportRequestId: 'treq-g', answer: 'обрезано', metadata: { status: 'SUCCESS', terminal: true } }, { final: true });
+    Delivery.batchEvent('unproven_replaced', { model: 'Grok', requestId: 'treq-g', chars: 470, previousChars: 143 });
+    const { sends, problems } = Diagnosis.diagnose(Delivery.journal());
+    expect(sends[0].result).toBe('delivered');
+    expect(problems.some((p) => p.code === 'no_token')).toBe(false);
   });
 });

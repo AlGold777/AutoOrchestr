@@ -85,6 +85,7 @@
       t.reason || null,
       t.detail || null,
       send.revisions ? `ревизий: ${send.revisions}` : null,
+      send.replacedUnproven ? `заменён полным ответом с меткой: ${send.replacedUnproven.previousChars} → ${send.replacedUnproven.chars} симв.` : null,
       send.rejections.length ? `отклонено: ${send.rejections.length}` : null
     ]) : '—';
     const dispatchTail = send.dispatchIds.map((id) => String(id).split(':').pop()).join(',');

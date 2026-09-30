@@ -98,7 +98,8 @@ describe('dispatch transaction', () => {
   });
 
   test('the retry supervisor resends the per-model prompt', () => {
-    expect(coordinator).toContain("await dispatchPromptToTab(llmName, tabId, resolvePromptForDispatch(llmName, jobState.prompt), jobState.attachments || [], 'retry_supervisor', {");
+    expect(coordinator).toContain("self.TransportPolicy.resolvePromptForModel(jobState?.session?.promptsByModel, llmName, jobState.prompt)");
+    expect(coordinator).toContain("await dispatchPromptToTab(llmName, tabId, retryPrompt, jobState.attachments || [], 'retry_supervisor', {");
     expect(coordinator).not.toContain("await dispatchPromptToTab(llmName, tabId, jobState.prompt,");
   });
 

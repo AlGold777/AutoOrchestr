@@ -3219,6 +3219,30 @@ document.addEventListener('click', (event) => {
             // revisions never replace it. A failure may still be upgraded by a
             // usable terminal answer of the same request before the batch settles.
             if (hasOwnKey(batch.responses, llmName)) {
+                // Exception to immutability, while the batch is still open: the kept
+                // answer lacked the delivery token (possibly cut off), the new one of
+                // the same request carries it. The token proves both completeness and
+                // ownership, so the complete answer replaces the unproven one.
+                const kept = batch.results[llmName] || {};
+                const incomingVerified = Boolean(String(envelope.answer || '').trim())
+                    && envelope.metadata?.attributionState !== 'unproven';
+                if (kept.attribution === 'unproven' && incomingVerified) {
+                    const text = String(envelope.answer || '');
+                    const status = PIPELINE_TRANSPORT.normalizeStatus(envelope.status) || 'SUCCESS';
+                    batch.responses[llmName] = text;
+                    batch.results[llmName] = {
+                        ...kept,
+                        status,
+                        completion: PIPELINE_TRANSPORT.classifyCompletion(status, text),
+                        attribution: 'verified',
+                        replacedUnproven: true,
+                        text
+                    };
+                    globalThis.MessageDelivery?.batchEvent?.('unproven_replaced', {
+                        model: llmName, requestId: envelope.transportRequestId || null, chars: text.length, previousChars: String(kept.text || '').length
+                    });
+                    return true;
+                }
                 if (String(envelope.answer || '') !== batch.responses[llmName]) {
                     this.journalRejection(envelope, envelope.metadata?.revision === true ? 'revision_after_terminal' : 'duplicate_terminal');
                 }
@@ -3233,6 +3257,7 @@ document.addEventListener('click', (event) => {
                 status,
                 completion: PIPELINE_TRANSPORT.classifyCompletion(status, text),
                 reason: envelope.metadata?.reason || envelope.metadata?.completionReason || null,
+                attribution: envelope.metadata?.attributionState === 'unproven' ? 'unproven' : 'verified',
                 text
             };
             batch.results[llmName] = result;

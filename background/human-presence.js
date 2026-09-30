@@ -329,7 +329,7 @@ const HUMAN_VISIT_NUDGE_SETTLE_MS = 6000;
 async function settleStaticAnswerAfterVisits(llmName, entry) {
   const sessionId = jobState?.session?.startTime || null;
   const lengthBefore = String(entry?.pendingFinalAnswer || entry?.answer || '').length;
-  if (lengthBefore > 0 && typeof runAutomaticGetItForModel === 'function' && !entry.bottomNudgedAfterVisits) {
+  if (lengthBefore > 0 && typeof self.runAutomaticGetItForModel === 'function' && !entry.bottomNudgedAfterVisits) {
     entry.bottomNudgedAfterVisits = true;
     const tabId = typeof resolveBoundTabIdForHuman === 'function' ? resolveBoundTabIdForHuman(llmName, entry) : null;
     if (isValidTabId(tabId)) {
@@ -339,7 +339,7 @@ async function settleStaticAnswerAfterVisits(llmName, entry) {
             dispatchId: entry.lastDispatchMeta?.dispatchId || null, tabId, reason: 'after_visits', attempt: 1
           });
         }
-        await runAutomaticGetItForModel(llmName, 'visits_give_up_get_it');
+        await self.runAutomaticGetItForModel(llmName, 'visits_give_up_get_it');
         await new Promise((resolve) => setTimeout(resolve, HUMAN_VISIT_NUDGE_SETTLE_MS));
       } catch (_) { /* a failed nudge must not block the decision */ }
     }
@@ -1098,9 +1098,24 @@ async function runHumanPresenceCycle() {
     // to the bottom (what the status-indicator double click does) once per send,
     // instead of yet another ordinary visit.
     const sendKey = liveEntry.lastDispatchMeta?.dispatchId || 'send';
+    // The model's own end marker is in the unchanged text: the answer is complete,
+    // commit it now instead of visiting or waiting for the page to say so.
+    if (progress.length > 0 && progress.staticVisits >= 1 && liveEntry.promptSubmittedAt
+      && typeof answerHasDeliveryToken === 'function'
+      && answerHasDeliveryToken(llmName, liveEntry.pendingFinalAnswer || liveEntry.answer || '')
+      && typeof commitIncompleteAnswer === 'function') {
+      commitIncompleteAnswer(llmName, liveEntry, {
+        text: String(liveEntry.pendingFinalAnswer || liveEntry.answer || ''),
+        html: String(liveEntry.pendingFinalAnswerHtml || liveEntry.answerHtml || ''),
+        source: 'static_answer_snapshot',
+        completionReason: 'static_text_with_delivery_token'
+      });
+      broadcastHumanVisitStatus();
+      continue;
+    }
     if (progress.length > 0 && progress.staticVisits >= 1
       && liveEntry.staticTextNudgedFor !== sendKey
-      && typeof runAutomaticGetItForModel === 'function') {
+      && typeof self.runAutomaticGetItForModel === 'function') {
       liveEntry.staticTextNudgedFor = sendKey;
       try {
         if (typeof reportDispatchPhase === 'function') {
@@ -1108,7 +1123,7 @@ async function runHumanPresenceCycle() {
             dispatchId: liveEntry.lastDispatchMeta?.dispatchId || null, tabId: boundTabId, reason: 'static_text', attempt: 1, answerChars: progress.length
           });
         }
-        await runAutomaticGetItForModel(llmName, 'static_text_get_it');
+        await self.runAutomaticGetItForModel(llmName, 'static_text_get_it');
       } catch (_) { /* a failed nudge falls back to the ordinary visit next cycle */ }
       broadcastHumanVisitStatus();
       continue;
