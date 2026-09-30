@@ -1,5 +1,17 @@
 # CHANGELOG — Project
 
+### 2026-09-30 — Transport: dispatch hardening and run guard, version 2.81.504
+
+- Take a synchronous start reservation before the first await: two START commands can no longer both pass the run guard and replace the shared job state.
+- Refuse a run that reuses tabs while a submitted prompt has no recorded final (the tab still generates); the panel waits for such a refusal within a 120 s budget instead of polling a busy flag after every batch.
+- Later batches of the same pipeline run keep diagnostics and the proof ledger; they are cleared only when a new run starts.
+- The retry supervisor resends the exact per-model prompt instead of the shared prompt.
+- The focus queue returns failures to the caller (it used to resolve them as success) and keeps running.
+- The pre-dispatch reload re-checks the dispatch state right before reloading, so a tab that received the prompt during the health ping is not reloaded.
+- An open circuit on the first attempt records a retryable state instead of returning silently (the model used to hang until the panel deadline).
+- The command intent must be durably saved before the provider page is touched; job-state saves report success or failure to their callers.
+- A command that was not delivered or not accepted settles the submit waiter immediately; the dispatch transaction no longer holds the model's dispatch lock forever.
+
 ### 2026-09-30 — Transport: request identity, one outcome per wait, version 2.81.503
 
 - Add `shared/transport-contract.js`: panel-issued `transportRequestId` per model request, one terminal status classification (`complete` / `partial` / `failed` / `cancelled`) and the panel wait deadline derived from the tab generation limit.

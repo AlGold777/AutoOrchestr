@@ -589,10 +589,13 @@ async function withPromptDispatchLock(llmName, fn) {
 }
 
 function withPromptDispatchFocusLock(fn) {
-  promptDispatchFocusMutex = promptDispatchFocusMutex.then(() => Promise.resolve(fn())).catch((err) => {
+  const run = promptDispatchFocusMutex.then(() => fn());
+  // The focus queue continues after a failure, but the caller still receives
+  // the failure: resolving to undefined made an error look like success.
+  promptDispatchFocusMutex = run.catch((err) => {
     console.warn('[DISPATCH] focus lock fn failed', err);
   });
-  return promptDispatchFocusMutex;
+  return run;
 }
 
 function resolvePromptSubmitted(llmName, payload = {}) {
@@ -1023,7 +1026,9 @@ async function runPromptDispatchSupervisor() {
     // One retry transaction at a time. Starting all eligible retries in the
     // same tick replaces dispatch identities before older provider signals can
     // be correlated and turns valid confirmations into dispatch_mismatch.
-    await dispatchPromptToTab(llmName, tabId, jobState.prompt, jobState.attachments || [], 'retry_supervisor', {
+    // Resend the exact per-model prompt (role, delivery token), never the
+    // shared fallback prompt.
+    await dispatchPromptToTab(llmName, tabId, resolvePromptForDispatch(llmName, jobState.prompt), jobState.attachments || [], 'retry_supervisor', {
       deferSendMs: 500,
       minFocusHoldMs: RETRY_FOCUS_HOLD_MS
     });
@@ -1355,6 +1360,25 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
       details: allowPreDispatchReload ? 'reload_attempted' : 'reload_skipped',
       meta: { tabId, reason, attempts, allowPreDispatchReload }
     });
+    // The health ping took up to a second: a submit confirmation or a new
+    // generation may have arrived meanwhile. Re-check right before the reload;
+    // reloading a tab that already received the prompt destroys the answer.
+    const reloadFlags = resolveDispatchFlags(llmName, entry);
+    const reloadStillSafe = isCurrentDispatchContext()
+      && !isTerminalLlmEntry(entry)
+      && !reloadFlags.isSent
+      && !reloadFlags.isInProgress
+      && !entry.promptSubmittedAt
+      && !isProviderPipelineOwnershipActive(entry);
+    if (allowPreDispatchReload && !reloadStillSafe) {
+      emitTelemetry(llmName, 'PRE_DISPATCH_RELOAD_SKIPPED', {
+        level: 'info',
+        details: 'state_changed_during_health_ping',
+        meta: { tabId, reason, attempts },
+        force: true
+      });
+      return;
+    }
     if (allowPreDispatchReload) {
       console.warn(`[Dispatch] Tab ${tabId} unresponsive, retry path will reload before send (${llmName})`);
       await new Promise((resolve) => chrome.tabs.reload(tabId, {}, () => setTimeout(resolve, 1200)));
@@ -1382,7 +1406,16 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
       details: `${circuitState.retryAfterMs}ms`,
       level: 'warning'
     });
-    return;
+    // An open circuit on the first attempt used to return silently: the retry
+    // supervisor only picks up entries with attempts > 0 and a recorded error,
+    // so the model hung until the panel deadline. Record an explicit, retryable
+    // state instead; the next attempt re-checks the circuit.
+    entry.lastDispatchError = { type: 'circuit_open', retryAfterMs: circuitState.retryAfterMs || 0 };
+    entry.lastDispatchErrorClass = 'CIRCUIT_OPEN';
+    entry.retryAfterAt = Date.now() + Math.max(1000, Number(circuitState.retryAfterMs || 0));
+    entry.dispatchAttempts = Math.max(1, Number(entry.dispatchAttempts || 0));
+    schedulePromptDispatchSupervisor();
+    return { ok: false, deferred: true, reason: 'circuit_open' };
   }
 
   entry.dispatchAttempts = (entry.dispatchAttempts || 0) + 1;
@@ -1836,6 +1869,17 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
           && acceptance?.dispatchId === dispatchId;
       };
       let commandDeliveryReported = false;
+      // The submit waiter is armed only by an accepted command. When the command
+      // was not delivered or not accepted, settle it now: an unarmed waiter never
+      // resolves and kept this transaction (and the model's dispatch lock) forever.
+      const settleUndeliveredCommand = (result) => {
+        resolvePromptSubmitted(llmName, {
+          ok: false,
+          reason: result?.reason || result?.response?.reason || 'command_not_delivered',
+          dispatchId,
+          meta: answerCommand.meta
+        });
+      };
       const reportCommandDelivered = (result) => {
         if (commandDeliveryReported || !commandWasAccepted(result)) return false;
         commandDeliveryReported = true;
@@ -1870,7 +1914,18 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
         // Persist intent before delivery: after a restart an uncertain send must
         // be reconciled, while a preparation-only attempt can safely resume.
         entry.dispatchCheckpoint = { dispatchId, phase: 'command_intent' };
-        await saveJobState(jobState);
+        const intentPersisted = await saveJobState(jobState);
+        // Without a durable intent a restart cannot reconcile an uncertain
+        // send: do not act on the provider page.
+        if (intentPersisted === false) {
+          emitTelemetry(llmName, 'DISPATCH_INTENT_NOT_PERSISTED', {
+            level: 'error',
+            details: 'command_intent',
+            meta: { tabId, dispatchId, dispatchReason: reason },
+            force: true
+          });
+          return { ok: false, reason: 'intent_not_persisted' };
+        }
         if (!isCurrentDispatchContext()) {
           return { ok: false, stale: true, reason: 'session_mismatch' };
         }
@@ -1905,6 +1960,7 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
           }
           commandDeliveryResult = await deliverAnswerCommand();
           const commandAccepted = reportCommandDelivered(commandDeliveryResult);
+          if (!commandAccepted) settleUndeliveredCommand(commandDeliveryResult);
           if (commandAccepted && postCommandFocusHoldMs > 0) {
             const holdStartedAt = Date.now();
             let boundary = await waitForPromptFocusBoundary(
@@ -2001,7 +2057,15 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
           await dispatchSleepMs(options.deferSendMs);
         }
         commandDeliveryResult = await deliverAnswerCommand();
-        reportCommandDelivered(commandDeliveryResult);
+        if (!reportCommandDelivered(commandDeliveryResult)) settleUndeliveredCommand(commandDeliveryResult);
+      }
+      // Not delivered and no acceptance contract to report it below: stop here
+      // instead of treating an undelivered command as submitted.
+      if (!commandDeliveryReported && !requireCommandAcceptance) {
+        const reasonCode = commandDeliveryResult?.reason || 'command_not_delivered';
+        if (machine?.isInProgress?.()) machine.error({ error: reasonCode, code: 'COMMAND_NOT_DELIVERED' });
+        if (!commandDeliveryResult?.stale) scheduleDispatchRetry(entry, llmName, { type: 'command_not_delivered', reason: reasonCode });
+        return { ok: false, accepted: false, dispatchId, reason: reasonCode };
       }
       const focusMetricPayload = {
         type: 'SMART_FOCUS_METRIC',

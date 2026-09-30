@@ -5254,7 +5254,7 @@ document.addEventListener('click', (event) => {
         const SLOW_MODEL_PIPELINE_WAIT_TIMEOUT_MS = 600000;
         const SLOW_PIPELINE_WAIT_MODELS = new Set(['QWEN']);
         const PIPELINE_BATCH_GUARD_RETRY_MS = 500;
-        const PIPELINE_BATCH_GUARD_RETRY_LIMIT = 20;
+        const PIPELINE_START_BUSY_WAIT_MS = 120000;
 
         const resolvePipelineWaitTimeoutMs = (models = [], requestedTimeoutMs = DEFAULT_PIPELINE_WAIT_TIMEOUT_MS, generationProfile = 'long') => {
             // Never give up before the tab itself can finish its generation.
@@ -5272,18 +5272,6 @@ document.addEventListener('click', (event) => {
         const delayPipelineBatchGuard = (ms = PIPELINE_BATCH_GUARD_RETRY_MS) => new Promise((resolve) => {
             setTimeout(resolve, ms);
         });
-
-        const waitForPipelineBatchGuard = async ({ signal = null } = {}) => {
-            for (let attempt = 0; attempt < PIPELINE_BATCH_GUARD_RETRY_LIMIT; attempt += 1) {
-                if (signal?.aborted) {
-                    throw new DOMException('Pipeline run cancelled', 'AbortError');
-                }
-                const runState = await getActiveRunState();
-                if (!runState?.roundsInProgress) return true;
-                await delayPipelineBatchGuard();
-            }
-            return false;
-        };
 
         const debateStageAttemptCounters = new Map();
         const runModelBatch = async ({
@@ -5479,7 +5467,11 @@ document.addEventListener('click', (event) => {
                 return sendToBackground({ ...payloadBase, attachments: Array.isArray(attachments) ? attachments : [] });
             };
 
-            for (let attempt = 0; attempt <= PIPELINE_BATCH_GUARD_RETRY_LIMIT; attempt += 1) {
+            // The background refuses a start while rounds run or a tab still
+            // generates; wait for it within an explicit budget instead of
+            // polling a separate busy flag after every batch.
+            const startBusyDeadline = Date.now() + PIPELINE_START_BUSY_WAIT_MS;
+            for (let attempt = 0; ; attempt += 1) {
                 if (signal?.aborted) abandonBatch(new DOMException('Pipeline run cancelled', 'AbortError'));
                 try {
                     response = await sendStartPayload();
@@ -5487,7 +5479,7 @@ document.addEventListener('click', (event) => {
                     abandonBatch(error);
                 }
                 if (response?.errorCode !== 'RUN_ALREADY_ACTIVE') break;
-                if (attempt === PIPELINE_BATCH_GUARD_RETRY_LIMIT) break;
+                if (Date.now() >= startBusyDeadline) break;
                 if (signal?.aborted) {
                     abandonBatch(new DOMException('Pipeline run cancelled', 'AbortError'));
                 }
@@ -5541,7 +5533,6 @@ document.addEventListener('click', (event) => {
                     pipelineBatchId: context.pipelineBatchId || null
                 });
             });
-            await waitForPipelineBatchGuard({ signal });
             return batchResult;
         };
 

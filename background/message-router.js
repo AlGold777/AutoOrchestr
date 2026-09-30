@@ -1980,7 +1980,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     ? self.TransportPolicy.sanitizePromptsByModel(message.promptsByModel)
                     : null;
                 (async () => {
-                    const runGuard = self.RunGuard?.canStartNewRun?.(jobState?.session, message);
+                    const runGuard = self.RunGuard?.canStartNewRun?.(jobState?.session, message, jobState?.llms);
                     if (runGuard && runGuard.ok === false) {
                         sendResponse({
                             success: false,
@@ -1990,12 +1990,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         return;
                     }
 
-                    try {
-                        await writeDiagnosticsEventsToStorage([]);
-                        await self.ProofTelemetryLedger?.clear?.(null);
-                        clearDiagnosticsRuntimeLogs();
-                    } catch (err) {
-                        console.warn('[DIAGNOSTICS] new run clear failed', err);
+                    // Diagnostics and the proof ledger belong to a pipeline run, not
+                    // to one batch: later stages of the same run keep the evidence of
+                    // earlier stages.
+                    const incomingPipelineRunId = message.pipelineContext?.pipelineRunId || null;
+                    const continuesPipelineRun = Boolean(incomingPipelineRunId)
+                        && incomingPipelineRunId === (jobState?.session?.pipelineRunId || null);
+                    if (!continuesPipelineRun) {
+                        try {
+                            await writeDiagnosticsEventsToStorage([]);
+                            await self.ProofTelemetryLedger?.clear?.(null);
+                            clearDiagnosticsRuntimeLogs();
+                        } catch (err) {
+                            console.warn('[DIAGNOSTICS] new run clear failed', err);
+                        }
                     }
                     const startResult = await startProcess(message.prompt, message.selectedLLMs, sender.tab.id, {
                         forceNewTabs,

@@ -4883,8 +4883,10 @@ function saveJobState(state) {
           const waiters = pendingJobStateSaveWaiters;
           pendingJobStateSave = null;
           pendingJobStateSaveWaiters = [];
-          await persistJobStateSnapshot(next);
-          waiters.forEach(resolve => resolve());
+          // Each caller learns whether its snapshot is durable: a write that
+          // must precede an external action (command intent) can refuse to go on.
+          const persisted = await persistJobStateSnapshot(next);
+          waiters.forEach(resolve => resolve(persisted));
         }
       } finally { jobStateSaveFlight = null; }
     });
@@ -4910,8 +4912,10 @@ async function persistJobStateSnapshot(state) {
       void self.PipelineFSM.persistControlState(control);
     }
     globalThis.LLMLog?.debug?.('[BACKGROUND] Job state saved to storage (compressed)');
+    return true;
   } catch (e) {
     console.error('[BACKGROUND] Failed to save job state:', e);
+    return false;
   }
 }
 
@@ -5097,8 +5101,30 @@ function stopAllProcesses(reason = 'unspecified', { closeTabs = false } = {}) {
   broadcastGlobalState();
 }
 
+// Synchronous reservation taken before the first await of a start: two START
+// commands used to both pass RunGuard (busy is only known after the awaited
+// ToS read) and then both replaced the shared jobState. Held until
+// runDispatchRounds has marked the rounds active.
+let startProcessReserved = false;
 async function startProcess(prompt, selectedLLMs, resultsTab, options = {}) {
-  const runGuard = self.RunGuard?.canStartNewRun?.(jobState?.session, options);
+  const runGuard = self.RunGuard?.canStartNewRun?.(jobState?.session, options, jobState?.llms);
+  if (runGuard && runGuard.ok === false) {
+    console.warn('[BACKGROUND] Refusing to start process while another run is active', runGuard);
+    return runGuard;
+  }
+  if (startProcessReserved && options.force !== true) {
+    return { ok: false, errorCode: 'RUN_ALREADY_ACTIVE', activeSessionId: jobState?.session?.startTime || null };
+  }
+  startProcessReserved = true;
+  try {
+    return await startProcessReservedRun(prompt, selectedLLMs, resultsTab, options);
+  } finally {
+    startProcessReserved = false;
+  }
+}
+
+async function startProcessReservedRun(prompt, selectedLLMs, resultsTab, options = {}) {
+  const runGuard = self.RunGuard?.canStartNewRun?.(jobState?.session, options, jobState?.llms);
   if (runGuard && runGuard.ok === false) {
     console.warn('[BACKGROUND] Refusing to start process while another run is active', runGuard);
     return runGuard;
@@ -5802,6 +5828,7 @@ async function focusTabForVerification(llmName, tabId, durationMs, sessionId) {
     : Number(durationMs || 0);
   const boundedDurationMs = Math.min(12000, Number(durationMs || 0), remainingFocusMs);
   if (boundedDurationMs <= 0) return false;
+  // Verification focus is best effort: a failure means "no useful visit".
   return withPromptDispatchFocusLock(async () => {
     if (self.isInitialPromptPassActive?.() || (sessionId && !isSessionActive(sessionId))
       || jobState?.llms?.[llmName] !== entry || isFinalizedEntry(entry)
@@ -5822,6 +5849,9 @@ async function focusTabForVerification(llmName, tabId, durationMs, sessionId) {
     }
     if (sessionId && !isSessionActive(sessionId)) return false;
     return visitSummary || true;
+  }).catch((err) => {
+    console.warn('[BACKGROUND] verification focus failed', err);
+    return false;
   });
 }
 
