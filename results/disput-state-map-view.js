@@ -142,6 +142,80 @@
     const compareB = panel.querySelector('[data-map-compare-b]');
     let mode = 'structure'; let filter = 'all'; let zoom = 1; let selectedId = ''; let comparison = null; let map = root.DebateStateMap.project({}); let caseMap = map;
     let pendingAggregate;
+    const shellOnly = panel.dataset.mapShell === 'true';
+
+    if (shellOnly) {
+      const projectAggregate = (aggregate) => {
+        if (aggregate) {
+          map = root.DebateStateMap.project({ ...aggregate, ruleHistory: aggregate.ruleHistory || options.getRuleHistory?.() || null });
+          caseMap = map;
+          comparison = null;
+        }
+        panel.dataset.status = map.readiness.id;
+        return map;
+      };
+      const render = (aggregate) => projectAggregate(aggregate !== undefined ? aggregate : options.getAggregate?.());
+      const setOpen = (open) => {
+        panel.classList.toggle('is-open', open);
+        header?.setAttribute('aria-expanded', String(open));
+        if (body) body.hidden = !open;
+      };
+      const refreshRuns = async () => options.caseStore?.list?.() || [];
+      const downloadJson = (payload, filename) => {
+        const blob = new Blob([payload], { type: 'application/json' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = filename;
+        link.click();
+        URL.revokeObjectURL(link.href);
+      };
+      const handleOutsideClick = (event) => {
+        if (!panel.classList.contains('is-open') || panel.contains(event.target)) return;
+        setOpen(false);
+      };
+
+      header?.addEventListener('click', () => setOpen(!panel.classList.contains('is-open')));
+      close?.addEventListener('click', () => setOpen(false));
+      document.addEventListener('click', handleOutsideClick);
+
+      panel.addEventListener('click', (event) => {
+        if (event.target.closest('[data-map-export]')) {
+          downloadJson(JSON.stringify(map, null, 2), `disput-state-map-${map.runId || 'idle'}.json`);
+          return;
+        }
+        if (event.target.closest('[data-case-export]')) {
+          const serialized = options.caseStore?.exportCase?.();
+          if (serialized) downloadJson(serialized, `disput-case-${map.runId || 'case'}.json`);
+          return;
+        }
+        if (event.target.closest('[data-case-import-action]')) {
+          caseImport?.click();
+          return;
+        }
+        if (event.target.closest('[data-case-delete]')) {
+          const id = options.caseStore?.getState?.()?.caseId;
+          if (id) {
+            void options.caseStore?.remove?.(id).then(() => render(options.getAggregate?.()));
+          }
+        }
+      });
+
+      caseImport?.addEventListener('change', async () => {
+        try {
+          const serialized = await caseImport.files?.[0]?.text?.();
+          if (serialized) {
+            const imported = await options.caseStore?.importCase?.(serialized);
+            projectAggregate(imported);
+          }
+        } finally {
+          caseImport.value = '';
+        }
+      });
+
+      options.caseStore?.subscribe?.(() => { void refreshRuns(); });
+      projectAggregate(options.aggregate || options.getAggregate?.());
+      return Object.freeze({ render, getMap: () => map, refreshRuns, open: () => setOpen(true), close: () => setOpen(false) });
+    }
     const drawLinks = () => {
       const graph = content.querySelector('.disput-graf'); const svg = graph?.querySelector('.disput-graf-links'); const group = svg?.querySelector('g');
       if (!graph || !svg || !group) return;
