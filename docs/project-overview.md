@@ -605,3 +605,6 @@ entries; no separate stale backlog document is maintained.
 ## License / Internal Use
 
 This project is currently marked `private` in `package.json`. Define license, distribution rules, and public release policy before publishing outside local/internal use.
+# Pipeline panel: лента ответов
+
+В Pipeline panel лента ответов моделей растягивается на всю ширину окна; остальные блоки остаются в прежнем контейнере. В заголовках карточек статус модели расположен сразу после имени и перед подтверждением ответа. Сводка позднего обновления ответа показывается в строке заголовка перед действиями карточки, рядом с отметкой непроверенной атрибуции.
