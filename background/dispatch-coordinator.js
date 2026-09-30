@@ -418,6 +418,22 @@ function resolveDispatchFlags(llmName, entry) {
   };
 }
 
+// Transport phase of one dispatch for the Pipeline Automation journal: what the
+// background actually observed, keyed by the panel's transport request id.
+function reportDispatchPhase(llmName, entry, phase, extra = {}) {
+  try {
+    if (typeof sendMessageToResultsTab !== 'function') return;
+    sendMessageToResultsTab({
+      type: 'TRANSPORT_DISPATCH_PHASE',
+      llmName,
+      phase,
+      transportRequestId: entry?.transportRequestId || null,
+      at: Date.now(),
+      ...extra
+    });
+  } catch (_) {}
+}
+
 function scheduleDispatchRetry(entry, llmName, error) {
   if (!entry) return;
   const attempt = Number(entry.dispatchAttempts || 0);
@@ -1135,6 +1151,7 @@ async function dispatchSimpleFirstPass(llmName, tabId, prompt, attachments, entr
   };
   const defer = reason => {
     if (current()) {
+      reportDispatchPhase(llmName, entry, 'blocked', {dispatchId: meta.dispatchId, tabId, reason, dispatchReason: 'round1_simple'});
       entry.firstPassResult = {dispatchId: meta.dispatchId, outcome: reason, commandAt: null, finishedAt: Date.now()};
       machine?.error?.({code: 'ROUND1_DEFERRED', error: reason});
       emitTelemetry(llmName, 'ROUND1_SIMPLE_DISPATCH_RESULT', {
@@ -1170,6 +1187,9 @@ async function dispatchSimpleFirstPass(llmName, tabId, prompt, attachments, entr
     machine?.ready?.();
     const commandAt = Date.now();
     let deliveryError = null;
+    reportDispatchPhase(llmName, entry, 'dispatch_started', {
+      dispatchId: meta.dispatchId, tabId, dispatchReason: 'round1_simple', attempt: entry.dispatchAttempts || 0
+    });
     // Exactly one prompt delivery after transport preparation; no send retry.
     // Provider-specific editing remains in the existing page adapter.
     try {
@@ -1181,6 +1201,10 @@ async function dispatchSimpleFirstPass(llmName, tabId, prompt, attachments, entr
         else if (response?.accepted === true && response.dispatchId === meta.dispatchId) {
           entry.lastCommandAcceptedAt = Date.now();
           entry.lastCommandAcceptedDispatchId = meta.dispatchId;
+          reportDispatchPhase(llmName, entry, 'command_accepted', {dispatchId: meta.dispatchId, tabId});
+        }
+        if (deliveryError) {
+          reportDispatchPhase(llmName, entry, 'command_not_delivered', {dispatchId: meta.dispatchId, tabId, reason: deliveryError});
         }
       });
     } catch (error) { deliveryError = error?.message || 'delivery_failed'; }
@@ -1218,6 +1242,7 @@ async function dispatchSimpleFirstPass(llmName, tabId, prompt, attachments, entr
       if (attempted) machine.submit();
       else machine.error({code: 'ROUND1_DEFERRED', error: outcome});
     }
+    reportDispatchPhase(llmName, entry, attempted ? 'submitted' : 'submit_unconfirmed', {dispatchId: meta.dispatchId, tabId, reason: attempted ? null : outcome});
     emitTelemetry(llmName, 'ROUND1_SIMPLE_DISPATCH_RESULT', {
       details: outcome,
       meta: {...meta, tabId, stage: 'first_pass_finished', outcome, commandIssued: true, visitMs: Date.now() - visitStartedAt, commandAt, leaveAt},
@@ -1416,6 +1441,7 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
     entry.retryAfterAt = Date.now() + Math.max(1000, Number(circuitState.retryAfterMs || 0));
     entry.dispatchAttempts = Math.max(1, Number(entry.dispatchAttempts || 0));
     schedulePromptDispatchSupervisor();
+    reportDispatchPhase(llmName, entry, 'blocked', { reason: 'circuit_open', dispatchReason: reason, retryAfterMs: circuitState.retryAfterMs || 0 });
     return { ok: false, deferred: true, reason: 'circuit_open' };
   }
 
@@ -1571,6 +1597,7 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
         if (machine) {
           machine.error({ error: readiness.reason || 'tab_not_ready', code: 'TAB_NOT_READY' });
         }
+        reportDispatchPhase(llmName, entry, 'blocked', { reason: readiness.reason || 'tab_not_ready', dispatchId, tabId, dispatchReason: reason });
         return;
       }
       broadcastDiagnostic(llmName, {
@@ -1676,6 +1703,7 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
           readyOk = await waitForScriptReady(tabId, llmName, { timeoutMs: READY_ACK_TIMEOUT_MS, intervalMs: 250 });
         }
         if (!readyOk) {
+          reportDispatchPhase(llmName, entry, 'blocked', { reason: 'ack_timeout', dispatchId, tabId, dispatchReason: reason });
           scheduleDispatchRetry(entry, llmName, { type: 'ack_timeout' });
           if (self.DispatchCircuit?.recordDispatchFailure) {
             self.DispatchCircuit.recordDispatchFailure(llmName, { type: 'ack_timeout' });
@@ -1709,6 +1737,9 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
           sendMessageToResultsTab(dispatchSendPayload);
         }
       } catch (_) {}
+      reportDispatchPhase(llmName, entry, 'dispatch_started', {
+        dispatchId, tabId, dispatchReason: reason, attempt: entry.dispatchAttempts || 0
+      });
 
       let needsFocus = false;
       let noFocusResponse = null;
@@ -1818,6 +1849,12 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
         if (machine) {
           machine.error({ error: pageReadyState.reason || 'page_not_ready', code: 'PAGE_NOT_READY' });
         }
+        reportDispatchPhase(llmName, entry, 'blocked', {
+          reason: pageReadyState.reason || 'page_not_ready',
+          blockers: pageReadyState.blockers || null,
+          retryable: pageReadyState.blockerPolicy?.retryable !== false,
+          dispatchId, tabId, dispatchReason: reason
+        });
         return;
       }
 
@@ -1876,6 +1913,9 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
       // was not delivered or not accepted, settle it now: an unarmed waiter never
       // resolves and kept this transaction (and the model's dispatch lock) forever.
       const settleUndeliveredCommand = (result) => {
+        reportDispatchPhase(llmName, entry, 'command_not_delivered', {
+          dispatchId, tabId, reason: result?.reason || result?.response?.reason || 'command_not_delivered'
+        });
         resolvePromptSubmitted(llmName, {
           ok: false,
           reason: result?.reason || result?.response?.reason || 'command_not_delivered',
@@ -1899,6 +1939,7 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
         };
         entry.lastCommandAcceptedAt = Date.now();
         entry.lastCommandAcceptedDispatchId = dispatchId;
+        reportDispatchPhase(llmName, entry, 'command_accepted', { dispatchId, tabId, requiresFocus: needsFocus });
         entry.lastCommandAcceptedTiming = commandTiming;
         emitTelemetry(llmName, 'DISPATCH_COMMAND_ACCEPTED', {
           details: `readyWaitMs=${readyWaitMs}`,
@@ -2084,6 +2125,11 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
         }
       } catch (_) {}
       const submittedPayload = options.skipSubmitWait ? null : (waiter ? await waiter : false);
+      if (!options.skipSubmitWait && commandDeliveryReported) {
+        reportDispatchPhase(llmName, entry, submittedPayload?.ok === true || submittedPayload === true ? 'submitted' : 'submit_unconfirmed', {
+          dispatchId, tabId, reason: submittedPayload?.reason || null
+        });
+      }
       if (requireCommandAcceptance) {
         const acceptance = commandDeliveryResult?.response || null;
         const accepted = commandDeliveryResult?.ok === true

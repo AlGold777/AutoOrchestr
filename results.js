@@ -3167,6 +3167,26 @@ document.addEventListener('click', (event) => {
             batch.reject(new DOMException('Pipeline run cancelled', 'AbortError'));
             return true;
         },
+        // Why a terminal answer did not match any waiting request (Automation journal).
+        missReason(envelope) {
+            if (!envelope.transportRequestId) return 'no_request_id';
+            const ref = this.requests.get(envelope.transportRequestId);
+            if (!ref) return 'unknown_request';
+            if (ref.llmName !== envelope.llmName) return 'model_mismatch';
+            return 'batch_settled';
+        },
+        journalRejection(envelope, reason) {
+            if (!this.batches.size) return;
+            globalThis.MessageDelivery?.batchEvent?.('identity_rejected', {
+                model: envelope.llmName || null,
+                requestId: envelope.transportRequestId || null,
+                dispatchId: envelope.dispatchId || null,
+                status: envelope.status || null,
+                chars: String(envelope.answer || '').length,
+                source: envelope.metadata?.source || null,
+                reason
+            });
+        },
         lookup(envelope) {
             if (!envelope.transportRequestId) return null;
             const ref = this.requests.get(envelope.transportRequestId);
@@ -3187,7 +3207,10 @@ document.addEventListener('click', (event) => {
         handleFinal(messageOrName, answer) {
             const envelope = normalizePipelineMessageEnvelope(messageOrName, answer);
             const hit = this.lookup(envelope);
-            if (!hit) return false;
+            if (!hit) {
+                if (isTerminalPipelineMessage(envelope)) this.journalRejection(envelope, this.missReason(envelope));
+                return false;
+            }
             if (!isTerminalPipelineMessage(envelope)) {
                 return this.handlePartial(envelope);
             }
@@ -3195,7 +3218,12 @@ document.addEventListener('click', (event) => {
             // A terminal answer is immutable: duplicates and post-terminal
             // revisions never replace it. A failure may still be upgraded by a
             // usable terminal answer of the same request before the batch settles.
-            if (hasOwnKey(batch.responses, llmName)) return false;
+            if (hasOwnKey(batch.responses, llmName)) {
+                if (String(envelope.answer || '') !== batch.responses[llmName]) {
+                    this.journalRejection(envelope, envelope.metadata?.revision === true ? 'revision_after_terminal' : 'duplicate_terminal');
+                }
+                return false;
+            }
             const text = String(envelope.answer || '');
             const hasText = Boolean(text.trim());
             const status = PIPELINE_TRANSPORT.normalizeStatus(envelope.status) || (hasText ? 'SUCCESS' : 'FAILED');
@@ -5366,6 +5394,7 @@ document.addEventListener('click', (event) => {
                 promptsByModel = window.MessageDelivery.prepare({ prompt, promptsByModel, models, requestIds: transportRequestIds, batchId: context?.pipelineBatchId || context?.stageAttemptId || '' });
             }
             if (!(await ensureNoOtherViewRun())) {
+                window.MessageDelivery?.closeBatch({ models, requestIds: transportRequestIds, cancelled: true, reason: 'other_view_active' });
                 throw new Error('Another page has an active request.');
             }
             // The generation-wait profile is the caller's choice, not a property of the
@@ -5436,7 +5465,10 @@ document.addEventListener('click', (event) => {
                 }
             }
 
-            if (signal?.aborted) throw new DOMException('Pipeline run cancelled', 'AbortError');
+            if (signal?.aborted) {
+                window.MessageDelivery?.closeBatch({ models, requestIds: transportRequestIds, cancelled: true, reason: 'cancelled_before_dispatch' });
+                throw new DOMException('Pipeline run cancelled', 'AbortError');
+            }
             const resolvedTimeoutMs = resolvePipelineWaitTimeoutMs(models, timeoutMs, generationProfile);
             const batchWait = pipelineWaiter.waitForModels(models, {
                 timeoutMs: resolvedTimeoutMs,
@@ -5446,8 +5478,40 @@ document.addEventListener('click', (event) => {
             });
             // The barrier may be rejected (cancel) while dispatch is still in flight.
             batchWait.catch(() => {});
+            const journalBatchId = String(pipelineContext.pipelineBatchId || pipelineContext.stageAttemptId || batchWait.batchId);
+            const batchStartedAt = Date.now();
+            const batchEvent = (kind, fields = {}) => window.MessageDelivery?.batchEvent?.(kind, {
+                batchId: journalBatchId,
+                waitId: batchWait.batchId,
+                ...fields
+            });
+            batchEvent('batch_start', {
+                models: models.slice(),
+                requestIds: { ...transportRequestIds },
+                timeoutMs: resolvedTimeoutMs,
+                generationProfile,
+                forceNewTabs: Boolean(forceNewTabs),
+                pipelineRunId: pipelineContext.pipelineRunId || null,
+                stageId: pipelineContext.stageId || null,
+                stageAttemptId: pipelineContext.stageAttemptId || null,
+                judge: context?.judge === true,
+                manual: context?.manualModeratorDispatch === true
+            });
             const abandonBatch = (error) => {
                 pipelineWaiter.cancelBatch(batchWait.batchId);
+                const cancelled = error?.name === 'AbortError';
+                window.MessageDelivery?.closeBatch({
+                    models,
+                    requestIds: transportRequestIds,
+                    cancelled: true,
+                    reason: cancelled ? 'cancelled_before_dispatch' : String(error?.message || 'dispatch_rejected')
+                });
+                batchEvent('batch_end', {
+                    outcome: cancelled ? 'cancelled' : 'rejected',
+                    reason: String(error?.message || error?.name || ''),
+                    errorCode: response?.errorCode || null,
+                    durationMs: Date.now() - batchStartedAt
+                });
                 throw error;
             };
             let response = null;
@@ -5479,6 +5543,13 @@ document.addEventListener('click', (event) => {
                     abandonBatch(error);
                 }
                 if (response?.errorCode !== 'RUN_ALREADY_ACTIVE') break;
+                batchEvent('start_refused', {
+                    attempt: attempt + 1,
+                    errorCode: response.errorCode,
+                    reason: response.reason || null,
+                    blockingModel: response.model || null,
+                    waitedMs: Date.now() - batchStartedAt
+                });
                 if (Date.now() >= startBusyDeadline) break;
                 if (signal?.aborted) {
                     abandonBatch(new DOMException('Pipeline run cancelled', 'AbortError'));
@@ -5501,6 +5572,10 @@ document.addEventListener('click', (event) => {
                 abandonBatch(new Error(response.errorCode || 'dispatch_rejected'));
             }
 
+            batchEvent(response?.status === 'process_started' ? 'start_accepted' : 'start_unconfirmed', {
+                status: response?.status || 'no_response',
+                waitedMs: Date.now() - batchStartedAt
+            });
             if (!response || response.status !== 'process_started') {
                 showNotification(`Pipeline: unexpected background response (${response?.status || 'no_response'})`, 'warn');
             } else if (forceNewTabs && context?.pipelineRunId && activePipelineRunContext?.pipelineRunId === context.pipelineRunId) {
@@ -5508,8 +5583,25 @@ document.addEventListener('click', (event) => {
                 resetNewPagesCheckboxAfterOpen();
             }
 
-            const batchResult = await batchWait;
+            let batchResult;
+            try {
+                batchResult = await batchWait;
+            } catch (error) {
+                // Cancelled while waiting for answers (Stop, reset, abort signal).
+                window.MessageDelivery?.closeBatch({ models, requestIds: transportRequestIds, cancelled: true, reason: 'cancelled_while_waiting' });
+                batchEvent('batch_end', { outcome: 'cancelled', reason: String(error?.name || error?.message || ''), durationMs: Date.now() - batchStartedAt });
+                throw error;
+            }
             window.MessageDelivery?.closeBatch({ models: batchResult.missing || [], timedOut: batchResult.timedOut, failed: batchResult.failed || {}, requestIds: batchResult.requestIds || {} });
+            batchEvent('batch_end', {
+                outcome: batchResult.timedOut ? 'timeout' : 'settled',
+                durationMs: Date.now() - batchStartedAt,
+                timeoutMs: resolvedTimeoutMs,
+                answered: Object.keys(batchResult.responses || {}),
+                missing: batchResult.missing || [],
+                failed: batchResult.failed || {},
+                completion: Object.fromEntries(Object.entries(batchResult.results || {}).map(([model, result]) => [model, result.completion]))
+            });
             batchResult.pipelineContext ||= pipelineContext;
             if (activePipelineRunContext?.anonymizationMap && window.DebateAnonymization) {
                 Object.keys(batchResult.responses || {}).forEach((model) => {
@@ -16471,6 +16563,8 @@ document.addEventListener('click', (event) => {
         'SMART_CLEANUP_EVENT',
         'SMART_SCRIPT_READY_ACK',
         'SMART_DISPATCH_SEND',
+        'TRANSPORT_DISPATCH_PHASE',
+        'PROVIDER_STOP_RESULT',
         'SMART_ATTACHMENT_CONFIRMED',
         'ATTACHMENT_MANUAL_REQUIRED',
         'MANUAL_PING_RESULT',
@@ -16484,9 +16578,10 @@ document.addEventListener('click', (event) => {
     // races with the background service worker for content-script RPC messages.
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (!RESULTS_RUNTIME_MESSAGE_TYPES.has(message?.type)) return false;
-        if (window.MessageDelivery && (message.type === 'STATUS_UPDATE' || message.type === 'GLOBAL_STATE_BROADCAST')) {
+        if (window.MessageDelivery && ['STATUS_UPDATE', 'GLOBAL_STATE_BROADCAST', 'TRANSPORT_DISPATCH_PHASE', 'PROVIDER_STOP_RESULT'].includes(message.type)) {
             window.MessageDelivery.observeRuntime(message);
         }
+        if (message.type === 'TRANSPORT_DISPATCH_PHASE' || message.type === 'PROVIDER_STOP_RESULT') return false;
         if (window.MessageDelivery && ['LLM_PARTIAL_RESPONSE', 'LLM_FINAL_RESPONSE', 'FINAL_LLM_RESPONSE'].includes(message.type)) {
             message = window.MessageDelivery.receive(message, { final: isTerminalPipelineMessage(message) });
             if (!message) return false; // stale answer of an earlier request

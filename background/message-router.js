@@ -1985,6 +1985,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         sendResponse({
                             success: false,
                             errorCode: runGuard.errorCode,
+                            reason: runGuard.reason || null,
+                            model: runGuard.model || null,
                             activeSessionId: runGuard.activeSessionId || null
                         });
                         return;
@@ -2017,6 +2019,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         sendResponse({
                             success: false,
                             errorCode: startResult.errorCode,
+                            reason: startResult.reason || null,
+                            model: startResult.model || null,
                             activeSessionId: startResult.activeSessionId || null
                         });
                         return;

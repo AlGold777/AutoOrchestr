@@ -4,7 +4,7 @@
 проекта. Он обновляется вместе с кодом при любом изменении timeout, interval,
 delay, retry, debounce, TTL, budget или retention window.
 
-Актуальность: extension `2.81.444`, аудит `2026-09-17`.
+Актуальность: extension `2.81.507`; перечень обновлён `2026-09-30` для лимита журнала доставки.
 
 Исторические значения фиксируются отдельными датированными snapshots только
 тогда, когда это требуется конкретной задачей. Snapshot не является источником
@@ -498,6 +498,7 @@ Claude снимаются один раз до первой попытки Send.
 | `PLATFORM_DEGRADED_COOLDOWN_MS` | `900000` | cooldown degraded platform |
 | `PLATFORM_DEGRADED_HOURLY_COOLDOWN_MS` | `3600000` | hourly degraded cooldown |
 | telemetry sample TTL | `600000` | TTL sample cache |
+| `shared/message-delivery.js JOURNAL_LIMIT` | `3000` событий | максимальный размер журнала доставки за сессию страницы; не временной интервал |
 | pipeline complete TTL | `600000` | TTL completed pipeline cache |
 | `SELECTOR_METRICS_FLUSH_MS` | `5000` | flush selector metrics |
 | `VERSION_STATUS_REFRESH_MINUTES` | `1440` | selector version audit alarm |

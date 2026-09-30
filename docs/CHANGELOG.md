@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-09-30 — Pipeline transport journal, version 2.81.507
+
+- The Automation journal now records batch start/refusal/end, background dispatch phases, provider stop results, and rejected or revised terminal answers with their request and dispatch identifiers.
+- Cancelled batches and models without a final answer are distinguished, with reasons preserved for diagnosis.
+- The page-session delivery journal retains up to 3,000 events.
+
 ### 2026-09-30 — Transport: acknowledged commands, status over text, stable deadlines, version 2.81.506
 
 - A command to a provider tab counts as delivered only on the adapter's acknowledgement carrying its dispatchId (all ten adapters send it); opting out is explicit.

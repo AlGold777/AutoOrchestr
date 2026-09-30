@@ -13,7 +13,8 @@
   'use strict';
 
   const JOURNAL_KEY = 'messageDelivery.journal';
-  const JOURNAL_LIMIT = 500;
+  // A multi-stage run of ten models produces ~20 events per message.
+  const JOURNAL_LIMIT = 3000;
   const EXPECTED_LIMIT = 200;
   const TOKEN_RE = /\[\[AO-[a-z0-9]{6}\]\]/gi;
   const INSTRUCTION = 'Последней строкой ответа напиши только метку';
@@ -72,6 +73,11 @@
     clearTimeout(mirrorTimer);
     mirrorTimer = setTimeout(() => { try { storage.set({ [JOURNAL_KEY]: journal }); } catch (_) { /* telemetry only */ } }, 300);
   }
+
+  const completionOf = (status, text) => {
+    const contract = root.TransportContract || globalThis.TransportContract;
+    return contract?.classifyCompletion ? contract.classifyCompletion(status, text) : null;
+  };
 
   const requestIdOf = (message) => String(message?.transportRequestId || message?.metadata?.transportRequestId || '') || null;
 
@@ -147,11 +153,27 @@
     if (final && !entry.final) {
       entry.final = true;
       const kind = !answer.trim() ? 'empty_answer' : state === 'verified' ? 'verified' : 'missing_token';
+      const status = String(message.status || metadata.status || metadata.finalStatus || '');
+      entry.finalKind = kind;
       record({
         kind, model, token: entry.token, requestId: entry.requestId, chars: answer.length, ms: Date.now() - entry.sentAt,
-        status: String(message.status || metadata.status || metadata.finalStatus || ''),
+        status,
+        completion: completionOf(status || (answer.trim() ? 'SUCCESS' : 'FAILED'), answer),
+        dispatchId: message.dispatchId || metadata.dispatchId || null,
+        source: String(metadata.source || metadata.answerSource || 'live'),
         reason: String(metadata.reason || metadata.completionReason || metadata.failureClass || metadata.hardStopReason || '')
       });
+    } else if (final && entry.final && entry.finalKind === 'empty_answer' && answer.trim()) {
+      // A usable answer upgraded an earlier empty/failed terminal of the same request.
+      const status = String(message.status || metadata.status || metadata.finalStatus || '');
+      entry.finalKind = state === 'verified' ? 'verified' : 'missing_token';
+      record({
+        kind: entry.finalKind, model, token: entry.token, requestId: entry.requestId, chars: answer.length, ms: Date.now() - entry.sentAt,
+        status, completion: completionOf(status || 'SUCCESS', answer), dispatchId: message.dispatchId || metadata.dispatchId || null,
+        source: String(metadata.source || metadata.answerSource || 'live'), reason: 'upgraded_after_failure'
+      });
+    } else if (final && entry.final && metadata.revision === true) {
+      record({ kind: 'revision', model, token: entry.token, requestId: entry.requestId, chars: answer.length, reason: String(metadata.reason || '') });
     }
     if (final && state === 'missing') {
       metadata.attributionState = 'unproven';
@@ -160,9 +182,25 @@
     return cleanMessage(message, metadata);
   }
 
-  // Runtime facts the background already broadcasts: model statuses and opened tabs.
+  // Runtime facts the background already broadcasts: model statuses, opened tabs,
+  // dispatch phases (TRANSPORT_DISPATCH_PHASE) and provider stop results.
   function observeRuntime(message) {
     if (!message) return;
+    if (message.type === 'TRANSPORT_DISPATCH_PHASE') {
+      const entry = entryFor(message);
+      record({
+        kind: 'dispatch', model: message.llmName, token: entry?.token || null, requestId: requestIdOf(message),
+        phase: String(message.phase || ''), dispatchId: message.dispatchId || null, tabId: message.tabId ?? null,
+        reason: message.reason || null, dispatchReason: message.dispatchReason || null, attempt: message.attempt ?? null,
+        ms: entry ? Date.now() - entry.sentAt : null
+      });
+      return;
+    }
+    if (message.type === 'PROVIDER_STOP_RESULT') {
+      const entry = latestByModel.get(message.llmName);
+      record({ kind: 'provider_stop', model: message.llmName || null, token: entry?.token || null, requestId: entry?.requestId || null, stopped: message.stopped === true, reason: message.reason || null });
+      return;
+    }
     if (message.type === 'STATUS_UPDATE') {
       const entry = latestByModel.get(message.llmName);
       const status = String(message.status || '').toUpperCase();
@@ -180,14 +218,23 @@
   }
 
   // The batch finished waiting: models that never produced a final answer.
-  function closeBatch({ models = [], timedOut = false, failed = {}, requestIds = null } = {}) {
+  function closeBatch({ models = [], timedOut = false, failed = {}, requestIds = null, cancelled = false, reason = '' } = {}) {
     models.forEach((model) => {
       const requestId = String(requestIds?.[model] || '') || null;
       const entry = requestId ? expectedByRequest.get(requestId) : latestByModel.get(model);
       if (!entry || entry.final) return;
       entry.final = true;
-      record({ kind: 'no_answer', model, token: entry.token, requestId: entry.requestId, ms: Date.now() - entry.sentAt, timedOut, status: String(failed[model] || '') });
+      record({
+        kind: cancelled ? 'cancelled' : 'no_answer', model, token: entry.token, requestId: entry.requestId,
+        ms: Date.now() - entry.sentAt, timedOut, status: String(failed[model] || ''), reason: String(reason || '')
+      });
     });
+  }
+
+  // Batch-level facts from the panel (start, refusals, acceptance, outcome) and
+  // answers the panel refused for their identity. Not tied to one token.
+  function batchEvent(kind, fields = {}) {
+    record({ kind, ...fields });
   }
 
   // Clears only the journal; tokens of requests still in flight stay valid.
@@ -206,7 +253,7 @@
   // A page load starts a new session: the previous journal is not carried over.
   try { root.chrome?.storage?.session?.remove(JOURNAL_KEY); } catch (_) { /* ignore */ }
 
-  const api = Object.freeze({ JOURNAL_KEY, makeToken, wrap, clean, cleanHtml, inspect, prepare, receive, observeRuntime, closeBatch, record, clearJournal, reset, journal: () => journal.slice() });
+  const api = Object.freeze({ JOURNAL_KEY, makeToken, wrap, clean, cleanHtml, inspect, prepare, receive, observeRuntime, closeBatch, batchEvent, record, clearJournal, reset, journal: () => journal.slice() });
   root.MessageDelivery = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

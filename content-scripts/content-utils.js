@@ -881,8 +881,11 @@
     chrome.runtime.onMessage.addListener((message) => {
       if (message?.type !== 'STOP_AND_CLEANUP' || !hasActiveRequest()) return false;
       stopProviderGeneration()
-        .then((result) => console.info('[ContentUtils] provider generation stop', result))
-        .catch((err) => console.warn('[ContentUtils] provider generation stop failed', err));
+        .catch((err) => ({ stopped: false, reason: `stop_failed:${err?.message || err}` }))
+        .then((result) => {
+          // Visible in the Pipeline Automation journal (provider_stop).
+          safeRuntimeSendMessage({ type: 'PROVIDER_STOP_RESULT', llmName: detectLlmNameFromLocation(), ...result });
+        });
       return false;
     });
   } catch (_) {}
