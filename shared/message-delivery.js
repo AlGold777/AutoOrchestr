@@ -74,7 +74,7 @@
       const base = promptsByModel?.[model] ?? prompt;
       out[model] = wrap(base, token);
       expected.set(model, { token, sentAt: Date.now(), batchId, final: false });
-      record({ kind: 'sent', model, token, batchId, chars: out[model].length });
+      record({ kind: 'sent', model, token, batchId, chars: out[model].length, prompt: out[model].slice(0, 2000) });
     });
     return out;
   }
@@ -90,7 +90,7 @@
       : String(message.answer || '');
     const state = inspect(answer, entry.token);
     if (state === 'foreign') {
-      if (!entry.staleLogged) { entry.staleLogged = true; record({ kind: 'stale_dropped', model, token: entry.token, chars: answer.length }); }
+      if (!entry.staleLogged) { entry.staleLogged = true; record({ kind: 'stale_dropped', model, token: entry.token, chars: answer.length, answer: answer.slice(0, 500) }); }
       return null;
     }
     const metadata = { ...(message.metadata || {}) };
@@ -102,7 +102,7 @@
       entry.final = true;
       const kind = !answer.trim() ? 'empty_answer' : state === 'verified' ? 'verified' : 'missing_token';
       record({
-        kind, model, token: entry.token, chars: answer.length, ms: Date.now() - entry.sentAt,
+        kind, model, token: entry.token, chars: answer.length, ms: Date.now() - entry.sentAt, answer: answer.slice(0, 1500),
         status: String(message.status || metadata.status || metadata.finalStatus || ''),
         reason: String(metadata.reason || metadata.completionReason || metadata.failureClass || metadata.hardStopReason || '')
       });

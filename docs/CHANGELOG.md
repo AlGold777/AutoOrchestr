@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-09-30 — Automation tab styled like the Disput tab, version 2.81.497
+
+- Apply the Disput tab's toolbar, single-column card and collapse-arrow styles to the Automation tab.
+- Keep the prompt and the raw answer head in the delivery journal so the JSON report shows what was sent and what came back.
+
 ### 2026-09-30 — Full Automation tab in the telemetry window, version 2.81.496
 
 - Record tabs, model statuses, first text, empty answers and batches that never answered in the delivery journal.

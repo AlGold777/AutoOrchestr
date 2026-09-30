@@ -72,7 +72,7 @@
     $('automation-status').textContent = all.length ? `${all.length} sent · ${all.filter((s) => s.result === 'delivered').length} delivered · ${crit} critical` : '';
 
     $('automation-health').replaceChildren(all.length ? table(
-      ['Model', 'Sent', 'Delivered', 'No token', 'Empty', 'No answer', 'No tab', 'Stale dropped', 'Median time'],
+      ['Model', 'Sent', 'OK', 'No token', 'Empty', 'No answer', 'No tab', 'Stale', 'Median'],
       view.matrix.map((r) => el('tr', null, el('td', null, r.model), el('td', null, r.sent), el('td', null, r.delivered), el('td', null, r.no_token), el('td', null, r.empty), el('td', null, r.no_answer), el('td', null, r.no_tab), el('td', null, r.stale), el('td', null, secs(r.medianMs))))) : empty('No messages yet.'));
 
     $('automation-problems').replaceChildren(view.problems.length
@@ -89,7 +89,7 @@
     $('automation-raw').replaceChildren(view.raw.length
       ? table(['Time', 'Model', 'Event', 'Details'], view.raw.slice().reverse().map((e) => {
         const { at, model, kind, token, ...rest } = e;
-        return el('tr', null, el('td', null, time(at)), el('td', null, model || ''), el('td', null, kind), el('td', null, `${token || ''} ${JSON.stringify(rest)}`));
+        return el('tr', null, el('td', null, time(at)), el('td', null, model || ''), el('td', null, kind), el('td', null, `${token || ''} ${JSON.stringify(rest).slice(0, 300)}`));
       }))
       : empty('No journal events.'));
   }
