@@ -280,8 +280,13 @@ tab create/attach
 Когда абсолютный budget `generation` или `collect` исчерпан, background фиксирует
 terminal-результат и отправляет во вкладку модели `HUMANOID_FORCE_STOP` вместе с
 `STOP_AND_CLEANUP`. Это завершает скроллинг, наблюдатели и прочую автоматизацию
-расширения. Генерация на стороне провайдера может продолжаться, поэтому поздний
-ответ всё ещё можно забрать вручную, но скрипты расширения после дедлайна не работают.
+расширения. Если во вкладке выполняется запрос расширения, `STOP_AND_CLEANUP`
+также нажимает кнопку остановки генерации провайдера (`stopButton` из
+`answer-pipeline-selectors.js`) и ждёт до 3 с исчезновения индикатора; без
+подтверждения результат журналируется как `stop_unconfirmed`.
+
+Смена профиля Long → Standard во вкладке откладывается, пока в ней выполняется
+запрос расширения (не дольше Long `hardMax`); Standard → Long применяется сразу.
 
 ### 5. Human Presence And Focus
 
@@ -521,10 +526,11 @@ Claude снимаются один раз до первой попытки Send.
 | Debate run store `MAX_EVENTS` | `500` | bounded event history |
 | Debate trace `flushDelayMs` | `500`, min `50` | debounce trace flush |
 | `DEBATE_AUTO_TURN_RETRY_DELAY_MS` | `1200` | retry delay auto turn |
-| `DEFAULT_PIPELINE_WAIT_TIMEOUT_MS` | `240000` | ожидание batch pipeline |
-| `SLOW_MODEL_PIPELINE_WAIT_TIMEOUT_MS` | `600000` | ожидание pipeline при Qwen |
-| `PIPELINE_BATCH_GUARD_RETRY_MS` | `500` | polling batch guard |
-| `PIPELINE_BATCH_GUARD_RETRY_LIMIT` | `20` | число batch guard retries |
+| `DEFAULT_PIPELINE_WAIT_TIMEOUT_MS` | `240000` | запрошенное ожидание batch pipeline; фактический срок не короче нижней границы `TransportContract` |
+| `TransportContract.resolvePanelWaitTimeoutMs` | Standard `615000`, Long `1110000` | `hardMax` вкладки + `streamStartTimeout` + `PANEL_WAIT_MARGIN_MS` (`120000`): панель не прекращает ждать раньше, чем вкладка может закончить генерацию |
+| `SLOW_MODEL_PIPELINE_WAIT_TIMEOUT_MS` | `600000` | ожидание pipeline при Qwen (перекрывается нижней границей контракта) |
+| `PIPELINE_BATCH_GUARD_RETRY_MS` | `500` | интервал повтора старта, отклонённого как `RUN_ALREADY_ACTIVE` |
+| `PIPELINE_START_BUSY_WAIT_MS` | `120000` | сколько панель повторяет старт, пока фон занят раундами или вкладка ещё генерирует |
 | `NOTE_DBLCLICK_DELAY` | `320` | распознавание double-click заметки |
 | `SESSION_DBLCLICK_DELAY` | `320` | распознавание double-click session |
 | `modifiersToggleClickDelayMs` | `220` | single/double click modifiers |
