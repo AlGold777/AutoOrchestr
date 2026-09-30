@@ -21,6 +21,7 @@
     identity: ['Ответ отклонён по принадлежности', 'Пришёл ответ, который не относится ни к одному ожидаемому запросу (чужой или прежний запрос, без идентификатора, повтор после финала).', 'Если повторяется — вкладка модели показывает ответ на другой запрос; проверьте, что в ней открыт нужный диалог.'],
     stale: ['Отброшен устаревший ответ', 'Пришёл ответ с меткой другого запроса (остался на странице модели).', 'Ничего делать не нужно: он не попал в ленту.'],
     stuck_waiting: ['Текст ответа идёт, но завершение не распознано', 'Модель начала отвечать, а финала нет уже давно: система ждёт или переключается между вкладками. Ответ, вероятно, уже готов на странице модели.', 'Откройте вкладку модели: если ответ полный — приложите JSON-отчёт (дефект определения завершения); отправку можно продолжить вручную.'],
+    stale_background: ['Фоновый процесс работает на другой версии, чем панель', 'Панель и фон расширения собраны из разных версий: фон, вероятно, не перезапускался после обновления, поэтому новые исправления в нём не действуют.', 'Перезагрузите расширение на странице расширений браузера и повторите запуск.'],
     focus_churn: ['Вкладка модели многократно перехватывала фокус', 'Система много раз переключалась на вкладку модели (визиты, восстановление), а ответ так и не был принят: обычно это признак того, что завершение ответа не распознано.', 'Источники и число переключений указаны в строке. Если ответ уже есть на странице модели — приложите JSON-отчёт: это дефект определения завершения.'],
     stop_unconfirmed: ['Генерация у провайдера не остановлена', 'При отмене кнопка остановки не найдена или генерация не прекратилась.', 'Остановите генерацию во вкладке модели вручную перед следующим запуском.'],
     start_refused: ['Старт пакета откладывался', 'Фон отклонял старт: шли раунды предыдущего пакета или вкладка ещё генерировала.', 'Ничего делать не нужно, если пакет затем стартовал.'],
@@ -30,7 +31,7 @@
     waiting: ['Ответ ещё не получен', 'Запрос подготовлен, ожидается ответ.', '']
   };
   const SEVERITY = {
-    no_tab: 'critical', not_submitted: 'critical', premature_terminal: 'critical', stuck_waiting: 'critical', no_answer: 'critical', empty: 'critical', start_rejected: 'critical', batch_timeout: 'critical',
+    no_tab: 'critical', not_submitted: 'critical', premature_terminal: 'critical', stuck_waiting: 'critical', stale_background: 'critical', no_answer: 'critical', empty: 'critical', start_rejected: 'critical', batch_timeout: 'critical',
     partial: 'warning', focus_churn: 'warning', error: 'warning', no_token: 'warning', identity: 'warning', stop_unconfirmed: 'warning',
     cancelled: 'info', stale: 'info', start_refused: 'info', waiting: 'info'
   };
@@ -56,7 +57,7 @@
           model: event.model, token: event.token, requestId: event.requestId || null, batchId: event.batchId || '', at: event.at, chars: event.chars, prompt: event.prompt || '',
           tab: null, statuses: [], firstTextMs: null, terminal: null, stale: 0,
           dispatch: [], dispatchIds: [], submittedMs: null, rejections: [], revisions: 0, providerStop: null,
-          completionTerminals: [], navigations: [], lateText: null, focus: { count: 0, sources: {} }, textProgress: null
+          completionTerminals: [], navigations: [], lateText: null, focus: { count: 0, sources: {} }, textProgress: null, backgroundVersions: []
         };
         byToken.set(event.token, send);
         if (send.requestId) byRequest.set(send.requestId, send);
@@ -89,7 +90,8 @@
       else if (event.kind === 'dispatch') {
         const last = send.dispatch[send.dispatch.length - 1];
         if (last && last.phase === event.phase && last.dispatchId === event.dispatchId && last.ms === event.ms) return;
-        send.dispatch.push({ phase: event.phase, dispatchId: event.dispatchId, reason: event.reason, ms: event.ms, attempt: event.attempt, dispatchReason: event.dispatchReason });
+        send.dispatch.push({ phase: event.phase, dispatchId: event.dispatchId, reason: event.reason, ms: event.ms, attempt: event.attempt, dispatchReason: event.dispatchReason, bg: event.bg || null, answerChars: event.answerChars ?? null });
+        if (event.bg && !send.backgroundVersions.includes(event.bg)) send.backgroundVersions.push(event.bg);
         if (event.dispatchId && !send.dispatchIds.includes(event.dispatchId)) send.dispatchIds.push(event.dispatchId);
         if (event.tabId != null && send.tab == null) send.tab = event.tabId;
         if (event.phase === 'submitted' && send.submittedMs == null) send.submittedMs = event.ms;
@@ -183,12 +185,17 @@
 
   const STUCK_WAITING_MS = 120000;
 
-  function problems(list, batchList = [], orphanRejections = [], now = Date.now()) {
+  function problems(list, batchList = [], orphanRejections = [], now = Date.now(), version = null) {
     const out = [];
     const make = (code, base, extra = {}) => ({
       code, severity: SEVERITY[code], model: base.model || null, at: base.at, batchId: base.batchId || '',
       title: `${base.model ? `${base.model}: ` : ''}${TEXT[code][0]}`, detail: TEXT[code][1], hint: TEXT[code][2], ...extra
     });
+    const stale = version ? list.find((send) => send.backgroundVersions.some((bg) => bg !== version)) : null;
+    if (stale) {
+      const seen = [...new Set(list.flatMap((send) => send.backgroundVersions))].join(', ');
+      out.push(make('stale_background', stale, { reason: `фон: ${seen}; панель: ${version}` }));
+    }
     list.forEach((send) => {
       const waitedMs = now - Date.parse(send.at);
       const stuck = send.result === 'waiting' && send.firstTextMs != null && waitedMs >= STUCK_WAITING_MS;
@@ -262,11 +269,11 @@
   }
 
   // `now` lets a report be judged at its own time, not at the time it is read.
-  function diagnose(journal, { now = Date.now() } = {}) {
+  function diagnose(journal, { now = Date.now(), version = null } = {}) {
     const list = sends(journal);
     const batchList = batches(journal);
     const orphans = unattachedRejections(journal, list);
-    return { sends: list, batches: batchList, rejections: orphans, problems: problems(list, batchList, orphans, now), matrix: matrix(list) };
+    return { sends: list, batches: batchList, rejections: orphans, problems: problems(list, batchList, orphans, now, version), matrix: matrix(list) };
   }
 
   const api = Object.freeze({ diagnose, sends, batches, problems, matrix, TEXT, RESULTS });

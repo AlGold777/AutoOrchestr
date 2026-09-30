@@ -312,15 +312,12 @@ function commitStaticAnswerAfterVisits(llmName, entry) {
       });
     }
   } catch (_) {}
-  handleLLMResponse(llmName, text, null, {
-    ...(entry.lastDispatchMeta || {}),
-    responseMeta: {
-      partial: true,
-      source: 'static_answer_snapshot',
-      completionReason: 'static_answer_after_visits'
-    }
-  }, String(entry.pendingFinalAnswerHtml || entry.answerHtml || ''));
-  return true;
+  return commitIncompleteAnswer(llmName, entry, {
+    text,
+    html: String(entry.pendingFinalAnswerHtml || entry.answerHtml || ''),
+    source: 'static_answer_snapshot',
+    completionReason: 'static_answer_after_visits'
+  });
 }
 
 // Before the text is kept as incomplete, do what the status-indicator double click
@@ -1091,10 +1088,30 @@ async function runHumanPresenceCycle() {
     if (!liveEntry.humanVisits) liveEntry.humanVisits = 0;
     liveEntry.humanVisits += 1;
     const visitsCount = liveEntry.humanVisits;
-    trackVisitAnswerProgress(liveEntry);
+    const progress = trackVisitAnswerProgress(liveEntry);
     if (visitsCount >= HUMAN_VISIT_ALERT_THRESHOLD && !liveEntry.humanStalled) {
       raiseHumanVisitAlert(llmName, visitsCount);
       return;
+    }
+    // Text is there but did not change since the previous visit: the page most
+    // likely finished writing and its own scripts did not report the end. Pull it
+    // to the bottom (what the status-indicator double click does) once per send,
+    // instead of yet another ordinary visit.
+    const sendKey = liveEntry.lastDispatchMeta?.dispatchId || 'send';
+    if (progress.length > 0 && progress.staticVisits >= 1
+      && liveEntry.staticTextNudgedFor !== sendKey
+      && typeof runPreCollectScrollNudge === 'function') {
+      liveEntry.staticTextNudgedFor = sendKey;
+      try {
+        if (typeof reportDispatchPhase === 'function') {
+          reportDispatchPhase(llmName, liveEntry, 'bottom_nudge', {
+            dispatchId: liveEntry.lastDispatchMeta?.dispatchId || null, tabId: boundTabId, reason: 'static_text', attempt: 1, answerChars: progress.length
+          });
+        }
+        await runPreCollectScrollNudge(llmName, boundTabId, jobState?.session?.startTime || null, 'static_text_bottom_nudge', { getIt: true });
+      } catch (_) { /* a failed nudge falls back to the ordinary visit next cycle */ }
+      broadcastHumanVisitStatus();
+      continue;
     }
     await visitTabWithHumanity(llmName, boundTabId);
     broadcastHumanVisitStatus();

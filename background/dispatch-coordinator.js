@@ -429,9 +429,53 @@ function reportDispatchPhase(llmName, entry, phase, extra = {}) {
       phase,
       transportRequestId: entry?.transportRequestId || null,
       at: Date.now(),
+      // Which build of the background produced this event: a service worker that
+      // was not restarted after an update must be visible in the report.
+      backgroundVersion: chrome?.runtime?.getManifest?.()?.version || null,
       ...extra
     });
   } catch (_) {}
+}
+
+// Commit the text the model already produced as an incomplete answer ("неполный"),
+// through the same gate-passing shape the automation deadline uses for a pending
+// answer (lastResortTerminal / lateCollectFinal / forceTerminalSuccess), so the
+// normal answer-verification gates do not turn it back into an open request.
+// Whether it really became final is checked and journaled.
+function commitIncompleteAnswer(llmName, entry, { text, html = '', source, completionReason, extraMeta = {} } = {}) {
+  const body = String(text || '').trim();
+  if (!entry || !body || typeof handleLLMResponse !== 'function') return false;
+  const sessionId = jobState?.session?.startTime || undefined;
+  const dispatchId = entry.lastDispatchMeta?.dispatchId || entry.confirmedDispatchId || null;
+  handleLLMResponse(llmName, body, null, {
+    ...(entry.lastDispatchMeta || {}),
+    dispatchId,
+    sessionId,
+    runSessionId: sessionId,
+    lastResortTerminal: true,
+    preTerminalMaterializeFinal: true,
+    finalizationDeferredCheck: true,
+    ...extraMeta,
+    responseMeta: {
+      source,
+      completionReason,
+      partial: true,
+      lateCollectFinal: true,
+      forceTerminalSuccess: true,
+      manualRecoveryAvailable: true
+    }
+  }, String(html || ''));
+  setTimeout(() => {
+    const live = jobState?.llms?.[llmName];
+    if (live !== entry || jobState?.session?.startTime !== sessionId) return;
+    const final = Boolean(live.finalStatusRecorded || live.finalStatus);
+    reportDispatchPhase(llmName, live, final ? 'incomplete_answer_committed' : 'commit_not_final', {
+      dispatchId,
+      reason: final ? `${live.finalStatus || 'final'}:${source}` : `status=${live.status || 'unknown'}:${source}`,
+      answerChars: body.length
+    });
+  }, 3000);
+  return true;
 }
 
 function scheduleDispatchRetry(entry, llmName, error) {

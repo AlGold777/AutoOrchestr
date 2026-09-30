@@ -1285,11 +1285,21 @@ const deferUncertainCompletionTerminal = (llmName, entry, finalize, terminalResu
     let lastGrowthAt = deferredAt;
     let nudges = 0;
     let nudgeInFlight = false;
+    const skippedReasons = new Set();
     const bottomNudge = (live, why) => {
-        if (nudgeInFlight || typeof runPreCollectScrollNudge !== 'function') return false;
+        if (nudgeInFlight) return false;
+        // A nudge that cannot run says why (journaled once per reason).
+        const skip = (reason) => {
+            if (!skippedReasons.has(reason) && typeof reportDispatchPhase === 'function') {
+                skippedReasons.add(reason);
+                reportDispatchPhase(llmName, live, 'bottom_nudge_skipped', { dispatchId: entry.deferredUncertainTerminal.dispatchId, reason: `${why}:${reason}` });
+            }
+            return false;
+        };
+        if (typeof runPreCollectScrollNudge !== 'function') return skip('no_nudge_function');
         const tabId = typeof resolveBoundTabIdForOrchestrator === 'function'
             ? resolveBoundTabIdForOrchestrator(llmName, live) : null;
-        if (!tabId) return false;
+        if (!tabId) return skip('no_bound_tab');
         nudgeInFlight = true;
         nudges += 1;
         if (typeof reportDispatchPhase === 'function') {
@@ -2319,17 +2329,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         // a PARTIAL answer ("неполный"), the user decides what to do.
                         const live = jobState?.llms?.[message.llmName];
                         const snapshotText = String(live?.pendingFinalAnswer || live?.answer || '').trim();
-                        if (snapshotText && DEFERRABLE_COMPLETION_TERMINALS.has(terminalResult.status)) {
-                            handleLLMResponse(message.llmName, snapshotText, null, {
-                                ...(message.meta || {}),
-                                completionTerminalResult: terminalResult,
-                                completionRolloutMode: authority.rolloutMode,
-                                responseMeta: {
-                                    partial: true,
-                                    source: 'deferred_terminal_snapshot',
-                                    completionReason: 'deferred_terminal_snapshot'
-                                }
-                            }, String(live?.pendingFinalAnswerHtml || live?.answerHtml || ''));
+                        if (snapshotText && DEFERRABLE_COMPLETION_TERMINALS.has(terminalResult.status)
+                            && commitIncompleteAnswer(message.llmName, live, {
+                                text: snapshotText,
+                                html: String(live?.pendingFinalAnswerHtml || live?.answerHtml || ''),
+                                source: 'deferred_terminal_snapshot',
+                                completionReason: 'deferred_terminal_snapshot',
+                                extraMeta: { completionTerminalResult: terminalResult, completionRolloutMode: authority.rolloutMode }
+                            })) {
                             return;
                         }
                         handleLLMResponse(message.llmName, '', {

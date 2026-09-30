@@ -211,6 +211,7 @@
         kind: 'dispatch', model: message.llmName, token: entry?.token || null, requestId: requestIdOf(message),
         phase: String(message.phase || ''), dispatchId: message.dispatchId || null, tabId: message.tabId ?? null,
         reason: message.reason || null, dispatchReason: message.dispatchReason || null, attempt: message.attempt ?? null,
+        bg: message.backgroundVersion || null, answerChars: message.answerChars ?? null,
         ms: entry ? Date.now() - entry.sentAt : null
       });
       return;

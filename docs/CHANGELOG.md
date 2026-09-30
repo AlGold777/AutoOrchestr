@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-01 — Forced commit of incomplete answers that really lands; reports name the background build, version 2.81.518
+
+- Field report 6 (Le Chat, Perplexity, 2.81.517): Perplexity's full answer was on the page after 17 s, but the final came only at 51 s — three seconds after the last automatic "focus + scroll" poke; Le Chat's deferral ended (`answer_quiet`) without any final, and no `bottom_nudge` was journaled.
+- The incomplete-answer commit (deferred terminal, visits that gave up) now uses the shape the automation deadline uses for a pending answer (`lastResortTerminal`, `lateCollectFinal`, `forceTerminalSuccess`) so the answer-verification gates cannot turn it back into an open request; its outcome is journaled (`incomplete_answer_committed` or `commit_not_final` with the model status).
+- Visits that find the text unchanged now pull the page to the bottom once per send (what the double click does) instead of another ordinary visit; the nudge that cannot run says why (`bottom_nudge_skipped`).
+- Every dispatch phase carries the background build; a background on another build than the panel is reported as `stale_background` (reload the extension).
+
 ### 2026-10-01 — Automatic recovery pulls the page to the bottom like the double click, version 2.81.517
 
 - The status-indicator double click works well because it does more than visit the page: it scrolls the conversation to the bottom (getIt), which lets the provider's page scripts finish the generation. The automatic recovery now does the same: the deferral of an uncertain terminal pulls the page down early (10 s) and once more before the text is committed, then gives the answer a short settle window; the visits that give up on static text pull the page down first, and if the answer grows or a final arrives nothing is committed (visits resume on growth).

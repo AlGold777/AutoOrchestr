@@ -357,7 +357,7 @@ describe('deferred uncertain terminal keeps the text the model produced', () => 
     const router = read('background/message-router.js');
     const finalize = router.slice(router.indexOf('const finalize = () => {'), router.indexOf('const liveEntry = jobState?.llms?.[message.llmName];'));
     expect(finalize).toContain("live?.pendingFinalAnswer || live?.answer");
-    expect(finalize).toContain("partial: true,");
+    expect(finalize).toContain("commitIncompleteAnswer(message.llmName, live, {");
     expect(finalize).toContain("source: 'deferred_terminal_snapshot'");
     // Still an empty failure when the model produced nothing.
     expect(finalize).toContain("handleLLMResponse(message.llmName, '', {");
@@ -410,6 +410,7 @@ describe('visits give up on answer content, not on activity', () => {
     const context = {
       emitTelemetry: jest.fn(),
       reportDispatchPhase: jest.fn(),
+      commitIncompleteAnswer: jest.fn(() => true),
       handleLLMResponse: jest.fn(),
       isTerminalEntry: (e) => Boolean(e?.finalStatusRecorded),
       ...overrides
@@ -437,14 +438,14 @@ describe('visits give up on answer content, not on activity', () => {
       lastDispatchMeta: { dispatchId: 'X:1:1', runSessionId: 1 }
     };
     expect(commitStaticAnswerAfterVisits('X', entry)).toBe(true);
-    expect(context.handleLLMResponse).toHaveBeenCalledWith('X', 'готовый текст', null,
-      expect.objectContaining({ dispatchId: 'X:1:1', responseMeta: expect.objectContaining({ partial: true, source: 'static_answer_snapshot' }) }), '');
+    expect(context.commitIncompleteAnswer).toHaveBeenCalledWith('X', entry,
+      expect.objectContaining({ text: 'готовый текст', source: 'static_answer_snapshot', completionReason: 'static_answer_after_visits' }));
     expect(context.reportDispatchPhase).toHaveBeenCalledWith('X', entry, 'static_answer_committed', expect.objectContaining({ answerChars: 13 }));
     const none = loadVisits();
     expect(none.commitStaticAnswerAfterVisits('X', { promptSubmittedAt: 1, humanStaticVisits: 3, answer: '' })).toBe(false);
     const growing = loadVisits();
     expect(growing.commitStaticAnswerAfterVisits('X', { promptSubmittedAt: 1, humanStaticVisits: 1, answer: 'text' })).toBe(false);
-    expect(growing.context.handleLLMResponse).not.toHaveBeenCalled();
+    expect(growing.context.commitIncompleteAnswer).not.toHaveBeenCalled();
   });
 
   test('the double click on a status indicator asks the model again in the Pipeline panel too', () => {
@@ -546,5 +547,78 @@ describe('the bottom nudge (what the status-indicator double click does) in auto
     expect(block).toContain('scheduleHumanPresenceLoop(true);');
     expect(block).toContain('commitStaticAnswerAfterVisits(llmName, live);');
     expect(presence).toContain('void settleStaticAnswerAfterVisits(llmName, entry);');
+  });
+});
+
+describe('forced commit shape, stale background, skipped nudges', () => {
+  const coordinator = read('background/dispatch-coordinator.js');
+
+  function loadCommit() {
+    const start = coordinator.indexOf('function commitIncompleteAnswer(');
+    const end = coordinator.indexOf('function scheduleDispatchRetry(');
+    const timers = [];
+    const context = {
+      jobState: { session: { startTime: 5 }, llms: {} },
+      handleLLMResponse: jest.fn(),
+      reportDispatchPhase: jest.fn(),
+      setTimeout: (fn) => { timers.push(fn); return timers.length; }
+    };
+    // eslint-disable-next-line no-new-func
+    const factory = new Function(...Object.keys(context), `${coordinator.slice(start, end)}\nreturn { commitIncompleteAnswer };`);
+    return { ...factory(...Object.values(context)), timers, context };
+  }
+
+  test('an incomplete answer is committed with the gate-passing shape and its outcome is journaled', () => {
+    const { commitIncompleteAnswer, timers, context } = loadCommit();
+    const entry = { lastDispatchMeta: { dispatchId: 'X:1:1', runSessionId: 5 }, status: 'RECEIVING' };
+    context.jobState.llms.X = entry;
+    expect(commitIncompleteAnswer('X', entry, { text: ' текст ', source: 'deferred_terminal_snapshot', completionReason: 'deferred_terminal_snapshot' })).toBe(true);
+    const [, sent, error, meta] = context.handleLLMResponse.mock.calls[0];
+    expect(sent).toBe('текст');
+    expect(error).toBeNull();
+    expect(meta).toMatchObject({
+      dispatchId: 'X:1:1', lastResortTerminal: true, preTerminalMaterializeFinal: true, finalizationDeferredCheck: true,
+      responseMeta: { partial: true, lateCollectFinal: true, forceTerminalSuccess: true, source: 'deferred_terminal_snapshot' }
+    });
+    // The gates turned it back into an open request: the report says so.
+    timers.shift()();
+    expect(context.reportDispatchPhase).toHaveBeenCalledWith('X', entry, 'commit_not_final', expect.objectContaining({ reason: 'status=RECEIVING:deferred_terminal_snapshot' }));
+    // And when it became final:
+    entry.finalStatusRecorded = true;
+    entry.finalStatus = 'PARTIAL';
+    commitIncompleteAnswer('X', entry, { text: 'a', source: 's', completionReason: 'c' });
+    timers.shift()();
+    expect(context.reportDispatchPhase).toHaveBeenLastCalledWith('X', entry, 'incomplete_answer_committed', expect.objectContaining({ reason: 'PARTIAL:s' }));
+    expect(commitIncompleteAnswer('X', entry, { text: '   ', source: 's' })).toBe(false);
+  });
+
+  test('every dispatch phase names the background build; a build different from the panel is diagnosed', () => {
+    expect(coordinator).toContain("backgroundVersion: chrome?.runtime?.getManifest?.()?.version || null,");
+    const { Delivery, Diagnosis } = loadModules();
+    Delivery.reset();
+    Delivery.prepare({ prompt: 'Q', models: ['GPT'], requestIds: { GPT: 'treq-v' } });
+    Delivery.observeRuntime({ type: 'TRANSPORT_DISPATCH_PHASE', llmName: 'GPT', transportRequestId: 'treq-v', phase: 'dispatch_started', dispatchId: 'G:1:1', backgroundVersion: '2.81.515' });
+    const same = Diagnosis.diagnose(Delivery.journal(), { version: '2.81.515' });
+    expect(same.problems.some((p) => p.code === 'stale_background')).toBe(false);
+    const other = Diagnosis.diagnose(Delivery.journal(), { version: '2.81.518' });
+    expect(other.problems[0]).toMatchObject({ code: 'stale_background', severity: 'critical', reason: 'фон: 2.81.515; панель: 2.81.518' });
+  });
+
+  test('a nudge that cannot run says why', () => {
+    const router = read('background/message-router.js');
+    expect(router).toContain("'bottom_nudge_skipped'");
+    expect(router).toContain("skip('no_nudge_function')");
+    expect(router).toContain("skip('no_bound_tab')");
+  });
+});
+
+describe('visits pull the page down when the text stopped changing', () => {
+  test('the first unchanged visit is replaced by one bottom nudge per send', () => {
+    const presence = read('background/human-presence.js');
+    const loop = presence.slice(presence.indexOf('const progress = trackVisitAnswerProgress(liveEntry);'), presence.indexOf('await visitTabWithHumanity(llmName, boundTabId);'));
+    expect(loop).toContain('progress.length > 0 && progress.staticVisits >= 1');
+    expect(loop).toContain('liveEntry.staticTextNudgedFor !== sendKey');
+    expect(loop).toContain("'static_text_bottom_nudge', { getIt: true }");
+    expect(loop).toContain("reason: 'static_text'");
   });
 });

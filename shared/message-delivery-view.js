@@ -14,6 +14,7 @@
   const OUTCOME = { settled: 'завершён', timeout: 'таймаут', cancelled: 'отменён', rejected: 'не стартовал' };
   const PHASE = {
     dispatch_started: 'отправка', command_accepted: 'команда принята', submitted: 'отправлено',
+    bottom_nudge: 'передёрнули вниз', bottom_nudge_skipped: 'передёргивание невозможно', commit_not_final: 'фиксация не стала финалом', incomplete_answer_committed: 'неполный ответ зафиксирован', static_answer_committed: 'текст зафиксирован после визитов',
     submit_unconfirmed: 'отправка не подтверждена', command_not_delivered: 'команда не доставлена', blocked: 'заблокировано',
     terminal_deferred: 'финал отложен', terminal_deferral_ended: 'отсрочка финала закончилась'
   };
@@ -44,7 +45,7 @@
   function filtered(journal) {
     const model = $('automation-model-filter')?.value || 'all';
     const only = $('automation-only-problems')?.checked;
-    const diagnosis = root.MessageDeliveryDiagnosis.diagnose(journal);
+    const diagnosis = root.MessageDeliveryDiagnosis.diagnose(journal, { version: root.chrome?.runtime?.getManifest?.().version || null });
     const keep = (item) => model === 'all' || item.model === model;
     return {
       journal, diagnosis,
@@ -185,7 +186,7 @@
       generated_at: new Date().toISOString(),
       extension_version: root.chrome?.runtime?.getManifest?.().version,
       transport_contract_version: root.TransportContract?.VERSION || null,
-      diagnosis: root.MessageDeliveryDiagnosis.diagnose(journal),
+      diagnosis: root.MessageDeliveryDiagnosis.diagnose(journal, { version: root.chrome?.runtime?.getManifest?.().version || null }),
       journal
     }, null, 2);
     const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
