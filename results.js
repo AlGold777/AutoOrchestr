@@ -20161,9 +20161,9 @@ function checkCompareButtonState() {
         card.innerHTML = `
             <div class="debate-model-card-header">
                 <span class="debate-model-card-title">
-                    ${kind === 'moderator' ? '' : '<span class="status-indicator success"></span>'}
                     <span class="debate-model-card-title-main">
                         <span class="debate-model-card-name">${escapeHtml(modelName)}</span>
+                        ${kind === 'moderator' ? '' : '<span class="status-indicator success"></span>'}
                         ${kind === 'moderator' ? '' : `<span class="debate-model-card-role">${escapeHtml(turn.role || '')}</span>`}
                         ${approvalHtml}
                     </span>
@@ -20347,9 +20347,9 @@ function checkCompareButtonState() {
             card.innerHTML = `
                 <div class="debate-model-card-header">
                     <span class="debate-model-card-title">
-                        <span class="status-indicator" data-llm-name="${escapeHtml(name)}"></span>
                         <span class="debate-model-card-title-main">
                             <span class="debate-model-card-name">${escapeHtml(name)}</span>
+                            <span class="status-indicator" data-llm-name="${escapeHtml(name)}"></span>
                             <span class="debate-model-card-role" data-role-for="${escapeHtml(name)}"></span>
                             ${buildApprovalCheckboxHtml(approvalSelectable)}
                         </span>
@@ -20589,7 +20589,11 @@ function checkCompareButtonState() {
         const body = document.createElement('div');
         body.className = 'post-terminal-answer-revision-body';
         revision.append(summary, body);
-        targetCard.appendChild(revision);
+        const header = targetCard.querySelector('.debate-model-card-header');
+        const headerMeta = header?.querySelector('.debate-model-card-meta');
+        if (header && headerMeta) header.insertBefore(revision, headerMeta);
+        else if (header) header.appendChild(revision);
+        else targetCard.appendChild(revision);
         renderDebateResponseBody(body, normalizedText, normalizedHtml);
         targetCard.dataset.hasPostTerminalRevision = 'true';
         return true;

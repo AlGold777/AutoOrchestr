@@ -1625,10 +1625,38 @@ body.llm-stream-preview-open .llm-results .llm-panel.llm-panel-session-restored:
 }
 
 .post-terminal-answer-revision > summary {
-    padding: 8px 10px;
+    padding: 4px 8px;
     cursor: pointer;
     font-size: 12px;
     font-weight: 600;
+    white-space: nowrap;
+}
+
+.debate-model-card-header > .post-terminal-answer-revision {
+    flex: 0 1 auto;
+    min-width: 0;
+    margin: 0 auto 0 8px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+}
+
+.debate-model-card-header > .post-terminal-answer-revision[open] {
+    position: relative;
+}
+
+.debate-model-card-header > .post-terminal-answer-revision .post-terminal-answer-revision-body {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 3;
+    width: min(560px, 80vw);
+    max-height: 50vh;
+    overflow: auto;
+    border: 1px solid var(--border-color, #d8dee8);
+    border-radius: 8px;
+    background: var(--surface, #fff);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, .14);
 }
 
 .post-terminal-answer-revision-body {
