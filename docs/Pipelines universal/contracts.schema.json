@@ -1,0 +1,309 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:auto-orchestr:universal-engine:contracts:0.1.0",
+  "title": "Universal Engine — task passport, stage contract and amendment",
+  "description": "Draft specification 0.1.0. Structural validation does not grant execution authority; semantic checks are listed in README.md.",
+  "oneOf": [
+    { "$ref": "#/$defs/task_passport" },
+    { "$ref": "#/$defs/stage_contract" },
+    { "$ref": "#/$defs/passport_amendment" }
+  ],
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9._:-]*$" },
+    "text": { "type": "string", "minLength": 1 },
+    "revision": { "type": "integer", "minimum": 1 },
+    "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "id_list": {
+      "type": "array", "uniqueItems": true,
+      "items": { "$ref": "#/$defs/id" }
+    },
+    "pointer": {
+      "type": "string",
+      "pattern": "^(?:/(?:[^~/]|~[01])*)+$",
+      "description": "Non-root JSON Pointer. Its meaning and scope require semantic validation."
+    },
+    "reference": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "revision", "digest"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "revision": { "$ref": "#/$defs/revision" },
+        "digest": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "approval": {
+      "type": "object", "additionalProperties": false,
+      "description": "A trusted human-decision record, verified by the runtime. Not a model assertion.",
+      "required": ["actor", "decision_ref"],
+      "properties": {
+        "actor": { "$ref": "#/$defs/id" },
+        "decision_ref": { "$ref": "#/$defs/reference" }
+      }
+    },
+    "verifier": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "binding_ref", "evidence_requirement"],
+      "properties": {
+        "kind": { "enum": ["program", "model", "human"] },
+        "binding_ref": { "$ref": "#/$defs/reference" },
+        "evidence_requirement": { "$ref": "#/$defs/text" }
+      }
+    },
+    "deliverable": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "description", "schema_ref", "required"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "description": { "$ref": "#/$defs/text" },
+        "schema_ref": { "$ref": "#/$defs/reference" },
+        "required": { "type": "boolean" }
+      }
+    },
+    "criterion": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "description", "required", "depends_on", "verifier"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "description": { "$ref": "#/$defs/text" },
+        "required": { "type": "boolean" },
+        "depends_on": { "$ref": "#/$defs/id_list" },
+        "verifier": { "$ref": "#/$defs/verifier" }
+      }
+    },
+    "budget": {
+      "type": "object", "additionalProperties": false,
+      "required": ["max_model_calls", "max_tool_calls", "max_duration_seconds", "cost_limit"],
+      "properties": {
+        "max_model_calls": { "type": "integer", "minimum": 0 },
+        "max_tool_calls": { "type": "integer", "minimum": 0 },
+        "max_duration_seconds": { "type": "integer", "minimum": 1 },
+        "cost_limit": {
+          "description": "Null disables only the monetary stop limit; call and duration limits remain mandatory.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object", "additionalProperties": false,
+              "required": ["amount", "currency"],
+              "properties": {
+                "amount": { "type": "number", "minimum": 0 },
+                "currency": { "type": "string", "pattern": "^[A-Z]{3}$" }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "authority": {
+      "type": "object", "additionalProperties": false,
+      "required": ["allowed_action_refs", "allowed_plan_changes", "approval_actor"],
+      "properties": {
+        "allowed_action_refs": {
+          "type": "array", "uniqueItems": true,
+          "items": { "$ref": "#/$defs/reference" }
+        },
+        "allowed_plan_changes": {
+          "type": "array", "uniqueItems": true,
+          "items": { "enum": ["add_stage", "reorder_independent_stages", "replace_executor", "change_branch", "retry_stage"] }
+        },
+        "approval_actor": { "$ref": "#/$defs/id" }
+      }
+    },
+    "progress_policy": {
+      "type": "object", "additionalProperties": false,
+      "required": ["comparison", "max_stagnant_attempts", "max_repeated_fingerprints", "on_stall"],
+      "properties": {
+        "comparison": { "const": "passed_set_growth_without_regression" },
+        "max_stagnant_attempts": { "type": "integer", "minimum": 1 },
+        "max_repeated_fingerprints": { "type": "integer", "minimum": 2 },
+        "on_stall": { "enum": ["pause", "fail"] }
+      }
+    },
+    "amendment_ref": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "version", "digest"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "version": { "$ref": "#/$defs/revision" },
+        "digest": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "task_passport": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "schema_version", "task_id", "revision", "previous_revision", "amendment_ref", "author", "goal", "inputs", "deliverables", "criteria", "constraints", "authority", "budget", "scenario_ref", "progress_policy", "stop_rule_refs", "approval"],
+      "properties": {
+        "kind": { "const": "task_passport" },
+        "schema_version": { "const": "0.1.0" },
+        "task_id": { "$ref": "#/$defs/id" },
+        "revision": { "$ref": "#/$defs/revision" },
+        "previous_revision": { "type": ["integer", "null"], "minimum": 1 },
+        "amendment_ref": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/amendment_ref" }] },
+        "author": { "$ref": "#/$defs/id" },
+        "goal": { "$ref": "#/$defs/text" },
+        "inputs": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/reference" } },
+        "deliverables": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/deliverable" } },
+        "criteria": {
+          "type": "array", "minItems": 1,
+          "items": { "$ref": "#/$defs/criterion" },
+          "contains": { "type": "object", "required": ["required"], "properties": { "required": { "const": true } } }
+        },
+        "constraints": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/text" } },
+        "authority": { "$ref": "#/$defs/authority" },
+        "budget": { "$ref": "#/$defs/budget" },
+        "scenario_ref": { "$ref": "#/$defs/reference" },
+        "progress_policy": { "$ref": "#/$defs/progress_policy" },
+        "stop_rule_refs": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/reference" } },
+        "approval": { "$ref": "#/$defs/approval" }
+      },
+      "allOf": [{
+        "if": { "properties": { "revision": { "const": 1 } }, "required": ["revision"] },
+        "then": { "properties": { "previous_revision": { "type": "null" }, "amendment_ref": { "type": "null" } } },
+        "else": { "properties": { "previous_revision": { "$ref": "#/$defs/revision" }, "amendment_ref": { "$ref": "#/$defs/amendment_ref" } } }
+      }]
+    },
+    "passport_amendment": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "schema_version", "id", "version", "task_id", "base_revision", "result_revision", "author", "reason", "changed_paths", "approval"],
+      "properties": {
+        "kind": { "const": "passport_amendment" },
+        "schema_version": { "const": "0.1.0" },
+        "id": { "$ref": "#/$defs/id" },
+        "version": { "$ref": "#/$defs/revision" },
+        "task_id": { "$ref": "#/$defs/id" },
+        "base_revision": { "$ref": "#/$defs/revision" },
+        "result_revision": { "type": "integer", "minimum": 2 },
+        "author": { "$ref": "#/$defs/id" },
+        "reason": { "$ref": "#/$defs/text" },
+        "changed_paths": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/pointer" } },
+        "approval": { "$ref": "#/$defs/approval" }
+      }
+    },
+    "port": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "artifact_type", "schema_ref", "min_items", "max_items"],
+      "properties": {
+        "name": { "$ref": "#/$defs/id" },
+        "artifact_type": { "$ref": "#/$defs/id" },
+        "schema_ref": { "$ref": "#/$defs/reference" },
+        "min_items": { "type": "integer", "minimum": 0 },
+        "max_items": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "context": {
+      "type": "object", "additionalProperties": false,
+      "required": ["read_selectors", "history", "max_tokens", "sibling_visibility"],
+      "properties": {
+        "read_selectors": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/pointer" } },
+        "history": { "enum": ["none", "references", "selected"] },
+        "max_tokens": { "type": "integer", "minimum": 1 },
+        "sibling_visibility": { "enum": ["isolated", "accepted_only"] }
+      }
+    },
+    "proposal_scope": {
+      "type": "object", "additionalProperties": false,
+      "required": ["artifact_type", "scope", "operations"],
+      "properties": {
+        "artifact_type": { "$ref": "#/$defs/id" },
+        "scope": { "enum": ["stage_outputs", "declared_inputs"] },
+        "operations": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "enum": ["create", "revise", "retire"] } }
+      },
+      "allOf": [{
+        "if": { "properties": { "scope": { "const": "declared_inputs" } }, "required": ["scope"] },
+        "then": { "properties": { "operations": { "type": "array", "items": { "enum": ["revise", "retire"] } } } }
+      }]
+    },
+    "tool_effects": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "retry_strategy", "guarantee_ref"],
+      "properties": {
+        "kind": { "enum": ["read_only", "idempotent", "non_idempotent"] },
+        "retry_strategy": { "enum": ["safe_repeat", "deduplicated", "reconcile", "manual"] },
+        "guarantee_ref": { "$ref": "#/$defs/reference" },
+        "reconciliation_ref": { "$ref": "#/$defs/reference" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "read_only" } }, "required": ["kind"] },
+          "then": { "properties": { "retry_strategy": { "const": "safe_repeat" } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "non_idempotent" } }, "required": ["kind"] },
+          "then": { "properties": { "retry_strategy": { "enum": ["deduplicated", "reconcile", "manual"] } } }
+        },
+        {
+          "if": { "properties": { "retry_strategy": { "const": "reconcile" } }, "required": ["retry_strategy"] },
+          "then": { "properties": { "reconciliation_ref": { "$ref": "#/$defs/reference" } }, "required": ["reconciliation_ref"] }
+        }
+      ]
+    },
+    "executor": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "kind", "role", "binding_ref", "action_refs"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "kind": { "enum": ["model", "tool", "human"] },
+        "role": { "$ref": "#/$defs/text" },
+        "binding_ref": { "$ref": "#/$defs/reference" },
+        "action_refs": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/reference" } },
+        "effects": { "$ref": "#/$defs/tool_effects" }
+      },
+      "allOf": [{
+        "if": { "properties": { "kind": { "const": "tool" } }, "required": ["kind"] },
+        "then": { "properties": { "effects": { "$ref": "#/$defs/tool_effects" } }, "required": ["effects"] },
+        "else": { "properties": { "effects": false } }
+      }]
+    },
+    "dispatch": {
+      "type": "object", "additionalProperties": false,
+      "required": ["mode", "min_successes", "min_distinct_models", "aggregation_ref"],
+      "properties": {
+        "mode": { "enum": ["single", "parallel"] },
+        "min_successes": { "type": "integer", "minimum": 1 },
+        "min_distinct_models": { "type": "integer", "minimum": 0 },
+        "aggregation_ref": { "$ref": "#/$defs/reference" }
+      },
+      "allOf": [{
+        "if": { "properties": { "mode": { "const": "single" } }, "required": ["mode"] },
+        "then": { "properties": { "min_successes": { "const": 1 }, "min_distinct_models": { "type": "integer", "maximum": 1 } } }
+      }]
+    },
+    "attempt_policy": {
+      "type": "object", "additionalProperties": false,
+      "description": "Limits include initial attempts, all executors, repairs and retries across the logical stage in this run. Cycles do not reset counters.",
+      "required": ["max_attempts", "max_model_calls", "max_tool_calls", "timeout_seconds", "on_exhausted"],
+      "properties": {
+        "max_attempts": { "type": "integer", "minimum": 1 },
+        "max_model_calls": { "type": "integer", "minimum": 0 },
+        "max_tool_calls": { "type": "integer", "minimum": 0 },
+        "timeout_seconds": { "type": "integer", "minimum": 1 },
+        "on_exhausted": { "enum": ["pause", "fail"] }
+      }
+    },
+    "stage_contract": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "schema_version", "stage_id", "revision", "title", "purpose", "precondition_refs", "inputs", "outputs", "action_ref", "executors", "dispatch", "context", "allowed_proposals", "acceptance_check_refs", "transition_rule_refs", "attempt_policy"],
+      "properties": {
+        "kind": { "const": "stage_contract" },
+        "schema_version": { "const": "0.1.0" },
+        "stage_id": { "$ref": "#/$defs/id" },
+        "revision": { "$ref": "#/$defs/revision" },
+        "title": { "$ref": "#/$defs/text" },
+        "purpose": { "$ref": "#/$defs/text" },
+        "precondition_refs": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/reference" } },
+        "inputs": { "type": "array", "items": { "$ref": "#/$defs/port" } },
+        "outputs": { "type": "array", "items": { "$ref": "#/$defs/port" } },
+        "action_ref": { "$ref": "#/$defs/reference" },
+        "executors": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/executor" } },
+        "dispatch": { "$ref": "#/$defs/dispatch" },
+        "context": { "$ref": "#/$defs/context" },
+        "allowed_proposals": { "type": "array", "items": { "$ref": "#/$defs/proposal_scope" } },
+        "acceptance_check_refs": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/reference" } },
+        "transition_rule_refs": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/reference" } },
+        "attempt_policy": { "$ref": "#/$defs/attempt_policy" }
+      },
+      "allOf": [{
+        "if": { "properties": { "dispatch": { "type": "object", "properties": { "mode": { "const": "single" } }, "required": ["mode"] } }, "required": ["dispatch"] },
+        "then": { "properties": { "executors": { "type": "array", "maxItems": 1 } } }
+      }]
+    }
+  }
+}
