@@ -1067,7 +1067,8 @@ async function prepareReusableTabReceiver(tabId, llmName, current) {
       chrome.tabs.sendMessage(tabId, {type:'HEALTH_CHECK_PING'}, response => {
         const error = chrome.runtime.lastError?.message || '';
         done(error.includes('Receiving end does not exist') ? 'missing'
-          : response?.type === 'HEALTH_CHECK_PONG' && (!response.llmName || response.llmName === llmName)
+          // Readiness of this model's receiver: an anonymous PONG proves nothing.
+          : response?.type === 'HEALTH_CHECK_PONG' && response.llmName === llmName
             ? 'ready' : 'unavailable');
       });
     } catch (_) { done('unavailable'); }

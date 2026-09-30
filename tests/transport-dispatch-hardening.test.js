@@ -127,3 +127,80 @@ describe('start reservation', () => {
     expect(router).toContain('if (!continuesPipelineRun) {');
   });
 });
+
+describe('cancellation is durable', () => {
+  const vm = require('vm');
+  function sandbox() {
+    const c = {
+      console,
+      CompressedStorage: { set: jest.fn(async () => {}), remove: jest.fn(async () => {}) },
+      updateMv3SurvivalAlarm: jest.fn()
+    };
+    c.self = c;
+    c.PipelineFSM = { compactJobStateForStorage: jest.fn((state) => structuredClone(state)) };
+    vm.createContext(c);
+    vm.runInContext(`${orchestrator.slice(orchestrator.indexOf('let jobStateSaveFlight'), orchestrator.indexOf('async function loadJobState'))}
+      this.saveJobState = saveJobState;
+      this.stop = () => { jobStateStopGeneration += 1; };`, c);
+    return c;
+  }
+
+  test('a snapshot queued before a stop is not written after it', async () => {
+    const c = sandbox();
+    const queued = c.saveJobState({ phase: 'running' });
+    c.stop();
+    await expect(queued).resolves.toBe(false);
+    expect(c.CompressedStorage.set).not.toHaveBeenCalled();
+  });
+
+  test('a write in flight during a stop is undone', async () => {
+    const c = sandbox();
+    let release;
+    c.CompressedStorage.set.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+    const inFlight = c.saveJobState({ phase: 'running' });
+    await new Promise((resolve) => setImmediate(resolve));
+    c.stop();
+    release();
+    await expect(inFlight).resolves.toBe(false);
+    expect(c.CompressedStorage.remove).toHaveBeenCalledWith('jobState');
+  });
+
+  test('recovery never resumes a cancelled or stopped run', () => {
+    const fn = orchestrator.slice(orchestrator.indexOf('function rehydrateActiveJobRuntime('));
+    const guard = fn.slice(0, fn.indexOf('mv3RehydrationInFlight = true;'));
+    expect(guard).toContain("controlState === 'CANCELLED' || controlState === 'STOPPED'");
+    expect(orchestrator).toContain('jobStateStopGeneration += 1;');
+  });
+});
+
+describe('provider tabs', () => {
+  const contentUtils = read('content-scripts/content-utils.js');
+  const gpt = read('content-scripts/content-chatgpt.js');
+  const pipeline = read('content-scripts/unified-answer-pipeline.js');
+
+  test('cancel stops the provider generation of a request in flight', () => {
+    expect(contentUtils).toContain("if (message?.type !== 'STOP_AND_CLEANUP' || !hasActiveRequest()) return false;");
+    expect(contentUtils).toContain("return { stopped: false, reason: 'stop_unconfirmed' };");
+  });
+
+  test('a GPT tab runs one injection at a time and refuses a different prompt', () => {
+    expect(gpt).toContain('if (gptSharedInjection && fp === gptSharedFingerprint) {');
+    expect(gpt).toContain("type: 'concurrent_request',");
+    expect(gpt).not.toContain('Date.now() - gptSharedStartedAt < 15000');
+  });
+
+  test('run state is not mirrored into the provider site storage', () => {
+    expect(pipeline).not.toContain('window.localStorage.setItem');
+    expect(pipeline).toContain('.forEach((key) => storage.removeItem(key));');
+  });
+
+  test('long answers are not cut at 50 000 characters', () => {
+    ['chatgpt', 'claude', 'gemini', 'grok', 'deepseek', 'qwen', 'lechat', 'perplexity'].forEach((name) => {
+      expect(read(`content-scripts/content-${name}.js`)).not.toContain('maxLength: 50000');
+    });
+  });
+
+  test('only a named health PONG proves the model receiver is ready', () => {
+    expect(coordinator).toContain("response?.type === 'HEALTH_CHECK_PONG' && response.llmName === llmName");
+  });
+});

@@ -174,7 +174,7 @@ function isStaleBaselineCandidate(entry, text, dispatchId = null) {
   return sig === entry.preDispatchAnswerSignature;
 }
 const LATE_COLLECT_CACHE_KEY_PREFIX = 'late_answer_snapshot_v1';
-const LATE_COLLECT_CACHE_MAX_CHARS = 50000;
+const LATE_COLLECT_CACHE_MAX_CHARS = 200000;
 const LATE_COLLECT_TOTAL_BUDGET_MS = 12000;
 const LATE_COLLECT_PING_TIMEOUT_MS = 900;
 const LATE_COLLECT_SLOW_PING_TIMEOUT_MS = 1500;
@@ -4719,6 +4719,19 @@ function rehydrateActiveJobRuntime(source = 'load_job_state') {
     updateMv3SurvivalAlarm(jobState);
     return false;
   }
+  // A cancelled or stopped run is terminal: open model entries in its snapshot
+  // are leftovers, never work to resume.
+  const controlState = String(jobState.session.pipelineControl?.state || jobState.session.pipelineState || '').toUpperCase();
+  if (controlState === 'CANCELLED' || controlState === 'STOPPED') {
+    emitTelemetry('SYSTEM', 'MV3_REHYDRATION_SKIPPED_TERMINAL_RUN', {
+      level: 'info',
+      details: controlState,
+      meta: { source, sessionId: jobState.session.startTime || null },
+      force: true
+    });
+    updateMv3SurvivalAlarm(null);
+    return false;
+  }
   mv3RehydrationInFlight = true;
   try {
     jobState.session.mv3RehydratedAt = Date.now();
@@ -4868,8 +4881,13 @@ if (typeof chrome !== 'undefined' && chrome?.runtime?.onStartup?.addListener) {
 let jobStateSaveFlight = null;
 let pendingJobStateSave = null;
 let pendingJobStateSaveWaiters = [];
+// Incremented by stopAllProcesses. A snapshot belongs to the stop generation it
+// was queued in; a stop/cancel invalidates every snapshot queued before it.
+let jobStateStopGeneration = 0;
+let pendingJobStateSaveGeneration = 0;
 function saveJobState(state) {
   pendingJobStateSave = state;
+  pendingJobStateSaveGeneration = jobStateStopGeneration;
   const saved = new Promise(resolve => pendingJobStateSaveWaiters.push(resolve));
   if (!jobStateSaveFlight) {
     // Defer compression out of message ACK handlers and coalesce their burst.
@@ -4880,12 +4898,26 @@ function saveJobState(state) {
       try {
         while (pendingJobStateSave) {
           const next = pendingJobStateSave;
+          const nextGeneration = pendingJobStateSaveGeneration;
           const waiters = pendingJobStateSaveWaiters;
           pendingJobStateSave = null;
           pendingJobStateSaveWaiters = [];
+          // A stop/cancel replaces jobState and deletes the stored snapshot. A
+          // snapshot queued before that must not be written afterwards, and a
+          // write already in flight must be undone: otherwise the cancelled run
+          // came back on the next MV3 load and resumed dispatching.
+          if (nextGeneration !== jobStateStopGeneration) {
+            waiters.forEach(resolve => resolve(false));
+            continue;
+          }
           // Each caller learns whether its snapshot is durable: a write that
           // must precede an external action (command intent) can refuse to go on.
           const persisted = await persistJobStateSnapshot(next);
+          if (nextGeneration !== jobStateStopGeneration) {
+            try { await CompressedStorage.remove('jobState'); } catch (_) {}
+            waiters.forEach(resolve => resolve(false));
+            continue;
+          }
           waiters.forEach(resolve => resolve(persisted));
         }
       } finally { jobStateSaveFlight = null; }
@@ -4991,6 +5023,7 @@ function persistPipelineControlState(nextControl = null) {
 
 function stopAllProcesses(reason = 'unspecified', { closeTabs = false } = {}) {
   globalThis.LLMLog?.debug?.(`[BACKGROUND] stopAllProcesses: reason=${reason}, closeTabs=${closeTabs}`);
+  jobStateStopGeneration += 1;
   // Purpose: cancel orchestrator waits tied to the previous session immediately.
   abortOrchestratorOperations(reason);
   resetOrchestratorAbortController();

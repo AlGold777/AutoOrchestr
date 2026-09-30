@@ -1801,7 +1801,7 @@ if (typeof window.SelectorFinder === 'undefined') {
       if (!candidate) {
         candidate = await autoExtractResponse('', null, 1500);
       }
-      const cleaned = contentCleaner.clean(candidate || '', { maxLength: 50000 }).trim();
+      const cleaned = contentCleaner.clean(candidate || '', { maxLength: 200000 }).trim();
       if (cleaned
         && !isLikelyClaudeModelLabel(cleaned)
         && !isLikelyClaudeThinkingText(cleaned)
@@ -2255,7 +2255,7 @@ function isLikelyClaudeModelLabel(text = '') {
           throw new Error('Pipeline did not return answer');
         }
         
-        let cleanedResponse = contentCleaner.clean(response, { maxLength: 50000 });
+        let cleanedResponse = contentCleaner.clean(response, { maxLength: 200000 });
         if (!String(cleanedResponse || '').trim()) {
           throw new Error('Empty answer after cleaning');
         }
@@ -2266,7 +2266,7 @@ function isLikelyClaudeModelLabel(text = '') {
         // background does not lock the real answer behind NO_SEND stale guards.
         if (!sentConfirmed) {
           const anchoredFreshAnswer = extractClaudeResponseFromDOM(prompt, baselineElement);
-          const anchoredCleanedAnswer = contentCleaner.clean(anchoredFreshAnswer || '', { maxLength: 50000 }).trim();
+          const anchoredCleanedAnswer = contentCleaner.clean(anchoredFreshAnswer || '', { maxLength: 200000 }).trim();
           if (!anchoredCleanedAnswer || isStaleClaudeResponse(anchoredCleanedAnswer, baselineText)) {
             throw { type: 'send_failed', message: 'Claude send not confirmed and no fresh anchored answer was found' };
           }
@@ -2514,7 +2514,7 @@ function isLikelyClaudeModelLabel(text = '') {
           try {
             await withSmartScroll(async () => {
               const refreshed = await waitForClaudeResponseForPing(45000, 900);
-              const cleaned = contentCleaner.clean(refreshed || '', { maxLength: 50000 }).trim();
+              const cleaned = contentCleaner.clean(refreshed || '', { maxLength: 200000 }).trim();
               if (cleaned && isStaleClaudeResponse(cleaned, claudeDispatchBaseline)) {
                 // Only the pre-dispatch answer is on the page; do not emit it as the
                 // new answer or the background will finalize on the previous response.

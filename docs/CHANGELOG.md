@@ -1,5 +1,14 @@
 # CHANGELOG — Project
 
+### 2026-09-30 — Transport: durable cancellation and provider tabs, version 2.81.505
+
+- A stop/cancel invalidates every job-state snapshot queued before it; a write still in flight is undone, and MV3 recovery never resumes a cancelled or stopped run.
+- Cancelling a run clicks the provider's stop control in tabs with a request in flight and waits for the generation indicator to disappear.
+- A ChatGPT tab runs one injection at a time: a repeated command for the same prompt joins the injection for as long as it runs (not for a fixed 15 s), a different prompt is refused as `concurrent_request`; the evaluator flag is captured per command.
+- Answers are no longer cut at 50 000 characters (limit raised to 200 000 in all adapters and the late-answer cache).
+- Run state is no longer mirrored into the provider site's localStorage; leftover `llm_ext_*` keys are removed.
+- A health PONG without the model name no longer proves that the model's receiver is ready.
+
 ### 2026-09-30 — Transport: dispatch hardening and run guard, version 2.81.504
 
 - Take a synchronous start reservation before the first await: two START commands can no longer both pass the run guard and replace the shared job state.

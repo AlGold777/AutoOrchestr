@@ -2833,7 +2833,7 @@ const keepAliveMutex = (() => {
               onPipeline: pipeline => { fallbackVerifier = text => pipeline.verifyFallbackAnswer?.(text); },
               heartbeat: (meta = {}) => activity.heartbeat(0.8, Object.assign({ phase: 'pipeline' }, meta)),
             stop: async ({ answer, answerHtml, metadata }) => {
-                let cleaned = contentCleaner.clean(answer, { maxLength: 50000 });
+                let cleaned = contentCleaner.clean(answer, { maxLength: 200000 });
                 let html = String(answerHtml || '').trim();
                 if (html) lastResponseHtml = html;
                 const refined = await refineQwenShortAnswer(
@@ -2881,7 +2881,7 @@ const keepAliveMutex = (() => {
               lastResponseHtml = latestMarkup.html;
             }
 
-            const cleaned = contentCleaner.clean(rawText, { maxLength: 50000 });
+            const cleaned = contentCleaner.clean(rawText, { maxLength: 200000 });
             if (!isQwenAnswerCandidate(cleaned, prompt, baselineAssistantText)) {
               throw new Error('Qwen returned non-answer status text');
             }
@@ -2916,7 +2916,7 @@ const keepAliveMutex = (() => {
             baselineText: baselineAssistantText || '',
             referenceElement: scope
           });
-          const cleanedFallback = contentCleaner.clean(fallback, { maxLength: 50000 });
+          const cleanedFallback = contentCleaner.clean(fallback, { maxLength: 200000 });
           if (isQwenAnswerCandidate(cleanedFallback, prompt, baselineAssistantText || '')) {
             const latestMarkup = grabLatestAssistantMarkup(scope);
             if (latestMarkup.html) lastResponseHtml = latestMarkup.html;

@@ -1466,11 +1466,11 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
             await tryDeepseekPipeline(prompt, {
               heartbeat: (meta = {}) => activity.heartbeat(0.75, Object.assign({ phase: 'pipeline' }, meta)),
               stop: async ({ answer, answerHtml, metadata }) => {
-                let cleanedPipeline = contentCleaner.clean(answer, { maxLength: 50000 });
+                let cleanedPipeline = contentCleaner.clean(answer, { maxLength: 200000 });
                 let html = String(answerHtml || '').trim();
                 if (!String(cleanedPipeline || '').trim()) {
                   const domFallback = grabLatestAssistantText();
-                  cleanedPipeline = contentCleaner.clean(domFallback.text || domFallback.html || '', { maxLength: 50000 });
+                  cleanedPipeline = contentCleaner.clean(domFallback.text || domFallback.html || '', { maxLength: 200000 });
                   if (!html && domFallback.html) html = domFallback.html;
                 }
                 if (window.ContentUtils?.isBaselineEquivalent?.(cleanedPipeline, preDispatchBaseline)) {
@@ -1506,10 +1506,10 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
 
             const response = await waitForDeepSeekReply(prompt, 150000);
 
-            let cleanedResponse = contentCleaner.clean(response, { maxLength: 50000 });
+            let cleanedResponse = contentCleaner.clean(response, { maxLength: 200000 });
             if (!String(cleanedResponse || '').trim()) {
               const domFallback = grabLatestAssistantText();
-              cleanedResponse = contentCleaner.clean(domFallback.text || domFallback.html || '', { maxLength: 50000 });
+              cleanedResponse = contentCleaner.clean(domFallback.text || domFallback.html || '', { maxLength: 200000 });
               if (domFallback.html) lastResponseHtml = domFallback.html;
             }
             if (window.ContentUtils?.isBaselineEquivalent?.(cleanedResponse, preDispatchBaseline)) {

@@ -853,6 +853,40 @@
     });
   } catch (_) {}
 
+  // Cancelling a run must stop the provider generation it started, not only our
+  // observation of it: otherwise the site keeps generating and the next command
+  // lands in a busy conversation. Only a tab with a request of ours in flight is
+  // touched. Registered before the adapters' listeners (manifest order), so the
+  // active-request check runs before an adapter resets its counters.
+  const findProviderStopButton = () => {
+    const bundle = window.AnswerPipelineSelectors;
+    const platform = bundle?.detectPlatform?.();
+    const selector = platform ? bundle?.PLATFORM_SELECTORS?.[platform]?.stopButton : null;
+    if (!selector) return null;
+    return Array.from(document.querySelectorAll(selector))
+      .find((button) => !button.disabled && isElementInteractable(button)) || null;
+  };
+  const stopProviderGeneration = async (timeoutMs = 3000) => {
+    const button = findProviderStopButton();
+    if (!button) return { stopped: false, reason: 'no_stop_control' };
+    button.click();
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      if (!findProviderStopButton()) return { stopped: true, reason: 'stop_confirmed' };
+    }
+    return { stopped: false, reason: 'stop_unconfirmed' };
+  };
+  try {
+    chrome.runtime.onMessage.addListener((message) => {
+      if (message?.type !== 'STOP_AND_CLEANUP' || !hasActiveRequest()) return false;
+      stopProviderGeneration()
+        .then((result) => console.info('[ContentUtils] provider generation stop', result))
+        .catch((err) => console.warn('[ContentUtils] provider generation stop failed', err));
+      return false;
+    });
+  } catch (_) {}
+
   const isElementInteractable = (el) => {
     if (!el) return false;
     const rect = el.getBoundingClientRect?.();
@@ -1253,7 +1287,7 @@
     const candidates = nodes
       .filter((node) => node && !isLateSnapshotRejectedNode(node))
       .map((node, index) => {
-        const text = extractSafeVisibleText(node, 50000);
+        const text = extractSafeVisibleText(node, 200000);
         let visible = true;
         try {
           const style = window.getComputedStyle(node);
