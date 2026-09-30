@@ -4673,6 +4673,7 @@ document.addEventListener('click', (event) => {
             });
             syncRoundFilterChips();
             syncPipelineFlowVisualState();
+            pipelinePanel?.querySelectorAll('.model-stack').forEach((stack) => pipelineAlignmentResizeObserver?.observe(stack));
             if (deferFinalLayout && typeof window.requestAnimationFrame === 'function') {
                 if (deferredPipelineLayoutFrame) window.cancelAnimationFrame?.(deferredPipelineLayoutFrame);
                 deferredPipelineLayoutFrame = window.requestAnimationFrame(() => {
@@ -4684,6 +4685,17 @@ document.addEventListener('click', (event) => {
                 });
             }
         };
+
+        let pipelineAlignmentResizeFrame = 0;
+        const pipelineAlignmentResizeObserver = typeof ResizeObserver === 'function'
+            ? new ResizeObserver(() => {
+                if (pipelineAlignmentResizeFrame) return;
+                pipelineAlignmentResizeFrame = window.requestAnimationFrame(() => {
+                    pipelineAlignmentResizeFrame = 0;
+                    updatePipelineAll({ deferFinalLayout: false });
+                });
+            })
+            : null;
 
         const syncPipelineFlowVisualState = () => {
             if (!pipelinePanel) return;
