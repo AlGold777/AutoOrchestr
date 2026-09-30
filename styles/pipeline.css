@@ -1026,26 +1026,26 @@ body.is-resizing {
 .disput-state-map-workspace[hidden] { display: none; }
 body.pipeline-page .disput-state-map-workspace { right: 24px; }
 
-#disput-state-map-panel .disput-state-map-workspace {
+body.pipeline-page #disput-state-map-panel .disput-state-map-workspace {
     bottom: auto;
     min-width: 0;
     background: #fff;
 }
-#disput-state-map-panel .disput-state-map-toolbar,
-#disput-state-map-panel [data-map-run],
-#disput-state-map-panel [data-map-summary],
-#disput-state-map-panel [data-map-mode],
-#disput-state-map-panel [data-map-filter],
-#disput-state-map-panel [data-map-search],
-#disput-state-map-panel [data-map-compare],
-#disput-state-map-panel [data-map-compare-a],
-#disput-state-map-panel [data-map-compare-b],
-#disput-state-map-panel [data-map-zoom],
-#disput-state-map-panel [data-map-content],
-#disput-state-map-panel [data-map-drawer] {
+body.pipeline-page #disput-state-map-panel .disput-state-map-toolbar,
+body.pipeline-page #disput-state-map-panel [data-map-run],
+body.pipeline-page #disput-state-map-panel [data-map-summary],
+body.pipeline-page #disput-state-map-panel [data-map-mode],
+body.pipeline-page #disput-state-map-panel [data-map-filter],
+body.pipeline-page #disput-state-map-panel [data-map-search],
+body.pipeline-page #disput-state-map-panel [data-map-compare],
+body.pipeline-page #disput-state-map-panel [data-map-compare-a],
+body.pipeline-page #disput-state-map-panel [data-map-compare-b],
+body.pipeline-page #disput-state-map-panel [data-map-zoom],
+body.pipeline-page #disput-state-map-panel [data-map-content],
+body.pipeline-page #disput-state-map-panel [data-map-drawer] {
     display: none !important;
 }
-#disput-state-map-panel .disput-state-map-actions > button:not([data-case-export]):not([data-map-export]):not([data-case-import-action]):not([data-case-delete]):not([data-map-close]) {
+body.pipeline-page #disput-state-map-panel .disput-state-map-actions > button:not([data-case-export]):not([data-map-export]):not([data-case-import-action]):not([data-case-delete]):not([data-map-close]) {
     display: none !important;
 }
 .disput-state-map-workspace.disput-state-map-workspace-shell {
