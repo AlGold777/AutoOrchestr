@@ -15,7 +15,7 @@
   const PHASE = {
     dispatch_started: 'отправка', command_accepted: 'команда принята', submitted: 'отправлено',
     submit_unconfirmed: 'отправка не подтверждена', command_not_delivered: 'команда не доставлена', blocked: 'заблокировано',
-    terminal_deferred: 'финал отложен'
+    terminal_deferred: 'финал отложен', terminal_deferral_ended: 'отсрочка финала закончилась'
   };
   const SEV = { critical: 'Критично', warning: 'Внимание', info: 'Инфо' };
   const time = (at) => (at ? new Date(at).toLocaleTimeString() : '—');
@@ -69,6 +69,8 @@
       send.navigations.length ? send.navigations.map((n) => `навигация ${n.from} → ${n.to}${n.ms != null ? ` ${secs(n.ms)}` : ''}`).join(' → ') : null,
       send.completionTerminals.length ? send.completionTerminals.map((c) => `протокол: ${c.status}${c.reason ? ` (${c.reason})` : ''}${c.ms != null ? ` ${secs(c.ms)}` : ''}`).join(' → ') : null,
       send.firstTextMs != null ? `текст через ${secs(send.firstTextMs)}` : 'текста нет',
+      send.textProgress ? `рос до ${send.textProgress.chars} симв. к ${secs(send.textProgress.ms)}` : null,
+      send.focus.count ? `фокус ×${send.focus.count}${Object.keys(send.focus.sources).length ? ` (${Object.entries(send.focus.sources).map(([name, n]) => `${name} ${n}`).join(', ')})` : ''}` : null,
       send.lateText ? `текст после финала: ${send.lateText.chars} симв. через ${secs(send.lateText.ms)}` : null,
       send.providerStop ? `стоп: ${send.providerStop.stopped ? 'подтверждён' : send.providerStop.reason}` : null
     ]);
@@ -143,12 +145,12 @@
       : '';
 
     $('automation-health').replaceChildren(all.length ? table(
-      ['Model', 'Sent', 'Delivered', 'Partial', 'No token', 'Empty', 'No answer', 'Not submitted', 'No tab', 'Error', 'Cancelled', 'Premature final', 'Rejected', 'Stale dropped', 'Median submit', 'Median answer'],
+      ['Model', 'Sent', 'Delivered', 'Partial', 'No token', 'Empty', 'No answer', 'Not submitted', 'No tab', 'Error', 'Cancelled', 'Premature final', 'Rejected', 'Stale dropped', 'Focus moves', 'Median submit', 'Median answer'],
       view.matrix.map((r) => el('tr', null,
         el('td', null, r.model), el('td', null, r.sent), el('td', null, r.delivered), el('td', null, r.partial),
         el('td', null, r.no_token), el('td', null, r.empty), el('td', null, r.no_answer), el('td', null, r.not_submitted),
         el('td', null, r.no_tab), el('td', null, r.error), el('td', null, r.cancelled), el('td', null, r.premature), el('td', null, r.rejected),
-        el('td', null, r.stale), el('td', null, secs(r.medianSubmitMs)), el('td', null, secs(r.medianMs)))))
+        el('td', null, r.stale), el('td', null, r.focus), el('td', null, secs(r.medianSubmitMs)), el('td', null, secs(r.medianMs)))))
       : empty('No messages yet.'));
 
     $('automation-batches')?.replaceChildren(view.batches.length

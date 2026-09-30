@@ -453,6 +453,20 @@ function markProgrammaticTabFocus(tabId, source = 'programmatic_focus', options 
     meta: entry,
     force: true
   });
+  // Every programmatic tab activation (dispatch, human visit, recovery visit)
+  // goes through here: the Automation journal shows who moved the focus and why.
+  try {
+    if (typeof sendMessageToResultsTab === 'function') {
+      sendMessageToResultsTab({
+        type: 'TRANSPORT_FOCUS',
+        llmName,
+        tabId,
+        source: entry.source,
+        transportRequestId: (llmName && jobState?.llms?.[llmName]?.transportRequestId) || null,
+        at: now
+      });
+    }
+  } catch (_) {}
   return true;
 }
 

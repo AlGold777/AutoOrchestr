@@ -18,7 +18,7 @@
 
 ## Неопределённый финал протокола
 
-Если после подтверждённой отправки вкладка сообщает `CONTEXT_LOST` или `AMBIGUOUS` (например, переход «новый чат → страница чата»), фон не закрывает запрос сразу: он журналирует фазу `terminal_deferred` и ждёт, пока вкладка не затихнет на 45 с. Пришёл настоящий финал — он выигрывает. Финала нет, а текст уже был — фиксируется `PARTIAL` с этим текстом (пометка «неполный»); текста не было — прежняя ошибка `UNCERTAIN`.
+Если после подтверждённой отправки вкладка сообщает `CONTEXT_LOST` или `AMBIGUOUS` (например, переход «новый чат → страница чата»), фон не закрывает запрос сразу: он журналирует фазу `terminal_deferred` и ждёт, пока **текст ответа** не перестанет расти 30 с (активность вкладки — визиты, скролл, проверки — в счёт не идёт, иначе отсрочка не кончалась бы), но не дольше 180 с. Конец отсрочки журналируется фазой `terminal_deferral_ended` (`answer_quiet` или `max_defer_reached`). Пришёл настоящий финал — он выигрывает. Финала нет, а текст уже был — фиксируется `PARTIAL` с этим текстом (пометка «неполный»); текста не было — прежняя ошибка `UNCERTAIN`.
 
 ## Карточки ответов
 
@@ -32,14 +32,14 @@
 | Источник | События |
 | --- | --- |
 | Панель | `batch_start` (модели, `transportRequestId`, срок, этап, профиль), `start_refused` (код, причина, модель, которая ещё генерирует), `start_accepted` / `start_unconfirmed`, `batch_end` (`settled` / `timeout` / `cancelled` / `rejected`, длительность, без ответа, завершённость по моделям), `prepared`, `identity_rejected` (ответ не принят: `no_request_id`, `unknown_request`, `model_mismatch`, `batch_settled`, `duplicate_terminal`, `revision_after_terminal`), `cancelled`, `no_answer` |
-| Фон (`TRANSPORT_DISPATCH_PHASE`) | `dispatch` с фазой: `dispatch_started`, `command_accepted`, `submitted`, `submit_unconfirmed`, `command_not_delivered`, `terminal_deferred` (неопределённый финал протокола отложен), `blocked` (`circuit_open`, `tab_not_ready`, `ack_timeout`, `page_not_ready`, `focus_unavailable`, …) — с `dispatchId`, вкладкой и временем от подготовки |
-| Ответы и вкладка | `first_text`, `verified` / `missing_token` / `empty_answer` (статус, `completion`, `dispatchId`, источник `live` или `GLOBAL_STATE_ANSWER_RECOVERY`), `revision`, `late_text` (текст после пустого финала), `stale_dropped`, `status`, `tab`, `provider_stop` (результат нажатия «Стоп» у провайдера), `completion_terminal` (решение протокола завершения во вкладке: статус и причина), `navigation` (переход SPA во вкладке: путь до и после). Финал ошибки несёт конкретную причину (`errorType: errorMessage`) |
+| Фон (`TRANSPORT_DISPATCH_PHASE`) | `dispatch` с фазой: `dispatch_started`, `command_accepted`, `submitted`, `submit_unconfirmed`, `command_not_delivered`, `terminal_deferred` (неопределённый финал протокола отложен), `terminal_deferral_ended`, `blocked` (`circuit_open`, `tab_not_ready`, `ack_timeout`, `page_not_ready`, `focus_unavailable`, …) — с `dispatchId`, вкладкой и временем от подготовки |
+| Ответы и вкладка | `first_text`, `verified` / `missing_token` / `empty_answer` (статус, `completion`, `dispatchId`, источник `live` или `GLOBAL_STATE_ANSWER_RECOVERY`), `revision`, `late_text` (текст после пустого финала), `stale_dropped`, `status`, `tab`, `provider_stop` (результат нажатия «Стоп» у провайдера), `focus` (программное переключение на вкладку модели: источник — диспетчеризация, визит человека, восстановление; до 30 событий на запрос, точный счёт сохраняется в `focus_count`), `text_progress` (рост текста ответа, не чаще раза в 10 с), `completion_terminal` (решение протокола завершения во вкладке: статус и причина), `navigation` (переход SPA во вкладке: путь до и после). Финал ошибки несёт конкретную причину (`errorType: errorMessage`) |
 
 Вкладка показывает:
 
 - **Delivery Health Summary** — по моделям: отправлено, доставлено, неполные, без метки, пустые, нет ответа, не отправлено, нет вкладки, ошибки, отменено, отклонено по принадлежности, устаревшие; медианы времени до отправки и до ответа.
 - **Batches** — каждый пакет: этап, модели, отказы старта с причиной, время до старта, исход, длительность и срок, модели без ответа, завершённость по моделям.
-- **Problems & Recovery** — проблемы с пояснением и что делать: `premature_terminal` (запрос закрыт без текста, а модель продолжила отвечать — с причиной: решение протокола, навигация, поздний текст), `not_submitted` и `no_tab` с причиной блокировки, `partial`, `identity`, `stop_unconfirmed`, `start_refused` / `start_rejected`, `batch_timeout` и прежние коды.
+- **Problems & Recovery** — проблемы с пояснением и что делать: `premature_terminal` (запрос закрыт без текста, а модель продолжила отвечать — с причиной: решение протокола, навигация, поздний текст), `not_submitted` и `no_tab` с причиной блокировки, `stuck_waiting` (текст пошёл, а финала нет больше 2 минут), `focus_churn` (6 и более переключений фокуса), `partial`, `identity`, `stop_unconfirmed`, `start_refused` / `start_rejected`, `batch_timeout` и прежние коды.
 - **Message Timeline** — каждое сообщение: `transportRequestId` и номера отправок, путь (вкладка → фазы отправки → статусы → первый текст → остановка), итог (время, размер, статус, завершённость, источник, ревизии, отклонённые ответы).
 - **Raw Delivery Events** и JSON-отчёт (с версией транспортного контракта).
 

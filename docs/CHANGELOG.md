@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-01 — Transport: deferred terminal can no longer hang; focus moves in the journal, version 2.81.514
+
+- Field report 3 (Le Chat, Perplexity): the models had long answered, but the system kept moving between tabs. Cause: the deferral of an uncertain (`CONTEXT_LOST`/`AMBIGUOUS`) terminal counted any tab activity as "not quiet"; the tab visits made to find the answer were themselves that activity, so the deferral never ended. Now "quiet" means the answer text stopped growing for 30 s, a hard cap of 180 s applies whatever the activity, and the end is journaled (`terminal_deferral_ended`: `answer_quiet` / `max_defer_reached`); the produced text is committed as a partial answer.
+- Every programmatic tab activation (dispatch, human visit, recovery visit) is journaled as `focus` with its source; the exact count per request is kept.
+- Diagnosis: new problems `stuck_waiting` (text arrived, no final for 2 minutes; names a pending deferral) and `focus_churn` (6 or more focus moves); timeline shows focus count with sources and the last sampled text length (`text_progress`); a "Focus moves" column in the summary; `diagnose` can judge a report at its own time.
+
 ### 2026-09-30 — Transport: deferred uncertain terminal keeps the produced text, version 2.81.513
 
 - Field report (Le Chat, Perplexity, 2.81.511): the premature `UNCERTAIN` final is gone — the `CONTEXT_LOST` decision after the new-chat navigation is journaled and deferred, and the answer text arrives.

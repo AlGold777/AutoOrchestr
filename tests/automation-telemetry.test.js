@@ -211,16 +211,15 @@ describe('transport fixes behind the field report', () => {
     return { ...factory(...Object.values(context)), timers, context };
   }
 
-  test('an uncertain terminal waits while the tab is active and yields to a real answer', () => {
-    const entry = { promptSubmittedAt: Date.now(), lastRuntimeActivityAt: 0, lastDispatchMeta: { dispatchId: 'X:1:1' } };
+  test('an uncertain terminal waits while the answer grows and yields to a real answer', () => {
+    const entry = { promptSubmittedAt: Date.now(), pendingFinalAnswer: 'a', lastDispatchMeta: { dispatchId: 'X:1:1' } };
     const jobState = { session: { startTime: 1 }, llms: { X: entry } };
     const { deferUncertainCompletionTerminal, timers, context } = loadDeferral({ entry, jobState });
     const finalize = jest.fn();
     deferUncertainCompletionTerminal('X', entry, finalize, { status: 'CONTEXT_LOST', reason: 'context_invalidated' });
     expect(finalize).not.toHaveBeenCalled();
     expect(context.reportDispatchPhase).toHaveBeenCalledWith('X', entry, 'terminal_deferred', expect.objectContaining({ reason: 'CONTEXT_LOST:context_invalidated' }));
-    // Activity after the deferral postpones the decision.
-    entry.lastRuntimeActivityAt = Date.now() + 10000;
+    entry.pendingFinalAnswer = 'ab';
     timers.shift().fn();
     expect(finalize).not.toHaveBeenCalled();
     expect(timers).toHaveLength(1);
@@ -230,20 +229,49 @@ describe('transport fixes behind the field report', () => {
     expect(finalize).not.toHaveBeenCalled();
   });
 
-  test('a quiet tab commits the uncertain terminal', () => {
-    const entry = { promptSubmittedAt: Date.now() - 120000, lastRuntimeActivityAt: 0, lastDispatchMeta: { dispatchId: 'X:1:1' } };
+  test('tab activity that does not grow the answer (visits, probes) does not postpone the terminal', () => {
+    const entry = { promptSubmittedAt: Date.now() - 120000, pendingFinalAnswer: 'complete text', lastRuntimeActivityAt: 0, lastDispatchMeta: { dispatchId: 'X:1:1' } };
     const jobState = { session: { startTime: 1 }, llms: { X: entry } };
-    const { deferUncertainCompletionTerminal, timers } = loadDeferral({ entry, jobState });
+    const { deferUncertainCompletionTerminal, timers, context } = loadDeferral({ entry, jobState });
     const finalize = jest.fn();
     const realNow = Date.now;
     deferUncertainCompletionTerminal('X', entry, finalize, { status: 'AMBIGUOUS', reason: 'ownership_conflict' });
-    Date.now = () => realNow() + 60000;
     try {
-      timers.shift().fn();
+      // Fresh runtime activity on every poll, but the text is unchanged.
+      let offset = 0;
+      for (let i = 0; i < 12 && !finalize.mock.calls.length; i += 1) {
+        offset += 5000;
+        Date.now = () => realNow() + offset;
+        entry.lastRuntimeActivityAt = Date.now();
+        timers.shift().fn();
+      }
     } finally {
       Date.now = realNow;
     }
     expect(finalize).toHaveBeenCalledTimes(1);
+    expect(context.reportDispatchPhase).toHaveBeenCalledWith('X', entry, 'terminal_deferral_ended', expect.objectContaining({ reason: 'answer_quiet', answerChars: 13 }));
+  });
+
+  test('the deferral is capped even while the answer keeps changing', () => {
+    const entry = { promptSubmittedAt: Date.now(), pendingFinalAnswer: '', lastDispatchMeta: { dispatchId: 'X:1:1' } };
+    const jobState = { session: { startTime: 1 }, llms: { X: entry } };
+    const { deferUncertainCompletionTerminal, timers, context } = loadDeferral({ entry, jobState });
+    const finalize = jest.fn();
+    const realNow = Date.now;
+    deferUncertainCompletionTerminal('X', entry, finalize, { status: 'CONTEXT_LOST', reason: 'context_invalidated' });
+    try {
+      let offset = 0;
+      for (let i = 0; i < 60 && !finalize.mock.calls.length; i += 1) {
+        offset += 5000;
+        Date.now = () => realNow() + offset;
+        entry.pendingFinalAnswer += 'x';
+        timers.shift().fn();
+      }
+    } finally {
+      Date.now = realNow;
+    }
+    expect(finalize).toHaveBeenCalledTimes(1);
+    expect(context.reportDispatchPhase).toHaveBeenCalledWith('X', entry, 'terminal_deferral_ended', expect.objectContaining({ reason: 'max_defer_reached' }));
   });
 
   test('only AMBIGUOUS / CONTEXT_LOST after a confirmed send are deferred', () => {
@@ -331,5 +359,43 @@ describe('deferred uncertain terminal keeps the text the model produced', () => 
     expect(finalize).toContain("source: 'deferred_terminal_snapshot'");
     // Still an empty failure when the model produced nothing.
     expect(finalize).toContain("handleLLMResponse(message.llmName, '', {");
+  });
+});
+
+describe('focus moves and stuck waiting in the journal', () => {
+  test('programmatic focus is journaled per request with its source, counted exactly and diagnosed', () => {
+    const { Delivery, Diagnosis } = loadModules();
+    Delivery.reset();
+    Delivery.prepare({ prompt: 'Q', models: ['Le Chat'], requestIds: { 'Le Chat': 'treq-f' } });
+    for (let i = 0; i < 40; i += 1) {
+      Delivery.observeRuntime({ type: 'TRANSPORT_FOCUS', llmName: 'Le Chat', transportRequestId: 'treq-f', tabId: 9, source: i % 2 ? 'human_visit_activate' : 'automation_visit_activate' });
+    }
+    const kinds = Delivery.journal().map((e) => e.kind);
+    expect(kinds.filter((k) => k === 'focus')).toHaveLength(30);
+    expect(kinds.filter((k) => k === 'focus_count').map((_, i) => i)).toHaveLength(1);
+    const { sends, problems, matrix } = Diagnosis.diagnose(Delivery.journal());
+    expect(sends[0].focus.count).toBe(40);
+    expect(problems.find((p) => p.code === 'focus_churn').reason).toContain('human_visit_activate');
+    expect(matrix[0].focus).toBe(40);
+  });
+
+  test('a send that has text but no final for minutes is reported as stuck, with the deferral named', () => {
+    const { Delivery, Diagnosis } = loadModules();
+    Delivery.reset();
+    Delivery.prepare({ prompt: 'Q', models: ['Perplexity'], requestIds: { Perplexity: 'treq-s' } });
+    Delivery.observeRuntime({ type: 'TRANSPORT_DISPATCH_PHASE', llmName: 'Perplexity', transportRequestId: 'treq-s', phase: 'terminal_deferred', dispatchId: 'P:1:1', reason: 'CONTEXT_LOST:context_invalidated' });
+    Delivery.receive({ llmName: 'Perplexity', transportRequestId: 'treq-s', answer: 'часть ответа', metadata: { status: 'RECEIVING' } }, { final: false });
+    const early = Diagnosis.diagnose(Delivery.journal(), { now: Date.now() + 30000 });
+    expect(early.problems.map((p) => p.code)).toEqual(['waiting']);
+    const late = Diagnosis.diagnose(Delivery.journal(), { now: Date.now() + 300000 });
+    expect(late.problems.map((p) => p.code)).toEqual(['stuck_waiting']);
+    expect(late.problems[0].reason).toContain('финал отложен протоколом');
+  });
+
+  test('every programmatic tab activation reports itself to the journal', () => {
+    const presence = read('background/human-presence.js');
+    const fn = presence.slice(presence.indexOf('function markProgrammaticTabFocus('), presence.indexOf('function consumeProgrammaticTabFocus('));
+    expect(fn).toContain("type: 'TRANSPORT_FOCUS'");
+    expect(read('results.js')).toContain("'TRANSPORT_FOCUS']");
   });
 });

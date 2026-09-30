@@ -16579,6 +16579,7 @@ document.addEventListener('click', (event) => {
         'PROVIDER_STOP_RESULT',
         'LLM_COMPLETION_TERMINAL',
         'SPA_NAVIGATION',
+        'TRANSPORT_FOCUS',
         'SMART_ATTACHMENT_CONFIRMED',
         'ATTACHMENT_MANUAL_REQUIRED',
         'MANUAL_PING_RESULT',
@@ -16593,7 +16594,7 @@ document.addEventListener('click', (event) => {
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (!RESULTS_RUNTIME_MESSAGE_TYPES.has(message?.type)) return false;
         // Journal-only messages; tab-originated ones are owned (answered) by the background.
-        const JOURNAL_ONLY_TYPES = ['TRANSPORT_DISPATCH_PHASE', 'PROVIDER_STOP_RESULT', 'LLM_COMPLETION_TERMINAL', 'SPA_NAVIGATION'];
+        const JOURNAL_ONLY_TYPES = ['TRANSPORT_DISPATCH_PHASE', 'PROVIDER_STOP_RESULT', 'LLM_COMPLETION_TERMINAL', 'SPA_NAVIGATION', 'TRANSPORT_FOCUS'];
         if (window.MessageDelivery && ['STATUS_UPDATE', 'GLOBAL_STATE_BROADCAST', ...JOURNAL_ONLY_TYPES].includes(message.type)) {
             window.MessageDelivery.observeRuntime(message);
         }

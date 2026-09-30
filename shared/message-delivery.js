@@ -16,6 +16,7 @@
   // A multi-stage run of ten models produces ~20 events per message.
   const JOURNAL_LIMIT = 3000;
   const EXPECTED_LIMIT = 200;
+  const FOCUS_EVENTS_PER_REQUEST = 30;
   const TOKEN_RE = /\[\[AO-[a-z0-9]{6}\]\]/gi;
   const INSTRUCTION = 'Последней строкой ответа напиши только метку';
   const INSTRUCTION_RE = new RegExp(`^.*${INSTRUCTION}.*$`, 'gim');
@@ -150,8 +151,17 @@
       entry.lateTextLogged = true;
       record({ kind: 'late_text', model, token: entry.token, requestId: entry.requestId, chars: answer.length, ms: Date.now() - entry.sentAt });
     }
+    // Growth of the answer text, sampled at most every 10 s: shows whether the
+    // model kept writing and when it stopped.
+    if (!final && answer.trim() && entry.firstText && answer.length !== entry.lastTextChars
+      && Date.now() - (entry.lastTextLoggedAt || 0) >= 10000) {
+      entry.lastTextLoggedAt = Date.now();
+      record({ kind: 'text_progress', model, token: entry.token, requestId: entry.requestId, chars: answer.length, ms: Date.now() - entry.sentAt });
+    }
+    if (answer.trim()) entry.lastTextChars = answer.length;
     if (answer.trim() && !entry.firstText) {
       entry.firstText = true;
+      entry.lastTextLoggedAt = Date.now();
       record({ kind: 'first_text', model, token: entry.token, requestId: entry.requestId, chars: answer.length, ms: Date.now() - entry.sentAt });
     }
     if (final && !entry.final) {
@@ -203,6 +213,18 @@
         reason: message.reason || null, dispatchReason: message.dispatchReason || null, attempt: message.attempt ?? null,
         ms: entry ? Date.now() - entry.sentAt : null
       });
+      return;
+    }
+    if (message.type === 'TRANSPORT_FOCUS') {
+      const entry = entryFor(message) || latestByModel.get(message.llmName) || null;
+      if (!entry || entry.final) return;
+      entry.focusCount = (entry.focusCount || 0) + 1;
+      // The count is exact; the first events carry the detail, the rest only the count.
+      if (entry.focusCount <= FOCUS_EVENTS_PER_REQUEST) {
+        record({ kind: 'focus', model: message.llmName || null, token: entry.token, requestId: entry.requestId, source: message.source || null, tabId: message.tabId ?? null, n: entry.focusCount, ms: Date.now() - entry.sentAt });
+      } else if (entry.focusCount % 10 === 0) {
+        record({ kind: 'focus_count', model: message.llmName || null, token: entry.token, requestId: entry.requestId, n: entry.focusCount, ms: Date.now() - entry.sentAt });
+      }
       return;
     }
     if (message.type === 'LLM_COMPLETION_TERMINAL') {

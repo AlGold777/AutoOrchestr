@@ -1244,7 +1244,13 @@ const recordCompletionAuthorityAttempt = (llmName, meta = {}) => {
 // still answering; the real answer then arrived as a duplicate final and was
 // dropped. After a confirmed send, wait until the tab is quiet: a real answer
 // (or any other terminal) wins; otherwise the uncertain terminal is committed.
-const UNCERTAIN_TERMINAL_QUIET_MS = 45000;
+// "Quiet" means the ANSWER stopped growing, not that the tab stopped emitting
+// diagnostics: tab visits, scrolling and recovery probes are activity too, and
+// counting them kept the deferral (and the visits that feed it) alive forever.
+// A hard cap bounds the deferral regardless of activity.
+const UNCERTAIN_TERMINAL_QUIET_MS = 30000;
+const UNCERTAIN_TERMINAL_MAX_DEFER_MS = 180000;
+const UNCERTAIN_TERMINAL_POLL_MS = 5000;
 const DEFERRABLE_COMPLETION_TERMINALS = new Set(['AMBIGUOUS', 'CONTEXT_LOST']);
 const deferUncertainCompletionTerminal = (llmName, entry, finalize, terminalResult) => {
     const sessionId = jobState?.session?.startTime || null;
@@ -1258,7 +1264,7 @@ const deferUncertainCompletionTerminal = (llmName, entry, finalize, terminalResu
     emitTelemetry(llmName, 'COMPLETION_UNCERTAIN_TERMINAL_DEFERRED', {
         level: 'warning',
         details: `${terminalResult?.status || 'UNKNOWN'}:${terminalResult?.reason || ''}`,
-        meta: { ...entry.deferredUncertainTerminal, quietMs: UNCERTAIN_TERMINAL_QUIET_MS },
+        meta: { ...entry.deferredUncertainTerminal, quietMs: UNCERTAIN_TERMINAL_QUIET_MS, maxDeferMs: UNCERTAIN_TERMINAL_MAX_DEFER_MS },
         force: true
     });
     if (typeof reportDispatchPhase === 'function') {
@@ -1267,15 +1273,31 @@ const deferUncertainCompletionTerminal = (llmName, entry, finalize, terminalResu
             reason: `${terminalResult?.status || ''}:${terminalResult?.reason || ''}`
         });
     }
+    const answerLength = (live) => String(live?.pendingFinalAnswer || live?.answer || '').length;
+    let lastLength = answerLength(entry);
+    let lastGrowthAt = deferredAt;
     const check = () => {
         const live = jobState?.llms?.[llmName];
         if (live !== entry || (sessionId && jobState?.session?.startTime !== sessionId)) return;
         if (isTerminalRouterEntry(live)) return;
-        const lastActivity = Math.max(Number(live.lastRuntimeActivityAt || 0), deferredAt);
-        const quietFor = Date.now() - lastActivity;
-        if (quietFor < UNCERTAIN_TERMINAL_QUIET_MS) {
-            schedule(UNCERTAIN_TERMINAL_QUIET_MS - quietFor + 50);
+        const now = Date.now();
+        const length = answerLength(live);
+        if (length !== lastLength) {
+            lastLength = length;
+            lastGrowthAt = now;
+        }
+        const quiet = now - lastGrowthAt >= UNCERTAIN_TERMINAL_QUIET_MS;
+        const capped = now - deferredAt >= UNCERTAIN_TERMINAL_MAX_DEFER_MS;
+        if (!quiet && !capped) {
+            schedule(UNCERTAIN_TERMINAL_POLL_MS);
             return;
+        }
+        if (typeof reportDispatchPhase === 'function') {
+            reportDispatchPhase(llmName, live, 'terminal_deferral_ended', {
+                dispatchId: entry.deferredUncertainTerminal.dispatchId,
+                reason: capped && !quiet ? 'max_defer_reached' : 'answer_quiet',
+                answerChars: length
+            });
         }
         finalize();
     };
@@ -1285,7 +1307,7 @@ const deferUncertainCompletionTerminal = (llmName, entry, finalize, terminalResu
             check();
         }, Math.max(0, delayMs)));
     };
-    schedule(UNCERTAIN_TERMINAL_QUIET_MS);
+    schedule(UNCERTAIN_TERMINAL_POLL_MS);
 };
 
 const validateCompletionAuthorityDelivery = (llmName, message = {}) => {
