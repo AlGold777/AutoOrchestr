@@ -962,7 +962,7 @@ body.pro-features-hidden .comparison-section {
     display: flex;
     flex-direction: column;
     gap: 6px;
-    padding: 6px 8px 8px;
+    padding: 6px 75px 8px;
     min-height: 120px;
     max-height: 240px;
     overflow-y: auto;
