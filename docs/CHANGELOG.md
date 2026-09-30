@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-09-30 — Simplify the Pipeline state map panel, version 2.81.502
+
+- Keep the Pipeline panel's state map to its title and import/export/delete actions, with the open or closed state remembered between visits.
+
 ### 2026-09-30 — Full Automation tab in the telemetry window, version 2.81.496
 
 - Record tabs, model statuses, first text, empty answers and batches that never answered in the delivery journal.

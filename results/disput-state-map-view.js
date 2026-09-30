@@ -131,6 +131,49 @@
     const header = panel.querySelector('[data-map-collapse]');
     const close = panel.querySelector('[data-map-close]');
     const body = panel.querySelector('.disput-state-map-workspace');
+    if (!body) {
+      let aggregate = options.aggregate || options.getAggregate?.() || {};
+      const project = () => root.DebateStateMap.project(aggregate);
+      const download = (filename, serialized) => {
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(new Blob([serialized], { type: 'application/json' }));
+        link.download = filename;
+        link.click();
+        URL.revokeObjectURL(link.href);
+      };
+      const caseImport = panel.querySelector('[data-case-import]');
+      const disclosureStorageKey = 'disput-state-map-disclosure';
+      try {
+        const savedState = root.localStorage?.getItem(disclosureStorageKey);
+        if (savedState === 'open' || savedState === 'closed') panel.open = savedState === 'open';
+      } catch (_) {}
+      panel.addEventListener('toggle', () => {
+        try { root.localStorage?.setItem(disclosureStorageKey, panel.open ? 'open' : 'closed'); } catch (_) {}
+      });
+      panel.addEventListener('click', (event) => {
+        if (event.target.closest('[data-case-export]')) {
+          const serialized = options.caseStore?.exportCase?.();
+          if (serialized) download(`disput-case-${project().runId || 'case'}.json`, serialized);
+        } else if (event.target.closest('[data-map-export]')) {
+          download(`disput-state-map-${project().runId || 'idle'}.json`, JSON.stringify(project(), null, 2));
+        } else if (event.target.closest('[data-case-import-action]')) {
+          caseImport?.click();
+        } else if (event.target.closest('[data-case-delete]')) {
+          const id = options.caseStore?.getState?.()?.caseId;
+          if (id) void options.caseStore?.remove?.(id);
+        }
+      });
+      caseImport?.addEventListener('change', async () => {
+        try {
+          const serialized = await caseImport.files?.[0]?.text?.();
+          if (serialized) {
+            const imported = await options.caseStore?.importCase?.(serialized);
+            if (imported) aggregate = imported;
+          }
+        } finally { caseImport.value = ''; }
+      });
+      return Object.freeze({ render: (next) => { if (next !== undefined) aggregate = next; return project(); }, getMap: project, refreshRuns: async () => [], open: () => { panel.open = true; }, close: () => { panel.open = false; } });
+    }
     const content = panel.querySelector('[data-map-content]');
     const title = panel.querySelector('[data-map-title]');
     const summaries = panel.querySelectorAll('[data-map-summary]');

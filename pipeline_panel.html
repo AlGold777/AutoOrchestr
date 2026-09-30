@@ -5,7 +5,7 @@
     <!-- LLM Discus: hidden search marker for developers -->
     <meta name="keywords" content="LLM Discus">
     <title>LLM Comparison</title>
-    <link rel="stylesheet" href="styles.css?v=2.81.496">
+    <link rel="stylesheet" href="styles.css?v=2.81.502">
 </head>
 <body class="pipeline-page">
     <div class="app-shell">
@@ -370,37 +370,18 @@
                         <span class="pipeline-item-name" title="Specialized profile">Specialized profile</span>
                     </div>
                 </div>
-                <section class="disput-state-map-panel" id="disput-state-map-panel" data-status="not_ready">
-                    <button type="button" class="disput-state-map-toggle" data-map-collapse aria-expanded="false">
-                        <span><strong data-map-title>Карта состояния</strong><small data-map-summary>Нет активного дела</small></span><span aria-hidden="true">▼</span>
-                    </button>
-                    <div class="disput-state-map-workspace" hidden>
-                        <header class="disput-state-map-header">
-                            <div><strong>Карта состояния</strong><span data-map-summary></span></div><select data-map-run aria-label="Сохранённое дело"><option value="">Текущее дело</option></select>
-                            <div class="disput-state-map-actions">
-                                <button type="button" data-map-mode="structure" class="is-active">Структура</button>
-                                <button type="button" data-map-mode="graf">Graf</button>
-                                <button type="button" class="disput-map-icon-action" data-map-mode="history" title="История" aria-label="История"><i class="ti ti-history" aria-hidden="true"></i></button>
-                                <button type="button" class="disput-map-icon-action" data-case-export title="Экспорт дела" aria-label="Экспорт дела"><i class="ti ti-folder" aria-hidden="true"></i></button>
-                                <button type="button" class="disput-map-icon-action" data-map-export title="Экспорт карты" aria-label="Экспорт карты"><i class="ti ti-download" aria-hidden="true"></i></button>
-                                <button type="button" data-case-import-action title="Импорт дела" aria-label="Импорт дела"><i class="ti ti-upload" aria-hidden="true"></i></button><button type="button" data-case-delete title="Удалить выбранное дело" aria-label="Удалить выбранное дело"><i class="ti ti-trash" aria-hidden="true"></i></button><input type="file" accept="application/json" data-case-import hidden>
-                                <button type="button" data-map-close aria-label="Закрыть карту">×</button>
-                            </div>
-                        </header>
-                        <div class="disput-state-map-toolbar">
-                            <div class="disput-map-segments" aria-label="Фильтр карты">
-                                <button type="button" data-map-filter="all" class="is-active">Все</button><button type="button" data-map-filter="open">Открытые</button><button type="button" data-map-filter="blocking">Blocking</button><button type="button" data-map-filter="dissent">Dissent</button>
-                            </div>
-                            <input type="search" data-map-search placeholder="Поиск по карте…" aria-label="Поиск по карте состояния">
-                            <div class="disput-map-compare" aria-label="Сравнение снимков">
-                                <select data-map-compare-a aria-label="Исходный снимок"></select><span>→</span><select data-map-compare-b aria-label="Сравниваемый снимок"></select><button type="button" data-map-compare>Сравнить</button>
-                            </div>
-                            <div class="disput-map-zoom" aria-label="Масштаб Graf"><button type="button" data-map-zoom="out" aria-label="Уменьшить">−</button><button type="button" data-map-zoom="reset">100%</button><button type="button" data-map-zoom="in" aria-label="Увеличить">+</button></div>
-                        </div>
-                        <div class="disput-state-map-content" data-map-content></div>
-                        <aside class="disput-map-drawer" data-map-drawer hidden aria-label="Подробности элемента карты"></aside>
+                <details class="disput-state-map-panel" id="disput-state-map-panel" aria-label="Карта состояния" open>
+                    <summary class="disput-state-map-toggle">
+                        <span class="disput-state-map-title">Карта состояния</span><span class="disput-state-map-caret" aria-hidden="true">⌄</span>
+                    </summary>
+                    <div class="disput-state-map-actions">
+                        <button type="button" class="disput-map-icon-action" data-case-export title="Экспорт дела" aria-label="Экспорт дела"><i class="ti ti-folder" aria-hidden="true"></i></button>
+                        <button type="button" class="disput-map-icon-action" data-map-export title="Экспорт карты" aria-label="Экспорт карты"><i class="ti ti-download" aria-hidden="true"></i></button>
+                        <button type="button" data-case-import-action title="Импорт дела" aria-label="Импорт дела"><i class="ti ti-upload" aria-hidden="true"></i></button>
+                        <button type="button" data-case-delete title="Удалить выбранное дело" aria-label="Удалить выбранное дело"><i class="ti ti-trash" aria-hidden="true"></i></button>
+                        <input type="file" accept="application/json" data-case-import hidden>
                     </div>
-                </section>
+                </details>
                 <dialog class="pipeline-profile-dialog" id="pipeline-profile-dialog">
                     <header><strong>Pipeline profiles</strong><button type="button" data-profile-close aria-label="Закрыть">×</button></header>
                     <select data-profile-select aria-label="Профиль pipeline"></select>

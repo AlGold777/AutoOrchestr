@@ -1008,6 +1008,15 @@ body.is-resizing {
     padding-top: 10px;
 }
 
+.pipeline-page .disput-state-map-panel { display: flex; align-items: center; gap: 8px; width: 100%; }
+.pipeline-page .disput-state-map-panel > .disput-state-map-toggle { flex: 1 1 auto; width: auto; min-height: 32px; justify-content: flex-start; gap: 8px; padding: 0; border: 0; background: transparent; list-style: none; }
+.pipeline-page .disput-state-map-panel > .disput-state-map-toggle::-webkit-details-marker { display: none; }
+.disput-state-map-title { font-size: 13px; font-weight: 700; }
+.disput-state-map-caret { transition: transform .15s ease; }
+.pipeline-page .disput-state-map-panel:not([open]) .disput-state-map-caret { transform: rotate(-90deg); }
+.pipeline-page .disput-state-map-panel > .disput-state-map-actions { flex: 0 0 auto; margin: 0 0 0 auto; }
+.pipeline-page .disput-state-map-panel:not([open]) > :not(summary) { display: none; }
+
 .disput-state-map-toggle {
     width: 100%;
     display: flex;
