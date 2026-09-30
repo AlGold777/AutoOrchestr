@@ -352,10 +352,17 @@ body.is-resizing {
 }
 
 .stage-header-row .stage-label {
+    position: relative;
     margin-bottom: 10px;
     display: flex;
     min-height: 28px;
     align-items: center;
+    justify-content: center;
+}
+
+.stage-header-row .pipeline-round-delete-btn {
+    position: absolute;
+    right: 0;
 }
 
 .stage-column[data-stage="synthesis"] > .stage-label {
