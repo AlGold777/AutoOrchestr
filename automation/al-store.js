@@ -5,7 +5,7 @@
   'use strict';
 
   const DB_NAME = 'automationLab.v1';
-  const DB_VERSION = 1;
+  const DB_VERSION = 2;
   const STORES = Object.freeze({
     projects: 'project_id',
     registry: ['project_id', 'object_id', 'version'],
@@ -13,7 +13,8 @@
     execs: 'exec_id',
     calls: 'call_id',
     snapshots: 'snapshot_id',
-    messages: ['project_id', 'source_message_id']
+    messages: ['project_id', 'source_message_id'],
+    diag: ['project_id', 'diag_id']
   });
   const STORE_NAMES = Object.freeze(Object.keys(STORES));
 

@@ -16384,6 +16384,8 @@ document.addEventListener('click', (event) => {
     // races with the background service worker for content-script RPC messages.
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (!RESULTS_RUNTIME_MESSAGE_TYPES.has(message?.type)) return false;
+        // Automation Lab runs own their results; their raw framed answers never enter this feed.
+        if (message?.sourceView === 'automation') return false;
         try {
             switch (message.type) {
                 case 'LLM_JOB_CREATED':

@@ -1345,6 +1345,15 @@ async function getPreferredResultsPageName() {
 }
 
 async function openOrFocusResultsTab() {
+  // An Automation Lab run returns focus to the Automation Lab tab, never to Pipeline.
+  const automationTab = jobState?.session?.sourceView === 'automation' ? await getTabSafe(jobState.session.originTabId) : null;
+  if (automationTab?.id) {
+    try {
+      chrome.windows.update(automationTab.windowId, { focused: true }, () => chrome.runtime.lastError);
+      chrome.tabs.update(automationTab.id, { active: true }, () => chrome.runtime.lastError);
+    } catch (_) { /* focus is best effort */ }
+    return automationTab;
+  }
   const preferredPage = await getPreferredResultsPageName();
   const preferredUrl = chrome.runtime.getURL(preferredPage);
   const fallbackUrl = chrome.runtime.getURL(preferredPage === 'pipeline_panel.html' ? 'result_new.html' : 'pipeline_panel.html');

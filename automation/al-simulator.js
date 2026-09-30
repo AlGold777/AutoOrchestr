@@ -146,12 +146,19 @@
     let lastText = null;
     let cancelled = false;
 
-    async function dispatch({ calls, freshConversation, onResult }) {
+    async function dispatch({ calls, freshConversation, onResult, onEvent }) {
       cancelled = false;
       const results = {};
+      const emit = (event) => { try { onEvent?.({ at: new Date().toISOString(), ...event }); } catch (_) { /* journal only */ } };
+      emit({ kind: 'DISPATCH_SENT', models: calls.map((call) => call.model), freshConversation: Boolean(freshConversation), promptChars: Object.fromEntries(calls.map((call) => [call.model, call.prompt.length])) });
+      emit({ kind: 'DISPATCH_STARTED', busyRetries: 0 });
       await Promise.all(calls.map(async (call) => {
         await answerOne(call);
-        onResult?.(call.model, results[call.model]);
+        const result = results[call.model];
+        if (result.ok) emit({ kind: 'MODEL_FIRST_TEXT', model: call.model, chars: result.text.length, afterMs: result.durationMs });
+        if (result.status === 'TIMEOUT') emit({ kind: 'MODEL_TIMEOUT', model: call.model, chars: 0, frameComplete: false });
+        else if (!result.cancelled) emit({ kind: 'MODEL_TERMINAL', model: call.model, status: result.status, chars: result.text?.length || 0, ok: result.ok, frameComplete: result.ok });
+        onResult?.(call.model, result);
       }));
       return results;
 

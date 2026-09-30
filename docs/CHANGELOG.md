@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-09-30 — Automation Lab: prototype layout, clean answers, diagnostics, result routing, version 2.81.493
+
+- Route Automation Lab results only to the tab that started the run and stamp them `sourceView: automation`. The Pipeline/Results feed ignores them: raw framed answers could previously land in an open Pipeline page while the lab waited until timeout.
+- Rebuild the lab page on the `automation_prototype_v2.2.3.html` layout: a model bar with icons (the first selected model is the primary one), per-model columns with the sent prompt and the cleaned answer plus structure summary (no transport frames), and a center Automation feed. The feed shows the expected number of tabs per stage, dispatches, commits, inline owner questions and diagnoses.
+- Add a persistent diagnostics journal of every transport and orchestration event, plain-language diagnoses (tab never opened, no answer, background busy, frame/JSON/schema failures) and a one-click "Report for Claude" JSON.
+- Add an Automation tab to the telemetry window on the Pipeline and Results pages.
+
 ### 2026-09-29 — Automation Lab: executable Product→Architecture stages 1–5, version 2.81.492
 
 - Add `automation_lab.html`, a separate page (linked from the Pipeline top bar) that runs framework stages 1–5 through the existing Web transport without API fallback. Its outputs are an owner-approved Decision Policy, independent multi-model expansion, decision synthesis with owner questions, a product concept and an independent adversarial review.

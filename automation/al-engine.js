@@ -16,9 +16,21 @@
   function createEngine({ spec, store, transport, now = () => new Date().toISOString(), onUpdate = () => {}, log = () => {} }) {
     if (!spec.ok) throw new Error(`MANIFEST_LINT_FAILED: ${spec.problems.map((p) => `${p.code} ${p.detail}`).join('; ')}`);
     let running = null;
+    let currentProjectId = null;
     let stopRequested = false;
 
     const tx = (mode, work) => store.transaction('*', mode, work);
+    let diagCounter = 0;
+
+    // Diagnostics journal: every orchestration and transport fact, so a problem can be
+    // explained afterwards without guessing (see al-diagnostics.js).
+    async function logDiag(projectId, event) {
+      diagCounter += 1;
+      const at = event.at || now();
+      const record = { ...event, project_id: projectId, diag_id: `${String(Date.parse(at) || Date.now()).padStart(14, '0')}-${String(diagCounter).padStart(6, '0')}`, at };
+      try { await tx('readwrite', (t) => t.put('diag', record)); } catch (_) { /* the journal never blocks the run */ }
+      notify(projectId, 'diag');
+    }
     const notify = (projectId, kind) => { try { onUpdate(projectId, kind); } catch (_) { /* UI errors never affect state */ } };
 
     async function createProject({ ideaText, title, models, primaryModel, timeoutMs, transportMode }) {
@@ -71,7 +83,8 @@
         const execs = (await t.byProject('execs', projectId)).sort((a, b) => a.seq - b.seq);
         const calls = await t.byProject('calls', projectId);
         const events = (await t.byProject('events', projectId)).sort((a, b) => a.seq - b.seq).map((item) => item.event);
-        return { project, records, latest: Snapshot.latestEntries(records), execs, calls, events };
+        const diag = (await t.byProject('diag', projectId)).sort((a, b) => (a.diag_id < b.diag_id ? -1 : 1));
+        return { project, records, latest: Snapshot.latestEntries(records), execs, calls, events, diag };
       });
     }
 
@@ -353,6 +366,12 @@
               await evaluate({ call, attempt, result, stage, snapshot, execId });
               if (attempt.outcome === 'INTERRUPTED' && stopRequested) call.fresh_attempts = Math.max(0, call.fresh_attempts - (built.attempt.kind === 'repair' ? 0 : 1));
               await saveCall(call);
+              await logDiag(projectId, {
+                source: 'engine', kind: 'ATTEMPT_RESULT', stage: stageN, exec_id: execId, call_id: call.call_id, model: call.model,
+                attempt_id: attempt.attempt_id, attempt_kind: attempt.kind, outcome: attempt.outcome, extraction_mode: attempt.extraction_mode || null,
+                transport_status: attempt.transport_status, duration_ms: attempt.duration_ms, response_chars: attempt.raw_text ? attempt.raw_text.length : 0,
+                errors: (attempt.errors || []).slice(0, 8).map((error) => ({ class: error.class, code: error.code, message: String(error.message || '').slice(0, 300) }))
+              });
               notify(projectId, 'attempt');
               log(`stage ${stageN} ${call.model} ${attempt.kind}: ${attempt.outcome}${attempt.errors?.length ? ` (${attempt.errors.slice(0, 3).map((e) => e.code).join(', ')})` : ''}`);
             });
@@ -364,7 +383,8 @@
             mode: project.config.transport || 'live',
             timeoutMs: project.config.timeoutMs,
             context: { pipelineRunId: execId, pipelineBatchId: `${execId}-R${round}-${freshTabs ? 'F' : 'R'}`, stageId: `AL-S${stageN}`, stageAttemptId: `${execId}:r${round}` },
-            onResult: (model, result) => { void handle(model, result); }
+            onResult: (model, result) => { void handle(model, result); },
+            onEvent: (event) => { void logDiag(projectId, { source: 'transport', stage: stageN, exec_id: execId, round, ...event }); }
           });
           group.forEach(({ call }) => { void handle(call.model, results?.[call.model]); });
           await chain;
@@ -375,6 +395,7 @@
     }
 
     async function failStage(projectId, stageN, execId, error) {
+      await logDiag(projectId, { source: 'engine', kind: 'STAGE_FAILED', stage: stageN, exec_id: execId || null, code: error.code, message: error.message });
       await tx('readwrite', async (t) => {
         const project = await t.get('projects', projectId);
         if (execId) {
@@ -395,6 +416,17 @@
         const prepared = await prepareExec(projectId, stageN);
         if (prepared.error) { await failStage(projectId, stageN, null, prepared.error); return false; }
         const { execId } = prepared;
+        {
+          const { calls: execCalls } = await loadExecContext(execId);
+          const stage = spec.stage(stageN);
+          await logDiag(projectId, {
+            source: 'engine', kind: 'STAGE_STARTED', stage: stageN, exec_id: execId, resumed: prepared.resumed,
+            mode: stage.execution?.fanout ? 'FANOUT' : 'SINGLE',
+            models: execCalls.map((call) => call.model),
+            already_accepted: execCalls.filter((call) => call.status === 'ACCEPTED').map((call) => call.model),
+            min_distinct_models: stage.execution?.fanout?.min_distinct_models || 1
+          });
+        }
         const outcome = await runExec(projectId, execId);
         if (outcome.stopped) return false;
         const { calls } = await loadExecContext(execId);
@@ -409,7 +441,12 @@
           return false;
         }
         try {
-          await tx('readwrite', (t) => Committer.commitStageExec(t, { spec, projectId, execId, now: now() }));
+          const committed = await tx('readwrite', (t) => Committer.commitStageExec(t, { spec, projectId, execId, now: now() }));
+          await logDiag(projectId, {
+            source: 'engine', kind: 'STAGE_COMMITTED', stage: stageN, exec_id: execId,
+            created: (committed.created || []).map((item) => `${item.ref.object_id}`), status_changes: (committed.statusChanges || []).length,
+            next: { workflow_state: committed.project.workflow_state, next_stage: committed.project.next_stage, wait: committed.project.wait?.qst_ids || null }
+          });
           notify(projectId, 'committed');
           log(`stage ${stageN} committed`);
           return true;
@@ -428,6 +465,7 @@
     // options.untilStage: stop before executing that stage (step mode / fixtures).
     async function run(projectId, options = {}) {
       if (running) return running;
+      currentProjectId = projectId;
       stopRequested = false;
       running = (async () => {
         try {
@@ -455,12 +493,14 @@
 
     async function stop() {
       stopRequested = true;
+      if (currentProjectId) await logDiag(currentProjectId, { source: 'engine', kind: 'STOP_REQUESTED' });
       await transport.cancel?.();
       return running;
     }
 
     async function answer(projectId, answers, ownerId) {
       const result = await tx('readwrite', (t) => Committer.compileAnswers(t, { spec, projectId, answers, now: now(), ownerId }));
+      await logDiag(projectId, { source: 'engine', kind: 'OWNER_ANSWERED', applied: result.applied, next_stage: result.project.next_stage });
       notify(projectId, 'answered');
       return result;
     }
@@ -476,6 +516,7 @@
     async function recover() {
       const projects = await listProjects();
       for (const project of projects) {
+        const interrupted = [];
         await tx('readwrite', async (t) => {
           const calls = await t.byProject('calls', project.project_id);
           for (const call of calls) {
@@ -486,17 +527,19 @@
               last.errors = [{ class: 'TRANSPORT', code: 'CONTROLLER_RESTARTED', message: 'page closed while waiting' }];
               last.finished_at = now();
               await t.put('calls', call);
+              interrupted.push({ model: call.model, stage: call.stage });
             }
           }
           const current = await t.get('projects', project.project_id);
           if (current.workflow_state === 'RUNNING') { current.workflow_state = 'PAUSED'; current.running_stage = null; await t.put('projects', current); }
         });
+        if (interrupted.length) await logDiag(project.project_id, { source: 'engine', kind: 'CONTROLLER_RESTARTED', interrupted });
       }
     }
 
     async function deleteProject(projectId) {
       await tx('readwrite', async (t) => {
-        for (const storeName of ['registry', 'events', 'execs', 'calls', 'snapshots', 'messages']) {
+        for (const storeName of ['registry', 'events', 'execs', 'calls', 'snapshots', 'messages', 'diag']) {
           const rows = await t.byProject(storeName, projectId);
           for (const row of rows) {
             const keyPath = root.AlStore?.STORES?.[storeName] || (typeof require !== 'undefined' ? require('./al-store.js').STORES[storeName] : null);

@@ -623,3 +623,85 @@ describe('live chrome transport bridge', () => {
     expect(result.Claude).toMatchObject({ ok: false, status: 'TIMEOUT' });
   });
 });
+
+describe('diagnostics journal and diagnosis', () => {
+  const Diagnostics = require('../automation/al-diagnostics.js');
+
+  test('a simulator run writes a complete journal and explains stage expectations', async () => {
+    const { engine } = await newEngine();
+    const projectId = await engine.createProject({ ideaText: IDEA, models: ['Claude', 'GPT', 'Gemini'] });
+    const state = await runToCompletion(engine, projectId);
+    const kinds = new Set(state.diag.map((event) => event.kind));
+    ['STAGE_STARTED', 'DISPATCH_SENT', 'DISPATCH_STARTED', 'MODEL_FIRST_TEXT', 'MODEL_TERMINAL', 'ATTEMPT_RESULT', 'STAGE_COMMITTED', 'OWNER_ANSWERED'].forEach((kind) => expect(kinds.has(kind)).toBe(true));
+    const diagnosis = Diagnostics.diagnose(state, { spec });
+    expect(diagnosis.stages[0].expectation).toBe('1 вкладка — основная модель Claude');
+    expect(diagnosis.stages[1].expectation).toMatch(/^3 вкладки параллельно \(Claude, GPT, Gemini\)/);
+    expect(diagnosis.problems.filter((problem) => problem.severity === 'critical')).toEqual([]);
+    const report = Diagnostics.buildReport(state, { spec, extensionVersion: 'test' });
+    expect(report.journal.length).toBe(state.diag.length);
+    expect(report.calls.find((call) => call.stage === 1).attempts[0].prompt_text).toContain('## ACTIVE');
+    expect(JSON.parse(JSON.stringify(report)).diagnosis.stages).toHaveLength(5);
+  });
+
+  const baseState = (diag, calls = []) => ({
+    project: { project_id: 'P', workflow_state: 'STAGE_FAILED', config: { models: ['Claude', 'GPT'], primary: 'Claude' } },
+    execs: [], calls, latest: [], events: [], diag
+  });
+  const sent = { source: 'transport', kind: 'DISPATCH_SENT', exec_id: 'E1', stage: 2, models: ['Claude', 'GPT'], at: '2026-09-30T10:00:00.000Z' };
+
+  test('a model that never got a tab is diagnosed as NO_TAB, a silent tab as NO_ANSWER', () => {
+    const diag = [
+      sent,
+      { source: 'transport', kind: 'TABS', exec_id: 'E1', models: { Claude: { tab: 7, status: 'GENERATING' }, GPT: { tab: null, status: null } } },
+      { source: 'transport', kind: 'MODEL_TIMEOUT', exec_id: 'E1', model: 'Claude', chars: 0, timeoutMs: 600000 },
+      { source: 'transport', kind: 'MODEL_TIMEOUT', exec_id: 'E1', model: 'GPT', chars: 0, timeoutMs: 600000 }
+    ];
+    const problems = Diagnostics.diagnose(baseState(diag), { spec }).problems;
+    expect(problems.find((p) => p.code === 'NO_TAB')).toMatchObject({ model: 'GPT', severity: 'critical' });
+    expect(problems.find((p) => p.code === 'NO_ANSWER')).toMatchObject({ model: 'Claude', severity: 'critical' });
+  });
+
+  test('a rejected dispatch explains the busy background', () => {
+    const diag = [sent, { source: 'transport', kind: 'DISPATCH_REJECTED', exec_id: 'E1', code: 'RUN_ALREADY_ACTIVE' }];
+    const problem = Diagnostics.diagnose(baseState(diag), { spec }).problems[0];
+    expect(problem).toMatchObject({ code: 'RUN_ALREADY_ACTIVE', severity: 'critical' });
+    expect(problem.hint).toMatch(/Дождитесь окончания/);
+  });
+
+  test('validation failures are explained in plain language with the next step', () => {
+    const calls = [{ call_id: 'C', stage: 1, model: 'GPT', status: 'PENDING', attempts: [{ outcome: 'REPAIRABLE', kind: 'initial', errors: [{ class: 'REPRESENTATION', code: 'FRAME_MISSING', message: 'x' }], finished_at: 'now' }] }];
+    const problem = Diagnostics.diagnose(baseState([], calls), { spec }).problems.find((p) => p.code === 'FRAME_MISSING');
+    expect(problem.title).toBe('GPT: Ответ без служебных маркеров');
+    expect(problem.hint).toMatch(/Сырой ответ/);
+  });
+});
+
+describe('transport event reporting', () => {
+  test('ignores other runs, reports tabs, statuses and first text', async () => {
+    const listeners = [];
+    const runtime = {
+      onMessage: { addListener: (fn) => listeners.push(fn), removeListener: () => {} },
+      sendMessage: (payload, cb) => {
+        if (payload.type === 'GET_ACTIVE_RUN_STATE') return cb({ roundsInProgress: false });
+        if (payload.type === 'START_FULLPAGE_PROCESS') return cb({ status: 'process_started' });
+        return cb({});
+      }
+    };
+    const emit = (message) => listeners.forEach((listener) => listener(message));
+    const events = [];
+    const transport = Transport.createChromeTransport({ runtime, guardPollMs: 1 });
+    const tokens = { callToken: 'Cq', attemptToken: 'Aq' };
+    const pending = transport.dispatch({ calls: [{ model: 'GPT', prompt: 'P', tokens }], freshConversation: true, timeoutMs: 5000, onEvent: (event) => events.push(event) });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    emit({ type: 'LLM_PARTIAL_RESPONSE', llmName: 'GPT', answer: 'from debate', sourceView: 'pipeline', metadata: { status: 'SUCCESS' } });
+    emit({ type: 'GLOBAL_STATE_BROADCAST', sourceView: 'automation', state: { tabs: { map: { GPT: 91 } }, llms: { GPT: { status: 'GENERATING' } } } });
+    emit({ type: 'STATUS_UPDATE', llmName: 'GPT', status: 'GENERATING', sourceView: 'automation' });
+    emit({ type: 'LLM_PARTIAL_RESPONSE', llmName: 'GPT', answer: 'PAF_RESPONSE_BEGIN Cq Aq\n{"a":1}\nPAF_RESPONSE_END Cq Aq', sourceView: 'automation', metadata: { status: 'SUCCESS' } });
+    const result = await pending;
+    expect(result.GPT.ok).toBe(true);
+    expect(result.GPT.text).toContain('PAF_RESPONSE_BEGIN Cq Aq');
+    const kinds = events.map((event) => event.kind);
+    expect(kinds).toEqual(expect.arrayContaining(['DISPATCH_SENT', 'DISPATCH_STARTED', 'TABS', 'MODEL_STATUS', 'MODEL_FIRST_TEXT', 'MODEL_TERMINAL']));
+    expect(events.find((event) => event.kind === 'TABS').models.GPT.tab).toBe(91);
+  });
+});

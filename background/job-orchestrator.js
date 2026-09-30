@@ -5130,6 +5130,9 @@ async function startProcess(prompt, selectedLLMs, resultsTab, options = {}) {
     startedAt: sessionStartTime,
     promptsByModel
   });
+  // The page that started the run owns its results. Automation Lab runs are routed back to
+  // that tab only (ui-broadcast), so an open Pipeline page never renders their raw frames.
+  if (jobState?.session) jobState.session.originTabId = Number.isInteger(resultsTab) ? resultsTab : null;
   // A per-model start chain belongs to exactly one run. A promise left by an
   // interrupted MV3 worker/run must never hold the next run behind old work.
   selectedLLMs.forEach((llmName) => {

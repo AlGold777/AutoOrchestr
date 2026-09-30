@@ -5,104 +5,111 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Automation Lab</title>
   <link rel="stylesheet" href="automation/lab.css">
+  <link rel="stylesheet" href="automation/diagnostics-view.css">
 </head>
 <body>
-  <header class="lab-header">
-    <div class="lab-brand">
-      <strong>Automation Lab</strong>
-      <span class="lab-sub">Product→Architecture · пилот стадий 1–5</span>
-    </div>
-    <div class="lab-header-meta">
-      <span id="specBadge" class="badge">spec …</span>
-      <label class="mode-switch" title="Симулятор отвечает валидными AL-STRUCT-1 без веб-моделей">
-        <input type="checkbox" id="simulatorToggle"> Симулятор
-      </label>
-      <a class="link-button" href="pipeline_panel.html">← Pipeline</a>
-    </div>
-  </header>
+  <div class="page">
+    <section class="runbar">
+      <nav class="model-navigation" id="modelNav" aria-label="Выбор моделей"></nav>
+      <div class="run-actions">
+        <select id="projectSelect" aria-label="Проект"></select>
+        <button type="button" class="secondary" id="newBtn" title="Новый проект">Новый</button>
+        <button type="button" class="primary" id="runBtn">Продолжить</button>
+        <button type="button" class="secondary" id="stopBtn">Стоп</button>
+        <button type="button" class="secondary" id="retryBtn" hidden>Повторить стадию</button>
+        <button type="button" class="secondary" id="resultsBtn">Результаты</button>
+        <button type="button" class="secondary" id="diagBtn">Диагностика <span id="diagCount" class="count" hidden></span></button>
+        <button type="button" class="secondary" id="reportBtn" title="Скопировать полный отчёт для анализа в Claude">Отчёт для Claude</button>
+        <label class="sim-switch" title="Проверить механику без веб-моделей: ответы генерирует встроенный симулятор">
+          <input type="checkbox" id="simulatorToggle"> Симулятор
+        </label>
+      </div>
+    </section>
 
-  <div id="lintBanner" class="banner banner-error" hidden></div>
+    <div id="lintBanner" class="banner banner-error" hidden></div>
 
-  <main class="lab-layout">
-    <aside class="lab-sidebar">
-      <section class="panel">
-        <h2>Новый проект</h2>
-        <form id="newProjectForm" class="stack">
-          <label for="ideaInput">Идея продукта (IDEA)</label>
-          <textarea id="ideaInput" rows="7" required placeholder="Опишите продуктовую идею свободным текстом: кто пользователь, какую проблему решаем, какой результат нужен."></textarea>
-          <fieldset class="models">
-            <legend>Модели (fan-out: 2–4)</legend>
-            <div id="modelChoices" class="model-grid"></div>
-          </fieldset>
-          <label for="primarySelect">Основная модель (стадии 1, 3, 4)</label>
-          <select id="primarySelect"></select>
-          <label for="timeoutInput">Таймаут ответа, сек</label>
-          <input id="timeoutInput" type="number" min="60" max="1800" step="30" value="600">
-          <button type="submit" class="primary">Создать и запустить</button>
-        </form>
-      </section>
-      <section class="panel">
-        <h2>Проекты</h2>
-        <ul id="projectList" class="project-list"></ul>
-      </section>
-    </aside>
-
-    <section class="lab-main" id="projectView" hidden>
-      <div class="project-head">
-        <div>
-          <h1 id="projectTitle"></h1>
-          <div class="project-meta">
-            <span id="stateBadge" class="badge"></span>
-            <span id="projectMeta"></span>
-          </div>
+    <section class="workspace">
+      <article class="column model-column" id="leftColumn">
+        <div class="head"><div class="col-tabs" id="leftTabs"></div><small id="leftStatus" class="col-status">ожидание</small></div>
+        <div class="body">
+          <div class="chat empty" id="leftChat"><p class="placeholder">Здесь появится лента первой модели: что ей отправлено и что она ответила.</p></div>
+          <div class="request-view empty" id="leftRequest">запрос к модели</div>
         </div>
-        <div class="actions">
-          <button id="runBtn" class="primary">Запустить</button>
-          <button id="stopBtn">Остановить</button>
-          <button id="retryBtn" hidden>Повторить стадию</button>
-          <button id="exportMdBtn">Экспорт .md</button>
-          <button id="exportJsonBtn">Экспорт .json</button>
-          <button id="deleteBtn" class="danger">Удалить</button>
+      </article>
+
+      <section class="column center-column">
+        <div class="head">
+          <h2>Automation</h2>
+          <ol class="stage-strip" id="stageStrip"></ol>
+          <small id="stateChip" class="chip">нет проекта</small>
+        </div>
+        <div class="body">
+          <div class="chat center-chat empty" id="centerChat">
+            <div class="placeholder">
+              <p><strong>Стадии 1–5 Product→Architecture.</strong></p>
+              <ol>
+                <li>Выберите модели вверху (минимум 2). Первая выбранная — основная: она одна работает на стадиях 1, 3 и 4.</li>
+                <li>Опишите идею продукта внизу и нажмите «Запустить».</li>
+                <li>На стадиях 2 и 5 все выбранные модели отвечают параллельно, каждая в своей новой вкладке.</li>
+                <li>Дважды система спросит вас: утвердить Decision Policy и выбрать варианты решений — вопросы появятся здесь.</li>
+              </ol>
+            </div>
+          </div>
+          <form class="composer" id="composer">
+            <textarea id="ideaInput" placeholder="Опишите идею продукта: кто пользователь, какую проблему решаем, какой результат нужен."></textarea>
+            <button type="submit" class="primary" id="sendBtn">Запустить</button>
+          </form>
+        </div>
+      </section>
+
+      <article class="column model-column" id="rightColumn">
+        <div class="head"><div class="col-tabs" id="rightTabs"></div><small id="rightStatus" class="col-status">ожидание</small></div>
+        <div class="body">
+          <div class="chat empty" id="rightChat"><p class="placeholder">Здесь появится лента второй модели.</p></div>
+          <div class="request-view empty" id="rightRequest">запрос к модели</div>
+        </div>
+      </article>
+    </section>
+  </div>
+
+  <div class="modal" id="resultsModal" hidden>
+    <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="resultsTitle">
+      <div class="modal-head">
+        <h2 id="resultsTitle">Результаты</h2>
+        <nav class="tabs" role="tablist">
+          <button role="tab" data-tab="results" aria-selected="true">Итог</button>
+          <button role="tab" data-tab="diagnostics">Диагностика</button>
+          <button role="tab" data-tab="calls">Вызовы</button>
+          <button role="tab" data-tab="telemetry">Телеметрия</button>
+          <button role="tab" data-tab="registry">Реестр</button>
+          <button role="tab" data-tab="events">События</button>
+        </nav>
+        <div class="modal-actions">
+          <button type="button" class="secondary" id="exportMdBtn">Экспорт .md</button>
+          <button type="button" class="secondary" id="exportJsonBtn">Экспорт .json</button>
+          <button type="button" class="secondary danger" id="deleteBtn">Удалить проект</button>
+          <button type="button" class="secondary" id="closeResultsBtn">Закрыть</button>
         </div>
       </div>
-
-      <ol id="stageTrack" class="stage-track"></ol>
-      <div id="liveProgress" class="live-progress" hidden></div>
-      <div id="errorPanel" class="banner banner-error" hidden></div>
-
-      <section id="ownerPanel" class="panel owner-panel" hidden>
-        <h2>Решение владельца</h2>
-        <p class="hint">Выбор только из вариантов. Выбранные эффекты применяются детерминированным компилятором ответов, без интерпретации моделью.</p>
-        <form id="ownerForm" class="stack"></form>
-      </section>
-
-      <nav class="tabs" role="tablist">
-        <button role="tab" data-tab="results" aria-selected="true">Результаты</button>
-        <button role="tab" data-tab="registry">Реестр</button>
-        <button role="tab" data-tab="calls">Вызовы</button>
-        <button role="tab" data-tab="telemetry">Телеметрия</button>
-        <button role="tab" data-tab="events">События</button>
-      </nav>
-      <div id="tabResults" class="tab-panel"></div>
-      <div id="tabRegistry" class="tab-panel" hidden></div>
-      <div id="tabCalls" class="tab-panel" hidden></div>
-      <div id="tabTelemetry" class="tab-panel" hidden></div>
-      <div id="tabEvents" class="tab-panel" hidden></div>
-    </section>
-
-    <section class="lab-main lab-empty" id="emptyView">
-      <h1>Автоматизация стадий 1–5</h1>
-      <p>Идея → Decision Policy (одобряет владелец) → независимое расширение несколькими моделями → синтез решений и вопросы владельцу → концепция продукта → независимое adversarial-ревью.</p>
-      <p>Каждый ответ модели проходит извлечение из рамки, валидацию AL-STRUCT-1, проверку хеша снимка и политики полномочий, и только затем атомарно фиксируется в IndexedDB.</p>
-    </section>
-  </main>
+      <div class="modal-body">
+        <div id="tabResults" class="tab-panel"></div>
+        <div id="tabDiagnostics" class="tab-panel" hidden></div>
+        <div id="tabCalls" class="tab-panel" hidden></div>
+        <div id="tabTelemetry" class="tab-panel" hidden></div>
+        <div id="tabRegistry" class="tab-panel" hidden></div>
+        <div id="tabEvents" class="tab-panel" hidden></div>
+      </div>
+    </div>
+  </div>
 
   <dialog id="textDialog" class="text-dialog">
     <form method="dialog">
-      <header><strong id="textDialogTitle"></strong><button value="close" aria-label="Закрыть">✕</button></header>
+      <header><strong id="textDialogTitle"></strong><span class="modal-actions"><button type="button" class="secondary" id="textDialogCopy">Копировать</button><button value="close" class="secondary" aria-label="Закрыть">✕</button></span></header>
       <pre id="textDialogBody"></pre>
     </form>
   </dialog>
+
+  <div id="toast" class="toast" hidden></div>
 
   <script src="tos-consent.js"></script>
   <script src="automation/al-canonical.js"></script>
@@ -117,6 +124,9 @@
   <script src="automation/al-engine.js"></script>
   <script src="automation/al-simulator.js"></script>
   <script src="automation/al-transport.js"></script>
+  <script src="automation/al-diagnostics.js"></script>
+  <script src="automation/model-icons.js"></script>
+  <script src="automation/al-diagnostics-view.js"></script>
   <script src="automation/lab-ui.js"></script>
 </body>
 </html>
