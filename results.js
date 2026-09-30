@@ -16565,6 +16565,8 @@ document.addEventListener('click', (event) => {
         'SMART_DISPATCH_SEND',
         'TRANSPORT_DISPATCH_PHASE',
         'PROVIDER_STOP_RESULT',
+        'LLM_COMPLETION_TERMINAL',
+        'SPA_NAVIGATION',
         'SMART_ATTACHMENT_CONFIRMED',
         'ATTACHMENT_MANUAL_REQUIRED',
         'MANUAL_PING_RESULT',
@@ -16578,10 +16580,12 @@ document.addEventListener('click', (event) => {
     // races with the background service worker for content-script RPC messages.
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (!RESULTS_RUNTIME_MESSAGE_TYPES.has(message?.type)) return false;
-        if (window.MessageDelivery && ['STATUS_UPDATE', 'GLOBAL_STATE_BROADCAST', 'TRANSPORT_DISPATCH_PHASE', 'PROVIDER_STOP_RESULT'].includes(message.type)) {
+        // Journal-only messages; tab-originated ones are owned (answered) by the background.
+        const JOURNAL_ONLY_TYPES = ['TRANSPORT_DISPATCH_PHASE', 'PROVIDER_STOP_RESULT', 'LLM_COMPLETION_TERMINAL', 'SPA_NAVIGATION'];
+        if (window.MessageDelivery && ['STATUS_UPDATE', 'GLOBAL_STATE_BROADCAST', ...JOURNAL_ONLY_TYPES].includes(message.type)) {
             window.MessageDelivery.observeRuntime(message);
         }
-        if (message.type === 'TRANSPORT_DISPATCH_PHASE' || message.type === 'PROVIDER_STOP_RESULT') return false;
+        if (JOURNAL_ONLY_TYPES.includes(message.type)) return false;
         if (window.MessageDelivery && ['LLM_PARTIAL_RESPONSE', 'LLM_FINAL_RESPONSE', 'FINAL_LLM_RESPONSE'].includes(message.type)) {
             message = window.MessageDelivery.receive(message, { final: isTerminalPipelineMessage(message) });
             if (!message) return false; // stale answer of an earlier request

@@ -14,7 +14,8 @@
   const OUTCOME = { settled: 'завершён', timeout: 'таймаут', cancelled: 'отменён', rejected: 'не стартовал' };
   const PHASE = {
     dispatch_started: 'отправка', command_accepted: 'команда принята', submitted: 'отправлено',
-    submit_unconfirmed: 'отправка не подтверждена', command_not_delivered: 'команда не доставлена', blocked: 'заблокировано'
+    submit_unconfirmed: 'отправка не подтверждена', command_not_delivered: 'команда не доставлена', blocked: 'заблокировано',
+    terminal_deferred: 'финал отложен'
   };
   const SEV = { critical: 'Критично', warning: 'Внимание', info: 'Инфо' };
   const time = (at) => (at ? new Date(at).toLocaleTimeString() : '—');
@@ -65,7 +66,10 @@
       send.tab != null ? `вкладка ${send.tab}` : 'вкладки нет',
       dispatchPath(send),
       send.statuses.length ? send.statuses.join(' → ') : null,
+      send.navigations.length ? send.navigations.map((n) => `навигация ${n.from} → ${n.to}${n.ms != null ? ` ${secs(n.ms)}` : ''}`).join(' → ') : null,
+      send.completionTerminals.length ? send.completionTerminals.map((c) => `протокол: ${c.status}${c.reason ? ` (${c.reason})` : ''}${c.ms != null ? ` ${secs(c.ms)}` : ''}`).join(' → ') : null,
       send.firstTextMs != null ? `текст через ${secs(send.firstTextMs)}` : 'текста нет',
+      send.lateText ? `текст после финала: ${send.lateText.chars} симв. через ${secs(send.lateText.ms)}` : null,
       send.providerStop ? `стоп: ${send.providerStop.stopped ? 'подтверждён' : send.providerStop.reason}` : null
     ]);
     const t = send.terminal;
@@ -76,6 +80,7 @@
       t.completion || null,
       t.source && t.source !== 'live' ? t.source : null,
       t.reason || null,
+      t.detail || null,
       send.revisions ? `ревизий: ${send.revisions}` : null,
       send.rejections.length ? `отклонено: ${send.rejections.length}` : null
     ]) : '—';
@@ -88,8 +93,8 @@
       el('td', null, send.batchId || '—'),
       el('td', null, flow),
       el('td', null, end),
-      el('td', null, RESULT[send.result] || send.result));
-    if (!['delivered', 'waiting', 'cancelled'].includes(send.result)) row.style.color = 'var(--danger, #b42318)';
+      el('td', null, send.prematureTerminal ? `${RESULT[send.result] || send.result} · финал преждевременный` : (RESULT[send.result] || send.result)));
+    if (send.prematureTerminal || !['delivered', 'waiting', 'cancelled'].includes(send.result)) row.style.color = 'var(--danger, #b42318)';
     return row;
   }
 
@@ -138,11 +143,11 @@
       : '';
 
     $('automation-health').replaceChildren(all.length ? table(
-      ['Model', 'Sent', 'Delivered', 'Partial', 'No token', 'Empty', 'No answer', 'Not submitted', 'No tab', 'Error', 'Cancelled', 'Rejected', 'Stale dropped', 'Median submit', 'Median answer'],
+      ['Model', 'Sent', 'Delivered', 'Partial', 'No token', 'Empty', 'No answer', 'Not submitted', 'No tab', 'Error', 'Cancelled', 'Premature final', 'Rejected', 'Stale dropped', 'Median submit', 'Median answer'],
       view.matrix.map((r) => el('tr', null,
         el('td', null, r.model), el('td', null, r.sent), el('td', null, r.delivered), el('td', null, r.partial),
         el('td', null, r.no_token), el('td', null, r.empty), el('td', null, r.no_answer), el('td', null, r.not_submitted),
-        el('td', null, r.no_tab), el('td', null, r.error), el('td', null, r.cancelled), el('td', null, r.rejected),
+        el('td', null, r.no_tab), el('td', null, r.error), el('td', null, r.cancelled), el('td', null, r.premature), el('td', null, r.rejected),
         el('td', null, r.stale), el('td', null, secs(r.medianSubmitMs)), el('td', null, secs(r.medianMs)))))
       : empty('No messages yet.'));
 

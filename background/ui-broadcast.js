@@ -113,7 +113,12 @@ function sendMessageToResultsTab(message) {
 
   chrome.tabs.sendMessage(resultsTabId, message, () => {
     if (chrome.runtime.lastError) {
-      console.warn('[BACKGROUND] tabs.sendMessage to results failed:', chrome.runtime.lastError.message);
+      const errorMessage = String(chrome.runtime.lastError.message || '');
+      // The results page received the message but does not answer it: that is a
+      // delivery, not a failure. Re-sending it through the runtime delivered the
+      // same message twice (the first message of every run was duplicated).
+      if (/message port closed before a response was received/i.test(errorMessage)) return;
+      console.warn('[BACKGROUND] tabs.sendMessage to results failed:', errorMessage);
       resultsTabId = null;
       fallbackToRuntime();
     } else {

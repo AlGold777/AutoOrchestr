@@ -9592,6 +9592,9 @@ function handleLLMResponse(llmName, answer, error = null, meta = null, answerHtm
       // local list of status names that can drift from deriveFailureFinalStatus.
       terminal: true,
       reason: finalReason,
+      // The concrete cause behind a coarse status (e.g. UNCERTAIN ← context_invalidated).
+      errorType: isSuccess ? null : (error?.type || null),
+      errorMessage: isSuccess ? null : (error?.message ? String(error.message).slice(0, 300) : null),
       completionReason,
       hardStopReason,
       failureClass: isSuccess ? null : failureClassification?.class || 'unknown',

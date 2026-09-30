@@ -1,5 +1,13 @@
 # CHANGELOG — Project
 
+### 2026-09-30 — Transport: no premature uncertain final; telemetry names the cause, version 2.81.509
+
+- Field report (Le Chat, Perplexity): the tab's completion protocol reported `CONTEXT_LOST`/`AMBIGUOUS` 1.5 s after Send, the background committed an empty `UNCERTAIN` final and closed the batch, while the models kept answering; the real answer was then dropped as a duplicate final. After a confirmed send such a terminal is now deferred until the tab has been quiet for 45 s; a real answer (or any other terminal) arriving earlier wins.
+- The first background message of a run is no longer delivered to the panel twice (a results page that does not answer counted as a failed delivery and was re-sent via runtime).
+- The final message carries the concrete failure cause (`errorType`, `errorMessage`).
+- Automation journal: `completion_terminal` (protocol decision and reason), `navigation` (SPA path change in the tab), `late_text` (text after an empty final), `terminal_deferred` phase; identical phase reports are journaled once.
+- Diagnosis: new critical problem `premature_terminal` with its cause (protocol decision, navigation, late text) and a "Premature final" column; messages are linked to their batch even when prepared without a batch id.
+
 ### 2026-09-30 — Automation tab: full delivery diagnosis, version 2.81.508
 
 - Diagnose every message from the full journal: dispatch phases (sent, accepted, submitted, blocked with reason), request and dispatch ids, completion, recovery source, revisions and answers rejected by identity.

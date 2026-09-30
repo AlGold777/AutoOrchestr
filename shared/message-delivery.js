@@ -146,6 +146,10 @@
       return null;
     }
     const metadata = { ...(message.metadata || {}) };
+    if (!final && entry.final && entry.finalKind === 'empty_answer' && answer.trim() && !entry.lateTextLogged) {
+      entry.lateTextLogged = true;
+      record({ kind: 'late_text', model, token: entry.token, requestId: entry.requestId, chars: answer.length, ms: Date.now() - entry.sentAt });
+    }
     if (answer.trim() && !entry.firstText) {
       entry.firstText = true;
       record({ kind: 'first_text', model, token: entry.token, requestId: entry.requestId, chars: answer.length, ms: Date.now() - entry.sentAt });
@@ -161,7 +165,8 @@
         completion: completionOf(status || (answer.trim() ? 'SUCCESS' : 'FAILED'), answer),
         dispatchId: message.dispatchId || metadata.dispatchId || null,
         source: String(metadata.source || metadata.answerSource || 'live'),
-        reason: String(metadata.reason || metadata.completionReason || metadata.failureClass || metadata.hardStopReason || '')
+        reason: String(metadata.reason || metadata.completionReason || metadata.failureClass || metadata.hardStopReason || ''),
+        detail: [metadata.errorType, metadata.errorMessage].filter(Boolean).join(': ') || null
       });
     } else if (final && entry.final && entry.finalKind === 'empty_answer' && answer.trim()) {
       // A usable answer upgraded an earlier empty/failed terminal of the same request.
@@ -188,10 +193,33 @@
     if (!message) return;
     if (message.type === 'TRANSPORT_DISPATCH_PHASE') {
       const entry = entryFor(message);
+      const phaseKey = `${requestIdOf(message)}|${message.phase}|${message.dispatchId}|${message.at || ''}`;
+      if (entry && entry.lastPhaseKey === phaseKey) return;
+      if (entry) entry.lastPhaseKey = phaseKey;
       record({
         kind: 'dispatch', model: message.llmName, token: entry?.token || null, requestId: requestIdOf(message),
         phase: String(message.phase || ''), dispatchId: message.dispatchId || null, tabId: message.tabId ?? null,
         reason: message.reason || null, dispatchReason: message.dispatchReason || null, attempt: message.attempt ?? null,
+        ms: entry ? Date.now() - entry.sentAt : null
+      });
+      return;
+    }
+    if (message.type === 'LLM_COMPLETION_TERMINAL') {
+      const entry = latestByModel.get(message.llmName);
+      const result = message.meta?.terminalResult || {};
+      record({
+        kind: 'completion_terminal', model: message.llmName || null, token: entry?.token || null, requestId: entry?.requestId || null,
+        status: result.status || null, reason: result.reason || null, dispatchId: message.meta?.dispatchId || null,
+        ms: entry ? Date.now() - entry.sentAt : null
+      });
+      return;
+    }
+    if (message.type === 'SPA_NAVIGATION') {
+      const entry = latestByModel.get(message.llmName);
+      const path = (url) => { try { return new URL(url).pathname; } catch (_) { return String(url || ''); } };
+      record({
+        kind: 'navigation', model: message.llmName || null, token: entry?.token || null, requestId: entry?.requestId || null,
+        from: path(message.oldUrl), to: path(message.newUrl), reason: message.reason || null,
         ms: entry ? Date.now() - entry.sentAt : null
       });
       return;

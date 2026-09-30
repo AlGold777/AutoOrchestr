@@ -1,0 +1,285 @@
+{
+  "source": "message-delivery-report 2.81.507, 2026-09-30 (Le Chat, Perplexity; UNCERTAIN terminal before the answer)",
+  "journal": [
+    {
+      "at": "2026-09-30T20:45:14.547Z",
+      "batchId": "",
+      "chars": 115,
+      "kind": "prepared",
+      "model": "Le Chat",
+      "requestId": "treq-03b53418-6855-4ce6-9726-2027d6889547",
+      "token": "AO-bc6rd5"
+    },
+    {
+      "at": "2026-09-30T20:45:14.547Z",
+      "batchId": "",
+      "chars": 115,
+      "kind": "prepared",
+      "model": "Perplexity",
+      "requestId": "treq-d04e7efb-f111-4be9-8f4e-782e8878b739",
+      "token": "AO-hdgr6r"
+    },
+    {
+      "at": "2026-09-30T20:45:14.557Z",
+      "batchId": "unscoped:a1",
+      "forceNewTabs": true,
+      "generationProfile": "long",
+      "judge": false,
+      "kind": "batch_start",
+      "manual": true,
+      "models": [
+        "Le Chat",
+        "Perplexity"
+      ],
+      "pipelineRunId": null,
+      "requestIds": {
+        "Le Chat": "treq-03b53418-6855-4ce6-9726-2027d6889547",
+        "Perplexity": "treq-d04e7efb-f111-4be9-8f4e-782e8878b739"
+      },
+      "stageAttemptId": "unscoped:a1",
+      "stageId": null,
+      "timeoutMs": 1110000,
+      "waitId": "wait-1"
+    },
+    {
+      "at": "2026-09-30T20:45:14.570Z",
+      "kind": "status",
+      "model": "Le Chat",
+      "requestId": "treq-03b53418-6855-4ce6-9726-2027d6889547",
+      "status": "IDLE",
+      "token": "AO-bc6rd5"
+    },
+    {
+      "at": "2026-09-30T20:45:14.571Z",
+      "kind": "status",
+      "model": "Perplexity",
+      "requestId": "treq-d04e7efb-f111-4be9-8f4e-782e8878b739",
+      "status": "IDLE",
+      "token": "AO-hdgr6r"
+    },
+    {
+      "at": "2026-09-30T20:45:14.575Z",
+      "batchId": "unscoped:a1",
+      "kind": "start_accepted",
+      "status": "process_started",
+      "waitId": "wait-1",
+      "waitedMs": 18
+    },
+    {
+      "at": "2026-09-30T20:45:14.597Z",
+      "kind": "tab",
+      "model": "Le Chat",
+      "ms": 50,
+      "requestId": "treq-03b53418-6855-4ce6-9726-2027d6889547",
+      "tabId": 315226105,
+      "token": "AO-bc6rd5"
+    },
+    {
+      "at": "2026-09-30T20:45:15.630Z",
+      "kind": "tab",
+      "model": "Perplexity",
+      "ms": 1083,
+      "requestId": "treq-d04e7efb-f111-4be9-8f4e-782e8878b739",
+      "tabId": 315226108,
+      "token": "AO-hdgr6r"
+    },
+    {
+      "at": "2026-09-30T20:45:17.665Z",
+      "attempt": 1,
+      "dispatchId": "Le Chat:1790801114565:1",
+      "dispatchReason": "round1_simple",
+      "kind": "dispatch",
+      "model": "Le Chat",
+      "ms": 3118,
+      "phase": "dispatch_started",
+      "reason": null,
+      "requestId": "treq-03b53418-6855-4ce6-9726-2027d6889547",
+      "tabId": 315226105,
+      "token": "AO-bc6rd5"
+    },
+    {
+      "at": "2026-09-30T20:45:17.665Z",
+      "attempt": 1,
+      "dispatchId": "Le Chat:1790801114565:1",
+      "dispatchReason": "round1_simple",
+      "kind": "dispatch",
+      "model": "Le Chat",
+      "ms": 3118,
+      "phase": "dispatch_started",
+      "reason": null,
+      "requestId": "treq-03b53418-6855-4ce6-9726-2027d6889547",
+      "tabId": 315226105,
+      "token": "AO-bc6rd5"
+    },
+    {
+      "at": "2026-09-30T20:45:17.781Z",
+      "attempt": null,
+      "dispatchId": "Le Chat:1790801114565:1",
+      "dispatchReason": null,
+      "kind": "dispatch",
+      "model": "Le Chat",
+      "ms": 3234,
+      "phase": "command_accepted",
+      "reason": null,
+      "requestId": "treq-03b53418-6855-4ce6-9726-2027d6889547",
+      "tabId": 315226105,
+      "token": "AO-bc6rd5"
+    },
+    {
+      "at": "2026-09-30T20:45:19.785Z",
+      "kind": "status",
+      "model": "Le Chat",
+      "requestId": "treq-03b53418-6855-4ce6-9726-2027d6889547",
+      "status": "RECOVERABLE_ERROR",
+      "token": "AO-bc6rd5"
+    },
+    {
+      "at": "2026-09-30T20:45:22.666Z",
+      "attempt": null,
+      "dispatchId": "Le Chat:1790801114565:1",
+      "dispatchReason": null,
+      "kind": "dispatch",
+      "model": "Le Chat",
+      "ms": 8119,
+      "phase": "submitted",
+      "reason": null,
+      "requestId": "treq-03b53418-6855-4ce6-9726-2027d6889547",
+      "tabId": 315226105,
+      "token": "AO-bc6rd5"
+    },
+    {
+      "at": "2026-09-30T20:45:24.153Z",
+      "kind": "status",
+      "model": "Le Chat",
+      "requestId": "treq-03b53418-6855-4ce6-9726-2027d6889547",
+      "status": "UNCERTAIN",
+      "token": "AO-bc6rd5"
+    },
+    {
+      "at": "2026-09-30T20:45:24.157Z",
+      "chars": 0,
+      "completion": "failed",
+      "dispatchId": "Le Chat:1790801114565:1",
+      "kind": "empty_answer",
+      "model": "Le Chat",
+      "ms": 9610,
+      "reason": "uncertain",
+      "requestId": "treq-03b53418-6855-4ce6-9726-2027d6889547",
+      "source": "live",
+      "status": "UNCERTAIN",
+      "token": "AO-bc6rd5"
+    },
+    {
+      "at": "2026-09-30T20:45:24.708Z",
+      "attempt": 1,
+      "dispatchId": "Perplexity:1790801114565:1",
+      "dispatchReason": "round1_simple",
+      "kind": "dispatch",
+      "model": "Perplexity",
+      "ms": 10161,
+      "phase": "dispatch_started",
+      "reason": null,
+      "requestId": "treq-d04e7efb-f111-4be9-8f4e-782e8878b739",
+      "tabId": 315226108,
+      "token": "AO-hdgr6r"
+    },
+    {
+      "at": "2026-09-30T20:45:24.716Z",
+      "attempt": null,
+      "dispatchId": "Perplexity:1790801114565:1",
+      "dispatchReason": null,
+      "kind": "dispatch",
+      "model": "Perplexity",
+      "ms": 10169,
+      "phase": "command_accepted",
+      "reason": null,
+      "requestId": "treq-d04e7efb-f111-4be9-8f4e-782e8878b739",
+      "tabId": 315226108,
+      "token": "AO-hdgr6r"
+    },
+    {
+      "at": "2026-09-30T20:45:26.292Z",
+      "kind": "status",
+      "model": "Perplexity",
+      "requestId": "treq-d04e7efb-f111-4be9-8f4e-782e8878b739",
+      "status": "RECOVERABLE_ERROR",
+      "token": "AO-hdgr6r"
+    },
+    {
+      "at": "2026-09-30T20:45:29.708Z",
+      "attempt": null,
+      "dispatchId": "Perplexity:1790801114565:1",
+      "dispatchReason": null,
+      "kind": "dispatch",
+      "model": "Perplexity",
+      "ms": 15161,
+      "phase": "submitted",
+      "reason": null,
+      "requestId": "treq-d04e7efb-f111-4be9-8f4e-782e8878b739",
+      "tabId": 315226108,
+      "token": "AO-hdgr6r"
+    },
+    {
+      "at": "2026-09-30T20:45:30.826Z",
+      "kind": "status",
+      "model": "Perplexity",
+      "requestId": "treq-d04e7efb-f111-4be9-8f4e-782e8878b739",
+      "status": "UNCERTAIN",
+      "token": "AO-hdgr6r"
+    },
+    {
+      "at": "2026-09-30T20:45:30.828Z",
+      "chars": 0,
+      "completion": "failed",
+      "dispatchId": "Perplexity:1790801114565:1",
+      "kind": "empty_answer",
+      "model": "Perplexity",
+      "ms": 16281,
+      "reason": "uncertain",
+      "requestId": "treq-d04e7efb-f111-4be9-8f4e-782e8878b739",
+      "source": "live",
+      "status": "UNCERTAIN",
+      "token": "AO-hdgr6r"
+    },
+    {
+      "answered": [],
+      "at": "2026-09-30T20:45:30.829Z",
+      "batchId": "unscoped:a1",
+      "completion": {
+        "Le Chat": "failed",
+        "Perplexity": "failed"
+      },
+      "durationMs": 16272,
+      "failed": {
+        "Le Chat": "UNCERTAIN",
+        "Perplexity": "UNCERTAIN"
+      },
+      "kind": "batch_end",
+      "missing": [
+        "Le Chat",
+        "Perplexity"
+      ],
+      "outcome": "settled",
+      "timeoutMs": 1110000,
+      "waitId": "wait-1"
+    },
+    {
+      "at": "2026-09-30T20:45:34.750Z",
+      "chars": 215,
+      "kind": "first_text",
+      "model": "Le Chat",
+      "ms": 20203,
+      "requestId": "treq-03b53418-6855-4ce6-9726-2027d6889547",
+      "token": "AO-bc6rd5"
+    },
+    {
+      "at": "2026-09-30T20:45:37.811Z",
+      "chars": 27,
+      "kind": "first_text",
+      "model": "Perplexity",
+      "ms": 23264,
+      "requestId": "treq-d04e7efb-f111-4be9-8f4e-782e8878b739",
+      "token": "AO-hdgr6r"
+    }
+  ]
+}

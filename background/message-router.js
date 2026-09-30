@@ -1238,6 +1238,56 @@ const recordCompletionAuthorityAttempt = (llmName, meta = {}) => {
     return next;
 };
 
+// AMBIGUOUS / CONTEXT_LOST from the completion protocol means the observer lost
+// certainty (e.g. a new-chat → thread navigation right after Send), not that the
+// provider failed. Finalizing at once closed the request while the model was
+// still answering; the real answer then arrived as a duplicate final and was
+// dropped. After a confirmed send, wait until the tab is quiet: a real answer
+// (or any other terminal) wins; otherwise the uncertain terminal is committed.
+const UNCERTAIN_TERMINAL_QUIET_MS = 45000;
+const DEFERRABLE_COMPLETION_TERMINALS = new Set(['AMBIGUOUS', 'CONTEXT_LOST']);
+const deferUncertainCompletionTerminal = (llmName, entry, finalize, terminalResult) => {
+    const sessionId = jobState?.session?.startTime || null;
+    const deferredAt = Date.now();
+    entry.deferredUncertainTerminal = {
+        status: terminalResult?.status || null,
+        reason: terminalResult?.reason || null,
+        dispatchId: entry?.lastDispatchMeta?.dispatchId || null,
+        at: deferredAt
+    };
+    emitTelemetry(llmName, 'COMPLETION_UNCERTAIN_TERMINAL_DEFERRED', {
+        level: 'warning',
+        details: `${terminalResult?.status || 'UNKNOWN'}:${terminalResult?.reason || ''}`,
+        meta: { ...entry.deferredUncertainTerminal, quietMs: UNCERTAIN_TERMINAL_QUIET_MS },
+        force: true
+    });
+    if (typeof reportDispatchPhase === 'function') {
+        reportDispatchPhase(llmName, entry, 'terminal_deferred', {
+            dispatchId: entry.deferredUncertainTerminal.dispatchId,
+            reason: `${terminalResult?.status || ''}:${terminalResult?.reason || ''}`
+        });
+    }
+    const check = () => {
+        const live = jobState?.llms?.[llmName];
+        if (live !== entry || (sessionId && jobState?.session?.startTime !== sessionId)) return;
+        if (isTerminalRouterEntry(live)) return;
+        const lastActivity = Math.max(Number(live.lastRuntimeActivityAt || 0), deferredAt);
+        const quietFor = Date.now() - lastActivity;
+        if (quietFor < UNCERTAIN_TERMINAL_QUIET_MS) {
+            schedule(UNCERTAIN_TERMINAL_QUIET_MS - quietFor + 50);
+            return;
+        }
+        finalize();
+    };
+    const schedule = (delayMs) => {
+        const timerId = routerRegisterSessionTimer(setTimeout(() => {
+            routerDeregisterSessionTimer(timerId);
+            check();
+        }, Math.max(0, delayMs)));
+    };
+    schedule(UNCERTAIN_TERMINAL_QUIET_MS);
+};
+
 const validateCompletionAuthorityDelivery = (llmName, message = {}) => {
     if (message.error || !String(message.answer || '').trim()) return { ok: true, reason: 'non_success_payload' };
     const meta = message.meta && typeof message.meta === 'object' ? message.meta : {};
@@ -2206,7 +2256,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         AMBIGUOUS: 'uncertain',
                         CONTEXT_LOST: 'uncertain'
                     })[terminalResult.status] || 'uncertain';
-                    handleLLMResponse(message.llmName, '', {
+                    const finalize = () => handleLLMResponse(message.llmName, '', {
                         type: errorType,
                         message: terminalResult.reason || terminalResult.status
                     }, {
@@ -2214,6 +2264,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         completionTerminalResult: terminalResult,
                         completionRolloutMode: authority.rolloutMode
                     }, '');
+                    const liveEntry = jobState?.llms?.[message.llmName];
+                    if (DEFERRABLE_COMPLETION_TERMINALS.has(terminalResult.status) && liveEntry?.promptSubmittedAt) {
+                        deferUncertainCompletionTerminal(message.llmName, liveEntry, finalize, terminalResult);
+                    } else {
+                        finalize();
+                    }
                 }
                 sendResponse({ status: 'completion_terminal_recorded', terminalStatus: terminalResult?.status || null });
                 break;

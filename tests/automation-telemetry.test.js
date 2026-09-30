@@ -150,3 +150,112 @@ describe('Automation view', () => {
     expect(read('pipeline_panel.html')).toContain('id="automation-batches"');
   });
 });
+
+describe('field report: UNCERTAIN terminal before the answer (Le Chat, Perplexity)', () => {
+  const { journal } = JSON.parse(read('tests/fixtures/delivery-journal-premature-uncertain.json'));
+
+  test('the diagnosis names the premature terminal instead of an empty answer', () => {
+    const { Diagnosis } = loadModules();
+    const { sends, problems, matrix } = Diagnosis.diagnose(journal);
+    expect(sends.map((s) => [s.model, s.prematureTerminal, s.batchId])).toEqual([
+      ['Le Chat', true, 'unscoped:a1'],
+      ['Perplexity', true, 'unscoped:a1']
+    ]);
+    expect(problems.filter((p) => p.code === 'premature_terminal')).toHaveLength(2);
+    expect(problems.some((p) => p.code === 'empty')).toBe(false);
+    expect(matrix.every((row) => row.premature === 1)).toBe(true);
+    // The duplicated dispatch_started delivery is counted once.
+    expect(sends[0].dispatch.map((d) => d.phase)).toEqual(['dispatch_started', 'command_accepted', 'submitted']);
+  });
+
+  test('the protocol terminal, navigation and late text are journaled with the cause', () => {
+    const { Delivery, Diagnosis } = loadModules();
+    Delivery.reset();
+    Delivery.prepare({ prompt: 'Q', models: ['Le Chat'], requestIds: { 'Le Chat': 'treq-l' } });
+    Delivery.observeRuntime({ type: 'SPA_NAVIGATION', llmName: 'Le Chat', oldUrl: 'https://chat.mistral.ai/chat', newUrl: 'https://chat.mistral.ai/chat/abc', reason: 'pushState' });
+    Delivery.observeRuntime({ type: 'LLM_COMPLETION_TERMINAL', llmName: 'Le Chat', meta: { dispatchId: 'Le Chat:1:1', terminalResult: { status: 'CONTEXT_LOST', reason: 'context_invalidated' } } });
+    Delivery.receive({ llmName: 'Le Chat', transportRequestId: 'treq-l', answer: '', metadata: { status: 'UNCERTAIN', terminal: true, reason: 'uncertain', errorType: 'uncertain', errorMessage: 'context_invalidated' } }, { final: true });
+    Delivery.receive({ llmName: 'Le Chat', transportRequestId: 'treq-l', answer: 'текст ответа', metadata: { status: 'RECEIVING' } }, { final: false });
+    const kinds = Delivery.journal().map((e) => e.kind);
+    expect(kinds).toEqual(['prepared', 'navigation', 'completion_terminal', 'empty_answer', 'late_text', 'first_text']);
+    const { sends, problems } = Diagnosis.diagnose(Delivery.journal());
+    expect(sends[0]).toMatchObject({ prematureTerminal: true, lateText: { chars: 12 } });
+    expect(problems[0].code).toBe('premature_terminal');
+    expect(problems[0].reason).toContain('CONTEXT_LOST (context_invalidated)');
+    expect(problems[0].reason).toContain('/chat → /chat/abc');
+    expect(problems[0].reason).toContain('uncertain: context_invalidated');
+  });
+});
+
+describe('transport fixes behind the field report', () => {
+  const router = read('background/message-router.js');
+  const broadcast = read('background/ui-broadcast.js');
+  const orchestrator = read('background/job-orchestrator.js');
+
+  function loadDeferral({ entry, jobState }) {
+    const start = router.indexOf('const UNCERTAIN_TERMINAL_QUIET_MS');
+    const end = router.indexOf('const validateCompletionAuthorityDelivery');
+    const timers = [];
+    const context = {
+      jobState,
+      emitTelemetry: jest.fn(),
+      reportDispatchPhase: jest.fn(),
+      isTerminalRouterEntry: (e) => Boolean(e?.finalStatusRecorded),
+      routerRegisterSessionTimer: (id) => id,
+      routerDeregisterSessionTimer: () => {},
+      setTimeout: (fn, ms) => { timers.push({ fn, ms }); return timers.length; },
+      Date
+    };
+    // eslint-disable-next-line no-new-func
+    const factory = new Function(...Object.keys(context), `${router.slice(start, end)}\nreturn { deferUncertainCompletionTerminal, UNCERTAIN_TERMINAL_QUIET_MS };`);
+    return { ...factory(...Object.values(context)), timers, context };
+  }
+
+  test('an uncertain terminal waits while the tab is active and yields to a real answer', () => {
+    const entry = { promptSubmittedAt: Date.now(), lastRuntimeActivityAt: 0, lastDispatchMeta: { dispatchId: 'X:1:1' } };
+    const jobState = { session: { startTime: 1 }, llms: { X: entry } };
+    const { deferUncertainCompletionTerminal, timers, context } = loadDeferral({ entry, jobState });
+    const finalize = jest.fn();
+    deferUncertainCompletionTerminal('X', entry, finalize, { status: 'CONTEXT_LOST', reason: 'context_invalidated' });
+    expect(finalize).not.toHaveBeenCalled();
+    expect(context.reportDispatchPhase).toHaveBeenCalledWith('X', entry, 'terminal_deferred', expect.objectContaining({ reason: 'CONTEXT_LOST:context_invalidated' }));
+    // Activity after the deferral postpones the decision.
+    entry.lastRuntimeActivityAt = Date.now() + 10000;
+    timers.shift().fn();
+    expect(finalize).not.toHaveBeenCalled();
+    expect(timers).toHaveLength(1);
+    // The real answer arrived: nothing to commit.
+    entry.finalStatusRecorded = true;
+    timers.shift().fn();
+    expect(finalize).not.toHaveBeenCalled();
+  });
+
+  test('a quiet tab commits the uncertain terminal', () => {
+    const entry = { promptSubmittedAt: Date.now() - 120000, lastRuntimeActivityAt: 0, lastDispatchMeta: { dispatchId: 'X:1:1' } };
+    const jobState = { session: { startTime: 1 }, llms: { X: entry } };
+    const { deferUncertainCompletionTerminal, timers } = loadDeferral({ entry, jobState });
+    const finalize = jest.fn();
+    const realNow = Date.now;
+    deferUncertainCompletionTerminal('X', entry, finalize, { status: 'AMBIGUOUS', reason: 'ownership_conflict' });
+    Date.now = () => realNow() + 60000;
+    try {
+      timers.shift().fn();
+    } finally {
+      Date.now = realNow;
+    }
+    expect(finalize).toHaveBeenCalledTimes(1);
+  });
+
+  test('only AMBIGUOUS / CONTEXT_LOST after a confirmed send are deferred', () => {
+    expect(router).toContain("const DEFERRABLE_COMPLETION_TERMINALS = new Set(['AMBIGUOUS', 'CONTEXT_LOST']);");
+    expect(router).toContain('if (DEFERRABLE_COMPLETION_TERMINALS.has(terminalResult.status) && liveEntry?.promptSubmittedAt) {');
+  });
+
+  test('a results page that does not answer is not sent the message twice', () => {
+    expect(broadcast).toContain('if (/message port closed before a response was received/i.test(errorMessage)) return;');
+  });
+
+  test('the final message carries the concrete failure cause', () => {
+    expect(orchestrator).toContain("errorMessage: isSuccess ? null : (error?.message ? String(error.message).slice(0, 300) : null),");
+  });
+});

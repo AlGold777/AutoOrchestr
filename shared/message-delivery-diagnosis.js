@@ -23,11 +23,12 @@
     stop_unconfirmed: ['Генерация у провайдера не остановлена', 'При отмене кнопка остановки не найдена или генерация не прекратилась.', 'Остановите генерацию во вкладке модели вручную перед следующим запуском.'],
     start_refused: ['Старт пакета откладывался', 'Фон отклонял старт: шли раунды предыдущего пакета или вкладка ещё генерировала.', 'Ничего делать не нужно, если пакет затем стартовал.'],
     start_rejected: ['Пакет не стартовал', 'Фон отказал в старте, панель завершила пакет без отправки.', 'Причина указана в строке; остановите предыдущий запуск или дождитесь окончания генерации.'],
+    premature_terminal: ['Запрос закрыт раньше, чем модель ответила', 'Фон зафиксировал финал без текста, но модель продолжила отвечать — ответ потерян для пайплайна.', 'Причина финала указана в строке (протокол завершения, навигация вкладки). Это дефект транспорта: приложите JSON-отчёт.'],
     batch_timeout: ['Пакет завершён по таймауту', 'Не все модели ответили до срока ожидания панели.', 'Модели без ответа указаны в строке; проверьте их вкладки.'],
     waiting: ['Ответ ещё не получен', 'Запрос подготовлен, ожидается ответ.', '']
   };
   const SEVERITY = {
-    no_tab: 'critical', not_submitted: 'critical', no_answer: 'critical', empty: 'critical', start_rejected: 'critical', batch_timeout: 'critical',
+    no_tab: 'critical', not_submitted: 'critical', premature_terminal: 'critical', no_answer: 'critical', empty: 'critical', start_rejected: 'critical', batch_timeout: 'critical',
     partial: 'warning', error: 'warning', no_token: 'warning', identity: 'warning', stop_unconfirmed: 'warning',
     cancelled: 'info', stale: 'info', start_refused: 'info', waiting: 'info'
   };
@@ -51,7 +52,8 @@
         const send = {
           model: event.model, token: event.token, requestId: event.requestId || null, batchId: event.batchId || '', at: event.at, chars: event.chars,
           tab: null, statuses: [], firstTextMs: null, terminal: null, stale: 0,
-          dispatch: [], dispatchIds: [], submittedMs: null, rejections: [], revisions: 0, providerStop: null
+          dispatch: [], dispatchIds: [], submittedMs: null, rejections: [], revisions: 0, providerStop: null,
+          completionTerminals: [], navigations: [], lateText: null
         };
         byToken.set(event.token, send);
         if (send.requestId) byRequest.set(send.requestId, send);
@@ -59,6 +61,11 @@
         return;
       }
       const send = (event.requestId && byRequest.get(event.requestId)) || (event.token && byToken.get(event.token)) || null;
+      // batch_start follows 'prepared': it links the requests to their batch.
+      if (event.kind === 'batch_start' && event.requestIds) {
+        Object.values(event.requestIds).forEach((id) => { const linked = byRequest.get(id); if (linked && !linked.batchId) linked.batchId = event.batchId || ''; });
+        return;
+      }
       if (!send) return;
       if (event.kind === 'tab') send.tab = event.tabId;
       else if (event.kind === 'status') send.statuses.push(event.status);
@@ -67,15 +74,41 @@
       else if (event.kind === 'revision') send.revisions += 1;
       else if (event.kind === 'identity_rejected') send.rejections.push(event);
       else if (event.kind === 'provider_stop') send.providerStop = event;
+      else if (event.kind === 'completion_terminal') send.completionTerminals.push({ status: event.status, reason: event.reason, ms: event.ms });
+      else if (event.kind === 'navigation') send.navigations.push({ from: event.from, to: event.to, reason: event.reason, ms: event.ms });
+      else if (event.kind === 'late_text') send.lateText = { chars: event.chars, ms: event.ms };
       else if (event.kind === 'dispatch') {
+        const last = send.dispatch[send.dispatch.length - 1];
+        if (last && last.phase === event.phase && last.dispatchId === event.dispatchId && last.ms === event.ms) return;
         send.dispatch.push({ phase: event.phase, dispatchId: event.dispatchId, reason: event.reason, ms: event.ms, attempt: event.attempt, dispatchReason: event.dispatchReason });
         if (event.dispatchId && !send.dispatchIds.includes(event.dispatchId)) send.dispatchIds.push(event.dispatchId);
         if (event.tabId != null && send.tab == null) send.tab = event.tabId;
         if (event.phase === 'submitted' && send.submittedMs == null) send.submittedMs = event.ms;
       } else if (TERMINAL_KINDS.includes(event.kind)) send.terminal = event;
     });
-    out.forEach((send) => { send.result = resultOf(send); });
+    out.forEach((send) => {
+      send.result = resultOf(send);
+      send.prematureTerminal = isPrematureTerminal(send);
+    });
     return out;
+  }
+
+  // An empty/failed terminal followed by answer text of the same request.
+  function isPrematureTerminal(send) {
+    const t = send.terminal;
+    if (!t || !['empty_answer', 'no_answer'].includes(t.kind)) return false;
+    if (send.lateText) return true;
+    return send.firstTextMs != null && t.ms != null && send.firstTextMs > t.ms;
+  }
+
+  function terminalCause(send) {
+    const completion = send.completionTerminals[send.completionTerminals.length - 1];
+    const navigation = send.navigations[send.navigations.length - 1];
+    return [
+      send.terminal?.detail || null,
+      completion ? `протокол завершения: ${completion.status}${completion.reason ? ` (${completion.reason})` : ''}` : null,
+      navigation ? `навигация ${navigation.from} → ${navigation.to}` : null
+    ].filter(Boolean).join(' · ');
   }
 
   function lastBlockReason(send) {
@@ -146,9 +179,13 @@
       title: `${base.model ? `${base.model}: ` : ''}${TEXT[code][0]}`, detail: TEXT[code][1], hint: TEXT[code][2], ...extra
     });
     list.forEach((send) => {
-      if (send.result !== 'delivered') {
+      if (send.prematureTerminal) {
+        out.push(make('premature_terminal', send, {
+          reason: [send.terminal?.status, terminalCause(send), send.lateText ? `текст ${send.lateText.chars} симв. через ${Math.round(send.lateText.ms / 1000)} с` : null].filter(Boolean).join(' · ')
+        }));
+      } else if (send.result !== 'delivered') {
         const reason = [
-          send.terminal?.status, send.terminal?.reason,
+          send.terminal?.status, send.terminal?.reason, terminalCause(send),
           send.result === 'not_submitted' || send.result === 'no_tab' ? lastBlockReason(send) : ''
         ].filter(Boolean).join(' · ');
         out.push(make(send.result, send, reason ? { reason } : {}));
@@ -185,13 +222,14 @@
     const rows = new Map();
     list.forEach((send) => {
       const row = rows.get(send.model) || {
-        model: send.model, sent: 0, stale: 0, rejected: 0, times: [], submitTimes: [],
+        model: send.model, sent: 0, stale: 0, rejected: 0, premature: 0, times: [], submitTimes: [],
         ...Object.fromEntries(RESULTS.map((result) => [result, 0]))
       };
       row.sent += 1;
       row[send.result] += 1;
       row.stale += send.stale;
       row.rejected += send.rejections.length;
+      if (send.prematureTerminal) row.premature += 1;
       if (['delivered', 'no_token', 'partial'].includes(send.result) && send.terminal?.ms != null) row.times.push(send.terminal.ms);
       if (send.submittedMs != null) row.submitTimes.push(send.submittedMs);
       rows.set(send.model, row);

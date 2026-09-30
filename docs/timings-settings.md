@@ -531,6 +531,7 @@ Claude снимаются один раз до первой попытки Send.
 | `TransportContract.resolvePanelWaitTimeoutMs` | Standard `615000`, Long `1110000` | `hardMax` вкладки + `streamStartTimeout` + `PANEL_WAIT_MARGIN_MS` (`120000`): панель не прекращает ждать раньше, чем вкладка может закончить генерацию |
 | `SLOW_MODEL_PIPELINE_WAIT_TIMEOUT_MS` | `600000` | ожидание pipeline при Qwen (перекрывается нижней границей контракта) |
 | `PIPELINE_BATCH_GUARD_RETRY_MS` | `500` | интервал повтора старта, отклонённого как `RUN_ALREADY_ACTIVE` |
+| `UNCERTAIN_TERMINAL_QUIET_MS` (фон) | `45000` | неопределённый финал протокола завершения (`AMBIGUOUS`, `CONTEXT_LOST`) после подтверждённой отправки фиксируется только после такой тишины во вкладке; настоящий ответ, пришедший раньше, выигрывает |
 | `PIPELINE_START_BUSY_WAIT_MS` | `120000` | сколько панель повторяет старт, пока фон занят раундами или вкладка ещё генерирует |
 | `NOTE_DBLCLICK_DELAY` | `320` | распознавание double-click заметки |
 | `SESSION_DBLCLICK_DELAY` | `320` | распознавание double-click session |
