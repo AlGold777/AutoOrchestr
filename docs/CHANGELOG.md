@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-10-01 — Merge of the telemetry-window tab memory, version 2.81.516
+
+- Integrates the "telemetry window remembers the active tab" change (entry 2.81.513 below, made in parallel) with the transport series 2.81.509–2.81.515; no behavior changes beyond that. The parallel change and the transport work both used 2.81.513, so the merged build is numbered 2.81.516.
+
 ### 2026-10-01 — Visits give up on answer content; static text kept as incomplete, version 2.81.515
 
 - The periodic tab visits (human presence) already stopped after 6 visits; now they also track whether the answer text changed between visits (the visits' own activity does not count). When they give up and the model produced text that stopped changing, the text is committed as an incomplete answer ("неполный") instead of leaving the request open, and journaled as `static_answer_committed`.
@@ -15,6 +19,10 @@
 
 - Field report (Le Chat, Perplexity, 2.81.511): the premature `UNCERTAIN` final is gone — the `CONTEXT_LOST` decision after the new-chat navigation is journaled and deferred, and the answer text arrives.
 - When a deferred `AMBIGUOUS`/`CONTEXT_LOST` terminal expires without a final answer, the text the model already produced is committed as a `PARTIAL` answer (marked "неполный") instead of an empty failure; with no text the failure is unchanged.
+
+### 2026-10-01 — Окно телеметрии: запоминание активной вкладки, version 2.81.513
+
+- Окно телеметрии восстанавливает последнюю выбранную вкладку среди Telemetry, Disput, Automation, Selectors и API после повторного открытия страницы.
 
 ### 2026-09-30 — Pipeline panel: запоминание Judge model, version 2.81.512
 

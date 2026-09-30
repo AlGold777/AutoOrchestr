@@ -22726,6 +22726,7 @@ function exportSingleTemplate(templateName, sourceData = null) {
     const devtoolsTabs = Array.from(document.querySelectorAll('.devtools-tab'));
     const devtoolsPanels = Array.from(document.querySelectorAll('.devtools-tabpanel'));
     const DEFAULT_DEVTOOLS_TAB_ID = 'telemetry-tabpanel';
+    const DEVTOOLS_TAB_STORAGE_KEY = 'llmCodexDevtoolsActiveTab.v1';
     let activeDevtoolsTabId = devtoolsTabs.find(tab => tab.classList.contains('is-active'))?.dataset.tabTarget ||
         devtoolsPanels[0]?.id || DEFAULT_DEVTOOLS_TAB_ID;
 
@@ -22733,6 +22734,7 @@ function exportSingleTemplate(templateName, sourceData = null) {
         try {
             if (!targetId || !devtoolsTabs.length || !devtoolsPanels.length) return;
             activeDevtoolsTabId = targetId;
+            try { localStorage.setItem(DEVTOOLS_TAB_STORAGE_KEY, targetId); } catch (_) {}
             devtoolsTabs.forEach((tab) => {
                 try {
                     const isActive = tab.dataset.tabTarget === targetId;
@@ -22762,6 +22764,14 @@ function exportSingleTemplate(templateName, sourceData = null) {
             console.error('[results] setActiveDevtoolsTab top-level error', err);
         }
     };
+
+    try {
+        const savedTabId = localStorage.getItem(DEVTOOLS_TAB_STORAGE_KEY);
+        if (savedTabId && devtoolsTabs.some((tab) => tab.dataset.tabTarget === savedTabId)
+            && devtoolsPanels.some((panel) => panel.id === savedTabId)) {
+            setActiveDevtoolsTab(savedTabId);
+        }
+    } catch (_) {}
 
     if (devtoolsTabs.length && devtoolsPanels.length) {
         devtoolsTabs.forEach((tab) => {
