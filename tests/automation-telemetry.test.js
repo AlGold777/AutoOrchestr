@@ -399,3 +399,59 @@ describe('focus moves and stuck waiting in the journal', () => {
     expect(read('results.js')).toContain("'TRANSPORT_FOCUS']");
   });
 });
+
+describe('visits give up on answer content, not on activity', () => {
+  const presence = read('background/human-presence.js');
+  function loadVisits(overrides = {}) {
+    const start = presence.indexOf('const HUMAN_VISIT_STATIC_MIN_VISITS');
+    const end = presence.indexOf('function raiseHumanVisitAlert(');
+    const context = {
+      emitTelemetry: jest.fn(),
+      reportDispatchPhase: jest.fn(),
+      handleLLMResponse: jest.fn(),
+      isTerminalEntry: (e) => Boolean(e?.finalStatusRecorded),
+      ...overrides
+    };
+    // eslint-disable-next-line no-new-func
+    const factory = new Function(...Object.keys(context), `${presence.slice(start, end)}\nreturn { trackVisitAnswerProgress, commitStaticAnswerAfterVisits };`);
+    return { ...factory(...Object.values(context)), context };
+  }
+
+  test('growth resets the static count; an unchanged text increments it; visits activity is irrelevant', () => {
+    const { trackVisitAnswerProgress } = loadVisits();
+    const entry = { answer: 'abc', lastRuntimeActivityAt: 1 };
+    expect(trackVisitAnswerProgress(entry).staticVisits).toBe(0);
+    entry.lastRuntimeActivityAt = Date.now(); // a visit's own activity
+    expect(trackVisitAnswerProgress(entry).staticVisits).toBe(1);
+    expect(trackVisitAnswerProgress(entry).staticVisits).toBe(2);
+    entry.answer = 'abcd';
+    expect(trackVisitAnswerProgress(entry).staticVisits).toBe(0);
+  });
+
+  test('static text after the visits gave up is committed as a partial answer; no text is left alone', () => {
+    const { commitStaticAnswerAfterVisits, context } = loadVisits();
+    const entry = {
+      promptSubmittedAt: 1, humanVisits: 6, humanStaticVisits: 3, pendingFinalAnswer: 'готовый текст',
+      lastDispatchMeta: { dispatchId: 'X:1:1', runSessionId: 1 }
+    };
+    expect(commitStaticAnswerAfterVisits('X', entry)).toBe(true);
+    expect(context.handleLLMResponse).toHaveBeenCalledWith('X', 'готовый текст', null,
+      expect.objectContaining({ dispatchId: 'X:1:1', responseMeta: expect.objectContaining({ partial: true, source: 'static_answer_snapshot' }) }), '');
+    expect(context.reportDispatchPhase).toHaveBeenCalledWith('X', entry, 'static_answer_committed', expect.objectContaining({ answerChars: 13 }));
+    const none = loadVisits();
+    expect(none.commitStaticAnswerAfterVisits('X', { promptSubmittedAt: 1, humanStaticVisits: 3, answer: '' })).toBe(false);
+    const growing = loadVisits();
+    expect(growing.commitStaticAnswerAfterVisits('X', { promptSubmittedAt: 1, humanStaticVisits: 1, answer: 'text' })).toBe(false);
+    expect(growing.context.handleLLMResponse).not.toHaveBeenCalled();
+  });
+
+  test('the double click on a status indicator asks the model again in the Pipeline panel too', () => {
+    const results = read('results.js');
+    expect(results).toContain("const indicator = event.target?.closest?.('.status-indicator');");
+    expect(results).toContain("triggerManualPing(llmName, indicator, { source: 'status_indicator_dblclick' });");
+    // Model blocks of the Pipeline panel render the same indicator with the model name.
+    expect(read('pipeline/pipeline-runtime.js')).toContain('class="status-indicator" data-llm-name=');
+    // A recovered answer after a committed terminal is a revision, never a second terminal.
+    expect(read('background/job-orchestrator.js')).toContain('revision: true,');
+  });
+});

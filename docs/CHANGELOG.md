@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-01 — Visits give up on answer content; static text kept as incomplete, version 2.81.515
+
+- The periodic tab visits (human presence) already stopped after 6 visits; now they also track whether the answer text changed between visits (the visits' own activity does not count). When they give up and the model produced text that stopped changing, the text is committed as an incomplete answer ("неполный") instead of leaving the request open, and journaled as `static_answer_committed`.
+- The user can still ask the model again: double-click the model's status indicator (also in the Pipeline panel) — the manual latest-answer recovery; an answer recovered after a committed terminal arrives as a revision.
+
 ### 2026-10-01 — Transport: deferred terminal can no longer hang; focus moves in the journal, version 2.81.514
 
 - Field report 3 (Le Chat, Perplexity): the models had long answered, but the system kept moving between tabs. Cause: the deferral of an uncertain (`CONTEXT_LOST`/`AMBIGUOUS`) terminal counted any tab activity as "not quiet"; the tab visits made to find the answer were themselves that activity, so the deferral never ended. Now "quiet" means the answer text stopped growing for 30 s, a hard cap of 180 s applies whatever the activity, and the end is journaled (`terminal_deferral_ended`: `answer_quiet` / `max_defer_reached`); the produced text is committed as a partial answer.

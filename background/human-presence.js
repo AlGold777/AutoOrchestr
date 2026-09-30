@@ -272,11 +272,63 @@ function broadcastHumanVisitStatus() {
   });
 }
 
+// Visits are made to find an answer; they are not evidence that one exists. The
+// only progress signal is the answer text itself: if it did not change between
+// visits, the visits found nothing new (the visits' own activity does not count).
+const HUMAN_VISIT_STATIC_MIN_VISITS = 2;
+
+function trackVisitAnswerProgress(entry) {
+  const length = String(entry?.pendingFinalAnswer || entry?.answer || '').length;
+  if (length > 0 && length === entry.humanVisitLastLength) {
+    entry.humanStaticVisits = Number(entry.humanStaticVisits || 0) + 1;
+  } else {
+    entry.humanStaticVisits = 0;
+  }
+  entry.humanVisitLastLength = length;
+  return { length, staticVisits: entry.humanStaticVisits };
+}
+
+// Visits gave up and the model has produced text that stopped changing: keep the
+// text as an incomplete answer ("неполный") instead of leaving the request open.
+// The user decides: approve it, or double-click the status indicator to ask the
+// model again (manual latest-answer recovery).
+function commitStaticAnswerAfterVisits(llmName, entry) {
+  const text = String(entry?.pendingFinalAnswer || entry?.answer || '').trim();
+  if (!text || Number(entry.humanStaticVisits || 0) < HUMAN_VISIT_STATIC_MIN_VISITS) return false;
+  if (!entry.promptSubmittedAt || isTerminalEntry(entry)) return false;
+  if (typeof handleLLMResponse !== 'function') return false;
+  emitTelemetry(llmName, 'HUMAN_VISITS_STATIC_ANSWER_COMMITTED', {
+    level: 'warning',
+    details: `visits=${entry.humanVisits || 0} static=${entry.humanStaticVisits || 0} chars=${text.length}`,
+    meta: { dispatchId: entry.lastDispatchMeta?.dispatchId || null },
+    force: true
+  });
+  try {
+    if (typeof reportDispatchPhase === 'function') {
+      reportDispatchPhase(llmName, entry, 'static_answer_committed', {
+        dispatchId: entry.lastDispatchMeta?.dispatchId || null,
+        reason: `visits=${entry.humanVisits || 0}`,
+        answerChars: text.length
+      });
+    }
+  } catch (_) {}
+  handleLLMResponse(llmName, text, null, {
+    ...(entry.lastDispatchMeta || {}),
+    responseMeta: {
+      partial: true,
+      source: 'static_answer_snapshot',
+      completionReason: 'static_answer_after_visits'
+    }
+  }, String(entry.pendingFinalAnswerHtml || entry.answerHtml || ''));
+  return true;
+}
+
 function raiseHumanVisitAlert(llmName, visits) {
   const entry = jobState?.llms?.[llmName];
   if (!entry || entry.humanStalled) return;
   entry.humanStalled = true;
   entry.skipHumanLoop = true;
+  commitStaticAnswerAfterVisits(llmName, entry);
   broadcastHumanVisitStatus();
   if (!hasPendingHumanVisits()) {
     stopHumanPresenceLoop();
@@ -997,6 +1049,7 @@ async function runHumanPresenceCycle() {
     if (!liveEntry.humanVisits) liveEntry.humanVisits = 0;
     liveEntry.humanVisits += 1;
     const visitsCount = liveEntry.humanVisits;
+    trackVisitAnswerProgress(liveEntry);
     if (visitsCount >= HUMAN_VISIT_ALERT_THRESHOLD && !liveEntry.humanStalled) {
       raiseHumanVisitAlert(llmName, visitsCount);
       return;
