@@ -1251,6 +1251,13 @@ const recordCompletionAuthorityAttempt = (llmName, meta = {}) => {
 const UNCERTAIN_TERMINAL_QUIET_MS = 30000;
 const UNCERTAIN_TERMINAL_MAX_DEFER_MS = 180000;
 const UNCERTAIN_TERMINAL_POLL_MS = 5000;
+// The same "pull the page to the bottom" that the status-indicator double click
+// does (getIt): it makes the provider's page scripts finish their own generation
+// bookkeeping, which often turns a stuck completion into a real final. Tried
+// early, and once more before the terminal is committed; after a nudge the
+// answer gets a short settle window to grow or finish.
+const UNCERTAIN_TERMINAL_EARLY_NUDGE_MS = 10000;
+const UNCERTAIN_TERMINAL_NUDGE_SETTLE_MS = 8000;
 const DEFERRABLE_COMPLETION_TERMINALS = new Set(['AMBIGUOUS', 'CONTEXT_LOST']);
 const deferUncertainCompletionTerminal = (llmName, entry, finalize, terminalResult) => {
     const sessionId = jobState?.session?.startTime || null;
@@ -1276,6 +1283,31 @@ const deferUncertainCompletionTerminal = (llmName, entry, finalize, terminalResu
     const answerLength = (live) => String(live?.pendingFinalAnswer || live?.answer || '').length;
     let lastLength = answerLength(entry);
     let lastGrowthAt = deferredAt;
+    let nudges = 0;
+    let nudgeInFlight = false;
+    const bottomNudge = (live, why) => {
+        if (nudgeInFlight || typeof runPreCollectScrollNudge !== 'function') return false;
+        const tabId = typeof resolveBoundTabIdForOrchestrator === 'function'
+            ? resolveBoundTabIdForOrchestrator(llmName, live) : null;
+        if (!tabId) return false;
+        nudgeInFlight = true;
+        nudges += 1;
+        if (typeof reportDispatchPhase === 'function') {
+            reportDispatchPhase(llmName, live, 'bottom_nudge', {
+                dispatchId: entry.deferredUncertainTerminal.dispatchId, tabId, reason: why, attempt: nudges
+            });
+        }
+        Promise.resolve()
+            .then(() => runPreCollectScrollNudge(llmName, tabId, sessionId, `deferred_terminal_${why}`, { getIt: true }))
+            .catch(() => false)
+            .finally(() => {
+                nudgeInFlight = false;
+                // Quiet is measured again from the end of the nudge.
+                lastGrowthAt = Math.max(lastGrowthAt, Date.now() - UNCERTAIN_TERMINAL_QUIET_MS + UNCERTAIN_TERMINAL_NUDGE_SETTLE_MS);
+                schedule(UNCERTAIN_TERMINAL_POLL_MS);
+            });
+        return true;
+    };
     const check = () => {
         const live = jobState?.llms?.[llmName];
         if (live !== entry || (sessionId && jobState?.session?.startTime !== sessionId)) return;
@@ -1286,8 +1318,11 @@ const deferUncertainCompletionTerminal = (llmName, entry, finalize, terminalResu
             lastLength = length;
             lastGrowthAt = now;
         }
+        if (nudgeInFlight) return; // the nudge reschedules the check itself
         const quiet = now - lastGrowthAt >= UNCERTAIN_TERMINAL_QUIET_MS;
         const capped = now - deferredAt >= UNCERTAIN_TERMINAL_MAX_DEFER_MS;
+        if (nudges === 0 && now - deferredAt >= UNCERTAIN_TERMINAL_EARLY_NUDGE_MS && !capped && bottomNudge(live, 'early')) return;
+        if (quiet && nudges < 2 && !capped && bottomNudge(live, 'before_commit')) return;
         if (!quiet && !capped) {
             schedule(UNCERTAIN_TERMINAL_POLL_MS);
             return;

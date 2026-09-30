@@ -192,7 +192,7 @@ describe('transport fixes behind the field report', () => {
   const broadcast = read('background/ui-broadcast.js');
   const orchestrator = read('background/job-orchestrator.js');
 
-  function loadDeferral({ entry, jobState }) {
+  function loadDeferral({ entry, jobState, nudge = undefined }) {
     const start = router.indexOf('const UNCERTAIN_TERMINAL_QUIET_MS');
     const end = router.indexOf('const validateCompletionAuthorityDelivery');
     const timers = [];
@@ -204,6 +204,8 @@ describe('transport fixes behind the field report', () => {
       routerRegisterSessionTimer: (id) => id,
       routerDeregisterSessionTimer: () => {},
       setTimeout: (fn, ms) => { timers.push({ fn, ms }); return timers.length; },
+      runPreCollectScrollNudge: nudge,
+      resolveBoundTabIdForOrchestrator: () => 7,
       Date
     };
     // eslint-disable-next-line no-new-func
@@ -453,5 +455,96 @@ describe('visits give up on answer content, not on activity', () => {
     expect(read('pipeline/pipeline-runtime.js')).toContain('class="status-indicator" data-llm-name=');
     // A recovered answer after a committed terminal is a revision, never a second terminal.
     expect(read('background/job-orchestrator.js')).toContain('revision: true,');
+  });
+});
+
+describe('the bottom nudge (what the status-indicator double click does) in automatic recovery', () => {
+  const router = read('background/message-router.js');
+  function loadDeferral(entry, nudge) {
+    const start = router.indexOf('const UNCERTAIN_TERMINAL_QUIET_MS');
+    const end = router.indexOf('const validateCompletionAuthorityDelivery');
+    const timers = [];
+    const context = {
+      jobState: { session: { startTime: 1 }, llms: { X: entry } },
+      emitTelemetry: jest.fn(),
+      reportDispatchPhase: jest.fn(),
+      isTerminalRouterEntry: (e) => Boolean(e?.finalStatusRecorded),
+      routerRegisterSessionTimer: (id) => id,
+      routerDeregisterSessionTimer: () => {},
+      setTimeout: (fn, ms) => { timers.push({ fn, ms }); return timers.length; },
+      runPreCollectScrollNudge: nudge,
+      resolveBoundTabIdForOrchestrator: () => 7,
+      Date
+    };
+    // eslint-disable-next-line no-new-func
+    const factory = new Function(...Object.keys(context), `${router.slice(start, end)}\nreturn { deferUncertainCompletionTerminal };`);
+    return { ...factory(...Object.values(context)), timers, context };
+  }
+  const flush = async () => { for (let i = 0; i < 10; i += 1) await Promise.resolve(); };
+
+  test('the deferral pulls the page to the bottom early and once more before committing, then commits', async () => {
+    const entry = { promptSubmittedAt: 1, pendingFinalAnswer: 'готовый текст', lastDispatchMeta: { dispatchId: 'X:1:1' } };
+    const nudge = jest.fn(async () => true);
+    const { deferUncertainCompletionTerminal, timers, context } = loadDeferral(entry, nudge);
+    const finalize = jest.fn();
+    const realNow = Date.now;
+    deferUncertainCompletionTerminal('X', entry, finalize, { status: 'CONTEXT_LOST', reason: 'context_invalidated' });
+    try {
+      let offset = 0;
+      for (let i = 0; i < 80 && !finalize.mock.calls.length; i += 1) {
+        offset += 5000;
+        Date.now = () => realNow() + offset;
+        const timer = timers.shift();
+        if (!timer) break;
+        timer.fn();
+        await flush();
+      }
+    } finally {
+      Date.now = realNow;
+    }
+    expect(nudge).toHaveBeenCalledTimes(2);
+    expect(nudge).toHaveBeenCalledWith('X', 7, 1, 'deferred_terminal_early', { getIt: true });
+    expect(nudge).toHaveBeenCalledWith('X', 7, 1, 'deferred_terminal_before_commit', { getIt: true });
+    const phases = context.reportDispatchPhase.mock.calls.map((c) => c[2]);
+    expect(phases.filter((p) => p === 'bottom_nudge')).toHaveLength(2);
+    expect(phases[phases.length - 1]).toBe('terminal_deferral_ended');
+    expect(finalize).toHaveBeenCalledTimes(1);
+  });
+
+  test('a nudge that wakes the page (the answer grows or a final arrives) postpones the commit', async () => {
+    const entry = { promptSubmittedAt: 1, pendingFinalAnswer: 'a', lastDispatchMeta: { dispatchId: 'X:1:1' } };
+    const nudge = jest.fn(async () => { entry.pendingFinalAnswer += 'bcdef'; return true; });
+    const { deferUncertainCompletionTerminal, timers } = loadDeferral(entry, nudge);
+    const finalize = jest.fn();
+    const realNow = Date.now;
+    deferUncertainCompletionTerminal('X', entry, finalize, { status: 'AMBIGUOUS', reason: 'ownership_conflict' });
+    try {
+      let offset = 0;
+      for (let i = 0; i < 5; i += 1) {
+        offset += 5000;
+        Date.now = () => realNow() + offset;
+        timers.shift().fn();
+        await flush();
+      }
+      // The page finished by itself after the early nudge: nothing is committed.
+      entry.finalStatusRecorded = true;
+      offset += 5000;
+      Date.now = () => realNow() + offset;
+      timers.shift().fn();
+      await flush();
+    } finally {
+      Date.now = realNow;
+    }
+    expect(finalize).not.toHaveBeenCalled();
+  });
+
+  test('visits that give up on static text pull the page down first; growth resumes the visits, otherwise the text is kept', () => {
+    const presence = read('background/human-presence.js');
+    const block = presence.slice(presence.indexOf('async function settleStaticAnswerAfterVisits('), presence.indexOf('function raiseHumanVisitAlert('));
+    expect(block).toContain("'visits_give_up_bottom_nudge', { getIt: true }");
+    expect(block).toContain('if (lengthAfter > lengthBefore) {');
+    expect(block).toContain('scheduleHumanPresenceLoop(true);');
+    expect(block).toContain('commitStaticAnswerAfterVisits(llmName, live);');
+    expect(presence).toContain('void settleStaticAnswerAfterVisits(llmName, entry);');
   });
 });

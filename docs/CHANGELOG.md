@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-01 — Automatic recovery pulls the page to the bottom like the double click, version 2.81.517
+
+- The status-indicator double click works well because it does more than visit the page: it scrolls the conversation to the bottom (getIt), which lets the provider's page scripts finish the generation. The automatic recovery now does the same: the deferral of an uncertain terminal pulls the page down early (10 s) and once more before the text is committed, then gives the answer a short settle window; the visits that give up on static text pull the page down first, and if the answer grows or a final arrives nothing is committed (visits resume on growth).
+- Each nudge is journaled as a `bottom_nudge` phase (with the tab and the reason) next to the `focus` event it causes.
+
 ### 2026-10-01 — Merge of the telemetry-window tab memory, version 2.81.516
 
 - Integrates the "telemetry window remembers the active tab" change (entry 2.81.513 below, made in parallel) with the transport series 2.81.509–2.81.515; no behavior changes beyond that. The parallel change and the transport work both used 2.81.513, so the merged build is numbered 2.81.516.

@@ -323,12 +323,54 @@ function commitStaticAnswerAfterVisits(llmName, entry) {
   return true;
 }
 
+// Before the text is kept as incomplete, do what the status-indicator double click
+// does: pull the page to the bottom (getIt). The provider's page scripts often
+// finish the generation only then. A short settle window follows; if the answer
+// grew the visits resume, if a final arrived nothing is left to do.
+const HUMAN_VISIT_NUDGE_SETTLE_MS = 6000;
+
+async function settleStaticAnswerAfterVisits(llmName, entry) {
+  const sessionId = jobState?.session?.startTime || null;
+  const lengthBefore = String(entry?.pendingFinalAnswer || entry?.answer || '').length;
+  if (lengthBefore > 0 && typeof runPreCollectScrollNudge === 'function' && !entry.bottomNudgedAfterVisits) {
+    entry.bottomNudgedAfterVisits = true;
+    const tabId = typeof resolveBoundTabIdForHuman === 'function' ? resolveBoundTabIdForHuman(llmName, entry) : null;
+    if (isValidTabId(tabId)) {
+      try {
+        if (typeof reportDispatchPhase === 'function') {
+          reportDispatchPhase(llmName, entry, 'bottom_nudge', {
+            dispatchId: entry.lastDispatchMeta?.dispatchId || null, tabId, reason: 'after_visits', attempt: 1
+          });
+        }
+        await runPreCollectScrollNudge(llmName, tabId, sessionId, 'visits_give_up_bottom_nudge', { getIt: true });
+        await new Promise((resolve) => setTimeout(resolve, HUMAN_VISIT_NUDGE_SETTLE_MS));
+      } catch (_) { /* a failed nudge must not block the decision */ }
+    }
+  }
+  const live = jobState?.llms?.[llmName];
+  if (live !== entry || (sessionId && jobState?.session?.startTime !== sessionId) || isTerminalEntry(live)) return;
+  const lengthAfter = String(live?.pendingFinalAnswer || live?.answer || '').length;
+  if (lengthAfter > lengthBefore) {
+    // The nudge woke the page: give the visits another round.
+    live.humanStalled = false;
+    live.skipHumanLoop = false;
+    live.humanVisits = 0;
+    live.humanStaticVisits = 0;
+    live.bottomNudgedAfterVisits = false;
+    if (typeof scheduleHumanPresenceLoop === 'function') scheduleHumanPresenceLoop(true);
+    return;
+  }
+  commitStaticAnswerAfterVisits(llmName, live);
+}
+
 function raiseHumanVisitAlert(llmName, visits) {
   const entry = jobState?.llms?.[llmName];
   if (!entry || entry.humanStalled) return;
   entry.humanStalled = true;
   entry.skipHumanLoop = true;
-  commitStaticAnswerAfterVisits(llmName, entry);
+  if (Number(entry.humanStaticVisits || 0) >= HUMAN_VISIT_STATIC_MIN_VISITS) {
+    void settleStaticAnswerAfterVisits(llmName, entry);
+  }
   broadcastHumanVisitStatus();
   if (!hasPendingHumanVisits()) {
     stopHumanPresenceLoop();
