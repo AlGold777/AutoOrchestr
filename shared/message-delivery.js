@@ -94,9 +94,18 @@
       return null;
     }
     const metadata = { ...(message.metadata || {}) };
+    if (answer.trim() && !entry.firstText) {
+      entry.firstText = true;
+      record({ kind: 'first_text', model, token: entry.token, chars: answer.length, ms: Date.now() - entry.sentAt });
+    }
     if (final && !entry.final) {
       entry.final = true;
-      record({ kind: state === 'verified' ? 'verified' : 'missing_token', model, token: entry.token, chars: answer.length, ms: Date.now() - entry.sentAt });
+      const kind = !answer.trim() ? 'empty_answer' : state === 'verified' ? 'verified' : 'missing_token';
+      record({
+        kind, model, token: entry.token, chars: answer.length, ms: Date.now() - entry.sentAt,
+        status: String(message.status || metadata.status || metadata.finalStatus || ''),
+        reason: String(metadata.reason || metadata.completionReason || metadata.failureClass || metadata.hardStopReason || '')
+      });
     }
     if (final && state === 'missing') {
       metadata.attributionState = 'unproven';
@@ -113,6 +122,41 @@
     return cleaned;
   }
 
+  // Runtime facts the background already broadcasts: model statuses and opened tabs.
+  function observeRuntime(message) {
+    if (!message) return;
+    if (message.type === 'STATUS_UPDATE') {
+      const entry = expected.get(message.llmName);
+      const status = String(message.status || '').toUpperCase();
+      if (!entry || entry.final || !status || entry.lastStatus === status) return;
+      entry.lastStatus = status;
+      record({ kind: 'status', model: message.llmName, token: entry.token, status });
+    } else if (message.type === 'GLOBAL_STATE_BROADCAST') {
+      const map = message.state?.tabs?.map || {};
+      expected.forEach((entry, model) => {
+        if (entry.tabSeen || entry.final || !Number.isInteger(map[model])) return;
+        entry.tabSeen = true;
+        record({ kind: 'tab', model, token: entry.token, tabId: map[model], ms: Date.now() - entry.sentAt });
+      });
+    }
+  }
+
+  // The batch finished waiting: models that never produced a final answer.
+  function closeBatch({ models = [], timedOut = false, failed = {} } = {}) {
+    models.forEach((model) => {
+      const entry = expected.get(model);
+      if (!entry || entry.final) return;
+      entry.final = true;
+      record({ kind: 'no_answer', model, token: entry.token, ms: Date.now() - entry.sentAt, timedOut, status: String(failed[model] || '') });
+    });
+  }
+
+  // Clears only the journal; tokens of requests still in flight stay valid.
+  function clearJournal() {
+    journal.length = 0;
+    try { root.chrome?.storage?.session?.remove(JOURNAL_KEY); } catch (_) { /* ignore */ }
+  }
+
   function reset() {
     expected.clear();
     journal.length = 0;
@@ -122,7 +166,7 @@
   // A page load starts a new session: the previous journal is not carried over.
   try { root.chrome?.storage?.session?.remove(JOURNAL_KEY); } catch (_) { /* ignore */ }
 
-  const api = Object.freeze({ JOURNAL_KEY, makeToken, wrap, clean, cleanHtml, inspect, prepare, receive, record, reset, journal: () => journal.slice() });
+  const api = Object.freeze({ JOURNAL_KEY, makeToken, wrap, clean, cleanHtml, inspect, prepare, receive, observeRuntime, closeBatch, record, clearJournal, reset, journal: () => journal.slice() });
   root.MessageDelivery = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
