@@ -48,19 +48,18 @@
     return target;
   };
 
-  const LOCAL_STATE_PREFIX = 'llm_ext_';
-  const persistLocalState = (sessionId, payload = {}) => {
-    if (!sessionId) return;
-    try {
-      const key = `${LOCAL_STATE_PREFIX}${sessionId}`;
-      const prev = window.localStorage.getItem(key);
-      const prevObj = prev ? JSON.parse(prev) : {};
-      const merged = Object.assign({}, prevObj, payload, { ts: Date.now() });
-      window.localStorage.setItem(key, JSON.stringify(merged));
-    } catch (err) {
-      console.warn('[Pipeline] persistLocalState failed', err);
+  // Run state used to be mirrored into the provider site's localStorage under
+  // llm_ext_<sessionId>: visible to the site, never cleaned up and never read
+  // back meaningfully. State lives in the extension; remove the leftovers once.
+  const LEGACY_LOCAL_STATE_PREFIX = 'llm_ext_';
+  try {
+    const storage = window.localStorage;
+    if (storage) {
+      Object.keys(storage)
+        .filter((key) => key.startsWith(LEGACY_LOCAL_STATE_PREFIX))
+        .forEach((key) => storage.removeItem(key));
     }
-  };
+  } catch (_) { /* storage may be unavailable on the provider page */ }
 
   const sendTabState = (payload = {}) => {
     try {
@@ -215,7 +214,6 @@
         maintenanceResult: null,
         initialScrollKick: null
       };
-      this._recoverLocalState();
 
       this.scrollToolkit = window.__UniversalScrollToolkit || null;
       this.lifecycle = window.HumanoidEvents || null;
@@ -296,21 +294,6 @@
       });
     }
 
-    _recoverLocalState() {
-      try {
-        const keys = Object.keys(window.localStorage || {}).filter((k) => k.startsWith(LOCAL_STATE_PREFIX));
-        if (!keys.length) return;
-        const lastKey = keys.sort().slice(-1)[0];
-        const cached = window.localStorage.getItem(lastKey);
-        if (cached) {
-          this.state.recoveredCache = JSON.parse(cached);
-          this.telemetry.logPhase('cache_recovered', { key: lastKey });
-        }
-      } catch (err) {
-        console.warn('[Pipeline] recoverLocalState failed', err);
-      }
-    }
-
     _initHumanSession() {
       const self = this;
       const cfg = Object.assign({
@@ -335,7 +318,6 @@
         const error = 'selectors_not_supported';
         console.error(`[UnifiedAnswerPipeline] FATAL: Platform selectors missing for ${this.platform}`);
         this.telemetry.logPhase('selectors_missing', { platform: this.platform, error });
-        persistLocalState(this.sessionId, { platform: this.platform, status: 'error', phase: 'preparation', error });
         sendTabState({ status: 'error', phase: 'preparation', error, platform: this.platform, sessionId: this.sessionId });
         return this.handleError('preparation', error);
       }
@@ -350,7 +332,6 @@
       this.state.startTime = Date.now();
       this.telemetry.logPhase('pipeline_start', { platform: this.platform });
       this._lifecycleHeartbeat('pipeline_start', 0.05);
-      persistLocalState(this.sessionId, { platform: this.platform, status: 'pipeline_start' });
       sendTabState({ status: 'pipeline_start', platform: this.platform, sessionId: this.sessionId });
 
       const lifecycle = this.lifecycle;
@@ -373,12 +354,10 @@
         const preparation = await this.runPreparationPhase();
         if (!preparation.success) {
           this._reportLifecycleError('preparation', preparation.error);
-          persistLocalState(this.sessionId, { status: 'error', phase: 'preparation', error: preparation.error });
           sendTabState({ status: 'error', phase: 'preparation', error: preparation.error, sessionId: this.sessionId });
           return this.handleError('preparation', preparation.error);
         }
         this._lifecycleHeartbeat('preparation', 0.3);
-        persistLocalState(this.sessionId, { status: 'streaming_start', phase: 'preparation_done' });
         sendTabState({ status: 'streaming_start', sessionId: this.sessionId });
 
         if (this.tabProtector) {
@@ -397,7 +376,6 @@
         const streaming = await this.runStreamingPhase(preparation);
         if (!streaming.success) {
           this._reportLifecycleError('streaming', streaming.error);
-          persistLocalState(this.sessionId, { status: 'error', phase: 'streaming', error: streaming.error });
           sendTabState({ status: 'error', phase: 'streaming', error: streaming.error, sessionId: this.sessionId });
           return this.handleError('streaming', streaming.error);
         }
@@ -406,7 +384,6 @@
         const finalization = await this.runFinalizationPhase(streaming);
         if (!finalization.success) {
           this._reportLifecycleError('finalization', finalization.error);
-          persistLocalState(this.sessionId, { status: 'error', phase: 'finalization', error: finalization.error });
           sendTabState({ status: 'error', phase: 'finalization', error: finalization.error, sessionId: this.sessionId });
           return this.handleError('finalization', finalization.error);
         }
@@ -431,12 +408,6 @@
           }
         });
         this.transitionState('DONE', { phase: 'complete' });
-        persistLocalState(this.sessionId, {
-          status: 'complete',
-          duration: report.totalDuration,
-          answerLength: finalization.answer?.length || 0,
-          completionReason: finalization.sanityCheck?.overallConfidence ? 'success' : report.completionReason
-        });
         sendTabState({
           status: 'complete',
           duration: report.totalDuration,
@@ -470,7 +441,6 @@
         if (this.lifecycleTraceId && lifecycle) {
           lifecycle.error(this.lifecycleTraceId, error, true);
         }
-        persistLocalState(this.sessionId, { status: 'error', phase: 'unexpected', error: error?.message || String(error) });
         sendTabState({ status: 'error', phase: 'unexpected', error: error?.message || String(error), sessionId: this.sessionId });
         return this.handleError('unexpected', error);
       } finally {

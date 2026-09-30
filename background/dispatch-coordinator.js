@@ -418,6 +418,22 @@ function resolveDispatchFlags(llmName, entry) {
   };
 }
 
+// Transport phase of one dispatch for the Pipeline Automation journal: what the
+// background actually observed, keyed by the panel's transport request id.
+function reportDispatchPhase(llmName, entry, phase, extra = {}) {
+  try {
+    if (typeof sendMessageToResultsTab !== 'function') return;
+    sendMessageToResultsTab({
+      type: 'TRANSPORT_DISPATCH_PHASE',
+      llmName,
+      phase,
+      transportRequestId: entry?.transportRequestId || null,
+      at: Date.now(),
+      ...extra
+    });
+  } catch (_) {}
+}
+
 function scheduleDispatchRetry(entry, llmName, error) {
   if (!entry) return;
   const attempt = Number(entry.dispatchAttempts || 0);
@@ -589,10 +605,13 @@ async function withPromptDispatchLock(llmName, fn) {
 }
 
 function withPromptDispatchFocusLock(fn) {
-  promptDispatchFocusMutex = promptDispatchFocusMutex.then(() => Promise.resolve(fn())).catch((err) => {
+  const run = promptDispatchFocusMutex.then(() => fn());
+  // The focus queue continues after a failure, but the caller still receives
+  // the failure: resolving to undefined made an error look like success.
+  promptDispatchFocusMutex = run.catch((err) => {
     console.warn('[DISPATCH] focus lock fn failed', err);
   });
-  return promptDispatchFocusMutex;
+  return run;
 }
 
 function resolvePromptSubmitted(llmName, payload = {}) {
@@ -1023,7 +1042,9 @@ async function runPromptDispatchSupervisor() {
     // One retry transaction at a time. Starting all eligible retries in the
     // same tick replaces dispatch identities before older provider signals can
     // be correlated and turns valid confirmations into dispatch_mismatch.
-    await dispatchPromptToTab(llmName, tabId, jobState.prompt, jobState.attachments || [], 'retry_supervisor', {
+    // Resend the exact per-model prompt (role, delivery token), never the
+    // shared fallback prompt.
+    await dispatchPromptToTab(llmName, tabId, resolvePromptForDispatch(llmName, jobState.prompt), jobState.attachments || [], 'retry_supervisor', {
       deferSendMs: 500,
       minFocusHoldMs: RETRY_FOCUS_HOLD_MS
     });
@@ -1062,7 +1083,8 @@ async function prepareReusableTabReceiver(tabId, llmName, current) {
       chrome.tabs.sendMessage(tabId, {type:'HEALTH_CHECK_PING'}, response => {
         const error = chrome.runtime.lastError?.message || '';
         done(error.includes('Receiving end does not exist') ? 'missing'
-          : response?.type === 'HEALTH_CHECK_PONG' && (!response.llmName || response.llmName === llmName)
+          // Readiness of this model's receiver: an anonymous PONG proves nothing.
+          : response?.type === 'HEALTH_CHECK_PONG' && response.llmName === llmName
             ? 'ready' : 'unavailable');
       });
     } catch (_) { done('unavailable'); }
@@ -1129,6 +1151,7 @@ async function dispatchSimpleFirstPass(llmName, tabId, prompt, attachments, entr
   };
   const defer = reason => {
     if (current()) {
+      reportDispatchPhase(llmName, entry, 'blocked', {dispatchId: meta.dispatchId, tabId, reason, dispatchReason: 'round1_simple'});
       entry.firstPassResult = {dispatchId: meta.dispatchId, outcome: reason, commandAt: null, finishedAt: Date.now()};
       machine?.error?.({code: 'ROUND1_DEFERRED', error: reason});
       emitTelemetry(llmName, 'ROUND1_SIMPLE_DISPATCH_RESULT', {
@@ -1164,6 +1187,9 @@ async function dispatchSimpleFirstPass(llmName, tabId, prompt, attachments, entr
     machine?.ready?.();
     const commandAt = Date.now();
     let deliveryError = null;
+    reportDispatchPhase(llmName, entry, 'dispatch_started', {
+      dispatchId: meta.dispatchId, tabId, dispatchReason: 'round1_simple', attempt: entry.dispatchAttempts || 0
+    });
     // Exactly one prompt delivery after transport preparation; no send retry.
     // Provider-specific editing remains in the existing page adapter.
     try {
@@ -1175,6 +1201,10 @@ async function dispatchSimpleFirstPass(llmName, tabId, prompt, attachments, entr
         else if (response?.accepted === true && response.dispatchId === meta.dispatchId) {
           entry.lastCommandAcceptedAt = Date.now();
           entry.lastCommandAcceptedDispatchId = meta.dispatchId;
+          reportDispatchPhase(llmName, entry, 'command_accepted', {dispatchId: meta.dispatchId, tabId});
+        }
+        if (deliveryError) {
+          reportDispatchPhase(llmName, entry, 'command_not_delivered', {dispatchId: meta.dispatchId, tabId, reason: deliveryError});
         }
       });
     } catch (error) { deliveryError = error?.message || 'delivery_failed'; }
@@ -1212,6 +1242,7 @@ async function dispatchSimpleFirstPass(llmName, tabId, prompt, attachments, entr
       if (attempted) machine.submit();
       else machine.error({code: 'ROUND1_DEFERRED', error: outcome});
     }
+    reportDispatchPhase(llmName, entry, attempted ? 'submitted' : 'submit_unconfirmed', {dispatchId: meta.dispatchId, tabId, reason: attempted ? null : outcome});
     emitTelemetry(llmName, 'ROUND1_SIMPLE_DISPATCH_RESULT', {
       details: outcome,
       meta: {...meta, tabId, stage: 'first_pass_finished', outcome, commandIssued: true, visitMs: Date.now() - visitStartedAt, commandAt, leaveAt},
@@ -1355,6 +1386,25 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
       details: allowPreDispatchReload ? 'reload_attempted' : 'reload_skipped',
       meta: { tabId, reason, attempts, allowPreDispatchReload }
     });
+    // The health ping took up to a second: a submit confirmation or a new
+    // generation may have arrived meanwhile. Re-check right before the reload;
+    // reloading a tab that already received the prompt destroys the answer.
+    const reloadFlags = resolveDispatchFlags(llmName, entry);
+    const reloadStillSafe = isCurrentDispatchContext()
+      && !isTerminalLlmEntry(entry)
+      && !reloadFlags.isSent
+      && !reloadFlags.isInProgress
+      && !entry.promptSubmittedAt
+      && !isProviderPipelineOwnershipActive(entry);
+    if (allowPreDispatchReload && !reloadStillSafe) {
+      emitTelemetry(llmName, 'PRE_DISPATCH_RELOAD_SKIPPED', {
+        level: 'info',
+        details: 'state_changed_during_health_ping',
+        meta: { tabId, reason, attempts },
+        force: true
+      });
+      return;
+    }
     if (allowPreDispatchReload) {
       console.warn(`[Dispatch] Tab ${tabId} unresponsive, retry path will reload before send (${llmName})`);
       await new Promise((resolve) => chrome.tabs.reload(tabId, {}, () => setTimeout(resolve, 1200)));
@@ -1382,7 +1432,17 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
       details: `${circuitState.retryAfterMs}ms`,
       level: 'warning'
     });
-    return;
+    // An open circuit on the first attempt used to return silently: the retry
+    // supervisor only picks up entries with attempts > 0 and a recorded error,
+    // so the model hung until the panel deadline. Record an explicit, retryable
+    // state instead; the next attempt re-checks the circuit.
+    entry.lastDispatchError = { type: 'circuit_open', retryAfterMs: circuitState.retryAfterMs || 0 };
+    entry.lastDispatchErrorClass = 'CIRCUIT_OPEN';
+    entry.retryAfterAt = Date.now() + Math.max(1000, Number(circuitState.retryAfterMs || 0));
+    entry.dispatchAttempts = Math.max(1, Number(entry.dispatchAttempts || 0));
+    schedulePromptDispatchSupervisor();
+    reportDispatchPhase(llmName, entry, 'blocked', { reason: 'circuit_open', dispatchReason: reason, retryAfterMs: circuitState.retryAfterMs || 0 });
+    return { ok: false, deferred: true, reason: 'circuit_open' };
   }
 
   entry.dispatchAttempts = (entry.dispatchAttempts || 0) + 1;
@@ -1537,6 +1597,7 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
         if (machine) {
           machine.error({ error: readiness.reason || 'tab_not_ready', code: 'TAB_NOT_READY' });
         }
+        reportDispatchPhase(llmName, entry, 'blocked', { reason: readiness.reason || 'tab_not_ready', dispatchId, tabId, dispatchReason: reason });
         return;
       }
       broadcastDiagnostic(llmName, {
@@ -1642,6 +1703,7 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
           readyOk = await waitForScriptReady(tabId, llmName, { timeoutMs: READY_ACK_TIMEOUT_MS, intervalMs: 250 });
         }
         if (!readyOk) {
+          reportDispatchPhase(llmName, entry, 'blocked', { reason: 'ack_timeout', dispatchId, tabId, dispatchReason: reason });
           scheduleDispatchRetry(entry, llmName, { type: 'ack_timeout' });
           if (self.DispatchCircuit?.recordDispatchFailure) {
             self.DispatchCircuit.recordDispatchFailure(llmName, { type: 'ack_timeout' });
@@ -1675,6 +1737,9 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
           sendMessageToResultsTab(dispatchSendPayload);
         }
       } catch (_) {}
+      reportDispatchPhase(llmName, entry, 'dispatch_started', {
+        dispatchId, tabId, dispatchReason: reason, attempt: entry.dispatchAttempts || 0
+      });
 
       let needsFocus = false;
       let noFocusResponse = null;
@@ -1784,6 +1849,12 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
         if (machine) {
           machine.error({ error: pageReadyState.reason || 'page_not_ready', code: 'PAGE_NOT_READY' });
         }
+        reportDispatchPhase(llmName, entry, 'blocked', {
+          reason: pageReadyState.reason || 'page_not_ready',
+          blockers: pageReadyState.blockers || null,
+          retryable: pageReadyState.blockerPolicy?.retryable !== false,
+          dispatchId, tabId, dispatchReason: reason
+        });
         return;
       }
 
@@ -1826,7 +1897,9 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
           tabSessionId: readyInfo?.tabSessionId || null
         }
       };
-      const requireCommandAcceptance = options.requireCommandAcceptance === true;
+      // Every provider adapter acknowledges GET_ANSWER with its dispatchId; a
+      // command counts as delivered only on that acknowledgement (opt-out only).
+      const requireCommandAcceptance = options.requireCommandAcceptance !== false;
       const commandWasAccepted = (result) => {
         if (!requireCommandAcceptance) return result?.ok === true;
         const acceptance = result?.response || null;
@@ -1836,6 +1909,20 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
           && acceptance?.dispatchId === dispatchId;
       };
       let commandDeliveryReported = false;
+      // The submit waiter is armed only by an accepted command. When the command
+      // was not delivered or not accepted, settle it now: an unarmed waiter never
+      // resolves and kept this transaction (and the model's dispatch lock) forever.
+      const settleUndeliveredCommand = (result) => {
+        reportDispatchPhase(llmName, entry, 'command_not_delivered', {
+          dispatchId, tabId, reason: result?.reason || result?.response?.reason || 'command_not_delivered'
+        });
+        resolvePromptSubmitted(llmName, {
+          ok: false,
+          reason: result?.reason || result?.response?.reason || 'command_not_delivered',
+          dispatchId,
+          meta: answerCommand.meta
+        });
+      };
       const reportCommandDelivered = (result) => {
         if (commandDeliveryReported || !commandWasAccepted(result)) return false;
         commandDeliveryReported = true;
@@ -1852,6 +1939,7 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
         };
         entry.lastCommandAcceptedAt = Date.now();
         entry.lastCommandAcceptedDispatchId = dispatchId;
+        reportDispatchPhase(llmName, entry, 'command_accepted', { dispatchId, tabId, requiresFocus: needsFocus });
         entry.lastCommandAcceptedTiming = commandTiming;
         emitTelemetry(llmName, 'DISPATCH_COMMAND_ACCEPTED', {
           details: `readyWaitMs=${readyWaitMs}`,
@@ -1870,7 +1958,18 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
         // Persist intent before delivery: after a restart an uncertain send must
         // be reconciled, while a preparation-only attempt can safely resume.
         entry.dispatchCheckpoint = { dispatchId, phase: 'command_intent' };
-        await saveJobState(jobState);
+        const intentPersisted = await saveJobState(jobState);
+        // Without a durable intent a restart cannot reconcile an uncertain
+        // send: do not act on the provider page.
+        if (intentPersisted === false) {
+          emitTelemetry(llmName, 'DISPATCH_INTENT_NOT_PERSISTED', {
+            level: 'error',
+            details: 'command_intent',
+            meta: { tabId, dispatchId, dispatchReason: reason },
+            force: true
+          });
+          return { ok: false, reason: 'intent_not_persisted' };
+        }
         if (!isCurrentDispatchContext()) {
           return { ok: false, stale: true, reason: 'session_mismatch' };
         }
@@ -1905,6 +2004,7 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
           }
           commandDeliveryResult = await deliverAnswerCommand();
           const commandAccepted = reportCommandDelivered(commandDeliveryResult);
+          if (!commandAccepted) settleUndeliveredCommand(commandDeliveryResult);
           if (commandAccepted && postCommandFocusHoldMs > 0) {
             const holdStartedAt = Date.now();
             let boundary = await waitForPromptFocusBoundary(
@@ -2001,7 +2101,15 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
           await dispatchSleepMs(options.deferSendMs);
         }
         commandDeliveryResult = await deliverAnswerCommand();
-        reportCommandDelivered(commandDeliveryResult);
+        if (!reportCommandDelivered(commandDeliveryResult)) settleUndeliveredCommand(commandDeliveryResult);
+      }
+      // Not delivered and no acceptance contract to report it below: stop here
+      // instead of treating an undelivered command as submitted.
+      if (!commandDeliveryReported && !requireCommandAcceptance) {
+        const reasonCode = commandDeliveryResult?.reason || 'command_not_delivered';
+        if (machine?.isInProgress?.()) machine.error({ error: reasonCode, code: 'COMMAND_NOT_DELIVERED' });
+        if (!commandDeliveryResult?.stale) scheduleDispatchRetry(entry, llmName, { type: 'command_not_delivered', reason: reasonCode });
+        return { ok: false, accepted: false, dispatchId, reason: reasonCode };
       }
       const focusMetricPayload = {
         type: 'SMART_FOCUS_METRIC',
@@ -2017,6 +2125,11 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
         }
       } catch (_) {}
       const submittedPayload = options.skipSubmitWait ? null : (waiter ? await waiter : false);
+      if (!options.skipSubmitWait && commandDeliveryReported) {
+        reportDispatchPhase(llmName, entry, submittedPayload?.ok === true || submittedPayload === true ? 'submitted' : 'submit_unconfirmed', {
+          dispatchId, tabId, reason: submittedPayload?.reason || null
+        });
+      }
       if (requireCommandAcceptance) {
         const acceptance = commandDeliveryResult?.response || null;
         const accepted = commandDeliveryResult?.ok === true

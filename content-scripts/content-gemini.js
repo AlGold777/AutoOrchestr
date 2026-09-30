@@ -167,7 +167,7 @@ const normalizeGeminiAnswer = (value = '') => String(value || '')
 function buildGeminiAnswerBaseline(snapshot = null, fingerprint = null) {
   const current = snapshot || grabLatestAssistantMarkup();
   const cleanedText = (() => {
-    try { return window.contentCleaner?.cleanContent?.(current?.text || '', { maxLength: 50000 }) || ''; } catch (_) { return ''; }
+    try { return window.contentCleaner?.cleanContent?.(current?.text || '', { maxLength: 200000 }) || ''; } catch (_) { return ''; }
   })();
   return {
     fingerprint,
@@ -1159,7 +1159,7 @@ async function injectAndGetResponse(prompt, attachments = [], meta = null) {
                 heartbeat: (meta = {}) => activity.heartbeat(0.85, Object.assign({ phase: 'pipeline' }, meta)),
                 stop: async ({ answer, answerHtml, metadata }) => {
                     console.log('[content-gemini] UnifiedAnswerPipeline captured response (dedupe path)', metadata || {});
-                    const cleanedResponse = window.contentCleaner.cleanContent(answer, { maxLength: 50000 });
+                    const cleanedResponse = window.contentCleaner.cleanContent(answer, { maxLength: 200000 });
                     const html = String(answerHtml || '').trim();
                     if (isGeminiBaselineCandidate({ text: cleanedResponse, node: null }, geminiLastDispatchBaseline)) {
                         emitGeminiDiagnostic({
@@ -1183,7 +1183,7 @@ async function injectAndGetResponse(prompt, attachments = [], meta = null) {
             if (pipelineAnswer) return pipelineAnswer;
             const fresh = await waitForFreshGeminiAnswer(geminiLastDispatchBaseline, 90000, 500);
             if (fresh?.text || fresh?.html) {
-                const cleaned = window.contentCleaner.cleanContent(fresh.html || fresh.text || '', { maxLength: 50000 });
+                const cleaned = window.contentCleaner.cleanContent(fresh.html || fresh.text || '', { maxLength: 200000 });
                 if (cleaned) return {
                     text: cleaned,
                     html: fresh.html || '',
@@ -1580,7 +1580,7 @@ async function injectAndGetResponse(prompt, attachments = [], meta = null) {
             stop: async ({ answer, answerHtml, metadata }) => {
                 console.log('[content-gemini] UnifiedAnswerPipeline captured response, skipping legacy wait', metadata || {});
                 const cleanedResponse = window.contentCleaner.cleanContent(answer, {
-                    maxLength: 50000
+                    maxLength: 200000
                 });
                 const html = String(answerHtml || '').trim();
                 if (isGeminiBaselineCandidate({ text: cleanedResponse, node: null }, preDispatchBaseline)) {
@@ -1608,7 +1608,7 @@ async function injectAndGetResponse(prompt, attachments = [], meta = null) {
         }
         const freshMarkup = await waitForFreshGeminiAnswer(preDispatchBaseline, 90000, 500);
         if (freshMarkup?.text || freshMarkup?.html) {
-          const cleanedFresh = window.contentCleaner.cleanContent(freshMarkup.html || freshMarkup.text || '', { maxLength: 50000 });
+          const cleanedFresh = window.contentCleaner.cleanContent(freshMarkup.html || freshMarkup.text || '', { maxLength: 200000 });
           if (cleanedFresh) {
             if (freshMarkup.html) lastResponseHtml = freshMarkup.html;
             activity.stop({ status: 'success', answerLength: cleanedFresh.length, source: 'fresh-dom' });
@@ -1622,7 +1622,7 @@ async function injectAndGetResponse(prompt, attachments = [], meta = null) {
         // Fallback: read last assistant message if pipeline missed
         try {
           const latestMarkup = grabLatestAssistantMarkup();
-          const cleanedFallback = window.contentCleaner.cleanContent(latestMarkup.html || latestMarkup.text || '', { maxLength: 50000 });
+          const cleanedFallback = window.contentCleaner.cleanContent(latestMarkup.html || latestMarkup.text || '', { maxLength: 200000 });
           if (cleanedFallback && !isGeminiBaselineCandidate(latestMarkup, preDispatchBaseline)) {
             console.warn('[content-gemini] Pipeline empty, using DOM fallback');
             if (latestMarkup.html) lastResponseHtml = latestMarkup.html;
@@ -1640,7 +1640,7 @@ async function injectAndGetResponse(prompt, attachments = [], meta = null) {
         // Last resort: SelectorFinder observation-based extraction (can traverse shadow DOM).
         try {
           const finderText = await trySelectorFinderResponse(prompt, 60000);
-          const cleanedFinder = window.contentCleaner.cleanContent(finderText || '', { maxLength: 50000 });
+          const cleanedFinder = window.contentCleaner.cleanContent(finderText || '', { maxLength: 200000 });
           if (cleanedFinder && !isGeminiBaselineCandidate({ text: cleanedFinder, node: null }, preDispatchBaseline)) {
             console.warn('[content-gemini] DOM fallback empty, using SelectorFinder response');
             activity.stop({ status: 'success', answerLength: cleanedFinder.length, source: 'selector-finder' });

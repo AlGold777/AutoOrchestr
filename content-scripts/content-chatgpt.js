@@ -995,7 +995,6 @@ const chatgptScrollCoordinator = window.ScrollCoordinator
   // ОРИГИНАЛЬНАЯ ФУНКЦИЯ ОБРАБОТКИ (с улучшенной очисткой)
   let gptSharedInjection = null;
   let gptSharedFingerprint = null;
-  let gptSharedStartedAt = 0;
   let gptLastPreparedFingerprint = null;
   let gptLastPreparedAt = 0;
   const GPT_PREPARED_DEDUPE_WINDOW_MS = 30000;
@@ -1084,12 +1083,21 @@ const chatgptScrollCoordinator = window.ScrollCoordinator
       : (meta && typeof meta === 'object' ? meta : null);
     const sessionKey = dispatchMeta?.sessionId ? String(dispatchMeta.sessionId) : 'no_session';
     const fp = `${sessionKey}:${fingerprintPrompt(prompt)}`;
-    if (gptSharedInjection && fp === gptSharedFingerprint && Date.now() - gptSharedStartedAt < 15000) {
+    // One injection per tab at a time. A repeated command for the same prompt
+    // joins the injection in flight (for as long as it runs, not for a fixed
+    // 15 s window: after it a second injection used to start in parallel and
+    // type into a generating conversation). A different prompt is refused.
+    if (gptSharedInjection && fp === gptSharedFingerprint) {
       console.warn('[CONTENT-GPT] Reusing in-flight injection promise');
       return gptSharedInjection;
     }
+    if (gptSharedInjection) {
+      return Promise.reject({
+        type: 'concurrent_request',
+        message: 'ChatGPT tab is still processing another request'
+      });
+    }
     gptSharedFingerprint = fp;
-    gptSharedStartedAt = Date.now();
 
     const opPromise = runLifecycle('chatgpt:inject', buildLifecycleContext(prompt, { evaluator: isEvaluatorMode }), async (activity) => {
       console.log(`[CONTENT-GPT] Starting ChatGPT injection process, evaluator mode: ${isEvaluatorMode}`);
@@ -1428,7 +1436,7 @@ const chatgptScrollCoordinator = window.ScrollCoordinator
           stop: async ({ answer, answerHtml, metadata }) => {
             console.log('[CONTENT-GPT] UnifiedAnswerPipeline captured answer, skipping legacy watcher');
             const cleanedResponse = window.contentCleaner.cleanContent(answer, {
-                maxLength: 50000
+                maxLength: 200000
             });
             if (window.ContentUtils?.isBaselineEquivalent?.(cleanedResponse, preDispatchBaseline)) {
               throw new Error('stale_baseline_answer');
@@ -1451,7 +1459,7 @@ const chatgptScrollCoordinator = window.ScrollCoordinator
         // Fallback: grab latest DOM answer if pipeline missed it
         try {
           const latestMarkup = grabLatestAssistantMarkup();
-          const cleanedFallback = window.contentCleaner.cleanContent(latestMarkup.html || latestMarkup.text || '', { maxLength: 50000 });
+          const cleanedFallback = window.contentCleaner.cleanContent(latestMarkup.html || latestMarkup.text || '', { maxLength: 200000 });
           if (window.ContentUtils?.isBaselineEquivalent?.(cleanedFallback, preDispatchBaseline)) {
             console.warn('[CONTENT-GPT] DOM fallback matched pre-dispatch baseline, ignoring stale answer');
             throw new Error('stale_baseline_answer');
@@ -1507,6 +1515,9 @@ const chatgptScrollCoordinator = window.ScrollCoordinator
     if (message?.type === 'STOP_AND_CLEANUP') {
       handleForceStopMessage(message.payload?.traceId);
       stopContentScript('manual-toggle');
+      // A stopped run releases the tab for the next command.
+      gptSharedInjection = null;
+      gptSharedFingerprint = null;
       if (typeof sendResponse === 'function') {
         sendResponse({ status: 'cleaned', llmName: MODEL });
       }
@@ -1525,7 +1536,7 @@ const chatgptScrollCoordinator = window.ScrollCoordinator
         (async () => {
             try {
                 const latestMarkup = grabLatestAssistantMarkup();
-                const cleaned = window.contentCleaner.cleanContent(latestMarkup.html || latestMarkup.text || '', { maxLength: 50000 });
+                const cleaned = window.contentCleaner.cleanContent(latestMarkup.html || latestMarkup.text || '', { maxLength: 200000 });
                 if (cleaned && cleaned !== lastResponseSnapshot) {
                     lastResponseSnapshot = cleaned;
                     if (latestMarkup.html) lastResponseHtml = latestMarkup.html;
@@ -1592,7 +1603,9 @@ const chatgptScrollCoordinator = window.ScrollCoordinator
     }
     
     if (message?.type === 'GET_ANSWER' || message.type === 'GET_FINAL_ANSWER') {
-      isEvaluatorMode = message.isEvaluator || false;
+      // Captured per command: the module flag is overwritten by the next message.
+      const commandEvaluatorMode = message.isEvaluator || false;
+      isEvaluatorMode = commandEvaluatorMode;
       console.log(`[CONTENT-GPT] Received ${message.type}, isEvaluator: ${isEvaluatorMode}`);
       const dispatchMeta = message?.meta && typeof message.meta === 'object' ? message.meta : null;
       if (!String(message.prompt || '').trim()) {
@@ -1629,7 +1642,7 @@ const chatgptScrollCoordinator = window.ScrollCoordinator
               timestamp: Date.now()
           });
           
-          if (isEvaluatorMode) {
+          if (commandEvaluatorMode) {
               sendResult(resp, true);
           } else {
               const payload = normalizeResponsePayload(resp, lastResponseHtml);
@@ -1652,7 +1665,7 @@ const chatgptScrollCoordinator = window.ScrollCoordinator
           const errorMessage = err.message || err?.message || String(err);
           const responseType = message.type === 'GET_ANSWER' ? 'LLM_RESPONSE' : 'FINAL_LLM_RESPONSE';
           
-          if (isEvaluatorMode) {
+          if (commandEvaluatorMode) {
               sendResult(errorMessage, false);
           } else {
               chrome.runtime.sendMessage({

@@ -991,7 +991,7 @@ describe('Pipeline debate favorites view', () => {
     expect(css).toContain('width: min(var(--center-max-width), calc(100vw - 32px));');
   });
 
-  test('pipeline waiter ignores partial and wrong-batch responses until terminal response arrives', async () => {
+  test('pipeline waiter matches answers only by transport request id', async () => {
     const debug = window.__pipelineLifecycleDebug;
     const context = {
       pipelineRunId: 'run-1',
@@ -1000,26 +1000,35 @@ describe('Pipeline debate favorites view', () => {
     };
     let settled = false;
     const waitPromise = debug.pipelineWaiter
-      .waitForModels(['GPT'], { timeoutMs: 200, context })
-      .then((result) => {
-        settled = true;
-        return result;
-      });
+      .waitForModels(['GPT'], { timeoutMs: 200, context, requestIds: { GPT: 'treq-current' } });
+    const observed = waitPromise.then((result) => {
+      settled = true;
+      return result;
+    });
 
     expect(debug.pipelineWaiter.handlePartial({
       type: 'LLM_PARTIAL_RESPONSE',
       llmName: 'GPT',
+      transportRequestId: 'treq-current',
       answer: 'first chunk',
       metadata: { ...context, status: 'GENERATING' }
     })).toBe(true);
     await delay(20);
     expect(settled).toBe(false);
 
+    // A previous request of the same model, and an answer without identity.
     expect(debug.pipelineWaiter.handleFinal({
       type: 'LLM_PARTIAL_RESPONSE',
       llmName: 'GPT',
+      transportRequestId: 'treq-previous',
       answer: 'old final',
-      metadata: { ...context, pipelineBatchId: 'old-run:r1:g0', status: 'SUCCESS' }
+      metadata: { ...context, status: 'SUCCESS' }
+    })).toBe(false);
+    expect(debug.pipelineWaiter.handleFinal({
+      type: 'LLM_PARTIAL_RESPONSE',
+      llmName: 'GPT',
+      answer: 'anonymous final',
+      metadata: { ...context, status: 'SUCCESS' }
     })).toBe(false);
     await delay(20);
     expect(settled).toBe(false);
@@ -1027,24 +1036,33 @@ describe('Pipeline debate favorites view', () => {
     expect(debug.pipelineWaiter.handleFinal({
       type: 'LLM_PARTIAL_RESPONSE',
       llmName: 'GPT',
+      transportRequestId: 'treq-current',
       answer: 'correct final',
       metadata: { ...context, status: 'SUCCESS' }
     })).toBe(true);
 
-    await expect(waitPromise).resolves.toMatchObject({
+    await expect(observed).resolves.toMatchObject({
       responses: { GPT: 'correct final' },
+      results: { GPT: { status: 'SUCCESS', completion: 'complete', transportRequestId: 'treq-current' } },
       missing: [],
       timedOut: false
     });
     expect(settled).toBe(true);
   });
 
-  test('pipeline wait timeout is extended for slow Qwen batches only', () => {
+  test('pipeline wait never ends before the tab generation limit', () => {
     const debug = window.__pipelineLifecycleDebug;
+    const contract = window.TransportContract;
+    const longFloor = contract.CONTENT_LIMITS_MS.long.hardMax
+      + contract.CONTENT_LIMITS_MS.long.streamStart
+      + contract.PANEL_WAIT_MARGIN_MS;
 
-    expect(debug.resolvePipelineWaitTimeoutMs(['GPT'], 240000)).toBe(240000);
-    expect(debug.resolvePipelineWaitTimeoutMs(['GPT', 'Qwen'], 240000)).toBe(600000);
-    expect(debug.resolvePipelineWaitTimeoutMs(['Qwen'], 900000)).toBe(900000);
+    expect(debug.resolvePipelineWaitTimeoutMs(['GPT'], 240000)).toBe(longFloor);
+    expect(debug.resolvePipelineWaitTimeoutMs(['GPT'], 240000, 'long')).toBe(longFloor);
+    expect(debug.resolvePipelineWaitTimeoutMs(['GPT'], 240000, 'inherit')).toBeGreaterThanOrEqual(
+      contract.CONTENT_LIMITS_MS.standard.hardMax + contract.CONTENT_LIMITS_MS.standard.streamStart
+    );
+    expect(debug.resolvePipelineWaitTimeoutMs(['Qwen'], 5000000)).toBe(5000000);
   });
 
   test('visible Gemini answer cannot upgrade an unverified PARTIAL indicator to green', () => {

@@ -1980,22 +1980,32 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     ? self.TransportPolicy.sanitizePromptsByModel(message.promptsByModel)
                     : null;
                 (async () => {
-                    const runGuard = self.RunGuard?.canStartNewRun?.(jobState?.session, message);
+                    const runGuard = self.RunGuard?.canStartNewRun?.(jobState?.session, message, jobState?.llms);
                     if (runGuard && runGuard.ok === false) {
                         sendResponse({
                             success: false,
                             errorCode: runGuard.errorCode,
+                            reason: runGuard.reason || null,
+                            model: runGuard.model || null,
                             activeSessionId: runGuard.activeSessionId || null
                         });
                         return;
                     }
 
-                    try {
-                        await writeDiagnosticsEventsToStorage([]);
-                        await self.ProofTelemetryLedger?.clear?.(null);
-                        clearDiagnosticsRuntimeLogs();
-                    } catch (err) {
-                        console.warn('[DIAGNOSTICS] new run clear failed', err);
+                    // Diagnostics and the proof ledger belong to a pipeline run, not
+                    // to one batch: later stages of the same run keep the evidence of
+                    // earlier stages.
+                    const incomingPipelineRunId = message.pipelineContext?.pipelineRunId || null;
+                    const continuesPipelineRun = Boolean(incomingPipelineRunId)
+                        && incomingPipelineRunId === (jobState?.session?.pipelineRunId || null);
+                    if (!continuesPipelineRun) {
+                        try {
+                            await writeDiagnosticsEventsToStorage([]);
+                            await self.ProofTelemetryLedger?.clear?.(null);
+                            clearDiagnosticsRuntimeLogs();
+                        } catch (err) {
+                            console.warn('[DIAGNOSTICS] new run clear failed', err);
+                        }
                     }
                     const startResult = await startProcess(message.prompt, message.selectedLLMs, sender.tab.id, {
                         forceNewTabs,
@@ -2009,6 +2019,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         sendResponse({
                             success: false,
                             errorCode: startResult.errorCode,
+                            reason: startResult.reason || null,
+                            model: startResult.model || null,
                             activeSessionId: startResult.activeSessionId || null
                         });
                         return;
@@ -5108,6 +5120,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         answer: entry.answer,
                         answerHtml: entry.answerHtml || '',
                         requestId: entry.requestId || null,
+                        transportRequestId: entry.transportRequestId || null,
+                        dispatchId: entry.lastDispatchMeta?.dispatchId || null,
                         metadata: { status: entry.status || 'UNKNOWN' },
                         logs: getLogSnapshot(llmName)
                     });

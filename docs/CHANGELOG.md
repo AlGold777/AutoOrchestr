@@ -1,5 +1,49 @@
 # CHANGELOG — Project
 
+### 2026-09-30 — Pipeline transport journal, version 2.81.507
+
+- The Automation journal now records batch start/refusal/end, background dispatch phases, provider stop results, and rejected or revised terminal answers with their request and dispatch identifiers.
+- Cancelled batches and models without a final answer are distinguished, with reasons preserved for diagnosis.
+- The page-session delivery journal retains up to 3,000 events.
+
+### 2026-09-30 — Transport: acknowledged commands, status over text, stable deadlines, version 2.81.506
+
+- A command to a provider tab counts as delivered only on the adapter's acknowledgement carrying its dispatchId (all ten adapters send it); opting out is explicit.
+- Moderator and Judge flows take the answer status from the batch result instead of guessing an error from text starting with "Error:".
+- A provider tab no longer shortens its generation deadlines while a request is in flight (Long → Standard waits until the tab is idle, bounded by the Long hard maximum); switching to Long applies at once.
+
+### 2026-09-30 — Transport: durable cancellation and provider tabs, version 2.81.505
+
+- A stop/cancel invalidates every job-state snapshot queued before it; a write still in flight is undone, and MV3 recovery never resumes a cancelled or stopped run.
+- Cancelling a run clicks the provider's stop control in tabs with a request in flight and waits for the generation indicator to disappear.
+- A ChatGPT tab runs one injection at a time: a repeated command for the same prompt joins the injection for as long as it runs (not for a fixed 15 s), a different prompt is refused as `concurrent_request`; the evaluator flag is captured per command.
+- Answers are no longer cut at 50 000 characters (limit raised to 200 000 in all adapters and the late-answer cache).
+- Run state is no longer mirrored into the provider site's localStorage; leftover `llm_ext_*` keys are removed.
+- A health PONG without the model name no longer proves that the model's receiver is ready.
+
+### 2026-09-30 — Transport: dispatch hardening and run guard, version 2.81.504
+
+- Take a synchronous start reservation before the first await: two START commands can no longer both pass the run guard and replace the shared job state.
+- Refuse a run that reuses tabs while a submitted prompt has no recorded final (the tab still generates); the panel waits for such a refusal within a 120 s budget instead of polling a busy flag after every batch.
+- Later batches of the same pipeline run keep diagnostics and the proof ledger; they are cleared only when a new run starts.
+- The retry supervisor resends the exact per-model prompt instead of the shared prompt.
+- The focus queue returns failures to the caller (it used to resolve them as success) and keeps running.
+- The pre-dispatch reload re-checks the dispatch state right before reloading, so a tab that received the prompt during the health ping is not reloaded.
+- An open circuit on the first attempt records a retryable state instead of returning silently (the model used to hang until the panel deadline).
+- The command intent must be durably saved before the provider page is touched; job-state saves report success or failure to their callers.
+- A command that was not delivered or not accepted settles the submit waiter immediately; the dispatch transaction no longer holds the model's dispatch lock forever.
+
+### 2026-09-30 — Transport: request identity, one outcome per wait, version 2.81.503
+
+- Add `shared/transport-contract.js`: panel-issued `transportRequestId` per model request, one terminal status classification (`complete` / `partial` / `failed` / `cancelled`) and the panel wait deadline derived from the tab generation limit.
+- The background stores the request id on the model entry, sends it with every answer message to the panel and in the global state snapshot; the final answer is explicitly terminal and a post-terminal improvement is marked as a revision.
+- Rewrite the Pipeline waiter: answers are matched only by request id (never by model name alone), the wait is registered before dispatch, concurrent batches are independent, reset/cancel settle every wait, a terminal answer is immutable, and each result keeps its status next to the text.
+- Snapshot recovery goes through the same delivery filter and identity check as a live answer and also settles recorded terminal failures.
+- The panel no longer gives up before the tab can finish (Long: up to 900 s generation); an explicit dispatch refusal fails the batch immediately; a cancelled request is not dispatched.
+- Delivery tokens are kept per request (preparing a new request no longer invalidates one in flight), the journal records `prepared` instead of `sent`, and only judge-prompt response delimiters are stripped (user `<<<...>>>` content is preserved).
+- State compaction keeps `session.promptsByModel`, `session.pipelineContext` and the request id, so a retry after an MV3 restart resends the exact per-model prompt.
+- Stage executor passes the transport completion to response acceptance and traces `PARTICIPANT_RESPONSE_INCOMPLETE`.
+
 ### 2026-09-30 — Simplify the Pipeline state map panel, version 2.81.502
 
 - Keep the Pipeline panel's state map to its title and import/export/delete actions, with the open or closed state remembered between visits.

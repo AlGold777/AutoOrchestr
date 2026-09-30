@@ -1793,7 +1793,7 @@ async function injectAndGetResponse(prompt, attachments = [], meta = null) {
       stop: async ({ answer, answerHtml, metadata }) => {
         console.log('[content-perplexity] UnifiedAnswerPipeline captured response, skipping legacy watcher');
         const cleanedPipelineResponse = window.contentCleaner.cleanContent(answer, {
-          maxLength: 50000
+          maxLength: 200000
         });
         if (window.ContentUtils?.isBaselineEquivalent?.(cleanedPipelineResponse, preDispatchBaseline)) {
           throw new Error('stale_baseline_answer');
@@ -1816,7 +1816,7 @@ async function injectAndGetResponse(prompt, attachments = [], meta = null) {
     // Fallback: extract latest assistant text if pipeline missed it
     try {
       const latestMarkup = grabLatestAssistantMarkup();
-      const cleanedFallback = window.contentCleaner.cleanContent(latestMarkup.html || latestMarkup.text || '', { maxLength: 50000 });
+      const cleanedFallback = window.contentCleaner.cleanContent(latestMarkup.html || latestMarkup.text || '', { maxLength: 200000 });
       if (window.ContentUtils?.isBaselineEquivalent?.(cleanedFallback, preDispatchBaseline)) {
         console.warn('[content-perplexity] DOM fallback matched pre-dispatch baseline, ignoring stale answer');
         throw new Error('stale_baseline_answer');
@@ -1839,7 +1839,7 @@ async function injectAndGetResponse(prompt, attachments = [], meta = null) {
     // Last resort: SelectorFinder observation-based extraction (can traverse shadow DOM).
     try {
       const finderText = await trySelectorFinderResponse(prompt, 60000);
-      const cleanedFinder = window.contentCleaner.cleanContent(finderText || '', { maxLength: 50000 });
+      const cleanedFinder = window.contentCleaner.cleanContent(finderText || '', { maxLength: 200000 });
       if (cleanedFinder) {
         console.warn('[content-perplexity] DOM fallback empty, using SelectorFinder response');
         activity.stop({ status: 'success', answerLength: cleanedFinder.length, source: 'selector-finder' });

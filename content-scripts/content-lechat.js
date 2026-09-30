@@ -1606,7 +1606,7 @@ const hydrateAttachments = (raw = []) =>
             heartbeat: (meta = {}) => activity.heartbeat(0.8, Object.assign({ phase: 'pipeline' }, meta)),
             stop: async ({ answer, answerHtml, metadata }) => {
               console.log('[content-lechat] UnifiedAnswerPipeline captured response');
-              const cleaned = contentCleaner.clean(answer, { maxLength: 50000 });
+              const cleaned = contentCleaner.clean(answer, { maxLength: 200000 });
               if (window.ContentUtils?.isBaselineEquivalent?.(cleaned, preDispatchBaseline)) {
                 throw new Error('stale_baseline_answer');
               }
@@ -1636,7 +1636,7 @@ const hydrateAttachments = (raw = []) =>
           }
 
           console.log('[content-lechat] ✅ Raw response captured, length:', rawPayload.text.length);
-          const cleaned = contentCleaner.clean(rawPayload.text, { maxLength: 50000 });
+          const cleaned = contentCleaner.clean(rawPayload.text, { maxLength: 200000 });
           if (window.ContentUtils?.isBaselineEquivalent?.(cleaned, preDispatchBaseline)) {
             throw new Error('stale_baseline_answer');
           }

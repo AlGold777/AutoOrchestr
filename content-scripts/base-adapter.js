@@ -181,7 +181,7 @@
       }
       if (message.type === 'HEALTH_CHECK_PING') {
         if (typeof sendResponse === 'function') {
-          sendResponse({ type: 'HEALTH_CHECK_PONG', pingId: message.pingId, model: this.MODEL });
+          sendResponse({ type: 'HEALTH_CHECK_PONG', pingId: message.pingId, llmName: this.MODEL, model: this.MODEL });
         }
         return true;
       }

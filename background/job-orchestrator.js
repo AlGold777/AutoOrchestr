@@ -152,6 +152,16 @@ function normalizeAnswerSignatureBg(text) {
 function hashAnswerSignatureBg(text) {
   return hashEvidenceText(normalizeAnswerSignatureBg(text));
 }
+// Transport identity of the model entry a panel-bound message is produced for.
+// Read from the entry the producer holds, never from the current jobState: a
+// late producer of a replaced entry must carry its own (stale) identity so the
+// panel can reject it instead of attributing it to the new request.
+function transportIdentityFor(entry) {
+  return {
+    transportRequestId: entry?.transportRequestId || null,
+    dispatchId: entry?.lastDispatchMeta?.dispatchId || null
+  };
+}
 function isStaleBaselineCandidate(entry, text, dispatchId = null) {
   if (!entry || !entry.preDispatchAnswerSignature) return false;
   const capturedAt = Number(entry.preDispatchAnswerCapturedAt || 0);
@@ -164,7 +174,7 @@ function isStaleBaselineCandidate(entry, text, dispatchId = null) {
   return sig === entry.preDispatchAnswerSignature;
 }
 const LATE_COLLECT_CACHE_KEY_PREFIX = 'late_answer_snapshot_v1';
-const LATE_COLLECT_CACHE_MAX_CHARS = 50000;
+const LATE_COLLECT_CACHE_MAX_CHARS = 200000;
 const LATE_COLLECT_TOTAL_BUDGET_MS = 12000;
 const LATE_COLLECT_PING_TIMEOUT_MS = 900;
 const LATE_COLLECT_SLOW_PING_TIMEOUT_MS = 1500;
@@ -1286,8 +1296,12 @@ function acceptLateCollectResult(llmName, result, meta = {}) {
       answer: incomingText,
       answerHtml: entry.answerHtml || '',
       requestId: entry.requestId || null,
+      ...transportIdentityFor(entry),
       metadata: {
         status: entry.finalStatus || entry.status || 'SUCCESS',
+        // Terminal results are immutable for the pipeline: a later, more
+        // complete extraction is a revision, never a second terminal answer.
+        revision: true,
         reason: replacesTerminalAnswer ? 'replaced_after_terminal' : 'improved_after_terminal',
         completionReason: replacesTerminalAnswer ? 'manual_replaced_terminal_answer' : 'manual_improved_terminal_answer',
         improvedAfterTerminal: true,
@@ -2175,6 +2189,7 @@ function preserveUnprovenMaterializeArtifact(llmName, entry, result = {}, eviden
     llmName,
     answer: text,
     answerHtml: html,
+    ...transportIdentityFor(entry),
     metadata: {
       status: 'RECEIVING',
       terminal: false,
@@ -2820,6 +2835,7 @@ function maybeDeferStreamingFinalization(llmName, answer, metaObj, answerHtml, n
           llmName,
           answer: deferredText,
           answerHtml: String(liveEntry.pendingFinalAnswerHtml || normalizedHtml || ''),
+          ...transportIdentityFor(liveEntry),
           requestId: liveEntry?.requestId || null,
           metadata: {
             status: 'RECEIVING',
@@ -2889,6 +2905,7 @@ function maybeDeferStreamingFinalization(llmName, answer, metaObj, answerHtml, n
         llmName,
         answer: String(normalizedAnswer || answer || ''),
         answerHtml: String(answerHtml || ''),
+        ...transportIdentityFor(liveEntry),
         metadata: { status: 'GENERATING', reason: 'generation_active' },
         logs: getLogSnapshot(llmName)
       });
@@ -3310,6 +3327,7 @@ function maybeDeferEarlyTerminalSuccess(llmName, entry, options = {}) {
     llmName,
     answer: normalizedAnswer,
     answerHtml: normalizedHtml,
+    ...transportIdentityFor(entry),
     requestId: entry?.requestId || null,
     metadata: {
       status: 'RECEIVING',
@@ -4701,6 +4719,19 @@ function rehydrateActiveJobRuntime(source = 'load_job_state') {
     updateMv3SurvivalAlarm(jobState);
     return false;
   }
+  // A cancelled or stopped run is terminal: open model entries in its snapshot
+  // are leftovers, never work to resume.
+  const controlState = String(jobState.session.pipelineControl?.state || jobState.session.pipelineState || '').toUpperCase();
+  if (controlState === 'CANCELLED' || controlState === 'STOPPED') {
+    emitTelemetry('SYSTEM', 'MV3_REHYDRATION_SKIPPED_TERMINAL_RUN', {
+      level: 'info',
+      details: controlState,
+      meta: { source, sessionId: jobState.session.startTime || null },
+      force: true
+    });
+    updateMv3SurvivalAlarm(null);
+    return false;
+  }
   mv3RehydrationInFlight = true;
   try {
     jobState.session.mv3RehydratedAt = Date.now();
@@ -4850,8 +4881,13 @@ if (typeof chrome !== 'undefined' && chrome?.runtime?.onStartup?.addListener) {
 let jobStateSaveFlight = null;
 let pendingJobStateSave = null;
 let pendingJobStateSaveWaiters = [];
+// Incremented by stopAllProcesses. A snapshot belongs to the stop generation it
+// was queued in; a stop/cancel invalidates every snapshot queued before it.
+let jobStateStopGeneration = 0;
+let pendingJobStateSaveGeneration = 0;
 function saveJobState(state) {
   pendingJobStateSave = state;
+  pendingJobStateSaveGeneration = jobStateStopGeneration;
   const saved = new Promise(resolve => pendingJobStateSaveWaiters.push(resolve));
   if (!jobStateSaveFlight) {
     // Defer compression out of message ACK handlers and coalesce their burst.
@@ -4862,11 +4898,27 @@ function saveJobState(state) {
       try {
         while (pendingJobStateSave) {
           const next = pendingJobStateSave;
+          const nextGeneration = pendingJobStateSaveGeneration;
           const waiters = pendingJobStateSaveWaiters;
           pendingJobStateSave = null;
           pendingJobStateSaveWaiters = [];
-          await persistJobStateSnapshot(next);
-          waiters.forEach(resolve => resolve());
+          // A stop/cancel replaces jobState and deletes the stored snapshot. A
+          // snapshot queued before that must not be written afterwards, and a
+          // write already in flight must be undone: otherwise the cancelled run
+          // came back on the next MV3 load and resumed dispatching.
+          if (nextGeneration !== jobStateStopGeneration) {
+            waiters.forEach(resolve => resolve(false));
+            continue;
+          }
+          // Each caller learns whether its snapshot is durable: a write that
+          // must precede an external action (command intent) can refuse to go on.
+          const persisted = await persistJobStateSnapshot(next);
+          if (nextGeneration !== jobStateStopGeneration) {
+            try { await CompressedStorage.remove('jobState'); } catch (_) {}
+            waiters.forEach(resolve => resolve(false));
+            continue;
+          }
+          waiters.forEach(resolve => resolve(persisted));
         }
       } finally { jobStateSaveFlight = null; }
     });
@@ -4892,8 +4944,10 @@ async function persistJobStateSnapshot(state) {
       void self.PipelineFSM.persistControlState(control);
     }
     globalThis.LLMLog?.debug?.('[BACKGROUND] Job state saved to storage (compressed)');
+    return true;
   } catch (e) {
     console.error('[BACKGROUND] Failed to save job state:', e);
+    return false;
   }
 }
 
@@ -4969,6 +5023,7 @@ function persistPipelineControlState(nextControl = null) {
 
 function stopAllProcesses(reason = 'unspecified', { closeTabs = false } = {}) {
   globalThis.LLMLog?.debug?.(`[BACKGROUND] stopAllProcesses: reason=${reason}, closeTabs=${closeTabs}`);
+  jobStateStopGeneration += 1;
   // Purpose: cancel orchestrator waits tied to the previous session immediately.
   abortOrchestratorOperations(reason);
   resetOrchestratorAbortController();
@@ -5079,8 +5134,30 @@ function stopAllProcesses(reason = 'unspecified', { closeTabs = false } = {}) {
   broadcastGlobalState();
 }
 
+// Synchronous reservation taken before the first await of a start: two START
+// commands used to both pass RunGuard (busy is only known after the awaited
+// ToS read) and then both replaced the shared jobState. Held until
+// runDispatchRounds has marked the rounds active.
+let startProcessReserved = false;
 async function startProcess(prompt, selectedLLMs, resultsTab, options = {}) {
-  const runGuard = self.RunGuard?.canStartNewRun?.(jobState?.session, options);
+  const runGuard = self.RunGuard?.canStartNewRun?.(jobState?.session, options, jobState?.llms);
+  if (runGuard && runGuard.ok === false) {
+    console.warn('[BACKGROUND] Refusing to start process while another run is active', runGuard);
+    return runGuard;
+  }
+  if (startProcessReserved && options.force !== true) {
+    return { ok: false, errorCode: 'RUN_ALREADY_ACTIVE', activeSessionId: jobState?.session?.startTime || null };
+  }
+  startProcessReserved = true;
+  try {
+    return await startProcessReservedRun(prompt, selectedLLMs, resultsTab, options);
+  } finally {
+    startProcessReserved = false;
+  }
+}
+
+async function startProcessReservedRun(prompt, selectedLLMs, resultsTab, options = {}) {
+  const runGuard = self.RunGuard?.canStartNewRun?.(jobState?.session, options, jobState?.llms);
   if (runGuard && runGuard.ok === false) {
     console.warn('[BACKGROUND] Refusing to start process while another run is active', runGuard);
     return runGuard;
@@ -5172,6 +5249,9 @@ async function startProcess(prompt, selectedLLMs, resultsTab, options = {}) {
       machine.reset();
     }
     jobState.llms[llmName] = buildInitialLlmEntry(llmName);
+    // Panel-issued identity of this model request (TransportContract). Every
+    // panel-bound answer message carries it; the panel rejects anything else.
+    jobState.llms[llmName].transportRequestId = String(pipelineContext?.transportRequestIds?.[llmName] || '') || null;
     updateModelState(llmName, 'IDLE', { apiStatus: 'idle' });
     if (self.syncDispatchEntryFromMachine) {
       self.syncDispatchEntryFromMachine(llmName, jobState.llms[llmName], machine);
@@ -5781,6 +5861,7 @@ async function focusTabForVerification(llmName, tabId, durationMs, sessionId) {
     : Number(durationMs || 0);
   const boundedDurationMs = Math.min(12000, Number(durationMs || 0), remainingFocusMs);
   if (boundedDurationMs <= 0) return false;
+  // Verification focus is best effort: a failure means "no useful visit".
   return withPromptDispatchFocusLock(async () => {
     if (self.isInitialPromptPassActive?.() || (sessionId && !isSessionActive(sessionId))
       || jobState?.llms?.[llmName] !== entry || isFinalizedEntry(entry)
@@ -5801,6 +5882,9 @@ async function focusTabForVerification(llmName, tabId, durationMs, sessionId) {
     }
     if (sessionId && !isSessionActive(sessionId)) return false;
     return visitSummary || true;
+  }).catch((err) => {
+    console.warn('[BACKGROUND] verification focus failed', err);
+    return false;
   });
 }
 
@@ -9232,6 +9316,7 @@ function handleLLMResponse(llmName, answer, error = null, meta = null, answerHtm
         llmName,
         answer: normalizedAnswer,
         answerHtml: normalizedHtml,
+        ...transportIdentityFor(entry),
         requestId: entry?.requestId || null,
         metadata: {
           status: 'RECEIVING',
@@ -9499,9 +9584,13 @@ function handleLLMResponse(llmName, answer, error = null, meta = null, answerHtm
     llmName,
     answer: normalizedAnswer,
     answerHtml: normalizedHtml,
+    ...transportIdentityFor(entry),
     requestId: entry?.requestId || jobState?.llms?.[llmName]?.requestId || null,
     metadata: {
       status: finalStatus,
+      // Explicit terminal marker: the panel settles on this flag, not on a
+      // local list of status names that can drift from deriveFailureFinalStatus.
+      terminal: true,
       reason: finalReason,
       completionReason,
       hardStopReason,

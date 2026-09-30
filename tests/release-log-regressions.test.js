@@ -570,7 +570,8 @@ describe('release log regression guards', () => {
     expect(source).toContain('forceNewTabs,');
     expect(source).toContain("const normalizeRoundLimitValue = (value, fallback = 'infinite') => {");
     expect(source).toContain("applyRoundLimitToPipelineConfig(config, getLongRoundLimitOverride(key) || config.protocol.roundLimit || '3');");
-    expect(source).toContain("if (!String(envelope.answer || '').trim()) {");
+    // Empty terminal answers settle as failures (per-request waiter).
+    expect(source).toContain('const hasText = Boolean(text.trim());');
     expect(source).toContain('const pipelineExportBuildDebateFeedHtml = () => {');
     expect(source).toContain('const pipelineExportDownloadDebateFeedHtml = (button = null) => {');
     expect(source).toContain("const ok = pipelineExportDownloadDebateFeedHtml(btn);");

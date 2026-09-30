@@ -222,9 +222,26 @@
       chrome.storage.local.get(STORAGE_KEY, (data) => {
         try { applyTimingProfile(data && data[STORAGE_KEY] ? 'long' : 'standard'); markProfileLoaded(); } catch (_) {}
       });
+      // Shortening the deadlines under a generation in flight made it time out
+      // early (e.g. a finished Disput restoring Standard while this tab still
+      // generates a Long answer). A downgrade waits until the tab has no request
+      // in flight, bounded by the Long hard maximum; an upgrade applies at once.
+      let pendingDowngradeTimer = null;
+      const applyWhenIdle = (profile, startedAt = Date.now()) => {
+        clearTimeout(pendingDowngradeTimer);
+        pendingDowngradeTimer = null;
+        const busy = window.ContentUtils?.hasActiveRequest?.() === true;
+        const expired = Date.now() - startedAt > LONG_OVERRIDES.streaming.adaptiveTimeout.hardMax;
+        if (profile === 'standard' && activeProfile === 'long' && busy && !expired) {
+          pendingDowngradeTimer = setTimeout(() => applyWhenIdle(profile, startedAt), 2000);
+          return;
+        }
+        applyTimingProfile(profile);
+        markProfileLoaded();
+      };
       chrome.storage.onChanged?.addListener?.((changes, area) => {
         if (area !== 'local' || !changes || !changes[STORAGE_KEY]) return;
-        try { applyTimingProfile(changes[STORAGE_KEY].newValue ? 'long' : 'standard'); markProfileLoaded(); } catch (_) {}
+        try { applyWhenIdle(changes[STORAGE_KEY].newValue ? 'long' : 'standard'); } catch (_) {}
       });
     } else {
       markProfileLoaded();

@@ -142,11 +142,16 @@
         'pipelineControl', 'roundDurations', 'roundStarts', 'runMetrics', 'boundTabIds',
         'acceptedFinals', 'roundSnapshots', 'roundSummaries', 'roundHistory', 'lastExportAt',
         'exportedAt', 'forceNewTabs', 'roundsInProgress', 'roundPhase',
-        'mv3RehydratedAt', 'mv3RehydrationCount', 'roundsRecoveredFromStuckAt'
+        'mv3RehydratedAt', 'mv3RehydrationCount', 'roundsRecoveredFromStuckAt',
+        // A retry after an MV3 restart must resend the exact per-model prompt
+        // (role, delivery token), not the shared fallback prompt.
+        'promptsByModel', 'pipelineContext'
       ].forEach((key) => {
         if (typeof session[key] !== 'undefined') {
           const value = clonePlain(session[key]);
-          if (Array.isArray(value) && ['roundHistory', 'roundSnapshots', 'roundSummaries'].includes(key)) {
+          if (key === 'promptsByModel' && value && typeof value === 'object') {
+            next[key] = Object.fromEntries(Object.entries(value).map(([model, text]) => [model, trimString(text, mergedLimits.maxTextChars)]));
+          } else if (Array.isArray(value) && ['roundHistory', 'roundSnapshots', 'roundSummaries'].includes(key)) {
             next[key] = trimArrayTail(value, mergedLimits.maxRoundsRetained);
           } else if (value && typeof value === 'object' && key === 'pipelineControl') {
             next[key] = compactPayloadObject(value, mergedLimits.maxPayloadBytes);
@@ -204,7 +209,7 @@
         'round4ForceFinalKey', 'round4ForceFinalAt', 'transientBlocker',
         'transientBlockerActive', 'transientBlockerActiveAt', 'transientBlockerRunSessionId',
         'transientBlockerDispatchId', 'transientBlockerTabId', 'lastClearedTransientBlockerToken',
-        'perplexityPaywallResumeCount'
+        'perplexityPaywallResumeCount', 'transportRequestId'
       ].forEach((field) => {
         if (typeof entry[field] !== 'undefined') {
           next[field] = clonePlain(entry[field]);

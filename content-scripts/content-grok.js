@@ -1374,7 +1374,7 @@
         if (isLowSignalResponseCandidate(txt)) continue;
         if (isPromptEcho(txt, prompt)) continue;
         try {
-          const cleaned = contentCleaner.clean(txt, { maxLength: 50000 });
+          const cleaned = contentCleaner.clean(txt, { maxLength: 200000 });
           if (!isLowSignalResponseCandidate(cleaned)) {
             return cleaned;
           }
@@ -1485,7 +1485,7 @@
           await sleep(intervalMs);
           continue;
         }
-        const cleaned = contentCleaner.clean(candidate.text || candidate.html || '', { maxLength: 50000 });
+        const cleaned = contentCleaner.clean(candidate.text || candidate.html || '', { maxLength: 200000 });
         if (cleaned && !isLowSignalResponseCandidate(cleaned) && !isPromptEcho(cleaned, prompt)) {
           if (cleaned === lastStable) {
             emitDiagnostic({
@@ -2372,14 +2372,14 @@
                 details: `Duration: ${metadata?.duration ?? 0}ms`,
                 level: 'success'
               });
-              let cleaned = contentCleaner.clean(answer, { maxLength: 50000 });
+              let cleaned = contentCleaner.clean(answer, { maxLength: 200000 });
               let html = String(answerHtml || '').trim();
               if (isLowSignalResponseCandidate(cleaned)) {
                 cleaned = '';
               }
               if (!String(cleaned || '').trim()) {
                 const domFallback = getFreshAssistantSnapshot(baselineSnapshot);
-                cleaned = contentCleaner.clean(domFallback.text || domFallback.html || '', { maxLength: 50000 });
+                cleaned = contentCleaner.clean(domFallback.text || domFallback.html || '', { maxLength: 200000 });
                 if (!html && domFallback.html) html = domFallback.html;
               }
               if (isLowSignalResponseCandidate(cleaned)) {
@@ -2430,7 +2430,7 @@
           const domFallbackAnswer = await domFallbackPromise;
           if (domFallbackAnswer && !responseDelivered) {
             const fallbackPayload = normalizeResponsePayload(domFallbackAnswer, lastResponseHtml);
-            let cleaned = contentCleaner.clean(fallbackPayload.text || fallbackPayload.html || '', { maxLength: 50000 });
+            let cleaned = contentCleaner.clean(fallbackPayload.text || fallbackPayload.html || '', { maxLength: 200000 });
             if (isLowSignalResponseCandidate(cleaned)) {
               cleaned = '';
             }
@@ -2458,14 +2458,14 @@
           }
 
           const responseSnapshot = getFreshAssistantSnapshot(baselineSnapshot);
-          let cleaned = contentCleaner.clean(responseSnapshot.text || responseSnapshot.html || '', { maxLength: 50000 });
+          let cleaned = contentCleaner.clean(responseSnapshot.text || responseSnapshot.html || '', { maxLength: 200000 });
           if (isLowSignalResponseCandidate(cleaned)) {
             cleaned = '';
           }
           if (!String(cleaned || '').trim()) {
             const domFallback = await domFallbackPromise;
             const fallbackPayload = normalizeResponsePayload(domFallback, lastResponseHtml);
-            cleaned = contentCleaner.clean(fallbackPayload.text || fallbackPayload.html || '', { maxLength: 50000 });
+            cleaned = contentCleaner.clean(fallbackPayload.text || fallbackPayload.html || '', { maxLength: 200000 });
             if (fallbackPayload.html) lastResponseHtml = fallbackPayload.html;
           }
           if (isLowSignalResponseCandidate(cleaned)) {
