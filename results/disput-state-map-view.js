@@ -125,9 +125,34 @@
       </div>`;
   }
 
+  function normalizeShellDom(panel) {
+    if (!panel) return;
+    panel.dataset.mapShell = 'true';
+    panel.innerHTML = `
+      <button type="button" class="disput-state-map-toggle" data-map-collapse aria-expanded="false">
+        <strong>Карта состояния</strong>
+      </button>
+      <div class="disput-state-map-workspace disput-state-map-workspace-shell" hidden>
+        <header class="disput-state-map-header disput-state-map-header-shell">
+          <strong>Карта состояния</strong>
+          <div class="disput-state-map-actions">
+            <button type="button" class="disput-map-icon-action" data-case-export title="Экспорт дела" aria-label="Экспорт дела"><i class="ti ti-folder" aria-hidden="true"></i></button>
+            <button type="button" class="disput-map-icon-action" data-map-export title="Экспорт карты" aria-label="Экспорт карты"><i class="ti ti-download" aria-hidden="true"></i></button>
+            <button type="button" class="disput-map-icon-action" data-case-import-action title="Импорт дела" aria-label="Импорт дела"><i class="ti ti-upload" aria-hidden="true"></i></button>
+            <button type="button" class="disput-map-icon-action" data-case-delete title="Удалить текущее дело" aria-label="Удалить текущее дело"><i class="ti ti-trash" aria-hidden="true"></i></button>
+            <button type="button" class="disput-map-icon-action" data-map-close title="Закрыть карту" aria-label="Закрыть карту">×</button>
+            <input type="file" accept="application/json" data-case-import hidden>
+          </div>
+        </header>
+      </div>
+    `;
+  }
+
   function init(options = {}) {
     const panel = document.getElementById('disput-state-map-panel');
-    if (!panel || !root.DebateStateMap) return null;
+    if (!panel) return null;
+    normalizeShellDom(panel);
+    if (!root.DebateStateMap) return null;
     const header = panel.querySelector('[data-map-collapse]');
     const close = panel.querySelector('[data-map-close]');
     const body = panel.querySelector('.disput-state-map-workspace');
@@ -142,7 +167,7 @@
     const compareB = panel.querySelector('[data-map-compare-b]');
     let mode = 'structure'; let filter = 'all'; let zoom = 1; let selectedId = ''; let comparison = null; let map = root.DebateStateMap.project({}); let caseMap = map;
     let pendingAggregate;
-    const shellOnly = panel.dataset.mapShell === 'true';
+    const shellOnly = true;
 
     if (shellOnly) {
       const projectAggregate = (aggregate) => {
