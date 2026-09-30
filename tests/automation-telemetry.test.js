@@ -274,3 +274,50 @@ describe('prompt and answer text in the journal', () => {
     expect(sends[0].terminal.answer).toContain('Ответ');
   });
 });
+
+describe('card marks: incomplete and verify', () => {
+  function loadMarkers() {
+    const results = read('results.js');
+    const start = results.indexOf('    function applyPartialMarker(container, meta = {}) {');
+    const end = results.indexOf('    // A model has at most ONE open (not-yet-approved) answer card per session.');
+    // eslint-disable-next-line no-new-func
+    return new Function('window', 'document', `${results.slice(start, end)}\nreturn { applyPartialMarker, applyAttributionMarker };`)(window, document);
+  }
+  const card = () => {
+    document.body.innerHTML = '<div class="debate-model-card"><span class="debate-model-card-title-main">GPT <input type="checkbox" class="debate-approval-check"></span><div class="debate-model-card-output">x</div></div>';
+    return document.querySelector('.debate-model-card');
+  };
+
+  test('a cut-off answer gets a gray mark next to the model name; a complete one does not', () => {
+    const { applyAttributionMarker } = loadMarkers();
+    const el = card();
+    applyAttributionMarker(el, { status: 'STREAM_TIMEOUT' });
+    expect(el.querySelector('.debate-model-card-title-main > .answer-partial-mark').textContent).toBe('неполный');
+    // A later message without a status keeps the mark; a complete one removes it.
+    applyAttributionMarker(el, {});
+    expect(el.querySelector('.answer-partial-mark')).not.toBeNull();
+    applyAttributionMarker(el, { status: 'SUCCESS' });
+    expect(el.querySelector('.answer-partial-mark')).toBeNull();
+  });
+
+  test('the approval checkbox doubles as verification of an unproven answer', () => {
+    const { applyAttributionMarker } = loadMarkers();
+    const el = card();
+    applyAttributionMarker(el, { status: 'SUCCESS', attributionState: 'unproven', attributionLabel: 'Без метки доставки' });
+    expect(el.querySelector('.attribution-unproven-banner').textContent).toBe('Без метки доставки');
+    expect(el.querySelector('.debate-approval-check').title).toBe('Verify and approve this answer');
+    // Approval marks the answer verified by the user; later updates do not bring the banner back.
+    el.dataset.attributionState = 'user_verified';
+    applyAttributionMarker(el, { status: 'SUCCESS', attributionState: 'unproven' });
+    expect(el.querySelector('.attribution-unproven-banner')).toBeNull();
+    expect(el.dataset.attributionState).toBe('user_verified');
+  });
+
+  test('approval of an unproven answer is recorded as the user\'s verification; partial answers stay approvable', () => {
+    const results = read('results.js');
+    expect(results).toContain("card.dataset.attributionState = 'user_verified';");
+    // No guard on completion in the approval path: the semi-automatic flow is intended.
+    const approve = results.slice(results.indexOf('    function approveDebateCard(card) {'), results.indexOf('    window.approveDebateCheckbox'));
+    expect(approve).not.toContain('partial');
+  });
+});

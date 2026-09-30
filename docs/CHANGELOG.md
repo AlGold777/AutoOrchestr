@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-09-30 — Answer cards: "incomplete" mark, approval as verification, version 2.81.511
+
+- An answer whose generation did not finish cleanly (`PARTIAL`, `STREAM_TIMEOUT`, …) shows a small gray "неполный" mark to the right of the model name; it only informs. Approving such an answer with the checkbox stays allowed (semi-automatic flow).
+- The approval checkbox is also the verification of an answer without a delivery token: its tooltip reads "Verify and approve this answer", and approving replaces the "Без метки доставки" banner with the user's decision (`attributionState: user_verified`).
+
 ### 2026-09-30 — Automation tab: GitHub UI changes integrated, prompt and answer in the journal, version 2.81.510
 
 - Integrate the two commits that existed only on GitHub (`e03d858`, `7b6b84e`, version 2.81.502): the Automation tab cards now share the Disput tab styling (`styles/devtools-selectors.css`: collapsible cards, toolbar, grid).

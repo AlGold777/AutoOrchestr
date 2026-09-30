@@ -20474,6 +20474,13 @@ function checkCompareButtonState() {
         card.dataset.approved = 'true';
         card.dataset.approvalSelectable = 'false';
         card.dataset.live = 'false';
+        // Approving an answer whose ownership was not proven is the user's
+        // verification: the "unverified" banner is replaced by the decision.
+        if (card.dataset.attributionState === 'unproven') {
+            card.dataset.attributionState = 'user_verified';
+            card.classList.remove('has-unproven-attribution');
+            card.querySelector('.attribution-unproven-banner')?.remove();
+        }
         patchDebateCardMessage(card, {
             status: 'approved',
             kind: card.dataset.kind === 'fragment' ? 'fragment' : 'model'
@@ -20691,11 +20698,45 @@ function checkCompareButtonState() {
             roleEl.textContent = roleValue ? String(roleValue).trim() : '';
         }
     }
+    // Gray "incomplete" mark to the right of the model name: the generation did not
+    // finish cleanly (timeout, cut stream). It informs only; approving such an
+    // answer stays the user's call (semi-automatic flow).
+    function applyPartialMarker(container, meta = {}) {
+        if (!container) return;
+        const status = String(meta.status || meta.finalStatus || '').trim();
+        // A message without a status (e.g. a later revision) keeps the current mark.
+        if (!status) return;
+        const partial = window.TransportContract?.classifyCompletion?.(status, 'x') === 'partial';
+        container.dataset.completion = partial ? 'partial' : '';
+        let mark = container.querySelector('.answer-partial-mark');
+        if (!partial) {
+            mark?.remove();
+            return;
+        }
+        if (!mark) {
+            mark = document.createElement('span');
+            mark.className = 'answer-partial-mark';
+            const title = container.querySelector('.debate-model-card-title-main');
+            if (title) title.appendChild(mark);
+            else container.insertBefore(mark, container.firstChild);
+        }
+        mark.textContent = 'неполный';
+        mark.title = `Генерация не завершилась чисто (${status}). Текст может быть обрезан.`;
+    }
     function applyAttributionMarker(container, meta = {}) {
         if (!container) return;
-        const unproven = String(meta.attributionState || '').toLowerCase() === 'unproven';
+        applyPartialMarker(container, meta);
+        const verified = container.dataset.attributionState === 'user_verified';
+        const unproven = !verified && String(meta.attributionState || '').toLowerCase() === 'unproven';
         container.classList.toggle('has-unproven-attribution', unproven);
-        container.dataset.attributionState = unproven ? 'unproven' : '';
+        if (!verified) container.dataset.attributionState = unproven ? 'unproven' : '';
+        // One control for both: the approval checkbox is also the "verify" action.
+        const approvalCheck = container.querySelector('.debate-approval-check');
+        if (approvalCheck) {
+            const label = unproven ? 'Verify and approve this answer' : 'Approve this answer';
+            approvalCheck.title = label;
+            approvalCheck.setAttribute('aria-label', label);
+        }
         let marker = container.querySelector(':scope > .attribution-unproven-banner, .debate-model-card-title-main > .attribution-unproven-banner');
         if (!unproven) {
             marker?.remove();
