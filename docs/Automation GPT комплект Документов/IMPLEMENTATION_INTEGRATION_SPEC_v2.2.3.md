@@ -2,7 +2,7 @@
 
 **Status:** implementation source of truth  
 **Version:** 2.2.4  
-**Target:** existing Web/DOM runtime of this repository (`AlGold777/AutoOrchestr`, extension `A_Fable`; earlier drafts called it MyOrchestrator)  
+**Target:** existing Web/DOM runtime of this repository (`AlGold777/AutoOrchestr`, extension `AutoOrchestr`; earlier drafts called it MyOrchestrator)  
 **Inputs:**  
 1. `product_architecture_framework_system_model_final.json`  
 2. `Automation Layer v2.2.3 — Web Runtime for Product→Architecture Framework`  
