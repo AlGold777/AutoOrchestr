@@ -7039,6 +7039,19 @@ document.addEventListener('click', (event) => {
         });
 
         pipelinePanel.addEventListener('dblclick', (event) => {
+            const roundBadge = event.target.closest('.round-badge');
+            if (roundBadge && pipelinePanel.contains(roundBadge)) {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                const dialog = document.getElementById('pipeline-stage-dialog');
+                const title = document.getElementById('pipeline-stage-dialog-title');
+                if (dialog && title) {
+                    const stageNumber = (roundBadge.textContent || '').trim().replace(/^R/i, '');
+                    title.textContent = `Этап ${stageNumber}`;
+                    if (!dialog.open) dialog.showModal();
+                }
+                return;
+            }
             const label = event.target.closest('.stage-label');
             if (!label || !pipelinePanel.contains(label)) return;
             const labelText = (label.textContent || '').toLowerCase();
