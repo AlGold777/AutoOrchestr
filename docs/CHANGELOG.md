@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-09-30 — Transport: deferred uncertain terminal keeps the produced text, version 2.81.513
+
+- Field report (Le Chat, Perplexity, 2.81.511): the premature `UNCERTAIN` final is gone — the `CONTEXT_LOST` decision after the new-chat navigation is journaled and deferred, and the answer text arrives.
+- When a deferred `AMBIGUOUS`/`CONTEXT_LOST` terminal expires without a final answer, the text the model already produced is committed as a `PARTIAL` answer (marked "неполный") instead of an empty failure; with no text the failure is unchanged.
+
 ### 2026-09-30 — Pipeline panel: запоминание Judge model, version 2.81.512
 
 - `judge-select` сохраняет выбранную модель вместе с отправителем и получателем debate-сообщений и восстанавливает её после перезагрузки панели; выбор также переживает пересоздание списка моделей.
