@@ -1407,6 +1407,7 @@
     requestFocusFromBackground,
     startActiveRequest,
     stopActiveRequest,
+    hasActiveRequest,
     withSmartScroll,
     findAndCacheElement,
     ensureMainWorldBridge,

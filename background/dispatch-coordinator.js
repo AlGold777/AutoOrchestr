@@ -1860,7 +1860,9 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
           tabSessionId: readyInfo?.tabSessionId || null
         }
       };
-      const requireCommandAcceptance = options.requireCommandAcceptance === true;
+      // Every provider adapter acknowledges GET_ANSWER with its dispatchId; a
+      // command counts as delivered only on that acknowledgement (opt-out only).
+      const requireCommandAcceptance = options.requireCommandAcceptance !== false;
       const commandWasAccepted = (result) => {
         if (!requireCommandAcceptance) return result?.ok === true;
         const acceptance = result?.response || null;

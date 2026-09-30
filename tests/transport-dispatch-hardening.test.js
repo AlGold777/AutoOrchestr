@@ -204,3 +204,47 @@ describe('provider tabs', () => {
     expect(coordinator).toContain("response?.type === 'HEALTH_CHECK_PONG' && response.llmName === llmName");
   });
 });
+
+describe('status instead of text guessing, stable deadlines', () => {
+  test('commands count as delivered only on the adapter acknowledgement by default', () => {
+    expect(coordinator).toContain('const requireCommandAcceptance = options.requireCommandAcceptance !== false;');
+  });
+
+  test('moderator and judge use the result status, not an "Error:" text guess', () => {
+    const results = read('results.js');
+    const judge = results.slice(results.indexOf('const runJudgeForModeratorTurn'), results.indexOf('let manualModeratorDispatchActive'));
+    expect(judge).not.toContain('!isErrorOutput(');
+    expect(judge).not.toContain('{ isErrorOutput }');
+    expect(judge).toContain('verdict?.results?.[judge]');
+  });
+
+  test('a tab does not shorten its deadlines under a generation in flight', () => {
+    const { JSDOM } = require('jsdom');
+    const dom = new JSDOM('', { runScripts: 'outside-only' });
+    const listeners = [];
+    let active = true;
+    dom.window.chrome = {
+      storage: {
+        local: { get: (key, cb) => cb({ longGenerationMode: true }) },
+        onChanged: { addListener: (fn) => listeners.push(fn) }
+      }
+    };
+    dom.window.ContentUtils = { hasActiveRequest: () => active };
+    dom.window.eval(read('content-scripts/pipeline-config.js'));
+    const timing = dom.window.AnswerPipelineTiming;
+    expect(timing.getTimingProfile()).toBe('long');
+    jest.useFakeTimers();
+    try {
+      listeners.forEach((fn) => fn({ longGenerationMode: { newValue: false } }, 'local'));
+      expect(timing.getTimingProfile()).toBe('long');
+      active = false;
+      jest.advanceTimersByTime(2100);
+    } finally {
+      jest.useRealTimers();
+    }
+    // Timers of the jsdom window run on its own clock; drive it directly.
+    return new Promise((resolve) => dom.window.setTimeout(resolve, 2100)).then(() => {
+      expect(timing.getTimingProfile()).toBe('standard');
+    });
+  }, 10000);
+});

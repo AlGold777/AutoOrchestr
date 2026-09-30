@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-09-30 — Transport: acknowledged commands, status over text, stable deadlines, version 2.81.506
+
+- A command to a provider tab counts as delivered only on the adapter's acknowledgement carrying its dispatchId (all ten adapters send it); opting out is explicit.
+- Moderator and Judge flows take the answer status from the batch result instead of guessing an error from text starting with "Error:".
+- A provider tab no longer shortens its generation deadlines while a request is in flight (Long → Standard waits until the tab is idle, bounded by the Long hard maximum); switching to Long applies at once.
+
 ### 2026-09-30 — Transport: durable cancellation and provider tabs, version 2.81.505
 
 - A stop/cancel invalidates every job-state snapshot queued before it; a write still in flight is undone, and MV3 recovery never resumes a cancelled or stopped run.

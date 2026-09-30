@@ -5540,9 +5540,12 @@ document.addEventListener('click', (event) => {
         // message and returns a verdict, shown as its card with the "Judge" role.
         const runJudgeForModeratorTurn = async (moderatorText, responses) => {
             const judge = String(document.getElementById('judge-select')?.value || '').trim();
-            const answers = Object.fromEntries(Object.entries(responses).filter(([, answer]) => !isErrorOutput(answer)));
+            // Batch responses hold only terminal model texts; failures carry their
+            // status in results, never an "Error:" string to be guessed from text.
+            const answers = Object.fromEntries(Object.entries(responses).filter(([, answer]) => String(answer || '').trim()));
             if (!judge || !Object.keys(answers).length || !window.JudgePromptBuilder?.buildResponsesList) return;
-            const list = window.JudgePromptBuilder.buildResponsesList(answers, { isErrorOutput }).list;
+            // Answers are already filtered by status above: no text-based error guess.
+            const list = window.JudgePromptBuilder.buildResponsesList(answers, { isErrorOutput: (answer) => !String(answer || '').trim() }).list;
             renderDebateModelCards('Judge', [judge], { approvalSelectable: false });
             const verdict = await runModelBatch({
                 prompt: `Вопрос модератора:\n${moderatorText}\n\nОтветы моделей:\n${list}\n\nТы судья. Сравни ответы, отметь сильные и слабые стороны и дай итоговый ответ.`,
@@ -5553,7 +5556,8 @@ document.addEventListener('click', (event) => {
                 generationProfile: 'long'
             });
             const answer = verdict?.responses?.[judge];
-            if (!isErrorOutput(answer)) updateDebateModelCardOutput(judge, String(answer || ''), '', { status: 'SUCCESS', source: 'judge', role: 'Judge' });
+            const judgeResult = verdict?.results?.[judge] || null;
+            if (String(answer || '').trim()) updateDebateModelCardOutput(judge, String(answer || ''), '', { status: judgeResult?.status || 'SUCCESS', source: 'judge', role: 'Judge' });
         };
 
         let manualModeratorDispatchActive = false;
@@ -5592,9 +5596,9 @@ document.addEventListener('click', (event) => {
                     generationProfile: 'long'
                 });
                 Object.entries(result?.responses || {}).forEach(([model, answer]) => {
-                    if (isErrorOutput(answer)) return;
+                    if (!String(answer || '').trim()) return;
                     updateDebateModelCardOutput(model, String(answer || ''), '', {
-                        status: 'SUCCESS',
+                        status: result?.results?.[model]?.status || 'SUCCESS',
                         source: 'manual_moderator'
                     });
                 });
