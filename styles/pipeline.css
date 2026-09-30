@@ -347,13 +347,21 @@ body.is-resizing {
     position: relative;
     display: flex;
     align-items: center;
-    min-height: 26px;
+    min-height: 28px;
     width: 100%;
 }
 
 .stage-header-row .stage-label {
-    margin-bottom: 0;
-    min-height: 26px;
+    margin-bottom: 10px;
+    display: flex;
+    min-height: 28px;
+    align-items: center;
+}
+
+.stage-column[data-stage="synthesis"] > .stage-label {
+    display: flex;
+    height: 28px;
+    margin-bottom: 10px;
     align-items: center;
 }
 
