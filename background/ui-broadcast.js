@@ -37,6 +37,9 @@ function buildGlobalStateSnapshot(options = {}) {
       stageTimeline: Array.isArray(entry?.stageTimeline) ? entry.stageTimeline.slice(-30) : [],
       answerRevisions: Array.isArray(entry?.answerRevisions) ? entry.answerRevisions.slice(-12) : [],
       hasAnswer: !!entry?.answer,
+      // Recovery must pass the same identity check as a live answer message.
+      transportRequestId: entry?.transportRequestId || null,
+      dispatchId: entry?.lastDispatchMeta?.dispatchId || null,
       // Recovery payload: STATUS_UPDATE and LLM_PARTIAL_RESPONSE are separate MV3
       // messages. If the latter is missed while the results page is reloading, the
       // next global-state broadcast must be able to hydrate the empty card instead

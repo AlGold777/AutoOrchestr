@@ -20,14 +20,15 @@
     const out = [];
     const open = new Map();
     (journal || []).forEach((event) => {
-      if (event.kind === 'sent') {
+      // 'prepared' opens a request ('sent' in journals written before 2.81.503).
+      if (event.kind === 'prepared' || event.kind === 'sent') {
         const send = { model: event.model, token: event.token, batchId: event.batchId || '', at: event.at, chars: event.chars, tab: null, statuses: [], firstTextMs: null, terminal: null, stale: 0 };
-        open.set(event.model, send);
+        open.set(event.token, send);
         out.push(send);
         return;
       }
-      const send = open.get(event.model);
-      if (!send || (event.token && event.token !== send.token)) return;
+      const send = open.get(event.token);
+      if (!send) return;
       if (event.kind === 'tab') send.tab = event.tabId;
       else if (event.kind === 'status') send.statuses.push(event.status);
       else if (event.kind === 'first_text') send.firstTextMs = event.ms;

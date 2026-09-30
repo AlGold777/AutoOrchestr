@@ -152,6 +152,16 @@ function normalizeAnswerSignatureBg(text) {
 function hashAnswerSignatureBg(text) {
   return hashEvidenceText(normalizeAnswerSignatureBg(text));
 }
+// Transport identity of the model entry a panel-bound message is produced for.
+// Read from the entry the producer holds, never from the current jobState: a
+// late producer of a replaced entry must carry its own (stale) identity so the
+// panel can reject it instead of attributing it to the new request.
+function transportIdentityFor(entry) {
+  return {
+    transportRequestId: entry?.transportRequestId || null,
+    dispatchId: entry?.lastDispatchMeta?.dispatchId || null
+  };
+}
 function isStaleBaselineCandidate(entry, text, dispatchId = null) {
   if (!entry || !entry.preDispatchAnswerSignature) return false;
   const capturedAt = Number(entry.preDispatchAnswerCapturedAt || 0);
@@ -1286,8 +1296,12 @@ function acceptLateCollectResult(llmName, result, meta = {}) {
       answer: incomingText,
       answerHtml: entry.answerHtml || '',
       requestId: entry.requestId || null,
+      ...transportIdentityFor(entry),
       metadata: {
         status: entry.finalStatus || entry.status || 'SUCCESS',
+        // Terminal results are immutable for the pipeline: a later, more
+        // complete extraction is a revision, never a second terminal answer.
+        revision: true,
         reason: replacesTerminalAnswer ? 'replaced_after_terminal' : 'improved_after_terminal',
         completionReason: replacesTerminalAnswer ? 'manual_replaced_terminal_answer' : 'manual_improved_terminal_answer',
         improvedAfterTerminal: true,
@@ -2175,6 +2189,7 @@ function preserveUnprovenMaterializeArtifact(llmName, entry, result = {}, eviden
     llmName,
     answer: text,
     answerHtml: html,
+    ...transportIdentityFor(entry),
     metadata: {
       status: 'RECEIVING',
       terminal: false,
@@ -2820,6 +2835,7 @@ function maybeDeferStreamingFinalization(llmName, answer, metaObj, answerHtml, n
           llmName,
           answer: deferredText,
           answerHtml: String(liveEntry.pendingFinalAnswerHtml || normalizedHtml || ''),
+          ...transportIdentityFor(liveEntry),
           requestId: liveEntry?.requestId || null,
           metadata: {
             status: 'RECEIVING',
@@ -2889,6 +2905,7 @@ function maybeDeferStreamingFinalization(llmName, answer, metaObj, answerHtml, n
         llmName,
         answer: String(normalizedAnswer || answer || ''),
         answerHtml: String(answerHtml || ''),
+        ...transportIdentityFor(liveEntry),
         metadata: { status: 'GENERATING', reason: 'generation_active' },
         logs: getLogSnapshot(llmName)
       });
@@ -3310,6 +3327,7 @@ function maybeDeferEarlyTerminalSuccess(llmName, entry, options = {}) {
     llmName,
     answer: normalizedAnswer,
     answerHtml: normalizedHtml,
+    ...transportIdentityFor(entry),
     requestId: entry?.requestId || null,
     metadata: {
       status: 'RECEIVING',
@@ -5172,6 +5190,9 @@ async function startProcess(prompt, selectedLLMs, resultsTab, options = {}) {
       machine.reset();
     }
     jobState.llms[llmName] = buildInitialLlmEntry(llmName);
+    // Panel-issued identity of this model request (TransportContract). Every
+    // panel-bound answer message carries it; the panel rejects anything else.
+    jobState.llms[llmName].transportRequestId = String(pipelineContext?.transportRequestIds?.[llmName] || '') || null;
     updateModelState(llmName, 'IDLE', { apiStatus: 'idle' });
     if (self.syncDispatchEntryFromMachine) {
       self.syncDispatchEntryFromMachine(llmName, jobState.llms[llmName], machine);
@@ -9232,6 +9253,7 @@ function handleLLMResponse(llmName, answer, error = null, meta = null, answerHtm
         llmName,
         answer: normalizedAnswer,
         answerHtml: normalizedHtml,
+        ...transportIdentityFor(entry),
         requestId: entry?.requestId || null,
         metadata: {
           status: 'RECEIVING',
@@ -9499,9 +9521,13 @@ function handleLLMResponse(llmName, answer, error = null, meta = null, answerHtm
     llmName,
     answer: normalizedAnswer,
     answerHtml: normalizedHtml,
+    ...transportIdentityFor(entry),
     requestId: entry?.requestId || jobState?.llms?.[llmName]?.requestId || null,
     metadata: {
       status: finalStatus,
+      // Explicit terminal marker: the panel settles on this flag, not on a
+      // local list of status names that can drift from deriveFailureFinalStatus.
+      terminal: true,
       reason: finalReason,
       completionReason,
       hardStopReason,

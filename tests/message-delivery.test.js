@@ -23,7 +23,7 @@ describe('message delivery', () => {
     const missing = Delivery.receive({ llmName: 'GPT', answer: 'Без метки' }, { final: true });
     expect(missing.metadata.attributionState).toBe('unproven');
     const kinds = Delivery.journal().map((e) => e.kind);
-    expect(kinds).toEqual(['sent', 'stale_dropped', 'first_text', 'verified', 'sent', 'first_text', 'missing_token']);
+    expect(kinds).toEqual(['prepared', 'stale_dropped', 'first_text', 'verified', 'prepared', 'first_text', 'missing_token']);
   });
 
   test('partial answers are cleaned but never marked', () => {
@@ -32,9 +32,26 @@ describe('message delivery', () => {
     expect(partial.metadata.attributionState).toBeUndefined();
   });
 
-  test('untracked models pass through untouched', () => {
+  test('untracked models pass through unchanged except our transport tags', () => {
     const message = { llmName: 'Grok', answer: 'x' };
-    expect(Delivery.receive(message, { final: true })).toBe(message);
+    expect(Delivery.receive(message, { final: true })).toEqual(message);
+    expect(Delivery.receive({ llmName: 'Grok', answer: 'x\n[[AO-abcdef]]' }, { final: true }).answer).toBe('x');
+  });
+
+  test('tokens are kept per transport request: a new request never invalidates one in flight', () => {
+    const first = Delivery.prepare({ prompt: 'Q1', models: ['GPT'], requestIds: { GPT: 'req-1' } });
+    const firstToken = /\[\[AO-[a-z0-9]{6}\]\]/.exec(first.GPT)[0];
+    // A second request is prepared (and possibly rejected before dispatch).
+    Delivery.prepare({ prompt: 'Q2', models: ['GPT'], requestIds: { GPT: 'req-2' } });
+    const late = Delivery.receive({ llmName: 'GPT', transportRequestId: 'req-1', answer: `Ответ 1\n${firstToken}` }, { final: true });
+    expect(late).not.toBeNull();
+    expect(late.answer).toBe('Ответ 1');
+    expect(late.metadata.attributionState).toBeUndefined();
+  });
+
+  test('user content that looks like markers is preserved', () => {
+    expect(Delivery.clean('kernel<<<grid, block>>>(data);')).toBe('kernel<<<grid, block>>>(data);');
+    expect(Delivery.clean('{"template":"<<<name>>>","value":3}')).toBe('{"template":"<<<name>>>","value":3}');
   });
 
   test('clean removes tokens, echoed instructions and <<< >>> markers', () => {
@@ -47,7 +64,7 @@ describe('message delivery', () => {
 describe('delivery diagnosis', () => {
   const Diagnosis = require('../shared/message-delivery-diagnosis.js');
   const at = (n) => new Date(Date.UTC(2026, 8, 30, 10, 0, n)).toISOString();
-  const sent = (model, token, n = 0) => ({ at: at(n), kind: 'sent', model, token, batchId: 'B1', chars: 100 });
+  const sent = (model, token, n = 0) => ({ at: at(n), kind: 'prepared', model, token, batchId: 'B1', chars: 100 });
 
   test('journal events are folded into per-message timelines', () => {
     Delivery.reset();

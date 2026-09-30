@@ -5108,6 +5108,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         answer: entry.answer,
                         answerHtml: entry.answerHtml || '',
                         requestId: entry.requestId || null,
+                        transportRequestId: entry.transportRequestId || null,
+                        dispatchId: entry.lastDispatchMeta?.dispatchId || null,
                         metadata: { status: entry.status || 'UNKNOWN' },
                         logs: getLogSnapshot(llmName)
                     });

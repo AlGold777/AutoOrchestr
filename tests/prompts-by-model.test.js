@@ -74,7 +74,11 @@ describe('TransportPolicy promptsByModel', () => {
       source.indexOf('function syncStatusFromGlobalState'),
       source.indexOf('// --- END STATUS INDICATOR LOGIC ---')
     );
-    expect(syncBlock).toContain('if (answerVisible && entry?.finalStatusRecorded)');
+    // Recovery settles only the request it belongs to, through the same
+    // delivery filter as a live answer.
+    expect(syncBlock).toContain('if (entry?.finalStatusRecorded && entry?.transportRequestId)');
+    expect(syncBlock).toContain('transportRequestId: entry.transportRequestId');
+    expect(syncBlock).toContain('window.MessageDelivery.receive(recovered, { final: true })');
     expect(syncBlock).toContain("type: 'LLM_FINAL_RESPONSE'");
     expect(syncBlock).toContain("source: 'GLOBAL_STATE_ANSWER_RECOVERY'");
     expect(syncBlock).toContain('pipelineWaiter.handleFinal');

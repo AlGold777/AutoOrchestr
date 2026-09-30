@@ -241,6 +241,7 @@ importScripts(
   '../shared/selector-profile-lifecycle.js',
   '../shared/model-policy.js',
   '../shared/transport-policy.js',
+  '../shared/transport-contract.js',
   '../shared/secret-redaction.js',
   '../shared/run-guard.js',
   '../shared/run-error.js',

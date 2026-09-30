@@ -49,3 +49,7 @@ global.chrome = {
     }
   }
 };
+
+// Pages load shared/transport-contract.js before results.js (pipeline_panel.html,
+// result_new.html); harnesses that evaluate results.js rely on the same global.
+require('../shared/transport-contract.js');

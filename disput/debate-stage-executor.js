@@ -44,7 +44,10 @@
         attemptId: `${stage.stageInstanceId}:a${attempt}`
       }).find((failure) => failure.modelId === modelId);
       if (terminalFailure) return { status: 'terminal_failure', failure: terminalFailure, raw: result };
-      return { status: 'received', text: text(result?.responses?.[modelId]), raw: result };
+      // Transport completion travels with the text: an incomplete generation
+      // (e.g. STREAM_TIMEOUT with text) must not look like a complete answer.
+      const completion = result?.results?.[modelId]?.completion || null;
+      return { status: 'received', text: text(result?.responses?.[modelId]), completion, raw: result };
     };
     return Object.freeze({
       type: 'llm',
@@ -163,7 +166,11 @@
             };
           }
           let responseText = text(outcome?.text);
-          let verdict = acceptance(responseText, { stage, participant });
+          let completion = outcome?.completion || null;
+          if (completion === 'partial') {
+            emit('PARTICIPANT_RESPONSE_INCOMPLETE', { stageInstanceId: stage.stageInstanceId, participantId: participant.participantId, attempt });
+          }
+          let verdict = acceptance(responseText, { stage, participant, completion });
           if (!verdict.ok && repairPrompt && attempt <= maxAttempts) {
             // Format repair: one in-attempt repair dispatch (Extraction Contract D-9/T-6/F-10).
             emit('RESPONSE_CONTRACT_REPAIR', { stageInstanceId: stage.stageInstanceId, participantId: participant.participantId, reason: verdict.reason });
@@ -172,7 +179,8 @@
               prompt: repairPrompt({ stage, participant, prompt, reason: verdict.reason, details: verdict.details })
             }), signal);
             responseText = text(repaired?.text);
-            verdict = acceptance(responseText, { stage, participant });
+            completion = repaired?.completion || null;
+            verdict = acceptance(responseText, { stage, participant, completion });
           }
           if (verdict.ok) {
             emit('PARTICIPANT_RESPONSE_ACCEPTED', { stageInstanceId: stage.stageInstanceId, participantId: participant.participantId, attempt });
@@ -180,7 +188,7 @@
             const stateDelta = proposeStateDelta({ stage, participant, text: responseText, artifacts, context });
             return {
               participantId: participant.participantId, status: 'accepted',
-              text: responseText, artifacts, proposedStateDelta: stateDelta, attempts: attempt
+              text: responseText, completion, artifacts, proposedStateDelta: stateDelta, attempts: attempt
             };
           }
           lastReason = verdict.reason || 'not_accepted';

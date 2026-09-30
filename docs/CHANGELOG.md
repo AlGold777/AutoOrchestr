@@ -1,5 +1,16 @@
 # CHANGELOG — Project
 
+### 2026-09-30 — Transport: request identity, one outcome per wait, version 2.81.503
+
+- Add `shared/transport-contract.js`: panel-issued `transportRequestId` per model request, one terminal status classification (`complete` / `partial` / `failed` / `cancelled`) and the panel wait deadline derived from the tab generation limit.
+- The background stores the request id on the model entry, sends it with every answer message to the panel and in the global state snapshot; the final answer is explicitly terminal and a post-terminal improvement is marked as a revision.
+- Rewrite the Pipeline waiter: answers are matched only by request id (never by model name alone), the wait is registered before dispatch, concurrent batches are independent, reset/cancel settle every wait, a terminal answer is immutable, and each result keeps its status next to the text.
+- Snapshot recovery goes through the same delivery filter and identity check as a live answer and also settles recorded terminal failures.
+- The panel no longer gives up before the tab can finish (Long: up to 900 s generation); an explicit dispatch refusal fails the batch immediately; a cancelled request is not dispatched.
+- Delivery tokens are kept per request (preparing a new request no longer invalidates one in flight), the journal records `prepared` instead of `sent`, and only judge-prompt response delimiters are stripped (user `<<<...>>>` content is preserved).
+- State compaction keeps `session.promptsByModel`, `session.pipelineContext` and the request id, so a retry after an MV3 restart resends the exact per-model prompt.
+- Stage executor passes the transport completion to response acceptance and traces `PARTICIPANT_RESPONSE_INCOMPLETE`.
+
 ### 2026-09-30 — Simplify the Pipeline state map panel, version 2.81.502
 
 - Keep the Pipeline panel's state map to its title and import/export/delete actions, with the open or closed state remembered between visits.
