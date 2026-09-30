@@ -4554,11 +4554,6 @@ document.addEventListener('click', (event) => {
             });
             const synthesisLabel = synthesisColumn?.querySelector('.stage-label');
             if (synthesisLabel) {
-                const badge = synthesisLabel.querySelector('.round-badge');
-                const labelText = ' Synthesis';
-                const textNode = Array.from(synthesisLabel.childNodes).find((node) => node.nodeType === Node.TEXT_NODE);
-                if (textNode) textNode.textContent = labelText;
-                else if (badge) badge.after(document.createTextNode(labelText));
                 synthesisLabel.title = 'After the last wave, Final Synthesis runs only when a synthesizer is selected.';
             }
         };
@@ -7039,7 +7034,29 @@ document.addEventListener('click', (event) => {
             showPipelineBlockInfo(block);
         });
 
+        const stageDialog = document.getElementById('pipeline-stage-dialog');
+        stageDialog?.addEventListener('click', (event) => {
+            if (event.target !== stageDialog) return;
+            const rect = stageDialog.getBoundingClientRect();
+            const outside = event.clientX < rect.left || event.clientX > rect.right
+                || event.clientY < rect.top || event.clientY > rect.bottom;
+            if (outside) stageDialog.close();
+        });
+
         pipelinePanel.addEventListener('dblclick', (event) => {
+            const roundBadge = event.target.closest('.round-badge');
+            if (roundBadge && pipelinePanel.contains(roundBadge)) {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                const dialog = document.getElementById('pipeline-stage-dialog');
+                const title = document.getElementById('pipeline-stage-dialog-title');
+                if (dialog && title) {
+                    const stageNumber = (roundBadge.textContent || '').trim().replace(/^R/i, '');
+                    title.textContent = `Этап ${stageNumber}`;
+                    if (!dialog.open) dialog.showModal();
+                }
+                return;
+            }
             const label = event.target.closest('.stage-label');
             if (!label || !pipelinePanel.contains(label)) return;
             const labelText = (label.textContent || '').toLowerCase();

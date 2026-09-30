@@ -347,13 +347,28 @@ body.is-resizing {
     position: relative;
     display: flex;
     align-items: center;
-    min-height: 26px;
+    min-height: 28px;
     width: 100%;
 }
 
 .stage-header-row .stage-label {
-    margin-bottom: 0;
-    min-height: 26px;
+    position: relative;
+    margin-bottom: 10px;
+    display: flex;
+    min-height: 28px;
+    align-items: center;
+    justify-content: center;
+}
+
+.stage-header-row .pipeline-round-delete-btn {
+    position: absolute;
+    right: 0;
+}
+
+.stage-column[data-stage="synthesis"] > .stage-label {
+    display: flex;
+    height: 28px;
+    margin-bottom: 10px;
     align-items: center;
 }
 
@@ -490,6 +505,12 @@ body.is-resizing {
 .round-badge {
     background: var(--pipeline-blue-soft);
     color: var(--pipeline-blue);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    width: 66px;
+    height: 28px;
     padding: 2px 5px;
     border-radius: 4px;
     font-size: 9px;
@@ -1139,6 +1160,9 @@ body.pipeline-page .disput-state-map-workspace { right: 24px; }
 .pipeline-profile-dialog [data-profile-status] { min-height: 18px; margin: 0; color: #657186; font-size: 11px; }
 .pipeline-profile-dialog [data-profile-status][data-kind="error"] { color: #b4232c; }
 .pipeline-profile-dialog [data-profile-status][data-kind="ok"] { color: #237a4b; }
+.pipeline-stage-dialog { width: min(420px, calc(100vw - 32px)); padding: 18px 20px; border: 1px solid #cbd5e1; border-radius: 12px; background: #fff; color: #172033; text-align: left; box-shadow: 0 24px 80px rgba(20,31,48,.3); }
+.pipeline-stage-dialog::backdrop { background: rgba(20,31,48,.35); }
+.pipeline-stage-dialog h2 { margin: 0; color: #2563eb; font-size: 20px; font-weight: 700; text-align: left; }
 
 @media (max-width: 1100px) {
     .disput-state-map-workspace { right: 12px; left: 12px; min-width: 0; }

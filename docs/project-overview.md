@@ -6,7 +6,7 @@ The project is optimized for unstable provider UIs. Its core design assumes sele
 
 ## Status
 
-- Current version: `2.81.497`, synchronized in `manifest.json`, `package.json`
+- Current version: `2.81.502`, synchronized in `manifest.json`, `package.json`
   and the root package entry in `package-lock.json`
 - Extension type: Chrome Manifest V3
 - Package name: `llm-selector-manager`
@@ -608,3 +608,13 @@ This project is currently marked `private` in `package.json`. Define license, di
 # Pipeline panel: лента ответов
 
 В Pipeline panel лента ответов моделей растягивается на всю ширину окна; остальные блоки остаются в прежнем контейнере. В заголовках карточек статус модели расположен сразу после имени и перед подтверждением ответа. Сводка позднего обновления ответа показывается в строке заголовка перед действиями карточки, рядом с отметкой непроверенной атрибуции.
+
+Двойной клик по бейджу раунда открывает отдельное окно этапа с заголовком «Этап N».
+
+В Pipeline panel бейджи раундов имеют увеличенный размер; подписи `Models` и `Synthesis` возле бейджей скрыты. Во встроенные предустановки добавлен `Test` с двумя раундами.
+
+Заголовки раундов и `Final` используют высоту бейджа и нижний отступ 10 px, чтобы бейджи не накладывались на блоки моделей.
+
+Бейджи `R1`, `R2` и следующих раундов центрируются относительно модельной колонки; кнопка удаления остаётся у правого края заголовка. Положение `Final` не изменено.
+
+Окно этапа оформлено тонкой серой рамкой без синего бокового акцента.

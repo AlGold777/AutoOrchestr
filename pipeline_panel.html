@@ -5,7 +5,7 @@
     <!-- LLM Discus: hidden search marker for developers -->
     <meta name="keywords" content="LLM Discus">
     <title>LLM Comparison</title>
-    <link rel="stylesheet" href="styles.css?v=2.81.497">
+    <link rel="stylesheet" href="styles.css?v=2.81.502">
 </head>
 <body class="pipeline-page">
     <div class="app-shell">
@@ -320,7 +320,7 @@
                     </div>
 
                         <div class="stage-column" id="round1" data-round="1" data-planned-stage-id="canvas-r1">
-                        <div class="stage-header-row"><div class="stage-label"><span class="round-badge">R1</span> Models <button type="button" class="pipeline-round-delete-btn" title="Delete round" aria-label="Delete round" hidden="">×</button></div><button type="button" class="pipeline-stage-insert" data-after-stage-id="canvas-r1" aria-label="Add stage after R1 Models" title="Add stage" disabled></button></div>
+                        <div class="stage-header-row"><div class="stage-label"><span class="round-badge">R1</span> <button type="button" class="pipeline-round-delete-btn" title="Delete round" aria-label="Delete round" hidden="">×</button></div><button type="button" class="pipeline-stage-insert" data-after-stage-id="canvas-r1" aria-label="Add stage after R1" title="Add stage" disabled></button></div>
                         <div class="model-stack" id="r1-models" data-render="pipeline-model-stack-r1"><!-- pipeline-model-stack-r1 rendered by pipeline/pipeline-runtime.js --></div>
                     </div>
 
@@ -340,7 +340,7 @@
                     </div>
 
                     <div class="stage-column synthesis-capable" id="synthesisColumn" data-stage="synthesis" hidden="" aria-hidden="true">
-                        <div class="stage-label"><span class="round-badge">Final</span> Synthesis</div>
+                        <div class="stage-label"><span class="round-badge">Final</span></div>
                         <div class="model-stack synthesis-stack" id="synthesis-stack" data-render="pipeline-synthesis-stack"><!-- pipeline-synthesis-stack rendered by results.js --></div>
                     </div>
 
@@ -356,6 +356,10 @@
                     <div class="pipeline-item" data-name="Universal">
                         <input type="radio" name="pipeline" class="pipeline-radio">
                         <span class="pipeline-item-name" title="Universal">Universal</span>
+                    </div>
+                    <div class="pipeline-item" data-name="Test">
+                        <input type="radio" name="pipeline" class="pipeline-radio">
+                        <span class="pipeline-item-name" title="Test">Test</span>
                     </div>
                     <div class="pipeline-item" data-name="Research">
                         <input type="radio" name="pipeline" class="pipeline-radio">
@@ -403,6 +407,9 @@
                     <textarea data-profile-editor spellcheck="false" aria-label="JSON профиля"></textarea>
                     <div class="pipeline-profile-actions"><button type="button" data-profile-action="apply">Применить</button><button type="button" data-profile-action="validate">Проверить</button><button type="button" data-profile-action="copy">Создать копию</button><button type="button" data-profile-action="save">Сохранить</button><button type="button" data-profile-action="import">Импорт</button><button type="button" data-profile-action="export">Экспорт</button></div>
                     <input type="file" accept="application/json" data-profile-import hidden><p data-profile-status aria-live="polite"></p>
+                </dialog>
+                <dialog class="pipeline-stage-dialog" id="pipeline-stage-dialog" aria-labelledby="pipeline-stage-dialog-title">
+                    <h2 id="pipeline-stage-dialog-title"></h2>
                 </dialog>
             </div>
         </div>
