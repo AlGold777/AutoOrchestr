@@ -18996,6 +18996,7 @@ function checkCompareButtonState() {
     const debateLengthSelect = document.getElementById('debate-length-select');
     const debateSelToolbar = document.getElementById('debateSelTb');
     const DEBATE_SELECTORS_STORAGE_KEY = 'llmCodexDebateSelectors.v1';
+    let persistedDebateSelectorState = {};
     const debateSessionsStore = window.DebateSessionsStore.create({ activeSessionId: '1' });
     const debateTabsState = debateSessionsStore.state;
     Object.assign(debateRunState, {
@@ -21161,7 +21162,9 @@ function checkCompareButtonState() {
         const state = {
             sender: debateSenderSelect?.value || 'Moderator',
             receiver: debateReceiverSelect?.value || '__none__',
+            judge: document.getElementById('judge-select')?.value || '',
         };
+        persistedDebateSelectorState = state;
         safeStorageLocalSet({ [DEBATE_SELECTORS_STORAGE_KEY]: state });
     }
     function restoreDebateSelectorState() {
@@ -21169,12 +21172,18 @@ function checkCompareButtonState() {
             return safeStorageLocalRemove(DEBATE_SELECTORS_STORAGE_KEY).then(() => {
                 if (debateSenderSelect) debateSenderSelect.value = 'Moderator';
                 if (debateReceiverSelect) debateReceiverSelect.value = '';
+                const judgeSelect = document.getElementById('judge-select');
+                if (judgeSelect) judgeSelect.value = '';
+                persistedDebateSelectorState = {};
             });
         }
         return safeStorageLocalGet(DEBATE_SELECTORS_STORAGE_KEY).then((data) => {
             const state = data?.[DEBATE_SELECTORS_STORAGE_KEY] || {};
+            persistedDebateSelectorState = state;
             if (state.sender && debateSenderSelect) debateSenderSelect.value = state.sender;
             if (state.receiver !== undefined && debateReceiverSelect) debateReceiverSelect.value = state.receiver;
+            const judgeSelect = document.getElementById('judge-select');
+            if (state.judge !== undefined && judgeSelect) judgeSelect.value = state.judge;
         });
     }
     function syncModeratorSelectors(options = {}) {
@@ -21205,11 +21214,12 @@ function checkCompareButtonState() {
         }
         const judgeSelect = document.getElementById('judge-select');
         if (judgeSelect) {
-            const prevJudge = judgeSelect.value;
+            const prevJudge = judgeSelect.value || '';
             judgeSelect.innerHTML = ['<option value="">Judge</option>']
                 .concat(selected.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`))
                 .join('');
-            judgeSelect.value = selected.includes(prevJudge) ? prevJudge : '';
+            const storedJudge = persistedDebateSelectorState.judge || '';
+            judgeSelect.value = selected.includes(prevJudge) ? prevJudge : (selected.includes(storedJudge) ? storedJudge : '');
         }
         if (debateReceiverSelect) {
             const prevValue = debateReceiverSelect.value;
@@ -22906,6 +22916,7 @@ function exportSingleTemplate(templateName, sourceData = null) {
         syncDirectionIcon();
         saveDebateSelectorState();
     });
+    document.getElementById('judge-select')?.addEventListener('change', saveDebateSelectorState);
     debateDirectionIcon?.addEventListener('click', () => {
         debateDirectionState.mode = debateDirectionState.mode === 'forward'
             ? 'reverse'

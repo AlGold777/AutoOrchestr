@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-09-30 — Pipeline panel: запоминание Judge model, version 2.81.512
+
+- `judge-select` сохраняет выбранную модель вместе с отправителем и получателем debate-сообщений и восстанавливает её после перезагрузки панели; выбор также переживает пересоздание списка моделей.
+
 ### 2026-09-30 — Answer cards: "incomplete" mark, approval as verification, version 2.81.511
 
 - An answer whose generation did not finish cleanly (`PARTIAL`, `STREAM_TIMEOUT`, …) shows a small gray "неполный" mark to the right of the model name; it only informs. Approving such an answer with the checkbox stays allowed (semi-automatic flow).
