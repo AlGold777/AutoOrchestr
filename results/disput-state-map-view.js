@@ -151,7 +151,8 @@
   function init(options = {}) {
     const panel = document.getElementById('disput-state-map-panel');
     if (!panel) return null;
-    normalizeShellDom(panel);
+    const shellOnly = panel.dataset.mapShell === 'true' || document.body?.classList.contains('pipeline-page');
+    if (shellOnly) normalizeShellDom(panel);
     if (!root.DebateStateMap) return null;
     const header = panel.querySelector('[data-map-collapse]');
     const close = panel.querySelector('[data-map-close]');
@@ -167,7 +168,6 @@
     const compareB = panel.querySelector('[data-map-compare-b]');
     let mode = 'structure'; let filter = 'all'; let zoom = 1; let selectedId = ''; let comparison = null; let map = root.DebateStateMap.project({}); let caseMap = map;
     let pendingAggregate;
-    const shellOnly = true;
 
     if (shellOnly) {
       const projectAggregate = (aggregate) => {
