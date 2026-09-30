@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-09-30 — Automation tab: GitHub UI changes integrated, prompt and answer in the journal, version 2.81.510
+
+- Integrate the two commits that existed only on GitHub (`e03d858`, `7b6b84e`, version 2.81.502): the Automation tab cards now share the Disput tab styling (`styles/devtools-selectors.css`: collapsible cards, toolbar, grid).
+- The journal keeps the prompt (1500 characters), the final answer (1200) and a dropped stale answer (500); the Message Timeline shows them as tooltips on the model and finish cells; the raw event view is capped at 300 characters per event.
+- The remote version of the journal code was not merged (it predates the request-id journal); its history is recorded as merged.
+
 ### 2026-09-30 — Transport: no premature uncertain final; telemetry names the cause, version 2.81.509
 
 - Field report (Le Chat, Perplexity): the tab's completion protocol reported `CONTEXT_LOST`/`AMBIGUOUS` 1.5 s after Send, the background committed an empty `UNCERTAIN` final and closed the batch, while the models kept answering; the real answer was then dropped as a duplicate final. After a confirmed send such a terminal is now deferred until the tab has been quiet for 45 s; a real answer (or any other terminal) arriving earlier wins.

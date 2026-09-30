@@ -50,7 +50,7 @@
       // 'prepared' opens a request ('sent' in journals written before 2.81.503).
       if (event.kind === 'prepared' || event.kind === 'sent') {
         const send = {
-          model: event.model, token: event.token, requestId: event.requestId || null, batchId: event.batchId || '', at: event.at, chars: event.chars,
+          model: event.model, token: event.token, requestId: event.requestId || null, batchId: event.batchId || '', at: event.at, chars: event.chars, prompt: event.prompt || '',
           tab: null, statuses: [], firstTextMs: null, terminal: null, stale: 0,
           dispatch: [], dispatchIds: [], submittedMs: null, rejections: [], revisions: 0, providerStop: null,
           completionTerminals: [], navigations: [], lateText: null

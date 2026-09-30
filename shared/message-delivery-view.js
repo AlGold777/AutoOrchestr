@@ -88,11 +88,11 @@
     const ids = `${shortId(send.requestId)}${dispatchTail ? ` / #${dispatchTail}` : ''}`;
     const row = el('tr', null,
       el('td', null, time(send.at)),
-      el('td', null, send.model),
+      el('td', { title: send.prompt ? `Prompt:\n${send.prompt}` : null }, send.model),
       el('td', { title: [send.requestId, ...send.dispatchIds].filter(Boolean).join('\n') }, ids),
       el('td', null, send.batchId || '—'),
       el('td', null, flow),
-      el('td', null, end),
+      el('td', { title: t?.answer ? `Answer:\n${t.answer}` : null }, end),
       el('td', null, send.prematureTerminal ? `${RESULT[send.result] || send.result} · финал преждевременный` : (RESULT[send.result] || send.result)));
     if (send.prematureTerminal || !['delivered', 'waiting', 'cancelled'].includes(send.result)) row.style.color = 'var(--danger, #b42318)';
     return row;
@@ -171,7 +171,7 @@
     $('automation-raw').replaceChildren(view.raw.length
       ? table(['Time', 'Model', 'Event', 'Details'], view.raw.slice().reverse().map((e) => {
         const { at, model, kind, token, ...rest } = e;
-        return el('tr', null, el('td', null, time(at)), el('td', null, model || ''), el('td', null, kind), el('td', null, `${token || ''} ${JSON.stringify(rest)}`));
+        return el('tr', null, el('td', null, time(at)), el('td', null, model || ''), el('td', null, kind), el('td', null, `${token || ''} ${JSON.stringify(rest).slice(0, 300)}`));
       }))
       : empty('No journal events.'));
   }

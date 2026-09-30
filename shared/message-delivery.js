@@ -99,7 +99,7 @@
       const entry = { token, sentAt: Date.now(), batchId, final: false, model, requestId };
       if (requestId) expectedByRequest.set(requestId, entry);
       latestByModel.set(model, entry);
-      record({ kind: 'prepared', model, token, batchId, requestId, chars: out[model].length });
+      record({ kind: 'prepared', model, token, batchId, requestId, chars: out[model].length, prompt: out[model].slice(0, 1500) });
     });
     pruneExpected();
     return out;
@@ -142,7 +142,7 @@
       : String(message.answer || '');
     const state = inspect(answer, entry.token);
     if (state === 'foreign') {
-      if (!entry.staleLogged) { entry.staleLogged = true; record({ kind: 'stale_dropped', model, token: entry.token, requestId: entry.requestId, chars: answer.length }); }
+      if (!entry.staleLogged) { entry.staleLogged = true; record({ kind: 'stale_dropped', model, token: entry.token, requestId: entry.requestId, chars: answer.length, answer: answer.slice(0, 500) }); }
       return null;
     }
     const metadata = { ...(message.metadata || {}) };
@@ -161,6 +161,7 @@
       entry.finalKind = kind;
       record({
         kind, model, token: entry.token, requestId: entry.requestId, chars: answer.length, ms: Date.now() - entry.sentAt,
+        answer: answer.slice(0, 1200),
         status,
         completion: completionOf(status || (answer.trim() ? 'SUCCESS' : 'FAILED'), answer),
         dispatchId: message.dispatchId || metadata.dispatchId || null,
