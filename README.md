@@ -11,6 +11,7 @@ collecting answers, and running Debate pipelines.
 - Main-page model tabs and dispatch: [docs/model-tabs-architecture.md](docs/model-tabs-architecture.md)
 - Timing architecture and current values: [docs/timings-settings.md](docs/timings-settings.md)
 - Current Debate plans: [docs/disput/PLAN-universal-pipeline-v3.0.md](docs/disput/PLAN-universal-pipeline-v3.0.md)
+- Universal task engine concept and draft contracts: [docs/Universal Engine/README.md](<docs/Universal Engine/README.md>)
 - Deferred work only: [docs/disput/OPEN-ITEMS-v3.0.md](docs/disput/OPEN-ITEMS-v3.0.md)
 - Append-only change history: [docs/CHANGELOG.md](docs/CHANGELOG.md)
 - Disput runtime/UI corrections: [docs/disput/TZ-runtime-ui-corrections-v1.0.md](docs/disput/TZ-runtime-ui-corrections-v1.0.md)
