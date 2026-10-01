@@ -5223,6 +5223,9 @@ async function startProcessReservedRun(prompt, selectedLLMs, resultsTab, options
   });
   humanPresencePaused = false;
   humanPresenceManuallyStopped = false;
+  // Who drives the run (panel-issued): a moderator-driven run does not get the
+  // system's own page visits; the moderator pulls answers with Get it.
+  jobState.session.runMode = String(pipelineContext?.runMode || '') || null;
   if (self.PipelineFSM?.startRun) {
     jobState.session.pipelineControl = self.PipelineFSM.startRun({
       pipelineRunId: pipelineContext?.pipelineRunId || null,
@@ -6053,9 +6056,24 @@ async function runPreCollectScrollNudge(llmName, tabId, sessionId, reason = 'pre
   }
 }
 
+// Semi-automatic and manual runs: the moderator decides when to look at a page.
+// Automatic visits would move focus and scroll the page on their own (observer
+// effect); Get it / double click stay the way to pull an answer.
+function isModeratorDrivenRun() {
+  return ['semi_auto', 'manual_dispatch'].includes(jobState?.session?.runMode);
+}
+self.isModeratorDrivenRun = isModeratorDrivenRun;
+
 async function runForcedAutomationVisits(llmName, tabId, sessionId, options = {}) {
   if (self.isInitialPromptPassActive?.()) return false;
   if (!isValidTabId(tabId)) return false;
+  if (isModeratorDrivenRun()) {
+    emitTelemetry(llmName, 'FORCED_VISIT_SKIPPED', {
+      details: 'moderator_driven_run',
+      meta: { tabId, reason: options.reason || 'automation_visit', runMode: jobState.session.runMode }
+    });
+    return false;
+  }
   const visitFn = (typeof self.visitTabWithAutomation === 'function') ? self.visitTabWithAutomation : null;
   const visitPolicy = self.VisitPolicy || null;
   const visits = Math.max(1, Number(options.visits || 1) || 1);

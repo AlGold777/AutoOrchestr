@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-01 — "Next" adopts shown text; no automatic visits in moderator-driven runs, version 2.81.527
+
+- Moderator-driven runs (semi-automatic with a template, manual dispatch) no longer get the system's own automatic page visits: the panel sends `runMode` with the batch and `runForcedAutomationVisits` skips them (`FORCED_VISIT_SKIPPED: moderator_driven_run`); Get it / double click stay the way to pull an answer.
+- "Next" now also closes a stage with text that is shown but has no final (answers recovered from the background state): such answers are adopted as incomplete and unproven (`MODERATOR_ACCEPTED`), after a confirmation that names them; a real final before the close still wins. This is the case from field report (5) — Perplexity's answer was on the page and in the feed but never reached the stage wait.
+- Merge of the pipeline layout polish (2.81.522–2.81.524) is in 2.81.526.
+- Tests: `pipeline-semi-auto`. Spec status: `docs/telemetry-semi-auto-spec.md` (T6 done).
+
 ### 2026-10-01 — Merge of the pipeline layout polish into the semi-automatic work, version 2.81.526
 
 - Integrates the cosmetic pipeline spacing/feed-height changes (2.81.522–2.81.524, made in parallel) with the semi-automatic series 2.81.521–2.81.525; no behavior changes beyond that.

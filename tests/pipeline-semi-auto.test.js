@@ -26,7 +26,7 @@ describe('pipelineWaiter — moderator close', () => {
     waiter.handleFinal(final('A', 'answer A'));
     waiter.handleFinal(final('C', '', 'ERROR'));
     expect(waiter.openModels()).toEqual(['A', 'B', 'C']);
-    expect(waiter.previewClose()).toEqual({ closable: 1, answeredModels: ['A'], skipModels: ['B'] });
+    expect(waiter.previewClose()).toEqual({ closable: 1, answeredModels: ['A'], partialModels: [], skipModels: ['B'] });
     expect(waiter.closeAnsweredBatches('moderator_closed')).toEqual({ closed: 1, stillWaiting: 0, skipped: ['B'] });
     const result = await promise;
     expect(result.timedOut).toBe(false);
@@ -35,6 +35,33 @@ describe('pipelineWaiter — moderator close', () => {
     expect(result.failed).toEqual({ C: 'ERROR' });
     expect(result.missing).toEqual(['B', 'C']);
     expect(waiter.openModels()).toEqual([]);
+  });
+
+  test('text shown without a final is adopted as an incomplete answer on close (field report 5)', async () => {
+    const waiter = loadPipelineWaiter();
+    const promise = waiter.waitForModels(['A', 'B', 'C'], { timeoutMs: 60000, requestIds: ids(['A', 'B', 'C']) });
+    waiter.handleFinal(final('A', 'answer A'));
+    // B: text arrived (e.g. from the global state) but no final; C: nothing.
+    waiter.handlePartial({ llmName: 'B', answer: 'partial B', transportRequestId: 'req-B' });
+    expect(waiter.previewClose()).toEqual({ closable: 1, answeredModels: ['A'], partialModels: ['B'], skipModels: ['C'] });
+    waiter.closeAnsweredBatches('moderator_closed');
+    const result = await promise;
+    expect(result.responses).toEqual({ A: 'answer A', B: 'partial B' });
+    expect(result.results.B).toMatchObject({ completion: 'partial', moderatorAccepted: true, attribution: 'unproven' });
+    expect(result.adopted).toEqual(['B']);
+    expect(result.skipped).toEqual(['C']);
+    expect(result.missing).toEqual(['C']);
+  });
+
+  test('a wait with only unfinished text can be closed; a real final before the close wins', async () => {
+    const waiter = loadPipelineWaiter();
+    const promise = waiter.waitForModels(['A'], { timeoutMs: 60000, requestIds: ids(['A']) });
+    waiter.handlePartial({ llmName: 'A', answer: 'draft', transportRequestId: 'req-A' });
+    expect(waiter.previewClose().closable).toBe(1);
+    waiter.handleFinal(final('A', 'complete answer'));
+    const result = await promise;
+    expect(result.responses.A).toBe('complete answer');
+    expect(result).not.toHaveProperty('adopted');
   });
 
   test('a wait without any answer keeps waiting', () => {
@@ -118,4 +145,35 @@ test('the panel journals shown answers, run context and moderator actions', () =
   ['moderator_get_it', 'get_it_result', 'moderator_stage_close', 'moderator_close_refused', 'moderator_approve']
     .forEach((kind) => expect(source).toContain(`'${kind}'`));
   expect(source).toContain("context?.manualModeratorDispatch ? 'manual' : 'unscoped'");
+});
+
+describe('moderator-driven runs get no automatic page visits', () => {
+  const vm = require('vm');
+  const orch = fs.readFileSync(path.join(__dirname, '..', 'background', 'job-orchestrator.js'), 'utf8');
+  const from = orch.indexOf('function isModeratorDrivenRun()');
+  const gate = orch.slice(from, orch.indexOf('  const visitFn =', from)) + '  return \'would_visit\';\n}';
+  const run = async (runMode) => {
+    const c = {
+      self: { isInitialPromptPassActive: () => false }, isValidTabId: () => true, emitTelemetry: jest.fn(),
+      jobState: { session: { runMode } }
+    };
+    vm.createContext(c);
+    vm.runInContext(gate, c);
+    return { result: await vm.runInContext("runForcedAutomationVisits('GPT', 5, 1, {reason:'x'})", c), c };
+  };
+
+  test.each(['semi_auto', 'manual_dispatch'])('%s skips the visit and journals why', async (mode) => {
+    const { result, c } = await run(mode);
+    expect(result).toBe(false);
+    expect(c.emitTelemetry).toHaveBeenCalledWith('GPT', 'FORCED_VISIT_SKIPPED', expect.objectContaining({ details: 'moderator_driven_run' }));
+  });
+
+  test.each(['auto', null])('%s still visits', async (mode) => {
+    expect((await run(mode)).result).toBe('would_visit');
+  });
+
+  test('the panel sends the run mode and the background keeps it on the session', () => {
+    expect(source).toContain('runMode: getRunModeContext().runMode');
+    expect(orch).toContain("jobState.session.runMode = String(pipelineContext?.runMode || '') || null;");
+  });
 });

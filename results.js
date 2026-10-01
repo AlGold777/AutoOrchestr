@@ -3079,6 +3079,9 @@ document.addEventListener('click', (event) => {
         );
     };
     const hasOwnKey = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
+    // A wait holds something to close with: a final answer or shown, unfinished text.
+    const hasAnyAnswer = (batch) => Object.keys(batch.responses).length > 0
+        || Object.values(batch.partialResponses).some((text) => String(text || '').trim());
     // Per-request barrier registry (TransportContract). A batch registers its
     // transport request ids before dispatch, so an answer can never arrive "too
     // early"; an answer is matched only by its transportRequestId, never by the
@@ -3150,6 +3153,25 @@ document.addEventListener('click', (event) => {
         finalizeBatch(batch, timedOut = false, closeReason = null) {
             if (!batch || batch.settled) return [];
             this.releaseBatch(batch);
+            // A moderator close takes what the models have shown so far: text that
+            // arrived without a final (still generating, or the final was lost) is
+            // adopted as an explicit, incomplete, unproven answer.
+            const adopted = [];
+            if (closeReason) {
+                batch.models.forEach((name) => {
+                    if (hasOwnKey(batch.responses, name)) return;
+                    const partial = String(batch.partialResponses[name] || '');
+                    if (!partial.trim()) return;
+                    batch.responses[name] = partial;
+                    batch.results[name] = {
+                        transportRequestId: batch.requestIds[name] || null, dispatchId: null,
+                        status: 'MODERATOR_ACCEPTED', completion: 'partial', reason: closeReason,
+                        attribution: 'unproven', moderatorAccepted: true, text: partial
+                    };
+                    delete batch.failures[name];
+                    adopted.push(name);
+                });
+            }
             const missing = batch.models.filter((name) => !hasOwnKey(batch.responses, name));
             // A moderator close skips the still-silent models for this stage only:
             // they are neither failures (no dropout from the run) nor retried.
@@ -3160,7 +3182,7 @@ document.addEventListener('click', (event) => {
                 missing,
                 failed: { ...batch.failures },
                 timedOut,
-                ...(closeReason ? { closeReason, skipped } : {}),
+                ...(closeReason ? { closeReason, skipped, adopted } : {}),
                 requestIds: { ...batch.requestIds }
             });
             return skipped;
@@ -3169,7 +3191,7 @@ document.addEventListener('click', (event) => {
         // least one answer with what it has. Waits with no answer keep waiting.
         closeAnsweredBatches(reason = 'moderator_closed') {
             const open = Array.from(this.batches.values()).filter((batch) => !batch.settled);
-            const answered = open.filter((batch) => Object.keys(batch.responses).length > 0);
+            const answered = open.filter((batch) => hasAnyAnswer(batch));
             const skipped = answered.flatMap((batch) => this.finalizeBatch(batch, false, reason));
             return { closed: answered.length, stillWaiting: open.length - answered.length, skipped };
         },
@@ -3182,11 +3204,13 @@ document.addEventListener('click', (event) => {
         // What closeAnsweredBatches would do now, without settling anything.
         previewClose() {
             const open = Array.from(this.batches.values()).filter((batch) => !batch.settled);
-            const answered = open.filter((batch) => Object.keys(batch.responses).length > 0);
+            const answered = open.filter((batch) => hasAnyAnswer(batch));
+            const hasPartial = (batch, name) => !hasOwnKey(batch.responses, name) && Boolean(String(batch.partialResponses[name] || '').trim());
             return {
                 closable: answered.length,
                 answeredModels: answered.flatMap((batch) => Object.keys(batch.responses)),
-                skipModels: answered.flatMap((batch) => batch.models.filter((name) => !hasOwnKey(batch.responses, name) && !hasOwnKey(batch.failures, name)))
+                partialModels: answered.flatMap((batch) => batch.models.filter((name) => hasPartial(batch, name))),
+                skipModels: answered.flatMap((batch) => batch.models.filter((name) => !hasOwnKey(batch.responses, name) && !hasOwnKey(batch.failures, name) && !hasPartial(batch, name)))
             };
         },
         cancelBatch(batchId) {
@@ -5507,7 +5531,8 @@ document.addEventListener('click', (event) => {
                 stageId,
                 stageAttemptId: requestedAttemptId || `${stageId || (context?.manualModeratorDispatch ? 'manual' : 'unscoped')}:a${attemptNumber}`,
                 sourceView,
-                transportRequestIds
+                transportRequestIds,
+                runMode: getRunModeContext().runMode
             };
             const sanitizedPromptMap = window.TransportPolicy?.sanitizePromptsByModel
                 ? window.TransportPolicy.sanitizePromptsByModel(promptsByModel)
@@ -5670,7 +5695,7 @@ document.addEventListener('click', (event) => {
             window.MessageDelivery?.closeBatch({ models: batchResult.missing || [], timedOut: batchResult.timedOut, failed: batchResult.failed || {}, requestIds: batchResult.requestIds || {}, reason: batchResult.closeReason || '' });
             batchEvent('batch_end', {
                 outcome: batchResult.timedOut ? 'timeout' : (batchResult.closeReason || 'settled'),
-                ...(batchResult.closeReason ? { skipped: batchResult.skipped || [] } : {}),
+                ...(batchResult.closeReason ? { skipped: batchResult.skipped || [], adopted: batchResult.adopted || [] } : {}),
                 durationMs: Date.now() - batchStartedAt,
                 timeoutMs: resolvedTimeoutMs,
                 answered: Object.keys(batchResult.responses || {}),
@@ -7415,14 +7440,16 @@ document.addEventListener('click', (event) => {
                     showNotification('Ни одна модель этапа ещё не ответила. Нажмите Get it, чтобы подтянуть ответы.', 'info');
                     return;
                 }
-                if (preview.skipModels.length && !window.confirm(
-                    `Закрыть этап с собранными ответами (${preview.answeredModels.join(', ')})?\n\nБез ответа будут пропущены на этом этапе: ${preview.skipModels.join(', ')}.`
+                if ((preview.skipModels.length || preview.partialModels.length) && !window.confirm(
+                    `Закрыть этап с собранными ответами?\n\nГотовы: ${preview.answeredModels.join(', ') || '—'}.`
+                    + (preview.partialModels.length ? `\nПринимаются неполными (текст есть, финала нет): ${preview.partialModels.join(', ')}.` : '')
+                    + (preview.skipModels.length ? `\nБез ответа, пропускаются на этом этапе: ${preview.skipModels.join(', ')}.` : '')
                 )) {
-                    window.MessageDelivery?.batchEvent?.('moderator_close_refused', { reason: 'declined', answered: preview.answeredModels, skipped: preview.skipModels });
+                    window.MessageDelivery?.batchEvent?.('moderator_close_refused', { reason: 'declined', answered: preview.answeredModels, partial: preview.partialModels, skipped: preview.skipModels });
                     return;
                 }
                 const closed = pipelineWaiter.closeAnsweredBatches('moderator_closed');
-                window.MessageDelivery?.batchEvent?.('moderator_stage_close', { answered: preview.answeredModels, skipped: closed.skipped, stillWaiting: closed.stillWaiting });
+                window.MessageDelivery?.batchEvent?.('moderator_stage_close', { answered: preview.answeredModels, adopted: preview.partialModels, skipped: closed.skipped, stillWaiting: closed.stillWaiting });
                 if (closed.stillWaiting) {
                     showNotification(`Этап закрыт частично: ${closed.stillWaiting} ожидание(й) ещё без ответов.`, 'info');
                 }
@@ -16308,6 +16335,12 @@ document.addEventListener('click', (event) => {
                 // Shown from the global state, but the wait never got it.
                 acceptedByWait = false;
                 rejectReason = entry?.transportRequestId ? 'not_final' : 'no_request_id';
+            }
+            // Text shown without a final stays available to the wait: the moderator can
+            // close the stage with it ("next"); a later real final still wins.
+            const stateText = String(entry?.answer || '').trim();
+            if (stateText && entry?.transportRequestId && !entry?.finalStatusRecorded && pipelineWaiter.waiting) {
+                pipelineWaiter.handlePartial({ llmName, answer: stateText, transportRequestId: entry.transportRequestId, dispatchId: entry?.dispatchId || null });
             }
             if (hydrateRendered) {
                 window.MessageDelivery?.batchEvent?.('displayed', {
