@@ -270,6 +270,8 @@
           terminalPolicy: stage.terminalPolicy,
           auditPolicy: stage.auditPolicy,
           inputSelector: stage.inputSelector,
+          ...(stage.instruction ? { instruction: stage.instruction } : {}),
+          ...(stage.label ? { label: stage.label } : {}),
           participantSelectionRationale: arr(stage.participantIds).length ? 'PLAN_REVISION_ASSIGNMENT' : 'CAPABILITY_MATCH'
         }],
         utilityBreakdown: []

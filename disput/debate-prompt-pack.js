@@ -48,6 +48,8 @@
     if (operation === 'opening') {
       lines.push('Ты участвуешь в работе с другими LLM. Их ответы пока тебе неизвестны, и они не видят твой ответ.');
       lines.push(OPENING_BY_CLASS[task.taskClass] || OPENING_BY_CLASS.general);
+      // A template stage brings its own brief (the generic opening stays the frame).
+      if (action?.instruction) lines.push(`Задание этапа:\n${text(action.instruction)}`);
     } else if (operation === 'final_position') {
       lines.push('Сформулируй финальную позицию: что сохранилось, что изменилось, почему это изменилось и какие вопросы остались открытыми. Не начинай новый спор.');
     } else if (operation === 'synthesis') {

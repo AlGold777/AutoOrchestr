@@ -5,7 +5,7 @@
     <!-- LLM Discus: hidden search marker for developers -->
     <meta name="keywords" content="LLM Discus">
     <title>LLM Comparison</title>
-    <link rel="stylesheet" href="styles.css?v=2.81.527">
+    <link rel="stylesheet" href="styles.css?v=2.81.528">
 </head>
 <body class="pipeline-page">
     <div class="app-shell">
@@ -391,7 +391,8 @@
                     <input type="file" accept="application/json" data-profile-import hidden><p data-profile-status aria-live="polite"></p>
                 </dialog>
                 <dialog class="pipeline-stage-dialog" id="pipeline-stage-dialog" aria-labelledby="pipeline-stage-dialog-title">
-                    <h2 id="pipeline-stage-dialog-title"></h2>
+                    <header class="pipeline-stage-dialog-header"><h2 id="pipeline-stage-dialog-title"></h2><button type="button" data-stage-close aria-label="Закрыть">×</button></header>
+                    <div class="pipeline-stage-card" id="pipeline-stage-card"></div>
                 </dialog>
             </div>
         </div>
@@ -954,6 +955,7 @@
     <script src="disput/debate-plan-revision.js"></script>
     <script src="disput/debate-planner.js"></script>
     <script src="disput/debate-participant-registry.js"></script>
+    <script src="disput/architecture-framework.js"></script>
     <script src="disput/debate-stage-executor.js"></script>
     <script src="disput/debate-orchestrator.js"></script>
     <script src="disput/debate-orchestrator-persistence.js"></script>
@@ -985,6 +987,7 @@
     <script src="results/debate-ui.js"></script>
     <script src="results/debate-transport.js"></script>
     <script src="results/debate-controller.js"></script>
+    <script src="results/stage-card.js"></script>
     <script src="results/debate-renderer.js"></script>
     <script src="results/debate-sessions-store.js"></script>
     <script src="results/debate-export.js"></script>

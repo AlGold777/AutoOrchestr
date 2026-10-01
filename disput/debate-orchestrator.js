@@ -433,6 +433,8 @@
           terminalPolicy: proposed.terminalPolicy,
           auditPolicy: proposed.auditPolicy,
           inputSelector: proposed.inputSelector,
+          ...(proposed.instruction ? { instruction: proposed.instruction } : {}),
+          ...(proposed.label ? { label: proposed.label } : {}),
           status: 'pending',
           attempt: 1
         };

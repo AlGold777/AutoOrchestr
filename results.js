@@ -3440,6 +3440,8 @@ document.addEventListener('click', (event) => {
         const pipelineSessionDraftPlans = Object.create(null);
         let pipelineR1ManualDirty = false;
         let pipelineApplyingConfig = false;
+        // Stage template of the applied pipeline ('' = a plain round pipeline).
+        let activeStageTemplate = '';
 
         const togglePipelineListCollapsed = () => {
             if (!pipelineList) return;
@@ -4050,10 +4052,12 @@ document.addEventListener('click', (event) => {
                 const stack = captureModelStackState(`r${round}-models`);
                 const participantIds = (stack?.items || []).filter((item) => item.send).map((item) => item.name).filter(Boolean);
                 if (!participantIds.length) continue;
+                const templateStage = activeStageTemplate ? window.ArchitectureFramework?.byNumber?.(round) : null;
                 rounds.push({
                     plannedStageId: `canvas-r${round}`,
-                    label: round === 1 ? 'R1 Models' : `R${round}`,
-                    purpose: round === 1 ? 'position' : 'response',
+                    label: templateStage ? `${round}. ${templateStage.titleRu}` : (round === 1 ? 'R1 Models' : `R${round}`),
+                    purpose: templateStage?.purpose || (round === 1 ? 'position' : 'response'),
+                    ...(templateStage ? { instruction: templateStage.instruction, meta: { stageTemplate: activeStageTemplate, stageNumber: templateStage.n, phase: templateStage.phase } } : {}),
                     participantIds,
                     participantBindings: (stack?.items || []).filter((item) => item.send).map((item) => ({ participantId: item.name, promptId: item.role || null }))
                 });
@@ -4180,14 +4184,24 @@ document.addEventListener('click', (event) => {
             anonymizeParticipants = true,
             profileId = '',
             profileVersion = '',
-            resourceBudget = null
+            resourceBudget = null,
+            stageTemplate = ''
         } = {}) => {
             const targetRounds = Math.max(1, Math.min(50, Number(roundLimit) || 1));
             const modelStacks = {
                 'r1-models': buildPresetModelStack(selectedModels, { withRoles: false })
             };
             for (let round = 2; round <= targetRounds; round++) {
-                modelStacks[`r${round}-models`] = buildPresetModelStack(selectedModels, { withRoles: true, roles });
+                modelStacks[`r${round}-models`] = buildPresetModelStack(selectedModels, { withRoles: !stageTemplate, roles });
+            }
+            // A stage template decides per stage who works (the rest stay visible, unsent).
+            if (stageTemplate) {
+                const ordered = orderModelNamesForPipeline(selectedModels);
+                Object.entries(modelStacks).forEach(([stackId, stack]) => {
+                    const stage = window.ArchitectureFramework?.byNumber?.(Number(stackId.replace(/\D+/g, '')));
+                    const wanted = new Set(window.ArchitectureFramework?.participantsFor?.(stage, ordered) || []);
+                    stack.items.forEach((item) => { item.send = wanted.has(item.name); });
+                });
             }
             return {
                 version: 3,
@@ -4207,6 +4221,7 @@ document.addEventListener('click', (event) => {
                     profileId,
                     profileVersion,
                     resourceBudget: resourceBudget ? { ...resourceBudget } : null,
+                    ...(stageTemplate ? { stageTemplate } : {}),
                     roles: roles.slice(),
                     // A fixed preset's round plan is deliberately explicit: each
                     // wave emits these artifacts and hands them to the next wave.
@@ -4246,7 +4261,8 @@ document.addEventListener('click', (event) => {
                     anonymizeParticipants: definition.anonymizeParticipants !== false,
                     profileId: definition.profileId || 'UNIVERSAL_STANDARD',
                     profileVersion: window.DebateProfileSchema?.BUILTIN_PROFILES?.[definition.profileId || 'UNIVERSAL_STANDARD']?.version || '',
-                    resourceBudget: definition.resourceBudget || null
+                    resourceBudget: definition.resourceBudget || null,
+                    stageTemplate: definition.stageTemplate || ''
                 });
                 return [definition.name, definition.disabled ? { ...config, disabled: true } : config];
             })
@@ -4993,6 +5009,10 @@ document.addEventListener('click', (event) => {
         };
         const setDebateRoundLimitValue = (value) => {
             if (!debateRoundLimitSelect) return;
+            if (activeStageTemplate && !pipelineApplyingConfig) {
+                showNotification('Число этапов задаёт шаблон: его нельзя менять кнопками раундов.', 'info');
+                return;
+            }
             if (String(value) === 'infinite') {
                 debateRoundLimitSelect.value = 'infinite';
                 debateRoundLimitSelect.dispatchEvent(new Event('change', { bubbles: true }));
@@ -5307,6 +5327,25 @@ document.addEventListener('click', (event) => {
                 && modelNameSetsEqual(state.sendModels, defaults);
         };
 
+        // Stage template: who works at each stage follows the framework (all / lead /
+        // reviewer / nobody at a gate), computed from the currently selected models.
+        const applyStageTemplateAssignments = () => {
+            const framework = window.ArchitectureFramework;
+            if (!activeStageTemplate || !framework?.participantsFor) return false;
+            const models = orderModelNamesForPipeline(getSelectedLLMs());
+            let changed = false;
+            for (let round = 1; round <= roundCounter; round++) {
+                const wanted = new Set(framework.participantsFor(framework.byNumber(round), models));
+                document.querySelectorAll(`#r${round}-models .model-block`).forEach((block) => {
+                    const name = block.querySelector('.model-name')?.textContent?.trim();
+                    const send = block.querySelector('.model-send-checkbox');
+                    if (!name || !send || send.disabled) return;
+                    const on = wanted.has(name);
+                    if (send.checked !== on) { send.checked = on; changed = true; }
+                });
+            }
+            return changed;
+        };
         const syncPipelineRoundModelsFromSelectedLLMs = ({ force = false } = {}) => {
             if (!force && pipelineR1ManualDirty && !isR1DefaultSelection()) return false;
             const selectedIndices = getSelectedLLMIndicesForPipeline();
@@ -5336,6 +5375,7 @@ document.addEventListener('click', (event) => {
                     }
                 });
             }
+            if (applyStageTemplateAssignments()) changed = true;
             if (changed) updatePipelineAll();
             return changed;
         };
@@ -6174,6 +6214,14 @@ document.addEventListener('click', (event) => {
                         objective: context?.debateCase?.topic?.title || 'Discussion',
                         maxWords: getDebateMaxWords()
                     },
+                    // A template stage carries its own brief (stage card): it becomes the
+                    // action instruction of the prompt for every participant of the stage.
+                    action: stage.instruction ? {
+                        id: stage.stageInstanceId,
+                        operation: window.DebateArtifactPipeline.operationForPurpose(stage.purpose),
+                        role: stage.purpose === 'synthesis' ? 'synthesizer' : 'participant',
+                        instruction: stage.instruction
+                    } : undefined,
                     stage: {
                         stageId: stage.stageInstanceId,
                         operation: window.DebateArtifactPipeline.operationForPurpose(stage.purpose),
@@ -6389,6 +6437,7 @@ document.addEventListener('click', (event) => {
             if (!config || typeof config !== 'object') return;
             pipelineApplyingConfig = true;
             const protocol = config.protocol && typeof config.protocol === 'object' ? config.protocol : null;
+            activeStageTemplate = String(protocol?.stageTemplate || '');
             if (protocol) {
                 if (typeof window.setDebateSchemeValue === 'function') window.setDebateSchemeValue('universal');
                 const lengthSelect = document.getElementById('debate-length-select');
@@ -7251,7 +7300,50 @@ document.addEventListener('click', (event) => {
             document.body.classList.add('modal-open');
         };
 
+        // Stage card: the round badge opens the stage's card (template stage text,
+        // who works, run status). Plain rounds show their participants.
+        const openStageCard = (roundBadge) => {
+            const dialog = document.getElementById('pipeline-stage-dialog');
+            const title = document.getElementById('pipeline-stage-dialog-title');
+            const body = document.getElementById('pipeline-stage-card');
+            if (!dialog || !title || !body) return;
+            const label = (roundBadge.textContent || '').trim();
+            const match = /^R?(\d+)$/i.exec(label);
+            if (!match || !window.StageCard) {
+                title.textContent = /^final$/i.test(label) ? 'Финальный синтез' : `Этап ${label}`;
+                body.replaceChildren();
+            } else {
+                const round = Number(match[1]);
+                const templateStage = activeStageTemplate ? window.ArchitectureFramework?.byNumber?.(round) || null : null;
+                const stack = captureModelStackState(`r${round}-models`);
+                const stages = debateApplication?.getOrchestrator?.()?.getState?.()?.stages || [];
+                const stageRun = stages.filter((item) => item.plannedStageId === `canvas-r${round}`).pop() || null;
+                const model = window.StageCard.buildModel({
+                    round,
+                    templateStage,
+                    participants: (stack?.items || []).filter((item) => item.input || item.send),
+                    stageRun
+                });
+                title.textContent = model.title;
+                window.StageCard.render(body, model, {
+                    onCopy: (text) => navigator.clipboard?.writeText?.(text)
+                        .then(() => showNotification('Задание этапа скопировано.', 'info'))
+                        .catch(() => showNotification('Не удалось скопировать задание.', 'warn'))
+                });
+            }
+            if (!dialog.open) dialog.showModal();
+        };
+        document.getElementById('pipeline-stage-dialog')?.addEventListener('click', (event) => {
+            if (event.target.closest?.('[data-stage-close]')) event.currentTarget.close();
+        });
+
         pipelinePanel.addEventListener('click', (event) => {
+            const stageBadge = event.target?.closest?.('.round-badge');
+            if (stageBadge && pipelinePanel.contains(stageBadge)) {
+                event.preventDefault();
+                openStageCard(stageBadge);
+                return;
+            }
             const addRoundBtn = event.target?.closest?.('#pipeline-add-round-btn');
             if (addRoundBtn) {
                 event.preventDefault();
@@ -7293,13 +7385,7 @@ document.addEventListener('click', (event) => {
             if (roundBadge && pipelinePanel.contains(roundBadge)) {
                 event.preventDefault();
                 event.stopImmediatePropagation();
-                const dialog = document.getElementById('pipeline-stage-dialog');
-                const title = document.getElementById('pipeline-stage-dialog-title');
-                if (dialog && title) {
-                    const stageNumber = (roundBadge.textContent || '').trim().replace(/^R/i, '');
-                    title.textContent = `Этап ${stageNumber}`;
-                    if (!dialog.open) dialog.showModal();
-                }
+                openStageCard(roundBadge);
                 return;
             }
             const label = event.target.closest('.stage-label');

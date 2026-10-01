@@ -4,10 +4,10 @@ describe('universal pipeline presets', () => {
   test('offers purpose profiles without execution topologies', () => {
     expect(Presets.DEFAULT_PRESET_ID).toBe('UNIVERSAL_STANDARD');
     expect(Presets.PIPELINE_PRESETS.map((preset) => preset.id)).toEqual([
-      'UNIVERSAL_STANDARD', 'TEST', 'UNIVERSAL_RESEARCH', 'UNIVERSAL_RED_TEAM'
+      'UNIVERSAL_STANDARD', 'TEST', 'UNIVERSAL_RESEARCH', 'UNIVERSAL_RED_TEAM', 'ARCHITECTURE'
     ]);
     expect(Presets.BUILTIN_PIPELINE_DEFINITIONS.map((item) => item.name)).toEqual([
-      'Universal', 'Test', 'Research', 'Red Team'
+      'Universal', 'Test', 'Research', 'Red Team', 'Architecture'
     ]);
     expect(JSON.stringify(Presets.PIPELINE_PRESETS)).not.toMatch(/topology|scheme|roundLimit|waveLimit|turnLimit/i);
   });

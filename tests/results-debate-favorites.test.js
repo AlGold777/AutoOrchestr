@@ -1385,7 +1385,7 @@ describe('Pipeline debate favorites view', () => {
   test('default pipeline list exposes only universal purpose profiles', () => {
     const names = Array.from(document.querySelectorAll('#pipelineItems .pipeline-item'))
       .map((item) => item.dataset.name);
-    expect(names).toEqual(['Universal', 'Test', 'Research', 'Red Team']);
+    expect(names).toEqual(['Universal', 'Test', 'Research', 'Red Team', 'Architecture']);
     expect(document.querySelectorAll('#pipelineItems .pipeline-item-delete')).toHaveLength(0);
   });
 

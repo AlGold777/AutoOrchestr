@@ -6,9 +6,12 @@
   const STANDARD_BUDGET = Object.freeze({ class: 'standard', maxTotalStages: 12, critiqueDepth: 1, synthesisPasses: 1 });
   const RESEARCH_BUDGET = Object.freeze({ class: 'research', maxTotalStages: 30, critiqueDepth: 2, synthesisPasses: 1 });
   const RED_TEAM_BUDGET = Object.freeze({ class: 'red_team', maxTotalStages: 24, critiqueDepth: 3, synthesisPasses: 1 });
+  // Product→Architecture template: 30 framework stages (26 with models, 4 gates).
+  const ARCHITECTURE_BUDGET = Object.freeze({ class: 'research', maxTotalStages: 40, critiqueDepth: 2, synthesisPasses: 1 });
   const REASONING_BUDGETS = Object.freeze({
     STANDARD: STANDARD_BUDGET, RESEARCH: RESEARCH_BUDGET, RED_TEAM: RED_TEAM_BUDGET,
-    VERDICT_STANDARD: STANDARD_BUDGET, LONG_INFINITE: RESEARCH_BUDGET, RED_TEAM_MEDIUM: RED_TEAM_BUDGET
+    VERDICT_STANDARD: STANDARD_BUDGET, LONG_INFINITE: RESEARCH_BUDGET, RED_TEAM_MEDIUM: RED_TEAM_BUDGET,
+    ARCHITECTURE: ARCHITECTURE_BUDGET
   });
   // Compatibility names describe budget classes, not execution architectures.
 
@@ -27,14 +30,19 @@
     makePreset('UNIVERSAL_RESEARCH', 'Research', 'DEEP_RESEARCH_ALPHA', REASONING_BUDGETS.RESEARCH,
       { finalizationPolicy: 'readiness_or_moderator' }),
     makePreset('UNIVERSAL_RED_TEAM', 'Red Team', 'UNIVERSAL_RED_TEAM', REASONING_BUDGETS.RED_TEAM,
-      { finalizationPolicy: 'after_audited_synthesis' })
+      { finalizationPolicy: 'after_audited_synthesis' }),
+    makePreset('ARCHITECTURE', 'Architecture', 'UNIVERSAL_STANDARD', REASONING_BUDGETS.ARCHITECTURE,
+      { finalizationPolicy: 'readiness_or_moderator' })
   ]);
 
   const BUILTIN_PIPELINE_DEFINITIONS = Object.freeze([
     Object.freeze({ name: 'Universal', presetId: 'UNIVERSAL_STANDARD', profileId: 'UNIVERSAL_STANDARD', runPolicy: 'auto', length: '700', defaultModelCount: 2, roles: ['participant', 'critic', 'verifier', 'synthesizer'] }),
     Object.freeze({ name: 'Test', presetId: 'TEST', profileId: 'UNIVERSAL_STANDARD', runPolicy: 'auto', length: '700', roundLimit: '2', defaultModelCount: 2, roles: ['participant', 'critic'] }),
     Object.freeze({ name: 'Research', presetId: 'UNIVERSAL_RESEARCH', profileId: 'DEEP_RESEARCH_ALPHA', runPolicy: 'auto', length: '1000', defaultModelCount: 2, roles: ['researcher', 'critic', 'verifier', 'synthesizer'] }),
-    Object.freeze({ name: 'Red Team', presetId: 'UNIVERSAL_RED_TEAM', profileId: 'UNIVERSAL_RED_TEAM', runPolicy: 'auto', length: '900', defaultModelCount: 3, roles: ['proposer', 'critic', 'verifier', 'synthesizer'] })
+    Object.freeze({ name: 'Red Team', presetId: 'UNIVERSAL_RED_TEAM', profileId: 'UNIVERSAL_RED_TEAM', runPolicy: 'auto', length: '900', defaultModelCount: 3, roles: ['proposer', 'critic', 'verifier', 'synthesizer'] }),
+    // Разработка архитектуры: stage by stage with the moderator (semi-automatic by default).
+    // The 30 stages come from ArchitectureFramework (disput/architecture-framework.js).
+    Object.freeze({ name: 'Architecture', presetId: 'ARCHITECTURE', profileId: 'UNIVERSAL_STANDARD', runPolicy: 'manual', length: '1000', roundLimit: '30', stageTemplate: 'architecture', defaultModelCount: 3, roles: ['participant', 'critic', 'verifier', 'synthesizer'] })
   ]);
 
   const PRESET_BY_ID = Object.freeze(Object.fromEntries(PIPELINE_PRESETS.map((preset) => [preset.id, preset])));

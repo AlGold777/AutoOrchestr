@@ -1169,9 +1169,25 @@ body.pipeline-page .disput-state-map-workspace { right: 24px; }
 .pipeline-profile-dialog [data-profile-status] { min-height: 18px; margin: 0; color: #657186; font-size: 11px; }
 .pipeline-profile-dialog [data-profile-status][data-kind="error"] { color: #b4232c; }
 .pipeline-profile-dialog [data-profile-status][data-kind="ok"] { color: #237a4b; }
-.pipeline-stage-dialog { width: min(420px, calc(100vw - 32px)); padding: 18px 20px; border: 1px solid #cbd5e1; border-radius: 12px; background: #fff; color: #172033; text-align: left; box-shadow: 0 24px 80px rgba(20,31,48,.3); }
+.pipeline-stage-dialog { width: min(560px, calc(100vw - 32px)); max-height: min(80vh, 720px); overflow: auto; padding: 18px 20px; border: 1px solid #cbd5e1; border-radius: 12px; background: #fff; color: #172033; text-align: left; box-shadow: 0 24px 80px rgba(20,31,48,.3); }
 .pipeline-stage-dialog::backdrop { background: rgba(20,31,48,.35); }
 .pipeline-stage-dialog h2 { margin: 0; color: #2563eb; font-size: 20px; font-weight: 700; text-align: left; }
+.pipeline-stage-dialog-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.pipeline-stage-dialog-header [data-stage-close] { border: 0; background: transparent; font-size: 22px; line-height: 1; cursor: pointer; color: inherit; }
+.pipeline-stage-card { margin-top: 8px; font-size: 13px; line-height: 1.45; }
+.stage-card-subtitle { margin: 0 0 8px; color: #64748b; }
+.stage-card-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.stage-card-badge { padding: 2px 8px; border-radius: 999px; background: #eef2f7; color: #334155; font-size: 12px; }
+.stage-card-status-gate { background: #fef3c7; color: #92400e; }
+.stage-card-status-completed { background: #dcfce7; color: #166534; }
+.stage-card-status-failed { background: #fee2e2; color: #991b1b; }
+.stage-card-status-running, .stage-card-status-awaiting_participant { background: #dbeafe; color: #1e40af; }
+.stage-card-people { margin-bottom: 10px; }
+.stage-card-muted { color: #64748b; }
+.stage-card-section h3 { margin: 12px 0 4px; font-size: 13px; }
+.stage-card-section ul { margin: 0; padding-left: 18px; }
+.stage-card-instruction { margin: 4px 0 6px; padding: 8px 10px; max-height: 220px; overflow: auto; white-space: pre-wrap; border-radius: 8px; background: #f1f5f9; font: inherit; font-size: 12px; }
+.stage-card-copy { padding: 4px 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; cursor: pointer; }
 
 @media (max-width: 1100px) {
     .disput-state-map-workspace { right: 12px; left: 12px; min-width: 0; }
@@ -1182,6 +1198,9 @@ body.pipeline-page .disput-state-map-workspace { right: 24px; }
 }
 
 @media (prefers-color-scheme: dark) {
+    .pipeline-stage-dialog { border-color: #384252; background: #202733; color: #e7ebf3; }
+    .stage-card-badge, .stage-card-instruction { background: #2b3445; color: #e7ebf3; }
+    .stage-card-copy { border-color: #384252; background: #202733; color: #e7ebf3; }
     .disput-state-map-workspace, .disput-state-map-content { background: #141922; color: #e7ebf3; }
     .disput-state-map-header, .disput-state-map-toolbar, .disput-map-panel, .disput-graf-column, .disput-map-card, .disput-map-axis, .disput-map-diff, .disput-map-drawer, .disput-map-drawer > header, .disput-map-comparison { border-color: #384252; background: #202733; color: #e7ebf3; }
     .disput-map-attention { border-color: #6a5530; background: #2b261d; }

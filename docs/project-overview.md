@@ -485,6 +485,17 @@ With the **Auto** toggle off the moderator drives the pipeline stage by stage:
   journaled with outcome `moderator_closed` instead of `timeout`.
 - After a stage completes the engine waits for approval (**Approve and
   continue**) before starting the next one.
+- **Architecture** template («Разработка архитектуры»): the 30-stage
+  Product→Architecture Framework as 30 canvas rounds (round number = framework
+  stage number; stages 13, 17, 22, 30 are moderator gates without models). Run
+  it semi-automatically: Auto off, models chosen in the header (3 recommended).
+  Click a round badge to open the stage card (what the stage is for, who works,
+  inputs, what is forbidden, the brief the model gets, run status). The stage
+  text comes from `disput/architecture-framework.js`, generated from
+  `docs/Automation GPT комплект Документов/process/stages.json`
+  (`node scripts/build-architecture-framework.js`). Semi-automatic and manual
+  runs get no automatic page visits; Get it pulls answers, "next" closes a stage
+  with what is there (text without a final is adopted as incomplete).
 - Run a template stage by stage: switch **Auto** off (the choice outranks the
   template's default policy, also when a template is selected afterwards) and
   pick a template, e.g. **Test** (two stages). Auto off without a template is a

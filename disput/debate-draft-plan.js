@@ -37,7 +37,10 @@
       expectedArtifactTypes: arr(stage.expectedArtifactTypes).map(clean).filter(Boolean),
       inputSelector: clone(stage.inputSelector || null),
       goalIds: arr(stage.goalIds).map(clean).filter(Boolean),
-      ...(stage.label ? { label: clean(stage.label) } : {})
+      ...(stage.label ? { label: clean(stage.label) } : {}),
+      // Moderator-facing brief of the stage (template stage card) and its card data.
+      ...(clean(stage.instruction) ? { instruction: clean(stage.instruction) } : {}),
+      ...(stage.meta && typeof stage.meta === 'object' ? { meta: clone(stage.meta) } : {})
     };
   }
 
@@ -99,7 +102,9 @@
       activationPolicy: 'immediate',
       outputIntent: 'discussion_work',
       terminalPolicy: 'continue',
-      expectedArtifactTypes: index === 0 ? ['claim'] : ['revision']
+      expectedArtifactTypes: index === 0 ? ['claim'] : ['revision'],
+      instruction: round.instruction,
+      meta: round.meta
     }, index));
     const synthesizer = clean(input.synthesizer);
     if (synthesizer) {
