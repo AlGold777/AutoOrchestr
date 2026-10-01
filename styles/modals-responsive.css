@@ -876,6 +876,21 @@ body.pro-features-hidden .comparison-section {
     min-height: calc(100dvh - 120px);
     justify-content: flex-start;
 }
+.pipeline-page .prompt-container.prompt-sandwich.debate-composer.has-debate-feed {
+    gap: 3px;
+    height: calc(100dvh - 120px);
+    max-height: none;
+    box-sizing: border-box;
+}
+.pipeline-page .prompt-container.prompt-sandwich.debate-composer.has-debate-feed .debate-model-cards {
+    flex: 1 1 0;
+    min-height: 120px;
+    max-height: none;
+}
+.pipeline-page .prompt-container.prompt-sandwich.debate-composer.has-debate-feed .moderator-input {
+    flex: 0 0 auto;
+    margin-top: 0;
+}
 .prompt-container.prompt-sandwich.debate-composer.is-debate-feed-wide-expanded {
     position: fixed;
     top: 50%;

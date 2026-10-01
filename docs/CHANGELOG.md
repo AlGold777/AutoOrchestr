@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-10-01 — Merge of the pipeline layout polish into the semi-automatic work, version 2.81.526
+
+- Integrates the cosmetic pipeline spacing/feed-height changes (2.81.522–2.81.524, made in parallel) with the semi-automatic series 2.81.521–2.81.525; no behavior changes beyond that.
+
 ### 2026-10-01 — Delivery report for the semi-automatic pipeline, version 2.81.525
 
 - The report no longer trusts only the delivery journal. An answer written into a card from the background global state (`hydrateAnswerFromGlobalState`) is journaled as `displayed` (source, length, whether it was final, whether the open stage wait accepted it and why not). A request that is shown but not accepted by the wait is the new problem `display_desync` (it replaces the bare "Ответ ещё не получен" for that request). Field report (5): Perplexity answered long before the report, the card showed it, the wait never received it.
