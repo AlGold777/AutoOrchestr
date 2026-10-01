@@ -1,0 +1,1130 @@
+AUTOMATION TELEMETRY — diff для переноса (без архитектурных частей)
+====================================================================
+
+База: расширение 2.81.502 (тег transport-baseline-2.81.502).
+Проверка:  git apply --check docs/telemetry/automation-telemetry.diff
+Применение: git apply docs/telemetry/automation-telemetry.diff
+Проверено: патч применяется к чистой копии 2.81.502, все затронутые файлы проходят
+`node --check`. Тесты базы на старый формат журнала (`sent`) после применения нужно
+обновить: событие подготовки теперь называется `prepared`.
+
+Что внутри
+----------
+1. shared/message-delivery.js — журнал доставки: до 3000 событий; запрос открывается событием
+   `prepared` (с текстом промпта, до 1500 символов); итог ответа (`verified`, `missing_token`,
+   `empty_answer`) с текстом (до 1200), статусом, причиной, источником; `revision`; `late_text`;
+   `text_progress`; наблюдение за STATUS_UPDATE, GLOBAL_STATE_BROADCAST, SPA_NAVIGATION,
+   LLM_COMPLETION_TERMINAL, TRANSPORT_DISPATCH_PHASE, TRANSPORT_FOCUS, PROVIDER_STOP_RESULT.
+2. shared/message-delivery-diagnosis.js — разбор журнала в проблемы с причиной и подсказкой:
+   not_submitted, no_tab, partial, empty, no_token, premature_terminal, stuck_waiting,
+   focus_churn, stale_background (версия фона не равна версии панели), identity,
+   stop_unconfirmed, start_refused/start_rejected, batch_timeout, cancelled; сводка по моделям.
+3. shared/message-delivery-view.js — вкладка Automation: сводка, карточка Batches, проблемы,
+   путь каждого сообщения (вкладка → фазы отправки → навигации → решение протокола →
+   текст → фокус), сырой журнал, подсказки с промптом и ответом, JSON-отчёт.
+4. styles/devtools-selectors.css — оформление вкладки Automation как Disput.
+5. pipeline_panel.html — карточка Batches (`automation-batches`) и подключение
+   shared/transport-contract.js (см. ниже).
+6. background/dispatch-coordinator.js — только функция `reportDispatchPhase` и её вызовы в
+   существующих точках отправки (старт, команда принята, отправлено, заблокировано,
+   не доставлено, не подтверждено); каждое событие несёт версию фона.
+7. background/human-presence.js — только отправка `TRANSPORT_FOCUS` из
+   `markProgrammaticTabFocus` (все программные переключения вкладок, с источником).
+8. results.js — только приём сообщений журнала на странице результатов (список типов
+   сообщений и обработка журнальных типов).
+
+Что НЕ внутри (производители, зависящие от архитектуры транспорта)
+---------------------------------------------------------------
+- события пакета `batch_start`, `batch_end`, `start_refused`, `start_accepted`,
+  `identity_rejected`, `unproven_replaced` и закрытие журнала при отмене — их пишет
+  переписанный `runModelBatch`/ожидатель панели; без них карточка Batches пуста, а проблемы
+  start_*/batch_timeout/identity не появятся;
+- `PROVIDER_STOP_RESULT` — пишет вкладка при остановке генерации у провайдера;
+- фазы `terminal_deferred`, `terminal_deferral_ended`, `bottom_nudge*`,
+  `incomplete_answer_committed`, `commit_not_final`, `static_answer_committed` — их пишут
+  механизмы восстановления;
+- тесты (`tests/automation-telemetry.test.js` смешивает журнал и механизмы).
+
+Связи, о которых нужно знать
+-----------------------------
+- Журнал ключуется по идентификатору запроса (`requestId`), если он передан в `prepare`, и
+  иначе по метке доставки и имени модели. Без идентификатора все возможности работают, но
+  привязка сообщения к запросу — по метке.
+- `shared/transport-contract.js` (файл не входит в патч) даёт диагностике классификацию
+  статусов (complete/partial/failed). Без него диагностика работает: разбор статусов
+  деградирует до проверки текста, `partial` у обрезанных статусов не определяется.
+- В `message-delivery-diagnosis.js` порог `focus_churn` — 6 переключений, `stuck_waiting` —
+  120 с; это значения текущей реализации, их можно менять.
+
+diff --git a/shared/message-delivery-diagnosis.js b/shared/message-delivery-diagnosis.js
+index cfac3ea..a60293e 100644
+--- a/shared/message-delivery-diagnosis.js
++++ b/shared/message-delivery-diagnosis.js
+@@ -1,62 +1,244 @@
+ // shared/message-delivery-diagnosis.js
+-// Turns the delivery journal into per-message timelines, a per-model matrix and plain-language
+-// problems with a next step. Pure functions (used by the telemetry Automation tab and its report).
++// Turns the delivery journal into per-message timelines, per-batch outcomes, a per-model
++// matrix and plain-language problems with a next step. Pure functions (used by the telemetry
++// Automation tab and its report).
+ (function initMessageDeliveryDiagnosis(root) {
+   'use strict';
+ 
++  const Contract = root.TransportContract
++    || globalThis.TransportContract
++    || (typeof require === 'function' ? require('./transport-contract.js') : null);
++
+   const TEXT = {
+-    no_tab: ['Вкладка модели не открылась или не получила запрос', 'Фон не сообщил ни о вкладке, ни о статусе, ни о тексте ответа.', 'Откройте сайт модели вручную: проверьте вход в аккаунт и не блокирует ли браузер новые вкладки.'],
+-    no_answer: ['Запрос отправлен, ответа нет', 'Вкладка была, но завершённого ответа модель не дала.', 'Откройте вкладку модели: вход в аккаунт, капча, лимит сообщений, выбранная модель.'],
++    no_tab: ['Вкладка модели не открылась или не получила запрос', 'Фон не сообщил ни о вкладке, ни об отправке, ни о статусе, ни о тексте ответа.', 'Откройте сайт модели вручную: проверьте вход в аккаунт и не блокирует ли браузер новые вкладки.'],
++    not_submitted: ['Промпт не был отправлен', 'Фон начинал отправку, но отправка на странице модели не подтвердилась.', 'Причина указана в строке; откройте вкладку модели: поле ввода, модальные окна, вход в аккаунт.'],
++    no_answer: ['Запрос отправлен, ответа нет', 'Промпт отправлен, но завершённого ответа модель не дала.', 'Откройте вкладку модели: капча, лимит сообщений, выбранная модель.'],
+     empty: ['Модель завершила работу с пустым ответом', 'Фон сообщил о завершении, но текста ответа нет.', 'Откройте вкладку модели и посмотрите, что на странице; отправьте сообщение ещё раз.'],
++    partial: ['Ответ неполный', 'Текст получен, но генерация не завершилась (таймаут или обрыв) — ответ может быть обрезан.', 'Проверьте конец ответа во вкладке модели; при необходимости повторите этап.'],
+     no_token: ['Ответ без метки доставки', 'Текст получен, но модель не повторила метку — нельзя доказать, что это ответ на этот запрос.', 'Ответ показан с пометкой. Если повторяется у одной модели — она игнорирует инструкцию.'],
+-    stale: ['Отброшен устаревший ответ', 'Пришёл ответ с меткой другого запроса (остался на странице модели).', 'Ничего делать не нужно: он не попал в ленту.'],
+     error: ['Завершение с ошибкой', 'Фон сообщил об ошибке при получении ответа.', 'Причина указана в строке; проверьте вкладку модели.'],
+-    waiting: ['Ответ ещё не получен', 'Запрос отправлен, ожидается ответ.', '']
++    cancelled: ['Запрос отменён', 'Запуск остановлен или отменён до получения ответа.', ''],
++    identity: ['Ответ отклонён по принадлежности', 'Пришёл ответ, который не относится ни к одному ожидаемому запросу (чужой или прежний запрос, без идентификатора, повтор после финала).', 'Если повторяется — вкладка модели показывает ответ на другой запрос; проверьте, что в ней открыт нужный диалог.'],
++    stale: ['Отброшен устаревший ответ', 'Пришёл ответ с меткой другого запроса (остался на странице модели).', 'Ничего делать не нужно: он не попал в ленту.'],
++    stuck_waiting: ['Текст ответа идёт, но завершение не распознано', 'Модель начала отвечать, а финала нет уже давно: система ждёт или переключается между вкладками. Ответ, вероятно, уже готов на странице модели.', 'Откройте вкладку модели: если ответ полный — приложите JSON-отчёт (дефект определения завершения); отправку можно продолжить вручную.'],
++    stale_background: ['Фоновый процесс работает на другой версии, чем панель', 'Панель и фон расширения собраны из разных версий: фон, вероятно, не перезапускался после обновления, поэтому новые исправления в нём не действуют.', 'Перезагрузите расширение на странице расширений браузера и повторите запуск.'],
++    focus_churn: ['Вкладка модели многократно перехватывала фокус', 'Система много раз переключалась на вкладку модели (визиты, восстановление), а ответ так и не был принят: обычно это признак того, что завершение ответа не распознано.', 'Источники и число переключений указаны в строке. Если ответ уже есть на странице модели — приложите JSON-отчёт: это дефект определения завершения.'],
++    stop_unconfirmed: ['Генерация у провайдера не остановлена', 'При отмене кнопка остановки не найдена или генерация не прекратилась.', 'Остановите генерацию во вкладке модели вручную перед следующим запуском.'],
++    start_refused: ['Старт пакета откладывался', 'Фон отклонял старт: шли раунды предыдущего пакета или вкладка ещё генерировала.', 'Ничего делать не нужно, если пакет затем стартовал.'],
++    start_rejected: ['Пакет не стартовал', 'Фон отказал в старте, панель завершила пакет без отправки.', 'Причина указана в строке; остановите предыдущий запуск или дождитесь окончания генерации.'],
++    premature_terminal: ['Запрос закрыт раньше, чем модель ответила', 'Фон зафиксировал финал без текста, но модель продолжила отвечать — ответ потерян для пайплайна.', 'Причина финала указана в строке (протокол завершения, навигация вкладки). Это дефект транспорта: приложите JSON-отчёт.'],
++    batch_timeout: ['Пакет завершён по таймауту', 'Не все модели ответили до срока ожидания панели.', 'Модели без ответа указаны в строке; проверьте их вкладки.'],
++    waiting: ['Ответ ещё не получен', 'Запрос подготовлен, ожидается ответ.', '']
++  };
++  const SEVERITY = {
++    no_tab: 'critical', not_submitted: 'critical', premature_terminal: 'critical', stuck_waiting: 'critical', stale_background: 'critical', no_answer: 'critical', empty: 'critical', start_rejected: 'critical', batch_timeout: 'critical',
++    partial: 'warning', focus_churn: 'warning', error: 'warning', no_token: 'warning', identity: 'warning', stop_unconfirmed: 'warning',
++    cancelled: 'info', stale: 'info', start_refused: 'info', waiting: 'info'
+   };
+-  const SEVERITY = { no_tab: 'critical', no_answer: 'critical', empty: 'critical', error: 'warning', no_token: 'warning', stale: 'info', waiting: 'info' };
+-  const OK_STATUS = new Set(['', 'SUCCESS', 'DONE', 'FINAL', 'COPY_SUCCESS', 'PARTIAL', 'STREAM_TIMEOUT_HIDDEN']);
++  const RESULTS = ['delivered', 'partial', 'no_token', 'empty', 'no_answer', 'not_submitted', 'no_tab', 'error', 'cancelled', 'waiting'];
++  const FOCUS_CHURN_THRESHOLD = 6;
++  const TERMINAL_KINDS = ['verified', 'missing_token', 'empty_answer', 'no_answer', 'cancelled'];
++
++  function completionOf(event) {
++    if (event.completion) return event.completion;
++    // Journals written before 2.81.507 have no completion: derive it from the status.
++    if (!Contract?.classifyCompletion) return null;
++    return Contract.classifyCompletion(event.status || 'SUCCESS', event.chars ? 'x' : '');
++  }
+ 
+   function sends(journal) {
+     const out = [];
+-    const open = new Map();
++    const byToken = new Map();
++    const byRequest = new Map();
+     (journal || []).forEach((event) => {
+-      if (event.kind === 'sent') {
+-        const send = { model: event.model, token: event.token, batchId: event.batchId || '', at: event.at, chars: event.chars, tab: null, statuses: [], firstTextMs: null, terminal: null, stale: 0 };
+-        open.set(event.model, send);
++      // 'prepared' opens a request ('sent' in journals written before 2.81.503).
++      if (event.kind === 'prepared' || event.kind === 'sent') {
++        const send = {
++          model: event.model, token: event.token, requestId: event.requestId || null, batchId: event.batchId || '', at: event.at, chars: event.chars, prompt: event.prompt || '',
++          tab: null, statuses: [], firstTextMs: null, terminal: null, stale: 0,
++          dispatch: [], dispatchIds: [], submittedMs: null, rejections: [], revisions: 0, providerStop: null,
++          completionTerminals: [], navigations: [], lateText: null, focus: { count: 0, sources: {} }, textProgress: null, backgroundVersions: []
++        };
++        byToken.set(event.token, send);
++        if (send.requestId) byRequest.set(send.requestId, send);
+         out.push(send);
+         return;
+       }
+-      const send = open.get(event.model);
+-      if (!send || (event.token && event.token !== send.token)) return;
++      const send = (event.requestId && byRequest.get(event.requestId)) || (event.token && byToken.get(event.token)) || null;
++      // batch_start follows 'prepared': it links the requests to their batch.
++      if (event.kind === 'batch_start' && event.requestIds) {
++        Object.values(event.requestIds).forEach((id) => { const linked = byRequest.get(id); if (linked && !linked.batchId) linked.batchId = event.batchId || ''; });
++        return;
++      }
++      if (!send) return;
+       if (event.kind === 'tab') send.tab = event.tabId;
+       else if (event.kind === 'status') send.statuses.push(event.status);
+       else if (event.kind === 'first_text') send.firstTextMs = event.ms;
+       else if (event.kind === 'stale_dropped') send.stale += 1;
+-      else if (['verified', 'missing_token', 'empty_answer', 'no_answer'].includes(event.kind)) send.terminal = event;
++      else if (event.kind === 'revision') send.revisions += 1;
++      else if (event.kind === 'identity_rejected') send.rejections.push(event);
++      else if (event.kind === 'provider_stop') send.providerStop = event;
++      else if (event.kind === 'completion_terminal') send.completionTerminals.push({ status: event.status, reason: event.reason, ms: event.ms });
++      else if (event.kind === 'navigation') send.navigations.push({ from: event.from, to: event.to, reason: event.reason, ms: event.ms });
++      else if (event.kind === 'text_progress') send.textProgress = { chars: event.chars, ms: event.ms };
++      else if (event.kind === 'unproven_replaced') send.replacedUnproven = { chars: event.chars, previousChars: event.previousChars };
++      else if (event.kind === 'late_text') send.lateText = { chars: event.chars, ms: event.ms };
++      else if (event.kind === 'focus') {
++        send.focus.count = Math.max(send.focus.count + 1, event.n || 0);
++        const source = event.source || 'unknown';
++        send.focus.sources[source] = (send.focus.sources[source] || 0) + 1;
++      } else if (event.kind === 'focus_count') send.focus.count = Math.max(send.focus.count, event.n || 0);
++      else if (event.kind === 'dispatch') {
++        const last = send.dispatch[send.dispatch.length - 1];
++        if (last && last.phase === event.phase && last.dispatchId === event.dispatchId && last.ms === event.ms) return;
++        send.dispatch.push({ phase: event.phase, dispatchId: event.dispatchId, reason: event.reason, ms: event.ms, attempt: event.attempt, dispatchReason: event.dispatchReason, bg: event.bg || null, answerChars: event.answerChars ?? null });
++        if (event.bg && !send.backgroundVersions.includes(event.bg)) send.backgroundVersions.push(event.bg);
++        if (event.dispatchId && !send.dispatchIds.includes(event.dispatchId)) send.dispatchIds.push(event.dispatchId);
++        if (event.tabId != null && send.tab == null) send.tab = event.tabId;
++        if (event.phase === 'submitted' && send.submittedMs == null) send.submittedMs = event.ms;
++      } else if (TERMINAL_KINDS.includes(event.kind)) send.terminal = event;
++    });
++    out.forEach((send) => {
++      send.result = resultOf(send);
++      send.prematureTerminal = isPrematureTerminal(send);
+     });
+-    out.forEach((send) => { send.result = resultOf(send); });
+     return out;
+   }
+ 
++  // An empty/failed terminal followed by answer text of the same request.
++  function isPrematureTerminal(send) {
++    const t = send.terminal;
++    if (!t || !['empty_answer', 'no_answer'].includes(t.kind)) return false;
++    if (send.lateText) return true;
++    return send.firstTextMs != null && t.ms != null && send.firstTextMs > t.ms;
++  }
++
++  function terminalCause(send) {
++    const completion = send.completionTerminals[send.completionTerminals.length - 1];
++    const navigation = send.navigations[send.navigations.length - 1];
++    return [
++      send.terminal?.detail || null,
++      completion ? `протокол завершения: ${completion.status}${completion.reason ? ` (${completion.reason})` : ''}` : null,
++      navigation ? `навигация ${navigation.from} → ${navigation.to}` : null
++    ].filter(Boolean).join(' · ');
++  }
++
++  function lastBlockReason(send) {
++    const blocked = send.dispatch.filter((d) => ['blocked', 'command_not_delivered', 'submit_unconfirmed'].includes(d.phase));
++    if (!blocked.length) return '';
++    const last = blocked[blocked.length - 1];
++    return last.reason || last.phase;
++  }
++
+   function resultOf(send) {
+     const t = send.terminal;
+     if (!t) return 'waiting';
+-    const seen = send.tab != null || send.statuses.length || send.firstTextMs != null;
+-    if (t.kind === 'verified') return OK_STATUS.has(String(t.status || '').toUpperCase()) ? 'delivered' : 'error';
++    if (t.kind === 'cancelled') return 'cancelled';
++    const seen = send.tab != null || send.statuses.length || send.firstTextMs != null || send.dispatch.length;
++    // An answer without the token was replaced by the same request's complete answer with it.
++    if (t.kind === 'missing_token' && send.replacedUnproven) return 'delivered';
++    if (t.kind === 'verified' || (t.kind === 'missing_token' && t.chars)) {
++      // A failure status with text (e.g. an error page captured as the answer) is an error;
++      // an incomplete generation (timeout, cut stream) is partial.
++      if ((Contract?.FAILED_STATUSES || []).includes(String(t.status || '').toUpperCase())) return 'error';
++      const completion = completionOf(t);
++      if (completion === 'partial') return 'partial';
++      if (completion === 'failed' || completion === 'cancelled') return 'error';
++      return t.kind === 'verified' ? 'delivered' : 'no_token';
++    }
+     const emptyText = t.kind === 'empty_answer' || (t.kind === 'missing_token' && t.chars === 0); // older journals
+     if (emptyText) return seen ? 'empty' : 'no_tab';
+-    if (t.kind === 'missing_token') return 'no_token';
+-    return seen ? 'no_answer' : 'no_tab';
++    if (!seen) return 'no_tab';
++    if (send.dispatch.length && send.submittedMs == null && send.firstTextMs == null) return 'not_submitted';
++    return 'no_answer';
+   }
+ 
+-  function problems(list) {
++  function batches(journal) {
++    const map = new Map();
++    const get = (event) => {
++      const key = event.waitId || event.batchId || '';
++      if (!map.has(key)) map.set(key, { waitId: event.waitId || null, batchId: event.batchId || '', at: event.at, models: [], refusals: [], accepted: null, outcome: null });
++      return map.get(key);
++    };
++    (journal || []).forEach((event) => {
++      if (event.kind === 'batch_start') {
++        Object.assign(get(event), {
++          at: event.at, models: event.models || [], requestIds: event.requestIds || {}, timeoutMs: event.timeoutMs ?? null,
++          stageId: event.stageId || null, stageAttemptId: event.stageAttemptId || null, pipelineRunId: event.pipelineRunId || null,
++          generationProfile: event.generationProfile || null, judge: event.judge === true, manual: event.manual === true
++        });
++      } else if (event.kind === 'start_refused') {
++        get(event).refusals.push({ at: event.at, attempt: event.attempt, errorCode: event.errorCode, reason: event.reason, blockingModel: event.blockingModel, waitedMs: event.waitedMs });
++      } else if (event.kind === 'start_accepted' || event.kind === 'start_unconfirmed') {
++        get(event).accepted = { status: event.status, waitedMs: event.waitedMs, confirmed: event.kind === 'start_accepted' };
++      } else if (event.kind === 'batch_end') {
++        Object.assign(get(event), {
++          outcome: event.outcome, durationMs: event.durationMs ?? null, reason: event.reason || '', errorCode: event.errorCode || null,
++          missing: event.missing || [], failed: event.failed || {}, completion: event.completion || {}
++        });
++      }
++    });
++    return [...map.values()];
++  }
++
++  function unattachedRejections(journal, list) {
++    const known = new Set(list.map((send) => send.requestId).filter(Boolean));
++    return (journal || []).filter((event) => event.kind === 'identity_rejected' && !(event.requestId && known.has(event.requestId)));
++  }
++
++  const STUCK_WAITING_MS = 120000;
++
++  function problems(list, batchList = [], orphanRejections = [], now = Date.now(), version = null) {
+     const out = [];
++    const make = (code, base, extra = {}) => ({
++      code, severity: SEVERITY[code], model: base.model || null, at: base.at, batchId: base.batchId || '',
++      title: `${base.model ? `${base.model}: ` : ''}${TEXT[code][0]}`, detail: TEXT[code][1], hint: TEXT[code][2], ...extra
++    });
++    const stale = version ? list.find((send) => send.backgroundVersions.some((bg) => bg !== version)) : null;
++    if (stale) {
++      const seen = [...new Set(list.flatMap((send) => send.backgroundVersions))].join(', ');
++      out.push(make('stale_background', stale, { reason: `фон: ${seen}; панель: ${version}` }));
++    }
+     list.forEach((send) => {
+-      const push = (code, extra = {}) => out.push({ code, severity: SEVERITY[code], model: send.model, at: send.at, batchId: send.batchId, title: `${send.model}: ${TEXT[code][0]}`, detail: TEXT[code][1], hint: TEXT[code][2], ...extra });
+-      if (send.result !== 'delivered') {
+-        const reason = send.terminal ? [send.terminal.status, send.terminal.reason].filter(Boolean).join(' · ') : '';
+-        push(send.result, reason ? { reason } : {});
++      const waitedMs = now - Date.parse(send.at);
++      const stuck = send.result === 'waiting' && send.firstTextMs != null && waitedMs >= STUCK_WAITING_MS;
++      if (stuck) {
++        const deferred = send.dispatch.some((d) => d.phase === 'terminal_deferred') && !send.dispatch.some((d) => d.phase === 'terminal_deferral_ended');
++        out.push(make('stuck_waiting', send, {
++          reason: [`ждём ${Math.round(waitedMs / 1000)} с`, `первый текст через ${Math.round(send.firstTextMs / 1000)} с`, deferred ? 'финал отложен протоколом' : null, terminalCause(send) || null].filter(Boolean).join(' · ')
++        }));
++      }
++      if (send.prematureTerminal) {
++        out.push(make('premature_terminal', send, {
++          reason: [send.terminal?.status, terminalCause(send), send.lateText ? `текст ${send.lateText.chars} симв. через ${Math.round(send.lateText.ms / 1000)} с` : null].filter(Boolean).join(' · ')
++        }));
++      } else if (send.result !== 'delivered' && !stuck) {
++        const reason = [
++          send.terminal?.status, send.terminal?.reason, terminalCause(send),
++          send.result === 'not_submitted' || send.result === 'no_tab' ? lastBlockReason(send) : ''
++        ].filter(Boolean).join(' · ');
++        out.push(make(send.result, send, reason ? { reason } : {}));
++      }
++      if (send.focus.count >= FOCUS_CHURN_THRESHOLD) {
++        const sources = Object.entries(send.focus.sources).map(([name, n]) => `${name} ×${n}`).join(', ');
++        out.push(make('focus_churn', send, { count: send.focus.count, reason: [`${send.focus.count} переключений`, sources].filter(Boolean).join(' · ') }));
++      }
++      if (send.stale) out.push(make('stale', send, { count: send.stale }));
++      if (send.rejections.length) {
++        out.push(make('identity', send, { count: send.rejections.length, reason: [...new Set(send.rejections.map((r) => r.reason))].join(', ') }));
++      }
++      if (send.providerStop && !send.providerStop.stopped && send.providerStop.reason !== 'no_stop_control') {
++        out.push(make('stop_unconfirmed', send, { reason: send.providerStop.reason }));
++      }
++    });
++    orphanRejections.forEach((event) => out.push(make('identity', event, { reason: event.reason, count: 1 })));
++    batchList.forEach((batch) => {
++      const base = { at: batch.at, batchId: batch.batchId };
++      if (batch.outcome === 'rejected') out.push(make('start_rejected', base, { reason: [batch.errorCode, batch.reason].filter(Boolean).join(' · ') }));
++      else if (batch.refusals.length) {
++        const last = batch.refusals[batch.refusals.length - 1];
++        out.push(make('start_refused', base, { count: batch.refusals.length, reason: [last.reason, last.blockingModel].filter(Boolean).join(' · ') }));
+       }
+-      if (send.stale) push('stale', { count: send.stale });
++      if (batch.outcome === 'timeout') out.push(make('batch_timeout', base, { reason: (batch.missing || []).join(', ') }));
+     });
+     const order = { critical: 0, warning: 1, info: 2 };
+@@ -73,20 +255,30 @@
+     const rows = new Map();
+     list.forEach((send) => {
+-      const row = rows.get(send.model) || { model: send.model, sent: 0, delivered: 0, no_token: 0, empty: 0, no_answer: 0, no_tab: 0, error: 0, waiting: 0, stale: 0, times: [] };
++      const row = rows.get(send.model) || {
++        model: send.model, sent: 0, stale: 0, rejected: 0, premature: 0, focus: 0, times: [], submitTimes: [],
++        ...Object.fromEntries(RESULTS.map((result) => [result, 0]))
++      };
+       row.sent += 1;
+       row[send.result] += 1;
+       row.stale += send.stale;
+-      if (send.result === 'delivered' && send.terminal?.ms != null) row.times.push(send.terminal.ms);
++      row.rejected += send.rejections.length;
++      if (send.prematureTerminal) row.premature += 1;
++      row.focus += send.focus.count;
++      if (['delivered', 'no_token', 'partial'].includes(send.result) && send.terminal?.ms != null) row.times.push(send.terminal.ms);
++      if (send.submittedMs != null) row.submitTimes.push(send.submittedMs);
+       rows.set(send.model, row);
+     });
+-    return [...rows.values()].map((row) => ({ ...row, medianMs: median(row.times) }));
++    return [...rows.values()].map((row) => ({ ...row, medianMs: median(row.times), medianSubmitMs: median(row.submitTimes) }));
+   }
+ 
+-  function diagnose(journal) {
++  // `now` lets a report be judged at its own time, not at the time it is read.
++  function diagnose(journal, { now = Date.now(), version = null } = {}) {
+     const list = sends(journal);
+-    return { sends: list, problems: problems(list), matrix: matrix(list) };
++    const batchList = batches(journal);
++    const orphans = unattachedRejections(journal, list);
++    return { sends: list, batches: batchList, rejections: orphans, problems: problems(list, batchList, orphans, now, version), matrix: matrix(list) };
+   }
+ 
+-  const api = Object.freeze({ diagnose, sends, problems, matrix, TEXT });
++  const api = Object.freeze({ diagnose, sends, batches, problems, matrix, TEXT, RESULTS });
+   root.MessageDeliveryDiagnosis = api;
+   if (typeof module !== 'undefined' && module.exports) module.exports = api;
+diff --git a/shared/message-delivery-view.js b/shared/message-delivery-view.js
+index 220c311..f6a3bac 100644
+--- a/shared/message-delivery-view.js
++++ b/shared/message-delivery-view.js
+@@ -1,5 +1,6 @@
+ // shared/message-delivery-view.js
+-// Telemetry window → Automation tab: delivery health, problems with next steps, every message's
+-// timeline, per-model matrix, raw journal and a JSON report. Style follows the Disput tab.
++// Telemetry window → Automation tab: delivery health, batches, problems with next steps,
++// every message's timeline (request id, dispatch phases, completion), per-model matrix,
++// raw journal and a JSON report. Style follows the Disput tab.
+ (function initMessageDeliveryView(root) {
+   'use strict';
+@@ -7,8 +8,20 @@
+   const KEY = () => root.MessageDelivery?.JOURNAL_KEY || 'messageDelivery.journal';
+   const $ = (id) => document.getElementById(id);
+-  const RESULT = { delivered: 'доставлено ✓', no_token: 'без метки', empty: 'пустой ответ', no_answer: 'нет ответа', no_tab: 'нет вкладки', error: 'ошибка', waiting: 'ждём…' };
++  const RESULT = {
++    delivered: 'доставлено ✓', partial: 'неполный', no_token: 'без метки', empty: 'пустой ответ', no_answer: 'нет ответа',
++    not_submitted: 'не отправлен', no_tab: 'нет вкладки', error: 'ошибка', cancelled: 'отменён', waiting: 'ждём…'
++  };
++  const OUTCOME = { settled: 'завершён', timeout: 'таймаут', cancelled: 'отменён', rejected: 'не стартовал' };
++  const PHASE = {
++    dispatch_started: 'отправка', command_accepted: 'команда принята', submitted: 'отправлено',
++    bottom_nudge: 'передёрнули вниз', bottom_nudge_skipped: 'передёргивание невозможно', commit_not_final: 'фиксация не стала финалом', incomplete_answer_committed: 'неполный ответ зафиксирован', static_answer_committed: 'текст зафиксирован после визитов',
++    submit_unconfirmed: 'отправка не подтверждена', command_not_delivered: 'команда не доставлена', blocked: 'заблокировано',
++    terminal_deferred: 'финал отложен', terminal_deferral_ended: 'отсрочка финала закончилась'
++  };
+   const SEV = { critical: 'Критично', warning: 'Внимание', info: 'Инфо' };
+   const time = (at) => (at ? new Date(at).toLocaleTimeString() : '—');
+   const secs = (ms) => (ms == null ? '—' : ms < 1000 ? `${ms} мс` : `${(ms / 1000).toFixed(1)} с`);
++  const shortId = (id) => (id ? String(id).replace(/^treq-/, '').slice(0, 8) : '—');
++  const join = (parts, sep = ' · ') => parts.filter((part) => part != null && part !== false && part !== '').join(sep);
+ 
+   function el(tag, attrs, ...kids) {
+@@ -33,25 +46,84 @@
+     const model = $('automation-model-filter')?.value || 'all';
+     const only = $('automation-only-problems')?.checked;
+-    const diagnosis = root.MessageDeliveryDiagnosis.diagnose(journal);
++    const diagnosis = root.MessageDeliveryDiagnosis.diagnose(journal, { version: root.chrome?.runtime?.getManifest?.().version || null });
+     const keep = (item) => model === 'all' || item.model === model;
+     return {
+       journal, diagnosis,
+-      sends: diagnosis.sends.filter((s) => keep(s) && (!only || s.result !== 'delivered' || s.stale)),
+-      problems: diagnosis.problems.filter(keep),
++      sends: diagnosis.sends.filter((s) => keep(s) && (!only || s.result !== 'delivered' || s.stale || s.rejections.length)),
++      batches: diagnosis.batches.filter((b) => (model === 'all' || b.models.includes(model)) && (!only || b.outcome !== 'settled' || b.refusals.length)),
++      problems: diagnosis.problems.filter((p) => model === 'all' || !p.model || p.model === model),
+       matrix: diagnosis.matrix.filter(keep),
+-      raw: journal.filter(keep)
++      raw: journal.filter((e) => model === 'all' || !e.model || e.model === model || (e.models || []).includes(model))
+     };
+   }
+ 
++  function dispatchPath(send) {
++    if (!send.dispatch.length) return null;
++    return send.dispatch.map((d) => join([PHASE[d.phase] || d.phase, d.ms != null ? secs(d.ms) : null, d.reason ? `(${d.reason})` : null], ' ')).join(' → ');
++  }
++
+   function sendRow(send) {
+-    const flow = [
++    const flow = join([
+       send.tab != null ? `вкладка ${send.tab}` : 'вкладки нет',
++      dispatchPath(send),
+       send.statuses.length ? send.statuses.join(' → ') : null,
+-      send.firstTextMs != null ? `текст через ${secs(send.firstTextMs)}` : 'текста нет'
+-    ].filter(Boolean).join(' · ');
++      send.navigations.length ? send.navigations.map((n) => `навигация ${n.from} → ${n.to}${n.ms != null ? ` ${secs(n.ms)}` : ''}`).join(' → ') : null,
++      send.completionTerminals.length ? send.completionTerminals.map((c) => `протокол: ${c.status}${c.reason ? ` (${c.reason})` : ''}${c.ms != null ? ` ${secs(c.ms)}` : ''}`).join(' → ') : null,
++      send.firstTextMs != null ? `текст через ${secs(send.firstTextMs)}` : 'текста нет',
++      send.textProgress ? `рос до ${send.textProgress.chars} симв. к ${secs(send.textProgress.ms)}` : null,
++      send.focus.count ? `фокус ×${send.focus.count}${Object.keys(send.focus.sources).length ? ` (${Object.entries(send.focus.sources).map(([name, n]) => `${name} ${n}`).join(', ')})` : ''}` : null,
++      send.lateText ? `текст после финала: ${send.lateText.chars} симв. через ${secs(send.lateText.ms)}` : null,
++      send.providerStop ? `стоп: ${send.providerStop.stopped ? 'подтверждён' : send.providerStop.reason}` : null
++    ]);
+     const t = send.terminal;
+-    const end = t ? `${secs(t.ms)}${t.chars != null ? ` · ${t.chars} симв.` : ''}${t.status ? ` · ${t.status}` : ''}${t.reason ? ` · ${t.reason}` : ''}` : '—';
+-    const row = el('tr', null, el('td', null, time(send.at)), el('td', null, send.model), el('td', null, send.batchId || '—'), el('td', null, flow), el('td', null, end), el('td', null, RESULT[send.result]));
+-    if (!['delivered', 'waiting'].includes(send.result)) row.style.color = 'var(--danger, #b42318)';
++    const end = t ? join([
++      secs(t.ms),
++      t.chars != null ? `${t.chars} симв.` : null,
++      t.status || null,
++      t.completion || null,
++      t.source && t.source !== 'live' ? t.source : null,
++      t.reason || null,
++      t.detail || null,
++      send.revisions ? `ревизий: ${send.revisions}` : null,
++      send.replacedUnproven ? `заменён полным ответом с меткой: ${send.replacedUnproven.previousChars} → ${send.replacedUnproven.chars} симв.` : null,
++      send.rejections.length ? `отклонено: ${send.rejections.length}` : null
++    ]) : '—';
++    const dispatchTail = send.dispatchIds.map((id) => String(id).split(':').pop()).join(',');
++    const ids = `${shortId(send.requestId)}${dispatchTail ? ` / #${dispatchTail}` : ''}`;
++    const row = el('tr', null,
++      el('td', null, time(send.at)),
++      el('td', { title: send.prompt ? `Prompt:\n${send.prompt}` : null }, send.model),
++      el('td', { title: [send.requestId, ...send.dispatchIds].filter(Boolean).join('\n') }, ids),
++      el('td', null, send.batchId || '—'),
++      el('td', null, flow),
++      el('td', { title: t?.answer ? `Answer:\n${t.answer}` : null }, end),
++      el('td', null, send.prematureTerminal ? `${RESULT[send.result] || send.result} · финал преждевременный` : (RESULT[send.result] || send.result)));
++    if (send.prematureTerminal || !['delivered', 'waiting', 'cancelled'].includes(send.result)) row.style.color = 'var(--danger, #b42318)';
++    return row;
++  }
++
++  function batchRow(batch) {
++    const refusalReasons = [...new Set(batch.refusals.map((r) => join([r.reason || r.errorCode, r.blockingModel], ' ')))].join(', ');
++    const start = join([
++      batch.refusals.length ? `отказов: ${batch.refusals.length} (${refusalReasons})` : null,
++      batch.accepted ? `${batch.accepted.confirmed ? 'принят' : 'без подтверждения'} через ${secs(batch.accepted.waitedMs)}` : null
++    ]) || '—';
++    const answered = Object.entries(batch.completion || {}).map(([model, completion]) => `${model}: ${completion}`).join(', ');
++    const end = join([
++      batch.durationMs != null ? secs(batch.durationMs) : null,
++      batch.timeoutMs != null ? `срок ${secs(batch.timeoutMs)}` : null,
++      batch.missing?.length ? `без ответа: ${batch.missing.join(', ')}` : null,
++      answered || null,
++      batch.reason || null
++    ]) || '—';
++    const stage = join([batch.stageAttemptId || batch.batchId, batch.judge ? 'judge' : null, batch.manual ? 'moderator' : null, batch.generationProfile]);
++    const row = el('tr', null,
++      el('td', null, time(batch.at)),
++      el('td', null, stage || '—'),
++      el('td', null, batch.models.join(', ') || '—'),
++      el('td', null, start),
++      el('td', null, OUTCOME[batch.outcome] || batch.outcome || 'идёт…'),
++      el('td', null, end));
++    if (['timeout', 'rejected'].includes(batch.outcome)) row.style.color = 'var(--danger, #b42318)';
+     return row;
+   }
+@@ -62,5 +134,5 @@
+     const journal = await readJournal();
+     const view = filtered(journal);
+-    const models = [...new Set(view.diagnosis.sends.map((s) => s.model))];
++    const models = [...new Set(view.diagnosis.sends.map((s) => s.model).filter(Boolean))];
+     const select = $('automation-model-filter');
+     const current = select.value;
+@@ -69,14 +141,28 @@
+ 
+     const all = view.diagnosis.sends;
++    const count = (result) => all.filter((s) => s.result === result).length;
+     const crit = view.diagnosis.problems.filter((p) => p.severity === 'critical').length;
+-    $('automation-status').textContent = all.length ? `${all.length} sent · ${all.filter((s) => s.result === 'delivered').length} delivered · ${crit} critical` : '';
++    $('automation-status').textContent = all.length
++      ? `${all.length} sent · ${count('delivered')} delivered · ${count('partial')} partial · ${count('waiting')} waiting · ${crit} critical`
++      : '';
+ 
+     $('automation-health').replaceChildren(all.length ? table(
+-      ['Model', 'Sent', 'Delivered', 'No token', 'Empty', 'No answer', 'No tab', 'Stale dropped', 'Median time'],
+-      view.matrix.map((r) => el('tr', null, el('td', null, r.model), el('td', null, r.sent), el('td', null, r.delivered), el('td', null, r.no_token), el('td', null, r.empty), el('td', null, r.no_answer), el('td', null, r.no_tab), el('td', null, r.stale), el('td', null, secs(r.medianMs))))) : empty('No messages yet.'));
++      ['Model', 'Sent', 'Delivered', 'Partial', 'No token', 'Empty', 'No answer', 'Not submitted', 'No tab', 'Error', 'Cancelled', 'Premature final', 'Rejected', 'Stale dropped', 'Focus moves', 'Median submit', 'Median answer'],
++      view.matrix.map((r) => el('tr', null,
++        el('td', null, r.model), el('td', null, r.sent), el('td', null, r.delivered), el('td', null, r.partial),
++        el('td', null, r.no_token), el('td', null, r.empty), el('td', null, r.no_answer), el('td', null, r.not_submitted),
++        el('td', null, r.no_tab), el('td', null, r.error), el('td', null, r.cancelled), el('td', null, r.premature), el('td', null, r.rejected),
++        el('td', null, r.stale), el('td', null, r.focus), el('td', null, secs(r.medianSubmitMs)), el('td', null, secs(r.medianMs)))))
++      : empty('No messages yet.'));
++
++    $('automation-batches')?.replaceChildren(view.batches.length
++      ? table(['Started', 'Stage', 'Models', 'Start', 'Outcome', 'Finish'], view.batches.slice().reverse().map(batchRow))
++      : empty(view.diagnosis.batches.length ? 'Nothing matches the filter.' : 'No batches yet.'));
+ 
+     $('automation-problems').replaceChildren(view.problems.length
+       ? el('div', null, view.problems.map((p) => el('div', { class: 'ad-problem', 'data-severity': p.severity },
+-        el('div', { class: 'ad-problem-head' }, el('strong', null, `[${SEV[p.severity]}] ${p.title}`), el('span', { class: 'devtools-meta' }, ` ${time(p.at)}${p.batchId ? ` · ${p.batchId}` : ''}${p.reason ? ` · ${p.reason}` : ''}`)),
++        el('div', { class: 'ad-problem-head' },
++          el('strong', null, `[${SEV[p.severity]}] ${p.title}`),
++          el('span', { class: 'devtools-meta' }, ` ${join([time(p.at), p.batchId, p.count > 1 ? `×${p.count}` : null, p.reason])}`)),
+         el('div', null, p.detail),
+         p.hint ? el('div', { class: 'ad-hint' }, `Что делать: ${p.hint}`) : null)))
+@@ -84,5 +170,5 @@
+ 
+     $('automation-messages').replaceChildren(view.sends.length
+-      ? table(['Sent', 'Model', 'Batch', 'Path', 'Finish', 'Result'], view.sends.slice().reverse().map(sendRow))
++      ? table(['Sent', 'Model', 'Request / dispatch', 'Batch', 'Path', 'Finish', 'Result'], view.sends.slice().reverse().map(sendRow))
+       : empty(all.length ? 'Nothing matches the filter.' : 'No messages yet.'));
+ 
+@@ -90,5 +176,5 @@
+       ? table(['Time', 'Model', 'Event', 'Details'], view.raw.slice().reverse().map((e) => {
+         const { at, model, kind, token, ...rest } = e;
+-        return el('tr', null, el('td', null, time(at)), el('td', null, model || ''), el('td', null, kind), el('td', null, `${token || ''} ${JSON.stringify(rest)}`));
++        return el('tr', null, el('td', null, time(at)), el('td', null, model || ''), el('td', null, kind), el('td', null, `${token || ''} ${JSON.stringify(rest).slice(0, 300)}`));
+       }))
+       : empty('No journal events.'));
+@@ -101,5 +187,6 @@
+       generated_at: new Date().toISOString(),
+       extension_version: root.chrome?.runtime?.getManifest?.().version,
+-      diagnosis: root.MessageDeliveryDiagnosis.diagnose(journal),
++      transport_contract_version: root.TransportContract?.VERSION || null,
++      diagnosis: root.MessageDeliveryDiagnosis.diagnose(journal, { version: root.chrome?.runtime?.getManifest?.().version || null }),
+       journal
+     }, null, 2);
+diff --git a/shared/message-delivery.js b/shared/message-delivery.js
+index 39e6bb3..5f7de3b 100644
+--- a/shared/message-delivery.js
++++ b/shared/message-delivery.js
+@@ -5,5 +5,8 @@
+ //   missing  — final answer without the token (shown, marked "attribution unverified");
+ //   foreign  — contains another request's token (a stale answer: not shown).
+-// Tokens and other transport tags are removed before anything reaches the feed.
++// The token is secondary evidence: request ownership is decided by transportRequestId
++// (TransportContract). Tokens are registered per transport request, so preparing a new
++// request never invalidates the token of a request that is still in flight.
++// Only our own transport tags are removed; the answer content is never rewritten otherwise.
+ // The journal is mirrored to chrome.storage.session for the telemetry window (Automation tab).
+ (function initMessageDelivery(root) {
+@@ -11,11 +14,17 @@
+ 
+   const JOURNAL_KEY = 'messageDelivery.journal';
+-  const JOURNAL_LIMIT = 500;
++  // A multi-stage run of ten models produces ~20 events per message.
++  const JOURNAL_LIMIT = 3000;
++  const EXPECTED_LIMIT = 200;
++  const FOCUS_EVENTS_PER_REQUEST = 30;
+   const TOKEN_RE = /\[\[AO-[a-z0-9]{6}\]\]/gi;
+   const INSTRUCTION = 'Последней строкой ответа напиши только метку';
+   const INSTRUCTION_RE = new RegExp(`^.*${INSTRUCTION}.*$`, 'gim');
+-  const ANGLE_MARKER_RE = /(?:<<<|&lt;&lt;&lt;)[^\n]*?(?:>>>|&gt;&gt;&gt;)/g;
++  // Only the judge-prompt response delimiters (shared/judge-prompt-builder.js) are
++  // transport tags. Generic <<<...>>> is user content (CUDA launches, templates).
++  const RESPONSE_MARKER_RE = /(?:<<<|&lt;&lt;&lt;)RESPONSE [^\n<>&]{1,200}? (?:START|END)(?:>>>|&gt;&gt;&gt;)/g;
+ 
+-  const expected = new Map(); // model -> { token, sentAt, batchId }
++  const expectedByRequest = new Map(); // transportRequestId -> entry
++  const latestByModel = new Map(); // model -> entry (requests without a transport id)
+   const journal = [];
+   let mirrorTimer = null;
+@@ -37,5 +46,5 @@
+       .replace(TOKEN_RE, '')
+       .replace(INSTRUCTION_RE, '')
+-      .replace(ANGLE_MARKER_RE, '')
++      .replace(RESPONSE_MARKER_RE, '')
+       .replace(/[ \t]+$/gm, '')
+       .replace(/\n{3,}/g, '\n\n')
+@@ -47,5 +56,5 @@
+     return String(html || '')
+       .replace(TOKEN_RE, '')
+-      .replace(ANGLE_MARKER_RE, '')
++      .replace(RESPONSE_MARKER_RE, '')
+       .replace(/<(p|div|li)[^>]*>\s*(?:<br\s*\/?>)?\s*<\/\1>/gi, '');
+   }
+@@ -67,23 +76,67 @@
+   }
+ 
++  const completionOf = (status, text) => {
++    const contract = root.TransportContract || globalThis.TransportContract;
++    return contract?.classifyCompletion ? contract.classifyCompletion(status, text) : null;
++  };
++
++  const requestIdOf = (message) => String(message?.transportRequestId || message?.metadata?.transportRequestId || '') || null;
++
++  function pruneExpected() {
++    if (expectedByRequest.size <= EXPECTED_LIMIT) return;
++    const overflow = expectedByRequest.size - EXPECTED_LIMIT;
++    Array.from(expectedByRequest.keys()).slice(0, overflow).forEach((key) => expectedByRequest.delete(key));
++  }
++
+   // Outgoing: one token per model; returns the per-model prompt map to dispatch.
+-  function prepare({ prompt, promptsByModel, models, batchId = '' }) {
++  // The journal records 'prepared': nothing has been sent yet at this point.
++  function prepare({ prompt, promptsByModel, models, batchId = '', requestIds = null }) {
+     const out = {};
+     models.forEach((model) => {
+       const token = makeToken();
+       const base = promptsByModel?.[model] ?? prompt;
++      const requestId = String(requestIds?.[model] || '') || null;
+       out[model] = wrap(base, token);
+-      expected.set(model, { token, sentAt: Date.now(), batchId, final: false });
+-      record({ kind: 'sent', model, token, batchId, chars: out[model].length });
++      const entry = { token, sentAt: Date.now(), batchId, final: false, model, requestId };
++      if (requestId) expectedByRequest.set(requestId, entry);
++      latestByModel.set(model, entry);
++      record({ kind: 'prepared', model, token, batchId, requestId, chars: out[model].length, prompt: out[model].slice(0, 1500) });
+     });
++    pruneExpected();
+     return out;
+   }
+ 
++  function entryFor(message) {
++    const requestId = requestIdOf(message);
++    if (requestId) return expectedByRequest.get(requestId) || null;
++    const model = message?.llmName;
++    return model ? latestByModel.get(model) || null : null;
++  }
++
++  function cleanMessage(message, metadata, { tracked = true } = {}) {
++    const answer = message.answer && typeof message.answer === 'object'
++      ? String(message.answer.text || message.answer.answer || '')
++      : String(message.answer || '');
++    const cleaned = { ...message };
++    if (tracked || message.metadata) cleaned.metadata = metadata;
++    if (message.answer && typeof message.answer === 'object') {
++      cleaned.answer = { ...message.answer, text: clean(answer), html: cleanHtml(message.answer.html || message.answer.answerHtml || '') };
++    } else {
++      cleaned.answer = clean(answer);
++    }
++    if (message.answerHtml) cleaned.answerHtml = cleanHtml(message.answerHtml);
++    if (message.html) cleaned.html = cleanHtml(message.html);
++    return cleaned;
++  }
++
+   // Incoming: returns null when the message must be dropped (stale answer),
+   // otherwise the message with cleaned text/html and attribution metadata.
+   function receive(message, { final = false } = {}) {
+-    const model = message?.llmName;
+-    const entry = model ? expected.get(model) : null;
+-    if (!entry) return message;
++    if (!message) return message;
++    const entry = entryFor(message);
++    // Unknown request (e.g. the panel was reloaded): still strip our transport
++    // tags so a token never leaks into the feed or into the next stage prompt.
++    if (!entry) return cleanMessage(message, { ...(message.metadata || {}) }, { tracked: false });
++    const model = message.llmName;
+     const answer = message.answer && typeof message.answer === 'object'
+       ? String(message.answer.text || message.answer.answer || '')
+@@ -91,20 +144,51 @@
+     const state = inspect(answer, entry.token);
+     if (state === 'foreign') {
+-      if (!entry.staleLogged) { entry.staleLogged = true; record({ kind: 'stale_dropped', model, token: entry.token, chars: answer.length }); }
++      if (!entry.staleLogged) { entry.staleLogged = true; record({ kind: 'stale_dropped', model, token: entry.token, requestId: entry.requestId, chars: answer.length, answer: answer.slice(0, 500) }); }
+       return null;
+     }
+     const metadata = { ...(message.metadata || {}) };
++    if (!final && entry.final && entry.finalKind === 'empty_answer' && answer.trim() && !entry.lateTextLogged) {
++      entry.lateTextLogged = true;
++      record({ kind: 'late_text', model, token: entry.token, requestId: entry.requestId, chars: answer.length, ms: Date.now() - entry.sentAt });
++    }
++    // Growth of the answer text, sampled at most every 10 s: shows whether the
++    // model kept writing and when it stopped.
++    if (!final && answer.trim() && entry.firstText && answer.length !== entry.lastTextChars
++      && Date.now() - (entry.lastTextLoggedAt || 0) >= 10000) {
++      entry.lastTextLoggedAt = Date.now();
++      record({ kind: 'text_progress', model, token: entry.token, requestId: entry.requestId, chars: answer.length, ms: Date.now() - entry.sentAt });
++    }
++    if (answer.trim()) entry.lastTextChars = answer.length;
+     if (answer.trim() && !entry.firstText) {
+       entry.firstText = true;
+-      record({ kind: 'first_text', model, token: entry.token, chars: answer.length, ms: Date.now() - entry.sentAt });
++      entry.lastTextLoggedAt = Date.now();
++      record({ kind: 'first_text', model, token: entry.token, requestId: entry.requestId, chars: answer.length, ms: Date.now() - entry.sentAt });
+     }
+     if (final && !entry.final) {
+       entry.final = true;
+       const kind = !answer.trim() ? 'empty_answer' : state === 'verified' ? 'verified' : 'missing_token';
++      const status = String(message.status || metadata.status || metadata.finalStatus || '');
++      entry.finalKind = kind;
++      record({
++        kind, model, token: entry.token, requestId: entry.requestId, chars: answer.length, ms: Date.now() - entry.sentAt,
++        answer: answer.slice(0, 1200),
++        status,
++        completion: completionOf(status || (answer.trim() ? 'SUCCESS' : 'FAILED'), answer),
++        dispatchId: message.dispatchId || metadata.dispatchId || null,
++        source: String(metadata.source || metadata.answerSource || 'live'),
++        reason: String(metadata.reason || metadata.completionReason || metadata.failureClass || metadata.hardStopReason || ''),
++        detail: [metadata.errorType, metadata.errorMessage].filter(Boolean).join(': ') || null
++      });
++    } else if (final && entry.final && entry.finalKind === 'empty_answer' && answer.trim()) {
++      // A usable answer upgraded an earlier empty/failed terminal of the same request.
++      const status = String(message.status || metadata.status || metadata.finalStatus || '');
++      entry.finalKind = state === 'verified' ? 'verified' : 'missing_token';
+       record({
+-        kind, model, token: entry.token, chars: answer.length, ms: Date.now() - entry.sentAt,
+-        status: String(message.status || metadata.status || metadata.finalStatus || ''),
+-        reason: String(metadata.reason || metadata.completionReason || metadata.failureClass || metadata.hardStopReason || '')
++        kind: entry.finalKind, model, token: entry.token, requestId: entry.requestId, chars: answer.length, ms: Date.now() - entry.sentAt,
++        status, completion: completionOf(status || 'SUCCESS', answer), dispatchId: message.dispatchId || metadata.dispatchId || null,
++        source: String(metadata.source || metadata.answerSource || 'live'), reason: 'upgraded_after_failure'
+       });
++    } else if (final && entry.final && metadata.revision === true) {
++      record({ kind: 'revision', model, token: entry.token, requestId: entry.requestId, chars: answer.length, reason: String(metadata.reason || '') });
+     }
+     if (final && state === 'missing') {
+@@ -112,30 +196,74 @@
+       metadata.attributionLabel = 'Без метки доставки';
+     }
+-    const cleaned = { ...message, metadata };
+-    if (message.answer && typeof message.answer === 'object') {
+-      cleaned.answer = { ...message.answer, text: clean(answer), html: cleanHtml(message.answer.html || message.answer.answerHtml || '') };
+-    } else {
+-      cleaned.answer = clean(answer);
+-    }
+-    if (message.answerHtml) cleaned.answerHtml = cleanHtml(message.answerHtml);
+-    if (message.html) cleaned.html = cleanHtml(message.html);
+-    return cleaned;
++    return cleanMessage(message, metadata);
+   }
+ 
+-  // Runtime facts the background already broadcasts: model statuses and opened tabs.
++  // Runtime facts the background already broadcasts: model statuses, opened tabs,
++  // dispatch phases (TRANSPORT_DISPATCH_PHASE) and provider stop results.
+   function observeRuntime(message) {
+     if (!message) return;
++    if (message.type === 'TRANSPORT_DISPATCH_PHASE') {
++      const entry = entryFor(message);
++      const phaseKey = `${requestIdOf(message)}|${message.phase}|${message.dispatchId}|${message.at || ''}`;
++      if (entry && entry.lastPhaseKey === phaseKey) return;
++      if (entry) entry.lastPhaseKey = phaseKey;
++      record({
++        kind: 'dispatch', model: message.llmName, token: entry?.token || null, requestId: requestIdOf(message),
++        phase: String(message.phase || ''), dispatchId: message.dispatchId || null, tabId: message.tabId ?? null,
++        reason: message.reason || null, dispatchReason: message.dispatchReason || null, attempt: message.attempt ?? null,
++        bg: message.backgroundVersion || null, answerChars: message.answerChars ?? null,
++        ms: entry ? Date.now() - entry.sentAt : null
++      });
++      return;
++    }
++    if (message.type === 'TRANSPORT_FOCUS') {
++      const entry = entryFor(message) || latestByModel.get(message.llmName) || null;
++      if (!entry || entry.final) return;
++      entry.focusCount = (entry.focusCount || 0) + 1;
++      // The count is exact; the first events carry the detail, the rest only the count.
++      if (entry.focusCount <= FOCUS_EVENTS_PER_REQUEST) {
++        record({ kind: 'focus', model: message.llmName || null, token: entry.token, requestId: entry.requestId, source: message.source || null, tabId: message.tabId ?? null, n: entry.focusCount, ms: Date.now() - entry.sentAt });
++      } else if (entry.focusCount % 10 === 0) {
++        record({ kind: 'focus_count', model: message.llmName || null, token: entry.token, requestId: entry.requestId, n: entry.focusCount, ms: Date.now() - entry.sentAt });
++      }
++      return;
++    }
++    if (message.type === 'LLM_COMPLETION_TERMINAL') {
++      const entry = latestByModel.get(message.llmName);
++      const result = message.meta?.terminalResult || {};
++      record({
++        kind: 'completion_terminal', model: message.llmName || null, token: entry?.token || null, requestId: entry?.requestId || null,
++        status: result.status || null, reason: result.reason || null, dispatchId: message.meta?.dispatchId || null,
++        ms: entry ? Date.now() - entry.sentAt : null
++      });
++      return;
++    }
++    if (message.type === 'SPA_NAVIGATION') {
++      const entry = latestByModel.get(message.llmName);
++      const path = (url) => { try { return new URL(url).pathname; } catch (_) { return String(url || ''); } };
++      record({
++        kind: 'navigation', model: message.llmName || null, token: entry?.token || null, requestId: entry?.requestId || null,
++        from: path(message.oldUrl), to: path(message.newUrl), reason: message.reason || null,
++        ms: entry ? Date.now() - entry.sentAt : null
++      });
++      return;
++    }
++    if (message.type === 'PROVIDER_STOP_RESULT') {
++      const entry = latestByModel.get(message.llmName);
++      record({ kind: 'provider_stop', model: message.llmName || null, token: entry?.token || null, requestId: entry?.requestId || null, stopped: message.stopped === true, reason: message.reason || null });
++      return;
++    }
+     if (message.type === 'STATUS_UPDATE') {
+-      const entry = expected.get(message.llmName);
++      const entry = latestByModel.get(message.llmName);
+       const status = String(message.status || '').toUpperCase();
+       if (!entry || entry.final || !status || entry.lastStatus === status) return;
+       entry.lastStatus = status;
+-      record({ kind: 'status', model: message.llmName, token: entry.token, status });
++      record({ kind: 'status', model: message.llmName, token: entry.token, requestId: entry.requestId, status });
+     } else if (message.type === 'GLOBAL_STATE_BROADCAST') {
+       const map = message.state?.tabs?.map || {};
+-      expected.forEach((entry, model) => {
++      latestByModel.forEach((entry, model) => {
+         if (entry.tabSeen || entry.final || !Number.isInteger(map[model])) return;
+         entry.tabSeen = true;
+-        record({ kind: 'tab', model, token: entry.token, tabId: map[model], ms: Date.now() - entry.sentAt });
++        record({ kind: 'tab', model, token: entry.token, requestId: entry.requestId, tabId: map[model], ms: Date.now() - entry.sentAt });
+       });
+     }
+@@ -143,13 +271,23 @@
+ 
+   // The batch finished waiting: models that never produced a final answer.
+-  function closeBatch({ models = [], timedOut = false, failed = {} } = {}) {
++  function closeBatch({ models = [], timedOut = false, failed = {}, requestIds = null, cancelled = false, reason = '' } = {}) {
+     models.forEach((model) => {
+-      const entry = expected.get(model);
++      const requestId = String(requestIds?.[model] || '') || null;
++      const entry = requestId ? expectedByRequest.get(requestId) : latestByModel.get(model);
+       if (!entry || entry.final) return;
+       entry.final = true;
+-      record({ kind: 'no_answer', model, token: entry.token, ms: Date.now() - entry.sentAt, timedOut, status: String(failed[model] || '') });
++      record({
++        kind: cancelled ? 'cancelled' : 'no_answer', model, token: entry.token, requestId: entry.requestId,
++        ms: Date.now() - entry.sentAt, timedOut, status: String(failed[model] || ''), reason: String(reason || '')
++      });
+     });
+   }
+ 
++  // Batch-level facts from the panel (start, refusals, acceptance, outcome) and
++  // answers the panel refused for their identity. Not tied to one token.
++  function batchEvent(kind, fields = {}) {
++    record({ kind, ...fields });
++  }
++
+   // Clears only the journal; tokens of requests still in flight stay valid.
+   function clearJournal() {
+@@ -159,5 +297,6 @@
+ 
+   function reset() {
+-    expected.clear();
++    expectedByRequest.clear();
++    latestByModel.clear();
+     journal.length = 0;
+     try { root.chrome?.storage?.session?.remove(JOURNAL_KEY); } catch (_) { /* ignore */ }
+@@ -167,5 +306,5 @@
+   try { root.chrome?.storage?.session?.remove(JOURNAL_KEY); } catch (_) { /* ignore */ }
+ 
+-  const api = Object.freeze({ JOURNAL_KEY, makeToken, wrap, clean, cleanHtml, inspect, prepare, receive, observeRuntime, closeBatch, record, clearJournal, reset, journal: () => journal.slice() });
++  const api = Object.freeze({ JOURNAL_KEY, makeToken, wrap, clean, cleanHtml, inspect, prepare, receive, observeRuntime, closeBatch, batchEvent, record, clearJournal, reset, journal: () => journal.slice() });
+   root.MessageDelivery = api;
+   if (typeof module !== 'undefined' && module.exports) module.exports = api;
+diff --git a/styles/devtools-selectors.css b/styles/devtools-selectors.css
+index 6c2ab57..2c17ed3 100644
+--- a/styles/devtools-selectors.css
++++ b/styles/devtools-selectors.css
+@@ -663,5 +663,6 @@
+ 
+ #telemetry-tabpanel .devtools-card-grid,
+-#disput-tabpanel .devtools-card-grid {
++#disput-tabpanel .devtools-card-grid,
++#automation-tabpanel .devtools-card-grid {
+     grid-template-columns: 1fr;
+     margin-top: 12px;
+@@ -669,10 +670,12 @@
+ 
+ #telemetry-tabpanel .devtools-card[data-collapsible] .devtools-card-header,
+-#disput-tabpanel .devtools-card[data-collapsible] .devtools-card-header {
++#disput-tabpanel .devtools-card[data-collapsible] .devtools-card-header,
++#automation-tabpanel .devtools-card[data-collapsible] .devtools-card-header {
+     cursor: pointer;
+ }
+ 
+ #telemetry-tabpanel .devtools-card[data-collapsible] .devtools-card-header h2,
+-#disput-tabpanel .devtools-card[data-collapsible] .devtools-card-header h2 {
++#disput-tabpanel .devtools-card[data-collapsible] .devtools-card-header h2,
++#automation-tabpanel .devtools-card[data-collapsible] .devtools-card-header h2 {
+     position: relative;
+     padding-right: 24px;
+@@ -680,5 +683,6 @@
+ 
+ #telemetry-tabpanel .devtools-card[data-collapsible] .devtools-card-header h2::after,
+-#disput-tabpanel .devtools-card[data-collapsible] .devtools-card-header h2::after {
++#disput-tabpanel .devtools-card[data-collapsible] .devtools-card-header h2::after,
++#automation-tabpanel .devtools-card[data-collapsible] .devtools-card-header h2::after {
+     content: '▼';
+     position: absolute;
+@@ -691,10 +695,12 @@
+ 
+ #telemetry-tabpanel .devtools-card[data-collapsible].is-collapsed .devtools-card-header h2::after,
+-#disput-tabpanel .devtools-card[data-collapsible].is-collapsed .devtools-card-header h2::after {
++#disput-tabpanel .devtools-card[data-collapsible].is-collapsed .devtools-card-header h2::after,
++#automation-tabpanel .devtools-card[data-collapsible].is-collapsed .devtools-card-header h2::after {
+     transform: translateY(-50%) rotate(-90deg);
+ }
+ 
+ #telemetry-tabpanel .devtools-card[data-collapsible].is-collapsed .devtools-card-body,
+-#disput-tabpanel .devtools-card[data-collapsible].is-collapsed .devtools-card-body {
++#disput-tabpanel .devtools-card[data-collapsible].is-collapsed .devtools-card-body,
++#automation-tabpanel .devtools-card[data-collapsible].is-collapsed .devtools-card-body {
+     display: none;
+ }
+@@ -716,5 +722,6 @@
+ 
+ #telemetry-tabpanel .devtools-toolbar-actions,
+-#disput-tabpanel .devtools-toolbar-actions {
++#disput-tabpanel .devtools-toolbar-actions,
++#automation-tabpanel .devtools-toolbar-actions {
+     display: grid;
+     margin: 10px;
+@@ -727,5 +734,6 @@
+ 
+ #telemetry-tabpanel .devtools-toolbar,
+-#disput-tabpanel .devtools-toolbar {
++#disput-tabpanel .devtools-toolbar,
++#automation-tabpanel .devtools-toolbar {
+     position: sticky;
+     top: 0;
+@@ -744,5 +752,6 @@
+ 
+ #telemetry-tabpanel .telemetry-actions,
+-#disput-tabpanel .telemetry-actions {
++#disput-tabpanel .telemetry-actions,
++#automation-tabpanel .telemetry-actions {
+     display: flex;
+     align-items: center;
+@@ -753,5 +762,6 @@
+ 
+ #telemetry-tabpanel .devtools-toolbar-actions .devtools-pill-btn,
+-#disput-tabpanel .devtools-toolbar-actions .devtools-pill-btn {
++#disput-tabpanel .devtools-toolbar-actions .devtools-pill-btn,
++#automation-tabpanel .devtools-toolbar-actions .devtools-pill-btn {
+     margin-top: 0;
+     padding: 2px 6px;
+@@ -765,5 +775,6 @@
+ 
+ #telemetry-tabpanel .devtools-toolbar-actions .devtools-pill-btn:hover,
+-#disput-tabpanel .devtools-toolbar-actions .devtools-pill-btn:hover {
++#disput-tabpanel .devtools-toolbar-actions .devtools-pill-btn:hover,
++#automation-tabpanel .devtools-toolbar-actions .devtools-pill-btn:hover {
+     box-shadow: none;
+ }
+@@ -781,6 +792,9 @@
+ 
+ #disput-tabpanel .disput-trace-filters .devtools-select,
++#automation-tabpanel .disput-trace-filters .devtools-select,
+ #disput-tabpanel .disput-trace-filters .devtools-select:focus,
+-#disput-tabpanel .disput-trace-filters .devtools-select:focus-visible {
++#automation-tabpanel .disput-trace-filters .devtools-select:focus,
++#disput-tabpanel .disput-trace-filters .devtools-select:focus-visible,
++#automation-tabpanel .disput-trace-filters .devtools-select:focus-visible {
+     border: none;
+     outline: none;
+@@ -789,5 +803,6 @@
+ 
+ #telemetry-tabpanel .telemetry-only-problems-label,
+-#disput-tabpanel .disput-only-problems-label {
++#disput-tabpanel .disput-only-problems-label,
++#automation-tabpanel .disput-only-problems-label {
+     margin-left: 15px;
+ }
+diff --git a/background/dispatch-coordinator.js b/background/dispatch-coordinator.js
+index 8593b71..6981ab4 100644
+--- a/background/dispatch-coordinator.js
++++ b/background/dispatch-coordinator.js
+@@ -1130,4 +1210,5 @@ async function dispatchSimpleFirstPass(llmName, tabId, prompt, attachments, entr
+   const defer = reason => {
+     if (current()) {
++      reportDispatchPhase(llmName, entry, 'blocked', {dispatchId: meta.dispatchId, tabId, reason, dispatchReason: 'round1_simple'});
+       entry.firstPassResult = {dispatchId: meta.dispatchId, outcome: reason, commandAt: null, finishedAt: Date.now()};
+       machine?.error?.({code: 'ROUND1_DEFERRED', error: reason});
+@@ -1165,4 +1246,7 @@ async function dispatchSimpleFirstPass(llmName, tabId, prompt, attachments, entr
+     const commandAt = Date.now();
+     let deliveryError = null;
++    reportDispatchPhase(llmName, entry, 'dispatch_started', {
++      dispatchId: meta.dispatchId, tabId, dispatchReason: 'round1_simple', attempt: entry.dispatchAttempts || 0
++    });
+     // Exactly one prompt delivery after transport preparation; no send retry.
+     // Provider-specific editing remains in the existing page adapter.
+@@ -1176,4 +1260,8 @@ async function dispatchSimpleFirstPass(llmName, tabId, prompt, attachments, entr
+           entry.lastCommandAcceptedAt = Date.now();
+           entry.lastCommandAcceptedDispatchId = meta.dispatchId;
++          reportDispatchPhase(llmName, entry, 'command_accepted', {dispatchId: meta.dispatchId, tabId});
++        }
++        if (deliveryError) {
++          reportDispatchPhase(llmName, entry, 'command_not_delivered', {dispatchId: meta.dispatchId, tabId, reason: deliveryError});
+         }
+       });
+@@ -1213,4 +1301,5 @@ async function dispatchSimpleFirstPass(llmName, tabId, prompt, attachments, entr
+       else machine.error({code: 'ROUND1_DEFERRED', error: outcome});
+     }
++    reportDispatchPhase(llmName, entry, attempted ? 'submitted' : 'submit_unconfirmed', {dispatchId: meta.dispatchId, tabId, reason: attempted ? null : outcome});
+     emitTelemetry(llmName, 'ROUND1_SIMPLE_DISPATCH_RESULT', {
+       details: outcome,
+@@ -1538,4 +1656,5 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
+           machine.error({ error: readiness.reason || 'tab_not_ready', code: 'TAB_NOT_READY' });
+         }
++        reportDispatchPhase(llmName, entry, 'blocked', { reason: readiness.reason || 'tab_not_ready', dispatchId, tabId, dispatchReason: reason });
+         return;
+       }
+@@ -1643,4 +1762,5 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
+         }
+         if (!readyOk) {
++          reportDispatchPhase(llmName, entry, 'blocked', { reason: 'ack_timeout', dispatchId, tabId, dispatchReason: reason });
+           scheduleDispatchRetry(entry, llmName, { type: 'ack_timeout' });
+           if (self.DispatchCircuit?.recordDispatchFailure) {
+@@ -1676,4 +1796,7 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
+         }
+       } catch (_) {}
++      reportDispatchPhase(llmName, entry, 'dispatch_started', {
++        dispatchId, tabId, dispatchReason: reason, attempt: entry.dispatchAttempts || 0
++      });
+ 
+       let needsFocus = false;
+@@ -1785,4 +1908,10 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
+           machine.error({ error: pageReadyState.reason || 'page_not_ready', code: 'PAGE_NOT_READY' });
+         }
++        reportDispatchPhase(llmName, entry, 'blocked', {
++          reason: pageReadyState.reason || 'page_not_ready',
++          blockers: pageReadyState.blockers || null,
++          retryable: pageReadyState.blockerPolicy?.retryable !== false,
++          dispatchId, tabId, dispatchReason: reason
++        });
+         return;
+       }
+@@ -1853,4 +1998,5 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
+         entry.lastCommandAcceptedAt = Date.now();
+         entry.lastCommandAcceptedDispatchId = dispatchId;
++        reportDispatchPhase(llmName, entry, 'command_accepted', { dispatchId, tabId, requiresFocus: needsFocus });
+         entry.lastCommandAcceptedTiming = commandTiming;
+         emitTelemetry(llmName, 'DISPATCH_COMMAND_ACCEPTED', {
+@@ -2018,4 +2184,9 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
+       } catch (_) {}
+       const submittedPayload = options.skipSubmitWait ? null : (waiter ? await waiter : false);
++      if (!options.skipSubmitWait && commandDeliveryReported) {
++        reportDispatchPhase(llmName, entry, submittedPayload?.ok === true || submittedPayload === true ? 'submitted' : 'submit_unconfirmed', {
++          dispatchId, tabId, reason: submittedPayload?.reason || null
++        });
++      }
+       if (requireCommandAcceptance) {
+         const acceptance = commandDeliveryResult?.response || null;
+diff --git a/background/human-presence.js b/background/human-presence.js
+index f33cf74..31c3924 100644
+--- a/background/human-presence.js
++++ b/background/human-presence.js
+@@ -454,4 +545,18 @@ function markProgrammaticTabFocus(tabId, source = 'programmatic_focus', options
+     force: true
+   });
++  // Every programmatic tab activation (dispatch, human visit, recovery visit)
++  // goes through here: the Automation journal shows who moved the focus and why.
++  try {
++    if (typeof sendMessageToResultsTab === 'function') {
++      sendMessageToResultsTab({
++        type: 'TRANSPORT_FOCUS',
++        llmName,
++        tabId,
++        source: entry.source,
++        transportRequestId: (llmName && jobState?.llms?.[llmName]?.transportRequestId) || null,
++        at: now
++      });
++    }
++  } catch (_) {}
+   return true;
+ }
+diff --git a/pipeline_panel.html b/pipeline_panel.html
+index de383c9..5ab02d8 100644
+--- a/pipeline_panel.html
++++ b/pipeline_panel.html
+@@ -702,4 +702,8 @@
+                                     <div class="devtools-card-body"><div class="telemetry-rounds-table-wrapper" id="automation-health"><p class="diag-empty">No messages yet.</p></div></div>
+                                 </article>
++                                <article class="devtools-card telemetry-rounds-card" data-collapsible="automation-batches">
++                                    <div class="devtools-card-header"><h2>Batches</h2></div>
++                                    <div class="devtools-card-body"><div class="telemetry-rounds-table-wrapper" id="automation-batches"><p class="diag-empty">No batches yet.</p></div></div>
++                                </article>
+                                 <article class="devtools-card telemetry-card" data-collapsible="automation-problems">
+                                     <div class="devtools-card-header"><h2>Problems &amp; Recovery</h2></div>
+@@ -907,4 +911,5 @@
+     <script src="shared/telemetry-export-runtime.js"></script>
+     <script src="shared/transport-policy.js"></script>
++    <script src="shared/transport-contract.js"></script>
+     <script src="shared/debate-schema.js"></script>
+     <script src="disput/debate-artifact-definitions.js"></script>
+diff --git a/results.js b/results.js
+index 233ed6d..c197ca5 100644
+--- a/results.js
++++ b/results.js
+@@ -16415,4 +16601,9 @@ document.addEventListener('click', (event) => {
+         'SMART_SCRIPT_READY_ACK',
+         'SMART_DISPATCH_SEND',
++        'TRANSPORT_DISPATCH_PHASE',
++        'PROVIDER_STOP_RESULT',
++        'LLM_COMPLETION_TERMINAL',
++        'SPA_NAVIGATION',
++        'TRANSPORT_FOCUS',
+         'SMART_ATTACHMENT_CONFIRMED',
+         'ATTACHMENT_MANUAL_REQUIRED',
+@@ -16428,7 +16619,10 @@ document.addEventListener('click', (event) => {
+     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+         if (!RESULTS_RUNTIME_MESSAGE_TYPES.has(message?.type)) return false;
+-        if (window.MessageDelivery && (message.type === 'STATUS_UPDATE' || message.type === 'GLOBAL_STATE_BROADCAST')) {
++        // Journal-only messages; tab-originated ones are owned (answered) by the background.
++        const JOURNAL_ONLY_TYPES = ['TRANSPORT_DISPATCH_PHASE', 'PROVIDER_STOP_RESULT', 'LLM_COMPLETION_TERMINAL', 'SPA_NAVIGATION', 'TRANSPORT_FOCUS'];
++        if (window.MessageDelivery && ['STATUS_UPDATE', 'GLOBAL_STATE_BROADCAST', ...JOURNAL_ONLY_TYPES].includes(message.type)) {
+             window.MessageDelivery.observeRuntime(message);
+         }
++        if (JOURNAL_ONLY_TYPES.includes(message.type)) return false;
+         if (window.MessageDelivery && ['LLM_PARTIAL_RESPONSE', 'LLM_FINAL_RESPONSE', 'FINAL_LLM_RESPONSE'].includes(message.type)) {
+             message = window.MessageDelivery.receive(message, { final: isTerminalPipelineMessage(message) });
