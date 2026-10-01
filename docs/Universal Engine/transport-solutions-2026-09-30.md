@@ -2,7 +2,7 @@
 
 Дата: 2026-09-30. Ревизия кода: `bffd7e5` (ветка `claude/inspiring-bell-71qgbj`).
 Область: браузерный транспорт (API исключён).
-Реестр дефектов — сводка review Astra (`transport-review-2026-09-30.md`) и Claude.
+Реестр дефектов — [сводка review Astra и Claude](<GPT - transport-findings-summary-2026-10-01.md>).
 Статус: **проект решений для обсуждения**. Код не менялся.
 
 ## Общие элементы решений
