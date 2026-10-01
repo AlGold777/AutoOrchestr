@@ -4057,7 +4057,7 @@ document.addEventListener('click', (event) => {
                     plannedStageId: `canvas-r${round}`,
                     label: templateStage ? `${round}. ${templateStage.titleRu}` : (round === 1 ? 'R1 Models' : `R${round}`),
                     purpose: templateStage?.purpose || (round === 1 ? 'position' : 'response'),
-                    ...(templateStage ? { instruction: templateStage.instruction, meta: { stageTemplate: activeStageTemplate, stageNumber: templateStage.n, phase: templateStage.phase } } : {}),
+                    ...(templateStage ? { instruction: templateStage.instruction, meta: { stageTemplate: activeStageTemplate, stageNumber: templateStage.n, phase: templateStage.phase, ...(templateStage.gateAfter ? { gateAfter: templateStage.gateAfter } : {}) } } : {}),
                     participantIds,
                     participantBindings: (stack?.items || []).filter((item) => item.send).map((item) => ({ participantId: item.name, promptId: item.role || null }))
                 });
@@ -4843,6 +4843,8 @@ document.addEventListener('click', (event) => {
             debateRunState.pauseReason = ['paused', 'technical_pause'].includes(debateRunState.status)
                 ? String(aggregate?.pauseReason || '') : '';
             window.__debateRunAggregate = aggregate;
+            // The engine can pause or continue without a page call (stage gate): keep the controls true.
+            try { updateDebateButtonsUi(); } catch (_) { /* not initialised yet */ }
         });
         window.__getDebateRunAggregate = getDebateAggregateState;
         window.__exportDebateDomainEvents = () => (getDebateAggregateState()?.events || []).slice();
@@ -5161,6 +5163,57 @@ document.addEventListener('click', (event) => {
             }
             if (debatePaused) void debateApplication?.pause?.(reason);
             else void debateApplication?.resume?.();
+        };
+        // ---- Engine pauses: a stage ended, a gate, a failed stage, a question for the owner ----
+        const ownerAskDialog = document.getElementById('owner-ask-dialog');
+        let pendingOwnerAsks = null;
+        const withOwnerAnswers = (task) => {
+            const notes = window.OwnerAsk?.toInstruction?.(activePipelineRunContext?.ownerAnswers || []) || '';
+            if (!notes) return task;
+            // A contract is immutable: rebuild it with the owner's answers as the current instruction.
+            return { ...task, contractKind: 'raw', currentInstruction: [task.currentInstruction, notes].filter(Boolean).join('\n') };
+        };
+        const openOwnerAsk = (info) => {
+            if (!ownerAskDialog || !window.OwnerAsk) return;
+            pendingOwnerAsks = info;
+            const hint = document.getElementById('owner-ask-hint');
+            if (hint) hint.textContent = `${info.label || info.plannedStageId || 'Этап'}: модель просит ответа владельца. Ответ получат следующие этапы.`;
+            window.OwnerAsk.render(document.getElementById('owner-ask-list'), info.asks || []);
+            if (!ownerAskDialog.open) ownerAskDialog.showModal();
+        };
+        ownerAskDialog?.addEventListener('click', (event) => {
+            const action = event.target.closest?.('[data-owner-ask]')?.dataset?.ownerAsk;
+            if (!action || !pendingOwnerAsks) return;
+            const info = pendingOwnerAsks;
+            if (action === 'answer') {
+                const answers = window.OwnerAsk.collect(document.getElementById('owner-ask-list'), info.asks || []);
+                if (!answers.length) { showNotification('Впишите хотя бы один ответ или выберите «Продолжить без ответа».', 'info'); return; }
+                if (activePipelineRunContext) (activePipelineRunContext.ownerAnswers ||= []).push(...answers.map((item) => ({ ...item, stage: info.plannedStageId || '' })));
+                globalThis.MessageDelivery?.batchEvent?.('owner_answer', { stage: info.plannedStageId || null, answered: answers.length, asked: (info.asks || []).length });
+            } else if (action === 'skip') {
+                globalThis.MessageDelivery?.batchEvent?.('owner_answer', { stage: info.plannedStageId || null, answered: 0, asked: (info.asks || []).length, skipped: true });
+            }
+            pendingOwnerAsks = null;
+            ownerAskDialog.close();
+            if (action !== 'later') setDebatePausedState(false, action === 'answer' ? 'owner_answer' : 'owner_skip');
+        });
+        const handleEnginePause = (info = {}) => {
+            globalThis.MessageDelivery?.batchEvent?.('run_paused', {
+                reason: info.reason || null, stage: info.plannedStageId || null, gate: info.gate || null,
+                asks: (info.asks || []).length, verdict: info.verdict || null
+            });
+            const where = info.label ? `«${info.label}»` : (info.plannedStageId || 'этап');
+            const verdict = info.verdict === 'issues_found' ? ' Проверка нашла блокирующие замечания.' : (info.verdict === 'pass' ? ' Проверка: замечаний нет.' : '');
+            if (info.reason === 'ask') {
+                showNotification(`${where}: нужен ответ владельца.`, 'info');
+                openOwnerAsk(info);
+            } else if (info.reason === 'gate') {
+                showNotification(`Ворота ${info.gate || ''} после ${where}: проверьте результат и нажмите «Продолжить».${verdict}`, 'info');
+            } else if (info.reason === 'stage_failed') {
+                showNotification(`${where}: ни одна модель не дала принятого ответа. Проверьте вкладки (Get it); «Продолжить» повторит этап.`, 'warn');
+            } else {
+                showNotification(`${where} выполнен. Нажмите «Продолжить».${verdict}`, 'info');
+            }
         };
         let debateApplication = null;
         const getDebateRunControls = () => {
@@ -6029,7 +6082,9 @@ document.addEventListener('click', (event) => {
                     || '1',
                 startedAt: Date.now(),
                 forceNewTabs: newPagesCheckbox ? newPagesCheckbox.checked : true,
-                newPagesDispatched: false
+                newPagesDispatched: false,
+                // Owner's answers to [[ASK:]] markers: they reach the prompts of the next stages.
+                ownerAnswers: []
             };
             await notifyPipelineControlState('STARTING', {
                 stage: 'dispatch',
@@ -6098,6 +6153,9 @@ document.addEventListener('click', (event) => {
                     problemSpecText,
                     taskContract,
                     policies: window.DebatePolicies?.resolve?.({
+                        // Semi-automatic stops after every stage; Auto only at template gates,
+                        // on a question for the owner and on a failed stage.
+                        stagePause: { mode: compiledRunPolicy === 'auto' ? 'gates' : 'every_stage' },
                         finalization: {
                             ...(presetConfig.finalization || {}),
                             mode: compiledRunPolicy === 'auto'
@@ -6202,6 +6260,7 @@ document.addEventListener('click', (event) => {
                 startFromPage: startDebateFromPage,
                 createId: makePipelineRunId,
                 runModelBatch,
+                onEnginePause: (info) => handleEnginePause(info),
                 acceptResponse: (text, meta) => window.DebateResponseAcceptance?.evaluate?.({
                     text, meta: {
                         ...(meta || {}), isErrorOutput,
@@ -6210,17 +6269,20 @@ document.addEventListener('click', (event) => {
                     }
                 }) || { ok: Boolean(String(text || '').trim()), reason: '' },
                 compilePrompt: ({ stage, participant, context }) => window.DebatePromptCompiler?.compile?.({
-                    task: context?.debateCase?.taskContract || {
+                    task: withOwnerAnswers(context?.debateCase?.taskContract || {
                         objective: context?.debateCase?.topic?.title || 'Discussion',
                         maxWords: getDebateMaxWords()
-                    },
+                    }),
                     // A template stage carries its own brief (stage card): it becomes the
                     // action instruction of the prompt for every participant of the stage.
                     action: stage.instruction ? {
                         id: stage.stageInstanceId,
                         operation: window.DebateArtifactPipeline.operationForPurpose(stage.purpose),
                         role: stage.purpose === 'synthesis' ? 'synthesizer' : 'participant',
-                        instruction: stage.instruction
+                        // The stage brief plus the control markers this stage may raise.
+                        instruction: window.DebateStageMarkers
+                            ? `${stage.instruction}\n\n${window.DebateStageMarkers.instructions({ purpose: stage.purpose })}`
+                            : stage.instruction
                     } : undefined,
                     stage: {
                         stageId: stage.stageInstanceId,

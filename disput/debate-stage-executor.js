@@ -3,6 +3,7 @@
 (function initDebateStageExecutor(root) {
   'use strict';
   const Participants = root.DebateParticipantRegistry || (typeof require === 'function' ? require('./debate-participant-registry') : null);
+  const Markers = root.DebateStageMarkers || (typeof require === 'function' ? require('./stage-markers') : null);
 
   const arr = (value) => Array.isArray(value) ? value : [];
   const text = (value) => String(value == null ? '' : value).trim();
@@ -197,7 +198,8 @@
             const stateDelta = proposeStateDelta({ stage, participant, text: responseText, artifacts, context });
             return {
               participantId: participant.participantId, status: 'accepted',
-              text: responseText, completion, artifacts, proposedStateDelta: stateDelta, attempts: attempt
+              text: responseText, completion, artifacts, proposedStateDelta: stateDelta, attempts: attempt,
+              markers: Markers ? Markers.parse(responseText) : { verdict: null, asks: [], invalid: [] }
             };
           }
           lastReason = verdict.reason || 'not_accepted';
@@ -259,9 +261,15 @@
       else if (completionMode === 'all') executionStatus = accepted.length === results.length ? 'completed' : (accepted.length ? 'partial' : 'failed');
       else if (completionMode === 'quorum') executionStatus = accepted.length >= quorum ? 'completed' : (accepted.length ? 'partial' : 'failed');
       else executionStatus = accepted.length >= 1 ? 'completed' : 'failed';
+      // Control markers of the accepted answers (disput/stage-markers.js).
+      const markered = accepted.map((r) => ({ participantId: r.participantId, markers: r.markers || { verdict: null, asks: [] } }));
+      const asks = markered.flatMap((r) => r.markers.asks.map((question) => ({ participantId: r.participantId, question })));
+      const verdict = Markers ? Markers.combineVerdicts(markered.map((r) => r.markers.verdict)) : null;
       return {
         stageInstanceId: stage.stageInstanceId,
         executionStatus,
+        asks,
+        verdict,
         attempts: results.map((r) => ({ participantId: r.participantId, status: r.status, attempts: r.attempts, reason: r.reason })),
         acceptedResponses: accepted.map((r) => ({ participantId: r.participantId, text: r.text, artifacts: r.artifacts })),
         proposedStateDeltas: accepted.map((r) => r.proposedStateDelta).filter(Boolean),

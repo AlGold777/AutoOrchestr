@@ -185,6 +185,12 @@
       if (type === 'RUN_COMPLETED') dispatch(event.FINALIZATION_COMPLETED, { reason: body.reason || 'completed' });
       if (type === 'RUN_CANCELLED') dispatch(event.CANCEL_REQUESTED, { reason: body.reason || 'cancelled' });
       if (type === 'RUN_FAILED') dispatch(event.RUN_FAILED, { reason: body.reason || 'failed' });
+      // The engine stopped by itself (after a stage, at a gate, on a question for the owner or a
+      // failed stage): the aggregate shows "paused" so the one existing "Continue" works.
+      if (type === 'RUN_PAUSED' && body.by === 'engine') {
+        dispatch(event.PAUSE_REQUESTED, { reason: body.reason || 'engine_pause' });
+        try { deps.onEnginePause?.(body); } catch (_) { /* a UI hook must not break the run */ }
+      }
       dispatch(event.TIMELINE_EVENT_RECORDED, { kind: type, ...payload });
     }
 

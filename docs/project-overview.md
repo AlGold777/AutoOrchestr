@@ -483,8 +483,22 @@ With the **Auto** toggle off the moderator drives the pipeline stage by stage:
   with no answer yet keeps waiting. Skipped models are not retried and are not
   dropped from the run (`PARTICIPANT_SKIPPED`, non-terminal); the batch is
   journaled with outcome `moderator_closed` instead of `timeout`.
-- After a stage completes the engine waits for approval (**Approve and
-  continue**) before starting the next one.
+- **Stops of the run** (since 2.81.529; before it the universal engine ran every
+  planned stage in one go — an earlier version of this page wrongly said it
+  waited for approval). The engine pauses itself (lifecycle `PAUSED`, one
+  **Continue** button, `policies.stagePause`): with Auto off after **every**
+  stage; with Auto on only at a template **gate**; in both modes on a
+  **question for the owner** (`[[ASK: …]]`, a dialog with a text field per
+  question; the answers go into the prompts of the next stages) and on a
+  **failed stage** (nobody gave an accepted answer: the stage is no longer
+  re-queued until the budget burns, Continue repeats it once). The reason is
+  in the notification, the delivery report (`run_paused`) and the stage card.
+- Control markers in a template stage's answer (`disput/stage-markers.js`):
+  the delivery token `[[AO-xxxxxx]]` (complete and mine, unchanged),
+  `[[ASK: question]]` (the owner is needed) and, for review stages,
+  `[[VERDICT: pass|issues_found]]` (blocking remarks or not; informational,
+  shown at the pause). A marker is a line of its own; text in code fences and
+  quotes is ignored. See `docs/automation-plan.md`.
 - **Architecture** template («Разработка архитектуры»): the 30-stage
   Product→Architecture Framework as 30 canvas rounds (round number = framework
   stage number; stages 13, 17, 22, 30 are moderator gates without models). Run

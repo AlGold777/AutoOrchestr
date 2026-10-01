@@ -435,6 +435,7 @@
           inputSelector: proposed.inputSelector,
           ...(proposed.instruction ? { instruction: proposed.instruction } : {}),
           ...(proposed.label ? { label: proposed.label } : {}),
+          ...(proposed.meta ? { meta: proposed.meta } : {}),
           status: 'pending',
           attempt: 1
         };
@@ -767,6 +768,10 @@
       stage.status = result.executionStatus === 'completed' ? 'completed'
         : result.executionStatus === 'partial' ? 'completed'
         : result.executionStatus === 'cancelled' ? 'cancelled' : 'failed';
+      // What the stage's answers carried for the moderator (markers) and who did not answer.
+      stage.asks = arr(result.asks).map((item) => ({ ...item }));
+      stage.verdict = result.verdict || null;
+      stage.failedParticipants = arr(result.failedParticipants).slice();
       state.totalStagesExecuted += 1;
       const attempts = arr(result.attempts);
       state.usage.modelCalls += attempts.length || (arr(result.acceptedResponses).length + arr(result.failedParticipants).length);
@@ -888,7 +893,8 @@
             const execution = await executeStage(stage);
             if (execution?.ok === false) return execution;
           }
-          return { ok: true, decision, executed: stages.map((s) => s.stageInstanceId) };
+          const pause = state.lifecycle === LIFECYCLE.RUNNING ? stagePauseFor(stages) : null;
+          return { ok: true, decision, executed: stages.map((s) => s.stageInstanceId), ...(pause ? { pause } : {}) };
         }
         case 'REQUEST_HUMAN_DECISION':
           emit('PLANNING_HUMAN_DECISION_REQUIRED', { request: decision.humanDecisionRequest });
@@ -907,6 +913,40 @@
       }
     }
 
+    // ---- Stage pause: the run stops by itself, "Continue" is requestContinue ----
+    // Priority: a failed stage > a question for the owner > a template gate > the
+    // policy's own "after every stage". A failed stage is never re-queued blindly:
+    // the planner would repeat it until the step budget burns every model call.
+    function stagePauseFor(stages) {
+      const mode = state.debateCase?.policies?.stagePause?.mode || 'never';
+      const executed = arr(stages).filter((stage) => ['completed', 'failed'].includes(stage.status));
+      const describe = (stage, reason, extra = {}) => ({
+        reason, stageInstanceId: stage.stageInstanceId, plannedStageId: stage.plannedStageId || null,
+        label: stage.label || null, ...extra
+      });
+      const failed = executed.find((stage) => stage.status === 'failed');
+      if (failed) return describe(failed, 'stage_failed', { failedParticipants: arr(failed.failedParticipants) });
+      const asking = executed.find((stage) => arr(stage.asks).length);
+      if (asking) return describe(asking, 'ask', { asks: arr(asking.asks).slice(), verdict: asking.verdict || null });
+      const gated = executed.find((stage) => stage.meta?.gateAfter);
+      if (gated && mode !== 'never') return describe(gated, 'gate', { gate: gated.meta.gateAfter, verdict: gated.verdict || null });
+      if (mode === 'every_stage' && executed.length) {
+        const last = executed[executed.length - 1];
+        return describe(last, 'stage_done', { verdict: last.verdict || null });
+      }
+      return null;
+    }
+
+    function enterStagePause(pause) {
+      state.lifecycle = LIFECYCLE.PAUSED;
+      state.pausePolicy = 'stage_gate';
+      state.pauseInfo = clone(pause);
+      emit('RUN_PAUSED', { ...clone(pause), by: 'engine' });
+      persistRecoveryPoint('run_paused');
+      persistence.saveSnapshot(buildSnapshot());
+      releaseLease('paused');
+    }
+
     async function runLoop(maxSteps = 50) {
       let steps = 0;
       while (state.lifecycle === LIFECYCLE.RUNNING && steps < maxSteps) {
@@ -914,6 +954,10 @@
         if (!renewLease()) return handleLeaseLost('lease_renewal_failed');
         const outcome = await step();
         if (!outcome.ok) return outcome;
+        if (outcome.pause && state.lifecycle === LIFECYCLE.RUNNING) {
+          enterStagePause(outcome.pause);
+          return { ...outcome, paused: true };
+        }
         const type = outcome.decision?.type;
         if (['WAIT', 'NO_OP', 'REQUEST_HUMAN_DECISION'].includes(type)) return outcome;
         if (state.finalization) return outcome;
@@ -1081,7 +1125,7 @@
         activePlanRevisionId: revisions.getActive?.()?.revisionId || null,
         stages: clone(state.stages), openGoals: clone(state.openGoals),
         events: state.events.slice(), finalization: clone(state.finalization),
-        pendingHumanDecision: clone(state.pendingHumanDecision || null),
+        pendingHumanDecision: clone(state.pendingHumanDecision || null), pauseInfo: clone(state.pauseInfo || null),
         stateMap: clone(state.stateMap), participantStatus: clone(state.participantStatus),
         configuredParticipants: clone(state.configuredParticipants), activeParticipants: clone(state.activeParticipants),
         droppedParticipants: clone(state.droppedParticipants)
@@ -1160,6 +1204,7 @@
         await reconcile();
         state.lifecycle = LIFECYCLE.RUNNING;
         emit('RUN_RESUMED', {});
+        state.pauseInfo = null;
         const outcome = command.deferExecution ? { ok: true } : await runLoop(command.maxSteps);
         return { ok: true, outcome, lifecycle: state.lifecycle };
       },

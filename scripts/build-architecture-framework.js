@@ -104,6 +104,9 @@ function build() {
       rules: list(doc.rules),
       creates: list(stage.contract?.creates),
       modifies: list(stage.contract?.modifies),
+      // Gate that follows this stage (the next framework stage is a gate): the run stops
+      // there for the moderator even in Auto.
+      gateAfter: (source.find((item) => item.n === stage.n + 1) || {}).gate || null,
       instruction: buildInstruction(stage, titleRu, who)
     };
   });

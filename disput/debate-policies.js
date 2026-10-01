@@ -35,6 +35,14 @@
     mode: 'finish_current_stage' // finish_current_stage | cancel_active_dispatch | finish_received_only
   });
 
+  // Where the run stops by itself so the moderator can look and continue.
+  // never — as before; every_stage — after each stage (semi-automatic);
+  // gates — only after a stage that is followed by a template gate.
+  const DEFAULT_STAGE_PAUSE = Object.freeze({
+    policyId: 'stage-pause.default.v1',
+    mode: 'never' // never | every_stage | gates
+  });
+
   const DEFAULT_RETRY = Object.freeze({
     policyId: 'retry.default.v1',
     maxAttempts: 2,
@@ -81,6 +89,7 @@
       finalization: { ...DEFAULT_FINALIZATION },
       stagnation: { ...DEFAULT_STAGNATION },
       pause: { ...DEFAULT_PAUSE },
+      stagePause: { ...DEFAULT_STAGE_PAUSE },
       retry: { ...DEFAULT_RETRY },
       completion: { ...DEFAULT_COMPLETION },
       independence: { ...DEFAULT_INDEPENDENCE },

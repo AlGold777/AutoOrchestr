@@ -1187,6 +1187,13 @@ body.pipeline-page .disput-state-map-workspace { right: 24px; }
 .stage-card-section h3 { margin: 12px 0 4px; font-size: 13px; }
 .stage-card-section ul { margin: 0; padding-left: 18px; }
 .stage-card-instruction { margin: 4px 0 6px; padding: 8px 10px; max-height: 220px; overflow: auto; white-space: pre-wrap; border-radius: 8px; background: #f1f5f9; font: inherit; font-size: 12px; }
+.owner-ask-hint { margin: 6px 0 0; color: #64748b; font-size: 13px; }
+.owner-ask-item { margin-bottom: 10px; }
+.owner-ask-item label { display: block; margin-bottom: 4px; font-weight: 600; }
+.owner-ask-item textarea { width: 100%; box-sizing: border-box; padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 6px; font: inherit; }
+.owner-ask-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.owner-ask-actions button { padding: 6px 12px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; cursor: pointer; }
+.owner-ask-actions [data-owner-ask="answer"] { background: #2563eb; border-color: #2563eb; color: #fff; }
 .stage-card-copy { padding: 4px 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; cursor: pointer; }
 
 @media (max-width: 1100px) {

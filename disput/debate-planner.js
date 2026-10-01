@@ -272,6 +272,7 @@
           inputSelector: stage.inputSelector,
           ...(stage.instruction ? { instruction: stage.instruction } : {}),
           ...(stage.label ? { label: stage.label } : {}),
+          ...(stage.meta ? { meta: stage.meta } : {}),
           participantSelectionRationale: arr(stage.participantIds).length ? 'PLAN_REVISION_ASSIGNMENT' : 'CAPABILITY_MATCH'
         }],
         utilityBreakdown: []

@@ -40,6 +40,7 @@
       "ASM"
     ],
     "modifies": [],
+    "gateAfter": null,
     "instruction": "Этап 1. Идея продукта и политика решений (Product Idea & Decision Policy).\n\nВходы:\n- Исходная продуктовая идея\n\nЧто нужно сделать:\n- Зафиксировать пользователя, проблему и ожидаемый результат\n- Определить классы решений и пороги риска\n- Явно записать known unknowns\n\nЧего делать нельзя:\n- Предлагать технические решения\n- Расширять полномочия моделей без решения владельца\n\nПравила: No Authority Expansion; No Architecture Leakage; No Silent Completion."
   },
   {
@@ -78,6 +79,7 @@
       "UNK"
     ],
     "modifies": [],
+    "gateAfter": null,
     "instruction": "Этап 2. Независимое расширение концепции (Independent Concept / Functional Expansion).\n\nВходы:\n- Product Idea\n- Decision Policy\n\nЧто нужно сделать:\n- Искать сценарии, capabilities, edge cases и продуктовые риски\n- Формулировать альтернативные трактовки и открытые вопросы\n\nЧего делать нельзя:\n- Видеть результаты других моделей до закрытия этапа\n- Проектировать реализацию\n- Объявлять proposal решением\n\nПравила: No Architecture Leakage; No Authority Expansion.\n\nЭтап независимый: не опирайся на ответы других моделей этого этапа."
   },
   {
@@ -121,6 +123,7 @@
     "modifies": [
       "PRP"
     ],
+    "gateAfter": null,
     "instruction": "Этап 3. Закрытие решений (Decision Closure Review).\n\nВходы:\n- Independent proposal sets\n- Decision Policy\n\nЧто нужно сделать:\n- Дедуплицировать семантически\n- Разделять составные предложения\n- Проверять класс полномочий и маршрутизировать решение\n\nЧего делать нельзя:\n- Закрывать решение выше своего класса\n- Сливать предложения с разными последствиями\n- Терять ссылки на исходные proposals\n\nПравила: No Hidden Merge; No Authority Expansion; Provenance Preservation."
   },
   {
@@ -156,6 +159,7 @@
       "PCON"
     ],
     "modifies": [],
+    "gateAfter": null,
     "instruction": "Этап 4. Синтез продуктовой концепции (Product Concept Synthesis).\n\nВходы:\n- Decision Register\n\nЧто нужно сделать:\n- Собрать сценарии, capabilities, scope и существенные правила в единое целое\n\nЧего делать нельзя:\n- Принимать новые решения\n- Заполнять OPEN правдоподобным поведением\n- Терять deferred scope\n\nПравила: No Silent Completion; No Silent Reinterpretation; No Hidden Deletion."
   },
   {
@@ -190,6 +194,7 @@
       "UNK"
     ],
     "modifies": [],
+    "gateAfter": null,
     "instruction": "Этап 5. Состязательная проверка концепции (Adversarial Concept Review).\n\nВходы:\n- Product Concept\n- Decision Register\n\nЧто нужно сделать:\n- Находить contradictions, missing scenarios, hidden assumptions и undefined behavior\n\nЧего делать нельзя:\n- Исправлять концепцию\n- Закрывать решения\n\nПравила: Review Discipline.\n\nЭтап независимый: не опирайся на ответы других моделей этого этапа."
   },
   {
@@ -233,6 +238,7 @@
       "FND",
       "UNK"
     ],
+    "gateAfter": null,
     "instruction": "Этап 6. Дельта-закрытие решений (Delta Decision Closure).\n\nВходы:\n- Findings\n- New Open Decisions\n- Decision Policy\n\nЧто нужно сделать:\n- Рассматривать только delta из review\n- Обновлять концепцию по закрытым delta decisions\n\nЧего делать нельзя:\n- Переоткрывать закрытое без основания\n- Менять смысл закрытого решения без change event\n\nПравила: Delta Discipline; No Silent Reinterpretation; No Authority Expansion."
   },
   {
@@ -268,6 +274,7 @@
       "UNK"
     ],
     "modifies": [],
+    "gateAfter": null,
     "instruction": "Этап 7. Черновик функциональной карты (Functional Map Draft).\n\nВходы:\n- Updated Product Concept\n\nЧто нужно сделать:\n- Декомпозировать продуктовую концепцию в capabilities и функции\n- Оставлять новую неопределённость видимой\n\nЧего делать нельзя:\n- Заполнять неопределённость догадкой\n- Вводить компоненты или технологии\n\nПравила: No Silent Completion; No Architecture Leakage."
   },
   {
@@ -309,6 +316,7 @@
       "CAP",
       "FND"
     ],
+    "gateAfter": null,
     "instruction": "Этап 8. Аудит функциональной карты (Functional Map Audit).\n\nВходы:\n- Functional Map Draft\n\nЧто нужно сделать:\n- Reviewer проверяет coverage, дубли, missing states и architecture leakage\n- Producer применяет исправления только по явным findings\n- Новые продуктовые решения маршрутизируются в delta closure\n\nЧего делать нельзя:\n- Молча править карту\n- Удалять функции без trace\n\nПравила: Review Discipline; No Hidden Deletion; No Architecture Leakage."
   },
   {
@@ -346,6 +354,7 @@
       "EVD"
     ],
     "modifies": [],
+    "gateAfter": null,
     "instruction": "Этап 9. Проверка сценариев и прототипа (Scenario / Prototype Validation).\n\nВходы:\n- Corrected Functional Map\n- Product Concept\n\nЧто нужно сделать:\n- Проверять достижимость целей, flows, состояния и transitions\n- Использовать prototype как проверку продуктовой модели\n\nЧего делать нельзя:\n- Превращать prototype в технический выбор\n\nПравила: No Architecture Leakage; Review Discipline."
   },
   {
@@ -388,6 +397,7 @@
       "FND",
       "UNK"
     ],
+    "gateAfter": null,
     "instruction": "Этап 10. Дельта-закрытие решений (Delta Decision Closure).\n\nВходы:\n- Audit Findings\n- Scenario / Prototype Findings\n- Decision Policy\n\nЧто нужно сделать:\n- Закрывать только выявленную delta\n- Обновлять функциональную карту по решениям\n\nЧего делать нельзя:\n- Пересматривать ранее закрытое без основания\n- Выходить за полномочия\n\nПравила: Delta Discipline; No Authority Expansion."
   },
   {
@@ -423,6 +433,7 @@
       "REQ"
     ],
     "modifies": [],
+    "gateAfter": null,
     "instruction": "Этап 11. Функциональная спецификация (Functional Specification).\n\nВходы:\n- Updated Functional Map\n- Updated Decisions\n\nЧто нужно сделать:\n- Описать scenarios, states, transitions, pre/postconditions и failure behavior\n\nЧего делать нельзя:\n- Определять реализацию\n- Придумывать недостающие правила\n\nПравила: No Silent Completion; No Architecture Leakage; Traceability Preservation."
   },
   {
@@ -464,6 +475,7 @@
       "REQ",
       "FND"
     ],
+    "gateAfter": "G1",
     "instruction": "Этап 12. Аудит функциональной спецификации (Functional Specification Audit).\n\nВходы:\n- Functional Specification\n\nЧто нужно сделать:\n- Reviewer проверяет completeness, consistency, testability и failure paths\n- Producer применяет исправления только по явным findings\n- Новое продуктовое решение маршрутизируется обратно в этап 10\n\nЧего делать нельзя:\n- Молча принимать продуктовые решения\n- Заполнять undefined states\n\nПравила: Review Discipline; No Silent Completion; No Architecture Leakage."
   },
   {
@@ -501,6 +513,7 @@
       "BSL"
     ],
     "modifies": [],
+    "gateAfter": null,
     "instruction": "Этап 13. Продуктовая базовая линия (Product Functional Baseline).\n\nЭто ворота: модель не запускается. Модератор проверяет результат предыдущих этапов и решает, зафиксировать ли базовую линию.\n\nВходы:\n- Product Idea\n- Decision Policy\n- Product Concept\n- Functional Map\n- Functional Specification\n- Closed Product Decisions\n- Known Unknowns\n- Deferred Scope\n\nЧто нужно сделать:\n- Зафиксировать версию продуктового baseline после проверки gate\n\nЧего делать нельзя:\n- Фиксировать при blocking OPEN\n- Менять после фиксации без change event\n\nПравила: Baseline Discipline."
   },
   {
@@ -535,6 +548,7 @@
       "ASM"
     ],
     "modifies": [],
+    "gateAfter": null,
     "instruction": "Этап 14. Независимый поиск ограничений (Independent Constraint Discovery).\n\nВходы:\n- Product Functional Baseline\n\nЧто нужно сделать:\n- Искать platform, OS/API, hardware, network, security, privacy и lifecycle constraints\n\nЧего делать нельзя:\n- Объявлять candidate фактом\n- Предлагать архитектуру\n\nПравила: Assumption Is Not Fact; Provenance Preservation.\n\nЭтап независимый: не опирайся на ответы других моделей этого этапа."
   },
   {
@@ -574,6 +588,7 @@
     "modifies": [
       "CON"
     ],
+    "gateAfter": null,
     "instruction": "Этап 15. Синтез и нормализация ограничений (Constraint Synthesis & Normalization).\n\nВходы:\n- Candidate Constraints\n\nЧто нужно сделать:\n- Дедуплицировать и нормализовать без потери условий\n- Фиксировать provenance и противоречия\n\nЧего делать нельзя:\n- Сливать ограничения с разными условиями\n- Повышать статус из-за консенсуса моделей\n- Терять кандидатов\n\nПравила: No Hidden Merge; Consensus Is Not Evidence; Provenance Preservation; No Hidden Deletion."
   },
   {
@@ -613,6 +628,7 @@
       "ASM",
       "UNK"
     ],
+    "gateAfter": "G2",
     "instruction": "Этап 16. Проверка фактов и реестр валидации (Fact Verification / Validation Registry).\n\nВходы:\n- Constraint Registry\n\nЧто нужно сделать:\n- Присваивать VERIFIED, FALSIFIED, UNCERTAIN, NEEDS_RESEARCH, NEEDS_EXPERIMENT\n\nЧего делать нельзя:\n- Подтверждать мнение модели как факт\n- Принимать архитектурные решения\n\nПравила: Consensus Is Not Evidence; Assumption Is Not Fact."
   },
   {
@@ -651,6 +667,7 @@
       "BSL"
     ],
     "modifies": [],
+    "gateAfter": null,
     "instruction": "Этап 17. Пакет входов для архитектуры (Architecture Input Package).\n\nЭто ворота: модель не запускается. Модератор проверяет результат предыдущих этапов и решает, зафиксировать ли базовую линию.\n\nВходы:\n- Product Functional Baseline\n- Verified constraints\n- Validation Registry\n- Quality attributes\n- Invariants\n- Known unknowns\n- Decision boundaries\n\nЧто нужно сделать:\n- Собрать один пакет одной версии для всех моделей\n- Зафиксировать decision boundaries и invariants\n\nЧего делать нельзя:\n- Давать разным моделям разные входы\n- Передавать непроверенное как факт\n\nПравила: Baseline Discipline; Assumption Is Not Fact."
   },
   {
@@ -687,6 +704,7 @@
       "RSK"
     ],
     "modifies": [],
+    "gateAfter": null,
     "instruction": "Этап 18. Независимые архитектурные предложения (Independent Architecture Proposals).\n\nВходы:\n- Architecture Input Package\n\nЧто нужно сделать:\n- Формировать независимые candidates с явными assumptions и trade-offs\n\nЧего делать нельзя:\n- Менять продуктовый контракт\n- Смотреть чужие candidates\n\nПравила: No Product Redefinition by Architecture; Assumption Is Not Fact.\n\nЭтап независимый: не опирайся на ответы других моделей этого этапа."
   },
   {
@@ -723,6 +741,7 @@
       "UNK"
     ],
     "modifies": [],
+    "gateAfter": null,
     "instruction": "Этап 19. Независимая оценка кандидатов (Independent Candidate Review).\n\nВходы:\n- Architecture candidates\n- Architecture Input Package\n\nЧто нужно сделать:\n- Проверять coverage, feasibility, consistency, failure modes и security\n\nЧего делать нельзя:\n- Исправлять candidate\n- Переопределять продукт\n\nПравила: Review Discipline; No Product Redefinition by Architecture.\n\nЭтап независимый: не опирайся на ответы других моделей этого этапа."
   },
   {
@@ -766,6 +785,7 @@
       "AD",
       "ASM"
     ],
+    "gateAfter": null,
     "instruction": "Этап 20. Перекрёстная критика и доработка (Cross-Critique & Candidate Revision).\n\nВходы:\n- Architecture candidates\n- Review Reports\n\nЧто нужно сделать:\n- Критиковать любой candidate\n- Ревизовать candidate только его автору\n- Фиксировать trade-offs и несовместимые assumptions\n\nЧего делать нельзя:\n- Скрыто сливать candidates\n- Удалять слабые стороны без следа\n\nПравила: No Hidden Deletion; No Hidden Merge; No Product Redefinition by Architecture.\n\nЭтап независимый: не опирайся на ответы других моделей этого этапа."
   },
   {
@@ -803,6 +823,7 @@
       "RSK"
     ],
     "modifies": [],
+    "gateAfter": "G3",
     "instruction": "Этап 21. Сравнение архитектур (Architecture Comparison).\n\nВходы:\n- Revised Candidates\n- Architecture Input Package\n\nЧто нужно сделать:\n- Сравнивать по requirements, constraints, quality attributes и рискам\n\nЧего делать нельзя:\n- Считать голоса моделей evidence\n- Скрыто объединять несовместимые решения\n\nПравила: Consensus Is Not Evidence; No Hidden Merge."
   },
   {
@@ -841,6 +862,7 @@
       "UNK"
     ],
     "modifies": [],
+    "gateAfter": null,
     "instruction": "Этап 22. Решение о направлении архитектуры (Architecture Direction Decision).\n\nЭто ворота: модель не запускается. Модератор проверяет результат предыдущих этапов и решает, зафиксировать ли базовую линию.\n\nВходы:\n- Architecture Comparison\n- Decision Policy\n- Available evidence\n\nЧто нужно сделать:\n- Выбрать направление в пределах authority\n- Зафиксировать rationale и unresolved blockers\n\nЧего делать нельзя:\n- Подменять evidence консенсусом\n- Менять продуктовый baseline\n\nПравила: No Authority Expansion; Consensus Is Not Evidence; No Product Redefinition by Architecture."
   },
   {
@@ -878,6 +900,7 @@
       "UNK"
     ],
     "modifies": [],
+    "gateAfter": null,
     "instruction": "Этап 23. Предварительная концептуальная архитектура (Preliminary Conceptual Architecture).\n\nВходы:\n- Architecture Direction\n- Rationale\n\nЧто нужно сделать:\n- Описать части, responsibilities, boundaries, interactions, flows и invariants\n\nЧего делать нельзя:\n- Скрыто закрывать open decisions\n- Превращать assumption в факт\n\nПравила: No Silent Completion; Assumption Is Not Fact; No Hidden Deletion."
   },
   {
@@ -914,6 +937,7 @@
     "modifies": [
       "UNK"
     ],
+    "gateAfter": null,
     "instruction": "Этап 24. Бэклог решений и проверок (Decision & Verification Backlog).\n\nВходы:\n- Evidence-dependent Decisions\n- Architecture Assumptions\n- Evidence Gaps\n\nЧто нужно сделать:\n- Для каждого unknown указать impact, требуемое evidence и blocking status\n\nЧего делать нельзя:\n- Оставлять архитектурно значимое неизвестное вне backlog\n\nПравила: Traceability Preservation; No Silent Completion."
   },
   {
@@ -954,6 +978,7 @@
       "CON",
       "UNK"
     ],
+    "gateAfter": null,
     "instruction": "Этап 25. Исследования и проверка платформы (Spikes / Platform Verification / Technology Research).\n\nВходы:\n- Decision & Verification Backlog\n\nЧто нужно сделать:\n- Проводить исследование или эксперимент, привязанный к вопросу\n- Фиксировать воспроизводимый метод и результат\n\nЧего делать нельзя:\n- Исследовать без вопроса\n- Выдавать мнение за измерение\n\nПравила: Assumption Is Not Fact; Consensus Is Not Evidence."
   },
   {
@@ -996,6 +1021,7 @@
       "ASM",
       "UNK"
     ],
+    "gateAfter": null,
     "instruction": "Этап 26. Закрытие блокирующих архитектурных решений (Close Architecture-Blocking Decisions).\n\nВходы:\n- Evidence\n- Measurements\n- Decision Policy\n\nЧто нужно сделать:\n- Закрывать blocking decisions в пределах authority\n- Явно инициировать изменение при опровержении assumption\n\nЧего делать нельзя:\n- Закрывать выше полномочий\n- Скрыто переинтерпретировать архитектуру\n\nПравила: No Authority Expansion; No Silent Reinterpretation; Delta Discipline."
   },
   {
@@ -1030,6 +1056,7 @@
       "UNK"
     ],
     "modifies": [],
+    "gateAfter": null,
     "instruction": "Этап 27. Премортем: поиск пропущенных отказов (Premortem / Missed-Failure Search).\n\nВходы:\n- Preliminary Conceptual Architecture\n- Closed Blocking Decisions\n\nЧто нужно сделать:\n- Искать failure classes, blind spots и новые риски\n\nЧего делать нельзя:\n- Исправлять архитектуру или самостоятельно закрывать решения\n\nПравила: Review Discipline.\n\nЭтап независимый: не опирайся на ответы других моделей этого этапа."
   },
   {
@@ -1071,6 +1098,7 @@
       "AD",
       "ASM"
     ],
+    "gateAfter": null,
     "instruction": "Этап 28. Ревизия концептуальной архитектуры (Conceptual Architecture Revision).\n\nВходы:\n- Closed Blocking Decisions\n- Failure Findings\n- Evidence\n\nЧто нужно сделать:\n- Вносить только трассируемые изменения по evidence и findings\n\nЧего делать нельзя:\n- Удалять без trace\n- Менять продуктовый baseline\n- Скрыто менять смысл решения\n\nПравила: No Hidden Deletion; Traceability Preservation; No Product Redefinition by Architecture; No Silent Reinterpretation."
   },
   {
@@ -1108,6 +1136,7 @@
       "FND"
     ],
     "modifies": [],
+    "gateAfter": "G4",
     "instruction": "Этап 29. Аудит: ADR, согласованность, трассируемость (ADR + Consistency + Traceability Audit).\n\nВходы:\n- Revised Conceptual Architecture\n\nЧто нужно сделать:\n- Зафиксировать ключевые ADR\n- Проверить происхождение и сквозную трассировку\n\nЧего делать нельзя:\n- Молча исправлять архитектуру\n- Игнорировать разрывы traceability\n\nПравила: Traceability Preservation; Provenance Preservation; Review Discipline."
   },
   {
@@ -1142,6 +1171,7 @@
       "BSL"
     ],
     "modifies": [],
+    "gateAfter": null,
     "instruction": "Этап 30. Базовая линия концептуальной архитектуры (Conceptual Architecture Baseline).\n\nЭто ворота: модель не запускается. Модератор проверяет результат предыдущих этапов и решает, зафиксировать ли базовую линию.\n\nВходы:\n- Revised Conceptual Architecture\n- ADR Set\n- Traceability Report\n- Non-blocking Unknowns\n- Change history\n\nЧто нужно сделать:\n- Зафиксировать conceptual architecture baseline после G4\n\nЧего делать нельзя:\n- Фиксировать при blocking issues\n- Менять CAB без controlled change\n\nПравила: Baseline Discipline."
   }
 ];

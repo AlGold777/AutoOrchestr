@@ -5,7 +5,7 @@
     <!-- LLM Discus: hidden search marker for developers -->
     <meta name="keywords" content="LLM Discus">
     <title>LLM Comparison</title>
-    <link rel="stylesheet" href="styles.css?v=2.81.528">
+    <link rel="stylesheet" href="styles.css?v=2.81.529">
 </head>
 <body class="pipeline-page">
     <div class="app-shell">
@@ -389,6 +389,16 @@
                     <textarea data-profile-editor spellcheck="false" aria-label="JSON профиля"></textarea>
                     <div class="pipeline-profile-actions"><button type="button" data-profile-action="apply">Применить</button><button type="button" data-profile-action="validate">Проверить</button><button type="button" data-profile-action="copy">Создать копию</button><button type="button" data-profile-action="save">Сохранить</button><button type="button" data-profile-action="import">Импорт</button><button type="button" data-profile-action="export">Экспорт</button></div>
                     <input type="file" accept="application/json" data-profile-import hidden><p data-profile-status aria-live="polite"></p>
+                </dialog>
+                <dialog class="pipeline-stage-dialog owner-ask-dialog" id="owner-ask-dialog" aria-labelledby="owner-ask-title">
+                    <header class="pipeline-stage-dialog-header"><h2 id="owner-ask-title">Вопрос владельцу</h2></header>
+                    <p class="owner-ask-hint" id="owner-ask-hint"></p>
+                    <div class="pipeline-stage-card" id="owner-ask-list"></div>
+                    <div class="owner-ask-actions">
+                        <button type="button" data-owner-ask="answer">Ответить и продолжить</button>
+                        <button type="button" data-owner-ask="skip">Продолжить без ответа</button>
+                        <button type="button" data-owner-ask="later">Позже</button>
+                    </div>
                 </dialog>
                 <dialog class="pipeline-stage-dialog" id="pipeline-stage-dialog" aria-labelledby="pipeline-stage-dialog-title">
                     <header class="pipeline-stage-dialog-header"><h2 id="pipeline-stage-dialog-title"></h2><button type="button" data-stage-close aria-label="Закрыть">×</button></header>
@@ -956,6 +966,7 @@
     <script src="disput/debate-planner.js"></script>
     <script src="disput/debate-participant-registry.js"></script>
     <script src="disput/architecture-framework.js"></script>
+    <script src="disput/stage-markers.js"></script>
     <script src="disput/debate-stage-executor.js"></script>
     <script src="disput/debate-orchestrator.js"></script>
     <script src="disput/debate-orchestrator-persistence.js"></script>
@@ -988,6 +999,7 @@
     <script src="results/debate-transport.js"></script>
     <script src="results/debate-controller.js"></script>
     <script src="results/stage-card.js"></script>
+    <script src="results/owner-ask.js"></script>
     <script src="results/debate-renderer.js"></script>
     <script src="results/debate-sessions-store.js"></script>
     <script src="results/debate-export.js"></script>

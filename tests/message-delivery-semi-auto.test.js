@@ -54,4 +54,20 @@ describe('semi-automatic context and moderator actions', () => {
     // A moderator close is not a timeout.
     expect(d.problems.find((p) => p.code === 'batch_timeout')).toBeUndefined();
   });
+
+  test('engine pauses are listed; a failed stage is a problem with age and a next step', () => {
+    const journal = [
+      { at: at(10), kind: 'run_paused', reason: 'stage_done', stage: 'canvas-r1', gate: null, asks: 0, verdict: null },
+      { at: at(40), kind: 'run_paused', reason: 'ask', stage: 'canvas-r2', gate: null, asks: 1, verdict: 'issues_found' },
+      { at: at(41), kind: 'owner_answer', stage: 'canvas-r2', answered: 1, asked: 1 },
+      { at: at(70), kind: 'run_paused', reason: 'stage_failed', stage: 'canvas-r3', gate: null, asks: 0, verdict: null }
+    ];
+    const d = Diagnosis.diagnose(journal, { now: T0 + 100000 });
+    expect(d.moderator.map((e) => e.kind)).toEqual(['run_paused', 'run_paused', 'owner_answer', 'run_paused']);
+    const failed = d.problems.filter((p) => p.code === 'stage_failed');
+    expect(failed).toHaveLength(1);
+    expect(failed[0]).toMatchObject({ severity: 'warning', ageMs: 30000, reason: 'canvas-r3' });
+    expect(failed[0].title).toContain('canvas-r3');
+    expect(failed[0].hint).toContain('Get it');
+  });
 });
