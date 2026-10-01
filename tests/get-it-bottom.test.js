@@ -2,7 +2,7 @@
 const fs = require('fs');
 const vm = require('vm');
 const source = fs.readFileSync(require.resolve('../results'), 'utf8');
-const start = source.indexOf("if (getItButton) {\n    getItButton.disabled = false;");
+const start = source.indexOf('function bindGetItButton(');
 const handler = source.slice(start, source.indexOf('function getSelectedJudgeSystemPrompt', start));
 
 test('forced status double-click requests bottom preparation independently of the batch button', () => {

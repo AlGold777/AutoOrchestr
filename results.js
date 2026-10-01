@@ -21703,23 +21703,24 @@ function checkCompareButtonState() {
         }
     });
     
-if (getItButton) {
-    getItButton.disabled = false;
-    let getItClickTimer = null;
-    const runGetIt = async (failedOnly = false) => {
-        if (getItButton.dataset.collecting === 'true') {
+// Get it for any page: one GET_IT_BATCH pass pulls every model tab to the
+// bottom and re-reads its latest answer. Single click = all models, double
+// click = only models without a usable answer. The main page and the pipeline
+// page bind their own buttons here, so both share one collection route.
+function bindGetItButton(button, { getModels, beforeRun = () => {}, afterRun = () => {} } = {}) {
+    button.disabled = false;
+    let clickTimer = null;
+    const run = async (failedOnly = false) => {
+        if (button.dataset.collecting === 'true') {
             if (failedOnly && typeof showNotification === 'function') showNotification('Get it уже выполняется. Дождитесь окончания текущего прохода.');
             return;
         }
-        getItButton.dataset.collecting = 'true';
+        button.dataset.collecting = 'true';
         console.log('[RESULTS] Get Answers clicked: requesting latest responses from open LLM tabs');
-        const selectedLLMs = getSelectedLLMs();
-        Object.keys(pendingResponses).forEach(llmName => {
-            updateLLMPanelOutput(llmName, pendingResponses[llmName]);
-        });
-        pendingResponses = {};
+        const llmNames = getModels();
+        beforeRun();
         try {
-          const batch = await chrome.runtime.sendMessage({ type: 'GET_IT_BATCH', llmNames: selectedLLMs,
+          const batch = await chrome.runtime.sendMessage({ type: 'GET_IT_BATCH', llmNames,
             ...(failedOnly ? { failedOnly: true } : {}) });
           if (batch?.error && typeof showNotification === 'function') showNotification(batch.error);
           if (batch?.status === 'get_it_empty' && typeof showNotification === 'function') showNotification('В текущем запуске нет моделей, требующих ручного сбора.');
@@ -21732,18 +21733,31 @@ if (getItButton) {
           console.error('[RESULTS] Get it batch failed:', err);
           if (typeof showNotification === 'function') showNotification(`Get it: ${err?.message || 'Не удалось связаться с расширением'}`);
         } finally {
-          delete getItButton.dataset.collecting;
-          checkCompareButtonState();
+          delete button.dataset.collecting;
+          afterRun();
         }
     };
-    getItButton.addEventListener('click', event => {
+    button.addEventListener('click', event => {
         if (event.detail > 1) return;
-        clearTimeout(getItClickTimer);
-        getItClickTimer = setTimeout(() => runGetIt(false), 600);
+        clearTimeout(clickTimer);
+        clickTimer = setTimeout(() => run(false), 600);
     });
-    getItButton.addEventListener('dblclick', () => {
-        clearTimeout(getItClickTimer);
-        runGetIt(true);
+    button.addEventListener('dblclick', () => {
+        clearTimeout(clickTimer);
+        run(true);
+    });
+}
+
+if (getItButton) {
+    bindGetItButton(getItButton, {
+        getModels: () => getSelectedLLMs(),
+        beforeRun: () => {
+            Object.keys(pendingResponses).forEach(llmName => {
+                updateLLMPanelOutput(llmName, pendingResponses[llmName]);
+            });
+            pendingResponses = {};
+        },
+        afterRun: () => checkCompareButtonState()
     });
 }
 
