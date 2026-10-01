@@ -6358,9 +6358,12 @@ document.addEventListener('click', (event) => {
             if (protocol) {
                 if (typeof window.setDebateSchemeValue === 'function') window.setDebateSchemeValue('universal');
                 const lengthSelect = document.getElementById('debate-length-select');
-                if (debateRunPolicySelect && (protocol.runPolicy === 'auto' || protocol.runPolicy === 'manual')) {
+                // The moderator's own Auto choice outranks the template's default
+                // policy: with Auto switched off the template runs semi-automatically
+                // (stage by stage) instead of silently flipping back to auto.
+                if (debateRunPolicySelect && (protocol.runPolicy === 'auto' || protocol.runPolicy === 'manual')
+                    && !debateRunPolicySelect.dataset.explicitOverride) {
                     debateRunPolicySelect.value = protocol.runPolicy;
-                    delete debateRunPolicySelect.dataset.explicitOverride;
                 }
                 if (lengthSelect && protocol.length) {
                     lengthSelect.value = String(protocol.length);
@@ -7416,6 +7419,10 @@ document.addEventListener('click', (event) => {
             }
             if (!isDebateAutoPolicy() && !String(pipelineStore.active || '').trim()) {
                 event.preventDefault();
+                if (!window.__manualDispatchHintShown) {
+                    window.__manualDispatchHintShown = true;
+                    showNotification('Шаблон не выбран: это одиночная отправка без этапов. Выберите шаблон (например Test), чтобы пройти этапы по шагам.', 'info');
+                }
                 void startManualModeratorDispatch();
                 return;
             }

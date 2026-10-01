@@ -485,6 +485,10 @@ With the **Auto** toggle off the moderator drives the pipeline stage by stage:
   journaled with outcome `moderator_closed` instead of `timeout`.
 - After a stage completes the engine waits for approval (**Approve and
   continue**) before starting the next one.
+- Run a template stage by stage: switch **Auto** off (the choice outranks the
+  template's default policy, also when a template is selected afterwards) and
+  pick a template, e.g. **Test** (two stages). Auto off without a template is a
+  single moderator dispatch without stages.
 
 Preset naming rule: built-in presets with the same suffix should be comparable.
 `Verdict` means a standard quick-to-final-answer budget across Duel, Triad, and

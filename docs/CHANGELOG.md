@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-01 — Templates run semi-automatically when Auto is off, version 2.81.524
+
+- Choosing a saved pipeline applied its default run policy (`auto` for every built-in template) and erased the moderator's explicit Auto choice, so a template could not be run stage by stage. The explicit choice now outranks the template default: with Auto off a template (e.g. Test, two stages) pauses for approval between stages; Get it and "next" work inside such a run.
+- Auto off with no template selected is still a single dispatch without stages; the first time it now says so and points to choosing a template.
+- Test: `pipeline-semi-auto` (template keeps the explicit Auto choice).
+
 ### 2026-10-01 — Re-emitted answers are no longer shown as "updated after completion", version 2.81.523
 
 - `Ответ обновлён после завершения · GLOBAL_STATE_ANSWER_RECOVERY · Δ -9` was a false revision: the recovery from the background global state re-emits the already shown answer as raw text (delivery token and trailing blanks included), while the card holds the cleaned text, and `appendPostTerminalAnswerRevision` compared them without cleaning. It now cleans both sides like the live path (`MessageDelivery.clean`) and treats a whitespace-equal copy as no revision. A genuinely different text is still marked as a revision.

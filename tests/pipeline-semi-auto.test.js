@@ -99,3 +99,14 @@ test('pipeline page binds Get it and the next action to the shared routes', () =
   expect(source).toContain("bindGetItButton(pipelineGetItBtn, {");
   expect(source).toContain("pipelineWaiter.closeAnsweredBatches('moderator_closed')");
 });
+
+test('a template keeps the moderator\'s explicit Auto choice (semi-automatic run of a template)', () => {
+  const from = source.indexOf('const applyPipelineConfig = (config = {}) => {');
+  const block = source.slice(from, source.indexOf('debateRunPolicySelect.value = protocol.runPolicy;', from) + 80);
+  expect(block).toContain('!debateRunPolicySelect.dataset.explicitOverride');
+  // The template must no longer erase the explicit choice.
+  const policyBlock = source.slice(from, source.indexOf('if (lengthSelect && protocol.length)', from));
+  expect(policyBlock).not.toContain('delete debateRunPolicySelect.dataset.explicitOverride');
+  // The compiled run policy reads that choice first.
+  expect(source).toMatch(/debateRunPolicySelect\?\.dataset\.explicitOverride\s*\|\|\s*presetConfig\.runPolicy/);
+});
