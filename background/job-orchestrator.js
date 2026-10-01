@@ -5242,6 +5242,7 @@ async function startProcessReservedRun(prompt, selectedLLMs, resultsTab, options
   allowCircuitHalfOpenForNewRun(selectedLLMs);
   startHeartbeatMonitor();
   broadcastGlobalState();
+  startStaticAnswerWatchdog(sessionStartTime);
 
   selectedLLMs.forEach(llmName => {
     const machine = self.DispatchStateManager ? self.DispatchStateManager.get(llmName) : null;
@@ -9972,6 +9973,84 @@ async function runAutomaticGetItForModel(llmName, reason = 'automatic_get_it') {
     try { await openOrFocusResultsTab(); } catch (_) { /* best effort */ }
   }
   return result;
+}
+
+// Watchdog for the case no other mechanism covers: the model's text is on the page
+// and has stopped changing, but no final arrives (the page's own completion logic
+// stays silent; the visit loops may not even run). Content is the only signal:
+// text with the request's delivery token is complete after a short quiet; other
+// text gets one Get it and then is kept as incomplete. Activity of the tab (visits,
+// focus, scrolling) never counts as progress.
+const STATIC_WATCH_TICK_MS = 3000;
+const STATIC_WATCH_TOKEN_QUIET_MS = 5000;
+const STATIC_WATCH_NUDGE_AFTER_MS = 15000;
+const STATIC_WATCH_COMMIT_AFTER_MS = 30000;
+const STATIC_WATCH_NUDGE_SETTLE_MS = 10000;
+
+function runStaticAnswerWatchTick(sessionId) {
+  if (!sessionId || !isSessionActive(sessionId)) return false;
+  const now = Date.now();
+  let open = false;
+  Object.entries(jobState?.llms || {}).forEach(([llmName, entry]) => {
+    if (!entry || isFinalizedEntry(entry)) return;
+    open = true;
+    // A deferred uncertain terminal has its own bounded handling.
+    if ((entry.deferredUncertainTerminal && !entry.deferredUncertainTerminal.endedAt) || !entry.promptSubmittedAt) return;
+    const text = String(entry.pendingFinalAnswer || entry.answer || '');
+    const watch = entry.staticAnswerWatch || (entry.staticAnswerWatch = { length: 0, since: now, nudged: false });
+    if (text.length !== watch.length) {
+      watch.length = text.length;
+      watch.since = now;
+      watch.nudged = false;
+      return;
+    }
+    if (!text.trim()) return;
+    const quietMs = now - watch.since;
+    if (typeof answerHasDeliveryToken === 'function' && answerHasDeliveryToken(llmName, text)) {
+      if (quietMs >= STATIC_WATCH_TOKEN_QUIET_MS) {
+        reportDispatchPhase(llmName, entry, 'static_text_watch', { dispatchId: entry.lastDispatchMeta?.dispatchId || null, reason: 'delivery_token_seen', answerChars: text.length });
+        commitIncompleteAnswer(llmName, entry, {
+          text, html: String(entry.pendingFinalAnswerHtml || entry.answerHtml || ''),
+          source: 'static_answer_snapshot', completionReason: 'static_text_with_delivery_token'
+        });
+      }
+      return;
+    }
+    if (quietMs >= STATIC_WATCH_COMMIT_AFTER_MS) {
+      reportDispatchPhase(llmName, entry, 'static_text_watch', { dispatchId: entry.lastDispatchMeta?.dispatchId || null, reason: 'text_quiet', answerChars: text.length });
+      commitIncompleteAnswer(llmName, entry, {
+        text, html: String(entry.pendingFinalAnswerHtml || entry.answerHtml || ''),
+        source: 'static_answer_snapshot', completionReason: 'static_text_quiet'
+      });
+      return;
+    }
+    if (quietMs >= STATIC_WATCH_NUDGE_AFTER_MS && !watch.nudged) {
+      watch.nudged = true;
+      reportDispatchPhase(llmName, entry, 'bottom_nudge', {
+        dispatchId: entry.lastDispatchMeta?.dispatchId || null, reason: 'static_text_watch', attempt: 1, answerChars: text.length
+      });
+      Promise.resolve(runAutomaticGetItForModel(llmName, 'static_text_watch')).then((result) => {
+        if (result?.status === 'get_it_busy') { watch.nudged = false; return; }
+        // The settle window starts when the nudge ends.
+        watch.since = Math.max(watch.since, Date.now() - (STATIC_WATCH_COMMIT_AFTER_MS - STATIC_WATCH_NUDGE_SETTLE_MS));
+      }).catch(() => {});
+    }
+  });
+  return open;
+}
+
+function startStaticAnswerWatchdog(sessionId) {
+  const tick = () => {
+    let keepGoing = false;
+    try { keepGoing = runStaticAnswerWatchTick(sessionId); } catch (err) { console.warn('[BACKGROUND] static answer watch failed', err); }
+    if (keepGoing && isSessionActive(sessionId)) {
+      const timerId = registerSessionTimer(setTimeout(() => {
+        sessionTimers.delete(timerId);
+        tick();
+      }, STATIC_WATCH_TICK_MS));
+    }
+  };
+  const first = registerSessionTimer(setTimeout(() => { sessionTimers.delete(first); tick(); }, STATIC_WATCH_TICK_MS));
 }
 
 function collectGetItBatch(selectedModels = [], options = {}) {

@@ -441,7 +441,11 @@ function reportDispatchPhase(llmName, entry, phase, extra = {}) {
 // once the model's own text contains the token of THIS request's prompt, the
 // model finished writing — whatever the page's completion signals say.
 function answerHasDeliveryToken(llmName, text) {
-  const prompt = String(jobState?.session?.promptsByModel?.[llmName] || '');
+  // The stored prompt map is keyed by the UPPER-CASED model name (TransportPolicy
+  // normalizes it): a plain lookup by "Le Chat" finds nothing.
+  const prompt = String(self.TransportPolicy?.resolvePromptForModel
+    ? self.TransportPolicy.resolvePromptForModel(jobState?.session?.promptsByModel, llmName, '')
+    : (jobState?.session?.promptsByModel?.[llmName] || ''));
   const token = (prompt.match(/\[\[AO-[a-z0-9]{6}\]\]/i) || [])[0];
   return Boolean(token && String(text || '').toLowerCase().includes(token.toLowerCase()));
 }

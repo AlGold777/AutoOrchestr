@@ -1347,6 +1347,7 @@ const deferUncertainCompletionTerminal = (llmName, entry, finalize, terminalResu
             schedule(UNCERTAIN_TERMINAL_POLL_MS);
             return;
         }
+        entry.deferredUncertainTerminal.endedAt = now;
         if (typeof reportDispatchPhase === 'function') {
             reportDispatchPhase(llmName, live, 'terminal_deferral_ended', {
                 dispatchId: entry.deferredUncertainTerminal.dispatchId,
