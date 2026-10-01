@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "AutoOrchestr",
+  "name": "_Opus",
   "version": "2.81.520",
   "description": "Compares LLMs with stable Debate pipelines, structured state maps, and optional synthesis.",
   "permissions": [
