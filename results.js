@@ -3147,18 +3147,47 @@ document.addEventListener('click', (event) => {
             this.batches.delete(batch.batchId);
             Object.values(batch.requestIds).forEach((id) => this.requests.delete(id));
         },
-        finalizeBatch(batch, timedOut = false) {
-            if (!batch || batch.settled) return;
+        finalizeBatch(batch, timedOut = false, closeReason = null) {
+            if (!batch || batch.settled) return [];
             this.releaseBatch(batch);
             const missing = batch.models.filter((name) => !hasOwnKey(batch.responses, name));
+            // A moderator close skips the still-silent models for this stage only:
+            // they are neither failures (no dropout from the run) nor retried.
+            const skipped = closeReason ? missing.filter((name) => !hasOwnKey(batch.failures, name)) : [];
             batch.resolve({
                 responses: { ...batch.responses },
                 results: { ...batch.results },
                 missing,
                 failed: { ...batch.failures },
                 timedOut,
+                ...(closeReason ? { closeReason, skipped } : {}),
                 requestIds: { ...batch.requestIds }
             });
+            return skipped;
+        },
+        // Semi-automatic "next": settle every open wait that already holds at
+        // least one answer with what it has. Waits with no answer keep waiting.
+        closeAnsweredBatches(reason = 'moderator_closed') {
+            const open = Array.from(this.batches.values()).filter((batch) => !batch.settled);
+            const answered = open.filter((batch) => Object.keys(batch.responses).length > 0);
+            const skipped = answered.flatMap((batch) => this.finalizeBatch(batch, false, reason));
+            return { closed: answered.length, stillWaiting: open.length - answered.length, skipped };
+        },
+        // Models of every open wait, i.e. the current stage's participants.
+        openModels() {
+            return Array.from(new Set(Array.from(this.batches.values())
+                .filter((batch) => !batch.settled)
+                .flatMap((batch) => batch.models)));
+        },
+        // What closeAnsweredBatches would do now, without settling anything.
+        previewClose() {
+            const open = Array.from(this.batches.values()).filter((batch) => !batch.settled);
+            const answered = open.filter((batch) => Object.keys(batch.responses).length > 0);
+            return {
+                closable: answered.length,
+                answeredModels: answered.flatMap((batch) => Object.keys(batch.responses)),
+                skipModels: answered.flatMap((batch) => batch.models.filter((name) => !hasOwnKey(batch.responses, name) && !hasOwnKey(batch.failures, name)))
+            };
         },
         cancelBatch(batchId) {
             const batch = this.batches.get(batchId);
@@ -5629,9 +5658,10 @@ document.addEventListener('click', (event) => {
                 batchEvent('batch_end', { outcome: 'cancelled', reason: String(error?.name || error?.message || ''), durationMs: Date.now() - batchStartedAt });
                 throw error;
             }
-            window.MessageDelivery?.closeBatch({ models: batchResult.missing || [], timedOut: batchResult.timedOut, failed: batchResult.failed || {}, requestIds: batchResult.requestIds || {} });
+            window.MessageDelivery?.closeBatch({ models: batchResult.missing || [], timedOut: batchResult.timedOut, failed: batchResult.failed || {}, requestIds: batchResult.requestIds || {}, reason: batchResult.closeReason || '' });
             batchEvent('batch_end', {
-                outcome: batchResult.timedOut ? 'timeout' : 'settled',
+                outcome: batchResult.timedOut ? 'timeout' : (batchResult.closeReason || 'settled'),
+                ...(batchResult.closeReason ? { skipped: batchResult.skipped || [] } : {}),
                 durationMs: Date.now() - batchStartedAt,
                 timeoutMs: resolvedTimeoutMs,
                 answered: Object.keys(batchResult.responses || {}),
@@ -7327,6 +7357,17 @@ document.addEventListener('click', (event) => {
         pipelineDeleteBtn?.addEventListener('click', deleteActivePipeline);
         pipelineExportBtn?.addEventListener('click', exportPipelines);
         pipelineImportBtn?.addEventListener('click', importPipelines);
+        // Pipeline Get it: the main page's collection pass for the running stage's
+        // models (or the selected models when no stage is waiting).
+        const pipelineGetItBtn = document.getElementById('pipeline-get-it-btn');
+        if (pipelineGetItBtn) {
+            bindGetItButton(pipelineGetItBtn, {
+                getModels: () => {
+                    const stageModels = pipelineWaiter.openModels();
+                    return stageModels.length ? stageModels : getSelectedLLMs();
+                }
+            });
+        }
         debateRunToggleBtn?.addEventListener('click', (event) => {
             const controls = getDebateRunControls();
             if (!controls.enabled || controls.action === 'wait') {
@@ -7350,8 +7391,21 @@ document.addEventListener('click', (event) => {
                     .filter((card) => card.dataset.approved !== 'true');
                 if (pendingCards.length) {
                     pendingCards.forEach((card) => approveDebateCard(card));
-                } else {
-                    showNotification('Текущий раунд ещё выполняется.', 'info');
+                    return;
+                }
+                // Semi-automatic: close the running stage with the answers already
+                // collected (Get it pulls the rest); silent models are skipped.
+                const preview = pipelineWaiter.previewClose();
+                if (!preview.closable) {
+                    showNotification('Ни одна модель этапа ещё не ответила. Нажмите Get it, чтобы подтянуть ответы.', 'info');
+                    return;
+                }
+                if (preview.skipModels.length && !window.confirm(
+                    `Закрыть этап с собранными ответами (${preview.answeredModels.join(', ')})?\n\nБез ответа будут пропущены на этом этапе: ${preview.skipModels.join(', ')}.`
+                )) return;
+                const closed = pipelineWaiter.closeAnsweredBatches('moderator_closed');
+                if (closed.stillWaiting) {
+                    showNotification(`Этап закрыт частично: ${closed.stillWaiting} ожидание(й) ещё без ответов.`, 'info');
                 }
                 return;
             }

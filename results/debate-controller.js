@@ -39,7 +39,7 @@
     if (status === 'running') {
       if (!autoMode) {
         return Object.freeze({
-          action: 'next', icon: 'ti ti-send', title: 'Запустить следующий раунд',
+          action: 'next', icon: 'ti ti-send', title: 'Дальше: закрыть этап с собранными ответами',
           active: true, enabled: true, stepEnabled: false
         });
       }

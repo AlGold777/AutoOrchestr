@@ -44,6 +44,10 @@
         attemptId: `${stage.stageInstanceId}:a${attempt}`
       }).find((failure) => failure.modelId === modelId);
       if (terminalFailure) return { status: 'terminal_failure', failure: terminalFailure, raw: result };
+      // Moderator closed the stage early: this model is skipped for this stage only.
+      if (Array.isArray(result?.skipped) && result.skipped.includes(modelId)) {
+        return { status: 'skipped', reason: result.closeReason || 'moderator_closed', raw: result };
+      }
       // Transport completion travels with the text: an incomplete generation
       // (e.g. STREAM_TIMEOUT with text) must not look like a complete answer.
       const completion = result?.results?.[modelId]?.completion || null;
@@ -147,6 +151,11 @@
           }
           if (outcome?.status === 'cancelled') {
             return { participantId: participant.participantId, status: 'cancelled', reason: 'aborted', attempts: attempt };
+          }
+          if (outcome?.status === 'skipped') {
+            // Not retried and not terminal: the participant stays in the run.
+            emit('PARTICIPANT_SKIPPED', { stageInstanceId: stage.stageInstanceId, participantId: participant.participantId, attempt, reason: outcome.reason });
+            return { participantId: participant.participantId, status: 'failed', skipped: true, reason: outcome.reason, attempts: attempt };
           }
           if (outcome?.status === 'terminal_failure') {
             const failure = outcome.failure || {

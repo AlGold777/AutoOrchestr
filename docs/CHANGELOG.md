@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-01 — Semi-automatic pipeline: Get it on the pipeline page and early stage close, version 2.81.521
+
+- The pipeline page has its own **Get it** button. It reuses the main page's collection route (`GET_IT_BATCH`, extracted into `bindGetItButton`) for the running stage's models; double click collects only models without an answer.
+- With Auto off, the run button during a running stage (**next**) closes the stage with the answers already collected instead of answering "Текущий раунд ещё выполняется". The silent models are skipped for that stage only: the stage executor neither retries them nor marks them as a terminal dropout (`PARTICIPANT_SKIPPED`), and the delivery journal records `moderator_closed` instead of `timeout`.
+- Tests: `pipeline-semi-auto` (waiter close, executor skip vs. retry, page binding); `get-it-bottom` now loads the shared binder.
+
 ### 2026-10-01 — Background scope fix; the delivery token marks a finished answer, version 2.81.520
 
 - Field report 7 (Grok, Le Chat, Perplexity, 2.81.519): `bottom_nudge_skipped: no_nudge_function`. Cause: `job-orchestrator.js` runs inside `if (…) { (function initJobOrchestrator() { 'use strict'; … })(); }`, so its declarations are visible to other background files only when exported on `self`. The Get-it trigger (`runAutomaticGetItForModel`, `resolveBoundTabIdForOrchestrator`) was never reachable from the router and the visits, and the retry supervisor's per-model prompt (2.81.504) referenced `resolvePromptForDispatch`, a ReferenceError that stopped the supervisor. They are now exported and called through `self`; the supervisor uses `TransportPolicy.resolvePromptForModel`. New test `background-global-scope` loads the real service worker and fails on any bare reference to a name hidden in the orchestrator (it finds all 9 on 2.81.519).

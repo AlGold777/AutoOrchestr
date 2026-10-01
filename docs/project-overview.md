@@ -467,6 +467,25 @@ This layer coordinates debate-style execution over collected model outputs. It d
 
 For non-developers: the Debate page now remembers more about the structure of a debate. It does not just pass the last answer to the next model. It can keep a small, checked list of unresolved questions, unsupported claims, repeated weak spots, and focus suggestions. The models only see compact summaries, so the debate stays directed without flooding every prompt with the full history.
 
+### Semi-automatic pipeline (Auto off)
+
+With the **Auto** toggle off the moderator drives the pipeline stage by stage:
+
+- **Get it** (`#pipeline-get-it-btn`, next to the run button) is the main page's
+  Get It pass for the running stage's models (or the selected models when no
+  stage is waiting): one `GET_IT_BATCH` pulls every model tab to the bottom and
+  re-reads its latest answer. Double click collects only models without a
+  usable answer. Both pages bind their buttons through `bindGetItButton` in
+  `results.js`.
+- The run button while a stage is running (**next**) closes the stage with the
+  answers already collected, after a confirmation that lists the models to be
+  skipped (`pipelineWaiter.closeAnsweredBatches('moderator_closed')`). A wait
+  with no answer yet keeps waiting. Skipped models are not retried and are not
+  dropped from the run (`PARTICIPANT_SKIPPED`, non-terminal); the batch is
+  journaled with outcome `moderator_closed` instead of `timeout`.
+- After a stage completes the engine waits for approval (**Approve and
+  continue**) before starting the next one.
+
 Preset naming rule: built-in presets with the same suffix should be comparable.
 `Verdict` means a standard quick-to-final-answer budget across Duel, Triad, and
 Multi. `Long` means user-controlled/open-ended depth. This prevents a topology
