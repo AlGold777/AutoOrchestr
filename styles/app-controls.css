@@ -391,6 +391,10 @@ body.left-sidebar-open .mode-pill .pill-dot {
     text-align: left;
 }
 
+.pipeline-page .main-controls-wrapper {
+    margin-bottom: 8px;
+}
+
 .prompt-group {
     width: 100%;
 }
