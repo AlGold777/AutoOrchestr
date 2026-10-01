@@ -5009,6 +5009,14 @@ document.addEventListener('click', (event) => {
             return value === 'auto' ? 'auto' : 'manual';
         };
         const isDebateAutoPolicy = () => getDebateRunPolicy() === 'auto';
+        // Journal context of a dispatch: who drives the run and from which template.
+        const getRunModeContext = () => {
+            const template = String(pipelineStore.active || '').trim();
+            return {
+                runMode: isDebateAutoPolicy() ? 'auto' : (template ? 'semi_auto' : 'manual_dispatch'),
+                template: template || null
+            };
+        };
         const getDebateLengthOptions = () => Array.from(document.getElementById('debate-length-select')?.options || []).map((option) => ({
             value: option.value,
             label: option.textContent || option.value
@@ -5497,7 +5505,7 @@ document.addEventListener('click', (event) => {
                 debateRunId: String(aggregate?.runId || activePipelineRunContext?.pipelineRunId || context?.pipelineRunId || '').trim(),
                 planId: String(aggregate?.executionPlan?.planId || '').trim(),
                 stageId,
-                stageAttemptId: requestedAttemptId || `${stageId || 'unscoped'}:a${attemptNumber}`,
+                stageAttemptId: requestedAttemptId || `${stageId || (context?.manualModeratorDispatch ? 'manual' : 'unscoped')}:a${attemptNumber}`,
                 sourceView,
                 transportRequestIds
             };
@@ -5561,7 +5569,8 @@ document.addEventListener('click', (event) => {
                 stageId: pipelineContext.stageId || null,
                 stageAttemptId: pipelineContext.stageAttemptId || null,
                 judge: context?.judge === true,
-                manual: context?.manualModeratorDispatch === true
+                manual: context?.manualModeratorDispatch === true,
+                ...getRunModeContext()
             });
             const abandonBatch = (error) => {
                 pipelineWaiter.cancelBatch(batchWait.batchId);
@@ -7365,6 +7374,7 @@ document.addEventListener('click', (event) => {
         const pipelineGetItBtn = document.getElementById('pipeline-get-it-btn');
         if (pipelineGetItBtn) {
             bindGetItButton(pipelineGetItBtn, {
+                surface: 'pipeline',
                 getModels: () => {
                     const stageModels = pipelineWaiter.openModels();
                     return stageModels.length ? stageModels : getSelectedLLMs();
@@ -7385,6 +7395,7 @@ document.addEventListener('click', (event) => {
             }
             if (controls.action === 'approve') {
                 event.preventDefault();
+                window.MessageDelivery?.batchEvent?.('moderator_approve', { template: String(pipelineStore.active || '').trim() || null });
                 resolveDebateApproval();
                 return;
             }
@@ -7400,13 +7411,18 @@ document.addEventListener('click', (event) => {
                 // collected (Get it pulls the rest); silent models are skipped.
                 const preview = pipelineWaiter.previewClose();
                 if (!preview.closable) {
+                    window.MessageDelivery?.batchEvent?.('moderator_close_refused', { reason: 'no_answers', waiting: pipelineWaiter.openModels() });
                     showNotification('Ни одна модель этапа ещё не ответила. Нажмите Get it, чтобы подтянуть ответы.', 'info');
                     return;
                 }
                 if (preview.skipModels.length && !window.confirm(
                     `Закрыть этап с собранными ответами (${preview.answeredModels.join(', ')})?\n\nБез ответа будут пропущены на этом этапе: ${preview.skipModels.join(', ')}.`
-                )) return;
+                )) {
+                    window.MessageDelivery?.batchEvent?.('moderator_close_refused', { reason: 'declined', answered: preview.answeredModels, skipped: preview.skipModels });
+                    return;
+                }
                 const closed = pipelineWaiter.closeAnsweredBatches('moderator_closed');
+                window.MessageDelivery?.batchEvent?.('moderator_stage_close', { answered: preview.answeredModels, skipped: closed.skipped, stillWaiting: closed.stillWaiting });
                 if (closed.stillWaiting) {
                     showNotification(`Этап закрыт частично: ${closed.stillWaiting} ожидание(й) ещё без ответов.`, 'info');
                 }
@@ -16152,7 +16168,9 @@ document.addEventListener('click', (event) => {
     // missed (results page reloading), the broadcast carries the persisted
     // answer, and the empty card is hydrated from it instead of restoring only
     // a green status indicator over an empty output.
+    // `lastRendered`: the last call wrote text into the card (telemetry: `displayed`).
     function hydrateAnswerFromGlobalState(llmName, entry) {
+        hydrateAnswerFromGlobalState.lastRendered = false;
         const panelId = String(llmName || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
         const outputElement = document.getElementById(`panel-${panelId}`)?.querySelector('.output');
         const panelHasAnswer = Boolean(String(outputElement?.textContent || '').trim());
@@ -16181,6 +16199,7 @@ document.addEventListener('click', (event) => {
         if (!answerText) return false;
         if (panelHasAnswer) return true;
         if (outputElement) {
+            hydrateAnswerFromGlobalState.lastRendered = true;
             const finalHtml = resolveCompleteAnswerHtml(answerText, answerHtml);
             replaceChildrenFromSanitizedHtml(outputElement, finalHtml);
             decorateLinksForNewTab(outputElement);
@@ -16247,6 +16266,9 @@ document.addEventListener('click', (event) => {
             const rawStatus = modelRunState?.uiStatus || modelRunState?.terminalStatus || entry?.finalStatus || entry?.status || null;
             if (!rawStatus) return;
             const answerVisible = hydrateAnswerFromGlobalState(llmName, entry);
+            const hydrateRendered = hydrateAnswerFromGlobalState.lastRendered === true;
+            let acceptedByWait = null;
+            let rejectReason = null;
             // GLOBAL_STATE_BROADCAST is also the durable recovery channel for a
             // missed LLM_PARTIAL_RESPONSE. Hydrating only the DOM left
             // runModelBatch waiting forever even though background had already
@@ -16272,7 +16294,32 @@ document.addEventListener('click', (event) => {
                     }
                 };
                 if (window.MessageDelivery) recovered = window.MessageDelivery.receive(recovered, { final: true });
-                if (recovered) pipelineWaiter.handleFinal(recovered);
+                if (recovered) {
+                    const accepted = pipelineWaiter.handleFinal(recovered);
+                    if (pipelineWaiter.waiting) {
+                        acceptedByWait = accepted;
+                        if (!accepted) rejectReason = pipelineWaiter.missReason(normalizePipelineMessageEnvelope(recovered));
+                    }
+                } else if (pipelineWaiter.waiting) {
+                    acceptedByWait = false;
+                    rejectReason = 'rejected_by_delivery';
+                }
+            } else if (hydrateRendered && pipelineWaiter.waiting) {
+                // Shown from the global state, but the wait never got it.
+                acceptedByWait = false;
+                rejectReason = entry?.transportRequestId ? 'not_final' : 'no_request_id';
+            }
+            if (hydrateRendered) {
+                window.MessageDelivery?.batchEvent?.('displayed', {
+                    model: llmName,
+                    requestId: entry?.transportRequestId || null,
+                    dispatchId: entry?.dispatchId || null,
+                    chars: String(entry?.answer || '').length,
+                    source: 'global_state_hydrate',
+                    final: Boolean(entry?.finalStatusRecorded),
+                    acceptedByWait,
+                    rejectReason
+                });
             }
             // A green indicator over a card with no answer anywhere is a false
             // success for the user; keep the honest uncertain state instead.
@@ -21772,7 +21819,7 @@ function checkCompareButtonState() {
 // bottom and re-reads its latest answer. Single click = all models, double
 // click = only models without a usable answer. The main page and the pipeline
 // page bind their own buttons here, so both share one collection route.
-function bindGetItButton(button, { getModels, beforeRun = () => {}, afterRun = () => {} } = {}) {
+function bindGetItButton(button, { getModels, surface = 'main', beforeRun = () => {}, afterRun = () => {} } = {}) {
     button.disabled = false;
     let clickTimer = null;
     const run = async (failedOnly = false) => {
@@ -21787,6 +21834,10 @@ function bindGetItButton(button, { getModels, beforeRun = () => {}, afterRun = (
         try {
           const batch = await chrome.runtime.sendMessage({ type: 'GET_IT_BATCH', llmNames,
             ...(failedOnly ? { failedOnly: true } : {}) });
+          globalThis.MessageDelivery?.batchEvent?.('moderator_get_it', { surface, models: llmNames, failedOnly, status: batch?.status || null, error: batch?.error || null });
+          for (const result of batch?.results || []) {
+              globalThis.MessageDelivery?.batchEvent?.('get_it_result', { surface, model: result?.llmName || null, status: result?.status || null, error: result?.error || null });
+          }
           if (batch?.error && typeof showNotification === 'function') showNotification(batch.error);
           if (batch?.status === 'get_it_empty' && typeof showNotification === 'function') showNotification('В текущем запуске нет моделей, требующих ручного сбора.');
           for (const result of batch?.results || []) {

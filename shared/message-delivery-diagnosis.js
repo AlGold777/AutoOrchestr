@@ -28,11 +28,12 @@
     start_rejected: ['Пакет не стартовал', 'Фон отказал в старте, панель завершила пакет без отправки.', 'Причина указана в строке; остановите предыдущий запуск или дождитесь окончания генерации.'],
     premature_terminal: ['Запрос закрыт раньше, чем модель ответила', 'Фон зафиксировал финал без текста, но модель продолжила отвечать — ответ потерян для пайплайна.', 'Причина финала указана в строке (протокол завершения, навигация вкладки). Это дефект транспорта: приложите JSON-отчёт.'],
     batch_timeout: ['Пакет завершён по таймауту', 'Не все модели ответили до срока ожидания панели.', 'Модели без ответа указаны в строке; проверьте их вкладки.'],
-    waiting: ['Ответ ещё не получен', 'Запрос подготовлен, ожидается ответ.', '']
+    waiting: ['Ответ ещё не получен', 'Запрос подготовлен, ожидается ответ.', ''],
+    display_desync: ['Ответ показан, но этап его не принял', 'Текст ответа уже выведен в карточку (источник указан в строке), а ожидание этапа его не получило: этап ждёт то, что пользователь уже видит.', 'Нажмите Get it, чтобы подтянуть ответ в этап, или «Дальше», чтобы закрыть этап с собранным. Если повторяется — приложите JSON-отчёт.']
   };
   const SEVERITY = {
     no_tab: 'critical', not_submitted: 'critical', premature_terminal: 'critical', stuck_waiting: 'critical', stale_background: 'critical', no_answer: 'critical', empty: 'critical', start_rejected: 'critical', batch_timeout: 'critical',
-    partial: 'warning', focus_churn: 'warning', error: 'warning', no_token: 'warning', identity: 'warning', stop_unconfirmed: 'warning',
+    partial: 'warning', display_desync: 'warning', focus_churn: 'warning', error: 'warning', no_token: 'warning', identity: 'warning', stop_unconfirmed: 'warning',
     cancelled: 'info', stale: 'info', start_refused: 'info', waiting: 'info'
   };
   const RESULTS = ['delivered', 'partial', 'no_token', 'empty', 'no_answer', 'not_submitted', 'no_tab', 'error', 'cancelled', 'waiting'];
@@ -57,7 +58,7 @@
           model: event.model, token: event.token, requestId: event.requestId || null, batchId: event.batchId || '', at: event.at, chars: event.chars, prompt: event.prompt || '',
           tab: null, statuses: [], firstTextMs: null, terminal: null, stale: 0,
           dispatch: [], dispatchIds: [], submittedMs: null, rejections: [], revisions: 0, providerStop: null,
-          completionTerminals: [], navigations: [], lateText: null, focus: { count: 0, sources: {} }, textProgress: null, backgroundVersions: []
+          completionTerminals: [], navigations: [], lateText: null, focus: { count: 0, sources: {} }, textProgress: null, backgroundVersions: [], displayed: []
         };
         byToken.set(event.token, send);
         if (send.requestId) byRequest.set(send.requestId, send);
@@ -83,6 +84,7 @@
       else if (event.kind === 'text_progress') send.textProgress = { chars: event.chars, ms: event.ms };
       else if (event.kind === 'unproven_replaced') send.replacedUnproven = { chars: event.chars, previousChars: event.previousChars };
       else if (event.kind === 'late_text') send.lateText = { chars: event.chars, ms: event.ms };
+      else if (event.kind === 'displayed') send.displayed.push({ at: event.at, source: event.source || 'unknown', chars: event.chars ?? null, final: event.final === true, acceptedByWait: event.acceptedByWait ?? null, rejectReason: event.rejectReason || null });
       else if (event.kind === 'focus') {
         send.focus.count = Math.max(send.focus.count + 1, event.n || 0);
         const source = event.source || 'unknown';
@@ -121,6 +123,16 @@
       completion ? `протокол завершения: ${completion.status}${completion.reason ? ` (${completion.reason})` : ''}` : null,
       navigation ? `навигация ${navigation.from} → ${navigation.to}` : null
     ].filter(Boolean).join(' · ');
+  }
+
+  // The latest observed fact of a still-open request, so "waiting" says what was last seen.
+  function lastFact(send) {
+    const shown = send.displayed[send.displayed.length - 1];
+    return [
+      send.statuses.length ? `статус ${send.statuses[send.statuses.length - 1]}` : null,
+      send.textProgress ? `текст ${send.textProgress.chars} симв. на ${Math.round(send.textProgress.ms / 1000)} с` : (send.firstTextMs != null ? `первый текст на ${Math.round(send.firstTextMs / 1000)} с` : null),
+      shown ? `показано ${shown.chars ?? '?'} симв. (${shown.source})` : null
+    ].filter(Boolean).join(', ');
   }
 
   function lastBlockReason(send) {
@@ -165,7 +177,8 @@
         Object.assign(get(event), {
           at: event.at, models: event.models || [], requestIds: event.requestIds || {}, timeoutMs: event.timeoutMs ?? null,
           stageId: event.stageId || null, stageAttemptId: event.stageAttemptId || null, pipelineRunId: event.pipelineRunId || null,
-          generationProfile: event.generationProfile || null, judge: event.judge === true, manual: event.manual === true
+          generationProfile: event.generationProfile || null, judge: event.judge === true, manual: event.manual === true,
+          runMode: event.runMode || null, template: event.template || null
         });
       } else if (event.kind === 'start_refused') {
         get(event).refusals.push({ at: event.at, attempt: event.attempt, errorCode: event.errorCode, reason: event.reason, blockingModel: event.blockingModel, waitedMs: event.waitedMs });
@@ -174,11 +187,17 @@
       } else if (event.kind === 'batch_end') {
         Object.assign(get(event), {
           outcome: event.outcome, durationMs: event.durationMs ?? null, reason: event.reason || '', errorCode: event.errorCode || null,
-          missing: event.missing || [], failed: event.failed || {}, completion: event.completion || {}
+          missing: event.missing || [], failed: event.failed || {}, completion: event.completion || {}, skipped: event.skipped || []
         });
       }
     });
     return [...map.values()];
+  }
+
+  // Semi-automatic moderator actions, in journal order.
+  const MODERATOR_KINDS = ['moderator_get_it', 'get_it_result', 'moderator_stage_close', 'moderator_close_refused', 'moderator_approve'];
+  function moderatorActions(journal) {
+    return (journal || []).filter((event) => MODERATOR_KINDS.includes(event.kind)).map((event) => ({ ...event }));
   }
 
   function unattachedRejections(journal, list) {
@@ -192,6 +211,7 @@
     const out = [];
     const make = (code, base, extra = {}) => ({
       code, severity: SEVERITY[code], model: base.model || null, at: base.at, batchId: base.batchId || '',
+      ageMs: Number.isFinite(Date.parse(base.at)) ? Math.max(0, now - Date.parse(base.at)) : null,
       title: `${base.model ? `${base.model}: ` : ''}${TEXT[code][0]}`, detail: TEXT[code][1], hint: TEXT[code][2], ...extra
     });
     const stale = version ? list.find((send) => send.backgroundVersions.some((bg) => bg !== version)) : null;
@@ -212,12 +232,20 @@
         out.push(make('premature_terminal', send, {
           reason: [send.terminal?.status, terminalCause(send), send.lateText ? `текст ${send.lateText.chars} симв. через ${Math.round(send.lateText.ms / 1000)} с` : null].filter(Boolean).join(' · ')
         }));
+      } else if (send.result === 'waiting' && send.displayed.some((d) => d.chars > 0 && d.acceptedByWait === false)) {
+        const shown = send.displayed.filter((d) => d.chars > 0 && d.acceptedByWait === false);
+        const last = shown[shown.length - 1];
+        out.push(make('display_desync', send, {
+          reason: [`показано ${last.chars} симв.`, last.source, last.rejectReason ? `этап: ${last.rejectReason}` : null, last.final ? 'финал есть' : 'финала нет'].filter(Boolean).join(' · ')
+        }));
       } else if (send.result !== 'delivered' && !stuck) {
         const reason = [
           send.terminal?.status, send.terminal?.reason, terminalCause(send),
           send.result === 'not_submitted' || send.result === 'no_tab' ? lastBlockReason(send) : ''
         ].filter(Boolean).join(' · ');
-        out.push(make(send.result, send, reason ? { reason } : {}));
+        const fact = send.result === 'waiting' ? lastFact(send) : '';
+        const joined = [reason, fact].filter(Boolean).join(' · ');
+        out.push(make(send.result, send, joined ? { reason: joined } : {}));
       }
       if (send.focus.count >= FOCUS_CHURN_THRESHOLD) {
         const sources = Object.entries(send.focus.sources).map(([name, n]) => `${name} ×${n}`).join(', ');
@@ -276,7 +304,7 @@
     const list = sends(journal);
     const batchList = batches(journal);
     const orphans = unattachedRejections(journal, list);
-    return { sends: list, batches: batchList, rejections: orphans, problems: problems(list, batchList, orphans, now, version), matrix: matrix(list) };
+    return { sends: list, batches: batchList, rejections: orphans, moderator: moderatorActions(journal), problems: problems(list, batchList, orphans, now, version), matrix: matrix(list) };
   }
 
   const api = Object.freeze({ diagnose, sends, batches, problems, matrix, TEXT, RESULTS });

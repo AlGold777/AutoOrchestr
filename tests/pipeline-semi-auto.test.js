@@ -110,3 +110,12 @@ test('a template keeps the moderator\'s explicit Auto choice (semi-automatic run
   // The compiled run policy reads that choice first.
   expect(source).toMatch(/debateRunPolicySelect\?\.dataset\.explicitOverride\s*\|\|\s*presetConfig\.runPolicy/);
 });
+
+test('the panel journals shown answers, run context and moderator actions', () => {
+  expect(source).toContain("batchEvent?.('displayed', {");
+  expect(source).toContain("source: 'global_state_hydrate'");
+  expect(source).toContain('...getRunModeContext()');
+  ['moderator_get_it', 'get_it_result', 'moderator_stage_close', 'moderator_close_refused', 'moderator_approve']
+    .forEach((kind) => expect(source).toContain(`'${kind}'`));
+  expect(source).toContain("context?.manualModeratorDispatch ? 'manual' : 'unscoped'");
+});

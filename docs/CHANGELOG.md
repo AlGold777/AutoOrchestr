@@ -1,5 +1,14 @@
 # CHANGELOG — Project
 
+### 2026-10-01 — Delivery report for the semi-automatic pipeline, version 2.81.525
+
+- The report no longer trusts only the delivery journal. An answer written into a card from the background global state (`hydrateAnswerFromGlobalState`) is journaled as `displayed` (source, length, whether it was final, whether the open stage wait accepted it and why not). A request that is shown but not accepted by the wait is the new problem `display_desync` (it replaces the bare "Ответ ещё не получен" for that request). Field report (5): Perplexity answered long before the report, the card showed it, the wait never received it.
+- `batch_start` carries `runMode` (`auto` / `semi_auto` / `manual_dispatch`) and the template name; a manual moderator dispatch is `manual:aN` instead of `unscoped:aN`.
+- Moderator actions are journaled and returned in `diagnosis.moderator`: `moderator_get_it` (+ `get_it_result` per model), `moderator_stage_close`, `moderator_close_refused`, `moderator_approve`. The batch outcome `moderator_closed` is shown as such with the skipped models, not as a timeout.
+- Problems carry `ageMs`; a plain "waiting" names the last observed fact (status, text length and time, what was shown).
+- Not done yet from `docs/telemetry-semi-auto-spec.md`: T2 (screen snapshot at report time; the report is built in the telemetry window, which cannot read the results page DOM), T6 (switching automatic visits off in semi-automatic mode), `displayed` for live, Get it and session-restore paths.
+- Tests: `message-delivery-semi-auto`, `pipeline-semi-auto`.
+
 ### 2026-10-01 — Templates run semi-automatically when Auto is off, version 2.81.524
 
 - Choosing a saved pipeline applied its default run policy (`auto` for every built-in template) and erased the moderator's explicit Auto choice, so a template could not be run stage by stage. The explicit choice now outranks the template default: with Auto off a template (e.g. Test, two stages) pauses for approval between stages; Get it and "next" work inside such a run.

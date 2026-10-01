@@ -46,6 +46,12 @@
 | Фон (`TRANSPORT_DISPATCH_PHASE`) | `dispatch` с фазой: `dispatch_started`, `command_accepted`, `submitted`, `submit_unconfirmed`, `command_not_delivered`, `terminal_deferred` (неопределённый финал протокола отложен), `terminal_deferral_ended`, `blocked` (`circuit_open`, `tab_not_ready`, `ack_timeout`, `page_not_ready`, `focus_unavailable`, …) — с `dispatchId`, вкладкой и временем от подготовки |
 | Ответы и вкладка | `first_text`, `verified` / `missing_token` / `empty_answer` (статус, `completion`, `dispatchId`, источник `live` или `GLOBAL_STATE_ANSWER_RECOVERY`), `revision`, `late_text` (текст после пустого финала), `stale_dropped`, `status`, `tab`, `provider_stop` (результат нажатия «Стоп» у провайдера), `focus` (программное переключение на вкладку модели: источник — диспетчеризация, визит человека, восстановление; до 30 событий на запрос, точный счёт сохраняется в `focus_count`), `text_progress` (рост текста ответа, не чаще раза в 10 с), `completion_terminal` (решение протокола завершения во вкладке: статус и причина), `navigation` (переход SPA во вкладке: путь до и после). Финал ошибки несёт конкретную причину (`errorType: errorMessage`) |
 
+Для полуавтоматики (2.81.525) панель пишет ещё:
+
+- `displayed` — текст выведен в карточку из глобального состояния фона: источник (`global_state_hydrate`), размер, был ли финал, принял ли его открытый этап (`acceptedByWait`) и почему нет (`rejectReason`: `not_final`, `no_request_id`, `unknown_request`, `model_mismatch`, `batch_settled`). Показано, но не принято — проблема `display_desync`.
+- `batch_start.runMode` (`auto`, `semi_auto`, `manual_dispatch`) и `template`; ручная отправка модератора идёт в пакете `manual:aN`.
+- Действия модератора: `moderator_get_it` и `get_it_result` по моделям, `moderator_stage_close` (кто ответил, кто пропущен), `moderator_close_refused`, `moderator_approve`; исход пакета `moderator_closed` (не таймаут).
+
 Вкладка показывает:
 
 - **Delivery Health Summary** — по моделям: отправлено, доставлено, неполные, без метки, пустые, нет ответа, не отправлено, нет вкладки, ошибки, отменено, отклонено по принадлежности, устаревшие; медианы времени до отправки и до ответа.

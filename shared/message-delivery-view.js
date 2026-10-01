@@ -11,7 +11,8 @@
     delivered: 'доставлено ✓', partial: 'неполный', no_token: 'без метки', empty: 'пустой ответ', no_answer: 'нет ответа',
     not_submitted: 'не отправлен', no_tab: 'нет вкладки', error: 'ошибка', cancelled: 'отменён', waiting: 'ждём…'
   };
-  const OUTCOME = { settled: 'завершён', timeout: 'таймаут', cancelled: 'отменён', rejected: 'не стартовал' };
+  const OUTCOME = { settled: 'завершён', timeout: 'таймаут', cancelled: 'отменён', rejected: 'не стартовал', moderator_closed: 'закрыт модератором' };
+  const RUN_MODE = { auto: 'авто', semi_auto: 'полуавтомат', manual_dispatch: 'ручная отправка' };
   const PHASE = {
     dispatch_started: 'отправка', command_accepted: 'команда принята', submitted: 'отправлено',
     bottom_nudge: 'передёрнули вниз', bottom_nudge_skipped: 'передёргивание невозможно', commit_not_final: 'фиксация не стала финалом', incomplete_answer_committed: 'неполный ответ зафиксирован', static_answer_committed: 'текст зафиксирован после визитов',
@@ -113,10 +114,11 @@
       batch.durationMs != null ? secs(batch.durationMs) : null,
       batch.timeoutMs != null ? `срок ${secs(batch.timeoutMs)}` : null,
       batch.missing?.length ? `без ответа: ${batch.missing.join(', ')}` : null,
+      batch.skipped?.length ? `пропущены модератором: ${batch.skipped.join(', ')}` : null,
       answered || null,
       batch.reason || null
     ]) || '—';
-    const stage = join([batch.stageAttemptId || batch.batchId, batch.judge ? 'judge' : null, batch.manual ? 'moderator' : null, batch.generationProfile]);
+    const stage = join([batch.stageAttemptId || batch.batchId, RUN_MODE[batch.runMode] || null, batch.template ? `шаблон ${batch.template}` : null, batch.judge ? 'judge' : null, batch.manual ? 'moderator' : null, batch.generationProfile]);
     const row = el('tr', null,
       el('td', null, time(batch.at)),
       el('td', null, stage || '—'),
@@ -163,7 +165,7 @@
       ? el('div', null, view.problems.map((p) => el('div', { class: 'ad-problem', 'data-severity': p.severity },
         el('div', { class: 'ad-problem-head' },
           el('strong', null, `[${SEV[p.severity]}] ${p.title}`),
-          el('span', { class: 'devtools-meta' }, ` ${join([time(p.at), p.batchId, p.count > 1 ? `×${p.count}` : null, p.reason])}`)),
+          el('span', { class: 'devtools-meta' }, ` ${join([time(p.at), p.ageMs != null ? `${secs(p.ageMs)} назад` : null, p.batchId, p.count > 1 ? `×${p.count}` : null, p.reason])}`)),
         el('div', null, p.detail),
         p.hint ? el('div', { class: 'ad-hint' }, `Что делать: ${p.hint}`) : null)))
       : empty(all.length ? 'No problems.' : 'No diagnoses yet.'));
