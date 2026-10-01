@@ -1,0 +1,157 @@
+diff --git a/background/human-presence.js b/background/human-presence.js
+index f33cf74..84338c9 100644
+--- a/background/human-presence.js
++++ b/background/human-presence.js
+@@ -453,6 +453,12 @@ function markProgrammaticTabFocus(tabId, source = 'programmatic_focus', options
+     meta: entry,
+     force: true
+   });
++  // Every programmatic tab activation goes through here: tell the journal who moved the focus.
++  try {
++    if (typeof sendMessageToResultsTab === 'function') {
++      sendMessageToResultsTab({ type: 'AUTOMATION_TAB_FOCUS', llmName, tabId, source: entry.source, at: now });
++    }
++  } catch (_) {}
+   return true;
+ }
+ 
+diff --git a/results.js b/results.js
+index 233ed6d..6c65cc5 100644
+--- a/results.js
++++ b/results.js
+@@ -16400,6 +16400,9 @@ document.addEventListener('click', (event) => {
+     }
+ 
+     const RESULTS_RUNTIME_MESSAGE_TYPES = new Set([
++        'AUTOMATION_TAB_FOCUS',
++        'SPA_NAVIGATION',
++        'LLM_COMPLETION_TERMINAL',
+         'LLM_JOB_CREATED',
+         'LLM_PARTIAL_RESPONSE',
+         'LLM_FINAL_RESPONSE',
+@@ -16427,9 +16430,12 @@ document.addEventListener('click', (event) => {
+     // races with the background service worker for content-script RPC messages.
+     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+         if (!RESULTS_RUNTIME_MESSAGE_TYPES.has(message?.type)) return false;
+-        if (window.MessageDelivery && (message.type === 'STATUS_UPDATE' || message.type === 'GLOBAL_STATE_BROADCAST')) {
++        const JOURNAL_ONLY = ['AUTOMATION_TAB_FOCUS', 'SPA_NAVIGATION', 'LLM_COMPLETION_TERMINAL'];
++        if (window.MessageDelivery && (message.type === 'STATUS_UPDATE' || message.type === 'GLOBAL_STATE_BROADCAST' || JOURNAL_ONLY.includes(message.type))) {
+             window.MessageDelivery.observeRuntime(message);
+         }
++        // Observation only: these messages belong to the background and are answered there.
++        if (JOURNAL_ONLY.includes(message.type)) return false;
+         if (window.MessageDelivery && ['LLM_PARTIAL_RESPONSE', 'LLM_FINAL_RESPONSE', 'FINAL_LLM_RESPONSE'].includes(message.type)) {
+             message = window.MessageDelivery.receive(message, { final: isTerminalPipelineMessage(message) });
+             if (!message) return false; // stale answer of an earlier request
+diff --git a/shared/message-delivery.js b/shared/message-delivery.js
+index 39e6bb3..20ee269 100644
+--- a/shared/message-delivery.js
++++ b/shared/message-delivery.js
+@@ -74,7 +74,7 @@
+       const base = promptsByModel?.[model] ?? prompt;
+       out[model] = wrap(base, token);
+       expected.set(model, { token, sentAt: Date.now(), batchId, final: false });
+-      record({ kind: 'sent', model, token, batchId, chars: out[model].length });
++      record({ kind: 'sent', model, token, batchId, chars: out[model].length, prompt: out[model].slice(0, 2000) });
+     });
+     return out;
+   }
+@@ -94,6 +94,11 @@
+       return null;
+     }
+     const metadata = { ...(message.metadata || {}) };
++    // Sample the growing text: shows whether the model kept writing and when it stopped.
++    if (!final && answer.trim() && Date.now() - (entry.lastSampleAt || 0) >= 10000) {
++      entry.lastSampleAt = Date.now();
++      record({ kind: 'text_snapshot', model, token: entry.token, chars: answer.length, ms: Date.now() - entry.sentAt });
++    }
+     if (answer.trim() && !entry.firstText) {
+       entry.firstText = true;
+       record({ kind: 'first_text', model, token: entry.token, chars: answer.length, ms: Date.now() - entry.sentAt });
+@@ -103,6 +108,7 @@
+       const kind = !answer.trim() ? 'empty_answer' : state === 'verified' ? 'verified' : 'missing_token';
+       record({
+         kind, model, token: entry.token, chars: answer.length, ms: Date.now() - entry.sentAt,
++        answer: answer.slice(0, 1500),
+         status: String(message.status || metadata.status || metadata.finalStatus || ''),
+         reason: String(metadata.reason || metadata.completionReason || metadata.failureClass || metadata.hardStopReason || '')
+       });
+@@ -122,9 +128,32 @@
+     return cleaned;
+   }
+ 
+-  // Runtime facts the background already broadcasts: model statuses and opened tabs.
++  // Runtime facts the background already broadcasts: model statuses and opened tabs,
++  // plus three more observations for the journal: page navigation inside a model tab,
++  // the decision of the tab's completion logic, and every programmatic tab focus.
+   function observeRuntime(message) {
+     if (!message) return;
++    const pathOf = (url) => { try { return new URL(url).pathname; } catch (_) { return String(url || ''); } };
++    if (message.type === 'SPA_NAVIGATION') {
++      const entry = expected.get(message.llmName);
++      if (!entry || entry.final) return;
++      record({ kind: 'page_navigation', model: message.llmName, token: entry.token, from: pathOf(message.oldUrl), to: pathOf(message.newUrl), reason: message.reason || null, ms: Date.now() - entry.sentAt });
++      return;
++    }
++    if (message.type === 'LLM_COMPLETION_TERMINAL') {
++      const entry = expected.get(message.llmName);
++      if (!entry || entry.final) return;
++      const result = message.meta?.terminalResult || {};
++      record({ kind: 'completion_decision', model: message.llmName, token: entry.token, decision: result.status || null, reason: result.reason || null, ms: Date.now() - entry.sentAt });
++      return;
++    }
++    if (message.type === 'AUTOMATION_TAB_FOCUS') {
++      const entry = expected.get(message.llmName);
++      if (!entry || entry.final) return;
++      entry.focusMoves = (entry.focusMoves || 0) + 1;
++      if (entry.focusMoves <= 40) record({ kind: 'tab_focus', model: message.llmName, token: entry.token, tabId: message.tabId ?? null, source: message.source || null, n: entry.focusMoves, ms: Date.now() - entry.sentAt });
++      return;
++    }
+     if (message.type === 'STATUS_UPDATE') {
+       const entry = expected.get(message.llmName);
+       const status = String(message.status || '').toUpperCase();
+diff --git a/tests/automation-journal-observations.test.js b/tests/automation-journal-observations.test.js
+new file mode 100644
+index 0000000..558aff2
+--- /dev/null
++++ b/tests/automation-journal-observations.test.js
+@@ -0,0 +1,39 @@
++/** @jest-environment node */
++const Delivery = require('../shared/message-delivery.js');
++
++const tokenOf = (prompt) => /\[\[AO-[a-z0-9]{6}\]\]/.exec(prompt)[0];
++
++describe('journal observations', () => {
++  beforeEach(() => Delivery.reset());
++
++  test('the prompt and the final answer text are kept (capped)', () => {
++    const prompts = Delivery.prepare({ prompt: 'Вопрос '.repeat(500), models: ['GPT'] });
++    Delivery.receive({ llmName: 'GPT', answer: `${'Ответ '.repeat(500)}\n${tokenOf(prompts.GPT)}`, status: 'SUCCESS' }, { final: true });
++    const events = Delivery.journal();
++    expect(events.find((e) => e.kind === 'sent').prompt.length).toBeLessThanOrEqual(2000);
++    expect(events.find((e) => e.kind === 'verified').answer.length).toBeLessThanOrEqual(1500);
++  });
++
++  test('page navigation, the completion decision and tab focus moves are recorded per model', () => {
++    Delivery.prepare({ prompt: 'Q', models: ['Le Chat'] });
++    Delivery.observeRuntime({ type: 'SPA_NAVIGATION', llmName: 'Le Chat', oldUrl: 'https://chat.mistral.ai/work', newUrl: 'https://chat.mistral.ai/work/abc', reason: 'url_change' });
++    Delivery.observeRuntime({ type: 'LLM_COMPLETION_TERMINAL', llmName: 'Le Chat', meta: { terminalResult: { status: 'CONTEXT_LOST', reason: 'context_invalidated' } } });
++    for (let i = 0; i < 45; i += 1) Delivery.observeRuntime({ type: 'AUTOMATION_TAB_FOCUS', llmName: 'Le Chat', tabId: 7, source: 'human_visit_activate' });
++    const events = Delivery.journal();
++    expect(events.find((e) => e.kind === 'page_navigation')).toMatchObject({ from: '/work', to: '/work/abc' });
++    expect(events.find((e) => e.kind === 'completion_decision')).toMatchObject({ decision: 'CONTEXT_LOST', reason: 'context_invalidated' });
++    expect(events.filter((e) => e.kind === 'tab_focus')).toHaveLength(40);
++  });
++
++  test('the growing text is sampled at most every 10 seconds', () => {
++    Delivery.prepare({ prompt: 'Q', models: ['GPT'] });
++    Delivery.receive({ llmName: 'GPT', answer: 'a' }, { final: false });
++    Delivery.receive({ llmName: 'GPT', answer: 'ab' }, { final: false });
++    expect(Delivery.journal().filter((e) => e.kind === 'text_snapshot')).toHaveLength(1);
++  });
++
++  test('events of models without a pending request are ignored', () => {
++    Delivery.observeRuntime({ type: 'SPA_NAVIGATION', llmName: 'Grok', oldUrl: 'https://grok.com/', newUrl: 'https://grok.com/c/1' });
++    expect(Delivery.journal()).toEqual([]);
++  });
++});
