@@ -20879,11 +20879,15 @@ function checkCompareButtonState() {
             ));
         const targetCard = terminalCards[terminalCards.length - 1] || null;
         if (!targetCard) return false;
-        const normalizedText = String(text || '').trim();
-        const normalizedHtml = sanitizeInlineHtml(String(html || '').trim());
+        // Same cleaning as the live path (delivery token, instruction echo, trailing
+        // blanks): a re-emitted copy of the shown answer is not a revision.
+        const normalizedText = cleanFeedText(text);
+        const normalizedHtml = sanitizeInlineHtml(cleanFeedHtml(String(html || '').trim()));
         if (!normalizedText && !normalizedHtml) return false;
         const primaryOutput = targetCard.querySelector('.debate-model-card-output');
-        const primaryText = String(primaryOutput?.innerText || primaryOutput?.textContent || '').trim();
+        const primaryText = cleanFeedText(primaryOutput?.innerText || primaryOutput?.textContent || '');
+        const squash = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+        if (normalizedText && squash(normalizedText) === squash(primaryText)) return true;
         const revisionHash = `${normalizedText.length}:${normalizedText.slice(0, 96)}|${normalizedHtml.length}:${normalizedHtml.slice(0, 96)}`;
         const duplicate = Array.from(targetCard.querySelectorAll('.post-terminal-answer-revision'))
             .some((entry) => entry.dataset.revisionHash === revisionHash);

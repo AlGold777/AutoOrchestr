@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-01 — Re-emitted answers are no longer shown as "updated after completion", version 2.81.523
+
+- `Ответ обновлён после завершения · GLOBAL_STATE_ANSWER_RECOVERY · Δ -9` was a false revision: the recovery from the background global state re-emits the already shown answer as raw text (delivery token and trailing blanks included), while the card holds the cleaned text, and `appendPostTerminalAnswerRevision` compared them without cleaning. It now cleans both sides like the live path (`MessageDelivery.clean`) and treats a whitespace-equal copy as no revision. A genuinely different text is still marked as a revision.
+- Test: `results-debate-favorites` (re-emitted answer with token vs. a real revision). Telemetry follow-up: `docs/telemetry-semi-auto-spec.md` (T7).
+
 ### 2026-10-01 — Semi-automatic pipeline: Get it on the pipeline page and early stage close, version 2.81.521
 
 - The pipeline page has its own **Get it** button. It reuses the main page's collection route (`GET_IT_BATCH`, extracted into `bindGetItButton`) for the running stage's models; double click collects only models without an answer.

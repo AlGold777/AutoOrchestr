@@ -1162,6 +1162,36 @@ describe('Pipeline debate favorites view', () => {
     panel.remove();
   });
 
+  test('re-emitting the shown answer with its delivery token is not a post-terminal revision', () => {
+    const debug = window.__pipelineLifecycleDebug;
+    // The real cleaner (token and trailing blanks), as loaded on the page.
+    window.MessageDelivery = require('../shared/message-delivery.js');
+    document.getElementById('panel-gpt')?.remove();
+    const panel = document.createElement('section');
+    panel.id = 'panel-gpt';
+    panel.className = 'llm-panel';
+    panel.innerHTML = '<div class="output"></div>';
+    document.body.appendChild(panel);
+    debug.updateLLMPanelOutput('GPT', 'Complete answer text.', '', { status: 'SUCCESS', requestId: 'recovery-echo' });
+    const card = document.querySelector('.debate-model-card[data-llm-name="GPT"][data-request-id="recovery-echo"]')
+      || document.querySelector('.debate-model-card[data-llm-name="GPT"]');
+    expect(card.dataset.turnClosed).toBe('true');
+
+    // Global-state recovery hands over the raw text: token and trailing blanks included.
+    debug.updateLLMPanelOutput('GPT', 'Complete answer text.   \n[[AO-abc123]]  ', '', {
+      source: 'GLOBAL_STATE_ANSWER_RECOVERY', requestId: 'recovery-echo'
+    });
+    expect(card.querySelector('.post-terminal-answer-revision')).toBeNull();
+
+    // A genuinely different text is still a revision.
+    debug.updateLLMPanelOutput('GPT', 'Complete answer text. And more added later.', '', {
+      source: 'GLOBAL_STATE_ANSWER_RECOVERY', requestId: 'recovery-echo'
+    });
+    expect(card.querySelector('.post-terminal-answer-revision')).not.toBeNull();
+    delete window.MessageDelivery;
+    panel.remove();
+  });
+
   test('a model answer keeps at most one open card (no duplicate whole or partial)', () => {
     const debug = window.__pipelineLifecycleDebug;
     const container = document.getElementById('debate-model-cards');
