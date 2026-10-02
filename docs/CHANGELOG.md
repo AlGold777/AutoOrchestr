@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-02 — Pipeline feed back inside the composer, version 2.81.544
+
+- Removed the full-viewport widening of `.pipeline-page .debate-model-cards` (`width: 100vw` + `margin-left: calc(50% - 50vw)`, added in `0cdf930`): the feed content stuck out of `.prompt-container.prompt-sandwich`. The feed again takes the width of its container.
+- Tests: `pipeline-feed-layout`.
+
 ### 2026-10-02 — Pause takes the answers shown in the feed, version 2.81.543
 
 - Field report: pressing Pause while the feed already showed answers said "Модели ещё ничего не показали: пауза после раунда". Pause (and "next") looked only at the round's wait, which gets text that is still arriving only through partial messages that carry the transport request id; the text in the feed never reached it.

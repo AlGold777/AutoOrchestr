@@ -985,12 +985,6 @@ body.pro-features-hidden .comparison-section {
     border-radius: 10px;
     background: none;
 }
-.pipeline-page .debate-model-cards {
-    width: 100vw;
-    max-width: none;
-    margin-left: calc(50% - 50vw);
-    box-sizing: border-box;
-}
 .debate-session-bar {
     display: flex;
     align-items: center;
