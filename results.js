@@ -3000,14 +3000,14 @@ document.addEventListener('click', (event) => {
             debateTraceStore?.setActiveRun?.(event.target.value);
             renderCurrentDebateTrace();
         }
-        if (['disput-only-problems', 'disput-stage-filter', 'disput-model-filter', 'disput-type-filter', 'disput-severity-filter'].includes(event.target?.id)) renderCurrentDebateTrace();
+        if (event.target?.id === 'disput-only-problems') renderCurrentDebateTrace();
     });
     document.addEventListener('click', async (event) => {
         const clearButton = event.target?.closest?.('#disput-clear-trace');
         if (!clearButton) return;
         await debateTraceStore?.clear?.();
         window.__lastDebateTraceReport = null;
-        ['disput-health-summary', 'disput-problems', 'disput-plan-actual', 'disput-participants', 'disput-critical-path', 'disput-raw-events'].forEach((id) => {
+        ['disput-health-summary', 'disput-problems', 'disput-raw-events'].forEach((id) => {
             const target = document.getElementById(id);
             if (target) replaceChildrenFromHtml(target, '<p class="diag-empty">No Debate trace events.</p>');
         });
@@ -15368,9 +15368,9 @@ document.addEventListener('click', (event) => {
         } catch (err) {
             console.warn('[Diagnostics] Disput telemetry export failed to read telemetry', err);
         }
-        const markdown = buildDisputTelemetryMarkdown(telemetryEvents, {
-            onlyProblems: document.getElementById('disput-only-problems')?.checked === true
-        });
+        // Exports are always complete: "Only problems" filters the tab view only. A filtered export
+        // dropped events the analysis needs (events[] 465 of integrity.eventsTotal 705, 2.81.567).
+        const markdown = buildDisputTelemetryMarkdown(telemetryEvents);
         const hasFlowEvents = Boolean(window.__lastDebateTraceReport?.events?.length)
             || serialDebateTimeline.length
             || normalizeTelemetryDisputRows(telemetryEvents).length;
@@ -15397,10 +15397,8 @@ document.addEventListener('click', (event) => {
         } catch (err) {
             console.warn('[Diagnostics] Disput JSON export failed to read telemetry', err);
         }
-        let payload = buildDisputExportPayload(telemetryEvents);
-        if (document.getElementById('disput-only-problems')?.checked === true) {
-            payload = applyDisputOnlyProblemsFilter(payload);
-        }
+        // Always complete (see the MD export): "Only problems" filters the tab view only.
+        const payload = buildDisputExportPayload(telemetryEvents);
         // Delivery (formerly the Automation tab): batches, sends, problems and the raw
         // journal, same shape as the former message-delivery report.
         let delivery = null;
@@ -20164,53 +20162,8 @@ function checkCompareButtonState() {
             rows
         };
     }
-    function applyDisputOnlyProblemsFilter(payload) {
-        if (!payload || typeof payload !== 'object') return payload;
-        const sharedFilter = window.ProblemContextFilter;
-        if (payload?.health && window.DebateTraceProjections?.filterProblems) {
-            return window.DebateTraceProjections.filterProblems(payload, {
-                problemContextFilter: sharedFilter
-            });
-        }
-        const isProblem = (item) => sharedFilter?.isProblem
-            ? sharedFilter.isProblem(item)
-            : ['warning', 'high', 'critical'].includes(String(item?.severity || '').toLowerCase())
-                || /(ERROR|FAILED|FAILURE|TIMEOUT|REJECTED|EXCEPTION|DIVERGENCE|MISMATCH)/i.test(String(item?.eventType || item?.action || item?.status || ''));
-        const next = { ...payload };
-        const events = Array.isArray(payload.events) ? payload.events : [];
-        const contextKey = (item) => item?.correlation?.stageId || item?.stageId || '__unscoped__';
-        if (Array.isArray(payload.events)) {
-            next.events = sharedFilter?.filterWithContext
-                ? sharedFilter.filterWithContext(events, { isProblem, getContextKey: contextKey })
-                : events.filter(isProblem);
-        }
-        if (Array.isArray(payload.diagnoses)) next.diagnoses = payload.diagnoses.slice();
-        if (Array.isArray(payload.stageExecutions)) {
-            const diagnosedStages = new Set((next.diagnoses || []).map((item) => item.affectedStageId).filter(Boolean));
-            next.stageExecutions = payload.stageExecutions.filter((stage) => diagnosedStages.has(stage.stageId)
-                || stage.deviations?.length || ['failed', 'skipped'].includes(stage.status));
-        }
-        if (Array.isArray(payload.participantExecutions)) {
-            next.participantExecutions = payload.participantExecutions.filter((item) => item.recoveries
-                || ['failed', 'error'].includes(String(item.submitStatus || '').toLowerCase())
-                || ['failed', 'error'].includes(String(item.completionStatus || '').toLowerCase())
-                || ['failed', 'error'].includes(String(item.finalStatus || '').toLowerCase()));
-        }
-        if (Array.isArray(payload.barriers)) {
-            next.barriers = payload.barriers.filter((barrier) => ['waiting', 'timeout'].includes(barrier.outcome)
-                || Number(barrier.durationMs) > 0);
-        }
-        if (Array.isArray(payload.rows)) {
-            next.rows = sharedFilter?.filterWithContext
-                ? sharedFilter.filterWithContext(payload.rows, { isProblem, getContextKey: contextKey })
-                : payload.rows.filter(isProblem);
-        }
-        return next;
-    }
     function buildDisputTelemetryMarkdown(telemetryEvents = []) {
-        const options = arguments[1] || {};
-        let payload = buildDisputExportPayload(telemetryEvents);
-        if (options.onlyProblems) payload = applyDisputOnlyProblemsFilter(payload);
+        const payload = buildDisputExportPayload(telemetryEvents);
         if (payload?.health && window.DebateTraceProjections?.toMarkdown) {
             return window.DebateTraceProjections.toMarkdown(payload);
         }

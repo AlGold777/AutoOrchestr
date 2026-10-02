@@ -36,8 +36,8 @@ node scripts/summarize-report.js "/путь/к/отчёту.json" ["/путь/к
 
 ### Разделы вывода Disput Flow
 
-1. **Data sufficiency** — `events[].length` против `integrity.eventsTotal`: экспорт может
-   содержать отфильтрованный `events[]`, а `integrity.*` описывает полный набор; наличие `plan`,
+1. **Data sufficiency** — `events[].length` против `integrity.eventsTotal`: до 2.81.569 экспорт при
+   включённом «Only problems» содержал отфильтрованный `events[]`, а `integrity.*` описывал полный набор; наличие `plan`,
    `expected`, `deviations`, раздела `delivery`; сколько сохранённых промптов обрезано; чего в этом
    формате нет вовсе (причина остановки наблюдателя, версия показанного и переданного ответа,
    текст ленты).

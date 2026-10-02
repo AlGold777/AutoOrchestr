@@ -46,17 +46,16 @@
   }
 
   function filtered(journal) {
-    const model = $('disput-model-filter')?.value || 'all';
+    // "Only problems" is the tab's single display toggle; the export (buildReport) is unfiltered.
     const only = $('disput-only-problems')?.checked;
     const diagnosis = root.MessageDeliveryDiagnosis.diagnose(journal, { version: root.chrome?.runtime?.getManifest?.().version || null });
-    const keep = (item) => model === 'all' || item.model === model;
     return {
       journal, diagnosis,
-      sends: diagnosis.sends.filter((s) => keep(s) && (!only || s.result !== 'delivered' || s.stale || s.rejections.length)),
-      batches: diagnosis.batches.filter((b) => (model === 'all' || b.models.includes(model)) && (!only || b.outcome !== 'settled' || b.refusals.length)),
-      problems: diagnosis.problems.filter((p) => model === 'all' || !p.model || p.model === model),
-      matrix: diagnosis.matrix.filter(keep),
-      raw: journal.filter((e) => model === 'all' || !e.model || e.model === model || (e.models || []).includes(model))
+      sends: diagnosis.sends.filter((s) => !only || s.result !== 'delivered' || s.stale || s.rejections.length),
+      batches: diagnosis.batches.filter((b) => !only || b.outcome !== 'settled' || b.refusals.length),
+      problems: diagnosis.problems,
+      matrix: diagnosis.matrix,
+      raw: journal
     };
   }
 
@@ -224,7 +223,7 @@
     if (!$('delivery-health')) return;
     document.addEventListener('devtools-tab-change', (e) => { if (e.detail?.targetId === 'disput-tabpanel') void render(); });
     root.chrome?.storage?.onChanged?.addListener((changes, area) => { if (area === 'session' && changes[KEY()]) void render(); });
-    ['disput-model-filter', 'disput-only-problems'].forEach((id) => $(id)?.addEventListener('change', () => void render()));
+    $('disput-only-problems')?.addEventListener('change', () => void render());
     // One tab, one Clear: the Disput trace and the delivery journal are cleared together.
     $('disput-clear-trace')?.addEventListener('click', () => { root.MessageDelivery?.clearJournal(); void render(); });
   }

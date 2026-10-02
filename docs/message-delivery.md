@@ -38,7 +38,7 @@
 
 ## Окно телеметрии → Disput, раздел «Доставка» (бывшая вкладка Automation)
 
-С 2.81.563 отдельной вкладки Automation нет: её карточки стоят во вкладке Disput, под карточками хода запуска. Фильтр модели, «Only problems» и кнопка очистки у них общие с Disput (очистка стирает и трассу, и журнал доставки). Экспорт Disput JSON содержит раздел `delivery` (`report`, `generated_at`, `extension_version`, `transport_contract_version`, `diagnosis`, `journal` — та же форма, что у прежнего `message-delivery-report.json`), экспорт MD — раздел «Delivery» с таблицами Batches, Sends и Problems.
+С 2.81.563 отдельной вкладки Automation нет: её карточки стоят во вкладке Disput, под карточками хода запуска. «Only problems» и кнопка очистки у них общие с Disput (очистка стирает и трассу, и журнал доставки). С 2.81.569 фильтра модели нет, а «Only problems» влияет только на отображение: экспорт всегда полный. Экспорт Disput JSON содержит раздел `delivery` (`report`, `generated_at`, `extension_version`, `transport_contract_version`, `diagnosis`, `journal` — та же форма, что у прежнего `message-delivery-report.json`), экспорт MD — раздел «Delivery» с таблицами Batches, Sends и Problems.
 
 Журнал (`chrome.storage.session`, до 3000 событий, живёт до перезагрузки страницы) собирает факты трёх источников:
 

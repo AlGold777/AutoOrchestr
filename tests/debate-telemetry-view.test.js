@@ -1,11 +1,10 @@
 const View = require('../results/debate-telemetry-view');
 
 describe('Disput telemetry view', () => {
-  test('renders health, plan/fact, diagnoses, participants and raw trace from one report', () => {
+  test('renders health, diagnoses and raw trace from one report', () => {
     document.body.innerHTML = `
       <div id="disput-health-summary"></div><div id="disput-problems"></div>
-      <div id="disput-plan-actual"></div><div id="disput-participants"></div>
-      <div id="disput-critical-path"></div><div id="disput-raw-events"></div>
+      <div id="disput-raw-events"></div>
       <span id="disput-trace-status"></span>`;
     const report = {
       metadata: { topology: 'universal', presetId: 'UNIVERSAL_RED_TEAM', dataCompleteness: 'complete' },
@@ -21,8 +20,6 @@ describe('Disput telemetry view', () => {
     expect(View.render(report, document)).toBe(true);
     expect(document.getElementById('disput-health-summary').textContent).toContain('degraded_success');
     expect(document.getElementById('disput-problems').textContent).toContain('STATE_DIVERGENCE');
-    expect(document.getElementById('disput-plan-actual').textContent).toContain('r1:wave');
-    expect(document.getElementById('disput-participants').textContent).toContain('Qwen');
     expect(document.getElementById('disput-raw-events').textContent).toContain('RUN_STARTED');
   });
 
@@ -30,8 +27,7 @@ describe('Disput telemetry view', () => {
     document.body.innerHTML = `
       <input type="checkbox" id="disput-only-problems" checked>
       <div id="disput-health-summary"></div><div id="disput-problems"></div>
-      <div id="disput-plan-actual"></div><div id="disput-participants"></div>
-      <div id="disput-critical-path"></div><div id="disput-raw-events"></div>
+      <div id="disput-raw-events"></div>
       <span id="disput-trace-status"></span>`;
     const baseEvent = { sourceTimestamp: Date.now(), source: 'application', reasonCode: '' };
     const report = {

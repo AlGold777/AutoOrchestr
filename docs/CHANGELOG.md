@@ -1,5 +1,13 @@
 # CHANGELOG — Project
 
+### 2026-10-03 — Disput tab: complete exports, one display toggle, legacy cards removed, version 2.81.569
+
+- **Exports are always complete.** «Only problems» (on by default) used to filter the Disput JSON and MD exports: the 2.81.567 report exported 465 of 705 events while `integrity` described all 705, and request chronologies lost their terminals. The toggle now filters the tab view only; `applyDisputOnlyProblemsFilter` is removed. Telemetry collection is unchanged.
+- **Drill-down filters removed** (stage, model, event type, severity). They filtered the view only; stage filtering keyed on `correlation.stageId`, which is the attribution shown to be wrong for late records of the previous request. Request-level drill-down is done on the complete export by `scripts/summarize-report.js`.
+- **Legacy cards removed:** Plan vs Actual (no compiled plan in the universal engine: `plan` null, `expected` null on every stage), Participant Matrix (`expectedStages` 0 → `0/0`; whole-run aggregate hides a lost stage answer), Critical Path & Barriers (barriers come only from the old round-4 gate; 0 in current reports; stage durations are in the delivery batches).
+- Run selector placeholder reads «Current run» on both pages.
+- Tests: `debate-telemetry-view`, `automation-telemetry`, `release-log-regressions`, `telemetry-export-actions` updated (not run in this change).
+
 ### 2026-10-03 — Report digest script: request-level chronology and field paths, version 2.81.568
 
 - `scripts/summarize-report.js` now carries the requirements of the transport investigation, so the model no longer computes them. For a Disput Flow export it prints field paths (`events[N]`, `delivery.journal[N]`, `diagnoses[N]`), marks computed values `calc:`, and keeps "no field", null, `""`, `[]` and 0 records apart.

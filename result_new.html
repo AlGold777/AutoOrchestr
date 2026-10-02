@@ -718,14 +718,8 @@
                                 <div class="devtools-toolbar-actions">
                                     <div class="telemetry-filters disput-trace-filters">
                                         <label class="sr-only" for="disput-run-select">Debate run</label>
-                                        <select id="disput-run-select" class="devtools-select"><option value="">Current Run</option></select>
-                                        <select id="disput-stage-filter" class="devtools-select" aria-label="Filter Disput by stage"><option value="all">All stages</option></select>
-                                        <select id="disput-model-filter" class="devtools-select" aria-label="Filter Disput by model"><option value="all">All models</option></select>
-                                        <select id="disput-type-filter" class="devtools-select" aria-label="Filter Disput by event type"><option value="all">All event types</option></select>
-                                        <select id="disput-severity-filter" class="devtools-select" aria-label="Filter Disput by severity">
-                                            <option value="all">All severities</option><option value="critical">Critical</option><option value="high">High</option><option value="warning">Warning</option><option value="info">Info</option>
-                                        </select>
-                                        <label class="disput-only-problems-label"><input type="checkbox" id="disput-only-problems" checked> Only problems</label>
+                                        <select id="disput-run-select" class="devtools-select"><option value="">Current run</option></select>
+                                        <label class="disput-only-problems-label" title="Display filter only; JSON and MD exports are always complete"><input type="checkbox" id="disput-only-problems" checked> Only problems</label>
                                     </div>
                                     <div class="telemetry-actions">
                                         <button type="button" class="diag-icon-btn" id="disput-clear-trace" title="Clear Disput trace" aria-label="Clear Disput trace"><i class="ti ti-trash" aria-hidden="true"></i></button>
@@ -745,18 +739,6 @@
                                 <article class="devtools-card telemetry-card" data-collapsible="disput-problems">
                                     <div class="devtools-card-header"><h2>Problems &amp; Recovery</h2></div>
                                     <div class="devtools-card-body"><div class="telemetry-rounds-table-wrapper" id="disput-problems"><p class="diag-empty">No diagnoses yet.</p></div></div>
-                                </article>
-                                <article class="devtools-card telemetry-rounds-card" data-collapsible="disput-plan">
-                                    <div class="devtools-card-header"><h2>Plan vs Actual</h2></div>
-                                    <div class="devtools-card-body"><div class="telemetry-rounds-table-wrapper" id="disput-plan-actual"><p class="diag-empty">Waiting for a compiled plan…</p></div></div>
-                                </article>
-                                <article class="devtools-card telemetry-card" data-collapsible="disput-participants">
-                                    <div class="devtools-card-header"><h2>Participant Matrix</h2></div>
-                                    <div class="devtools-card-body"><div class="telemetry-rounds-table-wrapper" id="disput-participants"><p class="diag-empty">No participant evidence.</p></div></div>
-                                </article>
-                                <article class="devtools-card telemetry-card" data-collapsible="disput-critical">
-                                    <div class="devtools-card-header"><h2>Critical Path &amp; Barriers</h2></div>
-                                    <div class="devtools-card-body"><div id="disput-critical-path"><p class="diag-empty">No timing evidence.</p></div></div>
                                 </article>
                                 <article class="devtools-card telemetry-card is-collapsed" data-collapsible="disput-raw">
                                     <div class="devtools-card-header"><h2>Raw Trace Events</h2></div>

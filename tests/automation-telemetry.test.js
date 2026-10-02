@@ -109,10 +109,9 @@ describe('Automation producers', () => {
 });
 
 describe('Delivery cards in the Disput tab (formerly the Automation tab)', () => {
-  test('render batches, dispatch path and result columns, driven by the Disput filters', async () => {
+  test('render batches, dispatch path and result columns, driven by the Disput display toggle', async () => {
     document.body.innerHTML = `
       <section id="disput-tabpanel">
-        <select id="disput-model-filter"><option value="all">All</option><option value="GPT">GPT</option></select>
         <input type="checkbox" id="disput-only-problems">
         <button id="disput-clear-trace"></button>
         <span id="delivery-status"></span>

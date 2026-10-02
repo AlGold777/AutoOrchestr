@@ -252,10 +252,12 @@ describe('release log regression guards', () => {
     [pipelineHtml, resultHtml].forEach((html) => {
       expect(html).toContain('id="disput-health-summary"');
       expect(html).toContain('id="disput-problems"');
-      expect(html).toContain('id="disput-plan-actual"');
-      expect(html).toContain('id="disput-participants"');
-      expect(html).toContain('id="disput-critical-path"');
       expect(html).toContain('id="disput-raw-events"');
+      // Cards of the planned-topology Disput: no plan, no barriers in the universal engine.
+      ['disput-plan-actual', 'disput-participants', 'disput-critical-path'].forEach((id) => expect(html).not.toContain(`id="${id}"`));
+      // One display toggle; drill-down is done on the complete export by scripts/summarize-report.js.
+      ['disput-stage-filter', 'disput-model-filter', 'disput-type-filter', 'disput-severity-filter'].forEach((id) => expect(html).not.toContain(`id="${id}"`));
+      expect(html).toContain('id="disput-only-problems"');
     });
   });
 

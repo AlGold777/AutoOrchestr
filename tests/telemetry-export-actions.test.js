@@ -217,6 +217,9 @@ describe('Telemetry export actions', () => {
     expect(resultsSource).toContain('evidence: buildSafeDebateDiagnosticEvidence(meta)');
     expect(resultsSource).not.toContain('evidence: meta');
     expect(resultsSource).toContain('window.SecretRedaction.redactDeep(payload)');
-    expect(resultsSource).toContain('window.DebateTraceProjections.filterProblems(payload');
+    // Exports are complete: "Only problems" filters the tab view, never the JSON/MD export.
+    expect(resultsSource).not.toContain('applyDisputOnlyProblemsFilter');
+    expect(resultsSource).not.toContain('window.DebateTraceProjections.filterProblems(payload');
+    expect(resultsSource).toContain('const payload = buildDisputExportPayload(telemetryEvents);');
   });
 });
