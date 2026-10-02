@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-02 — Post-completion updates collected into one badge, version 2.81.547
+
+- The technical «Updated · Source · Δ N» lines no longer sit in the card header one by one. A card with updates after completion gets **one badge** `↻ N`, placed right of the message time (it follows the time when the card is approved and the time moves next to the name). A click opens a popover with **one tab per update** (`1 · Recovery · Δ -274`, source cut to 20 chars + `...`, full wording in the tooltip and as the first line of the tab); the newest update is shown first. Click outside or Esc closes it.
+- Dedupe of repeated updates is unchanged (`.post-terminal-answer-revision[data-revision-hash]`, now `div` entries inside the popover).
+- Tests: `results-debate-favorites` (badge, tabs, close), `pipeline-feed-layout` (styles).
+
 ### 2026-10-02 — Merge of the pipeline page width work, version 2.81.546
 
 - Integrates the parallel layout changes (2.81.544–2.81.545: feed back inside the composer, wider working column) with the Run-button flow work; no behavior changes beyond that.

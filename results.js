@@ -20708,6 +20708,7 @@ function checkCompareButtonState() {
             }
             card.classList.remove('is-approved');
         }
+        placePostTerminalBadge(card);
         syncDebateCardOutputLayout(card);
     }
     function getFirstPendingCard(sessionId = debateTabsState.activeSessionId) {
@@ -21207,6 +21208,68 @@ function checkCompareButtonState() {
         });
         return preferred;
     }
+    // One badge per card, right of the time, collects every post-completion update
+    // (technical messages) in a popover with one tab per update.
+    function placePostTerminalBadge(card) {
+        const wrap = card?.querySelector?.('.post-terminal-badge-wrap');
+        const timeEl = card?.querySelector?.('.debate-model-card-header .debate-model-card-time');
+        if (wrap && timeEl && timeEl.nextElementSibling !== wrap) timeEl.after(wrap);
+    }
+    function ensurePostTerminalBadge(card) {
+        let wrap = card.querySelector('.post-terminal-badge-wrap');
+        if (!wrap) {
+            wrap = document.createElement('span');
+            wrap.className = 'post-terminal-badge-wrap';
+            wrap.innerHTML = '<button type="button" class="post-terminal-badge" aria-haspopup="true" aria-expanded="false"></button>'
+                + '<div class="post-terminal-popover" hidden>'
+                + '<div class="post-terminal-tabs" role="tablist"></div>'
+                + '<div class="post-terminal-panels"></div></div>';
+            const header = card.querySelector('.debate-model-card-header');
+            const meta = header?.querySelector('.debate-model-card-meta');
+            if (meta) meta.insertBefore(wrap, meta.firstChild);
+            else (header || card).appendChild(wrap);
+        }
+        placePostTerminalBadge(card);
+        return wrap;
+    }
+    function selectPostTerminalRevision(wrap, index) {
+        wrap.querySelectorAll('.post-terminal-tab').forEach((tab, i) => {
+            tab.classList.toggle('active', i === index);
+            tab.setAttribute('aria-selected', String(i === index));
+        });
+        Array.from(wrap.querySelector('.post-terminal-panels').children).forEach((panel, i) => {
+            panel.hidden = i !== index;
+        });
+    }
+    function setPostTerminalPopover(wrap, open) {
+        const popover = wrap?.querySelector('.post-terminal-popover');
+        if (!popover) return;
+        popover.hidden = !open;
+        wrap.querySelector('.post-terminal-badge')?.setAttribute('aria-expanded', String(open));
+    }
+    debateModelCards?.addEventListener('click', (event) => {
+        const wrap = event.target.closest('.post-terminal-badge-wrap');
+        document.querySelectorAll('.post-terminal-badge-wrap').forEach((other) => {
+            if (other !== wrap) setPostTerminalPopover(other, false);
+        });
+        if (!wrap) return;
+        const tab = event.target.closest('.post-terminal-tab');
+        if (tab) {
+            selectPostTerminalRevision(wrap, Array.from(wrap.querySelectorAll('.post-terminal-tab')).indexOf(tab));
+            return;
+        }
+        if (event.target.closest('.post-terminal-badge')) {
+            setPostTerminalPopover(wrap, wrap.querySelector('.post-terminal-popover').hidden);
+        }
+    });
+    document.addEventListener('pointerdown', (event) => {
+        if (event.target.closest('.post-terminal-badge-wrap')) return;
+        document.querySelectorAll('.post-terminal-badge-wrap').forEach((wrap) => setPostTerminalPopover(wrap, false));
+    });
+    document.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape') return;
+        document.querySelectorAll('.post-terminal-badge-wrap').forEach((wrap) => setPostTerminalPopover(wrap, false));
+    });
     function shortenRevisionSource(source) {
         const readable = String(source || 'unknown')
             .replace(/^GLOBAL_STATE_ANSWER_/, '')
@@ -21247,27 +21310,35 @@ function checkCompareButtonState() {
         const source = String(meta.source || meta.responseMeta?.source || 'unknown');
         const delta = normalizedText.length - primaryText.length;
         const deltaLabel = `${delta >= 0 ? '+' : ''}${delta}`;
-        const revision = document.createElement('details');
+        const revision = document.createElement('div');
         revision.className = 'post-terminal-answer-revision';
         revision.dataset.revisionHash = revisionHash;
         revision.dataset.source = source;
-        const summary = document.createElement('summary');
-        // Short label in the header row (source cut to 20 chars + "..."); the full
-        // wording is the tooltip and the first line of the expanded body (CSS ::before).
-        const sourceLabel = shortenRevisionSource(source);
-        summary.textContent = `Updated · ${sourceLabel} · Δ ${deltaLabel}`;
+        revision.hidden = true;
         const fullLabel = `Ответ обновлён после завершения · ${source} · Δ ${deltaLabel}`;
-        summary.title = fullLabel;
         const body = document.createElement('div');
         body.className = 'post-terminal-answer-revision-body';
         body.dataset.fullLabel = fullLabel;
-        revision.append(summary, body);
-        const header = targetCard.querySelector('.debate-model-card-header');
-        const headerMeta = header?.querySelector('.debate-model-card-meta');
-        if (header && headerMeta) header.insertBefore(revision, headerMeta);
-        else if (header) header.appendChild(revision);
-        else targetCard.appendChild(revision);
+        revision.append(body);
         renderDebateResponseBody(body, normalizedText, normalizedHtml);
+        const badge = ensurePostTerminalBadge(targetCard);
+        const panels = badge.querySelector('.post-terminal-panels');
+        const tabs = badge.querySelector('.post-terminal-tabs');
+        panels.append(revision);
+        // Tab label: short form (source cut to 20 chars + "..."); the tooltip keeps the full wording.
+        const tab = document.createElement('button');
+        tab.type = 'button';
+        tab.className = 'post-terminal-tab';
+        tab.setAttribute('role', 'tab');
+        tab.textContent = `${panels.children.length} · ${shortenRevisionSource(source)} · Δ ${deltaLabel}`;
+        tab.title = fullLabel;
+        tabs.append(tab);
+        selectPostTerminalRevision(badge, panels.children.length - 1);
+        const count = panels.children.length;
+        const trigger = badge.querySelector('.post-terminal-badge');
+        trigger.textContent = `↻ ${count}`;
+        trigger.title = `Updates after completion: ${count}`;
+        trigger.setAttribute('aria-label', trigger.title);
         targetCard.dataset.hasPostTerminalRevision = 'true';
         return true;
     }
