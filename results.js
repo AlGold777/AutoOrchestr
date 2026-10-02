@@ -23277,13 +23277,18 @@ function exportSingleTemplate(templateName, sourceData = null) {
         let topGain = 48;
         let frame = 0;
         const overflow = () => debateModelCards.scrollHeight - debateModelCards.clientHeight;
+        // Vertical space the bar takes in the layout: its box plus (negative) margins.
+        const topBarFootprint = () => {
+            const cs = getComputedStyle(topBar);
+            return topBar.offsetHeight + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0);
+        };
         const setTopCollapsed = (collapsed) => {
             if (document.body.classList.contains(TOP_CLASS) === collapsed) return;
-            const before = topBar.offsetHeight;
+            const before = topBarFootprint();
             document.body.classList.toggle(TOP_CLASS, collapsed);
             if (collapsed) topBarRight.insertBefore(actions, topBarRight.firstChild);
             else debateSessionBar.appendChild(actions);
-            const gain = before - topBar.offsetHeight;
+            const gain = before - topBarFootprint();
             if (collapsed && gain > 0) topGain = gain;
             document.documentElement.style.setProperty('--pipeline-top-gain', collapsed ? `${topGain}px` : '0px');
         };

@@ -1,6 +1,10 @@
 # CHANGELOG — Project
 
-### 2026-10-02 — A dropped participant no longer freezes the run; DeepSeek send confirmation; text_lost, version 2.81.535
+### 2026-10-02 — Merge of the pipeline panel layout work, version 2.81.536
+
+- Integrates the parallel layout change (2.81.535: collapsed top bar spacing, duplicate pause button removed) with the dropout/DeepSeek fixes; no behavior changes beyond that.
+
+### 2026-10-02 — A dropped participant no longer freezes the run; DeepSeek send confirmation; text_lost, version 2.81.536
 
 - Field report (9) (Auto, Universal, Grok + DeepSeek): stage 1 ended with Grok delivered and DeepSeek `NO_SEND`; then the run stood still — no pause, no message, no stage 2 (the run button stayed in "pause", Start did nothing). Cause: the planner treats a participant that dropped out of the run (terminal transport failure) as unavailable and answered every later stage that named it with `WAIT: PLANNED_STAGE_PARTICIPANT_UNAVAILABLE`, which the run loop swallowed.
 - Planner: a dropped participant is **removed from the stage** and the stage goes on with the participants that are left (`PARTICIPANT_DROPPED:<id>` in the decision notes). If nobody is left for the stage, the engine pauses visibly: `RUN_PAUSED` with `reason: participants_unavailable` (notification, journal `run_paused`, problem `participants_unavailable`); Continue retries.
@@ -8,6 +12,12 @@
 - Delivery report: new problem `text_lost` (critical) — an empty terminal although text had been received (size, time, terminal status).
 - Not fixed (open): the background still can close a request as `NO_SEND` with empty text after text was seen; `text_lost` makes it visible, Get it recovers the answer.
 - Tests: `automation-markers` (dropout on the real engine, with a mutation check), `message-delivery-semi-auto` (`text_lost`, DeepSeek).
+### 2026-10-02 — Pipeline panel: spacing of the collapsed top bar, no duplicate pause button, version 2.81.535
+
+- **Removed `#debate-auto-pause-btn`** from `.debate-session-actions`: a leftover of the old Disput. The main Run button (`#debate-run-toggle-btn`) already pauses and resumes through the same `setDebatePausedState` (`DebateController.deriveRunControls`: running + auto → `pause`, paused → `resume`). The JS handlers stay null-safe.
+- **Collapsed top bar:** 14px between model icons; the session actions keep a 14px margin before the sidebar toggle icons; the bar sits 7px closer to the screen edge (`top: 5px`, `margin-top: -7px`) and 7px closer to the input section (`margin-bottom: -11px`). The gain given to the feed box now counts the bar margins too.
+- **Compact input:** `.msg-header` loses 4px of vertical padding (6/4 → 2/0).
+- Tests: `pipeline-feed-layout`.
 
 ### 2026-10-02 — "None" in the mini prompt list of a round's model block, version 2.81.533
 

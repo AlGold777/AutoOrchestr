@@ -24,8 +24,13 @@ describe('pipeline panel markup', () => {
 
   test('session actions stay in the bar', () => {
     const bar = html.slice(html.indexOf('id="debate-session-bar"'), html.indexOf('id="debate-model-cards"'));
-    ['debate-session-copy-btn', 'debate-session-export-btn', 'debate-session-clear-btn', 'debate-auto-pause-btn']
+    ['debate-session-copy-btn', 'debate-session-export-btn', 'debate-session-clear-btn']
       .forEach((id) => expect(bar).toContain(`id="${id}"`));
+  });
+
+  test('the duplicate pause button is gone: the main Run button pauses and resumes', () => {
+    expect(html).not.toContain('id="debate-auto-pause-btn"');
+    expect(html).toContain('id="debate-run-toggle-btn"');
   });
 });
 
@@ -35,6 +40,16 @@ describe('pipeline feed layout styles', () => {
   test('collapsed top bar hides logo and model labels and is scoped to the pipeline page', () => {
     expect(css).toMatch(/\.pipeline-page\.pipeline-top-collapsed \.top-control-bar \.logo-badge,\s*\.pipeline-page\.pipeline-top-collapsed \.top-control-bar \.llm-button-label \{\s*display: none;/);
     expect(css).toContain('.pipeline-page.pipeline-top-collapsed .top-bar-right .debate-session-actions');
+  });
+
+  test('collapsed top bar: 14px between icons, 7px tighter to the edge and to the input section', () => {
+    expect(css).toMatch(/pipeline-top-collapsed \.top-control-bar \.models-row-header \.llm-buttons \{\s*gap: 14px;/);
+    expect(css).toMatch(/pipeline-top-collapsed \.top-control-bar \{[^}]*top: 5px;\s*margin: -7px 0 -11px 0;/);
+    expect(css).toMatch(/pipeline-top-collapsed \.top-bar-right \.debate-session-actions \{\s*margin-right: 14px;/);
+  });
+
+  test('compact input trims 4px from the msg-header padding', () => {
+    expect(css).toMatch(/is-feed-input-compact \.msg-header \{\s*padding-top: 2px;\s*padding-bottom: 0;/);
   });
 
   test('compact moderator input is one line unless focused', () => {

@@ -2775,13 +2775,20 @@ hr.section-divider {
 .pipeline-page.pipeline-top-collapsed .top-control-bar {
     padding-top: 4px;
     padding-bottom: 4px;
+    /* 7px closer to the screen edge and 7px closer to the input section. */
+    top: 5px;
+    margin: -7px 0 -11px 0;
+}
+.pipeline-page.pipeline-top-collapsed .top-control-bar::before {
+    top: -5px;
+    height: 5px;
 }
 .pipeline-page.pipeline-top-collapsed .top-control-bar .logo-badge,
 .pipeline-page.pipeline-top-collapsed .top-control-bar .llm-button-label {
     display: none;
 }
 .pipeline-page.pipeline-top-collapsed .top-control-bar .models-row-header .llm-buttons {
-    gap: 2px;
+    gap: 14px;
     margin-top: 0;
 }
 .pipeline-page.pipeline-top-collapsed .top-control-bar .models-row-header .llm-button {
@@ -2794,8 +2801,13 @@ hr.section-divider {
     display: none;
 }
 .pipeline-page.pipeline-top-collapsed .top-bar-right .debate-session-actions {
-    margin-right: 4px;
+    margin-right: 14px;
 }
 .pipeline-page.pipeline-top-collapsed .prompt-container.prompt-sandwich.debate-composer.has-debate-feed {
     height: calc(100dvh - 120px + var(--pipeline-top-gain, 0px));
+}
+/* Compact moderator input: the message header gives up 4px of padding (top and bottom). */
+.pipeline-page .prompt-container.prompt-sandwich.debate-composer.has-debate-feed.is-feed-input-compact .msg-header {
+    padding-top: 2px;
+    padding-bottom: 0;
 }
