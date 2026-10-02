@@ -1,5 +1,13 @@
 # CHANGELOG — Project
 
+### 2026-10-02 — Pipeline panel: a taller feed (no session tabs, compact input, collapsing top bar), version 2.81.530
+
+- **Session tabs removed** from the panel. `.debate-session-bar` now holds only `.debate-session-actions` (pause, copy, export, clear — each acts on the current session). The tab/add/delete nodes stay in the DOM, hidden, as the session state holder: `results.js` reads the active session id from `.debate-session-tab.active`. Session switching will live in the left sidebar.
+- **Step 1 — input.** When the feed content is taller than its box, the moderator input drops to one line (it still grows while focused). Hysteresis: the one-line state is kept until the content fits the default box with a margin.
+- **Step 2 — top bar.** If it still overflows and the feed is scrolled down, `top-control-bar` collapses: `.logo-badge` and model labels hide, icons tighten, `.debate-session-actions` moves into the right button group; the feed box grows by the measured height (`--pipeline-top-gain`). Back at the top of the feed the bar and the actions return. Controller: `debateFeedLayout` in `results.js`; it only toggles classes and a CSS variable (no scrolling, focusing or page visits), so it adds no liveness/progress signal.
+- **Live signal in the card header.** The `[Model] printing` line no longer sits under the answer text: it is a short `printing` chip in `.debate-model-card-header` (one line, ellipsis; full text in the tooltip).
+- Tests: `pipeline-feed-layout` (markup, styles, controller with mocked layout).
+
 ### 2026-10-01 — Automation: stops between stages, failed-stage stop, control markers, owner questions, version 2.81.529
 
 - **Correction.** The universal engine never paused between stages: `runLoop` ran every planned stage in one go and the Auto toggle only chose the finalization mode (probe: 3 stages, Auto off → 3 stages in one run). The earlier statements "with Auto off the engine waits for approval between stages" (2.81.521, 2.81.524, `project-overview`) were wrong; the semi-automatic buttons (Get it, "next") only worked inside one running stage. A second defect: a stage nobody answered was re-queued by the planner until the step budget ended (60 model calls for 3 stages × 2 models).

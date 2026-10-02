@@ -20333,11 +20333,15 @@ function checkCompareButtonState() {
         }
         card.dataset.live = 'true';
         if (!printingEl) {
-            printingEl = document.createElement('div');
+            printingEl = document.createElement('span');
             printingEl.className = 'debate-model-card-printing';
-            card.appendChild(printingEl);
+            // Live signal sits in the header row (short chip), never inside the answer text.
+            const headerMeta = card.querySelector('.debate-model-card-header .debate-model-card-meta');
+            if (headerMeta) headerMeta.insertBefore(printingEl, headerMeta.firstChild);
+            else card.appendChild(printingEl);
         }
-        printingEl.textContent = `[${llmName}] printing`;
+        printingEl.textContent = 'printing';
+        printingEl.title = `[${llmName}] printing`;
     }
     function finalizeDebatePrintingForModel(llmName, requestId = '') {
         if (!debateModelCards || !llmName) return;
@@ -23219,6 +23223,80 @@ function exportSingleTemplate(templateName, sourceData = null) {
             setDebateCardWideExpanded(card, !card.classList.contains('is-wide-expanded'));
         }
     });
+    // Pipeline page: give the feed more room once it outgrows its box.
+    // Step 1: feed overflows -> the moderator input shrinks to one line.
+    // Step 2: still overflowing and scrolled down -> the top bar collapses (logo and
+    // model labels hide, icons tighten, session actions move into the right button group).
+    // Both steps use hysteresis so a layout change cannot flip the state back at once.
+    // Only classes and a CSS variable change here: no scrolling, focusing or page visits.
+    const debateFeedLayout = (() => {
+        if (!document.body.classList.contains('pipeline-page') || !debateModelCards || !debateSessionBar) return null;
+        const composer = debateSessionBar.closest('.prompt-container.prompt-sandwich.debate-composer');
+        const moderatorInput = document.getElementById('moderator-input');
+        const topBar = document.querySelector('.top-control-bar');
+        const topBarRight = topBar?.querySelector('.top-bar-right');
+        const actions = debateSessionBar.querySelector('.debate-session-actions');
+        if (!composer || !moderatorInput || !topBar || !topBarRight || !actions) return null;
+        const INPUT_CLASS = 'is-feed-input-compact';
+        const TOP_CLASS = 'pipeline-top-collapsed';
+        const HYSTERESIS_PX = 8;
+        const COLLAPSE_SCROLL_PX = 24;
+        const EXPAND_SCROLL_PX = 2;
+        let inputGain = 0;
+        let topGain = 48;
+        let frame = 0;
+        const overflow = () => debateModelCards.scrollHeight - debateModelCards.clientHeight;
+        const setTopCollapsed = (collapsed) => {
+            if (document.body.classList.contains(TOP_CLASS) === collapsed) return;
+            const before = topBar.offsetHeight;
+            document.body.classList.toggle(TOP_CLASS, collapsed);
+            if (collapsed) topBarRight.insertBefore(actions, topBarRight.firstChild);
+            else debateSessionBar.appendChild(actions);
+            const gain = before - topBar.offsetHeight;
+            if (collapsed && gain > 0) topGain = gain;
+            document.documentElement.style.setProperty('--pipeline-top-gain', collapsed ? `${topGain}px` : '0px');
+        };
+        const setInputCompact = (compact) => {
+            if (composer.classList.contains(INPUT_CLASS) === compact) return;
+            const before = moderatorInput.offsetHeight;
+            composer.classList.toggle(INPUT_CLASS, compact);
+            if (compact) inputGain = Math.max(0, before - moderatorInput.offsetHeight);
+        };
+        const evaluate = () => {
+            frame = 0;
+            const feedActive = composer.classList.contains('has-debate-feed')
+                && !composer.classList.contains('is-debate-feed-wide-expanded');
+            if (!feedActive) {
+                setTopCollapsed(false);
+                setInputCompact(false);
+                return;
+            }
+            const topCollapsed = document.body.classList.contains(TOP_CLASS);
+            if (topCollapsed && debateModelCards.scrollTop <= EXPAND_SCROLL_PX) setTopCollapsed(false);
+            if (document.body.classList.contains(TOP_CLASS)) return;
+            if (!composer.classList.contains(INPUT_CLASS)) {
+                if (overflow() > HYSTERESIS_PX) setInputCompact(true);
+                return;
+            }
+            if (overflow() <= -(inputGain + HYSTERESIS_PX)) {
+                setInputCompact(false);
+                return;
+            }
+            if (debateModelCards.scrollTop > COLLAPSE_SCROLL_PX && overflow() > topGain + HYSTERESIS_PX * 2) {
+                setTopCollapsed(true);
+            }
+        };
+        const schedule = () => {
+            if (!frame) frame = requestAnimationFrame(evaluate);
+        };
+        debateModelCards.addEventListener('scroll', schedule, { passive: true });
+        window.addEventListener('resize', schedule);
+        new MutationObserver(schedule).observe(debateModelCards, { childList: true, subtree: true, characterData: true });
+        new MutationObserver(schedule).observe(composer, { attributes: true, attributeFilter: ['class'] });
+        if (typeof ResizeObserver === 'function') new ResizeObserver(schedule).observe(debateModelCards);
+        schedule();
+        return { evaluate, schedule };
+    })();
     debateSessionBar?.addEventListener('dblclick', (event) => {
         if (event.target.closest('button, a, input, select, textarea, [role="button"], [role="tab"]')) return;
         const composer = debateSessionBar.closest('.prompt-container.prompt-sandwich.debate-composer');
