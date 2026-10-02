@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-10-03 — Remove Disput run selector, version 2.81.570
+
+- Removed the saved-run selector and its UI handlers from both pages. Disput renders the active trace; telemetry storage, collection and exports retain their existing behavior.
+
 ### 2026-10-03 — Disput tab: complete exports, one display toggle, legacy cards removed, version 2.81.569
 
 - **Exports are always complete.** «Only problems» (on by default) used to filter the Disput JSON and MD exports: the 2.81.567 report exported 465 of 705 events while `integrity` described all 705, and request chronologies lost their terminals. The toggle now filters the tab view only; `applyDisputOnlyProblemsFilter` is removed. Telemetry collection is unchanged.

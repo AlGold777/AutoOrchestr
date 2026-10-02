@@ -2792,21 +2792,6 @@ document.addEventListener('click', (event) => {
             duplicateEventIds: debateTraceStore.getDuplicateIds?.(trace.debateRunId) || []
         });
         window.__lastDebateTraceReport = report;
-        const runSelect = document.getElementById('disput-run-select');
-        if (runSelect) {
-            const runs = debateTraceStore.listRuns?.() || [];
-            const signature = runs.map((run) => `${run.debateRunId}:${run.updatedAt}`).join('|');
-            if (runSelect.dataset.traceRuns !== signature) {
-                runSelect.replaceChildren(...runs.slice().reverse().map((run) => {
-                    const option = document.createElement('option');
-                    option.value = run.debateRunId;
-                    option.textContent = `${run.topology || 'Debate'} · ${run.presetId || 'custom'} · ${new Date(run.createdAt).toLocaleString()}`;
-                    return option;
-                }));
-                runSelect.dataset.traceRuns = signature;
-            }
-            runSelect.value = trace.debateRunId;
-        }
         window.DebateTelemetryView?.render?.(report, document);
         return report;
     };
@@ -2996,10 +2981,6 @@ document.addEventListener('click', (event) => {
         });
     };
     document.addEventListener('change', (event) => {
-        if (event.target?.id === 'disput-run-select') {
-            debateTraceStore?.setActiveRun?.(event.target.value);
-            renderCurrentDebateTrace();
-        }
         if (event.target?.id === 'disput-only-problems') renderCurrentDebateTrace();
     });
     document.addEventListener('click', async (event) => {
