@@ -49,6 +49,20 @@ describe('Disput Flow export', () => {
     expect(text).toContain('- 1270.0s A · UI button · stage-3');
     expect(text).toContain('| STAGE_FAILURE | critical | A@stage-3 |');
     expect(text).toContain('without dispatchId: 1');
+    // One line per model, and the notable events of a model that needed a recovery.
+    expect(text).toContain('### Per model (whole run)');
+    expect(text).toMatch(/\| A \| 3 \| 3:PARTIAL\/hard_stop_recovered_partial \| 1 \| — \| 1 \| stage 3 \|/);
+    expect(text).toContain('### Notable events: A');
+  });
+
+  test('a model that dropped out is visible in the per-model table, not only the longest stage', () => {
+    const dropped = { ...report, stageExecutions: [stage(1, 0, 30000, ['A', 'B']), stage(2, 30100, 60000, ['A'])], diagnoses: [],
+      events: [ev(1, 'MODEL_TERMINAL_COMMITTED', 20000, 'B', { evidence: { finalStatus: 'SUCCESS', completionReason: 'forced_success_with_text' } }),
+        ev(1, 'MANUAL_RECOVERY_REQUESTED', 19000, 'B', { details: 'UI button' }),
+        ev(2, 'MODEL_TERMINAL_COMMITTED', 50000, 'A', { evidence: { finalStatus: 'SUCCESS', completionReason: 'lifecycle_complete_snapshot' } })] };
+    const text = summarize(write('dropped.json', dropped));
+    expect(text).toMatch(/\| B \| 1 \| 1:SUCCESS\/forced_success_with_text \| 1 \| — \| — \| stage 1 \|/);
+    expect(text).toMatch(/\| A \| 2 \| 2:SUCCESS\/lifecycle_complete_snapshot \| — \| — \| — \| — \|/);
   });
 
   test('a clean flow is reported without flags', () => {

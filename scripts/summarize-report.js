@@ -53,6 +53,40 @@ function summarizeDisputFlow(d) {
     return [i + 1, short(s.stageId), (s.actual?.participants || []).join('+') || '—', rel(s.actual?.startedAt), rel(s.actual?.completedAt), MIN(s.durationMs), SEC(gap), s.status, flags.join(' ') || '—'];
   })));
 
+  // One line per model: the digest must not follow only the longest stage.
+  const models = [...new Set(events.map((e) => e.payload?.model).filter(Boolean))].sort();
+  out.push('\n### Per model (whole run)');
+  out.push(table(['model', 'stages', 'finals (stage:status/reason)', 'manual recoveries', 'stage failures', 'forced stable-text', 'dropped after'], models.map((model) => {
+    const mine = events.filter((e) => e.payload?.model === model);
+    const inStages = stages.map((st, i) => ({ st, i })).filter(({ st }) => mine.some((e) => e.correlation?.stageId === st.stageId));
+    const finals = inStages.map(({ st, i }) => {
+      const t = mine.filter((e) => e.correlation?.stageId === st.stageId && e.eventType === 'MODEL_TERMINAL_COMMITTED' && e.payload?.evidence?.finalStatus);
+      const last = t[t.length - 1];
+      return `${i + 1}:${last ? `${last.payload.evidence.finalStatus}/${last.payload.evidence.completionReason || '—'}` : 'none'}`;
+    });
+    const failures = mine.filter((e) => e.eventType === 'STAGE_FAILED');
+    const lastStageWith = inStages.length ? inStages[inStages.length - 1].i + 1 : null;
+    const dropped = lastStageWith && lastStageWith < stages.length ? `stage ${lastStageWith}` : '—';
+    return [model, inStages.map(({ i }) => i + 1).join(','), finals.join(' '), mine.filter((e) => e.eventType === 'MANUAL_RECOVERY_REQUESTED' && e.payload?.details === 'UI button').length || '—', failures.length ? failures.map((e) => e.reasonCode).join(',') : '—', mine.filter((e) => e.eventType === 'STABLE_TEXT_FALLBACK_USED').length || '—', dropped];
+  })));
+
+  // Notable events of every model that had a failure or needed a manual recovery (noise removed,
+  // repeats within 5 s collapsed), so the cause of a provider problem is visible without the raw file.
+  const NOISE = new Set(['SELECTOR_STATS', 'ANSWER_CARD_RENDER_EVALUATED', 'TEXT_STABLE', 'BARRIER_WAITING', 'UI_PROJECTION_FAILED', 'LEGACY_TIMELINE_EVENT']);
+  models.filter((model) => events.some((e) => e.payload?.model === model && ['STAGE_FAILED', 'MANUAL_RECOVERY_REQUESTED'].includes(e.eventType))).forEach((model) => {
+    const lines = [];
+    let lastKey = '';
+    let lastAt = -1e9;
+    events.filter((e) => e.payload?.model === model && !NOISE.has(e.eventType)).forEach((e) => {
+      const label = e.payload?.originalLabel || e.eventType;
+      const key = `${label}|${String(e.payload?.details || '').slice(0, 40)}`;
+      if (key === lastKey && e.sourceTimestamp - lastAt < 5000) { lastAt = e.sourceTimestamp; return; }
+      lastKey = key; lastAt = e.sourceTimestamp;
+      lines.push(`${rel(e.sourceTimestamp).padStart(8)} ${short(e.correlation?.stageId)} ${label.slice(0, 44)} ${String(e.payload?.details || '').slice(0, 90)}`);
+    });
+    out.push(`\n### Notable events: ${model} (${lines.length} lines, first 60)\n${lines.slice(0, 60).map((l) => `    ${l}`).join('\n')}`);
+  });
+
   out.push('\n### Per stage and participant (offset from the stage start)');
   const rows = [];
   stages.forEach((s, i) => {

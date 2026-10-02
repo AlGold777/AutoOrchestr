@@ -69,19 +69,38 @@
   // second GET_ANSWER while the first request is still preparing the same
   // composer. Keep one transaction per tab and suppress that duplicate before
   // it can clear/insert the prompt again.
+  // Dispatch ids look like "<model>:<run start ms>:<n>". A dispatch of a LATER run start than the
+  // active one belongs to a later stage: the background never sends it while the earlier request of
+  // the same model is unfinished, so the old transaction is a leftover that never settled.
+  const runStartOf = (dispatchId) => {
+    const match = /:(\d{10,}):/.exec(String(dispatchId || ''));
+    return match ? Number(match[1]) : null;
+  };
   const createDispatchGate = () => {
     let active = null;
     const begin = ({ dispatchId = null, prompt = '' } = {}) => {
       const fingerprint = promptFingerprint(prompt);
+      let supersededDispatchId = null;
       if (active) {
         const sameDispatch = Boolean(dispatchId && active.dispatchId && dispatchId === active.dispatchId);
         const samePrompt = Boolean(fingerprint && fingerprint === active.promptFingerprint);
-        return {
-          accepted: false,
-          duplicate: sameDispatch || samePrompt,
-          activeDispatchId: active.dispatchId,
-          activeStartedAt: active.startedAt
-        };
+        const nextRun = runStartOf(dispatchId);
+        const activeRun = runStartOf(active.dispatchId);
+        // Field report: stage 1's transaction never settled (the page navigated, the wait hung), so
+        // stage 2's request was refused as "different request while provider transaction active" and
+        // the model dropped out of the run. A newer stage replaces the stale transaction; a parallel
+        // duplicate inside the same run is still refused.
+        if (!sameDispatch && !samePrompt && nextRun != null && activeRun != null && nextRun > activeRun) {
+          supersededDispatchId = active.dispatchId;
+          active = null;
+        } else {
+          return {
+            accepted: false,
+            duplicate: sameDispatch || samePrompt,
+            activeDispatchId: active.dispatchId,
+            activeStartedAt: active.startedAt
+          };
+        }
       }
       const token = Object.freeze({
         dispatchId: dispatchId || null,
@@ -89,7 +108,7 @@
         startedAt: Date.now()
       });
       active = token;
-      return { accepted: true, duplicate: false, token };
+      return { accepted: true, duplicate: false, token, ...(supersededDispatchId ? { supersededDispatchId } : {}) };
     };
     const finish = (token) => {
       if (!token || active !== token) return false;

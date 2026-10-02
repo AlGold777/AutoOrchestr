@@ -125,6 +125,26 @@ describe('Perplexity composer transaction', () => {
     }));
   });
 
+  test('a dispatch of a later stage replaces a transaction that never settled (field report: stage 2 refused as busy)', () => {
+    const gate = window.PerplexityComposerTransaction.createDispatchGate();
+    const stage1 = gate.begin({ dispatchId: 'Perplexity:1790940815904:1', prompt: 'Stage one prompt' });
+    // Same run start, different prompt: still a parallel request inside one run — refused.
+    expect(gate.begin({ dispatchId: 'Perplexity:1790940815904:2', prompt: 'Another prompt of the same run' })).toEqual(expect.objectContaining({ accepted: false, duplicate: false }));
+    // A later run start (the next stage): the stale transaction is replaced.
+    const stage2 = gate.begin({ dispatchId: 'Perplexity:1790940858496:1', prompt: 'Stage two prompt' });
+    expect(stage2).toEqual(expect.objectContaining({ accepted: true, supersededDispatchId: 'Perplexity:1790940815904:1' }));
+    // The old request settling late can neither close nor disturb the new transaction.
+    expect(gate.finish(stage1.token)).toBe(false);
+    expect(gate.snapshot().dispatchId).toBe('Perplexity:1790940858496:1');
+    expect(gate.finish(stage2.token)).toBe(true);
+  });
+
+  test('an older dispatch never replaces a newer transaction', () => {
+    const gate = window.PerplexityComposerTransaction.createDispatchGate();
+    gate.begin({ dispatchId: 'Perplexity:1790940858496:1', prompt: 'Newer' });
+    expect(gate.begin({ dispatchId: 'Perplexity:1790940815904:1', prompt: 'Older and different' })).toEqual(expect.objectContaining({ accepted: false }));
+  });
+
   test('rejects a page-sized promotion ancestor even when it contains upgrade text and an icon button', () => {
     const page = document.createElement('main');
     page.textContent = 'Upgrade your plan. Search and navigation content. '.repeat(80);
