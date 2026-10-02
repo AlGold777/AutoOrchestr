@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-02 — Run button no longer shows pause/resume/approve without a real run, version 2.81.539
+
+- Field report: right after opening the pipeline page (no models chosen) the Run button was already in the pause state and stayed so. The state of the run aggregate (`pause`, `awaiting_approval`, an approval waiter) was read as a live run although nothing had run on this page — a phantom state. In the page test harness the same phantom appeared as "approve" after other tests had left the aggregate in `awaiting_approval`.
+- `getDebateRunControls` now derives the controls from an idle aggregate whenever no run exists on the page (none started here and no engine): Run stays "Run debate", the click starts a run. The first phantom state is logged (`console.warn`, journal event `ui_phantom_state` with the status and run id) so its source can be found; the guard does not hide real runs (a started run or an engine, including an engine paused by itself, is shown as before).
+- Not found yet: which code path puts the aggregate into that state at load. Suspects: an answer restored from the background's global state at load opening an approval request. `ui_phantom_state` in the report names the status.
+- Tests: `pipeline-semi-auto`; the "fresh page" Run test in `results-debate-favorites` now passes in the full file.
+
 ### 2026-10-02 — Run button works on the first click; New pages is switched off when the run starts, version 2.81.538
 
 - **First click on Run was lost.** When the feed overflows, the moderator input shrinks to one line as soon as it loses the focus (`#modTa:not(:focus)`, compact input). Pressing Run takes the focus out of the input, the input shrinks, the buttons below it move up from under the pointer and the click never happens; the second click worked because the input was already compact. Pressing a button in the composer header now keeps the focus in the input (`mousedown` default prevented for buttons; the click is unaffected).

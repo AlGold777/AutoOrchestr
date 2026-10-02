@@ -5220,15 +5220,29 @@ document.addEventListener('click', (event) => {
             }
         };
         let debateApplication = null;
+        let phantomRunStateReported = false;
         const getDebateRunControls = () => {
-            const aggregate = debateAggregateStore?.getState?.() || null;
+            let aggregate = debateAggregateStore?.getState?.() || null;
+            // No run exists on this page (none started here, no engine): whatever state the aggregate
+            // shows is a phantom (it never ran in this session) and must not turn Run into
+            // pause / resume / approve. Seen as "Run is on pause right after opening the page".
+            const hasLiveRun = pipelineRunActive || Boolean(debateApplication?.getOrchestrator?.());
+            const phantom = !hasLiveRun && aggregate && String(aggregate.status || 'idle') !== 'idle';
+            if (phantom) {
+                if (!phantomRunStateReported) {
+                    phantomRunStateReported = true;
+                    console.warn('[RESULTS] Phantom run state ignored by the Run button', { status: aggregate.status, runId: aggregate.runId || null });
+                    globalThis.MessageDelivery?.batchEvent?.('ui_phantom_state', { status: aggregate.status || null, runId: aggregate.runId || null });
+                }
+                aggregate = null;
+            }
             const status = String(aggregate?.status || 'idle');
             const lifecycle = String(debateApplication?.getOrchestrator?.()?.getState?.()?.lifecycle || '');
             const startPending = ['STARTING', 'RECONCILING', 'FINALIZING'].includes(lifecycle)
                 || (pipelineRunActive && !['running', 'awaiting_approval', 'paused', 'technical_pause', 'finalization_pending'].includes(status));
             return window.DebateController?.deriveRunControls?.({
                 aggregate,
-                approvalWaiting: debateExecutionContext?.hasApprovalWaiter?.() === true,
+                approvalWaiting: hasLiveRun && debateExecutionContext?.hasApprovalWaiter?.() === true,
                 startPending,
                 autoMode: isDebateAutoPolicy()
             }) || {
