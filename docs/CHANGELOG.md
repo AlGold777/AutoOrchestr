@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-02 — The top bar of the pipeline panel matches the main page again, version 2.81.562
+
+- **Cause.** Version 2.81.545 widened `.main-inner` on the pipeline page, and the top bar lives in it: the bar was 1248px wide at x=96 instead of 948px at x=246, so it jumped when switching pages.
+- **Fix.** `.main-inner` is no longer touched. Only the composer (and the feed in it) is wider: `.pipeline-page .app-main` is an inline-size container and the composer is `min(1280px, 100cqw - 32px)` wide, centered on the page column (open sidebars cannot be overlapped; the overlay of the expanded feed is excluded).
+- **Verified in the browser** (1440px): bar `[246, 12, 948, 77]` on both pages, same left/middle/right blocks; composer 1280px at x=80, no horizontal scroll; at 1100px and with the left sidebar open the composer stays inside the column. The collapsed state is unchanged.
+- Tests: `pipeline-feed-layout`.
+
 ### 2026-10-02 — Perplexity: a stale transaction no longer blocks the next stage; digest per model, version 2.81.560
 
 - Field report (Disput Flow 2.81.555, DeepSeek + Perplexity): I had looked at the longest stage (DeepSeek, 36 min) and treated Perplexity as "a known delivery failure". Its events show a precise mechanism: after the first prompt the page moves to a new thread URL, the content script's context is lost (`CONTEXT_LOST`, "message port closed"), the answer (1648 characters) is found by the inline DOM scan at 19 s but its success waits for a lifecycle that cannot come — accepted only when the person pressed manual recovery (21.7 s). Worse: the dispatch gate of the Perplexity script (`createDispatchGate`) kept stage 1's transaction forever, so stage 2's prompt was refused (`PERPLEXITY_CONCURRENT_DISPATCH_REJECTED: different request while provider transaction active`) — it was never sent, `PIPELINE_ERROR`, `terminal_quarantine`, and Perplexity dropped out of the run; the person pressed manual recovery again.

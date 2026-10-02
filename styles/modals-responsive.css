@@ -2806,15 +2806,19 @@ hr.section-divider {
     padding-bottom: 0;
 }
 
-/* Pipeline page: a wider working column. The composer (and the feed in it) takes the
-   width of .main-inner, so the cap lives there; the viewport-width trick for the feed
-   is gone because it pushed the content out of the composer. */
+/* Pipeline page: a wider composer (and the feed in it). .main-inner and the top bar keep
+   the width of the main page, so the bar does not jump between the two pages; only the
+   composer is wider, centered on that column. The width is bounded by the page column
+   (.app-main is a size container), so open sidebars cannot be overlapped. */
 .pipeline-page {
     --pipeline-main-max-width: 1280px;
 }
-.pipeline-page .main-inner {
-    max-width: var(--pipeline-main-max-width);
+.pipeline-page .app-main {
+    container-type: inline-size;
 }
-.pipeline-page .prompt-container.prompt-sandwich {
-    max-width: var(--pipeline-main-max-width);
+.pipeline-page .prompt-container.prompt-sandwich:not(.is-debate-feed-wide-expanded) {
+    --pipeline-composer-width: min(var(--pipeline-main-max-width), calc(100cqw - 32px));
+    width: var(--pipeline-composer-width);
+    max-width: none;
+    margin-left: calc((100% - var(--pipeline-composer-width)) / 2);
 }

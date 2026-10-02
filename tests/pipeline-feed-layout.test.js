@@ -56,10 +56,12 @@ describe('pipeline feed layout styles', () => {
     expect(css).not.toMatch(/\.pipeline-page \.debate-model-cards\s*\{[^}]*(100vw|50vw)/);
   });
 
-  test('the pipeline working column is wider than the global 980px', () => {
+  test('only the composer is wider on the pipeline page; the top bar column keeps the main page width', () => {
     expect(css).toMatch(/\.pipeline-page \{\s*--pipeline-main-max-width: 1280px;/);
-    expect(css).toMatch(/\.pipeline-page \.main-inner \{\s*max-width: var\(--pipeline-main-max-width\);/);
-    expect(css).toMatch(/\.pipeline-page \.prompt-container\.prompt-sandwich \{\s*max-width: var\(--pipeline-main-max-width\);/);
+    // .main-inner (the column of the top bar) must not be widened here: the bar would differ from the main page.
+    expect(css).not.toMatch(/\.pipeline-page \.main-inner\s*\{/);
+    expect(css).toMatch(/\.pipeline-page \.app-main \{\s*container-type: inline-size;/);
+    expect(css).toMatch(/\.pipeline-page \.prompt-container\.prompt-sandwich:not\(\.is-debate-feed-wide-expanded\) \{[^}]*width: var\(--pipeline-composer-width\);[^}]*margin-left: calc\(\(100% - var\(--pipeline-composer-width\)\) \/ 2\);/);
   });
 
   test('compact moderator input is one line unless focused', () => {
