@@ -1,11 +1,27 @@
 # CHANGELOG — Project
 
-### 2026-10-02 — Answers with provider chrome after the token are no longer rejected as "cut off", version 2.81.530
+### 2026-10-02 — Merge of the pipeline feed layout work, version 2.81.532
+
+- Integrates the parallel layout changes (2.81.530–2.81.531: taller feed, short post-terminal revision label) with the answer-tail fix; no behavior changes beyond that.
+
+### 2026-10-02 — Answers with provider chrome after the token are no longer rejected as "cut off", version 2.81.532
 
 - Field report (8) (Auto, template Test, Le Chat + Perplexity): the run did **not** go to round 7 — there were two stages; the 7 was the number of batches. Le Chat's answers were rejected by `DebateResponseAcceptance` as `incomplete_ending` (the repair prompt says so): Le Chat appends the time after the delivery token (`[[AO-…]] 8:55pm`), the token was stripped and the answer ended in `8:55pm`. Each stage cost Le Chat 3 calls (answer, repair, retry) and still failed; with Perplexity's real delivery failure the stage failed and the new `stage_failed` pause fired correctly.
 - `MessageDelivery.clean` drops a short tail (≤ 40 characters) after the token on its line. The ending heuristic is skipped for a transport-complete answer (`completion: 'complete'` — the token proves the answer ended); other rules (empty, too long, truncation markers, sections) still apply.
 - Every rejected attempt is journaled as `response_rejected` (model, stage, attempt, reason, chars) and grouped in the report as the problem `response_rejected` with the count — the delivery report did not say why an answer was rejected. `docs/report-analysis-prompt.md` asks for these.
 - Tests: `response-tail-acceptance`.
+### 2026-10-02 — Short post-terminal revision label in the card header, version 2.81.531
+
+- The «Ответ обновлён после завершения · SOURCE · Δ N» line overflowed the card header. Now the header shows `Updated · <source> · Δ N`: the source is humanized (`GLOBAL_STATE_ANSWER_RECOVERY` → `Recovery`) and cut to 20 characters plus `...`; the summary is one line with an ellipsis. The full original wording is the tooltip and the first line of the expanded revision body.
+- Tests: `results-debate-favorites` (revision label), `pipeline-feed-layout` (shortening, CSS).
+
+### 2026-10-02 — Pipeline panel: a taller feed (no session tabs, compact input, collapsing top bar), version 2.81.530
+
+- **Session tabs removed** from the panel. `.debate-session-bar` now holds only `.debate-session-actions` (pause, copy, export, clear — each acts on the current session). The tab/add/delete nodes stay in the DOM, hidden, as the session state holder: `results.js` reads the active session id from `.debate-session-tab.active`. Session switching will live in the left sidebar.
+- **Step 1 — input.** When the feed content is taller than its box, the moderator input drops to one line (it still grows while focused). Hysteresis: the one-line state is kept until the content fits the default box with a margin.
+- **Step 2 — top bar.** If it still overflows and the feed is scrolled down, `top-control-bar` collapses: `.logo-badge` and model labels hide, icons tighten, `.debate-session-actions` moves into the right button group; the feed box grows by the measured height (`--pipeline-top-gain`). Back at the top of the feed the bar and the actions return. Controller: `debateFeedLayout` in `results.js`; it only toggles classes and a CSS variable (no scrolling, focusing or page visits), so it adds no liveness/progress signal.
+- **Live signal in the card header.** The `[Model] printing` line no longer sits under the answer text: it is a short `printing` chip in `.debate-model-card-header` (one line, ellipsis; full text in the tooltip).
+- Tests: `pipeline-feed-layout` (markup, styles, controller with mocked layout).
 
 ### 2026-10-01 — Automation: stops between stages, failed-stage stop, control markers, owner questions, version 2.81.529
 

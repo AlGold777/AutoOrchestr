@@ -5,7 +5,7 @@
     <!-- LLM Discus: hidden search marker for developers -->
     <meta name="keywords" content="LLM Discus">
     <title>LLM Comparison</title>
-    <link rel="stylesheet" href="styles.css?v=2.81.530">
+    <link rel="stylesheet" href="styles.css?v=2.81.532">
 </head>
 <body class="pipeline-page">
     <div class="app-shell">
@@ -167,7 +167,9 @@
         <button class="stb" data-fav="1" title="Add selected fragment to favorites" aria-label="Add selected fragment to favorites" aria-pressed="false"><span class="stb-label">Favorite</span></button>
     </div>
     <div class="debate-session-bar" id="debate-session-bar">
-        <div class="debate-session-left">
+        <!-- Session tabs are no longer shown (sessions move to the left sidebar). The
+             nodes stay hidden because results.js reads the active session id from them. -->
+        <div class="debate-session-left" hidden>
             <div class="debate-session-tabs" id="debate-session-tabs" role="tablist" aria-label="Debate sessions">
                 <button type="button" class="debate-session-tab active" data-session-id="1" title="Session 1">1</button>
             </div>

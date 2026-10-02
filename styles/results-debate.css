@@ -1645,6 +1645,18 @@ body.llm-stream-preview-open .llm-results .llm-panel.llm-panel-session-restored:
     font-size: 12px;
     font-weight: 600;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+}
+
+.post-terminal-answer-revision-body::before {
+    content: attr(data-full-label);
+    display: block;
+    padding: 8px 0 6px;
+    font-size: 12px;
+    font-weight: 600;
+    overflow-wrap: anywhere;
 }
 
 .debate-model-card-header > .post-terminal-answer-revision {

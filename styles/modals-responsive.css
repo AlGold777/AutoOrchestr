@@ -994,7 +994,7 @@ body.pro-features-hidden .comparison-section {
 .debate-session-bar {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-end;
     gap: 8px;
     padding: 1px 18px 4px;
 
@@ -2747,4 +2747,55 @@ hr.section-divider {
     text-transform: uppercase;
     letter-spacing: 0.04em;
     font-size: 11px;
+}
+
+/* Pipeline feed layout. Session tabs are hidden (state holder only); the bar keeps
+   the session actions. */
+.debate-session-left[hidden] {
+    display: none;
+}
+/* Short live signal in the card header row: one line, never wraps over the answer. */
+.debate-model-card-header .debate-model-card-printing {
+    margin: 0;
+    max-width: 72px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: 12px !important;
+    line-height: 1;
+}
+/* Step 1: the feed overflows -> the moderator input shrinks to one line
+   (it still grows while the user is typing in it). */
+.pipeline-page .prompt-container.prompt-sandwich.debate-composer.is-feed-input-compact .moderator-input textarea#modTa:not(:focus) {
+    height: 20px !important;
+    overflow-y: hidden;
+}
+/* Step 2: the feed overflows and is scrolled down -> compact top bar. The feed box
+   grows by the height the bar gave up (--pipeline-top-gain, measured in JS). */
+.pipeline-page.pipeline-top-collapsed .top-control-bar {
+    padding-top: 4px;
+    padding-bottom: 4px;
+}
+.pipeline-page.pipeline-top-collapsed .top-control-bar .logo-badge,
+.pipeline-page.pipeline-top-collapsed .top-control-bar .llm-button-label {
+    display: none;
+}
+.pipeline-page.pipeline-top-collapsed .top-control-bar .models-row-header .llm-buttons {
+    gap: 2px;
+    margin-top: 0;
+}
+.pipeline-page.pipeline-top-collapsed .top-control-bar .models-row-header .llm-button {
+    min-width: 0;
+}
+.pipeline-page.pipeline-top-collapsed .top-control-bar .top-bar-right {
+    gap: 8px;
+}
+.pipeline-page.pipeline-top-collapsed .debate-session-bar {
+    display: none;
+}
+.pipeline-page.pipeline-top-collapsed .top-bar-right .debate-session-actions {
+    margin-right: 4px;
+}
+.pipeline-page.pipeline-top-collapsed .prompt-container.prompt-sandwich.debate-composer.has-debate-feed {
+    height: calc(100dvh - 120px + var(--pipeline-top-gain, 0px));
 }
