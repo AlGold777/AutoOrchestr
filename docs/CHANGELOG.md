@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-02 — "None" in the mini prompt list of a round's model block, version 2.81.533
+
+- The list of preset mini prompts in a model block of a round has a first item **None**: nothing is attached to that block's round. The choice is stored with the pipeline (a prompt id, or no role for None), restored when the pipeline is applied and kept when the blocks are rebuilt (changing the selected models no longer resets a block's choice — an empty choice used to be lost).
+- **Universal** and **Test** start with None in every round (flag `noMiniPrompts` in `BUILTIN_PIPELINE_DEFINITIONS`); Research and Red Team keep their prompts, and a new block keeps the former default (the first prompt). The Architecture template always starts with None because each stage carries its own brief. Built-in pipelines are canonical (re-created on load); to keep changed choices, save the pipeline under its own name.
+- Tests: `pipeline-none-mini-prompt`.
+
 ### 2026-10-02 — Merge of the pipeline feed layout work, version 2.81.532
 
 - Integrates the parallel layout changes (2.81.530–2.81.531: taller feed, short post-terminal revision label) with the answer-tail fix; no behavior changes beyond that.

@@ -36,8 +36,8 @@
   ]);
 
   const BUILTIN_PIPELINE_DEFINITIONS = Object.freeze([
-    Object.freeze({ name: 'Universal', presetId: 'UNIVERSAL_STANDARD', profileId: 'UNIVERSAL_STANDARD', runPolicy: 'auto', length: '700', defaultModelCount: 2, roles: ['participant', 'critic', 'verifier', 'synthesizer'] }),
-    Object.freeze({ name: 'Test', presetId: 'TEST', profileId: 'UNIVERSAL_STANDARD', runPolicy: 'auto', length: '700', roundLimit: '2', defaultModelCount: 2, roles: ['participant', 'critic'] }),
+    Object.freeze({ name: 'Universal', presetId: 'UNIVERSAL_STANDARD', profileId: 'UNIVERSAL_STANDARD', runPolicy: 'auto', noMiniPrompts: true, length: '700', defaultModelCount: 2, roles: ['participant', 'critic', 'verifier', 'synthesizer'] }),
+    Object.freeze({ name: 'Test', presetId: 'TEST', profileId: 'UNIVERSAL_STANDARD', runPolicy: 'auto', noMiniPrompts: true, length: '700', roundLimit: '2', defaultModelCount: 2, roles: ['participant', 'critic'] }),
     Object.freeze({ name: 'Research', presetId: 'UNIVERSAL_RESEARCH', profileId: 'DEEP_RESEARCH_ALPHA', runPolicy: 'auto', length: '1000', defaultModelCount: 2, roles: ['researcher', 'critic', 'verifier', 'synthesizer'] }),
     Object.freeze({ name: 'Red Team', presetId: 'UNIVERSAL_RED_TEAM', profileId: 'UNIVERSAL_RED_TEAM', runPolicy: 'auto', length: '900', defaultModelCount: 3, roles: ['proposer', 'critic', 'verifier', 'synthesizer'] }),
     // Разработка архитектуры: stage by stage with the moderator (semi-automatic by default).

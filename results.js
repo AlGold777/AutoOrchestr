@@ -4185,14 +4185,16 @@ document.addEventListener('click', (event) => {
             profileId = '',
             profileVersion = '',
             resourceBudget = null,
-            stageTemplate = ''
+            stageTemplate = '',
+            noMiniPrompts = false
         } = {}) => {
             const targetRounds = Math.max(1, Math.min(50, Number(roundLimit) || 1));
             const modelStacks = {
                 'r1-models': buildPresetModelStack(selectedModels, { withRoles: false })
             };
             for (let round = 2; round <= targetRounds; round++) {
-                modelStacks[`r${round}-models`] = buildPresetModelStack(selectedModels, { withRoles: !stageTemplate, roles });
+                // Universal and Test attach no mini prompt by default (None); other presets keep theirs.
+                modelStacks[`r${round}-models`] = buildPresetModelStack(selectedModels, { withRoles: !stageTemplate && !noMiniPrompts, roles });
             }
             // A stage template decides per stage who works (the rest stay visible, unsent).
             if (stageTemplate) {
@@ -4262,7 +4264,8 @@ document.addEventListener('click', (event) => {
                     profileId: definition.profileId || 'UNIVERSAL_STANDARD',
                     profileVersion: window.DebateProfileSchema?.BUILTIN_PROFILES?.[definition.profileId || 'UNIVERSAL_STANDARD']?.version || '',
                     resourceBudget: definition.resourceBudget || null,
-                    stageTemplate: definition.stageTemplate || ''
+                    stageTemplate: definition.stageTemplate || '',
+                    noMiniPrompts: definition.noMiniPrompts === true
                 });
                 return [definition.name, definition.disabled ? { ...config, disabled: true } : config];
             })
@@ -4460,6 +4463,9 @@ document.addEventListener('click', (event) => {
                     const resolvedPromptId = resolveJudgePromptId(item.role, index);
                     const hasOption = Array.from(role.options).some((opt) => opt.value === resolvedPromptId);
                     if (hasOption) role.value = resolvedPromptId;
+                } else if (role && item.role === null) {
+                    // A saved None: no mini prompt for this block.
+                    role.value = '';
                 }
             });
         };
@@ -5395,6 +5401,9 @@ document.addEventListener('click', (event) => {
                     if (!name || !send || send.disabled) return;
                     const on = wanted.has(name);
                     if (send.checked !== on) { send.checked = on; changed = true; }
+                    // A template stage carries its own brief: no extra mini prompt on top of it.
+                    const roleSelect = block.querySelector('.role-selector');
+                    if (roleSelect && roleSelect.value !== '') { roleSelect.value = ''; changed = true; }
                 });
             }
             return changed;
@@ -5409,8 +5418,9 @@ document.addEventListener('click', (event) => {
                 const roleByName = new Map();
                 stack.querySelectorAll('.model-block').forEach((block) => {
                     const name = block.querySelector('.model-name')?.textContent?.trim();
-                    const role = block.querySelector('.role-selector')?.value || '';
-                    if (name && role) roleByName.set(name, role);
+                    const roleSelect = block.querySelector('.role-selector');
+                    // An empty value is a real choice (None) and must survive the rebuild.
+                    if (name && roleSelect) roleByName.set(name, roleSelect.value || '');
                 });
                 const emptySlots = Math.max(0, getDebateModelSlotCount() - selectedIndices.length);
                 const nextHtml = buildModelBlocksHtml(selectedIndices, roundIndex > 1)
@@ -5422,8 +5432,8 @@ document.addEventListener('click', (event) => {
                 stack.querySelectorAll('.model-block').forEach((block) => {
                     const name = block.querySelector('.model-name')?.textContent?.trim();
                     const role = block.querySelector('.role-selector');
-                    const previousRole = name ? roleByName.get(name) : '';
-                    if (role && previousRole && Array.from(role.options).some((opt) => opt.value === previousRole)) {
+                    const previousRole = name ? roleByName.get(name) : undefined;
+                    if (role && previousRole !== undefined && Array.from(role.options).some((opt) => opt.value === previousRole)) {
                         role.value = previousRole;
                     }
                 });

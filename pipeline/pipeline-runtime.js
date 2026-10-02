@@ -46,9 +46,12 @@
         }) || prompts.find((prompt) => String(prompt.label || '').toLowerCase().includes('meta'));
         const primaryPrompt = index > 0 ? (metaPrompt || prompts[0]) : prompts[0];
         const ordered = [primaryPrompt, ...prompts.filter((prompt) => prompt !== primaryPrompt)];
-        return ordered
-            .map((prompt) => `<option value="${escapeHtml(prompt.id)}">${escapeHtml(prompt.label || prompt.id)}</option>`)
+        // "None" is first: no mini prompt is attached to the block's round. A new block keeps the
+        // former default (the first prompt); Universal and Test start with None (their saved stacks).
+        const options = ordered
+            .map((prompt, position) => `<option value="${escapeHtml(prompt.id)}"${position === 0 ? ' selected' : ''}>${escapeHtml(prompt.label || prompt.id)}</option>`)
             .join('');
+        return `<option value="">None</option>${options}`;
     };
 
     const buildModelBlocksHtml = ({
@@ -109,7 +112,8 @@
                 name: block.querySelector('.model-name')?.textContent?.trim() || '',
                 input: !!inputCb?.checked,
                 send: !!sendCb?.checked,
-                role: role ? role.value : null
+                // None (empty value) is stored as no role.
+                role: role ? (role.value || null) : null
             };
         }).filter((item) => item.name);
         return { items };
