@@ -971,7 +971,27 @@
       releaseLease('paused');
     }
 
+    // The run loop is active while it works through planner steps; a run that is RUNNING with no
+    // loop, no active stage and no question for a human is idle (all planned work is done and it
+    // waits for finalization): the UI shows Run again and a new run may replace it.
+    let loopDepth = 0;
     async function runLoop(maxSteps = 50) {
+      loopDepth += 1;
+      try {
+        return await runLoopInner(maxSteps);
+      } finally {
+        loopDepth -= 1;
+        // Tell the UI (it refreshes on events) that the run went idle: the Run button comes back.
+        if (loopDepth === 0 && isIdle()) emit('RUN_IDLE', {});
+      }
+    }
+    function isIdle() {
+      return state.lifecycle === LIFECYCLE.RUNNING && loopDepth === 0
+        && !state.pendingHumanDecision
+        && !state.stages.some((stage) => ['pending', 'running', 'awaiting_participant'].includes(stage.status));
+    }
+
+    async function runLoopInner(maxSteps = 50) {
       let steps = 0;
       while (state.lifecycle === LIFECYCLE.RUNNING && steps < maxSteps) {
         steps += 1;
@@ -1146,7 +1166,7 @@
     const api = Object.freeze({
       LIFECYCLE,
       getState: () => ({
-        runId: state.runId, lifecycle: state.lifecycle, caseVersion: state.caseVersion,
+        runId: state.runId, lifecycle: state.lifecycle, idle: isIdle(), caseVersion: state.caseVersion,
         activePlanRevisionId: revisions.getActive?.()?.revisionId || null,
         stages: clone(state.stages), openGoals: clone(state.openGoals),
         events: state.events.slice(), finalization: clone(state.finalization),

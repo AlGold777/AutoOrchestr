@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-02 — The Run button follows the rounds of an auto flow, and the flow can end, version 2.81.544
+
+- Checked the button along a whole flow on the real engine (`pause-resume`): Run → **pause** during every round and between rounds (pressing it works also between rounds) → **Run** (resume) while paused, also when pressed before the paused round has ended → after the last round **Run** again.
+- Found and fixed: in semi-automatic runs (Auto off) after the last round the engine stayed `RUNNING` doing nothing while the button showed "continue" and then "next"; a new run was refused ("Pipeline уже выполняется"). The engine now reports `idle` (RUNNING, no loop, no active stage, no question for a human) and emits `RUN_IDLE` so the page refreshes: an idle engine is not a live run for the button — it shows Run, and a new run closes the idle one (`requestCancel`, reason `new_run`) and starts. Auto already ended as `completed` (finalization after the required goals).
+- Pause between rounds (no round open) says so instead of "models have shown nothing".
+- Tests: `pause-resume` (button states along an auto flow; idle engine in a semi-automatic flow; page wiring).
+
 ### 2026-10-02 — Pause takes the answers shown in the feed, version 2.81.543
 
 - Field report: pressing Pause while the feed already showed answers said "Модели ещё ничего не показали: пауза после раунда". Pause (and "next") looked only at the round's wait, which gets text that is still arriving only through partial messages that carry the transport request id; the text in the feed never reached it.

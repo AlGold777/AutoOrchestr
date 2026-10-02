@@ -5258,7 +5258,11 @@ document.addEventListener('click', (event) => {
             // No run exists on this page (none started here, no engine): whatever state the aggregate
             // shows is a phantom (it never ran in this session) and must not turn Run into
             // pause / resume / approve. Seen as "Run is on pause right after opening the page".
-            const hasLiveRun = pipelineRunActive || Boolean(debateApplication?.getOrchestrator?.());
+            // An engine that is RUNNING but has nothing left to do (all rounds done, waiting for
+            // finalization) is not a live run for the button: it shows Run (a new run replaces it).
+            const engineState = debateApplication?.getOrchestrator?.()?.getState?.() || null;
+            const engineIdle = Boolean(engineState?.idle) && !pipelineRunActive;
+            const hasLiveRun = pipelineRunActive || (Boolean(engineState) && !engineIdle);
             const phantom = !hasLiveRun && aggregate && String(aggregate.status || 'idle') !== 'idle';
             if (phantom) {
                 if (!phantomRunStateReported) {
@@ -6116,6 +6120,11 @@ document.addEventListener('click', (event) => {
                 return false;
             }
             window.__activePipelinePresetConfig = presetConfig;
+            const previousEngine = debateApplication?.getOrchestrator?.() || null;
+            if (!pipelineRunActive && previousEngine?.getState?.()?.idle) {
+                // The previous run finished all its rounds and only waits for finalization: close it, a new run starts.
+                await previousEngine.requestCancel({ reason: 'new_run' });
+            }
             const activeLifecycle = debateApplication?.getOrchestrator?.()?.getState?.()?.lifecycle;
             if (pipelineRunActive || ['STARTING', 'RUNNING', 'PAUSE_REQUESTED', 'QUIESCING', 'PAUSED', 'RECONCILING', 'FINALIZING'].includes(activeLifecycle)) {
                 showNotification('Pipeline уже выполняется. Остановите текущий запуск перед новым.', 'warn');
@@ -7697,7 +7706,9 @@ document.addEventListener('click', (event) => {
                     showNotification(`Раунд закрыт с имеющимися ответами (${[...preview.answeredModels, ...preview.partialModels].join(', ')}).${closed.skipped.length ? ` Без ответа: ${closed.skipped.join(', ')}.` : ''} Нажмите «Пуск» для следующего раунда.`, 'info');
                 } else {
                     globalThis.MessageDelivery?.batchEvent?.('moderator_pause', { answered: [], adopted: [], skipped: [], stillWaiting: pipelineWaiter.openModels().length });
-                    showNotification('Модели ещё ничего не показали: пауза после раунда. Get it подтянет готовые ответы.', 'info');
+                    showNotification(pipelineWaiter.openModels().length
+                        ? 'Модели ещё ничего не показали: пауза после раунда. Get it подтянет готовые ответы.'
+                        : 'Между раундами: запуск встанет на паузу, следующий раунд не начнётся. Нажмите «Пуск», чтобы продолжить.', 'info');
                 }
                 setDebatePausedState(true, 'pause_button');
                 return;
