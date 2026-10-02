@@ -1,11 +1,20 @@
 # CHANGELOG — Project
 
-### 2026-10-02 — An auto stage no longer hangs on a model whose text has stopped, version 2.81.556
+### 2026-10-02 — Merge of the feed card work, version 2.81.558
+
+- Integrates the parallel feed changes (an adopted still-printing answer keeps growing in its own card) with the stall rule; no behavior changes beyond that.
+
+### 2026-10-02 — An auto stage no longer hangs on a model whose text has stopped, version 2.81.558
 
 - Field report (Disput Flow export, 2.81.555, DeepSeek + Perplexity, 4 stages): stage 3 took **36 minutes** with DeepSeek alone. The background's own "stable text" completion (`FORCED_STABLE_TEXT_COMPLETION`, 2696 characters, `busy=true` — the stuck-indicator glitch) fired at minute 19, yet the stage waited another 17 minutes (hard stop, `PARTIAL`, forced success) and a person pressed manual recovery eight times.
 - The stage wait now closes itself in **Auto** flows: when every model that has not answered shows text that has **not changed for 3 minutes** (`pipelineWaiter.adoptStalled`, checked every 15 s), the wait is closed with that text (incomplete, unproven — like the moderator's Pause). A model with no text yet (still thinking) is never cut, a model whose text still grows keeps its clock, and in the semi-automatic mode the human decides. Journal `stall_adopted`; batch outcome `stalled_with_text`; a notification names the models.
 - Not changed: why DeepSeek's completion is not recognised while its spinner is stuck (the background rules); Perplexity's `PIPELINE_ERROR` / `CONTEXT_LOST` in stage 2; `UI_PROJECTION_FAILED panel not found` (the pipeline page has no per-model panels — harmless).
 - Tests: `pipeline-semi-auto` (waiter stall rule).
+### 2026-10-02 — An adopted, still-printing answer keeps growing in its own card, version 2.81.555
+
+- **Cause.** Next/Pause adopt the text shown in the feed: the card becomes `approved` while the model is still printing (`turnClosed=false`). The live path skips approved cards, the post-completion path needed a closed card — so every further chunk of the same answer opened a new card.
+- **Fix** (`appendPostTerminalAnswerRevision`): an approved or starred card counts as settled like a closed one. A newer text of the same request replaces the provisional text of an adopted, still-printing card in place (streaming markdown is not a strict prefix); the final closes it (printing chip off, `turnClosed=true`). A closed card keeps the earlier rules (same/shorter → ignored, continuation → grows, changed text → Δ badge).
+- Tests: `results-debate-favorites` («adopted while still printing»; fails on 2.81.554 with two cards).
 
 \n### 2026-10-02 — A repeat of a model answer no longer makes a new card or a Δ badge, version 2.81.553
 

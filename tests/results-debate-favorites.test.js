@@ -1266,6 +1266,37 @@ describe('Pipeline debate favorites view', () => {
     panel.remove();
   });
 
+  test('an answer adopted while still printing keeps growing in its card (no new card)', () => {
+    const debug = window.__pipelineLifecycleDebug;
+    window.MessageDelivery = require('../shared/message-delivery.js');
+    document.getElementById('panel-gpt')?.remove();
+    const panel = document.createElement('section');
+    panel.id = 'panel-gpt';
+    panel.className = 'llm-panel';
+    panel.innerHTML = '<div class="output"></div>';
+    document.body.appendChild(panel);
+    const cards = () => document.querySelectorAll('.debate-model-card[data-llm-name="GPT"]');
+    debug.updateLLMPanelOutput('GPT', 'First part of a long **answer', '', { status: 'GENERATING', requestId: 'adopted-1' });
+    expect(cards()).toHaveLength(1);
+    const card = cards()[0];
+    expect(card.dataset.turnClosed).toBe('false');
+    card.dataset.approved = 'true'; // Next/Pause adopted the shown text
+
+    debug.updateLLMPanelOutput('GPT', 'First part of a long **answer** that keeps', '', { status: 'GENERATING', requestId: 'adopted-1' });
+    expect(cards()).toHaveLength(1);
+    expect(card.querySelector('.debate-model-card-output').textContent).toContain('that keeps');
+    expect(card.querySelector('.post-terminal-badge')).toBeNull();
+
+    debug.updateLLMPanelOutput('GPT', 'First part of a long **answer** that keeps growing to the end.', '', { status: 'SUCCESS', requestId: 'adopted-1' });
+    expect(cards()).toHaveLength(1);
+    expect(card.querySelector('.debate-model-card-output').textContent).toContain('to the end.');
+    expect(card.dataset.turnClosed).toBe('true');
+    expect(card.querySelector('.debate-model-card-printing')).toBeNull();
+    expect(card.querySelector('.post-terminal-badge')).toBeNull();
+    delete window.MessageDelivery;
+    panel.remove();
+  });
+
   test('Pause/next take the answer shown in the feed into the round wait, so the round can be closed with it', async () => {
     const debug = window.__pipelineLifecycleDebug;
     document.getElementById('panel-gpt')?.remove();
