@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-02 — Pause takes the answers shown in the feed, version 2.81.543
+
+- Field report: pressing Pause while the feed already showed answers said "Модели ещё ничего не показали: пауза после раунда". Pause (and "next") looked only at the round's wait, which gets text that is still arriving only through partial messages that carry the transport request id; the text in the feed never reached it.
+- Before closing the round, Pause and "next" now take the text of each silent model's **live feed card** (same session, not closed, not approved — the card the feed itself updates in place; closed cards of earlier rounds are never used) into the wait (`harvestFeedAnswersForOpenRound`, `pipelineWaiter.supplyPartial`). Such text is adopted as incomplete and unproven, like other partial text; a real final that arrives first still wins. The journal event `moderator_pause` lists `fromFeed`.
+- Tests: `results-debate-favorites` (real page harness: a feed answer reaches the wait, the round closes with it, a closed card is not taken), `pause-resume`.
+
 ### 2026-10-02 — Pause closes the round; Run after it starts the next round, version 2.81.542
 
 - **The manual hand-over to the next round did not work.** Agreed mechanism: while a round is active the Run button is "pause"; the moderator who finds the answers in the feed good enough presses it, the round stops, the button is "Run" again and pressing it starts the next round. Two defects: (1) Pause only asked the engine to pause *after* the running stage and did not stop the round's wait, so the round went on waiting for every model; (2) in the engine a pause requested while a stage ran left the run `QUIESCING` forever (`quiescePromise` was never assigned): after the round ended nothing completed the pause, the button showed Run, and "Continue" answered `NOT_PAUSED` — nothing started.

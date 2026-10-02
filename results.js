@@ -3201,6 +3201,15 @@ document.addEventListener('click', (event) => {
                 .filter((batch) => !batch.settled)
                 .flatMap((batch) => batch.models)));
         },
+        // Hand the wait text that is shown in the feed but never reached it (a partial message without
+        // the transport request id). Only a model without any answer yet takes it.
+        supplyPartial(llmName, text) {
+            const batch = Array.from(this.batches.values()).find((item) => !item.settled && item.models.includes(llmName));
+            const value = String(text || '');
+            if (!batch || !value.trim() || hasOwnKey(batch.responses, llmName) || String(batch.partialResponses[llmName] || '').trim()) return false;
+            batch.partialResponses[llmName] = value;
+            return true;
+        },
         // What closeAnsweredBatches would do now, without settling anything.
         previewClose() {
             const open = Array.from(this.batches.values()).filter((batch) => !batch.settled);
@@ -5166,6 +5175,29 @@ document.addEventListener('click', (event) => {
             if (debatePaused) void debateApplication?.pause?.(reason);
             else void debateApplication?.resume?.();
         };
+        // "The answers I see in the feed": for every model of the open round that the wait holds nothing
+        // for, take the text of its LIVE feed card (the one of the current request: not closed, not
+        // approved, same session — the card the feed itself updates in place; earlier rounds' cards are
+        // closed) into the wait, so closing the round keeps it.
+        const harvestFeedAnswersForOpenRound = () => {
+            const taken = [];
+            const sessionId = debateTabsState?.activeSessionId;
+            pipelineWaiter.openModels().forEach((model) => {
+                const cards = Array.from(debateModelCards?.querySelectorAll?.('.debate-model-card') || []).filter((card) => (
+                    card.dataset.llmName === model
+                    && (!sessionId || card.dataset.sessionId === sessionId)
+                    && card.dataset.turnClosed !== 'true'
+                    && card.dataset.approved !== 'true'
+                    && !['moderator', 'fragment'].includes(card.dataset.kind || '')
+                    && card.dataset.starred !== 'true'
+                ));
+                const card = cards[cards.length - 1];
+                const output = card?.querySelector('.debate-model-card-output');
+                const text = output ? cleanFeedText(output.innerText || output.textContent || '') : '';
+                if (text && pipelineWaiter.supplyPartial(model, text)) taken.push(model);
+            });
+            return taken;
+        };
         // ---- Engine pauses: a stage ended, a gate, a failed stage, a question for the owner ----
         const ownerAskDialog = document.getElementById('owner-ask-dialog');
         let pendingOwnerAsks = null;
@@ -6366,6 +6398,7 @@ document.addEventListener('click', (event) => {
                 resolvePipelineWaitTimeoutMs,
                 makePipelineBatchId,
                 waitForDebateApproval,
+                harvestFeedAnswersForOpenRound,
                 resolveDebateApproval,
                 rejectDebateApproval,
                 cleanupDebateApprovalWaiter,
@@ -7625,6 +7658,7 @@ document.addEventListener('click', (event) => {
                 }
                 // Semi-automatic: close the running stage with the answers already
                 // collected (Get it pulls the rest); silent models are skipped.
+                harvestFeedAnswersForOpenRound();
                 const preview = pipelineWaiter.previewClose();
                 if (!preview.closable) {
                     window.MessageDelivery?.batchEvent?.('moderator_close_refused', { reason: 'no_answers', waiting: pipelineWaiter.openModels() });
@@ -7652,10 +7686,12 @@ document.addEventListener('click', (event) => {
                 // what the models have shown so far (final answers, and text still on its way is taken
                 // as incomplete), then the run pauses. The button comes back as Run; pressing it
                 // starts the next round. Models with nothing yet are skipped for this round only.
+                const fromFeed = harvestFeedAnswersForOpenRound();
                 const preview = pipelineWaiter.previewClose();
                 if (preview.closable) {
                     const closed = pipelineWaiter.closeAnsweredBatches('moderator_closed');
                     globalThis.MessageDelivery?.batchEvent?.('moderator_pause', {
+                        fromFeed,
                         answered: preview.answeredModels, adopted: preview.partialModels, skipped: closed.skipped, stillWaiting: closed.stillWaiting
                     });
                     showNotification(`Раунд закрыт с имеющимися ответами (${[...preview.answeredModels, ...preview.partialModels].join(', ')}).${closed.skipped.length ? ` Без ответа: ${closed.skipped.join(', ')}.` : ''} Нажмите «Пуск» для следующего раунда.`, 'info');

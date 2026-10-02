@@ -1196,6 +1196,35 @@ describe('Pipeline debate favorites view', () => {
     panel.remove();
   });
 
+  test('Pause/next take the answer shown in the feed into the round wait, so the round can be closed with it', async () => {
+    const debug = window.__pipelineLifecycleDebug;
+    document.getElementById('panel-gpt')?.remove();
+    const panel = document.createElement('section');
+    panel.id = 'panel-gpt';
+    panel.className = 'llm-panel';
+    panel.innerHTML = '<div class="output"></div>';
+    document.body.appendChild(panel);
+    // The wait is open; the model's text reached the feed without reaching the wait.
+    const wait = debug.pipelineWaiter.waitForModels(['GPT', 'Gemini'], { timeoutMs: 600000, requestIds: { GPT: 'treq-feed-gpt', Gemini: 'treq-feed-gem' } });
+    wait.catch(() => {});
+    expect(debug.pipelineWaiter.previewClose().closable).toBe(0);
+    debug.updateLLMPanelOutput('GPT', 'Partial answer shown in the feed, still arriving', '', { status: 'RECEIVING', requestId: 'job-1' });
+    expect(debug.harvestFeedAnswersForOpenRound()).toEqual(['GPT']);
+    expect(debug.pipelineWaiter.previewClose()).toMatchObject({ closable: 1, partialModels: ['GPT'], skipModels: ['Gemini'] });
+    debug.pipelineWaiter.closeAnsweredBatches('moderator_closed');
+    const result = await wait;
+    expect(result.responses.GPT).toContain('Partial answer shown in the feed');
+    expect(result.results.GPT).toMatchObject({ completion: 'partial', moderatorAccepted: true });
+    expect(result.skipped).toEqual(['Gemini']);
+    // A closed card of an earlier round is never taken for the current one.
+    document.querySelectorAll('.debate-model-card[data-llm-name="GPT"]').forEach((card) => { card.dataset.turnClosed = 'true'; });
+    const next = debug.pipelineWaiter.waitForModels(['GPT'], { timeoutMs: 600000, requestIds: { GPT: 'treq-feed-gpt-2' } });
+    next.catch(() => {});
+    expect(debug.harvestFeedAnswersForOpenRound()).toEqual([]);
+    debug.pipelineWaiter.reset();
+    panel.remove();
+  });
+
   test('a model answer keeps at most one open card (no duplicate whole or partial)', () => {
     const debug = window.__pipelineLifecycleDebug;
     const container = document.getElementById('debate-model-cards');
