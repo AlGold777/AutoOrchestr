@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-02 — Pipeline page: wider working column, version 2.81.545
+
+- `.prompt-container.prompt-sandwich` (and the feed in it) is wider on the pipeline page: `--pipeline-main-max-width: 1280px` (was the global 980px). The width of the composer is set by its parent `.main-inner`, so the cap is raised there and on the composer itself; the column still shrinks with the sidebars. The top bar shares the column, so it is wider as well. The feed no longer uses a viewport-width trick.
+- Tests: `pipeline-feed-layout`.
+
 ### 2026-10-02 — Pipeline feed back inside the composer, version 2.81.544
 
 - Removed the full-viewport widening of `.pipeline-page .debate-model-cards` (`width: 100vw` + `margin-left: calc(50% - 50vw)`, added in `0cdf930`): the feed content stuck out of `.prompt-container.prompt-sandwich`. The feed again takes the width of its container.
