@@ -246,3 +246,48 @@ describe('the moderator input is emptied once the message is sent', () => {
     expect(source).toContain("String(promptInput.value || '').trim()) return;");
   });
 });
+
+describe('a stage does not hang on a model whose text has stopped (Auto)', () => {
+  const STALL = 180000;
+  const partial = (llmName, answer) => ({ llmName, answer, transportRequestId: `req-${llmName}` });
+
+  test('text that has not changed for the stall time closes the wait with it; the others are untouched', async () => {
+    const waiter = loadPipelineWaiter();
+    const promise = waiter.waitForModels(['A', 'B'], { timeoutMs: 60000000, requestIds: ids(['A', 'B']) });
+    waiter.handleFinal(final('A', 'answer A'));
+    waiter.handlePartial(partial('B', 'draft of B that stopped growing'));
+    const t0 = Date.now();
+    expect(waiter.adoptStalled(t0 + STALL - 1000, STALL)).toEqual([]); // not long enough
+    expect(waiter.adoptStalled(t0 + STALL + 1000, STALL)).toEqual(['B']);
+    const result = await promise;
+    expect(result.responses).toEqual({ A: 'answer A', B: 'draft of B that stopped growing' });
+    expect(result.closeReason).toBe('stalled_with_text');
+    expect(result.results.B).toMatchObject({ completion: 'partial', moderatorAccepted: true });
+    waiter.reset();
+  });
+
+  test('growing text keeps the clock running, so a model still writing is never cut', async () => {
+    const waiter = loadPipelineWaiter();
+    waiter.waitForModels(['A'], { timeoutMs: 60000000, requestIds: ids(['A']) }).catch(() => {});
+    waiter.handlePartial(partial('A', 'one'));
+    const t0 = Date.now();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    waiter.handlePartial(partial('A', 'one two'));
+    expect(waiter.adoptStalled(t0 + STALL + 5, STALL)).toEqual([]); // changed 20 ms after t0
+    waiter.reset();
+  });
+
+  test('a model with no text at all (still thinking) is never cut, even when another is stalled', () => {
+    const waiter = loadPipelineWaiter();
+    waiter.waitForModels(['A', 'B'], { timeoutMs: 60000000, requestIds: ids(['A', 'B']) }).catch(() => {});
+    waiter.handlePartial(partial('A', 'draft'));
+    expect(waiter.adoptStalled(Date.now() + STALL * 10, STALL)).toEqual([]);
+    waiter.reset();
+  });
+
+  test('the page enables it for Auto only and journals it', () => {
+    expect(source).toContain('pipelineWaiter.autoAdopt = () => isDebateAutoPolicy();');
+    expect(source).toContain("'stall_adopted'");
+    expect(source).toContain('if (!this.autoAdopt?.()) return;');
+  });
+});

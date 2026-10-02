@@ -1,4 +1,13 @@
-# CHANGELOG — Project\n\n### 2026-10-02 — A repeat of a model answer no longer makes a new card or a Δ badge, version 2.81.553
+# CHANGELOG — Project
+
+### 2026-10-02 — An auto stage no longer hangs on a model whose text has stopped, version 2.81.556
+
+- Field report (Disput Flow export, 2.81.555, DeepSeek + Perplexity, 4 stages): stage 3 took **36 minutes** with DeepSeek alone. The background's own "stable text" completion (`FORCED_STABLE_TEXT_COMPLETION`, 2696 characters, `busy=true` — the stuck-indicator glitch) fired at minute 19, yet the stage waited another 17 minutes (hard stop, `PARTIAL`, forced success) and a person pressed manual recovery eight times.
+- The stage wait now closes itself in **Auto** flows: when every model that has not answered shows text that has **not changed for 3 minutes** (`pipelineWaiter.adoptStalled`, checked every 15 s), the wait is closed with that text (incomplete, unproven — like the moderator's Pause). A model with no text yet (still thinking) is never cut, a model whose text still grows keeps its clock, and in the semi-automatic mode the human decides. Journal `stall_adopted`; batch outcome `stalled_with_text`; a notification names the models.
+- Not changed: why DeepSeek's completion is not recognised while its spinner is stuck (the background rules); Perplexity's `PIPELINE_ERROR` / `CONTEXT_LOST` in stage 2; `UI_PROJECTION_FAILED panel not found` (the pipeline page has no per-model panels — harmless).
+- Tests: `pipeline-semi-auto` (waiter stall rule).
+
+\n### 2026-10-02 — A repeat of a model answer no longer makes a new card or a Δ badge, version 2.81.553
 
 - **Cause.** The «is this answer already shown» check compared the *raw* incoming text with the card's *rendered* text (markdown markers, list numbering), so an identical answer looked different (Δ -26, Δ -274 …). In addition a repeat under another request id (recovery, late partial, re-send) was not matched to the closed card and opened a second «printing» card.
 - **Fix** (`appendPostTerminalAnswerRevision`): the incoming text is rendered through the same renderer as the card body and compared as the reader sees it. The same text, or an older/shorter copy of it → ignored; a continuation → the same card grows; only a text that changes what is shown → the Δ badge (Δ is now computed on the rendered texts). A repeat under another request id is attached to the closed card it repeats.

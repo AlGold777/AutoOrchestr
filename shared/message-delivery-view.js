@@ -11,7 +11,7 @@
     delivered: 'доставлено ✓', partial: 'неполный', no_token: 'без метки', empty: 'пустой ответ', no_answer: 'нет ответа',
     not_submitted: 'не отправлен', no_tab: 'нет вкладки', error: 'ошибка', cancelled: 'отменён', waiting: 'ждём…'
   };
-  const OUTCOME = { settled: 'завершён', timeout: 'таймаут', cancelled: 'отменён', rejected: 'не стартовал', moderator_closed: 'закрыт модератором' };
+  const OUTCOME = { settled: 'завершён', timeout: 'таймаут', cancelled: 'отменён', rejected: 'не стартовал', moderator_closed: 'закрыт модератором', stalled_with_text: 'закрыт: текст не менялся' };
   const RUN_MODE = { auto: 'авто', semi_auto: 'полуавтомат', manual_dispatch: 'ручная отправка' };
   const PHASE = {
     dispatch_started: 'отправка', command_accepted: 'команда принята', submitted: 'отправлено',

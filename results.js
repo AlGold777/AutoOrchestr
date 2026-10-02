@@ -3131,6 +3131,7 @@ document.addEventListener('click', (event) => {
                 reject: rejectBatch
             };
             this.batches.set(batchId, batch);
+            this.startStallWatch();
             normalized.forEach((name) => this.requests.set(ids[name], { batchId, llmName: name }));
             batch.timeoutId = setTimeout(() => this.finalizeBatch(batch, true), timeoutMs);
             if (signal) {
@@ -3208,6 +3209,7 @@ document.addEventListener('click', (event) => {
             const value = String(text || '');
             if (!batch || !value.trim() || hasOwnKey(batch.responses, llmName) || String(batch.partialResponses[llmName] || '').trim()) return false;
             batch.partialResponses[llmName] = value;
+            (batch.partialAt ||= {})[llmName] = Date.now();
             return true;
         },
         // What closeAnsweredBatches would do now, without settling anything.
@@ -3263,8 +3265,39 @@ document.addEventListener('click', (event) => {
             const envelope = normalizePipelineMessageEnvelope(messageOrName, answer);
             const hit = this.lookup(envelope);
             if (!hit) return false;
+            if (hit.batch.partialResponses[hit.llmName] !== envelope.answer) {
+                (hit.batch.partialAt ||= {})[hit.llmName] = Date.now();
+            }
             hit.batch.partialResponses[hit.llmName] = envelope.answer;
             return true;
+        },
+        // Auto flows must not hang on a model whose text has stopped: when every model of a wait is
+        // either settled or shows text that has not changed for `stallMs`, and at least one model
+        // holds text, the wait is closed with that text (incomplete, unproven) — the same way the
+        // moderator's Pause closes a round. A model with no text at all (still thinking) is never cut.
+        // Field report: a stage waited 36 minutes for a model whose answer had stood for 17 of them.
+        adoptStalled(now = Date.now(), stallMs = 180000) {
+            const adopted = [];
+            Array.from(this.batches.values()).filter((batch) => !batch.settled).forEach((batch) => {
+                const stalled = (name) => {
+                    const text = String(batch.partialResponses[name] || '').trim();
+                    return Boolean(text) && now - Number((batch.partialAt || {})[name] || now) >= stallMs;
+                };
+                const pending = batch.models.filter((name) => !hasOwnKey(batch.responses, name) && !hasOwnKey(batch.failures, name));
+                if (!pending.length || !pending.every(stalled)) return;
+                this.finalizeBatch(batch, false, 'stalled_with_text');
+                adopted.push(...pending);
+            });
+            return adopted;
+        },
+        startStallWatch() {
+            if (this.stallTimer || typeof setInterval !== 'function') return;
+            this.stallTimer = setInterval(() => {
+                if (!this.batches.size) { clearInterval(this.stallTimer); this.stallTimer = null; return; }
+                if (!this.autoAdopt?.()) return;
+                const adopted = this.adoptStalled(Date.now(), this.stallMs || 180000);
+                if (adopted.length) this.onStallAdopted?.({ models: adopted, stallMs: this.stallMs || 180000 });
+            }, 15000);
         },
         handleFinal(messageOrName, answer) {
             const envelope = normalizePipelineMessageEnvelope(messageOrName, answer);
@@ -3344,6 +3377,7 @@ document.addEventListener('click', (event) => {
         },
         reset() {
             Array.from(this.batches.keys()).forEach((batchId) => this.cancelBatch(batchId));
+            if (this.stallTimer) { clearInterval(this.stallTimer); this.stallTimer = null; }
         }
     };
 
@@ -5066,6 +5100,12 @@ document.addEventListener('click', (event) => {
             return value === 'auto' ? 'auto' : 'manual';
         };
         const isDebateAutoPolicy = () => getDebateRunPolicy() === 'auto';
+        // Stalled-text adoption is for Auto flows only (a human in the semi-automatic mode decides).
+        pipelineWaiter.autoAdopt = () => isDebateAutoPolicy();
+        pipelineWaiter.onStallAdopted = (info) => {
+            globalThis.MessageDelivery?.batchEvent?.('stall_adopted', { models: info.models, stallMs: info.stallMs });
+            showNotification(`Текст не менялся ${Math.round(info.stallMs / 60000)} мин: этап закрыт с ним (${info.models.join(', ')}).`, 'info');
+        };
         // Journal context of a dispatch: who drives the run and from which template.
         const getRunModeContext = () => {
             const template = String(pipelineStore.active || '').trim();
