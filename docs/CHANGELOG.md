@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-02 — Pipeline panel: spacing of the collapsed top bar, no duplicate pause button, version 2.81.535
+
+- **Removed `#debate-auto-pause-btn`** from `.debate-session-actions`: a leftover of the old Disput. The main Run button (`#debate-run-toggle-btn`) already pauses and resumes through the same `setDebatePausedState` (`DebateController.deriveRunControls`: running + auto → `pause`, paused → `resume`). The JS handlers stay null-safe.
+- **Collapsed top bar:** 14px between model icons; the session actions keep a 14px margin before the sidebar toggle icons; the bar sits 7px closer to the screen edge (`top: 5px`, `margin-top: -7px`) and 7px closer to the input section (`margin-bottom: -11px`). The gain given to the feed box now counts the bar margins too.
+- **Compact input:** `.msg-header` loses 4px of vertical padding (6/4 → 2/0).
+- Tests: `pipeline-feed-layout`.
+
 ### 2026-10-02 — "None" in the mini prompt list of a round's model block, version 2.81.533
 
 - The list of preset mini prompts in a model block of a round has a first item **None**: nothing is attached to that block's round. The choice is stored with the pipeline (a prompt id, or no role for None), restored when the pipeline is applied and kept when the blocks are rebuilt (changing the selected models no longer resets a block's choice — an empty choice used to be lost).
