@@ -1734,7 +1734,7 @@ body.pro-features-hidden .comparison-section {
 .debate-model-card-meta {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: 0px;
     color: #6b7280;
     font-size: 14px !important;
 }
