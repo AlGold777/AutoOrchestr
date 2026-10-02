@@ -20777,7 +20777,7 @@ function checkCompareButtonState() {
             <div class="debate-model-card-header">
                 <span class="debate-model-card-title">
                     <span class="debate-model-card-title-main">
-                        <span class="debate-model-card-name">${escapeHtml(modelName)}</span>
+                        <span class="debate-model-card-name">${escapeHtml(kind === 'moderator' ? 'User' : modelName)}</span>
                         ${kind === 'moderator' ? '' : '<span class="status-indicator success"></span>'}
                         ${kind === 'moderator' ? '' : `<span class="debate-model-card-role">${escapeHtml(turn.role || '')}</span>`}
                         ${approvalHtml}
@@ -21020,7 +21020,7 @@ function checkCompareButtonState() {
             <div class="debate-model-card-header">
                 <span class="debate-model-card-title">
                     <span class="debate-model-card-title-main">
-                        <span class="debate-model-card-name">Moderator</span>
+                        <span class="debate-model-card-name">User</span>
                     </span>
                 </span>
                 <span class="debate-model-card-meta">
@@ -21732,7 +21732,7 @@ function checkCompareButtonState() {
         const state = getPageSerialDebateState();
         const activeSerialSender = state.waitingApprovalModel
             || (state.currentSpeaker === 'A' ? state.modelA : state.currentSpeaker === 'B' ? state.modelB : '');
-        const senderOptions = ['<option value="Moderator">Moderator</option>']
+        const senderOptions = ['<option value="Moderator">User</option>']
             .concat(selected.map((name) => {
                 const disabled = (approvedSenders.includes(name) || name === activeSerialSender) ? '' : ' disabled';
                 return `<option value="${escapeHtml(name)}"${disabled}>${escapeHtml(name)}</option>`;

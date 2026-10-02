@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-10-02 — "Moderator" is shown as "User", version 2.81.550
+
+- Display name only: the author name on moderator cards (turn cards and the live moderator entry in `results.js`) and the "Moderator" sender option. Internal values (`Moderator` as `llmName`, route sender, transcript events, `kind: 'moderator'`) and the text sent to the models (`Moderator\n…`, `Moderator action: …`) are unchanged.
+
 ### 2026-10-02 — The "Judge" model is shown as "~ Lead ~", version 2.81.549
 
 - Display name only: the selector option and its aria-label (`pipeline_panel.html`), the placeholder option, the card role label and the role of the verdict card (`results.js`). Identifiers (`#judge-select`, `judge*` functions, `source: 'judge'`, stored selector state) and the text of the judge prompts are unchanged. The main page (`result_new.html`, stage label R2) is not touched: its label is also read by stage detection.
