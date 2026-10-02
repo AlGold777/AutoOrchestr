@@ -1,6 +1,11 @@
-# CHANGELOG — Project
+# CHANGELOG — Project\n\n### 2026-10-02 — A repeat of a model answer no longer makes a new card or a Δ badge, version 2.81.553
 
-### 2026-10-02 — The models see "User" instead of "Moderator" in prompts, version 2.81.552
+- **Cause.** The «is this answer already shown» check compared the *raw* incoming text with the card's *rendered* text (markdown markers, list numbering), so an identical answer looked different (Δ -26, Δ -274 …). In addition a repeat under another request id (recovery, late partial, re-send) was not matched to the closed card and opened a second «printing» card.
+- **Fix** (`appendPostTerminalAnswerRevision`): the incoming text is rendered through the same renderer as the card body and compared as the reader sees it. The same text, or an older/shorter copy of it → ignored; a continuation → the same card grows; only a text that changes what is shown → the Δ badge (Δ is now computed on the rendered texts). A repeat under another request id is attached to the closed card it repeats.
+- Left as is: a *different* text under another request id still opens a card (second request to a model inside a round is for later).
+- Tests: `results-debate-favorites` (markdown repeat, other request ids, shorter copy, growth).
+
+# 2026-10-02 — The models see "User" instead of "Moderator" in prompts, version 2.81.552
 
 - Text sent to the models: the author header of the moderator message (`User\n…`, was `Moderator\n…`), the action lines (`User action: …`), the judge prompt header («Вопрос пользователя»), and the texts of the pipeline action chips `[USER CHALLENGE]`, `[USER EVIDENCE REQUEST]`, `[ПОЛЬЗОВАТЕЛЬ — КОРРЕКЦИЯ]` (`disput/pipeline-actions.json`; their chip group is «User» and the correction chip «Пользователь — коррекция»; ids unchanged).
 - Not changed: internal ids and event kinds (`Moderator`, `moderator_*`), the judge role wording «Ты судья», and the gate descriptions of the Architecture template (they are for the owner, the model is not started on a gate).

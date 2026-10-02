@@ -1231,6 +1231,41 @@ describe('Pipeline debate favorites view', () => {
     panel.remove();
   });
 
+  test('a repeat of the shown answer under another request id stays in the same card (markdown or not, shorter copies too)', () => {
+    const debug = window.__pipelineLifecycleDebug;
+    window.MessageDelivery = require('../shared/message-delivery.js');
+    document.getElementById('panel-gpt')?.remove();
+    const panel = document.createElement('section');
+    panel.id = 'panel-gpt';
+    panel.className = 'llm-panel';
+    panel.innerHTML = '<div class="output"></div>';
+    document.body.appendChild(panel);
+    const raw = '**Dao** is the path.\n\n1. First point about the way.\n2. Second point about the flow.';
+    debug.updateLLMPanelOutput('GPT', raw, '', { status: 'SUCCESS', requestId: 'round-a' });
+    const cards = () => document.querySelectorAll('.debate-model-card[data-llm-name="GPT"]');
+    expect(cards()).toHaveLength(1);
+    const card = cards()[0];
+    expect(card.dataset.turnClosed).toBe('true');
+
+    // Same answer re-emitted by a recovery/late partial under another request id: raw text
+    // differs from the rendered card text, but nothing changed for the reader.
+    debug.updateLLMPanelOutput('GPT', raw, '', { source: 'GLOBAL_STATE_ANSWER_RECOVERY', requestId: 'round-a-2' });
+    debug.updateLLMPanelOutput('GPT', raw, '', { requestId: 'round-a-3' });
+    // A shorter older copy of the shown answer is not an update either.
+    debug.updateLLMPanelOutput('GPT', '**Dao** is the path.', '', { requestId: 'round-a-4' });
+    expect(cards()).toHaveLength(1);
+    expect(card.querySelector('.post-terminal-badge')).toBeNull();
+    expect(card.dataset.live).toBe('false');
+
+    // Growth under yet another request id extends the same card.
+    debug.updateLLMPanelOutput('GPT', `${raw}\n3. Third point about harmony.`, '', { requestId: 'round-a-5' });
+    expect(cards()).toHaveLength(1);
+    expect(card.querySelector('.debate-model-card-output').textContent).toContain('Third point');
+    expect(card.querySelector('.post-terminal-badge')).toBeNull();
+    delete window.MessageDelivery;
+    panel.remove();
+  });
+
   test('Pause/next take the answer shown in the feed into the round wait, so the round can be closed with it', async () => {
     const debug = window.__pipelineLifecycleDebug;
     document.getElementById('panel-gpt')?.remove();

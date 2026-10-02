@@ -21278,36 +21278,55 @@ function checkCompareButtonState() {
         const label = readable.charAt(0).toUpperCase() + readable.slice(1).toLowerCase();
         return label.length > 20 ? `${label.slice(0, 20)}...` : label;
     }
+    // What the user would read for a raw/html answer: rendered through the same
+    // pipeline as the card body, so markdown markers and formatting do not make an
+    // identical answer look different (raw text vs the card's rendered text).
+    function renderedAnswerPlainText(text, html = '') {
+        const probe = document.createElement('div');
+        document.createElement('div').appendChild(probe); // the renderer replaces the node in its parent
+        renderDebateResponseBody(probe, text, html);
+        return String(probe.innerText || probe.textContent || '').replace(/\s+/g, ' ').trim();
+    }
     function appendPostTerminalAnswerRevision(session, llmName, text, html = '', meta = {}) {
         if (!debateModelCards || !session || !llmName) return false;
         const requestId = String(meta.requestId || '').trim();
-        const terminalCards = Array.from(debateModelCards.querySelectorAll('.debate-model-card'))
+        // Same cleaning as the live path (delivery token, instruction echo, trailing
+        // blanks): a re-emitted copy of the shown answer is not a revision.
+        const normalizedText = cleanFeedText(text);
+        const normalizedHtml = sanitizeInlineHtml(cleanFeedHtml(String(html || '').trim()));
+        if (!normalizedText && !normalizedHtml) return false;
+        const closedCards = Array.from(debateModelCards.querySelectorAll('.debate-model-card'))
             .filter((card) => (
                 card.dataset.sessionId === session.id
                 && card.dataset.llmName === llmName
                 && card.dataset.kind !== 'moderator'
                 && card.dataset.kind !== 'fragment'
                 && card.dataset.kind !== 'revision'
-                && (!requestId || !card.dataset.requestId || card.dataset.requestId === requestId)
                 && card.dataset.turnClosed === 'true'
                 && String(card.querySelector('.debate-model-card-output')?.textContent || '').trim()
             ));
-        const targetCard = terminalCards[terminalCards.length - 1] || null;
+        const shownTextOf = (card) => cleanFeedText(card.querySelector('.debate-model-card-output')?.innerText
+            || card.querySelector('.debate-model-card-output')?.textContent || '').replace(/\s+/g, ' ').trim();
+        const incomingShown = renderedAnswerPlainText(normalizedText, normalizedHtml);
+        const sameRequest = closedCards.filter((card) => (
+            !requestId || !card.dataset.requestId || card.dataset.requestId === requestId
+        ));
+        // A repeat of an answer under another request id (re-send, recovery, late
+        // partial) belongs to the card it repeats: one message per model per round.
+        const repeated = closedCards.filter((card) => {
+            const shown = shownTextOf(card);
+            return shown && incomingShown && (incomingShown.startsWith(shown) || shown.startsWith(incomingShown));
+        });
+        const targetCard = sameRequest[sameRequest.length - 1] || repeated[repeated.length - 1] || null;
         if (!targetCard) return false;
-        // Same cleaning as the live path (delivery token, instruction echo, trailing
-        // blanks): a re-emitted copy of the shown answer is not a revision.
-        const normalizedText = cleanFeedText(text);
-        const normalizedHtml = sanitizeInlineHtml(cleanFeedHtml(String(html || '').trim()));
-        if (!normalizedText && !normalizedHtml) return false;
         const primaryOutput = targetCard.querySelector('.debate-model-card-output');
-        const primaryText = cleanFeedText(primaryOutput?.innerText || primaryOutput?.textContent || '');
-        const squash = (value) => String(value || '').replace(/\s+/g, ' ').trim();
-        if (normalizedText && squash(normalizedText) === squash(primaryText)) return true;
+        const primaryText = shownTextOf(targetCard);
+        // Nothing new: the same text, or an older/shorter copy of what is shown.
+        if (incomingShown && primaryText.startsWith(incomingShown)) return true;
         // Growth of the shown answer (the new text continues it) is not a separate
         // message: the single card of this model in this round just gets longer.
         // Only a text that changes what is shown goes to the badge below.
-        const shownSquashed = squash(primaryText);
-        if (normalizedText && shownSquashed && squash(normalizedText).startsWith(shownSquashed)) {
+        if (incomingShown && primaryText && incomingShown.startsWith(primaryText)) {
             const now = new Date();
             const timeLabel = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
             renderDebateResponseBody(primaryOutput, normalizedText, normalizedHtml);
@@ -21326,7 +21345,7 @@ function checkCompareButtonState() {
             .some((entry) => entry.dataset.revisionHash === revisionHash);
         if (duplicate) return true;
         const source = String(meta.source || meta.responseMeta?.source || 'unknown');
-        const delta = normalizedText.length - primaryText.length;
+        const delta = incomingShown.length - primaryText.length;
         const deltaLabel = `${delta >= 0 ? '+' : ''}${delta}`;
         const revision = document.createElement('div');
         revision.className = 'post-terminal-answer-revision';
