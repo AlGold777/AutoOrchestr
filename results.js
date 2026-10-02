@@ -23493,7 +23493,7 @@ function exportSingleTemplate(templateName, sourceData = null) {
 
     const devtoolsTabs = Array.from(document.querySelectorAll('.devtools-tab'));
     const devtoolsPanels = Array.from(document.querySelectorAll('.devtools-tabpanel'));
-    const DEFAULT_DEVTOOLS_TAB_ID = 'telemetry-tabpanel';
+    const DEFAULT_DEVTOOLS_TAB_ID = 'disput-tabpanel';
     const DEVTOOLS_TAB_STORAGE_KEY = 'llmCodexDevtoolsActiveTab.v1';
     let activeDevtoolsTabId = devtoolsTabs.find(tab => tab.classList.contains('is-active'))?.dataset.tabTarget ||
         devtoolsPanels[0]?.id || DEFAULT_DEVTOOLS_TAB_ID;

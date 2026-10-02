@@ -3,7 +3,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LLM Comparison</title>
-    <link rel="stylesheet" href="styles.css?v=2.81.572">
+    <link rel="stylesheet" href="styles.css?v=2.81.573">
 </head>
 <body>
     <div class="app-shell">
@@ -586,10 +586,10 @@
                 <button class="close" id="close-api-keys-modal">×</button>
                 <div class="modal-content modal-devtools-stack">
                     <div class="devtools-tablist" role="tablist" aria-label="Developer tools sections">
-                        <button class="devtools-tab is-active" id="telemetry-tab" role="tab" aria-selected="true" aria-controls="telemetry-tabpanel" data-tab-target="telemetry-tabpanel">
+                        <button class="devtools-tab" id="telemetry-tab" role="tab" aria-selected="false" aria-controls="telemetry-tabpanel" data-tab-target="telemetry-tabpanel">
                              Telemetry
                         </button>
-                        <button class="devtools-tab" id="disput-tab" role="tab" aria-selected="false" aria-controls="disput-tabpanel" data-tab-target="disput-tabpanel">
+                        <button class="devtools-tab is-active" id="disput-tab" role="tab" aria-selected="true" aria-controls="disput-tabpanel" data-tab-target="disput-tabpanel">
                             Disput
                         </button>
                         <button class="devtools-tab" id="selectors0-tab" role="tab" aria-selected="false" aria-controls="selectors0-tabpanel" data-tab-target="selectors0-tabpanel">
@@ -601,7 +601,7 @@
                     </div>
                     <div class="devtools-tabpanels">
 
-                        <section class="devtools-tabpanel is-active" id="telemetry-tabpanel" role="tabpanel" aria-labelledby="telemetry-tab" tabindex="0">
+                        <section class="devtools-tabpanel" id="telemetry-tabpanel" role="tabpanel" aria-labelledby="telemetry-tab" tabindex="0" hidden="">
                             <div class="devtools-toolbar">
                                 <div class="devtools-toolbar-actions">
                                     <div class="telemetry-filters">
@@ -713,7 +713,7 @@
                             </div>
                         </section>
 
-                        <section class="devtools-tabpanel" id="disput-tabpanel" role="tabpanel" aria-labelledby="disput-tab" tabindex="0" hidden="">
+                        <section class="devtools-tabpanel is-active" id="disput-tabpanel" role="tabpanel" aria-labelledby="disput-tab" tabindex="0">
                             <div class="devtools-toolbar">
                                 <div class="devtools-toolbar-actions">
                                     <div class="telemetry-filters disput-trace-filters">

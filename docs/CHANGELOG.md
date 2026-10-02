@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-10-03 — Default to Disput, version 2.81.573
+
+- Both pages mark Disput as the initial tab. Opening the telemetry window selects Disput by default.
+
 ### 2026-10-03 — Centered Disput Extract controls, version 2.81.572
 
 - Extract and its selector sit in the center of the toolbar, with a blue primary button in a shared rounded group. On narrow panels they occupy a centered first row. Closed the preceding unfinished CSS rule so the Extract styles apply independently.
