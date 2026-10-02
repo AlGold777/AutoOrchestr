@@ -21102,6 +21102,14 @@ function checkCompareButtonState() {
         });
         return preferred;
     }
+    function shortenRevisionSource(source) {
+        const readable = String(source || 'unknown')
+            .replace(/^GLOBAL_STATE_ANSWER_/, '')
+            .replace(/_/g, ' ')
+            .trim();
+        const label = readable.charAt(0).toUpperCase() + readable.slice(1).toLowerCase();
+        return label.length > 20 ? `${label.slice(0, 20)}...` : label;
+    }
     function appendPostTerminalAnswerRevision(session, llmName, text, html = '', meta = {}) {
         if (!debateModelCards || !session || !llmName) return false;
         const requestId = String(meta.requestId || '').trim();
@@ -21139,9 +21147,15 @@ function checkCompareButtonState() {
         revision.dataset.revisionHash = revisionHash;
         revision.dataset.source = source;
         const summary = document.createElement('summary');
-        summary.textContent = `Ответ обновлён после завершения · ${source} · Δ ${deltaLabel}`;
+        // Short label in the header row (source cut to 20 chars + "..."); the full
+        // wording is the tooltip and the first line of the expanded body (CSS ::before).
+        const sourceLabel = shortenRevisionSource(source);
+        summary.textContent = `Updated · ${sourceLabel} · Δ ${deltaLabel}`;
+        const fullLabel = `Ответ обновлён после завершения · ${source} · Δ ${deltaLabel}`;
+        summary.title = fullLabel;
         const body = document.createElement('div');
         body.className = 'post-terminal-answer-revision-body';
+        body.dataset.fullLabel = fullLabel;
         revision.append(summary, body);
         const header = targetCard.querySelector('.debate-model-card-header');
         const headerMeta = header?.querySelector('.debate-model-card-meta');

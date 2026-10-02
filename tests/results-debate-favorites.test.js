@@ -1156,8 +1156,12 @@ describe('Pipeline debate favorites view', () => {
 
     expect(card.querySelector('.debate-model-card-output').textContent.trim()).toBe(original);
     expect(output.textContent.trim()).toBe(original);
-    expect(card.querySelector('.post-terminal-answer-revision summary').textContent).toContain('Ответ обновлён после завершения');
-    expect(card.querySelector('.post-terminal-answer-revision summary').textContent).toContain('late_partial_response');
+    const revisionSummary = card.querySelector('.post-terminal-answer-revision summary');
+    // Short header label (source cut to 20 chars + "..."); full wording in the tooltip.
+    expect(revisionSummary.textContent).toBe('Updated · Late partial respons... · Δ +36');
+    expect(revisionSummary.title).toContain('Ответ обновлён после завершения');
+    expect(revisionSummary.title).toContain('late_partial_response');
+    expect(card.querySelector('.post-terminal-answer-revision-body').dataset.fullLabel).toBe(revisionSummary.title);
     expect(card.querySelector('.post-terminal-answer-revision-body').textContent).toContain('text appended');
     panel.remove();
   });

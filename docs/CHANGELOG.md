@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-02 — Short post-terminal revision label in the card header, version 2.81.531
+
+- The «Ответ обновлён после завершения · SOURCE · Δ N» line overflowed the card header. Now the header shows `Updated · <source> · Δ N`: the source is humanized (`GLOBAL_STATE_ANSWER_RECOVERY` → `Recovery`) and cut to 20 characters plus `...`; the summary is one line with an ellipsis. The full original wording is the tooltip and the first line of the expanded revision body.
+- Tests: `results-debate-favorites` (revision label), `pipeline-feed-layout` (shortening, CSS).
+
 ### 2026-10-02 — Pipeline panel: a taller feed (no session tabs, compact input, collapsing top bar), version 2.81.530
 
 - **Session tabs removed** from the panel. `.debate-session-bar` now holds only `.debate-session-actions` (pause, copy, export, clear — each acts on the current session). The tab/add/delete nodes stay in the DOM, hidden, as the session state holder: `results.js` reads the active session id from `.debate-session-tab.active`. Session switching will live in the left sidebar.

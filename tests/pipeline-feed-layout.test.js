@@ -152,3 +152,25 @@ describe('debateFeedLayout controller', () => {
     expect(actions.parentElement).toBe(bar);
   });
 });
+
+describe('post-terminal revision label', () => {
+  const source = read('results.js');
+  const start = source.indexOf('function shortenRevisionSource(source) {');
+  const end = source.indexOf('function appendPostTerminalAnswerRevision', start);
+  const shorten = new Function(`${source.slice(start, end)}\nreturn shortenRevisionSource;`)();
+
+  test('known recovery source becomes a short word', () => {
+    expect(shorten('GLOBAL_STATE_ANSWER_RECOVERY')).toBe('Recovery');
+    expect(shorten('unknown')).toBe('Unknown');
+  });
+
+  test('long sources are cut to 20 characters plus three dots', () => {
+    const label = shorten('late_partial_response');
+    expect(label).toBe('Late partial respons...');
+    expect(label.length).toBe(23);
+  });
+
+  test('summary may not overflow the header row', () => {
+    expect(readResolvedCss()).toMatch(/\.post-terminal-answer-revision > summary \{[^}]*overflow: hidden;[^}]*text-overflow: ellipsis;/);
+  });
+});
