@@ -1158,7 +1158,7 @@ describe('Pipeline debate favorites view', () => {
     expect(output.textContent.trim()).toBe(original);
     const badge = card.querySelector('.post-terminal-badge');
     // One badge right of the time; each update is a tab with a short label.
-    expect(badge.textContent).toBe('↻ 1');
+    expect(badge.textContent).toBe('Δ 1');
     expect(badge.closest('.debate-model-card-header')).not.toBeNull();
     expect(card.querySelector('.debate-model-card-time').nextElementSibling).toBe(badge.parentElement);
     const revisionTab = card.querySelector('.post-terminal-tab');
@@ -1178,7 +1178,7 @@ describe('Pipeline debate favorites view', () => {
       requestId: 'post-terminal-lock'
     });
     expect(card.querySelectorAll('.post-terminal-badge')).toHaveLength(1);
-    expect(badge.textContent).toBe('↻ 2');
+    expect(badge.textContent).toBe('Δ 2');
     const tabs = card.querySelectorAll('.post-terminal-tab');
     expect(tabs).toHaveLength(2);
     expect(tabs[1].textContent).toContain('Recovery');
@@ -1212,12 +1212,21 @@ describe('Pipeline debate favorites view', () => {
     });
     expect(card.querySelector('.post-terminal-answer-revision')).toBeNull();
 
-    // A genuinely different text is still a revision.
+    // Growth of the shown answer extends the same card: no second message, no badge.
     debug.updateLLMPanelOutput('GPT', 'Complete answer text. And more added later.', '', {
       source: 'GLOBAL_STATE_ANSWER_RECOVERY', requestId: 'recovery-echo'
     });
-    expect(card.querySelector('.post-terminal-answer-revision')).not.toBeNull();
+    expect(document.querySelectorAll('.debate-model-card[data-llm-name="GPT"]')).toHaveLength(1);
+    expect(card.querySelector('.debate-model-card-output').textContent).toContain('And more added later.');
+    expect(card.querySelector('.post-terminal-badge')).toBeNull();
+
+    // A text that changes what is shown (not a continuation) goes to the badge.
+    debug.updateLLMPanelOutput('GPT', 'A completely different answer.', '', {
+      source: 'GLOBAL_STATE_ANSWER_RECOVERY', requestId: 'recovery-echo'
+    });
+    expect(card.querySelector('.debate-model-card-output').textContent).toContain('And more added later.');
     expect(card.querySelectorAll('.post-terminal-badge')).toHaveLength(1);
+    expect(document.querySelectorAll('.debate-model-card[data-llm-name="GPT"]')).toHaveLength(1);
     delete window.MessageDelivery;
     panel.remove();
   });

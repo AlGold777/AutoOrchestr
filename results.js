@@ -21303,6 +21303,24 @@ function checkCompareButtonState() {
         const primaryText = cleanFeedText(primaryOutput?.innerText || primaryOutput?.textContent || '');
         const squash = (value) => String(value || '').replace(/\s+/g, ' ').trim();
         if (normalizedText && squash(normalizedText) === squash(primaryText)) return true;
+        // Growth of the shown answer (the new text continues it) is not a separate
+        // message: the single card of this model in this round just gets longer.
+        // Only a text that changes what is shown goes to the badge below.
+        const shownSquashed = squash(primaryText);
+        if (normalizedText && shownSquashed && squash(normalizedText).startsWith(shownSquashed)) {
+            const now = new Date();
+            const timeLabel = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+            renderDebateResponseBody(primaryOutput, normalizedText, normalizedHtml);
+            const timeEl = targetCard.querySelector('.debate-model-card-time');
+            if (timeEl) timeEl.textContent = timeLabel;
+            syncDebateCardOutputLayout(targetCard);
+            patchDebateCardMessage(targetCard, {
+                text: normalizedText,
+                html: String(primaryOutput?.innerHTML || '').trim(),
+                timeLabel
+            });
+            return true;
+        }
         const revisionHash = `${normalizedText.length}:${normalizedText.slice(0, 96)}|${normalizedHtml.length}:${normalizedHtml.slice(0, 96)}`;
         const duplicate = Array.from(targetCard.querySelectorAll('.post-terminal-answer-revision'))
             .some((entry) => entry.dataset.revisionHash === revisionHash);
@@ -21336,7 +21354,7 @@ function checkCompareButtonState() {
         selectPostTerminalRevision(badge, panels.children.length - 1);
         const count = panels.children.length;
         const trigger = badge.querySelector('.post-terminal-badge');
-        trigger.textContent = `↻ ${count}`;
+        trigger.textContent = `Δ ${count}`;
         trigger.title = `Updates after completion: ${count}`;
         trigger.setAttribute('aria-label', trigger.title);
         targetCard.dataset.hasPostTerminalRevision = 'true';

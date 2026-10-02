@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-02 — One message per model per round: growth extends the card, version 2.81.548
+
+- Every Run press is a new round; inside a round a model has **one card**. When a later text of the model **continues the shown answer** (the new text starts with it, whitespace-normalized), the same card is extended in place: longer body, updated time, the stored message is patched. No second card, no badge.
+- A text that **changes** what is shown (not a continuation) still goes to the update badge; the badge icon is now `Δ N` (was `↻ N`).
+- The transport result stays immutable (the batch keeps the accepted answer); only the feed card shows the extended text. A second request to the same model inside one round is left for later (after the automation work).
+- Tests: `results-debate-favorites` (extension in place, badge for replaced text).
+
 ### 2026-10-02 — Post-completion updates collected into one badge, version 2.81.547
 
 - The technical «Updated · Source · Δ N» lines no longer sit in the card header one by one. A card with updates after completion gets **one badge** `↻ N`, placed right of the message time (it follows the time when the card is approved and the time moves next to the name). A click opens a popover with **one tab per update** (`1 · Recovery · Δ -274`, source cut to 20 chars + `...`, full wording in the tooltip and as the first line of the tab); the newest update is shown first. Click outside or Esc closes it.
