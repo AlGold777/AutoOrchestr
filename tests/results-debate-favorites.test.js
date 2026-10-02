@@ -1561,4 +1561,10 @@ describe('Pipeline debate favorites view', () => {
   });
 
 
+
+  test('the Run button shows "Run debate" (not pause/resume) right after the page loads', () => {
+    const button = document.getElementById('debate-run-toggle-btn');
+    expect(button.dataset.action).toBe('run');
+    expect(button.title).toBe('Run debate');
+  });
 });
