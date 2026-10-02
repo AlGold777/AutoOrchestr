@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-02 — Run button works on the first click; New pages is switched off when the run starts, version 2.81.538
+
+- **First click on Run was lost.** When the feed overflows, the moderator input shrinks to one line as soon as it loses the focus (`#modTa:not(:focus)`, compact input). Pressing Run takes the focus out of the input, the input shrinks, the buttons below it move up from under the pointer and the click never happens; the second click worked because the input was already compact. Pressing a button in the composer header now keeps the focus in the input (`mousedown` default prevented for buttons; the click is unaffected).
+- **New pages** is switched off at the moment the run starts (the first dispatch uses its value from the run context; later stages continue in the pages that were opened). Before, it was switched off only after the background acknowledged the first dispatch with `process_started`; if that did not happen the box stayed checked.
+- Tests: `pipeline-semi-auto`.
+
 ### 2026-10-02 — The Run button no longer shows "pause" after a reload, version 2.81.537
 
 - At page load a Debate run that was left unfinished (a run stuck by the earlier dropout defect, a run paused by the engine, a closed page) was adopted as a **technical pause**: the Run button showed "pause" right after the reload, before any model was chosen, and kept it when models were selected; its "Continue" only restarted the run. The unfinished run is now dropped at load (`clearRecovery`, console info `Unfinished Debate run dropped at page load`) and the button stays "Run". Since the engine now pauses by itself (after stages, gates, questions), such runs are common.

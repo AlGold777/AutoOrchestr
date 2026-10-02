@@ -193,3 +193,18 @@ describe('an unfinished run does not take the Run button after a reload', () => 
     expect(transport).toContain('clearRecovery()');
   });
 });
+
+describe('Run button and New pages (field report)', () => {
+  test('pressing a composer button keeps the focus in the input, so a shrinking input cannot move the button away', () => {
+    expect(source).toContain("debateRunToggleBtn?.closest('.msg-header')?.addEventListener('mousedown', (event) => {");
+    expect(source).toContain("if (event.target.closest?.('button')) event.preventDefault();");
+    const css = fs.readFileSync(path.join(__dirname, '..', 'styles', 'modals-responsive.css'), 'utf8');
+    // The cause: the compact input shrinks on blur.
+    expect(css).toContain('textarea#modTa:not(:focus)');
+  });
+
+  test('New pages is switched off when the run starts, not only after the first dispatch is acknowledged', () => {
+    const from = source.indexOf('ownerAnswers: []\n            };');
+    expect(source.slice(from, from + 500)).toContain('if (activePipelineRunContext.forceNewTabs) resetNewPagesCheckboxAfterOpen();');
+  });
+});

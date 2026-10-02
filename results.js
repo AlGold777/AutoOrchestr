@@ -6094,6 +6094,9 @@ document.addEventListener('click', (event) => {
                 // Owner's answers to [[ASK:]] markers: they reach the prompts of the next stages.
                 ownerAnswers: []
             };
+            // The rounds have started: "New pages" is switched off at once (the first dispatch has
+            // its value in the run context; later stages continue in the pages that were opened).
+            if (activePipelineRunContext.forceNewTabs) resetNewPagesCheckboxAfterOpen();
             await notifyPipelineControlState('STARTING', {
                 stage: 'dispatch',
                 payload: { pipelineName: pipelineNameText }
@@ -7567,6 +7570,12 @@ document.addEventListener('click', (event) => {
                 }
             });
         }
+        // Pressing a composer control must not take the focus out of the moderator input: when the feed
+        // overflows, the input shrinks to one line as soon as it loses the focus, the buttons below it
+        // move up from under the pointer and the click never happens (the first click on Run was lost).
+        debateRunToggleBtn?.closest('.msg-header')?.addEventListener('mousedown', (event) => {
+            if (event.target.closest?.('button')) event.preventDefault();
+        });
         debateRunToggleBtn?.addEventListener('click', (event) => {
             const controls = getDebateRunControls();
             if (!controls.enabled || controls.action === 'wait') {
