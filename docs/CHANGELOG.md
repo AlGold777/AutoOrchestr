@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-02 — Report digest script for both report formats, version 2.81.559
+
+- The analysis prompt written for a weaker model (2.81.529) fitted only the message-delivery report; on a Disput Flow export it answered "нет данных" almost everywhere. New `scripts/summarize-report.js` (`node scripts/summarize-report.js "<report>.json"`) builds the digest deterministically for both formats: stages with start/end/duration/**gap to the next**, per stage and model the offsets of the first stable text, completion, terminals, forced stable-text completion, barrier waits and manual recoveries, **text that stood still > 2 min before the terminal**, diagnoses, integrity; for delivery reports batches with the gap before each and start refusals, sends, grouped problems, engine and moderator events. Facts only, no causes.
+- Applied to the 2.81.555 Disput Flow export it shows that DeepSeek's text in stage 3 was stable from +16 s while the stage took 36.7 min (the case behind the 3-minute stall rule of 2.81.558).
+- `docs/report-analysis-prompt.md` now leads with the script; the model prompt is kept as a fallback and distinguishes the two formats with the real field paths.
+- Tests: `summarize-report`.
+
 ### 2026-10-02 — Merge of the feed card work, version 2.81.558
 
 - Integrates the parallel feed changes (an adopted still-printing answer keeps growing in its own card) with the stall rule; no behavior changes beyond that.
