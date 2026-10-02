@@ -1,4 +1,12 @@
-# CHANGELOG — Project\n\n### 2026-10-02 — A repeat of a model answer no longer makes a new card or a Δ badge, version 2.81.553
+# CHANGELOG — Project
+
+### 2026-10-02 — An adopted, still-printing answer keeps growing in its own card, version 2.81.555
+
+- **Cause.** Next/Pause adopt the text shown in the feed: the card becomes `approved` while the model is still printing (`turnClosed=false`). The live path skips approved cards, the post-completion path needed a closed card — so every further chunk of the same answer opened a new card.
+- **Fix** (`appendPostTerminalAnswerRevision`): an approved or starred card counts as settled like a closed one. A newer text of the same request replaces the provisional text of an adopted, still-printing card in place (streaming markdown is not a strict prefix); the final closes it (printing chip off, `turnClosed=true`). A closed card keeps the earlier rules (same/shorter → ignored, continuation → grows, changed text → Δ badge).
+- Tests: `results-debate-favorites` («adopted while still printing»; fails on 2.81.554 with two cards).
+
+\n### 2026-10-02 — A repeat of a model answer no longer makes a new card or a Δ badge, version 2.81.553
 
 - **Cause.** The «is this answer already shown» check compared the *raw* incoming text with the card's *rendered* text (markdown markers, list numbering), so an identical answer looked different (Δ -26, Δ -274 …). In addition a repeat under another request id (recovery, late partial, re-send) was not matched to the closed card and opened a second «printing» card.
 - **Fix** (`appendPostTerminalAnswerRevision`): the incoming text is rendered through the same renderer as the card body and compared as the reader sees it. The same text, or an older/shorter copy of it → ignored; a continuation → the same card grows; only a text that changes what is shown → the Δ badge (Δ is now computed on the rendered texts). A repeat under another request id is attached to the closed card it repeats.

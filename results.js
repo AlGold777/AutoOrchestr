@@ -21302,9 +21302,19 @@ function checkCompareButtonState() {
                 && card.dataset.kind !== 'moderator'
                 && card.dataset.kind !== 'fragment'
                 && card.dataset.kind !== 'revision'
-                && card.dataset.turnClosed === 'true'
+                // Settled for the live path: closed, or taken by the moderator
+                // (approved — Next/Pause adopt a still-printing card), or starred.
+                && (card.dataset.turnClosed === 'true' || card.dataset.approved === 'true' || card.dataset.starred === 'true')
                 && String(card.querySelector('.debate-model-card-output')?.textContent || '').trim()
             ));
+        const isFinal = isFinalResponseMeta(meta);
+        // A final for a card that was adopted while still printing closes it.
+        const closeIfFinal = (card) => {
+            if (!isFinal || card.dataset.turnClosed === 'true') return;
+            setDebatePrintingState(card, llmName, false);
+            card.dataset.live = 'false';
+            card.dataset.turnClosed = 'true';
+        };
         const shownTextOf = (card) => cleanFeedText(card.querySelector('.debate-model-card-output')?.innerText
             || card.querySelector('.debate-model-card-output')?.textContent || '').replace(/\s+/g, ' ').trim();
         const incomingShown = renderedAnswerPlainText(normalizedText, normalizedHtml);
@@ -21322,11 +21332,18 @@ function checkCompareButtonState() {
         const primaryOutput = targetCard.querySelector('.debate-model-card-output');
         const primaryText = shownTextOf(targetCard);
         // Nothing new: the same text, or an older/shorter copy of what is shown.
-        if (incomingShown && primaryText.startsWith(incomingShown)) return true;
+        if (incomingShown && primaryText.startsWith(incomingShown)) {
+            closeIfFinal(targetCard);
+            return true;
+        }
         // Growth of the shown answer (the new text continues it) is not a separate
         // message: the single card of this model in this round just gets longer.
         // Only a text that changes what is shown goes to the badge below.
-        if (incomingShown && primaryText && incomingShown.startsWith(primaryText)) {
+        // A card adopted while still printing shows provisional text: a newer text of
+        // the same request replaces it in place even when it is not a strict
+        // continuation (partial markdown renders differently while streaming).
+        const provisional = targetCard.dataset.turnClosed !== 'true' && sameRequest.includes(targetCard);
+        if (incomingShown && primaryText && (incomingShown.startsWith(primaryText) || provisional)) {
             const now = new Date();
             const timeLabel = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
             renderDebateResponseBody(primaryOutput, normalizedText, normalizedHtml);
@@ -21338,6 +21355,7 @@ function checkCompareButtonState() {
                 html: String(primaryOutput?.innerHTML || '').trim(),
                 timeLabel
             });
+            closeIfFinal(targetCard);
             return true;
         }
         const revisionHash = `${normalizedText.length}:${normalizedText.slice(0, 96)}|${normalizedHtml.length}:${normalizedHtml.slice(0, 96)}`;
