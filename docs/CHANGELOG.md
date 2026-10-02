@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-02 — Answers with provider chrome after the token are no longer rejected as "cut off", version 2.81.530
+
+- Field report (8) (Auto, template Test, Le Chat + Perplexity): the run did **not** go to round 7 — there were two stages; the 7 was the number of batches. Le Chat's answers were rejected by `DebateResponseAcceptance` as `incomplete_ending` (the repair prompt says so): Le Chat appends the time after the delivery token (`[[AO-…]] 8:55pm`), the token was stripped and the answer ended in `8:55pm`. Each stage cost Le Chat 3 calls (answer, repair, retry) and still failed; with Perplexity's real delivery failure the stage failed and the new `stage_failed` pause fired correctly.
+- `MessageDelivery.clean` drops a short tail (≤ 40 characters) after the token on its line. The ending heuristic is skipped for a transport-complete answer (`completion: 'complete'` — the token proves the answer ended); other rules (empty, too long, truncation markers, sections) still apply.
+- Every rejected attempt is journaled as `response_rejected` (model, stage, attempt, reason, chars) and grouped in the report as the problem `response_rejected` with the count — the delivery report did not say why an answer was rejected. `docs/report-analysis-prompt.md` asks for these.
+- Tests: `response-tail-acceptance`.
+
 ### 2026-10-01 — Automation: stops between stages, failed-stage stop, control markers, owner questions, version 2.81.529
 
 - **Correction.** The universal engine never paused between stages: `runLoop` ran every planned stage in one go and the Auto toggle only chose the finalization mode (probe: 3 stages, Auto off → 3 stages in one run). The earlier statements "with Auto off the engine waits for approval between stages" (2.81.521, 2.81.524, `project-overview`) were wrong; the semi-automatic buttons (Get it, "next") only worked inside one running stage. A second defect: a stage nobody answered was re-queued by the planner until the step budget ended (60 model calls for 3 stages × 2 models).

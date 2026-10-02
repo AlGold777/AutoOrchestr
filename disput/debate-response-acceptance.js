@@ -38,7 +38,10 @@
     const fences = (value.match(/```/g) || []).length;
     if (value.includes('[...truncated]') || fences % 2 === 1 || (/…$/.test(value) || /\.\.\.$/.test(value)) && !ENDING.test(value.replace(/[.…]+$/, ''))) return { ok: false, reason: 'truncation_marker', details: { fences } };
     const lastLine = value.split(/\r?\n/).filter(Boolean).at(-1) || '';
-    if (!allowShort && outputKind !== 'json' && !ENDING.test(value) && !/^\s*(?:[-*]|\d+[.)]|#)/.test(lastLine) && lastLine.split(/\s+/).length > 3) return { ok: false, reason: 'incomplete_ending', details: { lastLine } };
+    // A transport-complete answer (the delivery token proves it ended) is not "cut off" because
+    // its last line is not a sentence: the ending heuristic is only for answers without proof.
+    const provenComplete = String(meta.completion || '').toLowerCase() === 'complete';
+    if (!allowShort && !provenComplete && outputKind !== 'json' && !ENDING.test(value) && !/^\s*(?:[-*]|\d+[.)]|#)/.test(lastLine) && lastLine.split(/\s+/).length > 3) return { ok: false, reason: 'incomplete_ending', details: { lastLine } };
     return { ok: true, reason: '', details: { chars: value.length, words: wordCount } };
   }
   const api = Object.freeze({ evaluate, parseAuditVerdict, countWords: (value) => words(value).length, requiredSectionMisses });

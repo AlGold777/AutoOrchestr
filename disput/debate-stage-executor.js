@@ -203,7 +203,7 @@
             };
           }
           lastReason = verdict.reason || 'not_accepted';
-          emit('PARTICIPANT_RESPONSE_REJECTED', { stageInstanceId: stage.stageInstanceId, participantId: participant.participantId, attempt, reason: lastReason });
+          emit('PARTICIPANT_RESPONSE_REJECTED', { stageInstanceId: stage.stageInstanceId, participantId: participant.participantId, attempt, reason: lastReason, details: verdict.details || null, chars: responseText.length });
         } catch (error) {
           if (error?.name === 'AbortError' || signal?.aborted) {
             return { participantId: participant.participantId, status: 'cancelled', reason: 'aborted', attempts: attempt };

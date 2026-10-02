@@ -6261,6 +6261,11 @@ document.addEventListener('click', (event) => {
                 createId: makePipelineRunId,
                 runModelBatch,
                 onEnginePause: (info) => handleEnginePause(info),
+                // Why an answer was not accepted (the delivery report never said): journaled per attempt.
+                onResponseRejected: (info) => globalThis.MessageDelivery?.batchEvent?.('response_rejected', {
+                    model: info.participantId || null, stage: info.stageInstanceId || null, attempt: info.attempt || null,
+                    reason: info.reason || null, chars: info.chars ?? null, kind: info.type === 'PARTICIPANT_DISPATCH_FAILED' ? 'dispatch_failed' : 'rejected'
+                }),
                 acceptResponse: (text, meta) => window.DebateResponseAcceptance?.evaluate?.({
                     text, meta: {
                         ...(meta || {}), isErrorOutput,

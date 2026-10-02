@@ -41,8 +41,14 @@
     return `${String(prompt || '').trimEnd()}\n\n${INSTRUCTION} ${tag(token)}`;
   }
 
+  // Provider chrome after the token ("[[AO-…]] 8:55pm": Le Chat appends the time) is not the
+  // answer. The token is the last line of the answer, so a short tail after it is dropped;
+  // otherwise the ending check would read "8:55pm" as a cut-off sentence.
+  const TAIL_AFTER_TOKEN_RE = /(\[\[AO-[a-z0-9]{6}\]\])[ \t]*[^\n\[]{0,40}$/gim;
+
   function clean(text) {
     return String(text || '')
+      .replace(TAIL_AFTER_TOKEN_RE, '$1')
       .replace(TOKEN_RE, '')
       .replace(INSTRUCTION_RE, '')
       .replace(RESPONSE_MARKER_RE, '')

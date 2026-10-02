@@ -187,6 +187,9 @@
       if (type === 'RUN_FAILED') dispatch(event.RUN_FAILED, { reason: body.reason || 'failed' });
       // The engine stopped by itself (after a stage, at a gate, on a question for the owner or a
       // failed stage): the aggregate shows "paused" so the one existing "Continue" works.
+      if (type === 'PARTICIPANT_RESPONSE_REJECTED' || type === 'PARTICIPANT_DISPATCH_FAILED') {
+        try { deps.onResponseRejected?.({ type, ...body }); } catch (_) { /* telemetry hook */ }
+      }
       if (type === 'RUN_PAUSED' && body.by === 'engine') {
         dispatch(event.PAUSE_REQUESTED, { reason: body.reason || 'engine_pause' });
         try { deps.onEnginePause?.(body); } catch (_) { /* a UI hook must not break the run */ }

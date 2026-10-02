@@ -29,13 +29,14 @@
     premature_terminal: ['Запрос закрыт раньше, чем модель ответила', 'Фон зафиксировал финал без текста, но модель продолжила отвечать — ответ потерян для пайплайна.', 'Причина финала указана в строке (протокол завершения, навигация вкладки). Это дефект транспорта: приложите JSON-отчёт.'],
     batch_timeout: ['Пакет завершён по таймауту', 'Не все модели ответили до срока ожидания панели.', 'Модели без ответа указаны в строке; проверьте их вкладки.'],
     waiting: ['Ответ ещё не получен', 'Запрос подготовлен, ожидается ответ.', ''],
+    response_rejected: ['Ответ модели не принят движком', 'Ответ получен, но не прошёл приёмку этапа (причина указана в строке), поэтому запрос повторялся: каждая попытка — лишний вызов модели.', 'Если причина повторяется у одной модели — смотрите её ответ во вкладке; приложите JSON-отчёт.'],
     stage_failed: ['Этап не дал ни одного принятого ответа', 'Движок остановил запуск: ни одна модель этапа не вернула принятый ответ. Этап не повторяется сам, чтобы не тратить вызовы.', 'Проверьте вкладки моделей (Get it подтянет готовые ответы); «Продолжить» повторит этап один раз.'],
     display_desync: ['Ответ показан, но этап его не принял', 'Текст ответа уже выведен в карточку (источник указан в строке), а ожидание этапа его не получило: этап ждёт то, что пользователь уже видит.', 'Нажмите Get it, чтобы подтянуть ответ в этап, или «Дальше», чтобы закрыть этап с собранным. Если повторяется — приложите JSON-отчёт.']
   };
   const SEVERITY = {
     no_tab: 'critical', not_submitted: 'critical', premature_terminal: 'critical', stuck_waiting: 'critical', stale_background: 'critical', no_answer: 'critical', empty: 'critical', start_rejected: 'critical', batch_timeout: 'critical',
     partial: 'warning', display_desync: 'warning', focus_churn: 'warning', error: 'warning', no_token: 'warning', identity: 'warning', stop_unconfirmed: 'warning',
-    stage_failed: 'warning',
+    stage_failed: 'warning', response_rejected: 'warning',
     cancelled: 'info', stale: 'info', start_refused: 'info', waiting: 'info'
   };
   const RESULTS = ['delivered', 'partial', 'no_token', 'empty', 'no_answer', 'not_submitted', 'no_tab', 'error', 'cancelled', 'waiting'];
@@ -197,7 +198,7 @@
   }
 
   // Semi-automatic moderator actions, in journal order.
-  const MODERATOR_KINDS = ['moderator_get_it', 'get_it_result', 'moderator_stage_close', 'moderator_close_refused', 'moderator_approve', 'run_paused', 'owner_answer'];
+  const MODERATOR_KINDS = ['response_rejected', 'moderator_get_it', 'get_it_result', 'moderator_stage_close', 'moderator_close_refused', 'moderator_approve', 'run_paused', 'owner_answer'];
   function moderatorActions(journal) {
     return (journal || []).filter((event) => MODERATOR_KINDS.includes(event.kind)).map((event) => ({ ...event }));
   }
@@ -314,8 +315,22 @@
       title: `${event.stage ? `${event.stage}: ` : ''}${TEXT.stage_failed[0]}`, detail: TEXT.stage_failed[1], hint: TEXT.stage_failed[2],
       reason: event.stage || ''
     }));
+    // Rejected answers, grouped per model and reason (each one cost a model call).
+    const rejectedGroups = new Map();
+    moderator.filter((event) => event.kind === 'response_rejected').forEach((event) => {
+      const key = `${event.model || ''}|${event.reason || ''}`;
+      const group = rejectedGroups.get(key) || { model: event.model || null, reason: event.reason || 'unknown', count: 0, last: event.at, stages: new Set() };
+      group.count += 1; group.last = event.at; if (event.stage) group.stages.add(event.stage);
+      rejectedGroups.set(key, group);
+    });
+    const rejected = [...rejectedGroups.values()].map((group) => ({
+      code: 'response_rejected', severity: SEVERITY.response_rejected, model: group.model, at: group.last, batchId: '',
+      ageMs: Number.isFinite(Date.parse(group.last)) ? Math.max(0, now - Date.parse(group.last)) : null, count: group.count,
+      title: `${group.model ? `${group.model}: ` : ''}${TEXT.response_rejected[0]}`, detail: TEXT.response_rejected[1], hint: TEXT.response_rejected[2],
+      reason: `${group.reason} ×${group.count} · этапов: ${group.stages.size}`
+    }));
     const order = { critical: 0, warning: 1, info: 2 };
-    const allProblems = problems(list, batchList, orphans, now, version).concat(failedStages)
+    const allProblems = problems(list, batchList, orphans, now, version).concat(failedStages, rejected)
       .sort((a, b) => order[a.severity] - order[b.severity] || String(b.at).localeCompare(String(a.at)));
     return { sends: list, batches: batchList, rejections: orphans, moderator, problems: allProblems, matrix: matrix(list) };
   }
