@@ -1,5 +1,13 @@
 # CHANGELOG — Project
 
+### 2026-10-02 — No dead time between auto stages; no false alarms for delivered answers, version 2.81.552
+
+- Field report (10) (Auto, Test, Gemini + Grok): the flow worked — two stages, the run completed by itself, no pause needed. But stage 2 waited **19 s** to start: the background refused it four times with `RUN_ALREADY_ACTIVE` (its own rounds were still "in progress") although the panel had every final of stage 1. Cause: the background's automatic Get-it pass (`allModels`) visited and re-read **every** model after the rounds — about 10 s per model — even those that had answered successfully; the re-read answers then came back as `identity_rejected: unknown_request` (late repeats of stage 1). Over a 26-stage template that is minutes of waiting.
+- In a pipeline stage the automatic pass now visits only models that need recovery (not SUCCESS, or no answer). The main page keeps its all-model automatic pass (deliberate earlier decision, tested) and a manual Get it still re-reads everyone.
+- Report: a repeat of an already delivered answer (`unknown_request`, `batch_settled`, `duplicate_terminal`, `revision_after_terminal`) is the info `late_duplicate`, not the warning `identity`; many tab switches on a delivered answer are the info `focus_moves`, not `focus_churn` ("the answer was never accepted" was shown for answers that were delivered). Real rejections and undelivered answers still warn.
+- Not changed: the ~6 s the engine itself spends between two stages (planning, artifact extraction).
+- Tests: `get-it-bottom`, `message-delivery-semi-auto`.
+
 ### 2026-10-02 — Merge of the pipeline page width work, version 2.81.546
 
 - Integrates the parallel layout changes (2.81.544–2.81.545: feed back inside the composer, wider working column) with the Run-button flow work; no behavior changes beyond that.

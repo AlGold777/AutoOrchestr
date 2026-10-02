@@ -10040,7 +10040,16 @@ async function collectFailedGetItPages(selectedModels, options) {
     ...(options.allModels ? [] : Object.keys(jobState?.llms || {}))
   ])].filter(name => {
     const entry = jobState?.llms?.[name];
-    return entry && (options.allModels || String(entry.finalStatus || entry.status).toUpperCase() !== 'SUCCESS' || !entry.answer);
+    if (!entry) return false;
+    const succeeded = String(entry.finalStatus || entry.status).toUpperCase() === 'SUCCESS' && Boolean(String(entry.answer || '').trim());
+    // In a pipeline stage the automatic pass is a recovery pass: a model that already answered
+    // successfully is not visited and re-read (the panel holds its final with the delivery proof;
+    // each visit held the background's rounds ~10 s per model, refused the next stage's start with
+    // RUN_ALREADY_ACTIVE, and the re-read answer came back rejected as an unknown request).
+    // The main page keeps its all-model pass, and a manual Get it re-reads every selected model.
+    const inPipelineStage = Boolean(jobState?.session?.pipelineContext?.pipelineRunId);
+    if (options.automatic && options.allModels && inPipelineStage) return !succeeded;
+    return options.allModels || !succeeded;
   });
   if (!names.length) return {status:'get_it_empty', results:[]};
   const entries = new Map(names.map(name => [name, {

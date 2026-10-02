@@ -216,3 +216,33 @@ test('automatic pass waits for an existing manual batch without losing the all-m
   finish({status:'manual_ping_sent'});await manual;await automatic;
   expect(c.handleManualResponsePing.mock.calls.map(([name])=>name)).toEqual(['Qwen','GPT','Qwen']);
 });
+
+test('in a pipeline stage the automatic pass visits only models that need recovery; main page and manual passes still re-read everyone', async () => {
+  const mk = () => {
+    const c = batchSetup();
+    Object.assign(c, { self: {}, getTabSafe: async (id) => ({ id }), isEligibleTabForLlm: () => true, isAppUiTab: () => false,
+      runPreCollectScrollNudge: jest.fn(async () => true) });
+    c.jobState.llms = { GPT: { tabId: 1, status: 'SUCCESS', finalStatus: 'SUCCESS', answer: 'done' }, Qwen: { tabId: 2, status: 'UNCERTAIN' }, Claude: { tabId: 3, status: 'SUCCESS', finalStatus: 'SUCCESS', answer: '' } };
+    c.jobState.session = { pipelineContext: { pipelineRunId: 'run-1' } };
+    return c;
+  };
+  const auto = mk();
+  const r = await auto.collectGetItBatch(['GPT', 'Qwen', 'Claude'], { failedOnly: true, allModels: true, automatic: true });
+  expect(r.status).toBe('get_it_completed');
+  expect(auto.runPreCollectScrollNudge.mock.calls.map(([name]) => name)).toEqual(['Qwen', 'Claude']);
+
+  const allGreen = mk();
+  allGreen.jobState.llms = { GPT: { tabId: 1, status: 'SUCCESS', finalStatus: 'SUCCESS', answer: 'a' }, Claude: { tabId: 3, status: 'SUCCESS', finalStatus: 'SUCCESS', answer: 'b' } };
+  expect((await allGreen.collectGetItBatch(['GPT', 'Claude'], { failedOnly: true, allModels: true, automatic: true })).status).toBe('get_it_empty');
+  expect(allGreen.runPreCollectScrollNudge).not.toHaveBeenCalled();
+
+  const manual = mk();
+  await manual.collectGetItBatch(['GPT', 'Qwen', 'Claude'], { failedOnly: true, allModels: true });
+  expect(manual.runPreCollectScrollNudge.mock.calls.map(([name]) => name)).toEqual(['GPT', 'Qwen', 'Claude']);
+
+  // The main page (no pipeline run) keeps the all-model automatic pass.
+  const main = mk();
+  main.jobState.session = {};
+  await main.collectGetItBatch(['GPT', 'Qwen', 'Claude'], { failedOnly: true, allModels: true, automatic: true });
+  expect(main.runPreCollectScrollNudge.mock.calls.map(([name]) => name)).toEqual(['GPT', 'Qwen', 'Claude']);
+});

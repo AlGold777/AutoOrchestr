@@ -103,3 +103,31 @@ describe('report (9): text received, request closed empty', () => {
     expect(script).toContain("location.pathname !== startPath && /\\/a\\/chat\\/s\\//.test(location.pathname)");
   });
 });
+
+describe('report (10): no alarms for answers that were delivered', () => {
+  const base = (extra) => [
+    { at: at(0), kind: 'prepared', model: 'Gemini', token: 'AO-gem111', requestId: 'treq-g', chars: 100, batchId: '' },
+    { at: at(0.01), kind: 'batch_start', batchId: 'stage-1:a1', waitId: 'wait-1', models: ['Gemini'], requestIds: { Gemini: 'treq-g' }, runMode: 'auto', template: 'Test' },
+    { at: at(25), kind: 'first_text', model: 'Gemini', requestId: 'treq-g', ms: 25000, chars: 1300 },
+    { at: at(40), kind: 'verified', model: 'Gemini', requestId: 'treq-g', token: 'AO-gem111', ms: 40000, chars: 1332, completion: 'complete', status: 'SUCCESS', answer: 'x' },
+    ...extra
+  ];
+  const focus = (n) => Array.from({ length: n }, (_, i) => ({ at: at(5 + i), kind: 'focus', model: 'Gemini', requestId: 'treq-g', n: i + 1, source: 'activate_tab_for_dispatch' }));
+
+  test('a late repeat of a delivered answer is information, not an identity alarm; a real rejection still is one', () => {
+    const repeat = [{ at: at(66), kind: 'identity_rejected', model: 'Gemini', requestId: 'treq-g', reason: 'unknown_request', chars: 1331 }];
+    const d = Diagnosis.diagnose(base(repeat), { now: T0 + 100000 });
+    expect(d.problems.find((p) => p.code === 'identity')).toBeUndefined();
+    expect(d.problems.find((p) => p.code === 'late_duplicate')).toMatchObject({ severity: 'info', count: 1 });
+    const foreign = [{ at: at(66), kind: 'identity_rejected', model: 'Gemini', requestId: 'treq-g', reason: 'model_mismatch', chars: 9 }];
+    expect(Diagnosis.diagnose(base(foreign), { now: T0 + 100000 }).problems.find((p) => p.code === 'identity')).toBeTruthy();
+  });
+
+  test('many tab switches on a delivered answer are information; on an undelivered one they stay a warning', () => {
+    const d = Diagnosis.diagnose(base(focus(6)), { now: T0 + 100000 });
+    expect(d.problems.find((p) => p.code === 'focus_churn')).toBeUndefined();
+    expect(d.problems.find((p) => p.code === 'focus_moves')).toMatchObject({ severity: 'info' });
+    const undelivered = base(focus(6)).filter((event) => event.kind !== 'verified');
+    expect(Diagnosis.diagnose(undelivered, { now: T0 + 100000 }).problems.find((p) => p.code === 'focus_churn')).toMatchObject({ severity: 'warning' });
+  });
+});

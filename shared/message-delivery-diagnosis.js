@@ -32,13 +32,15 @@
     response_rejected: ['Ответ модели не принят движком', 'Ответ получен, но не прошёл приёмку этапа (причина указана в строке), поэтому запрос повторялся: каждая попытка — лишний вызов модели.', 'Если причина повторяется у одной модели — смотрите её ответ во вкладке; приложите JSON-отчёт.'],
     participants_unavailable: ['Следующему этапу некого запускать', 'Все назначенные на следующий этап модели выбыли из запуска (терминальный сбой доставки). Запуск остановлен, чтобы не стоять молча.', 'Проверьте вкладки выбывших моделей; «Продолжить» повторит попытку, либо остановите запуск.'],
     text_lost: ['Текст ответа был получен, а запрос закрыт пустым', 'Страница модели показала текст ответа (размер указан в строке), но запрос завершён как пустой (например «отправка не подтверждена»): ответ потерян для этапа, хотя он есть на странице модели.', 'Нажмите Get it: он перечитает ответ со страницы. Если повторяется у одной модели — приложите JSON-отчёт (дефект подтверждения отправки или завершения).'],
+    late_duplicate: ['Повтор уже принятого ответа', 'После того как ответ был доставлен, пришли его повторы (перечитывание страницы, восстановление): система их отбросила как лишние.', 'Ничего делать не нужно: ответ уже в этапе.'],
+    focus_moves: ['Вкладка модели переключалась, ответ доставлен', 'Система переключалась на вкладку модели (отправка, визиты), ответ принят.', 'Ничего делать не нужно; много переключений замедляют этап.'],
     stage_failed: ['Этап не дал ни одного принятого ответа', 'Движок остановил запуск: ни одна модель этапа не вернула принятый ответ. Этап не повторяется сам, чтобы не тратить вызовы.', 'Проверьте вкладки моделей (Get it подтянет готовые ответы); «Продолжить» повторит этап один раз.'],
     display_desync: ['Ответ показан, но этап его не принял', 'Текст ответа уже выведен в карточку (источник указан в строке), а ожидание этапа его не получило: этап ждёт то, что пользователь уже видит.', 'Нажмите Get it, чтобы подтянуть ответ в этап, или «Дальше», чтобы закрыть этап с собранным. Если повторяется — приложите JSON-отчёт.']
   };
   const SEVERITY = {
     no_tab: 'critical', not_submitted: 'critical', premature_terminal: 'critical', stuck_waiting: 'critical', stale_background: 'critical', no_answer: 'critical', empty: 'critical', start_rejected: 'critical', batch_timeout: 'critical',
     partial: 'warning', display_desync: 'warning', focus_churn: 'warning', error: 'warning', no_token: 'warning', identity: 'warning', stop_unconfirmed: 'warning',
-    stage_failed: 'warning', response_rejected: 'warning', participants_unavailable: 'warning', text_lost: 'critical',
+    stage_failed: 'warning', response_rejected: 'warning', participants_unavailable: 'warning', text_lost: 'critical', late_duplicate: 'info', focus_moves: 'info',
     cancelled: 'info', stale: 'info', start_refused: 'info', waiting: 'info'
   };
   const RESULTS = ['delivered', 'partial', 'no_token', 'empty', 'no_answer', 'not_submitted', 'no_tab', 'error', 'cancelled', 'waiting'];
@@ -257,11 +259,15 @@
       }
       if (send.focus.count >= FOCUS_CHURN_THRESHOLD) {
         const sources = Object.entries(send.focus.sources).map(([name, n]) => `${name} ×${n}`).join(', ');
-        out.push(make('focus_churn', send, { count: send.focus.count, reason: [`${send.focus.count} переключений`, sources].filter(Boolean).join(' · ') }));
+        // "The answer was never accepted" is only true when it was not: a delivered answer is information.
+        out.push(make(send.result === 'delivered' ? 'focus_moves' : 'focus_churn', send, { count: send.focus.count, reason: [`${send.focus.count} переключений`, sources].filter(Boolean).join(' · ') }));
       }
       if (send.stale) out.push(make('stale', send, { count: send.stale }));
       if (send.rejections.length) {
-        out.push(make('identity', send, { count: send.rejections.length, reason: [...new Set(send.rejections.map((r) => r.reason))].join(', ') }));
+        // Repeats of an answer that was already delivered are noise, not a defect.
+        const benign = ['unknown_request', 'batch_settled', 'duplicate_terminal', 'revision_after_terminal'];
+        const onlyRepeats = send.result === 'delivered' && send.rejections.every((r) => benign.includes(r.reason));
+        out.push(make(onlyRepeats ? 'late_duplicate' : 'identity', send, { count: send.rejections.length, reason: [...new Set(send.rejections.map((r) => r.reason))].join(', ') }));
       }
       if (send.providerStop && !send.providerStop.stopped && send.providerStop.reason !== 'no_stop_control') {
         out.push(make('stop_unconfirmed', send, { reason: send.providerStop.reason }));
