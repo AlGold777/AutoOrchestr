@@ -1,5 +1,14 @@
 # CHANGELOG — Project
 
+### 2026-10-03 — Report digest script: request-level chronology and field paths, version 2.81.568
+
+- `scripts/summarize-report.js` now carries the requirements of the transport investigation, so the model no longer computes them. For a Disput Flow export it prints field paths (`events[N]`, `delivery.journal[N]`, `diagnoses[N]`), marks computed values `calc:`, and keeps "no field", null, `""`, `[]` and 0 records apart.
+- Each transport request (model × batch, `requestId`) is an attempt. Events join it by `requestId`, then by `dispatchId`; a join by `stageId` + model only is labelled. A `dispatchId` recorded under a later request is shown as foreign: in the 2.81.567 report the stage-4 DeepSeek `CONTEXT_LOST` carries the stage-3 dispatch.
+- New sections: data sufficiency (`events[]` filtered against `integrity.eventsTotal`, plan, truncated prompts), identity map, attempts with all terminals and first/last delays, full chronology of problem attempts including `LEGACY_DIAGNOSTIC_EVENT`, text lengths before submit or equal to the previous answer, answer lengths per measurement point, manual/moderator counts, start refusals (no invented lock duration), focus within first text → final, records outside the run window, the answer found in a later stored prompt, field disagreements, and the embedded `delivery` section.
+- Median is the true median (mean of the two middle values); `LONG` is > 3 × median or > 120000 ms.
+- `docs/report-analysis-prompt.md`: JSON → script → a short prompt that only checks the script output, labelling each statement as fact / calculation / hypothesis / insufficient data.
+- Tests: `tests/summarize-report.test.js` updated for the new Disput Flow output and a delivery-section case (not run in this change).
+
 ### 2026-10-02 — Preserve round identity across recovered and deferred answers, version 2.81.567
 
 - The field report from 2.81.564 ends with two copies of Gemini's stage-three answer. Round/run identity is now stored on each background model entry and carried by live deliveries, manual recovery and global-state snapshots, so the badge also survives a panel reload without its in-memory waiter registry.
