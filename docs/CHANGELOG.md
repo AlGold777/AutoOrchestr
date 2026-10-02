@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-10-02 — Increase pipeline round badge text size, version 2.81.565
+
+- The circular `R1` badge text increases to 11px at weight 600; the badge grows from 22px to 24px to keep the label centered.
+
 ### 2026-10-02 — Round badges and one answer card per model per round, version 2.81.564
 
 - The pipeline feed shows a compact circular `R1`, `R2`, … badge immediately after the model name, including approved and restored cards.
