@@ -332,7 +332,7 @@ describe('card marks: incomplete and verify', () => {
   function loadMarkers() {
     const results = read('results.js');
     const start = results.indexOf('    function applyPartialMarker(container, meta = {}) {');
-    const end = results.indexOf('    // A model has at most ONE open (not-yet-approved) answer card per session.');
+    const end = results.indexOf('    function resolveDebateFeedMeta', start);
     // eslint-disable-next-line no-new-func
     return new Function('window', 'document', `${results.slice(start, end)}\nreturn { applyPartialMarker, applyAttributionMarker };`)(window, document);
   }
@@ -345,7 +345,7 @@ describe('card marks: incomplete and verify', () => {
     const { applyAttributionMarker } = loadMarkers();
     const el = card();
     applyAttributionMarker(el, { status: 'STREAM_TIMEOUT' });
-    expect(el.querySelector('.debate-model-card-title-main > .answer-partial-mark').textContent).toBe('неполный');
+    expect(el.querySelector('.debate-model-card-title-main > .answer-partial-mark').textContent).toBe('uncompleted');
     // A later message without a status keeps the mark; a complete one removes it.
     applyAttributionMarker(el, {});
     expect(el.querySelector('.answer-partial-mark')).not.toBeNull();

@@ -16553,7 +16553,8 @@ document.addEventListener('click', (event) => {
                 attributionLabel: 'Attribution unverified',
                 completenessState: unverifiedArtifact.completenessState || 'complete',
                 reason: unverifiedArtifact.reason || 'materialize_recovery_freshness_unproven',
-                source: 'GLOBAL_STATE_UNVERIFIED_ARTIFACT'
+                source: 'GLOBAL_STATE_UNVERIFIED_ARTIFACT',
+                transportRequestId: entry?.transportRequestId || ''
             });
             return true;
         }
@@ -17280,7 +17281,10 @@ document.addEventListener('click', (event) => {
                             const recoveryMeta = {
                                 status: message.finalStatus || 'PARTIAL',
                                 source: 'MANUAL_PING_RESULT_RECOVERY',
-                                requestId: message.requestId || ''
+                                requestId: message.requestId || '',
+                                transportRequestId: message.transportRequestId || message.metadata?.transportRequestId || '',
+                                pipelineRunId: message.pipelineRunId || message.metadata?.pipelineRunId || '',
+                                pipelineRoundId: message.pipelineRoundId || message.metadata?.pipelineRoundId || ''
                             };
                             updateLLMPanelOutput(llmName, recoveredText, message.answerHtml || '', recoveryMeta);
                             manualPingReveal.delete(llmName);
@@ -20778,9 +20782,9 @@ function checkCompareButtonState() {
             if (timeEl && titleMainEl) {
                 timeEl.classList.remove('msg-time');
                 timeEl.classList.add('debate-inline-time');
-                const roundEl = card.querySelector('.debate-model-card-round') || nameEl;
-                const referenceEl = roundEl?.nextSibling || titleMainEl.firstChild;
-                if (timeEl.parentElement !== titleMainEl || timeEl.previousElementSibling !== roundEl) {
+                const labelEl = card.querySelector('.answer-partial-mark') || card.querySelector('.debate-model-card-round') || nameEl;
+                const referenceEl = labelEl?.nextSibling || titleMainEl.firstChild;
+                if (timeEl.parentElement !== titleMainEl || timeEl.previousElementSibling !== labelEl) {
                     titleMainEl.insertBefore(timeEl, referenceEl);
                 }
             }
@@ -21232,8 +21236,10 @@ function checkCompareButtonState() {
             if (title) title.appendChild(mark);
             else container.insertBefore(mark, container.firstChild);
         }
-        mark.textContent = 'неполный';
+        mark.textContent = 'uncompleted';
         mark.title = `Генерация не завершилась чисто (${status}). Текст может быть обрезан.`;
+        const round = container.querySelector('.debate-model-card-round');
+        if (round && round.nextElementSibling !== mark) round.after(mark);
     }
     function applyAttributionMarker(container, meta = {}) {
         if (!container) return;
@@ -21506,6 +21512,7 @@ function checkCompareButtonState() {
         const targetCard = sameRequest[sameRequest.length - 1] || repeated[repeated.length - 1] || null;
         if (!targetCard) return false;
         setDebateCardRound(targetCard, meta);
+        applyPartialMarker(targetCard, meta);
         const primaryOutput = targetCard.querySelector('.debate-model-card-output');
         const primaryText = shownTextOf(targetCard);
         // Nothing new: the same text, or an older/shorter copy of what is shown.

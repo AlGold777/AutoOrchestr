@@ -10402,6 +10402,7 @@ async function handleManualResponsePing(llmName, options = {}) {
             answer: String(updatedEntry?.answer || result.text || ''),
             answerHtml: String(updatedEntry?.answerHtml || result.html || ''),
             requestId: updatedEntry?.requestId || null,
+            ...transportIdentityFor(updatedEntry),
             finalStatus: updatedEntry?.finalStatus || updatedEntry?.status || null,
             strategyId: candidate?.strategyId || result.strategyId || strategy?.id || null,
             selectorUsed: candidate?.selectorDescriptor || result.selectorDescriptor || result.selectorUsed || null,

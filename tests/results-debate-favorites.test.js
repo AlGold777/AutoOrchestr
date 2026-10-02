@@ -1412,6 +1412,51 @@ describe('Pipeline debate favorites view', () => {
     expect(session.turns.find((turn) => turn.author === 'GPT').delivery).toMatchObject(context);
   });
 
+  test('a manually recovered incomplete DeepSeek answer keeps its R3 badge', async () => {
+    const debug = window.__pipelineLifecycleDebug;
+    const wait = debug.pipelineWaiter.waitForModels(['DeepSeek'], {
+      context: { pipelineRunId: 'incomplete-run', pipelineRoundId: 'r3' },
+      requestIds: { DeepSeek: 'incomplete-round-request' }, timeoutMs: 600000
+    });
+    const receive = (message) => {
+      chrome.runtime.onMessage.addListener.mock.calls.forEach(([listener]) => listener(message, {}, jest.fn()));
+    };
+    receive({
+      type: 'MANUAL_PING_RESULT', llmName: 'DeepSeek', status: 'success', finalStatus: 'STREAM_TIMEOUT',
+      answer: 'Recovered incomplete answer.', requestId: 'background-job-request',
+      transportRequestId: 'incomplete-round-request'
+    });
+    const card = document.querySelector('.debate-model-card[data-llm-name="DeepSeek"]');
+    const name = card.querySelector('.debate-model-card-name');
+    expect(name.nextElementSibling.textContent).toBe('R3');
+    expect(name.nextElementSibling.nextElementSibling.textContent).toBe('uncompleted');
+    expect(card.dataset.requestId).toBe('incomplete-round-request');
+    receive({
+      type: 'LLM_PARTIAL_RESPONSE', llmName: 'DeepSeek', answer: 'Recovered incomplete answer.',
+      transportRequestId: 'incomplete-round-request', metadata: { status: 'STREAM_TIMEOUT', terminal: true }
+    });
+    await wait;
+    expect(document.querySelectorAll('.debate-model-card[data-llm-name="DeepSeek"]')).toHaveLength(1);
+    expect(card.querySelector('.debate-model-card-round').textContent).toBe('R3');
+    expect(card.querySelectorAll('.answer-partial-mark')).toHaveLength(1);
+  });
+
+  test('an adopted answer receives its incomplete mark without losing its round or creating a card', () => {
+    const debug = window.__pipelineLifecycleDebug;
+    const meta = { requestId: 'adopted-incomplete', pipelineRunId: 'incomplete-adopt-run', pipelineRoundId: 'r3' };
+    debug.updateLLMPanelOutput('DeepSeek', 'Text already shown.', '', { ...meta, status: 'GENERATING' });
+    const card = document.querySelector('.debate-model-card[data-llm-name="DeepSeek"]');
+    card.querySelector('.debate-approval-check').click();
+    debug.updateLLMPanelOutput('DeepSeek', 'Text already shown.', '', { ...meta, status: 'PARTIAL' });
+    const badge = card.querySelector('.debate-model-card-round');
+    expect(badge.textContent).toBe('R3');
+    expect(badge.nextElementSibling.textContent).toBe('uncompleted');
+    expect(document.querySelectorAll('.debate-model-card[data-llm-name="DeepSeek"]')).toHaveLength(1);
+    debug.updateLLMPanelOutput('DeepSeek', 'Text already shown.', '', { ...meta, status: 'SUCCESS' });
+    expect(card.querySelector('.answer-partial-mark')).toBeNull();
+    expect(card.querySelector('.debate-model-card-round')).toBe(badge);
+  });
+
   test('identical answers in R1 and R2 remain separate; late R1 growth updates only R1', () => {
     const debug = window.__pipelineLifecycleDebug;
     const meta = (round) => ({

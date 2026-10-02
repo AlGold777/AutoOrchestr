@@ -6,6 +6,8 @@ collecting answers, and running Debate pipelines.
 Pipeline answer cards show a small round badge beside the model name (`GPT R1`).
 Each model has one card per round: streaming updates reuse it, and later answer
 growth adds paragraphs to the same card. The next round gets a separate card.
+Incomplete answers retain the round badge and show `uncompleted` after it
+(for example, `DeepSeek R3 uncompleted`), including manually recovered answers.
 
 ## Start here
 

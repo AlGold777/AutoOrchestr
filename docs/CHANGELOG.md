@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-02 — Keep round badges on incomplete recovered answers, version 2.81.566
+
+- Manual answer recovery now carries the model entry's transport identity through to the feed, so an incomplete recovered answer displays its actual round badge (for example, `DeepSeek R3 uncompleted`). Unverified global-state recovery also preserves that identity.
+- The incomplete label is `uncompleted` and sits immediately after the round badge. A terminal status updates this label even when it repeats text already shown or approved; a complete response removes the label and retains the round.
+- Tests: runtime manual recovery for DeepSeek R3, repeated terminal delivery, adopted incomplete answers, marker removal after completion, and recovery card preservation.
+
 ### 2026-10-02 — Increase pipeline round badge text size, version 2.81.565
 
 - The circular `R1` badge text increases to 11px at weight 600; the badge grows from 22px to 24px to keep the label centered.
