@@ -217,3 +217,15 @@ describe('Run button ignores a phantom run state', () => {
     expect(source).toContain("'ui_phantom_state'");
   });
 });
+
+describe('no model is pre-selected', () => {
+  const Presets = require('../disput/pipeline-presets');
+
+  test('built-in templates store no models, so choosing one selects nothing for the moderator', () => {
+    Presets.BUILTIN_PIPELINE_DEFINITIONS.forEach((definition) => expect(definition.defaultModelCount).toBe(0));
+  });
+
+  test('applying a template without stored models does not clear the moderator\'s own selection', () => {
+    expect(source).toContain('if (isPipelinePage && Array.isArray(protocol.selectedModels) && protocol.selectedModels.length) {');
+  });
+});

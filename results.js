@@ -6550,7 +6550,9 @@ document.addEventListener('click', (event) => {
                 if (debateMaxTurnsInput && protocol.maxTurns) {
                     debateMaxTurnsInput.value = String(protocol.maxTurns);
                 }
-                if (isPipelinePage && Array.isArray(protocol.selectedModels)) {
+                // A template with no stored models leaves the moderator's own choice alone (the built-in
+                // templates store none: nothing is pre-selected); a saved pipeline restores its models.
+                if (isPipelinePage && Array.isArray(protocol.selectedModels) && protocol.selectedModels.length) {
                     setHeaderSelectedLLMsFromNames(protocol.selectedModels);
                 }
                 const hasPersistedSynthesizer = typeof protocol.synthesizer === 'string'

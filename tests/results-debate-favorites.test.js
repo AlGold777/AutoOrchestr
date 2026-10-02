@@ -1431,8 +1431,9 @@ describe('Pipeline debate favorites view', () => {
     expect(roundLimit.value).toBe('3');
   });
 
-  test('Universal runtime default activates exactly two models', () => {
-    expect(window.PipelineRuntime.DEFAULT_MODEL_INDICES).toEqual([0, 1]);
+  test('no model is selected by default', () => {
+    expect(window.PipelineRuntime.DEFAULT_MODEL_INDICES).toEqual([]);
+    expect(window.PipelineRuntime.MODELS.filter((model) => model.defaultActive)).toEqual([]);
   });
 
   test('Universal selection keeps every selected available model', () => {

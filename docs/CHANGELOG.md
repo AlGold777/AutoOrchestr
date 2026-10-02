@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-02 — No model is selected by default, version 2.81.540
+
+- Claude and GPT were pre-selected on the pipeline page from two places: the pipeline runtime (`defaultActive` of the first two models) and the built-in templates (`defaultModelCount` 2–3 selected the first models in the header when a template was applied). Both are gone: no model is active by default and the built-in templates store no models.
+- Applying a template whose stored model list is empty no longer touches the moderator's own selection (before, applying a template replaced it); a saved pipeline with stored models still restores them.
+- Tests: `pipeline-semi-auto`, `results-debate-favorites` ("no model is selected by default").
+
 ### 2026-10-02 — Run button no longer shows pause/resume/approve without a real run, version 2.81.539
 
 - Field report: right after opening the pipeline page (no models chosen) the Run button was already in the pause state and stayed so. The state of the run aggregate (`pause`, `awaiting_approval`, an approval waiter) was read as a live run although nothing had run on this page — a phantom state. In the page test harness the same phantom appeared as "approve" after other tests had left the aggregate in `awaiting_approval`.

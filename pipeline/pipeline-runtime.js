@@ -2,8 +2,8 @@
     'use strict';
 
     const MODELS = [
-        { name: 'Claude', defaultActive: true },
-        { name: 'GPT', defaultActive: true },
+        { name: 'Claude', defaultActive: false },
+        { name: 'GPT', defaultActive: false },
         { name: 'Gemini', defaultActive: false },
         { name: 'Grok', defaultActive: false },
         { name: 'Le Chat', defaultActive: false },
