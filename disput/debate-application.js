@@ -175,6 +175,8 @@
       return { ok: true, orchestrator: universal, debateCase, plannedStages, validation, runId };
     }
 
+    const pausedWaiters = [];
+
     function recordUniversalEvent(type, payload = {}) {
       const body = payload?.payload || payload;
       // Lifecycle projections are committed before ancillary timeline work. This
@@ -189,6 +191,9 @@
       // failed stage): the aggregate shows "paused" so the one existing "Continue" works.
       if (type === 'PARTICIPANT_RESPONSE_REJECTED' || type === 'PARTICIPANT_DISPATCH_FAILED') {
         try { deps.onResponseRejected?.({ type, ...body }); } catch (_) { /* telemetry hook */ }
+      }
+      if (type === 'RUN_PAUSED') {
+        pausedWaiters.splice(0).forEach((resolve) => resolve());
       }
       if (type === 'RUN_PAUSED' && body.by === 'engine') {
         dispatch(event.PAUSE_REQUESTED, { reason: body.reason || 'engine_pause' });
@@ -270,6 +275,11 @@
         return universal?.requestPause?.({ requestedBy: 'moderator', reason }) || { ok: false, code: 'RUN_NOT_STARTED' };
       },
       async resume() {
+        // "Continue" pressed while the paused stage is still finishing: wait for the pause, then go on.
+        const lifecycle = universal?.getState?.()?.lifecycle;
+        if (['PAUSE_REQUESTED', 'QUIESCING'].includes(lifecycle)) {
+          await new Promise((resolve) => pausedWaiters.push(resolve));
+        }
         return universal?.requestContinue?.({ requestedBy: 'moderator' }) || { ok: false, code: 'RUN_NOT_STARTED' };
       },
       approveTurn(turn) {

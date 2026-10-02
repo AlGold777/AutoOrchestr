@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-02 — Pause closes the round; Run after it starts the next round, version 2.81.542
+
+- **The manual hand-over to the next round did not work.** Agreed mechanism: while a round is active the Run button is "pause"; the moderator who finds the answers in the feed good enough presses it, the round stops, the button is "Run" again and pressing it starts the next round. Two defects: (1) Pause only asked the engine to pause *after* the running stage and did not stop the round's wait, so the round went on waiting for every model; (2) in the engine a pause requested while a stage ran left the run `QUIESCING` forever (`quiescePromise` was never assigned): after the round ended nothing completed the pause, the button showed Run, and "Continue" answered `NOT_PAUSED` — nothing started.
+- Engine: a requested pause now ends (`PAUSED`, `RUN_PAUSED`) when the running stage is done (`finishRequestedPause` / `completePauseIfQuiesced` in the run loop). `DebateApplication.resume()` pressed while the stage is still finishing waits for the pause and then continues.
+- Page: Pause closes the running round with the answers the models have shown so far (finals; text still arriving is taken as incomplete and unproven; models with nothing yet are skipped for this round only), journals `moderator_pause`, then pauses. With Auto off the "next" button already closed the round and the engine paused after the stage. Run after the pause continues with the next round (in Auto the remaining rounds then go on by themselves until the next stop).
+- Tests: `pause-resume` (real engine; fails on the old orchestrator).
+
 ### 2026-10-02 — The moderator input is emptied after the message is sent, version 2.81.541
 
 - Starting a run with Run took the input text as the run's task (it shows up in the feed) but left it in the input. The input is now emptied when the run starts (the manual moderator dispatch already did this). If the run cannot start (rejected start or an error other than a cancel) the text is put back, only into an empty input — never over text typed since.

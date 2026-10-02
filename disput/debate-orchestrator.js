@@ -945,6 +945,22 @@
       return null;
     }
 
+    // A pause requested while a stage runs ends here, when that stage is done: without this the run
+    // stayed QUIESCING forever and "Continue" answered NOT_PAUSED (the Run button, back in its
+    // "run" state after Pause, started nothing).
+    function finishRequestedPause() {
+      state.lifecycle = LIFECYCLE.PAUSED;
+      emit('RUN_PAUSED', {});
+      persistRecoveryPoint('run_paused');
+      persistence.saveSnapshot(buildSnapshot());
+      releaseLease('paused');
+    }
+    function completePauseIfQuiesced() {
+      if (state.lifecycle !== LIFECYCLE.QUIESCING || state.stages.some((s) => s.status === 'running')) return false;
+      finishRequestedPause();
+      return true;
+    }
+
     function enterStagePause(pause) {
       state.lifecycle = LIFECYCLE.PAUSED;
       state.pausePolicy = 'stage_gate';
@@ -962,6 +978,7 @@
         if (!renewLease()) return handleLeaseLost('lease_renewal_failed');
         const outcome = await step();
         if (!outcome.ok) return outcome;
+        if (completePauseIfQuiesced()) return { ...outcome, paused: true };
         if (outcome.pause && state.lifecycle === LIFECYCLE.RUNNING) {
           enterStagePause(outcome.pause);
           return { ...outcome, paused: true };
@@ -1187,13 +1204,7 @@
         }
         if (quiescePromise) await quiescePromise.catch(() => {});
         const stillRunning = state.stages.some((s) => s.status === 'running');
-        if (!stillRunning) {
-          state.lifecycle = LIFECYCLE.PAUSED;
-          emit('RUN_PAUSED', {});
-          persistRecoveryPoint('run_paused');
-          persistence.saveSnapshot(buildSnapshot());
-          releaseLease('paused');
-        }
+        if (!stillRunning) finishRequestedPause();
         if (abortController && state.pausePolicy === 'cancel_active_dispatch' && deps.AbortController) {
           abortController = createAbortController();
         }

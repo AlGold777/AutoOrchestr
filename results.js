@@ -7648,6 +7648,21 @@ document.addEventListener('click', (event) => {
             }
             if (controls.action === 'pause') {
                 event.preventDefault();
+                // Pause = "the answers I see in the feed are enough": the running round is closed with
+                // what the models have shown so far (final answers, and text still on its way is taken
+                // as incomplete), then the run pauses. The button comes back as Run; pressing it
+                // starts the next round. Models with nothing yet are skipped for this round only.
+                const preview = pipelineWaiter.previewClose();
+                if (preview.closable) {
+                    const closed = pipelineWaiter.closeAnsweredBatches('moderator_closed');
+                    globalThis.MessageDelivery?.batchEvent?.('moderator_pause', {
+                        answered: preview.answeredModels, adopted: preview.partialModels, skipped: closed.skipped, stillWaiting: closed.stillWaiting
+                    });
+                    showNotification(`Раунд закрыт с имеющимися ответами (${[...preview.answeredModels, ...preview.partialModels].join(', ')}).${closed.skipped.length ? ` Без ответа: ${closed.skipped.join(', ')}.` : ''} Нажмите «Пуск» для следующего раунда.`, 'info');
+                } else {
+                    globalThis.MessageDelivery?.batchEvent?.('moderator_pause', { answered: [], adopted: [], skipped: [], stillWaiting: pipelineWaiter.openModels().length });
+                    showNotification('Модели ещё ничего не показали: пауза после раунда. Get it подтянет готовые ответы.', 'info');
+                }
                 setDebatePausedState(true, 'pause_button');
                 return;
             }

@@ -200,7 +200,7 @@
   }
 
   // Semi-automatic moderator actions, in journal order.
-  const MODERATOR_KINDS = ['response_rejected', 'moderator_get_it', 'get_it_result', 'moderator_stage_close', 'moderator_close_refused', 'moderator_approve', 'run_paused', 'owner_answer'];
+  const MODERATOR_KINDS = ['response_rejected', 'moderator_get_it', 'get_it_result', 'moderator_stage_close', 'moderator_close_refused', 'moderator_approve', 'moderator_pause', 'run_paused', 'owner_answer'];
   function moderatorActions(journal) {
     return (journal || []).filter((event) => MODERATOR_KINDS.includes(event.kind)).map((event) => ({ ...event }));
   }
