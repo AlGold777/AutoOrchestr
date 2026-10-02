@@ -1156,13 +1156,38 @@ describe('Pipeline debate favorites view', () => {
 
     expect(card.querySelector('.debate-model-card-output').textContent.trim()).toBe(original);
     expect(output.textContent.trim()).toBe(original);
-    const revisionSummary = card.querySelector('.post-terminal-answer-revision summary');
-    // Short header label (source cut to 20 chars + "..."); full wording in the tooltip.
-    expect(revisionSummary.textContent).toBe('Updated · Late partial respons... · Δ +36');
-    expect(revisionSummary.title).toContain('Ответ обновлён после завершения');
-    expect(revisionSummary.title).toContain('late_partial_response');
-    expect(card.querySelector('.post-terminal-answer-revision-body').dataset.fullLabel).toBe(revisionSummary.title);
+    const badge = card.querySelector('.post-terminal-badge');
+    // One badge right of the time; each update is a tab with a short label.
+    expect(badge.textContent).toBe('Δ 1');
+    expect(badge.closest('.debate-model-card-header')).not.toBeNull();
+    expect(card.querySelector('.debate-model-card-time').nextElementSibling).toBe(badge.parentElement);
+    const revisionTab = card.querySelector('.post-terminal-tab');
+    expect(revisionTab.textContent).toBe('1 · Late partial respons... · Δ +36');
+    expect(revisionTab.title).toContain('Ответ обновлён после завершения');
+    expect(revisionTab.title).toContain('late_partial_response');
+    expect(card.querySelector('.post-terminal-answer-revision-body').dataset.fullLabel).toBe(revisionTab.title);
+    expect(card.querySelector('.post-terminal-popover').hidden).toBe(true);
+    badge.click();
+    expect(card.querySelector('.post-terminal-popover').hidden).toBe(false);
+    expect(badge.getAttribute('aria-expanded')).toBe('true');
     expect(card.querySelector('.post-terminal-answer-revision-body').textContent).toContain('text appended');
+
+    // A second update joins the same badge as another tab; tabs switch the shown update.
+    debug.updateLLMPanelOutput('GPT', `${revised} And a second late addition.`, '', {
+      source: 'GLOBAL_STATE_ANSWER_RECOVERY',
+      requestId: 'post-terminal-lock'
+    });
+    expect(card.querySelectorAll('.post-terminal-badge')).toHaveLength(1);
+    expect(badge.textContent).toBe('Δ 2');
+    const tabs = card.querySelectorAll('.post-terminal-tab');
+    expect(tabs).toHaveLength(2);
+    expect(tabs[1].textContent).toContain('Recovery');
+    const panels = () => Array.from(card.querySelectorAll('.post-terminal-answer-revision')).map((p) => p.hidden);
+    expect(panels()).toEqual([true, false]);
+    tabs[0].click();
+    expect(panels()).toEqual([false, true]);
+    document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    expect(card.querySelector('.post-terminal-popover').hidden).toBe(true);
     panel.remove();
   });
 
@@ -1187,11 +1212,56 @@ describe('Pipeline debate favorites view', () => {
     });
     expect(card.querySelector('.post-terminal-answer-revision')).toBeNull();
 
-    // A genuinely different text is still a revision.
+    // Growth of the shown answer extends the same card: no second message, no badge.
     debug.updateLLMPanelOutput('GPT', 'Complete answer text. And more added later.', '', {
       source: 'GLOBAL_STATE_ANSWER_RECOVERY', requestId: 'recovery-echo'
     });
-    expect(card.querySelector('.post-terminal-answer-revision')).not.toBeNull();
+    expect(document.querySelectorAll('.debate-model-card[data-llm-name="GPT"]')).toHaveLength(1);
+    expect(card.querySelector('.debate-model-card-output').textContent).toContain('And more added later.');
+    expect(card.querySelector('.post-terminal-badge')).toBeNull();
+
+    // A text that changes what is shown (not a continuation) goes to the badge.
+    debug.updateLLMPanelOutput('GPT', 'A completely different answer.', '', {
+      source: 'GLOBAL_STATE_ANSWER_RECOVERY', requestId: 'recovery-echo'
+    });
+    expect(card.querySelector('.debate-model-card-output').textContent).toContain('And more added later.');
+    expect(card.querySelectorAll('.post-terminal-badge')).toHaveLength(1);
+    expect(document.querySelectorAll('.debate-model-card[data-llm-name="GPT"]')).toHaveLength(1);
+    delete window.MessageDelivery;
+    panel.remove();
+  });
+
+  test('a repeat of the shown answer under another request id stays in the same card (markdown or not, shorter copies too)', () => {
+    const debug = window.__pipelineLifecycleDebug;
+    window.MessageDelivery = require('../shared/message-delivery.js');
+    document.getElementById('panel-gpt')?.remove();
+    const panel = document.createElement('section');
+    panel.id = 'panel-gpt';
+    panel.className = 'llm-panel';
+    panel.innerHTML = '<div class="output"></div>';
+    document.body.appendChild(panel);
+    const raw = '**Dao** is the path.\n\n1. First point about the way.\n2. Second point about the flow.';
+    debug.updateLLMPanelOutput('GPT', raw, '', { status: 'SUCCESS', requestId: 'round-a' });
+    const cards = () => document.querySelectorAll('.debate-model-card[data-llm-name="GPT"]');
+    expect(cards()).toHaveLength(1);
+    const card = cards()[0];
+    expect(card.dataset.turnClosed).toBe('true');
+
+    // Same answer re-emitted by a recovery/late partial under another request id: raw text
+    // differs from the rendered card text, but nothing changed for the reader.
+    debug.updateLLMPanelOutput('GPT', raw, '', { source: 'GLOBAL_STATE_ANSWER_RECOVERY', requestId: 'round-a-2' });
+    debug.updateLLMPanelOutput('GPT', raw, '', { requestId: 'round-a-3' });
+    // A shorter older copy of the shown answer is not an update either.
+    debug.updateLLMPanelOutput('GPT', '**Dao** is the path.', '', { requestId: 'round-a-4' });
+    expect(cards()).toHaveLength(1);
+    expect(card.querySelector('.post-terminal-badge')).toBeNull();
+    expect(card.dataset.live).toBe('false');
+
+    // Growth under yet another request id extends the same card.
+    debug.updateLLMPanelOutput('GPT', `${raw}\n3. Third point about harmony.`, '', { requestId: 'round-a-5' });
+    expect(cards()).toHaveLength(1);
+    expect(card.querySelector('.debate-model-card-output').textContent).toContain('Third point');
+    expect(card.querySelector('.post-terminal-badge')).toBeNull();
     delete window.MessageDelivery;
     panel.remove();
   });

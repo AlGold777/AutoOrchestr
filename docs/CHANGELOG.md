@@ -1,4 +1,39 @@
-# CHANGELOG — Project
+# CHANGELOG — Project\n\n### 2026-10-02 — A repeat of a model answer no longer makes a new card or a Δ badge, version 2.81.553
+
+- **Cause.** The «is this answer already shown» check compared the *raw* incoming text with the card's *rendered* text (markdown markers, list numbering), so an identical answer looked different (Δ -26, Δ -274 …). In addition a repeat under another request id (recovery, late partial, re-send) was not matched to the closed card and opened a second «printing» card.
+- **Fix** (`appendPostTerminalAnswerRevision`): the incoming text is rendered through the same renderer as the card body and compared as the reader sees it. The same text, or an older/shorter copy of it → ignored; a continuation → the same card grows; only a text that changes what is shown → the Δ badge (Δ is now computed on the rendered texts). A repeat under another request id is attached to the closed card it repeats.
+- Left as is: a *different* text under another request id still opens a card (second request to a model inside a round is for later).
+- Tests: `results-debate-favorites` (markdown repeat, other request ids, shorter copy, growth).
+
+# 2026-10-02 — The models see "User" instead of "Moderator" in prompts, version 2.81.552
+
+- Text sent to the models: the author header of the moderator message (`User\n…`, was `Moderator\n…`), the action lines (`User action: …`), the judge prompt header («Вопрос пользователя»), and the texts of the pipeline action chips `[USER CHALLENGE]`, `[USER EVIDENCE REQUEST]`, `[ПОЛЬЗОВАТЕЛЬ — КОРРЕКЦИЯ]` (`disput/pipeline-actions.json`; their chip group is «User» and the correction chip «Пользователь — коррекция»; ids unchanged).
+- Not changed: internal ids and event kinds (`Moderator`, `moderator_*`), the judge role wording «Ты судья», and the gate descriptions of the Architecture template (they are for the owner, the model is not started on a gate).
+
+### 2026-10-02 — "~ Lead ~" on the main page too, version 2.81.551
+
+- The R2 stage label of the main page (`result_new.html`) reads "~ Lead ~" instead of "Judge". The stage detection in `results.js` (`isJudge`) now also matches "lead", so clicking the label keeps working. «Moderator» does not occur on the main page.
+
+### 2026-10-02 — "Moderator" is shown as "User", version 2.81.550
+
+- Display name only: the author name on moderator cards (turn cards and the live moderator entry in `results.js`) and the "Moderator" sender option. Internal values (`Moderator` as `llmName`, route sender, transcript events, `kind: 'moderator'`) and the text sent to the models (`Moderator\n…`, `Moderator action: …`) are unchanged.
+
+### 2026-10-02 — The "Judge" model is shown as "~ Lead ~", version 2.81.549
+
+- Display name only: the selector option and its aria-label (`pipeline_panel.html`), the placeholder option, the card role label and the role of the verdict card (`results.js`). Identifiers (`#judge-select`, `judge*` functions, `source: 'judge'`, stored selector state) and the text of the judge prompts are unchanged. The main page (`result_new.html`, stage label R2) is not touched: its label is also read by stage detection.
+
+### 2026-10-02 — One message per model per round: growth extends the card, version 2.81.548
+
+- Every Run press is a new round; inside a round a model has **one card**. When a later text of the model **continues the shown answer** (the new text starts with it, whitespace-normalized), the same card is extended in place: longer body, updated time, the stored message is patched. No second card, no badge.
+- A text that **changes** what is shown (not a continuation) still goes to the update badge; the badge icon is now `Δ N` (was `↻ N`).
+- The transport result stays immutable (the batch keeps the accepted answer); only the feed card shows the extended text. A second request to the same model inside one round is left for later (after the automation work).
+- Tests: `results-debate-favorites` (extension in place, badge for replaced text).
+
+### 2026-10-02 — Post-completion updates collected into one badge, version 2.81.547
+
+- The technical «Updated · Source · Δ N» lines no longer sit in the card header one by one. A card with updates after completion gets **one badge** `↻ N`, placed right of the message time (it follows the time when the card is approved and the time moves next to the name). A click opens a popover with **one tab per update** (`1 · Recovery · Δ -274`, source cut to 20 chars + `...`, full wording in the tooltip and as the first line of the tab); the newest update is shown first. Click outside or Esc closes it.
+- Dedupe of repeated updates is unchanged (`.post-terminal-answer-revision[data-revision-hash]`, now `div` entries inside the popover).
+- Tests: `results-debate-favorites` (badge, tabs, close), `pipeline-feed-layout` (styles).
 
 ### 2026-10-02 — No dead time between auto stages; no false alarms for delivered answers, version 2.81.552
 

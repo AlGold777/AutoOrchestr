@@ -5328,7 +5328,7 @@ document.addEventListener('click', (event) => {
             const pipelineActionLines = getPipelineActionSelectionItems()
                 .map((modifier) => modifier.text || modifier.label || modifier.id)
                 .filter(Boolean)
-                .map((instruction) => `Moderator action: ${instruction}`);
+                .map((instruction) => `User action: ${instruction}`);
             extra.push(...pipelineActionLines);
         }
         return extra.length ? `\n\n${extra.join('\n')}` : '';
@@ -5881,7 +5881,7 @@ document.addEventListener('click', (event) => {
         };
 
         // Judge: the model chosen in #judge-select receives every answer to the moderator's
-        // message and returns a verdict, shown as its card with the "Judge" role.
+        // message and returns a verdict, shown as its card with the "~ Lead ~" role.
         const runJudgeForModeratorTurn = async (moderatorText, responses) => {
             const judge = String(document.getElementById('judge-select')?.value || '').trim();
             // Batch responses hold only terminal model texts; failures carry their
@@ -5890,9 +5890,9 @@ document.addEventListener('click', (event) => {
             if (!judge || !Object.keys(answers).length || !window.JudgePromptBuilder?.buildResponsesList) return;
             // Answers are already filtered by status above: no text-based error guess.
             const list = window.JudgePromptBuilder.buildResponsesList(answers, { isErrorOutput: (answer) => !String(answer || '').trim() }).list;
-            renderDebateModelCards('Judge', [judge], { approvalSelectable: false });
+            renderDebateModelCards('~ Lead ~', [judge], { approvalSelectable: false });
             const verdict = await runModelBatch({
-                prompt: `Вопрос модератора:\n${moderatorText}\n\nОтветы моделей:\n${list}\n\nТы судья. Сравни ответы, отметь сильные и слабые стороны и дай итоговый ответ.`,
+                prompt: `Вопрос пользователя:\n${moderatorText}\n\nОтветы моделей:\n${list}\n\nТы судья. Сравни ответы, отметь сильные и слабые стороны и дай итоговый ответ.`,
                 models: [judge],
                 forceNewTabs: false,
                 useApiFallback: apiModeCheckbox ? apiModeCheckbox.checked : true,
@@ -5901,7 +5901,7 @@ document.addEventListener('click', (event) => {
             });
             const answer = verdict?.responses?.[judge];
             const judgeResult = verdict?.results?.[judge] || null;
-            if (String(answer || '').trim()) updateDebateModelCardOutput(judge, String(answer || ''), '', { status: judgeResult?.status || 'SUCCESS', source: 'judge', role: 'Judge' });
+            if (String(answer || '').trim()) updateDebateModelCardOutput(judge, String(answer || ''), '', { status: judgeResult?.status || 'SUCCESS', source: 'judge', role: '~ Lead ~' });
         };
 
         let manualModeratorDispatchActive = false;
@@ -7533,7 +7533,7 @@ document.addEventListener('click', (event) => {
             if (!label || !pipelinePanel.contains(label)) return;
             const labelText = (label.textContent || '').toLowerCase();
             const isModels = labelText.includes('models');
-            const isJudge = labelText.includes('judge') || labelText.includes('disput');
+            const isJudge = labelText.includes('judge') || labelText.includes('lead') || labelText.includes('disput');
             if (!isModels && !isJudge) return;
 
             let modelStack = null;
@@ -20708,6 +20708,7 @@ function checkCompareButtonState() {
             }
             card.classList.remove('is-approved');
         }
+        placePostTerminalBadge(card);
         syncDebateCardOutputLayout(card);
     }
     function getFirstPendingCard(sessionId = debateTabsState.activeSessionId) {
@@ -20776,7 +20777,7 @@ function checkCompareButtonState() {
             <div class="debate-model-card-header">
                 <span class="debate-model-card-title">
                     <span class="debate-model-card-title-main">
-                        <span class="debate-model-card-name">${escapeHtml(modelName)}</span>
+                        <span class="debate-model-card-name">${escapeHtml(kind === 'moderator' ? 'User' : modelName)}</span>
                         ${kind === 'moderator' ? '' : '<span class="status-indicator success"></span>'}
                         ${kind === 'moderator' ? '' : `<span class="debate-model-card-role">${escapeHtml(turn.role || '')}</span>`}
                         ${approvalHtml}
@@ -21019,7 +21020,7 @@ function checkCompareButtonState() {
             <div class="debate-model-card-header">
                 <span class="debate-model-card-title">
                     <span class="debate-model-card-title-main">
-                        <span class="debate-model-card-name">Moderator</span>
+                        <span class="debate-model-card-name">User</span>
                     </span>
                 </span>
                 <span class="debate-model-card-meta">
@@ -21207,6 +21208,68 @@ function checkCompareButtonState() {
         });
         return preferred;
     }
+    // One badge per card, right of the time, collects every post-completion update
+    // (technical messages) in a popover with one tab per update.
+    function placePostTerminalBadge(card) {
+        const wrap = card?.querySelector?.('.post-terminal-badge-wrap');
+        const timeEl = card?.querySelector?.('.debate-model-card-header .debate-model-card-time');
+        if (wrap && timeEl && timeEl.nextElementSibling !== wrap) timeEl.after(wrap);
+    }
+    function ensurePostTerminalBadge(card) {
+        let wrap = card.querySelector('.post-terminal-badge-wrap');
+        if (!wrap) {
+            wrap = document.createElement('span');
+            wrap.className = 'post-terminal-badge-wrap';
+            wrap.innerHTML = '<button type="button" class="post-terminal-badge" aria-haspopup="true" aria-expanded="false"></button>'
+                + '<div class="post-terminal-popover" hidden>'
+                + '<div class="post-terminal-tabs" role="tablist"></div>'
+                + '<div class="post-terminal-panels"></div></div>';
+            const header = card.querySelector('.debate-model-card-header');
+            const meta = header?.querySelector('.debate-model-card-meta');
+            if (meta) meta.insertBefore(wrap, meta.firstChild);
+            else (header || card).appendChild(wrap);
+        }
+        placePostTerminalBadge(card);
+        return wrap;
+    }
+    function selectPostTerminalRevision(wrap, index) {
+        wrap.querySelectorAll('.post-terminal-tab').forEach((tab, i) => {
+            tab.classList.toggle('active', i === index);
+            tab.setAttribute('aria-selected', String(i === index));
+        });
+        Array.from(wrap.querySelector('.post-terminal-panels').children).forEach((panel, i) => {
+            panel.hidden = i !== index;
+        });
+    }
+    function setPostTerminalPopover(wrap, open) {
+        const popover = wrap?.querySelector('.post-terminal-popover');
+        if (!popover) return;
+        popover.hidden = !open;
+        wrap.querySelector('.post-terminal-badge')?.setAttribute('aria-expanded', String(open));
+    }
+    debateModelCards?.addEventListener('click', (event) => {
+        const wrap = event.target.closest('.post-terminal-badge-wrap');
+        document.querySelectorAll('.post-terminal-badge-wrap').forEach((other) => {
+            if (other !== wrap) setPostTerminalPopover(other, false);
+        });
+        if (!wrap) return;
+        const tab = event.target.closest('.post-terminal-tab');
+        if (tab) {
+            selectPostTerminalRevision(wrap, Array.from(wrap.querySelectorAll('.post-terminal-tab')).indexOf(tab));
+            return;
+        }
+        if (event.target.closest('.post-terminal-badge')) {
+            setPostTerminalPopover(wrap, wrap.querySelector('.post-terminal-popover').hidden);
+        }
+    });
+    document.addEventListener('pointerdown', (event) => {
+        if (event.target.closest('.post-terminal-badge-wrap')) return;
+        document.querySelectorAll('.post-terminal-badge-wrap').forEach((wrap) => setPostTerminalPopover(wrap, false));
+    });
+    document.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape') return;
+        document.querySelectorAll('.post-terminal-badge-wrap').forEach((wrap) => setPostTerminalPopover(wrap, false));
+    });
     function shortenRevisionSource(source) {
         const readable = String(source || 'unknown')
             .replace(/^GLOBAL_STATE_ANSWER_/, '')
@@ -21215,59 +21278,104 @@ function checkCompareButtonState() {
         const label = readable.charAt(0).toUpperCase() + readable.slice(1).toLowerCase();
         return label.length > 20 ? `${label.slice(0, 20)}...` : label;
     }
+    // What the user would read for a raw/html answer: rendered through the same
+    // pipeline as the card body, so markdown markers and formatting do not make an
+    // identical answer look different (raw text vs the card's rendered text).
+    function renderedAnswerPlainText(text, html = '') {
+        const probe = document.createElement('div');
+        document.createElement('div').appendChild(probe); // the renderer replaces the node in its parent
+        renderDebateResponseBody(probe, text, html);
+        return String(probe.innerText || probe.textContent || '').replace(/\s+/g, ' ').trim();
+    }
     function appendPostTerminalAnswerRevision(session, llmName, text, html = '', meta = {}) {
         if (!debateModelCards || !session || !llmName) return false;
         const requestId = String(meta.requestId || '').trim();
-        const terminalCards = Array.from(debateModelCards.querySelectorAll('.debate-model-card'))
+        // Same cleaning as the live path (delivery token, instruction echo, trailing
+        // blanks): a re-emitted copy of the shown answer is not a revision.
+        const normalizedText = cleanFeedText(text);
+        const normalizedHtml = sanitizeInlineHtml(cleanFeedHtml(String(html || '').trim()));
+        if (!normalizedText && !normalizedHtml) return false;
+        const closedCards = Array.from(debateModelCards.querySelectorAll('.debate-model-card'))
             .filter((card) => (
                 card.dataset.sessionId === session.id
                 && card.dataset.llmName === llmName
                 && card.dataset.kind !== 'moderator'
                 && card.dataset.kind !== 'fragment'
                 && card.dataset.kind !== 'revision'
-                && (!requestId || !card.dataset.requestId || card.dataset.requestId === requestId)
                 && card.dataset.turnClosed === 'true'
                 && String(card.querySelector('.debate-model-card-output')?.textContent || '').trim()
             ));
-        const targetCard = terminalCards[terminalCards.length - 1] || null;
+        const shownTextOf = (card) => cleanFeedText(card.querySelector('.debate-model-card-output')?.innerText
+            || card.querySelector('.debate-model-card-output')?.textContent || '').replace(/\s+/g, ' ').trim();
+        const incomingShown = renderedAnswerPlainText(normalizedText, normalizedHtml);
+        const sameRequest = closedCards.filter((card) => (
+            !requestId || !card.dataset.requestId || card.dataset.requestId === requestId
+        ));
+        // A repeat of an answer under another request id (re-send, recovery, late
+        // partial) belongs to the card it repeats: one message per model per round.
+        const repeated = closedCards.filter((card) => {
+            const shown = shownTextOf(card);
+            return shown && incomingShown && (incomingShown.startsWith(shown) || shown.startsWith(incomingShown));
+        });
+        const targetCard = sameRequest[sameRequest.length - 1] || repeated[repeated.length - 1] || null;
         if (!targetCard) return false;
-        // Same cleaning as the live path (delivery token, instruction echo, trailing
-        // blanks): a re-emitted copy of the shown answer is not a revision.
-        const normalizedText = cleanFeedText(text);
-        const normalizedHtml = sanitizeInlineHtml(cleanFeedHtml(String(html || '').trim()));
-        if (!normalizedText && !normalizedHtml) return false;
         const primaryOutput = targetCard.querySelector('.debate-model-card-output');
-        const primaryText = cleanFeedText(primaryOutput?.innerText || primaryOutput?.textContent || '');
-        const squash = (value) => String(value || '').replace(/\s+/g, ' ').trim();
-        if (normalizedText && squash(normalizedText) === squash(primaryText)) return true;
+        const primaryText = shownTextOf(targetCard);
+        // Nothing new: the same text, or an older/shorter copy of what is shown.
+        if (incomingShown && primaryText.startsWith(incomingShown)) return true;
+        // Growth of the shown answer (the new text continues it) is not a separate
+        // message: the single card of this model in this round just gets longer.
+        // Only a text that changes what is shown goes to the badge below.
+        if (incomingShown && primaryText && incomingShown.startsWith(primaryText)) {
+            const now = new Date();
+            const timeLabel = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+            renderDebateResponseBody(primaryOutput, normalizedText, normalizedHtml);
+            const timeEl = targetCard.querySelector('.debate-model-card-time');
+            if (timeEl) timeEl.textContent = timeLabel;
+            syncDebateCardOutputLayout(targetCard);
+            patchDebateCardMessage(targetCard, {
+                text: normalizedText,
+                html: String(primaryOutput?.innerHTML || '').trim(),
+                timeLabel
+            });
+            return true;
+        }
         const revisionHash = `${normalizedText.length}:${normalizedText.slice(0, 96)}|${normalizedHtml.length}:${normalizedHtml.slice(0, 96)}`;
         const duplicate = Array.from(targetCard.querySelectorAll('.post-terminal-answer-revision'))
             .some((entry) => entry.dataset.revisionHash === revisionHash);
         if (duplicate) return true;
         const source = String(meta.source || meta.responseMeta?.source || 'unknown');
-        const delta = normalizedText.length - primaryText.length;
+        const delta = incomingShown.length - primaryText.length;
         const deltaLabel = `${delta >= 0 ? '+' : ''}${delta}`;
-        const revision = document.createElement('details');
+        const revision = document.createElement('div');
         revision.className = 'post-terminal-answer-revision';
         revision.dataset.revisionHash = revisionHash;
         revision.dataset.source = source;
-        const summary = document.createElement('summary');
-        // Short label in the header row (source cut to 20 chars + "..."); the full
-        // wording is the tooltip and the first line of the expanded body (CSS ::before).
-        const sourceLabel = shortenRevisionSource(source);
-        summary.textContent = `Updated · ${sourceLabel} · Δ ${deltaLabel}`;
+        revision.hidden = true;
         const fullLabel = `Ответ обновлён после завершения · ${source} · Δ ${deltaLabel}`;
-        summary.title = fullLabel;
         const body = document.createElement('div');
         body.className = 'post-terminal-answer-revision-body';
         body.dataset.fullLabel = fullLabel;
-        revision.append(summary, body);
-        const header = targetCard.querySelector('.debate-model-card-header');
-        const headerMeta = header?.querySelector('.debate-model-card-meta');
-        if (header && headerMeta) header.insertBefore(revision, headerMeta);
-        else if (header) header.appendChild(revision);
-        else targetCard.appendChild(revision);
+        revision.append(body);
         renderDebateResponseBody(body, normalizedText, normalizedHtml);
+        const badge = ensurePostTerminalBadge(targetCard);
+        const panels = badge.querySelector('.post-terminal-panels');
+        const tabs = badge.querySelector('.post-terminal-tabs');
+        panels.append(revision);
+        // Tab label: short form (source cut to 20 chars + "..."); the tooltip keeps the full wording.
+        const tab = document.createElement('button');
+        tab.type = 'button';
+        tab.className = 'post-terminal-tab';
+        tab.setAttribute('role', 'tab');
+        tab.textContent = `${panels.children.length} · ${shortenRevisionSource(source)} · Δ ${deltaLabel}`;
+        tab.title = fullLabel;
+        tabs.append(tab);
+        selectPostTerminalRevision(badge, panels.children.length - 1);
+        const count = panels.children.length;
+        const trigger = badge.querySelector('.post-terminal-badge');
+        trigger.textContent = `Δ ${count}`;
+        trigger.title = `Updates after completion: ${count}`;
+        trigger.setAttribute('aria-label', trigger.title);
         targetCard.dataset.hasPostTerminalRevision = 'true';
         return true;
     }
@@ -21489,7 +21597,7 @@ function checkCompareButtonState() {
             parts.push(`${approvalLabel}\n${legacyApprovalText}`);
         }
         if (moderatorText) {
-            parts.push(`Moderator\n${moderatorText}`);
+            parts.push(`User\n${moderatorText}`);
         }
         return parts.join('\n\n').trim();
     }
@@ -21643,7 +21751,7 @@ function checkCompareButtonState() {
         const state = getPageSerialDebateState();
         const activeSerialSender = state.waitingApprovalModel
             || (state.currentSpeaker === 'A' ? state.modelA : state.currentSpeaker === 'B' ? state.modelB : '');
-        const senderOptions = ['<option value="Moderator">Moderator</option>']
+        const senderOptions = ['<option value="Moderator">User</option>']
             .concat(selected.map((name) => {
                 const disabled = (approvedSenders.includes(name) || name === activeSerialSender) ? '' : ' disabled';
                 return `<option value="${escapeHtml(name)}"${disabled}>${escapeHtml(name)}</option>`;
@@ -21665,7 +21773,7 @@ function checkCompareButtonState() {
         const judgeSelect = document.getElementById('judge-select');
         if (judgeSelect) {
             const prevJudge = judgeSelect.value || '';
-            judgeSelect.innerHTML = ['<option value="">Judge</option>']
+            judgeSelect.innerHTML = ['<option value="">~ Lead ~</option>']
                 .concat(selected.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`))
                 .join('');
             const storedJudge = persistedDebateSelectorState.judge || '';

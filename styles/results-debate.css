@@ -1632,22 +1632,78 @@ body.llm-stream-preview-open .llm-results .llm-panel.llm-panel-session-restored:
 .disput-stage-failed td { color: #c62828; }
 .disput-stage-running td { color: #9a6700; }
 .disput-trace-table { min-width: 720px; }
-.post-terminal-answer-revision {
-    margin: 10px 14px 14px;
-    border: 1px solid color-mix(in srgb, var(--warning, #d97706) 42%, transparent);
-    border-radius: 8px;
-    background: color-mix(in srgb, var(--warning, #d97706) 8%, transparent);
+/* Post-completion updates (technical messages): one badge right of the message time,
+   one popover with a tab per update. */
+.post-terminal-badge-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
 }
 
-.post-terminal-answer-revision > summary {
-    padding: 4px 0px;
+.post-terminal-badge {
+    padding: 0 6px;
+    border: 1px solid #d1d5db;
+    border-radius: 999px;
+    background: transparent;
+    color: grey;
+    font-size: 10px !important;
+    line-height: 16px;
     cursor: pointer;
-    font-size: 10px;
+}
+
+.post-terminal-badge:hover,
+.post-terminal-badge[aria-expanded="true"] {
+    background: #f3f4f6;
+    color: #374151;
+}
+
+.post-terminal-popover {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    z-index: 5;
+    width: min(560px, 80vw);
+    max-height: 50vh;
+    margin-top: 4px;
+    overflow: auto;
+    border: 1px solid var(--border-color, #d8dee8);
+    border-radius: 8px;
+    background: var(--surface, #fff);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, .14);
+}
+
+.post-terminal-popover[hidden],
+.post-terminal-answer-revision[hidden] {
+    display: none;
+}
+
+.post-terminal-tabs {
+    display: flex;
+    gap: 4px;
+    padding: 6px 8px 0;
+    overflow-x: auto;
+    border-bottom: 1px solid var(--border-color, #d8dee8);
+}
+
+.post-terminal-tab {
+    flex: 0 0 auto;
+    max-width: 220px;
+    padding: 3px 8px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: transparent;
+    color: grey;
+    font-size: 11px !important;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 100%;
-    color: grey;
+    cursor: pointer;
+}
+
+.post-terminal-tab.active {
+    border-bottom-color: #2563eb;
+    color: #111827;
 }
 
 .post-terminal-answer-revision-body::before {
@@ -1657,33 +1713,6 @@ body.llm-stream-preview-open .llm-results .llm-panel.llm-panel-session-restored:
     font-size: 12px;
     font-weight: 600;
     overflow-wrap: anywhere;
-}
-
-.debate-model-card-header > .post-terminal-answer-revision {
-    flex: 0 1 auto;
-    min-width: 0;
-    margin: 0 auto 0 8px;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-}
-
-.debate-model-card-header > .post-terminal-answer-revision[open] {
-    position: relative;
-}
-
-.debate-model-card-header > .post-terminal-answer-revision .post-terminal-answer-revision-body {
-    position: absolute;
-    top: 100%;
-    left: 0;
-    z-index: 3;
-    width: min(560px, 80vw);
-    max-height: 50vh;
-    overflow: auto;
-    border: 1px solid var(--border-color, #d8dee8);
-    border-radius: 8px;
-    background: var(--surface, #fff);
-    box-shadow: 0 4px 14px rgba(0, 0, 0, .14);
 }
 
 .post-terminal-answer-revision-body {

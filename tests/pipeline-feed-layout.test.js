@@ -195,7 +195,11 @@ describe('post-terminal revision label', () => {
     expect(label.length).toBe(23);
   });
 
-  test('summary may not overflow the header row', () => {
-    expect(readResolvedCss()).toMatch(/\.post-terminal-answer-revision > summary \{[^}]*overflow: hidden;[^}]*text-overflow: ellipsis;/);
+  test('technical updates live in one badge popover with tabs', () => {
+    const css = readResolvedCss();
+    expect(css).toMatch(/\.post-terminal-badge-wrap \{[^}]*position: relative;/);
+    expect(css).toMatch(/\.post-terminal-popover \{[^}]*position: absolute;/);
+    expect(css).toMatch(/\.post-terminal-popover\[hidden\]/);
+    expect(css).toContain('.post-terminal-tab.active');
   });
 });
