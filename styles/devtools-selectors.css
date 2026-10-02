@@ -1961,3 +1961,26 @@
 .selectors0-advanced-actions {
     display: flex;
     flex-wrap: wrap;
+
+#disput-tabpanel .disput-extract-controls {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px;
+    border: 1px solid var(--border-color, #dbe2ea);
+    border-radius: 8px;
+}
+#disput-tabpanel #disput-extract {
+    margin: 0;
+    padding: 6px 14px;
+    font-weight: 600;
+    cursor: pointer;
+}
+#disput-tabpanel #disput-extract-type {
+    min-width: 100px;
+    margin: 0;
+}
+#disput-tabpanel #disput-extract:disabled {
+    opacity: 0.6;
+    cursor: wait;
+}

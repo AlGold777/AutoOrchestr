@@ -5,7 +5,7 @@
     <!-- LLM Discus: hidden search marker for developers -->
     <meta name="keywords" content="LLM Discus">
     <title>LLM Comparison</title>
-    <link rel="stylesheet" href="styles.css?v=2.81.570">
+    <link rel="stylesheet" href="styles.css?v=2.81.571">
 </head>
 <body class="pipeline-page">
     <div class="app-shell">
@@ -638,9 +638,13 @@
                             <div class="devtools-toolbar">
                                 <div class="devtools-toolbar-actions">
                                     <div class="telemetry-filters disput-trace-filters">
-                                        <label class="disput-only-problems-label" title="Display filter only; JSON and MD exports are always complete"><input type="checkbox" id="disput-only-problems" checked> Only problems</label>
+                                        <label class="disput-only-problems-label" title="Display filter only; JSON and MD exports are always complete"><input type="checkbox" id="disput-only-problems"> Only problems</label>
                                     </div>
                                     <div class="telemetry-actions">
+                                        <div class="disput-extract-controls">
+                                            <button type="button" class="devtools-pill-btn" id="disput-extract" title="Download the full report and transport extract">Extract</button>
+                                            <select id="disput-extract-type" class="devtools-select" aria-label="Extract type"><option value="transport">transport</option></select>
+                                        </div>
                                         <button type="button" class="diag-icon-btn" id="disput-clear-trace" title="Clear Disput trace" aria-label="Clear Disput trace"><i class="ti ti-trash" aria-hidden="true"></i></button>
                                         <button type="button" class="diag-icon-btn" id="disput-export-json" title="Export Disput telemetry as JSON" aria-label="Export Disput telemetry as JSON"><i class="ti ti-download" aria-hidden="true"></i></button>
                                         <button type="button" class="diag-icon-btn diag-export-all-logs-btn" id="disput-export-md" aria-label="Export Disput telemetry as Markdown" title="Export Disput telemetry as Markdown">MD</button>
@@ -965,6 +969,7 @@
     <script src="results/disput-state-map-view.js"></script>
     <script src="results/pipeline-profile-view.js"></script>
     <script src="results-telemetry-export-bootstrap.js"></script>
+    <script src="shared/report-digest.js"></script>
     <script src="results.js"></script>
     <!-- results-devtools.js is lazy-loaded by results.js (ensureTelemetryDevtoolsLoaded)
          just after boot; not loaded synchronously here to keep its parse cost off

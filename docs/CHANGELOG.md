@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-03 — In-extension transport extraction, version 2.81.571
+
+- Disput: Only problems is off by default. Extract and its adjacent transport selector download the full Disput Flow JSON and extract_transport JSON with the same timestamp.
+- Extraction runs inside the extension using the existing deterministic digest logic, now in shared/report-digest.js. The extract JSON contains sourceFile, debateRunId, format and the Markdown digest. Both files use the same redacted snapshot; no external process is needed.
+
 ### 2026-10-03 — Remove Disput run selector, version 2.81.570
 
 - Removed the saved-run selector and its UI handlers from both pages. Disput renders the active trace; telemetry storage, collection and exports retain their existing behavior.

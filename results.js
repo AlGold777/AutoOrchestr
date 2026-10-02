@@ -15137,9 +15137,9 @@ document.addEventListener('click', (event) => {
             if (button) flashButtonFeedback(button, 'error');
         }
     };
-    const downloadDiagnosticsJson = (fileBase, payload, button) => {
+    const downloadDiagnosticsJson = (fileBase, payload, button, options = {}) => {
         const safeBase = sanitizeFileSegment(fileBase, 'Diagnostics');
-        const fileName = `${safeBase} ${formatDiagnosticsExportStamp()}.json`;
+        const fileName = options.fileName || `${safeBase} ${formatDiagnosticsExportStamp()}.json`;
         try {
             const safePayload = window.SecretRedaction?.redactDeep
                 ? window.SecretRedaction.redactDeep(payload)
@@ -15157,9 +15157,11 @@ document.addEventListener('click', (event) => {
             document.body.removeChild(anchor);
             setTimeout(() => URL.revokeObjectURL(url), 1000);
             if (button) flashButtonFeedback(button, 'success');
+            return true;
         } catch (err) {
             console.error('[Diagnostics Export] JSON failed', err);
             if (button) flashButtonFeedback(button, 'error');
+            return false;
         }
     };
 
@@ -15395,6 +15397,44 @@ document.addEventListener('click', (event) => {
             return;
         }
         downloadDiagnosticsJson('Disput Flow', { ...(payload || {}), delivery }, disputBtn);
+    });
+
+    document.addEventListener('click', async (event) => {
+        const button = event.target.closest('#disput-extract');
+        if (!button || button.disabled) return;
+        button.disabled = true;
+        button.setAttribute('aria-busy', 'true');
+        try {
+            const type = document.getElementById('disput-extract-type')?.value;
+            if (type !== 'transport') throw new Error('Unsupported extract type');
+            const telemetryEvents = await getTelemetryEventsForExport();
+            const payload = buildDisputExportPayload(telemetryEvents);
+            const delivery = await window.MessageDeliveryView?.buildReport?.() || null;
+            // Freeze and redact one snapshot for both files, before any further async work.
+            const report = JSON.parse(JSON.stringify(window.SecretRedaction?.redactDeep
+                ? window.SecretRedaction.redactDeep({ ...payload, delivery })
+                : { ...payload, delivery }));
+            if (!report.events?.length && !report.delivery?.journal?.length) {
+                flashButtonFeedback(button, 'warn');
+                return;
+            }
+            const stamp = formatDiagnosticsExportStamp();
+            const sourceFile = `Disput Flow ${stamp}.json`;
+            if (!downloadDiagnosticsJson('Disput Flow', report, null, { fileName: sourceFile })) {
+                throw new Error('Could not download Disput Flow');
+            }
+            const extract = window.ReportDigest.extractTransport(report, sourceFile);
+            if (!downloadDiagnosticsJson('extract_transport', extract, button, {
+                fileName: `extract_transport_${stamp}.json`
+            })) throw new Error('Could not download transport extract');
+        } catch (error) {
+            console.error('[Disput Extract] failed', error);
+            showNotification(`Extract: ${error.message || error}`, 'error');
+            flashButtonFeedback(button, 'error');
+        } finally {
+            button.disabled = false;
+            button.removeAttribute('aria-busy');
+        }
     });
 
     document.addEventListener('click', (event) => {
