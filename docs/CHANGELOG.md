@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-02 — The models see "User" instead of "Moderator" in prompts, version 2.81.552
+
+- Text sent to the models: the author header of the moderator message (`User\n…`, was `Moderator\n…`), the action lines (`User action: …`), the judge prompt header («Вопрос пользователя»), and the texts of the pipeline action chips `[USER CHALLENGE]`, `[USER EVIDENCE REQUEST]`, `[ПОЛЬЗОВАТЕЛЬ — КОРРЕКЦИЯ]` (`disput/pipeline-actions.json`; their chip group is «User» and the correction chip «Пользователь — коррекция»; ids unchanged).
+- Not changed: internal ids and event kinds (`Moderator`, `moderator_*`), the judge role wording «Ты судья», and the gate descriptions of the Architecture template (they are for the owner, the model is not started on a gate).
+
 ### 2026-10-02 — "~ Lead ~" on the main page too, version 2.81.551
 
 - The R2 stage label of the main page (`result_new.html`) reads "~ Lead ~" instead of "Judge". The stage detection in `results.js` (`isJudge`) now also matches "lead", so clicking the label keeps working. «Moderator» does not occur on the main page.

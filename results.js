@@ -5328,7 +5328,7 @@ document.addEventListener('click', (event) => {
             const pipelineActionLines = getPipelineActionSelectionItems()
                 .map((modifier) => modifier.text || modifier.label || modifier.id)
                 .filter(Boolean)
-                .map((instruction) => `Moderator action: ${instruction}`);
+                .map((instruction) => `User action: ${instruction}`);
             extra.push(...pipelineActionLines);
         }
         return extra.length ? `\n\n${extra.join('\n')}` : '';
@@ -5892,7 +5892,7 @@ document.addEventListener('click', (event) => {
             const list = window.JudgePromptBuilder.buildResponsesList(answers, { isErrorOutput: (answer) => !String(answer || '').trim() }).list;
             renderDebateModelCards('~ Lead ~', [judge], { approvalSelectable: false });
             const verdict = await runModelBatch({
-                prompt: `Вопрос модератора:\n${moderatorText}\n\nОтветы моделей:\n${list}\n\nТы судья. Сравни ответы, отметь сильные и слабые стороны и дай итоговый ответ.`,
+                prompt: `Вопрос пользователя:\n${moderatorText}\n\nОтветы моделей:\n${list}\n\nТы судья. Сравни ответы, отметь сильные и слабые стороны и дай итоговый ответ.`,
                 models: [judge],
                 forceNewTabs: false,
                 useApiFallback: apiModeCheckbox ? apiModeCheckbox.checked : true,
@@ -21578,7 +21578,7 @@ function checkCompareButtonState() {
             parts.push(`${approvalLabel}\n${legacyApprovalText}`);
         }
         if (moderatorText) {
-            parts.push(`Moderator\n${moderatorText}`);
+            parts.push(`User\n${moderatorText}`);
         }
         return parts.join('\n\n').trim();
     }
