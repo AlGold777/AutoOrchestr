@@ -907,6 +907,14 @@
         case 'WAIT':
         case 'NO_OP':
           emit('PLANNING_NO_ACTION', { type: decision.type, rationaleCode: decision.rationaleCode });
+          // Nobody is left for the next planned stage: say so and stop visibly (before, the run
+          // stayed "running" and nothing was sent).
+          if (decision.rationaleCode === 'PLANNED_STAGE_PARTICIPANT_UNAVAILABLE' && state.lifecycle === LIFECYCLE.RUNNING) {
+            const blocked = arr(decision.suppressedRules)[0] || {};
+            const pause = { reason: 'participants_unavailable', plannedStageId: blocked.plannedStageId || null, participantId: blocked.participantId || null };
+            enterStagePause(pause);
+            return { ok: true, decision, paused: true, pause };
+          }
           return { ok: true, decision };
         default:
           return fatal('UNKNOWN_DECISION_TYPE', decision.type);

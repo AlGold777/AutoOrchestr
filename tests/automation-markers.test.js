@@ -207,3 +207,48 @@ describe('template wiring', () => {
     expect(html.indexOf('results/owner-ask.js')).toBeLessThan(html.indexOf('<script src="results.js">'));
   });
 });
+
+describe('a participant that dropped out does not freeze the run (field report 9)', () => {
+  const runDropout = async (assignments) => {
+    const plan = DraftPlan.createCanvasPlan({
+      rounds: assignments.map((participantIds, i) => ({ plannedStageId: `canvas-r${i + 1}`, purpose: i === 0 ? 'position' : 'response', participantIds }))
+    });
+    const calls = [];
+    const paused = [];
+    const app = Application.createApplication({
+      universalEngine: true, allowIncompleteWiring: true, exposeInternals: true,
+      deps: {
+        runModelBatch: async ({ models, context }) => {
+          calls.push({ stage: context.pipelineStageId.split('-').pop(), models: models.slice() });
+          const responses = {};
+          const failed = {};
+          models.forEach((model) => { if (model === 'B') failed.B = 'NO_SEND'; else responses[model] = `answer ${model}`; });
+          return { responses, results: {}, failed };
+        },
+        proposeStateDelta: ({ participant }) => ({ by: participant.participantId }),
+        onEnginePause: (info) => paused.push(info)
+      }
+    });
+    await app.start({
+      runId: 'run-dropout', topic: 't', models: ['A', 'B'], draftPlan: plan,
+      policies: { finalization: { mode: 'manual' }, stagePause: { mode: 'never' } }, maxSteps: 20
+    });
+    return { calls, paused, orchestrator: app.getOrchestrator() };
+  };
+
+  test('the next stage goes on with the participants that are left', async () => {
+    const { calls, orchestrator } = await runDropout([['A', 'B'], ['A', 'B']]);
+    expect(calls.map((call) => call.models)).toEqual([['A', 'B'], ['A']]);
+    expect(orchestrator.getState().stages.filter((stage) => stage.status === 'completed')).toHaveLength(2);
+    expect(orchestrator.getState().lifecycle).toBe('RUNNING');
+  });
+
+  test('when nobody is left for a stage the run stops visibly, with the reason and the stage', async () => {
+    const { calls, paused, orchestrator } = await runDropout([['A', 'B'], ['B']]);
+    expect(calls).toHaveLength(1);
+    const state = orchestrator.getState();
+    expect(state.lifecycle).toBe('PAUSED');
+    expect(state.pauseInfo).toMatchObject({ reason: 'participants_unavailable', plannedStageId: 'canvas-r2', participantId: 'B' });
+    expect(paused.map((info) => info.reason)).toEqual(['participants_unavailable']);
+  });
+});

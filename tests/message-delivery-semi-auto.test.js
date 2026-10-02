@@ -71,3 +71,35 @@ describe('semi-automatic context and moderator actions', () => {
     expect(failed[0].hint).toContain('Get it');
   });
 });
+
+describe('report (9): text received, request closed empty', () => {
+  const journal = [
+    { at: at(0), kind: 'prepared', model: 'DeepSeek', token: 'AO-ds1111', requestId: 'treq-ds', chars: 599, batchId: '' },
+    { at: at(0.01), kind: 'batch_start', batchId: 'stage-1:a1', waitId: 'wait-1', models: ['DeepSeek'], requestIds: { DeepSeek: 'treq-ds' }, runMode: 'auto', template: 'Universal' },
+    { at: at(15), kind: 'dispatch', model: 'DeepSeek', requestId: 'treq-ds', phase: 'submitted', ms: 15255, dispatchId: 'D:1' },
+    { at: at(55), kind: 'first_text', model: 'DeepSeek', requestId: 'treq-ds', ms: 55380, chars: 2995 },
+    { at: at(204), kind: 'empty_answer', model: 'DeepSeek', requestId: 'treq-ds', token: 'AO-ds1111', ms: 204842, chars: 0, completion: 'failed', status: 'NO_SEND', reason: 'send_failed', detail: 'send_failed: DeepSeek send not confirmed' }
+  ];
+
+  test('an empty terminal after received text is the problem text_lost, with sizes and the reason', () => {
+    const d = Diagnosis.diagnose(journal, { now: T0 + 300000 });
+    const lost = d.problems.find((p) => p.code === 'text_lost');
+    expect(lost).toMatchObject({ severity: 'critical', model: 'DeepSeek' });
+    expect(lost.reason).toContain('2995');
+    expect(lost.reason).toContain('NO_SEND');
+    expect(lost.hint).toContain('Get it');
+  });
+
+  test('an empty terminal without any received text stays an ordinary empty answer', () => {
+    const quiet = journal.filter((event) => event.kind !== 'first_text');
+    const d = Diagnosis.diagnose(quiet, { now: T0 + 300000 });
+    expect(d.problems.find((p) => p.code === 'text_lost')).toBeUndefined();
+    expect(d.problems.find((p) => p.code === 'empty')).toBeTruthy();
+  });
+
+  test('DeepSeek counts a new chat address or a detached composer as a confirmed send', () => {
+    const script = require('fs').readFileSync(require('path').join(__dirname, '..', 'content-scripts', 'content-deepseek.js'), 'utf8');
+    expect(script).toContain('if (input.isConnected === false) return true;');
+    expect(script).toContain("location.pathname !== startPath && /\\/a\\/chat\\/s\\//.test(location.pathname)");
+  });
+});

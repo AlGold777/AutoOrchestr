@@ -5215,6 +5215,8 @@ document.addEventListener('click', (event) => {
                 openOwnerAsk(info);
             } else if (info.reason === 'gate') {
                 showNotification(`Ворота ${info.gate || ''} после ${where}: проверьте результат и нажмите «Продолжить».${verdict}`, 'info');
+            } else if (info.reason === 'participants_unavailable') {
+                showNotification(`Следующий этап (${info.plannedStageId || '?'}): не осталось доступных моделей (${info.participantId || 'участник'} выбыл из запуска). Верните модель (вкладка, Get it) и нажмите «Продолжить», либо остановите запуск.`, 'warn');
             } else if (info.reason === 'stage_failed') {
                 showNotification(`${where}: ни одна модель не дала принятого ответа. Проверьте вкладки (Get it); «Продолжить» повторит этап.`, 'warn');
             } else {

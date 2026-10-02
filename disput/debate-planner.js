@@ -205,16 +205,26 @@
       const participantId = typeof participant === 'string' ? participant : participant?.participantId;
       if (participantId) capacityUsed[participantId] = (capacityUsed[participantId] || 0) + 1;
     }));
-    const invalid = assigned.find((participantId) => {
+    // A participant that dropped out of the run (terminal transport failure) is removed from the
+    // stage: the stage goes on with who is left. Before, one dropped participant blocked every
+    // later stage that named it, and the run stood still without a word.
+    const droppedIds = assigned.filter((participantId) => {
       const participant = available.get(participantId);
-      if (!participant || participant.available === false) return true;
+      return !participant || participant.available === false;
+    });
+    const remaining = assigned.filter((participantId) => !droppedIds.includes(participantId));
+    if (!remaining.length) {
+      return { participantIds: [], reason: 'ASSIGNED_PARTICIPANT_UNAVAILABLE', unavailableParticipantId: droppedIds[0], notes: [] };
+    }
+    const invalid = remaining.find((participantId) => {
+      const participant = available.get(participantId);
       if ((capacityUsed[participantId] || 0) >= Math.max(1, Number(participant.capacity ?? 1))) return true;
       const capabilities = arr(input.participantCapabilities?.[participantId] || participant.capabilities);
       return required.some((capability) => !capabilities.includes(capability));
     });
     return invalid
       ? { participantIds: [], reason: 'ASSIGNED_PARTICIPANT_UNAVAILABLE', unavailableParticipantId: invalid, notes: [] }
-      : { participantIds: assigned.slice(), notes: [] };
+      : { participantIds: remaining.slice(), droppedParticipantIds: droppedIds, notes: droppedIds.map((id) => `PARTICIPANT_DROPPED:${id}`) };
   }
 
   function resolvePlannedInputArtifactIds(stage, input) {
@@ -242,7 +252,7 @@
       decision: makeDecision(input, {
         type: 'CREATE_STAGES',
         rationaleCode: 'PLANNED_STAGE_READY',
-        rationaleData: { plannedStageId: stage.plannedStageId, notes: selection.notes },
+        rationaleData: { plannedStageId: stage.plannedStageId, notes: selection.notes, droppedParticipantIds: arr(selection.droppedParticipantIds) },
         consideredGoalIds: arr(stage.goalIds),
         selectedGoalIds: arr(stage.goalIds),
         firedRules: [{

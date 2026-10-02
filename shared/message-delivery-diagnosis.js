@@ -30,13 +30,15 @@
     batch_timeout: ['Пакет завершён по таймауту', 'Не все модели ответили до срока ожидания панели.', 'Модели без ответа указаны в строке; проверьте их вкладки.'],
     waiting: ['Ответ ещё не получен', 'Запрос подготовлен, ожидается ответ.', ''],
     response_rejected: ['Ответ модели не принят движком', 'Ответ получен, но не прошёл приёмку этапа (причина указана в строке), поэтому запрос повторялся: каждая попытка — лишний вызов модели.', 'Если причина повторяется у одной модели — смотрите её ответ во вкладке; приложите JSON-отчёт.'],
+    participants_unavailable: ['Следующему этапу некого запускать', 'Все назначенные на следующий этап модели выбыли из запуска (терминальный сбой доставки). Запуск остановлен, чтобы не стоять молча.', 'Проверьте вкладки выбывших моделей; «Продолжить» повторит попытку, либо остановите запуск.'],
+    text_lost: ['Текст ответа был получен, а запрос закрыт пустым', 'Страница модели показала текст ответа (размер указан в строке), но запрос завершён как пустой (например «отправка не подтверждена»): ответ потерян для этапа, хотя он есть на странице модели.', 'Нажмите Get it: он перечитает ответ со страницы. Если повторяется у одной модели — приложите JSON-отчёт (дефект подтверждения отправки или завершения).'],
     stage_failed: ['Этап не дал ни одного принятого ответа', 'Движок остановил запуск: ни одна модель этапа не вернула принятый ответ. Этап не повторяется сам, чтобы не тратить вызовы.', 'Проверьте вкладки моделей (Get it подтянет готовые ответы); «Продолжить» повторит этап один раз.'],
     display_desync: ['Ответ показан, но этап его не принял', 'Текст ответа уже выведен в карточку (источник указан в строке), а ожидание этапа его не получило: этап ждёт то, что пользователь уже видит.', 'Нажмите Get it, чтобы подтянуть ответ в этап, или «Дальше», чтобы закрыть этап с собранным. Если повторяется — приложите JSON-отчёт.']
   };
   const SEVERITY = {
     no_tab: 'critical', not_submitted: 'critical', premature_terminal: 'critical', stuck_waiting: 'critical', stale_background: 'critical', no_answer: 'critical', empty: 'critical', start_rejected: 'critical', batch_timeout: 'critical',
     partial: 'warning', display_desync: 'warning', focus_churn: 'warning', error: 'warning', no_token: 'warning', identity: 'warning', stop_unconfirmed: 'warning',
-    stage_failed: 'warning', response_rejected: 'warning',
+    stage_failed: 'warning', response_rejected: 'warning', participants_unavailable: 'warning', text_lost: 'critical',
     cancelled: 'info', stale: 'info', start_refused: 'info', waiting: 'info'
   };
   const RESULTS = ['delivered', 'partial', 'no_token', 'empty', 'no_answer', 'not_submitted', 'no_tab', 'error', 'cancelled', 'waiting'];
@@ -61,7 +63,7 @@
           model: event.model, token: event.token, requestId: event.requestId || null, batchId: event.batchId || '', at: event.at, chars: event.chars, prompt: event.prompt || '',
           tab: null, statuses: [], firstTextMs: null, terminal: null, stale: 0,
           dispatch: [], dispatchIds: [], submittedMs: null, rejections: [], revisions: 0, providerStop: null,
-          completionTerminals: [], navigations: [], lateText: null, focus: { count: 0, sources: {} }, textProgress: null, backgroundVersions: [], displayed: []
+          completionTerminals: [], navigations: [], lateText: null, focus: { count: 0, sources: {} }, textProgress: null, backgroundVersions: [], displayed: [], firstTextChars: null
         };
         byToken.set(event.token, send);
         if (send.requestId) byRequest.set(send.requestId, send);
@@ -77,7 +79,7 @@
       if (!send) return;
       if (event.kind === 'tab') send.tab = event.tabId;
       else if (event.kind === 'status') send.statuses.push(event.status);
-      else if (event.kind === 'first_text') send.firstTextMs = event.ms;
+      else if (event.kind === 'first_text') { send.firstTextMs = event.ms; send.firstTextChars = event.chars ?? null; }
       else if (event.kind === 'stale_dropped') send.stale += 1;
       else if (event.kind === 'revision') send.revisions += 1;
       else if (event.kind === 'identity_rejected') send.rejections.push(event);
@@ -231,7 +233,10 @@
           reason: [`ждём ${Math.round(waitedMs / 1000)} с`, `первый текст через ${Math.round(send.firstTextMs / 1000)} с`, deferred ? 'финал отложен протоколом' : null, terminalCause(send) || null].filter(Boolean).join(' · ')
         }));
       }
-      if (send.prematureTerminal) {
+      const emptyTerminal = send.terminal && ['empty_answer', 'no_answer'].includes(send.terminal.kind) && !send.terminal.chars;
+      if (emptyTerminal && !send.prematureTerminal && send.firstTextChars > 0) {
+        out.push(make('text_lost', send, { reason: [`текст ${send.firstTextChars} симв. на ${Math.round((send.firstTextMs || 0) / 1000)} с`, send.terminal.status, send.terminal.detail].filter(Boolean).join(' · ') }));
+      } else if (send.prematureTerminal) {
         out.push(make('premature_terminal', send, {
           reason: [send.terminal?.status, terminalCause(send), send.lateText ? `текст ${send.lateText.chars} симв. через ${Math.round(send.lateText.ms / 1000)} с` : null].filter(Boolean).join(' · ')
         }));
@@ -309,10 +314,10 @@
     const orphans = unattachedRejections(journal, list);
     const moderator = moderatorActions(journal);
     // A run the engine stopped because a stage got no accepted answer at all.
-    const failedStages = moderator.filter((event) => event.kind === 'run_paused' && event.reason === 'stage_failed').map((event) => ({
-      code: 'stage_failed', severity: SEVERITY.stage_failed, model: null, at: event.at, batchId: '',
+    const failedStages = moderator.filter((event) => event.kind === 'run_paused' && ['stage_failed', 'participants_unavailable'].includes(event.reason)).map((event) => ({
+      code: event.reason, severity: SEVERITY[event.reason], model: null, at: event.at, batchId: '',
       ageMs: Number.isFinite(Date.parse(event.at)) ? Math.max(0, now - Date.parse(event.at)) : null,
-      title: `${event.stage ? `${event.stage}: ` : ''}${TEXT.stage_failed[0]}`, detail: TEXT.stage_failed[1], hint: TEXT.stage_failed[2],
+      title: `${event.stage ? `${event.stage}: ` : ''}${TEXT[event.reason][0]}`, detail: TEXT[event.reason][1], hint: TEXT[event.reason][2],
       reason: event.stage || ''
     }));
     // Rejected answers, grouped per model and reason (each one cost a model call).

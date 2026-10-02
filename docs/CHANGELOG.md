@@ -1,5 +1,14 @@
 # CHANGELOG — Project
 
+### 2026-10-02 — A dropped participant no longer freezes the run; DeepSeek send confirmation; text_lost, version 2.81.535
+
+- Field report (9) (Auto, Universal, Grok + DeepSeek): stage 1 ended with Grok delivered and DeepSeek `NO_SEND`; then the run stood still — no pause, no message, no stage 2 (the run button stayed in "pause", Start did nothing). Cause: the planner treats a participant that dropped out of the run (terminal transport failure) as unavailable and answered every later stage that named it with `WAIT: PLANNED_STAGE_PARTICIPANT_UNAVAILABLE`, which the run loop swallowed.
+- Planner: a dropped participant is **removed from the stage** and the stage goes on with the participants that are left (`PARTICIPANT_DROPPED:<id>` in the decision notes). If nobody is left for the stage, the engine pauses visibly: `RUN_PAUSED` with `reason: participants_unavailable` (notification, journal `run_paused`, problem `participants_unavailable`); Continue retries.
+- DeepSeek: after the first message of a new chat the page moves to `/a/chat/s/<id>` and replaces the composer, so the old input is detached and never "empty" — the send was reported "not confirmed" although the page navigated and the answer came (2995 characters at 55 s, then `NO_SEND` at 204 s). A new chat address or a detached composer now counts as a confirmed send.
+- Delivery report: new problem `text_lost` (critical) — an empty terminal although text had been received (size, time, terminal status).
+- Not fixed (open): the background still can close a request as `NO_SEND` with empty text after text was seen; `text_lost` makes it visible, Get it recovers the answer.
+- Tests: `automation-markers` (dropout on the real engine, with a mutation check), `message-delivery-semi-auto` (`text_lost`, DeepSeek).
+
 ### 2026-10-02 — "None" in the mini prompt list of a round's model block, version 2.81.533
 
 - The list of preset mini prompts in a model block of a round has a first item **None**: nothing is attached to that block's round. The choice is stored with the pipeline (a prompt id, or no role for None), restored when the pipeline is applied and kept when the blocks are rebuilt (changing the selected models no longer resets a block's choice — an empty choice used to be lost).

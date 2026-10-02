@@ -1017,11 +1017,18 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
     };
 
     const baselineCount = getProseNodes().length;
+    const startPath = location.pathname;
     const confirmDeepSeekSend = async (timeout = 2000) => {
       const deadline = Date.now() + timeout;
       while (Date.now() < deadline) {
         const typing = document.querySelector('[aria-busy="true"], .loading, .spinner, [data-streaming="true"]');
         if (typing) return true;
+        // The first message of a new chat moves the page to /a/chat/s/<id> and replaces the
+        // composer: the old input is detached and keeps its text, so "composer is empty" never
+        // comes true. A new chat address or a detached input proves the message went out
+        // (report 9: the page navigated, the answer came, and the send was called "not confirmed").
+        if (input.isConnected === false) return true;
+        if (location.pathname !== startPath && /\/a\/chat\/s\//.test(location.pathname)) return true;
         if (getProseNodes().length > baselineCount) return true;
         if (!readComposerValue(input)) return true;
         await sleep(120);
