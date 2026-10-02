@@ -1640,14 +1640,14 @@ body.llm-stream-preview-open .llm-results .llm-panel.llm-panel-session-restored:
 }
 
 .post-terminal-answer-revision > summary {
-    padding: 4px 8px;
+    padding: 4px 0px;
     cursor: pointer;
-    font-size: 12px;
-    font-weight: 600;
+    font-size: 10px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 100%;
+    color: grey;
 }
 
 .post-terminal-answer-revision-body::before {
