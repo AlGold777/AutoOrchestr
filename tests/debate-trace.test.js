@@ -118,63 +118,40 @@ describe('Debate trace store', () => {
     expect(store.getConflicts('run-1')).toEqual([expect.objectContaining({ eventId: 'same-id' })]);
   });
 
-  test('persists and restores a bounded machine trace', async () => {
-    let saved = {};
-    const storage = {
-      get: (key, cb) => cb({ [key]: saved[key] }),
-      set: (value, cb) => { saved = { ...saved, ...value }; cb?.(); }
-    };
-    const store = TraceStore.createStore({ storage, flushDelayMs: 5 });
+  test('deletes legacy persisted traces without reading or writing snapshots', async () => {
+    const storage = { get: jest.fn(), set: jest.fn(), remove: jest.fn((keys, cb) => cb()) };
+    const store = TraceStore.createStore({ storage });
     store.beginRun({ debateRunId: 'run-1', plan });
-    await store.flush();
-    const restored = TraceStore.createStore({ storage });
-    expect(await restored.restore()).toBe(true);
-    expect(restored.getRun('run-1').plan.planId).toBe('plan-1');
+    await store.purgeStoredRuns();
+    expect(storage.remove).toHaveBeenCalledWith(['llmCodexDebateTrace.v1', 'llmCodexDebateTrace'], expect.any(Function));
+    expect(storage.get).not.toHaveBeenCalled();
+    expect(storage.set).not.toHaveBeenCalled();
+    expect(store.getActiveRun().debateRunId).toBe('run-1');
   });
 
-  test('re-sanitizes legacy persisted trace events during restore', async () => {
-    const legacyEvent = {
-      schemaVersion: 4,
-      eventId: 'legacy-answer',
-      eventType: 'ANSWER_COLLECTED',
-      source: 'background',
-      severity: 'info',
-      sourceTimestamp: 1000,
-      receivedAt: 1001,
-      receivedSeq: 1,
-      reasonCode: '',
-      correlation: { debateRunId: 'run-legacy', correlationQuality: 'exact' },
-      causality: {},
-      payload: { model: 'Qwen', text: 'legacy full answer', answerText: 'legacy camel answer', answerLength: 18 },
-      provenance: 'legacy_adapter',
-      redactedFieldsCount: 0,
-      semanticHash: 'old-hash',
-      validationErrors: []
-    };
-    const saved = {
-      llmCodexDebateTrace: {
-        schemaVersion: 4,
-        receivedSeq: 1,
-        activeRunId: 'run-legacy',
-        runs: [{ debateRunId: 'run-legacy', createdAt: 1, updatedAt: 1, plan, events: [legacyEvent] }]
-      }
-    };
-    const storageKey = 'llmCodexDebateTrace';
-    const writes = [];
-    const storage = {
-      get: (key, cb) => cb({ [key]: saved[key] }),
-      set: (value, cb) => { writes.push(value); cb?.(); }
-    };
-    const store = TraceStore.createStore({ storage, storageKey });
-    expect(await store.restore()).toBe(true);
-    const restored = store.getRun('run-legacy').events[0];
-    expect(restored.payload.text).toBe('[REDACTED]');
-    expect(restored.payload.answerText).toBe('[REDACTED]');
-    expect(restored.payload.answerLength).toBe(18);
-    expect(writes.length).toBeGreaterThan(0);
-    expect(JSON.stringify(writes)).not.toContain('legacy full answer');
-    expect(JSON.stringify(writes)).not.toContain('legacy camel answer');
+  test('retains only the current run and rejects late records from discarded runs', () => {
+    const store = TraceStore.createStore();
+    store.beginRun({ debateRunId: 'run-1', plan });
+    store.append({ eventId: 'duplicate', eventType: 'RUN_STARTED', correlation: { debateRunId: 'run-1' } });
+    store.append({ eventId: 'duplicate', eventType: 'RUN_STARTED', correlation: { debateRunId: 'run-1' } });
+    store.beginRun({ debateRunId: 'run-2', plan });
+    expect(store.getRun('run-1')).toBeNull();
+    expect(store.getDuplicateIds('run-1')).toEqual([]);
+    expect(store.append({ eventType: 'RUN_COMPLETED', correlation: { debateRunId: 'run-1' } })).toBeNull();
+    expect(store.getActiveRun().debateRunId).toBe('run-2');
+    expect(store.serialize().runs.map((r) => r.debateRunId)).toEqual(['run-2']);
+    expect(store.append({ eventType: 'RUN_STARTED', correlation: { debateRunId: 'run-2' } })).not.toBeNull();
   });
+
+  test('clear releases current telemetry and duplicate bookkeeping', async () => {
+    const store = TraceStore.createStore();
+    store.beginRun({ debateRunId: 'run-1', plan });
+    await store.clear();
+    expect(store.getActiveRun()).toBeNull();
+    expect(store.serialize().runs).toEqual([]);
+    expect(store.serialize().receivedSeq).toBe(0);
+  });
+
 });
 
 describe('Debate trace projections', () => {

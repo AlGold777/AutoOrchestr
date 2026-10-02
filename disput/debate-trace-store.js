@@ -1,10 +1,9 @@
-// Append-only, bounded trace storage. It observes Debate; it never controls it.
+// In-memory telemetry for the current Debate run only. No persisted run history.
 (function initDebateTraceStore(root) {
   'use strict';
 
   const Schema = root.DebateTraceSchema || (typeof require === 'function' ? require('./debate-trace-schema') : null);
   const STORAGE_KEY = 'llmCodexDebateTrace.v1';
-  const MAX_RUNS = 10;
   const MAX_EVENTS_PER_RUN = 3000;
 
   const storageCall = (storage, method, value) => new Promise((resolve) => {
@@ -19,7 +18,6 @@
   function createStore(options = {}) {
     const storage = options.storage || null;
     const storageKey = String(options.storageKey || STORAGE_KEY);
-    const maxRuns = Math.max(1, Number(options.maxRuns || MAX_RUNS));
     const maxEvents = Math.max(50, Number(options.maxEventsPerRun || MAX_EVENTS_PER_RUN));
     const listeners = new Set();
     const runs = new Map();
@@ -27,14 +25,11 @@
     const conflicts = new Map();
     let activeRunId = '';
     let receivedSeq = 0;
-    let flushTimer = null;
-    let dirty = false;
 
     const notify = (event, run) => listeners.forEach((listener) => {
       try { listener(event, run); } catch (_) {}
     });
     const compact = () => {
-      while (runs.size > maxRuns) runs.delete(runs.keys().next().value);
       runs.forEach((run) => {
         if (run.events.length <= maxEvents) return;
         const critical = run.events.filter((event) => Schema.CRITICAL_FLUSH.has(event.eventType));
@@ -50,24 +45,18 @@
       activeRunId,
       runs: Array.from(runs.values()).map((run) => ({ ...run, events: run.events.slice() }))
     });
-    const flush = async () => {
-      if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
-      if (!dirty || !storage) return false;
-      compact();
-      dirty = false;
-      return storageCall(storage, 'set', { [storageKey]: serialize() });
-    };
-    const scheduleFlush = (immediate = false) => {
-      dirty = true;
-      if (!storage) return;
-      if (immediate) { void flush(); return; }
-      if (flushTimer) return;
-      flushTimer = setTimeout(() => { void flush(); }, Math.max(50, Number(options.flushDelayMs || 500)));
+    const purgeStoredRuns = async () => {
+      // Remove snapshots written by previous versions; never read or restore them.
+      return storageCall(storage, 'remove', [...new Set([storageKey, STORAGE_KEY, 'llmCodexDebateTrace'])]);
     };
     const ensureRun = (runId, seed = {}) => {
       const id = String(runId || activeRunId || '').trim();
       if (!id) return null;
       if (!runs.has(id)) {
+        runs.clear();
+        duplicateIds.clear();
+        conflicts.clear();
+        receivedSeq = 0;
         runs.set(id, {
           debateRunId: id,
           createdAt: Number(seed.createdAt || 0) || Date.now(),
@@ -84,6 +73,8 @@
     const append = (input = {}) => {
       const correlation = Schema.normalizeCorrelation(input.correlation || {});
       const runId = correlation.debateRunId || activeRunId;
+      // A late event from an earlier run cannot recreate its history or replace the current trace.
+      if (activeRunId && runId !== activeRunId) return null;
       const run = ensureRun(runId, input.run || {});
       if (!run) return null;
       const event = Schema.createEvent({ ...input, correlation: { debateRunId: runId, ...correlation } }, {
@@ -108,7 +99,6 @@
       run.updatedAt = event.receivedAt;
       activeRunId = runId;
       compact();
-      scheduleFlush(Schema.CRITICAL_FLUSH.has(event.eventType));
       notify(event, run);
       return event;
     };
@@ -145,50 +135,27 @@
       }
       return run;
     };
-    const restore = async () => {
-      const result = await storageCall(storage, 'get', storageKey);
-      const snapshot = result?.[storageKey];
-      if (!snapshot || !Array.isArray(snapshot.runs)) return false;
-      receivedSeq = Math.max(0, Number(snapshot.receivedSeq || 0));
-      activeRunId = String(snapshot.activeRunId || '');
-      snapshot.runs.slice(-maxRuns).forEach((run) => {
-        if (!run?.debateRunId) return;
-        const events = (Array.isArray(run.events) ? run.events.slice(-maxEvents) : []).map((event) => (
-          Schema.createEvent(event, { receivedSeq: event.receivedSeq, receivedAt: event.receivedAt })
-        ));
-        runs.set(String(run.debateRunId), {
-          ...run,
-          plan: Schema.sanitizePlan?.(run.plan) || null,
-          events
-        });
-      });
-      // Persist the sanitized migration immediately. Otherwise an old trace is
-      // safe in memory/export but its raw content remains in chrome.storage
-      // until some unrelated future event triggers a flush.
-      dirty = true;
-      await flush();
-      return true;
-    };
     const clear = async (runId = null) => {
-      if (runId) runs.delete(String(runId));
-      else { runs.clear(); activeRunId = ''; receivedSeq = 0; }
-      dirty = true;
-      await flush();
+      if (runId && String(runId) !== activeRunId) return;
+      runs.clear();
+      duplicateIds.clear();
+      conflicts.clear();
+      activeRunId = '';
+      receivedSeq = 0;
+      await purgeStoredRuns();
     };
 
     return Object.freeze({
-      beginRun, append, flush, restore, clear, serialize,
+      beginRun, append, purgeStoredRuns, clear, serialize,
       getRun: (runId = activeRunId) => runs.get(String(runId || '')) || null,
       getActiveRun: () => runs.get(activeRunId) || null,
-      setActiveRun(runId) { const id = String(runId || ''); if (!runs.has(id)) return false; activeRunId = id; notify(null, runs.get(id)); return true; },
-      listRuns: () => Array.from(runs.values()),
       getDuplicateIds: (runId = activeRunId) => (duplicateIds.get(String(runId || '')) || []).slice(),
       getConflicts: (runId = activeRunId) => (conflicts.get(String(runId || '')) || []).slice(),
       subscribe(listener) { if (typeof listener !== 'function') return () => {}; listeners.add(listener); return () => listeners.delete(listener); }
     });
   }
 
-  const api = Object.freeze({ STORAGE_KEY, MAX_RUNS, MAX_EVENTS_PER_RUN, createStore });
+  const api = Object.freeze({ STORAGE_KEY, MAX_EVENTS_PER_RUN, createStore });
   root.DebateTraceStore = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this));

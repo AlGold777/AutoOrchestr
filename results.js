@@ -2759,11 +2759,10 @@ document.addEventListener('click', (event) => {
         return null;
     };
     const debateTraceStore = window.DebateTraceStore?.createStore?.({
-        storage: chrome?.storage?.local,
-        flushDelayMs: 400
+        storage: chrome?.storage?.local // Only used to delete legacy persisted run history.
     }) || null;
     window.__debateTraceStore = debateTraceStore;
-    void debateTraceStore?.restore?.().then(() => renderCurrentDebateTrace?.());
+    void debateTraceStore?.purgeStoredRuns?.();
 
     const getActiveDebateTraceCorrelation = (extra = {}) => {
         const aggregate = debateAggregateStore?.getState?.() || {};

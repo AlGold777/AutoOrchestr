@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-03 — Remove persisted Disput runs, version 2.81.574
+
+- Debate trace keeps only the current run in memory and no longer writes or restores run history. Legacy trace storage keys are deleted when the page initializes. Starting a new run discards the preceding trace and its duplicate/conflict indexes; late events cannot recreate discarded runs.
+- Current-run view, telemetry schema and export remain available. Reloading the page no longer restores earlier traces.
+
 ### 2026-10-03 — Default to Disput, version 2.81.573
 
 - Both pages mark Disput as the initial tab. Opening the telemetry window selects Disput by default.
