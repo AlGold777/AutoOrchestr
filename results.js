@@ -15117,9 +15117,9 @@ document.addEventListener('click', (event) => {
             if (button) flashButtonFeedback(button, 'error');
         }
     };
-    const downloadDiagnosticsMarkdown = (fileBase, markdownContent, button) => {
+    const downloadDiagnosticsMarkdown = (fileBase, markdownContent, button, options = {}) => {
         const safeBase = sanitizeFileSegment(fileBase, 'Diagnostics');
-        const fileName = `${safeBase} ${formatDiagnosticsExportStamp()}.md`;
+        const fileName = options.fileName || `${safeBase} ${formatDiagnosticsExportStamp()}.md`;
         try {
             const blob = new Blob([markdownContent], { type: 'text/markdown' });
             const url = URL.createObjectURL(blob);
@@ -15131,9 +15131,11 @@ document.addEventListener('click', (event) => {
             document.body.removeChild(anchor);
             setTimeout(() => URL.revokeObjectURL(url), 1000);
             if (button) flashButtonFeedback(button, 'success');
+            return true;
         } catch (err) {
             console.error('[Diagnostics Export] failed', err);
             if (button) flashButtonFeedback(button, 'error');
+            return false;
         }
     };
     const downloadDiagnosticsJson = (fileBase, payload, button, options = {}) => {
@@ -15143,10 +15145,8 @@ document.addEventListener('click', (event) => {
             const safePayload = window.SecretRedaction?.redactDeep
                 ? window.SecretRedaction.redactDeep(payload)
                 : payload;
-            // Unindented for the same reason as the telemetry export: these files
-            // are fed to analysis tooling, and pretty-printing cost a third of a
-            // real export's size. Any JSON viewer re-formats on demand.
-            const blob = new Blob([JSON.stringify(safePayload)], { type: 'application/json' });
+            // Raw telemetry stays compact; the structured extract opts into indentation.
+            const blob = new Blob([JSON.stringify(safePayload, null, options.pretty ? 2 : undefined)], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
             const anchor = document.createElement('a');
             anchor.href = url;
@@ -15423,9 +15423,13 @@ document.addEventListener('click', (event) => {
                 throw new Error('Could not download Disput Flow');
             }
             const extract = window.ReportDigest.extractTransport(report, sourceFile);
-            if (!downloadDiagnosticsJson('extract_transport', extract, button, {
-                fileName: `extract_transport_${stamp}.json`
-            })) throw new Error('Could not download transport extract');
+            const markdown = window.ReportDigest.renderTransportMarkdown(extract);
+            if (!downloadDiagnosticsJson('extract_transport', extract, null, {
+                fileName: `extract_transport_${stamp}.json`, pretty: true
+            })) throw new Error('Could not download transport extract JSON');
+            if (!downloadDiagnosticsMarkdown('extract_transport', markdown, button, {
+                fileName: `extract_transport_${stamp}.md`
+            })) throw new Error('Could not download transport extract Markdown');
         } catch (error) {
             console.error('[Disput Extract] failed', error);
             showNotification(`Extract: ${error.message || error}`, 'error');

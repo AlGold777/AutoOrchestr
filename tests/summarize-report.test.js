@@ -11,146 +11,154 @@ const write = (name, data) => {
   return file;
 };
 
-describe('Disput Flow export', () => {
-  const T = 1790940000000;
-  const stage = (n, start, end, participants) => ({
-    stageId: `stage-9642776a-3c87-479b-9993-ae0a7766ac03-${n}`, status: 'success', deviations: ['unplanned_stage'],
-    durationMs: end - start, actual: { participants, startedAt: T + start, completedAt: T + end, terminalEventType: 'STAGE_COMPLETED' }
-  });
-  const ev = (stageN, eventType, at, model, extra = {}) => ({
-    eventType, sourceTimestamp: T + at, reasonCode: extra.reasonCode || '',
-    correlation: { stageId: `stage-9642776a-3c87-479b-9993-ae0a7766ac03-${stageN}` },
-    payload: { model, details: extra.details || '', answerLength: extra.chars ?? null, evidence: extra.evidence || {} }
-  });
-  const report = {
-    metadata: { debateRunId: 'r', presetId: 'TEST', topology: 'universal', extensionVersion: '2.81.555', exportedAt: '2026-10-02T17:18:05.190Z', dataCompleteness: 'incomplete' },
-    plan: null,
-    runOutcome: { startedAt: T, completedAt: T + 2400000, durationMs: 2400000, terminalOutcome: 'completed' },
-    health: { classification: 'degraded_success', severity: 'warning', diagnosisCount: 1, manualRecoveryCount: 1, forcedCompletionCount: 1, stateDivergenceCount: 0 },
-    stageExecutions: [stage(1, 0, 30000, ['A', 'B']), stage(2, 30500, 60000, ['A', 'B']), stage(3, 70000, 2270000, ['A']), stage(4, 2270200, 2300000, ['A'])],
-    diagnoses: [{ code: 'STAGE_FAILURE', severity: 'critical', affectedStageId: 'stage-9642776a-3c87-479b-9993-ae0a7766ac03-3', affectedParticipant: 'A', summary: 'PIPELINE_ERROR', reasonCode: 'PIPELINE_ERROR', occurrences: 1, firstObservedAt: T + 1000000, resolvedAt: null }],
-    dispatchAttempts: [{ dispatchId: 'A:1', participantId: 'A', stageId: 'stage-9642776a-3c87-479b-9993-ae0a7766ac03-1' }, { dispatchId: null, participantId: 'A', stageId: 'stage-9642776a-3c87-479b-9993-ae0a7766ac03-1' }],
-    events: [
-      ev(3, 'TEXT_STABLE', 70000 + 16000, 'A', { chars: 2540 }),
-      ev(3, 'MANUAL_RECOVERY_REQUESTED', 70000 + 1200000, 'A', { details: 'UI button', reasonCode: 'MANUAL_RECOVERY' }),
-      ev(3, 'STABLE_TEXT_FALLBACK_USED', 70000 + 1157000, 'A', { details: 'reason=stable_text len=2696' }),
-      ev(3, 'MODEL_TERMINAL_COMMITTED', 2270000 - 10000, 'A', { chars: 2919, evidence: { finalStatus: 'PARTIAL', completionReason: 'hard_stop_recovered_partial' } })
-    ],
-    integrity: { eventsTotal: 4, sequenceGaps: [], duplicateEventIds: [], uncorrelatedEvents: [], missingTerminalEvents: [], schemaValidationErrors: [] }
-  };
+const Digest = require('../shared/report-digest');
 
-  test('stage table: true median, LONG, gap, contradiction; attempt, chronology, manual and diagnoses with paths', () => {
-    const text = summarize(write('flow.json', report));
-    expect(text).toContain('## Disput Flow export');
-    expect(text).toContain('calc: median durationMs of sorted [29500, 29800, 30000, 2200000] = 29900');
-    expect(text).toContain('| 3 | stage-3 | A | 70.000 | 2270.000 | 2200000 | 0.200 | success | LONG(>3×median) LONG(>120000ms) | success + STAGE_FAILED/STAGE_FAILURE: diagnoses[0] | unplanned_stage |');
-    expect(text).toMatch(/\| 1 \| stage-1 \| A\+B \| 0\.000 \| 30\.000 \| 30000 \| 0\.500 \|/);
-    expect(text).toMatch(/\| stage-3 \| A \|.*1 · PARTIAL\/hard_stop_recovered_partial\/2919 t=2260\.000/);
-    expect(text).toContain('2174000 (>120000) / 2174000 (>120000)');
-    expect(text).toContain('#### stage-3 / A');
-    expect(text).toContain('events[1] · MANUAL_RECOVERY_REQUESTED MANUAL_RECOVERY · UI button [joined by stageId]');
-    expect(text).toContain('  - t=1270.000 stage-3 A · events[1] · UI button');
-    expect(text).toContain('| STAGE_FAILURE | PIPELINE_ERROR | critical | A | stage-3 | 1 | 1 | 1 |');
-    expect(text).toContain('stageExecutions[2].status=success · STAGE_FAILED/STAGE_FAILURE for this stageId: diagnoses[0]');
-    expect(text).toContain('health.forcedCompletionCount=1 · MODEL_TERMINAL_COMMITTED with completionReason forced_*=0');
-    expect(text).toContain('without dispatchId 1');
-    expect(text).toContain('plan=null');
-    expect(text).toContain('delivery=no field');
-    expect(text).toContain('| A | 3 | 3:PARTIAL/hard_stop_recovered_partial | 1 | 0 | stage-3 of 4 |');
+describe('Disput Flow extract v2', () => {
+  const T = 1790980000000;
+  const at = (n) => new Date(T + n).toISOString();
+  const event = (type, n, extra = {}) => ({ eventType: type, sourceTimestamp: T + n,
+    correlation: { stageId: 's1', dispatchId: 'A:1', pipelineRoundId: 'r1', tabId: '123', correlationQuality: 'exact', ...extra.correlation },
+    provenance: 'legacy_adapter', reasonCode: extra.reasonCode || '', payload: { model: 'A', originalLabel: type, ...extra.payload } });
+  const flow = () => ({ metadata: { debateRunId: 'run', dataCompleteness: 'incomplete' },
+    runOutcome: { startedAt: T, completedAt: T + 10000 }, health: { manualRecoveryCount: 0, forcedCompletionCount: 0 },
+    stageExecutions: [{ stageId: 's1', durationMs: 10000, status: 'success', actual: { startedAt: T, completedAt: T + 10000, participants: ['A'] } }],
+    events: [], diagnoses: [], dispatchAttempts: [], integrity: {}, delivery: { diagnosis: { sends: [], batches: [], problems: [] }, journal: [
+      { kind: 'batch_start', at: at(0), batchId: 's1:a1', stageId: 's1', models: ['A'], requestIds: { A: 'q1' } },
+      { kind: 'prepared', at: at(1), batchId: 's1:a1', model: 'A', requestId: 'q1', token: 'AO-aaaaaa', prompt: 'p', chars: 1 },
+      { kind: 'tab', at: at(2), model: 'A', requestId: 'q1', tabId: 123 },
+      { kind: 'dispatch', phase: 'dispatch_started', at: at(100), model: 'A', requestId: 'q1', dispatchId: 'A:1' },
+      { kind: 'dispatch', phase: 'submitted', at: at(200), model: 'A', requestId: 'q1', dispatchId: 'A:1' },
+      { kind: 'focus', at: at(250), model: 'A', requestId: 'q1', source: 'automation_visit_activate' },
+      { kind: 'first_text', at: at(300), model: 'A', requestId: 'q1', chars: 100 },
+      { kind: 'verified', at: at(9000), model: 'A', requestId: 'q1', dispatchId: 'A:1', status: 'SUCCESS', chars: 100 }
+    ] } });
+
+  test('JSON is structured; Markdown uses the same facts and all requests, including a clean request', () => {
+    const d = flow(), before = JSON.stringify(d), x = Digest.extractTransport(d, 'source.json');
+    expect(x.DIGEST_VERSION).toBe('2.0.0');
+    expect(x).not.toHaveProperty('digest');
+    expect(x.requests).toHaveLength(1);
+    expect(x.requests[0].identity.tabIds).toEqual(['123']);
+    expect(x.stageTimeline[0].rows.map((r) => r.type)).toEqual(['tab', 'dispatch', 'dispatch', 'focus']);
+    expect(x.requests[0].transitions.some((r) => ['focus', 'tab', 'dispatch'].includes(r.first.type))).toBe(false);
+    expect(x.requests[0].coverage.omittedRecords).toBe(0);
+    expect(JSON.stringify(d)).toBe(before);
+    const text = Digest.renderTransportMarkdown(x);
+    expect(text).toContain('DIGEST_VERSION=2.0.0');
+    expect(text).toContain('Request 1: stage-1/A');
+    expect(text).not.toContain('### 15.');
+    expect(text).not.toContain('### 16.');
+    expect(summarize(write('flow.json', d))).toBe(Digest.renderTransportMarkdown(Digest.extractTransport(d)));
   });
 
-  test('a model that dropped out is visible in the per-model table, not only the longest stage', () => {
-    const dropped = { ...report, stageExecutions: [stage(1, 0, 30000, ['A', 'B']), stage(2, 30100, 60000, ['A'])], diagnoses: [],
-      events: [ev(1, 'MODEL_TERMINAL_COMMITTED', 20000, 'B', { evidence: { finalStatus: 'SUCCESS', completionReason: 'forced_success_with_text' } }),
-        ev(1, 'MANUAL_RECOVERY_REQUESTED', 19000, 'B', { details: 'UI button' }),
-        ev(2, 'MODEL_TERMINAL_COMMITTED', 50000, 'A', { evidence: { finalStatus: 'SUCCESS', completionReason: 'lifecycle_complete_snapshot' } })] };
-    const text = summarize(write('dropped.json', dropped));
-    expect(text).toContain('| B | 1 | 1:SUCCESS/forced_success_with_text | 1 | 0 | stage-1 of 2 |');
-    expect(text).toContain('| A | 2 | 2:SUCCESS/lifecycle_complete_snapshot | 0 | 0 | stage-2 |');
+  test('zero text and every return/change in length, dispatch, reason or status survive grouping', () => {
+    const d = flow();
+    d.events = [
+      event('TEXT_STABLE', 1000, { payload: { evidence: { textLength: 100 } } }),
+      event('TEXT_STABLE', 1100, { payload: { evidence: { textLength: 100 } } }),
+      event('TEXT_STABLE', 1200, { payload: { evidence: { textLength: 0 } } }),
+      event('TEXT_STABLE', 1300, { payload: { evidence: { textLength: 100 } } }),
+      event('TEXT_STABLE', 1400, { correlation: { dispatchId: 'A:2' }, payload: { transportRequestId: 'q1', evidence: { textLength: 100 } } }),
+      event('TEXT_STABLE', 1500, { payload: { evidence: { textLength: 100 }, status: 'FAILED' } }),
+      event('TEXT_STABLE', 1600, { payload: { evidence: { textLength: 100 }, status: 'FAILED' }, reasonCode: 'new_reason' })
+    ];
+    const a = Digest.extractTransport(d).requests[0];
+    const stable = a.transitions.filter((r) => r.first.type === 'TEXT_STABLE');
+    expect(stable.map((r) => r.first.path)).toEqual(['events[0]', 'events[2]', 'events[3]', 'events[4]', 'events[5]', 'events[6]']);
+    expect(stable[0].paths).toEqual(['events[0]', 'events[1]']);
+    expect(stable[1].first.textLength).toBe(0);
+    expect(a.coverage.representedRecords + a.coverage.sharedStageRecords).toBe(a.coverage.totalRecords);
   });
 
-  test('a clean flow is reported without flags', () => {
-    const clean = { ...report, stageExecutions: [stage(1, 0, 30000, ['A']), stage(2, 30100, 60000, ['A'])], events: [], diagnoses: [] };
-    const text = summarize(write('clean.json', clean));
-    expect(text).not.toContain('LONG(');
-    expect(text).toContain('or attribution warning\n- none');
-    expect(text).toContain("equal to the previous attempt's answer\n- none");
+  test('terminal pairs preserve both labels, both length fields and registered evidence, without conflating null and missing', () => {
+    const d = flow();
+    d.events = [
+      event('MODEL_TERMINAL_COMMITTED', 8000, { payload: { originalLabel: 'FINALIZATION_DECISION', answerLength: 100,
+        evidence: { finalStatus: 'SUCCESS', completionReason: 'lifecycle_complete_snapshot', answerLength: 100 } } }),
+      event('MODEL_TERMINAL_COMMITTED', 8007, { payload: { originalLabel: 'MODEL_FINAL', answerLength: null,
+        evidence: { finalStatus: 'SUCCESS', completionReason: 'lifecycle_complete_snapshot', answerLen: 100,
+          foregroundMsUsed: 400, focusSwitchesUsed: 0, doneReason: 'success', durationMs: 8007 } } })
+    ];
+    const x = Digest.extractTransport(d), g = x.requests[0].terminalGroups[0];
+    expect(x.counters.terminal).toEqual({ records: 2, groups: 1, uniqueRequests: 1 });
+    expect(g.intervalMs).toBe(7);
+    expect(g.members.map((m) => m.path)).toEqual(['events[0]', 'events[1]']);
+    expect(g.members[0].evidenceAnswerLen.state).toBe('missing');
+    expect(g.members[1].answerLength).toMatchObject({ state: 'present', value: null });
+    expect(g.members[1].registered.focusSwitchesUsed.value).toBe(0);
+    expect(Digest.renderTransportMarkdown(x)).toContain('answerLength=null evidence.answerLen=100');
+    d.events[1].payload.evidence.answerLen = 101;
+    expect(Digest.extractTransport(d).requests[0].terminalGroups).toHaveLength(2);
   });
 
-  test('with a delivery section: joins by requestId/dispatchId, foreign dispatchId, stale length, refusals, filtered events, late records, next prompt', () => {
-    const S = (n) => `stage-9642776a-3c87-479b-9993-ae0a7766ac03-${n}`;
-    const at = (ms) => new Date(T + ms).toISOString();
-    const first = 'Первый ответ модели A про путь Дао, достаточно длинный текст для пробы.';
-    const flow = {
-      ...report,
-      stageExecutions: [stage(1, 0, 20000, ['A']), stage(2, 20100, 40000, ['A'])],
-      runOutcome: { startedAt: T, completedAt: T + 40000, durationMs: 40000, terminalOutcome: 'completed' },
-      health: { classification: 'degraded_success', severity: 'warning', diagnosisCount: 0, manualRecoveryCount: 0, forcedCompletionCount: 0, stateDivergenceCount: 0 },
-      diagnoses: [],
-      dispatchAttempts: [],
-      events: [
-        { ...ev(2, 'STAGE_FAILED', 20600, 'A', { reasonCode: 'PIPELINE_ERROR' }), receivedSeq: 5, correlation: { stageId: S(2), dispatchId: 'A:1' } },
-        { ...ev(2, 'TEXT_STABLE', 23500, 'A', { evidence: { textLength: 300 } }), receivedSeq: 6, correlation: { stageId: S(2), dispatchId: 'A:2' } },
-        { ...ev(2, 'MODEL_TERMINAL_COMMITTED', 38900, 'A', { chars: 400, evidence: { finalStatus: 'SUCCESS', completionReason: 'lifecycle_complete_snapshot' } }), receivedSeq: 9, correlation: { stageId: S(2), dispatchId: 'A:2' } }
-      ],
-      integrity: { eventsTotal: 10, firstSeq: 1, lastSeq: 10, sequenceGaps: [], duplicateEventIds: [], uncorrelatedEvents: [], missingTerminalEvents: [], schemaValidationErrors: [] },
-      delivery: {
-        report: 'message-delivery', extension_version: '2.81.568', transport_contract_version: '1.0.0', generated_at: at(200000),
-        diagnosis: {
-          batches: [{ waitId: 'wait-2', batchId: `${S(2)}:a1`, at: at(20110), models: ['A'], durationMs: 19000, accepted: { waitedMs: 1500 },
-            refusals: [{ at: at(20120), attempt: 1, errorCode: 'RUN_ALREADY_ACTIVE', blockingModel: null, waitedMs: 10 }, { at: at(21110), attempt: 2, errorCode: 'RUN_ALREADY_ACTIVE', waitedMs: 1000 }] }],
-          sends: [
-            { model: 'A', requestId: 'treq-1', batchId: `${S(1)}:a1`, result: 'delivered', terminal: { status: 'SUCCESS', chars: 300 } },
-            { model: 'A', requestId: 'treq-2', batchId: `${S(2)}:a1`, result: 'delivered', terminal: { status: 'SUCCESS', chars: 400 } }
-          ],
-          problems: [], rejections: [], moderator: []
-        },
-        journal: [
-          { at: at(10), kind: 'batch_start', batchId: `${S(1)}:a1`, stageId: S(1), models: ['A'], requestIds: { A: 'treq-1' }, waitId: 'wait-1', stageAttemptId: `${S(1)}:a1` },
-          { at: at(11), kind: 'prepared', batchId: `${S(1)}:a1`, model: 'A', requestId: 'treq-1', token: 'AO-aaaaaa', chars: 100, prompt: 'p1' },
-          { at: at(1000), kind: 'dispatch', phase: 'dispatch_started', model: 'A', requestId: 'treq-1', dispatchId: 'A:1' },
-          { at: at(2000), kind: 'dispatch', phase: 'submitted', model: 'A', requestId: 'treq-1', dispatchId: 'A:1' },
-          { at: at(5000), kind: 'first_text', model: 'A', requestId: 'treq-1', chars: 50 },
-          { at: at(15000), kind: 'verified', model: 'A', requestId: 'treq-1', dispatchId: 'A:1', chars: 300, status: 'SUCCESS', reason: 'lifecycle_complete_snapshot', answer: first },
-          { at: at(20110), kind: 'batch_start', batchId: `${S(2)}:a1`, stageId: S(2), models: ['A'], requestIds: { A: 'treq-2' }, waitId: 'wait-2', stageAttemptId: `${S(2)}:a1` },
-          { at: at(20111), kind: 'prepared', batchId: `${S(2)}:a1`, model: 'A', requestId: 'treq-2', token: 'AO-bbbbbb', chars: 5000, prompt: `Контекст: ${first} Дальше обрезано` },
-          { at: at(20500), kind: 'completion_terminal', model: 'A', requestId: 'treq-2', dispatchId: 'A:1', status: 'CONTEXT_LOST', reason: 'context_invalidated' },
-          { at: at(21000), kind: 'dispatch', phase: 'dispatch_started', model: 'A', requestId: 'treq-2', dispatchId: 'A:2' },
-          { at: at(22000), kind: 'dispatch', phase: 'submitted', model: 'A', requestId: 'treq-2', dispatchId: 'A:2' },
-          { at: at(23000), kind: 'stale_dropped', model: 'A', requestId: 'treq-2', chars: 300 },
-          { at: at(39000), kind: 'verified', model: 'A', requestId: 'treq-2', dispatchId: 'A:2', chars: 400, status: 'SUCCESS', reason: 'lifecycle_complete_snapshot', answer: 'Второй ответ модели A, тоже достаточно длинный для проверки.' },
-          { at: at(21610), kind: 'start_accepted', waitId: 'wait-2', waitedMs: 1500 },
-          { at: at(100000), kind: 'completion_terminal', model: 'A', requestId: 'treq-2', dispatchId: 'A:2', status: 'INTERRUPTED', reason: 'attempt_interrupted' }
-        ]
-      }
-    };
-    const text = summarize(write('flow-delivery.json', flow));
-    // Data sufficiency: events[] is a subset of the set integrity describes.
-    expect(text).toContain('events[].length ≠ integrity.eventsTotal (calc: 10 − 3 = 7); receivedSeq numbers absent inside the events[] range: 2.');
-    expect(text).toContain('stored shorter than prepared.chars: 2');
-    // The CONTEXT_LOST terminal recorded under the stage-2 request carries the stage-1 dispatchId.
-    expect(text).toContain('A:1 (stage-1 / A)');
-    expect(text).toContain('completion_terminal · status=CONTEXT_LOST reason=context_invalidated · dispatchId=A:1 [dispatchId started by the stage-1 / A request]');
-    // STAGE_FAILED with the stage-2 stageId belongs, by dispatchId, to the stage-1 request.
-    expect(text).toContain('events[0] STAGE_FAILED has stageId=stage-2 but joins by dispatchId to the stage-1 / A request');
-    expect(text).toContain('stage-1 / A: delivery.diagnosis.sends[0].result=delivered · STAGE_FAILED events[0]');
-    // Text of the length of the previous answer after the new submit.
-    expect(text).toContain('- stage-2 / A · stale_dropped len=300 delivery.journal[11] t=23.000 · equals stage-1 / A final length (delivery.diagnosis.sends[0].terminal.chars)');
-    expect(text).toContain('- stage-2 / A · TEXT_STABLE len=300 events[1] t=23.500 · equals stage-1 / A final length');
-    // Start refusals: per-refusal offsets, acceptance, and no invented lock duration.
-    expect(text).toContain('first refusal t=20.120 (calc: at − batch.at = 10 ms) · last refusal t=21.110 (calc: 1000 ms) · refusals[].waitedMs as recorded: 10, 1000');
-    expect(text).toContain('start accepted: t=21.610 delivery.journal[13] (calc: 1500 ms after batch.at)');
-    expect(text).toContain('lock duration: not measured');
-    // A record after the run is listed, with the caution.
-    expect(text).toContain('60.000 s after runOutcome.completedAt · delivery.journal[14] · A · completion_terminal');
-    expect(text).toContain('does not show that generation continued');
-    // The stage-1 answer is found in the stage-2 prompt; the last answer has no later prompt.
-    expect(text).toContain('found in delivery.journal[7] (A, stage-2:a1)');
-    expect(text).toContain('no later prompt');
-    // Zero counts in an existing journal are 0, not "no field"; the embedded delivery section follows.
-    expect(text).toContain('run_paused=0');
-    expect(text).toContain('delivery.diagnosis.moderator=[]');
-    expect(text).toContain('#### Batches (delivery.diagnosis.batches[])');
+  test('request summary includes paths, accepted=false, first stable/completion, UI counts and quality separately', () => {
+    const d = flow();
+    d.events = [
+      event('TEXT_STABLE', 1000, { payload: { evidence: { textLength: 100 } } }),
+      event('COMPLETION_DETECTED', 2000),
+      event('ANSWER_COLLECTED', 9001, { payload: { accepted: false, pipelineBatchId: null, answerLength: 100 } }),
+      event('DUPLICATE_FINAL_REJECTED', 9100),
+      event('LEGACY_DIAGNOSTIC_EVENT', 9200, { payload: { originalLabel: 'ANSWER_CARD_RENDER_EVALUATED', details: 'wrong_card' } }),
+      event('MANUAL_RECOVERY_REQUESTED', 9300, { correlation: { correlationQuality: 'inferred', pipelineRoundId: undefined }, payload: { details: 'UI button' } })
+    ];
+    d.delivery.journal.push({ kind: 'displayed', at: at(9400), model: 'A', requestId: 'q1' });
+    const x = Digest.extractTransport(d), a = x.requests[0];
+    expect(a.times.firstStable).toMatchObject({ path: 'events[0]', t: 1, stageSeconds: 1, submitSeconds: 0.8 });
+    expect(a.times.firstCompletionDetected.path).toBe('events[1]');
+    expect(a.collected[0].accepted.value).toBe(false);
+    expect(a.collected[0].pipelineBatchId.value).toBeNull();
+    expect(a.counts).toMatchObject({ wrongCard: 1, displayed: 1, duplicateFinalRejected: 1, manualRecords: 1, uiButtonRecords: 1 });
+    expect(x.quality.correlationQuality).toEqual({ exact: 5, inferred: 1 });
+    expect(x.quality.provenance).toEqual({ legacy_adapter: 6 });
+    expect(x.quality.eventsWithoutRound.paths).toEqual(['events[5]']);
+    expect(a.identity.pipelineRoundIds).toEqual(['r1']);
+  });
+
+  test('foreign dispatch does not move previous events to a later request; background retains all paths beyond the old cap', () => {
+    const d = flow();
+    d.stageExecutions.push({ stageId: 's2', durationMs: 10000, status: 'success', actual: { startedAt: T + 10000, completedAt: T + 20000, participants: ['A'] } });
+    d.delivery.journal.push(
+      { kind: 'batch_start', at: at(10000), stageId: 's2', batchId: 's2:a1', models: ['A'], requestIds: { A: 'q2' } },
+      { kind: 'completion_terminal', at: at(10100), requestId: 'q2', model: 'A', dispatchId: 'A:1', status: 'CONTEXT_LOST' },
+      { kind: 'dispatch', phase: 'dispatch_started', at: at(10200), requestId: 'q2', model: 'A', dispatchId: 'A:2' }
+    );
+    d.events = Array.from({ length: 170 }, (_, i) => event('TEXT_STABLE', 1000 + i, { payload: { evidence: { textLength: i } } }));
+    d.events.push(event('STAGE_FAILED', 10150, { correlation: { stageId: 's2' } }));
+    const x = Digest.extractTransport(d);
+    expect(x.requests[1].identity.foreignDispatchIds[0].ownerRequestId).toBe('q1');
+    expect(x.requests[0].transitions.filter((r) => r.first.type === 'TEXT_STABLE')).toHaveLength(170);
+    expect(x.requests[0].transitions.find((r) => r.first.type === 'STAGE_FAILED').first.flags).toContain('record stageId=s2');
+    expect(x.requests.every((r) => r.coverage.omittedRecords === 0)).toBe(true);
+  });
+
+  test('stage timeline interleaves both models; per-request transitions do not repeat shared records', () => {
+    const d = flow();
+    d.delivery.journal[0].models.push('B');
+    d.delivery.journal[0].requestIds.B = 'qB';
+    d.delivery.journal.push(
+      { kind: 'dispatch', phase: 'dispatch_started', at: at(150), model: 'B', requestId: 'qB', dispatchId: 'B:1' },
+      { kind: 'dispatch', phase: 'submitted', at: at(220), model: 'B', requestId: 'qB', dispatchId: 'B:1' }
+    );
+    const x = Digest.extractTransport(d);
+    const row = x.stageTimeline[0].rows.filter((r) => r.type === 'dispatch');
+    expect(row.map((r) => r.model)).toEqual(['A', 'B', 'A', 'B']);
+    expect(x.requests).toHaveLength(2);
+    expect(x.requests.flatMap((a) => a.transitions).some((r) => r.first.type === 'dispatch')).toBe(false);
+  });
+
+  test('prompt match means a stored fragment only; same-name comparisons and true median use explicit units', () => {
+    const d = flow(), answer = 'A long answer with more than fifty characters for checking the stored prompt fragment.';
+    d.delivery.journal[7].answer = answer;
+    d.delivery.journal.push({ kind: 'prepared', at: at(10000), prompt: answer, chars: 1000 });
+    d.stageExecutions.push({ stageId: 's2', durationMs: 20000, actual: { startedAt: T + 11000, completedAt: T + 31000 }, status: 'success' });
+    d.integrity.eventsTotal = 10;
+    const x = Digest.extractTransport(d);
+    expect(x.promptChecks[0]).toMatchObject({ result: 'stored_fragment_found', submissionProven: false, fullAnswerInclusionProven: false });
+    expect(x.promptChecks[0].laterPrompts[0].found).toBe(true);
+    expect(x.calculations.medianDurationMs).toBe(15000);
+    expect(x.comparisons.map((r) => r.name)).toEqual(['eventsTotal']);
+    expect(x.counters.forced).toEqual({ events: 0, terminalRecords: 0, uniqueRequests: 0 });
+    expect(Digest.renderTransportMarkdown(x)).not.toContain('confirms it was sent');
   });
 });
 

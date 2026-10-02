@@ -1,9 +1,10 @@
-// In-memory telemetry for the current Debate run only. No persisted run history.
+// In-memory telemetry for at most two Debate runs. No persisted run history.
 (function initDebateTraceStore(root) {
   'use strict';
 
   const Schema = root.DebateTraceSchema || (typeof require === 'function' ? require('./debate-trace-schema') : null);
   const STORAGE_KEY = 'llmCodexDebateTrace.v1';
+  const MAX_RUNS = 2;
   const MAX_EVENTS_PER_RUN = 3000;
 
   const storageCall = (storage, method, value) => new Promise((resolve) => {
@@ -30,6 +31,13 @@
       try { listener(event, run); } catch (_) {}
     });
     const compact = () => {
+      while (runs.size > MAX_RUNS) {
+        const oldest = [...runs.keys()].find((id) => id !== activeRunId);
+        if (!oldest) break;
+        runs.delete(oldest);
+        duplicateIds.delete(oldest);
+        conflicts.delete(oldest);
+      }
       runs.forEach((run) => {
         if (run.events.length <= maxEvents) return;
         const critical = run.events.filter((event) => Schema.CRITICAL_FLUSH.has(event.eventType));
@@ -53,10 +61,6 @@
       const id = String(runId || activeRunId || '').trim();
       if (!id) return null;
       if (!runs.has(id)) {
-        runs.clear();
-        duplicateIds.clear();
-        conflicts.clear();
-        receivedSeq = 0;
         runs.set(id, {
           debateRunId: id,
           createdAt: Number(seed.createdAt || 0) || Date.now(),
@@ -73,8 +77,8 @@
     const append = (input = {}) => {
       const correlation = Schema.normalizeCorrelation(input.correlation || {});
       const runId = correlation.debateRunId || activeRunId;
-      // A late event from an earlier run cannot recreate its history or replace the current trace.
-      if (activeRunId && runId !== activeRunId) return null;
+      // Retained inactive runs can receive late evidence; evicted runs cannot be recreated.
+      if (activeRunId && runId !== activeRunId && !runs.has(runId)) return null;
       const run = ensureRun(runId, input.run || {});
       if (!run) return null;
       const event = Schema.createEvent({ ...input, correlation: { debateRunId: runId, ...correlation } }, {
@@ -97,7 +101,7 @@
       receivedSeq += 1;
       run.events.push(event);
       run.updatedAt = event.receivedAt;
-      activeRunId = runId;
+      if (!activeRunId) activeRunId = runId;
       compact();
       notify(event, run);
       return event;
@@ -155,7 +159,7 @@
     });
   }
 
-  const api = Object.freeze({ STORAGE_KEY, MAX_EVENTS_PER_RUN, createStore });
+  const api = Object.freeze({ STORAGE_KEY, MAX_RUNS, MAX_EVENTS_PER_RUN, createStore });
   root.DebateTraceStore = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this));

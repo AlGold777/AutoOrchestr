@@ -426,7 +426,7 @@ Telemetry exposes exactly two filters: Platform and Tasks. It has no
 `Only problems` mode. A selected Task exports an incident-scoped,
 proof-preserving projection from the single canonical ledger; All tasks exports
 the shared ledger plus all diagnostic projections without parallel recording.
-Disput keeps only the current trace in page memory; it does not persist or restore run history. Legacy trace snapshots are deleted on initialization. Starting a new run or reloading releases the prior trace.
+Disput keeps at most two traces in page memory and does not persist or restore run history. Late events of a retained inactive run do not activate it. Legacy trace snapshots are deleted on initialization; reload releases all traces. Extract downloads the original report, structured JSON tables/counters and separate Markdown using the same snapshot.
 The Disput tab is a live overview of the active trace: Run Health Summary, Problems &
 Recovery, the delivery cards and the raw trace/journal. Its only display toggle
 is `Only problems`; it never filters the JSON/MD export, which is always

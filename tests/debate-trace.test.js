@@ -129,18 +129,23 @@ describe('Debate trace store', () => {
     expect(store.getActiveRun().debateRunId).toBe('run-1');
   });
 
-  test('retains only the current run and rejects late records from discarded runs', () => {
+  test('retains two runs in memory; late evidence never activates an inactive run or recreates an evicted run', () => {
     const store = TraceStore.createStore();
     store.beginRun({ debateRunId: 'run-1', plan });
     store.append({ eventId: 'duplicate', eventType: 'RUN_STARTED', correlation: { debateRunId: 'run-1' } });
     store.append({ eventId: 'duplicate', eventType: 'RUN_STARTED', correlation: { debateRunId: 'run-1' } });
     store.beginRun({ debateRunId: 'run-2', plan });
+    expect(store.getRun('run-1')).not.toBeNull();
+    expect(store.append({ eventType: 'RUN_COMPLETED', correlation: { debateRunId: 'run-1' } })).not.toBeNull();
+    expect(store.getActiveRun().debateRunId).toBe('run-2');
+    expect(store.serialize().runs.map((r) => r.debateRunId)).toEqual(['run-1', 'run-2']);
+    store.beginRun({ debateRunId: 'run-3', plan });
     expect(store.getRun('run-1')).toBeNull();
     expect(store.getDuplicateIds('run-1')).toEqual([]);
     expect(store.append({ eventType: 'RUN_COMPLETED', correlation: { debateRunId: 'run-1' } })).toBeNull();
-    expect(store.getActiveRun().debateRunId).toBe('run-2');
-    expect(store.serialize().runs.map((r) => r.debateRunId)).toEqual(['run-2']);
+    expect(store.getActiveRun().debateRunId).toBe('run-3');
     expect(store.append({ eventType: 'RUN_STARTED', correlation: { debateRunId: 'run-2' } })).not.toBeNull();
+    expect(store.getActiveRun().debateRunId).toBe('run-3');
   });
 
   test('clear releases current telemetry and duplicate bookkeeping', async () => {

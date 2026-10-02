@@ -22,6 +22,7 @@ function setup(payload = report(), digest = Digest) {
     getTelemetryEventsForExport: async () => [], buildDisputExportPayload: () => payload,
     formatDiagnosticsExportStamp: () => '20261003_00-30',
     downloadDiagnosticsJson: (base, data, button, options) => { downloads.push({ data, name: options.fileName }); return true; },
+    downloadDiagnosticsMarkdown: (base, data, button, options) => { downloads.push({ data, name: options.fileName }); return true; },
     flashButtonFeedback: jest.fn(), showNotification: (message) => notices.push(message), console: { error: jest.fn() }
   };
   vm.runInNewContext(source.slice(start, end), context);
@@ -35,10 +36,11 @@ test('Extract downloads the complete snapshot and its deterministic digest with 
   const before = JSON.stringify(payload);
   const ui = setup(payload);
   await ui.run();
-  expect(ui.downloads.map((d) => d.name)).toEqual(['Disput Flow 20261003_00-30.json', 'extract_transport_20261003_00-30.json']);
+  expect(ui.downloads.map((d) => d.name)).toEqual(['Disput Flow 20261003_00-30.json', 'extract_transport_20261003_00-30.json', 'extract_transport_20261003_00-30.md']);
   expect(ui.downloads[0].data.events).toHaveLength(1);
   expect(ui.downloads[1].data.sourceFile).toBe(ui.downloads[0].name);
-  expect(ui.downloads[1].data.digest).toBe(Digest.summarizeDisputFlow(ui.downloads[0].data));
+  expect(ui.downloads[1].data).not.toHaveProperty('digest');
+  expect(ui.downloads[2].data).toBe(Digest.renderTransportMarkdown(ui.downloads[1].data));
   expect(JSON.stringify(payload)).toBe(before);
   expect(ui.button.disabled).toBe(false);
 });
@@ -46,7 +48,7 @@ test('Extract downloads the complete snapshot and its deterministic digest with 
 test('browser module needs no Node APIs and has the same output as the report script', () => {
   const context = { window: {} };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../shared/report-digest.js'), 'utf8'), context);
-  expect(context.window.ReportDigest.extractTransport(report(), 'source.json').digest).toBe(Digest.summarizeDisputFlow(report()));
+  expect(JSON.stringify(context.window.ReportDigest.extractTransport(report(), 'source.json'))).toBe(JSON.stringify(Digest.extractTransport(report(), 'source.json')));
 });
 
 test('failure leaves the raw report downloaded and releases the button', async () => {
@@ -66,7 +68,7 @@ test('duplicate clicks during snapshot loading do not create extra downloads', a
   await ui.run();
   release([]);
   await running;
-  expect(ui.downloads).toHaveLength(2);
+  expect(ui.downloads).toHaveLength(3);
 });
 
 test('both pages default to all records and load the digest before the UI handler', () => {
@@ -86,4 +88,14 @@ test('a failed raw download prevents extraction and reports the error', async ()
   expect(extractTransport).not.toHaveBeenCalled();
   expect(ui.notices[0]).toContain('Could not download Disput Flow');
   expect(ui.button.disabled).toBe(false);
+});
+
+test('Markdown failure keeps raw and structured JSON downloads and releases the Extract button', async () => {
+  const ui = setup();
+  ui.context.downloadDiagnosticsMarkdown = () => false;
+  await ui.run();
+  expect(ui.downloads).toHaveLength(2);
+  expect(ui.notices[0]).toContain('Could not download transport extract Markdown');
+  expect(ui.button.disabled).toBe(false);
+  expect(ui.button.hasAttribute('aria-busy')).toBe(false);
 });

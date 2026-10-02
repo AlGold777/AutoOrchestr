@@ -39,8 +39,7 @@ const JOURNAL_DETAIL_SKIP = new Set(['at', 'kind', 'model', 'requestId', 'token'
 const journalDetails = (j) => Object.entries(j)
   .filter(([k, v]) => !JOURNAL_DETAIL_SKIP.has(k) && v != null && v !== '')
   .map(([k, v]) => `${k}=${typeof v === 'object' ? JSON.stringify(v) : v}`)
-  .join(' ')
-  .slice(0, 160);
+  .join(' ');
 
 // One time-ordered list of events[] and delivery.journal[] entries with their identifiers.
 function buildRecords(events, journal) {
@@ -49,10 +48,10 @@ function buildRecords(events, journal) {
     const p = e.payload || {};
     const c = e.correlation || {};
     recs.push({
-      src: 'events', path: `events[${i}]`, at: e.sourceTimestamp, type: e.eventType, reasonCode: e.reasonCode || '',
+      src: 'events', path: `events[${i}]`, at: toMs(e.sourceTimestamp), type: e.eventType, reasonCode: e.reasonCode || '',
       label: p.originalLabel || e.eventType, model: p.model || p.participant || null,
-      stageId: c.stageId || p.stageId || null, dispatchId: c.dispatchId || null, requestId: p.transportRequestId || null,
-      tabId: c.tabId ?? null, details: clip(p.details || p.note || '', 120), raw: e
+      stageId: c.stageId || p.stageId || null, dispatchId: c.dispatchId || p.dispatchId || null, requestId: p.transportRequestId || p.requestId || c.requestId || null,
+      tabId: c.tabId == null ? null : String(c.tabId), details: String(p.details || p.note || ''), raw: e
     });
   });
   journal.forEach((j, i) => {
@@ -60,7 +59,7 @@ function buildRecords(events, journal) {
       src: 'journal', path: `delivery.journal[${i}]`, at: toMs(j.at), type: j.kind, reasonCode: '',
       label: j.kind === 'dispatch' ? `dispatch:${j.phase}` : j.kind, model: j.model || null,
       stageId: j.stageId || null, dispatchId: j.dispatchId || null, requestId: j.requestId || null,
-      tabId: j.tabId ?? null, details: journalDetails(j), raw: j
+      tabId: j.tabId == null ? null : String(j.tabId), details: journalDetails(j), raw: j
     });
   });
   return recs.sort((a, b) => a.at - b.at);
@@ -69,14 +68,14 @@ function buildRecords(events, journal) {
 // Text length carried by a record, if any (answer length, text length, "len=N" in the details).
 function textLengthOf(rec) {
   // prepared.chars is the prompt length, not answer text.
-  if (rec.src === 'journal') return rec.type !== 'prepared' && Number.isFinite(rec.raw.chars) && rec.raw.chars > 0 ? rec.raw.chars : null;
+  if (rec.src === 'journal') return rec.type !== 'prepared' && Number.isFinite(rec.raw.chars) && rec.raw.chars >= 0 ? rec.raw.chars : null;
   const p = rec.raw.payload || {};
   const ev = p.evidence && typeof p.evidence === 'object' ? p.evidence : {};
   for (const value of [p.answerLength, ev.answerLength, ev.answerLen, ev.textLength]) {
-    if (Number.isFinite(value) && value > 0) return value;
+    if (Number.isFinite(value) && value >= 0) return value;
   }
   const match = /\blen=(\d+)/.exec(String(p.details || ''));
-  return match && Number(match[1]) > 0 ? Number(match[1]) : null;
+  return match && Number(match[1]) >= 0 ? Number(match[1]) : null;
 }
 
 // Attempt = one transport request (one model in one batch). Built from delivery.journal batch_start;
@@ -104,7 +103,7 @@ function buildAttempts(stages, events, journal) {
   });
   if (!attempts.length) {
     stages.forEach((s, i) => {
-      const models = [...new Set(events.filter((e) => e.correlation?.stageId === s.stageId).map((e) => e.payload?.model).filter(Boolean))];
+      const models = [...new Set(arr(s.actual?.participants).concat(events.filter((e) => e.correlation?.stageId === s.stageId).map((e) => e.payload?.model || e.payload?.participant)).filter(Boolean))];
       models.forEach((model) => attempts.push({
         requestId: null, model, stageId: s.stageId, stageN: i + 1, batchId: null, stageAttemptId: null, waitId: null,
         batchAt: s.actual?.startedAt, batchPath: null, token: null, dispatchIds: [], recs: []
@@ -183,371 +182,446 @@ const terminalStatusOf = (r) => {
   return ev.finalStatus || r.raw.payload?.status || '';
 };
 const terminalReasonOf = (r) => r.raw.payload?.evidence?.completionReason || '';
-const describeTerminal = (r) => (r ? `${terminalStatusOf(r) || '""'}/${terminalReasonOf(r) || 'no completionReason'}/${r.raw.payload?.answerLength ?? 'no answerLength'}` : '—');
+// Structured facts are the source of both JSON and Markdown. No Markdown is embedded in JSON.
+const DIGEST_VERSION = '2.0.0';
+const COMPRESSION = Object.freeze({
+  allRequests: true, chronologyLimit: null, outsideWindowToleranceMs: 0,
+  terminalPairWindowMs: 50, promptProbeCharacters: 50,
+  grouping: 'request + dispatchId + status + reason + significant fields; changes split groups',
+  stable: 'first and every change, including zero length, correlation and dispatch changes',
+  background: 'counts and first/last paths; all member paths retained in JSON',
+  ignoredGroupingFields: ['elapsedMs', 'durationMs', 'foregroundMsUsed', 'focusSwitchesUsed', 'waitedMs', 'ms', 'at', 'SELECTOR_STATS sampled hit/miss/rate counters']
+});
+const arr = (v) => Array.isArray(v) ? v : [];
+const finite = (v) => Number.isFinite(v) ? v : null;
+const unique = (v) => [...new Set(v)];
+const field = (obj, key, prefix) => has(obj, key)
+  ? { path: prefix === 'root' ? key : `${prefix}.${key}`, state: 'present', value: obj[key] }
+  : { path: prefix === 'root' ? key : `${prefix}.${key}`, state: 'missing' };
+const fields = (obj, names, prefix) => Object.fromEntries(names.map((k) => [k, field(obj, k, prefix)]));
+const display = (f) => {
+  if (f === null) return 'null';
+  if (f === undefined) return 'no field';
+  if (has(f, 'state')) return f.state === 'missing' ? 'no field' : display(f.value);
+  if (Array.isArray(f)) return f.length ? f.map(display).join(', ') : '[]';
+  if (typeof f === 'object') return JSON.stringify(f);
+  if (f === '') return '""';
+  return String(f);
+};
+const pathValue = (f) => `${f.path}=${display(f)}`;
+const listCounts = (items, fn) => Object.fromEntries(count(items, fn));
+const offset = (at, base) => Number.isFinite(at) && Number.isFinite(base) ? Number(((at - base) / 1000).toFixed(3)) : null;
+const TABLE_EVENT_NAMES = new Set(['dispatch:dispatch_started', 'dispatch:submitted', 'focus', 'tab', 'navigation']);
 
-const NOISE_LABELS = new Set(['SELECTOR_STATS', 'text_progress']);
-
-function isProblemAttempt(a, send) {
-  if (a.stageFailed.length || a.manual.length || a.correlation.length) return true;
-  if (a.recs.some((r) => ['stale_dropped', 'identity_rejected', 'revision', 'late_text'].includes(r.type) || /ANSWER_DELIVERY_REJECTED/.test(`${r.label} ${r.reasonCode}`))) return true;
-  if (a.terminals.some((r) => terminalStatusOf(r) !== 'SUCCESS' || terminalReasonOf(r) !== 'lifecycle_complete_snapshot')) return true;
-  if (a.completionTerminals.some((r) => r.raw.status !== 'SUCCESS_TERMINAL')) return true;
-  if (a.final && a.final.type !== 'verified') return true;
-  if (send && send.result && send.result !== 'delivered') return true;
-  return a.recs.some((r) => r.flags.length && !r.flags.every((f) => f.startsWith('joined by')));
+function stateOf(r) {
+  const p = r.raw.payload || {}, ev = p.evidence || {};
+  return r.src === 'journal' ? r.raw.status ?? null : ev.finalStatus || p.status || ev.responsePhase || /\bstate=([^ ]+)/.exec(r.details)?.[1] || null;
 }
-
-// ---------------------------------------------------------------- Disput Flow export
-function summarizeDisputFlow(d) {
-  const out = [];
-  const events = Array.isArray(d.events) ? d.events : [];
-  const delivery = d.delivery && typeof d.delivery === 'object' ? d.delivery : null;
-  const journal = Array.isArray(delivery?.journal) ? delivery.journal : [];
-  const diag = delivery?.diagnosis && typeof delivery.diagnosis === 'object' ? delivery.diagnosis : {};
-  const sends = Array.isArray(diag.sends) ? diag.sends : [];
-  const stages = (d.stageExecutions || []).slice().sort((a, b) => (a.actual?.startedAt || 0) - (b.actual?.startedAt || 0));
-  const t0 = stages[0]?.actual?.startedAt ?? d.runOutcome?.startedAt ?? events[0]?.sourceTimestamp ?? 0;
-  const t = (at) => (Number.isFinite(at) ? T3(at - t0) : '—');
-  const stageLabel = (stageId) => {
-    const i = stages.findIndex((s) => s.stageId === stageId);
-    return i >= 0 ? `stage-${i + 1}` : short(stageId) || '—';
+function reasonOf(r) { return r.raw.reason || r.raw.errorCode || r.raw.payload?.evidence?.reason || r.reasonCode || null; }
+function recordRound(r) { return r.raw.correlation?.pipelineRoundId ?? r.raw.payload?.pipelineRoundId ?? r.raw.pipelineRoundId ?? null; }
+function timeFact(r, t0, st0, submitted) {
+  return r ? { path: r.path, at: finite(r.at), t: offset(r.at, t0), stageSeconds: offset(r.at, st0), submitSeconds: offset(r.at, submitted) } : null;
+}
+function recordFact(r, t0) {
+  const p = r.raw.payload || {};
+  return {
+    path: r.path, at: finite(r.at), t: offset(r.at, t0), type: r.type, label: r.label,
+    model: r.model, tabId: r.tabId, dispatchId: r.dispatchId, requestId: r.requestId,
+    recordedStageId: r.stageId, pipelineRoundId: recordRound(r),
+    status: stateOf(r), reason: reasonOf(r), textLength: textLengthOf(r),
+    details: r.src === 'events' ? r.details : journalDetails(r.raw),
+    evidence: r.src === 'events' ? { ...(p.evidence || {}) } : {},
+    correlationQuality: field(r.raw.correlation, 'correlationQuality', `${r.path}.correlation`),
+    joinedBy: r.via || null, flags: r.flags || []
   };
-  const m = d.metadata || {};
-  const recs = buildRecords(events, journal);
-  const attempts = buildAttempts(stages, events, journal);
-  const unassigned = assignRecords(attempts, recs);
-  const sendOf = (a) => sends.find((s) => (a.requestId && s.requestId === a.requestId) || (s.model === a.model && a.batchId && s.batchId === a.batchId)) || null;
-  const attemptName = (a) => `${a.stageN ? `stage-${a.stageN}` : short(a.stageId)} / ${a.model}`;
-
-  out.push('## Disput Flow export');
-  out.push('Legend: `path` = value from the file; `calc:` = computed (formula given); "no field", null, "", [] and "0 records" are different answers. '
-    + `t = seconds from stageExecutions[0].actual.startedAt = ${t0} (0.001 s). "+st" = from the stage start, "+sub" = from this attempt's submit.`);
-  out.push(`- metadata: extensionVersion=${fieldValue(m, 'extensionVersion')} · presetId=${fieldValue(m, 'presetId')} · runMode=${fieldValue(m, 'runMode')} · topology=${fieldValue(m, 'topology')} · dataCompleteness=${fieldValue(m, 'dataCompleteness')} · exportedAt=${fieldValue(m, 'exportedAt')}`);
-  const ro = d.runOutcome || {};
-  out.push(`- runOutcome: startedAt=${fieldValue(ro, 'startedAt')} (t=${t(ro.startedAt)}) · completedAt=${fieldValue(ro, 'completedAt')} (t=${t(ro.completedAt)}) · durationMs=${fieldValue(ro, 'durationMs')} · terminalOutcome=${fieldValue(ro, 'terminalOutcome')}`);
-  const h = d.health || {};
-  out.push(`- health: classification=${fieldValue(h, 'classification')} · severity=${fieldValue(h, 'severity')} · diagnosisCount=${fieldValue(h, 'diagnosisCount')} · manualRecoveryCount=${fieldValue(h, 'manualRecoveryCount')} · forcedCompletionCount=${fieldValue(h, 'forcedCompletionCount')} · stateDivergenceCount=${fieldValue(h, 'stateDivergenceCount')}`);
-  out.push(`- events[]: ${records(events.length)} · ${counted(events, (e) => e.eventType) || '—'}`);
-
-  // ---- 1. What the file can and cannot prove
-  out.push('\n### 1. Data sufficiency');
-  const integrity = d.integrity || {};
-  const seqs = events.map((e) => e.receivedSeq).filter(Number.isFinite).sort((a, b) => a - b);
-  out.push(`- events[].length=${events.length} · integrity.eventsTotal=${fieldValue(integrity, 'eventsTotal')} · integrity.firstSeq..lastSeq=${fieldValue(integrity, 'firstSeq')}..${fieldValue(integrity, 'lastSeq')} · events[].receivedSeq range=${seqs.length ? `${seqs[0]}..${seqs[seqs.length - 1]}` : '—'}`);
-  if (Number.isFinite(integrity.eventsTotal) && integrity.eventsTotal !== events.length) {
-    const missing = seqs.length ? (seqs[seqs.length - 1] - seqs[0] + 1) - new Set(seqs).size : 0;
-    out.push(`- events[].length ≠ integrity.eventsTotal (calc: ${integrity.eventsTotal} − ${events.length} = ${integrity.eventsTotal - events.length}); receivedSeq numbers absent inside the events[] range: ${missing}. integrity.* (sequenceGaps included) does not describe the events[] array of this file.`);
-  }
-  out.push(`- plan=${fieldValue(d, 'plan')} · stageExecutions[].expected: ${stages.map((s) => fieldValue(s, 'expected')).join(', ') || '—'} · deviations: ${counted(stages.flatMap((s) => s.deviations || []), (x) => x) || '[]'}`);
-  out.push(`- delivery=${delivery ? 'present' : 'no field'}${delivery ? ` · delivery.diagnosis: ${['batches', 'sends', 'problems', 'rejections', 'moderator', 'matrix'].map((k) => `${k}=${fieldValue(diag, k)}`).join(' · ')} · delivery.journal=${fieldValue(delivery, 'journal')}` : ''}`);
-  const preparedRecs = journal.map((j, i) => ({ j, i })).filter(({ j }) => j.kind === 'prepared');
-  const truncated = preparedRecs.filter(({ j }) => Number.isFinite(j.chars) && String(j.prompt || '').length < j.chars);
-  out.push(`- delivery.journal prepared.prompt: ${records(preparedRecs.length)}, stored shorter than prepared.chars: ${truncated.length}. A fragment found in a stored prompt confirms it was sent; a fragment not found in a shortened prompt proves nothing.`);
-  out.push(`- dispatchAttempts=${fieldValue(d, 'dispatchAttempts')} · without dispatchId: ${(d.dispatchAttempts || []).filter((x) => !x.dispatchId).length}`);
-  out.push(`- records joined to a request: by requestId ${recs.filter((r) => r.via === 'requestId').length} · by dispatchId ${recs.filter((r) => r.via === 'dispatchId').length} · by stageId+model only ${recs.filter((r) => r.via && r.via.startsWith('stageId')).length} · with a model but not joined ${unassigned.length}`);
-  out.push('- Absent from this export format (cannot be checked from the file): the reason a lifecycle observer stopped, the version/hash of the answer shown in the feed and of the one passed on, the feed text itself.');
-
-  // ---- 2. Stages
-  out.push('\n### 2. Stages (stageExecutions[], t in seconds)');
-  const medianDur = median(stages.map((s) => s.durationMs));
-  const failedByStage = (stageId) => [
-    ...recs.filter((r) => r.type === 'STAGE_FAILED' && r.stageId === stageId).map((r) => r.path),
-    ...(d.diagnoses || []).map((x, i) => ({ x, i })).filter(({ x }) => x.code === 'STAGE_FAILURE' && x.affectedStageId === stageId).map(({ i }) => `diagnoses[${i}]`)
-  ];
-  out.push(table(['#', 'stage', 'participants', 'start t', 'end t', 'durationMs', 'gap to next, s', 'status', 'LONG', 'CONTRADICTION', 'deviations'], stages.map((s, i) => {
-    const next = stages[i + 1];
-    const gap = next ? next.actual.startedAt - s.actual.completedAt : null;
-    const long = [];
-    if (medianDur && s.durationMs > 3 * medianDur) long.push('LONG(>3×median)');
-    if (s.durationMs > 120000) long.push('LONG(>120000ms)');
-    const failed = failedByStage(s.stageId);
-    const contradiction = s.status === 'success' && failed.length ? `success + STAGE_FAILED/STAGE_FAILURE: ${failed.join(', ')}` : '—';
-    return [i + 1, `stage-${i + 1}`, (s.actual?.participants || []).join('+') || '[]', t(s.actual?.startedAt), t(s.actual?.completedAt), s.durationMs ?? '—', T3(gap), s.status, long.join(' ') || '—', contradiction, (s.deviations || []).join(',') || '[]'];
-  })));
-  const sortedDur = stages.map((s) => s.durationMs).filter(Number.isFinite).sort((a, b) => a - b);
-  out.push(`- calc: median durationMs of sorted [${sortedDur.join(', ')}] = ${medianDur ?? '—'}; LONG = durationMs > 3 × median (${medianDur != null ? 3 * medianDur : '—'}) or > 120000.`);
-  out.push(`- stageId map: ${stages.map((s, i) => `stage-${i + 1} = ${s.stageId}`).join(' · ') || '—'}`);
-
-  // ---- 3. Identity map
-  out.push('\n### 3. Identity map (attempt = one transport request)');
-  out.push(table(['stage', 'model', 'requestId', 'token', 'stageAttemptId', 'waitId', 'dispatchIds', 'dispatchIds of other requests recorded here', 'tabIds', 'batch_start'], attempts.map((a) => [
-    a.stageN ? `stage-${a.stageN}` : short(a.stageId), a.model, a.requestId || 'no field', a.token || '—', short(a.stageAttemptId) || '—', a.waitId || '—',
-    a.dispatchIds.map((id, k) => `d${k + 1}=${id}`).join(' ') || '—',
-    (a.foreignDispatchIds || []).map((id) => `${id} (stage-${a.foreignOwners[id].stageN ?? '?'} / ${a.foreignOwners[id].model})`).join(' ') || '—',
-    [...new Set(a.recs.map((r) => r.tabId).filter((x) => x != null))].join(',') || '—', a.batchPath || '—'
-  ])));
-  const foreignDispatch = recs.filter((r) => r.dispatchId && !r.attempt);
-  out.push(`- records with a dispatchId found in no attempt: ${foreignDispatch.length ? counted(foreignDispatch, (r) => `${r.dispatchId}(${r.label})`) : '0 records'}`);
-  out.push(`- records with a model and no attempt: ${unassigned.length ? `${unassigned.length} — ${unassigned.slice(0, 8).map((r) => `${r.path} t=${t(r.at)} ${r.model || '—'} ${r.label}`).join('; ')}${unassigned.length > 8 ? '; …' : ''}` : '0 records'}`);
-
-  // ---- 4. Attempts summary
-  out.push('\n### 4. Attempts (t in seconds; delays in ms)');
-  out.push(table(['stage', 'model', 'dispatch_started t', 'submitted t (+st)', 'first_text t', 'delivery final', 'completion_terminal', 'MODEL_TERMINAL_COMMITTED: n · first · last', 'STAGE_FAILED', 'manual (UI button)', 'CORRELATION_REJECTED', 'TEXT_STABLE→first/last terminal, ms'], attempts.map((a) => {
-    const stage = stages[a.stageN - 1];
-    const st0 = stage?.actual?.startedAt;
-    const firstTerm = a.terminals[0];
-    const lastTerm = a.terminals[a.terminals.length - 1];
-    const stable = a.stable[0];
-    const delay = (term) => (stable && term ? term.at - stable.at : null);
-    const mark = (ms) => (ms == null ? '—' : `${ms}${ms < 0 ? ' (negative)' : ms > 120000 ? ' (>120000)' : ms > 15000 ? ' (>15000)' : ''}`);
-    return [
-      a.stageN ? `stage-${a.stageN}` : '—', a.model, t(a.dispatchStarted), a.submitted != null ? `${t(a.submitted)} (+${T3(a.submitted - st0)})` : '—', t(a.firstText),
-      a.final ? `${a.final.type} ${a.final.raw.chars ?? '—'}ch ${a.final.raw.status || ''}/${a.final.raw.reason || ''} t=${t(a.final.at)}` : 'not recorded',
-      a.completionTerminals.map((r) => `${r.raw.status}/${r.raw.reason} t=${t(r.at)}`).join('; ') || 'not recorded',
-      a.terminals.length ? `${a.terminals.length} · ${describeTerminal(firstTerm)} t=${t(firstTerm.at)} · ${describeTerminal(lastTerm)} t=${t(lastTerm.at)}` : '0 events',
-      a.stageFailed.map((r) => `t=${t(r.at)} ${r.reasonCode}${r.flags.length ? ` [${r.flags.join('; ')}]` : ''}`).join('; ') || '—',
-      a.manual.length ? `${a.manual.length} (${a.manual.filter((r) => r.raw.payload?.details === 'UI button').length})` : '0',
-      a.correlation.length ? counted(a.correlation, (r) => r.details || r.reasonCode) : '0',
-      `${mark(delay(firstTerm))} / ${mark(delay(lastTerm))}`
-    ];
-  })));
-  out.push('- calc: TEXT_STABLE→terminal = MODEL_TERMINAL_COMMITTED.sourceTimestamp − first TEXT_STABLE.sourceTimestamp of the same attempt; (negative) marks inconsistent data.');
-  const forced = attempts.filter((a) => a.terminals.some((r) => terminalReasonOf(r) !== 'lifecycle_complete_snapshot'));
-  out.push(`- attempts with completionReason ≠ lifecycle_complete_snapshot: ${forced.length ? forced.map((a) => `${attemptName(a)} (${[...new Set(a.terminals.map((r) => terminalReasonOf(r) || 'no completionReason'))].join(', ')})`).join('; ') : 'none'}`);
-  out.push(`- attempts without COMPLETION_DETECTED: ${attempts.filter((a) => !a.recs.some((r) => r.type === 'COMPLETION_DETECTED')).map(attemptName).join('; ') || 'none'}`);
-  out.push(`- MODEL_TERMINAL_COMMITTED: ${records(attempts.reduce((n, a) => n + a.terminals.length, 0))} over ${attempts.filter((a) => a.terminals.length).length} requests; not lifecycle_complete_snapshot: ${records(attempts.reduce((n, a) => n + a.terminals.filter((r) => terminalReasonOf(r) !== 'lifecycle_complete_snapshot').length, 0))}`);
-
-  // ---- 5. Chronology of problem attempts
-  out.push('\n### 5. Chronology of attempts with a failure, recovery, forced completion, rejection or attribution warning');
-  const problemAttempts = attempts.filter((a) => isProblemAttempt(a, sendOf(a)));
-  if (!problemAttempts.length) out.push('- none');
-  problemAttempts.forEach((a) => {
-    const st0 = stages[a.stageN - 1]?.actual?.startedAt;
-    const lines = [];
-    let lastKey = '';
-    let lastAt = -1e15;
-    let repeat = 0;
-    const stableCount = a.stable.length;
-    const flush = () => { if (repeat && lines.length) lines[lines.length - 1] += ` (×${repeat + 1} within 5 s)`; repeat = 0; };
-    a.recs.forEach((r) => {
-      if (NOISE_LABELS.has(r.label)) return;
-      if (r.type === 'TEXT_STABLE' && r !== a.stable[0] && r !== a.stable[stableCount - 1]) return;
-      const key = `${r.label}|${r.details.slice(0, 40)}`;
-      if (key === lastKey && r.at - lastAt < 5000) { repeat += 1; lastAt = r.at; return; }
-      flush();
-      lastKey = key;
-      lastAt = r.at;
-      const len = textLengthOf(r);
-      const ids = [r.dispatchId ? (a.dispatchIds.includes(r.dispatchId) ? `d${a.dispatchIds.indexOf(r.dispatchId) + 1}` : `dispatchId=${r.dispatchId}`) : null, len ? `len=${len}` : null].filter(Boolean).join(' ');
-      const reason = r.reasonCode && r.reasonCode !== r.label ? ` ${r.reasonCode}` : '';
-      lines.push(`t=${t(r.at)} +st ${T3(r.at - st0)} +sub ${a.submitted != null ? T3(r.at - a.submitted) : '—'} · ${r.path} · ${r.label}${reason}${r.details ? ` · ${r.details}` : ''}${ids ? ` · ${ids}` : ''}${r.flags.length ? ` [${r.flags.join('; ')}]` : ''}`);
-    });
-    flush();
-    const CAP = 160;
-    out.push(`\n#### ${attemptName(a)} · requestId=${a.requestId || 'no field'} · ${records(a.recs.length)} joined, ${lines.length} lines (SELECTOR_STATS/text_progress omitted; TEXT_STABLE: first and last of ${stableCount})`);
-    out.push(lines.slice(0, CAP).map((l) => `    ${l}`).join('\n') + (lines.length > CAP ? `\n    … ${lines.length - CAP} more lines (cap ${CAP})` : ''));
-    const missingSteps = [
-      ['dispatch_started', a.dispatchStarted], ['submitted', a.submitted], ['first_text', a.firstText],
-      ['completion_terminal', a.completionTerminals[0]?.at], ['MODEL_TERMINAL_COMMITTED', a.terminals[0]?.at], ['delivery final', a.final?.at]
-    ].filter(([, at]) => at == null).map(([name]) => name);
-    out.push(`    not recorded for this attempt: ${missingSteps.join(', ') || '—'}`);
-  });
-
-  // ---- 6. Text that may belong to an earlier request
-  out.push('\n### 6. Text lengths recorded before submit, or equal to the previous attempt\'s answer');
-  const staleLines = [];
-  attempts.forEach((a) => {
-    const prev = attempts.filter((x) => x.model === a.model && x.batchAt < a.batchAt).pop();
-    const prevLengths = new Map();
-    if (prev) {
-      prev.recs.forEach((r) => {
-        if (!(r.type === 'MODEL_TERMINAL_COMMITTED' || ['verified', 'empty_answer', 'missing_token'].includes(r.type))) return;
-        const len = textLengthOf(r);
-        if (len) prevLengths.set(len, r.path);
-      });
-      const send = sendOf(prev);
-      if (send?.terminal?.chars) prevLengths.set(send.terminal.chars, `delivery.diagnosis.sends[${sends.indexOf(send)}].terminal.chars`);
-    }
-    // Repeats of the same label and length are one line: count, first and last record.
-    const groups = new Map();
-    a.recs.forEach((r) => {
-      const len = textLengthOf(r);
-      if (!len || NOISE_LABELS.has(r.label)) return;
-      const beforeSubmit = a.submitted != null && r.at < a.submitted;
-      const equalsPrev = prevLengths.has(len);
-      if (!beforeSubmit && !equalsPrev) return;
-      const key = `${r.label}|${len}|${beforeSubmit}`;
-      const g = groups.get(key) || { first: r, last: r, n: 0, len, beforeSubmit, equalsPrev };
-      g.last = r;
-      g.n += 1;
-      groups.set(key, g);
-    });
-    groups.forEach((g) => {
-      const span = g.n > 1 ? ` ×${g.n}, first ${g.first.path} t=${t(g.first.at)}, last ${g.last.path} t=${t(g.last.at)}` : ` ${g.first.path} t=${t(g.first.at)}`;
-      staleLines.push(`- ${attemptName(a)} · ${g.first.label} len=${g.len}${span}${g.beforeSubmit ? ` · before this attempt's submit (t=${t(a.submitted)})` : ''}${g.equalsPrev ? ` · equals ${attemptName(prev)} final length (${prevLengths.get(g.len)})` : ''}`);
-    });
-  });
-  out.push(staleLines.length ? staleLines.join('\n') : '- none');
-
-  // ---- 7. Lengths
-  out.push('\n### 7. Answer lengths per attempt');
-  out.push(table(['stage', 'model', 'delivery.sends terminal.chars', 'journal final chars', 'MODEL_TERMINAL_COMMITTED answerLength', 'ANSWER_COLLECTED answerLength', 'revision chars', 'stale_dropped chars'], attempts.map((a) => {
-    const send = sendOf(a);
-    const list = (type) => a.recs.filter((r) => r.type === type).map((r) => r.raw.payload?.answerLength ?? r.raw.chars ?? 'null');
-    return [a.stageN ? `stage-${a.stageN}` : '—', a.model, send ? (send.terminal ? fieldValue(send.terminal, 'chars') : 'no field') : 'no send', a.final ? fieldValue(a.final.raw, 'chars') : 'not recorded',
-      list('MODEL_TERMINAL_COMMITTED').join(', ') || '0 events', list('ANSWER_COLLECTED').join(', ') || '0 events', list('revision').join(', ') || '0 records', list('stale_dropped').join(', ') || '0 records'];
-  })));
-  out.push('- Each column is a different measurement point; whether a value was taken before or after transport cleaning is not stated in the file.');
-
-  // ---- 8. Manual and moderator actions
-  out.push('\n### 8. Manual and moderator actions');
-  const manualRecs = recs.filter((r) => r.type === 'MANUAL_RECOVERY_REQUESTED');
-  const uiButtons = manualRecs.filter((r) => r.raw.payload?.details === 'UI button');
-  out.push(`- MANUAL_RECOVERY_REQUESTED: ${records(manualRecs.length)}; of them details="UI button": ${uiButtons.length}; other details: ${counted(manualRecs.filter((r) => r.raw.payload?.details !== 'UI button'), (r) => clip(r.raw.payload?.details, 60) || '""') || '—'}`);
-  manualRecs.forEach((r) => out.push(`  - t=${t(r.at)} ${stageLabel(r.stageId)} ${r.model || '—'} · ${r.path} · ${clip(r.raw.payload?.details, 90) || '""'}`));
-  const successStages = new Set(stages.filter((s) => s.status === 'success').map((s) => s.stageId));
-  out.push(`- calc: MANUAL_RECOVERY_REQUESTED on stages with status=success: ${manualRecs.filter((r) => successStages.has(r.stageId)).length} records, "UI button": ${uiButtons.filter((r) => successStages.has(r.stageId)).length}`);
-  if (delivery) {
-    const kinds = ['run_paused', 'moderator_pause', 'moderator_get_it', 'get_it_result', 'moderator_stage_close', 'moderator_close_refused', 'moderator_approve', 'owner_answer', 'stall_adopted', 'response_rejected', 'text_lost', 'displayed', 'unproven_replaced', 'late_text'];
-    const extraModerator = [...new Set(journal.map((j) => j.kind).filter((k) => /^moderator_/.test(k) && !kinds.includes(k)))];
-    out.push(`- delivery.journal kinds: ${[...kinds, ...extraModerator].map((k) => `${k}=${journal.filter((j) => j.kind === k).length}`).join(' · ')} (0 = no records of that kind in an existing journal)`);
-    journal.map((j, i) => ({ j, i })).filter(({ j }) => kinds.includes(j.kind) || /^moderator_/.test(j.kind)).slice(0, 30)
-      .forEach(({ j, i }) => out.push(`  - t=${t(toMs(j.at))} delivery.journal[${i}] ${j.kind} ${j.model || ''} ${journalDetails(j)}`));
-    out.push(`- delivery.diagnosis.moderator=${fieldValue(diag, 'moderator')} · delivery.diagnosis.rejections=${fieldValue(diag, 'rejections')}`);
-  } else {
-    out.push('- Get it / Pause / Next / Approve: no field delivery.journal');
-  }
-
-  // ---- 9. Start refusals
-  out.push('\n### 9. Start refusals');
-  const batches = Array.isArray(diag.batches) ? diag.batches : [];
-  const refusalLines = [];
-  batches.forEach((b, i) => {
-    const refusals = Array.isArray(b.refusals) ? b.refusals : [];
-    if (!refusals.length) return;
-    const bAt = toMs(b.at);
-    const accepted = journal.map((j, k) => ({ j, k })).find(({ j }) => j.kind === 'start_accepted' && j.waitId === b.waitId);
-    const first = refusals[0];
-    const last = refusals[refusals.length - 1];
-    refusalLines.push(`- delivery.diagnosis.batches[${i}] ${b.waitId} (${stageLabel(stages.find((s) => String(b.batchId || '').startsWith(`${s.stageId}:`))?.stageId)}) · batch at t=${t(bAt)} · refusals ${refusals.length}: ${counted(refusals, (r) => r.errorCode || 'no errorCode')} · blockingModel: ${counted(refusals, (r) => fieldValue(r, 'blockingModel'))}`);
-    refusalLines.push(`  first refusal t=${t(toMs(first.at))} (calc: at − batch.at = ${toMs(first.at) - bAt} ms) · last refusal t=${t(toMs(last.at))} (calc: ${toMs(last.at) - bAt} ms) · refusals[].waitedMs as recorded: ${refusals.map((r) => r.waitedMs).join(', ')}`);
-    refusalLines.push(`  start accepted: ${accepted ? `t=${t(toMs(accepted.j.at))} delivery.journal[${accepted.k}] (calc: ${toMs(accepted.j.at) - bAt} ms after batch.at)` : 'not recorded'} · batches[${i}].accepted.waitedMs=${fieldValue(b.accepted, 'waitedMs')}`);
-    refusalLines.push('  lock duration: not measured (the file has no lock begin/end records)');
-  });
-  out.push(delivery ? (refusalLines.length ? refusalLines.join('\n') : '- 0 refusals in delivery.diagnosis.batches[].refusals') : '- no field delivery');
-
-  // ---- 10. Focus
-  out.push('\n### 10. Focus switches (delivery.journal kind=focus)');
-  const focus = recs.filter((r) => r.type === 'focus');
-  if (!delivery) out.push('- no field delivery.journal');
-  else {
-    out.push(`- total ${focus.length} · by source: ${counted(focus, (r) => r.raw.source || 'no source') || '—'} · by model: ${counted(focus, (r) => r.model || '—') || '—'}`);
-    const inWindow = [];
-    attempts.forEach((a) => {
-      const end = a.final?.at ?? a.completionTerminals[0]?.at ?? null;
-      if (a.firstText == null || end == null) return;
-      a.recs.filter((r) => r.type === 'focus' && r.at > a.firstText && r.at < end).forEach((r) => inWindow.push(r));
-    });
-    out.push(`- in the interval first_text → delivery final of the same request (the interval does not prove continuous printing): ${inWindow.length} · by source: ${counted(inWindow, (r) => r.raw.source || 'no source') || '—'}`);
-    out.push(`- automation_visit_*: ${focus.filter((r) => /^automation_visit_/.test(r.raw.source || '')).length} (in interval ${inWindow.filter((r) => /^automation_visit_/.test(r.raw.source || '')).length}) · activate_tab_*: ${focus.filter((r) => /^activate_tab_/.test(r.raw.source || '')).length} (in interval ${inWindow.filter((r) => /^activate_tab_/.test(r.raw.source || '')).length})`);
-  }
-
-  // ---- 11. Outside the run window
-  out.push('\n### 11. Records outside the run window');
-  const runEnd = ro.completedAt ?? stages[stages.length - 1]?.actual?.completedAt ?? null;
-  const outsideAll = recs.filter((r) => Number.isFinite(r.at) && (r.at < t0 - 1000 || (runEnd != null && r.at > runEnd + 1000)));
-  const outside = outsideAll.filter((r) => !NOISE_LABELS.has(r.label));
-  if (outsideAll.length !== outside.length) out.push(`- SELECTOR_STATS/text_progress outside the window: ${outsideAll.length - outside.length} records (not listed)`);
-  out.push(outside.length
-    ? `${outside.slice(0, 40).map((r) => `- t=${t(r.at)} ${r.at < t0 ? 'before the first stage' : `${T3(r.at - runEnd)} s after runOutcome.completedAt`} · ${r.path} · ${r.model || '—'} · ${r.label}${r.reasonCode && r.reasonCode !== r.label ? ` ${r.reasonCode}` : ''}${r.details ? ` · ${r.details}` : ''}`).join('\n')}${outside.length > 40 ? `\n- … ${outside.length - 40} more` : ''}\n- A late record shows that something was recorded; by itself it does not show that generation continued.`
-    : '- none (tolerance 1 s)');
-
-  // ---- 12. Was the answer in a later prompt
-  out.push('\n### 12. Delivered answer found in a later stored prompt');
-  const normalize = (s) => String(s || '').replace(/[*_#`>|]/g, '').replace(/\s+/g, ' ').trim();
-  const answers = recs.filter((r) => r.type === 'verified' && normalize(r.raw.answer).length >= 40);
-  if (!delivery) out.push('- no field delivery.journal');
-  else if (!answers.length) out.push('- no delivery.journal verified record with stored answer text');
-  else {
-    answers.forEach((r) => {
-      const probe = normalize(r.raw.answer).slice(0, 50);
-      const later = preparedRecs.filter(({ j }) => toMs(j.at) > r.at);
-      const found = later.filter(({ j }) => normalize(j.prompt).includes(probe));
-      const shortened = later.filter(({ j }) => Number.isFinite(j.chars) && String(j.prompt || '').length < j.chars && !normalize(j.prompt).includes(probe));
-      const owner = r.attempt ? attemptName(r.attempt) : r.model;
-      const result = found.length
-        ? `found in ${found.map(({ j, i }) => `delivery.journal[${i}] (${j.model}, ${short(j.batchId)})`).join(', ')}`
-        : later.length ? `not found in ${later.length} later prompts; ${shortened.length} of them stored shortened → inconclusive` : 'no later prompt';
-      out.push(`- ${owner} · ${r.path} ${r.raw.chars ?? '—'}ch · probe "${probe.slice(0, 40)}…" · ${result}`);
-    });
-  }
-
-  // ---- 13. Diagnoses
-  out.push('\n### 13. diagnoses[]');
-  const diagnoses = d.diagnoses || [];
-  const rank = { critical: 0, high: 1, warning: 2, info: 3 };
-  if (!diagnoses.length) out.push(`- diagnoses=${fieldValue(d, 'diagnoses')}`);
-  else {
-    const groups = new Map();
-    diagnoses.forEach((x) => {
-      const key = `${x.code}|${x.reasonCode}`;
-      const g = groups.get(key) || { code: x.code, reasonCode: x.reasonCode, severity: new Set(), who: new Set(), stagesSet: new Set(), occurrences: 0, unresolved: 0, n: 0 };
-      g.severity.add(x.severity); g.who.add(x.affectedParticipant ?? 'null'); g.stagesSet.add(stageLabel(x.affectedStageId));
-      g.occurrences += Number(x.occurrences || 0); g.unresolved += x.resolvedAt == null ? 1 : 0; g.n += 1;
-      groups.set(key, g);
-    });
-    const groupRank = (g) => Math.min(...[...g.severity].map((s) => rank[s] ?? 9));
-    out.push(table(['code', 'reasonCode', 'severity', 'participants', 'stages', 'records', 'Σ occurrences', 'resolvedAt=null'], [...groups.values()]
-      .sort((a, b) => groupRank(a) - groupRank(b))
-      .map((g) => [g.code, g.reasonCode, [...g.severity].join(','), [...g.who].join(','), [...g.stagesSet].join(','), g.n, g.occurrences, g.unresolved])));
-    out.push('');
-    out.push(table(['path', 'severity', 'code', 'reasonCode', 'stage', 'participant', 'occurrences', 'firstObservedAt t', 'resolvedAt'], diagnoses.map((x, i) => ({ x, i }))
-      .sort((a, b) => (rank[a.x.severity] ?? 9) - (rank[b.x.severity] ?? 9) || (a.x.firstObservedAt || 0) - (b.x.firstObservedAt || 0))
-      .map(({ x, i }) => [`diagnoses[${i}]`, x.severity, x.code, x.reasonCode, stageLabel(x.affectedStageId), x.affectedParticipant ?? 'null', x.occurrences, t(x.firstObservedAt), x.resolvedAt == null ? 'null' : x.resolvedAt])));
-  }
-
-  // ---- 14. Disagreements between fields
-  out.push('\n### 14. Disagreements between fields (both sides shown; none is taken as correct)');
-  const disagreements = [];
-  stages.forEach((s, i) => {
-    const failed = failedByStage(s.stageId);
-    if (s.status === 'success' && failed.length) disagreements.push(`stageExecutions[${i}].status=success · STAGE_FAILED/STAGE_FAILURE for this stageId: ${failed.join(', ')}`);
-  });
-  recs.filter((r) => r.type === 'STAGE_FAILED' && r.attempt && r.stageId && r.attempt.stageId !== r.stageId)
-    .forEach((r) => disagreements.push(`${r.path} STAGE_FAILED has stageId=${stageLabel(r.stageId)} but joins by ${r.via} to the ${attemptName(r.attempt)} request`));
-  if (Number.isFinite(h.manualRecoveryCount) && h.manualRecoveryCount !== manualRecs.length) disagreements.push(`health.manualRecoveryCount=${h.manualRecoveryCount} · MANUAL_RECOVERY_REQUESTED events=${manualRecs.length}`);
-  if (Number.isFinite(h.manualRecoveryCount) && uiButtons.length && h.manualRecoveryCount !== uiButtons.length) disagreements.push(`health.manualRecoveryCount=${h.manualRecoveryCount} · MANUAL_RECOVERY_REQUESTED with details="UI button"=${uiButtons.length}`);
-  const forcedTerminals = recs.filter((r) => r.type === 'MODEL_TERMINAL_COMMITTED' && /^forced/.test(terminalReasonOf(r)));
-  if (Number.isFinite(h.forcedCompletionCount) && h.forcedCompletionCount !== forcedTerminals.length) disagreements.push(`health.forcedCompletionCount=${h.forcedCompletionCount} · MODEL_TERMINAL_COMMITTED with completionReason forced_*=${forcedTerminals.length} (${forcedTerminals.map((r) => r.path).join(', ')})`);
-  attempts.forEach((a) => {
-    const send = sendOf(a);
-    const last = a.terminals[a.terminals.length - 1];
-    if (send?.terminal?.status && last && terminalStatusOf(last) && send.terminal.status !== terminalStatusOf(last)) disagreements.push(`${attemptName(a)}: delivery.diagnosis.sends[${sends.indexOf(send)}].terminal.status=${send.terminal.status} · last MODEL_TERMINAL_COMMITTED ${last.path} finalStatus=${terminalStatusOf(last)}`);
-    if (send?.result === 'delivered' && a.stageFailed.length) disagreements.push(`${attemptName(a)}: delivery.diagnosis.sends[${sends.indexOf(send)}].result=delivered · STAGE_FAILED ${a.stageFailed.map((r) => r.path).join(', ')}`);
-  });
-  if (Number.isFinite(integrity.eventsTotal) && integrity.eventsTotal !== events.length) disagreements.push(`integrity.eventsTotal=${integrity.eventsTotal} · events[].length=${events.length}`);
-  out.push(disagreements.length ? disagreements.map((x) => `- ${x}`).join('\n') : '- none');
-  if (Number.isFinite(h.stateDivergenceCount)) out.push(`- (context) health.stateDivergenceCount=${h.stateDivergenceCount} counts STATE_DIVERGENCE events only.`);
-
-  // ---- 15. Per model (whole run)
-  const models = [...new Set(attempts.map((a) => a.model))];
-  out.push('\n### 15. Per model (whole run)');
-  out.push(table(['model', 'stages', 'last terminal per stage (status/reason)', 'manual (UI button)', 'STAGE_FAILED', 'last stage with this model'], models.map((model) => {
-    const mine = attempts.filter((a) => a.model === model);
-    const lastStage = Math.max(...mine.map((a) => a.stageN || 0));
-    return [model, mine.map((a) => a.stageN).join(','), mine.map((a) => { const last = a.terminals[a.terminals.length - 1]; return `${a.stageN}:${last ? `${terminalStatusOf(last) || '""'}/${terminalReasonOf(last) || '—'}` : 'none'}`; }).join(' '),
-      mine.reduce((n, a) => n + a.manual.filter((r) => r.raw.payload?.details === 'UI button').length, 0), mine.reduce((n, a) => n + a.stageFailed.length, 0),
-      lastStage && lastStage < stages.length ? `stage-${lastStage} of ${stages.length}` : `stage-${lastStage}`];
-  })));
-
-  // ---- 16. Dispatch attempts and integrity
-  const dispatches = d.dispatchAttempts || [];
-  out.push('\n### 16. dispatchAttempts and integrity');
-  out.push(`- dispatchAttempts: ${dispatches.length} · without dispatchId ${dispatches.filter((x) => !x.dispatchId).length} · submitStatus: ${counted(dispatches, (x) => fieldValue(x, 'submitStatus')) || '—'} · terminalStatus: ${counted(dispatches, (x) => fieldValue(x, 'terminalStatus')) || '—'}`);
-  out.push(`- integrity: ${['eventsTotal', 'firstSeq', 'lastSeq', 'sequenceGaps', 'duplicateEventIds', 'uncorrelatedEvents', 'missingRequiredStageEvents', 'missingTerminalEvents', 'clockSkewWarnings', 'redactedFieldsCount', 'schemaValidationErrors'].map((k) => `${k}=${fieldValue(integrity, k)}`).join(' · ')}`);
-  out.push('- No integrity error is not evidence that transport was correct.');
-
-  // ---- 17. Delivery section (former Automation tab)
-  if (delivery) {
-    out.push('\n### 17. delivery ("start" is t, seconds from the first stage start; other time columns are durations)');
-    out.push(summarizeDelivery(delivery, { t0, digits: 3, embedded: true }));
-  }
-  return out.join('\n');
 }
+// Time counters and sample durations vary on every poll and are not grouping keys.
+// Their first/last registered values remain available, as do every member's source paths.
+function signature(r) {
+  const raw = r.src === 'events' ? r.raw.payload || {} : r.raw;
+  const evidence = raw.evidence || {};
+  const omit = new Set(['elapsedMs', 'durationMs', 'foregroundMsUsed', 'focusSwitchesUsed', 'waitedMs', 'ms', 'at']);
+  if (r.label === 'SELECTOR_STATS') ['hitCount', 'missCount', 'totalCount', 'hitRate'].forEach((k) => omit.add(k));
+  const significant = Object.fromEntries(Object.entries(evidence).filter(([k]) => !omit.has(k)));
+  const detail = r.label === 'SELECTOR_STATS' ? r.details.replace(/ hit=.*$/, '')
+    : r.details.replace(/\b(elapsed|waited|duration|ms)=\d+(?:ms)?/g, '$1=<time>');
+  return JSON.stringify([r.type, r.label, r.dispatchId, stateOf(r), reasonOf(r), textLengthOf(r),
+    raw.errorCode, raw.completion, raw.source, raw.phase, significant,
+    r.stageId, recordRound(r), has(raw, 'status') ? { value: raw.status } : { missing: true }, r.raw.correlation?.correlationQuality, r.flags || [], detail]);
+}
+function compactRecords(list, t0) {
+  const result = [], groups = new Map(), states = new Map();
+  list.forEach((r) => {
+    // Returning to an old length/status/dispatch is a new transition, not a repeat of an old group.
+    const hardState = JSON.stringify([r.dispatchId, stateOf(r), textLengthOf(r)]);
+    const previous = states.get(r.label);
+    const epoch = previous ? previous.epoch + (previous.key === hardState ? 0 : 1) : 0;
+    states.set(r.label, { key: hardState, epoch });
+    const key = `${epoch}|${signature(r)}`, row = groups.get(key);
+    if (row) {
+      row.count += 1; row.paths.push(r.path); row.last = { path: r.path, at: finite(r.at), t: offset(r.at, t0) };
+    } else {
+      const next = { label: r.label, count: 1, paths: [r.path], first: recordFact(r, t0),
+        last: { path: r.path, at: finite(r.at), t: offset(r.at, t0) } };
+      result.push(next); groups.set(key, next);
+    }
+  });
+  return result;
+}
+function terminalGroups(a, t0) {
+  const result = [];
+  a.terminals.forEach((r) => {
+    const previous = result[result.length - 1], length = textLengthOf(r);
+    const pair = previous && previous.members.length === 1 && r.at - previous.firstAt >= 0
+      && r.at - previous.firstAt <= COMPRESSION.terminalPairWindowMs
+      && previous.dispatchId === r.dispatchId && previous.status === terminalStatusOf(r)
+      && previous.completionReason === terminalReasonOf(r)
+      && (previous.canonicalLength == null || length == null || previous.canonicalLength === length)
+      && new Set([previous.members[0].label, r.label]).size === 2
+      && [previous.members[0].label, r.label].every((x) => ['MODEL_FINAL', 'FINALIZATION_DECISION'].includes(x));
+    const ev = r.raw.payload?.evidence || {};
+    const member = {
+      path: r.path, label: r.label, t: offset(r.at, t0), at: finite(r.at),
+      answerLength: field(r.raw.payload, 'answerLength', `${r.path}.payload`),
+      evidenceAnswerLen: field(ev, 'answerLen', `${r.path}.payload.evidence`),
+      evidenceAnswerLength: field(ev, 'answerLength', `${r.path}.payload.evidence`),
+      registered: fields(ev, ['foregroundMsUsed', 'focusSwitchesUsed', 'doneReason', 'durationMs'], `${r.path}.payload.evidence`),
+      flags: r.flags || []
+    };
+    if (pair) { previous.members.push(member); previous.lastAt = r.at; previous.intervalMs = r.at - previous.firstAt; }
+    else result.push({ dispatchId: r.dispatchId, status: terminalStatusOf(r), completionReason: terminalReasonOf(r),
+      canonicalLength: length, firstAt: finite(r.at), lastAt: finite(r.at), intervalMs: 0, members: [member] });
+  });
+  return result;
+}
+function buildTransportDigest(d, sourceFile = null) {
+  if (!d?.metadata?.debateRunId || !Array.isArray(d.stageExecutions) || !Array.isArray(d.events)) {
+    throw new Error('Transport extraction requires a Disput Flow report');
+  }
+  const events = d.events, journal = arr(d.delivery?.journal), diag = d.delivery?.diagnosis || {};
+  const stages = d.stageExecutions, diagnoses = arr(d.diagnoses), sends = arr(diag.sends);
+  // Source order is retained so stage aliases, paths and the requested time base stay exact.
+  const t0 = toMs(stages[0]?.actual?.startedAt);
+  const recs = buildRecords(events, journal), attempts = buildAttempts(stages, events, journal);
+  const unassigned = assignRecords(attempts, recs);
+  const stageAlias = (id) => { const i = stages.findIndex((s) => s.stageId === id); return i < 0 ? id : `stage-${i + 1}`; };
+  const sendOf = (a) => sends.find((x) => a.requestId && x.requestId === a.requestId)
+    || sends.find((x) => !x.requestId && x.model === a.model && a.batchId && x.batchId === a.batchId);
+  const failurePaths = (id) => recs.filter((r) => r.type === 'STAGE_FAILED' && r.stageId === id).map((r) => r.path)
+    .concat(diagnoses.flatMap((x, i) => x.code === 'STAGE_FAILURE' && x.affectedStageId === id ? [`diagnoses[${i}]`] : []));
+  const durations = stages.map((s) => s.durationMs).filter(Number.isFinite), med = median(durations);
+  const stageRows = stages.map((s, i) => ({
+    path: `stageExecutions[${i}]`, stage: `stage-${i + 1}`, stageId: s.stageId,
+    participants: field(s.actual, 'participants', `stageExecutions[${i}].actual`),
+    start: field(s.actual, 'startedAt', `stageExecutions[${i}].actual`), end: field(s.actual, 'completedAt', `stageExecutions[${i}].actual`),
+    startT: offset(toMs(s.actual?.startedAt), t0), endT: offset(toMs(s.actual?.completedAt), t0),
+    durationMs: field(s, 'durationMs', `stageExecutions[${i}]`), status: field(s, 'status', `stageExecutions[${i}]`),
+    gapSeconds: i + 1 < stages.length ? offset(toMs(stages[i + 1].actual?.startedAt), toMs(s.actual?.completedAt)) : null,
+    long: Number.isFinite(s.durationMs) && ((med != null && s.durationMs > med * 3) || s.durationMs > 120000),
+    successWithFailureRecords: s.status === 'success' ? failurePaths(s.stageId) : [],
+    deviations: field(s, 'deviations', `stageExecutions[${i}]`), expected: field(s, 'expected', `stageExecutions[${i}]`)
+  }));
+  const lengthRows = [], stageTimeline = stages.map((s, i) => ({ stage: `stage-${i + 1}`, stageId: s.stageId, rows: [] }));
+  const sharedPaths = new Set();
+  recs.forEach((r) => {
+    if (!TABLE_EVENT_NAMES.has(r.label) && r.type !== 'SUBMIT_CONFIRMED') return;
+    const target = stageTimeline.find((x) => x.stageId === (r.attempt?.stageId || r.stageId));
+    if (target) { target.rows.push(recordFact(r, t0)); sharedPaths.add(r.path); }
+  });
+  const requestRows = attempts.map((a, index) => {
+    const st0 = toMs(stages[a.stageN - 1]?.actual?.startedAt), submitted = a.submitted;
+    const first = (fn) => a.recs.find(fn);
+    const milestone = (fn) => timeFact(first(fn), t0, st0, submitted);
+    const terminals = terminalGroups(a, t0), send = sendOf(a);
+    const own = a.recs.filter((r) => !sharedPaths.has(r.path));
+    const transitions = [], background = [];
+    own.forEach((r) => {
+      if (r.type === 'MODEL_TERMINAL_COMMITTED') return;
+      const exceptional = ['TEXT_STABLE', 'COMPLETION_DETECTED', 'STAGE_FAILED', 'MANUAL_RECOVERY_REQUESTED', 'CORRELATION_REJECTED',
+        'completion_terminal', 'first_text', 'verified', 'empty_answer', 'missing_token', 'stale_dropped', 'identity_rejected', 'revision', 'ANSWER_COLLECTED',
+        'ANSWER_REJECTED', 'response_rejected', 'late_text', 'unproven_replaced', 'get_it_result', 'owner_answer'].includes(r.type)
+        || /ANSWER_DELIVERY_REJECTED|MATERIALIZE_RECOVERY_|RECOVERY_ATTEMPT|STABLE_TEXT_FALLBACK|TERMINAL_FAILURE_UPGRADED/.test(`${r.label} ${r.type}`);
+      if (exceptional) transitions.push(r);
+      else background.push(r);
+    });
+    const transitionGroups = compactRecords(transitions, t0), backgroundGroups = compactRecords(background, t0);
+    // Terminal members preserve both paths and all registered fields, rather than discarding a duplicate.
+    const terminalRows = terminals.map((group) => ({ label: 'terminal_group', count: group.members.length,
+      paths: group.members.map((m) => m.path), first: { t: offset(group.firstAt, t0), at: group.firstAt, path: group.members[0].path }, group }));
+    const transitionRows = transitionGroups.concat(terminalRows).sort((x, y) => (x.first.at ?? Infinity) - (y.first.at ?? Infinity));
+    const counts = {
+      duplicateFinalRejected: a.recs.filter((r) => r.type === 'DUPLICATE_FINAL_REJECTED').length,
+      wrongCard: a.recs.filter((r) => r.label === 'ANSWER_CARD_RENDER_EVALUATED' && r.raw.payload?.details === 'wrong_card').length,
+      displayed: a.recs.filter((r) => r.type === 'displayed').length,
+      manualRecords: a.manual.length, uiButtonRecords: a.manual.filter((r) => r.raw.payload?.details === 'UI button').length,
+      correlationRejected: a.correlation.length, terminalRecords: a.terminals.length, terminalGroups: terminals.length
+    };
+    const length = (r) => ({ path: r.path, value: r.raw.payload
+      ? field(r.raw.payload, 'answerLength', `${r.path}.payload`) : field(r.raw, 'chars', r.path) });
+    const lr = { request: index + 1, stage: stageAlias(a.stageId), model: a.model,
+      measurements: { delivery: send ? field(send.terminal, 'chars', `delivery.diagnosis.sends[${sends.indexOf(send)}].terminal`) : null,
+        journal: a.final ? field(a.final.raw, 'chars', a.final.path) : null,
+        collected: a.recs.filter((r) => r.type === 'ANSWER_COLLECTED').map(length),
+        terminal: terminals.flatMap((g) => g.members.map((m) => ({ answerLength: m.answerLength, evidenceAnswerLen: m.evidenceAnswerLen, evidenceAnswerLength: m.evidenceAnswerLength }))),
+        revisions: a.recs.filter((r) => r.type === 'revision').map(length), staleDropped: a.recs.filter((r) => r.type === 'stale_dropped').map(length) } };
+    lengthRows.push(lr);
+    return {
+      request: index + 1, requestId: a.requestId, stage: stageAlias(a.stageId), stageId: a.stageId, model: a.model,
+      identity: { token: a.token, batchId: a.batchId, stageAttemptId: a.stageAttemptId, waitId: a.waitId, batchStartPath: a.batchPath,
+        pipelineRoundIds: unique(a.recs.map(recordRound).filter((x) => x != null)),
+        roundSources: a.recs.filter((r) => recordRound(r) != null).map((r) => r.path),
+        tabIds: unique(a.recs.map((r) => r.tabId).filter((x) => x != null)), dispatchIds: a.dispatchIds,
+        foreignDispatchIds: a.foreignDispatchIds.map((id) => ({ dispatchId: id, ownerRequestId: a.foreignOwners[id].requestId,
+          ownerStage: stageAlias(a.foreignOwners[id].stageId), ownerModel: a.foreignOwners[id].model })) },
+      times: { dispatchStarted: milestone((r) => r.label === 'dispatch:dispatch_started'),
+        submitted: milestone((r) => r.label === 'dispatch:submitted') || milestone((r) => r.type === 'SUBMIT_CONFIRMED'),
+        firstText: milestone((r) => r.type === 'first_text'), firstStable: milestone((r) => r.type === 'TEXT_STABLE'),
+        firstCompletionDetected: milestone((r) => r.type === 'COMPLETION_DETECTED'), deliveryFinal: timeFact(a.final, t0, st0, submitted) },
+      deliveryResult: send ? field(send, 'result', `delivery.diagnosis.sends[${sends.indexOf(send)}]`) : null,
+      collected: a.recs.filter((r) => r.type === 'ANSWER_COLLECTED').map((r) => ({ path: r.path,
+        accepted: field(r.raw.payload, 'accepted', `${r.path}.payload`), pipelineBatchId: field(r.raw.payload, 'pipelineBatchId', `${r.path}.payload`) })),
+      counts, terminalGroups: terminals,
+      stableToTerminalMs: a.stable.length ? a.terminals.map((r) => ({ path: r.path,
+        stablePath: a.stable[0].path, value: finite(r.at - a.stable[0].at) })) : [],
+      transitions: transitionRows, background: backgroundGroups,
+      coverage: { totalRecords: a.recs.length, sharedStageRecords: a.recs.length - own.length,
+        representedRecords: transitionRows.reduce((n, r) => n + r.count, 0) + backgroundGroups.reduce((n, r) => n + r.count, 0),
+        transitionLines: transitionRows.length, backgroundLines: backgroundGroups.length, omittedRecords: 0 }
+    };
+  });
+  // Text observations are comparisons of lengths only, never assertions of text identity.
+  const lengthObservations = [];
+  attempts.forEach((a, i) => {
+    const prev = attempts.slice(0, i).filter((x) => x.model === a.model).pop();
+    const prevLen = prev ? textLengthOf(prev.final || prev.terminals[prev.terminals.length - 1] || { src: 'journal', type: 'none', raw: {} }) : null;
+    a.recs.forEach((r) => {
+      if (r.type === 'prepared') return;
+      const len = textLengthOf(r);
+      if (len == null) return;
+      const beforeSubmit = a.submitted != null && r.at < a.submitted, equalPrevious = prevLen != null && len === prevLen;
+      if (beforeSubmit || equalPrevious) lengthObservations.push({ request: i + 1, path: r.path, t: offset(r.at, t0), length: len,
+        beforeSubmit, equalPreviousLength: equalPrevious, previousRequest: prev ? attempts.indexOf(prev) + 1 : null });
+    });
+  });
+  const prepared = journal.map((j, i) => ({ j, path: `delivery.journal[${i}]` })).filter(({ j }) => j.kind === 'prepared');
+  const normalize = (v) => String(v || '').replace(/[*_#`>|]/g, '').replace(/\s+/g, ' ').trim();
+  const promptChecks = recs.filter((r) => r.type === 'verified' && normalize(r.raw.answer).length >= 40).map((r) => {
+    const probe = normalize(r.raw.answer).slice(0, COMPRESSION.promptProbeCharacters);
+    const later = prepared.filter(({ j }) => toMs(j.at) > r.at);
+    return { answerPath: r.path, request: r.attempt ? attempts.indexOf(r.attempt) + 1 : null, probe,
+      laterPrompts: later.map(({ j, path }) => ({ path, model: j.model, batchId: j.batchId,
+        found: normalize(j.prompt).includes(probe), shortened: Number.isFinite(j.chars) && String(j.prompt || '').length < j.chars })),
+      result: later.some(({ j }) => normalize(j.prompt).includes(probe)) ? 'stored_fragment_found' : !later.length ? 'no_later_prompt'
+        : later.some(({ j }) => Number.isFinite(j.chars) && String(j.prompt || '').length < j.chars) ? 'inconclusive_shortened' : 'not_found_in_stored_prompts',
+      submissionProven: false, fullAnswerInclusionProven: false };
+  });
+  const diagnosisRows = diagnoses.map((x, i) => ({ path: `diagnoses[${i}]`,
+    ...Object.fromEntries(['code', 'reasonCode', 'severity', 'affectedStageId', 'affectedParticipant', 'occurrences',
+      'firstObservedAt', 'lastObservedAt', 'resolvedAt', 'summary', 'confidence'].filter((k) => has(x, k)).map((k) => [k, x[k]])) }));
+  const groupedDiagnoses = [];
+  diagnosisRows.forEach((x) => {
+    let g = groupedDiagnoses.find((g) => g.code === x.code && g.reasonCode === x.reasonCode);
+    if (!g) { g = { code: x.code, reasonCode: x.reasonCode, severities: [], participants: [], stages: [], records: 0,
+      occurrences: 0, missingOccurrences: 0, resolvedNull: 0, paths: [] }; groupedDiagnoses.push(g); }
+    g.records += 1; g.paths.push(x.path); g.severities = unique(g.severities.concat(x.severity));
+    g.participants = unique(g.participants.concat(x.affectedParticipant == null ? [] : arr(x.affectedParticipant).length ? x.affectedParticipant : [x.affectedParticipant]));
+    g.stages = unique(g.stages.concat(stageAlias(x.affectedStageId)));
+    if (Number.isFinite(x.occurrences)) g.occurrences += x.occurrences; else g.missingOccurrences += 1;
+    if (x.resolvedAt === null) g.resolvedNull += 1;
+  });
+  const sameNameComparisons = [];
+  const compare = (name, left, right) => {
+    if (left?.state === 'present' && right?.state === 'present' && left.value !== right.value) sameNameComparisons.push({ name, left, right });
+  };
+  lengthRows.forEach((r) => compare('chars', r.measurements.delivery, r.measurements.journal));
+  const seqs = events.map((e) => e.receivedSeq).filter(Number.isFinite);
+  const integrity = fields(d.integrity, ['eventsTotal', 'firstSeq', 'lastSeq', 'sequenceGaps', 'duplicateEventIds', 'uncorrelatedEvents',
+    'missingRequiredStageEvents', 'missingTerminalEvents', 'clockSkewWarnings', 'redactedFieldsCount', 'schemaValidationErrors'], 'integrity');
+  const computedIntegrity = { eventsTotal: events.length, firstSeq: seqs.length ? Math.min(...seqs) : null,
+    lastSeq: seqs.length ? Math.max(...seqs) : null,
+    missingSeqInsideExport: seqs.length ? Math.max(...seqs) - Math.min(...seqs) + 1 - new Set(seqs).size : 0 };
+  ['eventsTotal', 'firstSeq', 'lastSeq'].forEach((k) => compare(k, integrity[k], { path: `calc(events[].${k})`, state: 'present', value: computedIntegrity[k] }));
+  const forcedEvents = recs.filter((r) => r.type === 'STABLE_TEXT_FALLBACK_USED');
+  const forcedRecords = recs.filter((r) => r.type === 'MODEL_TERMINAL_COMMITTED' && terminalReasonOf(r).startsWith('forced_'));
+  const manual = recs.filter((r) => r.type === 'MANUAL_RECOVERY_REQUESTED');
+  const comparableHealth = { diagnosisCount: diagnoses.length, manualRecoveryCount: manual.length,
+    forcedCompletionCount: forcedEvents.length, stateDivergenceCount: recs.filter((r) => r.type === 'STATE_DIVERGENCE').length };
+  Object.entries(comparableHealth).forEach(([k, v]) => compare(k, field(d.health, k, 'health'),
+    { path: `calc(${k})`, state: 'present', value: v }));
 
-// ---------------------------------------------------------------- message-delivery report
-// Standalone file: times relative to the first journal event, 0.1 s. Embedded in a Disput Flow
-// export: times relative to the first stage start (t0), 0.001 s, paths prefixed with "delivery.".
+  const focus = recs.filter((r) => r.type === 'focus');
+  const inText = focus.filter((r) => r.attempt?.firstText != null && r.attempt?.final && r.at >= r.attempt.firstText && r.at <= r.attempt.final.at);
+  const outside = recs.filter((r) => Number.isFinite(r.at) && ((Number.isFinite(t0) && r.at < t0) ||
+    (Number.isFinite(toMs(d.runOutcome?.completedAt)) && r.at > toMs(d.runOutcome.completedAt))));
+  const batches = arr(diag.batches).map((b, i, bs) => ({ path: `delivery.diagnosis.batches[${i}]`, ...b,
+    stage: stageAlias(stages.find((s) => String(b.stageAttemptId || b.batchId || '').startsWith(s.stageId))?.stageId),
+    t: offset(toMs(b.at), t0), gapSeconds: i && Number.isFinite(bs[i - 1].durationMs)
+      ? offset(toMs(b.at), toMs(bs[i - 1].at) + bs[i - 1].durationMs) : null,
+    refusalRows: arr(b.refusals).map((r, j) => ({ path: `delivery.diagnosis.batches[${i}].refusals[${j}]`, ...r, t: offset(toMs(r.at), t0),
+      elapsedFromBatchMs: Number.isFinite(toMs(r.at)) && Number.isFinite(toMs(b.at)) ? toMs(r.at) - toMs(b.at) : null })) }));
+  const noRound = recs.filter((r) => r.src === 'events' && !recordRound(r)).map((r) => r.path);
+  return {
+    schemaVersion: 2, report: 'extract_transport', DIGEST_VERSION, compression: { ...COMPRESSION }, sourceFile,
+    debateRunId: d.metadata.debateRunId, base: { path: 'stageExecutions[0].actual.startedAt', value: finite(t0), unit: 'seconds', precision: 0.001 },
+    metadata: fields(d.metadata, ['extensionVersion', 'presetId', 'runMode', 'topology', 'dataCompleteness', 'exportedAt'], 'metadata'),
+    runOutcome: fields(d.runOutcome, ['startedAt', 'completedAt', 'durationMs', 'terminalOutcome'], 'runOutcome'),
+    health: fields(d.health, ['classification', 'severity', 'diagnosisCount', 'manualRecoveryCount', 'forcedCompletionCount', 'stateDivergenceCount'], 'health'),
+    quality: { correlationQuality: listCounts(events, (e) => fieldValue(e.correlation, 'correlationQuality')),
+      provenance: listCounts(events, (e) => fieldValue(e, 'provenance')), eventsWithoutRound: { count: noRound.length, paths: noRound },
+      completenessRule: 'events.some(event => event.correlation?.correlationQuality !== "exact"); provenance is counted separately',
+      observedNonExact: events.filter((e) => e.correlation?.correlationQuality !== 'exact').length },
+    availability: { plan: field(d, 'plan', 'root'), delivery: field(d, 'delivery', 'root').state,
+      deliverySections: Object.fromEntries(['batches', 'sends', 'problems', 'moderator', 'rejections', 'matrix'].map((k) => [k,
+        { path: `delivery.diagnosis.${k}`, state: has(diag, k) ? 'present' : 'missing', count: Array.isArray(diag[k]) ? diag[k].length : null }])),
+      shortenedPrompts: prepared.filter(({ j }) => Number.isFinite(j.chars) && String(j.prompt || '').length < j.chars).map((r) => r.path),
+      unassigned: unassigned.map((r) => recordFact(r, t0)) },
+    calculations: { medianDurationMs: med, sortedDurations: durations.slice().sort((a, b) => a - b),
+      long: 'durationMs > 3 * medianDurationMs OR durationMs > 120000',
+      stableToTerminal: 'terminal.sourceTimestamp - first TEXT_STABLE.sourceTimestamp of the same request',
+      stageGap: 'next.actual.startedAt - current.actual.completedAt',
+      batchGap: 'next.at - (previous.at + previous.durationMs)' },
+    stages: stageRows, requests: requestRows, stageTimeline, lengthObservations, lengths: lengthRows, promptChecks,
+    manual: { rows: manual.map((r) => recordFact(r, t0)), records: manual.length,
+      uiButtonRecords: manual.filter((r) => r.raw.payload?.details === 'UI button').length,
+      onSuccessStages: manual.filter((r) => stages.some((s) => s.stageId === r.stageId && s.status === 'success')).length,
+      journalKinds: listCounts(journal, (j) => j.kind),
+      moderatorActions: recs.filter((r) => /^(moderator_|run_paused|get_it_result|owner_answer|stall_adopted|response_rejected|text_lost)/.test(r.label)
+        || ['RUN_PAUSED', 'RUN_RESUMED', 'DECISION_REQUESTED', 'DECISION_RESOLVED'].includes(r.type)).map((r) => recordFact(r, t0)) },
+    focus: { total: focus.length, sources: listCounts(focus, (r) => r.raw.source || 'no field'),
+      models: listCounts(focus, (r) => r.model || 'no field'), inTextInterval: inText.length,
+      inTextSources: listCounts(inText, (r) => r.raw.source || 'no field') },
+    outsideRunWindow: compactRecords(outside, t0), diagnoses: { groups: groupedDiagnoses,
+      appendix: diagnosisRows.sort((a, b) => ({ critical: 0, high: 1, warning: 2, info: 3 }[a.severity] ?? 4) - ({ critical: 0, high: 1, warning: 2, info: 3 }[b.severity] ?? 4)) },
+    comparisons: sameNameComparisons,
+    counters: { events: events.length, eventTypes: listCounts(events, (e) => e.eventType), requests: requestRows.length,
+      forced: { events: forcedEvents.length, terminalRecords: forcedRecords.length,
+        uniqueRequests: new Set(forcedRecords.filter((r) => r.attempt).map((r) => r.attempt)).size },
+      terminal: { records: requestRows.reduce((n, a) => n + a.counts.terminalRecords, 0), groups: requestRows.reduce((n, a) => n + a.counts.terminalGroups, 0),
+        uniqueRequests: requestRows.filter((a) => a.counts.terminalRecords).length },
+      stages: { total: stages.length, success: stages.filter((s) => s.status === 'success').length,
+        withFailureRecords: stageRows.filter((s) => s.successWithFailureRecords.length).length, long: stageRows.filter((s) => s.long).length },
+      dispatchAttempts: { total: arr(d.dispatchAttempts).length, withoutDispatchId: arr(d.dispatchAttempts).filter((x) => !x.dispatchId).length,
+        submitStatus: listCounts(arr(d.dispatchAttempts), (x) => fieldValue(x, 'submitStatus')),
+        terminalStatus: listCounts(arr(d.dispatchAttempts), (x) => fieldValue(x, 'terminalStatus')) },
+      startRefusals: batches.reduce((n, b) => n + b.refusalRows.length, 0),
+      joinMethods: listCounts(recs, (r) => r.via || 'unassigned') },
+    integrity: { registered: integrity, computed: computedIntegrity },
+    delivery: { batches, problems: arr(diag.problems).map((x, i) => ({ path: `delivery.diagnosis.problems[${i}]`, ...x })) }
+  };
+}
+function renderTransportMarkdown(x) {
+  const out = ['# Transport extract', `DIGEST_VERSION=${x.DIGEST_VERSION} · sourceFile=${x.sourceFile || 'no field'} · debateRunId=${x.debateRunId}`,
+    `Compression: all requests; no line cap; terminalPairWindowMs=${x.compression.terminalPairWindowMs}; promptProbeCharacters=${x.compression.promptProbeCharacters}; same request/dispatch/status/reason/significant fields only. Full parameters in JSON compression.`, `t = seconds from ${x.base.path}=${display(x.base.value)}, precision 0.001; +st/+sub appear only in the request table.`,
+    'Notes: no field / null / "" / [] / 0 are distinct. Paths refer to the source JSON. Group counts include all member records; no line cap. Registered terminal evidence has no causal interpretation. Equal text lengths do not prove equal text. Stored prompt fragments do not prove submission or full-answer inclusion; shortened prompts cannot prove absence. Focus intervals do not prove continuous printing. Late records do not prove continued generation. Start-lock duration is not measured without begin/end records.',
+    ...['metadata', 'runOutcome', 'health'].map((k) => `${k}: ${Object.values(x[k]).map(pathValue).join(' · ')}`)];
+  const cell = (v) => display(v).replace(/\|/g, '\\|').replace(/\n/g, ' ');
+  const rows = (head, rs) => table(head, rs.map((r) => r.map(cell)));
+  const countsText = (v) => Object.entries(v).map(([k, n]) => `${k}=${n}`).join(', ');
+  const time = (v) => v == null ? 'not recorded' : `${T3(v.t == null ? null : v.t * 1000)} ${v.path}`;
+  const eventTime = (v) => `${T3(v.t == null ? null : v.t * 1000)} ${v.path}`;
+  out.push('\n### 1. Data sufficiency',
+    `events[].length=${x.counters.events} · integrity.eventsTotal=${display(x.integrity.registered.eventsTotal)} · correlationQuality: ${countsText(x.quality.correlationQuality)} · provenance: ${countsText(x.quality.provenance)}`,
+    `incomplete rule: ${x.quality.completenessRule}; non-exact=${x.quality.observedNonExact}`,
+    `plan=${display(x.availability.plan)} · delivery=${x.availability.delivery} · shortened prepared.prompt=${x.availability.shortenedPrompts.length}`,
+    `events without pipelineRoundId=${x.quality.eventsWithoutRound.count}; complete path list is in JSON quality.eventsWithoutRound.paths.`,
+    `join methods (all events+journal, including run-level records): ${countsText(x.counters.joinMethods)}; unmatched request/model records=${x.availability.unassigned.length} · dispatchAttempts=${JSON.stringify(x.counters.dispatchAttempts)}`,
+    `integrity: ${Object.values(x.integrity.registered).map(pathValue).join(' · ')}`,
+    `computed integrity: ${JSON.stringify(x.integrity.computed)}`,
+    `Not recorded by this report: lifecycle observer stop reason, feed text and the version/hash of the displayed/passed answer.`);
+  out.push('\n### 2. Stages', rows(['stage / path', 'participants', 'start t', 'end t', 'durationMs', 'gap s', 'status', 'LONG', 'success + failure records'],
+    x.stages.map((s) => [`${s.stage} ${s.path}`, s.participants, s.startT == null ? null : s.startT.toFixed(3), s.endT == null ? null : s.endT.toFixed(3),
+      s.durationMs, s.gapSeconds == null ? null : s.gapSeconds.toFixed(3), s.status, s.long, s.successWithFailureRecords])),
+    `calc: median durationMs of sorted [${x.calculations.sortedDurations.join(', ')}] = ${x.calculations.medianDurationMs}; LONG: ${x.calculations.long}`,
+    ...x.stages.map((s) => `${s.stage}=${s.stageId} · ${s.expected.path}=${display(s.expected)} · deviations=${display(s.deviations)}`));
+  out.push('\n### 3. Identity map', rows(['request', 'stage/model', 'requestId', 'pipelineRoundId', 'token', 'stageAttemptId / wait', 'dispatchIds / foreign', 'tabIds', 'batch_start'],
+    x.requests.map((a) => [a.request, `${a.stage}/${a.model}`, a.requestId, a.identity.pipelineRoundIds, a.identity.token,
+      `${short(a.identity.stageAttemptId)} / ${a.identity.waitId}`, `${a.identity.dispatchIds.map((id, i) => `d${i + 1}=${id}`).join(', ')} / ${a.identity.foreignDispatchIds.map((f) => `${f.dispatchId} (${f.ownerStage}/${f.ownerModel})`).join(', ') || '—'}`,
+      a.identity.tabIds, a.identity.batchStartPath])));
+  out.push('\n### 4. All requests', rows(['request', 'stage/model', 'dispatch', 'submitted (+st/+sub)', 'first_text', 'first TEXT_STABLE', 'first COMPLETION_DETECTED', 'counts dup/wrong/display/manual(UI)', 'terminal groups', 'ANSWER_COLLECTED.accepted', 'stable→terminal ms'],
+    x.requests.map((a) => [a.request, `${a.stage}/${a.model}`, time(a.times.dispatchStarted),
+      a.times.submitted ? `${time(a.times.submitted)} (+st=${a.times.submitted.stageSeconds}, +sub=${a.times.submitted.submitSeconds})` : 'not recorded',
+      time(a.times.firstText), time(a.times.firstStable), time(a.times.firstCompletionDetected),
+      `${a.counts.duplicateFinalRejected}/${a.counts.wrongCard}/${a.counts.displayed}/${a.counts.manualRecords}(${a.counts.uiButtonRecords})`,
+      a.terminalGroups.map((g) => `${g.members.map((m) => m.path).join('+')} (${g.intervalMs}ms)`),
+      a.collected.map((r) => pathValue(r.accepted)), a.stableToTerminalMs.map((r) => `${r.value} ${r.path}${r.value > 120000 ? ' >120000' : r.value > 15000 ? ' >15000' : r.value < 0 ? ' negative' : ''}`)])),
+    'calc: stable→terminal ms = terminal.sourceTimestamp − first TEXT_STABLE.sourceTimestamp for this request.');
+  const groupText = (g) => `${g.status}/${g.completionReason} · dispatchId=${g.dispatchId} · interval=${g.intervalMs}ms · `
+    + g.members.map((m) => `${m.path} ${m.label} answerLength=${display(m.answerLength)} evidence.answerLen=${display(m.evidenceAnswerLen)} evidence.answerLength=${display(m.evidenceAnswerLength)}` ).join('; ');
+  out.push('\n### 5. Stage timeline and request transitions');
+  const dispatchRef = (r) => {
+    if (!r.dispatchId) return '—';
+    const owner = x.requests.find((a) => a.identity.dispatchIds.includes(r.dispatchId));
+    return owner ? `Q${owner.request}.d${owner.identity.dispatchIds.indexOf(r.dispatchId) + 1}` : r.dispatchId;
+  };
+  x.stageTimeline.forEach((s) => { out.push(`\n#### ${s.stage} — shared timeline`, rows(['t', 'model', 'event', 'dispatch', 'path', 'details'],
+    s.rows.map((r) => [r.t == null ? null : r.t.toFixed(3), r.model, r.type === 'dispatch' ? r.label.replace('dispatch:', '') : r.type,
+      dispatchRef(r), r.path, r.type === 'tab' ? `tabId=${r.tabId}` : r.details.replace(/\bms=\d+ ?/g, '')]))); });
+  x.requests.forEach((a) => {
+    const c = a.coverage;
+    const dispatch = (id) => { const i = a.identity.dispatchIds.indexOf(id); return i < 0 ? id : `d${i + 1}`; };
+    out.push(`\n#### Request ${a.request}: ${a.stage}/${a.model}`, `Shown ${c.representedRecords} of ${c.totalRecords - c.sharedStageRecords} request records, ${c.sharedStageRecords} in shared timeline; ${c.transitionLines} transitions + ${c.backgroundLines} background groups; omitted=${c.omittedRecords}.`);
+    a.transitions.forEach((r) => {
+      if (r.group) {
+        out.push(`- t=${T3(r.first.t == null ? null : r.first.t * 1000)} terminal_group · ${groupText({ ...r.group, dispatchId: dispatch(r.group.dispatchId) })}`);
+        r.group.members.forEach((m) => { const registered = Object.entries(m.registered).filter(([, f]) => f.state === 'present');
+          if (registered.length) out.push(`  registered ${m.path}.payload.evidence: ${registered.map(([k, f]) => `${k}=${display(f)}`).join(', ')}`); });
+      } else {
+        const f = r.first;
+        out.push(`- t=${T3(f.t == null ? null : f.t * 1000)} ${f.path} ${f.type}${f.textLength == null ? '' : ` len=${f.textLength}`}${f.status ? ` status=${f.status}` : ''}${f.reason ? ` reason=${f.reason}` : ''}${f.dispatchId ? ` ${dispatch(f.dispatchId)}` : ''}${/MANUAL|RECOVERY|CORRELATION|STAGE_FAILED/.test(`${f.type} ${f.label}`) && f.details ? ` · ${f.details}` : ''}${f.flags.length ? ` [${f.flags.join('; ')}]` : ''}${r.count > 1 ? ` ×${r.count} · last ${eventTime(r.last)}` : ''}`);
+      }
+    });
+    const backgroundLabel = (r) => {
+      if (/FINALIZATION_DEFER|TERMINAL_SUCCESS_DEFER/.test(r.first.reason || '')) return r.first.reason;
+      if (r.first.type === 'UI_PROJECTION_FAILED') return r.first.reason || r.label;
+      if (r.first.type === 'DUPLICATE_FINAL_REJECTED') return 'DUPLICATE_FINAL';
+      return r.label;
+    };
+    out.push('Background:', rows(['label', '×N', 'first t / path', 'last t / path', 'state'], a.background.map((r) => [
+      backgroundLabel(r), r.count, eventTime(r.first), r.count === 1 ? '=' : eventTime(r.last),
+      [r.first.dispatchId ? dispatch(r.first.dispatchId) : '', r.first.textLength == null ? '' : `len=${r.first.textLength}`,
+        r.first.status || '', r.first.reason && r.first.reason !== r.first.label && r.first.reason !== backgroundLabel(r) ? r.first.reason : ''].filter(Boolean).join(' ')
+    ])));
+
+  });
+  out.push('\n### 6. Length observations', ...x.lengthObservations.map((r) => `- request ${r.request} ${r.path} t=${T3(r.t == null ? null : r.t * 1000)} len=${r.length}${r.beforeSubmit ? ' before submit' : ''}${r.equalPreviousLength ? ` equals previous request ${r.previousRequest} length` : ''}`));
+  const columns = ['delivery/journal chars', 'terminal lengths', 'collected'];
+  if (x.lengths.some((r) => r.measurements.revisions.length)) columns.push('revisions');
+  if (x.lengths.some((r) => r.measurements.staleDropped.length)) columns.push('staleDropped');
+  out.push('\n### 7. Answer lengths', rows(['request', ...columns], x.lengths.map((r) => {
+    const m = r.measurements, same = m.delivery?.state === 'present' && m.journal?.state === 'present' && m.delivery.value === m.journal.value;
+    const vals = [r.request, same ? `${display(m.delivery)} (${m.delivery.path}; ${m.journal.path})` : `${m.delivery ? pathValue(m.delivery) : 'no send'} / ${m.journal ? pathValue(m.journal) : 'not recorded'}`,
+      m.terminal.map((v) => `${v.answerLength.path.replace('.payload.answerLength', '')}: ${display(v.answerLength)}/${display(v.evidenceAnswerLen)}`), m.collected.map((v) => pathValue(v.value))];
+    if (columns.includes('revisions')) vals.push(m.revisions.map((v) => pathValue(v.value)));
+    if (columns.includes('staleDropped')) vals.push(m.staleDropped.map((v) => pathValue(v.value)));
+    return vals;
+  })));
+  out.push('\n### 8. Manual / moderator counters', `MANUAL_RECOVERY_REQUESTED records=${x.manual.records}; UI button records=${x.manual.uiButtonRecords}; records on success stages=${x.manual.onSuccessStages}`,
+    `delivery.journal kinds: ${countsText(x.manual.journalKinds)}`, ...x.manual.moderatorActions.map((r) => `- ${eventTime(r)} ${r.label} ${r.details}`));
+  out.push('\n### 9. Start refusals', ...x.delivery.batches.flatMap((b) => b.refusalRows.map((r) => `- ${r.path} t=${T3(r.t == null ? null : r.t * 1000)} ${r.errorCode || r.reason || 'no field'} attempt=${display(r.attempt)} waitedMs=${display(r.waitedMs)} calc elapsedFromBatchMs=${r.elapsedFromBatchMs}`)));
+  out.push('\n### 10. Focus', `total=${x.focus.total} · sources: ${countsText(x.focus.sources)} · models: ${countsText(x.focus.models)} · first_text→delivery final interval=${x.focus.inTextInterval} (${countsText(x.focus.inTextSources)})`);
+  out.push('\n### 11. Outside the run window', ...x.outsideRunWindow.map((r) => `- ${r.label} ×${r.count} first ${eventTime(r.first)}, last ${eventTime(r.last)}`));
+  out.push('\n### 12. Stored prompt fragment check', ...x.promptChecks.map((r) => {
+    const found = r.laterPrompts.filter((p) => p.found);
+    return `- request ${r.request} ${r.answerPath} · probe=${JSON.stringify(r.probe)} · ${found.length ? `fragment found in prepared.prompt: ${found.map((p) => p.path).join(', ')}` : r.laterPrompts.length ? `not found; shortened=${r.laterPrompts.filter((p) => p.shortened).length}/${r.laterPrompts.length}; ${r.result}` : 'no later prompt'}`;
+  }));
+  out.push('\n### 13. Diagnoses grouped', rows(['group', 'code / reason', 'severity', 'participants', 'stages', 'records', 'occurrences', 'resolved null', 'paths'],
+    x.diagnoses.groups.map((g, i) => [`D${i + 1}`, `${g.code}/${g.reasonCode}`, g.severities, g.participants, g.stages, g.records,
+      `${g.occurrences}${g.missingOccurrences ? ` (missing=${g.missingOccurrences})` : ''}`, g.resolvedNull, g.paths])));
+  out.push('\n### 14. Same-name comparisons and count units', ...x.comparisons.map((r) => `- ${r.name}: ${pathValue(r.left)} / ${pathValue(r.right)}`),
+    `Forced counters: events=${x.counters.forced.events}; terminal records=${x.counters.forced.terminalRecords}; unique requests=${x.counters.forced.uniqueRequests}`,
+    `Terminal counters: records=${x.counters.terminal.records}; groups=${x.counters.terminal.groups}; unique requests=${x.counters.terminal.uniqueRequests}`);
+  out.push('\n### 17. Delivery batches and problems', rows(['path / wait', 'stageAttemptId', 'models', 't', 'accepted waitedMs', 'refusals', 'outcome', 'durationMs', 'gap s'],
+    x.delivery.batches.map((b) => [`${b.path} / ${b.waitId}`, short(b.stageAttemptId || b.batchId), arr(b.models), b.t == null ? null : b.t.toFixed(3),
+      b.accepted?.waitedMs, b.refusalRows.length, b.outcome, b.durationMs, b.gapSeconds == null ? null : b.gapSeconds.toFixed(3)])),
+    rows(['path', 'code', 'severity', 'model', 'count', 'reason'], x.delivery.problems.map((p) => [p.path, p.code, p.severity, p.model, p.count, p.reason])));
+  out.push('\n### Appendix. Individual diagnoses', rows(['path', 'severity', 'group (section 13)', 'stage', 'participant', 'occurrences', 'first t', 'resolvedAt'],
+    x.diagnoses.appendix.map((d) => [d.path, d.severity, `D${x.diagnoses.groups.findIndex((g) => g.code === d.code && g.reasonCode === d.reasonCode) + 1}`, x.stages.find((s) => s.stageId === d.affectedStageId)?.stage || d.affectedStageId, d.affectedParticipant,
+      d.occurrences, offset(toMs(d.firstObservedAt), x.base.value), field(d, 'resolvedAt', d.path)])));
+  out.splice(4, 0, 'Path prefixes: E[N] = events[N]; J[N] = delivery.journal[N]. QN.dK refers to request N dispatch K in the identity map.');
+  return out.join('\n').replace(/delivery\.journal\[(\d+)\]/g, 'J[$1]').replace(/events\[(\d+)\]/g, 'E[$1]');
+}
+function summarizeDisputFlow(d) { return renderTransportMarkdown(buildTransportDigest(d)); }
+
 function summarizeDelivery(d, options = {}) {
   const out = [];
   const diag = d.diagnosis || {};
@@ -588,20 +662,9 @@ function summarizeDelivery(d, options = {}) {
   return out.join('\n');
 }
 
-function extractTransport(report, sourceFile) {
-  if (!report?.metadata?.debateRunId || !Array.isArray(report.stageExecutions) || !Array.isArray(report.events)) {
-    throw new Error('Transport extraction requires a Disput Flow report');
-  }
-  return {
-    schemaVersion: 1,
-    report: 'extract_transport',
-    sourceFile,
-    debateRunId: report.metadata.debateRunId,
-    format: 'markdown',
-    digest: summarizeDisputFlow(report)
-  };
-}
-const api = Object.freeze({ summarizeDisputFlow, summarizeDelivery, median, extractTransport });
+function extractTransport(report, sourceFile) { return buildTransportDigest(report, sourceFile); }
+const api = Object.freeze({ DIGEST_VERSION, COMPRESSION, summarizeDisputFlow, summarizeDelivery, median,
+  extractTransport, buildTransportDigest, renderTransportMarkdown });
 root.ReportDigest = api;
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

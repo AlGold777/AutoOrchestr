@@ -1,5 +1,14 @@
 # CHANGELOG — Project
 
+### 2026-10-03 — Structured transport Extract v2, version 2.81.575
+
+- `shared/report-digest.js`: structured JSON schema 2 and Markdown derived from the same tables; DIGEST_VERSION 2.0.0 and explicit compression parameters. All requests are included, shared stage timelines contain both models, attempt transitions retain zero lengths and state/dispatch changes. Background counts retain first/last and all member paths without line caps.
+- Terminal pairs preserve both labels/paths, null/missing length fields and registered foreground/focus/reason/duration evidence. Added round/quality/provenance coverage, accepted, wrong_card/displayed/duplicate/manual counters, normalized tab ids and same-name comparisons with separate event/record/request units. Prompt fragment matches do not claim submission.
+- Removed redundant sections 15/16 and repeated delivery sends/moderator output; diagnoses have a grouped summary and individual appendix. Markdown uses declared E[N]/J[N] path prefixes; JSON paths are full.
+- Extract downloads the full Disput Flow, structured extract_transport JSON and separate Markdown with matching timestamps.
+- Trace retains MAX_RUNS=2 in memory only. Late evidence for a retained inactive run cannot switch activeRunId; persistent run history stays disabled.
+- Updated digest, extraction and trace tests; not run by request. Syntax checked. On the 00-40 sample all 8 requests and 515 attributed records are represented; Markdown is about 49 KB instead of 72 KB, chronology about 30 KB instead of 44 KB. The estimated 35–40 KB total has not been reached.
+
 ### 2026-10-03 — Remove persisted Disput runs, version 2.81.574
 
 - Debate trace keeps only the current run in memory and no longer writes or restores run history. Legacy trace storage keys are deleted when the page initializes. Starting a new run discards the preceding trace and its duplicate/conflict indexes; late events cannot recreate discarded runs.
