@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-02 — Telemetry: the Automation tab is merged into Disput, version 2.81.563
+
+- **One tab, one report.** The delivery cards (Delivery Health, Delivery Batches, Delivery Problems, Message Timeline, Raw Delivery Events) moved from the Automation tab into the Disput tab; the Automation tab is removed. The Disput model filter, «Only problems» and Clear drive them too (Clear also empties the delivery journal). A remembered Automation tab opens Disput.
+- **Export.** The Disput Flow JSON gets a `delivery` section — the former message-delivery report (`diagnosis.batches/sends/problems/matrix`, `journal`, versions); the MD export gets a «Delivery» section (Batches, Sends, Problems tables). The export also works when there is only delivery data.
+- Code: `shared/message-delivery-view.js` (renders into `#disput-tabpanel`, exposes `MessageDeliveryView.buildReport/buildMarkdown/render`), `results.js` (Disput export handlers, tab memory), `results-devtools.js`, `styles/devtools-selectors.css`, `pipeline_panel.html`. Docs: `docs/message-delivery.md`.
+- Tests: `automation-telemetry` (cards in the Disput tab, export section, MD), `release-log-regressions`.
+
 ### 2026-10-02 — The top bar of the pipeline panel matches the main page again, version 2.81.562
 
 - **Cause.** Version 2.81.545 widened `.main-inner` on the pipeline page, and the top bar lives in it: the bar was 1248px wide at x=96 instead of 948px at x=246, so it jumped when switching pages.

@@ -662,28 +662,24 @@
 }
 
 #telemetry-tabpanel .devtools-card-grid,
-#disput-tabpanel .devtools-card-grid,
-#automation-tabpanel .devtools-card-grid {
+#disput-tabpanel .devtools-card-grid {
     grid-template-columns: 1fr;
     margin-top: 12px;
 }
 
 #telemetry-tabpanel .devtools-card[data-collapsible] .devtools-card-header,
-#disput-tabpanel .devtools-card[data-collapsible] .devtools-card-header,
-#automation-tabpanel .devtools-card[data-collapsible] .devtools-card-header {
+#disput-tabpanel .devtools-card[data-collapsible] .devtools-card-header {
     cursor: pointer;
 }
 
 #telemetry-tabpanel .devtools-card[data-collapsible] .devtools-card-header h2,
-#disput-tabpanel .devtools-card[data-collapsible] .devtools-card-header h2,
-#automation-tabpanel .devtools-card[data-collapsible] .devtools-card-header h2 {
+#disput-tabpanel .devtools-card[data-collapsible] .devtools-card-header h2 {
     position: relative;
     padding-right: 24px;
 }
 
 #telemetry-tabpanel .devtools-card[data-collapsible] .devtools-card-header h2::after,
-#disput-tabpanel .devtools-card[data-collapsible] .devtools-card-header h2::after,
-#automation-tabpanel .devtools-card[data-collapsible] .devtools-card-header h2::after {
+#disput-tabpanel .devtools-card[data-collapsible] .devtools-card-header h2::after {
     content: '▼';
     position: absolute;
     right: 0;
@@ -694,14 +690,12 @@
 }
 
 #telemetry-tabpanel .devtools-card[data-collapsible].is-collapsed .devtools-card-header h2::after,
-#disput-tabpanel .devtools-card[data-collapsible].is-collapsed .devtools-card-header h2::after,
-#automation-tabpanel .devtools-card[data-collapsible].is-collapsed .devtools-card-header h2::after {
+#disput-tabpanel .devtools-card[data-collapsible].is-collapsed .devtools-card-header h2::after {
     transform: translateY(-50%) rotate(-90deg);
 }
 
 #telemetry-tabpanel .devtools-card[data-collapsible].is-collapsed .devtools-card-body,
-#disput-tabpanel .devtools-card[data-collapsible].is-collapsed .devtools-card-body,
-#automation-tabpanel .devtools-card[data-collapsible].is-collapsed .devtools-card-body {
+#disput-tabpanel .devtools-card[data-collapsible].is-collapsed .devtools-card-body {
     display: none;
 }
 
@@ -721,8 +715,7 @@
 }
 
 #telemetry-tabpanel .devtools-toolbar-actions,
-#disput-tabpanel .devtools-toolbar-actions,
-#automation-tabpanel .devtools-toolbar-actions {
+#disput-tabpanel .devtools-toolbar-actions {
     display: grid;
     margin: 10px;
     grid-template-columns: minmax(0, 1fr) auto;
@@ -733,8 +726,7 @@
 }
 
 #telemetry-tabpanel .devtools-toolbar,
-#disput-tabpanel .devtools-toolbar,
-#automation-tabpanel .devtools-toolbar {
+#disput-tabpanel .devtools-toolbar {
     position: sticky;
     top: 0;
     z-index: 5;
@@ -751,8 +743,7 @@
 }
 
 #telemetry-tabpanel .telemetry-actions,
-#disput-tabpanel .telemetry-actions,
-#automation-tabpanel .telemetry-actions {
+#disput-tabpanel .telemetry-actions {
     display: flex;
     align-items: center;
     gap: 12px;
@@ -761,8 +752,7 @@
 }
 
 #telemetry-tabpanel .devtools-toolbar-actions .devtools-pill-btn,
-#disput-tabpanel .devtools-toolbar-actions .devtools-pill-btn,
-#automation-tabpanel .devtools-toolbar-actions .devtools-pill-btn {
+#disput-tabpanel .devtools-toolbar-actions .devtools-pill-btn {
     margin-top: 0;
     padding: 2px 6px;
     font-size: 16px;
@@ -774,8 +764,7 @@
 }
 
 #telemetry-tabpanel .devtools-toolbar-actions .devtools-pill-btn:hover,
-#disput-tabpanel .devtools-toolbar-actions .devtools-pill-btn:hover,
-#automation-tabpanel .devtools-toolbar-actions .devtools-pill-btn:hover {
+#disput-tabpanel .devtools-toolbar-actions .devtools-pill-btn:hover {
     box-shadow: none;
 }
 
@@ -791,19 +780,15 @@
 }
 
 #disput-tabpanel .disput-trace-filters .devtools-select,
-#automation-tabpanel .disput-trace-filters .devtools-select,
 #disput-tabpanel .disput-trace-filters .devtools-select:focus,
-#automation-tabpanel .disput-trace-filters .devtools-select:focus,
-#disput-tabpanel .disput-trace-filters .devtools-select:focus-visible,
-#automation-tabpanel .disput-trace-filters .devtools-select:focus-visible {
+#disput-tabpanel .disput-trace-filters .devtools-select:focus-visible {
     border: none;
     outline: none;
     box-shadow: none;
 }
 
 #telemetry-tabpanel .telemetry-only-problems-label,
-#disput-tabpanel .disput-only-problems-label,
-#automation-tabpanel .disput-only-problems-label {
+#disput-tabpanel .disput-only-problems-label {
     margin-left: 15px;
 }
 

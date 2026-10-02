@@ -1,7 +1,9 @@
 // shared/message-delivery-view.js
-// Telemetry window → Automation tab: delivery health, batches, problems with next steps,
-// every message's timeline (request id, dispatch phases, completion), per-model matrix,
-// raw journal and a JSON report. Style follows the Disput tab.
+// Telemetry window → Disput tab, "Delivery" cards (formerly the Automation tab): delivery
+// health, batches, problems with next steps, every message's timeline (request id, dispatch
+// phases, completion), per-model matrix and the raw journal. The Disput tab's model filter,
+// "Only problems" and Clear drive these cards too; the Disput JSON/MD exports embed the
+// delivery report (buildReport / buildMarkdown).
 (function initMessageDeliveryView(root) {
   'use strict';
 
@@ -44,8 +46,8 @@
   }
 
   function filtered(journal) {
-    const model = $('automation-model-filter')?.value || 'all';
-    const only = $('automation-only-problems')?.checked;
+    const model = $('disput-model-filter')?.value || 'all';
+    const only = $('disput-only-problems')?.checked;
     const diagnosis = root.MessageDeliveryDiagnosis.diagnose(journal, { version: root.chrome?.runtime?.getManifest?.().version || null });
     const keep = (item) => model === 'all' || item.model === model;
     return {
@@ -131,24 +133,19 @@
   }
 
   async function render() {
-    const panel = $('automation-tabpanel');
-    if (!panel || panel.hidden) return;
+    const panel = $('disput-tabpanel');
+    if (!panel || panel.hidden || !$('delivery-health')) return;
     const journal = await readJournal();
     const view = filtered(journal);
-    const models = [...new Set(view.diagnosis.sends.map((s) => s.model).filter(Boolean))];
-    const select = $('automation-model-filter');
-    const current = select.value;
-    select.replaceChildren(new Option('All models', 'all'), ...models.map((m) => new Option(m, m)));
-    select.value = models.includes(current) ? current : 'all';
 
     const all = view.diagnosis.sends;
     const count = (result) => all.filter((s) => s.result === result).length;
     const crit = view.diagnosis.problems.filter((p) => p.severity === 'critical').length;
-    $('automation-status').textContent = all.length
+    $('delivery-status').textContent = all.length
       ? `${all.length} sent · ${count('delivered')} delivered · ${count('partial')} partial · ${count('waiting')} waiting · ${crit} critical`
       : '';
 
-    $('automation-health').replaceChildren(all.length ? table(
+    $('delivery-health').replaceChildren(all.length ? table(
       ['Model', 'Sent', 'Delivered', 'Partial', 'No token', 'Empty', 'No answer', 'Not submitted', 'No tab', 'Error', 'Cancelled', 'Premature final', 'Rejected', 'Stale dropped', 'Focus moves', 'Median submit', 'Median answer'],
       view.matrix.map((r) => el('tr', null,
         el('td', null, r.model), el('td', null, r.sent), el('td', null, r.delivered), el('td', null, r.partial),
@@ -157,11 +154,11 @@
         el('td', null, r.stale), el('td', null, r.focus), el('td', null, secs(r.medianSubmitMs)), el('td', null, secs(r.medianMs)))))
       : empty('No messages yet.'));
 
-    $('automation-batches')?.replaceChildren(view.batches.length
+    $('delivery-batches').replaceChildren(view.batches.length
       ? table(['Started', 'Stage', 'Models', 'Start', 'Outcome', 'Finish'], view.batches.slice().reverse().map(batchRow))
       : empty(view.diagnosis.batches.length ? 'Nothing matches the filter.' : 'No batches yet.'));
 
-    $('automation-problems').replaceChildren(view.problems.length
+    $('delivery-problems').replaceChildren(view.problems.length
       ? el('div', null, view.problems.map((p) => el('div', { class: 'ad-problem', 'data-severity': p.severity },
         el('div', { class: 'ad-problem-head' },
           el('strong', null, `[${SEV[p.severity]}] ${p.title}`),
@@ -170,11 +167,11 @@
         p.hint ? el('div', { class: 'ad-hint' }, `Что делать: ${p.hint}`) : null)))
       : empty(all.length ? 'No problems.' : 'No diagnoses yet.'));
 
-    $('automation-messages').replaceChildren(view.sends.length
+    $('delivery-messages').replaceChildren(view.sends.length
       ? table(['Sent', 'Model', 'Request / dispatch', 'Batch', 'Path', 'Finish', 'Result'], view.sends.slice().reverse().map(sendRow))
       : empty(all.length ? 'Nothing matches the filter.' : 'No messages yet.'));
 
-    $('automation-raw').replaceChildren(view.raw.length
+    $('delivery-raw').replaceChildren(view.raw.length
       ? table(['Time', 'Model', 'Event', 'Details'], view.raw.slice().reverse().map((e) => {
         const { at, model, kind, token, ...rest } = e;
         return el('tr', null, el('td', null, time(at)), el('td', null, model || ''), el('td', null, kind), el('td', null, `${token || ''} ${JSON.stringify(rest).slice(0, 300)}`));
@@ -182,30 +179,54 @@
       : empty('No journal events.'));
   }
 
-  async function report() {
+  // The delivery report embedded in the Disput Flow export (section `delivery`); same
+  // shape as the former standalone message-delivery report.
+  async function buildReport() {
     const journal = await readJournal();
-    const text = JSON.stringify({
+    const version = root.chrome?.runtime?.getManifest?.().version || null;
+    return {
       report: 'message-delivery',
       generated_at: new Date().toISOString(),
-      extension_version: root.chrome?.runtime?.getManifest?.().version,
+      extension_version: version,
       transport_contract_version: root.TransportContract?.VERSION || null,
-      diagnosis: root.MessageDeliveryDiagnosis.diagnose(journal, { version: root.chrome?.runtime?.getManifest?.().version || null }),
+      diagnosis: root.MessageDeliveryDiagnosis.diagnose(journal, { version }),
       journal
-    }, null, 2);
-    const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
-    const link = Object.assign(document.createElement('a'), { href: url, download: 'message-delivery-report.json' });
-    document.body.append(link); link.click(); link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 0);
-    navigator.clipboard?.writeText(text).catch(() => {});
+    };
+  }
+
+  // Short Markdown section for the Disput Flow .md export.
+  function buildMarkdown(report) {
+    const d = report?.diagnosis;
+    if (!d) return '';
+    const cell = (v) => String(v == null || v === '' ? '—' : v).replace(/\|/g, '\\|').replace(/\n/g, ' ');
+    const rows = (head, list) => [
+      `| ${head.join(' | ')} |`, `| ${head.map(() => '---').join(' | ')} |`,
+      ...list.map((r) => `| ${r.map(cell).join(' | ')} |`)
+    ].join('\n');
+    const out = ['## Delivery', ''];
+    out.push('### Batches', '', d.batches.length ? rows(
+      ['waitId', 'stageAttemptId', 'runMode', 'models', 'at', 'accepted.waitedMs', 'refusals', 'outcome', 'durationMs', 'skipped'],
+      d.batches.map((b) => [b.waitId || b.batchId, b.stageAttemptId, b.runMode, b.models.join(', '), b.at ? new Date(b.at).toISOString() : '',
+        b.accepted?.waitedMs, b.refusals.map((r) => `${r.attempt ?? ''}/${r.errorCode || r.reason || ''}/${r.waitedMs ?? ''}`).join('; '),
+        b.outcome, b.durationMs, (b.skipped || []).join(', ')])) : 'No batches.', '');
+    out.push('### Sends', '', d.sends.length ? rows(
+      ['model', 'batchId', 'submittedMs', 'firstTextMs', 'result', 'terminal.status', 'terminal.chars', 'terminal.completion', 'focus.count', 'focus.sources', 'revisions', 'rejections'],
+      d.sends.map((s) => [s.model, s.batchId, s.submittedMs, s.firstTextMs, s.result, s.terminal?.status, s.terminal?.chars, s.terminal?.completion,
+        s.focus.count, Object.entries(s.focus.sources).map(([k, n]) => `${k}:${n}`).join(', '), s.revisions, s.rejections.length])) : 'No sends.', '');
+    out.push('### Problems', '', d.problems.length ? rows(
+      ['severity', 'code', 'model', 'batchId', 'count', 'reason'],
+      d.problems.map((p) => [p.severity, p.code, p.model, p.batchId, p.count, p.reason])) : 'No problems.', '');
+    return out.join('\n');
   }
 
   function init() {
-    if (!$('automation-tabpanel')) return;
-    document.addEventListener('devtools-tab-change', (e) => { if (e.detail?.targetId === 'automation-tabpanel') void render(); });
+    root.MessageDeliveryView = { render, buildReport, buildMarkdown };
+    if (!$('delivery-health')) return;
+    document.addEventListener('devtools-tab-change', (e) => { if (e.detail?.targetId === 'disput-tabpanel') void render(); });
     root.chrome?.storage?.onChanged?.addListener((changes, area) => { if (area === 'session' && changes[KEY()]) void render(); });
-    ['automation-model-filter', 'automation-only-problems'].forEach((id) => $(id)?.addEventListener('change', () => void render()));
-    $('automation-clear')?.addEventListener('click', () => { root.MessageDelivery?.clearJournal(); void render(); });
-    $('automation-export-json')?.addEventListener('click', report);
+    ['disput-model-filter', 'disput-only-problems'].forEach((id) => $(id)?.addEventListener('change', () => void render()));
+    // One tab, one Clear: the Disput trace and the delivery journal are cleared together.
+    $('disput-clear-trace')?.addEventListener('click', () => { root.MessageDelivery?.clearJournal(); void render(); });
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

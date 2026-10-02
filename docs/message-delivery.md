@@ -36,7 +36,9 @@
 - **«неполный»** — серая пометка справа от имени модели, если генерация завершилась не чисто (`PARTIAL`, `STREAM_TIMEOUT`, …). Только информирует: принять такой ответ галочкой можно (полуавтоматический режим).
 - **Галочка подтверждения** одновременно «проверяет» ответ без метки доставки: у неё подсказка «Verify and approve this answer», а принятие заменяет плашку «Без метки доставки» решением пользователя (`attributionState: user_verified`).
 
-## Окно телеметрии → Automation
+## Окно телеметрии → Disput, раздел «Доставка» (бывшая вкладка Automation)
+
+С 2.81.563 отдельной вкладки Automation нет: её карточки стоят во вкладке Disput, под карточками хода запуска. Фильтр модели, «Only problems» и кнопка очистки у них общие с Disput (очистка стирает и трассу, и журнал доставки). Экспорт Disput JSON содержит раздел `delivery` (`report`, `generated_at`, `extension_version`, `transport_contract_version`, `diagnosis`, `journal` — та же форма, что у прежнего `message-delivery-report.json`), экспорт MD — раздел «Delivery» с таблицами Batches, Sends и Problems.
 
 Журнал (`chrome.storage.session`, до 3000 событий, живёт до перезагрузки страницы) собирает факты трёх источников:
 
@@ -52,13 +54,13 @@
 - `batch_start.runMode` (`auto`, `semi_auto`, `manual_dispatch`) и `template`; ручная отправка модератора идёт в пакете `manual:aN`.
 - Действия модератора: `moderator_get_it` и `get_it_result` по моделям, `moderator_stage_close` (кто ответил, кто пропущен), `moderator_close_refused`, `moderator_approve`; исход пакета `moderator_closed` (не таймаут).
 
-Вкладка показывает:
+Карточки доставки:
 
-- **Delivery Health Summary** — по моделям: отправлено, доставлено, неполные, без метки, пустые, нет ответа, не отправлено, нет вкладки, ошибки, отменено, отклонено по принадлежности, устаревшие; медианы времени до отправки и до ответа.
-- **Batches** — каждый пакет: этап, модели, отказы старта с причиной, время до старта, исход, длительность и срок, модели без ответа, завершённость по моделям.
-- **Problems & Recovery** — проблемы с пояснением и что делать: `premature_terminal` (запрос закрыт без текста, а модель продолжила отвечать — с причиной: решение протокола, навигация, поздний текст), `not_submitted` и `no_tab` с причиной блокировки, `stuck_waiting` (текст пошёл, а финала нет больше 2 минут), `focus_churn` (6 и более переключений фокуса), `partial`, `identity`, `stop_unconfirmed`, `start_refused` / `start_rejected`, `batch_timeout` и прежние коды.
+- **Delivery Health** — по моделям: отправлено, доставлено, неполные, без метки, пустые, нет ответа, не отправлено, нет вкладки, ошибки, отменено, отклонено по принадлежности, устаревшие; медианы времени до отправки и до ответа.
+- **Delivery Batches** — каждый пакет: этап, модели, отказы старта с причиной, время до старта, исход, длительность и срок, модели без ответа, завершённость по моделям.
+- **Delivery Problems** — проблемы с пояснением и что делать: `premature_terminal` (запрос закрыт без текста, а модель продолжила отвечать — с причиной: решение протокола, навигация, поздний текст), `not_submitted` и `no_tab` с причиной блокировки, `stuck_waiting` (текст пошёл, а финала нет больше 2 минут), `focus_churn` (6 и более переключений фокуса), `partial`, `identity`, `stop_unconfirmed`, `start_refused` / `start_rejected`, `batch_timeout` и прежние коды.
 - **Message Timeline** — каждое сообщение: `transportRequestId` и номера отправок, путь (вкладка → фазы отправки → статусы → первый текст → остановка), итог (время, размер, статус, завершённость, источник, ревизии, отклонённые ответы).
-- **Raw Delivery Events** и JSON-отчёт (с версией транспортного контракта).
+- **Raw Delivery Events**. Отчёт — раздел `delivery` в экспорте Disput (с версией транспортного контракта).
 
 Код: `shared/transport-contract.js`, `shared/message-delivery.js`, `shared/message-delivery-diagnosis.js`, `shared/message-delivery-view.js`, точки подключения в `results.js` (`pipelineWaiter`, `runModelBatch`, обработчик сообщений, `syncStatusFromGlobalState`), `background/job-orchestrator.js` (`transportIdentityFor`), `background/dispatch-coordinator.js`, `content-scripts/content-utils.js`.
 

@@ -15351,7 +15351,14 @@ document.addEventListener('click', (event) => {
             flashButtonFeedback(disputBtn, 'warn');
             return;
         }
-        downloadDiagnosticsMarkdown('Disput Flow', markdown, disputBtn);
+        // Delivery (formerly the Automation tab) is part of the Disput Flow report.
+        let deliveryMarkdown = '';
+        try {
+            deliveryMarkdown = window.MessageDeliveryView?.buildMarkdown?.(await window.MessageDeliveryView?.buildReport?.()) || '';
+        } catch (err) {
+            console.warn('[Diagnostics] Disput export failed to read the delivery journal', err);
+        }
+        downloadDiagnosticsMarkdown('Disput Flow', deliveryMarkdown ? `${markdown}\n\n${deliveryMarkdown}` : markdown, disputBtn);
     });
 
     document.addEventListener('click', async (event) => {
@@ -15367,12 +15374,21 @@ document.addEventListener('click', (event) => {
         if (document.getElementById('disput-only-problems')?.checked === true) {
             payload = applyDisputOnlyProblemsFilter(payload);
         }
+        // Delivery (formerly the Automation tab): batches, sends, problems and the raw
+        // journal, same shape as the former message-delivery report.
+        let delivery = null;
+        try {
+            delivery = await window.MessageDeliveryView?.buildReport?.() || null;
+        } catch (err) {
+            console.warn('[Diagnostics] Disput JSON export failed to read the delivery journal', err);
+        }
+        const hasDelivery = Boolean(delivery?.journal?.length);
         const hasFlowEvents = Boolean(payload?.events?.length || payload?.rows?.length || serialDebateTimeline.length);
-        if (!hasFlowEvents) {
+        if (!hasFlowEvents && !hasDelivery) {
             flashButtonFeedback(disputBtn, 'warn');
             return;
         }
-        downloadDiagnosticsJson('Disput Flow', payload, disputBtn);
+        downloadDiagnosticsJson('Disput Flow', { ...(payload || {}), delivery }, disputBtn);
     });
 
     document.addEventListener('click', (event) => {
@@ -23399,7 +23415,9 @@ function exportSingleTemplate(templateName, sourceData = null) {
     };
 
     try {
-        const savedTabId = localStorage.getItem(DEVTOOLS_TAB_STORAGE_KEY);
+        // The Automation tab was merged into Disput.
+        const storedTabId = localStorage.getItem(DEVTOOLS_TAB_STORAGE_KEY);
+        const savedTabId = storedTabId === 'automation-tabpanel' ? 'disput-tabpanel' : storedTabId;
         if (savedTabId && devtoolsTabs.some((tab) => tab.dataset.tabTarget === savedTabId)
             && devtoolsPanels.some((panel) => panel.id === savedTabId)) {
             setActiveDevtoolsTab(savedTabId);

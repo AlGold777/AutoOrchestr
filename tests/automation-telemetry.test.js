@@ -108,15 +108,16 @@ describe('Automation producers', () => {
   });
 });
 
-describe('Automation view', () => {
-  test('renders batches, dispatch path and new result columns', async () => {
+describe('Delivery cards in the Disput tab (formerly the Automation tab)', () => {
+  test('render batches, dispatch path and result columns, driven by the Disput filters', async () => {
     document.body.innerHTML = `
-      <section id="automation-tabpanel">
-        <select id="automation-model-filter"><option value="all">All</option></select>
-        <input type="checkbox" id="automation-only-problems">
-        <span id="automation-status"></span>
-        <div id="automation-health"></div><div id="automation-batches"></div><div id="automation-problems"></div>
-        <div id="automation-messages"></div><div id="automation-raw"></div>
+      <section id="disput-tabpanel">
+        <select id="disput-model-filter"><option value="all">All</option><option value="GPT">GPT</option></select>
+        <input type="checkbox" id="disput-only-problems">
+        <button id="disput-clear-trace"></button>
+        <span id="delivery-status"></span>
+        <div id="delivery-health"></div><div id="delivery-batches"></div><div id="delivery-problems"></div>
+        <div id="delivery-messages"></div><div id="delivery-raw"></div>
       </section>`;
     const { Delivery } = loadModules();
     Delivery.reset();
@@ -131,23 +132,46 @@ describe('Automation view', () => {
     window.chrome = { storage: { session: { get: async () => ({ 'messageDelivery.journal': journal }) }, onChanged: { addListener: (fn) => listeners.push(fn) } } };
     try {
       window.eval(read('shared/message-delivery-view.js'));
-      document.dispatchEvent(new CustomEvent('devtools-tab-change', { detail: { targetId: 'automation-tabpanel' } }));
+      document.dispatchEvent(new CustomEvent('devtools-tab-change', { detail: { targetId: 'disput-tabpanel' } }));
       await new Promise((resolve) => setTimeout(resolve, 20));
-      const text = document.getElementById('automation-tabpanel').textContent;
-      expect(document.getElementById('automation-status').textContent).toContain('1 partial');
-      expect(document.getElementById('automation-batches').textContent).toContain('S:a1');
+      const text = document.getElementById('disput-tabpanel').textContent;
+      expect(document.getElementById('delivery-status').textContent).toContain('1 partial');
+      expect(document.getElementById('delivery-batches').textContent).toContain('S:a1');
       expect(text).toContain('abcdef12');
       expect(text).toContain('#2');
       expect(text).toContain('отправка');
       expect(text).toContain('неполный');
-      expect(document.querySelector('#automation-health th:nth-child(4)').textContent).toBe('Partial');
+      expect(document.querySelector('#delivery-health th:nth-child(4)').textContent).toBe('Partial');
+
+      // The Disput export embeds the delivery report and a Markdown section.
+      const report = await window.MessageDeliveryView.buildReport();
+      expect(report.report).toBe('message-delivery');
+      expect(report.diagnosis.batches[0].waitId).toBe('wait-9');
+      expect(report.journal.length).toBe(journal.length);
+      const md = window.MessageDeliveryView.buildMarkdown(report);
+      expect(md).toContain('## Delivery');
+      expect(md).toContain('| wait-9 | S:a1 |');
+      expect(md).toContain('### Sends');
     } finally {
       window.chrome = originalChrome;
     }
   });
 
-  test('the Pipeline panel has a Batches card', () => {
-    expect(read('pipeline_panel.html')).toContain('id="automation-batches"');
+  test('the Automation tab is gone; its cards live in the Disput tab', () => {
+    const html = read('pipeline_panel.html');
+    expect(html).not.toContain('id="automation-tab"');
+    expect(html).not.toContain('id="automation-tabpanel"');
+    const disput = html.slice(html.indexOf('id="disput-tabpanel"'), html.indexOf('id="selectors0-tabpanel"'));
+    ['delivery-health', 'delivery-batches', 'delivery-problems', 'delivery-messages', 'delivery-raw']
+      .forEach((id) => expect(disput).toContain(`id="${id}"`));
+  });
+
+  test('the Disput JSON and MD exports carry the delivery section', () => {
+    const source = read('results.js');
+    expect(source).toContain("downloadDiagnosticsJson('Disput Flow', { ...(payload || {}), delivery }, disputBtn);");
+    expect(source).toContain('window.MessageDeliveryView?.buildMarkdown?.(');
+    // A remembered Automation tab opens Disput.
+    expect(source).toContain("storedTabId === 'automation-tabpanel' ? 'disput-tabpanel' : storedTabId");
   });
 });
 
