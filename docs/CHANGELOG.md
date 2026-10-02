@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-02 — The moderator input is emptied after the message is sent, version 2.81.541
+
+- Starting a run with Run took the input text as the run's task (it shows up in the feed) but left it in the input. The input is now emptied when the run starts (the manual moderator dispatch already did this). If the run cannot start (rejected start or an error other than a cancel) the text is put back, only into an empty input — never over text typed since.
+- Tests: `pipeline-semi-auto`.
+
 ### 2026-10-02 — No model is selected by default, version 2.81.540
 
 - Claude and GPT were pre-selected on the pipeline page from two places: the pipeline runtime (`defaultActive` of the first two models) and the built-in templates (`defaultModelCount` 2–3 selected the first models in the header when a template was applied). Both are gone: no model is active by default and the built-in templates store no models.

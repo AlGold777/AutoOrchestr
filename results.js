@@ -6111,6 +6111,9 @@ document.addEventListener('click', (event) => {
             // The rounds have started: "New pages" is switched off at once (the first dispatch has
             // its value in the run context; later stages continue in the pages that were opened).
             if (activePipelineRunContext.forceNewTabs) resetNewPagesCheckboxAfterOpen();
+            // The moderator's message is sent (it is the run's task and appears in the feed): the
+            // input is emptied. If the run fails to start the text is put back below.
+            clearModeratorComposer();
             await notifyPipelineControlState('STARTING', {
                 stage: 'dispatch',
                 payload: { pipelineName: pipelineNameText }
@@ -6207,6 +6210,7 @@ document.addEventListener('click', (event) => {
                     makeBatchContext
                 });
                 if (started === false && !window.DebateRunStore.isTerminal(getDebateAggregateState())) {
+                    restoreModeratorComposer(moderatorEntryText);
                     dispatchDebateRunEvent(window.DebateRunStore.EVENTS.RUN_FAILED, {
                         reason: 'universal_start_rejected'
                     });
@@ -6218,6 +6222,7 @@ document.addEventListener('click', (event) => {
                 return started;
             } catch (err) {
                 const aborted = err?.name === 'AbortError';
+                if (!aborted) restoreModeratorComposer(moderatorEntryText);
                 await notifyPipelineControlState(aborted ? 'CANCELLED' : 'FAILED', {
                     stage: aborted ? 'cancelled' : 'failed',
                     reason: aborted ? 'abort_error' : (err?.message || String(err))
@@ -21388,6 +21393,14 @@ function checkCompareButtonState() {
             || ''
         ).trim();
         return moderatorInputText || moderatorBodyText;
+    }
+    // A message that could not be sent goes back into an empty input (never over new text).
+    function restoreModeratorComposer(text) {
+        const value = String(text || '');
+        if (!value || !promptInput || !isModeratorTextarea || String(promptInput.value || '').trim()) return;
+        promptInput.value = value;
+        promptInput.dispatchEvent(new Event('input', { bubbles: true }));
+        autoGrowDebateTextarea(promptInput);
     }
     function clearModeratorComposer() {
         if (promptInput && isModeratorTextarea) {

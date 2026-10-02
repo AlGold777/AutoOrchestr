@@ -229,3 +229,20 @@ describe('no model is pre-selected', () => {
     expect(source).toContain('if (isPipelinePage && Array.isArray(protocol.selectedModels) && protocol.selectedModels.length) {');
   });
 });
+
+describe('the moderator input is emptied once the message is sent', () => {
+  test('the Run path clears it when the run starts and puts the text back if the run cannot start', () => {
+    const start = source.indexOf('const startDebateFromPage = async () => {');
+    const block = source.slice(start, start + 9000);
+    expect(block).toContain('clearModeratorComposer();');
+    expect(block.indexOf('clearModeratorComposer();')).toBeGreaterThan(block.indexOf('ownerAnswers: []'));
+    expect(source).toContain('function restoreModeratorComposer(text) {');
+    expect((source.match(/restoreModeratorComposer\(moderatorEntryText\)/g) || []).length).toBe(2);
+    // The manual moderator dispatch already clears its input.
+    expect(source.slice(source.indexOf('const startManualModeratorDispatch'), source.indexOf('const getDisputeTemplateApi'))).toContain('clearModeratorComposer();');
+  });
+
+  test('restore never overwrites text the moderator has typed since', () => {
+    expect(source).toContain("String(promptInput.value || '').trim()) return;");
+  });
+});
