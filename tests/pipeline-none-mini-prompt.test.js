@@ -1,5 +1,5 @@
 // A round's model block can choose "None": no mini prompt is attached to that block's round.
-// Universal and Test start with None; everything else keeps its previous default.
+// None is the default of every new block and round; saved pipelines restore their stored choices.
 const fs = require('fs');
 const path = require('path');
 
@@ -16,16 +16,17 @@ const render = () => {
 };
 
 describe('None in the mini prompt list of a model block', () => {
-  test('the list starts with None; a new block keeps the former default prompt', () => {
+  test('the list starts with None and a new block (a new round) defaults to it', () => {
     const [first, second] = render();
     expect(Array.from(first.options).map((option) => option.value)).toEqual(['', 'critical', 'meta_synthesis']);
     expect(first.options[0].textContent).toBe('None');
-    expect(first.value).toBe('critical');
-    expect(second.value).toBe('meta_synthesis');
+    expect(first.value).toBe('');
+    expect(second.value).toBe('');
   });
 
   test('choosing None is captured as no prompt; the other block keeps its own choice', () => {
     const selectors = render();
+    expect(Array.from(selectors).map((select) => select.value)).toEqual(['', '']);
     selectors[0].value = '';
     selectors[1].value = 'critical';
     expect(Runtime.captureModelStackState(document, 'r2-models').items.map((item) => item.role)).toEqual([null, 'critical']);

@@ -46,12 +46,12 @@
         }) || prompts.find((prompt) => String(prompt.label || '').toLowerCase().includes('meta'));
         const primaryPrompt = index > 0 ? (metaPrompt || prompts[0]) : prompts[0];
         const ordered = [primaryPrompt, ...prompts.filter((prompt) => prompt !== primaryPrompt)];
-        // "None" is first: no mini prompt is attached to the block's round. A new block keeps the
-        // former default (the first prompt); Universal and Test start with None (their saved stacks).
+        // "None" is first and the default of every new block and round: no mini prompt is attached
+        // unless the moderator picks one. Saved pipelines restore the prompt they stored.
         const options = ordered
-            .map((prompt, position) => `<option value="${escapeHtml(prompt.id)}"${position === 0 ? ' selected' : ''}>${escapeHtml(prompt.label || prompt.id)}</option>`)
+            .map((prompt) => `<option value="${escapeHtml(prompt.id)}">${escapeHtml(prompt.label || prompt.id)}</option>`)
             .join('');
-        return `<option value="">None</option>${options}`;
+        return `<option value="" selected>None</option>${options}`;
     };
 
     const buildModelBlocksHtml = ({
