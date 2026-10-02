@@ -1961,26 +1961,88 @@
 .selectors0-advanced-actions {
     display: flex;
     flex-wrap: wrap;
+}
 
+#disput-tabpanel .devtools-toolbar-actions {
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    width: auto;
+    margin: 10px 20px;
+    gap: 18px;
+}
+#disput-tabpanel .telemetry-actions {
+    justify-self: end;
+    margin-right: 0;
+}
+#disput-tabpanel .disput-only-problems-label {
+    margin-left: 0;
+    color: #64748b;
+    font-size: 13px;
+    white-space: nowrap;
+}
 #disput-tabpanel .disput-extract-controls {
     display: inline-flex;
+    justify-self: center;
     align-items: center;
-    gap: 6px;
+    gap: 4px;
     padding: 4px;
-    border: 1px solid var(--border-color, #dbe2ea);
-    border-radius: 8px;
+    background: #f1f5f9;
+    border: 1px solid #dce4ef;
+    border-radius: 13px;
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.05);
 }
 #disput-tabpanel #disput-extract {
     margin: 0;
-    padding: 6px 14px;
+    min-height: 34px;
+    padding: 8px 20px;
+    border-radius: 9px;
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    color: #ffffff;
+    font-size: 13px;
     font-weight: 600;
+    line-height: 18px;
+    white-space: nowrap;
     cursor: pointer;
+    box-shadow: 0 2px 4px rgba(37, 99, 235, 0.18);
+    transition: background 150ms ease, box-shadow 150ms ease;
+}
+#disput-tabpanel #disput-extract:hover {
+    transform: none;
+    background: #1d4ed8;
+    box-shadow: 0 3px 8px rgba(37, 99, 235, 0.25);
+}
+#disput-tabpanel #disput-extract:active {
+    background: #1e40af;
 }
 #disput-tabpanel #disput-extract-type {
-    min-width: 100px;
+    min-width: 112px;
+    min-height: 34px;
     margin: 0;
+    padding: 6px 12px;
+    border: none;
+    border-radius: 9px;
+    background-color: transparent;
+    color: #334155;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+}
+#disput-tabpanel #disput-extract:focus-visible,
+#disput-tabpanel #disput-extract-type:focus-visible {
+    outline: 2px solid #60a5fa;
+    outline-offset: 2px;
 }
 #disput-tabpanel #disput-extract:disabled {
     opacity: 0.6;
     cursor: wait;
+}
+@media (max-width: 560px) {
+    #disput-tabpanel .devtools-toolbar-actions {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        margin: 10px 12px;
+        row-gap: 12px;
+    }
+    #disput-tabpanel .disput-extract-controls {
+        grid-column: 1 / -1;
+        grid-row: 1;
+    }
 }

@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-10-03 — Centered Disput Extract controls, version 2.81.572
+
+- Extract and its selector sit in the center of the toolbar, with a blue primary button in a shared rounded group. On narrow panels they occupy a centered first row. Closed the preceding unfinished CSS rule so the Extract styles apply independently.
+
 ### 2026-10-03 — In-extension transport extraction, version 2.81.571
 
 - Disput: Only problems is off by default. Extract and its adjacent transport selector download the full Disput Flow JSON and extract_transport JSON with the same timestamp.
