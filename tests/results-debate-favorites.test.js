@@ -1370,6 +1370,97 @@ describe('Pipeline debate favorites view', () => {
     expect(cards().every((card) => card.dataset.turnClosed === 'true')).toBe(true);
   });
 
+  test('runtime answer growth keeps one round card after the waiter closes and adds paragraphs', async () => {
+    const debug = window.__pipelineLifecycleDebug;
+    const context = { pipelineRunId: 'round-card-run', pipelineRoundId: 'r1' };
+    const wait = debug.pipelineWaiter.waitForModels(['GPT'], {
+      context, requestIds: { GPT: 'round-card-request' }, timeoutMs: 600000
+    });
+    const receive = (answer, status, answerHtml = '') => {
+      const message = {
+        type: 'LLM_PARTIAL_RESPONSE', llmName: 'GPT', answer, answerHtml,
+        transportRequestId: 'round-card-request', metadata: { status }
+      };
+      chrome.runtime.onMessage.addListener.mock.calls.forEach(([listener]) => listener(message, {}, jest.fn()));
+    };
+    receive('First', 'GENERATING');
+    const card = document.querySelector('.debate-model-card[data-llm-name="GPT"]');
+    receive('First paragraph.', 'GENERATING');
+    receive('First paragraph.', 'SUCCESS');
+    await wait;
+    const output = card.querySelector('.debate-model-card-output');
+    const firstParagraph = output.querySelector('p');
+    expect(card.dataset.requestId).toBe('round-card-request');
+    expect(card.dataset.pipelineRoundId).toBe('r1');
+    expect(card.querySelector('.debate-model-card-name').nextElementSibling.textContent).toBe('R1');
+
+    receive('First paragraph. Second paragraph.', 'SUCCESS');
+    receive('First paragraph. Second paragraph. Third paragraph.', 'SUCCESS',
+      '<p>First paragraph. Second paragraph. <strong>Third paragraph.</strong></p>');
+    receive('First paragraph. Second paragraph. Third paragraph.', 'SUCCESS');
+    receive('First paragraph.', 'SUCCESS'); // a stale, shorter copy
+
+    expect(document.querySelectorAll('.debate-model-card[data-llm-name="GPT"]')).toHaveLength(1);
+    expect(output.querySelectorAll('p')).toHaveLength(3);
+    expect(output.firstElementChild).toBe(firstParagraph);
+    expect(Array.from(output.querySelectorAll('p'), (p) => p.textContent))
+      .toEqual(['First paragraph.', 'Second paragraph.', 'Third paragraph.']);
+    expect(output.querySelector('strong').textContent).toBe('Third paragraph.');
+    expect(card.querySelector('.post-terminal-badge')).toBeNull();
+    const session = debug.collectDebateArtifact().sessions.find((item) => item.sessionId === card.dataset.sessionId);
+    expect(session.turns.filter((turn) => turn.author === 'GPT')).toHaveLength(1);
+    expect(session.turns.find((turn) => turn.author === 'GPT').delivery).toMatchObject(context);
+  });
+
+  test('identical answers in R1 and R2 remain separate; late R1 growth updates only R1', () => {
+    const debug = window.__pipelineLifecycleDebug;
+    const meta = (round) => ({
+      status: 'SUCCESS', requestId: `round-${round}`, pipelineRunId: 'round-isolation', pipelineRoundId: `r${round}`
+    });
+    debug.updateLLMPanelOutput('GPT', 'Same answer.', '', meta(1));
+    debug.updateLLMPanelOutput('GPT', 'Same answer.', '', meta(2));
+    const cards = Array.from(document.querySelectorAll('.debate-model-card[data-llm-name="GPT"]'));
+    expect(cards).toHaveLength(2);
+    expect(cards.map((card) => card.querySelector('.debate-model-card-round').textContent)).toEqual(['R1', 'R2']);
+    debug.updateLLMPanelOutput('GPT', 'Same answer. Late continuation.', '', meta(1));
+    expect(cards[0].querySelector('.debate-model-card-output').textContent).toContain('Late continuation.');
+    expect(cards[1].querySelector('.debate-model-card-output').textContent).toBe('Same answer.');
+    expect(document.querySelectorAll('.debate-model-card[data-llm-name="GPT"]')).toHaveLength(2);
+  });
+
+  test('an adopted streaming round card gets its final without another card or moving the round badge', () => {
+    const debug = window.__pipelineLifecycleDebug;
+    const meta = { requestId: 'adopt-round', pipelineRunId: 'adopt-run', pipelineRoundId: 'r10' };
+    debug.updateLLMPanelOutput('GPT', 'A partial **answer', '', { ...meta, status: 'GENERATING' });
+    const card = document.querySelector('.debate-model-card[data-llm-name="GPT"]');
+    card.querySelector('.debate-approval-check').click();
+    expect(card.dataset.approved).toBe('true');
+    debug.updateLLMPanelOutput('GPT', 'A partial **answer** that is now complete.', '', { ...meta, status: 'SUCCESS' });
+    expect(document.querySelectorAll('.debate-model-card[data-llm-name="GPT"]')).toHaveLength(1);
+    expect(card.dataset.turnClosed).toBe('true');
+    expect(card.querySelector('.debate-model-card-output').textContent).toContain('now complete.');
+    expect(card.querySelector('.debate-model-card-name').nextElementSibling.textContent).toBe('R10');
+    expect(card.querySelector('.debate-model-card-round').nextElementSibling.classList.contains('debate-inline-time')).toBe(true);
+  });
+
+  test('a completed duplicate of the same round collapses without disturbing a different run', () => {
+    const debug = window.__pipelineLifecycleDebug;
+    const meta = { status: 'SUCCESS', requestId: 'duplicate-round', pipelineRunId: 'duplicate-run', pipelineRoundId: 'r1' };
+    debug.updateLLMPanelOutput('GPT', 'Original answer.', '', meta);
+    const card = document.querySelector('.debate-model-card[data-llm-name="GPT"]');
+    const duplicate = card.cloneNode(true);
+    duplicate.dataset.entryId = 'duplicate-round-card';
+    duplicate.dataset.messageId = duplicate.dataset.entryId;
+    document.getElementById('debate-model-cards').appendChild(duplicate);
+    debug.updateLLMPanelOutput('GPT', 'Original answer. Extra paragraph.', '', meta);
+    expect(document.querySelectorAll('.debate-model-card[data-llm-name="GPT"]')).toHaveLength(1);
+    expect(card.isConnected).toBe(true);
+    debug.updateLLMPanelOutput('GPT', 'Original answer.', '', {
+      ...meta, requestId: 'next-run-request', pipelineRunId: 'next-run'
+    });
+    expect(document.querySelectorAll('.debate-model-card[data-llm-name="GPT"]')).toHaveLength(2);
+  });
+
   test('debate approval waiter rejects and cleans up on abort', async () => {
     const debug = window.__pipelineLifecycleDebug;
     const controller = new AbortController();
@@ -1451,6 +1542,7 @@ describe('Pipeline debate favorites view', () => {
             text: 'Restored transcript answer',
             status: 'approved',
             terminalStatus: 'SUCCESS',
+            delivery: { pipelineRunId: 'restored-run', pipelineRoundId: 'r2', requestId: 'restored-request' },
             createdAt: '2026-06-11T19:01:00.000Z',
             completedAt: '2026-06-11T19:02:00.000Z',
             approvedAt: '2026-06-11T19:02:00.000Z'
@@ -1464,12 +1556,21 @@ describe('Pipeline debate favorites view', () => {
     expect(document.querySelectorAll('#debate-model-cards .debate-model-card[data-session-id="restore-1"]')).toHaveLength(2);
     expect(document.getElementById('debate-model-cards').textContent).toContain('Restore this debate prompt');
     expect(document.getElementById('debate-model-cards').textContent).toContain('Restored transcript answer');
+    const restoredCard = document.querySelector('.debate-model-card[data-turn-id="turn-restore-gpt"]');
+    expect(restoredCard.querySelector('.debate-model-card-name').nextElementSibling.textContent).toBe('R2');
+    expect(restoredCard.querySelector('.debate-model-card-round').nextElementSibling.classList.contains('debate-inline-time')).toBe(true);
 
     const artifact = debug.collectDebateArtifact();
     const session = artifact.sessions.find((item) => item.sessionId === 'restore-1');
     expect(session.turns).toEqual(expect.arrayContaining([
       expect.objectContaining({ turnId: 'turn-restore-gpt', terminalStatus: 'SUCCESS', status: 'approved' })
     ]));
+    debug.updateLLMPanelOutput('GPT', 'Restored transcript answer More after restore.', '', {
+      transportRequestId: 'restored-request', status: 'SUCCESS'
+    });
+    expect(document.querySelectorAll('.debate-model-card[data-turn-id="turn-restore-gpt"]')).toHaveLength(1);
+    expect(restoredCard.querySelectorAll('.debate-model-card-output p')).toHaveLength(2);
+    expect(restoredCard.querySelector('.debate-model-card-round').textContent).toBe('R2');
   });
 
   test('Action chips never become moderator dispatch text', () => {

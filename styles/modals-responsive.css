@@ -1715,6 +1715,23 @@ body.pro-features-hidden .comparison-section {
     line-height: 1.1;
     cursor: default;
 }
+.debate-model-card .debate-model-card-round {
+    display: inline-flex;
+    box-sizing: border-box;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 1px solid var(--border-color, #dee2e6);
+    background: var(--pipeline-bg, #f8fafc);
+    color: var(--pipeline-muted, #64748b);
+    font-size: 10px !important;
+    font-weight: 600;
+    line-height: 1;
+    white-space: nowrap;
+}
 .debate-model-card-role {
     display: inline-flex;
     align-items: center;

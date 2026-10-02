@@ -3078,6 +3078,17 @@ document.addEventListener('click', (event) => {
             || PIPELINE_TERMINAL_STATUSES.has(PIPELINE_TRANSPORT.normalizeStatus(envelope.status))
         );
     };
+    const debateFeedMessageMeta = (message) => {
+        const envelope = normalizePipelineMessageEnvelope(message);
+        return {
+            ...envelope.metadata,
+            transportRequestId: envelope.transportRequestId,
+            pipelineRunId: envelope.pipelineRunId,
+            pipelineRoundId: envelope.pipelineRoundId,
+            requestId: envelope.transportRequestId || message.requestId || envelope.metadata.requestId || '',
+            status: envelope.status
+        };
+    };
     const hasOwnKey = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
     // A wait holds something to close with: a final answer or shown, unfinished text.
     const hasAnyAnswer = (batch) => Object.keys(batch.responses).length > 0
@@ -3088,6 +3099,8 @@ document.addEventListener('click', (event) => {
     // model name alone; concurrent batches share no state. Every wait has
     // exactly one outcome: resolved, timed out or cancelled (AbortError).
     const pipelineWaiter = {
+        // Keep round identities after settlement, for late answer growth in the feed.
+        responseContexts: new Map(),
         batches: new Map(),
         requests: new Map(),
         nextBatchSeq: 0,
@@ -3131,6 +3144,11 @@ document.addEventListener('click', (event) => {
                 reject: rejectBatch
             };
             this.batches.set(batchId, batch);
+            normalized.forEach((name) => this.responseContexts.set(ids[name], {
+                pipelineRunId: context?.pipelineRunId || '',
+                pipelineRoundId: context?.pipelineRoundId || '',
+                sessionId: context?.sessionId || '1'
+            }));
             this.startStallWatch();
             normalized.forEach((name) => this.requests.set(ids[name], { batchId, llmName: name }));
             batch.timeoutId = setTimeout(() => this.finalizeBatch(batch, true), timeoutMs);
@@ -5712,6 +5730,13 @@ document.addEventListener('click', (event) => {
             }
             const sourceView = getCurrentViewKey();
             const stageId = String(context?.stageId || context?.pipelineStageId || aggregate?.currentStageId || '').trim();
+            const stages = debateApplication?.getOrchestrator?.()?.getState?.()?.stages || [];
+            const stageIndex = context?.pipelineRunId
+                ? stages.findIndex((stage) => stage.stageInstanceId === stageId && stage.runId === context.pipelineRunId)
+                : -1;
+            const roundLabel = String(stages[stageIndex]?.label || '').match(/^R(\d+)$/i);
+            const pipelineRoundId = context?.pipelineRoundId
+                || (roundLabel ? `r${Number(roundLabel[1])}` : stageIndex >= 0 ? `r${stageIndex + 1}` : '');
             const requestedAttemptId = String(context?.stageAttemptId || '').trim();
             const attemptNumber = requestedAttemptId ? null : (debateStageAttemptCounters.get(stageId || 'unscoped') || 0) + 1;
             if (attemptNumber != null) debateStageAttemptCounters.set(stageId || 'unscoped', attemptNumber);
@@ -5720,6 +5745,8 @@ document.addEventListener('click', (event) => {
                 debateRunId: String(aggregate?.runId || activePipelineRunContext?.pipelineRunId || context?.pipelineRunId || '').trim(),
                 planId: String(aggregate?.executionPlan?.planId || '').trim(),
                 stageId,
+                pipelineRoundId,
+                sessionId: context?.sessionId || debateTabsState.activeSessionId || '1',
                 stageAttemptId: requestedAttemptId || `${stageId || (context?.manualModeratorDispatch ? 'manual' : 'unscoped')}:a${attemptNumber}`,
                 sourceView,
                 transportRequestIds,
@@ -16544,7 +16571,8 @@ document.addEventListener('click', (event) => {
                 : '';
         }
         updateDebateModelCardOutput(llmName, answerText, answerHtml, {
-            source: 'GLOBAL_STATE_ANSWER_RECOVERY'
+            source: 'GLOBAL_STATE_ANSWER_RECOVERY',
+            transportRequestId: entry?.transportRequestId || ''
         });
         return true;
     }
@@ -17104,10 +17132,7 @@ document.addEventListener('click', (event) => {
                             html: String(message.answerHtml || message.html || '')
                         };
                     })();
-                    updateDebateModelCardOutput(message.llmName, previewPayload.text, previewPayload.html, {
-                        ...(message.metadata || {}),
-                        requestId: message.requestId || message.metadata?.requestId || ''
-                    });
+                    updateDebateModelCardOutput(message.llmName, previewPayload.text, previewPayload.html, debateFeedMessageMeta(message));
                     const revealManualPing = manualPingReveal.has(message.llmName);
                     if (revealManualPing) {
                         const answerText = (() => {
@@ -17124,10 +17149,7 @@ document.addEventListener('click', (event) => {
                         )]);
                     }
                     if (autoMode || revealManualPing) {
-                        updateLLMPanelOutput(message.llmName, message.answer, message.answerHtml || message.html || '', {
-                            ...(message.metadata || {}),
-                            requestId: message.requestId || message.metadata?.requestId || ''
-                        });
+                        updateLLMPanelOutput(message.llmName, message.answer, message.answerHtml || message.html || '', debateFeedMessageMeta(message));
                         if (revealManualPing) {
                             manualPingReveal.delete(message.llmName);
                         }
@@ -17156,9 +17178,8 @@ document.addEventListener('click', (event) => {
                 case 'LLM_FINAL_RESPONSE':
                 case 'FINAL_LLM_RESPONSE': {
                     const finalMeta = {
-                        ...(message.metadata || {}),
-                        status: message.metadata?.status || message.status || message.finalStatus || 'SUCCESS',
-                        requestId: message.requestId || message.metadata?.requestId || ''
+                        ...debateFeedMessageMeta(message),
+                        status: message.metadata?.status || message.status || message.finalStatus || 'SUCCESS'
                     };
                     if (message.answer != null || message.answerHtml != null || message.html != null) {
                         updateLLMPanelOutput(message.llmName, message.answer, message.answerHtml || message.html || '', finalMeta);
@@ -17206,10 +17227,7 @@ document.addEventListener('click', (event) => {
                     }
                     break;
                 case 'UPDATE_LLM_PANEL_OUTPUT':
-                    updateLLMPanelOutput(message.llmName, message.answer, message.answerHtml || message.html || '', {
-                        ...(message.metadata || {}),
-                        requestId: message.requestId || message.metadata?.requestId || ''
-                    });
+                    updateLLMPanelOutput(message.llmName, message.answer, message.answerHtml || message.html || '', debateFeedMessageMeta(message));
                     break;
                 case 'LLM_DIAGNOSTIC_EVENT':
                     if (Array.isArray(message.logs) && message.logs.length) {
@@ -20315,6 +20333,14 @@ function checkCompareButtonState() {
             order: typeof prev?.order === 'number' ? prev.order : debateFeedState.nextId++,
             updatedAt: Date.now()
         };
+        if (card.dataset.pipelineRoundId) {
+            message.delivery = {
+                ...message.delivery,
+                pipelineRunId: card.dataset.pipelineRunId || '',
+                pipelineRoundId: card.dataset.pipelineRoundId,
+                requestId: card.dataset.requestId || ''
+            };
+        }
         if (!message.turnId) message.turnId = `turn-${message.id}`;
         if (!message.responseId && (message.kind === 'model' || message.kind === 'fragment')) {
             message.responseId = `response-${message.id}`;
@@ -20733,6 +20759,7 @@ function checkCompareButtonState() {
         const timeEl = card.querySelector('.debate-model-card-time');
         const titleMainEl = card.querySelector('.debate-model-card-title-main');
         const nameEl = card.querySelector('.debate-model-card-name');
+        syncDebateCardRound(card);
 
         if (isModerator) {
             card.dataset.approved = 'true';
@@ -20751,8 +20778,9 @@ function checkCompareButtonState() {
             if (timeEl && titleMainEl) {
                 timeEl.classList.remove('msg-time');
                 timeEl.classList.add('debate-inline-time');
-                const referenceEl = nameEl?.nextSibling || titleMainEl.firstChild;
-                if (timeEl.parentElement !== titleMainEl || timeEl.previousElementSibling !== nameEl) {
+                const roundEl = card.querySelector('.debate-model-card-round') || nameEl;
+                const referenceEl = roundEl?.nextSibling || titleMainEl.firstChild;
+                if (timeEl.parentElement !== titleMainEl || timeEl.previousElementSibling !== roundEl) {
                     titleMainEl.insertBefore(timeEl, referenceEl);
                 }
             }
@@ -20828,6 +20856,8 @@ function checkCompareButtonState() {
         card.dataset.approved = (status === 'approved' || kind === 'moderator') ? 'true' : 'false';
         card.dataset.approvalSelectable = status === 'pending' && !isDebateApprovalAutoMode() ? 'true' : 'false';
         card.dataset.live = status === 'printing' ? 'true' : 'false';
+        card.dataset.turnClosed = status === 'printing' ? 'false' : 'true';
+        setDebateCardRound(card, turn.delivery || {});
         const approvalHtml = status === 'pending' && kind !== 'moderator' ? buildApprovalCheckboxHtml(true) : '';
         card.innerHTML = `
             <div class="debate-model-card-header">
@@ -21234,29 +21264,69 @@ function checkCompareButtonState() {
         marker.textContent = meta.attributionLabel || 'Attribution unverified';
         marker.title = 'The content is complete, but its ownership by the current request is not proven.';
     }
-    // A model has at most ONE open (not-yet-approved) answer card per session.
+    function resolveDebateFeedMeta(meta = {}) {
+        const requestId = String(meta.transportRequestId || meta.requestId || '').trim();
+        const context = pipelineWaiter.responseContexts.get(requestId) || {};
+        return {
+            ...meta,
+            requestId,
+            pipelineRunId: String(meta.pipelineRunId || context.pipelineRunId || '').trim(),
+            pipelineRoundId: String(meta.pipelineRoundId || meta.roundId || context.pipelineRoundId || '').trim().toLowerCase()
+        };
+    }
+    function syncDebateCardRound(card) {
+        const match = String(card.dataset.pipelineRoundId || '').match(/^r(\d+)$/i);
+        const name = card.querySelector('.debate-model-card-name');
+        if (!match || !name || card.dataset.kind === 'moderator' || card.dataset.kind === 'fragment') return;
+        let badge = card.querySelector('.debate-model-card-round');
+        if (!badge) {
+            badge = document.createElement('span');
+            badge.className = 'debate-model-card-round';
+        }
+        badge.textContent = `R${Number(match[1])}`;
+        badge.title = `Round ${Number(match[1])}`;
+        badge.setAttribute('aria-label', badge.title);
+        if (name.nextElementSibling !== badge) name.after(badge);
+    }
+    function setDebateCardRound(card, meta = {}) {
+        if (meta.pipelineRoundId) card.dataset.pipelineRoundId = meta.pipelineRoundId;
+        if (meta.pipelineRunId) card.dataset.pipelineRunId = meta.pipelineRunId;
+        if (meta.requestId) card.dataset.requestId = meta.requestId;
+        syncDebateCardRound(card);
+    }
+    function matchesDebateCardRound(card, meta = {}) {
+        return card.dataset.pipelineRoundId === meta.pipelineRoundId
+            && String(card.dataset.pipelineRunId || '') === String(meta.pipelineRunId || '');
+    }
+    // A model has at most ONE answer card per round, including completed cards.
+    // Legacy responses without round identity reuse the open card of their request.
     // Returns that single card to update in place, collapsing any stray
     // duplicates so the same answer is never shown twice (whole or partial).
-    // Approved cards (debate history), moderator cards and starred fragments are
-    // left untouched.
+    // Cards of other rounds, moderator cards and fragments are left untouched.
     function resolveSingleDebateAnswerCard(session, llmName, options = {}) {
         if (!debateModelCards || !session || !llmName) return null;
-        const requestId = String(options.requestId || '').trim();
+        const meta = resolveDebateFeedMeta(options);
+        const requestId = meta.requestId;
         const matches = Array.from(debateModelCards.querySelectorAll('.debate-model-card'))
             .filter((card) => (
                 card.dataset.sessionId === session.id
                 && card.dataset.llmName === llmName
-                && card.dataset.turnClosed !== 'true'
-                && card.dataset.approved !== 'true'
                 && card.dataset.kind !== 'moderator'
                 && card.dataset.kind !== 'fragment'
-                && card.dataset.starred !== 'true'
-                && (!requestId || card.dataset.requestId === requestId || card.dataset.entryKind === 'placeholder')
+                && (meta.pipelineRoundId
+                    ? (matchesDebateCardRound(card, meta)
+                        || (card.dataset.entryKind === 'placeholder' && !card.dataset.pipelineRoundId))
+                    : (card.dataset.turnClosed !== 'true'
+                        && card.dataset.approved !== 'true'
+                        && card.dataset.starred !== 'true'
+                        && (!requestId || card.dataset.requestId === requestId || card.dataset.entryKind === 'placeholder')))
             ));
         if (!matches.length) return null;
-        const preferred = matches.find((card) => (
+        const preferred = (meta.pipelineRoundId && matches.find((card) => (
+            card.dataset.approved === 'true' || card.dataset.starred === 'true'
+        ))) || matches.find((card) => (
             card.dataset.live === 'true' || card.dataset.entryKind === 'placeholder'
-        )) || matches[matches.length - 1];
+        )) || (meta.pipelineRoundId ? matches[0] : matches[matches.length - 1]);
         matches.forEach((card) => {
             if (card === preferred) return;
             removeDebateCardMessage(card);
@@ -21341,10 +21411,60 @@ function checkCompareButtonState() {
         const probe = document.createElement('div');
         document.createElement('div').appendChild(probe); // the renderer replaces the node in its parent
         renderDebateResponseBody(probe, text, html);
-        return String(probe.innerText || probe.textContent || '').replace(/\s+/g, ' ').trim();
+        return debateRenderedPlainText(probe);
+    }
+    function debateRenderedPlainText(element) {
+        if (!element) return '';
+        const clone = element.cloneNode(true);
+        clone.querySelectorAll('p, div, li, pre, blockquote, tr, h1, h2, h3, h4, h5, h6, br')
+            .forEach((block) => block.appendChild(document.createTextNode('\n')));
+        return cleanFeedText(clone.textContent).replace(/\s+/g, ' ').trim();
+    }
+    function appendDebateResponseGrowth(output, text, html, previousShown) {
+        const continuation = document.createElement('div');
+        document.createElement('div').appendChild(continuation);
+        renderDebateResponseBody(continuation, text, html);
+        // Strip the already shown prefix from the rendered DOM, preserving rich
+        // formatting in the new part. Block boundaries need no literal whitespace.
+        const prefix = new RegExp(`^\\s*${previousShown.split(/\s+/).map(escapeRegExp).join('\\s*')}\\s*`)
+            .exec(continuation.textContent || '');
+        if (!prefix) {
+            renderDebateResponseBody(output, text, html);
+            return;
+        }
+        let remaining = prefix[0].length;
+        const walker = document.createTreeWalker(continuation, NodeFilter.SHOW_TEXT);
+        let node;
+        while ((node = walker.nextNode())) {
+            if (remaining > node.textContent.length) {
+                remaining -= node.textContent.length;
+                continue;
+            }
+            const range = document.createRange();
+            range.setStart(continuation, 0);
+            range.setEnd(node, remaining);
+            range.deleteContents();
+            break;
+        }
+        while (continuation.firstChild && !continuation.firstChild.textContent.trim()) {
+            continuation.firstChild.remove();
+        }
+        continuation.querySelectorAll('p, li, h1, h2, h3, h4, h5, h6').forEach((block) => {
+            if (!block.textContent.trim() && !block.querySelector('img, svg, video, audio')) block.remove();
+        });
+        if (!continuation.childNodes.length) return;
+        // Plain inline HTML also gets its own paragraph.
+        if (!continuation.querySelector('p, div, ul, ol, pre, blockquote, table, h1, h2, h3, h4, h5, h6')) {
+            const paragraph = document.createElement('p');
+            paragraph.append(...continuation.childNodes);
+            continuation.appendChild(paragraph);
+        }
+        output.append(...continuation.childNodes);
     }
     function appendPostTerminalAnswerRevision(session, llmName, text, html = '', meta = {}) {
         if (!debateModelCards || !session || !llmName) return false;
+        meta = resolveDebateFeedMeta(meta);
+        if (meta.pipelineRoundId) resolveSingleDebateAnswerCard(session, llmName, meta);
         const requestId = String(meta.requestId || '').trim();
         // Same cleaning as the live path (delivery token, instruction echo, trailing
         // blanks): a re-emitted copy of the shown answer is not a revision.
@@ -21358,6 +21478,7 @@ function checkCompareButtonState() {
                 && card.dataset.kind !== 'moderator'
                 && card.dataset.kind !== 'fragment'
                 && card.dataset.kind !== 'revision'
+                && (!meta.pipelineRoundId || matchesDebateCardRound(card, meta))
                 // Settled for the live path: closed, or taken by the moderator
                 // (approved — Next/Pause adopt a still-printing card), or starred.
                 && (card.dataset.turnClosed === 'true' || card.dataset.approved === 'true' || card.dataset.starred === 'true')
@@ -21371,11 +21492,10 @@ function checkCompareButtonState() {
             card.dataset.live = 'false';
             card.dataset.turnClosed = 'true';
         };
-        const shownTextOf = (card) => cleanFeedText(card.querySelector('.debate-model-card-output')?.innerText
-            || card.querySelector('.debate-model-card-output')?.textContent || '').replace(/\s+/g, ' ').trim();
+        const shownTextOf = (card) => debateRenderedPlainText(card.querySelector('.debate-model-card-output'));
         const incomingShown = renderedAnswerPlainText(normalizedText, normalizedHtml);
         const sameRequest = closedCards.filter((card) => (
-            !requestId || !card.dataset.requestId || card.dataset.requestId === requestId
+            meta.pipelineRoundId || !requestId || !card.dataset.requestId || card.dataset.requestId === requestId
         ));
         // A repeat of an answer under another request id (re-send, recovery, late
         // partial) belongs to the card it repeats: one message per model per round.
@@ -21385,6 +21505,7 @@ function checkCompareButtonState() {
         });
         const targetCard = sameRequest[sameRequest.length - 1] || repeated[repeated.length - 1] || null;
         if (!targetCard) return false;
+        setDebateCardRound(targetCard, meta);
         const primaryOutput = targetCard.querySelector('.debate-model-card-output');
         const primaryText = shownTextOf(targetCard);
         // Nothing new: the same text, or an older/shorter copy of what is shown.
@@ -21402,7 +21523,8 @@ function checkCompareButtonState() {
         if (incomingShown && primaryText && (incomingShown.startsWith(primaryText) || provisional)) {
             const now = new Date();
             const timeLabel = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-            renderDebateResponseBody(primaryOutput, normalizedText, normalizedHtml);
+            if (provisional) renderDebateResponseBody(primaryOutput, normalizedText, normalizedHtml);
+            else appendDebateResponseGrowth(primaryOutput, normalizedText, normalizedHtml, primaryText);
             const timeEl = targetCard.querySelector('.debate-model-card-time');
             if (timeEl) timeEl.textContent = timeLabel;
             syncDebateCardOutputLayout(targetCard);
@@ -21457,6 +21579,7 @@ function checkCompareButtonState() {
     const cleanFeedHtml = (value) => (window.MessageDelivery ? window.MessageDelivery.cleanHtml(value) : String(value || ''));
     function appendDebateFeedEntry(llmName, text, html = '', meta = {}) {
         if (!debateModelCards || !llmName) return;
+        meta = resolveDebateFeedMeta(meta);
         const normalizedText = cleanFeedText(text);
         const normalizedHtml = sanitizeInlineHtml(cleanFeedHtml(String(html || '').trim()));
         if (!normalizedText && !normalizedHtml) return;
@@ -21466,12 +21589,12 @@ function checkCompareButtonState() {
         const isFinal = isFinalResponseMeta(meta);
         const attributionState = String(meta.attributionState || '');
         const contentHash = `${isFinal ? 'final' : 'printing'}|${attributionState}|${normalizedText.length}:${normalizedText.slice(0, 64)}|${normalizedHtml.length}:${normalizedHtml.slice(0, 64)}`;
-        const contentScopeKey = `${modelKey}:${requestId || 'unscoped'}`;
+        const contentScopeKey = `${modelKey}:${meta.pipelineRunId}:${meta.pipelineRoundId}:${requestId || 'unscoped'}`;
         if (debateFeedState.lastCommittedHashByModel[contentScopeKey] === contentHash) return;
         debateFeedState.lastCommittedHashByModel[contentScopeKey] = contentHash;
-        const liveCard = resolveSingleDebateAnswerCard(session, llmName, { requestId });
+        const liveCard = resolveSingleDebateAnswerCard(session, llmName, meta);
         if (liveCard) {
-            if (requestId) liveCard.dataset.requestId = requestId;
+            setDebateCardRound(liveCard, meta);
             liveCard.dataset.entryKind = 'response';
             liveCard.dataset.kind = meta.kind || 'answer';
             liveCard.dataset.starred = liveCard.dataset.starred || 'false';
@@ -21549,6 +21672,7 @@ function checkCompareButtonState() {
             </div>
             <div class="debate-model-card-output"></div>
         `;
+        setDebateCardRound(card, meta);
         applyAttributionMarker(card, meta);
         updateCardRole(card, meta.role || '');
         const body = card.querySelector('.debate-model-card-output');
@@ -22096,6 +22220,12 @@ function checkCompareButtonState() {
     function clearDebateFeed(activeSessionId = '') {
         if (!debateModelCards) return;
         const targetSessionId = activeSessionId || debateTabsState.activeSessionId;
+        pipelineWaiter.responseContexts.forEach((context, requestId) => {
+            if (context.sessionId === targetSessionId) pipelineWaiter.responseContexts.delete(requestId);
+        });
+        Object.keys(debateFeedState.lastCommittedHashByModel).forEach((key) => {
+            if (key.startsWith(`${targetSessionId}:`)) delete debateFeedState.lastCommittedHashByModel[key];
+        });
         Array.from(debateModelCards.children).forEach((card) => {
             if (card instanceof HTMLElement && card.dataset.sessionId === targetSessionId) {
                 removeDebateCardMessage(card);

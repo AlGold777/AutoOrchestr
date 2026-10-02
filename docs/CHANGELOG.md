@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-02 — Round badges and one answer card per model per round, version 2.81.564
+
+- The pipeline feed shows a compact circular `R1`, `R2`, … badge immediately after the model name, including approved and restored cards.
+- Each round is one request. Its transport identity remains associated with the round after the answer waiter closes; partial, final and recovery deliveries reuse the same model/round card. Identical answers in different rounds stay separate, and a late continuation of R1 cannot update R2.
+- Post-completion growth appends the new content as another paragraph in the original card, preserving its earlier paragraphs and rich formatting. Repeated and shorter copies add nothing; corrections continue to use the existing update popover.
+- Tests: `results-debate-favorites` (runtime deliveries, multiple continuations, round/run isolation, adopted answers, duplicate cleanup, restore), `pipeline-feed-layout`, `debate-engine`, `debate-export`, pipeline waiters.
+
 ### 2026-10-02 — Telemetry: the Automation tab is merged into Disput, version 2.81.563
 
 - **One tab, one report.** The delivery cards (Delivery Health, Delivery Batches, Delivery Problems, Message Timeline, Raw Delivery Events) moved from the Automation tab into the Disput tab; the Automation tab is removed. The Disput model filter, «Only problems» and Clear drive them too (Clear also empties the delivery journal). A remembered Automation tab opens Disput.

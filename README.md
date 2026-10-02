@@ -3,6 +3,10 @@
 Chrome MV3 extension for dispatching prompts to multiple LLM web interfaces,
 collecting answers, and running Debate pipelines.
 
+Pipeline answer cards show a small round badge beside the model name (`GPT R1`).
+Each model has one card per round: streaming updates reuse it, and later answer
+growth adds paragraphs to the same card. The next round gets a separate card.
+
 ## Start here
 
 - Documentation map and writing rules: [docs/documentation-map.md](docs/documentation-map.md)
