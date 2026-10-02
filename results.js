@@ -4857,18 +4857,14 @@ document.addEventListener('click', (event) => {
         window.__projectDebateTurns = (sessionId = null) => window.DebateProjections?.projectTurns?.(
             getDebateAggregateState(), sessionId == null ? {} : { sessionId }
         ) || [];
+        // A run that was left unfinished when the page closed is NOT adopted as a "technical pause":
+        // that took the Run button (it showed "pause" right after a reload, before any model was
+        // chosen, and kept it) and its "Continue" only restarted the run anyway. It is dropped; a new
+        // run starts from the button as usual.
         void debateTransportPort?.recoverRun?.().then((recovered) => {
             if (!recovered || window.DebateRunStore.isTerminal(recovered)) return;
-            debateAggregateStore.replace(recovered);
-            activePipelineRunContext = {
-                pipelineRunId: recovered.runId, sessionId: recovered.sessionId,
-                startedAt: recovered.startedAt || Date.now(), recovered: true
-            };
-            pipelineRunActive = false;
-            debatePaused = true;
-            dispatchDebateRunEvent(window.DebateRunStore.EVENTS.TECHNICAL_PAUSE, { reason: 'page_runtime_recovered' });
-            syncPipelineFlowVisualState();
-            updateDebateButtonsUi();
+            console.info('[RESULTS] Unfinished Debate run dropped at page load', { runId: recovered.runId, status: recovered.status });
+            return debateTransportPort?.clearRecovery?.();
         }).catch?.((err) => console.warn('[RESULTS] Debate run recovery failed', err));
         const makeInitialRuntimeState = () => window.DebateFSM.createState();
         const getSerialDebateState = () => getDebateAggregateState()?.protocolState || makeInitialRuntimeState();

@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-02 — The Run button no longer shows "pause" after a reload, version 2.81.537
+
+- At page load a Debate run that was left unfinished (a run stuck by the earlier dropout defect, a run paused by the engine, a closed page) was adopted as a **technical pause**: the Run button showed "pause" right after the reload, before any model was chosen, and kept it when models were selected; its "Continue" only restarted the run. The unfinished run is now dropped at load (`clearRecovery`, console info `Unfinished Debate run dropped at page load`) and the button stays "Run". Since the engine now pauses by itself (after stages, gates, questions), such runs are common.
+- Tests: `pipeline-semi-auto`.
+
 ### 2026-10-02 — Merge of the pipeline panel layout work, version 2.81.536
 
 - Integrates the parallel layout change (2.81.535: collapsed top bar spacing, duplicate pause button removed) with the dropout/DeepSeek fixes; no behavior changes beyond that.

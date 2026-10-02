@@ -177,3 +177,19 @@ describe('moderator-driven runs get no automatic page visits', () => {
     expect(orch).toContain("jobState.session.runMode = String(pipelineContext?.runMode || '') || null;");
   });
 });
+
+describe('an unfinished run does not take the Run button after a reload', () => {
+  test('page load drops the recovered run instead of adopting it as a technical pause', () => {
+    const from = source.indexOf('debateTransportPort?.recoverRun?.()');
+    const block = source.slice(from, source.indexOf("Debate run recovery failed", from));
+    expect(block).toContain('debateTransportPort?.clearRecovery?.()');
+    expect(block).not.toContain('page_runtime_recovered');
+    expect(block).not.toContain('debatePaused = true');
+    expect(block).not.toContain('debateAggregateStore.replace(recovered)');
+  });
+
+  test('the transport port can clear the stored run', () => {
+    const transport = fs.readFileSync(path.join(__dirname, '..', 'results', 'debate-transport.js'), 'utf8');
+    expect(transport).toContain('clearRecovery()');
+  });
+});
