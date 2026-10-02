@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-02 — Preserve round identity across recovered and deferred answers, version 2.81.567
+
+- The field report from 2.81.564 ends with two copies of Gemini's stage-three answer. Round/run identity is now stored on each background model entry and carried by live deliveries, manual recovery and global-state snapshots, so the badge also survives a panel reload without its in-memory waiter registry.
+- Global-state hydration applies the persisted answer status and round. An already displayed or approved recovery card without a round can receive its badge later through the same request identity; the existing card and paragraphs are retained instead of creating a duplicate.
+- Deferred manual-mode answers retain their delivery metadata when Get it displays them, so an earlier round's answer cannot be attached to the latest completed round.
+- Tests: recovered Gemini R3 followed by repeated manual/final delivery and paragraph growth, late round identity on an approved card, deferred cross-round replay, producing-entry identity and storage compaction.
+
 ### 2026-10-02 — Keep round badges on incomplete recovered answers, version 2.81.566
 
 - Manual answer recovery now carries the model entry's transport identity through to the feed, so an incomplete recovered answer displays its actual round badge (for example, `DeepSeek R3 uncompleted`). Unverified global-state recovery also preserves that identity.

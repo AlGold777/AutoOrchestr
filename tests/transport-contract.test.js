@@ -2,6 +2,7 @@
 // Transport contract between the Pipeline panel and the background.
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 const Contract = require('../shared/transport-contract.js');
 
 const read = (rel) => fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
@@ -64,18 +65,44 @@ describe('background transport identity', () => {
 
   test('the panel request id is stored on the model entry and survives compaction', () => {
     expect(orchestrator).toContain('jobState.llms[llmName].transportRequestId = String(pipelineContext?.transportRequestIds?.[llmName]');
+    expect(orchestrator).toContain('jobState.llms[llmName].pipelineRunId = String(pipelineContext?.pipelineRunId');
+    expect(orchestrator).toContain('jobState.llms[llmName].pipelineRoundId = String(pipelineContext?.pipelineRoundId');
     const PipelineFSM = require('../shared/pipeline-fsm.js');
     const compacted = PipelineFSM.compactJobStateForStorage({
       prompt: 'shared',
       session: { startTime: 1, promptsByModel: { GPT: 'role prompt [[AO-abcdef]]' }, pipelineContext: { pipelineRunId: 'run-1' } },
-      llms: { GPT: { llmName: 'GPT', transportRequestId: 'treq-1' } }
+      llms: { GPT: { llmName: 'GPT', transportRequestId: 'treq-1', pipelineRunId: 'run-1', pipelineRoundId: 'r3' } }
     });
     expect(compacted.llms.GPT.transportRequestId).toBe('treq-1');
+    expect(compacted.llms.GPT.pipelineRunId).toBe('run-1');
+    expect(compacted.llms.GPT.pipelineRoundId).toBe('r3');
     expect(compacted.session.promptsByModel.GPT).toBe('role prompt [[AO-abcdef]]');
     expect(compacted.session.pipelineContext).toEqual({ pipelineRunId: 'run-1' });
   });
 
   test('global state snapshot exposes the request identity for recovery', () => {
     expect(read('background/ui-broadcast.js')).toContain('transportRequestId: entry?.transportRequestId || null');
+  });
+
+  test('answer deliveries and global recovery retain their producing round when the session moves on', () => {
+    const entry = {
+      answer: 'Recovered Gemini answer.', finalStatus: 'SUCCESS', finalStatusRecorded: true,
+      transportRequestId: 'gemini-r3', pipelineRunId: 'previous-run', pipelineRoundId: 'r3',
+      lastDispatchMeta: { dispatchId: 'gemini-dispatch' }
+    };
+    const context = vm.createContext({
+      jobState: { session: { pipelineRunId: 'new-run', pipelineRoundId: 'r1' }, llms: { Gemini: entry } },
+      TabMapManager: { get: () => 42, entries: () => [] }, resultsTabId: 7, self: {}
+    });
+    const start = orchestrator.indexOf('function transportIdentityFor(entry)');
+    vm.runInContext(orchestrator.slice(start, orchestrator.indexOf('function isStaleBaselineCandidate', start)), context);
+    const expectedIdentity = {
+      transportRequestId: 'gemini-r3', pipelineRunId: 'previous-run', pipelineRoundId: 'r3', dispatchId: 'gemini-dispatch'
+    };
+    expect(context.transportIdentityFor(entry)).toEqual(expectedIdentity);
+    vm.runInContext(read('background/ui-broadcast.js'), context);
+    expect(context.buildGlobalStateSnapshot({ includeAnswers: true }).llms.Gemini).toMatchObject({
+      ...expectedIdentity, answer: entry.answer
+    });
   });
 });

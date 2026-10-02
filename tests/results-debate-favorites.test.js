@@ -166,6 +166,7 @@ function renderDebateDom() {
       </select>
       <button id="debate-auto-toggle-btn" type="button">Auto off</button>
       <input id="auto-checkbox" type="checkbox" hidden aria-hidden="true">
+      <button id="get-it-button" type="button">Get it</button>
       <input id="new-pages-checkbox" type="checkbox" checked>
       <select id="mod-sender-select">
         <option value="Moderator" selected>Moderator</option>
@@ -1455,6 +1456,93 @@ describe('Pipeline debate favorites view', () => {
     debug.updateLLMPanelOutput('DeepSeek', 'Text already shown.', '', { ...meta, status: 'SUCCESS' });
     expect(card.querySelector('.answer-partial-mark')).toBeNull();
     expect(card.querySelector('.debate-model-card-round')).toBe(badge);
+  });
+
+  test('recovered Gemini R3 and its repeated final keep one badged card without an in-memory waiter', () => {
+    const debug = window.__pipelineLifecycleDebug;
+    const receive = (message) => {
+      chrome.runtime.onMessage.addListener.mock.calls.forEach(([listener]) => listener(message, {}, jest.fn()));
+    };
+    debug.updateLLMPanelOutput('DeepSeek', 'Incomplete preceding answer.', '', {
+      status: 'PARTIAL', requestId: 'report-deepseek', pipelineRunId: 'report-run', pipelineRoundId: 'r2'
+    });
+    const identity = {
+      transportRequestId: 'report-gemini-r3', pipelineRunId: 'report-run', pipelineRoundId: 'r3'
+    };
+    const answer = 'Critical stress testing and analysis of stability boundaries.';
+    expect(debug.pipelineWaiter.responseContexts.has(identity.transportRequestId)).toBe(false);
+    document.getElementById('output-gemini').replaceChildren();
+    receive({
+      type: 'GLOBAL_STATE_BROADCAST',
+      state: { llms: { Gemini: { ...identity, answer, status: 'SUCCESS', finalStatus: 'SUCCESS', finalStatusRecorded: true } } }
+    });
+    const card = document.querySelector('.debate-model-card[data-llm-name="Gemini"]');
+    expect(card.querySelector('.debate-model-card-round')?.textContent).toBe('R3');
+    expect(card.dataset.turnClosed).toBe('true');
+    receive({
+      type: 'MANUAL_PING_RESULT', llmName: 'Gemini', answer, status: 'success', finalStatus: 'SUCCESS',
+      requestId: 'background-gemini-job', ...identity
+    });
+    receive({ type: 'LLM_FINAL_RESPONSE', llmName: 'Gemini', answer, status: 'SUCCESS', ...identity });
+    receive({
+      type: 'LLM_FINAL_RESPONSE', llmName: 'Gemini', answer: `${answer} Another paragraph.`, status: 'SUCCESS', ...identity
+    });
+    expect(document.querySelectorAll('.debate-model-card[data-llm-name="Gemini"]')).toHaveLength(1);
+    expect(card.querySelectorAll('.debate-model-card-round')).toHaveLength(1);
+    expect(Array.from(card.querySelectorAll('.debate-model-card-output p'), (p) => p.textContent))
+      .toEqual([answer, 'Another paragraph.']);
+    const deepSeek = document.querySelector('.debate-model-card[data-llm-name="DeepSeek"]');
+    expect(deepSeek.querySelector('.debate-model-card-round').textContent).toBe('R2');
+    expect(deepSeek.querySelector('.answer-partial-mark').textContent).toBe('uncompleted');
+    const turns = debug.collectDebateArtifact().sessions.flatMap((session) => session.turns);
+    expect(turns.filter((turn) => turn.author === 'Gemini')).toHaveLength(1);
+    expect(turns.find((turn) => turn.author === 'Gemini').delivery).toMatchObject({
+      pipelineRunId: 'report-run', pipelineRoundId: 'r3', requestId: identity.transportRequestId
+    });
+  });
+
+  test('round identity arriving after an approved recovery adds the badge to that same request card', () => {
+    const debug = window.__pipelineLifecycleDebug;
+    debug.updateLLMPanelOutput('Gemini', 'Recovered answer.', '', { status: 'SUCCESS', requestId: 'late-round-identity' });
+    const card = document.querySelector('.debate-model-card[data-llm-name="Gemini"]');
+    card.querySelector('.debate-approval-check').click();
+    const firstParagraph = card.querySelector('.debate-model-card-output p');
+    debug.updateLLMPanelOutput('Gemini', 'Recovered answer. Continuation.', '', {
+      status: 'SUCCESS', transportRequestId: 'late-round-identity', pipelineRunId: 'late-identity-run', pipelineRoundId: 'r3'
+    });
+    expect(document.querySelectorAll('.debate-model-card[data-llm-name="Gemini"]')).toHaveLength(1);
+    expect(card.isConnected).toBe(true);
+    expect(card.dataset.approved).toBe('true');
+    expect(card.querySelector('.debate-model-card-round').textContent).toBe('R3');
+    expect(card.querySelector('.debate-model-card-output p')).toBe(firstParagraph);
+    expect(card.querySelectorAll('.debate-model-card-output p')).toHaveLength(2);
+    const turn = debug.collectDebateArtifact().sessions.flatMap((session) => session.turns).find((item) => item.author === 'Gemini');
+    expect(turn.delivery.pipelineRoundId).toBe('r3');
+  });
+
+  test('Get it replays a pending answer into its original round after a later round has completed', async () => {
+    const debug = window.__pipelineLifecycleDebug;
+    const autoCheckbox = document.getElementById('auto-checkbox');
+    autoCheckbox.checked = false;
+    autoCheckbox.dispatchEvent(new Event('change', { bubbles: true }));
+    const message = {
+      type: 'LLM_PARTIAL_RESPONSE', llmName: 'Gemini', answer: 'Earlier round still printing.',
+      transportRequestId: 'pending-r1', pipelineRunId: 'pending-run', pipelineRoundId: 'r1', status: 'GENERATING'
+    };
+    chrome.runtime.onMessage.addListener.mock.calls.forEach(([listener]) => listener(message, {}, jest.fn()));
+    debug.updateLLMPanelOutput('Gemini', 'Later round completed.', '', {
+      status: 'SUCCESS', transportRequestId: 'pending-r2', pipelineRunId: 'pending-run', pipelineRoundId: 'r2'
+    });
+    document.getElementById('get-it-button').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    await delay(0);
+    const cards = Array.from(document.querySelectorAll('.debate-model-card[data-llm-name="Gemini"]'));
+    expect(cards).toHaveLength(2);
+    expect(cards.map((card) => card.querySelector('.debate-model-card-round').textContent)).toEqual(['R1', 'R2']);
+    expect(cards.map((card) => card.querySelector('.debate-model-card-output').textContent))
+      .toEqual(['Earlier round still printing.', 'Later round completed.']);
+    expect(cards[0].dataset.requestId).toBe('pending-r1');
+    expect(cards[0].dataset.turnClosed).toBe('false');
+    expect(cards[1].querySelector('.post-terminal-badge')).toBeNull();
   });
 
   test('identical answers in R1 and R2 remain separate; late R1 growth updates only R1', () => {

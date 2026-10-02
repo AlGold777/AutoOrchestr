@@ -8,6 +8,9 @@ Each model has one card per round: streaming updates reuse it, and later answer
 growth adds paragraphs to the same card. The next round gets a separate card.
 Incomplete answers retain the round badge and show `uncompleted` after it
 (for example, `DeepSeek R3 uncompleted`), including manually recovered answers.
+Round identity survives background-state recovery and deferred display. If a
+recovered card receives its round identity later, it gains the badge in place;
+repeated recovery and final deliveries keep a single card for that request.
 
 ## Start here
 

@@ -16554,7 +16554,9 @@ document.addEventListener('click', (event) => {
                 completenessState: unverifiedArtifact.completenessState || 'complete',
                 reason: unverifiedArtifact.reason || 'materialize_recovery_freshness_unproven',
                 source: 'GLOBAL_STATE_UNVERIFIED_ARTIFACT',
-                transportRequestId: entry?.transportRequestId || ''
+                transportRequestId: entry?.transportRequestId || '',
+                pipelineRunId: entry?.pipelineRunId || '',
+                pipelineRoundId: entry?.pipelineRoundId || ''
             });
             return true;
         }
@@ -16573,7 +16575,10 @@ document.addEventListener('click', (event) => {
         }
         updateDebateModelCardOutput(llmName, answerText, answerHtml, {
             source: 'GLOBAL_STATE_ANSWER_RECOVERY',
-            transportRequestId: entry?.transportRequestId || ''
+            transportRequestId: entry?.transportRequestId || '',
+            pipelineRunId: entry?.pipelineRunId || '',
+            pipelineRoundId: entry?.pipelineRoundId || '',
+            status: entry?.finalStatus || entry?.status || ''
         });
         return true;
     }
@@ -16918,14 +16923,11 @@ document.addEventListener('click', (event) => {
     }
 
 
-    function storeResponseForManualMode(llmName, answer, html = '') {
-        if (answer && typeof answer === 'object') {
-            pendingResponses[llmName] = answer;
-            return;
-        }
+    function storeResponseForManualMode(llmName, answer, html = '', meta = {}) {
         pendingResponses[llmName] = {
-            text: String(answer ?? ''),
-            html: String(html || '')
+            answer,
+            html,
+            meta: resolveDebateFeedMeta(meta)
         };
         console.log(`[RESULTS] Stored response from ${llmName} (manual mode)`);
     }
@@ -17155,7 +17157,7 @@ document.addEventListener('click', (event) => {
                             manualPingReveal.delete(message.llmName);
                         }
                     } else {
-                        storeResponseForManualMode(message.llmName, message.answer, message.answerHtml || message.html || '');
+                        storeResponseForManualMode(message.llmName, message.answer, message.answerHtml || message.html || '', debateFeedMessageMeta(message));
                     }
                     if (isTerminalPipelineMessage(message)) {
                         pipelineWaiter.handleFinal(message);
@@ -21321,6 +21323,7 @@ function checkCompareButtonState() {
                 && card.dataset.kind !== 'fragment'
                 && (meta.pipelineRoundId
                     ? (matchesDebateCardRound(card, meta)
+                        || (!card.dataset.pipelineRoundId && requestId && card.dataset.requestId === requestId)
                         || (card.dataset.entryKind === 'placeholder' && !card.dataset.pipelineRoundId))
                     : (card.dataset.turnClosed !== 'true'
                         && card.dataset.approved !== 'true'
@@ -21338,6 +21341,10 @@ function checkCompareButtonState() {
             removeDebateCardMessage(card);
             card.remove();
         });
+        if (meta.pipelineRoundId && !matchesDebateCardRound(preferred, meta)) {
+            setDebateCardRound(preferred, meta);
+            patchDebateCardMessage(preferred);
+        }
         return preferred;
     }
     // One badge per card, right of the time, collects every post-completion update
@@ -22500,7 +22507,8 @@ if (getItButton) {
         getModels: () => getSelectedLLMs(),
         beforeRun: () => {
             Object.keys(pendingResponses).forEach(llmName => {
-                updateLLMPanelOutput(llmName, pendingResponses[llmName]);
+                const pending = pendingResponses[llmName];
+                updateLLMPanelOutput(llmName, pending.answer, pending.html, pending.meta);
             });
             pendingResponses = {};
         },

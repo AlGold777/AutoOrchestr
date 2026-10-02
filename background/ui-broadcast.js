@@ -39,6 +39,8 @@ function buildGlobalStateSnapshot(options = {}) {
       hasAnswer: !!entry?.answer,
       // Recovery must pass the same identity check as a live answer message.
       transportRequestId: entry?.transportRequestId || null,
+      pipelineRunId: entry?.pipelineRunId || null,
+      pipelineRoundId: entry?.pipelineRoundId || null,
       dispatchId: entry?.lastDispatchMeta?.dispatchId || null,
       // Recovery payload: STATUS_UPDATE and LLM_PARTIAL_RESPONSE are separate MV3
       // messages. If the latter is missed while the results page is reloading, the

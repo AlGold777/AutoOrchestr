@@ -159,6 +159,8 @@ function hashAnswerSignatureBg(text) {
 function transportIdentityFor(entry) {
   return {
     transportRequestId: entry?.transportRequestId || null,
+    pipelineRunId: entry?.pipelineRunId || null,
+    pipelineRoundId: entry?.pipelineRoundId || null,
     dispatchId: entry?.lastDispatchMeta?.dispatchId || null
   };
 }
@@ -5255,6 +5257,8 @@ async function startProcessReservedRun(prompt, selectedLLMs, resultsTab, options
     // Panel-issued identity of this model request (TransportContract). Every
     // panel-bound answer message carries it; the panel rejects anything else.
     jobState.llms[llmName].transportRequestId = String(pipelineContext?.transportRequestIds?.[llmName] || '') || null;
+    jobState.llms[llmName].pipelineRunId = String(pipelineContext?.pipelineRunId || '') || null;
+    jobState.llms[llmName].pipelineRoundId = String(pipelineContext?.pipelineRoundId || '') || null;
     updateModelState(llmName, 'IDLE', { apiStatus: 'idle' });
     if (self.syncDispatchEntryFromMachine) {
       self.syncDispatchEntryFromMachine(llmName, jobState.llms[llmName], machine);
