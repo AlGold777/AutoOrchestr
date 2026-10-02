@@ -426,7 +426,7 @@ Telemetry exposes exactly two filters: Platform and Tasks. It has no
 `Only problems` mode. A selected Task exports an incident-scoped,
 proof-preserving projection from the single canonical ledger; All tasks exports
 the shared ledger plus all diagnostic projections without parallel recording.
-The Disput tab is a live overview: run selector, Run Health Summary, Problems &
+The Disput tab is a live overview of the active trace: Run Health Summary, Problems &
 Recovery, the delivery cards and the raw trace/journal. Its only display toggle
 is `Only problems`; it never filters the JSON/MD export, which is always
 complete. Drill-down by request, stage or model is done on the export with
