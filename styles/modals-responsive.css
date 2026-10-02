@@ -985,12 +985,6 @@ body.pro-features-hidden .comparison-section {
     border-radius: 10px;
     background: none;
 }
-.pipeline-page .debate-model-cards {
-    width: 100vw;
-    max-width: none;
-    margin-left: calc(50% - 50vw);
-    box-sizing: border-box;
-}
 .debate-session-bar {
     display: flex;
     align-items: center;
@@ -2810,4 +2804,17 @@ hr.section-divider {
 .pipeline-page .prompt-container.prompt-sandwich.debate-composer.has-debate-feed.is-feed-input-compact .msg-header {
     padding-top: 2px;
     padding-bottom: 0;
+}
+
+/* Pipeline page: a wider working column. The composer (and the feed in it) takes the
+   width of .main-inner, so the cap lives there; the viewport-width trick for the feed
+   is gone because it pushed the content out of the composer. */
+.pipeline-page {
+    --pipeline-main-max-width: 1280px;
+}
+.pipeline-page .main-inner {
+    max-width: var(--pipeline-main-max-width);
+}
+.pipeline-page .prompt-container.prompt-sandwich {
+    max-width: var(--pipeline-main-max-width);
 }

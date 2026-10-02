@@ -52,6 +52,16 @@ describe('pipeline feed layout styles', () => {
     expect(css).toMatch(/is-feed-input-compact \.msg-header \{\s*padding-top: 2px;\s*padding-bottom: 0;/);
   });
 
+  test('the feed stays inside the composer: no full-viewport width', () => {
+    expect(css).not.toMatch(/\.pipeline-page \.debate-model-cards\s*\{[^}]*(100vw|50vw)/);
+  });
+
+  test('the pipeline working column is wider than the global 980px', () => {
+    expect(css).toMatch(/\.pipeline-page \{\s*--pipeline-main-max-width: 1280px;/);
+    expect(css).toMatch(/\.pipeline-page \.main-inner \{\s*max-width: var\(--pipeline-main-max-width\);/);
+    expect(css).toMatch(/\.pipeline-page \.prompt-container\.prompt-sandwich \{\s*max-width: var\(--pipeline-main-max-width\);/);
+  });
+
   test('compact moderator input is one line unless focused', () => {
     expect(css).toMatch(/is-feed-input-compact \.moderator-input textarea#modTa:not\(:focus\) \{\s*height: 20px !important;/);
   });
