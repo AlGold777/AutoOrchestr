@@ -7533,7 +7533,7 @@ document.addEventListener('click', (event) => {
             if (!label || !pipelinePanel.contains(label)) return;
             const labelText = (label.textContent || '').toLowerCase();
             const isModels = labelText.includes('models');
-            const isJudge = labelText.includes('judge') || labelText.includes('disput');
+            const isJudge = labelText.includes('judge') || labelText.includes('lead') || labelText.includes('disput');
             if (!isModels && !isJudge) return;
 
             let modelStack = null;

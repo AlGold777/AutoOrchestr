@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-10-02 — "~ Lead ~" on the main page too, version 2.81.551
+
+- The R2 stage label of the main page (`result_new.html`) reads "~ Lead ~" instead of "Judge". The stage detection in `results.js` (`isJudge`) now also matches "lead", so clicking the label keeps working. «Moderator» does not occur on the main page.
+
 ### 2026-10-02 — "Moderator" is shown as "User", version 2.81.550
 
 - Display name only: the author name on moderator cards (turn cards and the live moderator entry in `results.js`) and the "Moderator" sender option. Internal values (`Moderator` as `llmName`, route sender, transcript events, `kind: 'moderator'`) and the text sent to the models (`Moderator\n…`, `Moderator action: …`) are unchanged.
