@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-10-02 — The "Judge" model is shown as "~ Lead ~", version 2.81.549
+
+- Display name only: the selector option and its aria-label (`pipeline_panel.html`), the placeholder option, the card role label and the role of the verdict card (`results.js`). Identifiers (`#judge-select`, `judge*` functions, `source: 'judge'`, stored selector state) and the text of the judge prompts are unchanged. The main page (`result_new.html`, stage label R2) is not touched: its label is also read by stage detection.
+
 ### 2026-10-02 — One message per model per round: growth extends the card, version 2.81.548
 
 - Every Run press is a new round; inside a round a model has **one card**. When a later text of the model **continues the shown answer** (the new text starts with it, whitespace-normalized), the same card is extended in place: longer body, updated time, the stored message is patched. No second card, no badge.

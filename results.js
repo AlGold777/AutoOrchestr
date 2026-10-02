@@ -5881,7 +5881,7 @@ document.addEventListener('click', (event) => {
         };
 
         // Judge: the model chosen in #judge-select receives every answer to the moderator's
-        // message and returns a verdict, shown as its card with the "Judge" role.
+        // message and returns a verdict, shown as its card with the "~ Lead ~" role.
         const runJudgeForModeratorTurn = async (moderatorText, responses) => {
             const judge = String(document.getElementById('judge-select')?.value || '').trim();
             // Batch responses hold only terminal model texts; failures carry their
@@ -5890,7 +5890,7 @@ document.addEventListener('click', (event) => {
             if (!judge || !Object.keys(answers).length || !window.JudgePromptBuilder?.buildResponsesList) return;
             // Answers are already filtered by status above: no text-based error guess.
             const list = window.JudgePromptBuilder.buildResponsesList(answers, { isErrorOutput: (answer) => !String(answer || '').trim() }).list;
-            renderDebateModelCards('Judge', [judge], { approvalSelectable: false });
+            renderDebateModelCards('~ Lead ~', [judge], { approvalSelectable: false });
             const verdict = await runModelBatch({
                 prompt: `Вопрос модератора:\n${moderatorText}\n\nОтветы моделей:\n${list}\n\nТы судья. Сравни ответы, отметь сильные и слабые стороны и дай итоговый ответ.`,
                 models: [judge],
@@ -5901,7 +5901,7 @@ document.addEventListener('click', (event) => {
             });
             const answer = verdict?.responses?.[judge];
             const judgeResult = verdict?.results?.[judge] || null;
-            if (String(answer || '').trim()) updateDebateModelCardOutput(judge, String(answer || ''), '', { status: judgeResult?.status || 'SUCCESS', source: 'judge', role: 'Judge' });
+            if (String(answer || '').trim()) updateDebateModelCardOutput(judge, String(answer || ''), '', { status: judgeResult?.status || 'SUCCESS', source: 'judge', role: '~ Lead ~' });
         };
 
         let manualModeratorDispatchActive = false;
@@ -21754,7 +21754,7 @@ function checkCompareButtonState() {
         const judgeSelect = document.getElementById('judge-select');
         if (judgeSelect) {
             const prevJudge = judgeSelect.value || '';
-            judgeSelect.innerHTML = ['<option value="">Judge</option>']
+            judgeSelect.innerHTML = ['<option value="">~ Lead ~</option>']
                 .concat(selected.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`))
                 .join('');
             const storedJudge = persistedDebateSelectorState.judge || '';
