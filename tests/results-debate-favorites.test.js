@@ -1519,7 +1519,7 @@ describe('Pipeline debate favorites view', () => {
   test('default pipeline list exposes only universal purpose profiles', () => {
     const names = Array.from(document.querySelectorAll('#pipelineItems .pipeline-item'))
       .map((item) => item.dataset.name);
-    expect(names).toEqual(['Universal', 'Test', 'Research', 'Red Team', 'Architecture']);
+    expect(names).toEqual(['Test', 'Research', 'Red Team', 'Architecture']);
     expect(document.querySelectorAll('#pipelineItems .pipeline-item-delete')).toHaveLength(0);
   });
 
@@ -1549,16 +1549,16 @@ describe('Pipeline debate favorites view', () => {
   });
 
   test('built-in pipeline round changes are not remembered after switching away and back', () => {
-    const universal = document.querySelector('.pipeline-item[data-name="Universal"]');
+    const testPipeline = document.querySelector('.pipeline-item[data-name="Test"]');
     const research = document.querySelector('.pipeline-item[data-name="Research"]');
-    universal.click();
+    testPipeline.click();
     const roundLimit = document.getElementById('debate-round-limit-select');
     roundLimit.value = '5';
     roundLimit.dispatchEvent(new Event('change', { bubbles: true }));
     research.click();
-    document.querySelector('.pipeline-item[data-name="Universal"]').click();
+    document.querySelector('.pipeline-item[data-name="Test"]').click();
 
-    expect(roundLimit.value).toBe('3');
+    expect(roundLimit.value).toBe('2');
   });
 
   test('no model is selected by default', () => {

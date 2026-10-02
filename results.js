@@ -4375,7 +4375,7 @@ document.addEventListener('click', (event) => {
                 const clean = String(name || '').trim();
                 const stored = pipelineStore.pipelines?.[clean];
                 const supported = defaults.includes(clean) || stored?.protocol?.type === 'universal';
-                if (!clean || !supported || seen.has(clean) || defaults.includes(clean)) return;
+                if (!clean || clean === 'Universal' || !supported || seen.has(clean) || defaults.includes(clean)) return;
                 seen.add(clean);
                 customNames.push(clean);
             });
