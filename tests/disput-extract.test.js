@@ -36,11 +36,9 @@ test('Extract downloads the complete snapshot and its deterministic digest with 
   const before = JSON.stringify(payload);
   const ui = setup(payload);
   await ui.run();
-  expect(ui.downloads.map((d) => d.name)).toEqual(['Disput Flow 20261003_00-30.json', 'extract_transport_20261003_00-30.json', 'extract_transport_20261003_00-30.md']);
+  expect(ui.downloads.map((d) => d.name)).toEqual(['Disput Flow 20261003_00-30.json', 'extract_transport_20261003_00-30.md']);
   expect(ui.downloads[0].data.events).toHaveLength(1);
-  expect(ui.downloads[1].data.sourceFile).toBe(ui.downloads[0].name);
-  expect(ui.downloads[1].data).not.toHaveProperty('digest');
-  expect(ui.downloads[2].data).toBe(Digest.renderTransportMarkdown(ui.downloads[1].data));
+  expect(ui.downloads[1].data).toBe(Digest.renderTransportMarkdown(Digest.extractTransport(ui.downloads[0].data, ui.downloads[0].name)));
   expect(JSON.stringify(payload)).toBe(before);
   expect(ui.button.disabled).toBe(false);
 });
@@ -68,7 +66,7 @@ test('duplicate clicks during snapshot loading do not create extra downloads', a
   await ui.run();
   release([]);
   await running;
-  expect(ui.downloads).toHaveLength(3);
+  expect(ui.downloads).toHaveLength(2);
 });
 
 test('both pages default to all records and load the digest before the UI handler', () => {
@@ -90,11 +88,11 @@ test('a failed raw download prevents extraction and reports the error', async ()
   expect(ui.button.disabled).toBe(false);
 });
 
-test('Markdown failure keeps raw and structured JSON downloads and releases the Extract button', async () => {
+test('Markdown failure keeps only the raw JSON download and releases the Extract button', async () => {
   const ui = setup();
   ui.context.downloadDiagnosticsMarkdown = () => false;
   await ui.run();
-  expect(ui.downloads).toHaveLength(2);
+  expect(ui.downloads).toHaveLength(1);
   expect(ui.notices[0]).toContain('Could not download transport extract Markdown');
   expect(ui.button.disabled).toBe(false);
   expect(ui.button.hasAttribute('aria-busy')).toBe(false);

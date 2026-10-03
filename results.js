@@ -15145,7 +15145,7 @@ document.addEventListener('click', (event) => {
             const safePayload = window.SecretRedaction?.redactDeep
                 ? window.SecretRedaction.redactDeep(payload)
                 : payload;
-            // Raw telemetry stays compact; the structured extract opts into indentation.
+            // Raw telemetry stays compact; callers may explicitly request indentation.
             const blob = new Blob([JSON.stringify(safePayload, null, options.pretty ? 2 : undefined)], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
             const anchor = document.createElement('a');
@@ -15424,9 +15424,6 @@ document.addEventListener('click', (event) => {
             }
             const extract = window.ReportDigest.extractTransport(report, sourceFile);
             const markdown = window.ReportDigest.renderTransportMarkdown(extract);
-            if (!downloadDiagnosticsJson('extract_transport', extract, null, {
-                fileName: `extract_transport_${stamp}.json`, pretty: true
-            })) throw new Error('Could not download transport extract JSON');
             if (!downloadDiagnosticsMarkdown('extract_transport', markdown, button, {
                 fileName: `extract_transport_${stamp}.md`
             })) throw new Error('Could not download transport extract Markdown');

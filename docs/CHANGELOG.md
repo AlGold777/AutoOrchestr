@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-03 — Extract downloads raw JSON and Markdown only, version 2.81.578
+
+- Extract downloads exactly two files with matching timestamps: the complete Disput Flow JSON and extract_transport Markdown. Removed the separate structured extract JSON download; the digest calculation and Markdown contents are unchanged.
+- Updated export documentation and existing download-count/failure regressions. Tests not run by request; syntax and diff checks performed. This release builds on restored 2.81.575, without the reverted page-cleanup changes from 2.81.576–2.81.577.
+
 ### 2026-10-03 — Structured transport Extract v2, version 2.81.575
 
 - `shared/report-digest.js`: structured JSON schema 2 and Markdown derived from the same tables; DIGEST_VERSION 2.0.0 and explicit compression parameters. All requests are included, shared stage timelines contain both models, attempt transitions retain zero lengths and state/dispatch changes. Background counts retain first/last and all member paths without line caps.

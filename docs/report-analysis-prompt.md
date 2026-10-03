@@ -6,13 +6,14 @@
 
 ## Extract
 
-На вкладке Disput выберите `transport` рядом с **Extract**. Скачиваются три файла
+На вкладке Disput выберите `transport` рядом с **Extract**. Скачиваются два файла
 из одного снимка после удаления секретов, с одинаковой датой в именах:
 
 - `Disput Flow YYYYMMDD_HH-MM.json` — полный исходный отчёт.
-- `extract_transport_YYYYMMDD_HH-MM.json` — структурированные таблицы и счётчики,
-  `schemaVersion: 2`, без Markdown в поле `digest`.
-- `extract_transport_YYYYMMDD_HH-MM.md` — читаемая выжимка этих же таблиц.
+- `extract_transport_YYYYMMDD_HH-MM.md` — читаемая выжимка.
+
+Структурированные таблицы и счётчики (`schemaVersion: 2`) вычисляются внутри
+расширения для построения Markdown; отдельный JSON выжимки не скачивается.
 
 Командная строка и внешние процессы для Extract не нужны. `Only problems` относится
 только к отображению и выключен по умолчанию. Шапка выжимки содержит `sourceFile`,
