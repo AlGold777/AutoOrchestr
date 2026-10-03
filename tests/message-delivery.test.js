@@ -4,6 +4,27 @@ const Delivery = require('../shared/message-delivery.js');
 describe('message delivery', () => {
   beforeEach(() => Delivery.reset());
 
+  test('clear cancels a queued journal mirror and new records can mirror again', () => {
+    jest.useFakeTimers();
+    const previousChrome = globalThis.chrome;
+    const storage = { set: jest.fn(), remove: jest.fn() };
+    globalThis.chrome = { storage: { session: storage } };
+    try {
+      Delivery.record({ kind: 'status', status: 'old' });
+      Delivery.clearJournal();
+      jest.advanceTimersByTime(300);
+      expect(storage.set).not.toHaveBeenCalled();
+      expect(Delivery.journal()).toEqual([]);
+      Delivery.record({ kind: 'status', status: 'new' });
+      jest.advanceTimersByTime(300);
+      expect(storage.set).toHaveBeenCalledWith({ [Delivery.JOURNAL_KEY]: [expect.objectContaining({ status: 'new' })] });
+    } finally {
+      Delivery.reset();
+      globalThis.chrome = previousChrome;
+      jest.useRealTimers();
+    }
+  });
+
   test('each model gets its own token appended to its prompt', () => {
     const prompts = Delivery.prepare({ prompt: 'Обсудим идею', models: ['GPT', 'Claude'] });
     const tokens = Object.values(prompts).map((p) => /\[\[(AO-[a-z0-9]{6})\]\]$/.exec(p)[1]);

@@ -62,8 +62,9 @@ describe('main-page UI recovery triggers', () => {
     expect(RESULTS_SRC).toContain('const formattedHtml = resolveCompleteAnswerHtml(text, html);');
   });
 
-  test('results-page reload reconciles persisted answers instead of discarding them', () => {
-    expect(RESULTS_SRC).toContain("const reconciliationState = response?.runtimeReset === true");
+  test('results-page reload clears previous answers before reconciliation', () => {
+    expect(RESULTS_SRC).toContain('await resetSessionOnReload();');
+    expect(RESULTS_SRC).toContain("const reconciliationState = pageWasReloaded || response?.runtimeReset === true");
     expect(RESULTS_SRC).toContain('syncStatusFromGlobalState(reconciliationState, { replace: true });');
     expect(RESULTS_SRC).not.toContain('syncStatusFromGlobalState(pageWasReloaded ? {}');
   });

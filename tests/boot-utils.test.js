@@ -60,3 +60,30 @@ describe('ResultsBootUtils.clearDebateTranscriptOnReload', () => {
     await expect(BootUtils.clearDebateTranscriptOnReload()).resolves.toBe(false);
   });
 });
+
+describe('ResultsBootUtils.resetSessionOnReload', () => {
+  test('ordinary navigation keeps the current session', async () => {
+    await expect(BootUtils.resetSessionOnReload()).resolves.toBe(false);
+  });
+
+  test('reload waits for an explicit background reset acknowledgment', async () => {
+    const navigation = Object.getOwnPropertyDescriptor(performance, 'getEntriesByType');
+    Object.defineProperty(performance, 'getEntriesByType', { configurable: true, value: () => [{ type: 'reload' }] });
+    const previousChrome = window.chrome;
+    let respond;
+    window.chrome = { runtime: { sendMessage: jest.fn((_, callback) => { respond = callback; }) } };
+    try {
+      const reset = BootUtils.resetSessionOnReload();
+      expect(window.chrome.runtime.sendMessage).toHaveBeenCalledWith({ type: 'REGISTER_RESULTS_TAB', resetSession: true }, expect.any(Function));
+      respond({ sessionReset: true });
+      await expect(reset).resolves.toBe(true);
+      const failed = BootUtils.resetSessionOnReload();
+      respond({ error: 'storage_failed' });
+      await expect(failed).rejects.toThrow('storage_failed');
+    } finally {
+      window.chrome = previousChrome;
+      if (navigation) Object.defineProperty(performance, 'getEntriesByType', navigation);
+      else delete performance.getEntriesByType;
+    }
+  });
+});

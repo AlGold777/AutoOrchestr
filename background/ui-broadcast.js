@@ -89,10 +89,12 @@ function broadcastGlobalState() {
 }
 
 function sendMessageToResultsTab(message) {
+  const deliveryGeneration = jobStateStopGeneration;
   const isNoReceiverError = (errorMessage = '') =>
     errorMessage.toLowerCase().includes('receiving end does not exist');
 
   const fallbackToRuntime = () => {
+    if (deliveryGeneration !== jobStateStopGeneration) return;
     chrome.runtime.sendMessage(message, () => {
       if (chrome.runtime.lastError) {
         const { message: errorMessage } = chrome.runtime.lastError;
@@ -114,6 +116,9 @@ function sendMessageToResultsTab(message) {
   }
 
   chrome.tabs.sendMessage(resultsTabId, message, () => {
+    // A reload may complete while the old document's no-receiver callback is
+    // pending. Do not replay its answer into the new document via runtime.
+    if (deliveryGeneration !== jobStateStopGeneration) return;
     if (chrome.runtime.lastError) {
       const errorMessage = String(chrome.runtime.lastError.message || '');
       // The results page received the message but does not answer it: that is a

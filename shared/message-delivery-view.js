@@ -37,6 +37,9 @@
   const empty = (text) => el('p', { class: 'diag-empty' }, text);
 
   async function readJournal() {
+    // The page owns the current journal. A persisted mirror can lag a clear
+    // or contain another document's session, so never restore it into this page.
+    if (root.MessageDelivery?.journal) return root.MessageDelivery.journal();
     try {
       const data = await root.chrome.storage.session.get(KEY());
       return Array.isArray(data?.[KEY()]) ? data[KEY()] : [];

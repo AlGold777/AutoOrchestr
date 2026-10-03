@@ -151,6 +151,11 @@ describe('Delivery cards in the Disput tab (formerly the Automation tab)', () =>
       expect(md).toContain('## Delivery');
       expect(md).toContain('| wait-9 | S:a1 |');
       expect(md).toContain('### Sends');
+      // The storage stub still returns the old session. The active page journal
+      // is authoritative for both the Disput view and its exports after Clear.
+      Delivery.clearJournal();
+      const cleared = await window.MessageDeliveryView.buildReport();
+      expect(cleared.journal).toEqual([]);
     } finally {
       window.chrome = originalChrome;
     }

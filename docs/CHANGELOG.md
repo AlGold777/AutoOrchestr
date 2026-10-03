@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-03 — Page reload starts a clean session, version 2.81.576
+
+- Both application pages await an acknowledged background reset before initializing stores and message listeners on reload. Registration cancels the previous session through the existing Stop lifecycle, drains old snapshot writes, clears the job/tab registry, late-answer cache, diagnostics, delivery journal, transcript and rule-run history. Provider tabs stay open.
+- Reload reconciliation no longer hydrates previous answers from the background snapshot. Old no-receiver callbacks cannot replay answers through the runtime fallback after Stop/Reload. Ordinary navigation between main and pipeline views retains current-session reconciliation. Existing saved-session/IndexedDB reload cleanup remains in effect.
+- Delivery views and exports read the page's in-memory journal; a stale storage mirror cannot restore a cleared session. Clear/Reset cancel pending mirror timers.
+- Regression coverage added for delayed snapshot writes, reset acknowledgment/failure and stale journal mirrors. Tests updated but not run; syntax and diff checks performed.
+
 ### 2026-10-03 — Structured transport Extract v2, version 2.81.575
 
 - `shared/report-digest.js`: structured JSON schema 2 and Markdown derived from the same tables; DIGEST_VERSION 2.0.0 and explicit compression parameters. All requests are included, shared stage timelines contain both models, attempt transitions retain zero lengths and state/dispatch changes. Background counts retain first/last and all member paths without line caps.

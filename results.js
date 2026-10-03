@@ -49,11 +49,23 @@ document.addEventListener('DOMContentLoaded', async () => {
         recoverUiIfHidden,
         isPageReloadNavigation,
         clearTelemetryOnReload,
+        resetSessionOnReload,
         clearDebateTranscriptOnReload,
         normalizeExternalLinkUrl,
         decorateLinksForNewTab,
         openResponseLinkInNewTab
     } = window.ResultsBootUtils;
+    // No restoration or runtime listener may race the background reset.
+    try {
+        await resetSessionOnReload();
+    } catch (error) {
+        console.error('[RESULTS] Session reset failed', error);
+        const notice = document.createElement('p');
+        notice.setAttribute('role', 'alert');
+        notice.textContent = 'Не удалось очистить прошлую сессию. Перезагрузите страницу ещё раз.';
+        document.body.prepend(notice);
+        return;
+    }
     const favoritePanelId = 'favorite-panel';
     const favoriteOutputId = 'favorite-output';
     const favoriteSectionId = 'favorites-section';
@@ -16869,10 +16881,9 @@ document.addEventListener('click', (event) => {
         if (pageWasReloaded || response?.runtimeReset === true || !hasLiveSnapshot) {
             clearLiveResponseCards();
         }
-        // A page reload clears the old DOM, but the answer-bearing background
-        // snapshot is the recovery channel for messages missed during reload.
-        // Only a genuine extension-runtime reset invalidates that snapshot.
-        const reconciliationState = response?.runtimeReset === true
+        // Reload starts a clean session. Ordinary navigation between views still
+        // reconciles the current background snapshot.
+        const reconciliationState = pageWasReloaded || response?.runtimeReset === true
             ? {}
             : (response?.state || {});
         syncStatusFromGlobalState(reconciliationState, { replace: true });

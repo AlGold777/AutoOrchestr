@@ -44,7 +44,7 @@ describe('extension reload state reset', () => {
     expect(resultsSource).toContain('function clearLiveResponseCards()');
     expect(resultsSource).toContain('const pageWasReloaded = isPageReloadNavigation();');
     expect(resultsSource).toContain("if (pageWasReloaded || response?.runtimeReset === true || !hasLiveSnapshot) {");
-    expect(resultsSource).toContain("const reconciliationState = response?.runtimeReset === true");
+    expect(resultsSource).toContain("const reconciliationState = pageWasReloaded || response?.runtimeReset === true");
     expect(resultsSource).toContain(': (response?.state || {});');
     expect(resultsSource).toContain('syncStatusFromGlobalState(reconciliationState, { replace: true });');
     expect(resultsSource).not.toContain('syncStatusFromGlobalState(pageWasReloaded ? {}');
@@ -55,11 +55,63 @@ describe('extension reload state reset', () => {
     expect(resultsSource).toContain("detail: { source: 'extension_reload_reconcile' }");
   });
 
+  test('page reload cancels the producer and drains old writes before registration responds', async () => {
+    const source = read('background/message-router.js');
+    const block = source.slice(source.indexOf("case 'REGISTER_RESULTS_TAB':"), source.indexOf("case 'REQUEST_SELECTOR_VERSION_STATUS':"));
+    let releaseWrite;
+    const writeFlight = new Promise(resolve => { releaseWrite = resolve; });
+    const calls = [];
+    let state = { llms: { GPT: { answer: 'previous session' } } };
+    let reply;
+    const completion = new Promise(resolve => { reply = resolve; });
+    const context = {
+      message: { type: 'REGISTER_RESULTS_TAB', resetSession: true }, sender: { tab: { id: 5 } },
+      sendResponse: jest.fn(reply), isAppUiTab: () => true,
+      stopAllProcesses: jest.fn(() => { state = {}; calls.push('stop'); }),
+      jobState: {}, self: {}, jobStateSaveFlight: writeFlight,
+      TabMapManager: { clear: async () => { calls.push('tabs'); } },
+      CompressedStorage: { remove: async () => { calls.push('remove'); } },
+      clearLateAnswerSnapshotCache: async () => {},
+      writeDiagnosticsEventsToStorage: async () => {}, clearDiagnosticsRuntimeLogs: () => {},
+      chrome: { storage: { local: { remove: async () => {} }, session: { remove: async () => {} } } },
+      buildGlobalStateSnapshot: () => state, resultsTabId: null
+    };
+    const run = new Function(...Object.keys(context), `switch (message.type) { ${block} }`);
+    expect(run(...Object.values(context))).toBe(true);
+    expect(context.stopAllProcesses).toHaveBeenCalledWith('page_reload', { closeTabs: false });
+    expect(context.sendResponse).not.toHaveBeenCalled();
+    expect(calls).toEqual(['stop']);
+    releaseWrite();
+    await expect(completion).resolves.toMatchObject({ sessionReset: true, state: {} });
+    expect(calls).toEqual(['stop', 'tabs', 'remove']);
+  });
+
   test('telemetry UI drops its in-page cache on runtime reset', () => {
     const devtoolsSource = read('results-devtools.js');
     expect(devtoolsSource).toContain("document.addEventListener('extension-runtime-reset'");
     expect(devtoolsSource).toContain('telemetryCache = [];');
     expect(devtoolsSource).toContain('telemetryEventKeys = new Set();');
+  });
+
+  test('an old no-receiver callback cannot replay an answer after session reset', () => {
+    const vm = require('vm');
+    const source = read('background/ui-broadcast.js');
+    const block = source.slice(source.indexOf('function sendMessageToResultsTab('), source.indexOf('function focusResultsTab('));
+    let acknowledge;
+    const context = {
+      jobStateStopGeneration: 1, resultsTabId: 5, console,
+      chrome: {
+        tabs: { sendMessage: jest.fn((_, message, callback) => { acknowledge = callback; }) },
+        runtime: { sendMessage: jest.fn(), lastError: { message: 'Receiving end does not exist' } }
+      }
+    };
+    vm.createContext(context);
+    vm.runInContext(block, context);
+    context.sendMessageToResultsTab({ type: 'LLM_PARTIAL_RESPONSE', answer: 'old answer' });
+    context.jobStateStopGeneration += 1;
+    acknowledge();
+    expect(context.chrome.runtime.sendMessage).not.toHaveBeenCalled();
+    expect(context.resultsTabId).toBe(5);
   });
 
   test('saved sessions clear from memory when runtime reset races sidebar loading', () => {

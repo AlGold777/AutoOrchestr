@@ -4826,7 +4826,39 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 sendResponse({ status: 'evaluator_response_handled' });
                 break;
                 
-            case 'REGISTER_RESULTS_TAB':
+            case 'REGISTER_RESULTS_TAB': {
+                if (message.resetSession === true) {
+                    if (!isAppUiTab(sender?.tab)) {
+                        sendResponse({ error: 'page_reset_sender_not_authorized' });
+                        return false;
+                    }
+                    // Reuse Stop's cancellation generation: queued writes and
+                    // orchestrator waits from the old session must not revive it.
+                    stopAllProcesses('page_reload', { closeTabs: false });
+                    self.jobState = jobState;
+                    (async () => {
+                        try {
+                            if (jobStateSaveFlight) await jobStateSaveFlight;
+                            await TabMapManager.clear();
+                            await CompressedStorage.remove('jobState');
+                            const cacheCleanup = await clearLateAnswerSnapshotCache('page_reload');
+                            if (cacheCleanup?.ok === false) throw new Error(cacheCleanup.error || 'late_answer_cache_reset_failed');
+                            await chrome.storage.local.remove([
+                                'llmCortexDebateEngineState.v1',
+                                'llmCodexDebateRuleHistory.v1'
+                            ]);
+                            await writeDiagnosticsEventsToStorage([]);
+                            await self.ProofTelemetryLedger?.clear?.(null);
+                            clearDiagnosticsRuntimeLogs();
+                            await chrome.storage.session.remove('messageDelivery.journal');
+                            resultsTabId = sender.tab.id;
+                            sendResponse({ status: 'registered', state: buildGlobalStateSnapshot({ includeAnswers: true }), sessionReset: true });
+                        } catch (error) {
+                            sendResponse({ error: error?.message || String(error) });
+                        }
+                    })();
+                    return true;
+                }
                 resultsTabId = sender.tab.id;
                 globalThis.LLMLog?.debug?.("[BACKGROUND] Registered results tab:", resultsTabId);
                 const runtimeReset = Number(self.__extensionRuntimeResetAt || 0) > 0
@@ -4837,6 +4869,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     runtimeReset
                 });
                 break;
+            }
             
             case 'REQUEST_SELECTOR_VERSION_STATUS': {
                 (async () => {
