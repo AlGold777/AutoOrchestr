@@ -162,7 +162,7 @@
         planner: options.planner || Planner.createPlanner(),
         executor,
         revisionStore: universalRevisions,
-        persistence: options.persistence || (options.enableDurablePersistence ? OrchestratorPersistence?.createPersistence?.({ runId }) : undefined),
+        persistence: options.persistence || (options.enableDurablePersistence ? OrchestratorPersistence?.createPersistence?.({ runId, onStorageError: deps.onPersistenceError }) : undefined),
         semanticStore,
         commitStateDelta: options.commitStateDelta || deps.commitStateDelta,
         projectStateMap: options.projectStateMap || deps.projectStateMap,

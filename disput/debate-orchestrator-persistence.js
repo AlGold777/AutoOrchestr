@@ -32,23 +32,49 @@
       ? new root.BroadcastChannel(`${baseKey}:lease`)
       : null;
     let releaseExclusiveLock = null;
+    // Run data may exceed Web Storage's quota. Keep the complete live run,
+    // but never simulate a successful cross-tab lease write in private memory.
+    const runParts = ['events', 'snapshots', 'published'];
+    const volatileData = new Map();
+    let storageError = null;
     const key = (part) => `${baseKey}:${part}`;
     const read = (part, fallback) => {
       try {
-        const raw = backend.getItem(key(part));
+        const raw = storageError && runParts.includes(part)
+          ? volatileData.get(part) : backend.getItem(key(part));
         return raw == null ? clone(fallback) : JSON.parse(raw);
       } catch (_) { return clone(fallback); }
     };
     const write = (part, value) => {
-      backend.setItem(key(part), JSON.stringify(value));
-      return true;
+      const raw = JSON.stringify(value);
+      if (runParts.includes(part)) {
+        if (storageError) { volatileData.set(part, raw); return true; }
+        try { backend.setItem(key(part), raw); return true; }
+        catch (error) {
+          // Capture the other recovery records before removing stale partial
+          // persistence. This also frees space for the ownership lease.
+          runParts.forEach((name) => {
+            try { volatileData.set(name, backend.getItem(key(name))); } catch (_) {}
+          });
+          volatileData.set(part, raw);
+          storageError = { name: error.name || 'Error', message: String(error.message || error), part };
+          runParts.forEach((name) => { try { backend.removeItem(key(name)); } catch (_) {} });
+          try { options.onStorageError?.(clone(storageError)); } catch (_) {}
+          return true;
+        }
+      }
+      try { backend.setItem(key(part), raw); return true; }
+      catch (_) { return false; }
     };
     const publishLeaseChange = (change) => {
       try { channel?.postMessage(clone(change)); } catch (_) {}
     };
     return Object.freeze({
       version: VERSION,
-      durable,
+      get durable() { return durable && !storageError; },
+      getStorageStatus() {
+        return { durable: durable && !storageError, mode: durable && !storageError ? 'storage' : 'memory', error: clone(storageError) };
+      },
       appendEvent(event) {
         const events = read('events', []);
         if (!events.some((item) => item.eventId === event.eventId)) {
@@ -86,7 +112,7 @@
       },
       readLease() { return clone(read('lease', null)); },
       writeLease(value) {
-        write('lease', clone(value));
+        if (!write('lease', clone(value))) return false;
         const stored = read('lease', null);
         return JSON.stringify(stored) === JSON.stringify(value);
       },
@@ -94,7 +120,7 @@
         const current = read('lease', null);
         const currentRevision = Number(current?.leaseRevision || current?.version || 0);
         if (currentRevision !== Number(expectedRevision || 0)) return false;
-        write('lease', clone(value));
+        if (!write('lease', clone(value))) return false;
         const stored = read('lease', null);
         return JSON.stringify(stored) === JSON.stringify(value);
       },
@@ -123,6 +149,8 @@
       },
       clear() {
         ['events', 'snapshots', 'lease', 'published'].forEach((part) => backend.removeItem(key(part)));
+        volatileData.clear();
+        storageError = null;
         this.releaseExclusiveLease?.();
         channel?.close?.();
       }

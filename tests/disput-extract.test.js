@@ -97,3 +97,24 @@ test('Markdown failure keeps only the raw JSON download and releases the Extract
   expect(ui.button.disabled).toBe(false);
   expect(ui.button.hasAttribute('aria-busy')).toBe(false);
 });
+
+test('real report builder resolves application from the page bridge, without a lexical debateApplication', () => {
+  const builderStart = source.indexOf('    function buildDisputExportPayload(');
+  const builderEnd = source.indexOf('    function buildDisputTelemetryMarkdown(', builderStart);
+  const buildReport = jest.fn((trace, options) => ({ trace, options }));
+  const revision = { revisionId: 'rev1' };
+  const context = {
+    window: { __debateApplication: {
+      getActiveRevision: () => revision,
+      getOrchestrator: () => ({ getState: () => ({ stages: [{ stageInstanceId: 'stage1', plannedStageId: 'plan1', planRevisionId: 'rev1' }] }) })
+    }, DebateTraceSchema: { sanitize: value => value }, DebateTraceProjections: { buildReport } },
+    debateTraceStore: { getActiveRun: () => ({ debateRunId: 'r1' }), getDuplicateIds: () => [] },
+    chrome: { runtime: { getManifest: () => ({ version: 'test' }) } }
+  };
+  vm.runInNewContext(source.slice(builderStart, builderEnd), context);
+  const result = context.buildDisputExportPayload([]);
+  expect(result.options.planning.revision).toBe(revision);
+  expect(result.options.planning.instances[0]).toMatchObject({ stageId: 'stage1', plannedStageId: 'plan1' });
+  delete context.window.__debateApplication;
+  expect(() => context.buildDisputExportPayload([])).not.toThrow();
+});

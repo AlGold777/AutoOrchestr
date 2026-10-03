@@ -90,6 +90,7 @@ function makeOrchestrator(options = {}) {
     setInterval: options.setInterval,
     clearInterval: options.clearInterval,
     commitStateDelta,
+    emit: options.emit,
     AbortController,
     exposeInternals: true
   });
@@ -117,6 +118,31 @@ function makeTerminalAwareOrchestrator(options = {}) {
 const types = (state) => state.events.map((e) => e.type);
 
 describe('Orchestrator — run lifecycle', () => {
+  test('quota exhaustion does not interrupt stage completion or event publication', async () => {
+    const Persistence = require('../disput/debate-orchestrator-persistence');
+    const values = new Map();
+    const storage = {
+      getItem: key => values.get(key) ?? null,
+      setItem: (key, value) => {
+        if (!key.endsWith(':lease') && value.length > 1000) {
+          throw Object.assign(new Error('quota exceeded'), { name: 'QuotaExceededError' });
+        }
+        values.set(key, value);
+      },
+      removeItem: key => values.delete(key)
+    };
+    const persistence = Persistence.createPersistence({ runId: 'run-1', storage });
+    const emit = jest.fn();
+    const { orchestrator } = makeOrchestrator({ persistence, emit, adapterBehavior: () => ({ status: 'received', text: 'x'.repeat(10000) }) });
+    expect((await orchestrator.startRun({ debateCase: makeCase() })).ok).toBe(true);
+    expect(types(orchestrator.getState())).toContain('STAGE_COMPLETED');
+    await orchestrator.requestPause({ requestedBy: 'test' });
+    expect(orchestrator.getState().lifecycle).toBe('PAUSED');
+    expect(persistence.loadEvents()).toEqual(orchestrator.getState().events);
+    expect(emit.mock.calls.map(call => call[0])).toContain('STAGE_COMPLETED');
+    expect(persistence.getStorageStatus().mode).toBe('memory');
+  });
+
   test('startRun requires a pre-created DebateCase (Slice B order)', async () => {
     const { orchestrator } = makeOrchestrator();
     expect((await orchestrator.startRun({})).code).toBe('DEBATE_CASE_REQUIRED');

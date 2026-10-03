@@ -6412,6 +6412,7 @@ document.addEventListener('click', (event) => {
             semanticStore: debateCaseStore,
             enableDurablePersistence: true,
             deps: {
+                onPersistenceError: () => showNotification('Хранилище переполнено. Прогон продолжается в памяти. Сохраните отчёт до перезагрузки страницы.'),
                 startFromPage: startDebateFromPage,
                 createId: makePipelineRunId,
                 runModelBatch,
@@ -20245,11 +20246,12 @@ function checkCompareButtonState() {
         });
         const trace = debateTraceStore?.getActiveRun?.();
         if (trace && window.DebateTraceProjections) {
+            const application = window.__debateApplication;
             return window.DebateTraceProjections.buildReport(trace, {
                 extensionVersion: chrome?.runtime?.getManifest?.()?.version || 'unknown',
                 duplicateEventIds: debateTraceStore.getDuplicateIds?.(trace.debateRunId) || [],
-                planning: { revisions: trace.planRevisions || [], revision: window.DebateTraceSchema?.sanitize?.(debateApplication?.getActiveRevision?.() || null),
-                    instances: (debateApplication?.getOrchestrator?.()?.getState?.()?.stages || []).map(stage => ({
+                planning: { revisions: trace.planRevisions || [], revision: window.DebateTraceSchema?.sanitize?.(application?.getActiveRevision?.() || null),
+                    instances: (application?.getOrchestrator?.()?.getState?.()?.stages || []).map(stage => ({
                         stageId: stage.stageInstanceId, plannedStageId: stage.plannedStageId, planRevisionId: stage.planRevisionId
                     })) }
             });

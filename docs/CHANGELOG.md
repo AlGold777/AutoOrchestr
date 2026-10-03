@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-03 — Export scope and storage quota recovery, version 2.81.583
+
+- Disput JSON, MD and Extract resolve the live application through the existing page bridge. The shared report builder no longer references a variable private to the pipeline initializer.
+- If event, snapshot or publication storage fails, the complete current run continues in memory. Stale partial recovery records for this run are removed; lease writes still use shared storage and fail honestly. No response text is truncated to fit the quota.
+- The page shows one notification asking the user to export before reloading. Memory fallback does not survive page reload. Other runs and unrelated storage keys are untouched.
+- Regression coverage includes 36 large answers, snapshot overflow, cross-context lease fencing, stage completion/publication after quota failure and the real report builder without a lexical application variable.
+
 ### 2026-10-03 — Standalone transport Extract v3, version 2.81.582
 
 - MD has a reversible registry of every source member, common identity/label/evidence dictionaries, one terminal registry, explicit count units and continuous section numbering. It preserves state returns, multi-model ordering, run boundaries and ambiguity without time-based request guesses.
