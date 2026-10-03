@@ -1120,6 +1120,9 @@
     'canvas',
     'button',
     '[role="button"]',
+    '[data-message-part-type="reasoning"]',
+    '[aria-hidden="true"]',
+    '[inert]',
     'header',
     'footer',
     'nav',
@@ -1199,6 +1202,7 @@
       'article'
     ],
     'Le Chat': [
+      '[data-message-author-role="assistant"] [data-message-part-type="answer"]',
       'div[data-testid="lechat-response"] .prose',
       '[data-testid="answer"] .prose',
       '[data-testid="message-content"]',
@@ -1258,7 +1262,7 @@
     const tag = String(node?.tagName || '').toLowerCase();
     if (['input', 'textarea', 'button', 'nav', 'header', 'footer', 'form', 'aside'].includes(tag)) return true;
     try {
-      return !!node?.closest?.('textarea,input,button,nav,header,footer,form,aside,[contenteditable="true"],[role="combobox"]');
+      return !!node?.closest?.('textarea,input,button,nav,header,footer,form,aside,[contenteditable="true"],[role="combobox"],[data-message-part-type="reasoning"],[data-message-author-role="user"],[data-role="user"],[hidden],[inert],[aria-hidden="true"]');
     } catch (_) {
       return false;
     }
@@ -1287,10 +1291,18 @@
       } catch (_) {}
     };
     visitRoot(document);
+    if (llmName === 'Le Chat') {
+      const assistants = document.querySelectorAll('[data-message-author-role="assistant"], [data-role="assistant"]');
+      const latest = assistants[assistants.length - 1];
+      if (latest?.querySelector('[data-message-part-type]')) {
+        nodes.splice(0, nodes.length, ...latest.querySelectorAll('[data-message-part-type="answer"]'));
+      }
+    }
     const candidates = nodes
       .filter((node) => node && !isLateSnapshotRejectedNode(node))
       .map((node, index) => {
-        const text = extractSafeVisibleText(node, 200000);
+        const text = llmName === 'Le Chat' && window.AnswerStructure
+          ? window.AnswerStructure.linearizeText(node) : extractSafeVisibleText(node, 200000);
         let visible = true;
         try {
           const style = window.getComputedStyle(node);

@@ -1138,20 +1138,38 @@
 
   // Извлечение ответа - адаптация под LeChat с логикой Grok
   function getProseNodes() {
+    const assistants = document.querySelectorAll('[data-message-author-role="assistant"], [data-role="assistant"], [data-testid="lechat-response"], [data-testid="assistant-message"], .chat-response');
+    // Keep the newest assistant turn even while it contains only reasoning;
+    // falling back to an earlier answer would return stale content.
+    if (assistants.length) return [assistants[assistants.length - 1]];
     return Array.from(document.querySelectorAll(
       'div.prose:not(:has(div[contenteditable])), .prose, div[data-testid="lechat-response"] .prose, article .prose, [data-testid="answer"] .prose, [data-testid="message-content"], div[class*="message-content"], .result, .answer, [role="article"] .prose'
     )).filter((n) => {
-      const text = (n.innerText || '').trim();
+      const text = extractResponseText(n).text;
       // Filter out empty nodes and composer/input nodes
-      return text.length > 0 && !n.isContentEditable && !n.closest('[contenteditable="true"]');
+      return text.length > 0 && !n.isContentEditable && !n.closest('[contenteditable="true"], [data-message-part-type="reasoning"], [data-message-author-role="user"], [data-role="user"], [hidden], [inert], [aria-hidden="true"]');
     });
   }
 
   function extractResponseText(node) {
     if (!node) return { text: '', html: '' };
-    const html = buildInlineHtml(node);
-    const text = (node.innerText || node.textContent || '').trim();
+    const parts = node.matches?.('[data-message-part-type="answer"]') ? [node]
+      : Array.from(node.querySelectorAll?.('[data-message-part-type="answer"]') || []);
+    if (!parts.length && (node.matches?.('[data-message-part-type="reasoning"]')
+      || node.querySelector?.('[data-message-part-type]'))) return { text: '', html: '' };
+    const sources = parts.length ? parts : [node];
+    const html = sources.map(buildInlineHtml).filter(Boolean).join('\n');
+    const text = sources.map(part => (window.AnswerStructure?.linearizeText?.(part)
+      ?? part.innerText ?? part.textContent ?? '').trim()).filter(Boolean).join('\n\n');
     return { text, html };
+  }
+
+  function getFallbackAssistantNodes() {
+    // A known newest turn must stay authoritative, including an empty one.
+    const prose = getProseNodes();
+    if (prose.length) return prose;
+    return Array.from(document.querySelectorAll('div[class*="message"], article, div[role="article"]'))
+      .filter(node => !node.closest('[data-message-author-role="user"], [data-role="user"], [contenteditable="true"], [data-message-part-type="reasoning"], [hidden], [inert], [aria-hidden="true"]'));
   }
 
   function grabLatestAssistantMarkup() {
@@ -1165,7 +1183,7 @@
         }
       }
 
-      const messages = Array.from(document.querySelectorAll('div[class*="message"], article, div[role="article"]'));
+      const messages = getFallbackAssistantNodes();
       for (let i = messages.length - 1; i >= 0; i -= 1) {
         const node = messages[i];
         const payload = extractResponseText(node);
@@ -1204,7 +1222,7 @@
     };
 
     const captureFallbackSnapshot = () => {
-      const messages = Array.from(document.querySelectorAll('div[class*="message"], article, div[role="article"]'));
+      const messages = getFallbackAssistantNodes();
       if (!messages.length) return null;
       const lastMsg = messages[messages.length - 1];
       const payload = extractResponseText(lastMsg);

@@ -52,10 +52,21 @@
     if (/(?:^|[\s_-])(toolbar|actions?|controls?|feedback|copy-button|reaction)(?:$|[\s_-])/.test(structuralMarker)) return true;
     const semanticMarker = [
       node.getAttribute?.('data-testid'), node.getAttribute?.('data-type'),
-      node.getAttribute?.('data-content-type'), node.getAttribute?.('aria-label')
+      node.getAttribute?.('data-content-type'), node.getAttribute?.('data-message-part-type'),
+      node.getAttribute?.('aria-label')
     ].filter(Boolean).join(' ').toLowerCase();
     if (/(thinking|thought|reasoning|analysis|scratch|trace|internal|reflection)/.test(semanticMarker)) return true;
     return /(?:^|[\s_-])(thinking|thought|reasoning|scratchpad|chain-of-thought)(?:$|[\s_-])/.test(structuralMarker);
+  }
+
+  // Providers with typed message parts explicitly separate public answers from
+  // reasoning and turn metadata. Their answer parts are the content boundary.
+  // null means an untyped layout; [] means no public answer has rendered yet.
+  function getAnswerParts(element) {
+    if (!element?.querySelectorAll) return null;
+    if (element.matches?.('[data-message-part-type="answer"]')) return [element];
+    const parts = Array.from(element.querySelectorAll('[data-message-part-type]'));
+    return parts.length ? parts.filter(part => part.getAttribute('data-message-part-type') === 'answer') : null;
   }
 
   function linearizeText(element, options = {}) {
@@ -79,7 +90,9 @@
         if (node.shadowRoot) Array.from(node.shadowRoot.childNodes || []).forEach(visit);
       } catch (_) {}
     };
-    Array.from(element.childNodes || []).forEach(visit);
+    const parts = getAnswerParts(element);
+    if (parts) parts.forEach(visit);
+    else Array.from(element.childNodes || []).forEach(visit);
     try {
       if (element.shadowRoot) Array.from(element.shadowRoot.childNodes || []).forEach(visit);
     } catch (_) {}
@@ -151,8 +164,9 @@
     if (messageRoot && selected && messageRoot !== selected && !messageRoot.contains?.(selected)) {
       issues.push('selected_outside_message_root');
     }
+    const parts = messageRoot ? getAnswerParts(messageRoot) : null;
     const omittedBlocks = issues.length === 0
-      ? enumerateContentBlocks(messageRoot, { selected })
+      ? enumerateContentBlocks(parts ? { children: parts } : messageRoot, { selected })
       : [];
     if (omittedBlocks.length) issues.push('uncovered_message_blocks');
     return {
@@ -163,7 +177,7 @@
     };
   }
 
-  const api = Object.freeze({ normalizeText, isIgnored, linearizeText, enumerateContentBlocks, inspect });
+  const api = Object.freeze({ normalizeText, isIgnored, getAnswerParts, linearizeText, enumerateContentBlocks, inspect });
   root.AnswerStructure = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

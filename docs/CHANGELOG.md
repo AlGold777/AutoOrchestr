@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-03 — LeChat extracts typed public answers, version 2.81.588
+
+- Live LeChat renders the assistant turn as typed answer/reasoning parts. Selector profiles, the shared turn resolver, manual Get it inline extraction, late snapshots and the legacy collector now select public answer content rather than the surrounding thought disclosure and timestamp.
+- Shared text linearization and structural coverage use typed answer parts as the content boundary. Expanded reasoning is excluded from text and HTML, while legitimate answer prose about reasoning is preserved. A newest reasoning-only turn is not replaced by an older answer in manual/late collection; legacy extraction joins multiple answer parts.
+- Validation: 85 tests in 8 extraction, lifecycle, structural coverage, baseline and selector suites passed. Fixtures mirror the observed typed DOM and split-letter thought label.
+
 ### 2026-10-03 — Get it keeps short conversations as its scroll target, version 2.81.587
 
 - Follow-up to 2.81.586 after a failed GPT field test: the reversed coordinate fix was insufficient. On a short answer the conversation has no overflow, so the old 40px overflow filter discarded it and selected the lazy-loading chat-history sidebar instead.

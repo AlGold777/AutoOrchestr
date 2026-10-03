@@ -166,7 +166,7 @@
       const node = pool[index];
       const text = String(readNodeText(node) || '').trim();
       if (text.length < minimumTextLength) continue;
-      if (node.closest?.('[hidden], [aria-hidden="true"], [inert], [data-role="user"], [data-message-author-role="user"], [data-author-role="user"]')) {
+      if (node.closest?.('[hidden], [aria-hidden="true"], [inert], [data-message-part-type="reasoning"], [data-role="user"], [data-message-author-role="user"], [data-author-role="user"]')) {
         rejectedCandidates.push(node);
         continue;
       }

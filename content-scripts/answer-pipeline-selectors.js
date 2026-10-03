@@ -299,6 +299,8 @@
       ],
       answerContainer: 'main, article',
       lastMessage: [
+        '[data-message-author-role="assistant"] [data-message-part-type="answer"]',
+        '[data-role="assistant"] [data-message-part-type="answer"]',
         'div[data-testid=\"lechat-response\"] .prose',
         '[data-testid=\"answer\"] .prose',
         '[data-testid*=\"message-content\"]',
@@ -309,7 +311,7 @@
         'article',
         '.prose'
       ].join(', '),
-      streamStart: ['div[data-testid=\"lechat-response\"]', '[data-testid=\"answer\"]', '[data-testid*=\"message-content\"]', 'div[class*=\"message-content\"]', '[data-role=\"assistant\"]', '[data-message-author-role=\"assistant\"]', 'article', '.prose'],
+      streamStart: ['[data-message-author-role="assistant"] [data-message-part-type="answer"]', 'div[data-testid=\"lechat-response\"]', '[data-testid=\"answer\"]', '[data-testid*=\"message-content\"]', 'div[class*=\"message-content\"]', '[data-role=\"assistant\"]', '[data-message-author-role=\"assistant\"]', 'article', '.prose'],
       generatingIndicators: ['[aria-busy=\"true\"]', '.loading', '.animate-pulse', '.typing-indicator', '[class*=\"streaming\" i]', '[data-testid=\"generation\"]', '[data-testid*=\"loading\"]'],
       completionIndicators: ['button[type=\"submit\"]:not([disabled])', '[data-testid*=\"send\"]:not([disabled])', '[aria-label*=\"Send\" i]:not([disabled])', 'textarea[role=\"textbox\"]:not([disabled])'],
       stopButton: 'button[aria-label*=\"Stop\" i], button[aria-label*=\"Stop generation\" i], button[data-testid*=\"stop\" i], button[class*=\"stop\" i]',

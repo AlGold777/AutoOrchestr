@@ -35,6 +35,7 @@
         'button'
       ],
       response: [
+        '[data-message-author-role="assistant"] [data-message-part-type="answer"]',
         'main article',
         '.chat-response',
         '.prose',
@@ -45,6 +46,7 @@
     observationDefaults: {
       rootSelector: 'main',
       targetSelectors: [
+        '[data-message-author-role="assistant"] [data-message-part-type="answer"]',
         '.chat-response',
         'main article',
         '.prose',
