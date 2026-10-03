@@ -179,6 +179,7 @@
 
     function recordUniversalEvent(type, payload = {}) {
       const body = payload?.payload || payload;
+      try { deps.onTraceEvent?.({ type, ...body }); } catch (_) { /* telemetry must not affect execution */ }
       // Lifecycle projections are committed before ancillary timeline work. This
       // guarantees that a completed orchestrator cannot be left with a running
       // UI aggregate if telemetry/rendering fails.

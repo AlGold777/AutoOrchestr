@@ -177,6 +177,13 @@
           }
           let responseText = text(outcome?.text);
           let completion = outcome?.completion || null;
+          let answerIdentity = outcome?.raw?.results?.[participant.model || participant.participantId] || {};
+          const decisionEvidence = () => ({
+            transportRequestId: answerIdentity.transportRequestId || null, dispatchId: answerIdentity.dispatchId || null,
+            stageAttemptId: `${stage.stageInstanceId}:a${attempt}`, model: participant.model || participant.participantId,
+            answerLength: responseText.length, answerRepresentation: 'engine_response_trimmed',
+            answerProof: root.AnswerProofNormalization?.evidence?.(responseText, answerIdentity) || null
+          });
           if (completion === 'partial') {
             emit('PARTICIPANT_RESPONSE_INCOMPLETE', { stageInstanceId: stage.stageInstanceId, participantId: participant.participantId, attempt });
           }
@@ -190,10 +197,11 @@
             }), signal);
             responseText = text(repaired?.text);
             completion = repaired?.completion || null;
+            answerIdentity = repaired?.raw?.results?.[participant.model || participant.participantId] || {};
             verdict = acceptance(responseText, { stage, participant, completion });
           }
           if (verdict.ok) {
-            emit('PARTICIPANT_RESPONSE_ACCEPTED', { stageInstanceId: stage.stageInstanceId, participantId: participant.participantId, attempt });
+            emit('PARTICIPANT_RESPONSE_ACCEPTED', { stageInstanceId: stage.stageInstanceId, participantId: participant.participantId, attempt, accepted: true, ...decisionEvidence() });
             const artifacts = extractArtifacts({ stage, participant, text: responseText }) || [];
             const stateDelta = proposeStateDelta({ stage, participant, text: responseText, artifacts, context });
             return {
@@ -203,7 +211,7 @@
             };
           }
           lastReason = verdict.reason || 'not_accepted';
-          emit('PARTICIPANT_RESPONSE_REJECTED', { stageInstanceId: stage.stageInstanceId, participantId: participant.participantId, attempt, reason: lastReason, details: verdict.details || null, chars: responseText.length });
+          emit('PARTICIPANT_RESPONSE_REJECTED', { stageInstanceId: stage.stageInstanceId, participantId: participant.participantId, attempt, accepted: false, ...decisionEvidence(), reason: lastReason, details: verdict.details || null, chars: responseText.length });
         } catch (error) {
           if (error?.name === 'AbortError' || signal?.aborted) {
             return { participantId: participant.participantId, status: 'cancelled', reason: 'aborted', attempts: attempt };

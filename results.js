@@ -2852,7 +2852,8 @@ document.addEventListener('click', (event) => {
             }
             : (eventType === 'LEGACY_TIMELINE_EVENT'
                 ? {
-                    type: payload.type || '', from: payload.from || '', to: payload.to || '',
+                    ...payload,
+                    type: payload.type || payload.kind || '', from: payload.from || '', to: payload.to || '',
                     model: payload.model || '', round: payload.round || null,
                     status: payload.status || '', note: String(payload.note || '').slice(0, 240)
                 }
@@ -2867,11 +2868,12 @@ document.addEventListener('click', (event) => {
             eventType,
             source: 'run_store',
             sourceTimestamp: aggregateEvent.at,
+            causality: payload.causality || aggregateEvent.causality,
             reasonCode: String(payload.reason || ''),
             correlation: {
                 debateRunId: aggregate.runId,
                 planId: aggregate.executionPlan?.planId,
-                stageId: payload.stageId || aggregate.currentStageId,
+                stageId: payload.stageId || payload.stageInstanceId || payload.payload?.stageInstanceId || aggregate.currentStageId,
                 pipelineRunId: batch.pipelineRunId || aggregate.runId,
                 pipelineRoundId: payload.pipelineRoundId || batch.pipelineRoundId,
                 pipelineBatchId: payload.pipelineBatchId || batch.pipelineBatchId,
@@ -2970,6 +2972,7 @@ document.addEventListener('click', (event) => {
             source: entry.source || 'background',
             severity,
             sourceTimestamp: entry.ts,
+            causality: meta.causality,
             reasonCode,
             provenance: 'legacy_adapter',
             correlation: {
@@ -6396,6 +6399,15 @@ document.addEventListener('click', (event) => {
                 createId: makePipelineRunId,
                 runModelBatch,
                 onEnginePause: (info) => handleEnginePause(info),
+                onTraceEvent: (info) => {
+                    if (!['PARTICIPANT_RESPONSE_ACCEPTED', 'PARTICIPANT_RESPONSE_REJECTED'].includes(info.type)) return;
+                    appendDebateTraceEvent({ eventType: 'ANSWER_ACCEPTANCE_DECIDED', source: 'runner', sourceTimestamp: Date.now(),
+                        correlation: { stageId: info.stageInstanceId, stageAttemptId: info.stageAttemptId,
+                            transportRequestId: info.transportRequestId, dispatchId: info.dispatchId },
+                        reasonCode: info.reason || (info.accepted ? 'ENGINE_ACCEPTED' : 'ENGINE_REJECTED'),
+                        payload: { ...info, model: info.model || info.participantId, decisionSource: 'StageExecutor.acceptResponse' }
+                    });
+                },
                 // Why an answer was not accepted (the delivery report never said): journaled per attempt.
                 onResponseRejected: (info) => globalThis.MessageDelivery?.batchEvent?.('response_rejected', {
                     model: info.participantId || null, stage: info.stageInstanceId || null, attempt: info.attempt || null,
@@ -17465,9 +17477,17 @@ document.addEventListener('click', (event) => {
             || `boundary:${String(meta.dispatchId || 'unknown')}:${String(meta.attemptId || 'unknown')}:${evaluationBoundaryType}`;
         const resolutionState = meta.resolutionState
             || (outcome === 'matched' ? 'delivered' : 'unresolved');
-        const renderKey = [meta.dispatchId, meta.attemptId, meta.payloadEvidenceId, observedCardId, outcome].join('|');
+        const renderKey = [meta.transportRequestId || meta.requestId, meta.dispatchId, meta.attemptId, meta.payloadEvidenceId, observedCardId, observed?.normalizedHash, outcome].join('|');
         if (outputElement?.dataset?.proofRenderKey === renderKey) return;
         if (outputElement?.dataset) outputElement.dataset.proofRenderKey = renderKey;
+        window.MessageDelivery?.batchEvent?.('displayed', {
+            model: llmName, requestId: meta.transportRequestId || meta.requestId || null,
+            dispatchId: meta.dispatchId || null, chars: renderedText.length,
+            answerArtifact: { representation: 'rendered_text', ...(observed || {}) },
+            pageId: location.pathname, cardTargetType: panel?.classList?.contains('debate-model-card') ? 'pipeline' : 'main',
+            expectedCardId: expectedCardId || null, observedCardId, outcome,
+            source: 'CARD_RENDER', final: terminalStatus, usableResult: Boolean(renderedText && !isErrorOutput(renderedText))
+        });
         try {
             chrome.runtime.sendMessage({
                 type: 'ANSWER_CARD_RENDER_EVALUATED',
@@ -20181,7 +20201,11 @@ function checkCompareButtonState() {
         if (trace && window.DebateTraceProjections) {
             return window.DebateTraceProjections.buildReport(trace, {
                 extensionVersion: chrome?.runtime?.getManifest?.()?.version || 'unknown',
-                duplicateEventIds: debateTraceStore.getDuplicateIds?.(trace.debateRunId) || []
+                duplicateEventIds: debateTraceStore.getDuplicateIds?.(trace.debateRunId) || [],
+                planning: { revision: window.DebateTraceSchema?.sanitize?.(debateApplication?.getActiveRevision?.() || null),
+                    instances: (debateApplication?.getOrchestrator?.()?.getState?.()?.stages || []).map(stage => ({
+                        stageId: stage.stageInstanceId, plannedStageId: stage.plannedStageId, planRevisionId: stage.planRevisionId
+                    })) }
             });
         }
         const timelineRows = buildDisputTimelineRows();
@@ -21618,6 +21642,7 @@ function checkCompareButtonState() {
             if (body) {
                 body.classList.remove('debate-model-card-empty');
                 renderDebateResponseBody(body, normalizedText, normalizedHtml);
+                emitAnswerCardRenderEvidence(llmName, liveCard, body, meta);
             }
             syncDebateCardOutputLayout(liveCard);
             setDebatePrintingState(liveCard, llmName, !isFinal);
@@ -21685,6 +21710,7 @@ function checkCompareButtonState() {
         updateCardRole(card, meta.role || '');
         const body = card.querySelector('.debate-model-card-output');
         renderDebateResponseBody(body, normalizedText, normalizedHtml);
+        emitAnswerCardRenderEvidence(llmName, card, body, meta);
         syncDebateCardOutputLayout(card);
         setDebatePrintingState(card, llmName, !isFinal);
         bindApprovalCheckbox(card);

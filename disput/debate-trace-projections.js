@@ -292,6 +292,7 @@
         dataCompleteness: events.some((event) => event.correlation?.correlationQuality !== 'exact') ? 'incomplete' : 'complete'
       },
       plan: trace?.plan || null,
+      planning: options.planning || null,
       collection: { originalSourceTotal: null, ...(trace?.collection || {}), exportedEvents: events.length, exportFiltered: false },
       completeness: { identity, plan: trace?.plan ? 'available' : 'unavailable',
         displayEvidence: events.some(e => e.payload?.evidence?.normalizedHash) ? 'observed_partial' : 'not_recorded',

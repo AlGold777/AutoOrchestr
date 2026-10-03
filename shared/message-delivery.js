@@ -28,6 +28,12 @@
   const latestByModel = new Map(); // model -> entry (requests without a transport id)
   const journal = [];
   let mirrorTimer = null;
+  const collection = { recorded: 0, evicted: 0, focusDetailsOmitted: 0, limit: JOURNAL_LIMIT, focusDetailLimit: FOCUS_EVENTS_PER_REQUEST };
+  const proof = root.AnswerProofNormalization || (typeof require === 'function' ? require('./answer-proof-normalization') : null);
+  const textArtifact = (text, limit, representation, identity = {}) => ({
+    representation, lengthUnit: 'UTF-16 code units', fullLength: text.length, storedLength: Math.min(text.length, limit),
+    storageLimit: limit, truncated: text.length > limit, ...(proof?.evidence(text, identity) || {})
+  });
 
   function makeToken() {
     const bytes = new Uint8Array(6);
@@ -74,7 +80,8 @@
 
   function record(event) {
     journal.push({ at: new Date().toISOString(), ...event });
-    if (journal.length > JOURNAL_LIMIT) journal.splice(0, journal.length - JOURNAL_LIMIT);
+    collection.recorded += 1;
+    if (journal.length > JOURNAL_LIMIT) { collection.evicted += journal.length - JOURNAL_LIMIT; journal.splice(0, journal.length - JOURNAL_LIMIT); }
     const storage = root.chrome?.storage?.session;
     if (!storage) return;
     clearTimeout(mirrorTimer);
@@ -103,10 +110,11 @@
       const base = promptsByModel?.[model] ?? prompt;
       const requestId = String(requestIds?.[model] || '') || null;
       out[model] = wrap(base, token);
-      const entry = { token, sentAt: Date.now(), batchId, final: false, model, requestId };
+      const promptArtifact = textArtifact(out[model], 1500, 'wrapped_prompt');
+      const entry = { token, sentAt: Date.now(), batchId, final: false, model, requestId, promptArtifact };
       if (requestId) expectedByRequest.set(requestId, entry);
       latestByModel.set(model, entry);
-      record({ kind: 'prepared', model, token, batchId, requestId, chars: out[model].length, prompt: out[model].slice(0, 1500) });
+      record({ kind: 'prepared', model, token, batchId, requestId, chars: out[model].length, promptArtifact, prompt: out[model].slice(0, 1500) });
     });
     pruneExpected();
     return out;
@@ -148,6 +156,8 @@
       ? String(message.answer.text || message.answer.answer || '')
       : String(message.answer || '');
     const state = inspect(answer, entry.token);
+    const answerArtifacts = { raw: textArtifact(answer, 1200, 'received_with_transport_tags', message.metadata || {}),
+      cleaned: textArtifact(clean(answer), 0, 'transport_tags_removed', message.metadata || {}), transformation: 'MessageDelivery.clean' };
     if (state === 'foreign') {
       if (!entry.staleLogged) { entry.staleLogged = true; record({ kind: 'stale_dropped', model, token: entry.token, requestId: entry.requestId, chars: answer.length, answer: answer.slice(0, 500) }); }
       return null;
@@ -177,7 +187,7 @@
       entry.finalKind = kind;
       record({
         kind, model, token: entry.token, requestId: entry.requestId, chars: answer.length, ms: Date.now() - entry.sentAt,
-        answer: answer.slice(0, 1200),
+        answer: answer.slice(0, 1200), answerArtifacts,
         status,
         completion: completionOf(status || (answer.trim() ? 'SUCCESS' : 'FAILED'), answer),
         dispatchId: message.dispatchId || metadata.dispatchId || null,
@@ -192,10 +202,10 @@
       record({
         kind: entry.finalKind, model, token: entry.token, requestId: entry.requestId, chars: answer.length, ms: Date.now() - entry.sentAt,
         status, completion: completionOf(status || 'SUCCESS', answer), dispatchId: message.dispatchId || metadata.dispatchId || null,
-        source: String(metadata.source || metadata.answerSource || 'live'), reason: 'upgraded_after_failure'
+        source: String(metadata.source || metadata.answerSource || 'live'), answerArtifacts, reason: 'upgraded_after_failure'
       });
     } else if (final && entry.final && metadata.revision === true) {
-      record({ kind: 'revision', model, token: entry.token, requestId: entry.requestId, chars: answer.length, reason: String(metadata.reason || '') });
+      record({ kind: 'revision', model, token: entry.token, requestId: entry.requestId, chars: answer.length, answerArtifacts, reason: String(metadata.reason || '') });
     }
     if (final && state === 'missing') {
       metadata.attributionState = 'unproven';
@@ -217,6 +227,9 @@
         kind: 'dispatch', model: message.llmName, token: entry?.token || null, requestId: requestIdOf(message),
         phase: String(message.phase || ''), dispatchId: message.dispatchId || null, tabId: message.tabId ?? null,
         reason: message.reason || null, dispatchReason: message.dispatchReason || null, attempt: message.attempt ?? null,
+        promptArtifact: message.phase === 'submitted' ? entry?.promptArtifact || null : undefined,
+        promptIdentityProven: Boolean(message.promptHash && message.promptHash === entry?.promptArtifact?.normalizedHash),
+        submittedPromptHash: message.promptHash ?? null,
         bg: message.backgroundVersion || null, answerChars: message.answerChars ?? null,
         ms: entry ? Date.now() - entry.sentAt : null
       });
@@ -229,8 +242,11 @@
       // The count is exact; the first events carry the detail, the rest only the count.
       if (entry.focusCount <= FOCUS_EVENTS_PER_REQUEST) {
         record({ kind: 'focus', model: message.llmName || null, token: entry.token, requestId: entry.requestId, source: message.source || null, tabId: message.tabId ?? null, n: entry.focusCount, ms: Date.now() - entry.sentAt });
-      } else if (entry.focusCount % 10 === 0) {
+      } else {
+        collection.focusDetailsOmitted += 1;
+        if (entry.focusCount % 10 === 0) {
         record({ kind: 'focus_count', model: message.llmName || null, token: entry.token, requestId: entry.requestId, n: entry.focusCount, ms: Date.now() - entry.sentAt });
+        }
       }
       return;
     }
@@ -311,7 +327,7 @@
   // A page load starts a new session: the previous journal is not carried over.
   try { root.chrome?.storage?.session?.remove(JOURNAL_KEY); } catch (_) { /* ignore */ }
 
-  const api = Object.freeze({ JOURNAL_KEY, makeToken, wrap, clean, cleanHtml, inspect, prepare, receive, observeRuntime, closeBatch, batchEvent, record, clearJournal, reset, journal: () => journal.slice() });
+  const api = Object.freeze({ JOURNAL_KEY, makeToken, wrap, clean, cleanHtml, inspect, prepare, receive, observeRuntime, closeBatch, batchEvent, record, clearJournal, reset, collection: () => ({ ...collection, retained: journal.length }), journal: () => journal.slice() });
   root.MessageDelivery = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

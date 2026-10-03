@@ -611,6 +611,8 @@
             confidence: typeof payload.confidence === 'number' ? payload.confidence : null,
             answerMethod: payload.answerMethod || null,
             responsePhase: payload.responsePhase || null,
+            observerStoppedAt: payload.observerStoppedAt ?? null,
+            stopReason: payload.stopReason ?? null,
             phaseEvidence: payload.phaseEvidence || null
           }
         }
@@ -2160,6 +2162,10 @@
       emitLifecycleTelemetry('LIFECYCLE_TRACKING_STOPPED', {
         modelName: tracker.modelName,
         state: 'CANCELLED',
+        dispatchId: tracker.dispatchId,
+        runSessionId: tracker.runSessionId,
+        observerStoppedAt: tracker.cancelledAt,
+        stopReason: reason,
         level: 'info',
         textLength: tracker.lastTextLength || 0,
         phaseEvidence: { reason }

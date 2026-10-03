@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-03 — Delivery artifacts and source evidence, version 2.81.580
+
+- Journal declares full/stored UTF-16 lengths, truncation limits and normalization hashes computed before clipping. Raw tagged and cleaned answers have distinct representations; submitted prompt identity is not claimed without a matching dispatch hash.
+- Native engine acceptance decisions, pipeline/main card render observations and observer stop identity/reason survive export. Supplied causality is preserved; universal plan revisions retain their instance mapping separately from fixed execution plans.
+- Export reads the current in-memory journal snapshot; derived delivery text copies reference journal paths. Collection metrics expose evictions and omitted focus details.
+- 84 targeted delivery, exporter and engine tests passed, including long-answer normalization and clipping.
+
 ### 2026-10-03 — Trace identity and honest integrity, version 2.81.579
 
 - Event schema 6 preserves transport request aliases, attempt identity, render proof and zero measurements. Collected responses carry a pending engine decision rather than constant rejection.

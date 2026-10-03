@@ -180,15 +180,34 @@
 
   // The delivery report embedded in the Disput Flow export (section `delivery`); same
   // shape as the former standalone message-delivery report.
+  // Export projections reference the journal; the live UI still uses the complete diagnosis.
+  function compactDiagnosis(diagnosis, journal) {
+    const source = new Map(journal.map((e, i) => [JSON.stringify(e), `delivery.journal[${i}]`]));
+    const compact = (value) => {
+      if (Array.isArray(value)) return value.map(compact);
+      if (!value || typeof value !== 'object') return value;
+      const journalPath = source.get(JSON.stringify(value));
+      if (journalPath) return { journalPath, ...Object.fromEntries(Object.entries(value).filter(([k]) => !['prompt', 'answer', 'text', 'html'].includes(k))) };
+      return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, compact(v)]));
+    };
+    const out = compact(diagnosis);
+    (out.sends || []).forEach(send => {
+      const i = journal.findIndex(e => e.kind === 'prepared' && ((send.requestId && e.requestId === send.requestId) || (!send.requestId && e.token === send.token)));
+      if (i >= 0) { delete send.prompt; send.preparedPath = `delivery.journal[${i}]`; }
+    });
+    return out;
+  }
+
   async function buildReport() {
-    const journal = await readJournal();
+    const journal = root.MessageDelivery?.journal ? root.MessageDelivery.journal() : await readJournal();
     const version = root.chrome?.runtime?.getManifest?.().version || null;
     return {
       report: 'message-delivery',
       generated_at: new Date().toISOString(),
       extension_version: version,
       transport_contract_version: root.TransportContract?.VERSION || null,
-      diagnosis: root.MessageDeliveryDiagnosis.diagnose(journal, { version }),
+      diagnosis: compactDiagnosis(root.MessageDeliveryDiagnosis.diagnose(journal, { version }), journal),
+      collection: root.MessageDelivery?.collection?.() || { originalSourceTotal: null },
       journal
     };
   }

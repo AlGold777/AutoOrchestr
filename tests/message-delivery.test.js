@@ -124,3 +124,17 @@ describe('delivery diagnosis', () => {
     expect(Delivery.journal().filter((e) => e.kind === 'no_answer')).toHaveLength(2);
   });
 });
+
+test('full answer identities precede truncation and distinguish transport-tag removal', () => {
+  Delivery.reset();
+  const prompts = Delivery.prepare({ prompt: 'p'.repeat(2000), models: ['GPT'], requestIds: { GPT: 'q-artifact' } });
+  const token = /\[\[AO-[a-z0-9]{6}\]\]/.exec(prompts.GPT)[0];
+  const answer = 'a'.repeat(2000) + '\n' + token;
+  const result = Delivery.receive({ llmName: 'GPT', transportRequestId: 'q-artifact', answer }, { final: true });
+  const prepared = Delivery.journal().find(e => e.kind === 'prepared');
+  const final = Delivery.journal().find(e => e.kind === 'verified');
+  expect(prepared.promptArtifact).toMatchObject({ truncated: true, storedLength: 1500, fullLength: prompts.GPT.length });
+  expect(final.answerArtifacts.raw).toMatchObject({ fullLength: answer.length, storedLength: 1200, truncated: true });
+  expect(final.answerArtifacts.cleaned.fullLength).toBe(result.answer.length);
+  expect(final.answerArtifacts.cleaned.normalizedHash).not.toBe(final.answerArtifacts.raw.normalizedHash);
+});
