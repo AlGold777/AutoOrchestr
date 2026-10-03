@@ -163,6 +163,41 @@ test('GPT fails the mandatory visit when scrolling does not reach the bottom', a
   expect(await result).toBe(false);
 });
 
+test('GPT reaches zero in a reversed thread and follows lazy answer growth', async () => {
+  const main = document.createElement('main'); document.body.appendChild(main);
+  const chat = scroller(main);
+  chat.el.style.display = 'flex';
+  chat.el.style.flexDirection = 'column-reverse';
+  chat.el.scrollTop = -500;
+  let grown = false;
+  chat.el.scrollTo.mockImplementation(({ top }) => {
+    // Chromium clamps positive scroll positions to zero in column-reverse.
+    chat.el.scrollTop = Math.min(0, top);
+    if (!grown) {
+      grown = true;
+      setTimeout(() => { chat.grow(2400); chat.el.textContent = 'The final paragraph'; }, 80);
+    }
+  });
+  const c = setup(); const result = c.runPreCollectScrollNudge('GPT', 1, 1, 'get_it_precollect', { getIt: true });
+  await jest.runAllTimersAsync();
+  expect(await result).toBe(true);
+  expect(chat.el.scrollTop).toBe(0);
+  expect(chat.el.scrollTo.mock.calls.every(([options]) => options.top === 0)).toBe(true);
+  expect(c.emitTelemetry).toHaveBeenCalledWith('GPT', 'PRECOLLECT_NUDGE', expect.objectContaining({
+    meta: expect.objectContaining({ scrollPreparation: expect.objectContaining({ settled: true }) })
+  }));
+});
+
+test('GPT does not accept a reversed thread still showing older messages', async () => {
+  const chat = scroller(document.body);
+  chat.el.style.flexDirection = 'column-reverse';
+  chat.el.scrollTop = -200;
+  chat.el.scrollTo.mockImplementation(() => {});
+  const c = setup(); const result = c.runPreCollectScrollNudge('GPT', 1, 1, 'get_it_precollect', { getIt: true });
+  await jest.runAllTimersAsync();
+  expect(await result).toBe(false);
+});
+
 test.each(['GPT', 'Qwen', 'Claude', 'Gemini', 'Grok', 'DeepSeek', 'Le Chat', 'Perplexity', 'Z.ai', 'Kimi'])('Get it can prepare finalized %s after its automatic focus budget expires', async model => {
   const c = setup(); c.jobState.llms[model] = { finalizedAt: 1 };
   c.isActiveFocusAllowedForEntry = () => false;

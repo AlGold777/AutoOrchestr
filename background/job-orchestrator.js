@@ -5982,6 +5982,13 @@ async function runPreCollectScrollNudge(llmName, tabId, sessionId, reason = 'pre
           }
           return Number(node.scrollTop || 0);
         };
+        // ChatGPT's column-reverse thread has its latest end at zero;
+        // older messages use negative scrollTop values.
+        const isReverseColumn = (node) => getComputedStyle(node).flexDirection === 'column-reverse';
+        const bottomTop = (node) => isReverseColumn(node) ? 0 : node.scrollHeight - node.clientHeight;
+        const isAtBottom = (node) => node.isConnected && (isReverseColumn(node)
+          ? Math.abs(getTop(node)) <= 4
+          : node.scrollHeight - node.clientHeight - getTop(node) <= 4);
         const setTop = (node, top) => {
           if (!node) return;
           const bounded = Math.max(0, top);
@@ -5998,10 +6005,10 @@ async function runPreCollectScrollNudge(llmName, tabId, sessionId, reason = 'pre
             clickBottomArrow();
             // Re-resolve after rendering: both the node and its height can change.
             const targets = resolveScrollableTargets();
-            targets.forEach(node => setTop(node, node.scrollHeight - node.clientHeight));
+            targets.forEach(node => setTop(node, bottomTop(node)));
             window.dispatchEvent(new Event('scroll'));
             await sleep(150);
-            const atBottom = (!requiredBottom || targets.length > 0) && targets.every(node => node.isConnected && node.scrollHeight - node.clientHeight - getTop(node) <= 4);
+            const atBottom = (!requiredBottom || targets.length > 0) && targets.every(isAtBottom);
             const signature = targets.map(node => {
               const text = node.innerText || node.textContent || '';
               return `${node.scrollHeight}:${node.clientHeight}:${text.length}:${text.slice(-160)}`;

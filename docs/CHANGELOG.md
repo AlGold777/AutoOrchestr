@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-03 — Get it recognizes reversed conversation scrolling, version 2.81.586
+
+- ChatGPT now renders its thread as a column-reverse flex container: the latest end is scrollTop 0 and older messages have negative positions. Get it now scrolls and checks this coordinate system correctly, preventing a false «Не удалось перейти к концу беседы» failure on a completed answer.
+- Ordinary conversation containers retain their positive bottom position. Lazy growth, container replacement, bounded settling and focus/session guards still apply.
+- Validation: targeted scroll preparation and Get it regressions, including reversed lazy growth and a blocked negative scroll position.
+
 ### 2026-10-03 — Page runs no longer fill Web Storage, version 2.81.585
 
 - Pipeline keeps orchestrator events, checkpoints and publication cursor in page memory from the start. Full answers and recovery snapshots are no longer serialized into localStorage; pause/resume and export within the open page retain their data.
