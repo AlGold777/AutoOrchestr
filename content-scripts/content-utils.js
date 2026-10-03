@@ -1172,6 +1172,7 @@
 
   const lateSnapshotSelectorsByModel = {
     GPT: [
+      '[data-markdown-text-style="assistant-message"]',
       '[data-message-author-role="assistant"] .markdown',
       '[data-message-author-role="assistant"]',
       'article .markdown',

@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-03 — GPT semantic answer boundaries, version 2.81.590
+
+- Live inspection of short and multi-page GPT conversations found zero matches for the legacy assistant-role, markdown/prose and article selectors. The current renderer marks full answer bodies with `data-markdown-text-style="assistant-message"`.
+- Added that semantic boundary to manual inline Get it, late snapshots, the legacy GPT collector, unified turn/stream detection and both selector registries. Existing layouts remain supported; generated CSS class names are not used.
+- Regression fixtures reproduce the missing answer in all collection routes before the fix and check complete latest-answer extraction, short numeric answers and legacy compatibility. Live DOM inspection confirms the selector covers the full long answer; end-to-end extension UI verification remains unavailable through the browser tool.
+
 ### 2026-10-03 — Get it separates navigation from content settling, version 2.81.589
 
 - Follow-up after the report also reproduced on long GPT answers: scroll preparation previously returned failure unless the entire conversation text and geometry stabilized within eight samples. Reaching the latest end and render settling are now separate observations.

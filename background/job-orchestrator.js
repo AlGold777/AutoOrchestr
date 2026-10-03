@@ -452,7 +452,11 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
     'article',
     '[role="article"]'
   ];
-  const selectors = selectorMap[normalizedModel] || genericSelectors;
+  // GPT's current renderer exposes an explicit answer boundary without the
+  // legacy role wrappers or markdown/prose classes.
+  const selectors = normalizedModel === 'gpt'
+    ? ['[data-markdown-text-style="assistant-message"]', ...genericSelectors]
+    : (selectorMap[normalizedModel] || genericSelectors);
   const seen = new Set();
   const nodes = [];
   const nodeSelectors = new Map();
@@ -522,7 +526,7 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
         ? window.ContentUtils.buildInlineHtml(node, { includeRoot: false })
         : String(node.innerHTML || '').trim();
       const isMarkdown = /markdown|prose|qwen-markdown|markdown-body/i.test(`${selector} ${className}`);
-      const assistantNode = node.closest?.('[data-message-author-role="assistant"],[data-role="assistant"],.assistant-message,.qwen-chat-message-assistant,[class*="assistant" i]');
+      const assistantNode = node.closest?.('[data-markdown-text-style="assistant-message"],[data-message-author-role="assistant"],[data-role="assistant"],.assistant-message,.qwen-chat-message-assistant,[class*="assistant" i]');
       const isAssistantRole = !!assistantNode;
       const isArticle = selector.includes('article') || !!node.closest?.('article,[role="article"]');
       return {

@@ -35,6 +35,7 @@ const baseAdapter = window.BaseLLMAdapter ? new window.BaseLLMAdapter({
 }) : null;
 const attachmentHandler = window.AttachmentHandler || null;
   const FALLBACK_LAST_MESSAGE_SELECTORS = [
+    '[data-markdown-text-style="assistant-message"]',
     '[data-testid="conversation-turn"][data-message-author-role="assistant"]',
     '[data-testid="conversation-turn"][data-author-role="assistant"]',
     '[data-testid="conversation-turn"][data-role="assistant"]',

@@ -31,9 +31,10 @@
 
   const PLATFORM_SELECTORS = {
     chatgpt: {
-      messageRoot: '[data-testid="conversation-turn"][data-message-author-role="assistant"], [data-testid="conversation-turn"][data-author-role="assistant"], [data-testid="conversation-turn"][data-role="assistant"], [data-message-author-role="assistant"], [data-author-role="assistant"], [data-role="assistant"]',
+      messageRoot: '[data-markdown-text-style="assistant-message"], [data-testid="conversation-turn"][data-message-author-role="assistant"], [data-testid="conversation-turn"][data-author-role="assistant"], [data-testid="conversation-turn"][data-role="assistant"], [data-message-author-role="assistant"], [data-author-role="assistant"], [data-role="assistant"]',
       answerContainer: '[data-testid=\"conversation-panel\"], [data-testid=\"conversation-container\"], main, [data-testid=\"conversation-turn\"]',
       lastMessage: [
+        '[data-markdown-text-style="assistant-message"]',
         '[data-testid=\"conversation-turn\"][data-message-author-role=\"assistant\"]',
         '[data-testid=\"conversation-turn\"][data-author-role=\"assistant\"]',
         '[data-testid=\"conversation-turn\"][data-role=\"assistant\"]',
@@ -42,6 +43,7 @@
         '[data-role=\"assistant\"]'
       ].join(', '),
       streamStart: [
+        '[data-markdown-text-style="assistant-message"]',
         '[data-testid=\"conversation-turn\"][data-message-author-role=\"assistant\"]',
         '[data-testid=\"conversation-turn\"][data-author-role=\"assistant\"]',
         '[data-testid=\"conversation-turn\"][data-role=\"assistant\"]',

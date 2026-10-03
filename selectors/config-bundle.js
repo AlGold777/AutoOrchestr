@@ -19,6 +19,7 @@
         "button"
       ],
       "response": [
+        "[data-markdown-text-style=\"assistant-message\"]",
         "[data-testid=\"conversation-panel\"]",
         "[data-testid=\"conversation-container\"]",
         "[data-testid=\"chat-history\"]",
@@ -35,6 +36,7 @@
     "observationDefaults": {
       "rootSelector": "main",
       "targetSelectors": [
+        "[data-markdown-text-style=\"assistant-message\"]",
         "[data-testid=\"conversation-panel\"]",
         "[data-testid=\"chat-history\"]",
         ".markdown",
