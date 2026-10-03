@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-03 — Get it separates navigation from content settling, version 2.81.589
+
+- Follow-up after the report also reproduced on long GPT answers: scroll preparation previously returned failure unless the entire conversation text and geometry stabilized within eight samples. Reaching the latest end and render settling are now separate observations.
+- Manual collection proceeds when the connected conversation target is at its verified end, even if answer/composer content is changing. The bounded render wait remains; a hidden page, detached target or an unreached end still fails. Navigation never proves answer completion, which remains the collector's responsibility.
+- Validation: 165 tests in 15 suites passed, covering long normal/reversed conversations with ongoing content changes, fitting/small-overflow conversations beside a growing sidebar, blocked end positions, LeChat extraction and unaffected provider selectors.
+
 ### 2026-10-03 — LeChat extracts typed public answers, version 2.81.588
 
 - Live LeChat renders the assistant turn as typed answer/reasoning parts. Selector profiles, the shared turn resolver, manual Get it inline extraction, late snapshots and the legacy collector now select public answer content rather than the surrounding thought disclosure and timestamp.

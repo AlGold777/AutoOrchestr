@@ -6018,6 +6018,7 @@ async function runPreCollectScrollNudge(llmName, tabId, sessionId, reason = 'pre
         };
         return Promise.resolve().then(async () => {
           let previousTargets = [], previousSignature = '', stableSamples = 0;
+          let reachedBottom = false;
           for (let pass = 0; pass < 8; pass += 1) {
             if (requiredBottom && document.visibilityState === 'hidden') return { ok: false, settled: false, reason: 'page_hidden' };
             clickBottomArrow();
@@ -6027,6 +6028,7 @@ async function runPreCollectScrollNudge(llmName, tabId, sessionId, reason = 'pre
             window.dispatchEvent(new Event('scroll'));
             await sleep(150);
             const atBottom = (!requiredBottom || targets.length > 0) && targets.every(isAtBottom);
+            reachedBottom = atBottom;
             const signature = targets.map(node => {
               const text = node.innerText || node.textContent || '';
               return `${node.scrollHeight}:${node.clientHeight}:${text.length}:${text.slice(-160)}`;
@@ -6034,12 +6036,12 @@ async function runPreCollectScrollNudge(llmName, tabId, sessionId, reason = 'pre
             const sameNodes = targets.length === previousTargets.length
               && targets.every((node, index) => node === previousTargets[index]);
             stableSamples = atBottom && sameNodes && signature === previousSignature ? stableSamples + 1 : 0;
-            if (stableSamples >= 2) return { ok: true, settled: true, targets: targets.length, passes: pass + 1, arrowClicks };
+            if (stableSamples >= 2) return { ok: true, settled: true, reachedBottom, targets: targets.length, passes: pass + 1, arrowClicks };
             previousTargets = targets;
             previousSignature = signature;
           }
           // This only prepares the DOM. It is never evidence of completed generation.
-          return { ok: true, settled: false, targets: previousTargets.length, passes: 8 };
+          return { ok: true, settled: false, reachedBottom, targets: previousTargets.length, passes: 8, arrowClicks };
         });
       },
       args: [{ reason, llmName, requiredBottom }]
@@ -6069,7 +6071,11 @@ async function runPreCollectScrollNudge(llmName, tabId, sessionId, reason = 'pre
         });
       }
     }
-    return !requiredBottom || results?.[0]?.result?.settled === true;
+    // Render settling improves extraction, but is not the navigation contract:
+    // text, composer controls or a streaming answer can change while the
+    // conversation is already at its latest end. The collector owns completion.
+    const preparation = results?.[0]?.result;
+    return !requiredBottom || preparation?.reachedBottom === true || preparation?.settled === true;
   };
   try {
     // Keep focus for the full render preparation, not just tabs.update().

@@ -232,6 +232,28 @@ test('a main without a nested scroller uses the fitting document rather than a s
   delete document.documentElement.scrollHeight;
 });
 
+test.each(['column', 'column-reverse'])('Get it can reach the end of a long %s conversation while its content keeps changing', async direction => {
+  const main = document.createElement('main'); document.body.appendChild(main);
+  const chat = scroller(main, 3000);
+  chat.el.style.flexDirection = direction;
+  chat.el.textContent = 'A long rendered answer. '.repeat(300);
+  let updates = 0;
+  chat.el.scrollTo.mockImplementation(({ top }) => {
+    chat.el.scrollTop = top;
+    // Composer/disclosure updates do not mean navigation failed. Streaming
+    // grows the reversed viewport without moving its latest end away from 0.
+    chat.el.append(` update ${++updates}`);
+    if (direction === 'column-reverse') chat.grow(chat.el.scrollHeight + 100);
+  });
+  const c = setup(); const result = c.runPreCollectScrollNudge('GPT', 1, 1, 'get_it_precollect', { getIt: true });
+  await jest.runAllTimersAsync();
+  expect(await result).toBe(true);
+  expect(updates).toBe(8);
+  expect(c.emitTelemetry).toHaveBeenCalledWith('GPT', 'PRECOLLECT_NUDGE', expect.objectContaining({
+    meta: expect.objectContaining({ scrollPreparation: expect.objectContaining({ settled: false, reachedBottom: true, passes: 8 }) })
+  }));
+});
+
 test.each(['GPT', 'Qwen', 'Claude', 'Gemini', 'Grok', 'DeepSeek', 'Le Chat', 'Perplexity', 'Z.ai', 'Kimi'])('Get it can prepare finalized %s after its automatic focus budget expires', async model => {
   const c = setup(); c.jobState.llms[model] = { finalizedAt: 1 };
   c.isActiveFocusAllowedForEntry = () => false;
