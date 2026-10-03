@@ -1481,3 +1481,23 @@ describe('answer verification recording', () => {
     expect(entry.answerVerification.recordedAt).toBeGreaterThan(12345);
   });
 });
+
+test('manual GPT numeric answer remains available for the recovery result payload', async () => {
+  const { context } = createSandbox();
+  const entry = context.jobState.llms.GPT;
+  Object.assign(entry, { status: 'NO_SEND', finalStatus: 'NO_SEND', finalStatusRecorded: true,
+    finalizedAt: Date.now(), answer: 'Error: ChatGPT send not confirmed' });
+  const answer = '0.0000009386313895162496';
+  const result = { ok: true, status: 'success', text: answer, html: `<p>${answer}</p>`, source: 'inline_executeScript' };
+  const accepted = context.acceptLateCollectResult('GPT', result, {
+    source: 'manual_latest_recovery', dispatchId: 'dispatch-gpt', manualRecovery: true,
+    manualLatestRecovery: true, responseMeta: { source: 'manual_latest_recovery',
+      manualRecovery: true, manualOverride: true, manualLatestRecovery: true,
+      lateCollectFinal: true, forceTerminalSuccess: true }
+  });
+  await Promise.resolve();
+  expect(accepted).toBe(true);
+  // The same selection feeds MANUAL_PING_RESULT and therefore the results card.
+  expect(String(entry.answer || result.text || '')).toBe(answer);
+  expect(entry.finalStatus).toBe('NO_SEND'); // Collection alone does not prove completion.
+});

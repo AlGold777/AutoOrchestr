@@ -1206,7 +1206,7 @@ function acceptLateCollectResult(llmName, result, meta = {}) {
     terminalEntry
     && !improvesTerminalAnswer
     && manualLatestRecoveryRequested
-    && incomingText.length >= DOM_SNAPSHOT_RECOVERY_MIN_CHARS
+    && incomingText.length >= (self.AnswerLengthPolicy?.DEFAULTS?.manualLatestMinChars || 20)
     && normalizeAnswerSignatureBg(incomingText) !== normalizeAnswerSignatureBg(currentText)
     && !isPromptEchoAnswerCandidate(incomingText, jobState?.prompt || '')
     && !isStaleBaselineCandidate(entry, incomingText, replaceGuardDispatchId)

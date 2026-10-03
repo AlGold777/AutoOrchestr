@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-03 — Preserve short manually recovered answers, version 2.81.591
+
+- The manual latest collector accepted 20-character candidates, but terminal answer replacement still required 80. A recovered 24-character GPT numeric answer therefore left the old error text in the result payload.
+- Explicit manual replacement now uses the same `manualLatestMinChars` policy as collection. Prompt-echo and stale-baseline rejection remain in place. The terminal-success evidence threshold is unchanged: recovering short text does not prove generation completion.
+- Regression exercises production late-collection acceptance on a locked GPT NO_SEND entry and checks that the recovery payload uses the numeric answer while preserving the terminal status.
+
 ### 2026-10-03 — GPT semantic answer boundaries, version 2.81.590
 
 - Live inspection of short and multi-page GPT conversations found zero matches for the legacy assistant-role, markdown/prose and article selectors. The current renderer marks full answer bodies with `data-markdown-text-style="assistant-message"`.
