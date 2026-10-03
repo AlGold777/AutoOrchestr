@@ -151,6 +151,7 @@ function renderDebateDom() {
       </div>
       <button id="debate-session-add-btn" type="button">+</button>
       <button id="debate-session-delete-btn" type="button">−</button>
+      <button id="debate-session-fullscreen-btn" type="button" aria-expanded="false"><i class="ti ti-maximize"></i></button>
       <button id="debate-session-copy-btn" type="button">copy</button>
       <button id="debate-session-export-btn" type="button">export</button>
       <button id="debate-session-clear-btn" type="button">clear</button>
@@ -990,6 +991,74 @@ describe('Pipeline debate favorites view', () => {
     const css = readResolvedCss();
     expect(css).toContain('.prompt-container.prompt-sandwich.debate-composer.is-debate-feed-wide-expanded {');
     expect(css).toContain('width: min(var(--center-max-width), calc(100vw - 32px));');
+  });
+
+  test('fullscreen button closes the inline feed on Escape and outside clicks', () => {
+    const button = document.getElementById('debate-session-fullscreen-btn');
+    const composer = document.querySelector('.debate-composer');
+    button.click();
+    expect(composer.classList.contains('is-debate-feed-wide-expanded')).toBe(true);
+    expect(button.getAttribute('aria-expanded')).toBe('true');
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(composer.classList.contains('is-debate-feed-wide-expanded')).toBe(false);
+    expect(button.getAttribute('aria-expanded')).toBe('false');
+    button.click();
+    document.body.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }));
+    expect(composer.classList.contains('is-debate-feed-wide-expanded')).toBe(false);
+  });
+
+  test('fullscreen feed reuses the answer popup bounds and delivers live visible cards', async () => {
+    const previousWindows = chrome.windows;
+    const previousTabs = chrome.tabs;
+    const viewerWindow = { id: 91, tabs: [{ id: 92 }] };
+    chrome.windows = {
+      create: jest.fn(async () => viewerWindow),
+      get: jest.fn(async () => viewerWindow),
+      update: jest.fn(async () => viewerWindow),
+      remove: jest.fn(async () => {})
+    };
+    chrome.tabs = { sendMessage: jest.fn((_tabId, _payload, callback) => callback()) };
+    const button = document.getElementById('debate-session-fullscreen-btn');
+    try {
+      const first = addDebateCard({ id: 'viewer-gpt', text: '<p>First answer</p>' });
+      const second = addDebateCard({ id: 'viewer-claude', model: 'Claude', text: '<p>Second answer</p>' });
+      const hidden = addDebateCard({ id: 'viewer-hidden', text: 'Hidden session answer' });
+      hidden.dataset.sessionId = 'other-session';
+      first.querySelector('.debate-model-card-title-main').insertAdjacentHTML('beforeend', '<span class="debate-model-card-round">R2</span>');
+      first.querySelector('.debate-model-card-name').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+      await delay(20);
+      expect(chrome.windows.create).toHaveBeenCalledTimes(1);
+      const { width, height, left, top } = chrome.windows.create.mock.calls[0][0];
+
+      button.click();
+      await delay(20);
+      expect(chrome.windows.create).toHaveBeenCalledTimes(1);
+      expect(chrome.windows.update).toHaveBeenLastCalledWith(91, { width, height, left, top, focused: true, state: 'normal' });
+      expect(button.getAttribute('aria-expanded')).toBe('true');
+      const payload = chrome.tabs.sendMessage.mock.calls.at(-1)[1];
+      expect(payload.view).toBe('debate-feed');
+      expect(payload.html).toContain('First answer');
+      expect(payload.html).toContain('Second answer');
+      expect(payload.html).toContain('R2');
+      expect(payload.html).not.toContain('Hidden session answer');
+      expect(payload.html).not.toContain('<button');
+      expect(first.isConnected).toBe(true);
+      expect(second.isConnected).toBe(true);
+
+      chrome.tabs.sendMessage.mockClear();
+      second.querySelector('.debate-model-card-output').insertAdjacentHTML('beforeend', '<p>Continuation</p>');
+      await delay(20);
+      expect(chrome.tabs.sendMessage.mock.calls.at(-1)[1].html).toContain('Continuation');
+      expect(chrome.tabs.sendMessage.mock.calls.length).toBeLessThan(5);
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      expect(chrome.windows.remove).toHaveBeenCalledWith(91);
+      expect(button.getAttribute('aria-expanded')).toBe('false');
+    } finally {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      document.querySelector('.debate-model-card[data-entry-id="viewer-hidden"]')?.remove();
+      chrome.windows = previousWindows;
+      chrome.tabs = previousTabs;
+    }
   });
 
   test('pipeline waiter matches answers only by transport request id', async () => {

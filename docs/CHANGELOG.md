@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-03 — Fullscreen Debate feed, version 2.81.581
+
+- Added an icon-only fullscreen button immediately before Copy in the Debate session actions.
+- The feed reuses the main-page response viewer window and its width, height and position. It displays the visible session cards with round labels and full answers, and receives live updates while preserving the reader's scroll position.
+- Clicking outside the feed window or pressing Esc closes it. The existing inline fallback and session-bar double-click remain available.
+- Validation: 89 tests across the viewer, feed layout and Debate UI suites passed; the feed viewer layout was inspected in Chromium.
+
 ### 2026-10-03 — Delivery artifacts and source evidence, version 2.81.580
 
 - Journal declares full/stored UTF-16 lengths, truncation limits and normalization hashes computed before clipping. Raw tagged and cleaned answers have distinct representations; submitted prompt identity is not claimed without a matching dispatch hash.

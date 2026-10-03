@@ -12,6 +12,10 @@ Round identity survives background-state recovery and deferred display. If a
 recovered card receives its round identity later, it gains the badge in place;
 repeated recovery and final deliveries keep a single card for that request.
 
+The fullscreen icon immediately before Copy opens the visible Debate feed in
+the same separate window and at the same size as a main-page answer. The feed
+updates as new messages arrive. Click outside the window or press Esc to close it.
+
 ## Start here
 
 - Documentation map and writing rules: [docs/documentation-map.md](docs/documentation-map.md)

@@ -62,3 +62,19 @@ body { overflow: hidden; }
 #viewer-content table { max-width: 100%; border-collapse: collapse; }
 #viewer-content th, #viewer-content td { border: 1px solid #cbd5e1; padding: 6px 8px; vertical-align: top; }
 #viewer-content img { max-width: 100%; height: auto; }
+
+.viewer-debate-feed .debate-model-card {
+    margin-bottom: 16px;
+    padding: 16px;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+}
+
+.viewer-debate-feed .debate-model-card-header { margin-bottom: 12px; }
+.viewer-debate-feed .debate-model-card-title-main { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.viewer-debate-feed .debate-model-card-name { font-weight: 600; }
+.viewer-debate-feed .debate-model-card-round { padding: 2px 6px; border-radius: 50%; background: #eef2f7; }
+.viewer-debate-feed .debate-model-card-role,
+.viewer-debate-feed .debate-inline-time,
+.viewer-debate-feed .answer-partial-mark { color: #64748b; }
+.viewer-debate-feed .debate-moderator-card { background: #f8fafc; }

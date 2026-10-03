@@ -19528,6 +19528,7 @@ function checkCompareButtonState() {
     const debateSessionTabs = document.getElementById('debate-session-tabs');
     const debateSessionAddBtn = document.getElementById('debate-session-add-btn');
     const debateSessionDeleteBtn = document.getElementById('debate-session-delete-btn');
+    const debateSessionFullscreenBtn = document.getElementById('debate-session-fullscreen-btn');
     const debateSessionCopyBtn = document.getElementById('debate-session-copy-btn');
     const debateSessionExportBtn = document.getElementById('debate-session-export-btn');
     const debateSessionClearBtn = document.getElementById('debate-session-clear-btn');
@@ -20603,6 +20604,7 @@ function checkCompareButtonState() {
         return btn;
     }
     let responseViewerWindowId = null;
+    let responseViewerTabId = null;
     let responseViewerCard = null;
     let responseViewerId = null;
     const responseViewerUrl = () => chrome.runtime.getURL('response-viewer.html');
@@ -20632,6 +20634,26 @@ function checkCompareButtonState() {
         });
     };
     const responseViewerPayload = (card) => {
+        if (card === debateModelCards) {
+            // Snapshot the rendered feed without the copy/export helpers: those
+            // synchronize message state and mutate cards, retriggering the observer.
+            const cards = Array.from(debateModelCards.children).filter((entry) =>
+                entry instanceof HTMLElement && entry.dataset.sessionId === debateTabsState.activeSessionId
+                && !entry.hidden && entry.style.display !== 'none');
+            const html = cards.map((entry) => {
+                const clone = entry.cloneNode(true);
+                clone.querySelectorAll('.debate-model-card-meta, button, input, select, textarea, .status-indicator, .debate-fragment-hint')
+                    .forEach((node) => node.remove());
+                return clone.outerHTML;
+            }).join('');
+            return {
+                type: 'RESPONSE_VIEWER_SET_CONTENT',
+                view: 'debate-feed',
+                model: 'Debate feed',
+                text: cards.map((entry) => String(entry.innerText || entry.textContent || '').trim()).join('\n\n'),
+                html: sanitizeInlineHtml(html)
+            };
+        }
         const outputEl = card.querySelector('.debate-model-card-output, .output');
         const text = String(outputEl?.innerText || outputEl?.textContent || '').trim();
         const html = sanitizeInlineHtml(String(outputEl?.innerHTML || '').trim());
@@ -20679,6 +20701,7 @@ function checkCompareButtonState() {
             responseViewerWindowId = viewerWindow?.id ?? null;
         }
         responseViewerCard = card;
+        debateSessionFullscreenBtn?.setAttribute('aria-expanded', String(card === debateModelCards));
         let tabId = viewerWindow?.tabs?.[0]?.id;
         if (!Number.isInteger(tabId) && Number.isInteger(responseViewerWindowId)) {
             try {
@@ -20686,23 +20709,35 @@ function checkCompareButtonState() {
                 tabId = current?.tabs?.[0]?.id;
             } catch (_) {}
         }
-        sendResponseViewerContent(tabId, payload);
+        responseViewerTabId = tabId;
+        sendResponseViewerContent(tabId, card === debateModelCards ? responseViewerPayload(card) : payload);
     }
     function closeResponseViewer() {
         const windowId = responseViewerWindowId;
         responseViewerWindowId = null;
+        responseViewerTabId = null;
         responseViewerCard = null;
         responseViewerId = null;
+        debateSessionFullscreenBtn?.setAttribute('aria-expanded', 'false');
         if (Number.isInteger(windowId)) chrome.windows.remove(windowId).catch(() => {});
     }
     if (typeof chrome !== 'undefined' && chrome.windows?.onRemoved?.addListener) {
         chrome.windows.onRemoved.addListener((windowId) => {
             if (windowId === responseViewerWindowId) {
                 responseViewerWindowId = null;
+                responseViewerTabId = null;
                 responseViewerCard = null;
                 responseViewerId = null;
+                debateSessionFullscreenBtn?.setAttribute('aria-expanded', 'false');
             }
         });
+    }
+    if (debateModelCards) {
+        new MutationObserver(() => {
+            if (responseViewerCard === debateModelCards && Number.isInteger(responseViewerTabId)) {
+                sendResponseViewerContent(responseViewerTabId, responseViewerPayload(debateModelCards));
+            }
+        }).observe(debateModelCards, { childList: true, subtree: true, characterData: true, attributes: true });
     }
     function setDebateCardExpanded(card, expanded) {
         if (!(card instanceof HTMLElement)) return;
@@ -20734,6 +20769,16 @@ function checkCompareButtonState() {
     function setDebateFeedWideExpanded(expanded) {
         const composer = debateSessionBar?.closest('.prompt-container.prompt-sandwich.debate-composer');
         if (!(composer instanceof HTMLElement)) return false;
+        if (typeof chrome !== 'undefined' && typeof chrome.windows?.create === 'function') {
+            if (expanded) {
+                openResponseViewerForCard(debateModelCards).catch((err) => {
+                    console.warn('[RESULTS] debate feed viewer failed', err);
+                });
+            } else if (responseViewerCard === debateModelCards) {
+                closeResponseViewer();
+            }
+            return true;
+        }
         if (expanded) {
             document.querySelectorAll('.debate-model-card.is-wide-expanded').forEach((card) => {
                 card.classList.remove('is-wide-expanded');
@@ -20742,6 +20787,7 @@ function checkCompareButtonState() {
         }
         composer.classList.toggle('is-debate-feed-wide-expanded', !!expanded);
         debateSessionBar.setAttribute('aria-expanded', String(!!expanded));
+        debateSessionFullscreenBtn?.setAttribute('aria-expanded', String(!!expanded));
         return true;
     }
     function syncDebateCardOutputLayout(card) {
@@ -23778,12 +23824,19 @@ function exportSingleTemplate(templateName, sourceData = null) {
         schedule();
         return { evaluate, schedule };
     })();
+    const toggleDebateFeedWideExpanded = () => {
+        const composer = debateSessionBar?.closest('.prompt-container.prompt-sandwich.debate-composer');
+        if (!composer) return;
+        const expanded = responseViewerCard === debateModelCards || composer.classList.contains('is-debate-feed-wide-expanded');
+        setDebateFeedWideExpanded(!expanded);
+    };
+    debateSessionFullscreenBtn?.addEventListener('click', toggleDebateFeedWideExpanded);
     debateSessionBar?.addEventListener('dblclick', (event) => {
         if (event.target.closest('button, a, input, select, textarea, [role="button"], [role="tab"]')) return;
         const composer = debateSessionBar.closest('.prompt-container.prompt-sandwich.debate-composer');
         if (!composer) return;
         event.preventDefault();
-        setDebateFeedWideExpanded(!composer.classList.contains('is-debate-feed-wide-expanded'));
+        toggleDebateFeedWideExpanded();
     });
     document.addEventListener('pointerdown', (event) => {
         const expanded = document.querySelector('.debate-model-card.is-wide-expanded');
@@ -23796,6 +23849,13 @@ function exportSingleTemplate(templateName, sourceData = null) {
         if (!expanded || expanded.contains(event.target)) return;
         if (event.target.closest('.response-sel-toolbar, .debate-sel-toolbar')) return;
         setDebateFeedWideExpanded(false);
+    });
+    document.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape') return;
+        if (responseViewerCard === debateModelCards
+            || document.querySelector('.debate-composer.is-debate-feed-wide-expanded')) {
+            setDebateFeedWideExpanded(false);
+        }
     });
     // Single approval event path for both rendered and dynamically inserted cards.
     debateModelCards?.addEventListener('change', (event) => {

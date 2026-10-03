@@ -24,8 +24,16 @@ describe('pipeline panel markup', () => {
 
   test('session actions stay in the bar', () => {
     const bar = html.slice(html.indexOf('id="debate-session-bar"'), html.indexOf('id="debate-model-cards"'));
-    ['debate-session-copy-btn', 'debate-session-export-btn', 'debate-session-clear-btn']
+    ['debate-session-fullscreen-btn', 'debate-session-copy-btn', 'debate-session-export-btn', 'debate-session-clear-btn']
       .forEach((id) => expect(bar).toContain(`id="${id}"`));
+  });
+
+  test('fullscreen is an icon immediately before copy', () => {
+    const page = new DOMParser().parseFromString(html, 'text/html');
+    const button = page.getElementById('debate-session-fullscreen-btn');
+    expect(button.nextElementSibling.id).toBe('debate-session-copy-btn');
+    expect(button.querySelector('i').classList.contains('ti-maximize')).toBe(true);
+    expect(button.textContent.trim()).toBe('');
   });
 
   test('the duplicate pause button is gone: the main Run button pauses and resumes', () => {
