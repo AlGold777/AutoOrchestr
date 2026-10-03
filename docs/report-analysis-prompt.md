@@ -114,3 +114,7 @@ request/dispatch/status/completionReason, совместимых известн�
 С 2.81.575 телеметрия держит максимум два прогона **в памяти страницы**. Поздняя запись
 сохранённого неактивного прогона не переключает activeRunId. Вытеснённые прогоны не создаются
 заново поздними событиями. Запись истории в chrome.storage и восстановление остаются отключёнными.
+
+## Report contract 2 / event schema 6
+
+`correlation.transportRequestId` is the canonical request ID; `requestId` is its compatibility alias. A dispatch ID identifies an attempt, not a new request. Unresolved identities are explicit. Without a captured plan, expected stage counts are null and plan conformance is insufficient data; observed completion counts remain available. `integrity.checks` distinguishes checked, not_checked and insufficient_data. Empty warning arrays alone never establish that a check ran. `collection` reports known retained/evicted counts; original source totals remain null when unknown. Collected pending responses use accepted=null until an actual engine decision is recorded. Render proof fields survive the diagnostic adapter.

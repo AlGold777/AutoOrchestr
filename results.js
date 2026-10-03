@@ -2778,6 +2778,9 @@ document.addEventListener('click', (event) => {
             pipelineRoundId: String(extra.pipelineRoundId || ''),
             pipelineBatchId: String(extra.pipelineBatchId || ''),
             dispatchId: String(extra.dispatchId || ''),
+            stageAttemptId: String(extra.stageAttemptId || ''),
+            transportRequestId: String(extra.transportRequestId || extra.requestId || ''),
+            requestId: String(extra.requestId || extra.transportRequestId || ''),
             tabId: extra.tabId == null ? '' : String(extra.tabId),
             sessionId: String(extra.sessionId || aggregate.sessionId || context.sessionId || '').trim(),
             correlationQuality: extra.correlationQuality || (debateRunId ? 'exact' : 'partial')
@@ -2872,7 +2875,10 @@ document.addEventListener('click', (event) => {
                 pipelineRunId: batch.pipelineRunId || aggregate.runId,
                 pipelineRoundId: payload.pipelineRoundId || batch.pipelineRoundId,
                 pipelineBatchId: payload.pipelineBatchId || batch.pipelineBatchId,
-                sessionId: aggregate.sessionId
+                sessionId: aggregate.sessionId,
+                stageAttemptId: payload.attemptId || payload.stageAttemptId,
+                transportRequestId: payload.transportRequestId || payload.requestId,
+                dispatchId: payload.dispatchId
             },
             payload: tracePayload
         });
@@ -2903,6 +2909,7 @@ document.addEventListener('click', (event) => {
         if (label.includes('PROMPT_SUBMITTED_TIMEOUT')) return ['SUBMIT_TIMEOUT', 'PROMPT_SUBMIT_TIMEOUT', 'high'];
         if (label.includes('PROMPT_SUBMITTED_REJECTED')) return ['SUBMIT_REJECTED', 'PROMPT_SUBMIT_REJECTED', 'high'];
         if (label === 'FINALIZATION_DECISION' || label === 'MODEL_FINAL') return ['MODEL_TERMINAL_COMMITTED', 'TERMINAL_DECISION', 'info'];
+        if (label === 'LIFECYCLE_TRACKING_STOPPED') return ['OBSERVER_STOPPED', 'OBSERVER_STOPPED', 'info'];
         if (label === 'PIPELINE_ERROR') return ['STAGE_FAILED', 'PIPELINE_ERROR', 'critical'];
         return ['LEGACY_DIAGNOSTIC_EVENT', label || 'DIAGNOSTIC', 'info'];
     };
@@ -2915,12 +2922,18 @@ document.addEventListener('click', (event) => {
             'answerLength', 'answerLen', 'textLength', 'confidence',
             'round', 'attempt', 'retryCount', 'hitCount', 'missCount',
             'totalCount', 'hitRate', 'selectorPackVersion', 'responsePhase',
-            'closureState', 'mappingSource', 'generationActive', 'terminal'
+            'closureState', 'mappingSource', 'generationActive', 'terminal',
+            'expectedCardId', 'observedCardId', 'payloadEvidenceId', 'normalizationVersion',
+            'normalizedHash', 'normalizedLength', 'expectedNormalizedHash', 'expectedNormalizationVersion',
+            'outcome', 'comparisonReason', 'contentClass', 'usableResult', 'evaluationBoundaryId',
+            'evaluationBoundaryType', 'resolutionState', 'pageId', 'viewId', 'cardTargetType',
+            'observerStoppedAt', 'stopReason', 'documentInstanceId', 'navigationEpoch',
+            'expectedRequestId', 'incomingRequestId', 'expectedDispatchId', 'incomingDispatchId'
         ];
         const evidence = {};
         scalarKeys.forEach((key) => {
             const value = meta?.[key];
-            if (value == null || !['string', 'number', 'boolean'].includes(typeof value)) return;
+            if (!Object.prototype.hasOwnProperty.call(meta, key) || (value !== null && !['string', 'number', 'boolean'].includes(typeof value))) return;
             evidence[key] = value;
         });
         const copyBooleanNumberMap = (key, source) => {
@@ -2950,7 +2963,7 @@ document.addEventListener('click', (event) => {
         const meta = entry.meta || {};
         const active = debateTraceStore.getActiveRun();
         const explicitRoot = String(meta.debateRunId || meta.pipelineRunId || '').trim();
-        const exact = explicitRoot && explicitRoot === active.debateRunId;
+        const exact = explicitRoot === active.debateRunId && Boolean(meta.transportRequestId || meta.requestId || meta.dispatchId);
         return appendDebateTraceEvent({
             eventId: `diagnostic:${active.debateRunId}:${entry.ts || Date.now()}:${llmName || 'unknown'}:${entry.label || entry.event || eventType}`,
             eventType,
@@ -2966,6 +2979,9 @@ document.addEventListener('click', (event) => {
                 pipelineRoundId: meta.pipelineRoundId,
                 pipelineBatchId: meta.pipelineBatchId,
                 dispatchId: meta.dispatchId || entry.dispatchId,
+                stageAttemptId: meta.stageAttemptId || meta.attemptId,
+                transportRequestId: meta.transportRequestId || meta.requestId,
+                requestId: meta.requestId || meta.transportRequestId,
                 tabId: meta.tabId,
                 correlationQuality: exact ? 'exact' : 'inferred'
             },
@@ -2974,7 +2990,7 @@ document.addEventListener('click', (event) => {
                 originalLabel: entry.label || entry.event || entry.type || '',
                 details: entry.details || entry.message || '',
                 status: meta.finalStatus || meta.status || '',
-                answerLength: meta.answerLength || meta.textLength || null,
+                answerLength: meta.answerLength ?? meta.textLength ?? null,
                 evidence: buildSafeDebateDiagnosticEvidence(meta)
             }
         });
@@ -5915,13 +5931,14 @@ document.addEventListener('click', (event) => {
                     stageId: pipelineContext.stageId,
                     attemptId: pipelineContext.stageAttemptId,
                     text: String(answer || ''),
-                    accepted: false,
+                    accepted: null,
+                    acceptanceState: 'collected_pending_engine_decision',
                     transportRequestId: batchResult.results?.[model]?.transportRequestId || null,
                     finalStatus: batchResult.results?.[model]?.status || null,
                     completion: batchResult.results?.[model]?.completion || null,
                     answerLength: String(answer || '').length,
-                    pipelineRoundId: context.pipelineRoundId || null,
-                    pipelineBatchId: context.pipelineBatchId || null
+                    pipelineRoundId: pipelineContext.pipelineRoundId || context.pipelineRoundId || null,
+                    pipelineBatchId: pipelineContext.pipelineBatchId || context.pipelineBatchId || null
                 });
             });
             return batchResult;
@@ -17461,6 +17478,9 @@ document.addEventListener('click', (event) => {
                     payloadEvidenceId: meta.payloadEvidenceId || null,
                     expectedCardId: expectedCardId || null,
                     observedCardId,
+                    pageId: location.pathname,
+                    viewId: document.querySelector('.tab-button.active')?.dataset?.tab || null,
+                    cardTargetType: panel?.classList?.contains('debate-model-card') ? 'pipeline' : 'main',
                     outcome,
                     comparisonReason: comparison.reason || null,
                     normalizationVersion: observed?.normalizationVersion || null,
@@ -20154,7 +20174,7 @@ function checkCompareButtonState() {
                 ts: event?.ts,
                 label: event?.label || meta.event || event?.event || event?.type,
                 details: event?.details || meta.reason || meta.message || '',
-                meta: { ...meta, dispatchId: meta.dispatchId || meta.requestId }
+                meta: { ...meta }
             });
         });
         const trace = debateTraceStore?.getActiveRun?.();

@@ -254,3 +254,36 @@ describe('Debate trace projections', () => {
     expect(report.integrity.schemaValidationErrors).toEqual([]);
   });
 });
+
+describe('export identity and integrity coverage', () => {
+  test('retains request aliases, zero lengths and actual completion without a plan', () => {
+    const store = TraceStore.createStore();
+    store.beginRun({ debateRunId: 'identity-run' });
+    for (const eventType of ['STAGE_STARTED', 'ANSWER_COLLECTED', 'MODEL_TERMINAL_COMMITTED', 'STAGE_COMPLETED']) {
+      store.append({ eventType, source: 'runner', sourceTimestamp: 0,
+        correlation: { debateRunId: 'identity-run', stageId: 's1', pipelineRoundId: 'r1', requestId: 'q1', dispatchId: 'd1' },
+        payload: { model: 'Grok', answerLength: 0, accepted: null } });
+    }
+    const report = Projections.buildReport(store.getActiveRun());
+    expect(report.events.at(-1).correlation.transportRequestId).toBe('q1');
+    expect(report.events.at(-1).sourceTimestamp).toBe(0);
+    expect(report.stageExecutions[0]).toMatchObject({ round: 1, deviations: [] });
+    expect(report.participantExecutions[0]).toMatchObject({ expectedStages: null, completedStages: 1 });
+    expect(report.integrity.checks.stageTerminals).toBe('insufficient_data');
+  });
+  test('joins an unambiguous dispatch but keeps ambiguous evidence unresolved', () => {
+    const event = (dispatchId, id) => ({ eventId: id, receivedSeq: Number(id), eventType: 'SUBMIT_CONFIRMED',
+      correlation: { stageId: 's1', ...(dispatchId ? { dispatchId } : {}) }, payload: { model: 'Grok' } });
+    expect(Projections.projectDispatchAttempts({ events: [event(null, '1'), event('d1', '2')] })).toHaveLength(1);
+    const groups = Projections.projectDispatchAttempts({ events: [event(null, '1'), event('d1', '2'), event('d2', '3')] });
+    expect(groups).toHaveLength(3);
+    expect(groups.find(x => !x.dispatchId).identityResolution).toBe('unresolved');
+  });
+  test('critical-only overflow respects the cap and reports evictions', () => {
+    const store = TraceStore.createStore({ maxEventsPerRun: 50 });
+    store.beginRun({ debateRunId: 'cap' });
+    for (let i = 0; i < 80; i++) store.append({ eventId: `terminal-${i}`, eventType: 'MODEL_TERMINAL_COMMITTED', source: 'runner', payload: {} });
+    expect(store.getActiveRun().events).toHaveLength(50);
+    expect(store.getActiveRun().collection.evictedEvents).toBe(31);
+  });
+});

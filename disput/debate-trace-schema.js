@@ -2,7 +2,7 @@
 (function initDebateTraceSchema(root) {
   'use strict';
 
-  const VERSION = 5;
+  const VERSION = 6;
   const SOURCES = Object.freeze({
     APPLICATION: 'application', RUNNER: 'runner', RUN_STORE: 'run_store',
     BACKGROUND: 'background', CONTENT: 'content', RECOVERY: 'recovery',
@@ -19,7 +19,7 @@
     'COMPOSER_READY', 'PROMPT_INSERTED', 'SUBMIT_ATTEMPTED', 'SUBMIT_CONFIRMED',
     'SUBMIT_REJECTED', 'SUBMIT_TIMEOUT', 'GENERATION_OBSERVED',
     'FRESH_ANSWER_OBSERVED', 'TEXT_STABLE', 'COMPLETION_DETECTED',
-    'ANSWER_COLLECTED', 'ANSWER_REJECTED', 'MODEL_TERMINAL_COMMITTED',
+    'ANSWER_COLLECTED', 'ANSWER_REJECTED', 'MODEL_TERMINAL_COMMITTED', 'OBSERVER_STOPPED',
     'RECOVERY_REQUIRED', 'RECOVERY_ATTEMPT_STARTED', 'RECOVERY_ATTEMPT_FAILED',
     'RECOVERY_ATTEMPT_SUCCEEDED', 'MANUAL_RECOVERY_REQUESTED',
     'TERMINAL_FAILURE_UPGRADED', 'STABLE_TEXT_FALLBACK_USED',
@@ -44,7 +44,7 @@
   )));
   const CORRELATION_KEYS = Object.freeze([
     'debateRunId', 'planId', 'stageId', 'stageAttemptId', 'pipelineRunId',
-    'pipelineRoundId', 'pipelineBatchId', 'dispatchId', 'tabId', 'sessionId'
+    'pipelineRoundId', 'pipelineBatchId', 'dispatchId', 'tabId', 'sessionId', 'transportRequestId', 'requestId'
   ]);
   const FORBIDDEN_KEY = /(?:^|_)(?:prompt|answer|html|dom|cookie|authorization|api.?key|access.?token|refresh.?token|credential|secret)(?:$|_)/i;
   const CONTENT_KEY = /^(?:text|content|body|raw|rawtext|markdown|transcript|prompt|prompttext|prompthtml|compiledprompt|promptbymodel|promptsbymodel|answer|answertext|answerhtml|answerevidence|response|responsetext|responsehtml|rawrequest|moderatormessage|currentinstruction|instruction|objective|desiredoutput|successcriteria|description|formulation|title|claim|statement|quote|excerpt|constraints|context|contexttext|contextparts|statemap|debatecase|snapshot|attachment|attachments|file|files|blob|base64|dataurl)$/i;
@@ -129,6 +129,10 @@
       const raw = value?.[key];
       if (raw !== null && typeof raw !== 'undefined' && String(raw).trim()) result[key] = String(raw).trim();
     });
+    if (result.transportRequestId || result.requestId) {
+      result.transportRequestId = result.transportRequestId || result.requestId;
+      result.requestId = result.requestId || result.transportRequestId;
+    }
     result.correlationQuality = ['exact', 'partial', 'inferred'].includes(value?.correlationQuality)
       ? value.correlationQuality
       : (result.debateRunId ? 'exact' : 'partial');
@@ -179,7 +183,8 @@
   function createEvent(input = {}, collector = {}) {
     const stats = { redactedFieldsCount: 0 };
     const correlation = normalizeCorrelation({ ...(collector.correlation || {}), ...(input.correlation || {}) });
-    const sourceTimestamp = Number(input.sourceTimestamp || input.timestamp || 0) || Date.now();
+    const timestamp = input.sourceTimestamp ?? input.timestamp;
+    const sourceTimestamp = timestamp != null && Number.isFinite(Number(timestamp)) ? Number(timestamp) : Date.now();
     const eventType = String(input.eventType || 'LEGACY_DIAGNOSTIC_EVENT').trim().toUpperCase();
     const receivedSeq = Math.max(0, Number(collector.receivedSeq || input.receivedSeq || 0));
     const eventId = String(input.eventId || `${correlation.debateRunId || 'unscoped'}:${receivedSeq || sourceTimestamp}:${eventType}`);

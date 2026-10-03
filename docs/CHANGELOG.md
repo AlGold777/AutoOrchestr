@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-03 — Trace identity and honest integrity, version 2.81.579
+
+- Event schema 6 preserves transport request aliases, attempt identity, render proof and zero measurements. Collected responses carry a pending engine decision rather than constant rejection.
+- Report schema 2 separates unknown plans from deviations, counts actual completed stages, merges only unambiguous dispatch projections, deduplicates evidence IDs and declares integrity check coverage and event eviction metrics.
+- Validated with 17 trace regressions, including ambiguous dispatches, missing plans, zero lengths and critical-event overflow.
+
 ### 2026-10-03 — Extract downloads raw JSON and Markdown only, version 2.81.578
 
 - Extract downloads exactly two files with matching timestamps: the complete Disput Flow JSON and extract_transport Markdown. Removed the separate structured extract JSON download; the digest calculation and Markdown contents are unchanged.

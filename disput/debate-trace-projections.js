@@ -38,7 +38,7 @@
       const deviations = [];
       if (expected && !started) deviations.push('missing_stage_start');
       if (expected && !terminal) deviations.push('missing_stage_terminal');
-      if (!expected) deviations.push('unplanned_stage');
+      if (plan && !expected) deviations.push('unplanned_stage');
       if (skipped) deviations.push(`skipped:${terminal.reasonCode || 'unknown'}`);
       if (failed) deviations.push(`failed:${terminal.reasonCode || 'unknown'}`);
       if (related.some((event) => event.eventType === 'STAGE_SKIPPED') && related.some((event) => event.eventType === 'STAGE_COMPLETED')) deviations.push('skip_complete_conflict');
@@ -48,7 +48,10 @@
       return {
         stageId,
         kind: String(expected?.kind || started?.payload?.kind || ''),
-        round: Number(expected?.round || started?.payload?.round || 0) || null,
+        round: expected?.round ?? started?.payload?.round ?? (() => {
+          const ids = [...new Set(related.map(e => correlationValue(e, 'pipelineRoundId')).filter(Boolean))];
+          return ids.length === 1 && /^r\d+$/.test(ids[0]) ? Number(ids[0].slice(1)) : null;
+        })(),
         expected: expected ? {
           participants: expectedParticipants,
           inputs: Array.isArray(expected.inputs) ? expected.inputs : [],
@@ -68,7 +71,7 @@
         durationMs: duration(started, terminal),
         status: completed ? 'success' : failed ? 'failed' : skipped ? 'skipped' : started ? 'running' : 'pending',
         deviations,
-        evidenceEventIds: related.map((event) => event.eventId)
+        evidenceEventIds: [...new Set(related.map((event) => event.eventId))]
       };
     });
   }
@@ -140,16 +143,16 @@
     return participants.map((model) => {
       const related = events.filter((event) => payloadModels(event).includes(model));
       const expectedStages = stages.filter((stage) => stage.expected?.participants?.includes(model));
-      const completedStages = expectedStages.filter((stage) => ['success', 'skipped'].includes(stage.status));
+      const completedStages = stages.filter((stage) => stage.actual.participants.includes(model) && ['success', 'skipped'].includes(stage.status));
       const terminal = related.filter((event) => event.eventType === 'MODEL_TERMINAL_COMMITTED').slice(-1)[0] || null;
       return {
-        participantId: model, expectedStages: expectedStages.length, completedStages: completedStages.length,
+        participantId: model, expectedStages: Array.isArray(plan.stages) ? expectedStages.length : null, completedStages: completedStages.length,
         submitStatus: related.some((event) => event.eventType === 'SUBMIT_CONFIRMED') ? 'confirmed' : related.some((event) => /SUBMIT_(?:REJECTED|TIMEOUT)/.test(event.eventType)) ? 'failed' : 'unknown',
         completionStatus: related.some((event) => event.eventType === 'COMPLETION_DETECTED') ? 'detected' : 'unknown',
         recoveries: related.filter((event) => recoveryTypes.has(event.eventType)).length,
         finalStatus: String(terminal?.payload?.status || terminal?.reasonCode || ''),
         durationMs: related.length > 1 ? Math.max(0, related.at(-1).sourceTimestamp - related[0].sourceTimestamp) : null,
-        evidenceEventIds: related.map((event) => event.eventId)
+        evidenceEventIds: [...new Set(related.map((event) => event.eventId))]
       };
     });
   }
@@ -188,7 +191,7 @@
         failedParticipants: failed, pendingParticipants: expected.filter((model) => !ready.includes(model) && !failed.includes(model)),
         criticalParticipant: payloadModels(critical)[0] || null,
         outcome: released?.eventType === 'BARRIER_TIMEOUT' ? 'timeout' : released ? 'released' : 'waiting',
-        evidenceEventIds: related.map((event) => event.eventId)
+        evidenceEventIds: [...new Set(related.map((event) => event.eventId))]
       };
     });
   }
@@ -197,14 +200,28 @@
     const accepted = new Set(['DISPATCH_CREATED', 'SUBMIT_ATTEMPTED', 'SUBMIT_CONFIRMED', 'SUBMIT_REJECTED', 'SUBMIT_TIMEOUT', 'ANSWER_COLLECTED', 'MODEL_TERMINAL_COMMITTED']);
     const events = eventsOf(trace).filter((event) => accepted.has(event.eventType));
     const groups = new Map();
+    const identified = events.filter(e => correlationValue(e, 'dispatchId'));
     events.forEach((event) => {
       const model = payloadModels(event)[0] || 'batch';
-      const key = correlationValue(event, 'dispatchId') || correlationValue(event, 'stageAttemptId') || `${correlationValue(event, 'stageId')}:${model}`;
-      if (!groups.has(key)) groups.set(key, { dispatchId: correlationValue(event, 'dispatchId') || null, stageAttemptId: correlationValue(event, 'stageAttemptId') || null, stageId: correlationValue(event, 'stageId') || null, participantId: model, events: [] });
-      groups.get(key).events.push(event);
+      const request = correlationValue(event, 'transportRequestId') || correlationValue(event, 'requestId');
+      const stage = correlationValue(event, 'stageId');
+      const attempt = correlationValue(event, 'stageAttemptId');
+      const candidates = identified.filter(e => correlationValue(e, 'stageId') === stage && payloadModels(e)[0] === model
+        && (!attempt || !correlationValue(e, 'stageAttemptId') || correlationValue(e, 'stageAttemptId') === attempt)
+        && (!request || !correlationValue(e, 'transportRequestId') || correlationValue(e, 'transportRequestId') === request));
+      const candidateIds = [...new Set(candidates.map(e => correlationValue(e, 'dispatchId')))];
+      const dispatchId = correlationValue(event, 'dispatchId') || (candidateIds.length === 1 ? candidateIds[0] : null);
+      const key = dispatchId ? `dispatch:${dispatchId}` : request ? `request:${request}` : `unresolved:${stage}:${model}:${attempt}`;
+      if (!groups.has(key)) groups.set(key, { dispatchId, transportRequestId: request || null, stageAttemptId: attempt || null,
+        stageId: stage || null, participantId: model, identityResolution: dispatchId ? 'dispatch' : request ? 'request' : 'unresolved', events: [] });
+      const group = groups.get(key);
+      if (request) group.transportRequestId = group.transportRequestId || request;
+      group.events.push(event);
     });
     return Array.from(groups.values()).map((group) => ({
       dispatchId: group.dispatchId,
+      transportRequestId: group.transportRequestId,
+      identityResolution: group.identityResolution,
       stageAttemptId: group.stageAttemptId,
       stageId: group.stageId,
       participantId: group.participantId,
@@ -255,11 +272,19 @@
     const criticalBarrier = barriers.filter((barrier) => Number.isFinite(barrier.durationMs)).sort((a, b) => b.durationMs - a.durationMs)[0] || null;
     const expectedStageIds = new Set((trace?.plan?.stages || []).map((stage) => String(stage.stageId)));
     const observedTerminal = new Set(stages.filter((stage) => ['success', 'failed', 'skipped'].includes(stage.status)).map((stage) => stage.stageId));
+    health.evidenceEventIds = [...new Set(health.evidenceEventIds)];
+    const countBy = (list, key) => list.reduce((out, item) => { const value = key(item) ?? 'no field'; out[value] = (out[value] || 0) + 1; return out; }, {});
+    const requestScoped = e => /^(?:SUBMIT_|ANSWER_|TEXT_STABLE|COMPLETION_DETECTED|MODEL_TERMINAL_|GENERATION_OBSERVED|FRESH_ANSWER|OBSERVER_STOPPED)/.test(e.eventType);
+    const missingIdentity = events.filter(e => requestScoped(e) && !correlationValue(e, 'transportRequestId') && !correlationValue(e, 'requestId') && !correlationValue(e, 'dispatchId'));
+    const identity = { correlationQuality: countBy(events, e => e.correlation?.correlationQuality), provenance: countBy(events, e => e.provenance),
+      missingRequestIdentity: missingIdentity.map(e => e.eventId), byStage: countBy(missingIdentity, e => correlationValue(e, 'stageId')),
+      requestScopeRule: 'request events require transportRequestId/requestId or dispatchId; run/stage events do not',
+      aliasConflicts: events.filter(e => e.correlation?.transportRequestId && e.correlation?.requestId && e.correlation.transportRequestId !== e.correlation.requestId).map(e => e.eventId) };
     const seqs = events.map((event) => event.receivedSeq).filter(Number.isFinite);
     const sequenceGaps = [];
     for (let i = 1; i < seqs.length; i += 1) if (seqs[i] !== seqs[i - 1] + 1) sequenceGaps.push([seqs[i - 1], seqs[i]]);
     return {
-      schemaVersion: 1,
+      schemaVersion: 2,
       metadata: {
         debateRunId: trace?.debateRunId || null, planId: trace?.plan?.planId || null,
         topology: trace?.topology || trace?.plan?.topology || '', presetId: trace?.presetId || trace?.plan?.presetId || '',
@@ -267,6 +292,11 @@
         dataCompleteness: events.some((event) => event.correlation?.correlationQuality !== 'exact') ? 'incomplete' : 'complete'
       },
       plan: trace?.plan || null,
+      collection: { originalSourceTotal: null, ...(trace?.collection || {}), exportedEvents: events.length, exportFiltered: false },
+      completeness: { identity, plan: trace?.plan ? 'available' : 'unavailable',
+        displayEvidence: events.some(e => e.payload?.evidence?.normalizedHash) ? 'observed_partial' : 'not_recorded',
+        observerStops: events.some(e => e.eventType === 'OBSERVER_STOPPED') ? 'observed_partial' : 'not_recorded',
+        textArtifacts: 'redacted_events; delivery journal has separately declared truncation' },
       runOutcome: { startedAt: started?.sourceTimestamp || null, completedAt: ended?.sourceTimestamp || null, durationMs: duration(started, ended), terminalOutcome: health.terminalOutcome },
       health: { ...health, diagnosisCount: diagnoses.length, manualRecoveryCount: events.filter((event) => event.eventType === 'MANUAL_RECOVERY_REQUESTED').length, forcedCompletionCount: events.filter((event) => event.eventType === 'STABLE_TEXT_FALLBACK_USED').length, stateDivergenceCount: stateDivergences.length },
       diagnoses,
@@ -285,6 +315,11 @@
         uncorrelatedEvents: events.filter((event) => !event.correlation?.debateRunId).map((event) => event.eventId),
         missingRequiredStageEvents: Array.from(expectedStageIds).filter((stageId) => !observedTerminal.has(stageId)),
         missingTerminalEvents: events.some((event) => /^RUN_(?:COMPLETED|FAILED|CANCELLED)$/.test(event.eventType)) ? [] : ['run_terminal'],
+        checks: { sequence: 'checked', duplicateIds: 'checked', schema: 'checked',
+          stageTerminals: trace?.plan ? 'checked' : 'insufficient_data',
+          requestIdentity: 'checked', requestTerminals: 'insufficient_data', clockSkew: 'not_checked',
+          displayCoverage: 'insufficient_data', observerStopCoverage: 'insufficient_data' },
+        missingRequestIdentity: identity.missingRequestIdentity,
         clockSkewWarnings: [], redactedFieldsCount: events.reduce((sum, event) => sum + Number(event.redactedFieldsCount || 0), 0),
         schemaValidationErrors: events.flatMap((event) => (event.validationErrors || []).map((error) => ({ eventId: event.eventId, error })))
       }

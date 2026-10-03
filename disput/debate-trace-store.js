@@ -43,8 +43,11 @@
         const critical = run.events.filter((event) => Schema.CRITICAL_FLUSH.has(event.eventType));
         const criticalIds = new Set(critical.map((event) => event.eventId));
         const regular = run.events.filter((event) => !criticalIds.has(event.eventId));
-        run.events = regular.slice(-Math.max(0, maxEvents - critical.length)).concat(critical.slice(-maxEvents))
+        const regularLimit = Math.max(0, maxEvents - critical.length);
+        const before = run.events.length;
+        run.events = (regularLimit ? regular.slice(-regularLimit) : []).concat(critical.slice(-maxEvents))
           .sort((a, b) => a.receivedSeq - b.receivedSeq);
+        run.collection.evictedEvents += before - run.events.length;
       });
     };
     const serialize = () => ({
@@ -69,6 +72,7 @@
           topology: String(seed.topology || ''),
           presetId: String(seed.presetId || ''),
           sessionId: String(seed.sessionId || ''),
+          collection: { acceptedEvents: 0, evictedEvents: 0, eventLimit: maxEvents, originalSourceTotal: null },
           events: []
         });
       }
@@ -100,6 +104,7 @@
       }
       receivedSeq += 1;
       run.events.push(event);
+      run.collection.acceptedEvents += 1;
       run.updatedAt = event.receivedAt;
       if (!activeRunId) activeRunId = runId;
       compact();
