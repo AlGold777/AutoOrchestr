@@ -242,10 +242,17 @@ function appendLogEntry(llmName, entry = {}) {
     || jobState?.llms?.[llmName]?.requestId
     || null;
   const pipelineContext = jobState?.session?.pipelineContext || {};
+  const runtimeEntry = jobState?.llms?.[llmName];
+  const sameDispatch = Boolean(entry.meta?.dispatchId && entry.meta.dispatchId === resolvedDispatchId);
+  const registeredRequestId = entry.meta?.transportRequestId || (sameDispatch ? runtimeEntry?.transportRequestId : null) || null;
+  const identityKeys = ['transportRequestId','requestId','dispatchId','stageId','stageAttemptId','debateRunId','pipelineRunId','pipelineRoundId','pipelineBatchId','tabId'];
   const sharedMeta = {
     extVersion: getAppVersion(),
     runSessionId: jobState?.session?.startTime || null,
     dispatchId: resolvedDispatchId,
+    transportRequestId: registeredRequestId, requestId: registeredRequestId,
+    correlationQuality: entry.meta?.correlationQuality || (registeredRequestId || sameDispatch ? 'exact' : 'inferred'),
+    incomingIdentity: Object.fromEntries(identityKeys.filter(k => Object.prototype.hasOwnProperty.call(entry.meta || {}, k)).map(k => [k, entry.meta[k]])),
     schemaVersion: TELEMETRY_SCHEMA_VERSION,
     llmName,
     tabId: jobState?.llms?.[llmName]?.tabId || null,
@@ -257,7 +264,7 @@ function appendLogEntry(llmName, entry = {}) {
     pipelineRoundId: pipelineContext.pipelineRoundId || jobState?.session?.pipelineRoundId || null,
     pipelineBatchId: pipelineContext.pipelineBatchId || jobState?.session?.pipelineBatchId || null
   };
-  const mergedMeta = { ...sharedMeta, ...(entry.meta || {}) };
+  const mergedMeta = { expectedIdentity: { ...Object.fromEntries(identityKeys.filter(k => sharedMeta[k] != null).map(k => [k, sharedMeta[k]])), transportRequestId: runtimeEntry?.transportRequestId || null }, ...sharedMeta, ...(entry.meta || {}) };
   if (!mergedMeta.telemetryTaxonomy) {
     mergedMeta.telemetryTaxonomy = normalizeTelemetryTaxonomy({
       label: entry.label || '',
@@ -267,7 +274,7 @@ function appendLogEntry(llmName, entry = {}) {
     });
   }
   const logEntry = {
-    ts: entry.ts || Date.now(),
+    ts: entry.ts ?? Date.now(),
     type: entry.type || 'INFO',
     label: entry.label || '',
     details: entry.details || '',
@@ -275,10 +282,14 @@ function appendLogEntry(llmName, entry = {}) {
     meta: mergedMeta
   };
   buffer.push(logEntry);
+  if (runtimeEntry) runtimeEntry.telemetryLogRecordedCount = (runtimeEntry.telemetryLogRecordedCount || 0) + 1;
   while (buffer.length > MAX_LOG_ENTRIES) {
     const removableIndex = buffer.findIndex((item) => !isPinnedTelemetryEvent(item));
     buffer.splice(removableIndex >= 0 ? removableIndex : 0, 1);
+    if (runtimeEntry) runtimeEntry.telemetryLogEvictedCount = (runtimeEntry.telemetryLogEvictedCount || 0) + 1;
   }
+  logEntry.meta.logCollection = { scope: 'current_model_run_entry', limit: MAX_LOG_ENTRIES,
+    appended: runtimeEntry?.telemetryLogRecordedCount ?? null, evicted: runtimeEntry?.telemetryLogEvictedCount ?? 0, retained: buffer.length };
   saveJobState(jobState);
   return logEntry;
 }
@@ -612,7 +623,7 @@ function normalizeTelemetryEntry(entry = {}, llmName) {
     meta.telemetryTaxonomy = normalizeTelemetryTaxonomy({ ...entry, meta });
   }
   return {
-    ts: entry.ts || Date.now(),
+    ts: entry.ts ?? Date.now(),
     type: entry.type || 'TELEMETRY',
     label: entry.label || meta.event || entry.event || '',
     details: entry.details || '',

@@ -287,3 +287,11 @@ describe('export identity and integrity coverage', () => {
     expect(store.getActiveRun().collection.evictedEvents).toBe(31);
   });
 });
+
+test('dynamic plan expectations resolve through explicit revision and instance identity', () => {
+  const store=TraceStore.createStore();store.beginRun({debateRunId:'dynamic'});
+  store.append({eventType:'STAGE_STARTED',source:'runner',correlation:{stageId:'instance-1'},payload:{participants:['Grok']}});
+  const report=Projections.buildReport(store.getActiveRun(),{planning:{revision:{revisionId:'revision-1',plannedStages:[{plannedStageId:'planned-1',purpose:'opening',participantIds:['Grok'],inputArtifactIds:[]}]},instances:[{stageId:'instance-1',plannedStageId:'planned-1',planRevisionId:'revision-1'}]}});
+  expect(report.stageExecutions[0].expected).toMatchObject({participants:['Grok'],sourcePlanRevisionId:'revision-1',sourcePlannedStageId:'planned-1'});
+  expect(report.participantExecutions[0].expectedStages).toBeNull();
+});

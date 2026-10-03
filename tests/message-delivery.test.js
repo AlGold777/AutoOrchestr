@@ -138,3 +138,12 @@ test('full answer identities precede truncation and distinguish transport-tag re
   expect(final.answerArtifacts.cleaned.fullLength).toBe(result.answer.length);
   expect(final.answerArtifacts.cleaned.normalizedHash).not.toBe(final.answerArtifacts.raw.normalizedHash);
 });
+
+test('submission identity requires a submitted command hash with the same normalization version', () => {
+  Delivery.reset();
+  Delivery.prepare({prompt:'proof',models:['GPT'],requestIds:{GPT:'q-sub'}});
+  const artifact=Delivery.journal()[0].promptArtifact;
+  Delivery.observeRuntime({type:'TRANSPORT_DISPATCH_PHASE',phase:'submitted',llmName:'GPT',transportRequestId:'q-sub',dispatchId:'d1',promptHash:artifact.normalizedHash,promptNormalizationVersion:'other'});
+  Delivery.observeRuntime({type:'TRANSPORT_DISPATCH_PHASE',phase:'submitted',at:1,llmName:'GPT',transportRequestId:'q-sub',dispatchId:'d1',promptHash:artifact.normalizedHash,promptNormalizationVersion:artifact.normalizationVersion,promptProofScope:'dispatch_command'});
+  expect(Delivery.journal().filter(e=>e.kind==='dispatch').map(e=>e.promptIdentityProven)).toEqual([false,true]);
+});

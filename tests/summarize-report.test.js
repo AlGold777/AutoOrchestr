@@ -35,7 +35,7 @@ describe('Disput Flow extract v2', () => {
 
   test('JSON is structured; Markdown uses the same facts and all requests, including a clean request', () => {
     const d = flow(), before = JSON.stringify(d), x = Digest.extractTransport(d, 'source.json');
-    expect(x.DIGEST_VERSION).toBe('2.0.0');
+    expect(x.DIGEST_VERSION).toBe('3.0.0');
     expect(x).not.toHaveProperty('digest');
     expect(x.requests).toHaveLength(1);
     expect(x.requests[0].identity.tabIds).toEqual(['123']);
@@ -44,9 +44,9 @@ describe('Disput Flow extract v2', () => {
     expect(x.requests[0].coverage.omittedRecords).toBe(0);
     expect(JSON.stringify(d)).toBe(before);
     const text = Digest.renderTransportMarkdown(x);
-    expect(text).toContain('DIGEST_VERSION=2.0.0');
-    expect(text).toContain('Request 1: stage-1/A');
-    expect(text).not.toContain('### 15.');
+    expect(text).toContain('DIGEST_VERSION=3.0.0');
+    expect(text).toContain('Q1: stage-1/A');
+    expect(text).toContain('### 15. Delivery batches');
     expect(text).not.toContain('### 16.');
     expect(summarize(write('flow.json', d))).toBe(Digest.renderTransportMarkdown(Digest.extractTransport(d)));
   });
@@ -86,7 +86,7 @@ describe('Disput Flow extract v2', () => {
     expect(g.members[0].evidenceAnswerLen.state).toBe('missing');
     expect(g.members[1].answerLength).toMatchObject({ state: 'present', value: null });
     expect(g.members[1].registered.focusSwitchesUsed.value).toBe(0);
-    expect(Digest.renderTransportMarkdown(x)).toContain('answerLength=null evidence.answerLen=100');
+    expect(Digest.renderTransportMarkdown(x)).toContain('null / 100 / no field');
     d.events[1].payload.evidence.answerLen = 101;
     expect(Digest.extractTransport(d).requests[0].terminalGroups).toHaveLength(2);
   });
@@ -195,4 +195,31 @@ describe('message-delivery report', () => {
 
 test('an unknown report type fails with a clear message instead of a wrong digest', () => {
   expect(() => summarize(write('x.json', { hello: 'world' }))).toThrow(/unknown report type/);
+});
+
+test('trace-only requests retain distinct canonical identities and ambiguous stage-only evidence stays unassigned', () => {
+  const d={metadata:{debateRunId:'r'},stageExecutions:[{stageId:'s',actual:{startedAt:0,participants:['M']}}],events:[
+    {eventType:'TEXT_STABLE',sourceTimestamp:1,correlation:{stageId:'s',transportRequestId:'q1',dispatchId:'d1'},payload:{model:'M',answerLength:5}},
+    {eventType:'TEXT_STABLE',sourceTimestamp:2,correlation:{stageId:'s',transportRequestId:'q2',dispatchId:'d2'},payload:{model:'M',answerLength:6}},
+    {eventType:'TEXT_STABLE',sourceTimestamp:3,correlation:{stageId:'s'},payload:{model:'M',answerLength:7}}
+  ]};
+  const x=Digest.extractTransport(d);
+  expect(x.requests.map(a=>a.requestId)).toEqual(['q1','q2']);
+  expect(x.availability.unassigned.map(r=>r.path)).toEqual(['events[2]']);
+});
+
+test('compressed source registry can reconstruct every event and journal member without interleaving fragmentation', () => {
+  const t=1700000000000, event=(model,i,length)=>({eventType:'TEXT_STABLE',sourceTimestamp:t+i,correlation:{stageId:'s',requestId:`q${model}`,dispatchId:`d${model}`},payload:{model,answerLength:length}});
+  const events=Array.from({length:50},(_,i)=>event(i%2?'B':'A',i,i<30?10:20));
+  const d={metadata:{debateRunId:'r'},runOutcome:{startedAt:t,completedAt:t+10},stageExecutions:[{stageId:'s',actual:{startedAt:t,participants:['A','B']}}],events};
+  const x=Digest.extractTransport(d), text=Digest.renderTransportMarkdown(x);
+  expect(x.requests.every(a=>a.transitions.length===2)).toBe(true);
+  const refs=new Set();
+  for (const m of text.matchAll(/\bE\[([\d,./]+)\]/g)) for(const part of m[1].split(',')) {
+    const r=/^(\d+)\.\.(\d+)(?:\/(\d+))?$/.exec(part);
+    if(r)for(let i=+r[1];i<=+r[2];i+=+(r[3]||1))refs.add(i);else refs.add(+part);
+  }
+  expect([...refs].filter(i=>i<events.length).sort((a,b)=>a-b)).toEqual(events.map((_,i)=>i));
+  expect(text).not.toContain('Full parameters in JSON');
+  expect(text).not.toContain('JSON quality');
 });

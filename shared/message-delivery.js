@@ -103,7 +103,7 @@
 
   // Outgoing: one token per model; returns the per-model prompt map to dispatch.
   // The journal records 'prepared': nothing has been sent yet at this point.
-  function prepare({ prompt, promptsByModel, models, batchId = '', requestIds = null }) {
+  function prepare({ prompt, promptsByModel, models, batchId = '', requestIds = null, promptLineageByModel = null }) {
     const out = {};
     models.forEach((model) => {
       const token = makeToken();
@@ -114,7 +114,7 @@
       const entry = { token, sentAt: Date.now(), batchId, final: false, model, requestId, promptArtifact };
       if (requestId) expectedByRequest.set(requestId, entry);
       latestByModel.set(model, entry);
-      record({ kind: 'prepared', model, token, batchId, requestId, chars: out[model].length, promptArtifact, prompt: out[model].slice(0, 1500) });
+      record({ kind: 'prepared', model, token, batchId, requestId, chars: out[model].length, promptArtifact, promptLineage: promptLineageByModel?.[model] ?? null, prompt: out[model].slice(0, 1500) });
     });
     pruneExpected();
     return out;
@@ -228,8 +228,10 @@
         phase: String(message.phase || ''), dispatchId: message.dispatchId || null, tabId: message.tabId ?? null,
         reason: message.reason || null, dispatchReason: message.dispatchReason || null, attempt: message.attempt ?? null,
         promptArtifact: message.phase === 'submitted' ? entry?.promptArtifact || null : undefined,
-        promptIdentityProven: Boolean(message.promptHash && message.promptHash === entry?.promptArtifact?.normalizedHash),
+        promptIdentityProven: Boolean(message.phase === 'submitted' && message.promptHash && message.promptHash === entry?.promptArtifact?.normalizedHash && message.promptNormalizationVersion === entry?.promptArtifact?.normalizationVersion),
         submittedPromptHash: message.promptHash ?? null,
+        submittedPromptNormalizationVersion: message.promptNormalizationVersion ?? null,
+        promptProofScope: message.promptProofScope ?? null,
         bg: message.backgroundVersion || null, answerChars: message.answerChars ?? null,
         ms: entry ? Date.now() - entry.sentAt : null
       });

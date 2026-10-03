@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-03 — Standalone transport Extract v3, version 2.81.582
+
+- MD has a reversible registry of every source member, common identity/label/evidence dictionaries, one terminal registry, explicit count units and continuous section numbering. It preserves state returns, multi-model ordering, run boundaries and ambiguity without time-based request guesses.
+- Availability and legacy limitations are dynamic. Prompt checks cover the next captured/candidate stage rather than every later prompt. Registered integrity differs from check coverage; raw chronology remains untouched.
+- Source instrumentation records actual command prompt identity, selected compiler inputs and dynamic plan revision mappings. Batch events are separate from model dispatch projections.
+- Producer diagnostics preserve incoming/current identity separately, expose log evictions and mark inferred context. Added real diagnostic-adapter ingress tests and source-registry reconstruction regressions (151 tests passed). Measurement on report 08:22 preserves 12 requests, 28 terminal records, every event and journal path; details in docs/transport-extract-verification-2026-10-03.md.
+
 ### 2026-10-03 — Fullscreen Debate feed, version 2.81.581
 
 - Added an icon-only fullscreen button immediately before Copy in the Debate session actions.

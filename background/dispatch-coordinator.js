@@ -1300,7 +1300,9 @@ async function dispatchSimpleFirstPass(llmName, tabId, prompt, attachments, entr
       if (attempted) machine.submit();
       else machine.error({code: 'ROUND1_DEFERRED', error: outcome});
     }
-    reportDispatchPhase(llmName, entry, attempted ? 'submitted' : 'submit_unconfirmed', {dispatchId: meta.dispatchId, tabId, reason: attempted ? null : outcome});
+    reportDispatchPhase(llmName, entry, attempted ? 'submitted' : 'submit_unconfirmed', {dispatchId: meta.dispatchId, tabId, reason: attempted ? null : outcome,
+      promptHash: self.AnswerProofNormalization?.hashText?.(prompt) || null,
+      promptNormalizationVersion: self.AnswerProofNormalization?.VERSION || null, promptProofScope: 'dispatch_command'});
     emitTelemetry(llmName, 'ROUND1_SIMPLE_DISPATCH_RESULT', {
       details: outcome,
       meta: {...meta, tabId, stage: 'first_pass_finished', outcome, commandIssued: true, visitMs: Date.now() - visitStartedAt, commandAt, leaveAt},
@@ -2185,7 +2187,9 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
       const submittedPayload = options.skipSubmitWait ? null : (waiter ? await waiter : false);
       if (!options.skipSubmitWait && commandDeliveryReported) {
         reportDispatchPhase(llmName, entry, submittedPayload?.ok === true || submittedPayload === true ? 'submitted' : 'submit_unconfirmed', {
-          dispatchId, tabId, reason: submittedPayload?.reason || null
+          dispatchId, tabId, reason: submittedPayload?.reason || null,
+          promptHash: self.AnswerProofNormalization?.hashText?.(prompt) || null,
+          promptNormalizationVersion: self.AnswerProofNormalization?.VERSION || null, promptProofScope: 'dispatch_command'
         });
       }
       if (requireCommandAcceptance) {

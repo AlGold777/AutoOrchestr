@@ -184,6 +184,9 @@
     const stats = { redactedFieldsCount: 0 };
     const correlation = normalizeCorrelation({ ...(collector.correlation || {}), ...(input.correlation || {}) });
     const timestamp = input.sourceTimestamp ?? input.timestamp;
+    const requestScope = /^(?:SUBMIT_|ANSWER_|TEXT_STABLE|COMPLETION_DETECTED|MODEL_TERMINAL_|GENERATION_OBSERVED|FRESH_ANSWER|OBSERVER_STOPPED)/.test(String(input.eventType || ''));
+    const hasRequest = Boolean(correlation.transportRequestId || correlation.requestId || correlation.dispatchId);
+    if (requestScope && !hasRequest && correlation.correlationQuality === 'exact') correlation.correlationQuality = 'partial';
     const sourceTimestamp = timestamp != null && Number.isFinite(Number(timestamp)) ? Number(timestamp) : Date.now();
     const eventType = String(input.eventType || 'LEGACY_DIAGNOSTIC_EVENT').trim().toUpperCase();
     const receivedSeq = Math.max(0, Number(collector.receivedSeq || input.receivedSeq || 0));
@@ -195,7 +198,7 @@
       source: String(input.source || SOURCES.LEGACY),
       severity: String(input.severity || SEVERITIES.INFO),
       sourceTimestamp,
-      receivedAt: Number(collector.receivedAt || input.receivedAt || 0) || Date.now(),
+      receivedAt: Number.isFinite(Number(collector.receivedAt ?? input.receivedAt)) && (collector.receivedAt ?? input.receivedAt) != null ? Number(collector.receivedAt ?? input.receivedAt) : Date.now(),
       receivedSeq,
       reasonCode: String(input.reasonCode || ''),
       correlation,

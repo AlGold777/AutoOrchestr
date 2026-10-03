@@ -35,7 +35,7 @@ const records = (n) => `${n} record${n === 1 ? '' : 's'}`;
 const clip = (text, n) => String(text || '').replace(/\s+/g, ' ').trim().slice(0, n);
 
 // ---------------------------------------------------------------- Disput Flow export: records
-const JOURNAL_DETAIL_SKIP = new Set(['at', 'kind', 'model', 'requestId', 'token', 'answer', 'prompt', 'dispatchId', 'tabId', 'phase', 'bg']);
+const JOURNAL_DETAIL_SKIP = new Set(['at', 'kind', 'model', 'requestId', 'token', 'answer', 'prompt', 'dispatchId', 'tabId', 'phase', 'bg', 'promptArtifact', 'promptLineage', 'answerArtifact', 'answerArtifacts', 'promptIdentityProven', 'submittedPromptHash', 'submittedPromptNormalizationVersion', 'promptProofScope']);
 const journalDetails = (j) => Object.entries(j)
   .filter(([k, v]) => !JOURNAL_DETAIL_SKIP.has(k) && v != null && v !== '')
   .map(([k, v]) => `${k}=${typeof v === 'object' ? JSON.stringify(v) : v}`)
@@ -50,7 +50,7 @@ function buildRecords(events, journal) {
     recs.push({
       src: 'events', path: `events[${i}]`, at: toMs(e.sourceTimestamp), type: e.eventType, reasonCode: e.reasonCode || '',
       label: p.originalLabel || e.eventType, model: p.model || p.participant || null,
-      stageId: c.stageId || p.stageId || null, dispatchId: c.dispatchId || p.dispatchId || null, requestId: p.transportRequestId || p.requestId || c.requestId || null,
+      stageId: c.stageId || p.stageId || null, dispatchId: c.dispatchId || p.dispatchId || null, requestId: c.transportRequestId || c.requestId || p.transportRequestId || p.requestId || null,
       tabId: c.tabId == null ? null : String(c.tabId), details: String(p.details || p.note || ''), raw: e
     });
   });
@@ -103,11 +103,18 @@ function buildAttempts(stages, events, journal) {
   });
   if (!attempts.length) {
     stages.forEach((s, i) => {
-      const models = [...new Set(arr(s.actual?.participants).concat(events.filter((e) => e.correlation?.stageId === s.stageId).map((e) => e.payload?.model || e.payload?.participant)).filter(Boolean))];
-      models.forEach((model) => attempts.push({
-        requestId: null, model, stageId: s.stageId, stageN: i + 1, batchId: null, stageAttemptId: null, waitId: null,
-        batchAt: s.actual?.startedAt, batchPath: null, token: null, dispatchIds: [], recs: []
-      }));
+      const related = buildRecords(events, []).filter(r=>r.stageId===s.stageId && r.model);
+      const models = unique(arr(s.actual?.participants).concat(related.map(r=>r.model)));
+      models.forEach(model=>{
+        const rs=related.filter(r=>r.model===model), known=unique(rs.map(r=>r.requestId).filter(Boolean));
+        const identities=known.length?known:[null];
+        identities.forEach(requestId=>attempts.push({
+          requestId, model, stageId:s.stageId, stageN:i+1, batchId:null,
+          stageAttemptId:rs.find(r=>r.requestId===requestId)?.raw.correlation?.stageAttemptId || null, waitId:null,
+          batchAt:s.actual?.startedAt, batchPath:null, token:null,
+          dispatchIds:unique(rs.filter(r=>requestId?r.requestId===requestId:true).map(r=>r.dispatchId).filter(Boolean)), recs:[]
+        }));
+      });
     });
   }
   return attempts;
@@ -120,6 +127,7 @@ function buildAttempts(stages, events, journal) {
 function assignRecords(attempts, recs) {
   const byRequest = new Map(attempts.filter((a) => a.requestId).map((a) => [a.requestId, a]));
   const byDispatch = new Map();
+  attempts.forEach(a=>a.dispatchIds.forEach(id=>{if(!byDispatch.has(id))byDispatch.set(id,a);}));
   const journalWithDispatch = recs.filter((r) => r.src === 'journal' && r.requestId && r.dispatchId && byRequest.has(r.requestId));
   journalWithDispatch.filter((r) => r.label === 'dispatch:dispatch_started').forEach((r) => {
     if (!byDispatch.has(r.dispatchId)) byDispatch.set(r.dispatchId, byRequest.get(r.requestId));
@@ -142,7 +150,7 @@ function assignRecords(attempts, recs) {
     else if (r.model && r.stageId) {
       const candidates = attempts.filter((x) => x.model === r.model && x.stageId === r.stageId);
       if (candidates.length === 1) { a = candidates[0]; via = 'stageId'; }
-      else if (candidates.length > 1) { a = candidates.filter((x) => x.batchAt <= r.at).pop() || candidates[0]; via = 'stageId+time'; }
+      else if (candidates.length > 1) { r.flags = ['ambiguous stage/model binding']; }
     }
     if (!a) {
       if (r.model || r.requestId || r.dispatchId) unassigned.push(r);
@@ -183,13 +191,13 @@ const terminalStatusOf = (r) => {
 };
 const terminalReasonOf = (r) => r.raw.payload?.evidence?.completionReason || '';
 // Structured facts are the source of both JSON and Markdown. No Markdown is embedded in JSON.
-const DIGEST_VERSION = '2.0.0';
+const DIGEST_VERSION = '3.0.0';
 const COMPRESSION = Object.freeze({
   allRequests: true, chronologyLimit: null, outsideWindowToleranceMs: 0,
   terminalPairWindowMs: 50, promptProbeCharacters: 50,
   grouping: 'request + dispatchId + status + reason + significant fields; changes split groups',
   stable: 'first and every change, including zero length, correlation and dispatch changes',
-  background: 'counts and first/last paths; all member paths retained in JSON',
+  background: 'counts and first/last paths; all member paths retained in the Markdown source registry',
   ignoredGroupingFields: ['elapsedMs', 'durationMs', 'foregroundMsUsed', 'focusSwitchesUsed', 'waitedMs', 'ms', 'at', 'SELECTOR_STATS sampled hit/miss/rate counters']
 });
 const arr = (v) => Array.isArray(v) ? v : [];
@@ -211,6 +219,7 @@ const display = (f) => {
 const pathValue = (f) => `${f.path}=${display(f)}`;
 const listCounts = (items, fn) => Object.fromEntries(count(items, fn));
 const offset = (at, base) => Number.isFinite(at) && Number.isFinite(base) ? Number(((at - base) / 1000).toFixed(3)) : null;
+const JOURNAL_PROOF_KEYS = ['answerArtifact','answerArtifacts','promptArtifact','promptLineage','promptIdentityProven','submittedPromptHash','submittedPromptNormalizationVersion','promptProofScope'];
 const TABLE_EVENT_NAMES = new Set(['dispatch:dispatch_started', 'dispatch:submitted', 'focus', 'tab', 'navigation']);
 
 function stateOf(r) {
@@ -222,15 +231,18 @@ function recordRound(r) { return r.raw.correlation?.pipelineRoundId ?? r.raw.pay
 function timeFact(r, t0, st0, submitted) {
   return r ? { path: r.path, at: finite(r.at), t: offset(r.at, t0), stageSeconds: offset(r.at, st0), submitSeconds: offset(r.at, submitted) } : null;
 }
+const groupingDetail = r => r.label === 'SELECTOR_STATS' ? r.details.replace(/ hit=.*$/, '') : r.details.replace(/\b(elapsed|waited|duration|ms)=\d+(?:ms)?/g, '$1=<time>');
 function recordFact(r, t0) {
   const p = r.raw.payload || {};
   return {
-    path: r.path, at: finite(r.at), t: offset(r.at, t0), type: r.type, label: r.label,
+    path: r.path, at: finite(r.at), t: offset(r.at, t0), groupingDetail: groupingDetail(r), type: r.type, label: r.label,
     model: r.model, tabId: r.tabId, dispatchId: r.dispatchId, requestId: r.requestId,
     recordedStageId: r.stageId, pipelineRoundId: recordRound(r),
     status: stateOf(r), reason: reasonOf(r), textLength: textLengthOf(r),
     details: r.src === 'events' ? r.details : journalDetails(r.raw),
-    evidence: r.src === 'events' ? { ...(p.evidence || {}) } : {},
+    evidence: { ...(p.evidence || {}), ...Object.fromEntries(JOURNAL_PROOF_KEYS.filter(k=>has(r.raw,k)).map(k=>[k,r.raw[k]])),
+      ...Object.fromEntries(['source','phase','errorCode','completion'].filter(k=>has(r.src==='events'?p:r.raw,k)).map(k=>[k,(r.src==='events'?p:r.raw)[k]])),
+      ...((has(r.src==='events'?p:r.raw,'status') && [null,''].includes((r.src==='events'?p:r.raw).status))?{rawStatus:(r.src==='events'?p:r.raw).status}:{}) },
     correlationQuality: field(r.raw.correlation, 'correlationQuality', `${r.path}.correlation`),
     joinedBy: r.via || null, flags: r.flags || []
   };
@@ -239,13 +251,12 @@ function recordFact(r, t0) {
 // Their first/last registered values remain available, as do every member's source paths.
 function signature(r) {
   const raw = r.src === 'events' ? r.raw.payload || {} : r.raw;
-  const evidence = raw.evidence || {};
+  const evidence = {...(raw.evidence || {}), ...Object.fromEntries(JOURNAL_PROOF_KEYS.filter(k=>has(raw,k)).map(k=>[k,raw[k]]))};
   const omit = new Set(['elapsedMs', 'durationMs', 'foregroundMsUsed', 'focusSwitchesUsed', 'waitedMs', 'ms', 'at']);
   if (r.label === 'SELECTOR_STATS') ['hitCount', 'missCount', 'totalCount', 'hitRate'].forEach((k) => omit.add(k));
   const significant = Object.fromEntries(Object.entries(evidence).filter(([k]) => !omit.has(k)));
-  const detail = r.label === 'SELECTOR_STATS' ? r.details.replace(/ hit=.*$/, '')
-    : r.details.replace(/\b(elapsed|waited|duration|ms)=\d+(?:ms)?/g, '$1=<time>');
-  return JSON.stringify([r.type, r.label, r.dispatchId, stateOf(r), reasonOf(r), textLengthOf(r),
+  const detail = groupingDetail(r);
+  return JSON.stringify([r.model, r.requestId, r.type, r.label, r.dispatchId, stateOf(r), reasonOf(r), textLengthOf(r),
     raw.errorCode, raw.completion, raw.source, raw.phase, significant,
     r.stageId, recordRound(r), has(raw, 'status') ? { value: raw.status } : { missing: true }, r.raw.correlation?.correlationQuality, r.flags || [], detail]);
 }
@@ -253,10 +264,14 @@ function compactRecords(list, t0) {
   const result = [], groups = new Map(), states = new Map();
   list.forEach((r) => {
     // Returning to an old length/status/dispatch is a new transition, not a repeat of an old group.
-    const hardState = JSON.stringify([r.dispatchId, stateOf(r), textLengthOf(r)]);
-    const previous = states.get(r.label);
+    const partition = JSON.stringify([r.model, r.requestId, r.stageId, r.label]);
+    const previous = states.get(partition);
+    const observedLength = textLengthOf(r);
+    // Selector summaries without a text measurement do not assert a transition to a null text length.
+    const lengthState = r.label === 'SELECTOR_STATS' && observedLength == null ? previous?.length ?? null : observedLength;
+    const hardState = JSON.stringify([r.dispatchId, stateOf(r), lengthState]);
     const epoch = previous ? previous.epoch + (previous.key === hardState ? 0 : 1) : 0;
-    states.set(r.label, { key: hardState, epoch });
+    states.set(partition, { key: hardState, epoch, length: lengthState });
     const key = `${epoch}|${signature(r)}`, row = groups.get(key);
     if (row) {
       row.count += 1; row.paths.push(r.path); row.last = { path: r.path, at: finite(r.at), t: offset(r.at, t0) };
@@ -339,7 +354,7 @@ function buildTransportDigest(d, sourceFile = null) {
       if (r.type === 'MODEL_TERMINAL_COMMITTED') return;
       const exceptional = ['TEXT_STABLE', 'COMPLETION_DETECTED', 'STAGE_FAILED', 'MANUAL_RECOVERY_REQUESTED', 'CORRELATION_REJECTED',
         'completion_terminal', 'first_text', 'verified', 'empty_answer', 'missing_token', 'stale_dropped', 'identity_rejected', 'revision', 'ANSWER_COLLECTED',
-        'ANSWER_REJECTED', 'response_rejected', 'late_text', 'unproven_replaced', 'get_it_result', 'owner_answer'].includes(r.type)
+        'ANSWER_REJECTED', 'ANSWER_ACCEPTANCE_DECIDED', 'OBSERVER_STOPPED', 'response_rejected', 'late_text', 'unproven_replaced', 'get_it_result', 'owner_answer'].includes(r.type)
         || /ANSWER_DELIVERY_REJECTED|MATERIALIZE_RECOVERY_|RECOVERY_ATTEMPT|STABLE_TEXT_FALLBACK|TERMINAL_FAILURE_UPGRADED/.test(`${r.label} ${r.type}`);
       if (exceptional) transitions.push(r);
       else background.push(r);
@@ -351,7 +366,7 @@ function buildTransportDigest(d, sourceFile = null) {
     const transitionRows = transitionGroups.concat(terminalRows).sort((x, y) => (x.first.at ?? Infinity) - (y.first.at ?? Infinity));
     const counts = {
       duplicateFinalRejected: a.recs.filter((r) => r.type === 'DUPLICATE_FINAL_REJECTED').length,
-      wrongCard: a.recs.filter((r) => r.label === 'ANSWER_CARD_RENDER_EVALUATED' && r.raw.payload?.details === 'wrong_card').length,
+      wrongCard: a.recs.filter((r) => (r.label === 'ANSWER_CARD_RENDER_EVALUATED' || r.type === 'displayed') && (r.raw.payload?.evidence?.outcome === 'wrong_card' || r.raw.outcome === 'wrong_card' || r.raw.payload?.details === 'wrong_card')).length,
       displayed: a.recs.filter((r) => r.type === 'displayed').length,
       manualRecords: a.manual.length, uiButtonRecords: a.manual.filter((r) => r.raw.payload?.details === 'UI button').length,
       correlationRejected: a.correlation.length, terminalRecords: a.terminals.length, terminalGroups: terminals.length
@@ -361,7 +376,8 @@ function buildTransportDigest(d, sourceFile = null) {
     const lr = { request: index + 1, stage: stageAlias(a.stageId), model: a.model,
       measurements: { delivery: send ? field(send.terminal, 'chars', `delivery.diagnosis.sends[${sends.indexOf(send)}].terminal`) : null,
         journal: a.final ? field(a.final.raw, 'chars', a.final.path) : null,
-        collected: a.recs.filter((r) => r.type === 'ANSWER_COLLECTED').map(length),
+        acceptanceDecisions: a.recs.filter(r => r.type === 'ANSWER_ACCEPTANCE_DECIDED').map(r => ({ path: r.path, accepted: field(r.raw.payload, 'accepted', `${r.path}.payload`), reason: reasonOf(r), t: offset(r.at, t0) })),
+      collected: a.recs.filter((r) => r.type === 'ANSWER_COLLECTED').map(length),
         terminal: terminals.flatMap((g) => g.members.map((m) => ({ answerLength: m.answerLength, evidenceAnswerLen: m.evidenceAnswerLen, evidenceAnswerLength: m.evidenceAnswerLength }))),
         revisions: a.recs.filter((r) => r.type === 'revision').map(length), staleDropped: a.recs.filter((r) => r.type === 'stale_dropped').map(length) } };
     lengthRows.push(lr);
@@ -370,13 +386,17 @@ function buildTransportDigest(d, sourceFile = null) {
       identity: { token: a.token, batchId: a.batchId, stageAttemptId: a.stageAttemptId, waitId: a.waitId, batchStartPath: a.batchPath,
         pipelineRoundIds: unique(a.recs.map(recordRound).filter((x) => x != null)),
         roundSources: a.recs.filter((r) => recordRound(r) != null).map((r) => r.path),
-        tabIds: unique(a.recs.map((r) => r.tabId).filter((x) => x != null)), dispatchIds: a.dispatchIds,
+        tabIds: unique(a.recs.map((r) => r.tabId).filter((x) => x != null).map(String)), dispatchIds: a.dispatchIds,
         foreignDispatchIds: a.foreignDispatchIds.map((id) => ({ dispatchId: id, ownerRequestId: a.foreignOwners[id].requestId,
           ownerStage: stageAlias(a.foreignOwners[id].stageId), ownerModel: a.foreignOwners[id].model })) },
       times: { dispatchStarted: milestone((r) => r.label === 'dispatch:dispatch_started'),
         submitted: milestone((r) => r.label === 'dispatch:submitted') || milestone((r) => r.type === 'SUBMIT_CONFIRMED'),
         firstText: milestone((r) => r.type === 'first_text'), firstStable: milestone((r) => r.type === 'TEXT_STABLE'),
         firstCompletionDetected: milestone((r) => r.type === 'COMPLETION_DETECTED'), deliveryFinal: timeFact(a.final, t0, st0, submitted) },
+      artifacts: a.recs.filter(r=>r.raw.promptArtifact || r.raw.answerArtifacts || r.raw.answerArtifact || r.raw.payload?.answerProof).map(r=>({
+        path:r.path, type:r.type, prompt: r.raw.promptArtifact || null, answer:r.raw.answerArtifacts || r.raw.answerArtifact || r.raw.payload?.answerProof || null,
+        lineage:r.raw.promptLineage || null, submitted:r.type==='dispatch'?{ proven:r.raw.promptIdentityProven, hash:r.raw.submittedPromptHash, normalizationVersion:r.raw.submittedPromptNormalizationVersion, scope:r.raw.promptProofScope }:null
+      })),
       deliveryResult: send ? field(send, 'result', `delivery.diagnosis.sends[${sends.indexOf(send)}]`) : null,
       collected: a.recs.filter((r) => r.type === 'ANSWER_COLLECTED').map((r) => ({ path: r.path,
         accepted: field(r.raw.payload, 'accepted', `${r.path}.payload`), pipelineBatchId: field(r.raw.payload, 'pipelineBatchId', `${r.path}.payload`) })),
@@ -407,8 +427,14 @@ function buildTransportDigest(d, sourceFile = null) {
   const normalize = (v) => String(v || '').replace(/[*_#`>|]/g, '').replace(/\s+/g, ' ').trim();
   const promptChecks = recs.filter((r) => r.type === 'verified' && normalize(r.raw.answer).length >= 40).map((r) => {
     const probe = normalize(r.raw.answer).slice(0, COMPRESSION.promptProbeCharacters);
-    const later = prepared.filter(({ j }) => toMs(j.at) > r.at);
-    return { answerPath: r.path, request: r.attempt ? attempts.indexOf(r.attempt) + 1 : null, probe,
+    const origin = r.attempt;
+    const planStage = arr(d.plan?.stages).find(s => s.stageId === origin?.stageId);
+    const nextId = planStage?.nextStageId || stages[(origin?.stageN || 0)]?.stageId;
+    const nextAttempts = attempts.filter(a => a.stageId === nextId);
+    const later = prepared.filter(({ j }) => toMs(j.at) > r.at && (nextAttempts.some(a =>
+      (j.requestId && j.requestId === a.requestId) || (j.batchId && j.batchId === a.batchId)) || (!j.requestId && !j.batchId)));
+    const lineageStatus = planStage?.nextStageId ? 'captured_nextStageId' : 'next_observed_stage_candidate; dependency_not_proven';
+    return { answerPath: r.path, lineageStatus, nextStageId: nextId || null, request: r.attempt ? attempts.indexOf(r.attempt) + 1 : null, probe,
       laterPrompts: later.map(({ j, path }) => ({ path, model: j.model, batchId: j.batchId,
         found: normalize(j.prompt).includes(probe), shortened: Number.isFinite(j.chars) && String(j.prompt || '').length < j.chars })),
       result: later.some(({ j }) => normalize(j.prompt).includes(probe)) ? 'stored_fragment_found' : !later.length ? 'no_later_prompt'
@@ -451,8 +477,9 @@ function buildTransportDigest(d, sourceFile = null) {
 
   const focus = recs.filter((r) => r.type === 'focus');
   const inText = focus.filter((r) => r.attempt?.firstText != null && r.attempt?.final && r.at >= r.attempt.firstText && r.at <= r.attempt.final.at);
-  const outside = recs.filter((r) => Number.isFinite(r.at) && ((Number.isFinite(t0) && r.at < t0) ||
-    (Number.isFinite(toMs(d.runOutcome?.completedAt)) && r.at > toMs(d.runOutcome.completedAt))));
+  const windowStart = toMs(d.runOutcome?.startedAt), windowEnd = toMs(d.runOutcome?.completedAt);
+  const outside = recs.filter((r) => Number.isFinite(r.at) && ((Number.isFinite(windowStart) && r.at < windowStart) ||
+    (Number.isFinite(windowEnd) && r.at > windowEnd)));
   const batches = arr(diag.batches).map((b, i, bs) => ({ path: `delivery.diagnosis.batches[${i}]`, ...b,
     stage: stageAlias(stages.find((s) => String(b.stageAttemptId || b.batchId || '').startsWith(s.stageId))?.stageId),
     t: offset(toMs(b.at), t0), gapSeconds: i && Number.isFinite(bs[i - 1].durationMs)
@@ -461,7 +488,7 @@ function buildTransportDigest(d, sourceFile = null) {
       elapsedFromBatchMs: Number.isFinite(toMs(r.at)) && Number.isFinite(toMs(b.at)) ? toMs(r.at) - toMs(b.at) : null })) }));
   const noRound = recs.filter((r) => r.src === 'events' && !recordRound(r)).map((r) => r.path);
   return {
-    schemaVersion: 2, report: 'extract_transport', DIGEST_VERSION, compression: { ...COMPRESSION }, sourceFile,
+    schemaVersion: 3, report: 'extract_transport', DIGEST_VERSION, compression: { ...COMPRESSION }, sourceFile,
     debateRunId: d.metadata.debateRunId, base: { path: 'stageExecutions[0].actual.startedAt', value: finite(t0), unit: 'seconds', precision: 0.001 },
     metadata: fields(d.metadata, ['extensionVersion', 'presetId', 'runMode', 'topology', 'dataCompleteness', 'exportedAt'], 'metadata'),
     runOutcome: fields(d.runOutcome, ['startedAt', 'completedAt', 'durationMs', 'terminalOutcome'], 'runOutcome'),
@@ -505,120 +532,219 @@ function buildTransportDigest(d, sourceFile = null) {
         terminalStatus: listCounts(arr(d.dispatchAttempts), (x) => fieldValue(x, 'terminalStatus')) },
       startRefusals: batches.reduce((n, b) => n + b.refusalRows.length, 0),
       joinMethods: listCounts(recs, (r) => r.via || 'unassigned') },
-    integrity: { registered: integrity, computed: computedIntegrity },
+    integrity: { registered: integrity, computed: computedIntegrity, checks: field(d.integrity, 'checks', 'integrity') },
+    sourceStatus: { allPaths: recs.map(r=>r.path), completeness: field(d,'completeness','root'), modeHistory: field(d.metadata,'modeHistory','metadata'), collection: field(d, 'collection', 'root'), planning: field(d, 'planning', 'root'),
+      observerStops: recs.filter(r => r.type === 'OBSERVER_STOPPED' || r.label === 'LIFECYCLE_TRACKING_STOPPED').map(r => r.path),
+      displayProof: recs.filter(r => r.raw.payload?.evidence?.normalizedHash || r.raw.answerArtifact?.normalizedHash).map(r => r.path),
+      acceptance: recs.filter(r => r.type === 'ANSWER_COLLECTED').map(r => ({ path: r.path, accepted: r.raw.payload?.accepted })),
+      windowStart, windowEnd, totalSourceRecords: recs.length, unassignedPaths: unassigned.map(r => r.path) },
     delivery: { batches, problems: arr(diag.problems).map((x, i) => ({ path: `delivery.diagnosis.problems[${i}]`, ...x })) }
   };
 }
 function renderTransportMarkdown(x) {
-  const out = ['# Transport extract', `DIGEST_VERSION=${x.DIGEST_VERSION} · sourceFile=${x.sourceFile || 'no field'} · debateRunId=${x.debateRunId}`,
-    `Compression: all requests; no line cap; terminalPairWindowMs=${x.compression.terminalPairWindowMs}; promptProbeCharacters=${x.compression.promptProbeCharacters}; same request/dispatch/status/reason/significant fields only. Full parameters in JSON compression.`, `t = seconds from ${x.base.path}=${display(x.base.value)}, precision 0.001; +st/+sub appear only in the request table.`,
-    'Notes: no field / null / "" / [] / 0 are distinct. Paths refer to the source JSON. Group counts include all member records; no line cap. Registered terminal evidence has no causal interpretation. Equal text lengths do not prove equal text. Stored prompt fragments do not prove submission or full-answer inclusion; shortened prompts cannot prove absence. Focus intervals do not prove continuous printing. Late records do not prove continued generation. Start-lock duration is not measured without begin/end records.',
-    ...['metadata', 'runOutcome', 'health'].map((k) => `${k}: ${Object.values(x[k]).map(pathValue).join(' · ')}`)];
-  const cell = (v) => display(v).replace(/\|/g, '\\|').replace(/\n/g, ' ');
-  const rows = (head, rs) => table(head, rs.map((r) => r.map(cell)));
-  const countsText = (v) => Object.entries(v).map(([k, n]) => `${k}=${n}`).join(', ');
-  const time = (v) => v == null ? 'not recorded' : `${T3(v.t == null ? null : v.t * 1000)} ${v.path}`;
-  const eventTime = (v) => `${T3(v.t == null ? null : v.t * 1000)} ${v.path}`;
-  out.push('\n### 1. Data sufficiency',
-    `events[].length=${x.counters.events} · integrity.eventsTotal=${display(x.integrity.registered.eventsTotal)} · correlationQuality: ${countsText(x.quality.correlationQuality)} · provenance: ${countsText(x.quality.provenance)}`,
-    `incomplete rule: ${x.quality.completenessRule}; non-exact=${x.quality.observedNonExact}`,
-    `plan=${display(x.availability.plan)} · delivery=${x.availability.delivery} · shortened prepared.prompt=${x.availability.shortenedPrompts.length}`,
-    `events without pipelineRoundId=${x.quality.eventsWithoutRound.count}; complete path list is in JSON quality.eventsWithoutRound.paths.`,
-    `join methods (all events+journal, including run-level records): ${countsText(x.counters.joinMethods)}; unmatched request/model records=${x.availability.unassigned.length} · dispatchAttempts=${JSON.stringify(x.counters.dispatchAttempts)}`,
-    `integrity: ${Object.values(x.integrity.registered).map(pathValue).join(' · ')}`,
-    `computed integrity: ${JSON.stringify(x.integrity.computed)}`,
-    `Not recorded by this report: lifecycle observer stop reason, feed text and the version/hash of the displayed/passed answer.`);
-  out.push('\n### 2. Stages', rows(['stage / path', 'participants', 'start t', 'end t', 'durationMs', 'gap s', 'status', 'LONG', 'success + failure records'],
-    x.stages.map((s) => [`${s.stage} ${s.path}`, s.participants, s.startT == null ? null : s.startT.toFixed(3), s.endT == null ? null : s.endT.toFixed(3),
-      s.durationMs, s.gapSeconds == null ? null : s.gapSeconds.toFixed(3), s.status, s.long, s.successWithFailureRecords])),
-    `calc: median durationMs of sorted [${x.calculations.sortedDurations.join(', ')}] = ${x.calculations.medianDurationMs}; LONG: ${x.calculations.long}`,
-    ...x.stages.map((s) => `${s.stage}=${s.stageId} · ${s.expected.path}=${display(s.expected)} · deviations=${display(s.deviations)}`));
-  out.push('\n### 3. Identity map', rows(['request', 'stage/model', 'requestId', 'pipelineRoundId', 'token', 'stageAttemptId / wait', 'dispatchIds / foreign', 'tabIds', 'batch_start'],
-    x.requests.map((a) => [a.request, `${a.stage}/${a.model}`, a.requestId, a.identity.pipelineRoundIds, a.identity.token,
-      `${short(a.identity.stageAttemptId)} / ${a.identity.waitId}`, `${a.identity.dispatchIds.map((id, i) => `d${i + 1}=${id}`).join(', ')} / ${a.identity.foreignDispatchIds.map((f) => `${f.dispatchId} (${f.ownerStage}/${f.ownerModel})`).join(', ') || '—'}`,
-      a.identity.tabIds, a.identity.batchStartPath])));
-  out.push('\n### 4. All requests', rows(['request', 'stage/model', 'dispatch', 'submitted (+st/+sub)', 'first_text', 'first TEXT_STABLE', 'first COMPLETION_DETECTED', 'counts dup/wrong/display/manual(UI)', 'terminal groups', 'ANSWER_COLLECTED.accepted', 'stable→terminal ms'],
-    x.requests.map((a) => [a.request, `${a.stage}/${a.model}`, time(a.times.dispatchStarted),
-      a.times.submitted ? `${time(a.times.submitted)} (+st=${a.times.submitted.stageSeconds}, +sub=${a.times.submitted.submitSeconds})` : 'not recorded',
-      time(a.times.firstText), time(a.times.firstStable), time(a.times.firstCompletionDetected),
-      `${a.counts.duplicateFinalRejected}/${a.counts.wrongCard}/${a.counts.displayed}/${a.counts.manualRecords}(${a.counts.uiButtonRecords})`,
-      a.terminalGroups.map((g) => `${g.members.map((m) => m.path).join('+')} (${g.intervalMs}ms)`),
-      a.collected.map((r) => pathValue(r.accepted)), a.stableToTerminalMs.map((r) => `${r.value} ${r.path}${r.value > 120000 ? ' >120000' : r.value > 15000 ? ' >15000' : r.value < 0 ? ' negative' : ''}`)])),
-    'calc: stable→terminal ms = terminal.sourceTimestamp − first TEXT_STABLE.sourceTimestamp for this request.');
-  const groupText = (g) => `${g.status}/${g.completionReason} · dispatchId=${g.dispatchId} · interval=${g.intervalMs}ms · `
-    + g.members.map((m) => `${m.path} ${m.label} answerLength=${display(m.answerLength)} evidence.answerLen=${display(m.evidenceAnswerLen)} evidence.answerLength=${display(m.evidenceAnswerLength)}` ).join('; ');
-  out.push('\n### 5. Stage timeline and request transitions');
-  const dispatchRef = (r) => {
-    if (!r.dispatchId) return '—';
-    const owner = x.requests.find((a) => a.identity.dispatchIds.includes(r.dispatchId));
-    return owner ? `Q${owner.request}.d${owner.identity.dispatchIds.indexOf(r.dispatchId) + 1}` : r.dispatchId;
+  const out = [], registries = [], terminalRegistry = [], variants = [], membership = new Map();
+  const cell = v => display(v).replace(/\|/g, '\\|').replace(/[\r\n]+/g, ' ');
+  const rows = (head, list) => table(head, list.map(r => r.map(cell)));
+  const labelAliases = {
+    ANSWER_TEXT_STABLE: 'STABLE', TEXT_STABLE: 'STABLE', COMPLETION_DETECTED: 'COMPLETE',
+    CORRELATION_REJECTED: 'CORR_REJECT', LIFECYCLE_CORRELATION_REJECTED: 'CORR_REJECT',
+    SELECTOR_STATS: 'SELECTORS', PING_TRANSPORT_ERROR: 'PING_ERROR',
+    'Ping transport error': 'PING_ERROR', 'Panel output update failed': 'NO_PANEL', PANEL_NOT_FOUND: 'NO_PANEL',
+    SCRIPT_REINJECT_SKIPPED_ACTIVE_RUN: 'REINJECT_SKIP',
+    'Finalization deferred (generation active)': 'DEFER_ACTIVE', FINALIZATION_DEFERRED_GENERATION_ACTIVE: 'DEFER_ACTIVE',
+    'Response ignored (pipeline control)': 'DUPLICATE', duplicate_final: 'DUPLICATE',
+    ANSWER_GENERATING: 'GENERATING', GENERATION_ACTIVE: 'GENERATING'
   };
-  x.stageTimeline.forEach((s) => { out.push(`\n#### ${s.stage} — shared timeline`, rows(['t', 'model', 'event', 'dispatch', 'path', 'details'],
-    s.rows.map((r) => [r.t == null ? null : r.t.toFixed(3), r.model, r.type === 'dispatch' ? r.label.replace('dispatch:', '') : r.type,
-      dispatchRef(r), r.path, r.type === 'tab' ? `tabId=${r.tabId}` : r.details.replace(/\bms=\d+ ?/g, '')]))); });
-  x.requests.forEach((a) => {
-    const c = a.coverage;
-    const dispatch = (id) => { const i = a.identity.dispatchIds.indexOf(id); return i < 0 ? id : `d${i + 1}`; };
-    out.push(`\n#### Request ${a.request}: ${a.stage}/${a.model}`, `Shown ${c.representedRecords} of ${c.totalRecords - c.sharedStageRecords} request records, ${c.sharedStageRecords} in shared timeline; ${c.transitionLines} transitions + ${c.backgroundLines} background groups; omitted=${c.omittedRecords}.`);
-    a.transitions.forEach((r) => {
-      if (r.group) {
-        out.push(`- t=${T3(r.first.t == null ? null : r.first.t * 1000)} terminal_group · ${groupText({ ...r.group, dispatchId: dispatch(r.group.dispatchId) })}`);
-        r.group.members.forEach((m) => { const registered = Object.entries(m.registered).filter(([, f]) => f.state === 'present');
-          if (registered.length) out.push(`  registered ${m.path}.payload.evidence: ${registered.map(([k, f]) => `${k}=${display(f)}`).join(', ')}`); });
-      } else {
-        const f = r.first;
-        out.push(`- t=${T3(f.t == null ? null : f.t * 1000)} ${f.path} ${f.type}${f.textLength == null ? '' : ` len=${f.textLength}`}${f.status ? ` status=${f.status}` : ''}${f.reason ? ` reason=${f.reason}` : ''}${f.dispatchId ? ` ${dispatch(f.dispatchId)}` : ''}${/MANUAL|RECOVERY|CORRELATION|STAGE_FAILED/.test(`${f.type} ${f.label}`) && f.details ? ` · ${f.details}` : ''}${f.flags.length ? ` [${f.flags.join('; ')}]` : ''}${r.count > 1 ? ` ×${r.count} · last ${eventTime(r.last)}` : ''}`);
-      }
+  const usedAliases = new Set();
+  const label = v => { if (labelAliases[v]) { usedAliases.add(v); return labelAliases[v]; } return v; };
+  const counts = v => Object.entries(v || {}).map(([k,n]) => `${k}=${n}`).join(', ') || '0 records';
+  const seconds = n => n == null ? 'no field' : Number(n).toFixed(3);
+  const eventTime = r => `${seconds(r?.t)} ${r?.path || 'not recorded'}`;
+  const pathList = paths => {
+    const byPrefix = new Map(), other = [];
+    unique(paths).forEach(path => {
+      const m = /^(events|delivery\.journal)\[(\d+)\]$/.exec(path);
+      if (!m) { other.push(path); return; }
+      if (!byPrefix.has(m[1])) byPrefix.set(m[1], []);
+      byPrefix.get(m[1]).push(Number(m[2]));
     });
-    const backgroundLabel = (r) => {
-      if (/FINALIZATION_DEFER|TERMINAL_SUCCESS_DEFER/.test(r.first.reason || '')) return r.first.reason;
-      if (r.first.type === 'UI_PROJECTION_FAILED') return r.first.reason || r.label;
-      if (r.first.type === 'DUPLICATE_FINAL_REJECTED') return 'DUPLICATE_FINAL';
-      return r.label;
-    };
-    out.push('Background:', rows(['label', '×N', 'first t / path', 'last t / path', 'state'], a.background.map((r) => [
-      backgroundLabel(r), r.count, eventTime(r.first), r.count === 1 ? '=' : eventTime(r.last),
-      [r.first.dispatchId ? dispatch(r.first.dispatchId) : '', r.first.textLength == null ? '' : `len=${r.first.textLength}`,
-        r.first.status || '', r.first.reason && r.first.reason !== r.first.label && r.first.reason !== backgroundLabel(r) ? r.first.reason : ''].filter(Boolean).join(' ')
-    ])));
-
-  });
-  out.push('\n### 6. Length observations', ...x.lengthObservations.map((r) => `- request ${r.request} ${r.path} t=${T3(r.t == null ? null : r.t * 1000)} len=${r.length}${r.beforeSubmit ? ' before submit' : ''}${r.equalPreviousLength ? ` equals previous request ${r.previousRequest} length` : ''}`));
-  const columns = ['delivery/journal chars', 'terminal lengths', 'collected'];
-  if (x.lengths.some((r) => r.measurements.revisions.length)) columns.push('revisions');
-  if (x.lengths.some((r) => r.measurements.staleDropped.length)) columns.push('staleDropped');
-  out.push('\n### 7. Answer lengths', rows(['request', ...columns], x.lengths.map((r) => {
-    const m = r.measurements, same = m.delivery?.state === 'present' && m.journal?.state === 'present' && m.delivery.value === m.journal.value;
-    const vals = [r.request, same ? `${display(m.delivery)} (${m.delivery.path}; ${m.journal.path})` : `${m.delivery ? pathValue(m.delivery) : 'no send'} / ${m.journal ? pathValue(m.journal) : 'not recorded'}`,
-      m.terminal.map((v) => `${v.answerLength.path.replace('.payload.answerLength', '')}: ${display(v.answerLength)}/${display(v.evidenceAnswerLen)}`), m.collected.map((v) => pathValue(v.value))];
-    if (columns.includes('revisions')) vals.push(m.revisions.map((v) => pathValue(v.value)));
-    if (columns.includes('staleDropped')) vals.push(m.staleDropped.map((v) => pathValue(v.value)));
-    return vals;
-  })));
-  out.push('\n### 8. Manual / moderator counters', `MANUAL_RECOVERY_REQUESTED records=${x.manual.records}; UI button records=${x.manual.uiButtonRecords}; records on success stages=${x.manual.onSuccessStages}`,
-    `delivery.journal kinds: ${countsText(x.manual.journalKinds)}`, ...x.manual.moderatorActions.map((r) => `- ${eventTime(r)} ${r.label} ${r.details}`));
-  out.push('\n### 9. Start refusals', ...x.delivery.batches.flatMap((b) => b.refusalRows.map((r) => `- ${r.path} t=${T3(r.t == null ? null : r.t * 1000)} ${r.errorCode || r.reason || 'no field'} attempt=${display(r.attempt)} waitedMs=${display(r.waitedMs)} calc elapsedFromBatchMs=${r.elapsedFromBatchMs}`)));
-  out.push('\n### 10. Focus', `total=${x.focus.total} · sources: ${countsText(x.focus.sources)} · models: ${countsText(x.focus.models)} · first_text→delivery final interval=${x.focus.inTextInterval} (${countsText(x.focus.inTextSources)})`);
-  out.push('\n### 11. Outside the run window', ...x.outsideRunWindow.map((r) => `- ${r.label} ×${r.count} first ${eventTime(r.first)}, last ${eventTime(r.last)}`));
-  out.push('\n### 12. Stored prompt fragment check', ...x.promptChecks.map((r) => {
-    const found = r.laterPrompts.filter((p) => p.found);
-    return `- request ${r.request} ${r.answerPath} · probe=${JSON.stringify(r.probe)} · ${found.length ? `fragment found in prepared.prompt: ${found.map((p) => p.path).join(', ')}` : r.laterPrompts.length ? `not found; shortened=${r.laterPrompts.filter((p) => p.shortened).length}/${r.laterPrompts.length}; ${r.result}` : 'no later prompt'}`;
+    return [...byPrefix.entries()].map(([prefix, values]) => {
+      const ns = values.sort((a,b) => a-b), parts = [];
+      for (let i=0;i<ns.length;i++) {
+        const start=ns[i], step=ns[i+1]-start; let j=i;
+        if (step>0) while(j+1<ns.length && ns[j+1]-ns[j]===step)j++;
+        if (step===1 && j>i || j-i>=3) { parts.push(`${start}..${ns[j]}${step===1?'':`/${step}`}`);i=j; }
+        else parts.push(String(start));
+      }
+      return `${prefix==='events'?'E':'J'}[${parts.join(',')}]`;
+    }).concat(other).join('; ') || '0 records';
+  };
+  const reference = (paths, prefix='G') => {
+    if (paths.length <= 1) return paths[0] || '0 records';
+    const key = unique(paths).slice().sort().join('|');
+    let row = registries.find(r => r.key===key);
+    if (!row) { row={ key, id:`${prefix}${registries.length+1}`, paths:unique(paths) }; registries.push(row); }
+    return row.id;
+  };
+  const dispatchRef = (id) => {
+    if (!id) return 'no field';
+    const owner = x.requests.find(a => a.identity.dispatchIds.includes(id));
+    return owner ? `Q${owner.request}.D${owner.identity.dispatchIds.indexOf(id)+1}` : id;
+  };
+  const registered = m => Object.values(m.registered).every(f=>f.state==='missing') ? 'all no field' : Object.values(m.registered).map(display).join(' / ');
+  x.requests.forEach(a => a.terminalGroups.forEach((g,i) => {
+    const id=`Q${a.request}.T${i+1}`; g.members.forEach(m => membership.set(m.path,id));
+    terminalRegistry.push({id,a,g});
   }));
-  out.push('\n### 13. Diagnoses grouped', rows(['group', 'code / reason', 'severity', 'participants', 'stages', 'records', 'occurrences', 'resolved null', 'paths'],
-    x.diagnoses.groups.map((g, i) => [`D${i + 1}`, `${g.code}/${g.reasonCode}`, g.severities, g.participants, g.stages, g.records,
-      `${g.occurrences}${g.missingOccurrences ? ` (missing=${g.missingOccurrences})` : ''}`, g.resolvedNull, g.paths])));
-  out.push('\n### 14. Same-name comparisons and count units', ...x.comparisons.map((r) => `- ${r.name}: ${pathValue(r.left)} / ${pathValue(r.right)}`),
-    `Forced counters: events=${x.counters.forced.events}; terminal records=${x.counters.forced.terminalRecords}; unique requests=${x.counters.forced.uniqueRequests}`,
-    `Terminal counters: records=${x.counters.terminal.records}; groups=${x.counters.terminal.groups}; unique requests=${x.counters.terminal.uniqueRequests}`);
-  out.push('\n### 17. Delivery batches and problems', rows(['path / wait', 'stageAttemptId', 'models', 't', 'accepted waitedMs', 'refusals', 'outcome', 'durationMs', 'gap s'],
-    x.delivery.batches.map((b) => [`${b.path} / ${b.waitId}`, short(b.stageAttemptId || b.batchId), arr(b.models), b.t == null ? null : b.t.toFixed(3),
-      b.accepted?.waitedMs, b.refusalRows.length, b.outcome, b.durationMs, b.gapSeconds == null ? null : b.gapSeconds.toFixed(3)])),
-    rows(['path', 'code', 'severity', 'model', 'count', 'reason'], x.delivery.problems.map((p) => [p.path, p.code, p.severity, p.model, p.count, p.reason])));
-  out.push('\n### Appendix. Individual diagnoses', rows(['path', 'severity', 'group (section 13)', 'stage', 'participant', 'occurrences', 'first t', 'resolvedAt'],
-    x.diagnoses.appendix.map((d) => [d.path, d.severity, `D${x.diagnoses.groups.findIndex((g) => g.code === d.code && g.reasonCode === d.reasonCode) + 1}`, x.stages.find((s) => s.stageId === d.affectedStageId)?.stage || d.affectedStageId, d.affectedParticipant,
-      d.occurrences, offset(toMs(d.firstObservedAt), x.base.value), field(d, 'resolvedAt', d.path)])));
-  out.splice(4, 0, 'Path prefixes: E[N] = events[N]; J[N] = delivery.journal[N]. QN.dK refers to request N dispatch K in the identity map.');
-  return out.join('\n').replace(/delivery\.journal\[(\d+)\]/g, 'J[$1]').replace(/events\[(\d+)\]/g, 'E[$1]');
+  const time = r => r ? `${eventTime(r)}${r.stageSeconds == null?'':` +st=${seconds(r.stageSeconds)}`}${r.submitSeconds==null || r.submitSeconds===0?'':` +sub=${seconds(r.submitSeconds)}`}` : 'not recorded';
+  out.push('# Transport extract', `DIGEST_VERSION=${x.DIGEST_VERSION} · sourceFile=${x.sourceFile || 'no field'} · debateRunId=${x.debateRunId}`,
+    `Compression: all requests; no line cap; terminalPairWindowMs=${x.compression.terminalPairWindowMs}; promptProbeCharacters=${x.compression.promptProbeCharacters}; grouping=${x.compression.grouping}.`,
+    `Grouping ignores sampled time counters and SELECTOR_STATS hit/miss/rate counters; first/last observations and every member path remain addressable.`,
+    `t = seconds from ${x.base.path}=${display(x.base.value)}, precision 0.001. +st/+sub only in section 4.`,
+    'Legend: E[N]=events[N]; J[N]=delivery.journal[N]; E[1..3,7] means E[1],E[2],E[3],E[7]; E[1..13/4] means E[1],E[5],E[9],E[13]. QN.DK is a dispatch alias; QN.TK is a terminal group. ~stage means a join by stage/model only; pre-dispatch marks observations preceding dispatch_started. G references resolve in the source registry. S[N]=delivery.diagnosis.sends[N]; B[N]=delivery.diagnosis.batches[N]; P[N]=delivery.diagnosis.problems[N]. AL=payload.answerLength; EL=payload.evidence.answerLen; EAL=payload.evidence.answerLength.',
+    'Notes: no field / null / "" / [] / false / 0 are distinct. Registered fields are facts, not causal proof. Compare answer hashes only with matching representation and normalization version; token removal is a transformation. Equal lengths do not establish text identity. A stored prepared.prompt fragment does not prove submission or complete answer inclusion. Shortened text cannot prove absence. Focus intervals do not prove continuous printing; late observations do not prove continued generation. Refusal waitedMs is cumulative: do not sum it; start→accept is an observed interval, not proof of lock duration.',
+    ...['metadata','runOutcome','health'].map(k => `${k}: ${Object.values(x[k]).map(pathValue).join(' · ')}`));
+  out.push('\n### 1. Data availability and integrity',
+    `Exported events=${x.counters.events}; correlationQuality: ${counts(x.quality.correlationQuality)}; provenance: ${counts(x.quality.provenance)}.`,
+    `Non-exact=${x.quality.observedNonExact}; rule=${x.quality.completenessRule}.`,
+    `plan=${display(x.availability.plan)}; delivery=${x.availability.delivery}; shortened prepared.prompt=${x.availability.shortenedPrompts.length}.`,
+    `Missing pipelineRoundId=${x.quality.eventsWithoutRound.count}: ${reference(x.quality.eventsWithoutRound.paths)}. Round absence on run/stage records alone is not missing request identity.`,
+    `Registered integrity: ${Object.values(x.integrity.registered).map(f=>f.state==='present'&&Array.isArray(f.value)?`${f.path}=${f.value.length} records`:pathValue(f)).join(' · ')}`,
+    `Check coverage: ${pathValue(x.integrity.checks)}; computed from exported records: ${JSON.stringify(x.integrity.computed)}.`,
+    `Completeness dimensions: ${x.sourceStatus.completeness.state}; ${x.sourceStatus.completeness.path}; mode history: ${pathValue(x.sourceStatus.modeHistory)}.`,
+    `Collection coverage: ${pathValue(x.sourceStatus.collection)}; dynamic plan=${x.sourceStatus.planning.path}: ${x.sourceStatus.planning.state==='missing'?'no field':x.sourceStatus.planning.value?.revision ? 'revision and instance mapping captured' : 'unavailable'}.`,
+    `Observer stop records=${x.sourceStatus.observerStops.length}: ${reference(x.sourceStatus.observerStops)}; display hash observations=${x.sourceStatus.displayProof.length}: ${reference(x.sourceStatus.displayProof)}. These observations do not establish complete coverage.`,
+    `Delivery sections: ${Object.entries(x.availability.deliverySections).map(([k,v])=>`${v.path}=${v.state}${v.count==null?'':` (${v.count} records)`}`).join('; ')}.`,
+    `Joins: ${counts(x.counters.joinMethods)}; unassigned=${x.availability.unassigned.length}: ${reference(x.sourceStatus.unassignedPaths)}.`);
+  const legacy = [];
+  if (x.integrity.checks.state === 'missing') legacy.push('integrity arrays have no registered check status');
+  if (x.availability.plan.value == null) legacy.push('fixed execution plan not captured; legacy expectedStages=0 is not evidence of zero planned work');
+  if (x.sourceStatus.acceptance.length && x.sourceStatus.acceptance.every(r=>r.accepted===false) && !x.requests.some(a=>a.acceptanceDecisions?.length)) legacy.push('all ANSWER_COLLECTED.accepted=false without acceptance decisions; constant producer field cannot establish engine rejection');
+  if (legacy.length) out.push(`Legacy limitations: ${legacy.join('; ')}.`);
+  out.push('\n### 2. Stages', rows(['stage / source','participants','start t','end t','durationMs','gap s','status','LONG','success + failure records'], x.stages.map(s=>[
+    `${s.stage} ${s.path}`,s.participants,seconds(s.startT),seconds(s.endT),s.durationMs,seconds(s.gapSeconds),s.status,s.long,pathList(s.successWithFailureRecords)])),
+    `calc: median(${x.calculations.sortedDurations.join(',')})=${x.calculations.medianDurationMs}; LONG=${x.calculations.long}.`);
+  if (x.stages.every(s=>s.expected.value==null)) out.push('Expected stage definitions: all null/no field; plan conformance cannot be assessed.');
+  x.stages.forEach(s=>out.push(`${s.stage}=${s.stageId}${s.expected.value==null?'':` · ${pathValue(s.expected)}`} · deviations=${display(s.deviations)}`));
+  out.push('\n### 3. Identity map', rows(['request','stage/model','requestId','pipelineRoundId','token','stageAttemptId / wait','dispatch aliases / foreign','tabIds','batch_start'], x.requests.map(a=>[
+    `Q${a.request}`,`${a.stage}/${a.model}`,a.requestId,a.identity.pipelineRoundIds,a.identity.token,`${a.identity.stageAttemptId || 'no field'} / ${a.identity.waitId || 'no field'}`,
+    `${a.identity.dispatchIds.map((id,i)=>`Q${a.request}.D${i+1}=${id}`).join(', ') || 'no field'}; foreign=${a.identity.foreignDispatchIds.map(f=>`${dispatchRef(f.dispatchId)} owner=${f.ownerStage}/${f.ownerModel}`).join(', ') || '0 records'}`,a.identity.tabIds,a.identity.batchStartPath])));
+  out.push('\n### 4. All requests', rows(['request','stage/model','dispatch t','submitted','first_text','first TEXT_STABLE','first COMPLETION_DETECTED','record counts','terminal groups','collected / decisions','stable→terminal ms'], x.requests.map(a=>[
+    `Q${a.request}`,`${a.stage}/${a.model}`,time(a.times.dispatchStarted),time(a.times.submitted),time(a.times.firstText),time(a.times.firstStable),time(a.times.firstCompletionDetected),
+    `duplicate=${a.counts.duplicateFinalRejected}; wrong_card=${a.counts.wrongCard}; displayed=${a.counts.displayed}; manual=${a.counts.manualRecords}; UI=${a.counts.uiButtonRecords}; rejected=${a.counts.correlationRejected}`,
+    a.terminalGroups.map((g,i)=>`Q${a.request}.T${i+1}`),
+    a.collected.map(r=>pathValue(r.accepted)).concat((a.acceptanceDecisions||[]).map(r=>`${pathValue(r.accepted)} reason=${r.reason || 'no field'}`)),
+    a.terminalGroups.map((g,i)=> {
+      if (!a.times.firstStable) return 'no TEXT_STABLE';
+      const start=g.firstAt-a.times.firstStable.at, end=g.lastAt-a.times.firstStable.at;
+      return `Q${a.request}.T${i+1} ${start===end?start:`${start}..${end}`}${end>120000?' >120000':end>15000?' >15000':start<0?' negative':''}`;
+    })])), 'Count columns measure records: duplicate=DUPLICATE_FINAL_REJECTED; wrong_card=wrong-card evaluations; displayed=displayed journal observations; manual=MANUAL_RECOVERY_REQUESTED; UI=UI button records; rejected=CORRELATION_REJECTED.', 'calc: stable→terminal uses the first TEXT_STABLE timestamp and the first/last group member timestamps.');
+  out.push('\n### 5. Shared stage timeline and request transitions');
+  x.stageTimeline.forEach(s=> { if (s.rows.length) out.push(`\n#### ${s.stage}`,rows(['t','model','event','dispatch','source','details'],s.rows.map(r=>[
+    seconds(r.t),r.model,r.type==='dispatch'?r.label:r.type,dispatchRef(r.dispatchId),r.path,r.type==='tab'?`tabId=${r.tabId}`:r.details.replace(/\bms=\d+ ?/g,'')]))); });
+  const variant = value => {
+    if (!value || !Object.keys(value).length) return '';
+    const key = JSON.stringify(value);
+    let i = variants.findIndex(v => v.key === key);
+    if (i < 0) { i = variants.length; variants.push({ key, value }); }
+    return `V${i + 1}`;
+  };
+  let defaults = {};
+  const state = f => {
+    const ev = {...f.evidence};
+    x.compression.ignoredGroupingFields.forEach(k=>delete ev[k]);
+    ['elapsedMs','durationMs','foregroundMsUsed','focusSwitchesUsed','waitedMs','ms','at'].forEach(k=>delete ev[k]);
+    if (f.label==='SELECTOR_STATS') ['hitCount','missCount','totalCount','hitRate'].forEach(k=>delete ev[k]);
+    if (f.groupingDetail && (f.label === 'SELECTOR_STATS' || /PING_TRANSPORT_ERROR|ANSWER_CARD_RENDER_EVALUATED|REINJECT/.test(f.label))) ev.observation=f.groupingDetail;
+    ['textLength','answerLength','answerLen'].forEach(k=>{ if(ev[k]===f.textLength)delete ev[k]; });
+    ['status','finalStatus','responsePhase'].forEach(k=>{ if(ev[k]===f.status)delete ev[k]; });
+    if(ev.reason===f.reason)delete ev.reason;
+    return [f.textLength==null?'':`len=${f.textLength}`, f.status==null?'':`${f.status}`,
+      f.reason==null || label(f.reason)===label(f.label) || label(f.reason)===label(f.type)?'':`${label(f.reason)}`,
+      f.dispatchId && f.dispatchId!==defaults.dispatch?dispatchRef(f.dispatchId):'',
+      f.type && f.correlationQuality?.state==='present' && f.pipelineRoundId!==defaults.round?`round=${f.pipelineRoundId ?? 'no field'}`:'',
+      f.correlationQuality?.state==='present' && display(f.correlationQuality)!==defaults.quality?`cq=${display(f.correlationQuality)==='inferred'?'I':display(f.correlationQuality)==='exact'?'E':display(f.correlationQuality)}`:'',
+      variant(ev),f.flags?.length?`[${f.flags.map(v=>v.replace('joined by stageId','~stage').replace("before this attempt's dispatch_started",'pre-dispatch')).join('; ')}]`:''].filter(Boolean).join(' ');
+  };
+  x.requests.forEach(a=>{
+    const all = [...a.transitions.filter(r=>!r.group),...a.background];
+    const common = fn => Object.entries(all.reduce((o,r)=>{const v=fn(r.first);if(v!=null)o[v]=(o[v]||0)+r.count;return o;},{})).sort((a,b)=>b[1]-a[1])[0]?.[0];
+    defaults={ dispatch:a.identity.dispatchIds.length===1?a.identity.dispatchIds[0]:null, round:common(f=>f.pipelineRoundId), quality:common(f=>f.correlationQuality?.state==='present'?display(f.correlationQuality):null) };
+    const c=a.coverage;
+    out.push(`\n#### Q${a.request}: ${a.stage}/${a.model}`,`Shown ${c.representedRecords} of ${c.totalRecords-c.sharedStageRecords} request records; ${c.sharedStageRecords} in shared timeline; omitted=${c.omittedRecords}. Defaults for event rows: dispatch=${dispatchRef(defaults.dispatch)}, round=${defaults.round || 'no field'}, cq=${defaults.quality || 'no field'}; overrides shown explicitly.`);
+    a.transitions.forEach(r=> {
+      const ref = reference(r.paths); r.paths.forEach(p=>{ if (!membership.has(p)) membership.set(p,ref); });
+      if (r.group) { out.push(`- t=${seconds(r.first.t)} ${membership.get(r.paths[0])} (${ref})`); return; }
+      out.push(`- t=${seconds(r.first.t)} ${label(r.first.type==='LEGACY_DIAGNOSTIC_EVENT'?r.first.label:r.first.type)} ×${r.count} ${ref} ${state(r.first)}${r.count>1?` · last t=${seconds(r.last.t)}`:''}${/MANUAL|RECOVERY|CORRELATION|STAGE_FAILED/.test(`${r.first.type} ${r.first.label}`)&&r.first.details?` · ${r.first.details}`:''}`);
+    });
+    if(a.background.length) {
+      out.push('Background (first→last t):');
+      a.background.forEach(r=>{
+        const ref=reference(r.paths); r.paths.forEach(p=>{if(!membership.has(p))membership.set(p,ref);});
+        out.push(`- ${label(r.label)} ×${r.count} ${seconds(r.first.t)}${r.count>1?`→${seconds(r.last.t)}`:''} ${ref} ${state(r.first)}`);
+      });
+    }
+  });
+  out.push('\n### 6. Length observations',...x.lengthObservations.map(r=>`- Q${r.request} ${r.path} t=${seconds(r.t)} len=${r.length}${r.beforeSubmit?' before submit':''}${r.equalPreviousLength?` equals Q${r.previousRequest} length (identity unproven)`:''}`));
+  out.push('\n### 7. Terminal registry and answer representations',rows(['terminal','status / reason','dispatch','interval ms','members: AL / EL / EAL','foregroundMsUsed / focusSwitchesUsed / doneReason / durationMs'],terminalRegistry.map(({id,g})=>[
+    id,`${g.status}/${g.completionReason}`,dispatchRef(g.dispatchId),g.intervalMs,
+    g.members.map(m=>`${m.path} ${m.label}: ${display(m.answerLength)} / ${display(m.evidenceAnswerLen)} / ${display(m.evidenceAnswerLength)}`).join('; '),
+    g.members.map((m,i)=>`member ${i+1}: ${registered(m)}`).join('; ')])),
+    rows(['request','delivery/journal chars','collected chars','other lengths'],x.lengths.map(r=>{
+      const m=r.measurements;const same=m.delivery?.state==='present'&&m.journal?.state==='present'&&m.delivery.value===m.journal.value;
+      return [`Q${r.request}`,same?`${display(m.delivery)} (${m.delivery.path}; ${m.journal.path})`:`${m.delivery?pathValue(m.delivery):'no send'}; ${m.journal?pathValue(m.journal):'not recorded'}`,
+        m.collected.map(v=>pathValue(v.value)),
+        [...m.revisions,...m.staleDropped].map(v=>pathValue(v.value))];
+    })), 'Legacy lengths without a declared representation are shown separately; a difference between tagged delivery and cleaned engine text is not classified as text loss.');
+  const artifacts=x.requests.flatMap(a=> (a.artifacts || []).map(r=>({request:a.request,...r})));
+  if (artifacts.length) out.push(rows(['request','source','kind','registered prompt/answer identities','lineage / submitted command'],artifacts.map(r=>[
+    `Q${r.request}`,r.path,r.type,JSON.stringify({prompt:r.prompt,answer:r.answer}),JSON.stringify({lineage:r.lineage,submitted:r.submitted})
+  ])));
+  else out.push('Versioned prompt/answer/command lineage: not recorded in this source report.');
+  out.push('\n### 8. Manual actions',`MANUAL_RECOVERY_REQUESTED=${x.manual.records}; UI button records=${x.manual.uiButtonRecords}; on successful stages=${x.manual.onSuccessStages}.`,
+    ...x.manual.rows.map(r=>`- ${eventTime(r)} ${r.recordedStageId || 'no stage'} ${r.model || 'no model'} ${r.details || 'no details'}`),
+    ...x.manual.moderatorActions.map(r=>`- ${eventTime(r)} ${r.label} ${r.model || 'no model'} ${r.details || 'no details'}`));
+  out.push('\n### 9. Start refusals',...x.delivery.batches.flatMap(b=>b.refusalRows.map(r=>`- ${r.path} t=${seconds(r.t)} ${r.errorCode || r.reason || 'no field'} attempt=${display(r.attempt)} cumulative waitedMs=${display(r.waitedMs)} elapsedFromBatchMs=${display(r.elapsedFromBatchMs)}`)),
+    ...x.delivery.batches.filter(b=>b.accepted).map(b=>`- ${b.path}.accepted.waitedMs=${display(b.accepted.waitedMs)} (do not add cumulative refusal values)`));
+  out.push('\n### 10. Focus',`Recorded detailed switches=${x.focus.total}; sources: ${counts(x.focus.sources)}; models: ${counts(x.focus.models)}; first_text→delivery final interval=${x.focus.inTextInterval} (${counts(x.focus.inTextSources)}).`,
+    `Automation visits / activate_tab sources: ${counts(Object.fromEntries(Object.entries(x.focus.sources).filter(([k])=>/automation_visit_|activate_tab_/.test(k))))}. Consult delivery.collection for omitted focus details.`);
+  defaults={};
+  out.push('\n### 11. Outside the run window',`Window startedAt=${display(x.sourceStatus.windowStart)} completedAt=${display(x.sourceStatus.windowEnd)}; time base remains stageExecutions[0].actual.startedAt.`,
+    ...x.outsideRunWindow.map(r=>{
+      const f=r.first, before=f.at<x.sourceStatus.windowStart;
+      const references=unique(r.paths.map(p=>membership.get(p)).filter(Boolean));
+      return `- ${before?'before':'after'} model=${f.model || 'no model'} request=${x.requests.find(a=>a.requestId===f.requestId)?.request || 'unassigned'} ${r.label} ×${r.count} first=${seconds(f.t)} last=${seconds(r.last.t)}${!before&&x.sourceStatus.windowEnd!=null?` +end=${seconds((f.at-x.sourceStatus.windowEnd)/1000)}..${seconds((r.last.at-x.sourceStatus.windowEnd)/1000)}`:''}; ${reference(r.paths)}; chronology=${references.join(',') || 'unassigned'}; ${state(f)}`;
+    }));
+  out.push('\n### 12. Stored prompt fragment checks');
+  const emptyChecks=new Map();
+  x.promptChecks.forEach(r=>{
+    const found=r.laterPrompts.filter(p=>p.found);
+    if(found.length) out.push(`- Q${r.request} ${r.answerPath}: fragment found in prepared.prompt ${found.map(p=>p.path).join(', ')}; lineage=${r.lineageStatus}; submissionProven=false; fullAnswerInclusionProven=false.`);
+    else { const key=`${r.result}; lineage=${r.lineageStatus}`; if(!emptyChecks.has(key))emptyChecks.set(key,[]); emptyChecks.get(key).push(r); }
+  });
+  emptyChecks.forEach((rs,key)=>out.push(`- ${key}: ${rs.map(r=>`Q${r.request}`).join(', ')}; ${reference(rs.map(r=>r.answerPath))}; prepared candidates=${reference(rs.flatMap(r=>r.laterPrompts.map(p=>p.path)))}.`));
+  out.push('\n### 13. Diagnoses grouped',rows(['group','code / reason','severity','participants','stages','records','occurrences','resolved null','paths'],x.diagnoses.groups.map((g,i)=>[
+    `D${i+1}`,`${g.code}/${g.reasonCode}`,g.severities,g.participants,g.stages,g.records,`${g.occurrences}${g.missingOccurrences?` missing=${g.missingOccurrences}`:''}`,g.resolvedNull,pathList(g.paths)])));
+  out.push('\n### 14. Same-name comparisons and count units',...x.comparisons.map(r=>`- ${r.name}: ${pathValue(r.left)} / ${pathValue(r.right)}`),
+    `Forced: events=${x.counters.forced.events}; terminal records=${x.counters.forced.terminalRecords}; unique requests=${x.counters.forced.uniqueRequests}.`,
+    `Terminals: records=${x.counters.terminal.records}; decision/status groups=${x.counters.terminal.groups}; unique requests=${x.counters.terminal.uniqueRequests}.`,
+    `Dispatch projections: ${JSON.stringify(x.counters.dispatchAttempts)}.`);
+  out.push('\n### 15. Delivery batches and problems',rows(['path / wait','stage attempt','mode','models','t','accepted waitedMs','refusals','outcome','durationMs','gap s','skipped','adopted'],x.delivery.batches.map(b=>[
+    `${b.path} / ${b.waitId}`,b.stageAttemptId || b.batchId,field(b,'runMode',b.path),arr(b.models),seconds(b.t),b.accepted?.waitedMs,b.refusalRows.length,b.outcome,b.durationMs,seconds(b.gapSeconds),field(b,'skipped',b.path),field(b,'adopted',b.path)])),
+    rows(['source','code','severity','model','count','reason / details'],x.delivery.problems.map(p=>[
+      p.path,p.code,p.severity,p.model,p.count, /focus/.test(p.code)?'see section 10':/start_refus/.test(p.code)?'see section 9':p.reason])));
+  const resolvedAllNull=x.diagnoses.appendix.length && x.diagnoses.appendix.every(d=>d.resolvedAt===null);
+  out.push('\n### Appendix. Individual diagnoses', ...(resolvedAllNull?['All listed diagnoses have resolvedAt=null.']:[]),
+    rows(['source','group','stage','participant','occurrences','first t',...(resolvedAllNull?[]:['resolvedAt'])],x.diagnoses.appendix.map(d=>[
+      d.path,`D${x.diagnoses.groups.findIndex(g=>g.code===d.code&&g.reasonCode===d.reasonCode)+1}`,x.stages.find(s=>s.stageId===d.affectedStageId)?.stage || d.affectedStageId,
+      d.affectedParticipant,field(d,'occurrences',d.path),seconds(offset(toMs(d.firstObservedAt),x.base.value)),...(resolvedAllNull?[]:[field(d,'resolvedAt',d.path)])])));
+  out.push('\n### Event label aliases', 'cq=I means inferred; cq=E means exact.', ...[...usedAliases].map(v=>`${labelAliases[v]}=${v}`));
+  out.push('\n### Grouping evidence dictionary', ...variants.map((v,i)=>`V${i+1}=${v.key}`));
+  const addressed = new Set([...membership.keys(), ...registries.flatMap(r=>r.paths), ...x.stageTimeline.flatMap(s=>s.rows.map(r=>r.path))]);
+  const unrepresented = x.sourceStatus.allPaths.filter(p=>!addressed.has(p));
+  if(unrepresented.length) out.push(`Other run/stage/batch source records: ${reference(unrepresented)}.`);
+  out.push('\n### Source registry',...registries.map(r=>`${r.id}: ${pathList(r.paths)}`));
+  return out.join('\n').replace(/delivery\.journal\[(\d+)\]/g,'J[$1]').replace(/events\[(\d+)\]/g,'E[$1]').replace(/delivery\.diagnosis\.sends\[(\d+)\]/g,'S[$1]').replace(/delivery\.diagnosis\.batches\[(\d+)\]/g,'B[$1]').replace(/delivery\.diagnosis\.problems\[(\d+)\]/g,'P[$1]');
 }
 function summarizeDisputFlow(d) { return renderTransportMarkdown(buildTransportDigest(d)); }
 

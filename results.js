@@ -2762,6 +2762,7 @@ document.addEventListener('click', (event) => {
         storage: chrome?.storage?.local // Only used to delete legacy persisted run history.
     }) || null;
     window.__debateTraceStore = debateTraceStore;
+    const compiledPromptEvidence = new Map();
     void debateTraceStore?.purgeStoredRuns?.();
 
     const getActiveDebateTraceCorrelation = (extra = {}) => {
@@ -2930,7 +2931,8 @@ document.addEventListener('click', (event) => {
             'outcome', 'comparisonReason', 'contentClass', 'usableResult', 'evaluationBoundaryId',
             'evaluationBoundaryType', 'resolutionState', 'pageId', 'viewId', 'cardTargetType',
             'observerStoppedAt', 'stopReason', 'documentInstanceId', 'navigationEpoch',
-            'expectedRequestId', 'incomingRequestId', 'expectedDispatchId', 'incomingDispatchId'
+            'expectedRequestId', 'incomingRequestId', 'expectedDispatchId', 'incomingDispatchId',
+            'expectedDebateRunId', 'incomingDebateRunId', 'expectedStageId', 'incomingStageId'
         ];
         const evidence = {};
         scalarKeys.forEach((key) => {
@@ -2949,25 +2951,39 @@ document.addEventListener('click', (event) => {
         };
         copyBooleanNumberMap('completionSignals', meta?.completionSignals);
         copyBooleanNumberMap('phaseEvidence', meta?.phaseEvidence);
+        copyBooleanNumberMap('logCollection', meta?.logCollection);
+        ['expectedIdentity', 'incomingIdentity', 'receivedIdentity'].forEach(key => {
+            const source = meta?.[key];
+            if (!source || typeof source !== 'object') return;
+            evidence[key] = Object.fromEntries(['transportRequestId', 'requestId', 'dispatchId', 'stageId', 'stageAttemptId', 'debateRunId', 'pipelineRunId', 'pipelineRoundId', 'tabId', 'attemptId', 'runSessionId'].filter(id => Object.prototype.hasOwnProperty.call(source, id)).map(id => [id, source[id]]));
+        });
         return evidence;
     };
     const appendDebateDiagnosticTrace = (llmName, entry = {}) => {
         if (!debateTraceStore?.getActiveRun?.()) return null;
-        const ingestionKey = `${entry.ts || ''}|${llmName || ''}|${entry.label || entry.event || entry.type || ''}|${entry.details || entry.message || ''}`;
-        if (ingestedDebateDiagnosticTraceKeys.has(ingestionKey)) return null;
+        const ingestionKey = `${entry.ts ?? 'no timestamp'}|${llmName || ''}|${entry.label || entry.event || entry.type || ''}|${entry.details || entry.message || ''}`;
+        if (ingestedDebateDiagnosticTraceKeys.has(ingestionKey)) {
+            const collection = debateTraceStore.getActiveRun()?.collection;
+            if (collection) collection.duplicateDiagnosticInputs = (collection.duplicateDiagnosticInputs || 0) + 1;
+            return null;
+        }
         ingestedDebateDiagnosticTraceKeys.add(ingestionKey);
         const [eventType, reasonCode, mappedSeverity] = diagnosticTraceMapping(entry.label || entry.event || entry.type, entry.details || entry.message);
         const sourceSeverity = String(entry.level || entry.severity || '').toLowerCase();
         const severity = eventType === 'LEGACY_DIAGNOSTIC_EVENT' && ['warning', 'high', 'critical'].includes(sourceSeverity)
             ? sourceSeverity
             : mappedSeverity;
-        if (eventType === 'LEGACY_DIAGNOSTIC_EVENT' && severity === 'info') return null;
+        if (eventType === 'LEGACY_DIAGNOSTIC_EVENT' && severity === 'info') {
+            const collection = debateTraceStore.getActiveRun()?.collection;
+            if (collection) collection.filteredInformationalDiagnostics = (collection.filteredInformationalDiagnostics || 0) + 1;
+            return null;
+        }
         const meta = entry.meta || {};
         const active = debateTraceStore.getActiveRun();
         const explicitRoot = String(meta.debateRunId || meta.pipelineRunId || '').trim();
         const exact = explicitRoot === active.debateRunId && Boolean(meta.transportRequestId || meta.requestId || meta.dispatchId);
         return appendDebateTraceEvent({
-            eventId: `diagnostic:${active.debateRunId}:${entry.ts || Date.now()}:${llmName || 'unknown'}:${entry.label || entry.event || eventType}`,
+            eventId: `diagnostic:${active.debateRunId}:${entry.ts ?? Date.now()}:${llmName || 'unknown'}:${entry.label || entry.event || eventType}`,
             eventType,
             source: entry.source || 'background',
             severity,
@@ -2986,15 +3002,15 @@ document.addEventListener('click', (event) => {
                 transportRequestId: meta.transportRequestId || meta.requestId,
                 requestId: meta.requestId || meta.transportRequestId,
                 tabId: meta.tabId,
-                correlationQuality: exact ? 'exact' : 'inferred'
+                correlationQuality: ['exact','partial','inferred'].includes(meta.correlationQuality) ? meta.correlationQuality : exact ? 'exact' : 'inferred'
             },
             payload: {
                 model: llmName || entry.llmName || meta.llmName || '',
                 originalLabel: entry.label || entry.event || entry.type || '',
                 details: entry.details || entry.message || '',
-                status: meta.finalStatus || meta.status || '',
+                status: meta.finalStatus ?? meta.status ?? null,
                 answerLength: meta.answerLength ?? meta.textLength ?? null,
-                evidence: buildSafeDebateDiagnosticEvidence(meta)
+                evidence: { ...buildSafeDebateDiagnosticEvidence(meta), registeredRunId: meta.debateRunId ?? meta.pipelineRunId ?? meta.runSessionId ?? null }
             }
         });
     };
@@ -5697,7 +5713,8 @@ document.addEventListener('click', (event) => {
             }
             // Delivery proof: each model gets its own token to repeat on the last line.
             if (window.MessageDelivery) {
-                promptsByModel = window.MessageDelivery.prepare({ prompt, promptsByModel, models, requestIds: transportRequestIds, batchId: context?.pipelineBatchId || context?.stageAttemptId || '' });
+                promptsByModel = window.MessageDelivery.prepare({ prompt, promptsByModel, models, requestIds: transportRequestIds, batchId: context?.pipelineBatchId || context?.stageAttemptId || '',
+                    promptLineageByModel: Object.fromEntries(models.map(model => [model, compiledPromptEvidence.get(`${context?.stageAttemptId}:${model}`) || null])) });
             }
             if (!(await ensureNoOtherViewRun())) {
                 window.MessageDelivery?.closeBatch({ models, requestIds: transportRequestIds, cancelled: true, reason: 'other_view_active' });
@@ -6400,6 +6417,14 @@ document.addEventListener('click', (event) => {
                 runModelBatch,
                 onEnginePause: (info) => handleEnginePause(info),
                 onTraceEvent: (info) => {
+                    const run = debateTraceStore?.getActiveRun?.();
+                    const revision = debateApplication?.getActiveRevision?.();
+                    if (run && revision?.runId === run.debateRunId) {
+                        run.planRevisions ||= [];
+                        if (!run.planRevisions.some(item => item.revisionId === revision.revisionId)) {
+                            run.planRevisions.push(window.DebateTraceSchema.sanitize(revision));
+                        }
+                    }
                     if (!['PARTICIPANT_RESPONSE_ACCEPTED', 'PARTICIPANT_RESPONSE_REJECTED'].includes(info.type)) return;
                     appendDebateTraceEvent({ eventType: 'ANSWER_ACCEPTANCE_DECIDED', source: 'runner', sourceTimestamp: Date.now(),
                         correlation: { stageId: info.stageInstanceId, stageAttemptId: info.stageAttemptId,
@@ -6420,7 +6445,8 @@ document.addEventListener('click', (event) => {
                         ...(meta?.stage?.purpose === 'audit' ? { kind: 'synthesis_audit', outputKind: 'json' } : {})
                     }
                 }) || { ok: Boolean(String(text || '').trim()), reason: '' },
-                compilePrompt: ({ stage, participant, context }) => window.DebatePromptCompiler?.compile?.({
+                compilePrompt: ({ stage, participant, attempt, context }) => {
+                    const compiled = window.DebatePromptCompiler?.compile?.({
                     task: withOwnerAnswers(context?.debateCase?.taskContract || {
                         objective: context?.debateCase?.topic?.title || 'Discussion',
                         maxWords: getDebateMaxWords()
@@ -6447,7 +6473,25 @@ document.addEventListener('click', (event) => {
                     },
                     model: participant.model || participant.participantId,
                     map: context?.stateMap || {}
-                })?.prompt || '',
+                    });
+                    if (!compiled) return '';
+                    const evidence = {
+                        compilerVersion: compiled.compilerVersion, fingerprint: compiled.fingerprint,
+                        promptArtifact: window.AnswerProofNormalization?.evidence?.(compiled.prompt) || null,
+                        declaredInputIds: stage.inputArtifactIds || [],
+                        selectedInputs: (compiled.context?.parts || []).map(part => ({ id: part.id, type: part.type,
+                            provenance: part.provenance || null, representation: 'selected_context_part',
+                            proof: window.AnswerProofNormalization?.evidence?.(part.text || '') || null })),
+                        transformations: ['ContextBroker.select', 'ContextBroker.render', 'PromptPack.render']
+                    };
+                    const event = appendDebateTraceEvent({ eventType: 'PROMPT_COMPILED', source: 'runner',
+                        correlation: { debateRunId: stage.runId, stageId: stage.stageInstanceId, stageAttemptId: `${stage.stageInstanceId}:a${attempt}` },
+                        payload: { model: participant.model || participant.participantId, ...evidence }
+                    });
+                    compiledPromptEvidence.set(`${stage.stageInstanceId}:a${attempt}:${participant.model || participant.participantId}`, { ...evidence, eventId: event?.eventId || null });
+                    while (compiledPromptEvidence.size > 200) compiledPromptEvidence.delete(compiledPromptEvidence.keys().next().value);
+                    return compiled.prompt;
+                },
                 repairPrompt: ({ prompt, reason }) => `${ensureDisputResponseLimit(prompt)}\n\nИсправь нарушение контракта: ${reason || 'invalid_response'}. Верни самостоятельный исправленный ответ не более ${getDebateMaxWords()} слов.`,
                 extractArtifacts: (input) => window.DebateArtifactPipeline.extractArtifacts(input),
                 proposeStateDelta: (input) => window.DebateArtifactPipeline.proposeStateDelta(input),
@@ -17496,6 +17540,7 @@ document.addEventListener('click', (event) => {
                     dispatchId: meta.dispatchId || null,
                     attemptId: meta.attemptId || null,
                     payloadEvidenceId: meta.payloadEvidenceId || null,
+                    ...Object.fromEntries(['transportRequestId', 'requestId', 'stageId', 'stageAttemptId', 'pipelineRunId', 'pipelineRoundId', 'pipelineBatchId'].filter(key => meta[key] != null).map(key => [key, meta[key]])),
                     expectedCardId: expectedCardId || null,
                     observedCardId,
                     pageId: location.pathname,
@@ -20203,7 +20248,7 @@ function checkCompareButtonState() {
             return window.DebateTraceProjections.buildReport(trace, {
                 extensionVersion: chrome?.runtime?.getManifest?.()?.version || 'unknown',
                 duplicateEventIds: debateTraceStore.getDuplicateIds?.(trace.debateRunId) || [],
-                planning: { revision: window.DebateTraceSchema?.sanitize?.(debateApplication?.getActiveRevision?.() || null),
+                planning: { revisions: trace.planRevisions || [], revision: window.DebateTraceSchema?.sanitize?.(debateApplication?.getActiveRevision?.() || null),
                     instances: (debateApplication?.getOrchestrator?.()?.getState?.()?.stages || []).map(stage => ({
                         stageId: stage.stageInstanceId, plannedStageId: stage.plannedStageId, planRevisionId: stage.planRevisionId
                     })) }
