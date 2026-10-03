@@ -56,12 +56,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         openResponseLinkInNewTab
     } = window.ResultsBootUtils;
     // No restoration or runtime listener may race the background reset.
-    let pageSessionResetError = null;
     try {
         await resetSessionOnReload();
     } catch (error) {
         console.error('[RESULTS] Session reset failed', error);
-        pageSessionResetError = error;
+        const notice = document.createElement('p');
+        notice.setAttribute('role', 'alert');
+        notice.textContent = 'Не удалось очистить прошлую сессию. Перезагрузите страницу ещё раз.';
+        document.body.prepend(notice);
+        return;
     }
     const favoritePanelId = 'favorite-panel';
     const favoriteOutputId = 'favorite-output';
@@ -2708,7 +2711,7 @@ document.addEventListener('click', (event) => {
     const debateAggregateStore = window.DebateRunStore?.createStore?.() || null;
     const debateCaseStore = window.DebateCaseStore?.createStore?.({ storage: chrome?.storage?.local }) || null;
     const debateRuleHistoryStore = window.DebateRuleHistory?.createStore?.({ storage: chrome?.storage?.local }) || null;
-    if (!isPageReloadNavigation()) void debateRuleHistoryStore?.restore?.();
+    void debateRuleHistoryStore?.restore?.();
     const pipelineProfileView = window.PipelineProfileView?.init?.({ storage: chrome?.storage?.local }) || null;
     window.__debateCaseStore = debateCaseStore;
     const disputStateMapView = window.DisputStateMapView?.init?.({
@@ -17129,15 +17132,6 @@ document.addEventListener('click', (event) => {
     // races with the background service worker for content-script RPC messages.
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (!RESULTS_RUNTIME_MESSAGE_TYPES.has(message?.type)) return false;
-        // A reset failure must not disable controls or restore the old session.
-        // A newly created job opens the response channel again.
-        if (message.type === 'LLM_JOB_CREATED') pageSessionResetError = null;
-        if (pageSessionResetError && [
-            'GLOBAL_STATE_BROADCAST', 'LLM_PARTIAL_RESPONSE', 'LLM_FINAL_RESPONSE',
-            'FINAL_LLM_RESPONSE', 'STATUS_UPDATE', 'UPDATE_LLM_PANEL_OUTPUT',
-            'LLM_DIAGNOSTIC_EVENT', 'TRANSPORT_DISPATCH_PHASE', 'LLM_COMPLETION_TERMINAL',
-            'TRANSPORT_FOCUS', 'SPA_NAVIGATION'
-        ].includes(message.type)) return false;
         // Journal-only messages; tab-originated ones are owned (answered) by the background.
         const JOURNAL_ONLY_TYPES = ['TRANSPORT_DISPATCH_PHASE', 'PROVIDER_STOP_RESULT', 'LLM_COMPLETION_TERMINAL', 'SPA_NAVIGATION', 'TRANSPORT_FOCUS'];
         if (window.MessageDelivery && ['STATUS_UPDATE', 'GLOBAL_STATE_BROADCAST', ...JOURNAL_ONLY_TYPES].includes(message.type)) {
@@ -24070,9 +24064,6 @@ function exportSingleTemplate(templateName, sourceData = null) {
         }
     }
     // --- V2.0 END: API Keys Modal Logic ---
-    if (pageSessionResetError) {
-        showNotification(`Не удалось очистить прошлую сессию.\nПричина: ${pageSessionResetError.message || String(pageSessionResetError)}\nПерезагрузите расширение и страницу.`);
-    }
 	});
 const pipelineExportFlash = (button, state) => {
     try {

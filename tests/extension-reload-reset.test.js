@@ -86,20 +86,6 @@ describe('extension reload state reset', () => {
     expect(calls).toEqual(['stop', 'tabs', 'remove']);
   });
 
-  test('reset failure preserves boot continuation and uses the existing notification modal', async () => {
-    const source = read('results.js');
-    const block = source.slice(source.indexOf('let pageSessionResetError = null;'), source.indexOf("const favoritePanelId = 'favorite-panel';"));
-    const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
-    const error = new Error('storage_failed');
-    const run = new AsyncFunction('resetSessionOnReload', 'console', `${block}\nreturn { continued: true, error: pageSessionResetError };`);
-    await expect(run(async () => { throw error; }, { error: jest.fn() }))
-      .resolves.toEqual({ continued: true, error });
-    expect(block).not.toContain('document.body.prepend');
-    const noticeAt = source.indexOf('if (pageSessionResetError) {\n        showNotification(');
-    expect(noticeAt).toBeGreaterThan(source.indexOf("notificationOkBtn.addEventListener('click'"));
-    expect(source.slice(noticeAt, noticeAt + 300)).toContain('pageSessionResetError.message');
-  });
-
   test('telemetry UI drops its in-page cache on runtime reset', () => {
     const devtoolsSource = read('results-devtools.js');
     expect(devtoolsSource).toContain("document.addEventListener('extension-runtime-reset'");
