@@ -191,14 +191,14 @@ const terminalStatusOf = (r) => {
 };
 const terminalReasonOf = (r) => r.raw.payload?.evidence?.completionReason || '';
 // Structured facts are the source of both JSON and Markdown. No Markdown is embedded in JSON.
-const DIGEST_VERSION = '3.0.0';
+const DIGEST_VERSION = '3.1.0';
 const COMPRESSION = Object.freeze({
   allRequests: true, chronologyLimit: null, outsideWindowToleranceMs: 0,
   terminalPairWindowMs: 50, promptProbeCharacters: 50,
   grouping: 'request + dispatchId + status + reason + significant fields; changes split groups',
   stable: 'first and every change, including zero length, correlation and dispatch changes',
   background: 'counts and first/last paths; all member paths retained in the Markdown source registry',
-  ignoredGroupingFields: ['elapsedMs', 'durationMs', 'foregroundMsUsed', 'focusSwitchesUsed', 'waitedMs', 'ms', 'at', 'SELECTOR_STATS sampled hit/miss/rate counters']
+  ignoredGroupingFields: ['elapsedMs', 'durationMs', 'foregroundMsUsed', 'focusSwitchesUsed', 'waitedMs', 'ms', 'at', 'logCollection', 'SELECTOR_STATS sampled hit/miss/rate counters']
 });
 const arr = (v) => Array.isArray(v) ? v : [];
 const finite = (v) => Number.isFinite(v) ? v : null;
@@ -219,7 +219,8 @@ const display = (f) => {
 const pathValue = (f) => `${f.path}=${display(f)}`;
 const listCounts = (items, fn) => Object.fromEntries(count(items, fn));
 const offset = (at, base) => Number.isFinite(at) && Number.isFinite(base) ? Number(((at - base) / 1000).toFixed(3)) : null;
-const JOURNAL_PROOF_KEYS = ['answerArtifact','answerArtifacts','promptArtifact','promptLineage','promptIdentityProven','submittedPromptHash','submittedPromptNormalizationVersion','promptProofScope'];
+const RENDER_KEYS = ['pageId', 'viewId', 'cardTargetType', 'expectedCardId', 'observedCardId', 'outcome', 'final', 'usableResult'];
+const JOURNAL_PROOF_KEYS = ['answerArtifact','answerArtifacts','answerProof','promptArtifact','promptLineage','promptIdentityProven','submittedPromptHash','submittedPromptNormalizationVersion','promptProofScope'];
 const TABLE_EVENT_NAMES = new Set(['dispatch:dispatch_started', 'dispatch:submitted', 'focus', 'tab', 'navigation']);
 
 function stateOf(r) {
@@ -240,8 +241,8 @@ function recordFact(r, t0) {
     recordedStageId: r.stageId, pipelineRoundId: recordRound(r),
     status: stateOf(r), reason: reasonOf(r), textLength: textLengthOf(r),
     details: r.src === 'events' ? r.details : journalDetails(r.raw),
-    evidence: { ...(p.evidence || {}), ...Object.fromEntries(JOURNAL_PROOF_KEYS.filter(k=>has(r.raw,k)).map(k=>[k,r.raw[k]])),
-      ...Object.fromEntries(['source','phase','errorCode','completion'].filter(k=>has(r.src==='events'?p:r.raw,k)).map(k=>[k,(r.src==='events'?p:r.raw)[k]])),
+    evidence: { ...(p.evidence || {}), ...Object.fromEntries(JOURNAL_PROOF_KEYS.filter(k=>has(r.src==='events'?p:r.raw,k)).map(k=>[k,(r.src==='events'?p:r.raw)[k]])),
+      ...Object.fromEntries(['source','phase','errorCode','completion',...RENDER_KEYS].filter(k=>has(r.src==='events'?p:r.raw,k)).map(k=>[k,(r.src==='events'?p:r.raw)[k]])),
       ...((has(r.src==='events'?p:r.raw,'status') && [null,''].includes((r.src==='events'?p:r.raw).status))?{rawStatus:(r.src==='events'?p:r.raw).status}:{}) },
     correlationQuality: field(r.raw.correlation, 'correlationQuality', `${r.path}.correlation`),
     joinedBy: r.via || null, flags: r.flags || []
@@ -251,8 +252,8 @@ function recordFact(r, t0) {
 // Their first/last registered values remain available, as do every member's source paths.
 function signature(r) {
   const raw = r.src === 'events' ? r.raw.payload || {} : r.raw;
-  const evidence = {...(raw.evidence || {}), ...Object.fromEntries(JOURNAL_PROOF_KEYS.filter(k=>has(raw,k)).map(k=>[k,raw[k]]))};
-  const omit = new Set(['elapsedMs', 'durationMs', 'foregroundMsUsed', 'focusSwitchesUsed', 'waitedMs', 'ms', 'at']);
+  const evidence = {...(raw.evidence || {}), ...Object.fromEntries([...JOURNAL_PROOF_KEYS,...RENDER_KEYS].filter(k=>has(raw,k)).map(k=>[k,raw[k]]))};
+  const omit = new Set(COMPRESSION.ignoredGroupingFields);
   if (r.label === 'SELECTOR_STATS') ['hitCount', 'missCount', 'totalCount', 'hitRate'].forEach((k) => omit.add(k));
   const significant = Object.fromEntries(Object.entries(evidence).filter(([k]) => !omit.has(k)));
   const detail = groupingDetail(r);
@@ -264,15 +265,17 @@ function compactRecords(list, t0) {
   const result = [], groups = new Map(), states = new Map();
   list.forEach((r) => {
     // Returning to an old length/status/dispatch is a new transition, not a repeat of an old group.
-    const partition = JSON.stringify([r.model, r.requestId, r.stageId, r.label]);
+    const render = r.src === 'events' ? r.raw.payload?.evidence || {} : r.raw;
+    // Main and pipeline cards, and distinct selectors, are independent observation streams.
+    // Their interleaving is not a change of state of the same card/selector.
+    const partition = JSON.stringify([r.model, r.requestId, r.stageId, r.label,
+      render.pageId, render.viewId, render.cardTargetType,
+      r.label === 'SELECTOR_STATS' ? groupingDetail(r) : null]);
     const previous = states.get(partition);
-    const observedLength = textLengthOf(r);
-    // Selector summaries without a text measurement do not assert a transition to a null text length.
-    const lengthState = r.label === 'SELECTOR_STATS' && observedLength == null ? previous?.length ?? null : observedLength;
-    const hardState = JSON.stringify([r.dispatchId, stateOf(r), lengthState]);
+    const hardState = signature(r);
     const epoch = previous ? previous.epoch + (previous.key === hardState ? 0 : 1) : 0;
-    states.set(partition, { key: hardState, epoch, length: lengthState });
-    const key = `${epoch}|${signature(r)}`, row = groups.get(key);
+    states.set(partition, { key: hardState, epoch });
+    const key = `${partition}|${epoch}|${hardState}`, row = groups.get(key);
     if (row) {
       row.count += 1; row.paths.push(r.path); row.last = { path: r.path, at: finite(r.at), t: offset(r.at, t0) };
     } else {
@@ -394,7 +397,7 @@ function buildTransportDigest(d, sourceFile = null) {
         firstText: milestone((r) => r.type === 'first_text'), firstStable: milestone((r) => r.type === 'TEXT_STABLE'),
         firstCompletionDetected: milestone((r) => r.type === 'COMPLETION_DETECTED'), deliveryFinal: timeFact(a.final, t0, st0, submitted) },
       artifacts: a.recs.filter(r=>r.raw.promptArtifact || r.raw.answerArtifacts || r.raw.answerArtifact || r.raw.payload?.answerProof).map(r=>({
-        path:r.path, type:r.type, prompt: r.raw.promptArtifact || null, answer:r.raw.answerArtifacts || r.raw.answerArtifact || r.raw.payload?.answerProof || null,
+        path:r.path, type:r.type, target: Object.fromEntries(RENDER_KEYS.filter(k=>has(r.raw,k)).map(k=>[k,r.raw[k]])), prompt: r.raw.promptArtifact || null, answer:r.raw.answerArtifacts || r.raw.answerArtifact || r.raw.payload?.answerProof || null,
         lineage:r.raw.promptLineage || null, submitted:r.type==='dispatch'?{ proven:r.raw.promptIdentityProven, hash:r.raw.submittedPromptHash, normalizationVersion:r.raw.submittedPromptNormalizationVersion, scope:r.raw.promptProofScope }:null
       })),
       deliveryResult: send ? field(send, 'result', `delivery.diagnosis.sends[${sends.indexOf(send)}]`) : null,
@@ -486,6 +489,16 @@ function buildTransportDigest(d, sourceFile = null) {
       ? offset(toMs(b.at), toMs(bs[i - 1].at) + bs[i - 1].durationMs) : null,
     refusalRows: arr(b.refusals).map((r, j) => ({ path: `delivery.diagnosis.batches[${i}].refusals[${j}]`, ...r, t: offset(toMs(r.at), t0),
       elapsedFromBatchMs: Number.isFinite(toMs(r.at)) && Number.isFinite(toMs(b.at)) ? toMs(r.at) - toMs(b.at) : null })) }));
+  const collectionSamples = new Map();
+  recs.forEach(r=>{
+    const v=r.raw.payload?.evidence?.logCollection;
+    if(!v)return;
+    const key=JSON.stringify([r.model,r.requestId,r.dispatchId,v.scope,v.limit]);
+    const sample={path:r.path,t:offset(r.at,t0),value:v};
+    const row=collectionSamples.get(key);
+    if(row){ row.count++; if(v.appended<row.last.value.appended || v.evicted<row.last.value.evicted)row.resets++; row.last=sample; }
+    else collectionSamples.set(key,{model:r.model,requestId:r.requestId,dispatchId:r.dispatchId,count:1,resets:0,first:sample,last:sample});
+  });
   const noRound = recs.filter((r) => r.src === 'events' && !recordRound(r)).map((r) => r.path);
   return {
     schemaVersion: 3, report: 'extract_transport', DIGEST_VERSION, compression: { ...COMPRESSION }, sourceFile,
@@ -507,7 +520,7 @@ function buildTransportDigest(d, sourceFile = null) {
       stableToTerminal: 'terminal.sourceTimestamp - first TEXT_STABLE.sourceTimestamp of the same request',
       stageGap: 'next.actual.startedAt - current.actual.completedAt',
       batchGap: 'next.at - (previous.at + previous.durationMs)' },
-    stages: stageRows, requests: requestRows, stageTimeline, lengthObservations, lengths: lengthRows, promptChecks,
+    collectionSamples: [...collectionSamples.values()], stages: stageRows, requests: requestRows, stageTimeline, lengthObservations, lengths: lengthRows, promptChecks,
     manual: { rows: manual.map((r) => recordFact(r, t0)), records: manual.length,
       uiButtonRecords: manual.filter((r) => r.raw.payload?.details === 'UI button').length,
       onSuccessStages: manual.filter((r) => stages.some((s) => s.stageId === r.stageId && s.status === 'success')).length,
@@ -563,7 +576,7 @@ function renderTransportMarkdown(x) {
   const pathList = paths => {
     const byPrefix = new Map(), other = [];
     unique(paths).forEach(path => {
-      const m = /^(events|delivery\.journal)\[(\d+)\]$/.exec(path);
+      const m = /^(.+)\[(\d+)\]$/.exec(path);
       if (!m) { other.push(path); return; }
       if (!byPrefix.has(m[1])) byPrefix.set(m[1], []);
       byPrefix.get(m[1]).push(Number(m[2]));
@@ -576,7 +589,7 @@ function renderTransportMarkdown(x) {
         if (step===1 && j>i || j-i>=3) { parts.push(`${start}..${ns[j]}${step===1?'':`/${step}`}`);i=j; }
         else parts.push(String(start));
       }
-      return `${prefix==='events'?'E':'J'}[${parts.join(',')}]`;
+      return `${prefix==='events'?'E':prefix==='delivery.journal'?'J':prefix}[${parts.join(',')}]`;
     }).concat(other).join('; ') || '0 records';
   };
   const reference = (paths, prefix='G') => {
@@ -599,7 +612,7 @@ function renderTransportMarkdown(x) {
   const time = r => r ? `${eventTime(r)}${r.stageSeconds == null?'':` +st=${seconds(r.stageSeconds)}`}${r.submitSeconds==null || r.submitSeconds===0?'':` +sub=${seconds(r.submitSeconds)}`}` : 'not recorded';
   out.push('# Transport extract', `DIGEST_VERSION=${x.DIGEST_VERSION} · sourceFile=${x.sourceFile || 'no field'} · debateRunId=${x.debateRunId}`,
     `Compression: all requests; no line cap; terminalPairWindowMs=${x.compression.terminalPairWindowMs}; promptProbeCharacters=${x.compression.promptProbeCharacters}; grouping=${x.compression.grouping}.`,
-    `Grouping ignores sampled time counters and SELECTOR_STATS hit/miss/rate counters; first/last observations and every member path remain addressable.`,
+    `Grouping ignores sampled time counters, logCollection and SELECTOR_STATS hit/miss/rate counters. Collection counters have a separate summary; source paths retain access to individual samples in JSON.`,
     `t = seconds from ${x.base.path}=${display(x.base.value)}, precision 0.001. +st/+sub only in section 4.`,
     'Legend: E[N]=events[N]; J[N]=delivery.journal[N]; E[1..3,7] means E[1],E[2],E[3],E[7]; E[1..13/4] means E[1],E[5],E[9],E[13]. QN.DK is a dispatch alias; QN.TK is a terminal group. ~stage means a join by stage/model only; pre-dispatch marks observations preceding dispatch_started. G references resolve in the source registry. S[N]=delivery.diagnosis.sends[N]; B[N]=delivery.diagnosis.batches[N]; P[N]=delivery.diagnosis.problems[N]. AL=payload.answerLength; EL=payload.evidence.answerLen; EAL=payload.evidence.answerLength.',
     'Notes: no field / null / "" / [] / false / 0 are distinct. Registered fields are facts, not causal proof. Compare answer hashes only with matching representation and normalization version; token removal is a transformation. Equal lengths do not establish text identity. A stored prepared.prompt fragment does not prove submission or complete answer inclusion. Shortened text cannot prove absence. Focus intervals do not prove continuous printing; late observations do not prove continued generation. Refusal waitedMs is cumulative: do not sum it; start→accept is an observed interval, not proof of lock duration.',
@@ -644,9 +657,13 @@ function renderTransportMarkdown(x) {
     seconds(r.t),r.model,r.type==='dispatch'?r.label:r.type,dispatchRef(r.dispatchId),r.path,r.type==='tab'?`tabId=${r.tabId}`:r.details.replace(/\bms=\d+ ?/g,'')]))); });
   const variant = value => {
     if (!value || !Object.keys(value).length) return '';
-    const key = JSON.stringify(value);
+    // Repeated nested identities/artifacts are defined once, not copied into
+    // every observation variant. No hash or identity field is discarded.
+    const compact = Object.fromEntries(Object.entries(value).map(([k,v]) => [k,
+      v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length ? { ref: variant(v) } : v]));
+    const key = JSON.stringify(compact);
     let i = variants.findIndex(v => v.key === key);
-    if (i < 0) { i = variants.length; variants.push({ key, value }); }
+    if (i < 0) { i = variants.length; variants.push({ key, value: compact }); }
     return `V${i + 1}`;
   };
   let defaults = {};
@@ -678,11 +695,35 @@ function renderTransportMarkdown(x) {
       out.push(`- t=${seconds(r.first.t)} ${label(r.first.type==='LEGACY_DIAGNOSTIC_EVENT'?r.first.label:r.first.type)} ×${r.count} ${ref} ${state(r.first)}${r.count>1?` · last t=${seconds(r.last.t)}`:''}${/MANUAL|RECOVERY|CORRELATION|STAGE_FAILED/.test(`${r.first.type} ${r.first.label}`)&&r.first.details?` · ${r.first.details}`:''}`);
     });
     if(a.background.length) {
-      out.push('Background (first→last t):');
+      const states=new Map(), sequence=[];
       a.background.forEach(r=>{
-        const ref=reference(r.paths); r.paths.forEach(p=>{if(!membership.has(p))membership.set(p,ref);});
-        out.push(`- ${label(r.label)} ×${r.count} ${seconds(r.first.t)}${r.count>1?`→${seconds(r.last.t)}`:''} ${ref} ${state(r.first)}`);
+        const value=state(r.first), key=JSON.stringify([r.label,value,r.first.groupingDetail]);
+        let item=states.get(key);
+        if(!item){item={id:`b${states.size+1}`,label:r.label,value,paths:[],count:0,first:r.first,last:r.last};states.set(key,item);}
+        item.paths.push(...r.paths);item.count+=r.count;
+        if(r.last.at>item.last.at)item.last=r.last;
+        sequence.push(`${item.id}${r.count>1?`×${r.count}`:''}`);
       });
+      out.push('Background states (first→last t); sequence below preserves returns to earlier states. Counts measure source records.');
+      states.forEach(r=>{
+        const ref=reference(r.paths);r.paths.forEach(p=>{if(!membership.has(p))membership.set(p,ref);});
+        out.push(`- ${r.id} ${label(r.label)} ×${r.count} ${seconds(r.first.t)}→${seconds(r.last.t)} ${ref} ${r.value}`);
+      });
+      // Compress repeated cycles, not their constituent states. A→B→A never
+      // becomes an unordered {A,B}; every group occurrence can be expanded.
+      const tokens=[];
+      for(let i=0;i<sequence.length;){
+        let best={length:1,repeats:1,saved:0};
+        for(let length=1;length<=Math.min(16,(sequence.length-i)/2);length++){
+          let repeats=1;
+          while(i+(repeats+1)*length<=sequence.length && sequence.slice(i,i+length).every((v,k)=>v===sequence[i+repeats*length+k]))repeats++;
+          const saved=length*(repeats-1);
+          if(saved>best.saved)best={length,repeats,saved};
+        }
+        const block=sequence.slice(i,i+best.length).join('→');
+        tokens.push(best.repeats>1?`(${block})×${best.repeats}`:block);i+=best.length*best.repeats;
+      }
+      out.push(`Background sequence (${sequence.length} groups, group-start order): ${tokens.join('→')}`);
     }
   });
   out.push('\n### 6. Length observations',...x.lengthObservations.map(r=>`- Q${r.request} ${r.path} t=${seconds(r.t)} len=${r.length}${r.beforeSubmit?' before submit':''}${r.equalPreviousLength?` equals Q${r.previousRequest} length (identity unproven)`:''}`));
@@ -696,16 +737,23 @@ function renderTransportMarkdown(x) {
         m.collected.map(v=>pathValue(v.value)),
         [...m.revisions,...m.staleDropped].map(v=>pathValue(v.value))];
     })), 'Legacy lengths without a declared representation are shown separately; a difference between tagged delivery and cleaned engine text is not classified as text loss.');
-  const artifacts=x.requests.flatMap(a=> (a.artifacts || []).map(r=>({request:a.request,...r})));
-  if (artifacts.length) out.push(rows(['request','source','kind','registered prompt/answer identities','lineage / submitted command'],artifacts.map(r=>[
-    `Q${r.request}`,r.path,r.type,JSON.stringify({prompt:r.prompt,answer:r.answer}),JSON.stringify({lineage:r.lineage,submitted:r.submitted})
-  ])));
-  else out.push('Versioned prompt/answer/command lineage: not recorded in this source report.');
+  out.push('Prompt/answer artifacts, render targets and command lineage are defined once in the chronology evidence references (V). Raw source paths retain individual observations.');
   out.push('\n### 8. Manual actions',`MANUAL_RECOVERY_REQUESTED=${x.manual.records}; UI button records=${x.manual.uiButtonRecords}; on successful stages=${x.manual.onSuccessStages}.`,
     ...x.manual.rows.map(r=>`- ${eventTime(r)} ${r.recordedStageId || 'no stage'} ${r.model || 'no model'} ${r.details || 'no details'}`),
     ...x.manual.moderatorActions.map(r=>`- ${eventTime(r)} ${r.label} ${r.model || 'no model'} ${r.details || 'no details'}`));
-  out.push('\n### 9. Start refusals',...x.delivery.batches.flatMap(b=>b.refusalRows.map(r=>`- ${r.path} t=${seconds(r.t)} ${r.errorCode || r.reason || 'no field'} attempt=${display(r.attempt)} cumulative waitedMs=${display(r.waitedMs)} elapsedFromBatchMs=${display(r.elapsedFromBatchMs)}`)),
-    ...x.delivery.batches.filter(b=>b.accepted).map(b=>`- ${b.path}.accepted.waitedMs=${display(b.accepted.waitedMs)} (do not add cumulative refusal values)`));
+  out.push('\n### 9. Start refusals');
+  x.delivery.batches.forEach(b=>{
+    const groups=[];
+    b.refusalRows.forEach(r=>{
+      const key=JSON.stringify(Object.fromEntries(Object.entries(r).filter(([k])=>!['path','at','t','attempt','waitedMs','elapsedFromBatchMs'].includes(k))));
+      const previous=groups.at(-1);
+      const reset=previous && (r.attempt<previous.last.attempt || r.waitedMs<previous.last.waitedMs);
+      if(previous?.key===key && !reset) { previous.paths.push(r.path); previous.last=r; }
+      else groups.push({key,first:r,last:r,paths:[r.path]});
+    });
+    groups.forEach(g=>out.push(`- ${reference(g.paths)} ×${g.paths.length} ${g.first.errorCode || g.first.reason || 'no field'} t=${seconds(g.first.t)}→${seconds(g.last.t)}; attempt=${display(g.first.attempt)}→${display(g.last.attempt)}; cumulative waitedMs=${display(g.first.waitedMs)}→${display(g.last.waitedMs)}; elapsedFromBatchMs=${display(g.first.elapsedFromBatchMs)}→${display(g.last.elapsedFromBatchMs)}; fields=${g.key}`));
+    if(b.accepted)out.push(`- ${b.path}.accepted.waitedMs=${display(b.accepted.waitedMs)} (do not add cumulative refusal values)`);
+  });
   out.push('\n### 10. Focus',`Recorded detailed switches=${x.focus.total}; sources: ${counts(x.focus.sources)}; models: ${counts(x.focus.models)}; first_text→delivery final interval=${x.focus.inTextInterval} (${counts(x.focus.inTextSources)}).`,
     `Automation visits / activate_tab sources: ${counts(Object.fromEntries(Object.entries(x.focus.sources).filter(([k])=>/automation_visit_|activate_tab_/.test(k))))}. Consult delivery.collection for omitted focus details.`);
   defaults={};
@@ -738,8 +786,32 @@ function renderTransportMarkdown(x) {
     rows(['source','group','stage','participant','occurrences','first t',...(resolvedAllNull?[]:['resolvedAt'])],x.diagnoses.appendix.map(d=>[
       d.path,`D${x.diagnoses.groups.findIndex(g=>g.code===d.code&&g.reasonCode===d.reasonCode)+1}`,x.stages.find(s=>s.stageId===d.affectedStageId)?.stage || d.affectedStageId,
       d.affectedParticipant,field(d,'occurrences',d.path),seconds(offset(toMs(d.firstObservedAt),x.base.value)),...(resolvedAllNull?[]:[field(d,'resolvedAt',d.path)])])));
+  if(x.collectionSamples?.length)out.push('\n### Collection counter samples', 'First/last per request/dispatch/scope; resets count decreases in appended/evicted. Intermediate samples and exact eviction times remain in JSON.',
+    rows(['request / dispatch','samples / resets','first sample','last sample'],x.collectionSamples.map(r=>[
+      `Q${x.requests.find(a=>a.requestId===r.requestId)?.request ?? '?'} / ${dispatchRef(r.dispatchId)}`,`${r.count} / ${r.resets}`,`${r.first.path} t=${seconds(r.first.t)}: ${JSON.stringify(r.first.value)}`,`${r.last.path} t=${seconds(r.last.t)}: ${JSON.stringify(r.last.value)}`])));
   out.push('\n### Event label aliases', 'cq=I means inferred; cq=E means exact.', ...[...usedAliases].map(v=>`${labelAliases[v]}=${v}`));
-  out.push('\n### Grouping evidence dictionary', ...variants.map((v,i)=>`V${i+1}=${v.key}`));
+  const shapes=new Map();
+  variants.forEach((v,i)=>{
+    const keys=Object.keys(v.value).sort().join('|');
+    if(!shapes.has(keys))shapes.set(keys,[]);
+    shapes.get(keys).push({...v,id:`V${i+1}`});
+  });
+  const templates=[], encoded=new Map();
+  shapes.forEach(group=>{
+    const template={};
+    Object.keys(group[0].value).forEach(key=>{
+      const frequencies=new Map();
+      group.forEach(v=>{const text=JSON.stringify(v.value[key]);frequencies.set(text,(frequencies.get(text)||0)+1);});
+      template[key]=JSON.parse([...frequencies].sort((a,b)=>b[1]-a[1])[0][0]);
+    });
+    const id=`C${templates.length+1}`, base=JSON.stringify(template);
+    const patches=group.map(v=>JSON.stringify(Object.fromEntries(Object.entries(v.value).filter(([k,value])=>JSON.stringify(value)!==JSON.stringify(template[k])))));
+    if(base.length+id.length+group.length*(id.length+1)+patches.reduce((n,p)=>n+p.length,0)<group.reduce((n,v)=>n+v.key.length,0)){
+      templates.push(`${id}=${base}`);group.forEach((v,i)=>encoded.set(v.id,`${id}+${patches[i]}`));
+    }else group.forEach(v=>encoded.set(v.id,v.key));
+  });
+  out.push('\n### Grouping evidence dictionary', 'A {ref:Vn} resolves to that object. Cn are encoding templates, not observations. Vn=Cn+{...} copies the template and overrides listed fields. Missing keys remain missing; null and {} are explicit.',
+    ...templates,...variants.map((_,i)=>`V${i+1}=${encoded.get(`V${i+1}`)}`));
   const addressed = new Set([...membership.keys(), ...registries.flatMap(r=>r.paths), ...x.stageTimeline.flatMap(s=>s.rows.map(r=>r.path))]);
   const unrepresented = x.sourceStatus.allPaths.filter(p=>!addressed.has(p));
   if(unrepresented.length) out.push(`Other run/stage/batch source records: ${reference(unrepresented)}.`);

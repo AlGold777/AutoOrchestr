@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-03 — Compact transport digest, version 2.81.584
+
+- Digest 3.1.0 separates logCollection samples from grouping keys, shares nested evidence objects and preserves ordered background state cycles. Main/pipeline card observations and selectors have separate streams.
+- Removed duplicate artifact output; native answerProof remains in chronology evidence. Consecutive equal start refusals retain counts, source paths and endpoint counters; reason changes and counter resets split groups.
+- Real 15:24 extract: 1,226,110 → 135,189 bytes (88.97% reduction), retaining all 1,450 event and 1,248 journal source paths, 13 requests, 25 terminal records / 17 groups and 750 refusals. Counter, milestone, identity and terminal comparisons match the previous digest.
+- Added regression coverage for repeated polls, alternating card states, hash/reason returns, null/missing/empty objects, dictionary reconstruction and nine models over four rounds.
+
 ### 2026-10-03 — Export scope and storage quota recovery, version 2.81.583
 
 - Disput JSON, MD and Extract resolve the live application through the existing page bridge. The shared report builder no longer references a variable private to the pipeline initializer.
