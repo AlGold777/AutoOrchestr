@@ -198,6 +198,40 @@ test('GPT does not accept a reversed thread still showing older messages', async
   expect(await result).toBe(false);
 });
 
+test.each([500, 520])('a short conversation with height %s remains the target beside a lazy sidebar', async height => {
+  const sidebar = scroller(document.body, 1000, 240);
+  sidebar.el.scrollTo.mockImplementation(({ top }) => {
+    sidebar.el.scrollTop = top;
+    sidebar.grow(sidebar.el.scrollHeight + 100);
+  });
+  const main = document.createElement('main'); document.body.appendChild(main);
+  const chat = scroller(main, height);
+  chat.el.style.flexDirection = 'column-reverse';
+  chat.el.textContent = 'A short complete answer';
+  const c = setup(); const result = c.runPreCollectScrollNudge('GPT', 1, 1, 'get_it_precollect', { getIt: true });
+  await jest.runAllTimersAsync();
+  expect(await result).toBe(true);
+  expect(chat.el.scrollTo).toHaveBeenCalled();
+  expect(sidebar.el.scrollTo).not.toHaveBeenCalled();
+});
+
+test('a main without a nested scroller uses the fitting document rather than a sidebar', async () => {
+  const sidebar = scroller(document.body, 1000, 240);
+  document.body.insertAdjacentHTML('beforeend', '<main><p>A short complete answer</p></main>');
+  Object.defineProperties(document.documentElement, {
+    clientHeight: { configurable: true, value: 500 },
+    scrollHeight: { configurable: true, value: 500 }
+  });
+  window.scrollTo = jest.fn();
+  const c = setup(); const result = c.runPreCollectScrollNudge('GPT', 1, 1, 'get_it_precollect', { getIt: true });
+  await jest.runAllTimersAsync();
+  expect(await result).toBe(true);
+  expect(sidebar.el.scrollTo).not.toHaveBeenCalled();
+  expect(window.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: 'instant' });
+  delete document.documentElement.clientHeight;
+  delete document.documentElement.scrollHeight;
+});
+
 test.each(['GPT', 'Qwen', 'Claude', 'Gemini', 'Grok', 'DeepSeek', 'Le Chat', 'Perplexity', 'Z.ai', 'Kimi'])('Get it can prepare finalized %s after its automatic focus budget expires', async model => {
   const c = setup(); c.jobState.llms[model] = { finalizedAt: 1 };
   c.isActiveFocusAllowedForEntry = () => false;

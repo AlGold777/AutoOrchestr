@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-03 — Get it keeps short conversations as its scroll target, version 2.81.587
+
+- Follow-up to 2.81.586 after a failed GPT field test: the reversed coordinate fix was insufficient. On a short answer the conversation has no overflow, so the old 40px overflow filter discarded it and selected the lazy-loading chat-history sidebar instead.
+- Conversation viewports now remain eligible with zero or small overflow. When main exists, unrelated outside panes are excluded; a conversation using normal document flow falls back to the document. End-position checks and bounded render settling remain required.
+- Validation: short/fitting and small-overflow reversed conversations beside a growing sidebar, document-flow fallback, and existing Get it regressions.
+
 ### 2026-10-03 — Get it recognizes reversed conversation scrolling, version 2.81.586
 
 - ChatGPT now renders its thread as a column-reverse flex container: the latest end is scrollTop 0 and older messages have negative positions. Get it now scrolls and checks this coordinate system correctly, preventing a false «Не удалось перейти к концу беседы» failure on a completed answer.

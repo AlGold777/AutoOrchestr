@@ -5951,7 +5951,11 @@ async function runPreCollectScrollNudge(llmName, tabId, sessionId, reason = 'pre
             if (!node || set.has(node)) return;
             const height = Number(node.scrollHeight || 0);
             const view = Number(node.clientHeight || 0);
-            if (height - view <= 40) return;
+            // A short answer can fit entirely in its conversation viewport.
+            // Resolve that viewport before checking its scroll range; otherwise
+            // an overflowing sidebar becomes the only candidate.
+            if (view <= 0 || height <= 0) return;
+            if (node === root && height - view <= 4) return;
             if (node !== root) {
               const style = getComputedStyle(node);
               if (!/(auto|scroll|overlay)/.test(style.overflowY) || !node.getClientRects().length) return;
@@ -5965,7 +5969,8 @@ async function runPreCollectScrollNudge(llmName, tabId, sessionId, reason = 'pre
           const candidates = Array.from(set);
           const conversation = candidates.filter(node => node.matches('main, [role="main"]')
             || node.closest('main, [role="main"]') || node.querySelector('main, [role="main"]'));
-          const pool = conversation.length ? conversation : candidates;
+          const hasConversation = document.querySelector('main, [role="main"]');
+          const pool = conversation.length ? conversation : (hasConversation ? [] : candidates);
           // Prefer the large conversation viewport over nested code/table panes.
           pool.sort((a, b) => b.clientHeight * b.clientWidth - a.clientHeight * a.clientWidth);
           const primary = pool[0];
