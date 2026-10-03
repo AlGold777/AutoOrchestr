@@ -10,10 +10,8 @@
     if (supplied?.getItem && supplied?.setItem) return supplied;
     try {
       const candidate = root.localStorage;
-      const probe = `${PREFIX}:probe`;
-      candidate?.setItem(probe, '1');
-      candidate?.removeItem(probe);
-      if (candidate) return candidate;
+      // A full store must not silently replace shared leases with private memory.
+      if (candidate?.getItem && candidate?.setItem) return candidate;
     } catch (_) {}
     return {
       getItem(key) { return memory.has(key) ? memory.get(key) : null; },
@@ -35,12 +33,26 @@
     // Run data may exceed Web Storage's quota. Keep the complete live run,
     // but never simulate a successful cross-tab lease write in private memory.
     const runParts = ['events', 'snapshots', 'published'];
+    const persistRunData = options.persistRunData !== false;
     const volatileData = new Map();
     let storageError = null;
     const key = (part) => `${baseKey}:${part}`;
+    if (!persistRunData) {
+      // Remove only obsolete orchestrator run records. Keep leases and all
+      // unrelated settings; old snapshots must not fill the page's quota.
+      try {
+        const stale = [];
+        for (let i = 0; i < Number(backend.length || 0); i++) {
+          const name = backend.key?.(i);
+          if (typeof name === 'string' && name.startsWith(`${PREFIX}:`)
+            && /:(events|snapshots|published)$/.test(name)) stale.push(name);
+        }
+        stale.forEach(name => backend.removeItem(name));
+      } catch (_) {}
+    }
     const read = (part, fallback) => {
       try {
-        const raw = storageError && runParts.includes(part)
+        const raw = (!persistRunData || storageError) && runParts.includes(part)
           ? volatileData.get(part) : backend.getItem(key(part));
         return raw == null ? clone(fallback) : JSON.parse(raw);
       } catch (_) { return clone(fallback); }
@@ -48,7 +60,7 @@
     const write = (part, value) => {
       const raw = JSON.stringify(value);
       if (runParts.includes(part)) {
-        if (storageError) { volatileData.set(part, raw); return true; }
+        if (!persistRunData || storageError) { volatileData.set(part, raw); return true; }
         try { backend.setItem(key(part), raw); return true; }
         catch (error) {
           // Capture the other recovery records before removing stale partial
@@ -71,9 +83,10 @@
     };
     return Object.freeze({
       version: VERSION,
-      get durable() { return durable && !storageError; },
+      get durable() { return persistRunData && durable && !storageError; },
       getStorageStatus() {
-        return { durable: durable && !storageError, mode: durable && !storageError ? 'storage' : 'memory', error: clone(storageError) };
+        return { durable: persistRunData && durable && !storageError,
+          mode: persistRunData && durable && !storageError ? 'storage' : 'memory', error: clone(storageError) };
       },
       appendEvent(event) {
         const events = read('events', []);

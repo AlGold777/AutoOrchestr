@@ -6411,6 +6411,7 @@ document.addEventListener('click', (event) => {
             store: debateAggregateStore,
             semanticStore: debateCaseStore,
             enableDurablePersistence: true,
+            persistRunData: false,
             deps: {
                 onPersistenceError: () => showNotification('Хранилище переполнено. Прогон продолжается в памяти. Сохраните отчёт до перезагрузки страницы.'),
                 startFromPage: startDebateFromPage,

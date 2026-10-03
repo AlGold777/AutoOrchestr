@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-03 — Page runs no longer fill Web Storage, version 2.81.585
+
+- Pipeline keeps orchestrator events, checkpoints and publication cursor in page memory from the start. Full answers and recovery snapshots are no longer serialized into localStorage; pause/resume and export within the open page retain their data.
+- Shared ownership leases, BroadcastChannel and navigator.locks remain enabled. A quota error in browser storage no longer silently substitutes private memory for shared leases.
+- Starting this mode removes only legacy disputOrchestratorV2 events/snapshots/published records; active leases and unrelated settings remain. Reload does not recover archived page runs.
+- Regression coverage retains 36 answers totalling more than 5 MB without run-data storage writes or quota warnings, checks lease fencing across adapters, selective archive removal and a fully exhausted browser store.
+
 ### 2026-10-03 — Compact transport digest, version 2.81.584
 
 - Digest 3.1.0 separates logCollection samples from grouping keys, shares nested evidence objects and preserves ordered background state cycles. Main/pipeline card observations and selectors have separate streams.
