@@ -4834,10 +4834,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     }
                     // Reuse Stop's cancellation generation: queued writes and
                     // orchestrator waits from the old session must not revive it.
-                    stopAllProcesses('page_reload', { closeTabs: false });
-                    self.jobState = jobState;
                     (async () => {
                         try {
+                            stopAllProcesses('page_reload', { closeTabs: false });
+                            self.jobState = jobState;
                             if (jobStateSaveFlight) await jobStateSaveFlight;
                             await TabMapManager.clear();
                             await CompressedStorage.remove('jobState');

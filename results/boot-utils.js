@@ -112,19 +112,42 @@
     });
     // Reset the authoritative producer before any page store or listener starts.
     // Clearing only the DOM allows REGISTER_RESULTS_TAB to restore old answers.
-    const resetSessionOnReload = () => new Promise((resolve, reject) => {
-        if (!isPageReloadNavigation()) { resolve(false); return; }
-        try {
-            chrome.runtime.sendMessage({ type: 'REGISTER_RESULTS_TAB', resetSession: true }, (response) => {
-                const error = chrome.runtime.lastError?.message || response?.error;
-                if (error || response?.sessionReset !== true) {
-                    reject(new Error(error || 'Page session reset was not acknowledged'));
-                    return;
-                }
-                resolve(true);
-            });
-        } catch (error) { reject(error); }
-    });
+    const resetSessionOnReload = async () => {
+        if (!isPageReloadNavigation()) return false;
+        const request = (message) => new Promise((resolve, reject) => {
+            const timer = setTimeout(() => reject(new Error(`${message.type}: background_timeout`)), 10000);
+            try {
+                chrome.runtime.sendMessage(message, (response) => {
+                    clearTimeout(timer);
+                    const error = chrome.runtime.lastError?.message || response?.error;
+                    if (error) { reject(new Error(`${message.type}: ${error}`)); return; }
+                    resolve(response);
+                });
+            } catch (error) {
+                clearTimeout(timer);
+                reject(error);
+            }
+        });
+        const registration = await request({ type: 'REGISTER_RESULTS_TAB', resetSession: true });
+        if (registration?.sessionReset === true) return true;
+        if (registration?.status !== 'registered') throw new Error('REGISTER_RESULTS_TAB: unexpected_response');
+
+        // Reloading an unpacked page reads new JS while its worker may still run
+        // the previous version. That worker ignores resetSession. Use its existing
+        // Stop contract, and verify an empty snapshot instead of aborting page boot.
+        const stopped = await request({ type: 'STOP_ALL' });
+        if (stopped?.success !== true) throw new Error('STOP_ALL: reset_not_confirmed');
+        const cleared = await request({ type: 'CLEAR_DIAG_EVENTS', reason: 'page_reload' });
+        if (cleared?.success !== true) throw new Error('CLEAR_DIAG_EVENTS: reset_not_confirmed');
+        await chrome.storage.local.remove([DEBATE_TRANSCRIPT_STORAGE_KEY, 'llmCodexDebateRuleHistory.v1']);
+        await chrome.storage.session.remove('messageDelivery.journal');
+        const verified = await request({ type: 'REGISTER_RESULTS_TAB' });
+        if (verified?.status !== 'registered' || !verified?.state?.llms
+            || Object.keys(verified.state.llms).length) {
+            throw new Error('REGISTER_RESULTS_TAB: previous_session_still_active');
+        }
+        return true;
+    };
     const clearDebateTranscriptOnReload = () => new Promise((resolve) => {
         if (!isPageReloadNavigation()) {
             resolve(false);

@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-03 — Reload reset errors keep controls usable, version 2.81.577
+
+- Removed the reset-failure return that prevented results-page controls from initializing. Errors now appear in the existing notification modal after its close handler and page controls are wired, with the underlying command/error included; no paragraph is inserted into the page layout.
+- An older worker can answer REGISTER_RESULTS_TAB without understanding resetSession. The page now uses the established STOP_ALL/CLEAR_DIAG_EVENTS contracts, clears local transcript/history and the delivery mirror, then verifies an empty registered model snapshot. Unknown, missing and nonempty snapshots are not accepted as successful reset. Runtime requests have a 10-second response deadline.
+- Synchronous Stop failures now receive an explicit error response from the reset handler. If cleanup still fails, old response/status broadcasts are suppressed until a newly created job; rule history is not restored on reload.
+- Added regression coverage for older-worker compatibility, failed/missing verification, silent-worker timeout and boot continuation/modal notification. Tests updated but not run; syntax and diff checks performed.
+
 ### 2026-10-03 — Page reload starts a clean session, version 2.81.576
 
 - Both application pages await an acknowledged background reset before initializing stores and message listeners on reload. Registration cancels the previous session through the existing Stop lifecycle, drains old snapshot writes, clears the job/tab registry, late-answer cache, diagnostics, delivery journal, transcript and rule-run history. Provider tabs stay open.
