@@ -297,8 +297,6 @@
 
   // Clears only the journal; tokens of requests still in flight stay valid.
   function clearJournal() {
-    clearTimeout(mirrorTimer);
-    mirrorTimer = null;
     journal.length = 0;
     try { root.chrome?.storage?.session?.remove(JOURNAL_KEY); } catch (_) { /* ignore */ }
   }
@@ -306,7 +304,8 @@
   function reset() {
     expectedByRequest.clear();
     latestByModel.clear();
-    clearJournal();
+    journal.length = 0;
+    try { root.chrome?.storage?.session?.remove(JOURNAL_KEY); } catch (_) { /* ignore */ }
   }
 
   // A page load starts a new session: the previous journal is not carried over.

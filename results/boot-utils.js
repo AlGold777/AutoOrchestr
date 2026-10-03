@@ -110,21 +110,6 @@
             resolve(false);
         }
     });
-    // Reset the authoritative producer before any page store or listener starts.
-    // Clearing only the DOM allows REGISTER_RESULTS_TAB to restore old answers.
-    const resetSessionOnReload = () => new Promise((resolve, reject) => {
-        if (!isPageReloadNavigation()) { resolve(false); return; }
-        try {
-            chrome.runtime.sendMessage({ type: 'REGISTER_RESULTS_TAB', resetSession: true }, (response) => {
-                const error = chrome.runtime.lastError?.message || response?.error;
-                if (error || response?.sessionReset !== true) {
-                    reject(new Error(error || 'Page session reset was not acknowledged'));
-                    return;
-                }
-                resolve(true);
-            });
-        } catch (error) { reject(error); }
-    });
     const clearDebateTranscriptOnReload = () => new Promise((resolve) => {
         if (!isPageReloadNavigation()) {
             resolve(false);
@@ -207,7 +192,6 @@
         recoverUiIfHidden,
         isPageReloadNavigation,
         clearTelemetryOnReload,
-        resetSessionOnReload,
         clearDebateTranscriptOnReload,
         normalizeExternalLinkUrl,
         decorateLinksForNewTab,
