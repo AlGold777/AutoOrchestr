@@ -1,5 +1,16 @@
 # CHANGELOG — Project
 
+### 2026-10-04 — Transport extract 3.7.0: time axis, request chronology, no repeated cells, version 2.81.600
+
+- **Time axis without the first stage start.** When the event cap evicts `stageExecutions[0].actual.startedAt` (`missing_stage_start`), every `t` was "—" (10-model run: all of them). The base now falls back, with the path named in the header, to `runOutcome.startedAt`, `delivery.diagnosis.batches[0].at`, `events[0].sourceTimestamp`, `delivery.journal[0].at`; `st` falls back to the request's `batch_start.at` and is omitted when equal to `t`.
+- **Stage table fixed.** `durationMs` and `status / LONG` printed `[object Object]` (field objects interpolated into strings). LONG is `n/a (no durationMs)` when the duration is null.
+- **Request chronology (section 6).** The label-grouped error list lost the order of events inside a request. Section 6 is now, per request, the deviations in time order: one `t` per entry, records within 50 ms on one line, repeats as ×N with first→last source, every change of status/reason/length/dispatch/attribution as its own entry, zero-length stable text and foreign attribution visible. Routine observations and `SUCCESS_TERMINAL` proofs stay in section 4 (`ct:`), routine terminals in section 5 (now with times), dispatch/focus/tab/navigation in section 10, background labels in Background counters (the complement of the chronology). In `mode=aggregated` the previous label grouping is kept.
+- **Repeats removed.** Consecutive single terminal decisions with equal dispatch/status/reason/doneReason collapse into one row with all paths and the length series (Q8: 6 rows → 2). Render outcomes: one table for the run instead of a column per request. Manual records of one stage/model within 1 s are one action. Prompt checks: rows only for stored matches, one line per other result. `focus_*` problem rows are folded with their paths. Pair members that only repeat the shared `doneReason` are not printed twice.
+- **Empty sections are explicit zeros:** start refusals, moderator actions, run window, prompt checks, non-focus problems.
+- Join labels in section 1 no longer show two different "unassigned" numbers without explanation.
+- Measured on the 10-model report of 2026-10-04 (29 requests): non-compact Markdown 66.7 KB with the chronology and without the repeats (limit 70 KB; DIGEST_VERSION 3.6.0 gave 62.7 KB for the same report and no chronology); a run that exceeds the limit still degrades to `mode=aggregated`, then `mode=overview`.
+- Tests: new `tests/report-digest-chronology.test.js`; `tests/summarize-report.test.js` expects `DIGEST_VERSION=3.7.0` (not run in this change).
+
 ### 2026-10-04 — Restore pipeline HTML export download, version 2.81.599
 
 - Moved the shared model icon table into the scope available to both page initialization and feed download handlers. The previous placement caused HTML feed export to throw before creating its download.
