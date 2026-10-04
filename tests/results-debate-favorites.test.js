@@ -432,6 +432,34 @@ describe('Pipeline debate favorites view', () => {
     chrome.runtime.sendMessage.mockClear();
   });
 
+  test('HTML feed export button downloads the document with shared model icons', async () => {
+    const card = addDebateCard({ id: 'export-html', text: 'Feed export answer', model: 'GPT' });
+    card.dataset.pipelineRoundId = 'r1';
+    const createUrl = URL.createObjectURL;
+    const revokeUrl = URL.revokeObjectURL;
+    URL.createObjectURL = jest.fn(() => 'blob:feed-export');
+    URL.revokeObjectURL = jest.fn();
+    const click = jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function () {
+      expect(this.download).toMatch(/\.html$/);
+    });
+    try {
+      document.getElementById('debate-session-export-btn').click();
+      expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+      const blob = URL.createObjectURL.mock.calls[0][0];
+      expect(blob.type).toBe('text/html;charset=utf-8');
+      const html = await blobToText(blob);
+      expect(html).toContain('Feed export answer');
+      expect(html).toContain('data:image/svg+xml;base64,');
+      expect(html).toContain('data-view="round" data-value="r1"');
+      expect(click).toHaveBeenCalledTimes(1);
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:feed-export');
+    } finally {
+      click.mockRestore();
+      URL.createObjectURL = createUrl;
+      URL.revokeObjectURL = revokeUrl;
+    }
+  });
+
   test('double-clicking the active session tab enables favorite-only without creating a session', async () => {
     const plain = addDebateCard({ id: 'msg-1', text: 'ordinary answer' });
     const starred = addDebateCard({ id: 'msg-2', text: 'saved answer', starred: true });

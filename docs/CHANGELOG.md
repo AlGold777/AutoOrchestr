@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-04 — Restore pipeline HTML export download, version 2.81.599
+
+- Moved the shared model icon table into the scope available to both page initialization and feed download handlers. The previous placement caused HTML feed export to throw before creating its download.
+- Added an integration regression that clicks the real HTML feed export button and verifies the downloaded Blob, filename, embedded icons and round controls. It failed before the fix.
+- Validation: all 91 export, feed-layout and main-page/favorites tests passed after the fix; JavaScript syntax and whitespace checks passed.
+
 ### 2026-10-04 — Pipeline feed HTML views and TXT export, version 2.81.598
 
 - HTML feed export embeds the same model icons as the main response export and adds round navigation. Model views include all rounds; round views include all models; All restores the full feed.
