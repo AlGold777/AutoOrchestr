@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-04 — Pipeline feed HTML views and TXT export, version 2.81.598
+
+- HTML feed export embeds the same model icons as the main response export and adds round navigation. Model views include all rounds; round views include all models; All restores the full feed.
+- Added a `txt` action beside HTML export. It keeps active-session card order and separates cards with three lines of equals signs. Both exports include cards hidden by temporary display filters and exclude other sessions.
+- Added regressions for offline view switching, session scope, text order, separators and export sanitization.
+- Validation: 26 export/layout tests and 64 main-page/favorites tests passed; Chromium preview and round switching passed. The broader release guards passed 39 tests and failed two existing CSS/state-map assertions, reproduced on the unchanged baseline.
+
 ### 2026-10-04 — Accurate terminal-label counts and native severity, version 2.81.597
 
 - Digest 3.6 counts each terminal-group member under its own label and source path. A paired FINALIZATION_DECISION/MODEL_FINAL no longer contributes two observations to the first label.

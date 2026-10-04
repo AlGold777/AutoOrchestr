@@ -1,4 +1,4 @@
-// Debate HTML export service; independent from runtime orchestration.
+// Debate HTML/TXT export service; independent from runtime orchestration.
 (function initDebateExport(root) {
   'use strict';
 
@@ -48,6 +48,8 @@
     return {
       model: String(card.dataset.llmName || card.querySelector('.debate-model-card-name')?.textContent || 'Model').trim() || 'Model',
       time: String(card.querySelector('.debate-model-card-time')?.textContent || '').trim(),
+      plain,
+      round: String(card.dataset.pipelineRoundId || '').trim().toLowerCase(),
       body
     };
   }
@@ -63,22 +65,74 @@
 body{font-family:Arial,sans-serif;background:#fff;color:#111;padding:24px;line-height:1.5}section{margin-bottom:24px}h1{font-size:24px;margin:0 0 4px}h2{margin:0 0 12px;font-size:20px}pre{background:#f6f8fa;padding:12px;border-radius:8px;white-space:pre-wrap;word-wrap:break-word}.response-body{background:#f8fafc;padding:12px;border-radius:8px}.response-body table{width:100%;border-collapse:collapse;margin:8px 0}.response-body th,.response-body td{border:1px solid #ddd;padding:6px 8px;vertical-align:top}.response-body ul,.response-body ol{padding-left:24px}.response-time,.saved-at{color:#555;font-size:14px;font-weight:400}.saved-at{margin:0 0 16px}
 </style></head><body><h1>${escape(title)}</h1><p class="saved-at">${savedStamp(date)}</p>${bodyHtml}</body></html>`;
 
+  // Session identity defines export scope; temporary display filters must not lose cards.
+  function feedParts(feed, activeSessionId = '1') {
+    return Array.from(feed?.querySelectorAll('.debate-model-card') || [])
+      .filter((card) => card.dataset.sessionId === String(activeSessionId))
+      .map(cardParts).filter(Boolean);
+  }
+
   function collectFeedHtml(feed, activeSessionId = '1') {
-    if (!feed) return '';
-    return Array.from(feed.querySelectorAll('.debate-model-card'))
-      .filter((card) => card.dataset.sessionId === String(activeSessionId) && card.style.display !== 'none')
-      .map(section).filter(Boolean).join('\n');
+    return feedParts(feed, activeSessionId).map((parts) =>
+      `<section>${heading(parts)}<div class="response-body">${parts.body}</div></section>`).join('\n');
   }
 
-  function buildFeedDocument(feed, activeSessionId = '1', title = 'Debate Feed') {
-    const body = collectFeedHtml(feed, activeSessionId);
-    return body ? documentHtml(title, body) : '';
+  const responseSeparator = Array(3).fill('=========================================================').join('\n');
+
+  function buildFeedText(feed, activeSessionId = '1') {
+    return feedParts(feed, activeSessionId).map((parts) => [
+      `${parts.model}${parts.round ? ` ${parts.round.toUpperCase()}` : ''}${parts.time ? ` ${parts.time}` : ''}`,
+      parts.plain
+    ].join('\n')).join(`\n\n${responseSeparator}\n\n`);
   }
 
-  function downloadHtml(filename, htmlContent, documentRef = root.document) {
-    const content = String(htmlContent || '').trim();
+  function buildFeedDocument(feed, activeSessionId = '1', title = 'Debate Feed', modelIcons = {}) {
+    const parts = feedParts(feed, activeSessionId);
+    if (!parts.length) return '';
+    const models = [...new Set(parts.map((part) => part.model))];
+    const rounds = [...new Set(parts.map((part) => part.round).filter(Boolean))];
+    const button = (kind, value, icon, label) => `<button type="button" class="feed-nav-button" data-view="${kind}" data-value="${escape(value)}" aria-pressed="false" title="${escape(label)}">${icon}<span>${escape(label)}</span></button>`;
+    const modelButtons = models.map((model) => {
+      // Only bundled data images are embedded: the saved file works offline.
+      const icon = /^data:image\/(?:svg\+xml|png|jpeg|webp);base64,[a-z0-9+/=]+$/i.test(modelIcons[model] || '')
+        ? `<span class="model-nav-icon" style="--model-icon:url('${modelIcons[model]}')" aria-hidden="true"></span>`
+        : `<span class="nav-symbol" aria-hidden="true">${escape(model.slice(0, 1))}</span>`;
+      return button('model', model, icon, model);
+    }).join('');
+    const roundButtons = rounds.map((round) => button('round', round,
+      `<span class="nav-symbol" aria-hidden="true">${escape(round.toUpperCase())}</span>`, round.toUpperCase())).join('');
+    const navigation = `<nav class="feed-navigation" aria-label="Feed views">
+      ${button('all', '', '<span class="nav-symbol" aria-hidden="true">⌂</span>', 'All')}
+      <div class="nav-group" role="group" aria-label="Models">${modelButtons}</div>
+      <div class="nav-group" role="group" aria-label="Rounds">${roundButtons}</div>
+    </nav>`;
+    const body = parts.map((part) => `<section class="feed-response" data-model="${escape(part.model)}" data-round="${escape(part.round)}">
+      ${heading(part)}${part.round ? `<p class="response-time">${escape(part.round.toUpperCase())}</p>` : ''}<div class="response-body">${part.body}</div></section>`).join('\n');
+    return documentHtml(title, navigation + body).replace('</style>', `
+.feed-navigation{position:sticky;top:0;display:flex;flex-wrap:wrap;gap:12px;background:#fff;padding:17px 0;margin-bottom:16px;border-bottom:1px solid #ddd;z-index:10}.nav-group{display:flex;flex-wrap:wrap;gap:5px}.feed-nav-button{display:inline-flex;flex-direction:column;align-items:center;gap:6px;min-width:58px;border:0;background:transparent;color:#737b83;font-size:12px;cursor:pointer;padding:4px}.feed-nav-button:hover,.feed-nav-button[aria-pressed="true"]{color:#27251e}.model-nav-icon{display:block;width:34px;height:34px;background:currentColor;mask:var(--model-icon) center/contain no-repeat;-webkit-mask:var(--model-icon) center/contain no-repeat}.nav-symbol{display:flex;align-items:center;justify-content:center;min-width:34px;height:34px;font-size:24px}.feed-response[hidden]{display:none}
+</style>`).replace('</body>', `<script>
+(() => {
+  const buttons = Array.from(document.querySelectorAll('.feed-nav-button'));
+  const cards = Array.from(document.querySelectorAll('.feed-response'));
+  const select = (button) => {
+    const view = button.dataset.view;
+    const value = button.dataset.value;
+    cards.forEach((card) => {
+      card.hidden = view === 'model' ? card.dataset.model !== value
+        : view === 'round' ? card.dataset.round !== value : false;
+    });
+    buttons.forEach((item) => item.setAttribute('aria-pressed', String(item === button)));
+  };
+  buttons.forEach((button) => button.addEventListener('click', () => select(button)));
+  select(buttons[0]);
+})();
+</script></body>`);
+  }
+
+  function downloadFile(filename, value, mime, documentRef = root.document) {
+    const content = String(value || '');
     if (!content || !documentRef) return false;
-    const blob = new Blob([content], { type: 'text/html' });
+    const blob = new Blob([content], { type: mime });
     const url = URL.createObjectURL(blob);
     const anchor = documentRef.createElement('a');
     anchor.href = url;
@@ -90,7 +144,10 @@ body{font-family:Arial,sans-serif;background:#fff;color:#111;padding:24px;line-h
     return true;
   }
 
-  const api = Object.freeze({ escape, sanitizeFragment, stamp, fileStamp, cardFileStamp, savedStamp, cardParts, heading, section, documentHtml, collectFeedHtml, buildFeedDocument, downloadHtml });
+  const downloadHtml = (filename, content, documentRef = root.document) => downloadFile(filename, content, 'text/html;charset=utf-8', documentRef);
+  const downloadText = (filename, content, documentRef = root.document) => downloadFile(filename, content, 'text/plain;charset=utf-8', documentRef);
+
+  const api = Object.freeze({ escape, sanitizeFragment, stamp, fileStamp, cardFileStamp, savedStamp, cardParts, heading, section, documentHtml, collectFeedHtml, buildFeedDocument, buildFeedText, downloadHtml, downloadText });
   root.DebateExport = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this));

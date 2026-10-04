@@ -6,7 +6,7 @@ The project is optimized for unstable provider UIs. Its core design assumes sele
 
 ## Status
 
-- Current version: `2.81.597`, synchronized in `manifest.json`, `package.json`
+- Current version: `2.81.598`, synchronized in `manifest.json`, `package.json`
   and the root package entry in `package-lock.json`
 - Extension type: Chrome Manifest V3
 - Package name: `llm-selector-manager`
@@ -53,6 +53,16 @@ diagnostics, and `timings-settings.md` owns current runtime timing values.
   pipeline profiles and their tests.
 - Saved Pipelines store runnable protocol settings, including topology, models, run policy, limits, synthesizer and round plan.
 - Release-by-release project history is intentionally kept only in [CHANGELOG.md](CHANGELOG.md).
+
+## Pipeline Feed Export
+
+The feed download icon exports the complete active session as an offline HTML file.
+The top model icons show all cards from that model across rounds; round buttons
+show every model in that round. `All` restores the original feed order.
+The adjacent `txt` button exports the active feed in its original order, including
+user messages and fragments. Each card includes its author, round (when known),
+and time; cards are separated by three lines of 57 equals signs. Temporary display
+filters do not remove cards from either export.
 
 ## Saved Sessions
 

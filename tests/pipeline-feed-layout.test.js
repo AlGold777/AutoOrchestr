@@ -24,7 +24,7 @@ describe('pipeline panel markup', () => {
 
   test('session actions stay in the bar', () => {
     const bar = html.slice(html.indexOf('id="debate-session-bar"'), html.indexOf('id="debate-model-cards"'));
-    ['debate-session-fullscreen-btn', 'debate-session-copy-btn', 'debate-session-export-btn', 'debate-session-clear-btn']
+    ['debate-session-fullscreen-btn', 'debate-session-copy-btn', 'debate-session-export-btn', 'debate-session-export-txt-btn', 'debate-session-clear-btn']
       .forEach((id) => expect(bar).toContain(`id="${id}"`));
   });
 
