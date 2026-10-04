@@ -195,3 +195,35 @@ test('unbounded request cardinality falls back to a bounded overview with comple
   expect(md).toContain('total error observations=1500');
   expect(Buffer.byteLength(md)).toBeLessThanOrEqual(70000);
 });
+
+
+test('aggregated mode retains complete identifiers, engine verdicts and terminal members', () => {
+  const d=report();d.events=[event(0)];
+  const requestId='q'+ 'a'.repeat(240),dispatchId='d'+ 'b'.repeat(240);
+  d.events[0].correlation={stageId:'s1',requestId,dispatchId};
+  for(let i=1;i<=12;i++)d.events.push({eventType:'ANSWER_COLLECTED',sourceTimestamp:T+i,correlation:{stageId:'s1',requestId,dispatchId},payload:{model:'A',accepted:null,answerLength:i}});
+  d.events.push({eventType:'ANSWER_ACCEPTANCE_DECIDED',sourceTimestamp:T+13,reasonCode:'ENGINE_ACCEPTED',correlation:{stageId:'s1',requestId,dispatchId},payload:{model:'A',accepted:true}});
+  for(const [i,label] of [[14,'FINALIZATION_DECISION'],[15,'MODEL_FINAL']])d.events.push({eventType:'MODEL_TERMINAL_COMMITTED',sourceTimestamp:T+i,correlation:{stageId:'s1',requestId,dispatchId},payload:{model:'A',originalLabel:label,answerLength:123,evidence:{finalStatus:'SUCCESS',completionReason:'lifecycle_complete_snapshot',answerLen:123}}});
+  const md=Digest.renderTransportMarkdown(Digest.extractTransport(d),true);
+  expect(md).toContain(requestId);expect(md).toContain(dispatchId);
+  expect(md).toContain('E[13]=true ENGINE_ACCEPTED');
+  expect(md).toContain('E[14] FINALIZATION_DECISION: 123 / 123 / no field');
+  expect(md).toContain('E[15] MODEL_FINAL: 123 / 123 / no field');
+});
+
+test('rare critical stage and correlation errors survive overview dominated by frequent noise', () => {
+  const d=report();d.events=[];
+  for(let label=0;label<55;label++)for(let n=0;n<4;n++){
+    const e=event(d.events.length);e.eventType='LEGACY_DIAGNOSTIC_EVENT';e.payload.originalLabel=`PING_TRANSPORT_ERROR_${label}`;d.events.push(e);
+  }
+  d.events.push({eventType:'STAGE_FAILED',sourceTimestamp:T+1000,correlation:{stageId:'s1'},reasonCode:'critical_failure',payload:{}});
+  d.events.push({...event(1001),eventType:'CORRELATION_REJECTED',reasonCode:'mismatched_dispatch'});
+  d.metadata.presetId='Ж'.repeat(40000); // Requires overview without clipping typed metadata.
+  const md=Digest.renderTransportMarkdown(Digest.extractTransport(d));
+  expect(md).toContain('mode=overview');
+  expect(md).toContain('| stage_failure | 1 | events[220] |');
+  expect(md).toContain('| correlation_failure | 1 | events[221] |');
+  expect(md).toContain('| STAGE_FAILED | true | 1 | events[220] |');
+  expect(md).toContain('| CORRELATION_REJECTED | true | 1 | events[221] |');
+  expect(Buffer.byteLength(md)).toBeLessThanOrEqual(70000);
+});

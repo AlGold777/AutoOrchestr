@@ -191,7 +191,7 @@ const terminalStatusOf = (r) => {
 };
 const terminalReasonOf = (r) => r.raw.payload?.evidence?.completionReason || '';
 // Structured facts are the source of both JSON and Markdown. No Markdown is embedded in JSON.
-const DIGEST_VERSION = '3.4.0';
+const DIGEST_VERSION = '3.5.0';
 const COMPRESSION = Object.freeze({
   markdownMaxBytes: 70000,
   markdownAggregation: 'request tables → aggregated tables → bounded overview',
@@ -550,6 +550,7 @@ function buildTransportDigest(d, sourceFile = null) {
       joinMethods: listCounts(recs, (r) => r.via || 'unassigned') },
     integrity: { registered: integrity, computed: computedIntegrity, checks: field(d.integrity, 'checks', 'integrity') },
     sourceStatus: { allPaths: recs.map(r=>r.path), completeness: field(d,'completeness','root'), modeHistory: field(d.metadata,'modeHistory','metadata'), collection: field(d, 'collection', 'root'), planning: field(d, 'planning', 'root'),
+      unboundErrors: recs.filter(r=>!r.attempt&&!unassigned.includes(r)&&/FAIL|ERROR|REJECT|BLOCK|NO_SEND|UNCERTAIN|TIMEOUT|RECOVERY|MATERIALIZE|STALE|DIVERGENCE|CANCEL|EXHAUSTED|UNCONFIRMED/i.test(`${r.type} ${r.label} ${r.reasonCode||''}`)).map(r=>recordFact(r,t0)),
       observerStops: recs.filter(r => r.type === 'OBSERVER_STOPPED' || r.label === 'LIFECYCLE_TRACKING_STOPPED').map(r => r.path),
       displayProof: recs.filter(r => r.raw.payload?.evidence?.normalizedHash || r.raw.answerArtifact?.normalizedHash).map(r => r.path),
       acceptance: recs.filter(r => r.type === 'ANSWER_COLLECTED').map(r => ({ path: r.path, accepted: r.raw.payload?.accepted })),
@@ -560,7 +561,7 @@ function buildTransportDigest(d, sourceFile = null) {
 function renderTransportMarkdown(x, compact = false) {
   const limit=COMPRESSION.markdownMaxBytes, out=[];
   const preview=(v,n=180)=>{const text=String(v);return text.length<=n?text:`${text.slice(0,n).replace(/[\uD800-\uDBFF]$/,'')}… [${text.length} chars; full value in source JSON]`;};
-  const cell=v=>(compact?preview(display(v)):display(v)).replace(/\|/g,'\\|').replace(/[\r\n]+/g,' ');
+  const cell=v=>display(v).replace(/\|/g,'\\|').replace(/[\r\n]+/g,' ');
   const rows=(head,list)=>table(head,list.map(r=>r.map(cell)));
   const path=p=>String(p||'no field').replace(/delivery\.journal\[(\d+)\]/g,'J[$1]').replace(/events\[(\d+)\]/g,'E[$1]').replace(/delivery\.diagnosis\.sends\[(\d+)\]/g,'S[$1]').replace(/delivery\.diagnosis\.batches\[(\d+)\]/g,'B[$1]');
   const t=v=>v==null || !Number.isFinite(v)?'—':v.toFixed(3);
@@ -579,7 +580,7 @@ function renderTransportMarkdown(x, compact = false) {
       g.count+=r.count;g.rows.push(r);if(r.first.at<g.first.at)g.first=r.first;if(r.last.at>g.last.at)g.last=r.last;});
     return [...map.values()];
   };
-  const value=f=>compact?preview(display(f)):display(f);
+  const value=f=>display(f);
   const lengthValues=(a)=>{
     const m=x.lengths.find(r=>r.request===a.request)?.measurements;
     if(!m)return 'no field';
@@ -634,7 +635,7 @@ function renderTransportMarkdown(x, compact = false) {
       `${g.label}/${compact?`${g.states.size} status/reason combinations (source JSON)`:value(g.status)}${compact||g.reason===g.label?'':`/${value(g.reason)}`}`,g.count,
       [...g.requests].map(([q,v])=>`Q${q}:${v.count} ${path(v.path)} ${[...v.dispatches].filter(d=>d!==`Q${q}.D1`).join(',')}`).join('; '),
       `${sample(g.first)}${g.count>1?` → ${sample(g.last)}`:''}`])));
-  const unassignedIssues=x.availability.unassigned.filter(r=>issue.test(`${r.label} ${r.type} ${r.reason||''}`));
+  const unassignedIssues=x.availability.unassigned.concat(x.sourceStatus.unboundErrors||[]).filter(r=>issue.test(`${r.label} ${r.type} ${r.reason||''}`));
   const unassignedGroups=groups(unassignedIssues.map(r=>({first:r,last:r,count:1})),r=>JSON.stringify([r.label,r.first.status,r.first.reason,r.first.model,r.first.recordedStageId,r.first.dispatchId]));
   if(unassignedGroups.length)out.push('Unassigned errors (no request join):',rows(['label / status / reason','N','model / recorded stage / dispatch','first→last t / source'],unassignedGroups.map(g=>[
     `${g.first.label}/${value(g.first.status)}/${value(g.first.reason)}`,g.count,
@@ -648,7 +649,7 @@ function renderTransportMarkdown(x, compact = false) {
       render.map(g=>`${g.first.evidence.cardTargetType||'unspecified'}/${value(g.first.evidence.outcome)}${g.first.evidence.comparisonReason==null?'':`/${g.first.evidence.comparisonReason}`}:${g.count} ${path(g.first.path)}→${path(g.last.path)}`).join('; ')||'0'];
   })));
   out.push('\n### 8. Manual actions',`MANUAL_RECOVERY_REQUESTED=${x.manual.records}; UI=${x.manual.uiButtonRecords}; on successful stages=${x.manual.onSuccessStages}.`,
-    rows(['t / source','stage / model','details'],x.manual.rows.map(r=>[sample(r),`${x.stages.find(s=>s.stageId===r.recordedStageId)?.stage||r.recordedStageId||'no stage'}/${r.model||'no model'}`,r.details||'no details'])),
+    rows(['t / source','stage / model','details'],x.manual.rows.map(r=>[sample(r),`${x.stages.find(s=>s.stageId===r.recordedStageId)?.stage||r.recordedStageId||'no stage'}/${r.model||'no model'}`,compact?preview(r.details||'no details'):r.details||'no details'])),
     rows(['moderator t / source','label / model'],x.manual.moderatorActions.map(r=>[sample(r),`${r.label}/${r.model||'no model'}`])));
   out.push('\n### 9. Start refusals');
   x.delivery.batches.forEach(b=>{
@@ -686,7 +687,7 @@ function renderTransportMarkdown(x, compact = false) {
       const last=list.map(r=>r.lastTimed||r.last).filter(r=>Number.isFinite(r.at)).sort((a,b)=>b.at-a.at)[0];
       return [key,`${list.reduce((n,r)=>n+r.count,0)}/${list.reduce((n,r)=>n+r.resets,0)}`,mins.length?`${Math.min(...mins)}..${Math.max(...maxs)}`:'no field',`${first?path(first.path):'no usable timestamp'}→${last?path(last.path):'no usable timestamp'}`];
     })));
-  const md=(compact?out.map(line=>line.startsWith('|')?line:preview(line,800)):out).join('\n');
+  const md=out.join('\n');
   // Count UTF-8 bytes without Node dependencies; the extension uses this same code.
   let bytes=0;for(const char of md){const code=char.codePointAt(0);bytes+=code<128?1:code<2048?2:code<65536?3:4;}
   if(bytes>limit){
@@ -699,28 +700,48 @@ function renderTransportMarkdown(x, compact = false) {
 // It reports complete totals and explicitly states which tables need the source JSON.
 function renderTransportOverview(x,limit){
   const safe=v=>display(v).replace(/[\r\n|]/g,' ').slice(0,120).replace(/[\uD800-\uDBFF]$/,'');
+  const identity=(v,source)=>{const text=display(v);return text.length>120?`[${text.length} chars; see ${source}]`:text.replace(/[\r\n|]/g,' ');};
   const frequencies=(items,key)=>{const m=new Map();items.forEach(r=>{const k=key(r);m.set(k,(m.get(k)||0)+1);});return [...m].sort((a,b)=>b[1]-a[1]);};
   const decisions=x.requests.flatMap(a=>x.lengths.find(r=>r.request===a.request)?.measurements.acceptanceDecisions||[]);
-  const allIssues=x.requests.flatMap(a=>[...a.transitions,...a.background].filter(r=>!r.group)).concat(x.availability.unassigned.map(r=>({first:r,count:1})));
+  const terminalRecords=x.requests.flatMap(a=>a.terminalGroups.map(g=>({first:{label:g.members[0].label,type:'MODEL_TERMINAL_COMMITTED',status:g.status,reason:g.completionReason,path:g.members[0].path},count:g.members.length})));
+  const allIssues=x.requests.flatMap(a=>[...a.transitions,...a.background].filter(r=>!r.group)).concat(x.availability.unassigned.concat(x.sourceStatus.unboundErrors||[]).map(r=>({first:r,count:1})),terminalRecords);
   const issue=/FAIL|ERROR|REJECT|BLOCK|NO_SEND|UNCERTAIN|TIMEOUT|RECOVERY|MATERIALIZE|STALE|DIVERGENCE|CANCEL|EXHAUSTED|UNCONFIRMED/i;
-  const codes=new Map();allIssues.filter(r=>issue.test(`${r.first.label} ${r.first.type} ${r.first.reason||''}`)).forEach(r=>{
-    const label=r.first.label;let g=codes.get(label);if(!g){g={count:0,path:r.first.path};codes.set(label,g);}g.count+=r.count;
+  const criticalCategory=r=>{
+    const text=`${r.type} ${r.label} ${r.reason||''} ${r.status||''}`;
+    if(/STAGE_FAILED|STAGE_FAILURE/i.test(text))return 'stage_failure';
+    if(/CORRELATION_REJECTED|IDENTITY_REJECTED/i.test(text))return 'correlation_failure';
+    if(/STATE_DIVERGENCE/i.test(text))return 'state_divergence';
+    if(/ANSWER_DELIVERY_REJECTED|ANSWER_REJECTED|TEXT_LOST/i.test(text))return 'answer_delivery_failure';
+    if(/NO_SEND|CONTEXT_LOST/i.test(text))return 'request_not_delivered';
+    if(/TERMINAL_FAILURE|EXTERNAL_LLM_FAILURE/i.test(text) || /^(FAILED|FAILURE|ERROR|RECOVERABLE_ERROR|HARD_TIMEOUT|CANCELLED)$/i.test(r.status||''))return 'terminal_failure';
+    if(/^(critical|high)$/i.test(r.evidence?.severity||''))return 'registered_high_severity';
+    return null;
+  };
+  const critical=new Map(),codes=new Map();
+  allIssues.forEach(r=>{
+    const category=criticalCategory(r.first);
+    if(!category&&!issue.test(`${r.first.label} ${r.first.type} ${r.first.reason||''}`))return;
+    if(category){let c=critical.get(category);if(!c){c={count:0,path:r.first.path};critical.set(category,c);}c.count+=r.count;}
+    const label=r.first.label;let g=codes.get(label);if(!g){g={count:0,path:r.first.path,critical:false};codes.set(label,g);}
+    g.count+=r.count;g.critical ||= Boolean(category);
   });
-  const labels=[...codes].sort((a,b)=>b[1].count-a[1].count),shown=labels.slice(0,50);
+  const labels=[...codes].sort((a,b)=>Number(b[1].critical)-Number(a[1].critical)||b[1].count-a[1].count),shown=labels.slice(0,50);
   const terminals=x.requests.flatMap(a=>a.terminalGroups);
   const statuses=frequencies(terminals,g=>g.status);
   const o=['# Transport extract',`DIGEST_VERSION=${x.DIGEST_VERSION}; mode=overview; limit=${limit} UTF-8 bytes`,
-    `sourceFile=${safe(x.sourceFile)}; debateRunId=${safe(x.debateRunId)}`,
+    `sourceFile=${identity(x.sourceFile,'original JSON filename')}; debateRunId=${identity(x.debateRunId,'metadata.debateRunId')}`,
     'Request tables exceeded the byte budget after aggregation. This overview includes complete totals; individual requests, identities, terminal evidence, reasons and chronology are in stageExecutions[], events[] and delivery.journal[] of the source JSON. Long labels are previews of at most 120 characters.',
-    `Requests=${x.requests.length}; source records=${x.sourceStatus.totalSourceRecords}; unassigned=${x.availability.unassigned.length}; unassigned errors=${x.availability.unassigned.filter(r=>issue.test(`${r.label} ${r.type} ${r.reason||''}`)).length}.`,
+    `Requests=${x.requests.length}; source records=${x.sourceStatus.totalSourceRecords}; unassigned=${x.availability.unassigned.length}; unassigned errors=${x.availability.unassigned.concat(x.sourceStatus.unboundErrors||[]).filter(r=>issue.test(`${r.label} ${r.type} ${r.reason||''}`)).length}.`,
     `Stages: total=${x.counters.stages.total}; success=${x.counters.stages.success}; withFailureRecords=${x.counters.stages.withFailureRecords}; LONG=${x.counters.stages.long}.`,
     `Terminal records=${x.counters.terminal.records}; groups=${x.counters.terminal.groups}; requests=${x.counters.terminal.uniqueRequests}.`,
     `Engine acceptance decisions=${decisions.length}; true=${decisions.filter(r=>r.accepted.state==='present'&&r.accepted.value===true).length}; false=${decisions.filter(r=>r.accepted.state==='present'&&r.accepted.value===false).length}; null=${decisions.filter(r=>r.accepted.state==='present'&&r.accepted.value===null).length}; missing=${decisions.filter(r=>r.accepted.state==='missing').length}.`,
     `Manual recovery=${x.manual.records}; UI records=${x.manual.uiButtonRecords}; focus switches=${x.focus.total}; start refusals=${x.counters.startRefusals}.`,
     `Diagnoses=${x.diagnoses.appendix.length}; shortened prompts=${x.availability.shortenedPrompts.length}; observer stop records=${x.sourceStatus.observerStops.length}.`,
     `Terminal status counts (groups, showing ${Math.min(20,statuses.length)}/${statuses.length}): ${statuses.slice(0,20).map(([k,n])=>`${safe(k)}:${n}`).join('; ')}.`,
+    'Mandatory critical categories: every matching observation is counted here, irrespective of frequency or the label-table limit (includes failed terminal records).',
+    table(['critical category','observations','example source'],[...critical].map(([k,g])=>[k,g.count,safe(g.path)])),
     `Observed error labels: showing ${shown.length}/${labels.length}; total error observations=${labels.reduce((n,[,g])=>n+g.count,0)}; remaining label groups=${labels.length-shown.length} (source JSON).`,
-    table(['label preview','observations','example source'],shown.map(([k,g])=>[safe(k),g.count,safe(g.path)]))];
+    table(['label preview','critical','observations','example source'],shown.map(([k,g])=>[safe(k),g.critical,g.count,safe(g.path)]))];
   return o.join('\n');
 }
 function summarizeDisputFlow(d) { return renderTransportMarkdown(buildTransportDigest(d)); }

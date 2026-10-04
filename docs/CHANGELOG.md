@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-04 — Preserve typed summary fields and prioritize critical observations, version 2.81.596
+
+- Digest 3.5 removes generic cell/paragraph clipping in aggregated Markdown. Identifiers, engine acceptance decisions, terminal members and registered measurements remain complete; only long manual-action prose has explicit previews. Oversized tables still switch to the bounded overview.
+- Overview ranks critical labels before frequent noise and always includes fixed critical-category totals, including failed terminal records and stage/run errors with no request identity. Very long overview identities are referenced at their source instead of printing an invalid partial identifier.
+- Added regression assertions for long IDs, an engine verdict after multiple collected records, both terminal members, and rare stage/correlation failures in an overview dominated by frequent noise.
+- Tests and generator runs were not performed, as requested. Syntax and whitespace checks only; no new output size measurements.
+
 ### 2026-10-04 — Transport summary aggregation and review fixes, version 2.81.595
 
 - Digest 3.4 replaces the size-limit exception with explicit aggregation levels: request tables, aggregated tables, and a bounded overview with complete totals and declared group coverage. JSON and Markdown still download together when request tables exceed the byte budget.
