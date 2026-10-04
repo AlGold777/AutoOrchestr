@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-04 — Transport extract capped at 70 KB, version 2.81.594
+
+- Replaced the journal-like Markdown renderer with direct request/terminal tables and grouped observations. No previous Markdown is parsed; no evidence dictionaries or full background chronology are reproduced. Source JSON and structured facts are unchanged.
+- Both real reports fit the 70,000-byte UTF-8 budget: 15:24 = 30,133 bytes; 17:29 = 68,233 bytes (31 requests, four stages). All requests, terminal groups, acceptance decisions and their measurements remain visible.
+- Digest 3.3 enforces the byte budget without silent truncation. Regression tests cover multi-round recovery/render noise and the real Extract handler's raw-JSON preservation/button release on a budget error.
+
 ### 2026-10-04 — Compact transport Markdown projection, version 2.81.593
 
 - Digest 3.2 keeps structured facts and the source JSON intact, while Markdown summarizes background streams with ordered answer states and per-state source paths. Repeated cycles and opaque identifiers have reversible dictionaries; all event/journal paths remain addressable.

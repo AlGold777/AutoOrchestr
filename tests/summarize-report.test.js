@@ -35,7 +35,7 @@ describe('Disput Flow extract v2', () => {
 
   test('JSON is structured; Markdown uses the same facts and all requests, including a clean request', () => {
     const d = flow(), before = JSON.stringify(d), x = Digest.extractTransport(d, 'source.json');
-    expect(x.DIGEST_VERSION).toBe('3.2.0');
+    expect(x.DIGEST_VERSION).toBe('3.3.0');
     expect(x).not.toHaveProperty('digest');
     expect(x.requests).toHaveLength(1);
     expect(x.requests[0].identity.tabIds).toEqual(['123']);
@@ -44,8 +44,8 @@ describe('Disput Flow extract v2', () => {
     expect(x.requests[0].coverage.omittedRecords).toBe(0);
     expect(JSON.stringify(d)).toBe(before);
     const text = Digest.renderTransportMarkdown(x);
-    expect(text).toContain('DIGEST_VERSION=3.2.0');
-    expect(text).toContain('Q1: stage-1/A');
+    expect(text).toContain('DIGEST_VERSION=3.3.0');
+    expect(text).toContain('Q1 stage-1/A');
     expect(text).toContain('### 15. Delivery batches');
     expect(text).not.toContain('### 16.');
     expect(summarize(write('flow.json', d))).toBe(Digest.renderTransportMarkdown(Digest.extractTransport(d)));
@@ -208,18 +208,15 @@ test('trace-only requests retain distinct canonical identities and ambiguous sta
   expect(x.availability.unassigned.map(r=>r.path)).toEqual(['events[2]']);
 });
 
-test('compressed source registry can reconstruct every event and journal member without interleaving fragmentation', () => {
-  const t=1700000000000, event=(model,i,length)=>({eventType:'TEXT_STABLE',sourceTimestamp:t+i,correlation:{stageId:'s',requestId:`q${model}`,dispatchId:`d${model}`},payload:{model,answerLength:length}});
-  const events=Array.from({length:50},(_,i)=>event(i%2?'B':'A',i,i<30?10:20));
+test('compact summary references endpoints while structured facts retain every source record', () => {
+  const t=1700000000000,events=Array.from({length:50},(_,i)=>({eventType:'TEXT_STABLE',sourceTimestamp:t+i,correlation:{stageId:'s',requestId:i%2?'qB':'qA',dispatchId:i%2?'dB':'dA'},payload:{model:i%2?'B':'A',answerLength:i<30?10:20}}));
   const d={metadata:{debateRunId:'r'},runOutcome:{startedAt:t,completedAt:t+10},stageExecutions:[{stageId:'s',actual:{startedAt:t,participants:['A','B']}}],events};
-  const x=Digest.extractTransport(d), text=Digest.renderTransportMarkdown(x);
+  const x=Digest.extractTransport(d),text=Digest.renderTransportMarkdown(x);
   expect(x.requests.every(a=>a.transitions.length===2)).toBe(true);
-  const refs=new Set();
-  for (const m of text.matchAll(/\bE\[([\d,./]+)\]/g)) for(const part of m[1].split(',')) {
-    const r=/^(\d+)\.\.(\d+)(?:\/(\d+))?$/.exec(part);
-    if(r)for(let i=+r[1];i<=+r[2];i+=+(r[3]||1))refs.add(i);else refs.add(+part);
-  }
-  expect([...refs].filter(i=>i<events.length).sort((a,b)=>a-b)).toEqual(events.map((_,i)=>i));
-  expect(text).not.toContain('Full parameters in JSON');
-  expect(text).not.toContain('JSON quality');
+  const paths=x.requests.flatMap(a=>a.transitions.flatMap(r=>r.paths)).sort();
+  expect(paths).toEqual(events.map((_,i)=>`events[${i}]`).sort());
+  expect(text).toContain('Full chronology');
+  expect(text).toContain('E[48]');
+  expect(text).toContain('E[49]');
+  expect(Buffer.byteLength(text)).toBeLessThanOrEqual(70000);
 });

@@ -118,3 +118,16 @@ test('real report builder resolves application from the page bridge, without a l
   delete context.window.__debateApplication;
   expect(() => context.buildDisputExportPayload([])).not.toThrow();
 });
+
+test('size-budget failure retains raw JSON and releases the actual Extract handler', async () => {
+  const ui=setup(report(),{
+    extractTransport: (...args)=>{const x=Digest.extractTransport(...args);x.manual.rows=[{path:'events[0]',details:'Ж'.repeat(40000)}];return x;},
+    renderTransportMarkdown: Digest.renderTransportMarkdown
+  });
+  await ui.run();
+  expect(ui.downloads).toHaveLength(1);
+  expect(ui.downloads[0].name).toBe('Disput Flow 20261003_00-30.json');
+  expect(ui.notices[0]).toContain('exceeds 70000 bytes');
+  expect(ui.button.disabled).toBe(false);
+  expect(ui.button.hasAttribute('aria-busy')).toBe(false);
+});
