@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-04 — Compact transport Markdown projection, version 2.81.593
+
+- Digest 3.2 keeps structured facts and the source JSON intact, while Markdown summarizes background streams with ordered answer states and per-state source paths. Repeated cycles and opaque identifiers have reversible dictionaries; all event/journal paths remain addressable.
+- Full auxiliary artifacts, producer identities and command lineage stay in JSON. Markdown retains terminal decisions, acceptance verdicts, measured lengths, delays, counters, and first/last render proofs. Missing times are shown explicitly; null render hashes do not fall back to artifact hashes.
+- Corrected the acceptance-decision lookup in both request rows and the legacy warning. Regression checks cover source preservation, cyclic changes, proof null/missing distinctions, multi-round scaling, and the extension's two-file export.
+
 ### 2026-10-04 — Editable cards for large pasted prompts, version 2.81.592
 
 - Ported the pasted-text module from Astra, including its short HTML paste selection fix, to the main and Pipeline composers. Pastes of at least 3,000 characters or 40 lines fold into document cards with character/line counts, removal and Paste original.

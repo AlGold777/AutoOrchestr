@@ -191,8 +191,9 @@ const terminalStatusOf = (r) => {
 };
 const terminalReasonOf = (r) => r.raw.payload?.evidence?.completionReason || '';
 // Structured facts are the source of both JSON and Markdown. No Markdown is embedded in JSON.
-const DIGEST_VERSION = '3.1.0';
+const DIGEST_VERSION = '3.2.0';
 const COMPRESSION = Object.freeze({
+  markdownEvidence: 'investigation fields; auxiliary producer metadata remains at source paths in JSON',
   allRequests: true, chronologyLimit: null, outsideWindowToleranceMs: 0,
   terminalPairWindowMs: 50, promptProbeCharacters: 50,
   grouping: 'request + dispatchId + status + reason + significant fields; changes split groups',
@@ -357,7 +358,7 @@ function buildTransportDigest(d, sourceFile = null) {
       if (r.type === 'MODEL_TERMINAL_COMMITTED') return;
       const exceptional = ['TEXT_STABLE', 'COMPLETION_DETECTED', 'STAGE_FAILED', 'MANUAL_RECOVERY_REQUESTED', 'CORRELATION_REJECTED',
         'completion_terminal', 'first_text', 'verified', 'empty_answer', 'missing_token', 'stale_dropped', 'identity_rejected', 'revision', 'ANSWER_COLLECTED',
-        'ANSWER_REJECTED', 'ANSWER_ACCEPTANCE_DECIDED', 'OBSERVER_STOPPED', 'response_rejected', 'late_text', 'unproven_replaced', 'get_it_result', 'owner_answer'].includes(r.type)
+        'ANSWER_REJECTED', 'STATE_DIVERGENCE', 'ANSWER_ACCEPTANCE_DECIDED', 'OBSERVER_STOPPED', 'response_rejected', 'late_text', 'unproven_replaced', 'get_it_result', 'owner_answer'].includes(r.type)
         || /ANSWER_DELIVERY_REJECTED|MATERIALIZE_RECOVERY_|RECOVERY_ATTEMPT|STABLE_TEXT_FALLBACK|TERMINAL_FAILURE_UPGRADED/.test(`${r.label} ${r.type}`);
       if (exceptional) transitions.push(r);
       else background.push(r);
@@ -550,7 +551,7 @@ function buildTransportDigest(d, sourceFile = null) {
       observerStops: recs.filter(r => r.type === 'OBSERVER_STOPPED' || r.label === 'LIFECYCLE_TRACKING_STOPPED').map(r => r.path),
       displayProof: recs.filter(r => r.raw.payload?.evidence?.normalizedHash || r.raw.answerArtifact?.normalizedHash).map(r => r.path),
       acceptance: recs.filter(r => r.type === 'ANSWER_COLLECTED').map(r => ({ path: r.path, accepted: r.raw.payload?.accepted })),
-      windowStart, windowEnd, totalSourceRecords: recs.length, unassignedPaths: unassigned.map(r => r.path) },
+      windowStart: finite(windowStart), windowEnd: finite(windowEnd), totalSourceRecords: recs.length, unassignedPaths: unassigned.map(r => r.path) },
     delivery: { batches, problems: arr(diag.problems).map((x, i) => ({ path: `delivery.diagnosis.problems[${i}]`, ...x })) }
   };
 }
@@ -569,9 +570,12 @@ function renderTransportMarkdown(x) {
     ANSWER_GENERATING: 'GENERATING', GENERATION_ACTIVE: 'GENERATING'
   };
   const usedAliases = new Set();
-  const label = v => { if (labelAliases[v]) { usedAliases.add(v); return labelAliases[v]; } return v; };
+  const label = v => {
+    if (typeof v==='string' && v.length>24 && !labelAliases[v]) labelAliases[v]=`L${Object.keys(labelAliases).length+1}`;
+    if (labelAliases[v]) { usedAliases.add(v); return labelAliases[v]; } return v;
+  };
   const counts = v => Object.entries(v || {}).map(([k,n]) => `${k}=${n}`).join(', ') || '0 records';
-  const seconds = n => n == null ? 'no field' : Number(n).toFixed(3);
+  const seconds = n => n == null || !Number.isFinite(n) ? '—' : Number(n).toFixed(3);
   const eventTime = r => `${seconds(r?.t)} ${r?.path || 'not recorded'}`;
   const pathList = paths => {
     const byPrefix = new Map(), other = [];
@@ -612,10 +616,10 @@ function renderTransportMarkdown(x) {
   const time = r => r ? `${eventTime(r)}${r.stageSeconds == null?'':` +st=${seconds(r.stageSeconds)}`}${r.submitSeconds==null || r.submitSeconds===0?'':` +sub=${seconds(r.submitSeconds)}`}` : 'not recorded';
   out.push('# Transport extract', `DIGEST_VERSION=${x.DIGEST_VERSION} · sourceFile=${x.sourceFile || 'no field'} · debateRunId=${x.debateRunId}`,
     `Compression: all requests; no line cap; terminalPairWindowMs=${x.compression.terminalPairWindowMs}; promptProbeCharacters=${x.compression.promptProbeCharacters}; grouping=${x.compression.grouping}.`,
-    `Grouping ignores sampled time counters, logCollection and SELECTOR_STATS hit/miss/rate counters. Collection counters have a separate summary; source paths retain access to individual samples in JSON.`,
+    `MD evidence contains investigation fields; auxiliary producer metadata remains in the referenced JSON. Grouping ignores sampled time counters, logCollection and SELECTOR_STATS hit/miss/rate counters. Collection counters have a separate summary; source paths retain access to individual samples in JSON.`,
     `t = seconds from ${x.base.path}=${display(x.base.value)}, precision 0.001. +st/+sub only in section 4.`,
-    'Legend: E[N]=events[N]; J[N]=delivery.journal[N]; E[1..3,7] means E[1],E[2],E[3],E[7]; E[1..13/4] means E[1],E[5],E[9],E[13]. QN.DK is a dispatch alias; QN.TK is a terminal group. ~stage means a join by stage/model only; pre-dispatch marks observations preceding dispatch_started. G references resolve in the source registry. S[N]=delivery.diagnosis.sends[N]; B[N]=delivery.diagnosis.batches[N]; P[N]=delivery.diagnosis.problems[N]. AL=payload.answerLength; EL=payload.evidence.answerLen; EAL=payload.evidence.answerLength.',
-    'Notes: no field / null / "" / [] / false / 0 are distinct. Registered fields are facts, not causal proof. Compare answer hashes only with matching representation and normalization version; token removal is a transformation. Equal lengths do not establish text identity. A stored prepared.prompt fragment does not prove submission or complete answer inclusion. Shortened text cannot prove absence. Focus intervals do not prove continuous printing; late observations do not prove continued generation. Refusal waitedMs is cumulative: do not sum it; start→accept is an observed interval, not proof of lock duration.',
+    'Legend: — in time columns means no usable time field (never zero). I aliases resolve to full opaque values in the dictionary. L aliases resolve to event labels. E[N]=events[N]; J[N]=delivery.journal[N]; E[1..3,7] means E[1],E[2],E[3],E[7]; E[1..13/4] means E[1],E[5],E[9],E[13]. QN.DK is a dispatch alias; QN.TK is a terminal group. ~stage means a join by stage/model only; pre-dispatch marks observations preceding dispatch_started. G references resolve in the source registry. S[N]=delivery.diagnosis.sends[N]; B[N]=delivery.diagnosis.batches[N]; P[N]=delivery.diagnosis.problems[N]. AL=payload.answerLength; EL=payload.evidence.answerLen; EAL=payload.evidence.answerLength.',
+    'Background summaries: counts/endpoints and ordered [length,status,dispatch,reason,sources] states; unchanged samples are counted. Intermediate metadata/hash samples, artifacts and full command lineage remain in JSON. No source records are removed.\nNotes: no field / null / "" / [] / false / 0 are distinct. Registered fields are facts, not causal proof. Compare answer hashes only with matching representation and normalization version; token removal is a transformation. Equal lengths do not establish text identity. A stored prepared.prompt fragment does not prove submission or complete answer inclusion. Shortened text cannot prove absence. Focus intervals do not prove continuous printing; late observations do not prove continued generation. Refusal waitedMs is cumulative: do not sum it; start→accept is an observed interval, not proof of lock duration.',
     ...['metadata','runOutcome','health'].map(k => `${k}: ${Object.values(x[k]).map(pathValue).join(' · ')}`));
   out.push('\n### 1. Data availability and integrity',
     `Exported events=${x.counters.events}; correlationQuality: ${counts(x.quality.correlationQuality)}; provenance: ${counts(x.quality.provenance)}.`,
@@ -632,7 +636,7 @@ function renderTransportMarkdown(x) {
   const legacy = [];
   if (x.integrity.checks.state === 'missing') legacy.push('integrity arrays have no registered check status');
   if (x.availability.plan.value == null) legacy.push('fixed execution plan not captured; legacy expectedStages=0 is not evidence of zero planned work');
-  if (x.sourceStatus.acceptance.length && x.sourceStatus.acceptance.every(r=>r.accepted===false) && !x.requests.some(a=>a.acceptanceDecisions?.length)) legacy.push('all ANSWER_COLLECTED.accepted=false without acceptance decisions; constant producer field cannot establish engine rejection');
+  if (x.sourceStatus.acceptance.length && x.sourceStatus.acceptance.every(r=>r.accepted===false) && !x.lengths.some(r=>r.measurements.acceptanceDecisions?.length)) legacy.push('all ANSWER_COLLECTED.accepted=false without acceptance decisions; constant producer field cannot establish engine rejection');
   if (legacy.length) out.push(`Legacy limitations: ${legacy.join('; ')}.`);
   out.push('\n### 2. Stages', rows(['stage / source','participants','start t','end t','durationMs','gap s','status','LONG','success + failure records'], x.stages.map(s=>[
     `${s.stage} ${s.path}`,s.participants,seconds(s.startT),seconds(s.endT),s.durationMs,seconds(s.gapSeconds),s.status,s.long,pathList(s.successWithFailureRecords)])),
@@ -646,7 +650,7 @@ function renderTransportMarkdown(x) {
     `Q${a.request}`,`${a.stage}/${a.model}`,time(a.times.dispatchStarted),time(a.times.submitted),time(a.times.firstText),time(a.times.firstStable),time(a.times.firstCompletionDetected),
     `duplicate=${a.counts.duplicateFinalRejected}; wrong_card=${a.counts.wrongCard}; displayed=${a.counts.displayed}; manual=${a.counts.manualRecords}; UI=${a.counts.uiButtonRecords}; rejected=${a.counts.correlationRejected}`,
     a.terminalGroups.map((g,i)=>`Q${a.request}.T${i+1}`),
-    a.collected.map(r=>pathValue(r.accepted)).concat((a.acceptanceDecisions||[]).map(r=>`${pathValue(r.accepted)} reason=${r.reason || 'no field'}`)),
+    a.collected.map(r=>pathValue(r.accepted)).concat((x.lengths.find(r=>r.request===a.request)?.measurements.acceptanceDecisions||[]).map(r=>`${pathValue(r.accepted)} reason=${r.reason || 'no field'}`)),
     a.terminalGroups.map((g,i)=> {
       if (!a.times.firstStable) return 'no TEXT_STABLE';
       const start=g.firstAt-a.times.firstStable.at, end=g.lastAt-a.times.firstStable.at;
@@ -658,21 +662,53 @@ function renderTransportMarkdown(x) {
   const variant = value => {
     if (!value || !Object.keys(value).length) return '';
     // Repeated nested identities/artifacts are defined once, not copied into
-    // every observation variant. No hash or identity field is discarded.
-    const compact = Object.fromEntries(Object.entries(value).map(([k,v]) => [k,
-      v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length ? { ref: variant(v) } : v]));
+    // every observation variant. Structured facts retain all fields; Markdown selects investigation evidence.
+    const intern = v => Array.isArray(v) ? v.map(intern)
+      : v && typeof v==='object' && Object.keys(v).length ? {ref:variant(v)} : v;
+    const compact=Object.fromEntries(Object.entries(value).filter(([,v])=>v!==undefined).map(([k,v])=>[k,intern(v)]));
     const key = JSON.stringify(compact);
     let i = variants.findIndex(v => v.key === key);
     if (i < 0) { i = variants.length; variants.push({ key, value: compact }); }
     return `V${i + 1}`;
   };
+  // Repeated cycles are encoded losslessly; no state or return is omitted.
+  const ordered = sequence => {
+    const parts=[];
+    for(let i=0;i<sequence.length;) {
+      let best=null;
+      for(let width=1;width<=32 && i+width*2<=sequence.length;width++) {
+        let repeats=1;
+        while(i+(repeats+1)*width<=sequence.length && sequence.slice(i,i+width).every((v,k)=>v===sequence[i+repeats*width+k]))repeats++;
+        if(repeats>1 && (!best || width*(repeats-1)>best.saved))best={width,repeats,saved:width*(repeats-1)};
+      }
+      if(best && best.saved>2){parts.push(`(${sequence.slice(i,i+best.width).join('→')})×${best.repeats}`);i+=best.width*best.repeats;}
+      else parts.push(String(sequence[i++]));
+    }
+    return parts.join('→');
+  };
   let defaults = {};
-  const state = f => {
-    const ev = {...f.evidence};
+  const state = (f, background = false) => {
+    const keys=['normalizationVersion','normalizedHash','normalizedLength','expectedNormalizedHash','expectedNormalizationVersion',
+      'outcome','comparisonReason','pageId','viewId','cardTargetType','expectedCardId','observedCardId','expectedDispatchId',
+      'answerProof','promptIdentityProven','submittedPromptHash','submittedPromptNormalizationVersion','promptProofScope',
+      'observerStoppedAt','stopReason','documentInstanceId','navigationEpoch','source','phase','completion','errorCode','rawStatus'];
+    const backgroundKeys=['outcome','comparisonReason','cardTargetType','errorCode','source','phase','completion','rawStatus'];
+    const ev=Object.fromEntries((background && f.label!=='prepared'?backgroundKeys:keys).filter(k=>has(f.evidence,k)).map(k=>[k,f.evidence[k]]));
+    // Artifacts and command lineage remain in the structured digest/raw JSON.
+    // Render first/last proofs below retain their essential hash/identity evidence.
+    // The source map already defines ordinary run/request identity. Preserve
+    // conflicts explicitly instead of copying the full expected identity on every poll.
+    const expected=f.evidence.expectedIdentity, incoming=f.evidence.incomingIdentity;
+    if(!background && expected && incoming){
+      const mismatches=Object.fromEntries(Object.entries(incoming).filter(([k,v])=>has(expected,k) && expected[k]!==v));
+      if(Object.keys(mismatches).length)ev.identityMismatch=Object.fromEntries(Object.entries(mismatches).map(([k,v])=>[k,{expected:expected[k],incoming:v}]));
+    }
+    if(f.label==='SELECTOR_STATS')ev.selector=f.groupingDetail;
+
     x.compression.ignoredGroupingFields.forEach(k=>delete ev[k]);
     ['elapsedMs','durationMs','foregroundMsUsed','focusSwitchesUsed','waitedMs','ms','at'].forEach(k=>delete ev[k]);
     if (f.label==='SELECTOR_STATS') ['hitCount','missCount','totalCount','hitRate'].forEach(k=>delete ev[k]);
-    if (f.groupingDetail && (f.label === 'SELECTOR_STATS' || /PING_TRANSPORT_ERROR|ANSWER_CARD_RENDER_EVALUATED|REINJECT/.test(f.label))) ev.observation=f.groupingDetail;
+    if (!background && f.groupingDetail && (f.label === 'SELECTOR_STATS' || /PING_TRANSPORT_ERROR|ANSWER_CARD_RENDER_EVALUATED|REINJECT/.test(f.label))) ev.observation=f.groupingDetail;
     ['textLength','answerLength','answerLen'].forEach(k=>{ if(ev[k]===f.textLength)delete ev[k]; });
     ['status','finalStatus','responsePhase'].forEach(k=>{ if(ev[k]===f.status)delete ev[k]; });
     if(ev.reason===f.reason)delete ev.reason;
@@ -688,42 +724,37 @@ function renderTransportMarkdown(x) {
     const common = fn => Object.entries(all.reduce((o,r)=>{const v=fn(r.first);if(v!=null)o[v]=(o[v]||0)+r.count;return o;},{})).sort((a,b)=>b[1]-a[1])[0]?.[0];
     defaults={ dispatch:a.identity.dispatchIds.length===1?a.identity.dispatchIds[0]:null, round:common(f=>f.pipelineRoundId), quality:common(f=>f.correlationQuality?.state==='present'?display(f.correlationQuality):null) };
     const c=a.coverage;
-    out.push(`\n#### Q${a.request}: ${a.stage}/${a.model}`,`Shown ${c.representedRecords} of ${c.totalRecords-c.sharedStageRecords} request records; ${c.sharedStageRecords} in shared timeline; omitted=${c.omittedRecords}. Defaults for event rows: dispatch=${dispatchRef(defaults.dispatch)}, round=${defaults.round || 'no field'}, cq=${defaults.quality || 'no field'}; overrides shown explicitly.`);
+    out.push(`\n#### Q${a.request}: ${a.stage}/${a.model}`,`Shown ${c.representedRecords}/${c.totalRecords-c.sharedStageRecords}; shared=${c.sharedStageRecords}; omitted=${c.omittedRecords}. Defaults: dispatch=${dispatchRef(defaults.dispatch)}, round=${defaults.round || 'no field'}, cq=${defaults.quality || 'no field'}.`);
     a.transitions.forEach(r=> {
       const ref = reference(r.paths); r.paths.forEach(p=>{ if (!membership.has(p)) membership.set(p,ref); });
       if (r.group) { out.push(`- t=${seconds(r.first.t)} ${membership.get(r.paths[0])} (${ref})`); return; }
-      out.push(`- t=${seconds(r.first.t)} ${label(r.first.type==='LEGACY_DIAGNOSTIC_EVENT'?r.first.label:r.first.type)} ×${r.count} ${ref} ${state(r.first)}${r.count>1?` · last t=${seconds(r.last.t)}`:''}${/MANUAL|RECOVERY|CORRELATION|STAGE_FAILED/.test(`${r.first.type} ${r.first.label}`)&&r.first.details?` · ${r.first.details}`:''}`);
+      out.push(`- t=${seconds(r.first.t)} ${label(r.first.type==='LEGACY_DIAGNOSTIC_EVENT'?r.first.label:r.first.type)} ×${r.count} ${ref} ${state(r.first)}${r.count>1?` · last t=${seconds(r.last.t)}`:''}${/MANUAL|RECOVERY|CORRELATION|STAGE_FAILED|DIVERGENCE|ERROR|REJECT|BLOCKED/.test(`${r.first.type} ${r.first.label}`)&&r.first.details?` · ${r.first.details}`:''}`);
     });
     if(a.background.length) {
-      const states=new Map(), sequence=[];
+      const streams=new Map();
       a.background.forEach(r=>{
-        const value=state(r.first), key=JSON.stringify([r.label,value,r.first.groupingDetail]);
-        let item=states.get(key);
-        if(!item){item={id:`b${states.size+1}`,label:r.label,value,paths:[],count:0,first:r.first,last:r.last};states.set(key,item);}
-        item.paths.push(...r.paths);item.count+=r.count;
-        if(r.last.at>item.last.at)item.last=r.last;
-        sequence.push(`${item.id}${r.count>1?`×${r.count}`:''}`);
+        const f=r.first,e=f.evidence,key=JSON.stringify([r.label,e.pageId,e.viewId,e.cardTargetType]);
+        let stream=streams.get(key);
+        if(!stream){stream={label:r.label,target:e.cardTargetType,paths:[],count:0,first:f,last:r.last,states:[],statePaths:[],sequence:[],previous:null};streams.set(key,stream);}
+        stream.count+=r.count;stream.paths.push(...r.paths);if(r.last.at>stream.last.at)stream.last=r.last;
+        // Auxiliary producer fields do not describe a change of answer state.
+        const core=[f.textLength,f.status,dispatchRef(f.dispatchId),f.reason===r.label?null:label(f.reason)];
+        const stateKey=JSON.stringify(core);
+        let index=stream.states.findIndex(v=>JSON.stringify(v)===stateKey);
+        if(index<0){index=stream.states.length;stream.states.push(core);stream.statePaths.push([]);}
+        stream.statePaths[index].push(...r.paths);
+        if(stream.previous!==index){stream.sequence.push(index+1);stream.previous=index;}
       });
-      out.push('Background states (first→last t); sequence below preserves returns to earlier states. Counts measure source records.');
-      states.forEach(r=>{
+      const backgroundRows=[];
+      streams.forEach(r=>{
         const ref=reference(r.paths);r.paths.forEach(p=>{if(!membership.has(p))membership.set(p,ref);});
-        out.push(`- ${r.id} ${label(r.label)} ×${r.count} ${seconds(r.first.t)}→${seconds(r.last.t)} ${ref} ${r.value}`);
+        const states=r.states.length>1?`; states=${JSON.stringify(r.states.map((v,i)=>[...v,reference(r.statePaths[i])]))}; order=${ordered(r.sequence)}`
+          : r.states[0].map((v,i)=>v!=null && v!=='no field' && (i!==3 || v!==r.label)?`${['len','status','dispatch','reason'][i]}=${v}`:'').filter(Boolean).join(' ');
+        backgroundRows.push([`${label(r.label)}${r.target?`/${r.target}`:''}`,r.count,r.first.t===r.last.t?seconds(r.first.t):`${seconds(r.first.t)}→${seconds(r.last.t)}`,ref,states]);
       });
-      // Compress repeated cycles, not their constituent states. A→B→A never
-      // becomes an unordered {A,B}; every group occurrence can be expanded.
-      const tokens=[];
-      for(let i=0;i<sequence.length;){
-        let best={length:1,repeats:1,saved:0};
-        for(let length=1;length<=Math.min(16,(sequence.length-i)/2);length++){
-          let repeats=1;
-          while(i+(repeats+1)*length<=sequence.length && sequence.slice(i,i+length).every((v,k)=>v===sequence[i+repeats*length+k]))repeats++;
-          const saved=length*(repeats-1);
-          if(saved>best.saved)best={length,repeats,saved};
-        }
-        const block=sequence.slice(i,i+best.length).join('→');
-        tokens.push(best.repeats>1?`(${block})×${best.repeats}`:block);i+=best.length*best.repeats;
-      }
-      out.push(`Background sequence (${sequence.length} groups, group-start order): ${tokens.join('→')}`);
+      out.push(rows(['background / target','N','first→last t','sources','states'],backgroundRows));
+      // Preparation proofs are included once per request, not on every render sample.
+      a.background.filter(r=>r.label==='prepared').forEach(r=>out.push(`- preparation ${r.first.path}: ${state(r.first)}`));
     }
   });
   out.push('\n### 6. Length observations',...x.lengthObservations.map(r=>`- Q${r.request} ${r.path} t=${seconds(r.t)} len=${r.length}${r.beforeSubmit?' before submit':''}${r.equalPreviousLength?` equals Q${r.previousRequest} length (identity unproven)`:''}`));
@@ -737,7 +768,7 @@ function renderTransportMarkdown(x) {
         m.collected.map(v=>pathValue(v.value)),
         [...m.revisions,...m.staleDropped].map(v=>pathValue(v.value))];
     })), 'Legacy lengths without a declared representation are shown separately; a difference between tagged delivery and cleaned engine text is not classified as text loss.');
-  out.push('Prompt/answer artifacts, render targets and command lineage are defined once in the chronology evidence references (V). Raw source paths retain individual observations.');
+  out.push('Full prompt/answer artifacts and command lineage remain at their source paths in JSON; render proof endpoints are below.');
   out.push('\n### 8. Manual actions',`MANUAL_RECOVERY_REQUESTED=${x.manual.records}; UI button records=${x.manual.uiButtonRecords}; on successful stages=${x.manual.onSuccessStages}.`,
     ...x.manual.rows.map(r=>`- ${eventTime(r)} ${r.recordedStageId || 'no stage'} ${r.model || 'no model'} ${r.details || 'no details'}`),
     ...x.manual.moderatorActions.map(r=>`- ${eventTime(r)} ${r.label} ${r.model || 'no model'} ${r.details || 'no details'}`));
@@ -787,9 +818,30 @@ function renderTransportMarkdown(x) {
       d.path,`D${x.diagnoses.groups.findIndex(g=>g.code===d.code&&g.reasonCode===d.reasonCode)+1}`,x.stages.find(s=>s.stageId===d.affectedStageId)?.stage || d.affectedStageId,
       d.affectedParticipant,field(d,'occurrences',d.path),seconds(offset(toMs(d.firstObservedAt),x.base.value)),...(resolvedAllNull?[]:[field(d,'resolvedAt',d.path)])])));
   if(x.collectionSamples?.length)out.push('\n### Collection counter samples', 'First/last per request/dispatch/scope; resets count decreases in appended/evicted. Intermediate samples and exact eviction times remain in JSON.',
-    rows(['request / dispatch','samples / resets','first sample','last sample'],x.collectionSamples.map(r=>[
-      `Q${x.requests.find(a=>a.requestId===r.requestId)?.request ?? '?'} / ${dispatchRef(r.dispatchId)}`,`${r.count} / ${r.resets}`,`${r.first.path} t=${seconds(r.first.t)}: ${JSON.stringify(r.first.value)}`,`${r.last.path} t=${seconds(r.last.t)}: ${JSON.stringify(r.last.value)}`])));
+    rows(['request / dispatch','scope / limit','samples / resets','first→last t / sources','appended / evicted / retained: first→last'],x.collectionSamples.map(r=>[
+      `Q${x.requests.find(a=>a.requestId===r.requestId)?.request ?? '?'} / ${dispatchRef(r.dispatchId)}`,
+      `${display(r.first.value.scope)}/${display(r.first.value.limit)}`,`${r.count}/${r.resets}`,`${seconds(r.first.t)}→${seconds(r.last.t)} ${r.first.path};${r.last.path}`,
+      ['appended','evicted','retained'].map(k=>`${display(r.first.value[k])}→${display(r.last.value[k])}`).join(' / ')])));
   out.push('\n### Event label aliases', 'cq=I means inferred; cq=E means exact.', ...[...usedAliases].map(v=>`${labelAliases[v]}=${v}`));
+  const renderProofs=new Map();
+  x.requests.forEach(a=>{
+    [...a.transitions,...a.background].filter(r=>!r.group && (r.first.label==='ANSWER_CARD_RENDER_EVALUATED' || r.first.type==='displayed')).forEach(r=>{
+      const f=r.first,e=f.evidence,artifact=e.answerArtifact || {}, target=e.cardTargetType ?? 'no field';
+      const proof={hash:has(e,'normalizedHash')?e.normalizedHash:artifact.normalizedHash,length:has(e,'normalizedLength')?e.normalizedLength:artifact.normalizedLength,
+        version:has(e,'normalizationVersion')?e.normalizationVersion:artifact.normalizationVersion,expectedHash:e.expectedNormalizedHash,expectedVersion:e.expectedNormalizationVersion,
+        expectedCard:e.expectedCardId,observedCard:e.observedCardId,identityMismatch: e.incomingIdentity && e.expectedIdentity ? Object.fromEntries(Object.entries(e.incomingIdentity).filter(([k,v])=>has(e.expectedIdentity,k)&&v!==e.expectedIdentity[k]).map(([k,v])=>[k,{expected:e.expectedIdentity[k],incoming:v}])) : undefined};
+      const key=JSON.stringify([a.request,f.label,target,e.outcome,e.comparisonReason]);
+      let row=renderProofs.get(key);
+      if(!row){row={request:a.request,label:f.label,target,outcome:e.outcome,reason:e.comparisonReason,count:0,paths:[],first:f,last:f,firstProof:proof,lastProof:proof,hashes:new Set()};renderProofs.set(key,row);}
+      row.count+=r.count;row.paths.push(...r.paths);
+      if(r.last.at>=row.last.at){row.last={...f,...r.last};row.lastProof=proof;}
+      if(typeof proof.hash==='string')row.hashes.add(proof.hash);
+    });
+  });
+  if(renderProofs.size)out.push('\n### Render proof samples', 'Counts are observations, not lost answers. First/last proofs and distinct hashes among group-start samples are shown. Intermediate hash/identity samples remain at source paths in JSON.',
+    rows(['request / target','label / outcome / reason','records / sampled hashes','first→last t / sources','first proof / last if changed'],[...renderProofs.values()].map(r=>[
+      `Q${r.request}/${r.target}`,`${r.label}/${display(r.outcome)}/${display(r.reason)}`,`${r.count}/${r.hashes.size}`,`${seconds(r.first.t)}→${seconds(r.last.t)} ${reference(r.paths)}`,
+      `${variant(r.firstProof)}${JSON.stringify(r.firstProof)!==JSON.stringify(r.lastProof)?`→${variant(r.lastProof)}`:''}`])));
   const shapes=new Map();
   variants.forEach((v,i)=>{
     const keys=Object.keys(v.value).sort().join('|');
@@ -816,7 +868,16 @@ function renderTransportMarkdown(x) {
   const unrepresented = x.sourceStatus.allPaths.filter(p=>!addressed.has(p));
   if(unrepresented.length) out.push(`Other run/stage/batch source records: ${reference(unrepresented)}.`);
   out.push('\n### Source registry',...registries.map(r=>`${r.id}: ${pathList(r.paths)}`));
-  return out.join('\n').replace(/delivery\.journal\[(\d+)\]/g,'J[$1]').replace(/events\[(\d+)\]/g,'E[$1]').replace(/delivery\.diagnosis\.sends\[(\d+)\]/g,'S[$1]').replace(/delivery\.diagnosis\.batches\[(\d+)\]/g,'B[$1]').replace(/delivery\.diagnosis\.problems\[(\d+)\]/g,'P[$1]');
+  let markdown=out.join('\n');
+  // UUID identities/hashes are opaque values, defined once without truncation.
+  const opaque=/[A-Za-z0-9_-]*[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}[A-Za-z0-9_-]*|\b[0-9a-f]{64}\b/g;
+  const frequencies=new Map();
+  for(const m of markdown.matchAll(opaque))frequencies.set(m[0],(frequencies.get(m[0])||0)+1);
+  const aliases=new Map();
+  for(const [value,n] of frequencies){const id=`I${aliases.size+1}`;if((value.length-id.length)*(n-1)>id.length+3)aliases.set(value,id);}
+  markdown=markdown.replace(opaque,value=>aliases.get(value)||value);
+  if(aliases.size)markdown+='\n\n### Opaque value dictionary\n'+[...aliases].map(([v,id])=>`${id}=${v}`).join('\n');
+  return markdown.replace(/delivery\.journal\[(\d+)\]/g,'J[$1]').replace(/events\[(\d+)\]/g,'E[$1]').replace(/delivery\.diagnosis\.sends\[(\d+)\]/g,'S[$1]').replace(/delivery\.diagnosis\.batches\[(\d+)\]/g,'B[$1]').replace(/delivery\.diagnosis\.problems\[(\d+)\]/g,'P[$1]');
 }
 function summarizeDisputFlow(d) { return renderTransportMarkdown(buildTransportDigest(d)); }
 

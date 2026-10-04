@@ -39,7 +39,7 @@ test('returning hashes and reasons remain ordered transitions, not a set of uniq
   expect(x.requests[0].transitions.map(r=>r.first.evidence.normalizedHash)).toEqual(['a','b','a']);
 });
 
-test('interleaved cards are independent streams; repeated cycles retain their full state order', () => {
+test('interleaved cards retain structured changes and Markdown endpoint proofs', () => {
   const d=report();d.events=[event(0)];
   d.delivery.journal=Array.from({length:400},(_,i)=>({kind:'displayed',at:T+i,model:'A',requestId:'q1',dispatchId:'d1',
     chars:100,pageId:'page',cardTargetType:i%2?'main':'pipeline',outcome:'wrong_card',
@@ -47,10 +47,10 @@ test('interleaved cards are independent streams; repeated cycles retain their fu
   const x=Digest.extractTransport(d), md=Digest.renderTransportMarkdown(x);
   expect(x.requests[0].counts.displayed).toBe(400);
   expect(x.requests[0].background).toHaveLength(400); // changing expected identity, not discarded
-  expect(md).toContain('(b1→b2→b3→b4)×100');
+  expect(md).toContain('Intermediate hash/identity samples remain at source paths in JSON.');
   const values=decodeEvidence(md);
-  expect(values).toContainEqual(expect.objectContaining({expectedCardId:null,cardTargetType:'main'}));
-  expect(values).toContainEqual(expect.objectContaining({expectedCardId:'card',cardTargetType:'main'}));
+  expect(values).toContainEqual(expect.objectContaining({expectedCard:null}));
+  expect(values).toContainEqual(expect.objectContaining({expectedCard:'card'}));
   expect(Buffer.byteLength(md)).toBeLessThan(25000);
   d.delivery.journal.forEach(r=>r.expectedCardId=null);
   const stable=Digest.extractTransport(d);
@@ -77,11 +77,11 @@ test('native answer proof remains available when duplicate artifact table is rem
 });
 
 test('empty objects, null and missing evidence fields stay distinct after dictionary compression', () => {
-  const d=report();d.events=[event(0,{custom:{},nullable:null}),event(1,{custom:{}})];
+  const d=report();d.events=[event(0,{answerProof:{},stopReason:null}),event(1,{answerProof:{}})];
   const x=Digest.extractTransport(d), values=decodeEvidence(Digest.renderTransportMarkdown(x));
   expect(x.requests[0].transitions).toHaveLength(2);
-  expect(values.some(v=>v.custom && Object.keys(v.custom).length===0 && v.nullable===null)).toBe(true);
-  expect(values.some(v=>v.custom && Object.keys(v.custom).length===0 && !Object.hasOwn(v,'nullable'))).toBe(true);
+  expect(values.some(v=>v.answerProof && Object.keys(v.answerProof).length===0 && v.stopReason===null)).toBe(true);
+  expect(values.some(v=>v.answerProof && Object.keys(v.answerProof).length===0 && !Object.hasOwn(v,'stopReason'))).toBe(true);
 });
 
 test('nine models over four rounds stay compact despite 2880 poll records', () => {
@@ -95,4 +95,36 @@ test('nine models over four rounds stay compact despite 2880 poll records', () =
   expect(x.requests).toHaveLength(36);
   expect(x.requests.every(r=>r.transitions.length===1 && r.transitions[0].count===80)).toBe(true);
   expect(Buffer.byteLength(md)).toBeLessThan(80000);
+});
+
+
+test('background length/status/dispatch returns are ordered and repeated cycles are lossless', () => {
+  const d=report();d.events=[event(0)];
+  d.delivery.journal=Array.from({length:400},(_,i)=>({kind:'status',at:T+i,model:'A',requestId:'q1',dispatchId:i%2?'d2':'d1',chars:i%2?200:100,status:i%2?'complete':'printing'}));
+  const x=Digest.extractTransport(d),md=Digest.renderTransportMarkdown(x);
+  expect(x.requests[0].background).toHaveLength(400);
+  expect(md).toContain('order=(1→2)×200');
+  expect(md).toContain('J[0..399]');
+});
+
+test('render null hash never falls back to artifact hash; unavailable time is not zero', () => {
+  const d=report();delete d.stageExecutions[0].actual.startedAt;
+  d.events=[event(0),{...event(1,{normalizedHash:null,answerArtifact:{normalizedHash:'fallback'}}),eventType:'ANSWER_CARD_RENDER_EVALUATED'}];
+  const x=Digest.extractTransport(d),md=Digest.renderTransportMarkdown(x);
+  expect(decodeEvidence(md)).toContainEqual(expect.objectContaining({hash:null}));
+  expect(x.sourceStatus.windowStart).toBeNull();
+  expect(md).toContain('— in time columns means no usable time field (never zero)');
+});
+
+
+test('large auxiliary identity and lineage objects stay in JSON without bloating Markdown', () => {
+  const d=report();d.events=[event(0)];
+  const lineage={selectedInputs:Array.from({length:40},(_,i)=>({id:`input-${i}`,producerNote:'x'.repeat(800)}))};
+  d.delivery.journal=Array.from({length:400},(_,i)=>({kind:'displayed',at:T+i,model:'A',requestId:'q1',chars:100,outcome:'displayed',promptLineage:lineage,expectedIdentity:{runId:'run',auxiliaryNote:'y'.repeat(800)},answerArtifact:{normalizedHash:'same',normalizedLength:100}}));
+  const before=JSON.stringify(d),x=Digest.extractTransport(d),md=Digest.renderTransportMarkdown(x);
+  expect(x.requests[0].background[0].first.evidence.promptLineage).toEqual(lineage);
+  expect(md).not.toContain('producerNote');
+  expect(md).toContain('J[0..399]');
+  expect(Buffer.byteLength(md)).toBeLessThan(18000);
+  expect(JSON.stringify(d)).toBe(before);
 });
