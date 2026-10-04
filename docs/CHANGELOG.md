@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-04 — Collapsible Prompt and precise feed navigation, version 2.81.602
+
+- HTML feed export includes the assembled Prompt below model/round buttons, with the same three-line preview and Show more / Show less behavior as the main-page export.
+- Model/round view changes scroll to the first visible answer with a measured offset for sticky navigation, including wrapped buttons on narrow screens.
+- Feed export handlers now initialize alongside the prompt composer so the HTML builder can read the same assembled prompt as the main-page export.
+- Validation: 93 export/layout/main-page integration tests passed; Chromium at 1200px and 390px confirmed Prompt expansion/collapse and first-answer alignment after model/round changes from the middle of the page.
+
 ### 2026-10-04 — Transport extract 3.8.0: nothing silently counted away, focus by request, budget 250 KB, version 2.81.601
 
 - **Budget.** The 70 KB limit was shaping the content (per-request columns and chronology lines were cut to fit). `markdownMaxBytes` is now 250 000 as a safety net for pathological input; the aggregated/overview cascade stays. Real runs (10 models × 4 stages) keep the full chronology.

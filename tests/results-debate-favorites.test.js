@@ -435,6 +435,7 @@ describe('Pipeline debate favorites view', () => {
   test('HTML feed export button downloads the document with shared model icons', async () => {
     const card = addDebateCard({ id: 'export-html', text: 'Feed export answer', model: 'GPT' });
     card.dataset.pipelineRoundId = 'r1';
+    document.getElementById('modTa').value = 'Pipeline export prompt';
     const createUrl = URL.createObjectURL;
     const revokeUrl = URL.revokeObjectURL;
     URL.createObjectURL = jest.fn(() => 'blob:feed-export');
@@ -449,6 +450,9 @@ describe('Pipeline debate favorites view', () => {
       expect(blob.type).toBe('text/html;charset=utf-8');
       const html = await blobToText(blob);
       expect(html).toContain('Feed export answer');
+      const exported = new DOMParser().parseFromString(html, 'text/html');
+      expect(exported.querySelector('.export-prompt').textContent).toContain('Pipeline export prompt');
+      expect(exported.querySelector('.feed-navigation').nextElementSibling.className).toBe('prompt-section');
       expect(html).toContain('data:image/svg+xml;base64,');
       expect(html).toContain('data-view="round" data-value="r1"');
       expect(click).toHaveBeenCalledTimes(1);

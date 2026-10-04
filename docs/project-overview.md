@@ -6,7 +6,7 @@ The project is optimized for unstable provider UIs. Its core design assumes sele
 
 ## Status
 
-- Current version: `2.81.599`, synchronized in `manifest.json`, `package.json`
+- Current version: `2.81.602`, synchronized in `manifest.json`, `package.json`
   and the root package entry in `package-lock.json`
 - Extension type: Chrome Manifest V3
 - Package name: `llm-selector-manager`
@@ -59,6 +59,9 @@ diagnostics, and `timings-settings.md` owns current runtime timing values.
 The feed download icon exports the complete active session as an offline HTML file.
 The top model icons show all cards from that model across rounds; round buttons
 show every model in that round. `All` restores the original feed order.
+Selecting a view scrolls to its first answer below the sticky navigation.
+A Prompt block below the buttons uses the same assembled prompt and three-line
+collapsed preview with Show more / Show less as the main-page HTML export.
 The adjacent `txt` button exports the active feed in its original order, including
 user messages and fragments. Each card includes its author, round (when known),
 and time; cards are separated by three lines of 57 equals signs. Temporary display

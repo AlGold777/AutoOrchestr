@@ -11,7 +11,7 @@ if (window.__RESULTS_PAGE_LOADED) {
 } else {
     window.__RESULTS_PAGE_LOADED = true;
 
-// Shared by main-page exports and the feed handlers outside page initialization.
+// Shared model icons for main-page and pipeline feed exports.
 const modelIconData = {
         "GPT": 'data:image/svg+xml;base64,PHN2ZyBmaWxsPSJjdXJyZW50Q29sb3IiIGZpbGwtcnVsZT0iZXZlbm9kZCIgaGVpZ2h0PSIxZW0iIHN0eWxlPSJmbGV4Om5vbmU7bGluZS1oZWlnaHQ6MSIgdmlld0JveD0iMCAwIDI0IDI0IiB3aWR0aD0iMWVtIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjx0aXRsZT5PcGVuQUk8L3RpdGxlPjxwYXRoIGQ9Ik05LjIwNSA4LjY1OHYtMi4yNmMwLS4xOS4wNzItLjMzMy4yMzgtLjQyOGw0LjU0My0yLjYxNmMuNjE5LS4zNTcgMS4zNTYtLjUyMyAyLjExNy0uNTIzIDIuODU0IDAgNC42NjIgMi4yMTIgNC42NjIgNC41NjYgMCAuMTY3IDAgLjM1Ny0uMDI0LjU0N2wtNC43MS0yLjc1OWEuNzk3Ljc5NyAwIDAwLS44NTYgMGwtNS45NyAzLjQ3M3ptMTAuNjA5IDguOFYxMi4wNmMwLS4zMzMtLjE0My0uNTctLjQyOS0uNzM3bC01Ljk3LTMuNDczIDEuOTUtMS4xMThhLjQzMy40MzMgMCAwMS40NzYgMGw0LjU0MyAyLjYxN2MxLjMwOS43NiAyLjE4OSAyLjM3OCAyLjE4OSAzLjk0OCAwIDEuODA4LTEuMDcgMy40NzMtMi43NiA0LjE2M3pNNy44MDIgMTIuNzAzbC0xLjk1LTEuMTQyYy0uMTY3LS4wOTUtLjIzOS0uMjM4LS4yMzktLjQyOFY1Ljg5OWMwLTIuNTQ1IDEuOTUtNC40NzIgNC41OTEtNC40NzIgMSAwIDEuOTI3LjMzMyAyLjcxMi45MjhMOC4yMyA1LjA2N2MtLjI4NS4xNjYtLjQyOC40MDQtLjQyOC43Mzd2Ni44OTh6TTEyIDE1LjEyOGwtMi43OTUtMS41N3YtMy4zM0wxMiA4LjY1OGwyLjc5NSAxLjU3djMuMzNMMTIgMTUuMTI4em0xLjc5NiA3LjIzYy0xIDAtMS45MjctLjMzMi0yLjcxMi0uOTI3bDQuNjg2LTIuNzEyYy4yODUtLjE2Ni40MjgtLjQwNC40MjgtLjczN3YtNi44OThsMS45NzQgMS4xNDJjLjE2Ny4wOTUuMjM4LjIzOC4yMzguNDI4djUuMjMzYzAgMi41NDUtMS45NzQgNC40NzItNC42MTQgNC40NzJ6bS01LjYzNy01LjMwM2wtNC41NDQtMi42MTdjLTEuMzA4LS43NjEtMi4xODgtMi4zNzgtMi4xODgtMy45NDhBNC40ODIgNC40ODIgMCAwMTQuMjEgNi4zMjd2NS40MjNjMCAuMzMzLjE0My41NzEuNDI4LjczOGw1Ljk0NyAzLjQ0OS0xLjk1IDEuMTE4YS40MzIuNDMyIDAgMDEtLjQ3NiAwem0tLjI2MiAzLjljLTIuNjg4IDAtNC42NjItMi4wMjEtNC42NjItNC41MTkgMC0uMTkuMDI0LS4zOC4wNDctLjU3bDQuNjg2IDIuNzFjLjI4Ni4xNjcuNTcxLjE2Ny44NTYgMGw1Ljk3LTMuNDQ4djIuMjZjMCAuMTktLjA3LjMzMy0uMjM3LjQyOGwtNC41NDMgMi42MTZjLS42MTkuMzU3LTEuMzU2LjUyMy0yLjExNy41MjN6bTUuODk5IDIuODNhNS45NDcgNS45NDcgMCAwMDUuODI3LTQuNzU2QzIyLjI4NyAxOC4zMzkgMjQgMTUuODQgMjQgMTMuMjk2YzAtMS42NjUtLjcxMy0zLjI4Mi0xLjk5OC00LjQ0OC4xMTktLjUuMTktLjk5OS4xOS0xLjQ5OCAwLTMuNDAxLTIuNzU5LTUuOTQ3LTUuOTQ2LTUuOTQ3LS42NDIgMC0xLjI2LjA5NS0xLjg4LjMxQTUuOTYyIDUuOTYyIDAgMDAxMC4yMDUgMGE1Ljk0NyA1Ljk0NyAwIDAwLTUuODI3IDQuNzU3QzEuNzEzIDUuNDQ3IDAgNy45NDUgMCAxMC40OWMwIDEuNjY2LjcxMyAzLjI4MyAxLjk5OCA0LjQ0OC0uMTE5LjUtLjE5IDEtLjE5IDEuNDk5IDAgMy40MDEgMi43NTkgNS45NDYgNS45NDYgNS45NDYuNjQyIDAgMS4yNi0uMDk1IDEuODgtLjMwOWE1Ljk2IDUuOTYgMCAwMDQuMTYyIDEuNzEzeiI+PC9wYXRoPjwvc3ZnPg==',
         "Claude": 'data:image/svg+xml;base64,PHN2ZyBmaWxsPSJjdXJyZW50Q29sb3IiIGZpbGwtcnVsZT0iZXZlbm9kZCIgaGVpZ2h0PSIxZW0iIHN0eWxlPSJmbGV4Om5vbmU7bGluZS1oZWlnaHQ6MSIgdmlld0JveD0iMCAwIDI0IDI0IiB3aWR0aD0iMWVtIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjx0aXRsZT5DbGF1ZGU8L3RpdGxlPjxwYXRoIGQ9Ik00LjcwOSAxNS45NTVsNC43Mi0yLjY0Ny4wOC0uMjMtLjA4LS4xMjhIOS4ybC0uNzktLjA0OC0yLjY5OC0uMDczLTIuMzM5LS4wOTctMi4yNjYtLjEyMi0uNTcxLS4xMjFMMCAxMS43ODRsLjA1NS0uMzUyLjQ4LS4zMjEuNjg2LjA2IDEuNTIuMTAzIDIuMjc4LjE1OCAxLjY1Mi4wOTcgMi40NDkuMjU1aC4zODlsLjA1NS0uMTU3LS4xMzQtLjA5OC0uMTAzLS4wOTctMi4zNTgtMS41OTYtMi41NTItMS42ODgtMS4zMzYtLjk3Mi0uNzI0LS40OTEtLjM2NC0uNDYyLS4xNTgtMS4wMDguNjU2LS43MjIuODgxLjA2LjIyNS4wNjEuODkzLjY4NiAxLjkwOCAxLjQ3NiAyLjQ5MSAxLjgzMy4zNjUuMzA0LjE0NS0uMTAzLjAxOS0uMDczLS4xNjQtLjI3NC0xLjM1NS0yLjQ0Ni0xLjQ0Ni0yLjQ5LS42NDQtMS4wMzItLjE3LS42MTlhMi45NyAyLjk3IDAgMDEtLjEwNC0uNzI5TDYuMjgzLjEzNCA2LjY5NiAwbC45OTYuMTM0LjQyLjM2NC42MiAxLjQxNCAxLjAwMiAyLjIyOSAxLjU1NSAzLjAzLjQ1Ni44OTguMjQzLjgzMi4wOTEuMjU1aC4xNThWOS4wMWwuMTI4LTEuNzA2LjIzNy0yLjA5NS4yMy0yLjY5NS4wOC0uNzYuMzc2LS45MS43NDctLjQ5Mi41ODQuMjguNDguNjg1LS4wNjcuNDQ0LS4yODYgMS44NTEtLjU1OSAyLjkwMy0uMzY0IDEuOTQyaC4yMTJsLjI0My0uMjQyLjk4NS0xLjMwNiAxLjY1Mi0yLjA2NC43My0uODIuODUtLjkwNC41NDctLjQzMWgxLjAzM2wuNzYgMS4xMjktLjM0IDEuMTY2LTEuMDY0IDEuMzQ3LS44ODEgMS4xNDItMS4yNjQgMS43LS43OSAxLjM2LjA3My4xMS4xODgtLjAyIDIuODU2LS42MDYgMS41NDMtLjI4IDEuODQxLS4zMTUuODMzLjM4OC4wOTEuMzk1LS4zMjguODA3LTEuOTY5LjQ4Ni0yLjMwOS40NjItMy40MzkuODEzLS4wNDIuMDMuMDQ5LjA2MSAxLjU0OS4xNDYuNjYyLjAzNmgxLjYyMmwzLjAyLjIyNS43OS41MjIuNDc0LjYzOC0uMDc5LjQ4NS0xLjIxNS42Mi0xLjY0LS4zODktMy44MjktLjkxLTEuMzEyLS4zMjloLS4xODJ2LjExbDEuMDkzIDEuMDY4IDIuMDA2IDEuODEgMi41MDkgMi4zMy4xMjcuNTc4LS4zMjIuNDU1LS4zNC0uMDQ5LTIuMjA1LTEuNjU3LS44NTEtLjc0Ny0xLjkyNi0xLjYyaC0uMTI4di4xN2wuNDQ0LjY0OSAyLjM0NSAzLjUyMS4xMjIgMS4wOC0uMTcuMzUzLS42MDguMjEzLS42NjgtLjEyMi0xLjM3NC0xLjkyNS0xLjQxNS0yLjE2Ny0xLjE0My0xLjk0My0uMTQuMDgtLjY3NCA3LjI1NC0uMzE2LjM3LS43MjkuMjgtLjYwNy0uNDYxLS4zMjItLjc0Ny4zMjItMS40NzYuMzg5LTEuOTI0LjMxNS0xLjUzLjI4Ni0xLjkuMTctLjYzMi0uMDEyLS4wNDItLjE0LjAxOC0xLjQzNCAxLjk2Ny0yLjE4IDIuOTQ1LTEuNzI2IDEuODQ1LS40MTQuMTY0LS43MTctLjM3LjA2Ny0uNjYyLjQwMS0uNTg5IDIuMzg4LTMuMDM2IDEuNDQtMS44ODIuOTMtMS4wODYtLjAwNi0uMTU4aC0uMDU1TDQuMTMyIDE4LjU2bC0xLjEzLjE0Ni0uNDg3LS40NTYuMDYxLS43NDYuMjMxLS4yNDMgMS45MDgtMS4zMTItLjAwNi4wMDZ6Ij48L3BhdGg+PC9zdmc+',
@@ -24210,42 +24210,10 @@ function exportSingleTemplate(templateName, sourceData = null) {
             console.error('[results] modal wiring top-level error', err);
         }
     }
-    // --- V2.0 END: API Keys Modal Logic ---
-	});
-const pipelineExportFlash = (button, state) => {
-    try {
-        window.ResultsShared?.flashButtonFeedback?.(button, state);
-    } catch (_) {}
-};
-
-const pipelineExportFileStamp = window.DebateExport.fileStamp;
-const pipelineExportCardFileStamp = window.DebateExport.cardFileStamp;
-const pipelineExportCardFileStampForCard = (card) => {
-    const fallback = pipelineExportCardFileStamp();
-    const receivedTimeEl = card?.matches?.('.debate-model-card.is-approved')
-        ? card.querySelector('.debate-model-card-title-main .debate-inline-time')
-        : null;
-    const match = String(receivedTimeEl?.textContent || '').trim().match(/^(\d{1,2}):(\d{2})$/);
-    if (!match) return fallback;
-    const hours = String(match[1]).padStart(2, '0');
-    return fallback.replace(/\d{2}-\d{2}$/, `${hours}-${match[2]}`);
-};
-const pipelineExportDownloadHtml = window.DebateExport.downloadHtml;
-const pipelineExportCardParts = window.DebateExport.cardParts;
-const pipelineExportHeading = window.DebateExport.heading;
-const pipelineExportDocument = window.DebateExport.documentHtml;
-const pipelineExportActiveDebateName = () => {
-    const activeTab = document.querySelector('.debate-session-tab.active');
-    return String(activeTab?.getAttribute('title') || activeTab?.textContent || 'Debate').trim() || 'Debate';
-};
-const pipelineExportSafeName = (value = 'Debate') => String(value || 'Debate')
-    .replace(/[\/\\?<>|*"'\u0000-\u001F]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim() || 'Debate';
 const pipelineExportBuildDebateFeedHtml = () => {
     const feed = document.getElementById('debate-model-cards');
     const activeSessionId = document.querySelector('.debate-session-tab.active')?.dataset?.sessionId || '1';
-    return window.DebateExport.buildFeedDocument(feed, activeSessionId, pipelineExportActiveDebateName(), modelIconData);
+    return window.DebateExport.buildFeedDocument(feed, activeSessionId, pipelineExportActiveDebateName(), modelIconData, getAllResponsesPromptText());
 };
 const pipelineExportDownloadDebateFeedHtml = (button = null) => {
     const html = pipelineExportBuildDebateFeedHtml();
@@ -24286,6 +24254,38 @@ document.addEventListener('click', (event) => {
     }
 });
 
+    // --- V2.0 END: API Keys Modal Logic ---
+	});
+const pipelineExportFlash = (button, state) => {
+    try {
+        window.ResultsShared?.flashButtonFeedback?.(button, state);
+    } catch (_) {}
+};
+
+const pipelineExportFileStamp = window.DebateExport.fileStamp;
+const pipelineExportCardFileStamp = window.DebateExport.cardFileStamp;
+const pipelineExportCardFileStampForCard = (card) => {
+    const fallback = pipelineExportCardFileStamp();
+    const receivedTimeEl = card?.matches?.('.debate-model-card.is-approved')
+        ? card.querySelector('.debate-model-card-title-main .debate-inline-time')
+        : null;
+    const match = String(receivedTimeEl?.textContent || '').trim().match(/^(\d{1,2}):(\d{2})$/);
+    if (!match) return fallback;
+    const hours = String(match[1]).padStart(2, '0');
+    return fallback.replace(/\d{2}-\d{2}$/, `${hours}-${match[2]}`);
+};
+const pipelineExportDownloadHtml = window.DebateExport.downloadHtml;
+const pipelineExportCardParts = window.DebateExport.cardParts;
+const pipelineExportHeading = window.DebateExport.heading;
+const pipelineExportDocument = window.DebateExport.documentHtml;
+const pipelineExportActiveDebateName = () => {
+    const activeTab = document.querySelector('.debate-session-tab.active');
+    return String(activeTab?.getAttribute('title') || activeTab?.textContent || 'Debate').trim() || 'Debate';
+};
+const pipelineExportSafeName = (value = 'Debate') => String(value || 'Debate')
+    .replace(/[\/\\?<>|*"'\u0000-\u001F]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim() || 'Debate';
 document.addEventListener('click', (event) => {
     const btn = event.target.closest('.debate-card-export');
     if (!btn) return;

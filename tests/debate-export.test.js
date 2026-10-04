@@ -96,3 +96,54 @@ test('TXT download uses UTF-8 text and preserves the supplied contents', async (
     URL.revokeObjectURL = revokeUrl;
   }
 });
+
+
+test('exported Prompt starts collapsed, preserves literal text and toggles like the main export', () => {
+  const prompt = 'Line 1 <script>bad()</script>\n' + 'Long prompt line\n'.repeat(10);
+  const html = Exporter.buildFeedDocument(multiRoundFeed(), '1', 'Feed', {}, prompt);
+  const saved = new JSDOM(html, {
+    runScripts: 'dangerously',
+    beforeParse(window) {
+      Object.defineProperty(window.HTMLElement.prototype, 'scrollHeight', { configurable: true, get: () => 300 });
+      Object.defineProperty(window.HTMLElement.prototype, 'clientHeight', { configurable: true, get: () => 90 });
+    }
+  });
+  const doc = saved.window.document;
+  const block = doc.querySelector('.export-prompt');
+  const toggle = doc.querySelector('.prompt-toggle');
+  expect(block.textContent).toBe(prompt.trim());
+  expect(doc.querySelector('.feed-navigation').nextElementSibling.className).toBe('prompt-section');
+  expect(block.classList.contains('is-collapsed')).toBe(true);
+  expect(toggle.hidden).toBe(false);
+  toggle.click();
+  expect(block.classList.contains('is-collapsed')).toBe(false);
+  expect(toggle.getAttribute('aria-expanded')).toBe('true');
+  expect(toggle.textContent).toBe('Show less');
+  toggle.click();
+  expect(block.classList.contains('is-collapsed')).toBe(true);
+  expect(toggle.getAttribute('aria-expanded')).toBe('false');
+  expect(toggle.textContent).toBe('Show more');
+  expect(doc.querySelectorAll('script')).toHaveLength(1);
+  saved.window.close();
+});
+
+test('each model or round click scrolls to its first answer, including repeated selections', () => {
+  const scroll = jest.fn();
+  const saved = new JSDOM(Exporter.buildFeedDocument(multiRoundFeed()), {
+    runScripts: 'dangerously',
+    beforeParse(window) {
+      window.HTMLElement.prototype.scrollIntoView = function (options) { scroll(this.textContent, options); };
+    }
+  });
+  const doc = saved.window.document;
+  expect(scroll).not.toHaveBeenCalled();
+  doc.querySelector('[data-view="round"][data-value="r1"]').click();
+  expect(scroll.mock.calls[0][0]).toContain('First round GPT');
+  doc.querySelector('[data-view="model"][data-value="Claude"]').click();
+  expect(scroll.mock.calls[1][0]).toContain('Second round Claude');
+  doc.querySelector('[data-view="model"][data-value="Claude"]').click();
+  expect(scroll.mock.calls[2][0]).toContain('Second round Claude');
+  doc.querySelector('[data-view="all"]').click();
+  expect(scroll.mock.calls[3][0]).toContain('Second round Claude');
+  saved.window.close();
+});
