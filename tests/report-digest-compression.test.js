@@ -227,3 +227,37 @@ test('rare critical stage and correlation errors survive overview dominated by f
   expect(md).toContain('| CORRELATION_REJECTED | true | 1 | events[221] |');
   expect(Buffer.byteLength(md)).toBeLessThanOrEqual(70000);
 });
+
+test('failed terminal pair keeps one observation and source for each original label', () => {
+  const d=report();d.metadata.presetId='Ж'.repeat(40000);
+  d.events=[1,2].map((i)=>({...event(i),eventType:'MODEL_TERMINAL_COMMITTED',payload:{model:'A',originalLabel:i===1?'FINALIZATION_DECISION':'MODEL_FINAL',answerLength:i===1?100:null,evidence:{answerLen:100,finalStatus:'FAILED',completionReason:'provider_error'}}}));
+  const x=Digest.extractTransport(d),md=Digest.renderTransportMarkdown(x);
+  expect(x.requests[0].terminalGroups).toHaveLength(1);
+  expect(md).toContain('| FINALIZATION_DECISION | true | 1 | events[0] |');
+  expect(md).toContain('| MODEL_FINAL | true | 1 | events[1] |');
+  expect(md).toContain('| terminal_failure | 2 | events[0] |');
+});
+
+test('intermediate recoverable error followed by success is not a terminal failure', () => {
+  const d=report();d.metadata.presetId='Ж'.repeat(40000);
+  d.events=[{...event(0),eventType:'LEGACY_DIAGNOSTIC_EVENT',payload:{model:'A',originalLabel:'status',status:'RECOVERABLE_ERROR'}},
+    {...event(1),eventType:'MODEL_TERMINAL_COMMITTED',payload:{model:'A',originalLabel:'FINALIZATION_DECISION',answerLength:100,evidence:{finalStatus:'SUCCESS',completionReason:'lifecycle_complete_snapshot'}}}];
+  const md=Digest.renderTransportMarkdown(Digest.extractTransport(d));
+  expect(md).toContain('| status | false | 1 | events[0] |');
+  expect(md).toContain('SUCCESS:1');
+  expect(md).not.toContain('| terminal_failure |');
+});
+
+test('native severity separates repeated records and prioritizes unknown and unbound labels', () => {
+  const d=report();d.metadata.presetId='Ж'.repeat(40000);
+  d.events=['info','critical','high'].map((severity,i)=>({...event(i,{severity:'critical'}),eventType:'CUSTOM_SIGNAL',severity}));
+  d.events.push({eventType:'GLOBAL_SIGNAL',severity:'critical',sourceTimestamp:T+4,correlation:{},payload:{}});
+  const x=Digest.extractTransport(d),md=Digest.renderTransportMarkdown(x);
+  expect(x.requests[0].background).toHaveLength(3);
+  expect(x.requests[0].background.map(r=>r.first.severity.value)).toEqual(['info','critical','high']);
+  expect(x.sourceStatus.unboundErrors[0].severity).toEqual({state:'present',value:'critical',path:'events[3].severity'});
+  expect(md).toContain('| CUSTOM_SIGNAL | true | 2 | events[1] |');
+  expect(md).toContain('| GLOBAL_SIGNAL | true | 1 | events[3] |');
+  expect(md).toContain('| registered_high_severity | 3 | events[1] |');
+  expect(Buffer.byteLength(md)).toBeLessThanOrEqual(70000);
+});

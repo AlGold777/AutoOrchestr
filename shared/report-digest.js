@@ -191,7 +191,7 @@ const terminalStatusOf = (r) => {
 };
 const terminalReasonOf = (r) => r.raw.payload?.evidence?.completionReason || '';
 // Structured facts are the source of both JSON and Markdown. No Markdown is embedded in JSON.
-const DIGEST_VERSION = '3.5.0';
+const DIGEST_VERSION = '3.6.0';
 const COMPRESSION = Object.freeze({
   markdownMaxBytes: 70000,
   markdownAggregation: 'request tables → aggregated tables → bounded overview',
@@ -206,6 +206,8 @@ const COMPRESSION = Object.freeze({
 const arr = (v) => Array.isArray(v) ? v : [];
 const finite = (v) => Number.isFinite(v) ? v : null;
 const unique = (v) => [...new Set(v)];
+const isHighSeverity = f => f?.state === 'present' && /^(critical|high)$/i.test(f.value);
+const isFailedStatus = status => /^(FAILED|FAILURE|ERROR|RECOVERABLE_ERROR|HARD_TIMEOUT|CANCELLED|NO_SEND|CONTEXT_LOST)$/i.test(status || '');
 const field = (obj, key, prefix) => has(obj, key)
   ? { path: prefix === 'root' ? key : `${prefix}.${key}`, state: 'present', value: obj[key] }
   : { path: prefix === 'root' ? key : `${prefix}.${key}`, state: 'missing' };
@@ -243,6 +245,7 @@ function recordFact(r, t0) {
     model: r.model, tabId: r.tabId, dispatchId: r.dispatchId, requestId: r.requestId,
     recordedStageId: r.stageId, pipelineRoundId: recordRound(r),
     status: stateOf(r), reason: reasonOf(r), textLength: textLengthOf(r),
+    severity: field(r.raw, 'severity', r.path),
     details: r.src === 'events' ? r.details : journalDetails(r.raw),
     evidence: { ...(p.evidence || {}), ...Object.fromEntries(JOURNAL_PROOF_KEYS.filter(k=>has(r.src==='events'?p:r.raw,k)).map(k=>[k,(r.src==='events'?p:r.raw)[k]])),
       ...Object.fromEntries(['source','phase','errorCode','completion',...RENDER_KEYS].filter(k=>has(r.src==='events'?p:r.raw,k)).map(k=>[k,(r.src==='events'?p:r.raw)[k]])),
@@ -262,6 +265,7 @@ function signature(r) {
   const detail = groupingDetail(r);
   return JSON.stringify([r.model, r.requestId, r.type, r.label, r.dispatchId, stateOf(r), reasonOf(r), textLengthOf(r),
     raw.errorCode, raw.completion, raw.source, raw.phase, significant,
+    has(r.raw, 'severity') ? { value: r.raw.severity } : { missing: true },
     r.stageId, recordRound(r), has(raw, 'status') ? { value: raw.status } : { missing: true }, r.raw.correlation?.correlationQuality, r.flags || [], detail]);
 }
 function compactRecords(list, t0) {
@@ -303,6 +307,7 @@ function terminalGroups(a, t0) {
     const ev = r.raw.payload?.evidence || {};
     const member = {
       path: r.path, label: r.label, t: offset(r.at, t0), at: finite(r.at),
+      severity: field(r.raw, 'severity', r.path),
       answerLength: field(r.raw.payload, 'answerLength', `${r.path}.payload`),
       evidenceAnswerLen: field(ev, 'answerLen', `${r.path}.payload.evidence`),
       evidenceAnswerLength: field(ev, 'answerLength', `${r.path}.payload.evidence`),
@@ -550,7 +555,7 @@ function buildTransportDigest(d, sourceFile = null) {
       joinMethods: listCounts(recs, (r) => r.via || 'unassigned') },
     integrity: { registered: integrity, computed: computedIntegrity, checks: field(d.integrity, 'checks', 'integrity') },
     sourceStatus: { allPaths: recs.map(r=>r.path), completeness: field(d,'completeness','root'), modeHistory: field(d.metadata,'modeHistory','metadata'), collection: field(d, 'collection', 'root'), planning: field(d, 'planning', 'root'),
-      unboundErrors: recs.filter(r=>!r.attempt&&!unassigned.includes(r)&&/FAIL|ERROR|REJECT|BLOCK|NO_SEND|UNCERTAIN|TIMEOUT|RECOVERY|MATERIALIZE|STALE|DIVERGENCE|CANCEL|EXHAUSTED|UNCONFIRMED/i.test(`${r.type} ${r.label} ${r.reasonCode||''}`)).map(r=>recordFact(r,t0)),
+      unboundErrors: recs.filter(r=>!r.attempt&&!unassigned.includes(r)&&(isFailedStatus(stateOf(r))||isHighSeverity(field(r.raw,'severity',r.path))||/FAIL|ERROR|REJECT|BLOCK|NO_SEND|UNCERTAIN|TIMEOUT|RECOVERY|MATERIALIZE|STALE|DIVERGENCE|CANCEL|EXHAUSTED|UNCONFIRMED/i.test(`${r.type} ${r.label} ${r.reasonCode||''}`))).map(r=>recordFact(r,t0)),
       observerStops: recs.filter(r => r.type === 'OBSERVER_STOPPED' || r.label === 'LIFECYCLE_TRACKING_STOPPED').map(r => r.path),
       displayProof: recs.filter(r => r.raw.payload?.evidence?.normalizedHash || r.raw.answerArtifact?.normalizedHash).map(r => r.path),
       acceptance: recs.filter(r => r.type === 'ANSWER_COLLECTED').map(r => ({ path: r.path, accepted: r.raw.payload?.accepted })),
@@ -624,21 +629,22 @@ function renderTransportMarkdown(x, compact = false) {
   // bookkeeping are counted later, irrespective of the number of raw observations.
   const issue=/FAIL|ERROR|REJECT|BLOCK|NO_SEND|UNCERTAIN|TIMEOUT|RECOVERY|MATERIALIZE|STALE|DIVERGENCE|CANCEL|EXHAUSTED|UNCONFIRMED/i;
   const issueGroups=new Map();
-  x.requests.forEach(a=>[...a.transitions,...a.background].filter(r=>!r.group&&issue.test(`${r.label} ${r.first.type} ${r.first.reason||''}`)).forEach(r=>{
-    const key=JSON.stringify(compact?[r.label]:[r.label,r.first.status,r.first.reason]);
-    let g=issueGroups.get(key);if(!g){g={label:r.label,status:r.first.status,reason:r.first.reason,count:0,requests:new Map(),states:new Map(),first:r.first,last:r.last};issueGroups.set(key,g);}
+  x.requests.forEach(a=>[...a.transitions,...a.background].filter(r=>!r.group&&(isFailedStatus(r.first.status)||isHighSeverity(r.first.severity)||issue.test(`${r.label} ${r.first.type} ${r.first.reason||''}`))).forEach(r=>{
+    const key=JSON.stringify(compact?[r.label]:[r.label,r.first.status,r.first.reason,r.first.severity?.state,r.first.severity?.value]);
+    let g=issueGroups.get(key);if(!g){g={label:r.label,status:r.first.status,reason:r.first.reason,count:0,requests:new Map(),states:new Map(),severities:new Set(),first:r.first,last:r.last};issueGroups.set(key,g);}
+    g.severities.add(value(r.first.severity));
     const state=JSON.stringify([r.first.status,r.first.reason]);g.states.set(state,(g.states.get(state)||0)+r.count);g.count+=r.count;if(r.first.at<g.first.at)g.first=r.first;if(r.last.at>g.last.at)g.last=r.last;
     let q=g.requests.get(a.request);if(!q){q={count:0,path:r.first.path,dispatches:new Set()};g.requests.set(a.request,q);}q.count+=r.count;q.dispatches.add(dispatch(r.first.dispatchId));
   }));
   out.push('\n### 6. Decision/error observations', compact?'Grouped by label; status/reason combination counts are shown. Q:N counts observations; full combinations and time order are in source JSON.':'Grouped by label/status/reason; Q:N gives per-request observation counts. Complete details and time order remain in the source JSON.',
-    rows(['label / status / reason','N','requests:N / first source / dispatch','first→last t / source'],[...issueGroups.values()].map(g=>[
-      `${g.label}/${compact?`${g.states.size} status/reason combinations (source JSON)`:value(g.status)}${compact||g.reason===g.label?'':`/${value(g.reason)}`}`,g.count,
+    rows(['label / status / reason','severity','N','requests:N / first source / dispatch','first→last t / source'],[...issueGroups.values()].map(g=>[
+      `${g.label}/${compact?`${g.states.size} status/reason combinations (source JSON)`:value(g.status)}${compact||g.reason===g.label?'':`/${value(g.reason)}`}`,[...g.severities].join(','),g.count,
       [...g.requests].map(([q,v])=>`Q${q}:${v.count} ${path(v.path)} ${[...v.dispatches].filter(d=>d!==`Q${q}.D1`).join(',')}`).join('; '),
       `${sample(g.first)}${g.count>1?` → ${sample(g.last)}`:''}`])));
-  const unassignedIssues=x.availability.unassigned.concat(x.sourceStatus.unboundErrors||[]).filter(r=>issue.test(`${r.label} ${r.type} ${r.reason||''}`));
-  const unassignedGroups=groups(unassignedIssues.map(r=>({first:r,last:r,count:1})),r=>JSON.stringify([r.label,r.first.status,r.first.reason,r.first.model,r.first.recordedStageId,r.first.dispatchId]));
-  if(unassignedGroups.length)out.push('Unassigned errors (no request join):',rows(['label / status / reason','N','model / recorded stage / dispatch','first→last t / source'],unassignedGroups.map(g=>[
-    `${g.first.label}/${value(g.first.status)}/${value(g.first.reason)}`,g.count,
+  const unassignedIssues=x.availability.unassigned.concat(x.sourceStatus.unboundErrors||[]).filter(r=>isFailedStatus(r.status)||isHighSeverity(r.severity)||issue.test(`${r.label} ${r.type} ${r.reason||''}`));
+  const unassignedGroups=groups(unassignedIssues.map(r=>({first:r,last:r,count:1})),r=>JSON.stringify([r.label,r.first.status,r.first.reason,r.first.model,r.first.recordedStageId,r.first.dispatchId,r.first.severity?.state,r.first.severity?.value]));
+  if(unassignedGroups.length)out.push('Unassigned errors (no request join):',rows(['label / status / reason','severity','N','model / recorded stage / dispatch','first→last t / source'],unassignedGroups.map(g=>[
+    `${g.first.label}/${value(g.first.status)}/${value(g.first.reason)}`,value(g.first.severity),g.count,
     `${g.first.model||'no model'}/${g.first.recordedStageId||'no stage'}/${dispatch(g.first.dispatchId)}`,endpoints(g)])));
   out.push('\n### 7. Length and display observations',rows(['Q','stable samples / length min..max / groups / zero','pre-submit lengths / equals previous length','render outcome: N / first→last sources'],x.requests.map(a=>{
     const stable=a.transitions.filter(r=>/TEXT_STABLE/.test(r.first.type+' '+r.label)),lengths=stable.map(r=>r.first.textLength).filter(Number.isFinite);
@@ -703,7 +709,7 @@ function renderTransportOverview(x,limit){
   const identity=(v,source)=>{const text=display(v);return text.length>120?`[${text.length} chars; see ${source}]`:text.replace(/[\r\n|]/g,' ');};
   const frequencies=(items,key)=>{const m=new Map();items.forEach(r=>{const k=key(r);m.set(k,(m.get(k)||0)+1);});return [...m].sort((a,b)=>b[1]-a[1]);};
   const decisions=x.requests.flatMap(a=>x.lengths.find(r=>r.request===a.request)?.measurements.acceptanceDecisions||[]);
-  const terminalRecords=x.requests.flatMap(a=>a.terminalGroups.map(g=>({first:{label:g.members[0].label,type:'MODEL_TERMINAL_COMMITTED',status:g.status,reason:g.completionReason,path:g.members[0].path},count:g.members.length})));
+  const terminalRecords=x.requests.flatMap(a=>a.terminalGroups.flatMap(g=>g.members.map(m=>({first:{label:m.label,type:'MODEL_TERMINAL_COMMITTED',status:g.status,reason:g.completionReason,path:m.path,severity:m.severity},count:1}))));
   const allIssues=x.requests.flatMap(a=>[...a.transitions,...a.background].filter(r=>!r.group)).concat(x.availability.unassigned.concat(x.sourceStatus.unboundErrors||[]).map(r=>({first:r,count:1})),terminalRecords);
   const issue=/FAIL|ERROR|REJECT|BLOCK|NO_SEND|UNCERTAIN|TIMEOUT|RECOVERY|MATERIALIZE|STALE|DIVERGENCE|CANCEL|EXHAUSTED|UNCONFIRMED/i;
   const criticalCategory=r=>{
@@ -713,14 +719,14 @@ function renderTransportOverview(x,limit){
     if(/STATE_DIVERGENCE/i.test(text))return 'state_divergence';
     if(/ANSWER_DELIVERY_REJECTED|ANSWER_REJECTED|TEXT_LOST/i.test(text))return 'answer_delivery_failure';
     if(/NO_SEND|CONTEXT_LOST/i.test(text))return 'request_not_delivered';
-    if(/TERMINAL_FAILURE|EXTERNAL_LLM_FAILURE/i.test(text) || /^(FAILED|FAILURE|ERROR|RECOVERABLE_ERROR|HARD_TIMEOUT|CANCELLED)$/i.test(r.status||''))return 'terminal_failure';
-    if(/^(critical|high)$/i.test(r.evidence?.severity||''))return 'registered_high_severity';
+    if(['MODEL_TERMINAL_COMMITTED','completion_terminal'].includes(r.type) && isFailedStatus(r.status))return 'terminal_failure';
+    if(isHighSeverity(r.severity))return 'registered_high_severity';
     return null;
   };
   const critical=new Map(),codes=new Map();
   allIssues.forEach(r=>{
     const category=criticalCategory(r.first);
-    if(!category&&!issue.test(`${r.first.label} ${r.first.type} ${r.first.reason||''}`))return;
+    if(!category&&!isFailedStatus(r.first.status)&&!issue.test(`${r.first.label} ${r.first.type} ${r.first.reason||''}`))return;
     if(category){let c=critical.get(category);if(!c){c={count:0,path:r.first.path};critical.set(category,c);}c.count+=r.count;}
     const label=r.first.label;let g=codes.get(label);if(!g){g={count:0,path:r.first.path,critical:false};codes.set(label,g);}
     g.count+=r.count;g.critical ||= Boolean(category);
@@ -731,7 +737,7 @@ function renderTransportOverview(x,limit){
   const o=['# Transport extract',`DIGEST_VERSION=${x.DIGEST_VERSION}; mode=overview; limit=${limit} UTF-8 bytes`,
     `sourceFile=${identity(x.sourceFile,'original JSON filename')}; debateRunId=${identity(x.debateRunId,'metadata.debateRunId')}`,
     'Request tables exceeded the byte budget after aggregation. This overview includes complete totals; individual requests, identities, terminal evidence, reasons and chronology are in stageExecutions[], events[] and delivery.journal[] of the source JSON. Long labels are previews of at most 120 characters.',
-    `Requests=${x.requests.length}; source records=${x.sourceStatus.totalSourceRecords}; unassigned=${x.availability.unassigned.length}; unassigned errors=${x.availability.unassigned.concat(x.sourceStatus.unboundErrors||[]).filter(r=>issue.test(`${r.label} ${r.type} ${r.reason||''}`)).length}.`,
+    `Requests=${x.requests.length}; source records=${x.sourceStatus.totalSourceRecords}; unassigned=${x.availability.unassigned.length}; unassigned errors=${x.availability.unassigned.concat(x.sourceStatus.unboundErrors||[]).filter(r=>isFailedStatus(r.status)||isHighSeverity(r.severity)||issue.test(`${r.label} ${r.type} ${r.reason||''}`)).length}.`,
     `Stages: total=${x.counters.stages.total}; success=${x.counters.stages.success}; withFailureRecords=${x.counters.stages.withFailureRecords}; LONG=${x.counters.stages.long}.`,
     `Terminal records=${x.counters.terminal.records}; groups=${x.counters.terminal.groups}; requests=${x.counters.terminal.uniqueRequests}.`,
     `Engine acceptance decisions=${decisions.length}; true=${decisions.filter(r=>r.accepted.state==='present'&&r.accepted.value===true).length}; false=${decisions.filter(r=>r.accepted.state==='present'&&r.accepted.value===false).length}; null=${decisions.filter(r=>r.accepted.state==='present'&&r.accepted.value===null).length}; missing=${decisions.filter(r=>r.accepted.state==='missing').length}.`,

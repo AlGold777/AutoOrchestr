@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-04 — Accurate terminal-label counts and native severity, version 2.81.597
+
+- Digest 3.6 counts each terminal-group member under its own label and source path. A paired FINALIZATION_DECISION/MODEL_FINAL no longer contributes two observations to the first label.
+- Overview terminal_failure classification requires a terminal event type and a failed status. Intermediate error states remain observations and do not imply terminal failure.
+- Preserves native event.severity in record facts and terminal members, separates severity changes during grouping, and includes high/critical unknown labels and unbound events in summaries. Nested evidence.severity does not override the native value.
+- Added regressions for paired failed terminals, recovery followed by success, and native severity across repeated/unbound observations. Tests and report generation were not run; syntax and whitespace checks only.
+
 ### 2026-10-04 — Preserve typed summary fields and prioritize critical observations, version 2.81.596
 
 - Digest 3.5 removes generic cell/paragraph clipping in aggregated Markdown. Identifiers, engine acceptance decisions, terminal members and registered measurements remain complete; only long manual-action prose has explicit previews. Oversized tables still switch to the bounded overview.
