@@ -128,3 +128,63 @@ test('focus problem rows are folded with their paths; a problem without a reason
   expect(delivery).toContain('stale/info/A');
   expect(md).not.toContain('undefined');
 });
+
+test('the Markdown budget is a safety net sized for real runs, not a design target', () => {
+  expect(Digest.COMPRESSION.markdownMaxBytes).toBe(250000);
+  expect(Digest.DIGEST_VERSION).toBe('3.8.0');
+});
+
+test('our own interventions and decisions without error words stay in the request chronology', () => {
+  const d = report();
+  d.events = [
+    event(1000, 'LEGACY_DIAGNOSTIC_EVENT', { payload: { originalLabel: 'Terminal status upgraded', details: 'PARTIAL -> SUCCESS' }, reasonCode: 'TERMINAL_STATUS_UPGRADED' }),
+    event(1500, 'LEGACY_DIAGNOSTIC_EVENT', { payload: { originalLabel: 'TAB_VISIT_SHORT' } }),
+    event(2000, 'LEGACY_DIAGNOSTIC_EVENT', { payload: { originalLabel: 'A_LABEL_NOBODY_CLASSIFIED' } }),
+    event(2500, 'LEGACY_DIAGNOSTIC_EVENT', { payload: { originalLabel: 'SELECTOR_STATS' } })
+  ];
+  d.delivery.journal = [{ kind: 'dispatch', phase: 'bottom_nudge', reason: 'early', at: iso(1200), model: 'A', requestId: 'q1', dispatchId: 'd1' }];
+  const md = Digest.renderTransportMarkdown(Digest.extractTransport(d));
+  const chronology = section(md, '### 6. Request chronology (deviations)', '### 7.');
+  ['Terminal status upgraded', 'dispatch:bottom_nudge/early J[0]', 'TAB_VISIT_SHORT', 'A_LABEL_NOBODY_CLASSIFIED'].forEach((label) => expect(chronology).toContain(label));
+  expect(chronology).not.toContain('SELECTOR_STATS');
+  const background = section(md, '### Background counters', '### Collection coverage');
+  expect(background).toContain('SELECTOR_STATS | 1 |');
+  expect(background).not.toContain('bottom_nudge');
+});
+
+test('records after the run end are marked in the chronology', () => {
+  const d = report({ runOutcome: { completedAt: T + 5000 } });
+  d.events = [event(2000, 'STAGE_FAILED', { reasonCode: 'PIPELINE_ERROR' }), event(6000, 'CORRELATION_REJECTED', { reasonCode: 'late' })];
+  const chronology = section(Digest.renderTransportMarkdown(Digest.extractTransport(d)), '### 6. Request chronology (deviations)', '### 7.');
+  expect(chronology).toMatch(/\n  2\.000 · STAGE_FAILED/);
+  expect(chronology).toMatch(/\n  6\.000 \[after run end\] · CORRELATION_REJECTED/);
+});
+
+test('focus switches are listed by request and in time order with the requests printing at that moment', () => {
+  const d = report();
+  d.stageExecutions[0].actual.participants = ['A', 'B'];
+  d.events = [
+    event(500, 'TEXT_STABLE', { model: 'A', requestId: 'q1', dispatchId: 'd1', payload: { evidence: { textLength: 5 } } }),
+    event(500, 'TEXT_STABLE', { model: 'B', requestId: 'q2', dispatchId: 'd2', payload: { evidence: { textLength: 5 } } })
+  ];
+  const j = (kind, at, model, requestId, extra = {}) => ({ kind, at: iso(at), model, requestId, dispatchId: requestId === 'q1' ? 'd1' : 'd2', ...extra });
+  d.delivery.journal = [
+    j('dispatch', 1000, 'A', 'q1', { phase: 'submitted' }), j('first_text', 3000, 'A', 'q1', { chars: 5 }), j('verified', 8000, 'A', 'q1', { chars: 20, status: 'SUCCESS' }),
+    j('dispatch', 1500, 'B', 'q2', { phase: 'submitted' }), j('first_text', 3500, 'B', 'q2', { chars: 5 }), j('verified', 9000, 'B', 'q2', { chars: 20, status: 'SUCCESS' }),
+    j('focus', 5000, 'A', 'q1', { source: 'activate_tab_for_dispatch', n: 1 }),
+    j('focus', 4000, 'B', 'q2', { source: 'activate_tab_for_dispatch', n: 1 }),
+    j('focus', 10000, 'B', 'q2', { source: 'automation_visit_activate', n: 2 })
+  ];
+  const x = Digest.extractTransport(d);
+  expect(x.focus.switches.map((r) => [r.request, r.phase, r.othersInInterval])).toEqual([
+    [2, 'first text→final', [1]], [1, 'first text→final', [2]], [2, 'after final', []]
+  ]);
+  const focus = section(Digest.renderTransportMarkdown(x), '### 10. Focus', '### 11.');
+  expect(focus).toContain('| Q1 A | 1 | 0 | 0 | 1 | 0 | 0 | activate_tab_for_dispatch:1 |');
+  expect(focus).toContain('| Q2 B | 2 | 0 | 0 | 1 | 1 | 0 |');
+  expect(focus).toContain('| B/Q2 | activate_tab_for_dispatch | first text→final | Q1 |');
+  expect(focus).toContain('| A/Q1 | activate_tab_for_dispatch | first text→final | Q2 |');
+  expect(focus).toContain('| B/Q2 | automation_visit_activate | after final | 0 |');
+  const none = Digest.renderTransportMarkdown(Digest.extractTransport(report()));
+  expect(section(none, '### 10. Focus', '### 11.')).toContain('0 focus switches in delivery.journal.');
+});

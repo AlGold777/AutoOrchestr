@@ -1,5 +1,14 @@
 # CHANGELOG — Project
 
+### 2026-10-04 — Transport extract 3.8.0: nothing silently counted away, focus by request, budget 250 KB, version 2.81.601
+
+- **Budget.** The 70 KB limit was shaping the content (per-request columns and chronology lines were cut to fit). `markdownMaxBytes` is now 250 000 as a safety net for pathological input; the aggregated/overview cascade stays. Real runs (10 models × 4 stages) keep the full chronology.
+- **Chronology eligibility inverted.** Section 6 lists everything of a request except an explicit noise list, routine observations and routine terminals, instead of only records matching error words. In the 2026-10-04 3-model report this brought in what the old rule had counted away in Background counters: `dispatch:bottom_nudge`, `TAB_VISIT_SHORT`, `FORCED_VISIT_SHORT_RETRY`, `dispatch:terminal_deferred`/`terminal_deferral_ended`, `Terminal status upgraded`, `Answer received (partial)` (Q1: 8 records, Q3: 2). These are the automation's own interventions on the page. An unknown label is listed, not counted away.
+- Request header carries the submit time; entries after the run end are marked `[after run end]`.
+- **Focus (section 10).** Counts only before. Now: a table by request (before submit / submit→first text / first text→final / after final / sources) and every switch in time order with the other requests whose first_text→final interval contains it ("others printing"; the interval does not prove continuous printing). Structured as `focus.switches`.
+- Per-request render outcome counts are back in section 7 (they were removed only for size); `stageAttemptId` in section 15 uses stage aliases.
+- Tests: `tests/report-digest-chronology.test.js` extended (interventions, unknown labels, after-run mark, focus by request and time); size-triggered tests use `Digest.COMPRESSION.markdownMaxBytes` and 130 000-character payloads (not run in this change).
+
 ### 2026-10-04 — Transport extract 3.7.0: time axis, request chronology, no repeated cells, version 2.81.600
 
 - **Time axis without the first stage start.** When the event cap evicts `stageExecutions[0].actual.startedAt` (`missing_stage_start`), every `t` was "—" (10-model run: all of them). The base now falls back, with the path named in the header, to `runOutcome.startedAt`, `delivery.diagnosis.batches[0].at`, `events[0].sourceTimestamp`, `delivery.journal[0].at`; `st` falls back to the request's `batch_start.at` and is omitted when equal to `t`.

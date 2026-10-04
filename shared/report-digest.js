@@ -191,9 +191,9 @@ const terminalStatusOf = (r) => {
 };
 const terminalReasonOf = (r) => r.raw.payload?.evidence?.completionReason || '';
 // Structured facts are the source of both JSON and Markdown. No Markdown is embedded in JSON.
-const DIGEST_VERSION = '3.7.0';
+const DIGEST_VERSION = '3.8.0';
 const COMPRESSION = Object.freeze({
-  markdownMaxBytes: 70000,
+  markdownMaxBytes: 250000,
   markdownAggregation: 'request tables → aggregated tables → bounded overview',
   markdownEvidence: 'request and decision tables; repeated observations counted globally; full evidence at source JSON paths',
   allRequests: true, chronologyLimit: null, outsideWindowToleranceMs: 0,
@@ -498,6 +498,21 @@ function buildTransportDigest(d, sourceFile = null) {
     { path: `calc(${k})`, state: 'present', value: v }));
 
   const focus = recs.filter((r) => r.type === 'focus');
+  const requestIndex = new Map(attempts.map((a, i) => [a, i + 1]));
+  const focusPhase = (r) => {
+    const a = r.attempt;
+    if (!a) return 'unassigned';
+    if (a.submitted == null) return 'no submit time';
+    if (r.at < a.submitted) return 'before submit';
+    if (a.firstText == null) return 'after submit, no first text';
+    if (r.at < a.firstText) return 'submit→first text';
+    if (a.final == null) return 'after first text, no final';
+    return r.at <= a.final.at ? 'first text→final' : 'after final';
+  };
+  // "Printing" is the interval first_text→delivery final of another request; it does not prove continuous printing.
+  const focusSwitches = focus.map((r) => ({ path: r.path, at: finite(r.at), t: offset(r.at, t0), model: r.model,
+    request: r.attempt ? requestIndex.get(r.attempt) : null, source: has(r.raw, 'source') ? r.raw.source : null, tabId: r.tabId, phase: focusPhase(r),
+    othersInInterval: attempts.filter((o) => o !== r.attempt && o.firstText != null && o.final && r.at >= o.firstText && r.at <= o.final.at).map((o) => requestIndex.get(o)) }));
   const inText = focus.filter((r) => r.attempt?.firstText != null && r.attempt?.final && r.at >= r.attempt.firstText && r.at <= r.attempt.final.at);
   const windowStart = toMs(d.runOutcome?.startedAt), windowEnd = toMs(d.runOutcome?.completedAt);
   const outside = recs.filter((r) => Number.isFinite(r.at) && ((Number.isFinite(windowStart) && r.at < windowStart) ||
@@ -548,7 +563,7 @@ function buildTransportDigest(d, sourceFile = null) {
         || ['RUN_PAUSED', 'RUN_RESUMED', 'DECISION_REQUESTED', 'DECISION_RESOLVED'].includes(r.type)).map((r) => recordFact(r, t0)) },
     focus: { total: focus.length, sources: listCounts(focus, (r) => r.raw.source || 'no field'),
       models: listCounts(focus, (r) => r.model || 'no field'), inTextInterval: inText.length,
-      inTextSources: listCounts(inText, (r) => r.raw.source || 'no field') },
+      inTextSources: listCounts(inText, (r) => r.raw.source || 'no field'), switches: focusSwitches },
     outsideRunWindow: compactRecords(outside, t0), diagnoses: { groups: groupedDiagnoses,
       appendix: diagnosisRows.sort((a, b) => ({ critical: 0, high: 1, warning: 2, info: 3 }[a.severity] ?? 4) - ({ critical: 0, high: 1, warning: 2, info: 3 }[b.severity] ?? 4)) },
     comparisons: sameNameComparisons,
@@ -582,6 +597,7 @@ function renderTransportMarkdown(x, compact = false) {
   const path=p=>String(p||'no field').replace(/delivery\.journal\[(\d+)\]/g,'J[$1]').replace(/events\[(\d+)\]/g,'E[$1]').replace(/delivery\.diagnosis\.sends\[(\d+)\]/g,'S[$1]').replace(/delivery\.diagnosis\.batches\[(\d+)\]/g,'B[$1]');
   const t=v=>v==null || !Number.isFinite(v)?'—':v.toFixed(3);
   const countText=o=>Object.entries(o||{}).map(([k,n])=>`${k}:${n}`).join(', ')||'0';
+  const listCountsOf=(list,fn)=>Object.fromEntries(count(list,r=>String(fn(r)??'no field')));
   const sample=r=>r?`${t(r.t)} ${path(r.path)}`:'not recorded';
   const milestone=r=>r?`${sample(r)}${r.stageSeconds==null||r.stageSeconds===r.t?'':` st:${t(r.stageSeconds)}`}${r.submitSeconds==null?'':` sub:${t(r.submitSeconds)}`}`:'not recorded';
   const endpoints=g=>`${sample(g.first)}${g.count>1?` → ${sample(g.last)}`:''}`;
@@ -661,17 +677,17 @@ function renderTransportMarkdown(x, compact = false) {
   // Only decision/error categories belong in the issue summary. Polls and renderer
   // bookkeeping are counted later, irrespective of the number of raw observations.
   const issue=/FAIL|ERROR|REJECT|BLOCK|NO_SEND|UNCERTAIN|TIMEOUT|RECOVERY|MATERIALIZE|STALE|DIVERGENCE|CANCEL|EXHAUSTED|UNCONFIRMED/i;
-  const NOISE_LABEL=/^(PING_TRANSPORT_ERROR|status|Panel output update failed|SELECTOR_STATS|SCRIPT_REINJECT_SKIPPED_ACTIVE_RUN|Finalization deferred|Finalization defer bypassed|ANSWER_GENERATING|ANSWER_CARD_RENDER_EVALUATED|Response ignored \(pipeline control\))/;
+  const NOISE_LABEL=/^(PING_TRANSPORT_ERROR|status|Panel output update failed|SELECTOR_STATS|SCRIPT_REINJECT_SKIPPED_ACTIVE_RUN|Finalization deferred|Finalization defer bypassed|ANSWER_GENERATING|ANSWER_CARD_RENDER_EVALUATED|Response ignored \(pipeline control\)|displayed|prepared|PROMPT_COMPILED|TURN_RESOLUTION|LEGACY_TIMELINE_EVENT|text_progress|Terminal success deferred|dispatch:command_accepted)/;
+  // Noise is an explicit list. An unknown label is shown in the chronology, never silently counted away.
   const ROUTINE_TYPES=new Set(['first_text','TEXT_STABLE','COMPLETION_DETECTED','verified','ANSWER_COLLECTED','ANSWER_ACCEPTANCE_DECIDED']);
   const isNoise=r=>r.label!=='terminal_group'&&(NOISE_LABEL.test(r.label)||r.first.type==='DUPLICATE_FINAL_REJECTED');
-  const isIssue=r=>!r.group&&(isFailedStatus(r.first.status)||isHighSeverity(r.first.severity)||issue.test(`${r.label} ${r.first.type} ${r.first.reason||''}`));
   const anomalousStable=r=>r.first.type==='TEXT_STABLE'&&(r.first.textLength===0||r.first.flags.some(f=>!f.startsWith('joined by')));
   // A group appears in exactly one place: chronology (deviations), section 4/5 (routine, terminals) or Background counters.
   const ROUTINE_REASONS=new Set(['lifecycle_complete_snapshot','stable_pending_auto_finalization','generation_inactive']);
   const routineTerminal=r=>r.label==='terminal_group'&&value(r.group.status)==='SUCCESS'&&ROUTINE_REASONS.has(r.group.completionReason);
   const routineCompletion=r=>r.first.type==='completion_terminal'&&r.first.status==='SUCCESS_TERMINAL';
   const chronologyOf=a=>[...a.transitions,...a.background].filter(r=>r.label==='terminal_group'?!routineTerminal(r)
-    :(!isNoise(r)&&!routineCompletion(r)&&(anomalousStable(r)||(!ROUTINE_TYPES.has(r.first.type)&&(a.transitions.includes(r)||isIssue(r))))))
+    :(!isNoise(r)&&!routineCompletion(r)&&(anomalousStable(r)||!ROUTINE_TYPES.has(r.first.type))))
     .sort((p,q)=>(p.first.at??Infinity)-(q.first.at??Infinity));
   const chronologyShown=new Set();
   x.requests.forEach(a=>{const rowsC=chronologyOf(a);if(rowsC.some(r=>r.label!=='terminal_group'))rowsC.forEach(r=>chronologyShown.add(r));});
@@ -711,10 +727,12 @@ function renderTransportMarkdown(x, compact = false) {
         if(last&&last.label!=='terminal_group'&&r.label!=='terminal_group'&&Number.isFinite(r.first.at)&&Number.isFinite(last.first.at)&&r.first.at-last.first.at<=50)prev.push(r);
         else bursts.push([r]);
       });
-      lines.push(`Q${a.request} ${a.stage}/${a.model}/${a.identity.pipelineRoundIds.join(',')||'no field'}:`,...bursts.map(burst=>`  ${t(burst[0].first.t)} · ${burst.map(r=>segment(a,r)).join(' · ')}`));
+      const runEnd=x.sourceStatus.windowEnd;
+      lines.push(`Q${a.request} ${a.stage}/${a.model}/${a.identity.pipelineRoundIds.join(',')||'no field'} · submitted t=${t(a.times.submitted?.t)}:`,
+        ...bursts.map(burst=>`  ${t(burst[0].first.t)}${Number.isFinite(runEnd)&&burst[0].first.at>runEnd?' [after run end]':''} · ${burst.map(r=>segment(a,r)).join(' · ')}`));
     });
     out.push('\n### 6. Request chronology (deviations)',
-      'Ordered by time within each request (t = seconds from the base; section 4 has submit times). Records within 50 ms share a line. Not repeated here: routine observations and SUCCESS_TERMINAL completion proofs (section 4), terminal details (section 5; only non-routine terminals are marked Tn here), dispatch/focus/tab/navigation (section 10 and source), background labels (Background counters). Repeats are ×N with first→last source; any change of status, reason, length, dispatch or attribution is its own entry.',
+      'Ordered by time within each request (t = seconds from the base; the request header gives its submit time). Records within 50 ms share a line. Everything is listed except explicit noise (Background counters), routine observations and routine terminals. Not repeated here: routine observations and SUCCESS_TERMINAL completion proofs (section 4), terminal details (section 5; only non-routine terminals are marked Tn here), dispatch/focus/tab/navigation (section 10 and source), background labels (Background counters). Repeats are ×N with first→last source; any change of status, reason, length, dispatch or attribution is its own entry.',
       ...lines,quiet.length?`No deviation transitions: ${quiet.join(', ')}.`:'Every request has deviation transitions.');
   }
   const unassignedIssues=x.availability.unassigned.concat(x.sourceStatus.unboundErrors||[]).filter(r=>isFailedStatus(r.status)||isHighSeverity(r.severity)||issue.test(`${r.label} ${r.type} ${r.reason||''}`));
@@ -722,14 +740,16 @@ function renderTransportMarkdown(x, compact = false) {
   if(unassignedGroups.length)out.push('Unassigned errors (no request join):',rows(['label / status / reason','severity','N','model / recorded stage / dispatch','first→last t / source'],unassignedGroups.map(g=>[
     `${g.first.label}/${value(g.first.status)}/${value(g.first.reason)}`,value(g.first.severity),g.count,
     `${g.first.model||'no model'}/${g.first.recordedStageId||'no stage'}/${dispatch(g.first.dispatchId)}`,endpoints(g)])));
-  out.push('\n### 7. Length and display observations',rows(['Q','stable samples / length min..max / groups / zero','pre-submit lengths / equals previous length'],x.requests.map(a=>{
+  out.push('\n### 7. Length and display observations',rows(['Q','stable samples / length min..max / groups / zero','pre-submit lengths / equals previous length','render outcome: N'],x.requests.map(a=>{
     const stable=a.transitions.filter(r=>/TEXT_STABLE/.test(r.first.type+' '+r.label)),lengths=stable.map(r=>r.first.textLength).filter(Number.isFinite);
     const probes=x.lengthObservations.filter(r=>r.request===a.request);
+    const render=groups([...a.transitions,...a.background].filter(r=>!r.group&&(r.first.type==='displayed'||r.label==='ANSWER_CARD_RENDER_EVALUATED')),r=>JSON.stringify([r.first.evidence.cardTargetType,r.first.evidence.outcome,r.first.evidence.comparisonReason]));
     return [`Q${a.request}`,`${stable.reduce((n,r)=>n+r.count,0)} / ${lengths.length?`${Math.min(...lengths)}..${Math.max(...lengths)}`:'no field'} / ${stable.length} / ${stable.filter(r=>r.first.textLength===0).reduce((n,r)=>n+r.count,0)}`,
-      `${probes.filter(r=>r.beforeSubmit).length}/${probes.filter(r=>r.equalPreviousLength).length}${probes.length?` ${path(probes[0].path)}→${path(probes.at(-1).path)}`:''}`];
+      `${probes.filter(r=>r.beforeSubmit).length}/${probes.filter(r=>r.equalPreviousLength).length}${probes.length?` ${path(probes[0].path)}→${path(probes.at(-1).path)}`:''}`,
+      render.map(g=>`${g.first.evidence.cardTargetType||'unspecified'}/${value(g.first.evidence.outcome)}${g.first.evidence.comparisonReason==null?'':`/${g.first.evidence.comparisonReason}`}:${g.count}`).join('; ')||'0'];
   })));
   const renderAll=groups(x.requests.flatMap(a=>[...a.transitions,...a.background].filter(r=>!r.group&&(r.first.type==='displayed'||r.label==='ANSWER_CARD_RENDER_EVALUATED'))),r=>JSON.stringify([r.first.evidence.cardTargetType,r.first.evidence.outcome,r.first.evidence.comparisonReason]));
-  out.push('Render outcomes over all requests (per-request counts are in the structured JSON; wrong_card per request is in section 4):',renderAll.length?rows(['page/outcome/reason:N','first→last t / source'],renderAll.map(g=>[
+  out.push('Render outcomes over all requests (first and last source per outcome; per-request counts are in the column above):',renderAll.length?rows(['page/outcome/reason:N','first→last t / source'],renderAll.map(g=>[
     `${g.first.evidence.cardTargetType||'unspecified'}/${value(g.first.evidence.outcome)}${g.first.evidence.comparisonReason==null?'':`/${g.first.evidence.comparisonReason}`}:${g.count}`,endpoints(g)])):'0 render observations.');
   const manualActions=[];
   x.manual.rows.forEach(r=>{
@@ -752,9 +772,19 @@ function renderTransportMarkdown(x, compact = false) {
     grouped.forEach(g=>{refusalGroups+=1;out.push(`- ${path(b.path)} ×${g.count} ${g.first.errorCode||g.first.reason||'no field'}; ${sample(g.first)}→${sample(g.last)}; attempt=${value(g.first.attempt)}→${value(g.last.attempt)}; cumulative waitedMs=${value(g.first.waitedMs)}→${value(g.last.waitedMs)}`);});
   });
   if(!refusalGroups)out.push(x.availability.delivery==='present'?'0 refusals in delivery.diagnosis.batches[].refusals.':'no field delivery.');
+  const phaseColumns=['before submit','submit→first text','first text→final','after final'];
+  const focusRows=x.focus.switches;
   out.push('\n### 10. Focus',`Detailed switches=${x.focus.total}; sources=${countText(x.focus.sources)}; models=${countText(x.focus.models)}; in first_text→final=${x.focus.inTextInterval} (${countText(x.focus.inTextSources)}).`,
     `Automation sources=${countText(Object.fromEntries(Object.entries(x.focus.sources).filter(([k])=>/automation_visit_|activate_tab_/.test(k))))}.`,
-    'Exact shared chronology: delivery.journal[] (dispatch, submitted, focus, tab, navigation).');
+    x.availability.delivery!=='present'?'no field delivery.journal (focus switches are recorded there).':!focusRows.length?'0 focus switches in delivery.journal.':
+      ['By request: a switch is counted in the phase of the request it switched to. Phases use that request\'s submit, first_text and delivery final.',
+        rows(['Q','switches',...phaseColumns,'other phase','sources'],x.requests.map(a=>{
+          const mine=focusRows.filter(r=>r.request===a.request);
+          return [`Q${a.request} ${a.model}`,mine.length,...phaseColumns.map(ph=>mine.filter(r=>r.phase===ph).length),mine.filter(r=>!phaseColumns.includes(r.phase)).length,countText(listCountsOf(mine,r=>r.source))];
+        })),
+        'In time order. "others printing" = requests whose first_text→delivery final interval contains the switch; the interval does not prove continuous printing.',
+        rows(['t / source','model / Q','focus source','phase','others printing'],focusRows.map(r=>[`${t(r.t)} ${path(r.path)}`,`${r.model||'no model'}/${r.request?`Q${r.request}`:'no request'}`,r.source??'no field',r.phase,r.othersInInterval.length?r.othersInInterval.map(q=>`Q${q}`).join(','):'0'])) ].join('\n'),
+    'Dispatch, submitted, tab and navigation records: delivery.journal[] (their times are in section 4).');
   out.push('\n### 11. Run window',`runOutcome.startedAt=${value(x.sourceStatus.windowStart)}; completedAt=${value(x.sourceStatus.windowEnd)}.`,
     x.outsideRunWindow.length?rows(['label / model','N','first→last t / source'],groups(x.outsideRunWindow,r=>JSON.stringify([r.label,r.first.model,r.first.requestId,r.first.status,r.first.reason])).map(g=>[`${g.first.label}/${g.first.model}`,g.count,endpoints(g)])):'0 records outside the run window.');
   const lineageText=r=>r.lineageStatus==='next_observed_stage_candidate; dependency_not_proven'?'candidate, dependency not proven':r.lineageStatus;
@@ -772,7 +802,7 @@ function renderTransportMarkdown(x, compact = false) {
     `Terminals: records=${x.counters.terminal.records}; groups=${x.counters.terminal.groups}; requests=${x.counters.terminal.uniqueRequests}.`,
     `Dispatch attempts=${JSON.stringify(x.counters.dispatchAttempts)}.`);
   out.push('\n### 15. Delivery batches and problems',rows(['source / stage attempt','mode / models','t / durationMs / gap s','accepted waitedMs / refusals','outcome / skipped / adopted'],x.delivery.batches.map(b=>[
-    `${path(b.path)}/${b.stageAttemptId||b.batchId}`,`${b.runMode||'no field'}/${arr(b.models).join(',')}`,`${t(b.t)}/${value(b.durationMs)}/${t(b.gapSeconds)}`,`${value(b.accepted?.waitedMs)}/${b.refusalRows.length}`,`${value(b.outcome)}/${value(b.skipped)}/${value(b.adopted)}`])),
+    `${path(b.path)}/${String(b.stageAttemptId||b.batchId||'no field').replace(/^stage-[0-9a-f-]{36}-/,'stage-')}`,`${b.runMode||'no field'}/${arr(b.models).join(',')}`,`${t(b.t)}/${value(b.durationMs)}/${t(b.gapSeconds)}`,`${value(b.accepted?.waitedMs)}/${b.refusalRows.length}`,`${value(b.outcome)}/${value(b.skipped)}/${value(b.adopted)}`])),
     x.delivery.problems.some(p=>!/^focus_/.test(p.code))?rows(['source','code / severity / model','count','reason'],x.delivery.problems.filter(p=>!/^focus_/.test(p.code)).map(p=>[path(p.path),`${p.code}/${p.severity}/${p.model}`,p.count,p.reason==null?p.reason:preview(p.reason,200)])):'0 non-focus delivery problems.',
     (fp=>fp.length?`Focus problem rows folded (same facts as section 10): ${fp.length} (${countText(Object.fromEntries(count(fp,p=>p.code)))}); models ${[...new Set(fp.map(p=>p.model))].join(', ')}; sources ${fp.map(p=>path(p.path)).join(', ')}.`:'0 focus problem rows.')(x.delivery.problems.filter(p=>/^focus_/.test(p.code))));
   // Background is global, not hundreds of per-request bookkeeping rows.
