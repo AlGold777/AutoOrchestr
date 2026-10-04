@@ -22,6 +22,13 @@ function renderBootstrapDom({ pipelinePage = false } = {}) {
       <button id="debate-session-export-btn" type="button">export</button>
       <button id="debate-session-clear-btn" type="button">clear</button>
       <div id="pipeline-panel"></div>
+      ${pipelinePage ? `
+        <section id="pipeline-modifiers-section" hidden></section>
+        <button id="pipeline-toggle-modifiers-btn" type="button"></button>
+        <div id="pipeline-modifiers-container"></div>
+        <div id="mod-mini-prompts"></div>
+      ` : ''}
+      <div id="prompt-pasted-text-bar" hidden></div>
       <textarea id="${promptId}"></textarea>
       <div id="modifiers-header"></div>
       <div id="modifiers-row"></div>
@@ -204,7 +211,7 @@ async function loadResultsScript() {
   };
   // DebateFSM is the explicit serial-debate state machine results.js init depends on.
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-runtime.js'), 'utf8'));
-  ['boot-utils', 'dom-utils', 'attachments', 'tooltips', 'debate-sessions-store', 'debate-export'].forEach((mod) => { window.eval(fs.readFileSync(path.join(__dirname, '..', 'results', `${mod}.js`), 'utf8')); });
+  ['boot-utils', 'dom-utils', 'attachments', 'pasted-text', 'tooltips', 'debate-sessions-store', 'debate-export'].forEach((mod) => { window.eval(fs.readFileSync(path.join(__dirname, '..', 'results', `${mod}.js`), 'utf8')); });
   const script = fs.readFileSync(path.join(__dirname, '..', 'results.js'), 'utf8');
   window.eval(script);
   document.addEventListener = originalAddEventListener;
@@ -282,5 +289,34 @@ describe('modifier bootstrap reset', () => {
       'llmComparatorSelectedByPreset',
       'llmComparatorSelectedByPresetPipeline'
     ]));
+  });
+
+  test('Pipeline action hydration restores a chip-only cross-view draft', async () => {
+    renderBootstrapDom({ pipelinePage: true });
+    installMocks();
+    const now = Date.now();
+    const text = 'Restored Pipeline document\n'.repeat(140);
+    chrome.storage.local._store.set('llmComparatorCrossViewNavigationIntent', {
+      sourceView: 'main', targetView: 'pipeline', savedAt: now
+    });
+    chrome.storage.local._store.set('llmComparatorCrossViewUiState', {
+      version: 2, savedAt: now,
+      views: { main: {}, pipeline: {
+        promptText: text,
+        pastedText: { version: 1, visibleText: '', chips: [{ text, offset: 0, name: 'Pasted text 1.txt' }] },
+        formControls: {}
+      } },
+      shared: {}
+    });
+
+    await loadResultsScript();
+
+    expect(document.getElementById('pipeline-modifiers-container').querySelectorAll('input[data-mod-id]')).toHaveLength(8);
+    expect(document.getElementById('modTa').value).toBe('');
+    expect(document.querySelectorAll('.pasted-text-chip')).toHaveLength(1);
+    document.querySelector('.pasted-text-open').click();
+    expect(document.querySelector('.pasted-text-editor').value).toBe(text);
+    document.querySelector('.pasted-text-dialog-actions button').click();
+    expect(chrome.storage.local._store.get('llmComparatorCrossViewUiState').views.pipeline.promptText).toBe(text);
   });
 });

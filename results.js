@@ -1399,15 +1399,7 @@ document.addEventListener('click', (event) => {
             });
         };
 
-        const syncPipelineActionMiniPrompts = () => {
-            if (!debateMiniPrompts) return;
-            const selectedLabels = getPipelineActionSelectionItems().map((modifier) => modifier.label || modifier.id);
-            const pieces = [];
-            if (role) pieces.push(`<span class="mod-mini-prompt">Role: ${escapeHtml(role)}</span>`);
-            if (selectedLabels.length) pieces.push(`<span class="mod-mini-prompt">Action: ${escapeHtml(selectedLabels.join(', '))}</span>`);
-            const html = pieces.join('');
-            debateMiniPrompts.innerHTML = html;
-        };
+        const syncPipelineActionMiniPrompts = () => syncModeratorMiniPrompts();
 
         const renderPipelineActionModifiers = () => {
             if (!pipelineModifiersContainer) return;
@@ -1534,6 +1526,10 @@ document.addEventListener('click', (event) => {
         || document.querySelector('.prompt-container.prompt-sandwich')
         || document.querySelector('.prompt-container');
     const isModeratorTextarea = promptInput?.id === 'modTa';
+    const pastedTextComposer = window.ResultsPastedText.create({
+        input: promptInput,
+        bar: document.getElementById('prompt-pasted-text-bar')
+    });
     let useInputRichMode = false;
     let editorState = null;
     let applyRichInputContent = null;
@@ -1716,7 +1712,7 @@ document.addEventListener('click', (event) => {
     const bodyIncludesPipelinePage = () => String(document.body.className || '')
         .split(/\s+/).filter(Boolean).includes('pipeline-page');
     const getPromptDraftText = () => {
-        if (promptInput) return String(promptInput.value || '');
+        if (promptInput) return pastedTextComposer.getText();
         return String(document.getElementById('prompt-input')?.value || document.getElementById('modTa')?.value || '');
     };
     const clearCrossViewPromptState = async () => {
@@ -1731,6 +1727,7 @@ document.addEventListener('click', (event) => {
             const viewState = nextState.views?.[viewKey];
             if (!viewState || typeof viewState !== 'object') return;
             delete viewState.promptText;
+            delete viewState.pastedText;
             delete viewState.modelButtonIds;
             delete viewState.modifiers;
             if (viewState.bodyFlags && typeof viewState.bodyFlags === 'object') {
@@ -1796,6 +1793,7 @@ document.addEventListener('click', (event) => {
                 promptSubmitted: document.body.classList.contains('prompt-submitted')
             },
             promptText: getPromptDraftText(),
+            pastedText: pastedTextComposer.getSnapshot(),
             modifiers: {
                 presetId: currentModifierPresetId,
                 selectedIds: Array.isArray(selectedModifierIds) ? [...selectedModifierIds] : [],
@@ -1861,7 +1859,7 @@ document.addEventListener('click', (event) => {
             }
         });
         if (promptInput && Object.prototype.hasOwnProperty.call(state, 'promptText')) {
-            promptInput.value = String(state.promptText || '');
+            pastedTextComposer.restoreSnapshot(state.pastedText, String(state.promptText || ''));
         }
         Object.entries(normalized.shared?.outputs || {}).forEach(([id, html]) => {
             const el = document.getElementById(id);
@@ -8004,7 +8002,7 @@ document.addEventListener('click', (event) => {
 
             const syncPromptValue = (value, { dispatch = false } = {}) => {
                 if (!promptInput) return;
-                promptInput.value = String(value || '');
+                pastedTextComposer.setText(value);
                 if (dispatch) {
                     promptInput.dispatchEvent(new Event('input', { bubbles: true }));
                 }
@@ -8075,7 +8073,7 @@ document.addEventListener('click', (event) => {
                     const text = getNoteViewText(html);
                     return { text, html };
                 }
-                return { text: promptInput ? String(promptInput.value || '') : '', html: '' };
+                return { text: promptInput ? pastedTextComposer.getText() : '', html: '' };
             };
 
             const getEditorValue = () => getEditorContent().text;
@@ -8145,7 +8143,7 @@ document.addEventListener('click', (event) => {
             setPromptEditorMode = setEditorMode;
             syncRichViewFromPrompt = () => {
                 if (!promptInput || !promptNoteView) return;
-                const promptText = String(promptInput.value || '');
+                const promptText = pastedTextComposer.getText();
                 const existingHtml = getNoteViewHtml();
                 if (existingHtml) {
                     const existingText = getNoteViewText(existingHtml);
@@ -11056,7 +11054,7 @@ document.addEventListener('click', (event) => {
             };
 
             const getPromptTextForSave = () => {
-                const baseText = (promptInput?.value || '').trim();
+                const baseText = pastedTextComposer.getText().trim();
                 if (!baseText) return '';
                 if (typeof applySelectedModifiersToPrompt === 'function') {
                     return applySelectedModifiersToPrompt(baseText, { includeResponses: true, wrapPromptTag: false }).trim();
@@ -12007,7 +12005,7 @@ document.addEventListener('click', (event) => {
 
             document.addEventListener('click', async (event) => {
                 const target = event.target;
-                const inPrompt = target?.closest('.prompt-container') || target?.closest('.prompt-group');
+                const inPrompt = target?.closest('.prompt-container') || target?.closest('.prompt-group') || target?.closest('.pasted-text-dialog');
                 const inNotesPanel = notesPanel && notesPanel.contains(target);
                 if (editorState.mode !== 'PROMPT') {
                     if (inPrompt || inNotesPanel) return;
@@ -18480,8 +18478,7 @@ setTimeout(() => window.clearFavoriteEntriesOnLoad?.(), 0);
 function setPromptContent(text) {
     if (!promptInput) return;
     const nextValue = (text || '').trim();
-    promptInput.value = '';
-    promptInput.value = nextValue;
+    pastedTextComposer.setText(nextValue);
     promptInput.dispatchEvent(new Event('input', { bubbles: true }));
     if (useInputRichMode && editorState?.mode === 'PROMPT' && typeof applyRichInputContent === 'function') {
         applyRichInputContent({ text: nextValue, html: '' });
@@ -18526,6 +18523,18 @@ const handlePromptPaste = (event) => {
         return;
     }
     if (!clipboard) return;
+    const pastedText = clipboard.getData('text/plain') || plainTextFromHtml(clipboard.getData('text/html'));
+    // Notes retain their rich editing behavior. Large prompt pastes switch
+    // back to the plain composer so the folded fragment has one source of truth.
+    if ((!editorState || editorState.mode === 'PROMPT') && pastedTextComposer.tryPaste(pastedText)) {
+        event.preventDefault();
+        if (useInputRichMode) {
+            useInputRichMode = false;
+            syncPromptViewMode?.();
+        }
+        promptInput.focus();
+        return;
+    }
     if (event.currentTarget === promptNoteView && isPromptRichEditable()) {
         return;
     }
@@ -18779,11 +18788,7 @@ document.addEventListener('click', (event) => {
         clearAllSelectedModifiers();
     }
     // Очищаем прикреплённые файлы вместе с текстом и модификаторами
-    try {
-        attachedFiles.splice(0, attachedFiles.length);
-        attachmentKeys.clear();
-        renderPromptAttachments && renderPromptAttachments();
-    } catch (_) {}
+    clearPromptAttachments();
 });
 
 // -- Кнопка копирования содержимого поля prompt --
@@ -18794,7 +18799,7 @@ document.addEventListener('click', async (event) => {
     const promptEl = document.getElementById('prompt-input');
     if (!promptEl) return;
 
-    const text = applySelectedModifiersToPrompt(promptEl.value || '').trim();
+    const text = applySelectedModifiersToPrompt(pastedTextComposer.getText()).trim();
 
     if (!text) {
         // краткий фидбек, если поле пустое
@@ -18831,7 +18836,7 @@ document.addEventListener('click', async (event) => {
     const promptEl = document.getElementById('prompt-input');
     if (!promptEl) return;
 
-    const baseText = (promptEl.value || '').trim();
+    const baseText = pastedTextComposer.getText().trim();
 
     // Собираем полный текст промпта с префиксами и суффиксами
     const fullPromptText = applySelectedModifiersToPrompt(baseText, { includeResponses: true });
@@ -18869,8 +18874,7 @@ document.addEventListener('click', async (event) => {
 });
 
 function getAllResponsesPromptText() {
-    const promptEl = document.getElementById('prompt-input');
-    const basePromptText = (promptEl?.value || '').trim();
+    const basePromptText = pastedTextComposer.getText().trim();
     if (!basePromptText) return '';
     const fullPrompt = applySelectedModifiersToPrompt(basePromptText, { includeResponses: true }) || '';
     return fullPrompt.replace(/<LLM Responses>[\s\S]*?<\/>/gi, '').trim();
@@ -18893,6 +18897,7 @@ function formatModelCardExportStamp(date = new Date()) {
 
 function getExportPromptSource() {
     const promptValues = [
+        pastedTextComposer.getText(),
         document.getElementById('prompt-input')?.value,
         document.getElementById('modTa')?.value,
         window.__lastExportPromptText
@@ -21879,7 +21884,7 @@ function checkCompareButtonState() {
             .filter(Boolean);
     }
     function getModeratorDispatchText() {
-        const moderatorInputText = String(promptInput?.value || '').trim();
+        const moderatorInputText = pastedTextComposer.getText().trim();
         // On the Debate page #mod-message-body is a presentation surface, not
         // an input. Role/Action chips must never become a moderator prompt.
         if (isModeratorTextarea) return moderatorInputText;
@@ -21893,14 +21898,14 @@ function checkCompareButtonState() {
     // A message that could not be sent goes back into an empty input (never over new text).
     function restoreModeratorComposer(text) {
         const value = String(text || '');
-        if (!value || !promptInput || !isModeratorTextarea || String(promptInput.value || '').trim()) return;
-        promptInput.value = value;
+        if (!value || !promptInput || !isModeratorTextarea || pastedTextComposer.getText().trim()) return;
+        pastedTextComposer.setText(value);
         promptInput.dispatchEvent(new Event('input', { bubbles: true }));
         autoGrowDebateTextarea(promptInput);
     }
     function clearModeratorComposer() {
         if (promptInput && isModeratorTextarea) {
-            promptInput.value = '';
+            pastedTextComposer.setText('');
             promptInput.dispatchEvent(new Event('input', { bubbles: true }));
             autoGrowDebateTextarea(promptInput);
         }
@@ -22481,7 +22486,7 @@ function checkCompareButtonState() {
     startButton?.addEventListener('click', async () => {
 
         try {
-            let finalPrompt = promptInput.value;
+            let finalPrompt = pastedTextComposer.getText();
             if (!finalPrompt) {
                 showNotification('Please enter a prompt.');
                 return;
@@ -22736,7 +22741,7 @@ compareButton.addEventListener('click', () => {
         return;
     }
 
-    const originalPrompt = promptInput.value || 'the user\'s request';
+    const originalPrompt = pastedTextComposer.getText() || 'the user\'s request';
     
     // 6) Формируем полный промпт для модели-оценщика
     const selectedSystemPrompt = getSelectedJudgeSystemPrompt();
@@ -23366,7 +23371,7 @@ if (smartCompareButton) {
             return;
         }
         if (selectedTemplate === 'manual' || !savedTemplates[selectedTemplate]) {
-            promptInput.value = '';
+            pastedTextComposer.setText('');
             promptInput.readOnly = false;
             return;
         }
@@ -23420,7 +23425,7 @@ if (smartCompareButton) {
             const placeholder = `[${label}]`;
             promptText = promptText.replace(new RegExp(`{${varName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}}`, 'g'), value || placeholder);
         });
-        promptInput.value = promptText;
+        pastedTextComposer.setText(promptText);
     }
 
 function exportSingleTemplate(templateName, sourceData = null) {

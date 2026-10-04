@@ -3,7 +3,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LLM Comparison</title>
-    <link rel="stylesheet" href="styles.css?v=2.81.591">
+    <link rel="stylesheet" href="styles.css?v=2.81.592">
 </head>
 <body>
     <div class="app-shell">
@@ -150,6 +150,7 @@
                 <!-- 1.1. Оборачиваем поле ввода в "сэндвич-контейнер" -->
 <div class="prompt-container prompt-sandwich">
     <div id="prefix-container" class="modifier-chips-container"></div>
+    <div id="prompt-pasted-text-bar" class="pasted-text-bar" aria-label="Pasted text attachments" hidden></div>
     
     <textarea id="prompt-input" placeholder="Enter a prompt" data-default-placeholder="Enter a prompt"></textarea>
     <div id="prompt-note-view" class="prompt-note-view" role="textbox" aria-multiline="true" aria-label="Note view" data-placeholder="Note..."></div>
@@ -1123,6 +1124,7 @@
     <script src="results/boot-utils.js"></script>
     <script src="results/dom-utils.js"></script>
     <script src="results/attachments.js"></script>
+    <script src="results/pasted-text.js"></script>
     <script src="results/tooltips.js"></script>
     <script src="results/debate-ui.js"></script>
     <script src="results/debate-transport.js"></script>

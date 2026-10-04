@@ -241,6 +241,7 @@ function renderDebateDom() {
         <div class="pipeline-items-divider"></div>
         <div class="customer-pipeline-items" id="customerPipelineItems"></div>
       </div>
+      <div id="prompt-pasted-text-bar" hidden></div>
       <textarea id="modTa"></textarea>
       <div id="debate-model-cards"></div>
       <div id="create-template-modal" class="modal">
@@ -378,7 +379,7 @@ async function loadResultsScript() {
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-projections.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-prompt-catalog.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'pipeline-presets.js'), 'utf8'));
-  ['boot-utils', 'dom-utils', 'attachments', 'tooltips', 'debate-ui', 'debate-transport', 'debate-controller', 'debate-renderer', 'debate-sessions-store', 'debate-export', 'debate-plan-view-model', 'debate-telemetry-view'].forEach((mod) => { window.eval(fs.readFileSync(path.join(__dirname, '..', 'results', `${mod}.js`), 'utf8')); });
+  ['boot-utils', 'dom-utils', 'attachments', 'pasted-text', 'tooltips', 'debate-ui', 'debate-transport', 'debate-controller', 'debate-renderer', 'debate-sessions-store', 'debate-export', 'debate-plan-view-model', 'debate-telemetry-view'].forEach((mod) => { window.eval(fs.readFileSync(path.join(__dirname, '..', 'results', `${mod}.js`), 'utf8')); });
   const script = fs.readFileSync(path.join(__dirname, '..', 'results.js'), 'utf8');
   window.eval(script);
   document.dispatchEvent(new Event('DOMContentLoaded', { bubbles: true }));
@@ -1992,6 +1993,22 @@ describe('Pipeline debate favorites view', () => {
     expect(panelHtml).not.toContain('id="mod-status-indicator"');
     expect(css).not.toContain('.debate-model-card.first-pending-zone-card::before');
     expect(css).not.toContain('На утверждение');
+  });
+
+  test('a folded moderator paste remains complete in the dispatch text', () => {
+    const input = document.getElementById('modTa');
+    const text = 'Complete pasted moderator message\n'.repeat(130);
+    input.value = 'before REPLACE after';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.setSelectionRange(7, 14);
+    const paste = new Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(paste, 'clipboardData', { value: { getData: (type) => type === 'text/plain' ? text : '', files: [] } });
+    input.dispatchEvent(paste);
+    expect(paste.defaultPrevented).toBe(true);
+    expect(input.value).toBe('before  after');
+    expect(window.__pipelineLifecycleDebug.getModeratorDispatchText()).toBe(`before ${text} after`);
+    document.querySelector('.pasted-text-remove').click();
+    expect(window.__pipelineLifecycleDebug.getModeratorDispatchText()).toBe('before  after');
   });
 
 

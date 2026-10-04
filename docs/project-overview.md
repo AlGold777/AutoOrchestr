@@ -6,7 +6,7 @@ The project is optimized for unstable provider UIs. Its core design assumes sele
 
 ## Status
 
-- Current version: `2.81.591`, synchronized in `manifest.json`, `package.json`
+- Current version: `2.81.592`, synchronized in `manifest.json`, `package.json`
   and the root package entry in `package-lock.json`
 - Extension type: Chrome Manifest V3
 - Package name: `llm-selector-manager`
@@ -82,6 +82,21 @@ The TXT file groups answers by Session: a line with the Session name, then that 
 Both imports open the browser's standard file window inside `Downloads/Saved sessions` — the same dialog any download or upload uses, no in-app file list. The first press after installing opens `Downloads`, where `Saved sessions` sits one folder down; once a backup has been picked there, Chrome remembers that folder for this dialog and every later press opens straight inside it. No extra permission is needed.
 
 ## Attachments Behavior
+
+On the main page and in the Pipeline moderator composer, clipboard text of at
+least 3,000 characters or 40 lines automatically folds into a text attachment
+card. Click the card to view and edit the complete text, then Save or Cancel
+(Escape also cancels; Ctrl/Cmd+Enter saves). Use the card's × to remove the
+fragment, or “Paste original” to put it back into the input at its original
+position. Short pastes continue to appear directly in the input.
+
+Sending, copying, saving and exporting use the complete assembled prompt,
+including surrounding text and multiple cards in their original order. Cards
+do not create provider file uploads. Cross-page draft storage preserves the
+collapsed cards. Clear prompt removes both text cards and selected files.
+Pasting while editing a Note keeps the existing note editing behavior.
+Short HTML pastes retain the actual selection before insertion, including
+repeated surrounding characters, so the hidden fragments stay in place.
 
 When you send a prompt with an attached file, the app tries to attach the file to each provider page automatically. Since 2.80.133 the behavior on failure is designed to leave you in a recoverable state instead of a dead end:
 

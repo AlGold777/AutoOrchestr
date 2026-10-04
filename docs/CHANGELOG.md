@@ -1,5 +1,13 @@
 # CHANGELOG — Project
 
+### 2026-10-04 — Editable cards for large pasted prompts, version 2.81.592
+
+- Ported the pasted-text module from Astra, including its short HTML paste selection fix, to the main and Pipeline composers. Pastes of at least 3,000 characters or 40 lines fold into document cards with character/line counts, removal and Paste original.
+- The card editor supports Save, Cancel, Esc and Ctrl/Cmd+Enter. Dispatch, copy, save, export and cross-page drafts preserve the full text and the order of surrounding text and multiple fragments; these cards never become file uploads.
+- Clear prompt also clears selected files. Notes editing and the existing fullscreen Debate feed remain available. Failed moderator-message recovery checks the complete draft before replacing an empty composer.
+- Pipeline startup now reuses the existing Action mini-prompt renderer; the duplicate renderer referenced an undefined role and prevented cross-page draft restoration.
+- Validation: 127 tests in 9 targeted suites passed. Chromium checks on the real main/Pipeline pages covered complete prompt dispatch/copy, editor shortcuts, restore/remove/clear, repeated cross-page drafts, short HTML paste selection and narrow layouts. Provider/background boundaries were mocked; no live provider request was sent.
+
 ### 2026-10-03 — Preserve short manually recovered answers, version 2.81.591
 
 - The manual latest collector accepted 20-character candidates, but terminal answer replacement still required 80. A recovered 24-character GPT numeric answer therefore left the old error text in the result payload.

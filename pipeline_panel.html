@@ -5,7 +5,7 @@
     <!-- LLM Discus: hidden search marker for developers -->
     <meta name="keywords" content="LLM Discus">
     <title>LLM Comparison</title>
-    <link rel="stylesheet" href="styles.css?v=2.81.591">
+    <link rel="stylesheet" href="styles.css?v=2.81.592">
 </head>
 <body class="pipeline-page">
     <div class="app-shell">
@@ -187,6 +187,7 @@
     <div class="moderator-input" id="moderator-input">
         <div class="mod-middle">
             <div id="mod-message-body" class="mod-message-body"></div>
+            <div id="prompt-pasted-text-bar" class="pasted-text-bar" aria-label="Pasted text attachments" hidden></div>
             <div class="mod-compose-row">
                 <textarea id="modTa" placeholder="Enter a prompt"></textarea>
             </div>
@@ -957,6 +958,7 @@
     <script src="results/boot-utils.js"></script>
     <script src="results/dom-utils.js"></script>
     <script src="results/attachments.js"></script>
+    <script src="results/pasted-text.js"></script>
     <script src="results/tooltips.js"></script>
     <script src="results/debate-ui.js"></script>
     <script src="results/debate-transport.js"></script>
