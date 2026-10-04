@@ -119,15 +119,17 @@ test('real report builder resolves application from the page bridge, without a l
   expect(() => context.buildDisputExportPayload([])).not.toThrow();
 });
 
-test('size-budget failure retains raw JSON and releases the actual Extract handler', async () => {
-  const ui=setup(report(),{
-    extractTransport: (...args)=>{const x=Digest.extractTransport(...args);x.manual.rows=[{path:'events[0]',details:'Ж'.repeat(40000)}];return x;},
-    renderTransportMarkdown: Digest.renderTransportMarkdown
-  });
+test('size-budget aggregation downloads JSON and Markdown and releases the actual Extract handler', async () => {
+  const payload=report();payload.events=[{eventType:'MANUAL_RECOVERY_REQUESTED',sourceTimestamp:1000,correlation:{},payload:{details:'Ж'.repeat(40000)}}];
+  const ui=setup(payload);
   await ui.run();
-  expect(ui.downloads).toHaveLength(1);
+  expect(ui.downloads).toHaveLength(2);
   expect(ui.downloads[0].name).toBe('Disput Flow 20261003_00-30.json');
-  expect(ui.notices[0]).toContain('exceeds 70000 bytes');
+  expect(ui.downloads[1].name).toBe('extract_transport_20261003_00-30.md');
+  expect(ui.downloads[0].data.events[0].payload.details).toHaveLength(40000);
+  expect(ui.downloads[1].data).toContain('mode=aggregated');
+  expect(Buffer.byteLength(ui.downloads[1].data)).toBeLessThanOrEqual(70000);
+  expect(ui.notices).toHaveLength(0);
   expect(ui.button.disabled).toBe(false);
   expect(ui.button.hasAttribute('aria-busy')).toBe(false);
 });

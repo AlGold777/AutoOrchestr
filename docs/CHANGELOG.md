@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-04 — Transport summary aggregation and review fixes, version 2.81.595
+
+- Digest 3.4 replaces the size-limit exception with explicit aggregation levels: request tables, aggregated tables, and a bounded overview with complete totals and declared group coverage. JSON and Markdown still download together when request tables exceed the byte budget.
+- Unassigned errors retain their reasons and concrete source paths. Collection eviction extrema include every sample; first/last coverage sources are selected by timestamp across streams.
+- Added assertions on actual Markdown acceptance decisions, terminal length distinctions and observer evidence, plus regressions for unassigned errors, interleaved collection streams, high cardinality and successful size-budget export.
+- Tests and report generation were not run, as requested. Only source review and syntax checks were performed; new output sizes were not measured.
+
 ### 2026-10-04 — Transport extract capped at 70 KB, version 2.81.594
 
 - Replaced the journal-like Markdown renderer with direct request/terminal tables and grouped observations. No previous Markdown is parsed; no evidence dictionaries or full background chronology are reproduced. Source JSON and structured facts are unchanged.

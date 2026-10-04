@@ -191,15 +191,16 @@ const terminalStatusOf = (r) => {
 };
 const terminalReasonOf = (r) => r.raw.payload?.evidence?.completionReason || '';
 // Structured facts are the source of both JSON and Markdown. No Markdown is embedded in JSON.
-const DIGEST_VERSION = '3.3.0';
+const DIGEST_VERSION = '3.4.0';
 const COMPRESSION = Object.freeze({
   markdownMaxBytes: 70000,
+  markdownAggregation: 'request tables → aggregated tables → bounded overview',
   markdownEvidence: 'request and decision tables; repeated observations counted globally; full evidence at source JSON paths',
   allRequests: true, chronologyLimit: null, outsideWindowToleranceMs: 0,
   terminalPairWindowMs: 50, promptProbeCharacters: 50,
   grouping: 'request + dispatchId + status + reason + significant fields; changes split groups',
   stable: 'first and every change, including zero length, correlation and dispatch changes',
-  background: 'counts and first/last paths; all member paths retained in the Markdown source registry',
+  background: 'global counts and first/last paths; full members in source JSON',
   ignoredGroupingFields: ['elapsedMs', 'durationMs', 'foregroundMsUsed', 'focusSwitchesUsed', 'waitedMs', 'ms', 'at', 'logCollection', 'SELECTOR_STATS sampled hit/miss/rate counters']
 });
 const arr = (v) => Array.isArray(v) ? v : [];
@@ -496,10 +497,10 @@ function buildTransportDigest(d, sourceFile = null) {
     const v=r.raw.payload?.evidence?.logCollection;
     if(!v)return;
     const key=JSON.stringify([r.model,r.requestId,r.dispatchId,v.scope,v.limit]);
-    const sample={path:r.path,t:offset(r.at,t0),value:v};
+    const sample={path:r.path,at:finite(r.at),t:offset(r.at,t0),value:v};
     const row=collectionSamples.get(key);
-    if(row){ row.count++; if(v.appended<row.last.value.appended || v.evicted<row.last.value.evicted)row.resets++; row.last=sample; }
-    else collectionSamples.set(key,{model:r.model,requestId:r.requestId,dispatchId:r.dispatchId,count:1,resets:0,first:sample,last:sample});
+    if(row){ row.count++; if(v.appended<row.last.value.appended || v.evicted<row.last.value.evicted)row.resets++; row.last=sample; if(sample.at!=null){if(!row.firstTimed||sample.at<row.firstTimed.at)row.firstTimed=sample;if(!row.lastTimed||sample.at>row.lastTimed.at)row.lastTimed=sample;} if(Number.isFinite(v.evicted)){row.evictedMin=row.evictedMin==null?v.evicted:Math.min(row.evictedMin,v.evicted);row.evictedMax=row.evictedMax==null?v.evicted:Math.max(row.evictedMax,v.evicted);} }
+    else collectionSamples.set(key,{model:r.model,requestId:r.requestId,dispatchId:r.dispatchId,count:1,resets:0,evictedMin:finite(v.evicted),evictedMax:finite(v.evicted),firstTimed:sample.at==null?null:sample,lastTimed:sample.at==null?null:sample,first:sample,last:sample});
   });
   const noRound = recs.filter((r) => r.src === 'events' && !recordRound(r)).map((r) => r.path);
   return {
@@ -556,9 +557,10 @@ function buildTransportDigest(d, sourceFile = null) {
     delivery: { batches, problems: arr(diag.problems).map((x, i) => ({ path: `delivery.diagnosis.problems[${i}]`, ...x })) }
   };
 }
-function renderTransportMarkdown(x) {
+function renderTransportMarkdown(x, compact = false) {
   const limit=COMPRESSION.markdownMaxBytes, out=[];
-  const cell=v=>display(v).replace(/\|/g,'\\|').replace(/[\r\n]+/g,' ');
+  const preview=(v,n=180)=>{const text=String(v);return text.length<=n?text:`${text.slice(0,n).replace(/[\uD800-\uDBFF]$/,'')}… [${text.length} chars; full value in source JSON]`;};
+  const cell=v=>(compact?preview(display(v)):display(v)).replace(/\|/g,'\\|').replace(/[\r\n]+/g,' ');
   const rows=(head,list)=>table(head,list.map(r=>r.map(cell)));
   const path=p=>String(p||'no field').replace(/delivery\.journal\[(\d+)\]/g,'J[$1]').replace(/events\[(\d+)\]/g,'E[$1]').replace(/delivery\.diagnosis\.sends\[(\d+)\]/g,'S[$1]').replace(/delivery\.diagnosis\.batches\[(\d+)\]/g,'B[$1]');
   const t=v=>v==null || !Number.isFinite(v)?'—':v.toFixed(3);
@@ -577,14 +579,14 @@ function renderTransportMarkdown(x) {
       g.count+=r.count;g.rows.push(r);if(r.first.at<g.first.at)g.first=r.first;if(r.last.at>g.last.at)g.last=r.last;});
     return [...map.values()];
   };
-  const value=f=>display(f);
+  const value=f=>compact?preview(display(f)):display(f);
   const lengthValues=(a)=>{
     const m=x.lengths.find(r=>r.request===a.request)?.measurements;
     if(!m)return 'no field';
     return [m.delivery?`${value(m.delivery)} ${path(m.delivery.path)}`:'no send',m.journal?`${value(m.journal)} ${path(m.journal.path)}`:'no journal final',a.deliveryResult?value(a.deliveryResult):'no result'].join(' / ');
   };
   out.push('# Transport extract',`DIGEST_VERSION=${x.DIGEST_VERSION} · sourceFile=${x.sourceFile||'no field'} · debateRunId=${x.debateRunId}`,
-    `MD limit=${limit} UTF-8 bytes; facts come directly from the source JSON, not from an earlier extract.`,
+    `MD limit=${limit} UTF-8 bytes; mode=${compact?'aggregated':'request tables'}; facts come directly from the source JSON, not from an earlier extract.`,
     `t: seconds from ${x.base.path}=${value(x.base.value)}, precision 0.001. st/sub: relative to stage/submission (request table only). — in time columns means no usable time field (never zero).`,
     'E[N]=events[N]; J[N]=delivery.journal[N]; S[N]=delivery.diagnosis.sends[N]; B[N]=delivery.diagnosis.batches[N]; QN.DK=dispatch alias below. AL/EL/EAL=answerLength/evidence.answerLen/evidence.answerLength. no field, null, "", [], false and 0 are distinct.',
     'This is a summary, not a journal copy. Repeated observations have counts and first/last source paths. Full chronology, intermediate render proofs, identity objects, artifacts, prompt lineage and individual diagnoses remain in the source JSON. Equal lengths do not prove equal text; focus observations do not prove continuous printing; stored prompt fragments do not prove submission. Refusal waitedMs is cumulative and must not be summed.',
@@ -622,16 +624,21 @@ function renderTransportMarkdown(x) {
   const issue=/FAIL|ERROR|REJECT|BLOCK|NO_SEND|UNCERTAIN|TIMEOUT|RECOVERY|MATERIALIZE|STALE|DIVERGENCE|CANCEL|EXHAUSTED|UNCONFIRMED/i;
   const issueGroups=new Map();
   x.requests.forEach(a=>[...a.transitions,...a.background].filter(r=>!r.group&&issue.test(`${r.label} ${r.first.type} ${r.first.reason||''}`)).forEach(r=>{
-    const key=JSON.stringify([r.label,r.first.status,r.first.reason]);
-    let g=issueGroups.get(key);if(!g){g={label:r.label,status:r.first.status,reason:r.first.reason,count:0,requests:new Map(),first:r.first,last:r.last};issueGroups.set(key,g);}
-    g.count+=r.count;if(r.first.at<g.first.at)g.first=r.first;if(r.last.at>g.last.at)g.last=r.last;
+    const key=JSON.stringify(compact?[r.label]:[r.label,r.first.status,r.first.reason]);
+    let g=issueGroups.get(key);if(!g){g={label:r.label,status:r.first.status,reason:r.first.reason,count:0,requests:new Map(),states:new Map(),first:r.first,last:r.last};issueGroups.set(key,g);}
+    const state=JSON.stringify([r.first.status,r.first.reason]);g.states.set(state,(g.states.get(state)||0)+r.count);g.count+=r.count;if(r.first.at<g.first.at)g.first=r.first;if(r.last.at>g.last.at)g.last=r.last;
     let q=g.requests.get(a.request);if(!q){q={count:0,path:r.first.path,dispatches:new Set()};g.requests.set(a.request,q);}q.count+=r.count;q.dispatches.add(dispatch(r.first.dispatchId));
   }));
-  out.push('\n### 6. Decision/error observations', 'Grouped by label/status/reason; Q:N gives per-request observation counts. Complete details and time order remain in the source JSON.',
+  out.push('\n### 6. Decision/error observations', compact?'Grouped by label; status/reason combination counts are shown. Q:N counts observations; full combinations and time order are in source JSON.':'Grouped by label/status/reason; Q:N gives per-request observation counts. Complete details and time order remain in the source JSON.',
     rows(['label / status / reason','N','requests:N / first source / dispatch','first→last t / source'],[...issueGroups.values()].map(g=>[
-      `${g.label}/${value(g.status)}${g.reason===g.label?'':`/${value(g.reason)}`}`,g.count,
+      `${g.label}/${compact?`${g.states.size} status/reason combinations (source JSON)`:value(g.status)}${compact||g.reason===g.label?'':`/${value(g.reason)}`}`,g.count,
       [...g.requests].map(([q,v])=>`Q${q}:${v.count} ${path(v.path)} ${[...v.dispatches].filter(d=>d!==`Q${q}.D1`).join(',')}`).join('; '),
       `${sample(g.first)}${g.count>1?` → ${sample(g.last)}`:''}`])));
+  const unassignedIssues=x.availability.unassigned.filter(r=>issue.test(`${r.label} ${r.type} ${r.reason||''}`));
+  const unassignedGroups=groups(unassignedIssues.map(r=>({first:r,last:r,count:1})),r=>JSON.stringify([r.label,r.first.status,r.first.reason,r.first.model,r.first.recordedStageId,r.first.dispatchId]));
+  if(unassignedGroups.length)out.push('Unassigned errors (no request join):',rows(['label / status / reason','N','model / recorded stage / dispatch','first→last t / source'],unassignedGroups.map(g=>[
+    `${g.first.label}/${value(g.first.status)}/${value(g.first.reason)}`,g.count,
+    `${g.first.model||'no model'}/${g.first.recordedStageId||'no stage'}/${dispatch(g.first.dispatchId)}`,endpoints(g)])));
   out.push('\n### 7. Length and display observations',rows(['Q','stable samples / length min..max / groups / zero','pre-submit lengths / equals previous length','render outcome: N / first→last sources'],x.requests.map(a=>{
     const stable=a.transitions.filter(r=>/TEXT_STABLE/.test(r.first.type+' '+r.label)),lengths=stable.map(r=>r.first.textLength).filter(Number.isFinite);
     const probes=x.lengthObservations.filter(r=>r.request===a.request);
@@ -673,14 +680,48 @@ function renderTransportMarkdown(x) {
   out.push('\n### Background counters',rows(['label','N','first→last t / source'],background.map(g=>[g.first.label,g.count,endpoints(g)])));
   if(x.collectionSamples?.length)out.push('\n### Collection coverage',rows(['scope / limit','samples / resets','evicted min..max','first / last source'],
     [...new Set(x.collectionSamples.map(r=>`${value(r.first.value.scope)}/${value(r.first.value.limit)}`))].map(key=>{
-      const list=x.collectionSamples.filter(r=>`${value(r.first.value.scope)}/${value(r.first.value.limit)}`===key),nums=list.flatMap(r=>[r.first.value.evicted,r.last.value.evicted]).filter(Number.isFinite);
-      return [key,`${list.reduce((n,r)=>n+r.count,0)}/${list.reduce((n,r)=>n+r.resets,0)}`,nums.length?`${Math.min(...nums)}..${Math.max(...nums)}`:'no field',`${path(list[0].first.path)}→${path(list.at(-1).last.path)}`];
+      const list=x.collectionSamples.filter(r=>`${value(r.first.value.scope)}/${value(r.first.value.limit)}`===key);
+      const mins=list.map(r=>r.evictedMin).filter(Number.isFinite),maxs=list.map(r=>r.evictedMax).filter(Number.isFinite);
+      const first=list.map(r=>r.firstTimed||r.first).filter(r=>Number.isFinite(r.at)).sort((a,b)=>a.at-b.at)[0];
+      const last=list.map(r=>r.lastTimed||r.last).filter(r=>Number.isFinite(r.at)).sort((a,b)=>b.at-a.at)[0];
+      return [key,`${list.reduce((n,r)=>n+r.count,0)}/${list.reduce((n,r)=>n+r.resets,0)}`,mins.length?`${Math.min(...mins)}..${Math.max(...maxs)}`:'no field',`${first?path(first.path):'no usable timestamp'}→${last?path(last.path):'no usable timestamp'}`];
     })));
-  const md=out.join('\n');
+  const md=(compact?out.map(line=>line.startsWith('|')?line:preview(line,800)):out).join('\n');
   // Count UTF-8 bytes without Node dependencies; the extension uses this same code.
   let bytes=0;for(const char of md){const code=char.codePointAt(0);bytes+=code<128?1:code<2048?2:code<65536?3:4;}
-  if(bytes>limit)throw new Error(`Transport extract exceeds ${limit} bytes (${bytes}); summary generation must be corrected. Source JSON remains available.`);
+  if(bytes>limit){
+    if(!compact)return renderTransportMarkdown(x,true);
+    return renderTransportOverview(x,limit);
+  }
   return md;
+}
+// Last aggregation level is bounded independently of request/record cardinality.
+// It reports complete totals and explicitly states which tables need the source JSON.
+function renderTransportOverview(x,limit){
+  const safe=v=>display(v).replace(/[\r\n|]/g,' ').slice(0,120).replace(/[\uD800-\uDBFF]$/,'');
+  const frequencies=(items,key)=>{const m=new Map();items.forEach(r=>{const k=key(r);m.set(k,(m.get(k)||0)+1);});return [...m].sort((a,b)=>b[1]-a[1]);};
+  const decisions=x.requests.flatMap(a=>x.lengths.find(r=>r.request===a.request)?.measurements.acceptanceDecisions||[]);
+  const allIssues=x.requests.flatMap(a=>[...a.transitions,...a.background].filter(r=>!r.group)).concat(x.availability.unassigned.map(r=>({first:r,count:1})));
+  const issue=/FAIL|ERROR|REJECT|BLOCK|NO_SEND|UNCERTAIN|TIMEOUT|RECOVERY|MATERIALIZE|STALE|DIVERGENCE|CANCEL|EXHAUSTED|UNCONFIRMED/i;
+  const codes=new Map();allIssues.filter(r=>issue.test(`${r.first.label} ${r.first.type} ${r.first.reason||''}`)).forEach(r=>{
+    const label=r.first.label;let g=codes.get(label);if(!g){g={count:0,path:r.first.path};codes.set(label,g);}g.count+=r.count;
+  });
+  const labels=[...codes].sort((a,b)=>b[1].count-a[1].count),shown=labels.slice(0,50);
+  const terminals=x.requests.flatMap(a=>a.terminalGroups);
+  const statuses=frequencies(terminals,g=>g.status);
+  const o=['# Transport extract',`DIGEST_VERSION=${x.DIGEST_VERSION}; mode=overview; limit=${limit} UTF-8 bytes`,
+    `sourceFile=${safe(x.sourceFile)}; debateRunId=${safe(x.debateRunId)}`,
+    'Request tables exceeded the byte budget after aggregation. This overview includes complete totals; individual requests, identities, terminal evidence, reasons and chronology are in stageExecutions[], events[] and delivery.journal[] of the source JSON. Long labels are previews of at most 120 characters.',
+    `Requests=${x.requests.length}; source records=${x.sourceStatus.totalSourceRecords}; unassigned=${x.availability.unassigned.length}; unassigned errors=${x.availability.unassigned.filter(r=>issue.test(`${r.label} ${r.type} ${r.reason||''}`)).length}.`,
+    `Stages: total=${x.counters.stages.total}; success=${x.counters.stages.success}; withFailureRecords=${x.counters.stages.withFailureRecords}; LONG=${x.counters.stages.long}.`,
+    `Terminal records=${x.counters.terminal.records}; groups=${x.counters.terminal.groups}; requests=${x.counters.terminal.uniqueRequests}.`,
+    `Engine acceptance decisions=${decisions.length}; true=${decisions.filter(r=>r.accepted.state==='present'&&r.accepted.value===true).length}; false=${decisions.filter(r=>r.accepted.state==='present'&&r.accepted.value===false).length}; null=${decisions.filter(r=>r.accepted.state==='present'&&r.accepted.value===null).length}; missing=${decisions.filter(r=>r.accepted.state==='missing').length}.`,
+    `Manual recovery=${x.manual.records}; UI records=${x.manual.uiButtonRecords}; focus switches=${x.focus.total}; start refusals=${x.counters.startRefusals}.`,
+    `Diagnoses=${x.diagnoses.appendix.length}; shortened prompts=${x.availability.shortenedPrompts.length}; observer stop records=${x.sourceStatus.observerStops.length}.`,
+    `Terminal status counts (groups, showing ${Math.min(20,statuses.length)}/${statuses.length}): ${statuses.slice(0,20).map(([k,n])=>`${safe(k)}:${n}`).join('; ')}.`,
+    `Observed error labels: showing ${shown.length}/${labels.length}; total error observations=${labels.reduce((n,[,g])=>n+g.count,0)}; remaining label groups=${labels.length-shown.length} (source JSON).`,
+    table(['label preview','observations','example source'],shown.map(([k,g])=>[safe(k),g.count,safe(g.path)]))];
+  return o.join('\n');
 }
 function summarizeDisputFlow(d) { return renderTransportMarkdown(buildTransportDigest(d)); }
 

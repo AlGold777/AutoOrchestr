@@ -119,10 +119,14 @@ test('large auxiliary identity and lineage objects stay in JSON without bloating
 });
 
 
-test('oversized UTF-8 output fails explicitly instead of silently truncating or downloading a giant extract', () => {
-  const x=Digest.extractTransport(report());
-  x.manual.rows=[{path:'events[0]',details:'Ж'.repeat(40000)}];
-  expect(()=>Digest.renderTransportMarkdown(x)).toThrow(/exceeds 70000 bytes/);
+test('oversized freeform evidence is explicitly previewed and still produces an extract', () => {
+  const d=report();const e=event(0);e.eventType='MANUAL_RECOVERY_REQUESTED';e.payload.details='Ж'.repeat(40000);d.events=[e];
+  const x=Digest.extractTransport(d);
+  const md=Digest.renderTransportMarkdown(x);
+  expect(md).toContain('mode=aggregated');
+  expect(md).toContain('full value in source JSON');
+  expect(md).toContain('E[0]');
+  expect(Buffer.byteLength(md)).toBeLessThanOrEqual(70000);
 });
 
 test('multiple rounds and repeated recovery/display observations fit the output budget', () => {
@@ -145,4 +149,49 @@ test('multiple rounds and repeated recovery/display observations fit the output 
   expect(md).toContain('Q36');
   expect(md).toContain('RECOVERY_BUDGET_EXHAUSTED');
   expect(md).not.toContain('Grouping evidence dictionary');
+});
+
+
+test('unassigned correlation errors retain their reason and concrete source in Markdown', () => {
+  const d=report();d.events=[event(0),{...event(1),eventType:'CORRELATION_REJECTED',reasonCode:'unknown_request',correlation:{requestId:'alien',dispatchId:'alien-dispatch'}}];
+  const x=Digest.extractTransport(d),md=Digest.renderTransportMarkdown(x);
+  expect(x.availability.unassigned).toHaveLength(1);
+  expect(md).toContain('Unassigned errors (no request join)');
+  expect(md).toContain('CORRELATION_REJECTED/null/unknown_request');
+  expect(md).toContain('E[1]');
+});
+
+test('collection endpoints use time order across streams and extrema include peaks before resets', () => {
+  const d=report();d.events=[event(0),event(1),event(2),event(3)];
+  d.events[1].correlation={stageId:'s1',requestId:'q2',dispatchId:'d2'};
+  d.events[0].payload.evidence.logCollection.evicted=0;
+  d.events[2].payload.evidence.logCollection.evicted=500;
+  d.events[3].payload.evidence.logCollection.evicted=0;
+  const x=Digest.extractTransport(d),md=Digest.renderTransportMarkdown(x);
+  expect(x.collectionSamples[0]).toMatchObject({evictedMin:0,evictedMax:500,resets:1});
+  const section=md.split('### Collection coverage')[1];
+  expect(section).toContain('0..500');
+  expect(section).toContain('E[0]→E[3]');
+});
+
+test('Markdown itself contains acceptance, terminal fields and registered observer evidence', () => {
+  const d=report();const accepted={...event(1),eventType:'ANSWER_ACCEPTANCE_DECIDED',reasonCode:'ENGINE_ACCEPTED',payload:{model:'A',accepted:true}};
+  const terminal={...event(2),eventType:'MODEL_TERMINAL_COMMITTED',payload:{model:'A',originalLabel:'FINALIZATION_DECISION',answerLength:123,evidence:{finalStatus:'SUCCESS',completionReason:'lifecycle_complete_snapshot',answerLen:null,foregroundMsUsed:400,focusSwitchesUsed:2,doneReason:'finished',durationMs:1000}}};
+  d.events=[event(0),accepted,terminal];
+  const md=Digest.renderTransportMarkdown(Digest.extractTransport(d));
+  expect(md).toContain('E[1]=true ENGINE_ACCEPTED');
+  expect(md).toContain('E[2] FINALIZATION_DECISION: 123 / null / no field');
+  expect(md).toContain('400/2/finished/1000');
+});
+
+test('unbounded request cardinality falls back to a bounded overview with complete totals', () => {
+  const d=report();d.events=Array.from({length:1500},(_,i)=>{
+    const e=event(i);e.correlation={stageId:'s1',requestId:`request-${i}`,dispatchId:`dispatch-${i}`};
+    e.eventType='CORRELATION_REJECTED';e.reasonCode=`reason-${i}`;return e;
+  });
+  const x=Digest.extractTransport(d),md=Digest.renderTransportMarkdown(x);
+  expect(md).toContain('mode=overview');
+  expect(md).toContain('Requests=1500');
+  expect(md).toContain('total error observations=1500');
+  expect(Buffer.byteLength(md)).toBeLessThanOrEqual(70000);
 });

@@ -35,7 +35,7 @@ describe('Disput Flow extract v2', () => {
 
   test('JSON is structured; Markdown uses the same facts and all requests, including a clean request', () => {
     const d = flow(), before = JSON.stringify(d), x = Digest.extractTransport(d, 'source.json');
-    expect(x.DIGEST_VERSION).toBe('3.3.0');
+    expect(x.DIGEST_VERSION).toBe('3.4.0');
     expect(x).not.toHaveProperty('digest');
     expect(x.requests).toHaveLength(1);
     expect(x.requests[0].identity.tabIds).toEqual(['123']);
@@ -44,7 +44,7 @@ describe('Disput Flow extract v2', () => {
     expect(x.requests[0].coverage.omittedRecords).toBe(0);
     expect(JSON.stringify(d)).toBe(before);
     const text = Digest.renderTransportMarkdown(x);
-    expect(text).toContain('DIGEST_VERSION=3.3.0');
+    expect(text).toContain('DIGEST_VERSION=3.4.0');
     expect(text).toContain('Q1 stage-1/A');
     expect(text).toContain('### 15. Delivery batches');
     expect(text).not.toContain('### 16.');
