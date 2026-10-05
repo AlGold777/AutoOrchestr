@@ -5,7 +5,7 @@
     <!-- LLM Discus: hidden search marker for developers -->
     <meta name="keywords" content="LLM Discus">
     <title>LLM Comparison</title>
-    <link rel="stylesheet" href="styles.css?v=2.81.605">
+    <link rel="stylesheet" href="styles.css?v=2.81.606">
 </head>
 <body class="pipeline-page">
     <div class="app-shell">
@@ -156,6 +156,8 @@
     <!-- Кнопки копирования и очистки теперь внутри обертки, но позиционируются абсолютно -->
     <input type="file" id="prompt-attach-input" class="visually-hidden" multiple="">
     <div class="debate-sel-toolbar" id="debateSelTb" aria-label="Selected text actions">
+      <div class="selection-toolbar-row">
+        <button type="button" class="stb selection-toolbar-toggle" data-more="1" title="More formatting" aria-label="More formatting" aria-expanded="false" aria-controls="debateSelTb-extra">⌄</button>
         <button class="stb" data-clear-highlight="1" title="Remove highlight" aria-label="Remove highlight"><span class="stb-label">No colour</span></button>
         <button class="stb col" style="background:#FFEB3B;border-color:#fbc02d" data-color="#FFEB3B" title="Yellow highlight" aria-label="Yellow highlight"><span class="stb-label">Yellow</span></button>
         <button class="stb col" style="background:#05e56d;border-color:#00c853" data-color="#05e56d" title="Green highlight" aria-label="Green highlight"><span class="stb-label">Green</span></button>
@@ -165,6 +167,15 @@
         <button class="stb" data-cmd="italic" title="Italic" aria-label="Italic"><span class="stb-label">Italic</span></button>
         <div style="width:1px;background:rgba(255,255,255,.2);margin:2px 3px;height:14px;flex-shrink:0"></div>
         <button class="stb" data-fav="1" title="Add selected fragment to favorites" aria-label="Add selected fragment to favorites" aria-pressed="false"><span class="stb-label">Favorite</span></button>
+      </div>
+      <div class="selection-toolbar-row selection-toolbar-extra" id="debateSelTb-extra" hidden>
+        <button type="button" class="stb" data-block="left" title="Align left" aria-label="Align left">≡</button>
+        <button type="button" class="stb" data-block="center" title="Align center" aria-label="Align center">≡</button>
+        <button type="button" class="stb" data-block="right" title="Align right" aria-label="Align right">≡</button>
+        <button type="button" class="stb" data-block="list" title="Bulleted list" aria-label="Bulleted list">☷</button>
+        <button type="button" class="stb" data-block="outdent" title="Decrease indent" aria-label="Decrease indent">⇤</button>
+        <button type="button" class="stb" data-block="indent" title="Increase indent" aria-label="Increase indent">⇥</button>
+      </div>
     </div>
     <div class="debate-session-bar" id="debate-session-bar">
         <!-- Session tabs are no longer shown (sessions move to the left sidebar). The
@@ -974,6 +985,7 @@
     <script src="results/pipeline-profile-view.js"></script>
     <script src="results-telemetry-export-bootstrap.js"></script>
     <script src="shared/report-digest.js"></script>
+    <script src="utils/selection-block-format.js"></script>
     <script src="results.js"></script>
     <!-- results-devtools.js is lazy-loaded by results.js (ensureTelemetryDevtoolsLoaded)
          just after boot; not loaded synchronously here to keep its parse cost off

@@ -18151,6 +18151,8 @@ function ensureResponseSelectionToolbar() {
     toolbar.id = responseSelectionToolbarId;
     toolbar.className = 'debate-sel-toolbar response-sel-toolbar';
     toolbar.innerHTML = `
+        <div class="selection-toolbar-row">
+        <button type="button" class="stb selection-toolbar-toggle" data-more="1" title="More formatting" aria-label="More formatting" aria-expanded="false" aria-controls="${responseSelectionToolbarId}-extra">⌄</button>
         <button class="stb" data-clear-highlight="1" title="Remove highlight" aria-label="Remove highlight"><span class="stb-label">No colour</span></button>
         <button class="stb col" style="background:#FFEB3B;border-color:#fbc02d" data-color="#FFEB3B" title="Yellow highlight" aria-label="Yellow highlight"><span class="stb-label">Yellow</span></button>
         <button class="stb col" style="background:#05e56d;border-color:#00c853" data-color="#05e56d" title="Green highlight" aria-label="Green highlight"><span class="stb-label">Green</span></button>
@@ -18160,16 +18162,39 @@ function ensureResponseSelectionToolbar() {
         <button class="stb" data-cmd="italic" title="Italic" aria-label="Italic"><span class="stb-label">Italic</span></button>
         <div style="width:1px;background:rgba(255,255,255,.2);margin:2px 3px;height:14px;flex-shrink:0"></div>
         <button class="stb" data-fav="1" title="Add selected fragment to favorites" aria-label="Add selected fragment to favorites" aria-pressed="false"><span class="stb-label">Favourite</span></button>
+        </div>
+        <div class="selection-toolbar-row selection-toolbar-extra" id="${responseSelectionToolbarId}-extra" hidden>
+            <button type="button" class="stb" data-block="left" title="Align left" aria-label="Align left">≡</button>
+            <button type="button" class="stb" data-block="center" title="Align center" aria-label="Align center">≡</button>
+            <button type="button" class="stb" data-block="right" title="Align right" aria-label="Align right">≡</button>
+            <button type="button" class="stb" data-block="list" title="Bulleted list" aria-label="Bulleted list">☷</button>
+            <button type="button" class="stb" data-block="outdent" title="Decrease indent" aria-label="Decrease indent">⇤</button>
+            <button type="button" class="stb" data-block="indent" title="Increase indent" aria-label="Increase indent">⇥</button>
+        </div>
     `;
     document.body.appendChild(toolbar);
     responseSelectionToolbarEl = toolbar;
     return toolbar;
 }
 
+function setSelectionToolbarExtra(toolbar, expanded) {
+    const toggle = toolbar?.querySelector?.('[data-more]');
+    const extra = toolbar?.querySelector?.('.selection-toolbar-extra');
+    if (!toggle || !extra) return;
+    const oldHeight = toolbar.offsetHeight;
+    extra.hidden = !expanded;
+    toggle.setAttribute('aria-expanded', String(expanded));
+    if (toolbar.classList.contains('vis') && toolbar.style.top) {
+        const top = Number.parseFloat(toolbar.style.top) || 0;
+        toolbar.style.top = `${Math.max(4, top - (toolbar.offsetHeight - oldHeight))}px`;
+    }
+}
+
 function hideResponseSelectionToolbar() {
     responseSelectionState.range = null;
     responseSelectionState.target = null;
     responseSelectionToolbarEl?.classList.remove('vis');
+    setSelectionToolbarExtra(responseSelectionToolbarEl, false);
 }
 
 function getResponseSelectionText() {
@@ -18356,6 +18381,14 @@ function applyResponseSelectionStyle(command, value = null) {
     hideResponseSelectionToolbar();
 }
 
+function applyResponseSelectionBlock(command) {
+    if (window.SelectionBlockFormat?.apply(responseSelectionState.range, responseSelectionState.target, command)) {
+        syncResponseSelectionSourceOutput();
+    }
+    window.getSelection?.()?.removeAllRanges?.();
+    hideResponseSelectionToolbar();
+}
+
 function showResponseSelectionToolbar(target) {
     const toolbar = ensureResponseSelectionToolbar();
     if (!toolbar || !target) return;
@@ -18375,6 +18408,7 @@ function showResponseSelectionToolbar(target) {
     }
     responseSelectionState.range = range;
     responseSelectionState.target = target;
+    setSelectionToolbarExtra(toolbar, false);
     const sourceCard = target.closest?.('.llm-panel') || null;
     setSelectionFavoriteButtonState(toolbar, Boolean(
         favoriteEntryFromSelectionRange(range)
@@ -18437,6 +18471,14 @@ function bindMainPageFavoritesInteractions() {
         event.stopImmediatePropagation();
         const color = btn.dataset.color || '';
         const cmd = btn.dataset.cmd || '';
+        if (btn.dataset.more) {
+            setSelectionToolbarExtra(toolbar, toolbar.querySelector('.selection-toolbar-extra')?.hidden);
+            return;
+        }
+        if (btn.dataset.block) {
+            applyResponseSelectionBlock(btn.dataset.block);
+            return;
+        }
         if (btn.dataset.clearHighlight) {
             applyResponseSelectionStyle('clearHighlight');
             return;
@@ -22149,6 +22191,7 @@ function checkCompareButtonState() {
     }
     function hideDebateSelectionToolbar() {
         if (debateSelToolbar) debateSelToolbar.classList.remove('vis');
+        setSelectionToolbarExtra(debateSelToolbar, false);
         debateSelectionState.range = null;
         debateSelectionState.target = null;
     }
@@ -22162,6 +22205,7 @@ function checkCompareButtonState() {
         if (!rect || !wrapRect) return;
         debateSelectionState.range = range;
         debateSelectionState.target = target;
+        setSelectionToolbarExtra(debateSelToolbar, false);
         debateSelToolbar.classList.add('vis');
         const toolbarWidth = debateSelToolbar.offsetWidth || 190;
         const toolbarHeight = debateSelToolbar.offsetHeight || 36;
@@ -22252,6 +22296,13 @@ function checkCompareButtonState() {
                 document.execCommand(command, false, value);
                 syncDebateSelectionSourceMessage();
             } catch (_) {}
+        }
+        window.getSelection?.()?.removeAllRanges?.();
+        hideDebateSelectionToolbar();
+    }
+    function applyDebateSelectionBlock(command) {
+        if (window.SelectionBlockFormat?.apply(debateSelectionState.range, debateSelectionState.target, command)) {
+            syncDebateSelectionSourceMessage();
         }
         window.getSelection?.()?.removeAllRanges?.();
         hideDebateSelectionToolbar();
@@ -23976,6 +24027,14 @@ function exportSingleTemplate(templateName, sourceData = null) {
         event.preventDefault();
         const color = btn.dataset.color || '';
         const cmd = btn.dataset.cmd || '';
+        if (btn.dataset.more) {
+            setSelectionToolbarExtra(debateSelToolbar, debateSelToolbar.querySelector('.selection-toolbar-extra')?.hidden);
+            return;
+        }
+        if (btn.dataset.block) {
+            applyDebateSelectionBlock(btn.dataset.block);
+            return;
+        }
         if (btn.dataset.clearHighlight) {
             applyDebateSelectionStyle('clearHighlight');
             return;
@@ -24016,6 +24075,14 @@ function exportSingleTemplate(templateName, sourceData = null) {
         event.preventDefault();
         const color = btn.dataset.color || '';
         const cmd = btn.dataset.cmd || '';
+        if (btn.dataset.more) {
+            setSelectionToolbarExtra(toolbar, toolbar.querySelector('.selection-toolbar-extra')?.hidden);
+            return;
+        }
+        if (btn.dataset.block) {
+            applyResponseSelectionBlock(btn.dataset.block);
+            return;
+        }
         if (btn.dataset.clearHighlight) {
             applyResponseSelectionStyle('clearHighlight');
             return;

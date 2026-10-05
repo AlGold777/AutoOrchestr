@@ -120,6 +120,7 @@ function renderDebateDom() {
   document.body.innerHTML = `
     <div class="prompt-container prompt-sandwich debate-composer has-debate-feed">
       <div class="debate-sel-toolbar" id="debateSelTb">
+        <button type="button" data-more="1" aria-expanded="false">⌄</button>
         <button class="stb" data-clear-highlight="1" aria-label="Remove highlight">No colour</button>
         <button class="stb col" data-color="#fde68a" aria-label="Yellow highlight">Yellow</button>
         <button class="stb col" data-color="#bbf7d0" aria-label="Green highlight">Green</button>
@@ -127,6 +128,14 @@ function renderDebateDom() {
         <button class="stb" data-cmd="bold" aria-label="Bold">Bold</button>
         <button class="stb" data-cmd="italic" aria-label="Italic">Italic</button>
         <button class="stb" data-fav="1" aria-label="Add selected fragment to favorites">Favorite</button>
+        <div class="selection-toolbar-extra" hidden>
+          <button type="button" data-block="left">Left</button>
+          <button type="button" data-block="center">Center</button>
+          <button type="button" data-block="right">Right</button>
+          <button type="button" data-block="list">List</button>
+          <button type="button" data-block="outdent">Outdent</button>
+          <button type="button" data-block="indent">Indent</button>
+        </div>
       </div>
       <div class="debate-session-bar" id="debate-session-bar">
         <span class="debate-session-bar-hit">Debate</span>
@@ -380,6 +389,7 @@ async function loadResultsScript() {
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-prompt-catalog.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'pipeline-presets.js'), 'utf8'));
   ['boot-utils', 'dom-utils', 'attachments', 'pasted-text', 'tooltips', 'debate-ui', 'debate-transport', 'debate-controller', 'debate-renderer', 'debate-sessions-store', 'debate-export', 'debate-plan-view-model', 'debate-telemetry-view'].forEach((mod) => { window.eval(fs.readFileSync(path.join(__dirname, '..', 'results', `${mod}.js`), 'utf8')); });
+  window.eval(fs.readFileSync(path.join(__dirname, '..', 'utils', 'selection-block-format.js'), 'utf8'));
   const script = fs.readFileSync(path.join(__dirname, '..', 'results.js'), 'utf8');
   window.eval(script);
   document.dispatchEvent(new Event('DOMContentLoaded', { bubbles: true }));
@@ -815,6 +825,39 @@ describe('Pipeline debate favorites view', () => {
     const bold = output.querySelector('strong');
     expect(bold).not.toBeNull();
     expect(bold.textContent).toBe('Format');
+  });
+
+  test('selection toolbar expands paragraph tools and stores list markup in a feed card', async () => {
+    const source = addDebateCard({ id: 'source-list', model: 'GPT', text: 'First paragraph' });
+    const output = source.querySelector('.debate-model-card-output');
+    await selectTextInOutput(output, 0, 5);
+    const toolbar = document.getElementById('debateSelTb');
+    toolbar.querySelector('[data-more]').click();
+    expect(toolbar.querySelector('.selection-toolbar-extra').hidden).toBe(false);
+    toolbar.querySelector('[data-block="center"]').click();
+    expect(output.style.textAlign).toBe('center');
+
+    await selectTextInOutput(output, 0, 5);
+    toolbar.querySelector('[data-more]').click();
+    toolbar.querySelector('[data-block="list"]').click();
+    expect(output.querySelector('ul > li')?.textContent).toBe('First paragraph');
+  });
+
+  test('main response toolbar expands paragraph tools and changes the selected paragraph', async () => {
+    const output = document.getElementById('output-gemini');
+    output.textContent = 'Main answer paragraph';
+    await selectTextInOutput(output, 0, 4);
+    const toolbar = document.getElementById('responseSelTb');
+    toolbar.querySelector('[data-more]').click();
+    expect(toolbar.querySelector('[data-more]').getAttribute('aria-expanded')).toBe('true');
+    toolbar.querySelector('[data-block="right"]').click();
+    expect(output.style.textAlign).toBe('right');
+    await selectTextInOutput(output, 0, 4);
+    toolbar.querySelector('[data-more]').click();
+    toolbar.querySelector('[data-block="indent"]').click();
+    expect(output.style.marginLeft).toBe('24px');
+    output.textContent = '';
+    output.removeAttribute('style');
   });
 
   test('export all responses includes Favourite content in the same HTML bundle', async () => {

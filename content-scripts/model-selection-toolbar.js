@@ -126,6 +126,7 @@
       position: fixed;
       z-index: 2147483647;
       display: flex;
+      flex-direction: column;
       align-items: center;
       gap: 4px;
       padding: 5px 6px;
@@ -148,6 +149,16 @@
       transform: translateY(0);
       transition: opacity 0.12s ease, transform 0.12s ease;
     }
+    #${TOOLBAR_ID} .selection-toolbar-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      width: 100%;
+    }
+    #${TOOLBAR_ID} .selection-toolbar-extra[hidden] { display: none; }
+    #${TOOLBAR_ID} .selection-toolbar-toggle[aria-expanded="true"] { transform: rotate(180deg); }
+    #${TOOLBAR_ID} .stb[data-block="left"] { justify-content: flex-start; padding-left: 8px; }
+    #${TOOLBAR_ID} .stb[data-block="right"] { justify-content: flex-end; padding-right: 8px; }
     #${TOOLBAR_ID} .stb {
       position: relative;
       display: inline-flex;
@@ -245,6 +256,8 @@
   toolbar.id = TOOLBAR_ID;
   toolbar.setAttribute('aria-hidden', 'true');
   toolbar.innerHTML = `
+    <div class="selection-toolbar-row">
+    <button type="button" class="stb selection-toolbar-toggle" data-more="1" title="More formatting" aria-label="More formatting" aria-expanded="false" aria-controls="${TOOLBAR_ID}-extra">⌄</button>
     <button class="stb" data-clear-highlight="1" title="Remove highlight" aria-label="Remove highlight"><span class="stb-label">No colour</span></button>
     <button class="stb col" data-color="#FFEB3B" title="Yellow highlight" aria-label="Yellow highlight"><span class="stb-label">Yellow</span></button>
     <button class="stb col" data-color="#05e56d" title="Green highlight" aria-label="Green highlight"><span class="stb-label">Green</span></button>
@@ -254,6 +267,15 @@
     <button class="stb" data-cmd="italic" title="Italic" aria-label="Italic"><span class="stb-label">Italic</span></button>
     <div class="selection-sep" aria-hidden="true"></div>
     <button class="stb" data-fav="1" title="Add selected fragment to favorites" aria-label="Add selected fragment to favorites" aria-pressed="false"><span class="stb-label">Favourite</span></button>
+    </div>
+    <div class="selection-toolbar-row selection-toolbar-extra" id="${TOOLBAR_ID}-extra" hidden>
+      <button type="button" class="stb" data-block="left" title="Align left" aria-label="Align left">≡</button>
+      <button type="button" class="stb" data-block="center" title="Align center" aria-label="Align center">≡</button>
+      <button type="button" class="stb" data-block="right" title="Align right" aria-label="Align right">≡</button>
+      <button type="button" class="stb" data-block="list" title="Bulleted list" aria-label="Bulleted list">☷</button>
+      <button type="button" class="stb" data-block="outdent" title="Decrease indent" aria-label="Decrease indent">⇤</button>
+      <button type="button" class="stb" data-block="indent" title="Increase indent" aria-label="Increase indent">⇥</button>
+    </div>
   `;
   document.body.appendChild(toolbar);
 
@@ -266,11 +288,24 @@
   let favoriteActivationPending = false;
   let suppressFavoriteClickUntil = 0;
 
+  const setToolbarExtra = (expanded) => {
+    const extra = toolbar.querySelector('.selection-toolbar-extra');
+    const toggle = toolbar.querySelector('[data-more]');
+    const oldHeight = toolbar.offsetHeight;
+    extra.hidden = !expanded;
+    toggle.setAttribute('aria-expanded', String(expanded));
+    if (toolbar.classList.contains('is-visible') && toolbar.style.top) {
+      const top = Number.parseFloat(toolbar.style.top) || 0;
+      toolbar.style.top = `${Math.max(8, top - (toolbar.offsetHeight - oldHeight))}px`;
+    }
+  };
+
   const hideToolbar = () => {
     selectionState.range = null;
     selectionState.target = null;
     toolbar.classList.remove('is-visible');
     toolbar.setAttribute('aria-hidden', 'true');
+    setToolbarExtra(false);
   };
 
   const normalizeSelectionTarget = (node) => {
@@ -319,6 +354,7 @@
       hideToolbar();
       return;
     }
+    setToolbarExtra(false);
     const toolbarWidth = toolbar.offsetWidth || 220;
     const toolbarHeight = toolbar.offsetHeight || 34;
     let top = rect.top - toolbarHeight - GAP_PX;
@@ -392,6 +428,12 @@
       } catch (_) {}
     }
 
+    window.getSelection?.()?.removeAllRanges?.();
+    hideToolbar();
+  };
+
+  const applySelectionBlock = (command) => {
+    window.SelectionBlockFormat?.apply(selectionState.range, selectionState.target, command);
     window.getSelection?.()?.removeAllRanges?.();
     hideToolbar();
   };
@@ -509,6 +551,14 @@
     event.stopPropagation();
     const color = btn.dataset.color || '';
     const cmd = btn.dataset.cmd || '';
+    if (btn.dataset.more) {
+      setToolbarExtra(toolbar.querySelector('.selection-toolbar-extra').hidden);
+      return;
+    }
+    if (btn.dataset.block) {
+      applySelectionBlock(btn.dataset.block);
+      return;
+    }
     if (btn.dataset.clearHighlight) {
       clearSelectionHighlight();
       return;

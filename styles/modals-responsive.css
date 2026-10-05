@@ -1016,6 +1016,7 @@ body.pro-features-hidden .comparison-section {
 .debate-sel-toolbar {
     position: absolute;
     display: none;
+    flex-direction: column;
     background: #ffffff;
     border: 1px solid #d7dce5;
     border-radius: 8px;
@@ -1030,6 +1031,17 @@ body.pro-features-hidden .comparison-section {
     pointer-events: auto;
 }
 .debate-sel-toolbar.vis { display: flex; }
+.debate-sel-toolbar .selection-toolbar-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+}
+.debate-sel-toolbar .selection-toolbar-extra[hidden] { display: none; }
+.debate-sel-toolbar .selection-toolbar-toggle[aria-expanded="true"] { transform: rotate(180deg); }
+.debate-sel-toolbar .stb[data-block="left"] { justify-content: flex-start; padding-left: 4px; }
+.debate-sel-toolbar .stb[data-block="right"] { justify-content: flex-end; padding-right: 4px; }
+.debate-sel-toolbar .selection-toolbar-extra .stb { font-size: 17px; font-weight: 500; }
 .debate-sel-toolbar .stb {
     display: inline-flex;
     align-items: center;

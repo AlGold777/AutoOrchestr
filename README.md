@@ -3,6 +3,11 @@
 Chrome MV3 extension for dispatching prompts to multiple LLM web interfaces,
 collecting answers, and running Debate pipelines.
 
+Select text in a response card or on a model page to open its formatting bar.
+The arrow on the left reveals paragraph alignment, a bulleted list, and
+decrease/increase indent controls. These actions format the paragraph containing
+the selection; selecting across paragraphs formats each selected paragraph.
+
 Pipeline answer cards show a small round badge beside the model name (`GPT R1`).
 Each model has one card per round: streaming updates reuse it, and later answer
 growth adds paragraphs to the same card. The next round gets a separate card.

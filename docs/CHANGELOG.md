@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-05 — Expand selection formatting, version 2.81.606
+
+- Added a left-side arrow to the selection toolbar in response cards and on model pages. Its second row offers left, center and right alignment, a bulleted list, and decrease/increase paragraph indent.
+- Block formatting applies to the selected paragraphs while preserving inline formatting and response-card content updates. The second row collapses when the selection toolbar closes.
+- Validation: 75 targeted toolbar and response-card integration tests passed; JavaScript syntax and whitespace checks passed.
+
 ### 2026-10-05 — Restore prompt undo and redo, version 2.81.605
 
 - Main-page and Pipeline composers share a bounded history for typing, HTML-to-plain pastes and folded text fragment insertion, editing, removal and restoration. Programmatic pastes previously bypassed the browser's undo history.

@@ -80,6 +80,8 @@ async function loadToolbarScript() {
   installDomMocks();
   const sanitize = require('fs').readFileSync(require('path').join(__dirname, '..', 'utils', 'sanitize.js'), 'utf8');
   window.eval(sanitize);
+  const blocks = require('fs').readFileSync(require('path').join(__dirname, '..', 'utils', 'selection-block-format.js'), 'utf8');
+  window.eval(blocks);
   const toolbar = require('fs').readFileSync(require('path').join(__dirname, '..', 'content-scripts', 'model-selection-toolbar.js'), 'utf8');
   window.eval(toolbar);
   await delay(20);
@@ -168,8 +170,9 @@ describe('Model selection toolbar', () => {
     await selectText();
     const toolbar = document.getElementById('codex-model-selection-toolbar');
     const buttons = Array.from(toolbar.querySelectorAll('button'));
-    expect(buttons[0].hasAttribute('data-clear-highlight')).toBe(true);
-    expect(buttons[1].dataset.color).toBe('#FFEB3B');
+    expect(buttons[0].hasAttribute('data-more')).toBe(true);
+    expect(buttons[1].hasAttribute('data-clear-highlight')).toBe(true);
+    expect(buttons[2].dataset.color).toBe('#FFEB3B');
 
     toolbar.querySelector('[data-color="#FFEB3B"]').click();
     const highlight = document.querySelector('#answer-text span');
@@ -200,5 +203,46 @@ describe('Model selection toolbar', () => {
 
     const payload = chrome.storage.local.set.mock.calls.at(-1)[0];
     expect(payload.llmComparatorFavoriteEntries).toHaveLength(0);
+  });
+
+  test('expands paragraph tools and applies alignment, indentation and a list', async () => {
+    await selectText();
+    const toolbar = document.getElementById('codex-model-selection-toolbar');
+    const toggle = toolbar.querySelector('[data-more]');
+    const extra = toolbar.querySelector('.selection-toolbar-extra');
+    expect(extra.hidden).toBe(true);
+    toggle.click();
+    expect(extra.hidden).toBe(false);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    toolbar.querySelector('[data-block="center"]').click();
+    expect(document.getElementById('answer-text').style.textAlign).toBe('center');
+
+    await selectText();
+    toggle.click();
+    toolbar.querySelector('[data-block="indent"]').click();
+    expect(document.getElementById('answer-text').style.marginLeft).toBe('24px');
+    await selectText();
+    toggle.click();
+    toolbar.querySelector('[data-block="outdent"]').click();
+    expect(document.getElementById('answer-text').style.marginLeft).toBe('0px');
+
+    await selectText();
+    toggle.click();
+    toolbar.querySelector('[data-block="list"]').click();
+    expect(document.querySelector('.answer > ul > li')?.textContent).toBe('Selected text fragment');
+  });
+
+  test('one list groups adjacent selected paragraphs and preserves inline markup', () => {
+    const answer = document.querySelector('.answer');
+    answer.innerHTML = '<p><strong>First</strong> paragraph</p><p>Second paragraph</p>';
+    const paragraphs = answer.querySelectorAll('p');
+    const range = document.createRange();
+    range.setStart(paragraphs[0].querySelector('strong').firstChild, 0);
+    range.setEnd(paragraphs[1].firstChild, 6);
+
+    expect(window.SelectionBlockFormat.apply(range, answer, 'list')).toBe(true);
+    expect(answer.querySelectorAll(':scope > ul')).toHaveLength(1);
+    expect(answer.querySelectorAll('ul > li')).toHaveLength(2);
+    expect(answer.querySelector('ul > li strong')?.textContent).toBe('First');
   });
 });
