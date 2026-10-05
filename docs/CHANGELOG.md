@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-05 — Scenario design guide and Research scenario draft (documentation only, version unchanged 2.81.492)
+
+- Add `docs/scenarios/how-to-design-a-scenario.md`: a plain-language 14-step algorithm for designing a scenario, derived from the Architecture scenario and the OSI stack.
+- Add `docs/scenarios/research.md`: Research scenario v0.1 (12 stages, 4 control points, bounded loops, budget formula), written by that algorithm; not yet run or wired into code.
+
 ### 2026-10-05 — OSI stack 1.4: Scenario Definition on L6 (documentation only, version unchanged 2.81.492)
 
 - Add the L6 Scenario Definition subprotocol: `PipelineDefinition` (versioned template) / `ScenarioPlan` (fixed before round 1 by a new `RunStarted` commit) / `RoundDecision`, with deterministic structural validation and `L6.DEF_*` failure codes.
