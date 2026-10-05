@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-05 — Restore prompt undo and redo, version 2.81.605
+
+- Main-page and Pipeline composers share a bounded history for typing, HTML-to-plain pastes and folded text fragment insertion, editing, removal and restoration. Programmatic pastes previously bypassed the browser's undo history.
+- Ctrl+Z / Cmd+Z undo; Ctrl+Shift+Z / Cmd+Shift+Z and Ctrl+Y redo. Physical key codes support non-Latin keyboard layouts. Undo restores selections and fragment offsets and emits input for draft persistence; loading or replacing a prompt resets history.
+- Validation: 38 composer/dispatch tests and 66 results-page integration tests passed. Chromium reproduced the original HTML-paste failure and verified Ctrl/Cmd undo/redo, folded fragments and assembled dispatch text for both fields. Two unrelated release guards (composer CSS and state-map action markup) still fail on unchanged baseline `d0367f6`; the other 39 guards passed.
+
 ### 2026-10-05 — Match pipeline answer export layout to the main page, version 2.81.604
 
 - Feed HTML answer headings show model and round on one shaded line, with response date/time and source URL beneath. Answer bodies have no background; each ends with `<model> End`.

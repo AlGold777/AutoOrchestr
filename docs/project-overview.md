@@ -6,7 +6,7 @@ The project is optimized for unstable provider UIs. Its core design assumes sele
 
 ## Status
 
-- Current version: `2.81.604`, synchronized in `manifest.json`, `package.json`
+- Current version: `2.81.605`, synchronized in `manifest.json`, `package.json`
   and the root package entry in `package-lock.json`
 - Extension type: Chrome Manifest V3
 - Package name: `llm-selector-manager`
@@ -53,6 +53,15 @@ diagnostics, and `timings-settings.md` owns current runtime timing values.
   pipeline profiles and their tests.
 - Saved Pipelines store runnable protocol settings, including topology, models, run policy, limits, synthesizer and round plan.
 - Release-by-release project history is intentionally kept only in [CHANGELOG.md](CHANGELOG.md).
+
+## Prompt Editing
+
+The main-page and Pipeline prompt fields support Ctrl+Z (Cmd+Z on macOS) to
+undo typing, pasting and changes to folded text fragments. Use Ctrl+Shift+Z,
+Cmd+Shift+Z or Ctrl+Y to redo. Undo restores the caret, selected text and fragment
+positions; full folded content remains available for dispatch. Consecutive typing
+is grouped, with up to 100 undo steps per field. Loading or replacing a prompt
+starts a new history; history is not saved between page loads.
 
 ## Pipeline Feed Export
 

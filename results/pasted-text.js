@@ -1,4 +1,4 @@
-// Fold large clipboard text without turning it into a provider file upload.
+// Prompt text, folded clipboard fragments and their shared undo/redo history.
 (function installResultsPastedText(root) {
     'use strict';
     if (!root || root.ResultsPastedText) return;
@@ -17,6 +17,74 @@
         let dialog = null;
         let editingId = null;
         let returnFocus = null;
+        const undoStack = [];
+        const redoStack = [];
+        const HISTORY_LIMIT = 100;
+        let historyState;
+        let editGroup = null;
+        let restoringHistory = false;
+
+        const captureState = () => ({
+            visibleText, chips: chips.map((chip) => ({ ...chip })),
+            start: input?.selectionStart || 0, end: input?.selectionEnd || 0,
+            direction: input?.selectionDirection || 'none'
+        });
+        const sameContent = (a, b) => a.visibleText === b.visibleText
+            && a.chips.length === b.chips.length
+            && a.chips.every((chip, index) => {
+                const other = b.chips[index];
+                return chip.id === other.id && chip.offset === other.offset
+                    && chip.text === other.text && chip.name === other.name;
+            });
+        const resetHistory = () => {
+            undoStack.length = 0;
+            redoStack.length = 0;
+            editGroup = null;
+            historyState = captureState();
+        };
+        // Keep the caret before each edit, including programmatic chip changes.
+        const captureSelection = () => {
+            if (!historyState) return;
+            if (historyState.start !== input?.selectionStart || historyState.end !== input?.selectionEnd) editGroup = null;
+            historyState.start = input?.selectionStart || 0;
+            historyState.end = input?.selectionEnd || 0;
+            historyState.direction = input?.selectionDirection || 'none';
+        };
+        const recordChange = (event) => {
+            if (restoringHistory) return;
+            const next = captureState();
+            if (sameContent(historyState, next)) return;
+            const type = event?.inputType;
+            const groupable = ['insertText', 'insertCompositionText', 'deleteContentBackward', 'deleteContentForward'].includes(type);
+            const now = Date.now();
+            if (!groupable || !editGroup || editGroup.type !== type || now - editGroup.at > 1000) {
+                undoStack.push(historyState);
+                if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
+            }
+            redoStack.length = 0;
+            historyState = next;
+            editGroup = groupable ? { type, at: now } : null;
+        };
+        const travelHistory = (redo = false) => {
+            if (!input || input.readOnly || input.disabled) return;
+            syncVisibleEdit();
+            const from = redo ? redoStack : undoStack;
+            const to = redo ? undoStack : redoStack;
+            const state = from.pop();
+            if (!state) return;
+            to.push(captureState());
+            closeEditor();
+            visibleText = state.visibleText;
+            chips = state.chips.map((chip) => ({ ...chip }));
+            input.value = visibleText;
+            input.setSelectionRange(state.start, state.end, state.direction);
+            pendingEdit = null;
+            editGroup = null;
+            historyState = captureState();
+            render();
+            restoringHistory = true;
+            try { emitChange(); } finally { restoringHistory = false; }
+        };
 
         const orderedChips = () => chips.slice().sort((a, b) => a.offset - b.offset || a.order - b.order);
         const moveAnchors = (start, end, length) => {
@@ -32,7 +100,7 @@
             let oldEnd = visibleText.length;
             let newEnd = next.length;
             // Use the real selection where possible (repeated text makes a
-            // longest-prefix diff ambiguous), including native undo/redo fallback.
+            // longest-prefix diff ambiguous), with a diff for edits without beforeinput.
             if (pendingEdit && next.startsWith(visibleText.slice(0, pendingEdit.start))
                 && next.endsWith(visibleText.slice(pendingEdit.end))) {
                 start = pendingEdit.start;
@@ -108,6 +176,8 @@
                 remove.setAttribute('aria-label', `Remove ${chip.name}`);
                 remove.title = 'Remove pasted text';
                 remove.addEventListener('click', () => {
+                    syncVisibleEdit();
+                    captureSelection();
                     chips = chips.filter((item) => item.id !== chip.id);
                     if (editingId === chip.id) closeEditor();
                     render();
@@ -123,6 +193,7 @@
             const ordered = orderedChips();
             const chip = ordered.find((item) => item.id === id);
             if (!chip || !input) return;
+            captureSelection();
             const index = ordered.indexOf(chip);
             ordered.forEach((item, itemIndex) => {
                 if (item.offset > chip.offset || (item.offset === chip.offset && itemIndex > index)) item.offset += chip.text.length;
@@ -160,6 +231,8 @@
                 save.className = 'pasted-text-save';
                 save.textContent = 'Save';
                 save.addEventListener('click', () => {
+                    syncVisibleEdit();
+                    captureSelection();
                     const current = chips.find((item) => item.id === editingId);
                     if (current) {
                         // textarea normalizes CRLF. Viewing and saving an
@@ -197,6 +270,7 @@
         const tryPaste = (text) => {
             if (!input || !bar || input.readOnly || input.disabled || !shouldCollapse(text)) return false;
             syncVisibleEdit();
+            captureSelection();
             const start = input.selectionStart;
             const end = input.selectionEnd;
             moveAnchors(start, end, 0);
@@ -216,6 +290,7 @@
             pendingEdit = null;
             if (input) input.value = visibleText;
             render();
+            resetHistory();
         };
         const getSnapshot = () => {
             syncVisibleEdit();
@@ -235,20 +310,43 @@
             // A stale or malformed snapshot must never replace the saved prompt.
             if (getText() !== fullText) { setText(fullText); return; }
             render();
+            resetHistory();
         };
         // HTML-to-plain paste inserts programmatically without beforeinput.
         // Capture its selection before the composer paste handler runs.
         input?.addEventListener('paste', () => {
+            captureSelection();
+            editGroup = null;
             pendingEdit = { start: input.selectionStart, end: input.selectionEnd };
         }, true);
         input?.addEventListener('beforeinput', (event) => {
+            if (event.inputType === 'historyUndo' || event.inputType === 'historyRedo') {
+                event.preventDefault();
+                travelHistory(event.inputType === 'historyRedo');
+                return;
+            }
+            captureSelection();
             const start = input.selectionStart;
             const end = input.selectionEnd;
             // Only ordinary insertion/replacement has a known selection range.
             pendingEdit = event.inputType?.startsWith('insert') ? { start, end } : null;
         });
-        input?.addEventListener('input', syncVisibleEdit);
+        input?.addEventListener('input', (event) => {
+            syncVisibleEdit();
+            recordChange(event);
+        });
+        input?.addEventListener('keydown', (event) => {
+            if (event.defaultPrevented || event.isComposing || event.altKey || !(event.ctrlKey || event.metaKey)
+                || input.readOnly || input.disabled) return;
+            // Physical codes also work with a Russian keyboard layout.
+            const z = event.code === 'KeyZ' || event.key.toLowerCase() === 'z';
+            const y = event.code === 'KeyY' || event.key.toLowerCase() === 'y';
+            if (!z && !(y && !event.shiftKey)) return;
+            event.preventDefault();
+            travelHistory(y || event.shiftKey);
+        });
         render();
+        resetHistory();
         return { getText, setText, tryPaste, getSnapshot, restoreSnapshot };
     }
 
