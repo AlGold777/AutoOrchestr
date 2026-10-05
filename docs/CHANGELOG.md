@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-05 — OSI stack 1.3 after third review (documentation only, version unchanged 2.81.492)
+
+- Remove the measurement-based `bounded` submit finality: a measured delay never proves non-delivery; `T_final` only bounds waiting before `delivery_unknown`.
+- Narrow `explicit` finality to a provider signal tied to the specific send and confirming completion without acceptance; disconnects, timeouts and rejected client promises do not qualify.
+
 ### 2026-10-05 — OSI stack 1.2 after second review (documentation only, version unchanged 2.81.492)
 
 - Require an adapter submit-finality guarantee (`submit_finality`: none / explicit / bounded) before declaring `not_delivered` after a submit action; default `none` yields `delivery_unknown`.
