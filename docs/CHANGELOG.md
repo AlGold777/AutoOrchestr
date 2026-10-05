@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-05 — Place incomplete status beside API, version 2.81.611
+
+- Moved the main answer card’s `uncompleted` label into `.llm-header`, immediately after API. It also relocates correctly when API is created later. The label is subtle grey (`#969ca5`), with the existing completion tooltip retained. Pipeline round labels retain their inline placement where no API indicator exists.
+- Validation: 44 targeted completion/deck/layout/viewer tests passed. Chromium verified placement immediately after API and the computed grey against the real header background; syntax and whitespace checks passed.
+
 ### 2026-10-05 — Pipeline full answer feed, version 2.81.610
 
 - Added delayed card cover inside the Pipeline feed viewport with the same hold and movement as the main answer view. Original cards remain direct children, preserving session filtering and actions. Long answers scroll inside cards; reduced motion retains the regular feed.

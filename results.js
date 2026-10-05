@@ -12709,6 +12709,8 @@ document.addEventListener('click', (event) => {
         indicator.tabIndex = 0;
         indicator.setAttribute('aria-label', `${llmName} API status. Double-click to open telemetry.`);
         referenceNode.insertAdjacentElement('afterend', indicator);
+        const partialMark = panel.querySelector('.answer-partial-mark');
+        if (partialMark) indicator.after(partialMark);
         apiIndicatorRegistry.set(llmName, indicator);
         return indicator;
     };
@@ -21457,13 +21459,19 @@ function checkCompareButtonState() {
             mark = document.createElement('span');
             mark.className = 'answer-partial-mark';
             const title = container.querySelector('.debate-model-card-title-main');
-            if (title) title.appendChild(mark);
-            else container.insertBefore(mark, container.firstChild);
+            const header = container.querySelector('.llm-header');
+            if (header) header.appendChild(mark);
+            else if (title) title.appendChild(mark);
+            else container.appendChild(mark);
         }
         mark.textContent = 'uncompleted';
         mark.title = `Генерация не завершилась чисто (${status}). Текст может быть обрезан.`;
+        const api = container.querySelector('.llm-header .api-indicator');
+        const header = container.querySelector('.llm-header');
         const round = container.querySelector('.debate-model-card-round');
-        if (round && round.nextElementSibling !== mark) round.after(mark);
+        if (api && api.nextElementSibling !== mark) api.after(mark);
+        else if (header && mark.parentElement !== header) header.appendChild(mark);
+        else if (!header && round && round.nextElementSibling !== mark) round.after(mark);
     }
     function applyAttributionMarker(container, meta = {}) {
         if (!container) return;

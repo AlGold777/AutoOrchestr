@@ -64,3 +64,6 @@ hold, seating by 84%, and a 34% upward shift of the previous card. Long answers
 scroll inside their cards. Collapsed mode shows the compact feed. Reading earlier
 answers is preserved during updates; new content follows automatically at the end.
 Reduced motion uses the regular full feed. Export and fullscreen include all visible answers.
+
+Incomplete main-page answers show a subtle grey `uncompleted` label immediately
+after the API indicator in the card header. The label keeps its completion tooltip.
