@@ -54,3 +54,13 @@ npm test -- --runInBand
 The extension is loaded unpacked from the project root through
 `chrome://extensions`. Provider pages must already be authenticated for web UI
 automation.
+
+### Pipeline answer feed
+
+The left icon in the feed header switches **Full answers / Collapsed answers**.
+Full answers is the default; the choice is saved locally and applies to new answers too.
+In full mode the next card covers the current card inside the feed viewport: 30%
+hold, seating by 84%, and a 34% upward shift of the previous card. Long answers
+scroll inside their cards. Collapsed mode shows the compact feed. Reading earlier
+answers is preserved during updates; new content follows automatically at the end.
+Reduced motion uses the regular full feed. Export and fullscreen include all visible answers.

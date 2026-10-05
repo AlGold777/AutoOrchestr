@@ -19629,6 +19629,43 @@ function checkCompareButtonState() {
     const debateSessionAddBtn = document.getElementById('debate-session-add-btn');
     const debateSessionDeleteBtn = document.getElementById('debate-session-delete-btn');
     const debateSessionFullscreenBtn = document.getElementById('debate-session-fullscreen-btn');
+    const debateFullAnswersBtn = document.getElementById('debate-full-answers-btn');
+    const DEBATE_FULL_ANSWERS_KEY = 'llmCodexDebateFullAnswers.v1';
+    var debateFullAnswers = true;
+    var pipelineCardCover = document.body.classList.contains('pipeline-page')
+        ? window.PipelineCardCover?.create(debateModelCards) : null;
+    let debateExpansionChanged = false;
+    let debateFeedFollowLatest = true;
+    let debateFeedLastSession = null;
+    debateModelCards?.addEventListener('scroll', () => {
+        debateFeedFollowLatest = debateModelCards.scrollHeight - debateModelCards.clientHeight - debateModelCards.scrollTop < 24;
+    }, { passive: true });
+    function setDebateFullAnswers(expanded) {
+        debateFullAnswers = !!expanded;
+        debateFullAnswersBtn?.classList.toggle('is-active', debateFullAnswers);
+        debateFullAnswersBtn?.setAttribute('aria-pressed', String(debateFullAnswers));
+        debateFullAnswersBtn?.setAttribute('title', debateFullAnswers ? 'Full answers — collapse all' : 'Collapsed answers — expand all');
+        debateFullAnswersBtn?.setAttribute('aria-label', debateFullAnswers ? 'Collapse all model answers' : 'Expand all model answers');
+        const icon = debateFullAnswersBtn?.querySelector('i');
+        if (icon) icon.className = debateFullAnswers ? 'ti ti-arrows-minimize' : 'ti ti-arrows-maximize';
+        debateModelCards?.querySelectorAll('.debate-model-card').forEach((card) => {
+            setDebateCardExpanded(card, debateFullAnswers);
+            card.dataset.answerExpansionInitialized = 'true';
+        });
+        pipelineCardCover?.setEnabled(debateFullAnswers);
+    }
+    if (debateFullAnswersBtn) {
+        debateFullAnswersBtn.addEventListener('click', () => {
+            debateExpansionChanged = true;
+            setDebateFullAnswers(!debateFullAnswers);
+            safeStorageLocalSet({ [DEBATE_FULL_ANSWERS_KEY]: debateFullAnswers });
+        });
+        setDebateFullAnswers(true);
+        safeStorageLocalGet(DEBATE_FULL_ANSWERS_KEY).then((data) => {
+            if (!debateExpansionChanged) setDebateFullAnswers(data?.[DEBATE_FULL_ANSWERS_KEY] !== false);
+        });
+    }
+
     const debateSessionCopyBtn = document.getElementById('debate-session-copy-btn');
     const debateSessionExportBtn = document.getElementById('debate-session-export-btn');
     const debateSessionClearBtn = document.getElementById('debate-session-clear-btn');
@@ -20584,7 +20621,12 @@ function checkCompareButtonState() {
         });
         firstApproved?.classList.add('first-approved-zone-card');
         syncPromptSandwichLayoutState(activeSessionId);
-        debateModelCards.scrollTop = debateModelCards.scrollHeight;
+        pipelineCardCover?.refresh();
+        if (debateFeedFollowLatest || debateFeedLastSession !== activeSessionId) {
+            debateModelCards.scrollTop = debateModelCards.scrollHeight;
+            debateFeedFollowLatest = true;
+        }
+        debateFeedLastSession = activeSessionId;
     }
     // Perf: this runs a full DOM sweep (per-card layout reads + display writes +
     // a scrollTop=scrollHeight forced reflow) and is called from ~18 sites,
@@ -20748,6 +20790,7 @@ function checkCompareButtonState() {
                 && !entry.hidden && entry.style.display !== 'none');
             const html = cards.map((entry) => {
                 const clone = entry.cloneNode(true);
+                window.PipelineCardCover?.cleanSnapshot(clone);
                 clone.querySelectorAll('.debate-model-card-meta, button, input, select, textarea, .status-indicator, .debate-fragment-hint')
                     .forEach((node) => node.remove());
                 return clone.outerHTML;
@@ -20839,8 +20882,11 @@ function checkCompareButtonState() {
         });
     }
     if (debateModelCards) {
-        new MutationObserver(() => {
-            if (responseViewerCard === debateModelCards && Number.isInteger(responseViewerTabId)) {
+        new MutationObserver((records) => {
+            const contentChanged = records.some((record) => record.type !== 'attributes'
+                || !['style', 'inert', 'data-cover-state'].includes(record.attributeName)
+                || !record.target.classList?.contains('pipeline-cover-card'));
+            if (contentChanged && responseViewerCard === debateModelCards && Number.isInteger(responseViewerTabId)) {
                 sendResponseViewerContent(responseViewerTabId, responseViewerPayload(debateModelCards));
             }
         }).observe(debateModelCards, { childList: true, subtree: true, characterData: true, attributes: true });
@@ -20871,6 +20917,7 @@ function checkCompareButtonState() {
         });
         card.classList.toggle('is-wide-expanded', !!expanded);
         setDebateCardExpanded(card, !!expanded);
+        pipelineCardCover?.refresh();
     }
     function setDebateFeedWideExpanded(expanded) {
         const composer = debateSessionBar?.closest('.prompt-container.prompt-sandwich.debate-composer');
@@ -20904,11 +20951,16 @@ function checkCompareButtonState() {
         if (isEmpty) {
             card.classList.remove('has-response', 'has-overflow', 'is-expanded');
             card.dataset.expanded = 'false';
+            delete card.dataset.answerExpansionInitialized;
             const btn = card.querySelector('.debate-card-show-more');
             if (btn) btn.hidden = true;
             return;
         }
         card.classList.add('has-response');
+        if (debateFullAnswersBtn && card.dataset.answerExpansionInitialized !== 'true') {
+            setDebateCardExpanded(card, debateFullAnswers);
+            card.dataset.answerExpansionInitialized = 'true';
+        }
         if (card.dataset.expanded !== 'true') {
             setDebateCardExpanded(card, false);
         }
@@ -22378,6 +22430,7 @@ function checkCompareButtonState() {
         const html = cards.map((card) => {
             const clone = card.cloneNode(true);
             if (!(clone instanceof HTMLElement)) return '';
+            window.PipelineCardCover?.cleanSnapshot(clone);
             clone.querySelectorAll('.debate-model-card-meta, .debate-approval-check, .debate-model-card-printing').forEach((el) => el.remove());
             return clone.outerHTML;
         }).join('');

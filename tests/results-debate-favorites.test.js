@@ -160,6 +160,7 @@ function renderDebateDom() {
       </div>
       <button id="debate-session-add-btn" type="button">+</button>
       <button id="debate-session-delete-btn" type="button">−</button>
+      <button id="debate-full-answers-btn" type="button" aria-pressed="true"><i></i></button>
       <button id="debate-session-fullscreen-btn" type="button" aria-expanded="false"><i class="ti ti-maximize"></i></button>
       <button id="debate-session-copy-btn" type="button">copy</button>
       <button id="debate-session-export-btn" type="button">export</button>
@@ -404,6 +405,8 @@ describe('Pipeline debate favorites view', () => {
   });
 
   beforeEach(async () => {
+    const fullAnswers = document.getElementById('debate-full-answers-btn');
+    if (fullAnswers.getAttribute('aria-pressed') === 'false') fullAnswers.click();
     chrome.runtime.sendMessage.mockImplementation((message, callback) => {
       if (typeof callback === 'function') {
         callback({ status: 'ok', active: false });
@@ -440,6 +443,24 @@ describe('Pipeline debate favorites view', () => {
     tab.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
     await delay(520);
     chrome.runtime.sendMessage.mockClear();
+  });
+
+  test('full answers defaults on, toggles every answer, persists and applies to incoming cards', async () => {
+    const button = document.getElementById('debate-full-answers-btn');
+    const first = addDebateCard({ id: 'full-mode-first', text: 'Line\n'.repeat(10), model: 'GPT' });
+    window.__pipelineLifecycleDebug.syncDebateCardOutputLayout(first);
+    expect(button.getAttribute('aria-pressed')).toBe('true');
+    expect(first.classList.contains('is-expanded')).toBe(true);
+    button.click();
+    expect(first.classList.contains('is-expanded')).toBe(false);
+    const saved = await chrome.storage.local.get('llmCodexDebateFullAnswers.v1');
+    expect(saved['llmCodexDebateFullAnswers.v1']).toBe(false);
+    const second = addDebateCard({ id: 'full-mode-second', text: 'Next\n'.repeat(10), model: 'Gemini' });
+    window.__pipelineLifecycleDebug.syncDebateCardOutputLayout(second);
+    expect(second.classList.contains('is-expanded')).toBe(false);
+    button.click();
+    expect(first.classList.contains('is-expanded')).toBe(true);
+    expect(second.classList.contains('is-expanded')).toBe(true);
   });
 
   test('HTML feed export button downloads the document with shared model icons', async () => {
@@ -959,6 +980,7 @@ describe('Pipeline debate favorites view', () => {
   });
 
   test('model cards use 14px text, keep empty one-line cards, and cap long responses at five lines', async () => {
+    document.getElementById('debate-full-answers-btn').click();
     const css = readResolvedCss();
     expect(css).toContain('.debate-model-card,\n.debate-model-card :where(*) {\n    font-size: 14px !important;');
     expect(css).toContain('min-height: var(--debate-card-line-height);');

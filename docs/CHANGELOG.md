@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-05 — Pipeline full answer feed, version 2.81.610
+
+- Added delayed card cover inside the Pipeline feed viewport with the same hold and movement as the main answer view. Original cards remain direct children, preserving session filtering and actions. Long answers scroll inside cards; reduced motion retains the regular feed.
+- Added a left Full answers / Collapsed answers icon, defaulting to full answers and persisting the choice in local storage. New answers inherit it; reading earlier answers is no longer interrupted by streaming updates. Export and fullscreen snapshots remove cover presentation.
+- Validation: 94 targeted feed/deck/layout tests passed. Chromium with the actual Pipeline markup and styles verified hold/cover/seating, reverse scroll, internal answer scrolling, left-aligned control and a 390 px viewport without horizontal overflow. Syntax and whitespace checks passed.
+
 ### 2026-10-05 — Cover tiled answers by rows, version 2.81.609
 
 - Extended the delayed cover effect to the main-page grid: a full row of three cards rises and covers the preceding row as one block. The last incomplete row has an opaque full-width backing, so old cards do not remain visible in empty cells.

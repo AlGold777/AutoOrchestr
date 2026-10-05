@@ -5,7 +5,8 @@
     <!-- LLM Discus: hidden search marker for developers -->
     <meta name="keywords" content="LLM Discus">
     <title>LLM Comparison</title>
-    <link rel="stylesheet" href="styles.css?v=2.81.609">
+    <link rel="stylesheet" href="styles.css?v=2.81.610">
+    <link rel="stylesheet" href="styles/pipeline-card-cover.css?v=2.81.610">
 </head>
 <body class="pipeline-page">
     <div class="app-shell">
@@ -188,6 +189,7 @@
             <button type="button" id="debate-session-delete-btn" class="ib" title="Delete current session" aria-label="Delete current session">−</button>
         </div>
         <div class="debate-session-actions">
+            <button type="button" id="debate-full-answers-btn" class="ib is-active" title="Full answers — collapse all" aria-label="Collapse all model answers" aria-pressed="true"><i class="ti ti-arrows-minimize" aria-hidden="true"></i></button>
             <button type="button" id="debate-session-fullscreen-btn" class="ib" title="Fullscreen feed" aria-label="Fullscreen feed" aria-expanded="false"><i class="ti ti-maximize" aria-hidden="true"></i></button>
             <button type="button" id="debate-session-copy-btn" class="ib" title="Copy feed" aria-label="Copy feed"><i class="ti ti-copy" aria-hidden="true"></i></button>
             <button type="button" id="debate-session-export-btn" class="ib" title="Export feed as HTML" aria-label="Export feed as HTML"><i class="ti ti-download" aria-hidden="true"></i></button>
@@ -986,6 +988,7 @@
     <script src="results-telemetry-export-bootstrap.js"></script>
     <script src="shared/report-digest.js"></script>
     <script src="utils/selection-block-format.js"></script>
+    <script src="results/pipeline-card-cover.js"></script>
     <script src="results.js"></script>
     <!-- results-devtools.js is lazy-loaded by results.js (ensureTelemetryDevtoolsLoaded)
          just after boot; not loaded synchronously here to keep its parse cost off
