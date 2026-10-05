@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-05 — OSI stack 1.5: scenario logic as a core L6 function (documentation only, version unchanged 2.81.492)
+
+- Name scenario logic formation as one of the most important L6 functions and add the Scenario Logic subprotocol before Scenario Definition: `ResultSpec`, `InputGap`, backward chains with per-link `error_cost` / `multi_model_value` / `progress_definition`, `FailureModeMap`, `ScenarioLogic`.
+- Require traceability: `PipelineDefinition.logic_ref`, `derived_from` on every stage and gate; add `gates[]` with predicate conditions and `human_gates[]`.
+- Extend structural validation with `L6.LOGIC_*` and `L6.GATE_NOT_PREDICATE` codes; add stack rule 16 "logic before form".
+
 ### 2026-10-05 — Scenario design: understand the logic first (documentation only, version unchanged 2.81.492)
 
 - Restructure `docs/scenarios/how-to-design-a-scenario.md` into Part 1 "understand the logic" (describe the result, analyse the input gap, work backwards from each part of the result) and Part 2 "formalize".

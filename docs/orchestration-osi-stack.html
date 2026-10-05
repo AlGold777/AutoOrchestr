@@ -25,7 +25,7 @@ hr{border:0;border-top:1px solid var(--bd);margin:32px 0}
 отказы и сквозные протоколы. Все остальные спецификации (Completion V2,
 model-tabs, Disput pipeline) описывают реализацию отдельных слоёв и не должны
 ему противоречить. При конфликте сначала правится этот документ, затем код.</p>
-<p>Версия стека: <strong>OSI-1.4</strong> (2026-10-05). Состав и названия шести слоёв
+<p>Версия стека: <strong>OSI-1.5</strong> (2026-10-05). Состав и названия шести слоёв
 зафиксированы; изменения формулировок внутри слоя повышают минорную версию,
 изменение состава слоёв — мажорную.</p>
 </blockquote>
@@ -99,6 +99,11 @@ model-tabs, Disput pipeline) описывают реализацию отдел�
 <li><strong>Данные не издают протокол.</strong> Чужие ответы, цитаты и извлечённый текст не
     могут содержать действующие протокольные элементы (маркер, нонс, ограждение
     данных). Протокольная позиция валидна только в заданном месте.</li>
+<li><strong>Логика сценария — до его формы.</strong> Этапы, роли, проверки и бюджет
+    сценария выводятся из логики сценария (<code>ScenarioLogic</code>, §5.L6), а не
+    придумываются. Этап, который не выводится ни из одного звена логики,
+    лишний; часть результата, к которой не ведёт ни одна цепочка, не будет
+    получена.</li>
 </ol>
 <h2 id="3">3. Сводная карта слоёв</h2>
 <div class="tw"><table>
@@ -117,9 +122,9 @@ model-tabs, Disput pipeline) описывают реализацию отдел�
 <tr>
 <td><strong>L6</strong></td>
 <td>Сценарии</td>
-<td>Что решаем, по какому pipeline, каким протоколом и когда остановиться?</td>
-<td><code>PipelineDefinition</code>, <code>ScenarioPlan</code>, <code>RoundDecision</code>, <code>DisputeGraph</code>, <code>Disposition</code>, <code>StopDecision</code></td>
-<td>Структурно валидный зафиксированный план; вердикт прогона с причиной; каждое существенное расхождение имеет disposition</td>
+<td>Какой результат нужен и какая логика к нему ведёт; по какому pipeline, каким протоколом и когда остановиться?</td>
+<td><code>ScenarioLogic</code>, <code>PipelineDefinition</code>, <code>ScenarioPlan</code>, <code>RoundDecision</code>, <code>DisputeGraph</code>, <code>Disposition</code>, <code>StopDecision</code></td>
+<td>Логика с полной прослеживаемостью этапов; структурно валидный зафиксированный план; вердикт прогона с причиной; каждое существенное расхождение имеет disposition</td>
 <td>Структура сценария — детерминированная; оценка содержания — вероятностная</td>
 <td>core / Disput orchestrator</td>
 </tr>
@@ -614,17 +619,25 @@ model-tabs, Disput pipeline) описывают реализацию отдел�
 усиление.</p>
 <hr />
 <h3 id="l6">L6 — Сценарии</h3>
-<p><strong>Назначение.</strong> Выполнение задачи и сценария: цель, выбор протокола (debate,
-расширение, критика, арбитраж), план раундов, назначение ролей, критерий
-остановки, решение о том, что сжимать в контексте.</p>
-<p><strong>Подпротоколы.</strong> Scenario Definition · Scenario Planning · Protocol
-Transition · Reconciliation (claims, расхождения, disposition) · Semantic
-Assessment · Stop Decision.</p>
-<p><strong>Единица данных.</strong> <code>PipelineDefinition</code>, <code>ScenarioPlan</code>, <code>Claim</code>,
+<p><strong>Назначение.</strong> Одна из важнейших функций L6 — <strong>формирование логики
+сценария</strong>: понять, из чего складывается нужный результат и какие шаги к нему
+неизбежно ведут от того, что есть на входе. Остальные функции слоя опираются
+на неё: оформление логики в pipeline (этапы, роли, проверки, бюджет), выбор
+протокола (debate, расширение, критика, арбитраж), план раундов, назначение
+ролей, критерий остановки, решение о том, что сжимать в контексте, и
+исполнение сценария.</p>
+<p>Ошибку логики нельзя исправить на нижних слоях: L1–L5 надёжно доставят,
+проверят и зафиксируют ответы на этапы, которые не ведут к результату. Поэтому
+логика формируется и проверяется до того, как появляется первый этап.</p>
+<p><strong>Подпротоколы.</strong> Scenario Logic · Scenario Definition · Scenario Planning ·
+Protocol Transition · Reconciliation (claims, расхождения, disposition) ·
+Semantic Assessment · Stop Decision.</p>
+<p><strong>Единица данных.</strong> <code>ResultSpec</code>, <code>InputGap</code>, <code>ScenarioLogic</code>,
+<code>FailureModeMap</code>, <code>PipelineDefinition</code>, <code>ScenarioPlan</code>, <code>Claim</code>,
 <code>DisputeGraph</code>, <code>Disposition</code> (<code>accepted</code> / <code>rejected</code> / <code>open</code> / <code>deferred</code>),
 <code>ConvergenceDelta</code>, <code>SemanticAssessment</code>, <code>RoundDecision</code>, <code>StopDecision</code>,
 <code>RunVerdict</code>.</p>
-<p><strong>Три сущности сценария.</strong></p>
+<p><strong>Четыре сущности сценария.</strong></p>
 <div class="tw"><table>
 <thead>
 <tr>
@@ -634,6 +647,11 @@ Assessment · Stop Decision.</p>
 </tr>
 </thead>
 <tbody>
+<tr>
+<td><code>ScenarioLogic</code></td>
+<td>Первой, до любого этапа; версионируется вместе с определением</td>
+<td>Описание результата, разбор входа, цепочки от каждой части результата к входу, слитая схема звеньев</td>
+</tr>
 <tr>
 <td><code>PipelineDefinition</code></td>
 <td>До любого запуска; версионируется</td>
@@ -651,9 +669,75 @@ Assessment · Stop Decision.</p>
 </tr>
 </tbody>
 </table></div>
+<p><strong>Scenario Logic.</strong> Формирование логики идёт от результата назад, а не от
+начала вперёд. Методика с примерами —
+<a href="scenarios/how-to-design-a-scenario.md">how-to-design-a-scenario.md</a>, часть 1;
+пример применения — <a href="scenarios/research.md">research.md</a>.</p>
+<ol>
+<li><strong><code>ResultSpec</code> — описание результата.</strong> Что это за вещь; из каких частей
+   она состоит (<code>parts[]</code>, каждая часть получает идентификатор); какими
+   проверяемыми свойствами обладает каждая часть; что человек сделает с
+   результатом; чего в результате быть не должно (граница сценария).</li>
+<li><strong><code>InputGap</code> — разбор входа.</strong> Что приходит на вход (вопрос пользователя,
+   документы, знания и умения моделей), насколько этому можно доверять, чего
+   не хватает до результата по каждой части и какого рода эта нехватка
+   (фактов, ясности цели, способа сделать, знания о слабых местах, выбора
+   между вариантами). Род нехватки определяет набор ходов сценария.</li>
+<li><strong>Обратный ход.</strong> Для каждой части результата отдельно задаётся вопрос
+   «что должно существовать непосредственно перед этим?», пока цепочка не
+   упрётся во вход. Одинаковые звенья разных цепочек сливаются в одно. Каждое
+   звено размечается:</li>
+</ol>
+<div class="tw"><table>
+<thead>
+<tr>
+<th>Разметка звена</th>
+<th>Вопрос</th>
+<th>Куда переходит</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>error_cost</code></td>
+<td>Испортит ли результат ошибка в этой вещи?</td>
+<td>Если да — отдельная проверка (контрольная точка) перед следующим звеном</td>
+</tr>
+<tr>
+<td><code>multi_model_value</code></td>
+<td>Что дают несколько моделей: <code>diversity</code> (ракурсы и охват), <code>independence</code> (подтверждение, не подсказанное другим), <code>collision</code> (спор проявляет слабое) или <code>none</code></td>
+<td>Число участников роли (L2); <code>independence</code> — участники не видят чужих ответов (L5↓); <code>collision</code> — протокол debate или критики; <code>none</code> — одна модель</td>
+</tr>
+<tr>
+<td><code>progress_definition</code></td>
+<td>Для звена, которое может повторяться: что считается шагом вперёд?</td>
+<td>Условие дополнительного круга и детектор эха (<code>L6.ECHO</code>); без шага вперёд повтор не назначается (правило 5)</td>
+</tr>
+</tbody>
+</table></div>
+<ol>
+<li><strong><code>FailureModeMap</code> — карта поломок.</strong> Как сценарий может сломаться
+   (выдумка, согласие двух неправых моделей, слишком широкая задача, потерянная
+   часть задачи, находка пропала при сведении, спор замазан, итог утверждает
+   больше найденного, процесс не кончается) и на каком звене или проверке
+   каждая поломка ловится.</li>
+</ol>
+<p><code>ScenarioLogic{logic_id, result_spec, input_gap, chains[], links[],
+failure_modes[], logic_hash}</code> — итог формирования логики: слитая схема
+звеньев, каждое с разметкой. Пересказ схемы словами («сначала…, потом…,
+если…, то…») должен помещаться на страницу; схема мысленно прогоняется на
+трёх задачах — простой, слишком широкой и с противоречащими источниками. Эти
+две проверки выполняет человек или отдельный прогон моделей: они оценивают
+смысл логики и поэтому детерминированными не являются.</p>
+<p><strong>Прослеживаемость логики в определение.</strong> <code>PipelineDefinition</code> выводится из
+<code>ScenarioLogic</code> и ссылается на неё (<code>logic_ref = logic_id + logic_hash</code>).
+Каждый этап и каждая контрольная точка несут <code>derived_from</code> — ссылку на звено
+логики, из которого выведены. Следствия разметки звена обязательны:
+<code>error_cost = high</code> → контрольная точка с условием-предикатом;
+<code>multi_model_value</code> → число участников и режим видимости чужих ответов;
+<code>progress_definition</code> → условие повтора этапа.</p>
 <p><strong>Scenario Definition.</strong> <code>PipelineDefinition{pipeline_id, pipeline_version,
-definition_hash, stages[], edges[], stop_rules, failure_policy,
-result_criteria, versions}</code> описывает:</p>
+definition_hash, logic_ref, stages[], edges[], gates[], human_gates[],
+stop_rules, failure_policy, result_criteria, versions}</code> описывает:</p>
 <ul>
 <li><strong>Этапы и раунды.</strong> Этап содержит один или несколько раундов; число
   раундов фиксированное либо ограничено условием выхода с жёстким максимумом.
@@ -671,7 +755,15 @@ result_criteria, versions}</code> описывает:</p>
   артефакта, минимальный кворум принятых ответов, когда выдаётся частичный
   итог, когда прогон останавливается.</li>
 <li><strong>Критерии результата.</strong> Что означает успешное завершение каждого этапа и
-  всего pipeline.</li>
+  всего pipeline. Критерии pipeline совпадают со свойствами частей
+  <code>ResultSpec</code>.</li>
+<li><strong>Контрольные точки</strong> (<code>gates[]</code>). Место, где нельзя идти дальше, пока не
+  выполнены условия. Условие — предикат над полями артефактов («поле
+  заполнено», «у каждого пункта есть источник», «число не больше»), а не
+  оценка («качественно»). У каждой точки — куда возвращаться и сколько раз.</li>
+<li><strong>Участие человека</strong> (<code>human_gates[]</code>). Только там, где модель не вправе
+  решать за человека: цель, границы, спорные ценности. Указывается, можно ли
+  пройти сценарий без остановок.</li>
 </ul>
 <p><strong>Структурная валидация</strong> (детерминированная; выполняется при фиксации версии
 <code>PipelineDefinition</code> и повторно при создании <code>ScenarioPlan</code> с конкретными
@@ -687,16 +779,34 @@ result_criteria, versions}</code> описывает:</p>
 <li>из начального этапа достижим хотя бы один конечный, недостижимых этапов нет;</li>
 <li>бюджеты этапов в сумме не превышают бюджет pipeline;</li>
 <li>версии рамки, политики приёмки и протоколов, на которые ссылается
-  определение, существуют и совместимы.</li>
+  определение, существуют и совместимы;</li>
+<li>определение ссылается на существующую <code>ScenarioLogic</code> с совпадающим
+  <code>logic_hash</code>;</li>
+<li>каждый этап и каждая контрольная точка имеют <code>derived_from</code> на звено
+  логики, и каждое звено превращено в этап или проверку;</li>
+<li>к каждой части <code>ResultSpec</code> ведёт путь этапов;</li>
+<li>у каждого звена с <code>error_cost = high</code> есть контрольная точка перед
+  следующим звеном;</li>
+<li>у каждого повторяемого этапа есть <code>progress_definition</code>;</li>
+<li>у каждой поломки из <code>FailureModeMap</code> есть этап или проверка, где она
+  ловится;</li>
+<li>условие каждой контрольной точки записано как предикат над полями
+  артефактов;</li>
+<li>у каждого возврата есть предел.</li>
 </ul>
+<p>Валидация проверяет полноту и прослеживаемость логики, но не её смысл: что
+выбраны правильные части результата и правильные звенья, проверить
+детерминированно нельзя (см. выше).</p>
 <p>Определение, не прошедшее валидацию, не получает версию и не может быть
 запущено. Эти проверки не оценивают качество сценария — только его
 исполнимость.</p>
 <p><strong>Pipeline, спроектированный моделями.</strong> Прогон, задача которого —
 спроектировать сценарий, проходит все шесть слоёв как обычный прогон. Его
-итог — кандидат <code>PipelineDefinition</code>. Перед использованием кандидат проходит
-структурную валидацию и получает зафиксированную версию; до этого он не
-может быть исполнен. Отдельного слоя для этого нет.</p>
+итог — кандидат <code>ScenarioLogic</code> и выведенный из неё кандидат
+<code>PipelineDefinition</code>. Логика проектируется раньше определения и
+рассматривается отдельно. Перед использованием кандидат проходит структурную
+валидацию и получает зафиксированную версию; до этого он не может быть
+исполнен. Отдельного слоя для этого нет.</p>
 <p><strong>Semantic Assessment.</strong> Вероятностные оценки, которые нельзя сделать
 детерминированно на L5:
 <code>SemanticAssessment{kind, subject_ref, confidence, method, evaluator,
@@ -738,7 +848,8 @@ evaluator_version}</code>, где <code>kind</code> — <code>compression_fideli
 <p><strong>Запрещено.</strong> Прямая запись в журнал в обход L4. Проверка формата ответа.
 Повтор раунда «на всякий случай». Вердикт «кончились раунды» без явного
 <code>not_achieved</code>. Смена протокола внутри раунда. Запуск невалидированного или
-неверсионированного <code>PipelineDefinition</code>. Изменение <code>ScenarioPlan</code> после
+неверсионированного <code>PipelineDefinition</code>. Этапы, придуманные до описания
+результата и не выведенные из логики. Изменение <code>ScenarioPlan</code> после
 <code>RunStarted</code>: переход, не объявленный в определении, — новый run.</p>
 <p><strong>Типовые отказы.</strong></p>
 <div class="tw"><table>
@@ -750,6 +861,46 @@ evaluator_version}</code>, где <code>kind</code> — <code>compression_fideli
 </tr>
 </thead>
 <tbody>
+<tr>
+<td><code>L6.LOGIC_MISSING</code></td>
+<td>Определение без <code>ScenarioLogic</code> или с несовпадающим <code>logic_hash</code></td>
+<td>Определение не получает версию</td>
+</tr>
+<tr>
+<td><code>L6.LOGIC_UNTRACED_STAGE</code></td>
+<td>Этап или контрольная точка без <code>derived_from</code> на звено логики</td>
+<td>Этап удаляется или логика дополняется звеном</td>
+</tr>
+<tr>
+<td><code>L6.LOGIC_UNREALIZED_LINK</code></td>
+<td>Звено логики не превращено ни в этап, ни в проверку</td>
+<td>Определение не получает версию</td>
+</tr>
+<tr>
+<td><code>L6.LOGIC_UNREACHED_PART</code></td>
+<td>К части результата не ведёт ни один путь этапов</td>
+<td>Определение не получает версию</td>
+</tr>
+<tr>
+<td><code>L6.LOGIC_CHECK_MISSING</code></td>
+<td>Звено с <code>error_cost = high</code> без контрольной точки</td>
+<td>Определение не получает версию</td>
+</tr>
+<tr>
+<td><code>L6.LOGIC_NO_PROGRESS_DEF</code></td>
+<td>Повторяемый этап без определения шага вперёд</td>
+<td>Определение не получает версию</td>
+</tr>
+<tr>
+<td><code>L6.LOGIC_UNCOVERED_FAILURE</code></td>
+<td>Поломка из карты не ловится ни одним этапом или проверкой</td>
+<td>Определение не получает версию</td>
+</tr>
+<tr>
+<td><code>L6.GATE_NOT_PREDICATE</code></td>
+<td>Условие контрольной точки — оценка, а не предикат над полями</td>
+<td>Определение не получает версию</td>
+</tr>
 <tr>
 <td><code>L6.DEF_DANGLING_REF</code></td>
 <td>Ссылка на несуществующий этап или выход</td>
@@ -836,7 +987,8 @@ evaluator_version}</code>, где <code>kind</code> — <code>compression_fideli
 <p><strong>Признак прогресса.</strong> Новые disposition на существенных расхождениях.</p>
 <p><strong>Метрики.</strong> <code>rounds_to_stop</code>, <code>disposition_coverage</code>,
 <code>open_critical_claims</code>, <code>new_claims_per_round</code>, <code>protocol_switch_count</code>,
-<code>drift_score</code>, <code>token_budget_used</code>, <code>injection_suspect_rate</code>,
+<code>drift_score</code>, <code>token_budget_used</code>, <code>result_parts_covered</code>,
+<code>gate_failure_by_gate</code>, <code>rounds_without_progress</code>, <code>injection_suspect_rate</code>,
 <code>compression_fidelity_low_rate</code>.</p>
 <p><strong>Точечное усиление.</strong> Критерий остановки и лимит раундов задаются до старта.
 Pipeline валидируется до запуска, а не во время исполнения.
@@ -1672,7 +1824,7 @@ DOM-состояния (полный снимок не хранится).</p>
 <tbody>
 <tr>
 <td>L6</td>
-<td><code>disput/pipeline-presets.js</code>, <code>pipeline-profile-store.js</code>, <code>debate-profile-schema.js</code>, <code>debate-draft-plan.js</code>, <code>debate-plan-revision.js</code> (Scenario Definition), <code>disput/debate-orchestrator.js</code>, <code>debate-planner.js</code>, <code>debate-protocols.js</code>, <code>debate-protocol-transition-service.js</code>, <code>debate-convergence.js</code>, <code>debate-stagnation-warning.js</code>, <code>debate-epistemic-outcome.js</code></td>
+<td>Методика Scenario Logic: <code>docs/scenarios/how-to-design-a-scenario.md</code>, сценарии в <code>docs/scenarios/</code>; код: <code>disput/pipeline-presets.js</code>, <code>pipeline-profile-store.js</code>, <code>debate-profile-schema.js</code>, <code>debate-draft-plan.js</code>, <code>debate-plan-revision.js</code> (Scenario Definition), <code>disput/debate-orchestrator.js</code>, <code>debate-planner.js</code>, <code>debate-protocols.js</code>, <code>debate-protocol-transition-service.js</code>, <code>debate-convergence.js</code>, <code>debate-stagnation-warning.js</code>, <code>debate-epistemic-outcome.js</code></td>
 </tr>
 <tr>
 <td>L5</td>
@@ -1966,6 +2118,33 @@ DOM-состояния (полный снимок не хранится).</p>
 </tr>
 </tbody>
 </table></div>
+<p>Формирование логики сценария (2026-10-05) → OSI-1.5:</p>
+<div class="tw"><table>
+<thead>
+<tr>
+<th>Изменение</th>
+<th>Основание</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Формирование логики сценария названо одной из важнейших функций L6 и вынесено в подпротокол Scenario Logic перед Scenario Definition</td>
+<td>Ошибку логики не исправляют нижние слои; этапы должны выводиться, а не придумываться (<a href="scenarios/how-to-design-a-scenario.md">how-to-design-a-scenario.md</a>)</td>
+</tr>
+<tr>
+<td>Новые сущности <code>ResultSpec</code>, <code>InputGap</code>, <code>ScenarioLogic</code>, <code>FailureModeMap</code>; разметка звеньев <code>error_cost</code> / <code>multi_model_value</code> / <code>progress_definition</code></td>
+<td>Перенесено из методики: обратный ход от каждой части результата</td>
+</tr>
+<tr>
+<td>Прослеживаемость <code>derived_from</code> и коды <code>L6.LOGIC_*</code>, <code>L6.GATE_NOT_PREDICATE</code> в структурной валидации</td>
+<td>Полнота логики проверяется детерминированно; смысл логики — человеком или отдельным прогоном</td>
+</tr>
+<tr>
+<td>Правило стека 16 «Логика сценария — до его формы»</td>
+<td>Общий запрет на этапы без происхождения</td>
+</tr>
+</tbody>
+</table></div>
 <h2 id="9">9. Требует проверки</h2>
 <ul>
 <li>Порог сходства для детектора эха и критерий существенности расхождения —
@@ -1984,6 +2163,10 @@ DOM-состояния (полный снимок не хранится).</p>
   противоречит OSI-1.3, если он срабатывает по таймауту или окну ожидания. Он
   допустим только для адаптеров с <code>submit_finality = explicit</code> после сигнала
   об отказе в приёме конкретной отправки.</li>
+<li>Прослеживаемость <code>derived_from</code> и проверки <code>L6.LOGIC_*</code> в коде не
+  реализованы; существующие сценарии (Architecture) логику в формате
+  <code>ScenarioLogic</code> пока не имеют. Research — первый сценарий, написанный от
+  логики.</li>
 <li>Методы <code>SemanticAssessment</code> (оценщик, калибровка уверенности) не выбраны.</li>
 <li>Структурное доказательство свежести (принадлежность узла ответа ходу) —
   проверить на каждом из девяти интерфейсов.</li>
