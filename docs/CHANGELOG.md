@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-05 — Add normative OSI orchestration stack (documentation only, version unchanged 2.81.492)
+
+- Add `docs/orchestration-osi-stack.md`: six layers L1–L6 with contracts, evidence, invariants, boundaries, failure codes, retry budgets and metrics; cross-cutting identity, error passport, evidence envelope, canonicalization, time and versioning protocols.
+- Link the stack from the project overview as the normative layer model.
+
 ### 2026-09-29 — Preserve unlimited attachment batches in distributions, version 2.81.491
 
 - Rebuild tracked provider adapters and content bundles from the current sources so generated outputs no longer carry the stale five-file cap.

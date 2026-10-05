@@ -199,6 +199,8 @@ utils/               Storage, retry, sanitization, mutex, cleanup helpers
 
 ## Architecture Overview
 
+The normative layer model (L1 channel … L6 scenarios), its contracts, evidence and failure taxonomy are defined in [`orchestration-osi-stack.md`](orchestration-osi-stack.md). Component specs below implement individual layers and must not contradict it.
+
 ### Runtime Contexts
 
 The extension has three main runtime contexts:
