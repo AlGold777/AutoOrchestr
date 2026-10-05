@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-05 — OSI stack 1.2 after second review (documentation only, version unchanged 2.81.492)
+
+- Require an adapter submit-finality guarantee (`submit_finality`: none / explicit / bounded) before declaring `not_delivered` after a submit action; default `none` yields `delivery_unknown`.
+- Split idempotency keys per operation: packet build, per-response validation, shared terminal outcome key, and scenario transitions keyed by `decision_id`.
+- Record the existing bounded send-only retry as implementation debt against OSI-1.2.
+- Fix a broken column separator in the layer overview table.
+
 ### 2026-10-05 — OSI stack 1.1 after specification review (documentation only, version unchanged 2.81.492)
 
 - Replace ACK-based non-delivery with an observed `DeliveryOutcome` (`delivered` / `not_delivered` / `delivery_unknown`); resend only on proven `not_delivered`.

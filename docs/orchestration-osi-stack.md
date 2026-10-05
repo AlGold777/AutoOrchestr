@@ -5,7 +5,7 @@
 > model-tabs, Disput pipeline) описывают реализацию отдельных слоёв и не должны
 > ему противоречить. При конфликте сначала правится этот документ, затем код.
 >
-> Версия стека: **OSI-1.1** (2026-10-05). Состав и названия шести слоёв
+> Версия стека: **OSI-1.2** (2026-10-05). Состав и названия шести слоёв
 > зафиксированы; изменения формулировок внутри слоя повышают минорную версию,
 > изменение состава слоёв — мажорную.
 
@@ -54,8 +54,10 @@
 8. **Три вида повтора не смешиваются** (§4.7):
    - *capture retry* — повторное чтение того же attempt; всегда первым;
    - *transport resend* — повторная отправка того же пакета; только при
-     доказанной недоставке (`not_delivered`). Отсутствие ACK — не
-     доказательство недоставки, а `delivery_unknown`;
+     доказанной недоставке (`not_delivered`). Отсутствие ACK, сохранённый
+     черновик и отсутствие сообщения в ленте сами по себе не доказательство
+     недоставки, а `delivery_unknown`. После выдачи submit-действия
+     `not_delivered` требует гарантии финальности адаптера (§5.L3);
    - *rejection retry* — новая попытка после отказа L5 при доказанной
      доставке; новый `attempt_id`, своя причина, свой бюджет и явный способ
      восстановления контекста.
@@ -85,7 +87,7 @@
 | **L6** | Сценарии | Что решаем, каким протоколом и когда остановиться? | `ScenarioPlan`, `DisputeGraph`, `Disposition`, `StopDecision` | Вердикт прогона с причиной; каждое существенное расхождение имеет disposition | Вероятностный | core / Disput orchestrator |
 | **L5** | Контекст | Какие данные получает исполнитель и в каком виде возвращает результат? | `PromptPacket`, `AcceptanceReceipt`, `AcceptedResponse` / `Rejection` | `packet_hash` и `rendered_prompt_hash`; квитанция приёмки с результатом каждой детерминированной проверки | Детерминированный | core |
 | **L4** | Сеансовый | Кому принадлежит событие и каково логическое состояние? | `ObservedAttempt`, типизированный `LogicalCommit`, `StateSnapshot` | Replay журнала даёт то же состояние; хэш-цепочка цела; у каждой логической работы ровно один терминальный исход | Детерминированный | background |
-| **L3** | Транспортный | Доставлен ли запрос и снят ли полный свежий ответ? | `RequestEnvelope`, `ResponseEnvelope`, `CompletionReport` `DeliveryOutcome` (`delivered` / `not_delivered` / `delivery_unknown`) + `capture_complete` + свежесть + хэш и длина | Детерминированный | background + content (completion) |
+| **L3** | Транспортный | Доставлен ли запрос и снят ли полный свежий ответ? | `RequestEnvelope`, `ResponseEnvelope`, `CompletionReport` | `DeliveryOutcome` (`delivered` / `not_delivered` / `delivery_unknown`) + `capture_complete` + свежесть + хэш и длина | Детерминированный | background + content (completion) |
 | **L2** | Маршрутизация | Какому исполнителю и какой операции принадлежит сообщение? | `RoutePlan`, `RouteDecision`, `CapabilitySnapshot` | План покрывает всех адресатов; доставка или `SKIP{reason}` по каждому | Детерминированный | background |
 | **L1** | Канальный | Можно ли сейчас взаимодействовать со страницей, и что на ней произошло? | `ChannelMessage`, `Invocation`, `InvocationReceipt` | Наблюдаемый эффект действия в DOM; хэш содержимого composer = `rendered_prompt_hash`; вложения подтверждены по отдельности | Детерминированный | content script + IPC |
 
@@ -114,16 +116,24 @@
 Правило: `attempt` никогда не означает повторное чтение DOM. Три уровня —
 логическая работа, попытка исполнения, попытка чтения — не сливаются.
 
-Ключи идемпотентности:
+Ключи идемпотентности. Каждая операция имеет свой ключ; ключ одной операции
+не переиспользуется для другой.
 
-| Слой | Ключ |
-|---|---|
-| L6 | `scenario_id + protocol_version + round_plan_version` |
-| L5 | `prompt_packet_id + round_nonce + acceptance_policy_version` |
-| L4 | логический: `session_id + round_id + role`; технический: `attempt_id` |
-| L3 | `request_id + attempt_id` (send), `attempt_id + capture_id` (capture) |
-| L2 | `route_plan_id + recipient_id + operation` |
-| L1 | `invocation_id + tab_id + action_seq` |
+| Слой | Операция | Ключ | Повтор с тем же ключом |
+|---|---|---|---|
+| L6 | Решение сценария | `decision_id = run_id + boundary_round_id + decision_kind` | Возвращает уже принятое решение |
+| L5↓ | Сборка пакета | `packet_key = run_id + logical_invocation_id + frame_hash + body_hash + round_nonce + canon_version` → `prompt_packet_id` | Тот же пакет; rejection retry намеренно использует тот же пакет |
+| L5↑ | Проверка конкретного ответа | `validation_key = attempt_id + capture_id + extracted_hash + acceptance_policy_version` | Та же квитанция; новый ответ после rejection retry имеет новый `attempt_id` и `extracted_hash`, поэтому с прежним `Rejection` не сталкивается |
+| L4 | Наблюдение | `attempt_id` / `attempt_id + capture_id` | Дубль события отбрасывается |
+| L4 | Терминальный исход логической работы | `terminal_key = session_id + logical_invocation_id` (`logical_invocation_id` = `round_id + role`) | `ResponseAccepted` и `ResponseAbsent` конкурируют за этот один ключ; первый коммит побеждает, второй — `L4.DOUBLE_COMMIT` |
+| L4 | `RoundOpened` | `session_id + round_id + RoundOpened`; `proof_ref = decision_id` | Возвращает существующий коммит |
+| L4 | `RoundClosed` | `session_id + round_id + RoundClosed` | То же |
+| L4 | `ProtocolChanged` | `session_id + decision_id` | То же |
+| L4 | `RunStopped` | `session_id + run_id + RunStopped` (один на прогон); `proof_ref = decision_id` | То же |
+| L3 | Отправка | `attempt_id` | Повторная отправка — только новый `attempt_id` по правилам §4.7 |
+| L3 | Съём | `attempt_id + capture_id` | — |
+| L2 | Маршрут | `route_plan_id + recipient_id + operation`; замена — новый `route_decision_id` | — |
+| L1 | IPC-сообщение | `message_id` | Получатель не повторяет side-effect, возвращает сохранённый `observed_effect` |
 
 ### 4.2. Паспорт ошибки
 
@@ -599,8 +609,24 @@ completion_status, via_fallback}`, `CompletionReport`,
 | Исход | Свидетельство |
 |---|---|
 | `delivered` | Наше сообщение появилось в ленте, или началась генерация хода, начатого нашим сообщением |
-| `not_delivered` | После окна стабилизации нашего сообщения в ленте нет, черновик с `rendered_prompt_hash` остался в composer, генерация не началась; либо явная ошибка до side-effect (команда отклонена, вкладка недоступна до вставки) |
-| `delivery_unknown` | Ни одно из двух свидетельств не получено: потерян ACK, навигация или выгрузка вкладки во время submit, лента не читается |
+| `not_delivered` (до submit) | Submit-действие (клик Send, Enter) не выдавалось: composer transaction не дошла до `SUBMITTING`, либо явная ошибка до side-effect (команда отклонена, вкладка недоступна до вставки). Свидетельство — журнал composer transaction |
+| `not_delivered` (после submit) | Только при гарантии финальности адаптера (ниже): первая отправка доказанно больше не может завершиться, и при этом нашего сообщения в ленте нет, черновик с `rendered_prompt_hash` на месте, генерация не началась |
+| `delivery_unknown` | Всё остальное: потерян ACK, навигация или выгрузка вкладки во время submit, лента не читается, а также «сообщения нет, черновик на месте» после submit без гарантии финальности |
+
+**Гарантия финальности отправки.** Отсутствие наблюдаемого подтверждения не
+доказывает недоставку: первый submit может ещё обрабатываться, пока интерфейс
+показывает черновик, и завершиться после окна стабилизации. Поэтому после
+выдачи submit-действия адаптер вправе заявить `not_delivered` только если в
+`CapabilitySnapshot` объявлена гарантия `submit_finality` и она выполнена:
+
+| `submit_finality` | Что гарантирует адаптер | Когда допустим `not_delivered` после submit |
+|---|---|---|
+| `none` | Ничего | Никогда; исход `delivery_unknown` |
+| `explicit` | Интерфейс даёт наблюдаемый терминальный сигнал отказа отправки (ошибка отправки у сообщения, явное «не отправлено», отклонённый сетевой запрос, наблюдаемый адаптером) | После этого сигнала |
+| `bounded` | Провайдер не может принять отправку позже `T_final` после submit; `T_final` измерен на прогонах и записан в версии адаптера | После `T_final` и при сохранённых признаках недоставки; лента дополнительно перечитывается прямо перед resend |
+
+По умолчанию у каждого адаптера `submit_finality = none`. Повышение уровня —
+изменение версии адаптера с приложенным свидетельством калибровки.
 
 При `delivery_unknown` сначала выполняется сверка (повторное чтение ленты и
 composer). Если исход остаётся неизвестным, повторная отправка запрещена:
@@ -680,7 +706,8 @@ Breaker.
 capability_version}`, `RouteEntry{role, target, preset, adapter, operation,
 fallback[], route_decision_id}`, `CapabilitySnapshot{stream, limits,
 context_window, frame_version, context_restore[]: regenerate | edit_resubmit |
-new_conversation, delivery_observable}`, `RouteDiff`, `SKIP{reason}`.
+new_conversation, submit_finality: none | explicit | bounded, T_final?}`,
+`RouteDiff`, `SKIP{reason}`.
 
 `SKIP{reason}` — свидетельство для `Absence` и терминального коммита
 `ResponseAbsent` на L4.
@@ -823,7 +850,7 @@ PROMPT_COMMITTED → SUBMITTING → SUBMITTED` (см.
 | `L1.PROMPT_NOT_INSERTED` | Хэш composer ≠ `rendered_prompt_hash` | Повтор вставки |
 | `L1.ATTACHMENT_UNCONFIRMED` | Страница не подтвердила загрузку файла из пакета | Повтор загрузки этого файла; отправка не начинается |
 | `L1.INPUT_NOT_REGISTERED` | Значение вставлено, но UI-фреймворк не увидел ввода | Программное событие input/paste, повтор |
-| `L1.PROMPT_NOT_SENT` | Сообщения нет в ленте, черновик остался в composer (`not_delivered`) | Bounded send-only retry без повторной вставки |
+| `L1.PROMPT_NOT_SENT` | Сообщения нет в ленте, черновик остался в composer | Если submit не выдавался — отправка. Если выдавался — bounded send-only retry без повторной вставки только при `submit_finality ≠ none` и выполненной гарантии; иначе `delivery_unknown` |
 | `L1.DOUBLE_SUBMIT` | Повторный submit после успешного первого | Предотвращается проверкой ленты |
 | `L1.ACK_LOST` | ACK потерян; side-effect мог произойти | Повтор сообщения по тому же `message_id` (получатель дедуплицирует); для submit — исход `delivery_unknown` до сверки ленты |
 | `L1.SELECTOR_BROKEN` | Селектор не найден | Fallback-селектор, затем отказ наверх |
@@ -938,6 +965,13 @@ DOM-состояния (полный снимок не хранится).
 | Повтор после отказа L5 противоречил запрету resend и шёл в изменённый контекст | Rejection retry выделен в отдельный вид повтора с новым `attempt_id`, бюджетом и явным `context_restore` (§4.7) |
 | В детерминированном L5 были семантические проверки без метода | На L5 остались синтаксические проверки хэшей, позиций и экранирования; сохранность смысла и подозрение на инъекцию — `SemanticAssessment` L6 с уверенностью (§5.L5, §5.L6) |
 
+Повторное ревью OSI-1.1 (Astra, 2026-10-05) → OSI-1.2:
+
+| Замечание | Исправление |
+|---|---|
+| Признаки «сообщения нет, черновик на месте, генерации нет» после окна стабилизации доказывают отсутствие подтверждения, а не недоставку: первый submit может завершиться позже | `not_delivered` после submit требует гарантии финальности адаптера `submit_finality` (`explicit` / `bounded`); по умолчанию `none` → `delivery_unknown` (§5.L3) |
+| Ключи идемпотентности остались от прежней модели: нет ключей для переходов сценария; ключ приёмки сталкивает новый ответ с прежним `Rejection` | Ключи разделены по операциям: сборка пакета, проверка конкретного ответа, терминальный исход (общий для `ResponseAccepted` / `ResponseAbsent`), переходы сценария по `decision_id` (§4.1) |
+
 ## 9. Требует проверки
 
 - Порог сходства для детектора эха и критерий существенности расхождения —
@@ -947,9 +981,14 @@ DOM-состояния (полный снимок не хранится).
   (contenteditable с нестандартной моделью ввода) — проверить по адаптерам;
   там же проверить, совпадает ли `render(packet)` с тем, что адаптер реально
   вставляет (переносы строк, вложения как текст).
-- Наблюдаемость `not_delivered` (черновик остался, сообщения нет) и способов
-  `context_restore` (`regenerate`, `edit_resubmit`) — проверить на каждом из
-  девяти интерфейсов и занести в `CapabilitySnapshot`.
+- Уровень `submit_finality` и способы `context_restore` (`regenerate`,
+  `edit_resubmit`) — определить для каждого из девяти интерфейсов и занести в
+  `CapabilitySnapshot`. До этого все адаптеры работают с
+  `submit_finality = none`.
+- Реализационный долг: существующий bounded send-only retry после
+  неподтверждённого Send ([completion-protocol-v2.md](completion-protocol-v2.md))
+  при `submit_finality = none` противоречит OSI-1.2 и должен быть ограничен
+  адаптерами с подтверждённой гарантией финальности.
 - Методы `SemanticAssessment` (оценщик, калибровка уверенности) не выбраны.
 - Структурное доказательство свежести (принадлежность узла ответа ходу) —
   проверить на каждом из девяти интерфейсов.
