@@ -457,6 +457,26 @@ describe('Pipeline debate favorites view', () => {
       expect(html).toContain('data-view="round" data-value="r1"');
       expect(click).toHaveBeenCalledTimes(1);
       expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:feed-export');
+      // Production case: the submitted topic remains in the session tooltip,
+      // while the composer has already been cleared by sending.
+      const tab = document.querySelector('.debate-session-tab.active');
+      const originalTitle = tab.title;
+      const submittedPrompt = 'Submitted pipeline prompt\n'.repeat(600).trim();
+      try {
+        tab.title = submittedPrompt;
+        document.getElementById('modTa').value = '';
+        URL.createObjectURL.mockClear();
+        document.getElementById('debate-session-export-btn').click();
+        expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+        const submittedHtml = await blobToText(URL.createObjectURL.mock.calls[0][0]);
+        const submittedDoc = new DOMParser().parseFromString(submittedHtml, 'text/html');
+        expect(submittedDoc.body.firstElementChild.className).toBe('feed-navigation');
+        expect(submittedDoc.querySelector('h1')).toBeNull();
+        expect(submittedDoc.querySelector('.export-prompt').textContent).toBe(submittedPrompt);
+        expect(submittedDoc.querySelector('.export-prompt').classList.contains('is-collapsed')).toBe(true);
+      } finally {
+        tab.title = originalTitle;
+      }
     } finally {
       click.mockRestore();
       URL.createObjectURL = createUrl;

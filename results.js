@@ -24213,7 +24213,13 @@ function exportSingleTemplate(templateName, sourceData = null) {
 const pipelineExportBuildDebateFeedHtml = () => {
     const feed = document.getElementById('debate-model-cards');
     const activeSessionId = document.querySelector('.debate-session-tab.active')?.dataset?.sessionId || '1';
-    return window.DebateExport.buildFeedDocument(feed, activeSessionId, pipelineExportActiveDebateName(), modelIconData, getAllResponsesPromptText());
+    const session = debateTabsState.sessions.get(String(activeSessionId));
+    // The composer is cleared after sending; the session keeps the submitted topic.
+    const tab = document.querySelector('.debate-session-tab.active');
+    const storedTopic = session?.disputeTopic || (tab?.title !== session?.title ? tab?.title : '');
+    const prompt = getAllResponsesPromptText() || String(storedTopic || '').trim();
+    const title = truncateDisputeLabel(session?.title || pipelineExportActiveDebateName(), 60);
+    return window.DebateExport.buildFeedDocument(feed, activeSessionId, title, modelIconData, prompt);
 };
 const pipelineExportDownloadDebateFeedHtml = (button = null) => {
     const html = pipelineExportBuildDebateFeedHtml();

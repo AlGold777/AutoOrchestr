@@ -60,10 +60,10 @@
     return parts ? `<section>${heading(parts)}<div class="response-body">${parts.body}</div></section>` : '';
   };
 
-  const documentHtml = (title, bodyHtml, date = new Date()) => `<!DOCTYPE html>
+  const documentHtml = (title, bodyHtml, date = new Date(), showHeader = true) => `<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><title>${escape(title)}</title><style>
 body{font-family:Arial,sans-serif;background:#fff;color:#111;padding:24px;line-height:1.5}section{margin-bottom:24px}h1{font-size:24px;margin:0 0 4px}h2{margin:0 0 12px;font-size:20px}pre{background:#f6f8fa;padding:12px;border-radius:8px;white-space:pre-wrap;word-wrap:break-word}.response-body{background:#f8fafc;padding:12px;border-radius:8px}.response-body table{width:100%;border-collapse:collapse;margin:8px 0}.response-body th,.response-body td{border:1px solid #ddd;padding:6px 8px;vertical-align:top}.response-body ul,.response-body ol{padding-left:24px}.response-time,.saved-at{color:#555;font-size:14px;font-weight:400}.saved-at{margin:0 0 16px}
-</style></head><body><h1>${escape(title)}</h1><p class="saved-at">${savedStamp(date)}</p>${bodyHtml}</body></html>`;
+</style></head><body>${showHeader ? `<h1>${escape(title)}</h1><p class="saved-at">${savedStamp(date)}</p>` : ''}${bodyHtml}</body></html>`;
 
   // Session identity defines export scope; temporary display filters must not lose cards.
   function feedParts(feed, activeSessionId = '1') {
@@ -107,13 +107,13 @@ body{font-family:Arial,sans-serif;background:#fff;color:#111;padding:24px;line-h
       <div class="nav-group" role="group" aria-label="Rounds">${roundButtons}</div>
     </nav>`;
     const prompt = String(promptText || '').trim();
-    const promptBlock = prompt ? `<section class="prompt-section">
-      <div class="prompt-heading"><h2>Prompt</h2><button type="button" class="prompt-toggle" hidden aria-expanded="false">Show more</button></div>
-      <pre class="export-prompt is-collapsed">${escape(prompt)}</pre>
-    </section>` : '';
+    const promptBlock = `<section class="prompt-section">
+      <div class="prompt-heading">${prompt ? '<h2>Prompt</h2>' : ''}<span class="saved-at">${savedStamp()}</span>${prompt ? '<button type="button" class="prompt-toggle" hidden aria-expanded="false">Show more</button>' : ''}</div>
+      ${prompt ? `<pre class="export-prompt is-collapsed">${escape(prompt)}</pre>` : ''}
+    </section>`;
     const body = parts.map((part) => `<section class="feed-response" data-model="${escape(part.model)}" data-round="${escape(part.round)}">
       ${heading(part)}${part.round ? `<p class="response-time">${escape(part.round.toUpperCase())}</p>` : ''}<div class="response-body">${part.body}</div></section>`).join('\n');
-    return documentHtml(title, navigation + promptBlock + body).replace('</style>', `
+    return documentHtml(title, navigation + promptBlock + body, new Date(), false).replace('</style>', `
 .feed-navigation{position:sticky;top:0;display:flex;flex-wrap:wrap;gap:12px;background:#fff;padding:17px 0;margin-bottom:16px;border-bottom:1px solid #ddd;z-index:10}.nav-group{display:flex;flex-wrap:wrap;gap:5px}.feed-nav-button{display:inline-flex;flex-direction:column;align-items:center;gap:6px;min-width:58px;border:0;background:transparent;color:#737b83;font-size:12px;cursor:pointer;padding:4px}.feed-nav-button:hover,.feed-nav-button[aria-pressed="true"]{color:#27251e}.model-nav-icon{display:block;width:34px;height:34px;background:currentColor;mask:var(--model-icon) center/contain no-repeat;-webkit-mask:var(--model-icon) center/contain no-repeat}.nav-symbol{display:flex;align-items:center;justify-content:center;min-width:34px;height:34px;font-size:24px}.feed-response[hidden]{display:none}
 .export-prompt{box-sizing:border-box}.export-prompt.is-collapsed{max-height:calc(4.5em + 24px);overflow:hidden}.prompt-heading{position:sticky;top:var(--model-navigation-height,0px);z-index:9;display:flex;align-items:center;gap:15px;margin:0 0 12px;padding:4px 0;background:#fff}.prompt-heading h2{margin:0}.prompt-toggle{padding:4px 8px;border:1px solid #d0d7de;border-radius:6px;background:#f6f8fa;color:#27251eeb;cursor:pointer}.feed-response{scroll-margin-top:calc(var(--model-navigation-height,0px) + 12px)}
 </style>`).replace('</body>', `<script>

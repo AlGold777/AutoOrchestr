@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-05 — Export the submitted Prompt after composer clearing, version 2.81.603
+
+- The active session’s full topic was previously rendered as a non-collapsible H1 before navigation. If sending had cleared the composer, no Prompt section was exported. Feed HTML now starts with navigation and places the full topic only in the collapsible Prompt block below it.
+- Prompt content falls back to the saved session topic (or its full tab tooltip for legacy sessions) when the composer is empty. Page/tab titles stay short.
+- Extended the real download-button integration test with a cleared composer and a long submitted topic.
+- Validation: 93 export/layout/integration tests passed. Rebuilt the actual downloaded 33-card export with its 13,732-character prompt and verified navigation-first placement, collapsed/expanded/collapsed Prompt and round scroll alignment in Chromium.
+
 ### 2026-10-04 — Collapsible Prompt and precise feed navigation, version 2.81.602
 
 - HTML feed export includes the assembled Prompt below model/round buttons, with the same three-line preview and Show more / Show less behavior as the main-page export.
