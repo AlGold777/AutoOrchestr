@@ -1,0 +1,44 @@
+.llm-results.view-stack.response-cover-host {
+  display: block;
+  position: relative;
+  height: calc(var(--response-cover-height) + var(--response-cover-travel));
+  overflow: visible;
+  overflow-anchor: none;
+}
+
+.response-cover-sticky {
+  position: sticky;
+  top: var(--response-cover-top);
+  width: 100%;
+  height: var(--response-cover-height);
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.response-cover-deck {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.llm-results.view-stack .llm-panel.response-cover-card {
+  position: absolute;
+  inset: 0;
+  display: flex !important;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  background: #fff;
+  will-change: transform;
+}
+
+.llm-results.view-stack .llm-panel.response-cover-card .output {
+  flex: 1;
+  min-height: 0 !important;
+  max-height: none !important;
+  overflow-y: auto;
+}
+
+.response-cover-card[inert] { pointer-events: none; }

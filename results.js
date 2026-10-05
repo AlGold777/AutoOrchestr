@@ -90,6 +90,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     let responseSelectionToolbarBound = false;
     let suppressResponseFavoriteClickUntil = 0;
     const llmResultsContainer = document.querySelector('.llm-results');
+    const responseCardCover = document.body.classList.contains('pipeline-page')
+        ? null
+        : window.ResultsResponseCardCover?.create(llmResultsContainer);
     const sanitizeInlineHtml = (html) => {
         if (!html) return '';
         if (typeof sanitizeHTML === 'function') {
@@ -12602,6 +12605,7 @@ document.addEventListener('click', (event) => {
         llmResultsContainer.classList.add(useStack ? 'view-stack' : 'view-grid');
         if (viewGridBtn) viewGridBtn.classList.toggle('is-active', !useStack);
         if (viewStackBtn) viewStackBtn.classList.toggle('is-active', useStack);
+        responseCardCover?.refresh();
     };
 
     setResultsViewMode('grid');

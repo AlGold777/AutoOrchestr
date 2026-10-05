@@ -8,6 +8,13 @@ The arrow on the left reveals paragraph alignment, a bulleted list, and
 decrease/increase indent controls. These actions format the paragraph containing
 the selection; selecting across paragraphs formats each selected paragraph.
 
+In the main page's single-column answer view, scrolling brings the next model
+card up from below to cover the current card in a stable reading viewport.
+Small initial scrolls hold the current card in place; scrolling back reverses
+the transition. Long answers scroll inside the card. Grid view restores the
+normal card layout. Streaming previews, expanded cards, and reduced-motion
+preferences use the normal layout.
+
 Pipeline answer cards show a small round badge beside the model name (`GPT R1`).
 Each model has one card per round: streaming updates reuse it, and later answer
 growth adds paragraphs to the same card. The next round gets a separate card.

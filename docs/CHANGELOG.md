@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-05 — Delayed cover replacement in the single-column answer view, version 2.81.608
+
+- Adapted the supplied delayed-cover prototype to the main page's canonical `.llm-results` / `.llm-panel` elements and `view-stack` switch. A sticky reading viewport holds the current answer for the first 30% of a scroll step; the next card rises from below, covers the previous card and seats by 84%. The previous card moves upward by only 34% of its height.
+- Retains original card nodes, handlers, content and DOM order. Only the seated reading card is interactive; moving cards block clicks during overlap. Visibility changes and added/removed models update the deck while preserving the reading card; viewport resizing preserves reading progress. Long answers remain scrollable inside the card.
+- Returning to the grid, streaming preview, panel expansion or reduced motion restores the regular layout. Viewport geometry follows the actual top control bar and fits short/mobile windows. UI projection is isolated in `results/response-card-cover.js` with dedicated CSS.
+- Validation: 80 targeted cover, response-card and viewer tests passed. Chromium with the actual main-page markup and styles verified the held viewport, incoming cover, reverse scroll, inner answer scrolling, unchanged card nodes after returning to grid, and a 390 × 500 px viewport.
+
 ### 2026-10-05 — Center the selection toolbar chevron, version 2.81.607
 
 - Replaced the text arrow in all selection toolbars with a rounded SVG chevron. Its fixed 16 px box and zero button padding center it in the cell; only the icon rotates when the second row opens.
