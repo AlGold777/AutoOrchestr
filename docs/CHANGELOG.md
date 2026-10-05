@@ -1,5 +1,13 @@
 # CHANGELOG — Project
 
+### 2026-10-05 — OSI stack 1.1 after specification review (documentation only, version unchanged 2.81.492)
+
+- Replace ACK-based non-delivery with an observed `DeliveryOutcome` (`delivered` / `not_delivered` / `delivery_unknown`); resend only on proven `not_delivered`.
+- Verify composer insertion against `rendered_prompt_hash` instead of `packet_hash`; confirm attachments separately.
+- Make L4 commits typed with per-kind proofs and exactly one terminal outcome (`ResponseAccepted` / `ResponseAbsent`) per logical invocation; persist scenario decisions as commits.
+- Separate rejection retry from transport resend, with its own budget and explicit context restoration.
+- Move semantic compression fidelity and injection suspicion from deterministic L5 to probabilistic L6 `SemanticAssessment`.
+
 ### 2026-10-05 — Add normative OSI orchestration stack (documentation only, version unchanged 2.81.492)
 
 - Add `docs/orchestration-osi-stack.md`: six layers L1–L6 with contracts, evidence, invariants, boundaries, failure codes, retry budgets and metrics; cross-cutting identity, error passport, evidence envelope, canonicalization, time and versioning protocols.

@@ -25,7 +25,7 @@ hr{border:0;border-top:1px solid var(--bd);margin:32px 0}
 отказы и сквозные протоколы. Все остальные спецификации (Completion V2,
 model-tabs, Disput pipeline) описывают реализацию отдельных слоёв и не должны
 ему противоречить. При конфликте сначала правится этот документ, затем код.</p>
-<p>Версия стека: <strong>OSI-1.0</strong> (2026-10-05). Состав и названия шести слоёв
+<p>Версия стека: <strong>OSI-1.1</strong> (2026-10-05). Состав и названия шести слоёв
 зафиксированы; изменения формулировок внутри слоя повышают минорную версию,
 изменение состава слоёв — мажорную.</p>
 </blockquote>
@@ -58,12 +58,24 @@ model-tabs, Disput pipeline) описывают реализацию отдел�
    recovery, перезагрузка вкладки и любые другие наши действия прогрессом не
    являются (эффект наблюдателя).</li>
 <li><strong>Одна точка изменения логического состояния.</strong> Логическое состояние
-   меняется только <code>LogicalCommit</code> на L4 после <code>AcceptedResponse</code> на L5.
-   Журналировать можно всё; двигать состояние может только коммит (§5.L4).</li>
-<li><strong>Принятие и коммит атомарны.</strong> <code>AcceptedResponse</code> без коммита не считается
-   принятым; коммит без принятия невозможен.</li>
-<li><strong>Повторное чтение — не повторная отправка.</strong> Сначала повтор съёма
-   (capture), и только при доказанной недоставке — повтор отправки (send).</li>
+   меняется только типизированным переходом <code>LogicalCommit</code> на L4. Каждый тип
+   перехода требует своего свидетельства: принятый ответ — <code>AcceptanceReceipt</code>
+   L5; отсутствие ответа — свидетельство исчерпания попыток или <code>SKIP</code>;
+   решение сценария — решение L6 (§5.L4). Журналировать можно всё; двигать
+   состояние может только коммит.</li>
+<li><strong>Одна логическая работа — ровно один терминальный исход.</strong> Каждый
+   <code>logical_invocation_id</code> завершается ровно одним коммитом:
+   <code>ResponseAccepted</code> или <code>ResponseAbsent</code>. Принятие и коммит атомарны:
+   <code>AcceptedResponse</code> без коммита не считается принятым; коммит ответа без
+   <code>AcceptanceReceipt</code> невозможен.</li>
+<li><strong>Три вида повтора не смешиваются</strong> (§4.7):</li>
+<li><em>capture retry</em> — повторное чтение того же attempt; всегда первым;</li>
+<li><em>transport resend</em> — повторная отправка того же пакета; только при
+     доказанной недоставке (<code>not_delivered</code>). Отсутствие ACK — не
+     доказательство недоставки, а <code>delivery_unknown</code>;</li>
+<li><em>rejection retry</em> — новая попытка после отказа L5 при доказанной
+     доставке; новый <code>attempt_id</code>, своя причина, свой бюджет и явный способ
+     восстановления контекста.</li>
 <li><strong>Рамка бедная.</strong> На L5 проверяется только то, что переживает L1-извлечение:
    никакой markdown, списков и визуальной разметки как критерия приёмки.</li>
 <li><strong>Одна канонизация.</strong> Хэши на L1 и проверки на L5 считаются над одной
@@ -111,7 +123,7 @@ model-tabs, Disput pipeline) описывают реализацию отдел�
 <td>Контекст</td>
 <td>Какие данные получает исполнитель и в каком виде возвращает результат?</td>
 <td><code>PromptPacket</code>, <code>AcceptanceReceipt</code>, <code>AcceptedResponse</code> / <code>Rejection</code></td>
-<td>Хэш пакета; квитанция приёмки с результатом каждой проверки</td>
+<td><code>packet_hash</code> и <code>rendered_prompt_hash</code>; квитанция приёмки с результатом каждой детерминированной проверки</td>
 <td>Детерминированный</td>
 <td>core</td>
 </tr>
@@ -119,8 +131,8 @@ model-tabs, Disput pipeline) описывают реализацию отдел�
 <td><strong>L4</strong></td>
 <td>Сеансовый</td>
 <td>Кому принадлежит событие и каково логическое состояние?</td>
-<td><code>ObservedAttempt</code>, <code>LogicalCommit</code>, <code>StateSnapshot</code></td>
-<td>Replay журнала даёт то же состояние; хэш-цепочка цела</td>
+<td><code>ObservedAttempt</code>, типизированный <code>LogicalCommit</code>, <code>StateSnapshot</code></td>
+<td>Replay журнала даёт то же состояние; хэш-цепочка цела; у каждой логической работы ровно один терминальный исход</td>
 <td>Детерминированный</td>
 <td>background</td>
 </tr>
@@ -128,10 +140,10 @@ model-tabs, Disput pipeline) описывают реализацию отдел�
 <td><strong>L3</strong></td>
 <td>Транспортный</td>
 <td>Доставлен ли запрос и снят ли полный свежий ответ?</td>
-<td><code>RequestEnvelope</code>, <code>ResponseEnvelope</code>, <code>CompletionReport</code></td>
-<td><code>dispatch_ack</code> + <code>capture_complete</code> + свежесть + хэш и длина</td>
+<td><code>RequestEnvelope</code>, <code>ResponseEnvelope</code>, <code>CompletionReport</code> <code>DeliveryOutcome</code> (<code>delivered</code> / <code>not_delivered</code> / <code>delivery_unknown</code>) + <code>capture_complete</code> + свежесть + хэш и длина</td>
 <td>Детерминированный</td>
 <td>background + content (completion)</td>
+<td></td>
 </tr>
 <tr>
 <td><strong>L2</strong></td>
@@ -147,7 +159,7 @@ model-tabs, Disput pipeline) описывают реализацию отдел�
 <td>Канальный</td>
 <td>Можно ли сейчас взаимодействовать со страницей, и что на ней произошло?</td>
 <td><code>ChannelMessage</code>, <code>Invocation</code>, <code>InvocationReceipt</code></td>
-<td>Наблюдаемый эффект действия в DOM; хэш введённого = хэш пакета</td>
+<td>Наблюдаемый эффект действия в DOM; хэш содержимого composer = <code>rendered_prompt_hash</code>; вложения подтверждены по отдельности</td>
 <td>Детерминированный</td>
 <td>content script + IPC</td>
 </tr>
@@ -204,7 +216,7 @@ model-tabs, Disput pipeline) описывают реализацию отдел�
 </tr>
 <tr>
 <td><code>attempt_id</code></td>
-<td>Попытка исполнения (отправка). Повтор send — новый <code>attempt_id</code></td>
+<td>Попытка исполнения (отправка). Transport resend и rejection retry — новый <code>attempt_id</code> с <code>retry_kind</code> и <code>parent_attempt_id</code></td>
 <td>L3</td>
 </tr>
 <tr>
@@ -293,7 +305,7 @@ model-tabs, Disput pipeline) описывают реализацию отдел�
 </tr>
 <tr>
 <td><code>retry_scope</code></td>
-<td><code>capture</code> / <code>send</code> / <code>rebuild</code> / <code>fallback</code> / <code>none</code></td>
+<td><code>capture</code> / <code>resend</code> / <code>rejection_retry</code> / <code>rebuild</code> / <code>fallback</code> / <code>none</code></td>
 </tr>
 <tr>
 <td><code>proof_ref</code></td>
@@ -319,8 +331,13 @@ model-tabs, Disput pipeline) описывают реализацию отдел�
 </code></pre>
 <p>Особые типы:</p>
 <ul>
-<li><code>Absence{reason}</code> — доказанное отсутствие результата (таймаут, SKIP,
-  карантин). Записывается как результат, не как пустота.</li>
+<li><code>Absence{reason, exhaustion_proof}</code> — доказанное отсутствие результата
+  (исчерпание попыток, SKIP, карантин, неопределённая доставка). Записывается
+  как результат, не как пустота, и служит свидетельством для терминального
+  коммита <code>ResponseAbsent</code> на L4.</li>
+<li><code>DeliveryOutcome{delivered | not_delivered | delivery_unknown, proof}</code> —
+  исход отправки (§5.L3). <code>delivered</code> и <code>not_delivered</code> требуют наблюдаемого
+  свидетельства на странице; без него исход — <code>delivery_unknown</code>.</li>
 <li><code>Quarantine{raw_hash, reason}</code> — сырой текст, не прошедший приёмку после
   исчерпания повторов. Хранится для аудита; второго логического ответа не
   создаёт и отбраковкой на L6 не считается.</li>
@@ -334,14 +351,21 @@ model-tabs, Disput pipeline) описывают реализацию отдел�
   концевые пробелы строк, без семантической нормализации. Версия канонизации
   (<code>canon_version</code>) входит в версию рамки.</li>
 <li>Хэшируются раздельно: <code>frame_hash</code>, <code>body_hash</code>, затем
-  <code>packet_hash = sha256(frame_hash ‖ body_hash ‖ round_nonce ‖ canonical(metadata))</code>.</li>
+  <code>packet_hash = sha256(frame_hash ‖ body_hash ‖ round_nonce ‖ canonical(metadata))</code>.
+  <code>packet_hash</code> — идентификатор всего пакета (включая метаданные и
+  вложения); с текстом на странице он не сравнивается.</li>
+<li><code>rendered_prompt_hash = sha256(canonical(render(packet)))</code> — хэш ровно того
+  текста, который должен оказаться в поле ввода. Его вычисляет L5↓ при сборке,
+  с ним сравнивает L1 при вставке.</li>
+<li>Вложения проверяются отдельно: <code>attachment_hashes[]</code> из пакета против
+  подтверждения загрузки каждого файла на странице (§5.L1).</li>
 <li><code>frame_hash</code> одинаков для всех участников раунда. <code>body_hash</code> может
   различаться по ролям.</li>
 <li>Сырой ответ хэшируется до любой интерпретации (<code>raw_hash</code>), извлечённый
   текст — после канонизации (<code>extracted_hash</code>).</li>
-<li>На L1 сравниваются канонические хэши фактического <code>input.value</code> (или
-  содержимого composer) перед submit и пакета L5. Несовпадение только из-за
-  нормализации DOM — дефект канонизации, а не отказ L1.</li>
+<li>На L1 сравниваются канонический хэш фактического <code>input.value</code> (или
+  содержимого composer) перед submit и <code>rendered_prompt_hash</code>. Несовпадение
+  только из-за нормализации DOM — дефект канонизации, а не отказ L1.</li>
 </ul>
 <h3 id="45">4.5. Время</h3>
 <ul>
@@ -415,21 +439,27 @@ model-tabs, Disput pipeline) описывают реализацию отдел�
 </tr>
 <tr>
 <td>L3</td>
-<td>Capture</td>
+<td>Capture retry</td>
 <td>2</td>
-<td>Send, если недоставка доказана</td>
+<td>Определение <code>DeliveryOutcome</code></td>
 </tr>
 <tr>
 <td>L3</td>
-<td>Send</td>
+<td>Transport resend (только <code>not_delivered</code>)</td>
 <td>1</td>
-<td><code>Absence</code></td>
+<td><code>Absence{transport}</code></td>
+</tr>
+<tr>
+<td>L3</td>
+<td><code>delivery_unknown</code></td>
+<td>0 resend; capture продолжается до общего дедлайна</td>
+<td><code>Absence{delivery_unknown}</code></td>
 </tr>
 <tr>
 <td>L5</td>
-<td>Повтор с тем же <code>PromptPacket</code></td>
+<td>Rejection retry (новый <code>attempt_id</code>, тот же <code>PromptPacket</code>, восстановленный контекст)</td>
 <td>2</td>
-<td><code>Quarantine</code> + <code>Absence</code></td>
+<td><code>Quarantine</code> + <code>Absence{rejected}</code></td>
 </tr>
 <tr>
 <td>L6</td>
@@ -440,6 +470,59 @@ model-tabs, Disput pipeline) описывают реализацию отдел�
 </tbody>
 </table></div>
 <p>Повторы любого слоя не расходуют бюджет раундов L6 (правило 12).</p>
+<p><strong>Различие повторов.</strong></p>
+<div class="tw"><table>
+<thead>
+<tr>
+<th>Вид</th>
+<th>Когда</th>
+<th>Что повторяется</th>
+<th><code>attempt_id</code></th>
+<th>Контекст переписки</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Capture retry</td>
+<td>Ответ снят неполно, рано или не тот</td>
+<td>Только чтение</td>
+<td>тот же, новый <code>capture_id</code></td>
+<td>не меняется</td>
+</tr>
+<tr>
+<td>Transport resend</td>
+<td>Доказано <code>not_delivered</code></td>
+<td>Отправка того же пакета</td>
+<td>новый, <code>retry_kind=resend</code></td>
+<td>не меняется: предыдущей отправки не было</td>
+</tr>
+<tr>
+<td>Rejection retry</td>
+<td>Доставка доказана, L5 отклонил ответ, отказ <code>retryable</code></td>
+<td>Исполнение того же пакета</td>
+<td>новый, <code>retry_kind=rejection</code>, <code>retry_reason=L5.&lt;code&gt;</code></td>
+<td>восстанавливается явно (ниже)</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Восстановление контекста при rejection retry.</strong> Отклонённый ответ остаётся
+на странице, поэтому повторная отправка того же пакета в ту же переписку даёт
+модели другой контекст и запрещена. Допустимые способы, в порядке
+предпочтения; набор доступных способов берётся из <code>CapabilitySnapshot</code> адаптера
+(L2), выбранный способ записывается в attempt как <code>context_restore</code>:</p>
+<ol>
+<li><code>regenerate</code> — штатная перегенерация того же хода, если интерфейс заменяет
+   ею отклонённый ответ в текущей ветке;</li>
+<li><code>edit_resubmit</code> — редактирование и повторная отправка нашего сообщения
+   (новая ветка от того же места переписки);</li>
+<li><code>new_conversation</code> — новая беседа; допустим только если пакет
+   самодостаточен (<code>self_contained=true</code>, L5↓), то есть не опирается на
+   историю переписки.</li>
+</ol>
+<p>Корректирующее сообщение в ту же переписку («исправь формат») — это другой
+пакет с другим контекстом; в OSI-1.1 оно не используется как rejection retry.
+Если ни один способ недоступен, rejection retry не выполняется: <code>Quarantine</code> +
+<code>Absence{rejected}</code>.</p>
 <h3 id="48">4.8. Телеметрия</h3>
 <p>События: <code>layer_enter</code>, <code>layer_exit</code>, <code>evidence</code>, <code>error</code>, <code>retry</code>,
 <code>fallback</code>, <code>commit</code>, <code>absence</code>, <code>quarantine</code>. Метрики слоёв перечислены в §5.
@@ -455,13 +538,23 @@ model-tabs, Disput pipeline) описывают реализацию отдел�
 расширение, критика, арбитраж), план раундов, назначение ролей, критерий
 остановки, решение о том, что сжимать в контексте.</p>
 <p><strong>Подпротоколы.</strong> Scenario Planning · Protocol Transition · Reconciliation
-(claims, расхождения, disposition) · Stop Decision.</p>
+(claims, расхождения, disposition) · Semantic Assessment · Stop Decision.</p>
 <p><strong>Единица данных.</strong> <code>ScenarioPlan</code>, <code>Claim</code>, <code>DisputeGraph</code>, <code>Disposition</code>
 (<code>accepted</code> / <code>rejected</code> / <code>open</code> / <code>deferred</code>), <code>ConvergenceDelta</code>,
-<code>StopDecision</code>, <code>RunVerdict</code>.</p>
-<p><strong>Контракт.</strong> <code>ScenarioPlan + закоммиченные на L4 ответы + Disposition +
+<code>SemanticAssessment</code>, <code>RoundDecision</code>, <code>StopDecision</code>, <code>RunVerdict</code>.</p>
+<p><strong>Semantic Assessment.</strong> Вероятностные оценки, которые нельзя сделать
+детерминированно на L5:
+<code>SemanticAssessment{kind, subject_ref, confidence, method, evaluator,
+evaluator_version}</code>, где <code>kind</code> — <code>compression_fidelity</code> (сохранён ли смысл
+сжатого фрагмента) или <code>injection_suspect</code> (похоже ли, что ответ выполняет
+инструкции из чужих данных). Оценка никогда не отклоняет ответ: она меняет
+вес, помечает ответ и может повлиять на решение следующего раунда (например,
+подать фрагмент без сжатия). Метод и уверенность записываются всегда.</p>
+<p><strong>Контракт.</strong> <code>ScenarioPlan + закоммиченные на L4 исходы + Disposition +
 бюджет → RoundDecision{continue | stop | change_protocol, reason}</code>; в конце —
-<code>RunVerdict{achieved | not_achieved | aborted, stop_reason}</code>.</p>
+<code>RunVerdict{achieved | not_achieved | aborted, stop_reason}</code>. Каждое решение
+становится состоянием только через коммит L4 (<code>RoundOpened</code>,
+<code>ProtocolChanged</code>, <code>RunStopped</code>).</p>
 <p><strong>Предусловие входа.</strong> До раунда 1 зафиксированы: цель, протокол, роли, лимит
 раундов, бюджет токенов/времени, критерий существенности расхождения, критерий
 остановки как измеримый предикат по <code>DisputeGraph</code>, правила смены протокола,
@@ -523,6 +616,16 @@ model-tabs, Disput pipeline) описывают реализацию отдел�
 <td>Итог опирается на непринятый или отсутствующий ответ</td>
 <td>Итог невалиден</td>
 </tr>
+<tr>
+<td><code>L6.COMPRESSION_FIDELITY_LOW</code></td>
+<td>Оценка: сжатый фрагмент, вероятно, исказил смысл (с уверенностью)</td>
+<td>Пометка; в следующем раунде фрагмент подаётся без сжатия или со сжатием другой версии</td>
+</tr>
+<tr>
+<td><code>L6.INJECTION_SUSPECT</code></td>
+<td>Оценка: ответ, вероятно, следует инструкциям из чужих данных (с уверенностью)</td>
+<td>Понижение веса, пометка в итоге; отбраковки нет</td>
+</tr>
 </tbody>
 </table></div>
 <p><strong>Реакция.</strong> Сменить протокол (только на границе раунда, с записью в журнал)
@@ -534,7 +637,8 @@ model-tabs, Disput pipeline) описывают реализацию отдел�
 <p><strong>Признак прогресса.</strong> Новые disposition на существенных расхождениях.</p>
 <p><strong>Метрики.</strong> <code>rounds_to_stop</code>, <code>disposition_coverage</code>,
 <code>open_critical_claims</code>, <code>new_claims_per_round</code>, <code>protocol_switch_count</code>,
-<code>drift_score</code>, <code>token_budget_used</code>.</p>
+<code>drift_score</code>, <code>token_budget_used</code>, <code>injection_suspect_rate</code>,
+<code>compression_fidelity_low_rate</code>.</p>
 <p><strong>Точечное усиление.</strong> Критерий остановки и лимит раундов задаются до старта.
 Детектор эха: порог сходства claims между соседними раундами. Ответ,
 полученный через fallback (§L2), помечен и взвешивается с учётом этого.</p>
@@ -550,7 +654,8 @@ model-tabs, Disput pipeline) описывают реализацию отдел�
 <li><strong>L5↑ Acceptance Gate</strong> — детерминированная приёмка сырого ответа.</li>
 </ul>
 <p><strong>Единица данных.</strong> <code>PromptPacket{frame, body, artifacts[], round_nonce,
-frame_hash, body_hash, packet_hash, versions}</code>, <code>CompressionManifest</code>,
+frame_hash, body_hash, packet_hash, rendered_prompt_hash, attachment_hashes[],
+self_contained, versions}</code>, <code>CompressionManifest</code>,
 <code>AcceptancePolicy</code>, <code>AcceptanceReceipt</code>, <code>AcceptedResponse</code>,
 <code>Rejection{code, origin_layer, retryable}</code>.</p>
 <p><strong>Контракт.</strong>
@@ -560,8 +665,9 @@ frame_hash, body_hash, packet_hash, versions}</code>, <code>CompressionManifest<
 присутствует; внешние фрагменты помечены как данные и экранированы; допуск
 лимита и N повторов заданы в <code>AcceptancePolicy</code>.</p>
 <p><strong>Свидетельство вверх.</strong>
-- ↓ <code>packet_hash</code>; у каждого вложения указаны источник, версия и пометка
-  «данные».
+- ↓ <code>packet_hash</code> (идентификатор пакета), <code>rendered_prompt_hash</code> (эталон для
+  проверки вставки на L1), <code>attachment_hashes[]</code>; у каждого вложения указаны
+  источник, версия и пометка «данные».
 - ↑ <code>AcceptanceReceipt{acceptance_policy_version, canon_version,
   checks[{name, result}], round_nonce, extracted_hash}</code> либо причина отказа.</p>
 <p><strong>Проверки приёмки</strong> (только детерминированные, без LLM-суждений): зоны
@@ -575,7 +681,9 @@ frame_hash, body_hash, packet_hash, versions}</code>, <code>CompressionManifest<
   Персональная идентичность живёт в конверте L4, в промпт не попадает.
 - Сжатие не затрагивает неизменяемую рамку.
 - Все валидаторы чистые, детерминированные и версионированные.
-- Рамка при повторе не меняется.</p>
+- Рамка при повторе не меняется.
+- На L5 нет семантических проверок. Сохранность смысла при сжатии и
+  подозрение на инъекцию — вероятностные оценки L6 (<code>SemanticAssessment</code>).</p>
 <p><strong>Не входит в слой.</strong> Выбор адресата (L2), выбор протокола и решение о том,
 что сжимать (L6), отправка (L3), запись состояния (L4), оценка смысла (L6).</p>
 <p><strong>Запрещено.</strong> Markdown, списки и разметка как критерий приёмки. Сжатие «на
@@ -593,15 +701,21 @@ frame_hash, body_hash, packet_hash, versions}</code>, <code>CompressionManifest<
 </thead>
 <tbody>
 <tr>
-<td><code>L5.INJECTION</code></td>
+<td><code>L5.PROTOCOL_TOKEN_IN_DATA</code></td>
 <td>↓</td>
-<td>Чужой ответ содержит инструкции или протокольные элементы</td>
+<td>В данных после санитайзинга остался неэкранированный маркер, нонс или ограждение</td>
 <td>frame (санитайзинг)</td>
 </tr>
 <tr>
-<td><code>L5.COMPRESSION_DISTORTION</code></td>
+<td><code>L5.FRAME_TOUCHED</code></td>
 <td>↓</td>
-<td>Сжатие исказило смысл или затронуло рамку</td>
+<td><code>frame_hash</code> после сжатия отличается от эталона раунда</td>
+<td>frame</td>
+</tr>
+<tr>
+<td><code>L5.MANIFEST_MISMATCH</code></td>
+<td>↓</td>
+<td>Сжатый фрагмент не соответствует <code>CompressionManifest</code> (источник, версия, хэш)</td>
 <td>frame</td>
 </tr>
 <tr>
@@ -642,18 +756,27 @@ frame_hash, body_hash, packet_hash, versions}</code>, <code>CompressionManifest<
 </tr>
 </tbody>
 </table></div>
+<p>Все коды ↓ проверяются синтаксически: по хэшам, позициям и экранированию.
+Они не утверждают, что смысл сохранён или что модель не подчинится
+инструкциям из данных, — это оценки L6.</p>
 <p>Если извлечение L1 не доказало полноту, любой отказ ↑ получает
 <code>origin_layer = L1</code>, <code>blame = channel</code>.</p>
 <p><strong>Реакция.</strong> ↓ — пересобрать пакет, модель не виновата. ↑ — fail closed:
-состояние не коммитится; повтор относится к тому же
-<code>logical_invocation_id</code>, с тем же <code>PromptPacket</code>, не больше N раз. Неповторяемый
-отказ — стоп или эскалация на L6. После исчерпания — <code>Quarantine</code> + <code>Absence</code>.</p>
+состояние не коммитится. Повторяемый отказ при доказанной доставке —
+<em>rejection retry</em> (§4.7): тот же <code>logical_invocation_id</code> и тот же
+<code>PromptPacket</code>, новый <code>attempt_id</code> с <code>retry_kind=rejection</code> и
+<code>retry_reason=L5.&lt;code&gt;</code>, явный <code>context_restore</code>, не больше N раз. Это не
+transport resend и не нарушает правило 8. Неповторяемый отказ или
+недоступность способа восстановления контекста — стоп или эскалация на L6.
+После исчерпания — <code>Quarantine</code> + <code>Absence{rejected}</code>, которое L4 коммитит
+как <code>ResponseAbsent</code>.</p>
 <p><strong>Не считается ошибкой.</strong> Семантическое качество, стиль, отсутствие markdown,
 если они не входят в рамку.</p>
 <p><strong>Признак прогресса.</strong> Принятые ответы.</p>
 <p><strong>Метрики.</strong> <code>first_try_acceptance_rate</code>, <code>rejection_by_reason</code>,
 <code>rejection_blame_split</code> (модель против канала), <code>retry_per_response</code>,
-<code>compression_ratio</code>, <code>injection_flags</code>, <code>prompt_hash_mismatch</code>.</p>
+<code>compression_ratio</code>, <code>protocol_token_escapes</code>, <code>prompt_hash_mismatch</code>,
+<code>context_restore_by_method</code>.</p>
 <p><strong>Точечное усиление.</strong> Чужие ответы подаются в ограждающих маркерах данных с
 экранированием; ограждение — часть неизменяемой рамки. Санитайзинг выполняется
 до любой сборки и любой проверки. Параметры приёмки версионируются вместе с
@@ -668,22 +791,76 @@ frame_hash, body_hash, packet_hash, versions}</code>, <code>CompressionManifest<
 <p><strong>Единица данных.</strong>
 - <code>ObservedAttempt</code> — любая попытка, включая технические и отклонённые.
   Журналируется, состояние не двигает.
-- <code>LogicalCommit{logical_invocation_id, accepted_response_hash, attempt_id,
-  prev_hash, entry_hash, schema_version}</code> — единственное, что двигает
-  состояние.
+- <code>LogicalCommit{kind, subject_id, proof_ref, attempt_id?, prev_hash,
+  entry_hash, schema_version}</code> — типизированный переход; единственное, что
+  двигает состояние.
 - <code>Event{event_id, trace_id, run_id, session_id, round_id, role, model,
   attempt_id, causation_id, monotonic_ts, wall_ts, source}</code>.
 - <code>StateSnapshot</code> / <code>Checkpoint</code> на границах раундов.</p>
-<p><strong>Контракт.</strong> <code>ObservedAttempt → append</code>. <code>AcceptedResponse + ключ
-идемпотентности → ровно один LogicalCommit → новое состояние</code>.</p>
+<p><strong>Типы переходов.</strong> Коммит без свидетельства своего типа невозможен.</p>
+<div class="tw"><table>
+<thead>
+<tr>
+<th><code>kind</code></th>
+<th>Субъект</th>
+<th>Обязательное свидетельство</th>
+<th>Терминальный для логической работы</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>RoundOpened</code></td>
+<td><code>round_id</code></td>
+<td><code>RoundDecision{continue}</code> L6 + зафиксированный <code>RoutePlan</code> L2</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>ResponseAccepted</code></td>
+<td><code>logical_invocation_id</code></td>
+<td><code>AcceptanceReceipt</code> L5 + хэш <code>AcceptedResponse</code></td>
+<td>да</td>
+</tr>
+<tr>
+<td><code>ResponseAbsent</code></td>
+<td><code>logical_invocation_id</code></td>
+<td><code>Absence{reason, exhaustion_proof}</code>: исчерпание бюджета повторов, <code>SKIP</code> L2, <code>delivery_unknown</code> после дедлайна или карантин после rejection retry</td>
+<td>да</td>
+</tr>
+<tr>
+<td><code>ProtocolChanged</code></td>
+<td><code>run_id</code></td>
+<td><code>RoundDecision{change_protocol, reason}</code> L6 на границе раунда</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>RoundClosed</code></td>
+<td><code>round_id</code></td>
+<td>Все логические работы раунда имеют терминальный исход</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>RunStopped</code></td>
+<td><code>run_id</code></td>
+<td><code>StopDecision</code> + <code>RunVerdict</code> L6</td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Контракт.</strong> <code>ObservedAttempt → append</code>. <code>Свидетельство нужного типа + ключ
+идемпотентности → ровно один LogicalCommit → новое состояние</code>. Логическая
+работа завершается ровно одним терминальным коммитом: <code>ResponseAccepted</code> или
+<code>ResponseAbsent</code>; второй терминальный коммит — <code>L4.DOUBLE_COMMIT</code>.</p>
 <p><strong>Предусловие входа.</strong> Журнал доступен; предыдущее состояние восстановлено или
 явно открыт новый раунд; ключ идемпотентности вычислим.</p>
 <p><strong>Свидетельство вверх.</strong> Replay журнала даёт то же логическое состояние;
-каждый коммит содержит хэш <code>AcceptedResponse</code> и ссылку на породивший attempt;
-хэш-цепочка цела.</p>
-<p><strong>Критерий завершения.</strong> Ровно один коммит на логическую работу.</p>
+каждый коммит содержит <code>proof_ref</code> на свидетельство своего типа и, для
+ответов, ссылку на породивший attempt; хэш-цепочка цела.</p>
+<p><strong>Критерий завершения.</strong> Ровно один терминальный коммит на логическую работу;
+раунд закрывается <code>RoundClosed</code>, прогон — <code>RunStopped</code>.</p>
 <p><strong>Инварианты.</strong>
 - At-least-once наблюдение, exactly-once логический коммит.
+- Нет вечно ожидающих слотов: каждая логическая работа к дедлайну раунда
+  получает терминальный исход.
 - Один <code>round + role</code> — максимум один логический ответ.
 - Состояние — свёртка журнала; вне журнала состояния нет.
 - Журнал append-only; откат — компенсирующее событие, удаление запрещено.
@@ -704,8 +881,18 @@ frame_hash, body_hash, packet_hash, versions}</code>, <code>CompressionManifest<
 <tbody>
 <tr>
 <td><code>L4.DOUBLE_COMMIT</code></td>
-<td>Коллизия ключа идемпотентности</td>
+<td>Коллизия ключа идемпотентности или второй терминальный исход</td>
 <td>Отказ, не перезапись; дубль отбрасывается</td>
+</tr>
+<tr>
+<td><code>L4.PROOF_MISSING</code></td>
+<td>Коммит без свидетельства своего типа</td>
+<td>Отказ коммита</td>
+</tr>
+<tr>
+<td><code>L4.SLOT_PENDING</code></td>
+<td>Логическая работа без терминального исхода к дедлайну раунда</td>
+<td>L3/L5 обязаны выдать <code>Absence</code>; раунд не закрывается до этого</td>
 </tr>
 <tr>
 <td><code>L4.ORPHAN_RESPONSE</code></td>
@@ -738,7 +925,8 @@ frame_hash, body_hash, packet_hash, versions}</code>, <code>CompressionManifest<
 последнего валидного коммита.</p>
 <p><strong>Не считается ошибкой.</strong> Дубль события, отброшенный по ключу
 идемпотентности. Повтор из журнала.</p>
-<p><strong>Признак прогресса.</strong> Рост числа <code>LogicalCommit</code> (не числа событий).</p>
+<p><strong>Признак прогресса.</strong> Рост числа терминальных коммитов <code>ResponseAccepted</code>
+(не числа событий; <code>ResponseAbsent</code> закрывает слот, но прогрессом не является).</p>
 <p><strong>Метрики.</strong> <code>commits_per_attempts</code>, <code>duplicate_suppressed</code>, <code>replay_parity</code>,
 <code>recovery_time</code>, <code>journal_lag</code>, <code>replay_depth</code>.</p>
 <p><strong>Точечное усиление.</strong> <code>logical_invocation_id</code> отдельно от <code>attempt_id</code>.
@@ -755,7 +943,8 @@ Checkpoint на границах раундов. Перед отправкой �
 <p><strong>Единица данных.</strong> <code>RequestEnvelope{request_id, attempt_id, packet_hash,
 target, sent_at}</code>, <code>ResponseEnvelope{attempt_id, capture_id, sent_at,
 first_output_at, last_output_at, capture_at, raw_hash, length,
-completion_status, via_fallback}</code>, <code>CompletionReport</code>.</p>
+completion_status, via_fallback}</code>, <code>CompletionReport</code>,
+<code>DeliveryOutcome{delivered | not_delivered | delivery_unknown, proof}</code>.</p>
 <p><code>completion_status</code>: <code>complete</code> / <code>cut</code> / <code>timeout</code> / <code>empty</code> / <code>stale</code> /
 <code>continue_required</code> / <code>ambiguous</code>.</p>
 <p><strong>Контракт.</strong> <code>PromptPacket + адресат + дедлайны → ResponseEnvelope</code>
@@ -763,12 +952,43 @@ completion_status, via_fallback}</code>, <code>CompletionReport</code>.</p>
 завершения. Неполный ответ не выдаётся как завершённый.</p>
 <p><strong>Предусловие входа.</strong> Маршрут выбран, адресат доступен, дедлайны заданы, нонс
 вложен в пакет.</p>
-<p><strong>Свидетельство вверх.</strong> <code>dispatch_ack</code> + <code>capture_complete</code> +
+<p><strong>Свидетельство вверх.</strong> <code>DeliveryOutcome</code> + <code>capture_complete</code> +
 <code>freshness_evidence</code> + <code>raw_hash</code> + <code>length</code>.</p>
+<p><strong>Исход доставки.</strong> Определяется по наблюдаемому состоянию страницы (L1), а
+не по ACK. ACK подтверждает, что команда дошла до исполнителя; его
+отсутствие не говорит ничего о том, произошла ли отправка.</p>
+<div class="tw"><table>
+<thead>
+<tr>
+<th>Исход</th>
+<th>Свидетельство</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>delivered</code></td>
+<td>Наше сообщение появилось в ленте, или началась генерация хода, начатого нашим сообщением</td>
+</tr>
+<tr>
+<td><code>not_delivered</code></td>
+<td>После окна стабилизации нашего сообщения в ленте нет, черновик с <code>rendered_prompt_hash</code> остался в composer, генерация не началась; либо явная ошибка до side-effect (команда отклонена, вкладка недоступна до вставки)</td>
+</tr>
+<tr>
+<td><code>delivery_unknown</code></td>
+<td>Ни одно из двух свидетельств не получено: потерян ACK, навигация или выгрузка вкладки во время submit, лента не читается</td>
+</tr>
+</tbody>
+</table></div>
+<p>При <code>delivery_unknown</code> сначала выполняется сверка (повторное чтение ленты и
+composer). Если исход остаётся неизвестным, повторная отправка запрещена:
+capture продолжается до общего дедлайна; появившийся ответ на наш ход
+переводит исход в <code>delivered</code>; иначе — <code>Absence{delivery_unknown}</code>.</p>
 <p><strong>Критерий завершения.</strong> Ответ полон и свеж, либо доказан отказ.</p>
 <p><strong>Инварианты.</strong>
 - Ответ не может быть старше запроса.
 - Повторное чтение ответа ≠ повторная отправка запроса.
+- Transport resend возможен только при <code>not_delivered</code>; при
+  <code>delivery_unknown</code> — никогда.
 - Транспорт нейтрален к смыслу.
 - Ответ без меток времени наверх не поднимается.</p>
 <p><strong>Три таймера с разными кодами:</strong> до первого вывода (<code>stuck</code>), между
@@ -780,7 +1000,8 @@ completion_status, via_fallback}</code>, <code>CompletionReport</code>.</p>
 <p><strong>Не входит в слой.</strong> Выбор модели и пресета, приёмка по формату, запись
 состояния, интерпретация смысла.</p>
 <p><strong>Запрещено.</strong> Смешивать <code>cut</code> и <code>false-success</code> в одну ошибку. Считать
-recovery, фокус, скролл прогрессом. Повторять send по таймауту ожидания ответа.</p>
+recovery, фокус, скролл прогрессом. Повторять send по таймауту ожидания
+ответа или по отсутствию ACK. Выдавать rejection retry за transport resend.</p>
 <p><strong>Типовые отказы.</strong></p>
 <div class="tw"><table>
 <thead>
@@ -799,7 +1020,7 @@ recovery, фокус, скролл прогрессом. Повторять send
 <tr>
 <td><code>L3.CUTTED</code></td>
 <td>Обрыв потока</td>
-<td>capture, затем send при доказанной недоставке</td>
+<td>capture; resend невозможен — доставка уже доказана</td>
 </tr>
 <tr>
 <td><code>L3.LATE_END</code></td>
@@ -814,7 +1035,12 @@ recovery, фокус, скролл прогрессом. Повторять send
 <tr>
 <td><code>L3.STUCK</code></td>
 <td>Нет первого вывода</td>
-<td>send (если отправка не подтверждена)</td>
+<td>Определить <code>DeliveryOutcome</code>; resend только при <code>not_delivered</code></td>
+</tr>
+<tr>
+<td><code>L3.DELIVERY_UNKNOWN</code></td>
+<td>Факт отправки не установлен ни в одну сторону</td>
+<td>Сверка; без resend; capture до дедлайна, затем <code>Absence{delivery_unknown}</code></td>
 </tr>
 <tr>
 <td><code>L3.STALL</code></td>
@@ -838,19 +1064,20 @@ recovery, фокус, скролл прогрессом. Повторять send
 </tr>
 </tbody>
 </table></div>
-<p><strong>Реакция.</strong> Сначала capture retry; send retry только при доказанной
-недоставке. Доказательство недоставки — отсутствие <code>dispatch_ack</code> или явная
-транспортная ошибка, но не таймаут ожидания ответа.</p>
+<p><strong>Реакция.</strong> Сначала capture retry; transport resend только при
+<code>not_delivered</code>. Ни отсутствие ACK, ни таймаут ожидания ответа
+доказательством недоставки не являются. Rejection retry (§4.7) инициирует
+L5, а не L3.</p>
 <p><strong>Не считается ошибкой.</strong> Фокус, скролл, опрос вкладки, recovery — это не
 вывод модели и не прогресс, но и не отказ.</p>
 <p><strong>Признак прогресса.</strong> Нет; слой производит только события и свидетельства.
 Живость модели — только по фрагментам её вывода.</p>
 <p><strong>Метрики.</strong> <code>ttft</code> (send → first output), <code>last_output_to_capture</code>,
 <code>empty_rate</code>, <code>cut_rate</code>, <code>late_end_rate</code>, <code>old_answer_rate</code>, <code>resend_rate</code>,
-<code>stall_count</code>.</p>
+<code>delivery_unknown_rate</code>, <code>stall_count</code>.</p>
 <p><strong>Точечное усиление.</strong> Хэш финального снимка сверяется с хэшем при извлечении
 на L1; расхождение — новый capture, а не новый запрос. Каждая попытка несёт
-<code>attempt_id</code> и <code>parent_attempt_id</code>.</p>
+<code>attempt_id</code>, <code>parent_attempt_id</code> и <code>retry_kind</code>.</p>
 <hr />
 <h3 id="l2">L2 — Маршрутизация</h3>
 <p><strong>Назначение.</strong> Выбор пресета и модели; адресация и маршрутизация: какому
@@ -859,8 +1086,11 @@ recovery, фокус, скролл прогрессом. Повторять send
 Breaker.</p>
 <p><strong>Единица данных.</strong> <code>RoutePlan{route_plan_id, entries[], policy_version,
 capability_version}</code>, <code>RouteEntry{role, target, preset, adapter, operation,
-fallback[], route_decision_id}</code>, <code>CapabilitySnapshot</code>, <code>RouteDiff</code>,
-<code>SKIP{reason}</code>.</p>
+fallback[], route_decision_id}</code>, <code>CapabilitySnapshot{stream, limits,
+context_window, frame_version, context_restore[]: regenerate | edit_resubmit |
+new_conversation, delivery_observable}</code>, <code>RouteDiff</code>, <code>SKIP{reason}</code>.</p>
+<p><code>SKIP{reason}</code> — свидетельство для <code>Absence</code> и терминального коммита
+<code>ResponseAbsent</code> на L4.</p>
 <p>Идентичность исполнителя = имя + провайдер + наблюдаемая версия модели, если
 интерфейс её показывает; иначе исполнитель помечается <code>version_unpinned</code>.</p>
 <p><strong>Контракт.</strong> <code>Сценарий (роли от L6) + CapabilitySnapshot → RoutePlan</code>;
@@ -963,8 +1193,9 @@ fallback-цепочка объявлена; пакет помещается в �
 Transaction · Extraction.</p>
 <p><strong>Единица данных.</strong> <code>ChannelMessage{message_id, parent_id, seq, tab_id,
 action, payload_hash}</code>, <code>Invocation</code>, <code>InvocationReceipt{tab_ok, auth_ok,
-page_state, selector_found, inserted_hash, submitted_observed,
-extracted_hash, extraction_complete, selector_map_version}</code>, <code>PageHealth</code>,
+page_state, selector_found, inserted_hash, attachments_confirmed[],
+submitted_observed, draft_still_present, extracted_hash, extraction_complete,
+selector_map_version}</code>, <code>PageHealth</code>,
 <code>ExtractionManifest</code>.</p>
 <p>Состояния страницы: <code>visible</code>, <code>authorized</code>, <code>input_ready</code>, <code>streaming</code>,
 <code>idle</code>, <code>blocked</code> (капча, баннер, модальное окно), <code>busy</code> (вкладка занята
@@ -975,7 +1206,10 @@ extracted_hash, extraction_complete, selector_map_version}</code>, <code>PageHea
 <code>input_ready</code>; селекторы существуют; канал сообщений жив.</p>
 <p><strong>Свидетельство вверх.</strong>
 - Вставка: канонический хэш фактического содержимого composer перед submit
-  равен <code>packet_hash</code> L5.
+  равен <code>rendered_prompt_hash</code> L5 (не <code>packet_hash</code>: тот идентифицирует весь
+  пакет с метаданными).
+- Вложения: каждый файл из <code>attachment_hashes[]</code> подтверждён страницей
+  (имя, размер, состояние загрузки); проверка отдельная от текста.
 - Отправка: наше сообщение появилось в ленте переписки (наблюдаемый эффект), а
   не «кнопка не вернула ошибку».
 - Извлечение: сырой текст + <code>extraction_complete</code> + <code>extracted_hash</code>.
@@ -990,7 +1224,11 @@ PROMPT_COMMITTED → SUBMITTING → SUBMITTED</code> (см.
 - Один <code>Invocation</code> не может вызвать два submit-side-effect.
 - Слой не интерпретирует содержимое: сырой текст вверх без правок.
 - Сбой интерфейса не является ошибкой модели.
-- Перед повторным submit сначала доказать, что предыдущий не произошёл.</p>
+- Перед повторным submit сначала доказать, что предыдущий не произошёл
+  (<code>not_delivered</code>, §5.L3).
+- Повторное IPC-сообщение с тем же <code>message_id</code> не повторяет side-effect:
+  получатель дедуплицирует по <code>message_id</code> и возвращает сохранённый
+  <code>observed_effect</code>.</p>
 <p><strong>Не входит в слой.</strong> Решение accepted/rejected, изменение промпта, выбор
 модели.</p>
 <p><strong>Запрещено.</strong> Записывать DOM-ошибку как «модель не поставила маркер». Слать
@@ -1007,8 +1245,13 @@ PROMPT_COMMITTED → SUBMITTING → SUBMITTED</code> (см.
 <tbody>
 <tr>
 <td><code>L1.PROMPT_NOT_INSERTED</code></td>
-<td>Хэш composer ≠ хэш пакета</td>
+<td>Хэш composer ≠ <code>rendered_prompt_hash</code></td>
 <td>Повтор вставки</td>
+</tr>
+<tr>
+<td><code>L1.ATTACHMENT_UNCONFIRMED</code></td>
+<td>Страница не подтвердила загрузку файла из пакета</td>
+<td>Повтор загрузки этого файла; отправка не начинается</td>
 </tr>
 <tr>
 <td><code>L1.INPUT_NOT_REGISTERED</code></td>
@@ -1017,7 +1260,7 @@ PROMPT_COMMITTED → SUBMITTING → SUBMITTED</code> (см.
 </tr>
 <tr>
 <td><code>L1.PROMPT_NOT_SENT</code></td>
-<td>Сообщение не появилось в ленте</td>
+<td>Сообщения нет в ленте, черновик остался в composer (<code>not_delivered</code>)</td>
 <td>Bounded send-only retry без повторной вставки</td>
 </tr>
 <tr>
@@ -1027,8 +1270,8 @@ PROMPT_COMMITTED → SUBMITTING → SUBMITTED</code> (см.
 </tr>
 <tr>
 <td><code>L1.ACK_LOST</code></td>
-<td>ACK потерян после успешного side-effect</td>
-<td>Повтор по тому же <code>message_id</code>; проверить эффект до повтора</td>
+<td>ACK потерян; side-effect мог произойти</td>
+<td>Повтор сообщения по тому же <code>message_id</code> (получатель дедуплицирует); для submit — исход <code>delivery_unknown</code> до сверки ленты</td>
 </tr>
 <tr>
 <td><code>L1.SELECTOR_BROKEN</code></td>
@@ -1117,8 +1360,8 @@ DOM-состояния (полный снимок не хранится).</p>
 <tr>
 <td>L3 → L1</td>
 <td>Команда отправки</td>
-<td>Двойной submit</td>
-<td>Проверка ленты до повтора</td>
+<td>Двойной submit после потери ACK</td>
+<td>Resend только при <code>not_delivered</code>; <code>delivery_unknown</code> — без resend</td>
 </tr>
 <tr>
 <td>L1 → L3</td>
@@ -1128,9 +1371,15 @@ DOM-состояния (полный снимок не хранится).</p>
 </tr>
 <tr>
 <td>L1 ↔ L5</td>
-<td>Хэш вставленного и пакета</td>
-<td>Ложное несовпадение из-за DOM-нормализации</td>
-<td>Одна каноническая форма (§4.4)</td>
+<td>Хэш содержимого composer и <code>rendered_prompt_hash</code>; вложения отдельно</td>
+<td>Сравнение хэшей разных объектов; ложное несовпадение из-за DOM-нормализации</td>
+<td><code>rendered_prompt_hash</code> вместо <code>packet_hash</code>; одна каноническая форма (§4.4)</td>
+</tr>
+<tr>
+<td>L5 → L3</td>
+<td>Rejection retry</td>
+<td>Повтор в той же переписке с отклонённым ответом в контексте</td>
+<td>Новый <code>attempt_id</code>, явный <code>context_restore</code> (§4.7)</td>
 </tr>
 <tr>
 <td>L3 → L5</td>
@@ -1140,13 +1389,19 @@ DOM-состояния (полный снимок не хранится).</p>
 </tr>
 <tr>
 <td>L5 → L4</td>
-<td><code>AcceptedResponse</code></td>
-<td>«Принято, но не записано»</td>
-<td>Атомарность; коммит → возврат наверх</td>
+<td><code>AcceptedResponse</code> или <code>Absence</code></td>
+<td>«Принято, но не записано»; вечно ожидающий слот</td>
+<td>Атомарность; ровно один терминальный коммит на логическую работу</td>
+</tr>
+<tr>
+<td>L6 → L4</td>
+<td><code>RoundDecision</code>, <code>StopDecision</code></td>
+<td>Решение сценария не сохранено</td>
+<td>Типизированные коммиты <code>RoundOpened</code> / <code>ProtocolChanged</code> / <code>RunStopped</code></td>
 </tr>
 <tr>
 <td>L4 → L6</td>
-<td>Закоммиченные ответы</td>
+<td>Закоммиченные исходы</td>
 <td>Итог из непринятого ответа</td>
 <td>L6 читает только коммиты</td>
 </tr>
@@ -1367,13 +1622,50 @@ DOM-состояния (полный снимок не хранится).</p>
 </tr>
 </tbody>
 </table></div>
+<p>Ревью спецификации OSI-1.0 (Astra, 2026-10-05) → OSI-1.1:</p>
+<div class="tw"><table>
+<thead>
+<tr>
+<th>Замечание</th>
+<th>Исправление</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Отсутствие ACK считалось доказательством недоставки; при потере ACK после успешной отправки возможна двойная отправка</td>
+<td>Введён <code>DeliveryOutcome</code> с исходом <code>delivery_unknown</code>; resend только при наблюдаемом <code>not_delivered</code> (§5.L3, правило 8)</td>
+</tr>
+<tr>
+<td><code>packet_hash</code> сравнивался с хэшем текста composer — хэши разных объектов</td>
+<td>Введён <code>rendered_prompt_hash = sha256(canonical(render(packet)))</code>; <code>packet_hash</code> остаётся идентификатором пакета; вложения проверяются отдельно (§4.4, §5.L1)</td>
+</tr>
+<tr>
+<td>L4 не мог завершить логическую работу без принятого ответа; решения сценария не имели пути в состояние</td>
+<td>Типизированные коммиты <code>LogicalCommit{kind, proof_ref}</code>; ровно один терминальный исход на логическую работу (§5.L4, правила 6–7)</td>
+</tr>
+<tr>
+<td>Повтор после отказа L5 противоречил запрету resend и шёл в изменённый контекст</td>
+<td>Rejection retry выделен в отдельный вид повтора с новым <code>attempt_id</code>, бюджетом и явным <code>context_restore</code> (§4.7)</td>
+</tr>
+<tr>
+<td>В детерминированном L5 были семантические проверки без метода</td>
+<td>На L5 остались синтаксические проверки хэшей, позиций и экранирования; сохранность смысла и подозрение на инъекцию — <code>SemanticAssessment</code> L6 с уверенностью (§5.L5, §5.L6)</td>
+</tr>
+</tbody>
+</table></div>
 <h2 id="9">9. Требует проверки</h2>
 <ul>
 <li>Порог сходства для детектора эха и критерий существенности расхождения —
   калибруются на прогонах, пока задаются в <code>ScenarioPlan</code> вручную.</li>
 <li>Допуск лимита +30% основан на одном прогоне (ebe8b806).</li>
 <li>Хэш фактического содержимого composer доступен не во всех провайдерах
-  (contenteditable с нестандартной моделью ввода) — проверить по адаптерам.</li>
+  (contenteditable с нестандартной моделью ввода) — проверить по адаптерам;
+  там же проверить, совпадает ли <code>render(packet)</code> с тем, что адаптер реально
+  вставляет (переносы строк, вложения как текст).</li>
+<li>Наблюдаемость <code>not_delivered</code> (черновик остался, сообщения нет) и способов
+  <code>context_restore</code> (<code>regenerate</code>, <code>edit_resubmit</code>) — проверить на каждом из
+  девяти интерфейсов и занести в <code>CapabilitySnapshot</code>.</li>
+<li>Методы <code>SemanticAssessment</code> (оценщик, калибровка уверенности) не выбраны.</li>
 <li>Структурное доказательство свежести (принадлежность узла ответа ходу) —
   проверить на каждом из девяти интерфейсов.</li>
 <li>Соответствие компонентам (§7) составлено по именам модулей и описаниям в
