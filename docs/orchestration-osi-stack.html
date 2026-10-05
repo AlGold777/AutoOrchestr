@@ -25,7 +25,7 @@ hr{border:0;border-top:1px solid var(--bd);margin:32px 0}
 отказы и сквозные протоколы. Все остальные спецификации (Completion V2,
 model-tabs, Disput pipeline) описывают реализацию отдельных слоёв и не должны
 ему противоречить. При конфликте сначала правится этот документ, затем код.</p>
-<p>Версия стека: <strong>OSI-1.5</strong> (2026-10-05). Состав и названия шести слоёв
+<p>Версия стека: <strong>OSI-1.6</strong> (2026-10-06). Состав и названия шести слоёв
 зафиксированы; изменения формулировок внутри слоя повышают минорную версию,
 изменение состава слоёв — мажорную.</p>
 </blockquote>
@@ -46,7 +46,8 @@ model-tabs, Disput pipeline) описывают реализацию отдел�
    а не <code>ok</code>. Без свидетельства результата нет.</li>
 <li><strong>Отказ имеет два атрибута слоя: где обнаружен и где возник.</strong>
    <code>detected_at_layer</code> и <code>origin_layer</code> (§4.2) записываются раздельно. Например,
-   отсутствие маркера обнаруживает L5, но если извлечение L1 не доказало
+   отсутствие закрывающего маркера рамки ответа обнаруживает L5, но если
+   извлечение L1 не доказало
    полноту, <code>origin_layer = L1</code>. Атрибуция не меняется при движении вверх.</li>
 <li><strong>Отказы L1–L3 никогда не попадают в статистику качества моделей.</strong>
    Технический отказ имеет <code>blame ≠ model</code>.</li>
@@ -78,8 +79,9 @@ model-tabs, Disput pipeline) описывают реализацию отдел�
      недоставки, а <code>delivery_unknown</code>. После выдачи submit-действия
      <code>not_delivered</code> требует гарантии финальности адаптера (§5.L3);</li>
 <li><em>rejection retry</em> — новая попытка после отказа L5 при доказанной
-     доставке; новый <code>attempt_id</code>, своя причина, свой бюджет и явный способ
-     восстановления контекста.</li>
+     доставке; новый <code>attempt_id</code>, своя причина, свой бюджет; способ повтора
+     (исправление в той же беседе или новая попытка) определяется классом
+     ошибки (§4.7).</li>
 <li><strong>Рамка бедная.</strong> На L5 проверяется только то, что переживает L1-извлечение:
    никакой markdown, списков и визуальной разметки как критерия приёмки.</li>
 <li><strong>Одна канонизация.</strong> Хэши на L1 и проверки на L5 считаются над одной
@@ -97,13 +99,25 @@ model-tabs, Disput pipeline) описывают реализацию отдел�
     версией рамки, политики приёмки, канонизации или <code>PipelineDefinition</code> не
     является attempt прежнего run.</li>
 <li><strong>Данные не издают протокол.</strong> Чужие ответы, цитаты и извлечённый текст не
-    могут содержать действующие протокольные элементы (маркер, нонс, ограждение
-    данных). Протокольная позиция валидна только в заданном месте.</li>
+    могут содержать действующие протокольные элементы: маркеры рамки запроса и
+    ответа, маркеры разделов, токены вызова и попытки, паспорт, ограждение
+    данных. Протокольная позиция валидна только в заданном месте.</li>
 <li><strong>Логика сценария — до его формы.</strong> Этапы, роли, проверки и бюджет
     сценария выводятся из логики сценария (<code>ScenarioLogic</code>, §5.L6), а не
     придумываются. Этап, который не выводится ни из одного звена логики,
     лишний; часть результата, к которой не ведёт ни одна цепочка, не будет
     получена.</li>
+<li><strong>Ответ привязан к вызову дважды.</strong> Снаружи — L3: узел ответа создан после
+    нашей отправки, в нашей беседе (§5.L3). Изнутри — L5: единственная рамка
+    ответа с токенами вызова и попытки и паспорт, совпадающий с заголовком
+    вызова (§5.L5). Одной привязки недостаточно.</li>
+<li><strong>Модель копирует служебные значения, но не вычисляет их.</strong> Токены,
+    хэши, идентификаторы и версии выдаёт оркестратор; модель только повторяет
+    их в ответе, и проверяется точное равенство. Расхождение — отказ, а не
+    исправление на нашей стороне.</li>
+<li><strong>Три представления ответа.</strong> Сырой ответ (RAW), принятый ответ
+    (CANONICAL) и представление для следующих вызовов (CONTEXT) хранятся
+    раздельно. Сжатие и усечение трогают только CONTEXT.</li>
 </ol>
 <h2 id="3">3. Сводная карта слоёв</h2>
 <div class="tw"><table>
@@ -132,8 +146,8 @@ model-tabs, Disput pipeline) описывают реализацию отдел�
 <td><strong>L5</strong></td>
 <td>Контекст</td>
 <td>Какие данные получает исполнитель и в каком виде возвращает результат?</td>
-<td><code>PromptPacket</code>, <code>AcceptanceReceipt</code>, <code>AcceptedResponse</code> / <code>Rejection</code></td>
-<td><code>packet_hash</code> и <code>rendered_prompt_hash</code>; квитанция приёмки с результатом каждой детерминированной проверки</td>
+<td><code>ResponseContract</code>, <code>InputSnapshot</code>, <code>PromptPacket</code>, <code>AcceptanceReceipt</code>, <code>AcceptedResponse</code> / <code>Rejection</code></td>
+<td><code>snapshot_hash</code>, <code>packet_hash</code>, <code>rendered_prompt_hash</code>; квитанция приёмки: рамка ответа, паспорт, контракт, покрытие</td>
 <td>Детерминированный</td>
 <td>core</td>
 </tr>
@@ -151,7 +165,7 @@ model-tabs, Disput pipeline) описывают реализацию отдел�
 <td>Транспортный</td>
 <td>Доставлен ли запрос и снят ли полный свежий ответ?</td>
 <td><code>RequestEnvelope</code>, <code>ResponseEnvelope</code>, <code>CompletionReport</code></td>
-<td><code>DeliveryOutcome</code> (<code>delivered</code> / <code>not_delivered</code> / <code>delivery_unknown</code>) + <code>capture_complete</code> + свежесть + хэш и длина</td>
+<td><code>DeliveryOutcome</code> (<code>delivered</code> / <code>not_delivered</code> / <code>delivery_unknown</code>) + привязка узла ответа к вызову + <code>capture_complete</code> + хэш и длина</td>
 <td>Детерминированный</td>
 <td>background + content (completion)</td>
 </tr>
@@ -160,7 +174,7 @@ model-tabs, Disput pipeline) описывают реализацию отдел�
 <td>Маршрутизация</td>
 <td>Какому исполнителю и какой операции принадлежит сообщение?</td>
 <td><code>RoutePlan</code>, <code>RouteDecision</code>, <code>CapabilitySnapshot</code></td>
-<td>План покрывает всех адресатов; доставка или <code>SKIP{reason}</code> по каждому</td>
+<td>План покрывает всех адресатов; доставка или <code>SKIP{reason}</code> по каждому; достигнутый уровень изоляции</td>
 <td>Детерминированный</td>
 <td>background</td>
 </tr>
@@ -169,7 +183,7 @@ model-tabs, Disput pipeline) описывают реализацию отдел�
 <td>Канальный</td>
 <td>Можно ли сейчас взаимодействовать со страницей, и что на ней произошло?</td>
 <td><code>ChannelMessage</code>, <code>Invocation</code>, <code>InvocationReceipt</code></td>
-<td>Наблюдаемый эффект действия в DOM; хэш содержимого composer = <code>rendered_prompt_hash</code>; вложения подтверждены по отдельности</td>
+<td>Наблюдаемый эффект действия в DOM; хэш содержимого composer и отображённого сообщения = <code>rendered_prompt_hash</code> (<code>input_verified</code>); вложения подтверждены по отдельности; предварительная проверка адаптера</td>
 <td>Детерминированный</td>
 <td>content script + IPC</td>
 </tr>
@@ -235,6 +249,26 @@ model-tabs, Disput pipeline) описывают реализацию отдел�
 <td>L3</td>
 </tr>
 <tr>
+<td><code>call_token</code></td>
+<td>Токен логической работы в маркерах запроса и ответа; выдаётся один раз на <code>PromptPacket</code></td>
+<td>L5↓</td>
+</tr>
+<tr>
+<td><code>attempt_token</code></td>
+<td>Токен отправленного текста: новый при каждой новой отправке. Transport resend отправляет тот же текст и сохраняет токен; <code>regenerate</code> сохраняет токен исходного сообщения, новую попытку тогда отличает привязка L3</td>
+<td>L5↓</td>
+</tr>
+<tr>
+<td><code>snapshot_id</code></td>
+<td>Замороженный вход вызова (<code>InputSnapshot</code>)</td>
+<td>L5↓</td>
+</tr>
+<tr>
+<td><code>contract_id@contract_version</code></td>
+<td>Контракт ответа этапа</td>
+<td>L6</td>
+</tr>
+<tr>
 <td><code>message_id</code>, <code>seq</code></td>
 <td>Сообщение panel ↔ background ↔ tab с порядковым номером</td>
 <td>L1</td>
@@ -281,8 +315,8 @@ model-tabs, Disput pipeline) описывают реализацию отдел�
 <tr>
 <td>L5↓</td>
 <td>Сборка пакета</td>
-<td><code>packet_key = run_id + logical_invocation_id + frame_hash + body_hash + round_nonce + canon_version</code> → <code>prompt_packet_id</code></td>
-<td>Тот же пакет; rejection retry намеренно использует тот же пакет</td>
+<td><code>packet_key = run_id + logical_invocation_id + frame_hash + contract_id@contract_version + snapshot_hash + body_hash + canon_version</code> → <code>prompt_packet_id</code> и <code>call_token</code></td>
+<td>Тот же пакет и тот же <code>call_token</code>; rejection retry намеренно использует тот же пакет</td>
 </tr>
 <tr>
 <td>L5↑</td>
@@ -345,6 +379,12 @@ model-tabs, Disput pipeline) описывают реализацию отдел�
 <td>—</td>
 </tr>
 <tr>
+<td>L3</td>
+<td>Принятое сообщение</td>
+<td><code>conversation_id + assistant_node_ref + attempt_token</code></td>
+<td>Повторное считывание того же сообщения (повторный обход, восстановление, replay) возвращает тот же результат съёма; нового ответа не создаёт</td>
+</tr>
+<tr>
 <td>L2</td>
 <td>Маршрут</td>
 <td><code>route_plan_id + recipient_id + operation</code>; замена — новый <code>route_decision_id</code></td>
@@ -370,7 +410,7 @@ model-tabs, Disput pipeline) описывают реализацию отдел�
 <tbody>
 <tr>
 <td><code>code</code></td>
-<td><code>Lx.REASON</code>, например <code>L3.CUTTED</code>, <code>L5.MARKER_MISSING</code></td>
+<td><code>Lx.REASON</code>, например <code>L3.CUTTED</code>, <code>L5.FRAME_MISSING</code></td>
 </tr>
 <tr>
 <td><code>detected_at_layer</code></td>
@@ -405,7 +445,7 @@ model-tabs, Disput pipeline) описывают реализацию отдел�
 <p>Отказ без <code>blame</code> и без <code>proof_ref</code> не записывается как окончательный: он
 остаётся <code>AMBIGUOUS</code> и не попадает в статистику качества моделей. <code>blame=model</code>
 допустим только когда все нижние слои дали положительные свидетельства
-(например, <code>L5.MARKER_MISSING</code> при доказанно полном извлечении).</p>
+(например, <code>L5.FRAME_MISSING</code> при доказанно полном извлечении).</p>
 <h3 id="43">4.3. Происхождение свидетельств</h3>
 <p>Минимальный конверт любого свидетельства:</p>
 <pre><code class="language-text">Evidence {
@@ -423,6 +463,9 @@ model-tabs, Disput pipeline) описывают реализацию отдел�
 <li><code>DeliveryOutcome{delivered | not_delivered | delivery_unknown, proof}</code> —
   исход отправки (§5.L3). <code>delivered</code> и <code>not_delivered</code> требуют наблюдаемого
   свидетельства на странице; без него исход — <code>delivery_unknown</code>.</li>
+<li><code>InputVerified{displayed_prompt_hash, rendered_prompt_hash}</code> —
+  отображённое сообщение пользователя после отправки совпадает с тем, что
+  должно было быть отправлено (§5.L1).</li>
 <li><code>Quarantine{raw_hash, reason}</code> — сырой текст, не прошедший приёмку после
   исчерпания повторов. Хранится для аудита; второго логического ответа не
   создаёт и отбраковкой на L6 не считается.</li>
@@ -436,16 +479,23 @@ model-tabs, Disput pipeline) описывают реализацию отдел�
   концевые пробелы строк, без семантической нормализации. Версия канонизации
   (<code>canon_version</code>) входит в версию рамки.</li>
 <li>Хэшируются раздельно: <code>frame_hash</code>, <code>body_hash</code>, затем
-  <code>packet_hash = sha256(frame_hash ‖ body_hash ‖ round_nonce ‖ canonical(metadata))</code>.
+  <code>packet_hash = sha256(frame_hash ‖ contract_hash ‖ snapshot_hash ‖ body_hash ‖ call_token ‖ canonical(metadata))</code>.
   <code>packet_hash</code> — идентификатор всего пакета (включая метаданные и
   вложения); с текстом на странице он не сравнивается.</li>
-<li><code>rendered_prompt_hash = sha256(canonical(render(packet)))</code> — хэш ровно того
-  текста, который должен оказаться в поле ввода. Его вычисляет L5↓ при сборке,
-  с ним сравнивает L1 при вставке.</li>
+<li><code>snapshot_hash</code> — хэш замороженного входа (<code>InputSnapshot</code>): что дано
+  вызову. Вычисляет оркестратор; модель только копирует его в паспорт.</li>
+<li><code>rendered_prompt_hash = sha256(canonical(render(packet, attempt_token)))</code> —
+  хэш ровно того текста, который должен оказаться в поле ввода и затем в
+  отображённом сообщении. Один на каждую отправку. Его вычисляет L5↓, с ним
+  сравнивает L1 при вставке и после отправки.</li>
+<li>Эти три хэша не взаимозаменяемы: <code>snapshot_hash</code> — что дано,
+  <code>packet_hash</code> — что собрано, <code>rendered_prompt_hash</code> — что отправлено.</li>
+<li><code>canonical_hash</code> — хэш принятой внутренности рамки ответа (CANONICAL).</li>
 <li>Вложения проверяются отдельно: <code>attachment_hashes[]</code> из пакета против
   подтверждения загрузки каждого файла на странице (§5.L1).</li>
 <li><code>frame_hash</code> одинаков для всех участников раунда. <code>body_hash</code> может
-  различаться по ролям.</li>
+  различаться по ролям. Токены и значения паспорта входят в заголовок
+  вызова, а не в рамку.</li>
 <li>Сырой ответ хэшируется до любой интерпретации (<code>raw_hash</code>), извлечённый
   текст — после канонизации (<code>extracted_hash</code>).</li>
 <li>На L1 сравниваются канонический хэш фактического <code>input.value</code> (или
@@ -584,30 +634,70 @@ model-tabs, Disput pipeline) описывают реализацию отдел�
 <tr>
 <td>Rejection retry</td>
 <td>Доставка доказана, L5 отклонил ответ, отказ <code>retryable</code></td>
-<td>Исполнение того же пакета</td>
+<td>Исполнение того же пакета: исправление в той же беседе или новая попытка — по классу ошибки</td>
 <td>новый, <code>retry_kind=rejection</code>, <code>retry_reason=L5.&lt;code&gt;</code></td>
-<td>восстанавливается явно (ниже)</td>
+<td>по классу ошибки (ниже)</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>Восстановление контекста при rejection retry.</strong> Отклонённый ответ остаётся
-на странице, поэтому повторная отправка того же пакета в ту же переписку даёт
-модели другой контекст и запрещена. Допустимые способы, в порядке
-предпочтения; набор доступных способов берётся из <code>CapabilitySnapshot</code> адаптера
-(L2), выбранный способ записывается в attempt как <code>context_restore</code>:</p>
-<ol>
-<li><code>regenerate</code> — штатная перегенерация того же хода, если интерфейс заменяет
-   ею отклонённый ответ в текущей ветке;</li>
+<p><strong>Способ rejection retry определяется классом ошибки.</strong> Класс записан в
+отказе L5 (<code>error_class</code>); способ не выбирается.</p>
+<div class="tw"><table>
+<thead>
+<tr>
+<th>Класс</th>
+<th>Коды</th>
+<th>Способ</th>
+<th>Бюджет</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>form</code> — ошибка представления</td>
+<td><code>FRAME_MISSING</code>, <code>FRAME_AMBIGUOUS</code>, <code>SECTION_*</code>, <code>LIMIT_EXCEEDED</code>, <code>EMPTY_NOT_ALLOWED</code></td>
+<td><code>same_conversation_repair</code></td>
+<td>1, затем <code>fresh_attempt</code></td>
+</tr>
+<tr>
+<td><code>binding</code> — ошибка привязки</td>
+<td><code>FRAME_TOKEN_MISMATCH</code>, <code>PASSPORT_*</code></td>
+<td><code>same_conversation_repair</code> с тем же снимком; повторное несовпадение — <code>fresh_attempt</code></td>
+<td>1</td>
+</tr>
+<tr>
+<td><code>coverage</code> — ошибка покрытия</td>
+<td><code>COVERAGE_*</code></td>
+<td><code>same_conversation_repair</code> с перечнем неучтённых, чужих и повторных входов</td>
+<td>1, затем <code>fresh_attempt</code></td>
+</tr>
+<tr>
+<td><code>semantic</code> — смысловая ошибка</td>
+<td>Выявляется на L6 (оценка, ревью), не на L5</td>
+<td>Только <code>fresh_attempt</code> в новой беседе по <code>failure_policy</code> сценария; отклонённый ответ не попадает в контекст новой попытки</td>
+<td>по <code>failure_policy</code> L6</td>
+</tr>
+</tbody>
+</table></div>
+<ul>
+<li><strong><code>same_conversation_repair</code></strong> — исправляющее сообщение в той же беседе
+  (<code>RepairPacket</code>): коды ошибок и требование <strong>полного</strong> нового ответа в новой
+  рамке с новым <code>attempt_token</code>. Частичное исправление и склейка с прежним
+  ответом запрещены. Это допустимо для ошибок формы, привязки и покрытия:
+  содержание прежнего ответа не вводит модель в заблуждение, а новый ответ
+  целиком заменяет прежний.</li>
+<li><strong><code>fresh_attempt</code></strong> — та же логическая работа в контексте без отклонённого
+  ответа. Способы, в порядке предпочтения, берутся из <code>CapabilitySnapshot</code>
+  адаптера (L2); выбранный способ записывается в attempt как
+  <code>context_restore</code>:</li>
+<li><code>regenerate</code> — штатная перегенерация того же хода, если интерфейс
+     заменяет ею отклонённый ответ в текущей ветке;</li>
 <li><code>edit_resubmit</code> — редактирование и повторная отправка нашего сообщения
-   (новая ветка от того же места переписки);</li>
+     (новая ветка от того же места переписки);</li>
 <li><code>new_conversation</code> — новая беседа; допустим только если пакет
-   самодостаточен (<code>self_contained=true</code>, L5↓), то есть не опирается на
-   историю переписки.</li>
-</ol>
-<p>Корректирующее сообщение в ту же переписку («исправь формат») — это другой
-пакет с другим контекстом; в OSI-1.1 оно не используется как rejection retry.
-Если ни один способ недоступен, rejection retry не выполняется: <code>Quarantine</code> +
-<code>Absence{rejected}</code>.</p>
+     самодостаточен (<code>self_contained=true</code>, L5↓).</li>
+</ul>
+<p>Смысловую ошибку нельзя исправлять в той же беседе. Если ни один способ
+недоступен, повтор не выполняется: <code>Quarantine</code> + <code>Absence{rejected}</code>.</p>
 <h3 id="48">4.8. Телеметрия</h3>
 <p>События: <code>layer_enter</code>, <code>layer_exit</code>, <code>evidence</code>, <code>error</code>, <code>retry</code>,
 <code>fallback</code>, <code>commit</code>, <code>absence</code>, <code>quarantine</code>. Метрики слоёв перечислены в §5.
@@ -705,7 +795,7 @@ Semantic Assessment · Stop Decision.</p>
 <tr>
 <td><code>multi_model_value</code></td>
 <td>Что дают несколько моделей: <code>diversity</code> (ракурсы и охват), <code>independence</code> (подтверждение, не подсказанное другим), <code>collision</code> (спор проявляет слабое) или <code>none</code></td>
-<td>Число участников роли (L2); <code>independence</code> — участники не видят чужих ответов (L5↓); <code>collision</code> — протокол debate или критики; <code>none</code> — одна модель</td>
+<td>Число участников роли (L2); <code>independence</code> — требование независимости этапа: отдельные новые беседы, доказуемый уровень изоляции (L2), участники не видят чужих ответов (L5↓); <code>collision</code> — протокол debate или критики; <code>none</code> — одна модель</td>
 </tr>
 <tr>
 <td><code>progress_definition</code></td>
@@ -764,6 +854,25 @@ stop_rules, failure_policy, result_criteria, versions}</code> описывает
 <li><strong>Участие человека</strong> (<code>human_gates[]</code>). Только там, где модель не вправе
   решать за человека: цель, границы, спорные ценности. Указывается, можно ли
   пройти сценарий без остановок.</li>
+<li><strong>Контракт ответа этапа</strong> (<code>response_contract_ref</code>). Что этап обязан
+  вернуть: формат, разделы или поля, лимиты, паспорт, политика пустого
+  результата (§5.L5). Разделы контракта соответствуют тому, что этап отдаёт
+  следующим звеньям логики.</li>
+<li><strong>Обязательство покрытия</strong> (<code>coverage_obligation{selector, cardinality}</code>).
+  Для этапов, которые обрабатывают множество входов: оркестратор до вызова
+  вычисляет <code>accountable_set</code> из снимка; модель не может его расширить или
+  сузить, а L5↑ проверяет, что каждый вход учтён.</li>
+<li><strong>Требование независимости</strong> (<code>independence{isolation_level,
+  distinct_providers}</code>). Для звеньев с <code>multi_model_value = independence</code>:
+  минимальный доказуемый уровень изоляции (§5.L2) и нужны ли разные
+  провайдеры.</li>
+<li><strong>Декомпозиция</strong> (<code>decomposition{partition_selector, ordering,
+  max_items_per_partition, fan_in}</code>). Для этапов, которые могут не поместиться
+  в ёмкость модели. Оркестратор до вызова делит множество на части:
+  объединение частей равно всему множеству, пересечений нет, если контракт не
+  разрешает иное. Каждая часть — отдельная логическая работа со своим
+  снимком; сведение частей детерминировано. Продолжение обрезанного ответа
+  («continue») декомпозицией не является и запрещено (§5.L3).</li>
 </ul>
 <p><strong>Структурная валидация</strong> (детерминированная; выполняется при фиксации версии
 <code>PipelineDefinition</code> и повторно при создании <code>ScenarioPlan</code> с конкретными
@@ -792,7 +901,12 @@ stop_rules, failure_policy, result_criteria, versions}</code> описывает
   ловится;</li>
 <li>условие каждой контрольной точки записано как предикат над полями
   артефактов;</li>
-<li>у каждого возврата есть предел.</li>
+<li>у каждого возврата есть предел;</li>
+<li>у каждого этапа есть контракт ответа существующей версии, а его разделы
+  покрывают выходы этапа, нужные следующим звеньям;</li>
+<li>селектор обязательства покрытия вычислим по входам этапа;</li>
+<li>у этапа с декомпозицией заданы селектор, порядок, максимум части и способ
+  сведения.</li>
 </ul>
 <p>Валидация проверяет полноту и прослеживаемость логики, но не её смысл: что
 выбраны правильные части результата и правильные звенья, проверить
@@ -815,6 +929,11 @@ evaluator_version}</code>, где <code>kind</code> — <code>compression_fideli
 инструкции из чужих данных). Оценка никогда не отклоняет ответ: она меняет
 вес, помечает ответ и может повлиять на решение следующего раунда (например,
 подать фрагмент без сжатия). Метод и уверенность записываются всегда.</p>
+<p><strong>Независимость в весах.</strong> Согласие участников засчитывается как независимое
+подтверждение только в пределах уровня изоляции, который доказан для их
+вызовов (<code>isolation_assurance</code> в конверте L3). Заявленное «разнообразие
+моделей» — только наблюдаемое: разные провайдеры, разные заявленные модели,
+разные профили; фактическая модель провайдера неизвестна.</p>
 <p><strong>Контракт.</strong>
 - <code>Validate(PipelineDefinition) → pipeline_version | DefinitionRejection</code>
   (детерминированно).
@@ -899,6 +1018,16 @@ evaluator_version}</code>, где <code>kind</code> — <code>compression_fideli
 <tr>
 <td><code>L6.GATE_NOT_PREDICATE</code></td>
 <td>Условие контрольной точки — оценка, а не предикат над полями</td>
+<td>Определение не получает версию</td>
+</tr>
+<tr>
+<td><code>L6.DEF_CONTRACT_MISSING</code></td>
+<td>Этап без контракта ответа, контракт несуществующей версии или не покрывает выходы этапа</td>
+<td>Определение не получает версию</td>
+</tr>
+<tr>
+<td><code>L6.DEF_DECOMPOSITION_INCOMPLETE</code></td>
+<td>Декомпозиция объявлена без селектора, порядка, максимума или способа сведения</td>
 <td>Определение не получает версию</td>
 </tr>
 <tr>
@@ -1001,46 +1130,177 @@ Pipeline валидируется до запуска, а не во время �
 <p><strong>Подпротоколы.</strong> Две независимые функции одного слоя, которые не смешиваются
 ни в коде, ни в журнале, ни в таксономии ошибок:</p>
 <ul>
-<li><strong>L5↓ Context Build</strong> — сборка пакета: неизменяемая рамка + сменное тело +
-  чужие ответы как данные + сжатие контекста по решению L6.</li>
-<li><strong>L5↑ Acceptance Gate</strong> — детерминированная приёмка сырого ответа.</li>
+<li><strong>L5↓ Context Build</strong> — заморозка входного снимка и сборка пакета:
+  неизменяемая рамка + краткая форма контракта ответа + заголовок вызова +
+  данные + задание этапа; сжатие контекста по решению L6.</li>
+<li><strong>L5↑ Acceptance Gate</strong> — детерминированная приёмка ответа по контракту.</li>
 </ul>
-<p><strong>Единица данных.</strong> <code>PromptPacket{frame, body, artifacts[], round_nonce,
-frame_hash, body_hash, packet_hash, rendered_prompt_hash, attachment_hashes[],
-self_contained, versions}</code>, <code>CompressionManifest</code>,
-<code>AcceptancePolicy</code>, <code>AcceptanceReceipt</code>, <code>AcceptedResponse</code>,
-<code>Rejection{code, origin_layer, retryable}</code>.</p>
+<p>Обе функции работают по <strong>контракту ответа этапа</strong>, который объявляет L6.</p>
+<p><strong>Контракт ответа.</strong> <code>ResponseContract{contract_id, contract_version,
+response_format: text_sections | json_object, passport_fields[],
+sections[]{name, required, order, type, limits}, size_limits, language,
+material_output: required | empty_allowed{reason_codes[]},
+coverage_obligation?, full_schema_hash, compact_form}</code>.</p>
+<ul>
+<li>Объявляется у каждого этапа в <code>PipelineDefinition</code> (L6) и версионируется.</li>
+<li>L5↓ вставляет в промпт только краткую форму: обязательные разделы и поля,
+  закрытые списки значений, ключевые правила и ровно один пример с пометкой
+  <code>role=schema_example</code>. Полная схема в промпт не попадает — по ней проверяет
+  L5↑.</li>
+<li>До отправки <code>full_schema_hash</code> краткой формы сверяется с полной схемой.
+  Несовпадение блокирует отправку (<code>L5.CONTRACT_STALE</code>).</li>
+<li><code>AcceptancePolicy</code> остаётся для общего всем этапам: канонизация, допуск по
+  лимиту, бюджет повторов.</li>
+</ul>
+<p><strong>Входной снимок.</strong> <code>InputSnapshot{snapshot_id, snapshot_hash, input_refs[],
+accountable_set?}</code> — замороженный набор того, что получает вызов: артефакты и
+принятые ответы предыдущих этапов (ссылками с хэшами) и, если этап несёт
+обязательство покрытия, множество входов, за которые он отвечает. Снимок
+неизменен; <code>snapshot_hash</code> вычисляет оркестратор от стабильной сериализации.
+Снимок хранится вместе с журналом (L4), чтобы вызов можно было воспроизвести.</p>
+<p><strong>Устройство промпта.</strong> Части идут в фиксированном порядке:</p>
+<ol>
+<li>открывающий маркер запроса <code>[[CALL &lt;call_token&gt; &lt;attempt_token&gt;]]</code>;</li>
+<li>неизменяемая рамка (<code>frame</code>) — одинакова байт в байт у всех участников
+   раунда;</li>
+<li>краткая форма контракта ответа с одним примером <code>role=schema_example</code>;</li>
+<li>заголовок вызова (<code>call_header</code>) — значения паспорта, которые модель
+   обязана скопировать в ответ;</li>
+<li>данные: входной снимок в ограждении; у каждого фрагмента источник, версия
+   и роль (<code>input</code> — вход, <code>prior_output</code> — ранее принятый ответ модели);</li>
+<li>задание этапа (<code>body</code>);</li>
+<li>закрывающий маркер запроса <code>[[END CALL &lt;call_token&gt; &lt;attempt_token&gt;]]</code>.</li>
+</ol>
+<p>Персональные значения (токены и паспорт) живут только в маркерах запроса и в
+заголовке вызова; рамка остаётся общей для раунда.</p>
+<p><strong>Рамка ответа и структурные маркеры.</strong> Ответ модели:</p>
+<pre><code class="language-text">[[RESPONSE &lt;call_token&gt; &lt;attempt_token&gt;]]
+[[PASSPORT]]
+contract: &lt;contract_id&gt;@&lt;contract_version&gt;
+stage: &lt;stage_id&gt;
+round: &lt;round_id&gt;
+snapshot: &lt;snapshot_id&gt;
+snapshot_hash: &lt;64 hex&gt;
+inputs: &lt;ref&gt;, &lt;ref&gt;, …
+[[END PASSPORT]]
+[[SECTION &lt;name&gt;]]
+…
+[[SECTION &lt;name&gt;]]
+…
+[[END RESPONSE &lt;call_token&gt; &lt;attempt_token&gt;]]
+</code></pre>
+<ul>
+<li>Ответом считается только внутренность единственной рамки с токенами
+  текущего вызова и попытки. Текст вне рамки — сырой материал для аудита
+  (RAW), не ответ.</li>
+<li>Маркеры разделов берутся из закрытого списка контракта; каждый раздел — не
+  больше одного раза и в порядке контракта.</li>
+<li>Для <code>response_format = json_object</code> внутри рамки ровно один JSON-объект, а
+  паспорт — его поле <code>passport</code>.</li>
+<li>Маркеры — обычный текст на отдельной строке (правило 9). Синтаксис
+  маркеров входит в <code>frame_version</code>; приведённый — пример. Что маркеры
+  переживают извлечение, адаптер доказывает на предварительной проверке
+  (L1, <code>markers_survive</code>).</li>
+</ul>
+<p><strong>Паспорт ответа.</strong> Свидетельство изнутри ответа, что модель отвечала на этот
+вызов по этому входу. Проверка — точное равенство значений паспорта
+заголовку вызова; ссылки в <code>inputs</code> — только из <code>input_refs</code> снимка. Паспорт
+дополняет, а не заменяет привязку ответа снаружи на L3 (правило 17).</p>
+<p><strong>Три представления ответа</strong> (правило 19).</p>
+<div class="tw"><table>
+<thead>
+<tr>
+<th>Представление</th>
+<th>Что это</th>
+<th>Кто создаёт</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>RAW</td>
+<td>Сырой извлечённый текст узла ответа целиком</td>
+<td>L1</td>
+</tr>
+<tr>
+<td>CANONICAL</td>
+<td>Принятая и канонизированная внутренность рамки</td>
+<td>L5↑</td>
+</tr>
+<tr>
+<td>CONTEXT</td>
+<td>Компактное представление для следующих вызовов</td>
+<td>L5↓ по решению L6</td>
+</tr>
+</tbody>
+</table></div>
+<p>Сжатие и усечение работают только с CONTEXT и никогда не перезаписывают RAW
+и CANONICAL. Усечение — по безопасной границе с явной пометкой <code>[TRUNC]</code>;
+входы из <code>accountable_set</code> и обязательные поля контракта не вытесняются. Если
+обязательное не помещается после разрешённого сжатия — <code>L5.PROMPT_TOO_LARGE</code>,
+и L6 применяет декомпозицию этапа. Каждый вызов сохраняет запись сборки
+контекста (<code>CompressionManifest</code>): включённые, опущенные и усечённые ссылки,
+версия политики, использованный бюджет.</p>
+<p><strong>Единица данных.</strong> <code>ResponseContract</code>, <code>InputSnapshot</code>,
+<code>PromptPacket{frame, contract_ref, contract_compact, call_header, snapshot_ref,
+body, artifacts[], frame_hash, body_hash, packet_hash, attachment_hashes[],
+self_contained, versions}</code>, <code>RenderedPrompt{attempt_token,
+rendered_prompt_hash}</code>, <code>RepairPacket{packet_ref, error_class, codes[],
+attempt_token}</code>, <code>CompressionManifest</code>, <code>AcceptancePolicy</code>,
+<code>AcceptanceReceipt</code>, <code>AcceptedResponse</code>, <code>Rejection{code, error_class,
+origin_layer, retryable}</code>.</p>
+<p><code>PromptPacket</code> один на логическую работу (<code>call_token</code>); <code>RenderedPrompt</code> —
+на каждую отправку (<code>attempt_token</code>).</p>
 <p><strong>Контракт.</strong>
-- <code>Build(frame, body, artifacts, compression_decision) → PromptPacket</code>
-- <code>Validate(extracted_text, policy, round_nonce) → AcceptedResponse | Rejection</code></p>
-<p><strong>Предусловие входа.</strong> Рамка собрана и её хэш стабилен; нонс раунда
-присутствует; внешние фрагменты помечены как данные и экранированы; допуск
-лимита и N повторов заданы в <code>AcceptancePolicy</code>.</p>
+- <code>Snapshot(stage, inputs) → InputSnapshot</code>
+- <code>Build(frame, contract, snapshot, body, compression_decision) → PromptPacket</code>
+- <code>Render(packet, attempt_token) → RenderedPrompt</code>
+- <code>Validate(raw, contract, policy, call_header) → AcceptedResponse | Rejection</code></p>
+<p><strong>Предусловие входа.</strong> ↓ Контракт этапа существует и его краткая форма
+сверена; снимок заморожен; рамка собрана и её хэш стабилен; токены выданы;
+данные экранированы. ↑ L1 подтвердил доставленный промпт (<code>input_verified</code>);
+L3 привязал узел ответа к вызову; извлечение доказало полноту.</p>
 <p><strong>Свидетельство вверх.</strong>
-- ↓ <code>packet_hash</code> (идентификатор пакета), <code>rendered_prompt_hash</code> (эталон для
-  проверки вставки на L1), <code>attachment_hashes[]</code>; у каждого вложения указаны
-  источник, версия и пометка «данные».
-- ↑ <code>AcceptanceReceipt{acceptance_policy_version, canon_version,
-  checks[{name, result}], round_nonce, extracted_hash}</code> либо причина отказа.</p>
-<p><strong>Проверки приёмки</strong> (только детерминированные, без LLM-суждений): зоны
-ответа; язык; лимит длины с явным допуском (по прогону ebe8b806 — около +30%);
-маркер последней строкой; нонс совпадает с раундом; маркер и нонс валидны
-только в своей позиции.</p>
+- ↓ <code>snapshot_hash</code>, <code>packet_hash</code>, <code>rendered_prompt_hash</code> (эталон для L1),
+  <code>contract_id@contract_version</code>, <code>attachment_hashes[]</code>, <code>CompressionManifest</code>.
+- ↑ <code>AcceptanceReceipt{contract_id@contract_version,
+  acceptance_policy_version, canon_version, checks[{name, result}],
+  call_token, attempt_token, snapshot_hash, canonical_hash}</code> либо отказ с
+  кодом и классом ошибки.</p>
+<p><strong>Проверки приёмки.</strong> Только детерминированные, по порядку; первая неудача
+останавливает приёмку:</p>
+<ol>
+<li>ровно одна рамка ответа с токенами текущего вызова и попытки;</li>
+<li>паспорт равен заголовку вызова, ссылки — только из снимка;</li>
+<li>формат по контракту: обязательные разделы на месте, лишних и повторных
+   нет, порядок соблюдён; для JSON — поля и закрытые списки значений;</li>
+<li>лимиты длины с допуском из <code>AcceptancePolicy</code>, язык;</li>
+<li>покрытие, если контракт его объявляет: каждый вход из <code>accountable_set</code>
+   учтён ровно один раз, чужих нет;</li>
+<li>пустой результат допустим, только если контракт разрешает пустоту и
+   указана разрешённая причина.</li>
+</ol>
+<p>Смысл ответа на L5 не проверяется.</p>
 <p><strong>Критерий завершения.</strong> Либо <code>AcceptedResponse</code>, либо <code>Rejection</code> с причиной.
 Сырой ответ результатом не считается.</p>
 <p><strong>Инварианты.</strong>
-- <code>frame_hash</code> одинаков у всех участников раунда; нонс общий на раунд.
-  Персональная идентичность живёт в конверте L4, в промпт не попадает.
-- Сжатие не затрагивает неизменяемую рамку.
+- <code>frame_hash</code> одинаков у всех участников раунда; персональные значения — только
+  в маркерах запроса и заголовке вызова.
+- Сжатие не затрагивает рамку и работает только с CONTEXT.
 - Все валидаторы чистые, детерминированные и версионированные.
-- Рамка при повторе не меняется.
+- Рамка и контракт при повторе не меняются.
+- Модель копирует служебные значения, но не вычисляет их; любое расхождение —
+  отказ, а не исправление на нашей стороне (правило 18).
 - На L5 нет семантических проверок. Сохранность смысла при сжатии и
-  подозрение на инъекцию — вероятностные оценки L6 (<code>SemanticAssessment</code>).</p>
+  подозрение на инъекцию — вероятностные оценки L6 (<code>SemanticAssessment</code>).
+- Принимается одна целая попытка; склейка частей разных попыток запрещена.</p>
 <p><strong>Не входит в слой.</strong> Выбор адресата (L2), выбор протокола и решение о том,
-что сжимать (L6), отправка (L3), запись состояния (L4), оценка смысла (L6).</p>
-<p><strong>Запрещено.</strong> Markdown, списки и разметка как критерий приёмки. Сжатие «на
-глаз» без <code>CompressionManifest</code>. Персональный нонс в промпте. Действующий
-маркер или нонс внутри данных.</p>
+что сжимать (L6), объявление контракта и обязательства покрытия (L6),
+отправка (L3), запись состояния (L4), оценка смысла (L6).</p>
+<p><strong>Запрещено.</strong> Markdown и разметка провайдера как критерий приёмки; маркеры —
+только обычный текст. Сжатие без <code>CompressionManifest</code>. Действующие
+протокольные элементы внутри данных. Восстановление ответа из отрисованного
+HTML или markdown. Принятие текста вне рамки. Исправление паспорта или ответа
+на нашей стороне.</p>
 <p><strong>Типовые отказы.</strong></p>
 <div class="tw"><table>
 <thead>
@@ -1049,90 +1309,158 @@ self_contained, versions}</code>, <code>CompressionManifest</code>,
 <th>Фаза</th>
 <th>Описание</th>
 <th>blame</th>
+<th>Класс</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><code>L5.PROTOCOL_TOKEN_IN_DATA</code></td>
 <td>↓</td>
-<td>В данных после санитайзинга остался неэкранированный маркер, нонс или ограждение</td>
+<td>В данных после санитайзинга остался неэкранированный протокольный элемент (маркер, токен, паспорт, ограждение)</td>
 <td>frame (санитайзинг)</td>
+<td>—</td>
 </tr>
 <tr>
 <td><code>L5.FRAME_TOUCHED</code></td>
 <td>↓</td>
 <td><code>frame_hash</code> после сжатия отличается от эталона раунда</td>
 <td>frame</td>
+<td>—</td>
 </tr>
 <tr>
 <td><code>L5.MANIFEST_MISMATCH</code></td>
 <td>↓</td>
 <td>Сжатый фрагмент не соответствует <code>CompressionManifest</code> (источник, версия, хэш)</td>
 <td>frame</td>
+<td>—</td>
 </tr>
 <tr>
-<td><code>L5.MARKER_MISSING</code></td>
+<td><code>L5.CONTRACT_STALE</code></td>
+<td>↓</td>
+<td>Краткая форма контракта не соответствует полной схеме (<code>full_schema_hash</code>)</td>
+<td>frame</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>L5.PROMPT_TOO_LARGE</code></td>
+<td>↓</td>
+<td>Обязательное не помещается после разрешённого сжатия</td>
+<td>frame</td>
+<td>— (декомпозиция на L6)</td>
+</tr>
+<tr>
+<td><code>L5.FRAME_MISSING</code></td>
 <td>↑</td>
-<td>Нет маркера последней строкой при доказанно полном извлечении</td>
+<td>Нет рамки ответа или нет её закрывающего маркера при доказанно полном извлечении</td>
 <td>model</td>
+<td>form</td>
 </tr>
 <tr>
-<td><code>L5.MARKER_SPOOFED</code></td>
+<td><code>L5.FRAME_AMBIGUOUS</code></td>
 <td>↑</td>
-<td>Маркер или нонс найден внутри цитаты, а не в протокольной позиции</td>
-<td>model / frame</td>
+<td>Больше одной рамки или больше одного JSON-объекта</td>
+<td>model</td>
+<td>form</td>
 </tr>
 <tr>
-<td><code>L5.NONCE_MISMATCH</code></td>
+<td><code>L5.FRAME_TOKEN_MISMATCH</code></td>
 <td>↑</td>
-<td>Чужой или повторно использованный нонс</td>
-<td>model / journal</td>
+<td>Токены рамки не равны текущему вызову и попытке при доказанной привязке узла на L3 (без неё — <code>L3.OLD_ANSWER</code>)</td>
+<td>model</td>
+<td>binding</td>
+</tr>
+<tr>
+<td><code>L5.PASSPORT_MISMATCH</code></td>
+<td>↑</td>
+<td>Значения паспорта не равны заголовку вызова</td>
+<td>model</td>
+<td>binding</td>
+</tr>
+<tr>
+<td><code>L5.PASSPORT_FOREIGN_REF</code></td>
+<td>↑</td>
+<td>В <code>inputs</code> есть ссылки, которых нет во входном снимке</td>
+<td>model</td>
+<td>binding</td>
+</tr>
+<tr>
+<td><code>L5.SECTION_MISSING</code></td>
+<td>↑</td>
+<td>Нет обязательного раздела или поля контракта</td>
+<td>model</td>
+<td>form</td>
+</tr>
+<tr>
+<td><code>L5.SECTION_INVALID</code></td>
+<td>↑</td>
+<td>Неизвестный, повторный или не на своём месте раздел; значение вне закрытого списка</td>
+<td>model</td>
+<td>form</td>
 </tr>
 <tr>
 <td><code>L5.LIMIT_EXCEEDED</code></td>
 <td>↑</td>
 <td>Превышен лимит с учётом допуска</td>
 <td>model</td>
+<td>form</td>
 </tr>
 <tr>
-<td><code>L5.ZONE_MISSING</code></td>
+<td><code>L5.EMPTY_NOT_ALLOWED</code></td>
 <td>↑</td>
-<td>Пустая обязательная зона</td>
+<td>Пустой результат там, где контракт требует материальный</td>
 <td>model</td>
+<td>form</td>
 </tr>
 <tr>
-<td><code>L5.FALSE_SUCCESS</code></td>
+<td><code>L5.COVERAGE_UNACCOUNTED</code></td>
 <td>↑</td>
-<td>Ответ оформлен, но не удовлетворяет рамке</td>
+<td>Вход из <code>accountable_set</code> не учтён</td>
 <td>model</td>
+<td>coverage</td>
+</tr>
+<tr>
+<td><code>L5.COVERAGE_FOREIGN</code></td>
+<td>↑</td>
+<td>Учтён вход, которого нет в <code>accountable_set</code></td>
+<td>model</td>
+<td>coverage</td>
+</tr>
+<tr>
+<td><code>L5.COVERAGE_DUPLICATE</code></td>
+<td>↑</td>
+<td>Вход учтён больше одного раза</td>
+<td>model</td>
+<td>coverage</td>
 </tr>
 </tbody>
 </table></div>
 <p>Все коды ↓ проверяются синтаксически: по хэшам, позициям и экранированию.
 Они не утверждают, что смысл сохранён или что модель не подчинится
 инструкциям из данных, — это оценки L6.</p>
-<p>Если извлечение L1 не доказало полноту, любой отказ ↑ получает
-<code>origin_layer = L1</code>, <code>blame = channel</code>.</p>
-<p><strong>Реакция.</strong> ↓ — пересобрать пакет, модель не виновата. ↑ — fail closed:
-состояние не коммитится. Повторяемый отказ при доказанной доставке —
-<em>rejection retry</em> (§4.7): тот же <code>logical_invocation_id</code> и тот же
-<code>PromptPacket</code>, новый <code>attempt_id</code> с <code>retry_kind=rejection</code> и
-<code>retry_reason=L5.&lt;code&gt;</code>, явный <code>context_restore</code>, не больше N раз. Это не
-transport resend и не нарушает правило 8. Неповторяемый отказ или
-недоступность способа восстановления контекста — стоп или эскалация на L6.
+<p>Если извлечение L1 не доказало полноту или маркеры не пережили извлечение,
+любой отказ ↑ получает <code>origin_layer = L1</code>, <code>blame = channel</code>.</p>
+<p><strong>Реакция.</strong> ↓ — пересобрать пакет, модель не виновата; <code>PROMPT_TOO_LARGE</code> —
+решение L6 о декомпозиции. ↑ — fail closed: состояние не коммитится.
+Повторяемый отказ при доказанной доставке — <em>rejection retry</em> того же
+<code>logical_invocation_id</code>; способ повтора определяется классом ошибки (§4.7).
 После исчерпания — <code>Quarantine</code> + <code>Absence{rejected}</code>, которое L4 коммитит
 как <code>ResponseAbsent</code>.</p>
 <p><strong>Не считается ошибкой.</strong> Семантическое качество, стиль, отсутствие markdown,
-если они не входят в рамку.</p>
+текст модели вне рамки.</p>
 <p><strong>Признак прогресса.</strong> Принятые ответы.</p>
 <p><strong>Метрики.</strong> <code>first_try_acceptance_rate</code>, <code>rejection_by_reason</code>,
-<code>rejection_blame_split</code> (модель против канала), <code>retry_per_response</code>,
+<code>rejection_by_class</code>, <code>rejection_blame_split</code> (модель против канала),
+<code>repair_success_by_class</code>, <code>retry_per_response</code>, <code>frame_missing_rate</code>,
+<code>passport_mismatch_rate</code>, <code>coverage_failures</code>, <code>contract_stale_blocks</code>,
 <code>compression_ratio</code>, <code>protocol_token_escapes</code>, <code>prompt_hash_mismatch</code>,
 <code>context_restore_by_method</code>.</p>
 <p><strong>Точечное усиление.</strong> Чужие ответы подаются в ограждающих маркерах данных с
 экранированием; ограждение — часть неизменяемой рамки. Санитайзинг выполняется
-до любой сборки и любой проверки. Параметры приёмки версионируются вместе с
-рамкой.</p>
+до любой сборки и любой проверки. Пример схемы и ранее принятые ответы
+помечены разными ролями (<code>schema_example</code> и <code>prior_output</code>), чтобы пример не
+был принят за данные. На существующие артефакты в данных ссылаются по
+идентификатору и хэшу, а не повторяют их текст, если этап не требует полного
+содержания. Параметры приёмки версионируются вместе с рамкой и контрактом.</p>
 <hr />
 <h3 id="l4">L4 — Сеансовый</h3>
 <p><strong>Назначение.</strong> Связывает session, round, role и model; ведёт append-only
@@ -1142,7 +1470,11 @@ transport resend и не нарушает правило 8. Неповторяе
 страницы.</p>
 <p><strong>Единица данных.</strong>
 - <code>ObservedAttempt</code> — любая попытка, включая технические и отклонённые.
-  Журналируется, состояние не двигает.
+  Журналируется, состояние не двигает. Несёт <code>call_token</code>, <code>attempt_token</code>,
+  <code>snapshot_id</code>/<code>snapshot_hash</code>, <code>contract_id@contract_version</code>,
+  <code>isolation_assurance</code>, <code>retry_kind</code>, <code>context_restore</code>.
+- <code>InputSnapshot</code> хранится вместе с журналом: без него вызов нельзя
+  воспроизвести.
 - <code>LogicalCommit{kind, subject_id, proof_ref, attempt_id?, prev_hash,
   entry_hash, schema_version}</code> — типизированный переход; единственное, что
   двигает состояние.
@@ -1298,20 +1630,29 @@ Checkpoint на границах раундов. Перед отправкой �
 <p><strong>Подпротоколы.</strong> Dispatch · Capture · Completion · Freshness. Completion —
 отдельный версионированный предикат, а не таймаут. Реализация предиката —
 <a href="completion-protocol-v2.md">Completion Protocol V2</a>.</p>
-<p><strong>Единица данных.</strong> <code>RequestEnvelope{request_id, attempt_id, packet_hash,
-target, sent_at}</code>, <code>ResponseEnvelope{attempt_id, capture_id, sent_at,
-first_output_at, last_output_at, capture_at, raw_hash, length,
-completion_status, via_fallback}</code>, <code>CompletionReport</code>,
+<p><strong>Единица данных.</strong> <code>RequestEnvelope{request_id, attempt_id, call_token,
+attempt_token, packet_hash, rendered_prompt_hash, target, conversation_id,
+assistant_nodes_before, sent_at}</code>, <code>ResponseEnvelope{attempt_id, capture_id,
+assistant_node_ref, sent_at, first_output_at, last_output_at, capture_at,
+raw_hash, length, completion_status, isolation_assurance, via_fallback}</code>,
+<code>CompletionReport</code>,
 <code>DeliveryOutcome{delivered | not_delivered | delivery_unknown, proof}</code>.</p>
 <p><code>completion_status</code>: <code>complete</code> / <code>cut</code> / <code>timeout</code> / <code>empty</code> / <code>stale</code> /
 <code>continue_required</code> / <code>ambiguous</code>.</p>
 <p><strong>Контракт.</strong> <code>PromptPacket + адресат + дедлайны → ResponseEnvelope</code>
 (полный, свежий ответ с метками времени) либо доказанный отказ доставки или
 завершения. Неполный ответ не выдаётся как завершённый.</p>
-<p><strong>Предусловие входа.</strong> Маршрут выбран, адресат доступен, дедлайны заданы, нонс
-вложен в пакет.</p>
-<p><strong>Свидетельство вверх.</strong> <code>DeliveryOutcome</code> + <code>capture_complete</code> +
-<code>freshness_evidence</code> + <code>raw_hash</code> + <code>length</code>.</p>
+<p><strong>Предусловие входа.</strong> Маршрут выбран, адресат доступен, дедлайны заданы;
+токены вызова и попытки вложены в промпт; до отправки зафиксированы беседа и
+снимок существующих узлов ответа (<code>assistant_nodes_before</code>).</p>
+<p><strong>Свидетельство вверх.</strong> <code>DeliveryOutcome</code> + привязка узла ответа к вызову +
+<code>capture_complete</code> + <code>raw_hash</code> + <code>length</code>.</p>
+<p><strong>Привязка ответа к вызову.</strong> Принимается только узел ответа, который:
+создан после нашей отправки (его нет в <code>assistant_nodes_before</code>); принадлежит
+текущей беседе; содержит токены текущего вызова и попытки. Правило «взять
+последнее сообщение ассистента» запрещено. Это и есть свидетельство свежести.
+Повторное считывание уже принятого сообщения не создаёт нового ответа (ключ
+принятого сообщения, §4.1).</p>
 <p><strong>Исход доставки.</strong> Определяется по наблюдаемому состоянию страницы (L1), а
 не по ACK. ACK подтверждает, что команда дошла до исполнителя; его
 отсутствие не говорит ничего о том, произошла ли отправка.</p>
@@ -1396,14 +1737,24 @@ capture продолжается до общего дедлайна; появи�
 <p><strong>Три таймера с разными кодами:</strong> до первого вывода (<code>stuck</code>), между
 фрагментами (<code>stall</code>), общий (<code>hard</code>). Тишина без признака конца — подозрение
 на обрыв, а не завершение.</p>
-<p><strong>Завершение</strong> требует нескольких независимых признаков (UI вернулся в idle, и
-поток замолчал на окно подтверждения, и содержимое стабильно). Один признак —
-только кандидат.</p>
+<p><strong>Завершение транспорта</strong> — конъюнкция трёх свидетельств: закрывающий маркер
+рамки ответа с текущими токенами, И провайдер показал конец генерации, И
+сообщение финализировано. Стабильность DOM — только пауза перед извлечением,
+а не признак завершения. Любой из трёх признаков по отдельности — только
+кандидат; реализация предиката — Completion V2. Если конец генерации у
+адаптера не наблюдается (<code>terminal_observable = false</code>), ответ не принимается
+автоматически (<code>L3.TERMINAL_UNVERIFIABLE</code>).</p>
+<p><strong>Обрыв не спасается.</strong> Незакрытая рамка после наблюдаемого конца генерации
+— <code>L3.CUTTED</code>. «Продолжи» и второй кусок в рамках одной логической работы
+запрещены. Требование провайдера продолжить (<code>continue_required</code>) — новая
+попытка или декомпозиция этапа на L6.</p>
 <p><strong>Не входит в слой.</strong> Выбор модели и пресета, приёмка по формату, запись
 состояния, интерпретация смысла.</p>
 <p><strong>Запрещено.</strong> Смешивать <code>cut</code> и <code>false-success</code> в одну ошибку. Считать
 recovery, фокус, скролл прогрессом. Повторять send по таймауту ожидания
-ответа или по отсутствию ACK. Выдавать rejection retry за transport resend.</p>
+ответа или по отсутствию ACK. Выдавать rejection retry за transport resend.
+Брать последнее сообщение ассистента без привязки. Склеивать ответ из
+продолжений.</p>
 <p><strong>Типовые отказы.</strong></p>
 <div class="tw"><table>
 <thead>
@@ -1421,8 +1772,23 @@ recovery, фокус, скролл прогрессом. Повторять send
 </tr>
 <tr>
 <td><code>L3.CUTTED</code></td>
-<td>Обрыв потока</td>
-<td>capture; resend невозможен — доставка уже доказана</td>
+<td>Обрыв потока или незакрытая рамка ответа после конца генерации</td>
+<td>capture; продолжение не склеивается; дальше — rejection retry или декомпозиция</td>
+</tr>
+<tr>
+<td><code>L3.CORRELATION_FAILED</code></td>
+<td>Нет узла ответа, созданного после отправки в нашей беседе с нашими токенами</td>
+<td>capture до дедлайна, затем <code>Absence</code></td>
+</tr>
+<tr>
+<td><code>L3.TERMINAL_UNVERIFIABLE</code></td>
+<td>Адаптер не может наблюдать конец генерации</td>
+<td>none; автоматическая приёмка запрещена</td>
+</tr>
+<tr>
+<td><code>L3.CONTINUE_REQUIRED</code></td>
+<td>Провайдер остановил вывод и требует продолжения</td>
+<td>rejection retry или декомпозиция на L6; склейка запрещена</td>
 </tr>
 <tr>
 <td><code>L3.LATE_END</code></td>
@@ -1490,16 +1856,47 @@ Breaker.</p>
 capability_version}</code>, <code>RouteEntry{role, target, preset, adapter, operation,
 fallback[], route_decision_id}</code>, <code>CapabilitySnapshot{stream, limits,
 context_window, frame_version, context_restore[]: regenerate | edit_resubmit |
-new_conversation, submit_finality: none | explicit, T_final?}</code> (<code>T_final</code> —
-только предел ожидания),
+new_conversation, submit_finality: none | explicit, T_final?, preflight{…},
+isolation_levels[], terminal_observable, input_verifiable, markers_survive,
+provider, declared_model}</code> (<code>T_final</code> — только предел ожидания; <code>preflight</code> —
+результат предварительной проверки L1),
 <code>RouteDiff</code>, <code>SKIP{reason}</code>.</p>
 <p><code>SKIP{reason}</code> — свидетельство для <code>Absence</code> и терминального коммита
 <code>ResponseAbsent</code> на L4.</p>
 <p>Идентичность исполнителя = имя + провайдер + наблюдаемая версия модели, если
 интерфейс её показывает; иначе исполнитель помечается <code>version_unpinned</code>.</p>
-<p><strong>Контракт.</strong> <code>Сценарий (роли от L6) + CapabilitySnapshot → RoutePlan</code>;
-маршрут логируется до отправки.</p>
-<p><strong>Предусловие входа.</strong> Есть хотя бы один исполнитель с нужными возможностями;
+<p><strong>Независимость и изоляция.</strong> Каждый независимый вызов идёт в новой беседе.
+Новая беседа доказывает только изоляцию беседы; память аккаунта провайдера
+этим не контролируется. Поэтому уровень изоляции записывается явно:</p>
+<div class="tw"><table>
+<thead>
+<tr>
+<th><code>isolation_assurance</code></th>
+<th>Что доказано</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>CONVERSATION_ONLY</code></td>
+<td>Новая беседа; память аккаунта не контролируется (<code>provider_memory = unknown</code>)</td>
+</tr>
+<tr>
+<td><code>PROVIDER_MEMORY_CONTROLLED</code></td>
+<td>Память аккаунта отключена, и это проверено</td>
+</tr>
+<tr>
+<td><code>FULL_PROFILE_ISOLATED</code></td>
+<td>Отдельный профиль браузера и аккаунт</td>
+</tr>
+</tbody>
+</table></div>
+<p>L2 направляет этап с требованием независимости только к адаптерам, которые
+достигают нужного уровня, и при <code>distinct_providers</code> — к разным провайдерам.
+Достигнутый уровень записывается в конверт ответа.</p>
+<p><strong>Контракт.</strong> <code>Сценарий (роли и требования этапов от L6) + CapabilitySnapshot →
+RoutePlan</code>; маршрут логируется до отправки.</p>
+<p><strong>Предусловие входа.</strong> Адаптер прошёл предварительную проверку (L1); есть хотя
+бы один исполнитель с нужными возможностями;
 fallback-цепочка объявлена; пакет помещается в контекстное окно адресата;
 квота доступна.</p>
 <p><strong>Свидетельство вверх.</strong> План покрывает всех адресатов раунда; по каждому —
@@ -1519,7 +1916,10 @@ fallback-цепочка объявлена; пакет помещается в �
 новый <code>route_decision_id</code> и новый <code>attempt_id</code> при том же
 <code>logical_invocation_id</code>. Ответ помечается <code>via_fallback</code> и приписывается
 фактическому исполнителю, а не исходному. Цепочка ограничена, циклы
-запрещены.</p>
+запрещены. Замена допустима, только если новый исполнитель удовлетворяет всем
+требованиям этапа: возможностям, уровню изоляции, требованию разных
+провайдеров. Иначе — <code>L2.REQUIREMENT_UNSATISFIED</code>: гарантия этапа молча не
+ослабляется, решение принимает L6 по <code>failure_policy</code>.</p>
 <p><strong>Не входит в слой.</strong> Вкладки и DOM (L1), формат ответа (L5), журнал (L4),
 сценарий (L6).</p>
 <p><strong>Запрещено.</strong> Тихая подмена модели или пресета. «Умная» маршрутизация без
@@ -1574,6 +1974,16 @@ fallback-цепочка объявлена; пакет помещается в �
 <td>Цикл в fallback-цепочке</td>
 <td>route</td>
 </tr>
+<tr>
+<td><code>L2.REQUIREMENT_UNSATISFIED</code></td>
+<td>Ни один доступный исполнитель не удовлетворяет требованиям этапа (изоляция, разные провайдеры, возможности)</td>
+<td>route</td>
+</tr>
+<tr>
+<td><code>L2.ADAPTER_UNSAFE</code></td>
+<td>Адаптер не прошёл предварительную проверку и исключён из маршрутов</td>
+<td>provider</td>
+</tr>
 </tbody>
 </table></div>
 <p><strong>Реакция.</strong> Отказ с причиной, переход по объявленному fallback;
@@ -1593,13 +2003,25 @@ fallback-цепочка объявлена; пакет помещается в �
 <p><strong>Назначение.</strong> Обмен сообщениями расширения и доступ к интерфейсу модели: как
 передать команду или событие между панелью, фоном и вкладкой; можно ли сейчас
 взаимодействовать со страницей и наблюдать её состояние.</p>
-<p><strong>Подпротоколы.</strong> IPC (panel ↔ background ↔ tab) · Page Health · Composer
-Transaction · Extraction.</p>
+<p><strong>Подпротоколы.</strong> Preflight · IPC (panel ↔ background ↔ tab) · Page Health ·
+Composer Transaction · Input Verification · Extraction.</p>
+<p><strong>Предварительная проверка адаптера.</strong> До рабочих вызовов адаптер доказывает
+свои возможности: авторизация, новая беседа, поле ввода найдено, отправка
+работает, отображённое сообщение пользователя читается, сообщение ответа
+читается, генерация и её конец наблюдаемы, маркеры рамки переживают
+извлечение (<code>markers_survive</code>). Результат идёт в <code>CapabilitySnapshot</code> (L2).
+Без критической возможности — <code>L1.ADAPTER_UNSAFE</code>: адаптер исключается из
+автоматической приёмки. Отказ селектора проходит ограниченную
+последовательность проверки здоровья (готовность страницы, основные и
+запасные селекторы, структурный поиск, перезагрузка, новая вкладка, пробное
+действие); только устойчивая неоднозначность переводит адаптер в карантин
+(<code>L1.UI_CHANGED</code>). Ложная остановка предпочтительнее ложного успеха.</p>
 <p><strong>Единица данных.</strong> <code>ChannelMessage{message_id, parent_id, seq, tab_id,
 action, payload_hash}</code>, <code>Invocation</code>, <code>InvocationReceipt{tab_ok, auth_ok,
 page_state, selector_found, inserted_hash, attachments_confirmed[],
-submitted_observed, draft_still_present, extracted_hash, extraction_complete,
-selector_map_version}</code>, <code>PageHealth</code>,
+submitted_observed, draft_still_present, displayed_prompt_hash,
+input_verified, extracted_hash, extraction_complete, selector_map_version}</code>,
+<code>PageHealth</code>, <code>PreflightReport</code>,
 <code>ExtractionManifest</code>.</p>
 <p>Состояния страницы: <code>visible</code>, <code>authorized</code>, <code>input_ready</code>, <code>streaming</code>,
 <code>idle</code>, <code>blocked</code> (капча, баннер, модальное окно), <code>busy</code> (вкладка занята
@@ -1616,7 +2038,14 @@ selector_map_version}</code>, <code>PageHealth</code>,
   (имя, размер, состояние загрузки); проверка отдельная от текста.
 - Отправка: наше сообщение появилось в ленте переписки (наблюдаемый эффект), а
   не «кнопка не вернула ошибку».
-- Извлечение: сырой текст + <code>extraction_complete</code> + <code>extracted_hash</code>.
+- Проверка доставленного: после отправки извлекается отображённое сообщение
+  пользователя; его канонический хэш равен <code>rendered_prompt_hash</code>, оба маркера
+  запроса на месте → <code>input_verified</code>. Если отображённое сообщение нельзя
+  прочитать или восстановить целиком — <code>L1.INPUT_UNVERIFIABLE</code>: доставка может
+  быть доказана, но ответ на такой вызов не принимается.
+- Извлечение: сырой текст узла ответа (<code>textContent</code> или его эквивалент) +
+  <code>extraction_complete</code> + <code>extracted_hash</code>. Восстановление из <code>innerHTML</code> или
+  отрисованного markdown запрещено.
 - ACK содержит <code>message_id</code> и <code>observed_effect</code>, а не просто <code>ok</code>.</p>
 <p>Последовательность composer transaction уже реализована:
 <code>COMMAND_ACCEPTED → ATTEMPT_PREPARED → BASELINE_ACKED → ATTACHMENT_SETTLED →
@@ -1708,6 +2137,26 @@ PROMPT_COMMITTED → SUBMITTING → SUBMITTED</code> (см.
 <td>Повтор извлечения</td>
 </tr>
 <tr>
+<td><code>L1.INPUT_UNVERIFIABLE</code></td>
+<td>Отображённое сообщение пользователя нельзя прочитать или оно не совпадает с отправленным</td>
+<td>Ответ не принимается; повтор только по правилам §4.7</td>
+</tr>
+<tr>
+<td><code>L1.MARKERS_STRIPPED</code></td>
+<td>Маркеры рамки не пережили извлечение (интерфейс изменил текст)</td>
+<td>Отказ L1, не модели; адаптер — на повторную предварительную проверку</td>
+</tr>
+<tr>
+<td><code>L1.ADAPTER_UNSAFE</code></td>
+<td>Предварительная проверка не пройдена</td>
+<td>Адаптер исключён из маршрутов (L2)</td>
+</tr>
+<tr>
+<td><code>L1.UI_CHANGED</code></td>
+<td>Устойчивая неоднозначность интерфейса после последовательности проверки здоровья</td>
+<td>Карантин адаптера</td>
+</tr>
+<tr>
 <td><code>L1.MANUAL_INTERFERENCE</code></td>
 <td>Пользователь вмешался: ручной ввод, смена фокуса, закрытие вкладки</td>
 <td>Записать как данные, <code>blame = user</code>; снять DOM заново</td>
@@ -1747,7 +2196,19 @@ DOM-состояния (полный снимок не хранится).</p>
 <td>L6 → L5</td>
 <td>Решение о сжатии, роли, тело задачи</td>
 <td>Сжатие затрагивает рамку</td>
-<td>Сжимается только тело и данные; рамка неизменна</td>
+<td>Сжимается только CONTEXT; рамка неизменна</td>
+</tr>
+<tr>
+<td>L6 → L5</td>
+<td>Контракт ответа этапа, обязательство покрытия</td>
+<td>Краткая форма в промпте расходится с проверяемой схемой</td>
+<td>Сверка <code>full_schema_hash</code> до отправки</td>
+</tr>
+<tr>
+<td>L2 → L6</td>
+<td>Достигнутый уровень изоляции</td>
+<td>Согласие принято за независимое подтверждение без доказанной изоляции</td>
+<td><code>isolation_assurance</code> в конверте; невыполнимое требование — <code>L2.REQUIREMENT_UNSATISFIED</code>, а не ослабление</td>
 </tr>
 <tr>
 <td>L5 → L2</td>
@@ -1787,9 +2248,15 @@ DOM-состояния (полный снимок не хранится).</p>
 </tr>
 <tr>
 <td>L3 → L5</td>
-<td><code>ResponseEnvelope</code></td>
-<td>Маркер потерян при извлечении → ложный <code>MARKER_MISSING</code></td>
-<td><code>origin_layer</code> по свидетельству полноты</td>
+<td><code>ResponseEnvelope</code> (RAW + привязка узла)</td>
+<td>Маркер рамки потерян при извлечении → ложный <code>L5.FRAME_MISSING</code></td>
+<td><code>origin_layer</code> по свидетельству полноты; маркеры обязаны пережить извлечение (<code>markers_survive</code>)</td>
+</tr>
+<tr>
+<td>L1 → L5</td>
+<td><code>input_verified</code></td>
+<td>Ответ на промпт, доставку которого нельзя подтвердить</td>
+<td>Без <code>input_verified</code> приёмки нет</td>
 </tr>
 <tr>
 <td>L5 → L4</td>
@@ -1849,6 +2316,94 @@ DOM-состояния (полный снимок не хранится).</p>
 <tr>
 <td>Сквозные</td>
 <td><code>background/proof-telemetry-ledger.js</code>, <code>shared/answer-evidence.js</code>, <code>background/telemetry-logs.js</code>, <code>disput/debate-version-manifest.js</code></td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="71-automation-layer-v223">7.1. Механизмы из Automation Layer v2.2.3</h3>
+<p><a href="Automation%20GPT%20комплект%20Документов/">Automation Layer v2.2.3</a> —
+подробная спецификация среды исполнения сценария Architecture. Стек — то же по
+сути, представленное по слоям оркестрации. Из Automation Layer в стек
+перенесены механизмы, без которых слои не могут выдать свои свидетельства.
+Формат Automation Layer (AL-STRUCT-1, маркеры PAF) — одна из допустимых
+реализаций контракта ответа.</p>
+<div class="tw"><table>
+<thead>
+<tr>
+<th>Элемент стека</th>
+<th>Слой</th>
+<th>Источник в Automation Layer</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Маркеры запроса и рамка ответа, токены вызова и попытки</td>
+<td>L5, L3</td>
+<td>§10 Prompt Frame, §14 Response Frame, §15 Transport Parser</td>
+</tr>
+<tr>
+<td>Паспорт ответа</td>
+<td>L5↑</td>
+<td>§20.1 passport</td>
+</tr>
+<tr>
+<td>Контракт ответа этапа, краткая форма с хэшем полной схемы, пример схемы</td>
+<td>L6 → L5</td>
+<td>§20, §20.9, §71.1</td>
+</tr>
+<tr>
+<td>Входной снимок</td>
+<td>L5, L4</td>
+<td>§9 Run Identity</td>
+</tr>
+<tr>
+<td>Проверка отображённого сообщения; привязка ответа к вызову</td>
+<td>L1, L3</td>
+<td>§12, §13</td>
+</tr>
+<tr>
+<td>Формула завершения транспорта; запрет склейки продолжения</td>
+<td>L3</td>
+<td>§16, §17</td>
+</tr>
+<tr>
+<td>Классы ошибок и способ исправления</td>
+<td>L5, §4.7</td>
+<td>§48–§51</td>
+</tr>
+<tr>
+<td>Уровни изоляции, наблюдаемое разнообразие, условие замены исполнителя</td>
+<td>L2, L6</td>
+<td>§8, §45, §46, §73</td>
+</tr>
+<tr>
+<td>Три представления, пометка усечения, <code>PROMPT_TOO_LARGE</code>, запись сборки контекста</td>
+<td>L5</td>
+<td>§71, §75, §76</td>
+</tr>
+<tr>
+<td>Обязательство покрытия</td>
+<td>L6, L5↑</td>
+<td>§28, §29</td>
+</tr>
+<tr>
+<td>Пустой результат по контракту</td>
+<td>L5↑</td>
+<td>§30</td>
+</tr>
+<tr>
+<td>Декомпозиция этапа</td>
+<td>L6</td>
+<td>§18, §19</td>
+</tr>
+<tr>
+<td>Предварительная проверка адаптера, дрейф интерфейса</td>
+<td>L1, L2</td>
+<td>§6, §7</td>
+</tr>
+<tr>
+<td>Идемпотентность принятого сообщения</td>
+<td>L3, L4</td>
+<td>§57</td>
 </tr>
 </tbody>
 </table></div>
@@ -2145,6 +2700,66 @@ DOM-состояния (полный снимок не хранится).</p>
 </tr>
 </tbody>
 </table></div>
+<p>Перенос механизмов Automation Layer v2.2.3 (2026-10-06) → OSI-1.6:</p>
+<div class="tw"><table>
+<thead>
+<tr>
+<th>Изменение</th>
+<th>Основание</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Маркер последней строкой и нонс раунда заменены маркерами запроса, рамкой ответа с токенами вызова и попытки и паспортом</td>
+<td>Полнота ответа, граница «ответ или цитата» и связь ответа с вызовом доказываются изнутри ответа (правило 17)</td>
+</tr>
+<tr>
+<td>Решение OSI-1.0 «персональная идентичность в промпт не попадает» уточнено: рамка общая для раунда, персональные значения живут в заголовке вызова</td>
+<td>Без токенов и паспорта в промпте нет привязки изнутри; общая рамка сохранена</td>
+</tr>
+<tr>
+<td>Контракт ответа этапа объявляется на L6, краткая форма — в промпте, полная схема — у L5↑</td>
+<td>У приёмки появился предмет проверки для каждого этапа</td>
+</tr>
+<tr>
+<td>Входной снимок и три разных хэша (что дано, что собрано, что отправлено)</td>
+<td>Паспорт и повтор из журнала требуют замороженного входа</td>
+</tr>
+<tr>
+<td>Проверка отображённого сообщения после отправки, привязка узла ответа, запрет «последнего сообщения»</td>
+<td>Свидетельство доставки содержимого и свежести, а не только факта отправки</td>
+</tr>
+<tr>
+<td>Завершение транспорта: закрывающий маркер И конец генерации И финализация; стабильность DOM — только пауза</td>
+<td>Совпадает с Completion V2; закрывающий маркер — свидетель, а не доказательство</td>
+</tr>
+<tr>
+<td>Классы ошибок определяют способ повтора; исправление в той же беседе разрешено для формы, привязки и покрытия с полной заменой ответа</td>
+<td>Пересмотр OSI-1.1: полный запрет исправляющего сообщения был избыточен; смысловые ошибки по-прежнему исправляются только в новой беседе</td>
+</tr>
+<tr>
+<td>Уровни изоляции и правило «замена исполнителя не ослабляет гарантию»</td>
+<td>Независимость — только в пределах доказанной изоляции; <code>via_fallback</code> больше не может молча ослабить требование этапа</td>
+</tr>
+<tr>
+<td>Три представления ответа; сжатие только CONTEXT; <code>PROMPT_TOO_LARGE</code> → декомпозиция</td>
+<td>Сжатие не может испортить аудит и принятый ответ</td>
+</tr>
+<tr>
+<td>Обязательство покрытия и декомпозиция этапа</td>
+<td>Правило 11 («нет молчаливых пропусков») получило проверку на уровне входов этапа</td>
+</tr>
+<tr>
+<td>Предварительная проверка адаптера и карантин при дрейфе интерфейса</td>
+<td>L2 получает доказанные возможности, а не заявленные</td>
+</tr>
+</tbody>
+</table></div>
+<p>Не перенесены: классы полномочий и политика решений, реестр и идентификаторы
+предметных объектов, изменения и базовые линии, опросник владельца, модель
+свидетельств <code>VERIFIED</code>. Это предметная часть сценария Architecture; в другие
+сценарии она входит через <code>ResultSpec</code> и контракты этапов, а не через механику
+стека.</p>
 <h2 id="9">9. Требует проверки</h2>
 <ul>
 <li>Порог сходства для детектора эха и критерий существенности расхождения —
@@ -2168,6 +2783,14 @@ DOM-состояния (полный снимок не хранится).</p>
   <code>ScenarioLogic</code> пока не имеют. Research — первый сценарий, написанный от
   логики.</li>
 <li>Методы <code>SemanticAssessment</code> (оценщик, калибровка уверенности) не выбраны.</li>
+<li>Рамка ответа, паспорт, контракт ответа этапа, входной снимок и классы
+  исправлений в коде не реализованы: текущая приёмка проверяет разделы по
+  markdown-заголовкам и финальный маркер.</li>
+<li>Для каждого из девяти интерфейсов проверить на предварительной проверке:
+  переживают ли маркеры <code>[[…]]</code> извлечение (<code>markers_survive</code>), читается ли
+  отображённое сообщение пользователя целиком (<code>input_verifiable</code>),
+  наблюдается ли конец генерации (<code>terminal_observable</code>), какой уровень
+  изоляции достижим.</li>
 <li>Структурное доказательство свежести (принадлежность узла ответа ходу) —
   проверить на каждом из девяти интерфейсов.</li>
 <li>Соответствие компонентам (§7) составлено по именам модулей и описаниям в

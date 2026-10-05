@@ -1,5 +1,13 @@
 # CHANGELOG — Project
 
+### 2026-10-06 — OSI stack 1.6: response frame, passport and contract from Automation Layer (documentation only, version unchanged 2.81.492)
+
+- Replace the last-line marker and round nonce with request markers, a response frame carrying call/attempt tokens, and an answer passport; add a per-stage response contract (compact form in the prompt, full schema at acceptance, schema-hash check before dispatch) and a frozen input snapshot.
+- Add post-submit verification of the displayed prompt, answer-node correlation, the three-witness transport completion rule and the no-continuation-splicing rule.
+- Derive the rejection-retry method from the error class (form / binding / coverage / semantic); same-conversation repair is allowed only with a full replacement answer.
+- Add isolation assurance levels and forbid fallback from weakening a stage's independence requirement; add RAW / CANONICAL / CONTEXT representations, coverage obligations, stage decomposition and adapter preflight.
+- Map each adopted mechanism to its Automation Layer v2.2.3 section (§7.1); list the domain parts deliberately not adopted.
+
 ### 2026-10-05 — OSI stack 1.5: scenario logic as a core L6 function (documentation only, version unchanged 2.81.492)
 
 - Name scenario logic formation as one of the most important L6 functions and add the Scenario Logic subprotocol before Scenario Definition: `ResultSpec`, `InputGap`, backward chains with per-link `error_cost` / `multi_model_value` / `progress_definition`, `FailureModeMap`, `ScenarioLogic`.
