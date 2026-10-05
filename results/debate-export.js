@@ -39,6 +39,14 @@
     return parsed.body.innerHTML;
   }
 
+  function responseTimestamp(value) {
+    if (!value) return '';
+    const date = new Date(/^\d+$/.test(String(value)) ? Number(value) : value);
+    if (Number.isNaN(date.getTime())) return '';
+    const pad = (number) => String(number).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}-${pad(date.getMinutes())}`;
+  }
+
   function cardParts(card) {
     const outputEl = card?.querySelector?.('.debate-model-card-output');
     const rawHtml = outputEl ? sanitizeFragment(String(outputEl.innerHTML || '').trim()) : '';
@@ -48,6 +56,7 @@
     return {
       model: String(card.dataset.llmName || card.querySelector('.debate-model-card-name')?.textContent || 'Model').trim() || 'Model',
       time: String(card.querySelector('.debate-model-card-time')?.textContent || '').trim(),
+      metadata: [responseTimestamp(card.dataset.responseTimestamp), String(card.dataset.sourceUrl || '').trim()].filter(Boolean).join('  '),
       plain,
       round: String(card.dataset.pipelineRoundId || '').trim().toLowerCase(),
       body
@@ -112,10 +121,15 @@ body{font-family:Arial,sans-serif;background:#fff;color:#111;padding:24px;line-h
       ${prompt ? `<pre class="export-prompt is-collapsed">${escape(prompt)}</pre>` : ''}
     </section>`;
     const body = parts.map((part) => `<section class="feed-response" data-model="${escape(part.model)}" data-round="${escape(part.round)}">
-      ${heading(part)}${part.round ? `<p class="response-time">${escape(part.round.toUpperCase())}</p>` : ''}<div class="response-body">${part.body}</div></section>`).join('\n');
+      <h2 class="model-title">${escape(part.model)}${part.round ? ` ${escape(part.round.toUpperCase())}` : ''}</h2>
+      ${part.metadata ? `<p class="response-meta">${escape(part.metadata)}</p>` : ''}
+      <div class="response-blank-line" aria-hidden="true"></div>
+      <div class="response-body">${part.body}</div>
+      <div class="response-end">${escape(part.model)} End</div>
+      <div class="response-blank-line" aria-hidden="true"></div></section>`).join('\n');
     return documentHtml(title, navigation + promptBlock + body, new Date(), false).replace('</style>', `
 .feed-navigation{position:sticky;top:0;display:flex;flex-wrap:wrap;gap:12px;background:#fff;padding:17px 0;margin-bottom:16px;border-bottom:1px solid #ddd;z-index:10}.nav-group{display:flex;flex-wrap:wrap;gap:5px}.feed-nav-button{display:inline-flex;flex-direction:column;align-items:center;gap:6px;min-width:58px;border:0;background:transparent;color:#737b83;font-size:12px;cursor:pointer;padding:4px}.feed-nav-button:hover,.feed-nav-button[aria-pressed="true"]{color:#27251e}.model-nav-icon{display:block;width:34px;height:34px;background:currentColor;mask:var(--model-icon) center/contain no-repeat;-webkit-mask:var(--model-icon) center/contain no-repeat}.nav-symbol{display:flex;align-items:center;justify-content:center;min-width:34px;height:34px;font-size:24px}.feed-response[hidden]{display:none}
-.export-prompt{box-sizing:border-box}.export-prompt.is-collapsed{max-height:calc(4.5em + 24px);overflow:hidden}.prompt-heading{position:sticky;top:var(--model-navigation-height,0px);z-index:9;display:flex;align-items:center;gap:15px;margin:0 0 12px;padding:4px 0;background:#fff}.prompt-heading h2{margin:0}.prompt-toggle{padding:4px 8px;border:1px solid #d0d7de;border-radius:6px;background:#f6f8fa;color:#27251eeb;cursor:pointer}.feed-response{scroll-margin-top:calc(var(--model-navigation-height,0px) + 12px)}
+.export-prompt{box-sizing:border-box}.export-prompt.is-collapsed{max-height:calc(4.5em + 24px);overflow:hidden}.prompt-heading{position:sticky;top:var(--model-navigation-height,0px);z-index:9;display:flex;align-items:center;gap:15px;margin:0 0 12px;padding:4px 0;background:#fff}.prompt-heading h2{margin:0}.prompt-toggle{padding:4px 8px;border:1px solid #d0d7de;border-radius:6px;background:#f6f8fa;color:#27251eeb;cursor:pointer}.model-title{display:block;width:100%;box-sizing:border-box;padding:2px 8px;background:#e9eef2}.response-meta{margin:0 0 12px;color:#555;font-size:14px;overflow-wrap:anywhere}.response-blank-line{height:1.5em}.response-end{margin-top:12px;color:#27251eeb}.response-body{background:transparent;padding:0;border-radius:0}.response-body pre{background:transparent}.response-body,.response-body *{color:#27251eeb !important}.feed-response{scroll-margin-top:calc(var(--model-navigation-height,0px) + 12px)}
 </style>`).replace('</body>', `<script>
 (() => {
   const navigation = document.querySelector('.feed-navigation');

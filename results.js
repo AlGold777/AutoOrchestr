@@ -20421,6 +20421,11 @@ function checkCompareButtonState() {
                 requestId: card.dataset.requestId || ''
             };
         }
+        message.delivery = {
+            ...message.delivery,
+            sourceUrl: card.dataset.sourceUrl || message.delivery?.sourceUrl || '',
+            responseTimestamp: card.dataset.responseTimestamp || message.delivery?.responseTimestamp || ''
+        };
         if (!message.turnId) message.turnId = `turn-${message.id}`;
         if (!message.responseId && (message.kind === 'model' || message.kind === 'fragment')) {
             message.responseId = `response-${message.id}`;
@@ -20982,7 +20987,7 @@ function checkCompareButtonState() {
         card.dataset.approvalSelectable = status === 'pending' && !isDebateApprovalAutoMode() ? 'true' : 'false';
         card.dataset.live = status === 'printing' ? 'true' : 'false';
         card.dataset.turnClosed = status === 'printing' ? 'false' : 'true';
-        setDebateCardRound(card, turn.delivery || {});
+        setDebateCardRound(card, { ...turn.delivery, completedAt: turn.completedAt, createdAt: turn.createdAt });
         const approvalHtml = status === 'pending' && kind !== 'moderator' ? buildApprovalCheckboxHtml(true) : '';
         card.innerHTML = `
             <div class="debate-model-card-header">
@@ -21419,6 +21424,11 @@ function checkCompareButtonState() {
         if (meta.pipelineRoundId) card.dataset.pipelineRoundId = meta.pipelineRoundId;
         if (meta.pipelineRunId) card.dataset.pipelineRunId = meta.pipelineRunId;
         if (meta.requestId) card.dataset.requestId = meta.requestId;
+        const timestamp = meta.completedAt || meta.responseTimestamp || meta.createdAt || meta.timestamp;
+        if (timestamp && Number.isFinite(new Date(/^\d+$/.test(String(timestamp)) ? Number(timestamp) : timestamp).getTime())) card.dataset.responseTimestamp = String(timestamp);
+        if (!card.dataset.responseTimestamp) card.dataset.responseTimestamp = String(Date.now());
+        const sourceUrl = meta.url || meta.sourceUrl;
+        if (sourceUrl) card.dataset.sourceUrl = String(sourceUrl);
         syncDebateCardRound(card);
     }
     function matchesDebateCardRound(card, meta = {}) {
@@ -24214,6 +24224,16 @@ const pipelineExportBuildDebateFeedHtml = () => {
     const feed = document.getElementById('debate-model-cards');
     const activeSessionId = document.querySelector('.debate-session-tab.active')?.dataset?.sessionId || '1';
     const session = debateTabsState.sessions.get(String(activeSessionId));
+    feed?.querySelectorAll('.debate-model-card').forEach((card) => {
+        if (card.dataset.sessionId !== String(activeSessionId)) return;
+        const message = ensureDebateCardMessage(card);
+        if (!card.dataset.responseTimestamp) card.dataset.responseTimestamp = String(message.completedAt || message.createdAt || '');
+        if (!card.dataset.sourceUrl && message.delivery?.sourceUrl) card.dataset.sourceUrl = message.delivery.sourceUrl;
+        const meta = llmResponseMetadata[card.dataset.llmName];
+        if (!card.dataset.sourceUrl && card.dataset.requestId && meta?.requestId === card.dataset.requestId && meta.url) {
+            card.dataset.sourceUrl = meta.url;
+        }
+    });
     // The composer is cleared after sending; the session keeps the submitted topic.
     const tab = document.querySelector('.debate-session-tab.active');
     const storedTopic = session?.disputeTopic || (tab?.title !== session?.title ? tab?.title : '');

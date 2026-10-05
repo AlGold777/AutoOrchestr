@@ -6,7 +6,7 @@ The project is optimized for unstable provider UIs. Its core design assumes sele
 
 ## Status
 
-- Current version: `2.81.603`, synchronized in `manifest.json`, `package.json`
+- Current version: `2.81.604`, synchronized in `manifest.json`, `package.json`
   and the root package entry in `package-lock.json`
 - Extension type: Chrome Manifest V3
 - Package name: `llm-selector-manager`
@@ -63,6 +63,10 @@ Selecting a view scrolls to its first answer below the sticky navigation.
 A Prompt block below the buttons uses the current assembled prompt, falling back
 to the active session’s saved topic after sending clears the composer. The full
 prompt appears only in this block; it is not repeated as a heading above the buttons.
+Answer headings show model and round together, with response date/time and source
+URL below, followed by the unshaded answer and a `<model> End` marker. Source metadata
+is retained per card and in saved transcript delivery data; unavailable historical
+URLs are omitted rather than borrowed from another round.
 It uses the same three-line
 collapsed preview with Show more / Show less as the main-page HTML export.
 The adjacent `txt` button exports the active feed in its original order, including

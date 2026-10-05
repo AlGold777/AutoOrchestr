@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-05 — Match pipeline answer export layout to the main page, version 2.81.604
+
+- Feed HTML answer headings show model and round on one shaded line, with response date/time and source URL beneath. Answer bodies have no background; each ends with `<model> End`.
+- Capture response timestamps and source URLs per feed card and persist them in transcript delivery metadata, so later rounds cannot overwrite earlier answers’ provenance.
+- Validation: 95 export/layout/integration tests passed, including separate metadata for two rounds. Chromium verified the inline model/round heading, full metadata line, End marker, shaded title and transparent response body.
+
 ### 2026-10-05 — Export the submitted Prompt after composer clearing, version 2.81.603
 
 - The active session’s full topic was previously rendered as a non-collapsible H1 before navigation. If sending had cleared the composer, no Prompt section was exported. Feed HTML now starts with navigation and places the full topic only in the collapsible Prompt block below it.

@@ -1580,6 +1580,27 @@ describe('Pipeline debate favorites view', () => {
     expect(card.querySelector('.debate-model-card-round')).toBe(badge);
   });
 
+  test('feed retains each round’s response time and source URL independently', () => {
+    const debug = window.__pipelineLifecycleDebug;
+    const first = new Date(2026, 9, 5, 10, 33).getTime();
+    const second = new Date(2026, 9, 5, 11, 44).getTime();
+    debug.updateLLMPanelOutput('GPT', 'First provenance answer', '', {
+      status: 'SUCCESS', requestId: 'provenance-r1', pipelineRunId: 'provenance', pipelineRoundId: 'r1',
+      completedAt: first, url: 'https://chatgpt.com/c/first-round'
+    });
+    debug.updateLLMPanelOutput('GPT', 'Second provenance answer', '', {
+      status: 'SUCCESS', requestId: 'provenance-r2', pipelineRunId: 'provenance', pipelineRoundId: 'r2',
+      completedAt: second, url: 'https://chatgpt.com/c/second-round'
+    });
+    const cards = [...document.querySelectorAll('.debate-model-card[data-llm-name="GPT"]')];
+    const firstCard = cards.find((card) => card.dataset.pipelineRoundId === 'r1');
+    const secondCard = cards.find((card) => card.dataset.pipelineRoundId === 'r2');
+    expect(firstCard.dataset.sourceUrl).toBe('https://chatgpt.com/c/first-round');
+    expect(firstCard.dataset.responseTimestamp).toBe(String(first));
+    expect(secondCard.dataset.sourceUrl).toBe('https://chatgpt.com/c/second-round');
+    expect(window.DebateExport.cardParts(firstCard).metadata).toBe('2026-10-05 10-33  https://chatgpt.com/c/first-round');
+  });
+
   test('recovered Gemini R3 and its repeated final keep one badged card without an in-memory waiter', () => {
     const debug = window.__pipelineLifecycleDebug;
     const receive = (message) => {

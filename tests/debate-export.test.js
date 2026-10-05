@@ -147,3 +147,21 @@ test('each model or round click scrolls to its first answer, including repeated 
   expect(scroll.mock.calls[3][0]).toContain('Second round Claude');
   saved.window.close();
 });
+
+
+test('feed answers place round beside the model, metadata below, and End after the unshaded body', () => {
+  const feed = multiRoundFeed();
+  const card = feed.querySelector('.debate-model-card');
+  card.dataset.llmName = 'Le Chat';
+  card.dataset.pipelineRoundId = 'r1';
+  card.dataset.responseTimestamp = String(new Date(2026, 9, 5, 10, 33).getTime());
+  card.dataset.sourceUrl = 'https://claude.ai/chat/5f8da1b0-88d4-421d-a2ab-8401dda9a63c';
+  const doc = new DOMParser().parseFromString(Exporter.buildFeedDocument(feed), 'text/html');
+  const response = doc.querySelector('.feed-response');
+  expect(response.querySelector('h2').textContent).toBe('Le Chat R1');
+  const metadata = response.querySelector('.response-meta');
+  expect(metadata.textContent).toBe('2026-10-05 10-33  https://claude.ai/chat/5f8da1b0-88d4-421d-a2ab-8401dda9a63c');
+  expect(response.querySelector('h2').nextElementSibling).toBe(metadata);
+  expect(response.querySelector('.response-body').nextElementSibling.textContent).toBe('Le Chat End');
+  expect(doc.querySelector('style').textContent).toContain('.response-body{background:transparent;padding:0;border-radius:0}');
+});
