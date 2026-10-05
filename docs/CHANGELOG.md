@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-10-05 — Research scenario 2.0 (documentation only, version unchanged 2.81.492)
+
+- Add `docs/scenarios/research-2.0.md`, superseding 1.0: orchestrator-keyed chain source → fragment → claim → report; claim and evidence states kept separate; mechanical quote check plus meaning check; frozen original spec with a scope-change journal; model-built questionnaire with human selection and comments; role assignment with marked degraded independence; enforcing counters with a completion reserve; list of code prerequisites checked against the main checkout (2.81.611).
+
 ### 2026-10-05 — Research scenario 1.0 (documentation only, version unchanged 2.81.492)
 
 - Final pre-run Research scenario: per-run research spec checked at acceptance; question tree with dependencies; per-question evidence requirement and source of truth; perspective-based search with a mandatory refutation perspective; claim extraction separate from collection; accepted / gap / conflict / rejected verdicts with deficit-type routing; two kinds of critic remarks; return to the earliest defective stage; separate step, round and request budgets.
