@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-05 — Research scenario 1.0 (documentation only, version unchanged 2.81.492)
+
+- Final pre-run Research scenario: per-run research spec checked at acceptance; question tree with dependencies; per-question evidence requirement and source of truth; perspective-based search with a mandatory refutation perspective; claim extraction separate from collection; accepted / gap / conflict / rejected verdicts with deficit-type routing; two kinds of critic remarks; return to the earliest defective stage; separate step, round and request budgets.
+- Records which ideas were taken from the other models' variants.
+
 ### 2026-10-05 — Scenario design: understand the logic first (documentation only, version unchanged 2.81.492)
 
 - Restructure `docs/scenarios/how-to-design-a-scenario.md` into Part 1 "understand the logic" (describe the result, analyse the input gap, work backwards from each part of the result) and Part 2 "formalize".
