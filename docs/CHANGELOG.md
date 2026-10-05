@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-05 — Cover tiled answers by rows, version 2.81.609
+
+- Extended the delayed cover effect to the main-page grid: a full row of three cards rises and covers the preceding row as one block. The last incomplete row has an opaque full-width backing, so old cards do not remain visible in empty cells.
+- Group size follows the available width (three, two or one columns). Switching between tiled and single-column views, resizing and changing visible models retains a model from the reading block. Cards keep their existing content and handlers, with independent internal answer scrolling.
+- Validation: 9 cover tests passed. Chromium with the actual page markup/styles verified synchronized movement of three cards, hold/settle/reverse phases, a final one-card row, mobile regrouping, reading-model preservation across view changes/deselection, and original nodes/order after cleanup. JavaScript syntax and whitespace checks passed.
+
 ### 2026-10-05 — Delayed cover replacement in the single-column answer view, version 2.81.608
 
 - Adapted the supplied delayed-cover prototype to the main page's canonical `.llm-results` / `.llm-panel` elements and `view-stack` switch. A sticky reading viewport holds the current answer for the first 30% of a scroll step; the next card rises from below, covers the previous card and seats by 84%. The previous card moves upward by only 34% of its height.
