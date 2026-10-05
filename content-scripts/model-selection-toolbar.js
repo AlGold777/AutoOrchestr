@@ -156,7 +156,27 @@
       width: 100%;
     }
     #${TOOLBAR_ID} .selection-toolbar-extra[hidden] { display: none; }
-    #${TOOLBAR_ID} .selection-toolbar-toggle[aria-expanded="true"] { transform: rotate(180deg); }
+    #${TOOLBAR_ID} .stb.selection-toolbar-toggle {
+      box-sizing: border-box;
+      width: 30px;
+      min-width: 30px;
+      padding: 0;
+      justify-content: center;
+    }
+    #${TOOLBAR_ID} .selection-toolbar-chevron {
+      display: block;
+      flex: none;
+      width: 16px;
+      height: 16px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      pointer-events: none;
+      transition: transform 0.15s ease;
+    }
+    #${TOOLBAR_ID} .selection-toolbar-toggle[aria-expanded="true"] .selection-toolbar-chevron { transform: rotate(180deg); }
     #${TOOLBAR_ID} .stb[data-block="left"] { justify-content: flex-start; padding-left: 8px; }
     #${TOOLBAR_ID} .stb[data-block="right"] { justify-content: flex-end; padding-right: 8px; }
     #${TOOLBAR_ID} .stb {
@@ -257,7 +277,7 @@
   toolbar.setAttribute('aria-hidden', 'true');
   toolbar.innerHTML = `
     <div class="selection-toolbar-row">
-    <button type="button" class="stb selection-toolbar-toggle" data-more="1" title="More formatting" aria-label="More formatting" aria-expanded="false" aria-controls="${TOOLBAR_ID}-extra">⌄</button>
+    <button type="button" class="stb selection-toolbar-toggle" data-more="1" title="More formatting" aria-label="More formatting" aria-expanded="false" aria-controls="${TOOLBAR_ID}-extra"><svg class="selection-toolbar-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m3.25 6 4.75 4 4.75-4"/></svg></button>
     <button class="stb" data-clear-highlight="1" title="Remove highlight" aria-label="Remove highlight"><span class="stb-label">No colour</span></button>
     <button class="stb col" data-color="#FFEB3B" title="Yellow highlight" aria-label="Yellow highlight"><span class="stb-label">Yellow</span></button>
     <button class="stb col" data-color="#05e56d" title="Green highlight" aria-label="Green highlight"><span class="stb-label">Green</span></button>

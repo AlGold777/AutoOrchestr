@@ -1038,7 +1038,26 @@ body.pro-features-hidden .comparison-section {
     width: 100%;
 }
 .debate-sel-toolbar .selection-toolbar-extra[hidden] { display: none; }
-.debate-sel-toolbar .selection-toolbar-toggle[aria-expanded="true"] { transform: rotate(180deg); }
+.debate-sel-toolbar .stb.selection-toolbar-toggle {
+    box-sizing: border-box;
+    flex: 0 0 28px;
+    padding: 0;
+    justify-content: center;
+}
+.debate-sel-toolbar .selection-toolbar-chevron {
+    display: block;
+    flex: none;
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    pointer-events: none;
+    transition: transform 0.15s ease;
+}
+.debate-sel-toolbar .selection-toolbar-toggle[aria-expanded="true"] .selection-toolbar-chevron { transform: rotate(180deg); }
 .debate-sel-toolbar .stb[data-block="left"] { justify-content: flex-start; padding-left: 4px; }
 .debate-sel-toolbar .stb[data-block="right"] { justify-content: flex-end; padding-right: 4px; }
 .debate-sel-toolbar .selection-toolbar-extra .stb { font-size: 17px; font-weight: 500; }

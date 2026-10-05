@@ -18152,7 +18152,7 @@ function ensureResponseSelectionToolbar() {
     toolbar.className = 'debate-sel-toolbar response-sel-toolbar';
     toolbar.innerHTML = `
         <div class="selection-toolbar-row">
-        <button type="button" class="stb selection-toolbar-toggle" data-more="1" title="More formatting" aria-label="More formatting" aria-expanded="false" aria-controls="${responseSelectionToolbarId}-extra">⌄</button>
+        <button type="button" class="stb selection-toolbar-toggle" data-more="1" title="More formatting" aria-label="More formatting" aria-expanded="false" aria-controls="${responseSelectionToolbarId}-extra"><svg class="selection-toolbar-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m3.25 6 4.75 4 4.75-4"/></svg></button>
         <button class="stb" data-clear-highlight="1" title="Remove highlight" aria-label="Remove highlight"><span class="stb-label">No colour</span></button>
         <button class="stb col" style="background:#FFEB3B;border-color:#fbc02d" data-color="#FFEB3B" title="Yellow highlight" aria-label="Yellow highlight"><span class="stb-label">Yellow</span></button>
         <button class="stb col" style="background:#05e56d;border-color:#00c853" data-color="#05e56d" title="Green highlight" aria-label="Green highlight"><span class="stb-label">Green</span></button>

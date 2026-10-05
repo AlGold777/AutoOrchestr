@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-05 — Center the selection toolbar chevron, version 2.81.607
+
+- Replaced the text arrow in all selection toolbars with a rounded SVG chevron. Its fixed 16 px box and zero button padding center it in the cell; only the icon rotates when the second row opens.
+- Validation: 75 targeted tests passed. Chromium measured zero horizontal and vertical offset between the icon and button centers in both the response-card (28 × 26 px) and model-page (30 × 28 px) toolbars.
+
 ### 2026-10-05 — Expand selection formatting, version 2.81.606
 
 - Added a left-side arrow to the selection toolbar in response cards and on model pages. Its second row offers left, center and right alignment, a bulleted list, and decrease/increase paragraph indent.
