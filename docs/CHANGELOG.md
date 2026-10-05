@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-05 — Scenario design: understand the logic first (documentation only, version unchanged 2.81.492)
+
+- Restructure `docs/scenarios/how-to-design-a-scenario.md` into Part 1 "understand the logic" (describe the result, analyse the input gap, work backwards from each part of the result) and Part 2 "formalize".
+- Research scenario 0.2: add its logic derived backwards from the seven report parts; the backward pass reproduces the 12 stages and a three-task check lowered the minimum sub-question count from 3 to 1.
+
 ### 2026-10-05 — Scenario design guide and Research scenario draft (documentation only, version unchanged 2.81.492)
 
 - Add `docs/scenarios/how-to-design-a-scenario.md`: a plain-language 14-step algorithm for designing a scenario, derived from the Architecture scenario and the OSI stack.
