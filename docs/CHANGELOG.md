@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-10-06 — Document the response markers in use (documentation only, version unchanged 2.81.492)
+
+- Add `docs/markers.md`: delivery token `[[AO-…]]`, `[[ASK: …]]`, `[[VERDICT: …]]` and the judge `<<<RESPONSE …>>>` delimiters, as implemented in 2.81.611 (checked against the main checkout), with their parsing rules, flow effects and covering tests.
+
 ### 2026-10-05 — Research scenario 2.0 (documentation only, version unchanged 2.81.492)
 
 - Add `docs/scenarios/research-2.0.md`, superseding 1.0: orchestrator-keyed chain source → fragment → claim → report; claim and evidence states kept separate; mechanical quote check plus meaning check; frozen original spec with a scope-change journal; model-built questionnaire with human selection and comments; role assignment with marked degraded independence; enforcing counters with a completion reserve; list of code prerequisites checked against the main checkout (2.81.611).
