@@ -25,7 +25,7 @@ hr{border:0;border-top:1px solid var(--bd);margin:32px 0}
 отказы и сквозные протоколы. Все остальные спецификации (Completion V2,
 model-tabs, Disput pipeline) описывают реализацию отдельных слоёв и не должны
 ему противоречить. При конфликте сначала правится этот документ, затем код.</p>
-<p>Версия стека: <strong>OSI-1.3</strong> (2026-10-05). Состав и названия шести слоёв
+<p>Версия стека: <strong>OSI-1.4</strong> (2026-10-05). Состав и названия шести слоёв
 зафиксированы; изменения формулировок внутри слоя повышают минорную версию,
 изменение состава слоёв — мажорную.</p>
 </blockquote>
@@ -50,9 +50,11 @@ model-tabs, Disput pipeline) описывают реализацию отдел�
    полноту, <code>origin_layer = L1</code>. Атрибуция не меняется при движении вверх.</li>
 <li><strong>Отказы L1–L3 никогда не попадают в статистику качества моделей.</strong>
    Технический отказ имеет <code>blame ≠ model</code>.</li>
-<li><strong>Два типа критериев не смешиваются.</strong> L1–L5 — детерминированные: отказ и
-   повтор. L6 — вероятностный: меняется вес, ответ не отбраковывается. В одном
-   списке проверок не бывает критериев обоих типов.</li>
+<li><strong>Два типа критериев не смешиваются.</strong> Детерминированные проверки — L1–L5
+   и структурная валидация сценария на L6 (§5.L6, Scenario Definition): отказ
+   и повтор или запрет запуска. Вероятностная оценка содержания ответов —
+   только на L6: меняется вес, ответ не отбраковывается. В одном списке
+   проверок не бывает критериев обоих типов.</li>
 <li><strong>Прогресс — это подтверждённые результаты, а не активность.</strong> Признак
    живости модели берётся только из её вывода. Фокус, скролл, повторный опрос,
    recovery, перезагрузка вкладки и любые другие наши действия прогрессом не
@@ -91,8 +93,9 @@ model-tabs, Disput pipeline) описывают реализацию отдел�
     отказоустойчивость транспорта имитирует сходимость дискуссии.</li>
 <li><strong>Дедлайны вложены.</strong> Дедлайн верхнего слоя больше суммы дедлайнов нижних с
     запасом; иначе наверх приходит отказ, который некому обработать.</li>
-<li><strong>Изменение версии рамки — новый run.</strong> Повтор с другой версией рамки,
-    политики приёмки или канонизации не является attempt прежнего run.</li>
+<li><strong>Изменение версии рамки или сценария — новый run.</strong> Повтор с другой
+    версией рамки, политики приёмки, канонизации или <code>PipelineDefinition</code> не
+    является attempt прежнего run.</li>
 <li><strong>Данные не издают протокол.</strong> Чужие ответы, цитаты и извлечённый текст не
     могут содержать действующие протокольные элементы (маркер, нонс, ограждение
     данных). Протокольная позиция валидна только в заданном месте.</li>
@@ -114,10 +117,10 @@ model-tabs, Disput pipeline) описывают реализацию отдел�
 <tr>
 <td><strong>L6</strong></td>
 <td>Сценарии</td>
-<td>Что решаем, каким протоколом и когда остановиться?</td>
-<td><code>ScenarioPlan</code>, <code>DisputeGraph</code>, <code>Disposition</code>, <code>StopDecision</code></td>
-<td>Вердикт прогона с причиной; каждое существенное расхождение имеет disposition</td>
-<td>Вероятностный</td>
+<td>Что решаем, по какому pipeline, каким протоколом и когда остановиться?</td>
+<td><code>PipelineDefinition</code>, <code>ScenarioPlan</code>, <code>RoundDecision</code>, <code>DisputeGraph</code>, <code>Disposition</code>, <code>StopDecision</code></td>
+<td>Структурно валидный зафиксированный план; вердикт прогона с причиной; каждое существенное расхождение имеет disposition</td>
+<td>Структура сценария — детерминированная; оценка содержания — вероятностная</td>
 <td>core / Disput orchestrator</td>
 </tr>
 <tr>
@@ -254,6 +257,18 @@ model-tabs, Disput pipeline) описывают реализацию отдел�
 <tbody>
 <tr>
 <td>L6</td>
+<td>Фиксация версии pipeline</td>
+<td><code>pipeline_id + definition_hash</code> → <code>pipeline_version</code></td>
+<td>Та же версия; изменённое определение — новая версия</td>
+</tr>
+<tr>
+<td>L6</td>
+<td>Фиксация плана запуска</td>
+<td><code>run_id</code> → <code>scenario_plan_id</code> (один план на прогон)</td>
+<td>Возвращает зафиксированный план</td>
+</tr>
+<tr>
+<td>L6</td>
 <td>Решение сценария</td>
 <td><code>decision_id = run_id + boundary_round_id + decision_kind</code></td>
 <td>Возвращает уже принятое решение</td>
@@ -281,6 +296,12 @@ model-tabs, Disput pipeline) описывают реализацию отдел�
 <td>Терминальный исход логической работы</td>
 <td><code>terminal_key = session_id + logical_invocation_id</code> (<code>logical_invocation_id</code> = <code>round_id + role</code>)</td>
 <td><code>ResponseAccepted</code> и <code>ResponseAbsent</code> конкурируют за этот один ключ; первый коммит побеждает, второй — <code>L4.DOUBLE_COMMIT</code></td>
+</tr>
+<tr>
+<td>L4</td>
+<td><code>RunStarted</code></td>
+<td><code>session_id + run_id + RunStarted</code> (один на прогон); <code>proof_ref = scenario_plan_id</code></td>
+<td>Возвращает существующий коммит</td>
 </tr>
 <tr>
 <td>L4</td>
@@ -596,11 +617,86 @@ model-tabs, Disput pipeline) описывают реализацию отдел�
 <p><strong>Назначение.</strong> Выполнение задачи и сценария: цель, выбор протокола (debate,
 расширение, критика, арбитраж), план раундов, назначение ролей, критерий
 остановки, решение о том, что сжимать в контексте.</p>
-<p><strong>Подпротоколы.</strong> Scenario Planning · Protocol Transition · Reconciliation
-(claims, расхождения, disposition) · Semantic Assessment · Stop Decision.</p>
-<p><strong>Единица данных.</strong> <code>ScenarioPlan</code>, <code>Claim</code>, <code>DisputeGraph</code>, <code>Disposition</code>
-(<code>accepted</code> / <code>rejected</code> / <code>open</code> / <code>deferred</code>), <code>ConvergenceDelta</code>,
-<code>SemanticAssessment</code>, <code>RoundDecision</code>, <code>StopDecision</code>, <code>RunVerdict</code>.</p>
+<p><strong>Подпротоколы.</strong> Scenario Definition · Scenario Planning · Protocol
+Transition · Reconciliation (claims, расхождения, disposition) · Semantic
+Assessment · Stop Decision.</p>
+<p><strong>Единица данных.</strong> <code>PipelineDefinition</code>, <code>ScenarioPlan</code>, <code>Claim</code>,
+<code>DisputeGraph</code>, <code>Disposition</code> (<code>accepted</code> / <code>rejected</code> / <code>open</code> / <code>deferred</code>),
+<code>ConvergenceDelta</code>, <code>SemanticAssessment</code>, <code>RoundDecision</code>, <code>StopDecision</code>,
+<code>RunVerdict</code>.</p>
+<p><strong>Три сущности сценария.</strong></p>
+<div class="tw"><table>
+<thead>
+<tr>
+<th>Сущность</th>
+<th>Когда создаётся</th>
+<th>Что содержит</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>PipelineDefinition</code></td>
+<td>До любого запуска; версионируется</td>
+<td>Шаблон: этапы, роли, задания, зависимости, правила переходов и остановки</td>
+</tr>
+<tr>
+<td><code>ScenarioPlan</code></td>
+<td>При запуске, до раунда 1; фиксируется коммитом <code>RunStarted</code></td>
+<td>Выбранная версия pipeline, входные данные, параметры, бюджеты</td>
+</tr>
+<tr>
+<td><code>RoundDecision</code></td>
+<td>Во время исполнения, на границе раунда</td>
+<td>Продолжить, выбрать следующую ветку или этап, сменить протокол, остановиться</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Scenario Definition.</strong> <code>PipelineDefinition{pipeline_id, pipeline_version,
+definition_hash, stages[], edges[], stop_rules, failure_policy,
+result_criteria, versions}</code> описывает:</p>
+<ul>
+<li><strong>Этапы и раунды.</strong> Этап содержит один или несколько раундов; число
+  раундов фиксированное либо ограничено условием выхода с жёстким максимумом.
+  У каждого этапа указан протокол (debate, критика, расширение, арбитраж).</li>
+<li><strong>Задания ролям.</strong> Что роль должна выяснить, предложить или проверить на
+  этапе. Это смысловое задание (<code>body</code>); в промпт его превращает L5↓.
+  Определение описывает роли, а не модели: связывание роли с моделью — L2 при
+  запуске.</li>
+<li><strong>Входы и выходы.</strong> Какие результаты и артефакты предыдущих этапов
+  используются, какие артефакты этап обязан произвести, что передаётся дальше
+  и что можно сжимать.</li>
+<li><strong>Управление исполнением.</strong> Последовательность, параллельные ветки,
+  условия их объединения и перехода между этапами.</li>
+<li><strong>Поведение при отказах.</strong> Можно ли продолжать без участника или
+  артефакта, минимальный кворум принятых ответов, когда выдаётся частичный
+  итог, когда прогон останавливается.</li>
+<li><strong>Критерии результата.</strong> Что означает успешное завершение каждого этапа и
+  всего pipeline.</li>
+</ul>
+<p><strong>Структурная валидация</strong> (детерминированная; выполняется при фиксации версии
+<code>PipelineDefinition</code> и повторно при создании <code>ScenarioPlan</code> с конкретными
+входами):</p>
+<ul>
+<li>каждая ссылка между этапами указывает на существующий этап и существующий
+  выход;</li>
+<li>каждый обязательный вход этапа производится одним из предшествующих этапов
+  или передан во входных данных запуска;</li>
+<li>у каждого цикла есть условие выхода и жёсткий максимум итераций;</li>
+<li>у каждого этапа есть хотя бы одна роль, протокол и критерий перехода;</li>
+<li>параллельные ветки имеют определённое условие объединения;</li>
+<li>из начального этапа достижим хотя бы один конечный, недостижимых этапов нет;</li>
+<li>бюджеты этапов в сумме не превышают бюджет pipeline;</li>
+<li>версии рамки, политики приёмки и протоколов, на которые ссылается
+  определение, существуют и совместимы.</li>
+</ul>
+<p>Определение, не прошедшее валидацию, не получает версию и не может быть
+запущено. Эти проверки не оценивают качество сценария — только его
+исполнимость.</p>
+<p><strong>Pipeline, спроектированный моделями.</strong> Прогон, задача которого —
+спроектировать сценарий, проходит все шесть слоёв как обычный прогон. Его
+итог — кандидат <code>PipelineDefinition</code>. Перед использованием кандидат проходит
+структурную валидацию и получает зафиксированную версию; до этого он не
+может быть исполнен. Отдельного слоя для этого нет.</p>
 <p><strong>Semantic Assessment.</strong> Вероятностные оценки, которые нельзя сделать
 детерминированно на L5:
 <code>SemanticAssessment{kind, subject_ref, confidence, method, evaluator,
@@ -609,15 +705,22 @@ evaluator_version}</code>, где <code>kind</code> — <code>compression_fideli
 инструкции из чужих данных). Оценка никогда не отклоняет ответ: она меняет
 вес, помечает ответ и может повлиять на решение следующего раунда (например,
 подать фрагмент без сжатия). Метод и уверенность записываются всегда.</p>
-<p><strong>Контракт.</strong> <code>ScenarioPlan + закоммиченные на L4 исходы + Disposition +
-бюджет → RoundDecision{continue | stop | change_protocol, reason}</code>; в конце —
-<code>RunVerdict{achieved | not_achieved | aborted, stop_reason}</code>. Каждое решение
-становится состоянием только через коммит L4 (<code>RoundOpened</code>,
-<code>ProtocolChanged</code>, <code>RunStopped</code>).</p>
-<p><strong>Предусловие входа.</strong> До раунда 1 зафиксированы: цель, протокол, роли, лимит
-раундов, бюджет токенов/времени, критерий существенности расхождения, критерий
-остановки как измеримый предикат по <code>DisputeGraph</code>, правила смены протокола,
-правила взвешивания.</p>
+<p><strong>Контракт.</strong>
+- <code>Validate(PipelineDefinition) → pipeline_version | DefinitionRejection</code>
+  (детерминированно).
+- <code>Plan(pipeline_version, inputs, params, budgets) → ScenarioPlan</code>
+  (детерминированно; фиксируется коммитом <code>RunStarted</code>).
+- <code>ScenarioPlan + закоммиченные на L4 исходы + Disposition + бюджет →
+  RoundDecision{continue | next_stage | change_protocol | stop, reason}</code>; в
+  конце — <code>RunVerdict{achieved | not_achieved | aborted, stop_reason}</code>.
+  Решение о переходе использует только условия, объявленные в
+  <code>PipelineDefinition</code>. Каждое решение становится состоянием только через
+  коммит L4 (<code>RoundOpened</code>, <code>ProtocolChanged</code>, <code>RunStopped</code>).</p>
+<p><strong>Предусловие входа.</strong> До раунда 1 коммитом <code>RunStarted</code> зафиксирован
+<code>ScenarioPlan</code>: версия pipeline, прошедшая валидацию, цель, роли, этапы,
+лимиты раундов, бюджет токенов/времени, критерий существенности расхождения,
+критерий остановки как измеримый предикат по <code>DisputeGraph</code>, правила смены
+протокола, правила взвешивания, политика отказов.</p>
 <p><strong>Свидетельство вверх.</strong> <code>StopDecision</code> с <code>stop_reason</code>:
 <code>converged</code> / <code>max_rounds</code> / <code>budget_exhausted</code> / <code>blocked</code> / <code>echo</code> /
 <code>aborted</code>. Перечень открытых существенных расхождений. Частичный итог —
@@ -634,7 +737,9 @@ evaluator_version}</code>, где <code>kind</code> — <code>compression_fideli
 (L1–L3), запись журнала (L4), выбор адаптера (L2).</p>
 <p><strong>Запрещено.</strong> Прямая запись в журнал в обход L4. Проверка формата ответа.
 Повтор раунда «на всякий случай». Вердикт «кончились раунды» без явного
-<code>not_achieved</code>. Смена протокола внутри раунда.</p>
+<code>not_achieved</code>. Смена протокола внутри раунда. Запуск невалидированного или
+неверсионированного <code>PipelineDefinition</code>. Изменение <code>ScenarioPlan</code> после
+<code>RunStarted</code>: переход, не объявленный в определении, — новый run.</p>
 <p><strong>Типовые отказы.</strong></p>
 <div class="tw"><table>
 <thead>
@@ -645,6 +750,41 @@ evaluator_version}</code>, где <code>kind</code> — <code>compression_fideli
 </tr>
 </thead>
 <tbody>
+<tr>
+<td><code>L6.DEF_DANGLING_REF</code></td>
+<td>Ссылка на несуществующий этап или выход</td>
+<td>Определение не получает версию</td>
+</tr>
+<tr>
+<td><code>L6.DEF_INPUT_UNSATISFIED</code></td>
+<td>Обязательный вход этапа никем не производится и не передан при запуске</td>
+<td>Определение или план отклонён</td>
+</tr>
+<tr>
+<td><code>L6.DEF_UNBOUNDED_LOOP</code></td>
+<td>Цикл без условия выхода или без максимума итераций</td>
+<td>Определение не получает версию</td>
+</tr>
+<tr>
+<td><code>L6.DEF_UNREACHABLE</code></td>
+<td>Недостижимый этап или нет пути к конечному этапу</td>
+<td>Определение не получает версию</td>
+</tr>
+<tr>
+<td><code>L6.DEF_INCOMPLETE_STAGE</code></td>
+<td>Этап без роли, протокола или критерия перехода; ветки без условия объединения</td>
+<td>Определение не получает версию</td>
+</tr>
+<tr>
+<td><code>L6.DEF_INCOMPATIBLE</code></td>
+<td>Ссылки на несуществующие или несовместимые версии рамки, политики приёмки, протокола; бюджеты этапов превышают общий</td>
+<td>Определение не получает версию</td>
+</tr>
+<tr>
+<td><code>L6.QUORUM_LOST</code></td>
+<td>Принятых ответов на этапе меньше минимума политики отказов</td>
+<td>Частичный итог или стоп по <code>failure_policy</code></td>
+</tr>
 <tr>
 <td><code>L6.NO_CONVERGENCE</code></td>
 <td>Раунды не закрывают расхождения</td>
@@ -699,6 +839,7 @@ evaluator_version}</code>, где <code>kind</code> — <code>compression_fideli
 <code>drift_score</code>, <code>token_budget_used</code>, <code>injection_suspect_rate</code>,
 <code>compression_fidelity_low_rate</code>.</p>
 <p><strong>Точечное усиление.</strong> Критерий остановки и лимит раундов задаются до старта.
+Pipeline валидируется до запуска, а не во время исполнения.
 Детектор эха: порог сходства claims между соседними раундами. Ответ,
 полученный через fallback (§L2), помечен и взвешивается с учётом этого.</p>
 <hr />
@@ -868,9 +1009,15 @@ transport resend и не нарушает правило 8. Неповторяе
 </thead>
 <tbody>
 <tr>
+<td><code>RunStarted</code></td>
+<td><code>run_id</code></td>
+<td>Зафиксированный <code>ScenarioPlan</code> со ссылкой на версию <code>PipelineDefinition</code>, прошедшую структурную валидацию</td>
+<td>—</td>
+</tr>
+<tr>
 <td><code>RoundOpened</code></td>
 <td><code>round_id</code></td>
-<td><code>RoundDecision{continue}</code> L6 + зафиксированный <code>RoutePlan</code> L2</td>
+<td><code>RoundDecision{continue}</code> L6 со ссылкой на <code>scenario_plan_id</code> + зафиксированный <code>RoutePlan</code> L2</td>
 <td>—</td>
 </tr>
 <tr>
@@ -1500,9 +1647,9 @@ DOM-состояния (полный снимок не хранится).</p>
 </tr>
 <tr>
 <td>L6 → L4</td>
-<td><code>RoundDecision</code>, <code>StopDecision</code></td>
-<td>Решение сценария не сохранено</td>
-<td>Типизированные коммиты <code>RoundOpened</code> / <code>ProtocolChanged</code> / <code>RunStopped</code></td>
+<td><code>ScenarioPlan</code>, <code>RoundDecision</code>, <code>StopDecision</code></td>
+<td>План или решение сценария не сохранено; план изменён посреди прогона</td>
+<td>Типизированные коммиты <code>RunStarted</code> / <code>RoundOpened</code> / <code>ProtocolChanged</code> / <code>RunStopped</code>; план неизменен после <code>RunStarted</code></td>
 </tr>
 <tr>
 <td>L4 → L6</td>
@@ -1525,7 +1672,7 @@ DOM-состояния (полный снимок не хранится).</p>
 <tbody>
 <tr>
 <td>L6</td>
-<td><code>disput/debate-orchestrator.js</code>, <code>debate-planner.js</code>, <code>debate-protocols.js</code>, <code>debate-protocol-transition-service.js</code>, <code>debate-convergence.js</code>, <code>debate-stagnation-warning.js</code>, <code>debate-epistemic-outcome.js</code></td>
+<td><code>disput/pipeline-presets.js</code>, <code>pipeline-profile-store.js</code>, <code>debate-profile-schema.js</code>, <code>debate-draft-plan.js</code>, <code>debate-plan-revision.js</code> (Scenario Definition), <code>disput/debate-orchestrator.js</code>, <code>debate-planner.js</code>, <code>debate-protocols.js</code>, <code>debate-protocol-transition-service.js</code>, <code>debate-convergence.js</code>, <code>debate-stagnation-warning.js</code>, <code>debate-epistemic-outcome.js</code></td>
 </tr>
 <tr>
 <td>L5</td>
@@ -1771,6 +1918,10 @@ DOM-состояния (полный снимок не хранится).</p>
 <td>Признаки «сообщения нет, черновик на месте, генерации нет» после окна стабилизации доказывают отсутствие подтверждения, а не недоставку: первый submit может завершиться позже</td>
 <td><code>not_delivered</code> после submit требует гарантии финальности адаптера <code>submit_finality</code>; по умолчанию <code>none</code> → <code>delivery_unknown</code> (§5.L3)</td>
 </tr>
+<tr>
+<td>Ключи идемпотентности остались от прежней модели: нет ключей для переходов сценария; ключ приёмки сталкивает новый ответ с прежним <code>Rejection</code></td>
+<td>Ключи разделены по операциям: сборка пакета, проверка конкретного ответа, терминальный исход (общий для <code>ResponseAccepted</code> / <code>ResponseAbsent</code>), переходы сценария по <code>decision_id</code> (§4.1)</td>
+</tr>
 </tbody>
 </table></div>
 <p>Третье ревью OSI-1.2 (Astra, 2026-10-05) → OSI-1.3:</p>
@@ -1786,9 +1937,32 @@ DOM-состояния (полный снимок не хранится).</p>
 <td>Режим <code>bounded</code> выводил гарантию недоставки из измеренной задержки; следующая отправка может обрабатываться дольше</td>
 <td><code>bounded</code> удалён; <code>T_final</code> — только предел ожидания перед <code>delivery_unknown</code>. <code>explicit</code> уточнён: сигнал относится к конкретной отправке и подтверждает её завершение без принятия; обрыв, таймаут и отклонённый клиентский promise сигналом не являются (§5.L3)</td>
 </tr>
+</tbody>
+</table></div>
+<p>Вопрос о месте проектирования pipeline и ревью ответа (Astra, 2026-10-05) → OSI-1.4:</p>
+<div class="tw"><table>
+<thead>
 <tr>
-<td>Ключи идемпотентности остались от прежней модели: нет ключей для переходов сценария; ключ приёмки сталкивает новый ответ с прежним <code>Rejection</code></td>
-<td>Ключи разделены по операциям: сборка пакета, проверка конкретного ответа, терминальный исход (общий для <code>ResponseAccepted</code> / <code>ResponseAbsent</code>), переходы сценария по <code>decision_id</code> (§4.1)</td>
+<th>Предложение</th>
+<th>Решение</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Проектирование pipeline (раунды, логика, задания этапов, связи)</td>
+<td>Отнесено к L6, новый подпротокол Scenario Definition</td>
+</tr>
+<tr>
+<td>Разделить <code>PipelineDefinition</code> / <code>ScenarioPlan</code> / <code>RoundDecision</code></td>
+<td>Принято; <code>ScenarioPlan</code> фиксируется до раунда 1 новым коммитом <code>RunStarted</code></td>
+</tr>
+<tr>
+<td>На L6 есть детерминированные проверки (входы, ссылки, выход из цикла)</td>
+<td>Принято; правило 4 переформулировано: структурная валидация сценария детерминирована, вероятностна только оценка содержания ответов</td>
+</tr>
+<tr>
+<td>Pipeline, спроектированный моделями</td>
+<td>Итог такого прогона — кандидат <code>PipelineDefinition</code>; запуск только после валидации и фиксации версии</td>
 </tr>
 </tbody>
 </table></div>

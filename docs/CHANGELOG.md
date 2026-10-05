@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-05 — OSI stack 1.4: Scenario Definition on L6 (documentation only, version unchanged 2.81.492)
+
+- Add the L6 Scenario Definition subprotocol: `PipelineDefinition` (versioned template) / `ScenarioPlan` (fixed before round 1 by a new `RunStarted` commit) / `RoundDecision`, with deterministic structural validation and `L6.DEF_*` failure codes.
+- Reword rule 4: scenario structure validation is deterministic; only answer content assessment is probabilistic.
+- Model-designed pipelines produce a candidate definition that must pass validation and be versioned before use.
+- Fix misplaced rows in the review decision tables.
+
 ### 2026-10-05 — OSI stack 1.3 after third review (documentation only, version unchanged 2.81.492)
 
 - Remove the measurement-based `bounded` submit finality: a measured delay never proves non-delivery; `T_final` only bounds waiting before `delivery_unknown`.
