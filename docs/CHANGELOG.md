@@ -13,6 +13,13 @@
 - The stage instruction asks models for options. `docs/markers.md` describes the marker set in use.
 - Integration: all branches merged into this line (main's state map shell work kept on the 2.81.611 panel; transport-hardening; the OSI stack and Research scenario documents).
 
+### 2026-10-06 — Organize documentation by topic, version 2.81.612
+
+- Grouped documentation under Automation, Transport, Telemetry, Architecture, Pipeline and History. The root retains this changelog, the project overview and a new documentation map; updated README navigation and links between moved documents.
+- Removed the completed automation plan (steps A–F delivered in 2.81.529). Kept unfinished migration/specification work, baseline source snapshots, verification reports and rollback evidence; the documentation map explains their status.
+- Updated the architecture-framework generator to read the relocated Automation stage catalogue and aligned generated-source provenance and report-analysis references. Runtime behavior is unchanged.
+- Validation: generator freshness check, Automation static contracts and all 18 automation-marker tests passed. All 160 retained documents are present; schemas, prototypes and baseline source payloads are unchanged. No new broken Markdown links; version files are synchronized and whitespace checks passed.
+
 ### 2026-10-06 — Document the response markers in use (documentation only, version unchanged 2.81.492)
 
 - Add `docs/markers.md`: delivery token `[[AO-…]]`, `[[ASK: …]]`, `[[VERDICT: …]]` and the judge `<<<RESPONSE …>>>` delimiters, as implemented in 2.81.611 (checked against the main checkout), with their parsing rules, flow effects and covering tests.

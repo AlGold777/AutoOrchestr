@@ -35,14 +35,11 @@ updates as new messages arrive. Click outside the window or press Esc to close i
 
 - Documentation map and writing rules: [docs/documentation-map.md](docs/documentation-map.md)
 - Project setup and runtime overview: [docs/project-overview.md](docs/project-overview.md)
-- Current Debate architecture: [docs/disput/orchestrator-contract-v1.0.md](docs/disput/orchestrator-contract-v1.0.md)
-- Main-page model tabs and dispatch: [docs/model-tabs-architecture.md](docs/model-tabs-architecture.md)
-- Timing architecture and current values: [docs/timings-settings.md](docs/timings-settings.md)
-- Current Debate plans: [docs/disput/PLAN-universal-pipeline-v3.0.md](docs/disput/PLAN-universal-pipeline-v3.0.md)
-- Universal task engine concept and draft contracts: [docs/Universal Engine/README.md](<docs/Universal Engine/README.md>)
-- Deferred work only: [docs/disput/OPEN-ITEMS-v3.0.md](docs/disput/OPEN-ITEMS-v3.0.md)
+- Main-page model tabs and dispatch: [docs/Architecture/model-tabs-architecture.md](docs/Architecture/model-tabs-architecture.md)
+- Timing architecture and current values: [docs/Transport/timings-settings.md](docs/Transport/timings-settings.md)
+- Pipeline baseline, audits and unfinished migration plans: [docs/Pipeline/Pre-Dispute](docs/Pipeline/Pre-Dispute)
+- Universal task engine concept and draft contracts: [docs/Architecture/Universal Engine/README.md](<docs/Architecture/Universal Engine/README.md>)
 - Append-only change history: [docs/CHANGELOG.md](docs/CHANGELOG.md)
-- Disput runtime/UI corrections: [docs/disput/TZ-runtime-ui-corrections-v1.0.md](docs/disput/TZ-runtime-ui-corrections-v1.0.md)
 
 ## Development
 

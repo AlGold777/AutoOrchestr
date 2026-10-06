@@ -33,7 +33,7 @@ Scope: runtime-настройки времени из `config/`, `background/`,
 | Telemetry, storage и selectors | `background/telemetry-logs.js`, `background/selector-metrics.js`, `results.js` | flush, retention, export snapshot и UI refresh |
 
 Архитектура вкладок и правила владения focus описаны в
-[`model-tabs-architecture.md`](model-tabs-architecture.md). Инварианты
+[`model-tabs-architecture.md`](../Architecture/model-tabs-architecture.md). Инварианты
 профильной лестницы проверяет `tests/timing-ladder.test.js`.
 
 ### Лестница зависимостей Standard / Long

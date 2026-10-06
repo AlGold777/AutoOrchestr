@@ -7,7 +7,7 @@
 //   * message-delivery report   ({ report: 'message-delivery', diagnosis, journal })
 //   * Disput Flow export        ({ metadata.debateRunId, stageExecutions, events, delivery?, ... })
 //
-// Output rules (docs/report-analysis-prompt.md):
+// Output rules (docs/Telemetry/report-analysis-prompt.md):
 //   * a value read from the file carries its path (`events[12]`, `delivery.journal[40]`);
 //   * a computed value is marked `calc:` with its formula;
 //   * "no field", null, "", [] and "0 records" are different answers and are printed as such;

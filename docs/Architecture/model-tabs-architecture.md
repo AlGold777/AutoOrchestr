@@ -175,15 +175,15 @@ the previous runtime's telemetry or model statuses onto the main page.
   `tabSessionId` or dispatch identity; the supervisor creates a fresh dispatch.
 
 The canonical dispatch boundary is `background/dispatch-coordinator.js`.
-Changes to focus or retry timing belong in `docs/timings-settings.md` and the relevant
+Changes to focus or retry timing belong in `docs/Transport/timings-settings.md` and the relevant
 policy/config, not in this document.
 
 ## Pages Visit
 
 This section is the normative description of foreground visits to provider
 pages on the main results-page path. It consolidates the architectural rules
-from this document, the current values from `docs/timings-settings.md`, the
-diagnostic vocabulary from `docs/telemetry.md`, and the behavior currently
+from this document, the current values from `docs/Transport/timings-settings.md`, the
+diagnostic vocabulary from `docs/Telemetry/telemetry.md`, and the behavior currently
 implemented by:
 
 - `background/job-orchestrator.js` — round order, forced visits, recovery and
@@ -381,7 +381,7 @@ model:
 
 The batch budget is `max(ROUND2_BATCH_MAX_MS,
 selected-model-count × ROUND2_MODEL_TIME_SLICE_MS)`. Exact current values and
-all visit intervals are canonical only in `docs/timings-settings.md`.
+all visit intervals are canonical only in `docs/Transport/timings-settings.md`.
 
 ### Recurring human-presence order
 
@@ -444,7 +444,7 @@ After it expires, the entry receives `skipHumanLoop` and
 `ACTIVE_FOCUS_WINDOW_EXHAUSTED`. Autonomous foreground visits stop, while
 passive generation observation continues until the separate generation
 deadline. The complete timing ladder is maintained in
-`docs/timings-settings.md`.
+`docs/Transport/timings-settings.md`.
 
 ### Lease and overlap contract
 
@@ -488,7 +488,7 @@ not create a retry loop. Visit histories are bounded in model state rather than
 growing without limit.
 
 Exact quota window, quota amount, cooldown and minimum useful duration belong
-to `docs/timings-settings.md`.
+to `docs/Transport/timings-settings.md`.
 
 ### Focus activation and restoration
 
@@ -609,13 +609,13 @@ that order.
 ### Documentation ownership
 
 - This section owns the visit-ordering and focus-ownership contract.
-- `docs/timings-settings.md` owns every current numeric timing value.
-- `docs/telemetry.md` owns event schema/export and UI interpretation.
+- `docs/Transport/timings-settings.md` owns every current numeric timing value.
+- `docs/Telemetry/telemetry.md` owns event schema/export and UI interpretation.
 - `docs/CHANGELOG.md` records how the behavior evolved; it is not a substitute
   for this contract.
 - Executable truth remains in the owner modules listed at the start of this
   section. A behavior change must update code, focused tests, this section and,
-  when timing changes, `docs/timings-settings.md` in the same set.
+  when timing changes, `docs/Transport/timings-settings.md` in the same set.
 
 ## Content-script boundary
 
@@ -1007,6 +1007,6 @@ When changing model tabs or main-page selection:
 Related operational documents:
 
 - `docs/project-overview.md` — product behavior and module map;
-- `docs/completion-protocol-v2.md` — completion authority;
-- `docs/telemetry.md` — evidence and export vocabulary;
-- `docs/timings-settings.md` — timing ownership and current values.
+- `docs/Transport/completion-protocol-v2.md` — completion authority;
+- `docs/Telemetry/telemetry.md` — evidence and export vocabulary;
+- `docs/Transport/timings-settings.md` — timing ownership and current values.
