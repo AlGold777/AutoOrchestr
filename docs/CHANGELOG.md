@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-06 — Owner questions are answered by choosing, not typing, version 2.81.612
+
+- `[[ASK: question || option 1 || option 2 [|| несколько]]]`: 2–5 options, the last word «несколько» allows several; one option is dropped, a question without options keeps the old plain form. `Markers.parse` returns `askItems` next to `asks`; the stage executor carries `options` and `multi` into the stage asks and the pause info.
+- «Вопрос владельцу» dialog: radio buttons or checkboxes and an optional comment instead of a text field; a question without options offers one standard choice «Решите сами и отметьте это допущением». The answer reaches the next prompts as the chosen options plus the comment.
+- The stage instruction asks models for options. `docs/markers.md` describes the marker set in use.
+- Integration: all branches merged into this line (main's state map shell work kept on the 2.81.611 panel; transport-hardening; the OSI stack and Research scenario documents).
+
 ### 2026-10-06 — Document the response markers in use (documentation only, version unchanged 2.81.492)
 
 - Add `docs/markers.md`: delivery token `[[AO-…]]`, `[[ASK: …]]`, `[[VERDICT: …]]` and the judge `<<<RESPONSE …>>>` delimiters, as implemented in 2.81.611 (checked against the main checkout), with their parsing rules, flow effects and covering tests.

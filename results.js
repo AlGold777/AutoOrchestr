@@ -5299,7 +5299,7 @@ document.addEventListener('click', (event) => {
             if (!ownerAskDialog || !window.OwnerAsk) return;
             pendingOwnerAsks = info;
             const hint = document.getElementById('owner-ask-hint');
-            if (hint) hint.textContent = `${info.label || info.plannedStageId || 'Этап'}: модель просит ответа владельца. Ответ получат следующие этапы.`;
+            if (hint) hint.textContent = `${info.label || info.plannedStageId || 'Этап'}: модель просит ответа владельца. Выберите вариант, при желании добавьте комментарий. Ответ получат следующие этапы.`;
             window.OwnerAsk.render(document.getElementById('owner-ask-list'), info.asks || []);
             if (!ownerAskDialog.open) ownerAskDialog.showModal();
         };
@@ -5309,7 +5309,7 @@ document.addEventListener('click', (event) => {
             const info = pendingOwnerAsks;
             if (action === 'answer') {
                 const answers = window.OwnerAsk.collect(document.getElementById('owner-ask-list'), info.asks || []);
-                if (!answers.length) { showNotification('Впишите хотя бы один ответ или выберите «Продолжить без ответа».', 'info'); return; }
+                if (!answers.length) { showNotification('Выберите хотя бы один вариант или нажмите «Продолжить без ответа».', 'info'); return; }
                 if (activePipelineRunContext) (activePipelineRunContext.ownerAnswers ||= []).push(...answers.map((item) => ({ ...item, stage: info.plannedStageId || '' })));
                 globalThis.MessageDelivery?.batchEvent?.('owner_answer', { stage: info.plannedStageId || null, answered: answers.length, asked: (info.asks || []).length });
             } else if (action === 'skip') {

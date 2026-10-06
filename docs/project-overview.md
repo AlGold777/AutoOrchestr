@@ -541,14 +541,14 @@ With the **Auto** toggle off the moderator drives the pipeline stage by stage:
   waited for approval). The engine pauses itself (lifecycle `PAUSED`, one
   **Continue** button, `policies.stagePause`): with Auto off after **every**
   stage; with Auto on only at a template **gate**; in both modes on a
-  **question for the owner** (`[[ASK: …]]`, a dialog with a text field per
-  question; the answers go into the prompts of the next stages) and on a
+  **question for the owner** (`[[ASK: question || option 1 || option 2]]`, a dialog where the owner
+  picks one or several options and may add a comment; the answers go into the prompts of the next stages) and on a
   **failed stage** (nobody gave an accepted answer: the stage is no longer
   re-queued until the budget burns, Continue repeats it once). The reason is
   in the notification, the delivery report (`run_paused`) and the stage card.
 - Control markers in a template stage's answer (`disput/stage-markers.js`):
   the delivery token `[[AO-xxxxxx]]` (complete and mine, unchanged),
-  `[[ASK: question]]` (the owner is needed) and, for review stages,
+  `[[ASK: question || option 1 || option 2]]` (the owner is needed and picks from the options) and, for review stages,
   `[[VERDICT: pass|issues_found]]` (blocking remarks or not; informational,
   shown at the pause). A marker is a line of its own; text in code fences and
   quotes is ignored. See `docs/automation-plan.md`.

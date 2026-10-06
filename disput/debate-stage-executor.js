@@ -207,7 +207,7 @@
             return {
               participantId: participant.participantId, status: 'accepted',
               text: responseText, completion, artifacts, proposedStateDelta: stateDelta, attempts: attempt,
-              markers: Markers ? Markers.parse(responseText) : { verdict: null, asks: [], invalid: [] }
+              markers: Markers ? Markers.parse(responseText) : { verdict: null, asks: [], askItems: [], invalid: [] }
             };
           }
           lastReason = verdict.reason || 'not_accepted';
@@ -270,8 +270,11 @@
       else if (completionMode === 'quorum') executionStatus = accepted.length >= quorum ? 'completed' : (accepted.length ? 'partial' : 'failed');
       else executionStatus = accepted.length >= 1 ? 'completed' : 'failed';
       // Control markers of the accepted answers (disput/stage-markers.js).
-      const markered = accepted.map((r) => ({ participantId: r.participantId, markers: r.markers || { verdict: null, asks: [] } }));
-      const asks = markered.flatMap((r) => r.markers.asks.map((question) => ({ participantId: r.participantId, question })));
+      const markered = accepted.map((r) => ({ participantId: r.participantId, markers: r.markers || { verdict: null, asks: [], askItems: [] } }));
+      const asks = markered.flatMap((r) => {
+        const items = Array.isArray(r.markers.askItems) ? r.markers.askItems : r.markers.asks.map((question) => ({ question, options: [], multi: false }));
+        return items.map((item) => ({ participantId: r.participantId, question: item.question, options: Array.isArray(item.options) ? item.options.slice() : [], multi: item.multi === true }));
+      });
       const verdict = Markers ? Markers.combineVerdicts(markered.map((r) => r.markers.verdict)) : null;
       return {
         stageInstanceId: stage.stageInstanceId,
