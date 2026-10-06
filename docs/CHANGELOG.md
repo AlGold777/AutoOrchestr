@@ -1,5 +1,18 @@
 # CHANGELOG — Project
 
+### 2026-10-06 — Document the response markers in use (documentation only, version unchanged 2.81.492)
+
+- Add `docs/markers.md`: delivery token `[[AO-…]]`, `[[ASK: …]]`, `[[VERDICT: …]]` and the judge `<<<RESPONSE …>>>` delimiters, as implemented in 2.81.611 (checked against the main checkout), with their parsing rules, flow effects and covering tests.
+
+### 2026-10-05 — Research scenario 2.0 (documentation only, version unchanged 2.81.492)
+
+- Add `docs/scenarios/research-2.0.md`, superseding 1.0: orchestrator-keyed chain source → fragment → claim → report; claim and evidence states kept separate; mechanical quote check plus meaning check; frozen original spec with a scope-change journal; model-built questionnaire with human selection and comments; role assignment with marked degraded independence; enforcing counters with a completion reserve; list of code prerequisites checked against the main checkout (2.81.611).
+
+### 2026-10-05 — Research scenario 1.0 (documentation only, version unchanged 2.81.492)
+
+- Final pre-run Research scenario: per-run research spec checked at acceptance; question tree with dependencies; per-question evidence requirement and source of truth; perspective-based search with a mandatory refutation perspective; claim extraction separate from collection; accepted / gap / conflict / rejected verdicts with deficit-type routing; two kinds of critic remarks; return to the earliest defective stage; separate step, round and request budgets.
+- Records which ideas were taken from the other models' variants.
+
 ### 2026-10-06 — OSI stack 1.6: response frame, passport and contract from Automation Layer (documentation only, version unchanged 2.81.492)
 
 - Replace the last-line marker and round nonce with request markers, a response frame carrying call/attempt tokens, and an answer passport; add a per-stage response contract (compact form in the prompt, full schema at acceptance, schema-hash check before dispatch) and a frozen input snapshot.
