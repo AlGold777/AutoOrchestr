@@ -61,7 +61,7 @@ L1–L4 образуют основание существующего брау�
   исход. Отсутствие наблюдения не доказывает завершение генерации.
 
 **Выход:** наблюдения и сведения о доступности адаптера. Опора в текущем коде:
-[`unified-answer-pipeline.js`](../../content-scripts/unified-answer-pipeline.js)
+[`unified-answer-pipeline.js`](../../../content-scripts/unified-answer-pipeline.js)
 и модули адаптеров страниц.
 
 ### L2. Протокол обмена сообщениями расширения
@@ -82,8 +82,8 @@ L1–L4 образуют основание существующего брау�
 - Исходный текст ответа остаётся данными; управляющие команды передаются отдельно.
 
 **Выход:** подтверждение, отказ или событие с известным происхождением. Опора:
-[`debate-transport.js`](../../results/debate-transport.js) и
-[`pipeline-message-handlers.js`](../../background/pipeline-message-handlers.js).
+[`debate-transport.js`](../../../results/debate-transport.js) и
+[`pipeline-message-handlers.js`](../../../background/pipeline-message-handlers.js).
 
 ### L3. Протокол адресации и маршрутизации
 
@@ -107,8 +107,8 @@ L1–L4 образуют основание существующего брау�
   друг друга. Метка в тексте сама по себе не доказывает подлинность результата.
 
 **Выход:** проверенная привязка либо отказ в привязке. Опора:
-[`transport-contract.js`](../../shared/transport-contract.js) и
-[документ доставки](../message-delivery.md).
+[`transport-contract.js`](../../../shared/transport-contract.js) и
+[документ доставки](../../Transport/message-delivery.md).
 
 ### L4. Протокол доставки запросов и ответов
 
@@ -133,8 +133,8 @@ L1–L4 образуют основание существующего брау�
   транспорту права автоматически создавать второй запрос.
 
 **Выход:** транспортный результат, который ещё предстоит проверить по заданию.
-Опора: [`transport-contract.js`](../../shared/transport-contract.js) и
-[`run-result-contract.js`](../../shared/run-result-contract.js).
+Опора: [`transport-contract.js`](../../../shared/transport-contract.js) и
+[`run-result-contract.js`](../../../shared/run-result-contract.js).
 
 ### L5. Протокол сеанса исполнения
 
@@ -159,9 +159,9 @@ L1–L4 образуют основание существующего брау�
   ответы. Восстановление сохраняет отмену и не запускает работу заново без команды.
 
 **Выход:** однозначное состояние сеанса и разрешённое следующее действие. Опора:
-[`pipeline-fsm.js`](../../shared/pipeline-fsm.js),
-[`debate-engine.js`](../../disput/debate-engine.js) и
-[`debate-run-store.js`](../../disput/debate-run-store.js).
+[`pipeline-fsm.js`](../../../shared/pipeline-fsm.js),
+[`debate-engine.js`](../../../disput/debate-engine.js) и
+[`debate-run-store.js`](../../../disput/debate-run-store.js).
 
 ### L6. Протокол контекста и артефактов
 
@@ -186,9 +186,9 @@ L1–L4 образуют основание существующего брау�
   Новая версия сохраняет старую и требует перепроверки зависимых выводов.
 
 **Выход:** воспроизводимая сборка контекста и кандидат результата. Опора:
-[`debate-context-broker.js`](../../disput/debate-context-broker.js),
-[`debate-context-budget.js`](../../disput/debate-context-budget.js) и
-[`debate-artifact-pipeline.js`](../../disput/debate-artifact-pipeline.js).
+[`debate-context-broker.js`](../../../disput/debate-context-broker.js),
+[`debate-context-budget.js`](../../../disput/debate-context-budget.js) и
+[`debate-artifact-pipeline.js`](../../../disput/debate-artifact-pipeline.js).
 
 ### L7. Протокол выполнения задачи и сценария
 
@@ -212,8 +212,8 @@ L1–L4 образуют основание существующего брау�
   собственный исход и не приравнивается к успешному завершению.
 
 **Выход:** решение о следующем этапе, запрос участия человека или итог задачи.
-Опора: [`debate-planner.js`](../../disput/debate-planner.js),
-[`debate-rule-engine.js`](../../disput/debate-rule-engine.js) и
+Опора: [`debate-planner.js`](../../../disput/debate-planner.js),
+[`debate-rule-engine.js`](../../../disput/debate-rule-engine.js) и
 [контракты будущего Universal Engine](contracts.schema.json).
 
 ## 3. Протоколы, действующие на нескольких уровнях

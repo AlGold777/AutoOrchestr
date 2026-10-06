@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-06 — Organize documentation by topic, version 2.81.612
+
+- Grouped documentation under Automation, Transport, Telemetry, Architecture, Pipeline and History. The root retains this changelog, the project overview and a new documentation map; updated README navigation and links between moved documents.
+- Removed the completed automation plan (steps A–F delivered in 2.81.529). Kept unfinished migration/specification work, baseline source snapshots, verification reports and rollback evidence; the documentation map explains their status.
+- Updated the architecture-framework generator to read the relocated Automation stage catalogue and aligned generated-source provenance and report-analysis references. Runtime behavior is unchanged.
+- Validation: generator freshness check, Automation static contracts and all 18 automation-marker tests passed. All 160 retained documents are present; schemas, prototypes and baseline source payloads are unchanged. No new broken Markdown links; version files are synchronized and whitespace checks passed.
+
 ### 2026-10-05 — Place incomplete status beside API, version 2.81.611
 
 - Moved the main answer card’s `uncompleted` label into `.llm-header`, immediately after API. It also relocates correctly when API is created later. The label is subtle grey (`#969ca5`), with the existing completion tooltip retained. Pipeline round labels retain their inline placement where no API indicator exists.

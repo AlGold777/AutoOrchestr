@@ -196,7 +196,7 @@ API fallback support depends on configured keys for the relevant provider. API k
 ## Running And Testing
 
 The canonical timing ownership map and complete current values are maintained
-in [`timings-settings.md`](timings-settings.md). Any runtime timing change must
+in [`timings-settings.md`](Transport/timings-settings.md). Any runtime timing change must
 update that document and keep `tests/timing-ladder.test.js` green where the
 profile ladder is affected.
 
@@ -331,7 +331,7 @@ The `shared/` directory contains cross-context contracts. Changes here affect ba
 Selector sources, overrides, health checks, signing and provider-specific
 failure modes are maintained in `selectors/`, `selector-manager.js` and their
 tests. The main-page tab contract is in
-[model-tabs-architecture.md](model-tabs-architecture.md); this overview only
+[model-tabs-architecture.md](Architecture/model-tabs-architecture.md); this overview only
 points to the canonical entry points:
 
 - `selectors/*.config.js` — canonical provider configuration;
@@ -547,7 +547,7 @@ With the **Auto** toggle off the moderator drives the pipeline stage by stage:
   `[[ASK: question]]` (the owner is needed) and, for review stages,
   `[[VERDICT: pass|issues_found]]` (blocking remarks or not; informational,
   shown at the pause). A marker is a line of its own; text in code fences and
-  quotes is ignored. See `docs/automation-plan.md`.
+  quotes is ignored. See the automation behavior described in this section; implementation history: `docs/CHANGELOG.md`, version 2.81.529.
 - **Architecture** template («Разработка архитектуры»): the 30-stage
   Product→Architecture Framework as 30 canvas rounds (round number = framework
   stage number; stages 13, 17, 22, 30 are moderator gates without models). Run
@@ -555,7 +555,7 @@ With the **Auto** toggle off the moderator drives the pipeline stage by stage:
   Click a round badge to open the stage card (what the stage is for, who works,
   inputs, what is forbidden, the brief the model gets, run status). The stage
   text comes from `disput/architecture-framework.js`, generated from
-  `docs/Automation GPT комплект Документов/process/stages.json`
+  `docs/Automation/Automation GPT комплект Документов/process/stages.json`
   (`node scripts/build-architecture-framework.js`). Semi-automatic and manual
   runs get no automatic page visits; Get it pulls answers, "next" closes a stage
   with what is there (text without a final is adopted as incomplete).
