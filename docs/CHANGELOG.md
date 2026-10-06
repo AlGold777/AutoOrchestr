@@ -1,5 +1,61 @@
 # CHANGELOG — Project
 
+### 2026-10-06 — OSI stack 1.6: response frame, passport and contract from Automation Layer (documentation only, version unchanged 2.81.492)
+
+- Replace the last-line marker and round nonce with request markers, a response frame carrying call/attempt tokens, and an answer passport; add a per-stage response contract (compact form in the prompt, full schema at acceptance, schema-hash check before dispatch) and a frozen input snapshot.
+- Add post-submit verification of the displayed prompt, answer-node correlation, the three-witness transport completion rule and the no-continuation-splicing rule.
+- Derive the rejection-retry method from the error class (form / binding / coverage / semantic); same-conversation repair is allowed only with a full replacement answer.
+- Add isolation assurance levels and forbid fallback from weakening a stage's independence requirement; add RAW / CANONICAL / CONTEXT representations, coverage obligations, stage decomposition and adapter preflight.
+- Map each adopted mechanism to its Automation Layer v2.2.3 section (§7.1); list the domain parts deliberately not adopted.
+
+### 2026-10-05 — OSI stack 1.5: scenario logic as a core L6 function (documentation only, version unchanged 2.81.492)
+
+- Name scenario logic formation as one of the most important L6 functions and add the Scenario Logic subprotocol before Scenario Definition: `ResultSpec`, `InputGap`, backward chains with per-link `error_cost` / `multi_model_value` / `progress_definition`, `FailureModeMap`, `ScenarioLogic`.
+- Require traceability: `PipelineDefinition.logic_ref`, `derived_from` on every stage and gate; add `gates[]` with predicate conditions and `human_gates[]`.
+- Extend structural validation with `L6.LOGIC_*` and `L6.GATE_NOT_PREDICATE` codes; add stack rule 16 "logic before form".
+
+### 2026-10-05 — Scenario design: understand the logic first (documentation only, version unchanged 2.81.492)
+
+- Restructure `docs/scenarios/how-to-design-a-scenario.md` into Part 1 "understand the logic" (describe the result, analyse the input gap, work backwards from each part of the result) and Part 2 "formalize".
+- Research scenario 0.2: add its logic derived backwards from the seven report parts; the backward pass reproduces the 12 stages and a three-task check lowered the minimum sub-question count from 3 to 1.
+
+### 2026-10-05 — Scenario design guide and Research scenario draft (documentation only, version unchanged 2.81.492)
+
+- Add `docs/scenarios/how-to-design-a-scenario.md`: a plain-language 14-step algorithm for designing a scenario, derived from the Architecture scenario and the OSI stack.
+- Add `docs/scenarios/research.md`: Research scenario v0.1 (12 stages, 4 control points, bounded loops, budget formula), written by that algorithm; not yet run or wired into code.
+
+### 2026-10-05 — OSI stack 1.4: Scenario Definition on L6 (documentation only, version unchanged 2.81.492)
+
+- Add the L6 Scenario Definition subprotocol: `PipelineDefinition` (versioned template) / `ScenarioPlan` (fixed before round 1 by a new `RunStarted` commit) / `RoundDecision`, with deterministic structural validation and `L6.DEF_*` failure codes.
+- Reword rule 4: scenario structure validation is deterministic; only answer content assessment is probabilistic.
+- Model-designed pipelines produce a candidate definition that must pass validation and be versioned before use.
+- Fix misplaced rows in the review decision tables.
+
+### 2026-10-05 — OSI stack 1.3 after third review (documentation only, version unchanged 2.81.492)
+
+- Remove the measurement-based `bounded` submit finality: a measured delay never proves non-delivery; `T_final` only bounds waiting before `delivery_unknown`.
+- Narrow `explicit` finality to a provider signal tied to the specific send and confirming completion without acceptance; disconnects, timeouts and rejected client promises do not qualify.
+
+### 2026-10-05 — OSI stack 1.2 after second review (documentation only, version unchanged 2.81.492)
+
+- Require an adapter submit-finality guarantee (`submit_finality`: none / explicit / bounded) before declaring `not_delivered` after a submit action; default `none` yields `delivery_unknown`.
+- Split idempotency keys per operation: packet build, per-response validation, shared terminal outcome key, and scenario transitions keyed by `decision_id`.
+- Record the existing bounded send-only retry as implementation debt against OSI-1.2.
+- Fix a broken column separator in the layer overview table.
+
+### 2026-10-05 — OSI stack 1.1 after specification review (documentation only, version unchanged 2.81.492)
+
+- Replace ACK-based non-delivery with an observed `DeliveryOutcome` (`delivered` / `not_delivered` / `delivery_unknown`); resend only on proven `not_delivered`.
+- Verify composer insertion against `rendered_prompt_hash` instead of `packet_hash`; confirm attachments separately.
+- Make L4 commits typed with per-kind proofs and exactly one terminal outcome (`ResponseAccepted` / `ResponseAbsent`) per logical invocation; persist scenario decisions as commits.
+- Separate rejection retry from transport resend, with its own budget and explicit context restoration.
+- Move semantic compression fidelity and injection suspicion from deterministic L5 to probabilistic L6 `SemanticAssessment`.
+
+### 2026-10-05 — Add normative OSI orchestration stack (documentation only, version unchanged 2.81.492)
+
+- Add `docs/orchestration-osi-stack.md`: six layers L1–L6 with contracts, evidence, invariants, boundaries, failure codes, retry budgets and metrics; cross-cutting identity, error passport, evidence envelope, canonicalization, time and versioning protocols.
+- Link the stack from the project overview as the normative layer model.
+
 ### 2026-10-05 — Place incomplete status beside API, version 2.81.611
 
 - Moved the main answer card’s `uncompleted` label into `.llm-header`, immediately after API. It also relocates correctly when API is created later. The label is subtle grey (`#969ca5`), with the existing completion tooltip retained. Pipeline round labels retain their inline placement where no API indicator exists.
