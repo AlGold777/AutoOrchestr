@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-06 — Missing web research no longer blocks a Research run, version 2.81.614
+
+- The run start no longer refuses with «Профиль требует недоступный инструмент» when no selected model is known to have a tool the profile declares (`web_research`: only Perplexity/Sonar are recognised). The moderator gets a warning, and `DebateCapabilityRegistry.degradedNotes` lines are added to the current instruction of every prompt of the run (run notes): nothing found may be presented as checked against a source; claims without a checked source get a low confidence; the report starts with a warning.
+- `docs/scenarios/research-template.md`: section on web research. Tests in `tests/research-template.test.js`; the start path itself was not exercised in a browser.
+
 ### 2026-10-06 — Research pipeline template and stage-template registry, version 2.81.613
 
 - New `disput/research-framework.js`: a 15-stage catalogue (12 model stages and three moderator gates G1–G3) written from `docs/scenarios/research-2.0.md`. The built-in Research pipeline now runs it (`stageTemplate: 'research'`, `roundLimit: '15'`, auto with gates).

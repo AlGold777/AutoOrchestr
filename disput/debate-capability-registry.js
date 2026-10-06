@@ -83,7 +83,19 @@
     return Object.freeze({ ok: missingTools.length === 0, missingTools: Object.freeze(missingTools) });
   }
 
-  const api = Object.freeze({ VERSION, infer, independence, rank, choose, supportsTool, validateRequirements });
+  // A run may go on without a tool that no selected model is known to have. The models are told
+  // so (these lines join the current instruction of the run), so that nothing is presented as
+  // checked against a source it could not be checked against.
+  const DEGRADED_NOTES = Object.freeze({
+    web_research: 'Веб-поиск в этом прогоне не подтверждён ни у одной выбранной модели. Не выдавай найденное за проверенное по источнику: утверждение без проверенного источника получает степень «слабо» или «не подтверждено», а отчёт начинается с предупреждения об этом.'
+  });
+
+  function degradedNotes(missingTools = []) {
+    return (Array.isArray(missingTools) ? missingTools : []).map(text).filter(Boolean)
+      .map((tool) => DEGRADED_NOTES[tool] || `Инструмент ${tool} в этом прогоне не подтверждён ни у одной выбранной модели: не выдавай результат за проверенный им.`);
+  }
+
+  const api = Object.freeze({ VERSION, infer, independence, rank, choose, supportsTool, validateRequirements, degradedNotes });
   root.DebateCapabilityRegistry = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

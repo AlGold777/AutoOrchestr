@@ -120,3 +120,30 @@ describe('research template in the pipeline', () => {
     expect(gate.badges).toEqual(expect.arrayContaining(['ворота G2']));
   });
 });
+
+describe('a tool the selected models are not known to have does not stop the run', () => {
+  const Registry = require('../disput/debate-capability-registry');
+
+  test('the verdict stays explicit; the notes tell the models what to do without web research', () => {
+    const verdict = Registry.validateRequirements({ models: ['GPT', 'Claude'], tools: ['web_research'] });
+    expect(verdict).toEqual({ ok: false, missingTools: ['web_research'] });
+    const notes = Registry.degradedNotes(verdict.missingTools);
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toContain('Веб-поиск в этом прогоне не подтверждён');
+    expect(notes[0]).toContain('«слабо» или «не подтверждено»');
+    expect(notes[0]).toContain('предупреждения');
+    expect(Registry.degradedNotes(['some_tool'])[0]).toContain('some_tool');
+    expect(Registry.degradedNotes([])).toEqual([]);
+    expect(Registry.degradedNotes(undefined)).toEqual([]);
+    // A model known to search needs no note.
+    expect(Registry.validateRequirements({ models: ['Perplexity'], tools: ['web_research'] }).ok).toBe(true);
+  });
+
+  test('the run start warns instead of refusing, and the notes reach every prompt of the run', () => {
+    const source = read('results.js');
+    expect(source).not.toContain('Профиль требует недоступный инструмент');
+    expect(source).toContain('degradedNotes?.(capabilityVerdict.missingTools)');
+    expect(source).toContain('...(activePipelineRunContext?.runNotes || [])');
+    expect(source).toMatch(/runNotes,\s*\/\/ Owner's answers[^\n]*\n\s*ownerAnswers: \[\]\s*\};/);
+  });
+});

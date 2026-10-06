@@ -5291,7 +5291,10 @@ document.addEventListener('click', (event) => {
         const ownerAskDialog = document.getElementById('owner-ask-dialog');
         let pendingOwnerAsks = null;
         const withOwnerAnswers = (task) => {
-            const notes = window.OwnerAsk?.toInstruction?.(activePipelineRunContext?.ownerAnswers || []) || '';
+            const notes = [
+                ...(activePipelineRunContext?.runNotes || []),
+                window.OwnerAsk?.toInstruction?.(activePipelineRunContext?.ownerAnswers || []) || ''
+            ].filter(Boolean).join('\n');
             if (!notes) return task;
             // A contract is immutable: rebuild it with the owner's answers as the current instruction.
             return { ...task, contractKind: 'raw', currentInstruction: [task.currentInstruction, notes].filter(Boolean).join('\n') };
@@ -6215,9 +6218,13 @@ document.addEventListener('click', (event) => {
                 models: selectedModelsForValidation,
                 tools: presetConfig.extensionContract?.tools || []
             });
-            if (capabilityVerdict && !capabilityVerdict.ok) {
-                showNotification(`Профиль требует недоступный инструмент: ${capabilityVerdict.missingTools.join(', ')}. Выберите модель с этой возможностью.`, 'warn');
-                return false;
+            // A tool no selected model is known to have does not stop the run: the models are told
+            // (run notes join the current instruction) and the moderator is warned.
+            const runNotes = capabilityVerdict && !capabilityVerdict.ok
+                ? (window.DebateCapabilityRegistry?.degradedNotes?.(capabilityVerdict.missingTools) || [])
+                : [];
+            if (runNotes.length) {
+                showNotification(`Ни у одной выбранной модели нет подтверждённого инструмента: ${capabilityVerdict.missingTools.join(', ')}. Прогон идёт без него: модели получат об этом указание, отчёт начнётся с предупреждения.`, 'warn');
             }
             window.__activePipelinePresetConfig = presetConfig;
             const previousEngine = debateApplication?.getOrchestrator?.() || null;
@@ -6246,6 +6253,8 @@ document.addEventListener('click', (event) => {
                 startedAt: Date.now(),
                 forceNewTabs: newPagesCheckbox ? newPagesCheckbox.checked : true,
                 newPagesDispatched: false,
+                // Lines for every prompt of the run: a tool the selected models are not known to have.
+                runNotes,
                 // Owner's answers to [[ASK:]] markers: they reach the prompts of the next stages.
                 ownerAnswers: []
             };
