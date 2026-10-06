@@ -4143,7 +4143,7 @@ document.addEventListener('click', (event) => {
                 const stack = captureModelStackState(`r${round}-models`);
                 const participantIds = (stack?.items || []).filter((item) => item.send).map((item) => item.name).filter(Boolean);
                 if (!participantIds.length) continue;
-                const templateStage = activeStageTemplate ? window.ArchitectureFramework?.byNumber?.(round) : null;
+                const templateStage = activeStageTemplate ? window.StageTemplates?.get?.(activeStageTemplate)?.byNumber?.(round) : null;
                 rounds.push({
                     plannedStageId: `canvas-r${round}`,
                     label: templateStage ? `${round}. ${templateStage.titleRu}` : (round === 1 ? 'R1 Models' : `R${round}`),
@@ -4291,8 +4291,9 @@ document.addEventListener('click', (event) => {
             if (stageTemplate) {
                 const ordered = orderModelNamesForPipeline(selectedModels);
                 Object.entries(modelStacks).forEach(([stackId, stack]) => {
-                    const stage = window.ArchitectureFramework?.byNumber?.(Number(stackId.replace(/\D+/g, '')));
-                    const wanted = new Set(window.ArchitectureFramework?.participantsFor?.(stage, ordered) || []);
+                    const framework = window.StageTemplates?.get?.(stageTemplate);
+                    const stage = framework?.byNumber?.(Number(stackId.replace(/\D+/g, '')));
+                    const wanted = new Set(framework?.participantsFor?.(stage, ordered) || []);
                     stack.items.forEach((item) => { item.send = wanted.has(item.name); });
                 });
             }
@@ -5525,7 +5526,7 @@ document.addEventListener('click', (event) => {
         // Stage template: who works at each stage follows the framework (all / lead /
         // reviewer / nobody at a gate), computed from the currently selected models.
         const applyStageTemplateAssignments = () => {
-            const framework = window.ArchitectureFramework;
+            const framework = activeStageTemplate ? window.StageTemplates?.get?.(activeStageTemplate) : null;
             if (!activeStageTemplate || !framework?.participantsFor) return false;
             const models = orderModelNamesForPipeline(getSelectedLLMs());
             let changed = false;
@@ -7592,7 +7593,7 @@ document.addEventListener('click', (event) => {
                 body.replaceChildren();
             } else {
                 const round = Number(match[1]);
-                const templateStage = activeStageTemplate ? window.ArchitectureFramework?.byNumber?.(round) || null : null;
+                const templateStage = activeStageTemplate ? window.StageTemplates?.get?.(activeStageTemplate)?.byNumber?.(round) || null : null;
                 const stack = captureModelStackState(`r${round}-models`);
                 const stages = debateApplication?.getOrchestrator?.()?.getState?.()?.stages || [];
                 const stageRun = stages.filter((item) => item.plannedStageId === `canvas-r${round}`).pop() || null;

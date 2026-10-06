@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-06 — Research pipeline template and stage-template registry, version 2.81.613
+
+- New `disput/research-framework.js`: a 15-stage catalogue (12 model stages and three moderator gates G1–G3) written from `docs/scenarios/research-2.0.md`. The built-in Research pipeline now runs it (`stageTemplate: 'research'`, `roundLimit: '15'`, auto with gates).
+- New `disput/stage-templates.js`: the panel resolves a template name to its framework through this registry instead of naming `ArchitectureFramework`; Architecture behaves as before.
+- `docs/scenarios/research-template.md`: what works and what of the scenario is not in code yet. Tests: `tests/research-template.test.js`. Not run in the browser extension.
+
 ### 2026-10-06 — Owner questions are answered by choosing, not typing, version 2.81.612
 
 - `[[ASK: question || option 1 || option 2 [|| несколько]]]`: 2–5 options, the last word «несколько» allows several; one option is dropped, a question without options keeps the old plain form. `Markers.parse` returns `askItems` next to `asks`; the stage executor carries `options` and `multi` into the stage asks and the pause info.

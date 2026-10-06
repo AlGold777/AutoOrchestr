@@ -37,7 +37,9 @@
 
   const BUILTIN_PIPELINE_DEFINITIONS = Object.freeze([
     Object.freeze({ name: 'Test', presetId: 'TEST', profileId: 'UNIVERSAL_STANDARD', runPolicy: 'auto', noMiniPrompts: true, length: '700', roundLimit: '2', defaultModelCount: 0, roles: ['participant', 'critic'] }),
-    Object.freeze({ name: 'Research', presetId: 'UNIVERSAL_RESEARCH', profileId: 'DEEP_RESEARCH_ALPHA', runPolicy: 'auto', length: '1000', defaultModelCount: 0, roles: ['researcher', 'critic', 'verifier', 'synthesizer'] }),
+    // Исследование: 15 stages from ResearchFramework (disput/research-framework.js), automatic
+    // with three moderator gates (G1 specification, G2 sufficiency, G3 acceptance).
+    Object.freeze({ name: 'Research', presetId: 'UNIVERSAL_RESEARCH', profileId: 'DEEP_RESEARCH_ALPHA', runPolicy: 'auto', length: '1000', roundLimit: '15', stageTemplate: 'research', defaultModelCount: 0, roles: ['researcher', 'critic', 'verifier', 'synthesizer'] }),
     Object.freeze({ name: 'Red Team', presetId: 'UNIVERSAL_RED_TEAM', profileId: 'UNIVERSAL_RED_TEAM', runPolicy: 'auto', length: '900', defaultModelCount: 0, roles: ['proposer', 'critic', 'verifier', 'synthesizer'] }),
     // Разработка архитектуры: stage by stage with the moderator (semi-automatic by default).
     // The 30 stages come from ArchitectureFramework (disput/architecture-framework.js).
