@@ -4,7 +4,7 @@ const markup = () => `<section id="disput-state-map-panel"><button data-map-coll
 
 describe('Disput state map view', () => {
   beforeEach(() => {
-    jest.resetModules(); document.body.innerHTML = markup();
+    jest.resetModules(); document.body.className = ''; document.body.innerHTML = markup();
     window.DebateStateMap = StateMap;
     window.requestAnimationFrame = (callback) => { callback(); return 1; };
     global.requestAnimationFrame = window.requestAnimationFrame;
@@ -158,5 +158,67 @@ describe('Disput state map view', () => {
     expect(project.mock.calls.length).toBe(callsAfterInit + 1);
     expect(view.getMap().technicalStatus).toBe('completed');
     expect(document.querySelector('[data-map-content]').childElementCount).toBeGreaterThan(0);
+  });
+});
+
+describe('Disput state map compact shell on pipeline page', () => {
+  const aggregate = {
+    runId: 'run-shell', status: 'running', config: { topic: 'Shell case' }, executionPlan: { profileId: 'UNIVERSAL_STANDARD' },
+    protocolState: { registry: { artifacts: {} } }
+  };
+
+  const legacyPipelineMarkup = () => `<section id="disput-state-map-panel" data-status="not_ready"><button data-map-collapse aria-expanded="false"><span><strong data-map-title>Карта состояния</strong><small data-map-summary>legacy</small></span></button><div class="disput-state-map-workspace" hidden><header><span data-map-summary>legacy</span><select data-map-run><option value="">Текущее дело</option></select><div class="disput-state-map-actions"><button data-map-mode="structure">Структура</button><button data-map-mode="graf">Graf</button><button data-map-mode="history">История</button><button data-case-export><i class="ti ti-folder"></i></button><button data-map-export><i class="ti ti-download"></i></button><button data-case-import-action><i class="ti ti-upload"></i></button><button data-case-delete><i class="ti ti-trash"></i></button><button data-map-close>×</button></div></header><div class="disput-state-map-toolbar"><button data-map-filter="all">Все</button><input data-map-search><button data-map-compare>Сравнить</button><button data-map-zoom="reset">100%</button></div><div data-map-content>legacy content</div><aside data-map-drawer></aside></div></section>`;
+
+  beforeEach(() => {
+    jest.resetModules();
+    document.body.className = 'pipeline-page';
+    document.body.innerHTML = legacyPipelineMarkup();
+    window.DebateStateMap = StateMap;
+    if (!window.URL.createObjectURL) window.URL.createObjectURL = jest.fn(() => 'blob:test');
+    if (!window.URL.revokeObjectURL) window.URL.revokeObjectURL = jest.fn();
+    require('../results/disput-state-map-view');
+  });
+
+  afterEach(() => {
+    document.body.className = '';
+  });
+
+  test('normalizes legacy pipeline markup to title plus exactly five icon actions', () => {
+    window.DisputStateMapView.init({ aggregate });
+    const panel = document.getElementById('disput-state-map-panel');
+
+    expect(panel.dataset.mapShell).toBe('true');
+    expect(panel.querySelector('[data-map-collapse]').textContent.trim()).toBe('Карта состояния');
+
+    [
+      '[data-map-mode]',
+      '[data-map-filter]',
+      '[data-map-search]',
+      '[data-map-run]',
+      '[data-map-summary]',
+      '[data-map-compare]',
+      '[data-map-zoom]',
+      '[data-map-content]',
+      '[data-map-drawer]'
+    ].forEach((selector) => expect(panel.querySelector(selector)).toBeNull());
+
+    const actions = panel.querySelector('.disput-state-map-actions');
+    expect(actions.querySelectorAll('button')).toHaveLength(5);
+    expect(actions.querySelector('[data-case-export]')).not.toBeNull();
+    expect(actions.querySelector('[data-map-export]')).not.toBeNull();
+    expect(actions.querySelector('[data-case-import-action]')).not.toBeNull();
+    expect(actions.querySelector('[data-case-delete]')).not.toBeNull();
+    expect(actions.querySelector('[data-map-close]')).not.toBeNull();
+  });
+
+  test('does not apply the compact shell outside pipeline page', () => {
+    document.body.className = '';
+    document.body.innerHTML = markup();
+    jest.resetModules();
+    window.DebateStateMap = StateMap;
+    require('../results/disput-state-map-view');
+    window.DisputStateMapView.init({ aggregate });
+    expect(document.querySelector('[data-map-mode="structure"]')).not.toBeNull();
+    expect(document.querySelector('[data-map-content]')).not.toBeNull();
   });
 });

@@ -125,9 +125,35 @@
       </div>`;
   }
 
+  function normalizeShellDom(panel) {
+    if (!panel) return;
+    panel.dataset.mapShell = 'true';
+    panel.innerHTML = `
+      <button type="button" class="disput-state-map-toggle" data-map-collapse aria-expanded="false">
+        <strong>Карта состояния</strong>
+      </button>
+      <div class="disput-state-map-workspace disput-state-map-workspace-shell" hidden>
+        <header class="disput-state-map-header disput-state-map-header-shell">
+          <strong>Карта состояния</strong>
+          <div class="disput-state-map-actions">
+            <button type="button" class="disput-map-icon-action" data-case-export title="Экспорт дела" aria-label="Экспорт дела"><i class="ti ti-folder" aria-hidden="true"></i></button>
+            <button type="button" class="disput-map-icon-action" data-map-export title="Экспорт карты" aria-label="Экспорт карты"><i class="ti ti-download" aria-hidden="true"></i></button>
+            <button type="button" class="disput-map-icon-action" data-case-import-action title="Импорт дела" aria-label="Импорт дела"><i class="ti ti-upload" aria-hidden="true"></i></button>
+            <button type="button" class="disput-map-icon-action" data-case-delete title="Удалить текущее дело" aria-label="Удалить текущее дело"><i class="ti ti-trash" aria-hidden="true"></i></button>
+            <button type="button" class="disput-map-icon-action" data-map-close title="Закрыть карту" aria-label="Закрыть карту">×</button>
+            <input type="file" accept="application/json" data-case-import hidden>
+          </div>
+        </header>
+      </div>
+    `;
+  }
+
   function init(options = {}) {
     const panel = document.getElementById('disput-state-map-panel');
-    if (!panel || !root.DebateStateMap) return null;
+    if (!panel) return null;
+    const shellOnly = panel.dataset.mapShell === 'true' || document.body?.classList.contains('pipeline-page');
+    if (shellOnly) normalizeShellDom(panel);
+    if (!root.DebateStateMap) return null;
     const header = panel.querySelector('[data-map-collapse]');
     const close = panel.querySelector('[data-map-close]');
     const body = panel.querySelector('.disput-state-map-workspace');
@@ -185,6 +211,79 @@
     const compareB = panel.querySelector('[data-map-compare-b]');
     let mode = 'structure'; let filter = 'all'; let zoom = 1; let selectedId = ''; let comparison = null; let map = root.DebateStateMap.project({}); let caseMap = map;
     let pendingAggregate;
+
+    if (shellOnly) {
+      const projectAggregate = (aggregate) => {
+        if (aggregate) {
+          map = root.DebateStateMap.project({ ...aggregate, ruleHistory: aggregate.ruleHistory || options.getRuleHistory?.() || null });
+          caseMap = map;
+          comparison = null;
+        }
+        panel.dataset.status = map.readiness.id;
+        return map;
+      };
+      const render = (aggregate) => projectAggregate(aggregate !== undefined ? aggregate : options.getAggregate?.());
+      const setOpen = (open) => {
+        panel.classList.toggle('is-open', open);
+        header?.setAttribute('aria-expanded', String(open));
+        if (body) body.hidden = !open;
+      };
+      const refreshRuns = async () => options.caseStore?.list?.() || [];
+      const downloadJson = (payload, filename) => {
+        const blob = new Blob([payload], { type: 'application/json' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = filename;
+        link.click();
+        URL.revokeObjectURL(link.href);
+      };
+      const handleOutsideClick = (event) => {
+        if (!panel.classList.contains('is-open') || panel.contains(event.target)) return;
+        setOpen(false);
+      };
+
+      header?.addEventListener('click', () => setOpen(!panel.classList.contains('is-open')));
+      close?.addEventListener('click', () => setOpen(false));
+      document.addEventListener('click', handleOutsideClick);
+
+      panel.addEventListener('click', (event) => {
+        if (event.target.closest('[data-map-export]')) {
+          downloadJson(JSON.stringify(map, null, 2), `disput-state-map-${map.runId || 'idle'}.json`);
+          return;
+        }
+        if (event.target.closest('[data-case-export]')) {
+          const serialized = options.caseStore?.exportCase?.();
+          if (serialized) downloadJson(serialized, `disput-case-${map.runId || 'case'}.json`);
+          return;
+        }
+        if (event.target.closest('[data-case-import-action]')) {
+          caseImport?.click();
+          return;
+        }
+        if (event.target.closest('[data-case-delete]')) {
+          const id = options.caseStore?.getState?.()?.caseId;
+          if (id) {
+            void options.caseStore?.remove?.(id).then(() => render(options.getAggregate?.()));
+          }
+        }
+      });
+
+      caseImport?.addEventListener('change', async () => {
+        try {
+          const serialized = await caseImport.files?.[0]?.text?.();
+          if (serialized) {
+            const imported = await options.caseStore?.importCase?.(serialized);
+            projectAggregate(imported);
+          }
+        } finally {
+          caseImport.value = '';
+        }
+      });
+
+      options.caseStore?.subscribe?.(() => { void refreshRuns(); });
+      projectAggregate(options.aggregate || options.getAggregate?.());
+      return Object.freeze({ render, getMap: () => map, refreshRuns, open: () => setOpen(true), close: () => setOpen(false) });
+    }
     const drawLinks = () => {
       const graph = content.querySelector('.disput-graf'); const svg = graph?.querySelector('.disput-graf-links'); const group = svg?.querySelector('g');
       if (!graph || !svg || !group) return;
