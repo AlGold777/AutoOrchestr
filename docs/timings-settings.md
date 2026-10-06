@@ -534,6 +534,7 @@ Claude снимаются один раз до первой попытки Send.
 | `UNCERTAIN_TERMINAL_QUIET_MS` (фон) | `30000` | неопределённый финал протокола (`AMBIGUOUS`, `CONTEXT_LOST`) после подтверждённой отправки откладывается, пока текст ответа растёт; фиксируется, когда текст не менялся столько времени |
 | `UNCERTAIN_TERMINAL_MAX_DEFER_MS` (фон) | `180000` | жёсткий предел отсрочки независимо от активности вкладки |
 | `UNCERTAIN_TERMINAL_POLL_MS` (фон) | `5000` | период проверки роста текста при отсрочке |
+| `STATIC_WATCH_TICK_MS` / `STATIC_WATCH_TOKEN_QUIET_MS` / `STATIC_WATCH_NUDGE_AFTER_MS` / `STATIC_WATCH_COMMIT_AFTER_MS` / `STATIC_WATCH_NUDGE_SETTLE_MS` (фон) | `3000` / `5000` / `15000` / `30000` / `10000` | наблюдатель за неизменным текстом: период проверки, тишина при метке доставки, срок до Get it, срок до фиксации неполного ответа, окно ожидания после Get it |
 | `PIPELINE_START_BUSY_WAIT_MS` | `120000` | сколько панель повторяет старт, пока фон занят раундами или вкладка ещё генерирует |
 | `NOTE_DBLCLICK_DELAY` | `320` | распознавание double-click заметки |
 | `SESSION_DBLCLICK_DELAY` | `320` | распознавание double-click session |

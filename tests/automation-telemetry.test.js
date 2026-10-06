@@ -691,11 +691,15 @@ describe('the automatic recovery is the full double click, not half of it', () =
 
 describe('the delivery token is the model\'s own end-of-answer marker', () => {
   const coordinator = read('background/dispatch-coordinator.js');
-  function loadToken(promptsByModel) {
+  function loadToken(rawPromptsByModel) {
+    const TransportPolicy = require('../shared/transport-policy.js');
+    // The real session map: keys are upper-cased by TransportPolicy.
+    const promptsByModel = TransportPolicy.sanitizePromptsByModel(rawPromptsByModel);
     const start = coordinator.indexOf('function answerHasDeliveryToken(');
     const end = coordinator.indexOf('function scheduleDispatchRetry(');
     const timers = [];
     const context = {
+      self: { TransportPolicy },
       jobState: { session: { startTime: 5, promptsByModel }, llms: {} },
       handleLLMResponse: jest.fn(), reportDispatchPhase: jest.fn(),
       setTimeout: (fn) => { timers.push(fn); return timers.length; }
@@ -739,5 +743,88 @@ describe('the delivery token is the model\'s own end-of-answer marker', () => {
     const { sends, problems } = Diagnosis.diagnose(Delivery.journal());
     expect(sends[0].result).toBe('delivered');
     expect(problems.some((p) => p.code === 'no_token')).toBe(false);
+  });
+});
+
+describe('static answer watchdog', () => {
+  const orchestrator = read('background/job-orchestrator.js');
+  function loadWatch(llms, { tokenFor = () => false, getItStatus = 'manual_ping_sent' } = {}) {
+    const start = orchestrator.indexOf('const STATIC_WATCH_TICK_MS');
+    const end = orchestrator.indexOf('function startStaticAnswerWatchdog(');
+    const calls = { commit: [], phases: [], getIt: [] };
+    const context = {
+      jobState: { session: { startTime: 7 }, llms },
+      isSessionActive: (id) => id === 7,
+      isFinalizedEntry: (e) => Boolean(e?.finalStatusRecorded),
+      answerHasDeliveryToken: tokenFor,
+      commitIncompleteAnswer: (...args) => { calls.commit.push(args); return true; },
+      reportDispatchPhase: (...args) => calls.phases.push(args[2] + ':' + (args[3]?.reason || '')),
+      runAutomaticGetItForModel: async (...args) => { calls.getIt.push(args); return { status: getItStatus }; }
+    };
+    // eslint-disable-next-line no-new-func
+    const factory = new Function(...Object.keys(context), `${orchestrator.slice(start, end)}\nreturn { runStaticAnswerWatchTick };`);
+    return { ...factory(...Object.values(context)), calls };
+  }
+  const withNow = (offsetMs, fn) => {
+    const real = Date.now;
+    Date.now = () => real() + offsetMs;
+    try { return fn(); } finally { Date.now = real; }
+  };
+
+  test('text with the request\'s token is committed after a short quiet; growth resets the quiet', () => {
+    const entry = { promptSubmittedAt: 1, answer: 'часть' };
+    const { runStaticAnswerWatchTick, calls } = loadWatch({ X: entry }, { tokenFor: () => true });
+    withNow(0, () => runStaticAnswerWatchTick(7));          // first sight: records the length
+    withNow(4000, () => runStaticAnswerWatchTick(7));       // quiet 4 s: not yet
+    expect(calls.commit).toHaveLength(0);
+    entry.answer += ' ещё';
+    withNow(6000, () => runStaticAnswerWatchTick(7));       // grew: quiet restarts
+    withNow(9000, () => runStaticAnswerWatchTick(7));
+    expect(calls.commit).toHaveLength(0);
+    withNow(12000, () => runStaticAnswerWatchTick(7));      // 6 s without growth
+    expect(calls.commit).toHaveLength(1);
+    expect(calls.commit[0][2]).toMatchObject({ completionReason: 'static_text_with_delivery_token', source: 'static_answer_snapshot' });
+    expect(calls.phases).toContain('static_text_watch:delivery_token_seen');
+  });
+
+  test('text without the token gets one Get it after 15 s, then is kept as incomplete after 30 s; activity does not count', async () => {
+    const entry = { promptSubmittedAt: 1, answer: 'текст ответа', lastRuntimeActivityAt: 0 };
+    const { runStaticAnswerWatchTick, calls } = loadWatch({ X: entry });
+    withNow(0, () => runStaticAnswerWatchTick(7));
+    entry.lastRuntimeActivityAt = Date.now() + 14000;       // tab activity: ignored
+    withNow(14000, () => runStaticAnswerWatchTick(7));
+    expect(calls.getIt).toHaveLength(0);
+    withNow(16000, () => runStaticAnswerWatchTick(7));
+    await Promise.resolve(); await Promise.resolve();
+    expect(calls.getIt).toEqual([['X', 'static_text_watch']]);
+    expect(calls.phases).toContain('bottom_nudge:static_text_watch');
+    withNow(17000, () => runStaticAnswerWatchTick(7));      // nudged once only
+    expect(calls.getIt).toHaveLength(1);
+    expect(calls.commit).toHaveLength(0);
+    withNow(31000, () => runStaticAnswerWatchTick(7));
+    expect(calls.commit).toHaveLength(1);
+    expect(calls.commit[0][2]).toMatchObject({ completionReason: 'static_text_quiet' });
+  });
+
+  test('a busy Get it is retried; finished, unsent, empty and deferred models are left alone', () => {
+    const busy = loadWatch({ X: { promptSubmittedAt: 1, answer: 'a' } }, { getItStatus: 'get_it_busy' });
+    withNow(0, () => busy.runStaticAnswerWatchTick(7));
+    withNow(16000, () => busy.runStaticAnswerWatchTick(7));
+    const others = loadWatch({
+      Done: { finalStatusRecorded: true, promptSubmittedAt: 1, answer: 'a' },
+      Unsent: { answer: 'a' },
+      Empty: { promptSubmittedAt: 1, answer: '' },
+      Deferred: { promptSubmittedAt: 1, answer: 'a', deferredUncertainTerminal: { status: 'CONTEXT_LOST' } }
+    });
+    withNow(0, () => others.runStaticAnswerWatchTick(7));
+    withNow(40000, () => others.runStaticAnswerWatchTick(7));
+    expect(others.calls.commit).toHaveLength(0);
+    expect(others.calls.getIt).toHaveLength(0);
+  });
+
+  test('the watchdog starts with the run, ends with it, and the deferral marks its end', () => {
+    expect(orchestrator).toContain('startStaticAnswerWatchdog(sessionStartTime);');
+    expect(orchestrator).toContain('if (keepGoing && isSessionActive(sessionId)) {');
+    expect(read('background/message-router.js')).toContain('entry.deferredUncertainTerminal.endedAt = now;');
   });
 });

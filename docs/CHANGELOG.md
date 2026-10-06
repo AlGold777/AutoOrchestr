@@ -544,6 +544,12 @@
 - `Ответ обновлён после завершения · GLOBAL_STATE_ANSWER_RECOVERY · Δ -9` was a false revision: the recovery from the background global state re-emits the already shown answer as raw text (delivery token and trailing blanks included), while the card holds the cleaned text, and `appendPostTerminalAnswerRevision` compared them without cleaning. It now cleans both sides like the live path (`MessageDelivery.clean`) and treats a whitespace-equal copy as no revision. A genuinely different text is still marked as a revision.
 - Test: `results-debate-favorites` (re-emitted answer with token vs. a real revision). Telemetry follow-up: `docs/telemetry-semi-auto-spec.md` (T7).
 
+### 2026-10-01 — Delivery-token lookup fixed; watchdog for text that stopped changing, version 2.81.521
+
+- Field report 8 (DeepSeek, Le Chat, 2.81.520): Le Chat's text with the delivery token was on the page at 26 s but was committed as incomplete at 73 s, and DeepSeek was still "waiting" after 172 s with its text on the page. Causes: (1) the token lookup used the model name as it is, while the stored prompt map is keyed by the UPPER-CASED name (`TransportPolicy.sanitizePromptsByModel`), so the token was never found and the "finished by its own marker" shortcut of 2.81.520 never worked (my test used a map key shape that real data does not have); (2) the only handling of "text is there, no final" lived in the visit loop and the deferred-terminal path, and in these runs the visits that fire are other ones, so DeepSeek (no `CONTEXT_LOST`) had nothing.
+- The token is now looked up through `TransportPolicy.resolvePromptForModel`; tests use the real (upper-cased) key shape.
+- New watchdog (`runStaticAnswerWatchTick`, 3 s tick for the life of a run): for every sent, not finished model whose text did not change — with the request's token for 5 s: committed as a complete answer; without it: one Get it after 15 s, then kept as incomplete after 30 s ("неполный"). Only the text counts; tab activity (visits, focus, scroll) never does. A deferred uncertain terminal keeps its own handling until it ends. The decisions are journaled (`static_text_watch`, `bottom_nudge` with reason `static_text_watch`).
+
 ### 2026-10-01 — Semi-automatic pipeline: Get it on the pipeline page and early stage close, version 2.81.521
 
 - The pipeline page has its own **Get it** button. It reuses the main page's collection route (`GET_IT_BATCH`, extracted into `bindGetItButton`) for the running stage's models; double click collects only models without an answer.
