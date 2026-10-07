@@ -9,7 +9,7 @@
 | [Transport](Transport) | [Доставка сообщений](Transport/message-delivery.md), [протокол завершения](Transport/completion-protocol-v2.md), [тайминги](Transport/timings-settings.md), [обзоры проблем и решений](Transport/Reviews), [отчёт восстановления отправки](Transport/Reports/dispatch-recovery-2026-09-05.md). |
 | [Telemetry](Telemetry) | [Телеметрия](Telemetry/telemetry.md), [полуавтоматический режим](Telemetry/telemetry-semi-auto-spec.md), [инструкция анализа отчёта](Telemetry/report-analysis-prompt.md), [проверки Transport Extract и сжатия отчётов](Telemetry/Reports). |
 | [Architecture](Architecture) | [Архитектура вкладок моделей](Architecture/model-tabs-architecture.md), [концепция Universal Engine](<Architecture/Universal Engine/README.md>) и проекты контрактов/протоколов. |
-| [Pipeline](<Pipeline scenarios>) | [Проект Pipelines universal](<Pipeline scenarios/Pipelines universal/README.md>), [Pre-Dispute](<Pipeline scenarios/Pre-Dispute>): исходный снимок, аудит архитектуры, требования и планы миграции/очистки; сценарии Research. |
+| [Pipeline](<Pipeline scenarios>) | [Pipeline Test: описание реализации и схема для новых сценариев](<Pipeline scenarios/test-pipeline.md>), [Проект Pipelines universal](<Pipeline scenarios/Pipelines universal/README.md>), [Pre-Dispute](<Pipeline scenarios/Pre-Dispute>): исходный снимок, аудит архитектуры, требования и планы миграции/очистки; сценарии Research. |
 | [History](History) | [Прежний журнал Codex](History/change-log-codex.md) и [разбор отката 2.81.576–2.81.577](History/uncommitted-page-cleanup-2.81.576-577-diff.md). |
 
 ## Статус и хранение материалов
