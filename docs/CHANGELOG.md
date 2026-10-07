@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-10-07 — Preserve flex layout on visible model cards, version 2.81.619
+
+- Model-selection handlers no longer set visible `.llm-panel` elements to inline `display: block`. Clearing the inline value preserves the stylesheet's column flex layout, allowing an empty stream output to fill its preview card immediately.
+
 ### 2026-10-07 — Refresh stream preview styles, version 2.81.618
 
 - Keep the preview card at a definite height so its output fills the card from the start. Bump stylesheet URLs in both main pages and the CSS imports so the browser does not keep the previous preview styles from cache.

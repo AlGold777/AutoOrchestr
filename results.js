@@ -1569,6 +1569,11 @@ document.addEventListener('click', (event) => {
     }
     // Rich input is activated automatically when Use in input is pressed.
     const llmButtons = document.querySelectorAll('.llm-button');
+    const setModelPanelVisibility = (panel, visible) => {
+        if (!panel) return;
+        // Active model cards use the CSS flex layout so their output can fill the card.
+        panel.style.display = visible ? '' : 'none';
+    };
     const llmNames = Array.from(llmButtons).map(btn => btn.textContent.trim()).filter(Boolean);
     const LLM_BUTTON_NAME_MAP = {
         'gpt': 'GPT',
@@ -1593,9 +1598,7 @@ document.addEventListener('click', (event) => {
         llmButtons.forEach((button) => {
             const llmId = button.id.replace('llm-', '');
             const panel = document.getElementById(`panel-${llmId}`);
-            if (panel) {
-                panel.style.display = button.classList.contains('active') ? 'block' : 'none';
-            }
+            setModelPanelVisibility(panel, button.classList.contains('active'));
         });
     };
     const normalizeHeaderModelButtonsEarly = (preferredButton = null) => {
@@ -1928,7 +1931,7 @@ document.addEventListener('click', (event) => {
             button.classList.toggle('active', isActive);
             const llmId = button.id.replace('llm-', '');
             const panel = document.getElementById(`panel-${llmId}`);
-            if (panel) panel.style.display = isActive ? 'block' : 'none';
+            setModelPanelVisibility(panel, isActive);
         });
         checkCompareButtonState();
         try { renderDiagnosticsModal(); } catch (_) {}
@@ -4022,9 +4025,7 @@ document.addEventListener('click', (event) => {
                 }
                 button.classList.toggle('active', shouldBeActive);
                 const panel = document.getElementById(`panel-${idName}`);
-                if (panel) {
-                    panel.style.display = shouldBeActive ? 'block' : 'none';
-                }
+                setModelPanelVisibility(panel, shouldBeActive);
             });
             if (changed) {
                 checkCompareButtonState();
@@ -10529,9 +10530,7 @@ document.addEventListener('click', (event) => {
                     button.classList.toggle('active', isActive);
                     const llmId = button.id.replace('llm-', '');
                     const panel = document.getElementById(`panel-${llmId}`);
-                    if (panel) {
-                        panel.style.display = isActive ? 'block' : 'none';
-                    }
+                    setModelPanelVisibility(panel, isActive);
                 });
                 checkCompareButtonState();
                 try { renderDiagnosticsModal(); } catch (_) {}
@@ -16177,9 +16176,7 @@ document.addEventListener('click', (event) => {
             button.classList.toggle('active', shouldBeActive);
             const llmId = button.id.replace('llm-', '');
             const panel = document.getElementById(`panel-${llmId}`);
-	            if (panel) {
-	                panel.style.display = shouldBeActive ? 'block' : 'none';
-	            }
+	            setModelPanelVisibility(panel, shouldBeActive);
         });
         checkCompareButtonState();
             renderDiagnosticsModal();
@@ -19588,9 +19585,7 @@ function checkCompareButtonState() {
         llmButtons.forEach((button) => {
             const llmId = button.id.replace('llm-', '');
             const panel = document.getElementById(`panel-${llmId}`);
-            if (panel) {
-                panel.style.display = button.classList.contains('active') ? 'block' : 'none';
-            }
+            setModelPanelVisibility(panel, button.classList.contains('active'));
         });
     }
     function normalizeSelectedLLMsForScheme(preferredButton = null) {
@@ -19630,9 +19625,7 @@ function checkCompareButtonState() {
             button.dataset.headerModelBound = 'true';
             const llmId = button.id.replace('llm-', '');
             const panel = document.getElementById(`panel-${llmId}`);
-            if (panel) {
-                panel.style.display = button.classList.contains('active') ? 'block' : 'none';
-            }
+            setModelPanelVisibility(panel, button.classList.contains('active'));
             button.addEventListener('click', (event) => {
                 event.preventDefault();
                 button.classList.toggle('active');
