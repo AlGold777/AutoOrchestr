@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-07 — Custom engine: Stop while waiting for the owner, closing a sequential step, version 2.81.631
+
+- Stop while the engine waits for the owner's decision or for an `[[ASK]]` answer now ends the run as `cancelled` with what was collected. Before, the engine kept waiting for the decision, and an `AbortError` from the ASK dialog was thrown instead of returning the result.
+- Closing a sequential step by the owner ("next", Get it) now closes the whole step: the models after the current one are not called and get `closed_by_owner`. Before, only the retries of the current model stopped.
+- Validation: `tests/custom-engine.test.js` (19) pass, including the three reproduced cases.
+
 ### 2026-10-07 — Custom engine module, version 2.81.630
 
 - New shared pipeline engine `disput/custom-engine.js` (`window.CustomEngine`) for the Custom pipeline: a run is one sequence of steps (round cards and synthesis inserts). Per step: models in card order with an optional per-model addition, parallel or sequential order, a round task, and an explicit input (none / answers of the previous step / everything accepted). Empty and token-only answers are not accepted; rejected answers get a correction retry in the same chat (2 attempts); a prompt over the budget stops the run (`context_full`). Auto goes on with a partial step and pauses only without accepted answers; semi-automatic pauses after every step with continue / retry / skip / stop (continue only with accepted answers). Stop keeps what was collected. `[[ASK]]` answers reach the following steps. Every request is in the run history and in the delivery journal (`custom_*` events with `transportRequestId`).

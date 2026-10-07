@@ -106,6 +106,25 @@
 
     class StopRun extends Error { constructor(reason) { super(reason); this.stopReason = reason; } }
 
+    // Waiting for the owner (a decision, an [[ASK]] answer) ends on Stop: the run is cancelled with
+    // what was collected, also when the owner's dialog itself rejects with AbortError.
+    async function ownerWait(start) {
+      if (aborted()) throw new StopRun('cancelled');
+      let onAbort = null;
+      const stopped = new Promise((resolve, reject) => {
+        onAbort = () => reject(new StopRun('cancelled'));
+        signal?.addEventListener?.('abort', onAbort, { once: true });
+      });
+      try {
+        return await Promise.race([Promise.resolve().then(start), stopped]);
+      } catch (error) {
+        if (error instanceof StopRun || error?.name === 'AbortError' || aborted()) throw new StopRun('cancelled');
+        throw error;
+      } finally {
+        signal?.removeEventListener?.('abort', onAbort);
+      }
+    }
+
     const acceptedOf = (entry) => (entry?.skipped ? [] : entry.step.models.map((model) => entry.outcome[model.name])
       .filter((item) => item?.ok));
     function inputFor(step) {
@@ -153,10 +172,11 @@
             transportRequestId: result.transportRequestId || null, promptChars: String(prompts[name] || '').length });
           if (!verdict.ok && !reply?.closedByOwner) retry.push(name);
         });
-        if (reply?.closedByOwner) break;
+        if (reply?.closedByOwner) return { closedByOwner: true };
         pending = retry;
         prompts = Object.fromEntries(retry.map((name) => [name, correctionPrompt(outcome[name].reason)]));
       }
+      return { closedByOwner: false };
     }
 
     async function execute(step, models, outcome, firstAttempt = 1) {
@@ -166,7 +186,14 @@
           const position = step.models.findIndex((item) => item.name === model.name);
           const earlier = step.models.slice(0, position).map((item) => outcome[item.name])
             .filter((item) => item?.ok).map((item) => ({ text: item.text }));
-          await attempt(step, [model.name], { [model.name]: promptFor(step, model, earlier) }, outcome, firstAttempt);
+          const reply = await attempt(step, [model.name], { [model.name]: promptFor(step, model, earlier) }, outcome, firstAttempt);
+          if (reply.closedByOwner) {
+            // The owner closed the step: the models after this one are not called.
+            models.slice(models.indexOf(model) + 1).forEach((rest) => {
+              outcome[rest.name] = { ok: false, reason: 'closed_by_owner', text: '', status: '', attempt: outcome[rest.name]?.attempt || 0, transportRequestId: '' };
+            });
+            break;
+          }
         }
       } else {
         const prompts = Object.fromEntries(models.map((model) => [model.name, promptFor(step, model, [])]));
@@ -191,8 +218,8 @@
           if (accepted.length && semiAuto && last && !failed.length) break;
           const choices = accepted.length ? ['continue', ...(failed.length ? ['retry'] : []), 'stop'] : ['retry', 'skip', 'stop'];
           const action = typeof decide === 'function'
-            ? await decide({ step: step.index, label: stepLabel(step), accepted, failed, choices, last,
-              reasons: Object.fromEntries(failed.map((name) => [name, outcome[name]?.reason || ''])) })
+            ? await ownerWait(() => decide({ step: step.index, label: stepLabel(step), accepted, failed, choices, last,
+              reasons: Object.fromEntries(failed.map((name) => [name, outcome[name]?.reason || ''])) }))
             : null;
           if (!choices.includes(action)) { if (accepted.length) break; throw new StopRun('no_decision'); }
           emit('custom_decision', { step: step.index, action });
@@ -206,7 +233,7 @@
         current = null;
         if (typeof parseAsks === 'function' && typeof askOwner === 'function' && !entry.skipped) {
           const asks = acceptedOf(entry).flatMap((item) => parseAsks(item.text) || []);
-          if (asks.length) ownerAnswers.push(...((await askOwner(asks, { step: step.index, label: stepLabel(step) })) || []));
+          if (asks.length) ownerAnswers.push(...((await ownerWait(() => askOwner(asks, { step: step.index, label: stepLabel(step) }))) || []));
         }
       }
     } catch (error) {

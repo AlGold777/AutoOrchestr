@@ -176,6 +176,40 @@ describe('Custom engine', () => {
     expect(result).toMatchObject({ stopReason: 'cancelled', answers: ['a1'] });
   });
 
+  test('Stop while the owner decides ends the run with what was collected', async () => {
+    const controller = new AbortController();
+    const { send } = transport({ A: ['a1'] });
+    const decide = () => { setTimeout(() => controller.abort(), 0); return new Promise(() => {}); };
+    const result = await Engine.run({
+      task: 'T', semiAuto: true, signal: controller.signal, send, decide,
+      steps: [{ task: 'x', input: 'none', models: ['A'] }, { task: 'y', input: 'previous', models: ['A'] }]
+    });
+    expect(result).toMatchObject({ stopReason: 'cancelled', answers: ['a1'] });
+  });
+
+  test('Stop while the owner answers [[ASK]] ends the run with what was collected', async () => {
+    const controller = new AbortController();
+    const { send, calls } = transport({ A: ['a1\n[[ASK: Срок? || неделя || месяц]]'], B: ['b1'] });
+    const result = await Engine.run({
+      task: 'T', signal: controller.signal, send,
+      steps: [{ task: 'x', input: 'none', models: ['A'] }, { task: 'y', input: 'previous', models: ['B'] }],
+      parseAsks: () => [{ question: 'Срок?' }],
+      askOwner: async () => { controller.abort(); throw new DOMException('cancelled', 'AbortError'); }
+    });
+    expect(calls).toHaveLength(1);
+    expect(result).toMatchObject({ stopReason: 'cancelled' });
+    expect(result.answers[0]).toContain('a1');
+  });
+
+  test('closing a sequential step by the owner closes the whole step: later models are not called', async () => {
+    const { send, calls } = transport({ A: ['a1'], B: ['b1'], C: ['c1'] }, { closedByOwner: true });
+    const result = await Engine.run({ task: 'T', steps: [{ order: 'sequential', task: 'x', input: 'none', models: ['A', 'B', 'C'] }], send });
+    expect(calls.map((call) => call.models)).toEqual([['A']]);
+    expect(result.steps[0].outcome.A).toMatchObject({ ok: true, text: 'a1' });
+    expect(result.steps[0].outcome.B).toMatchObject({ ok: false, reason: 'closed_by_owner' });
+    expect(result.steps[0].outcome.C).toMatchObject({ ok: false, reason: 'closed_by_owner' });
+  });
+
   test('[[ASK]] goes to the owner; the answer reaches the next steps', async () => {
     const { send, calls } = transport({ A: ['a1\n[[ASK: Срок? || неделя || месяц]]'], B: ['b1'] });
     await Engine.run({
