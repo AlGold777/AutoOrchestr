@@ -288,7 +288,7 @@ describe('release log regression guards', () => {
     const html = fs.readFileSync(path.join(__dirname, '..', 'pipeline_panel.html'), 'utf8');
     const css = readResolvedCss();
 
-    expect(source).toContain('activePipelineRunContext?.newPagesDispatched !== true');
+    expect(source).toContain('&& !models.some((model) => opened?.has?.(model));');
     expect(source).toContain('activePipelineRunContext.newPagesDispatched = true;');
     expect(source).toContain("pipelinePanel?.addEventListener('dblclick', (event) => {");
     expect(source).toContain('void toggleIntermediateSynthesis(insert);');

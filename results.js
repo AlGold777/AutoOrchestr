@@ -2716,6 +2716,8 @@ document.addEventListener('click', (event) => {
     let activePipelineAbortController = null;
     // Set while a Polishing run (runPolishingFromPage) is going: the Run button becomes Stop.
     let polishingAbortController = null;
+    // Same for a Delta run (runDeltaFromPage).
+    let deltaAbortController = null;
     let activePipelineRunContext = null;
     const debateAggregateStore = window.DebateRunStore?.createStore?.() || null;
     const debateCaseStore = window.DebateCaseStore?.createStore?.({ storage: chrome?.storage?.local }) || null;
@@ -5371,8 +5373,8 @@ document.addEventListener('click', (event) => {
         let debateApplication = null;
         let phantomRunStateReported = false;
         const getDebateRunControls = () => {
-            if (polishingAbortController) {
-                return { action: 'stop', icon: 'ti ti-player-stop', title: 'Остановить Polishing', active: true, enabled: true, stepEnabled: false };
+            if (polishingAbortController || deltaAbortController) {
+                return { action: 'stop', icon: 'ti ti-player-stop', title: polishingAbortController ? 'Остановить Polishing' : 'Остановить Delta', active: true, enabled: true, stepEnabled: false };
             }
             let aggregate = debateAggregateStore?.getState?.() || null;
             // No run exists on this page (none started here, no engine): whatever state the aggregate
@@ -5689,15 +5691,17 @@ document.addEventListener('click', (event) => {
                 model,
                 window.TransportContract.makeTransportRequestId()
             ]));
-            // A multi-stage Disput run opens model pages only for its first
-            // dispatch. Every later round/synthesis continues in those tabs.
+            // A multi-stage Disput run opens a new page for a model only on the model's first
+            // dispatch in the run. Every later round/synthesis continues in that tab. Tracked per
+            // model: in a run where models go one by one, each one still starts in a new chat.
             if (context?.pipelineRunId) {
                 const sameRun = activePipelineRunContext?.pipelineRunId === context.pipelineRunId;
                 const requestedForRun = sameRun
                     ? activePipelineRunContext.forceNewTabs
                     : forceNewTabs;
+                const opened = sameRun ? activePipelineRunContext.newPagesModels : null;
                 forceNewTabs = Boolean(requestedForRun)
-                    && activePipelineRunContext?.newPagesDispatched !== true;
+                    && !models.some((model) => opened?.has?.(model));
             }
             const budget = window.DebateContextBudget;
             let contextBudget = null;
@@ -5961,6 +5965,8 @@ document.addEventListener('click', (event) => {
                 showNotification(`Pipeline: unexpected background response (${response?.status || 'no_response'})`, 'warn');
             } else if (forceNewTabs && context?.pipelineRunId && activePipelineRunContext?.pipelineRunId === context.pipelineRunId) {
                 activePipelineRunContext.newPagesDispatched = true;
+                activePipelineRunContext.newPagesModels ||= new Set();
+                models.forEach((model) => activePipelineRunContext.newPagesModels.add(model));
                 resetNewPagesCheckboxAfterOpen();
             }
 
@@ -6221,6 +6227,116 @@ document.addEventListener('click', (event) => {
                 return '';
             }
         };
+        // Delta (disput/delta-pipeline.js): models take turns adding one word to the phrase; a model
+        // gets the whole phrase on its first turn and only the words added since on later turns.
+        // Its own loop over runModelBatch like Polishing — no plan, StateMap or ContextBroker.
+        const runDeltaFromPage = async ({ phrase }) => {
+            const delta = window.DeltaPipeline;
+            const draftPlan = draftPlanForCanvas(getActiveDraftPlan());
+            const rounds = (draftPlan?.plannedStages || [])
+                .filter((stage) => /^canvas-r\d+$/.test(String(stage.plannedStageId || '')))
+                .map((stage) => (stage.participantIds || []).filter(Boolean))
+                .filter((models) => models.length);
+            if (!delta || !rounds.length) {
+                showNotification('Delta: выберите модели хотя бы в одном круге.', 'warn');
+                return false;
+            }
+            const useApiFallback = apiModeCheckbox ? apiModeCheckbox.checked : true;
+            pipelineRunActive = true;
+            deltaAbortController = new AbortController();
+            activePipelineRunContext = {
+                pipelineRunId: makePipelineRunId(),
+                sessionId: debateTabsState?.activeSessionId
+                    || document.querySelector('.debate-session-tab.active')?.dataset?.sessionId
+                    || '1',
+                startedAt: Date.now(),
+                forceNewTabs: newPagesCheckbox ? newPagesCheckbox.checked : true,
+                newPagesDispatched: false
+            };
+            const runContext = activePipelineRunContext;
+            if (runContext.forceNewTabs) resetNewPagesCheckboxAfterOpen();
+            clearModeratorComposer();
+            appendModeratorFeedEntry(phrase);
+            setPipelineEditingEnabled(false);
+            setPipelineRunUi(true);
+            updateDebateButtonsUi();
+            try {
+                const attachments = await buildAttachmentPayload();
+                // Attachments go with the first message to each model only: later turns continue in that chat.
+                const attached = new Set();
+                const result = await delta.run({
+                    start: phrase,
+                    rounds,
+                    signal: deltaAbortController.signal,
+                    send: async (model, prompt, { round }) => {
+                        const pipelineRoundId = `r${round}`;
+                        const batch = await runModelBatch({
+                            // The prompt asks for one word itself: no generic length limit is added.
+                            prompt,
+                            models: [model],
+                            attachments: attached.has(model) ? [] : attachments,
+                            forceNewTabs: runContext.forceNewTabs,
+                            useApiFallback,
+                            signal: deltaAbortController.signal,
+                            context: {
+                                ...runContext,
+                                pipelineRoundId,
+                                pipelineBatchId: makePipelineBatchId({ runId: runContext.pipelineRunId, roundIndex: round, groupIndex: 0 }),
+                                // The phrase carries no participant names; a preset left over from an
+                                // earlier run must not rewrite its words with aliases.
+                                anonymizeParticipants: false,
+                                delta: true
+                            },
+                            generationProfile: 'long'
+                        });
+                        attached.add(model);
+                        const text = String(batch?.responses?.[model] || '');
+                        const modelResult = batch?.results?.[model] || {};
+                        // The live feed already shows the answer; this only covers a path that did not
+                        // reach it. Same run/round/request as the live card, so it is not a second card.
+                        if (text.trim()) {
+                            updateDebateModelCardOutput(model, text, '', {
+                                status: modelResult.status || 'SUCCESS', source: 'delta', role: `Delta · круг ${round}`,
+                                pipelineRunId: runContext.pipelineRunId, pipelineRoundId,
+                                transportRequestId: modelResult.transportRequestId || '', requestId: modelResult.transportRequestId || ''
+                            });
+                        }
+                        return { text, status: modelResult.status || '' };
+                    },
+                    onAnswer: (entry, words) => {
+                        window.MessageDelivery?.batchEvent?.('delta_answer', {
+                            pipelineRunId: runContext.pipelineRunId, round: entry.round, model: entry.model,
+                            status: entry.status, full: entry.full, extra: entry.extra || 0,
+                            reason: entry.reason || null, total: words.length
+                        });
+                    }
+                });
+                const stopText = delta.STOP_TEXT[result.stopReason] || result.stopReason;
+                window.MessageDelivery?.batchEvent?.('delta_end', {
+                    pipelineRunId: runContext.pipelineRunId, stopReason: result.stopReason,
+                    words: result.words.length, answers: result.log.length
+                });
+                // Always shown, also after Stop: the phrase built so far is the run's result.
+                updateDebateModelCardOutput('Delta', delta.formatResult(result), '', {
+                    status: 'SUCCESS', source: 'delta', role: 'Delta · итог',
+                    pipelineRunId: runContext.pipelineRunId, pipelineRoundId: 'delta-result'
+                });
+                showNotification(`Delta: добавлено слов ${result.words.length} (${stopText}).`, result.words.length ? 'info' : 'warn');
+                return result.stopReason !== 'cancelled';
+            } catch (err) {
+                console.error('[RESULTS] Delta run failed', err);
+                showNotification(`Pipeline: error (${err?.message || String(err)})`, 'error');
+                return false;
+            } finally {
+                clearPromptAttachments();
+                pipelineRunActive = false;
+                deltaAbortController = null;
+                activePipelineRunContext = null;
+                setPipelineEditingEnabled(true);
+                setPipelineRunUi(false);
+                updateDebateButtonsUi();
+            }
+        };
         // Polishing (disput/polishing-pipeline.js): its own loop over runModelBatch, like the judge and the
         // moderator dispatch — no plan, StateMap or ContextBroker. Every model sees the whole list.
         const runPolishingFromPage = async ({ idea, presetId }) => {
@@ -6357,6 +6473,9 @@ document.addEventListener('click', (event) => {
             }
             if (selectedPreset?.runner === 'polishing') {
                 return runPolishingFromPage({ idea: moderatorEntryText || pipelineNameText, presetId });
+            }
+            if (selectedPreset?.runner === 'delta') {
+                return runDeltaFromPage({ phrase: moderatorEntryText || pipelineNameText });
             }
             const presetConfig = buildPipelinePresetRuntimeConfig(presetId);
             const draftPlan = draftPlanForCanvas(getActiveDraftPlan());
@@ -6564,9 +6683,9 @@ document.addEventListener('click', (event) => {
             }
         };
         const cancelPipelineRun = async () => {
-            if (polishingAbortController) {
+            if (polishingAbortController || deltaAbortController) {
                 const runId = activePipelineRunContext?.pipelineRunId;
-                polishingAbortController.abort();
+                (polishingAbortController || deltaAbortController).abort();
                 try { await debateTransportPort?.cancelRun?.(runId); } catch (_) {}
                 return true;
             }

@@ -118,8 +118,8 @@ describe('Polishing pipeline', () => {
     expect(glue).not.toContain('renderDebateModelCards(');
     expect(source).toMatch(/if \(controls\.action === 'stop'\) \{\s*event\.preventDefault\(\);\s*void cancelPipelineRun\(\);/);
     expect(source).toContain("const RETIRED_PIPELINE_PRESET_IDS = ['DELTA'];");
-    // The name Delta belongs to no built-in Polishing artefact any more.
-    expect(JSON.stringify(Presets.PIPELINE_PRESETS)).not.toMatch(/delta/i);
+    // Polishing's own preset and glue carry no trace of the old name.
+    expect(JSON.stringify(Presets.getPipelinePreset('POLISHING'))).not.toMatch(/delta/i);
     expect(glue).not.toMatch(/delta/i);
     ['result_new.html', 'pipeline_panel.html'].forEach((page) => {
       expect(fs.readFileSync(path.join(__dirname, '..', page), 'utf8')).toContain('<script src="disput/polishing-pipeline.js"></script>');

@@ -34,7 +34,9 @@
     makePreset('ARCHITECTURE', 'Architecture', 'UNIVERSAL_STANDARD', REASONING_BUDGETS.ARCHITECTURE,
       { finalizationPolicy: 'readiness_or_moderator' }),
     // Polishing runs its own loop (disput/polishing-pipeline.js), not the Debate engine.
-    makePreset('POLISHING', 'Polishing', 'UNIVERSAL_STANDARD', REASONING_BUDGETS.STANDARD, { runner: 'polishing' })
+    makePreset('POLISHING', 'Polishing', 'UNIVERSAL_STANDARD', REASONING_BUDGETS.STANDARD, { runner: 'polishing' }),
+    // Delta runs its own loop too (disput/delta-pipeline.js).
+    makePreset('DELTA', 'Delta', 'UNIVERSAL_STANDARD', REASONING_BUDGETS.STANDARD, { runner: 'delta' })
   ]);
 
   const BUILTIN_PIPELINE_DEFINITIONS = Object.freeze([
@@ -48,7 +50,10 @@
     Object.freeze({ name: 'Architecture', presetId: 'ARCHITECTURE', profileId: 'UNIVERSAL_STANDARD', runPolicy: 'manual', length: '1000', roundLimit: '30', stageTemplate: 'architecture', defaultModelCount: 0, roles: ['participant', 'critic', 'verifier', 'synthesizer'] }),
     // Polishing: collects fresh improvements of one idea. Canvas rounds are the rounds, the order of
     // models in a round is the call order; polishingMaxIdeas is K (lines per answer).
-    Object.freeze({ name: 'Polishing', presetId: 'POLISHING', profileId: 'UNIVERSAL_STANDARD', runPolicy: 'auto', noMiniPrompts: true, length: '300', roundLimit: '3', defaultModelCount: 0, roles: ['participant'], polishingMaxIdeas: 3 })
+    Object.freeze({ name: 'Polishing', presetId: 'POLISHING', profileId: 'UNIVERSAL_STANDARD', runPolicy: 'auto', noMiniPrompts: true, length: '300', roundLimit: '3', defaultModelCount: 0, roles: ['participant'], polishingMaxIdeas: 3 }),
+    // Delta: models take turns adding one word to the phrase; later turns carry only the change.
+    // Canvas rounds are the rounds, the order of models in a round is the order of turns.
+    Object.freeze({ name: 'Delta', presetId: 'DELTA', profileId: 'UNIVERSAL_STANDARD', runPolicy: 'auto', noMiniPrompts: true, length: '300', roundLimit: '3', defaultModelCount: 0, roles: ['participant'] })
   ]);
 
   const PRESET_BY_ID = Object.freeze(Object.fromEntries(PIPELINE_PRESETS.map((preset) => [preset.id, preset])));

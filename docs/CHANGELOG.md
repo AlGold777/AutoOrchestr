@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-07 — Pipeline Delta: word game, version 2.81.627
+
+- New built-in pipeline **Delta** (`presetId: DELTA`, `disput/delta-pipeline.js`; the name was freed by renaming the idea-collecting pipeline to Polishing). Models of a canvas round take turns adding exactly one word to the phrase from the input field. A model gets the whole phrase on its first turn and only the words added after its own word on later turns; after a turn without an answer it gets the whole phrase again. The first word of an answer is taken, the rest is dropped. Stops after the last round, a round with no word added, or Stop (the phrase built so far stays in the final card).
+- Runs on its own page loop `runDeltaFromPage` over `runModelBatch`, like Polishing; Polishing is unchanged. `RETIRED_PIPELINE_PRESET_IDS` still lists `DELTA` but ignores it while the preset exists.
+- Transport: a pipeline run now opens a new page for each model on that model's first dispatch (`newPagesModels`), not only for the first dispatch of the run. Before, in turn-by-turn runs only the first model started in a new chat.
 ### 2026-10-07 — Rename pipeline Delta to Polishing, version 2.81.626
 
 - The pipeline that collects fresh improvements of an idea is renamed **Polishing** everywhere: preset `POLISHING` (runner `polishing`, K setting `polishingMaxIdeas`), `disput/polishing-pipeline.js` / `window.PolishingPipeline`, `runPolishingFromPage`, telemetry events `polishing_answer` / `polishing_end`, the result card, notifications, tests and `docs/Pipeline scenarios/polishing-pipeline.md`. Entries of 2.81.623–2.81.625 below describe the same pipeline under its former name Delta. Behaviour is unchanged.
