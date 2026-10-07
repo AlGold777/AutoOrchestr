@@ -391,10 +391,6 @@ body.left-sidebar-open .mode-pill .pill-dot {
     text-align: left;
 }
 
-.pipeline-page .main-controls-wrapper {
-    margin-bottom: 5px;
-}
-
 .prompt-group {
     width: 100%;
 }
@@ -429,7 +425,7 @@ body.left-sidebar-open .mode-pill .pill-dot {
 
 /* После открытия Pro или запуска Pipeline поднимаем composer к sticky header. */
 .pipeline-page .app-main .input-section:has(.prompt-container.is-pipeline-composer-raised) {
-    padding-top: 2.5px;
+    padding-top: 5px;
 }
 .pipeline-page .prompt-group:has(.prompt-container.prompt-sandwich.debate-composer.is-pipeline-composer-raised:not(.has-debate-feed)) {
     margin-top: 0;

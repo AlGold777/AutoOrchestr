@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-07 — Align Pipeline composer vertical position, version 2.81.622
+
+- Match the vertical spacing before Pipeline's input section to the main page and use the same 5px top inset when the composer is raised. The Pipeline composer now starts on the same vertical anchor as the main composer after model selection.
+- Validation: CSS flow and spacing comparison; live extension rendering was not run.
+
 ### 2026-10-07 — Match closed Pipeline composer to the main prompt, version 2.81.621
 
 - The closed Pipeline composer uses the same responsive content column as `.main-inner` (948px at the 980px maximum). Before model selection its frame is 122px tall, with a 70px editor at y=4.5px and controls at y=86.5px. After selection it mirrors the main page's compact 104px frame, with editor/buttons at y=1px/71px. The moderator frame replaces the former nested outer border.
