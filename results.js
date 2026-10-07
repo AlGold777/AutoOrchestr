@@ -1997,6 +1997,7 @@ document.addEventListener('click', (event) => {
         const debateRoundLimitSelect = document.getElementById('debate-round-limit-select');
         const DEFAULT_DEBATE_ROUND_LIMIT = '3';
         const debateRoundValue = document.getElementById('debate-round-value');
+        const debateRoundUnit = document.getElementById('debate-round-unit');
         const debateRoundMinusBtn = document.getElementById('debate-round-minus-btn');
         const debateRoundPlusBtn = document.getElementById('pipeline-add-round-btn');
     const debateRunPolicySelect = document.getElementById('debate-run-policy-select');
@@ -5099,9 +5100,22 @@ document.addEventListener('click', (event) => {
             debateRoundLimitSelect.title = `Debate rounds: ${label}`;
             debateRoundLimitSelect.setAttribute('aria-label', `Debate rounds: ${label}`);
             debateRoundLimitSelect.dataset.currentLabel = label;
-            if (debateRoundValue) debateRoundValue.textContent = label;
-            if (debateRoundMinusBtn) debateRoundMinusBtn.disabled = !showRoundLimitControl || roundLimit === '1';
-            if (debateRoundPlusBtn) debateRoundPlusBtn.disabled = !showRoundLimitControl || roundLimit === '50';
+            if (debateRoundValue) {
+                const infinite = roundLimit === 'infinite';
+                debateRoundValue.disabled = !showRoundLimitControl;
+                debateRoundValue.value = infinite ? '' : String(roundLimit);
+                debateRoundValue.placeholder = infinite ? '∞' : '';
+                debateRoundValue.title = infinite
+                    ? 'Enter 1–50 rounds to replace the infinite limit'
+                    : `Debate rounds: ${label} (enter 1–50)`;
+                debateRoundValue.setAttribute('aria-label', `Debate rounds: ${label}`);
+            }
+            if (debateRoundUnit) {
+                debateRoundUnit.textContent = roundLimit === 1 ? 'round' : 'rounds';
+                debateRoundUnit.hidden = roundLimit === 'infinite';
+            }
+            if (debateRoundMinusBtn) debateRoundMinusBtn.disabled = !showRoundLimitControl || roundLimit === 1;
+            if (debateRoundPlusBtn) debateRoundPlusBtn.disabled = !showRoundLimitControl || roundLimit === 50;
         };
         const setDebateRoundLimitValue = (value) => {
             if (!debateRoundLimitSelect) return;
@@ -7879,6 +7893,16 @@ document.addEventListener('click', (event) => {
             syncPipelineRoundsToDebateLimit();
             persistActiveLongRoundLimit();
             updateDebateButtonsUi();
+        });
+        debateRoundValue?.addEventListener('change', () => {
+            const value = String(debateRoundValue.value || '').trim();
+            if (value) setDebateRoundLimitValue(value);
+            syncDebateRoundStepperUi();
+        });
+        debateRoundValue?.addEventListener('keydown', (event) => {
+            if (event.key !== 'Enter') return;
+            event.preventDefault();
+            debateRoundValue.blur();
         });
         debateRoundMinusBtn?.addEventListener('click', (event) => {
             event.preventDefault();

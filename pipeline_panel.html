@@ -294,7 +294,8 @@
                     </label>
                     <div class="debate-round-control" title="Debate rounds" aria-label="Debate rounds">
                         <button type="button" class="debate-round-stepper-btn" id="debate-round-minus-btn" aria-label="Decrease rounds">−</button>
-                        <span class="debate-round-value" id="debate-round-value">3 rounds</span>
+                        <input type="number" class="debate-round-value" id="debate-round-value" min="1" max="50" step="1" value="3" inputmode="numeric" aria-label="Debate rounds" title="Enter 1–50 rounds">
+                        <span class="debate-round-unit" id="debate-round-unit">rounds</span>
                         <button type="button" class="debate-round-stepper-btn pipeline-add-round-btn" id="pipeline-add-round-btn" title="Increase rounds" aria-label="Increase rounds">+</button>
                         <select id="debate-round-limit-select" class="debate-round-select-proxy" aria-label="Debate rounds">
                             <option value="1">1 round</option>

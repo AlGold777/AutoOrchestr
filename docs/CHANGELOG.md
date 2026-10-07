@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-10-07 — Enter Pipeline round limits manually, version 2.81.616
+
+- The round counter accepts a number from 1 to 50 by direct keyboard entry as well as by the existing minus/plus buttons. Enter or leaving the field applies the value; an infinite limit remains shown as `∞` until replaced with a number.
+
 ### 2026-10-07 — Keep stream preview output full-height, version 2.81.615
 
 - Removed the `3.2em` cap from response cards while the pre-prompt stream preview is open. The output now fills the card and remains internally scrollable, including after the preview layout is reapplied by JavaScript.
