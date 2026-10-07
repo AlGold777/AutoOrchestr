@@ -1720,3 +1720,10 @@ body.llm-stream-preview-open .llm-results .llm-panel.llm-panel-session-restored:
     padding: 0 10px 10px;
     font-size: 13px;
 }
+
+/* A definite panel height lets the empty stream output grow into the available
+   flex space immediately instead of sizing itself only from its placeholder. */
+body.llm-stream-preview-open .llm-results .llm-panel:not(.favorite-panel):not(.llm-panel-expanded) {
+  box-sizing: border-box;
+  height: 450px;
+}

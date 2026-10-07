@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-10-07 — Expand empty stream preview cards, version 2.81.617
+
+- Give pre-prompt response cards a definite 450 px height so the output flexes to fill the card immediately, even before any response text arrives.
+
 ### 2026-10-07 — Enter Pipeline round limits manually, version 2.81.616
 
 - The round counter accepts a number from 1 to 50 by direct keyboard entry as well as by the existing minus/plus buttons. Enter or leaving the field applies the value; an infinite limit remains shown as `∞` until replaced with a number.
