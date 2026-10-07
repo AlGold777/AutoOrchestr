@@ -1961,8 +1961,25 @@ describe('Pipeline debate favorites view', () => {
   test('default pipeline list exposes only universal purpose profiles', () => {
     const names = Array.from(document.querySelectorAll('#pipelineItems .pipeline-item'))
       .map((item) => item.dataset.name);
-    expect(names).toEqual(['Test', 'Research', 'Red Team', 'Architecture', 'Polishing', 'Delta']);
+    expect(names).toEqual(['Custom', 'Polishing', 'Delta', 'Test', 'Research', 'Architecture']);
     expect(document.querySelectorAll('#pipelineItems .pipeline-item-delete')).toHaveLength(0);
+    expect(document.querySelector('[data-name="Custom"] .pipeline-radio').disabled).toBe(true);
+  });
+
+  test('retiring Red Team removes the built-in and preserves user-named copies', () => {
+    const debug = window.__pipelineLifecycleDebug;
+    const saved = { protocol: { type: 'universal', presetId: 'UNIVERSAL_RED_TEAM' }, modelStacks: { 'r1-models': { items: [{ name: 'GPT', send: true }] } } };
+    debug.setPipelineStoreForTest({
+      pipelines: { 'Red Team': saved, 'My review': saved },
+      order: ['Red Team', 'My review'], active: 'Red Team', lastSaved: 'Red Team'
+    });
+    expect(debug.ensureDefaultPipelinePresets()).toBe(true);
+    const store = debug.getPipelineStoreSnapshot();
+    expect(store.order).toEqual(['Custom', 'Polishing', 'Delta', 'Test', 'Research', 'Architecture', 'My review']);
+    expect(store.pipelines['Red Team']).toBeUndefined();
+    expect(store.pipelines['My review'].modelStacks).toEqual(saved.modelStacks);
+    expect(store.active).toBe('');
+    expect(store.lastSaved).toBe('');
   });
 
   test('new empty pipeline resets an inherited round limit to the three-round default', () => {

@@ -34,8 +34,8 @@ describe('None in the mini prompt list of a model block', () => {
 });
 
 describe('which templates start with None', () => {
-  test('only Universal and Test (the Architecture template carries its own stage brief)', () => {
-    expect(Presets.BUILTIN_PIPELINE_DEFINITIONS.filter((item) => item.noMiniPrompts).map((item) => item.name)).toEqual(['Universal', 'Test']);
+  test('Custom, Polishing, Delta and Test start with None', () => {
+    expect(Presets.BUILTIN_PIPELINE_DEFINITIONS.filter((item) => item.noMiniPrompts).map((item) => item.name)).toEqual(['Custom', 'Polishing', 'Delta', 'Test']);
     expect(source).toContain('withRoles: !stageTemplate && !noMiniPrompts');
     expect(source).toContain('noMiniPrompts: definition.noMiniPrompts === true');
   });

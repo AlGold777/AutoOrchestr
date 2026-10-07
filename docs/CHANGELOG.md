@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-07 — Pipeline list layout, version 2.81.632
+
+- Arrange the built-in list by columns: Custom / Polishing / Delta on the left, Test / Research / Architecture on the right. Custom is visible but disabled until its page integration is ready.
+- Remove the built-in Red Team from the list and block its runner. User-named saved copies retain their configuration for inspection; they cannot run. The retired preset metadata remains for compatibility.
+- Validation: preset, Polishing and Delta tests (25); list/migration integration checks (2); mini-prompt defaults (4); headless Chromium confirms the requested three rows and two columns.
+
 ### 2026-10-07 — Custom engine: Stop while waiting for the owner, closing a sequential step, version 2.81.631
 
 - Stop while the engine waits for the owner's decision or for an `[[ASK]]` answer now ends the run as `cancelled` with what was collected. Before, the engine kept waiting for the decision, and an `AbortError` from the ASK dialog was thrown instead of returning the result.

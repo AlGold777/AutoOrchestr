@@ -3864,7 +3864,11 @@ document.addEventListener('click', (event) => {
             if (isDefaultPipelineName(key)) {
                 return buildResolvedDefaultPipelineConfig(key);
             }
-            return pipelineStore.pipelines[key] || null;
+            const stored = pipelineStore.pipelines[key] || null;
+            if (stored?.protocol?.presetId === 'UNIVERSAL_RED_TEAM') {
+                return { ...stored, disabled: true, disabledReason: 'Red Team удалён из доступных pipelines. Сохранённая копия доступна для просмотра.' };
+            }
+            return stored;
         };
 
         const formatPipelineProtocolSummary = (config = null) => {
@@ -4366,7 +4370,7 @@ document.addEventListener('click', (event) => {
                     stageTemplate: definition.stageTemplate || '',
                     noMiniPrompts: definition.noMiniPrompts === true
                 });
-                return [definition.name, definition.disabled ? { ...config, disabled: true } : config];
+                return [definition.name, definition.disabled ? { ...config, disabled: true, disabledReason: definition.disabledReason || '' } : config];
             })
         );
         const getDefaultPipelinePresetNames = () => Object.keys(buildDefaultPipelinePresets());
@@ -4440,11 +4444,22 @@ document.addEventListener('click', (event) => {
         const ensureDefaultPipelinePresets = () => {
             const defaults = buildDefaultPipelinePresets();
             const defaultNames = Object.keys(defaults);
+            let changed = false;
+            // Remove the retired built-in only. User-named copies retain their data;
+            // getPipelineConfigByName and the preset guard keep them from running.
+            if (pipelineStore.pipelines['Red Team']?.protocol?.presetId === 'UNIVERSAL_RED_TEAM') {
+                delete pipelineStore.pipelines['Red Team'];
+                pipelineStore.order = pipelineStore.order.filter((name) => name !== 'Red Team');
+                if (pipelineStore.active === 'Red Team') pipelineStore.active = '';
+                if (pipelineStore.lastSaved === 'Red Team') pipelineStore.lastSaved = '';
+                delete pipelineStore.draftPlans?.['Red Team'];
+                Object.values(pipelineStore.overrides || {}).forEach((overrides) => { delete overrides?.['Red Team']; });
+                changed = true;
+            }
             const legacy = new Set(LEGACY_EXAMPLE_PIPELINE_NAMES);
             const onlyLegacyExamples = pipelineStore.order.length > 0
                 && pipelineStore.order.every((name) => legacy.has(name))
                 && pipelineStore.order.every((name) => !pipelineStore.pipelines[name]);
-            let changed = false;
             if (!pipelineStore.order.length || onlyLegacyExamples) {
                 pipelineStore.pipelines = clonePipelineConfig(defaults);
                 pipelineStore.order = defaultNames.slice();
@@ -7264,7 +7279,7 @@ document.addEventListener('click', (event) => {
             if (disabled) {
                 item.dataset.disabled = 'true';
                 item.setAttribute('aria-disabled', 'true');
-                item.title = 'This pipeline is unavailable.';
+                item.title = config.disabledReason || 'This pipeline is unavailable.';
             }
             const main = document.createElement('span');
             main.className = 'pipeline-item-main';
@@ -7278,7 +7293,7 @@ document.addEventListener('click', (event) => {
             radio.disabled = disabled;
             const label = document.createElement('span');
             label.className = 'pipeline-item-name';
-            label.title = metaText ? `${fullName} · ${metaText}` : fullName;
+            label.title = config?.disabledReason || (metaText ? `${fullName} · ${metaText}` : fullName);
             label.textContent = displayName;
             main.appendChild(radio);
             main.appendChild(label);
@@ -7528,7 +7543,7 @@ document.addEventListener('click', (event) => {
             const name = item.dataset.name || '';
             const config = getPipelineConfigByName(name);
             if (config?.disabled) {
-                showNotification('Этот pipeline недоступен.', 'warn');
+                showNotification(config.disabledReason || 'Этот pipeline недоступен.', 'warn');
                 return;
             }
             pipelineItems?.querySelectorAll('.pipeline-item').forEach((el) => el.classList.remove('active'));

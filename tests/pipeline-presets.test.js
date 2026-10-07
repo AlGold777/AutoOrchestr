@@ -4,12 +4,14 @@ describe('universal pipeline presets', () => {
   test('offers purpose profiles without execution topologies', () => {
     expect(Presets.DEFAULT_PRESET_ID).toBe('UNIVERSAL_STANDARD');
     expect(Presets.PIPELINE_PRESETS.map((preset) => preset.id)).toEqual([
-      'UNIVERSAL_STANDARD', 'TEST', 'UNIVERSAL_RESEARCH', 'UNIVERSAL_RED_TEAM', 'ARCHITECTURE', 'POLISHING', 'DELTA'
+      'UNIVERSAL_STANDARD', 'CUSTOM', 'TEST', 'UNIVERSAL_RESEARCH', 'UNIVERSAL_RED_TEAM', 'ARCHITECTURE', 'POLISHING', 'DELTA'
     ]);
     expect(Presets.BUILTIN_PIPELINE_DEFINITIONS.map((item) => item.name)).toEqual([
-      'Test', 'Research', 'Red Team', 'Architecture', 'Polishing', 'Delta'
+      'Custom', 'Polishing', 'Delta', 'Test', 'Research', 'Architecture'
     ]);
     expect(JSON.stringify(Presets.PIPELINE_PRESETS)).not.toMatch(/topology|scheme|roundLimit|waveLimit|turnLimit/i);
+    expect(Presets.isPresetEnabled('CUSTOM')).toBe(false);
+    expect(Presets.isPresetEnabled('UNIVERSAL_RED_TEAM')).toBe(false);
   });
 
   test('normalizes an explicit universal stage budget', () => {
