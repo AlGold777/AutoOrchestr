@@ -93,7 +93,7 @@
   async function run({
     task, steps = [], maxAttempts = DEFAULT_ATTEMPTS, semiAuto = false, maxPromptChars = Infinity,
     accept = defaultAccept, parseAsks = null, askOwner = null, askInstruction = '', decide = null,
-    send, signal = null, onEvent = null
+    send, signal = null, onEvent = null, onRequest = null, onResponse = null
   }) {
     if (typeof send !== 'function') throw new Error('custom_send_required');
     const emit = (kind, fields) => { if (typeof onEvent === 'function') onEvent(kind, fields); };
@@ -125,36 +125,58 @@
       }
     }
 
+    // Accepted answers of a step, each with its source (step, model, attempt) for the record.
     const acceptedOf = (entry) => (entry?.skipped ? [] : entry.step.models.map((model) => entry.outcome[model.name])
-      .filter((item) => item?.ok));
+      .filter((item) => item?.ok)
+      .map((item) => ({ ...item, source: { step: entry.step.index, label: stepLabel(entry.step), model: item.model, attempt: item.attempt } })));
     function inputFor(step) {
       if (step.input === 'none') return [];
       if (step.input === 'all') {
-        return results.flatMap((entry) => acceptedOf(entry).map((item, index) => ({ label: `${stepLabel(entry.step)}, ответ ${index + 1}`, text: item.text })));
+        return results.flatMap((entry) => acceptedOf(entry).map((item, index) => ({ label: `${stepLabel(entry.step)}, ответ ${index + 1}`, text: item.text, source: item.source })));
       }
       for (let index = results.length - 1; index >= 0; index -= 1) {
         const accepted = acceptedOf(results[index]);
-        if (accepted.length) return accepted.map((item) => ({ text: item.text }));
+        if (accepted.length) return accepted.map((item) => ({ text: item.text, source: item.source }));
       }
       return [];
     }
 
-    function promptFor(step, model, earlier) {
-      const prompt = buildPrompt({ task, step, model, input: inputFor(step), inputMode: step.input, earlier,
-        ownerAnswers, askInstruction: semiAuto ? askInstruction : '' });
-      if (prompt.length > maxPromptChars) throw new StopRun('context_full');
-      return prompt;
+    // Instructions (owner-editable behaviour) and input (data from other models) are kept apart.
+    function partsFor(step, model, input, earlier) {
+      return {
+        instructions: { task: text(task), stepTask: step.task, extra: model.extra || '', askInstruction: semiAuto ? askInstruction : '',
+          ownerAnswers: ownerAnswers.slice() },
+        input: { mode: step.input, items: input, earlier }
+      };
     }
 
-    // Sends `models` with their prompts, then corrections; fills `outcome`.
-    async function attempt(step, models, promptsByModel, outcome, firstAttempt = 1) {
+    function promptFor(step, model, earlier) {
+      const input = inputFor(step);
+      const prompt = buildPrompt({ task, step, model, input, inputMode: step.input, earlier,
+        ownerAnswers, askInstruction: semiAuto ? askInstruction : '' });
+      if (prompt.length > maxPromptChars) throw new StopRun('context_full');
+      return { prompt, parts: partsFor(step, model, input, earlier) };
+    }
+
+    // Sends `models` with their prompts, then corrections; fills `outcome`. Every attempt is a
+    // history entry of its own: a retry never rewrites the attempt it follows, it refers to it.
+    async function attempt(step, models, requests, outcome, firstAttempt = 1) {
       let pending = models.slice();
-      let prompts = promptsByModel;
+      let current = requests; // model → { prompt, parts, retryOf }
       for (let tryNo = firstAttempt; pending.length && tryNo < firstAttempt + maxAttempts; tryNo += 1) {
         if (aborted()) throw new StopRun('cancelled');
+        const entries = Object.fromEntries(pending.map((name) => {
+          const entry = { step: step.index, kind: step.kind, label: stepLabel(step), model: name, attempt: tryNo,
+            retryOf: current[name].retryOf || null, prompt: current[name].prompt, parts: current[name].parts,
+            state: 'sent', sentAt: Date.now() };
+          history.push(entry);
+          if (typeof onRequest === 'function') onRequest(entry);
+          return [name, entry];
+        }));
         let reply;
         try {
-          reply = await send(pending, prompts, { step: step.index, kind: step.kind, label: stepLabel(step), attempt: tryNo });
+          reply = await send(pending, Object.fromEntries(pending.map((name) => [name, current[name].prompt])),
+            { step: step.index, kind: step.kind, label: stepLabel(step), attempt: tryNo });
         } catch (error) {
           if (error?.name === 'AbortError' || aborted()) throw new StopRun('cancelled');
           reply = { byModel: Object.fromEntries(pending.map((name) => [name, { text: '', status: String(error?.message || error) }])) };
@@ -164,17 +186,25 @@
           const result = reply?.byModel?.[name] || {};
           let verdict = judge(result, accept);
           if (!verdict.ok && reply?.closedByOwner && !text(result.text)) verdict = { ...verdict, reason: 'closed_by_owner' };
-          outcome[name] = { ...verdict, status: result.status || '', attempt: tryNo, transportRequestId: result.transportRequestId || '' };
-          history.push({ step: step.index, label: stepLabel(step), model: name, attempt: tryNo, prompt: prompts[name],
-            accepted: verdict.ok, reason: verdict.reason || '', status: result.status || '', transportRequestId: result.transportRequestId || '' });
+          outcome[name] = { ...verdict, model: name, status: result.status || '', attempt: tryNo, transportRequestId: result.transportRequestId || '' };
+          Object.assign(entries[name], {
+            state: 'done', finishedAt: Date.now(), sentPrompt: typeof result.sentPrompt === 'string' ? result.sentPrompt : null,
+            answer: text(result.text), attribution: result.attribution || '', accepted: verdict.ok, reason: verdict.reason || '',
+            status: result.status || '', transportRequestId: result.transportRequestId || ''
+          });
+          if (typeof onResponse === 'function') onResponse(entries[name]);
           emit('custom_answer', { step: step.index, label: stepLabel(step), model: name, attempt: tryNo, input: step.input,
             accepted: verdict.ok, reason: verdict.reason || null, status: result.status || null,
-            transportRequestId: result.transportRequestId || null, promptChars: String(prompts[name] || '').length });
+            transportRequestId: result.transportRequestId || null, promptChars: String(current[name].prompt || '').length });
           if (!verdict.ok && !reply?.closedByOwner) retry.push(name);
         });
         if (reply?.closedByOwner) return { closedByOwner: true };
         pending = retry;
-        prompts = Object.fromEntries(retry.map((name) => [name, correctionPrompt(outcome[name].reason)]));
+        current = Object.fromEntries(retry.map((name) => [name, {
+          prompt: correctionPrompt(outcome[name].reason),
+          parts: { correction: { reason: outcome[name].reason, text: correctionPrompt(outcome[name].reason) } },
+          retryOf: tryNo
+        }]));
       }
       return { closedByOwner: false };
     }
@@ -185,8 +215,9 @@
           // Only the models before this one in card order, also on a retry.
           const position = step.models.findIndex((item) => item.name === model.name);
           const earlier = step.models.slice(0, position).map((item) => outcome[item.name])
-            .filter((item) => item?.ok).map((item) => ({ text: item.text }));
-          const reply = await attempt(step, [model.name], { [model.name]: promptFor(step, model, earlier) }, outcome, firstAttempt);
+            .filter((item) => item?.ok)
+            .map((item) => ({ text: item.text, source: { step: step.index, label: stepLabel(step), model: item.model, attempt: item.attempt } }));
+          const reply = await attempt(step, [model.name], { [model.name]: { ...promptFor(step, model, earlier), retryOf: outcome[model.name]?.attempt || null } }, outcome, firstAttempt);
           if (reply.closedByOwner) {
             // The owner closed the step: the models after this one are not called.
             models.slice(models.indexOf(model) + 1).forEach((rest) => {
@@ -196,8 +227,8 @@
           }
         }
       } else {
-        const prompts = Object.fromEntries(models.map((model) => [model.name, promptFor(step, model, [])]));
-        await attempt(step, models.map((model) => model.name), prompts, outcome, firstAttempt);
+        const requests = Object.fromEntries(models.map((model) => [model.name, { ...promptFor(step, model, []), retryOf: outcome[model.name]?.attempt || null }]));
+        await attempt(step, models.map((model) => model.name), requests, outcome, firstAttempt);
       }
     }
 
@@ -250,7 +281,33 @@
     };
   }
 
-  const api = Object.freeze({ DEFAULT_ATTEMPTS, SYNTHESIS_TASK, STOP_TEXT, REASON_TEXT, buildPrompt, correctionPrompt, normalizeSteps, run });
+  // Before a run there is no exact prompt yet: the template shows what is known and marks the data
+  // that will come from other models. Lines the transport adds are listed apart, never as editable text.
+  const PLACEHOLDER = Object.freeze({
+    previous: '‹ответы предыдущего шага появятся при запуске›',
+    all: '‹все принятые ответы предыдущих шагов появятся при запуске›',
+    earlier: '‹ответы моделей, работающих до тебя в этом раунде, появятся при запуске›'
+  });
+  const TRANSPORT_LINES = Object.freeze([
+    'Предел длины ответа — по настройке длины pipeline.',
+    'Метка доставки последней строкой — добавляет транспорт; не редактируется.'
+  ]);
+  function previewPrompt({ task, steps = [], stepIndex = 0, modelName = '', semiAuto = false, askInstruction = '' }) {
+    const plan = normalizeSteps(steps);
+    const step = plan.find((item) => item.index === stepIndex) || plan[stepIndex];
+    if (!step) return null;
+    const model = step.models.find((item) => item.name === modelName) || { name: modelName, extra: '' };
+    const input = step.input === 'none' || !plan.some((item) => item.index < step.index) ? []
+      : [{ label: 'Вход', text: PLACEHOLDER[step.input] || PLACEHOLDER.previous }];
+    const position = step.models.findIndex((item) => item.name === model.name);
+    const earlier = step.order === 'sequential' && position > 0 ? [{ text: PLACEHOLDER.earlier }] : [];
+    const prompt = buildPrompt({ task, step, model, input, inputMode: step.input, earlier, ownerAnswers: [],
+      askInstruction: semiAuto ? askInstruction : '' });
+    return { label: stepLabel(step), order: step.order, inputMode: step.input, prompt, transportLines: TRANSPORT_LINES.slice(),
+      instructions: { task: text(task), stepTask: step.task, extra: model.extra || '', askInstruction: semiAuto ? askInstruction : '' } };
+  }
+
+  const api = Object.freeze({ DEFAULT_ATTEMPTS, SYNTHESIS_TASK, STOP_TEXT, REASON_TEXT, PLACEHOLDER, TRANSPORT_LINES, buildPrompt, correctionPrompt, normalizeSteps, previewPrompt, run });
   root.CustomEngine = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

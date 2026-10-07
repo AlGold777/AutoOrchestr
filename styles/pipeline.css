@@ -1419,6 +1419,32 @@ body.pipeline-page #disput-state-map-panel .disput-state-map-actions > button:no
     color: var(--pipeline-text);
 }
 
+.pipeline-block-info-prompts h5 {
+    margin: 10px 0 4px;
+    font-size: 12px;
+    color: var(--pipeline-muted);
+}
+
+.pipeline-block-info-prompts details {
+    margin: 6px 0;
+}
+
+.pipeline-block-info-prompts summary {
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--pipeline-text);
+}
+
+.custom-attempt {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid var(--pipeline-border);
+}
+
+.custom-attempt[data-state="unknown"] h4 {
+    color: #b45309;
+}
+
 .pipeline-block-info-prompts pre {
     max-height: 280px;
     overflow: auto;

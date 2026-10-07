@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "_Opus",
-  "version": "2.81.633",
+  "version": "2.81.634",
   "description": "Compares LLMs with stable Debate pipelines, structured state maps, and optional synthesis.",
   "permissions": [
     "storage",
@@ -273,6 +273,7 @@
         "results/debate-telemetry-view.js",
         "disput/pipeline-presets.js",
         "disput/custom-engine.js",
+        "disput/custom-run-record.js",
         "disput/polishing-pipeline.js",
         "disput/debate-protocols.js",
         "disput/debate-version-manifest.js",

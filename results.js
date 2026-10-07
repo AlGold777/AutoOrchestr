@@ -6022,6 +6022,9 @@ document.addEventListener('click', (event) => {
                 completion: Object.fromEntries(Object.entries(batchResult.results || {}).map(([model, result]) => [model, result.completion]))
             });
             batchResult.pipelineContext ||= pipelineContext;
+            // Read-only: the prompts exactly as dispatched (delivery token and limits included), so a
+            // caller can show the fact instead of rebuilding it. Sending and receiving do not use it.
+            batchResult.sentPrompts = sanitizedPromptMap || null;
             if (activePipelineRunContext?.anonymizationMap && window.DebateAnonymization) {
                 Object.keys(batchResult.responses || {}).forEach((model) => {
                     batchResult.responses[model] = window.DebateAnonymization.deanonymizeText(batchResult.responses[model], activePipelineRunContext.anonymizationMap);
@@ -6382,10 +6385,11 @@ document.addEventListener('click', (event) => {
                 if (/^canvas-r\d+$/.test(String(stage.plannedStageId || ''))) {
                     round += 1;
                     return round === 1
-                        ? { kind: 'round', order: 'parallel', task: '', input: 'none', models }
-                        : { kind: 'round', order: 'parallel', task: CUSTOM_ROUND_TASK, input: 'previous', models };
+                        ? { kind: 'round', ref: `r${round}`, order: 'parallel', task: '', input: 'none', models }
+                        : { kind: 'round', ref: `r${round}`, order: 'parallel', task: CUSTOM_ROUND_TASK, input: 'previous', models };
                 }
-                if (['working_synthesis', 'candidate_final'].includes(stage.outputIntent)) return { kind: 'synthesis', models };
+                if (stage.outputIntent === 'working_synthesis') return { kind: 'synthesis', ref: `synth:${stage.plannedStageId}`, models };
+                if (stage.outputIntent === 'candidate_final') return { kind: 'synthesis', ref: 'final', models };
                 return null;
             }).filter((step) => step?.models?.length);
         };
@@ -6409,6 +6413,13 @@ document.addEventListener('click', (event) => {
             if (!ownerAskDialog || !window.OwnerAsk) { resolve([]); return; }
             openOwnerAsk({ label, asks, resolve });
         });
+        // Records of Custom runs (disput/custom-run-record.js) in chrome.storage.local, bounded by size.
+        const customRunStore = window.CustomRunRecord && chrome?.storage?.local
+            ? window.CustomRunRecord.createStore({ storage: window.CustomRunRecord.chromeStorage(chrome.storage.local) })
+            : null;
+        // The run in progress (or the last one of this page): the card reads it live.
+        let liveCustomRecord = null;
+        const customPipelineName = () => String(pipelineStore.active || getPipelineHeaderName() || 'Custom').trim();
         const runCustomFromPage = async ({ task }) => {
             const engine = window.CustomEngine;
             const steps = customStepsFromPlan(draftPlanForCanvas(getActiveDraftPlan()));
@@ -6431,6 +6442,21 @@ document.addEventListener('click', (event) => {
             };
             const runContext = activePipelineRunContext;
             const signal = customAbortController.signal;
+            const record = window.CustomRunRecord?.createRun?.({ runId: runContext.pipelineRunId, pipelineName: customPipelineName(), task, steps }) || null;
+            liveCustomRecord = record;
+            let saveTimer = null;
+            const saveRecord = async (now = false) => {
+                if (!record || !customRunStore) return;
+                clearTimeout(saveTimer);
+                const write = () => customRunStore.save(record).catch((error) => console.warn('[RESULTS] Custom run record not saved', error));
+                if (now) { await write(); return; }
+                saveTimer = setTimeout(write, 600);
+            };
+            const recordAttempt = (entry) => {
+                if (!record) return;
+                window.CustomRunRecord.recordAttempt(record, entry);
+                void saveRecord();
+            };
             if (runContext.forceNewTabs) resetNewPagesCheckboxAfterOpen();
             clearModeratorComposer();
             appendModeratorFeedEntry(task);
@@ -6453,6 +6479,8 @@ document.addEventListener('click', (event) => {
                     askInstruction: window.StageMarkers?.instructions?.() || '',
                     askOwner: askCustomOwner,
                     decide: askCustomDecision,
+                    onRequest: recordAttempt,
+                    onResponse: recordAttempt,
                     send: async (models, promptsByModel, { step, label, attempt }) => {
                         const batch = await runModelBatch({
                             prompt: promptsByModel[models[0]],
@@ -6484,6 +6512,9 @@ document.addEventListener('click', (event) => {
                             }
                             return [model, {
                                 text, status: modelResult.status || '', completion: modelResult.completion || '',
+                                // The prompt exactly as the transport dispatched it (token and limit included).
+                                sentPrompt: window.TransportPolicy?.resolvePromptForModel?.(batch?.sentPrompts, model, null) ?? null,
+                                attribution: modelResult.attribution || '',
                                 answered: String(modelResult.status || '').toUpperCase() === 'SUCCESS' && modelResult.attribution === 'verified',
                                 transportRequestId: modelResult.transportRequestId || ''
                             }];
@@ -6493,6 +6524,7 @@ document.addEventListener('click', (event) => {
                     onEvent: (kind, fields) => window.MessageDelivery?.batchEvent?.(kind, { pipelineRunId: runContext.pipelineRunId, ...fields })
                 });
                 const stopText = engine.STOP_TEXT[result.stopReason] || result.stopReason;
+                if (record) { window.CustomRunRecord.finishRun(record, { stopReason: result.stopReason }); await saveRecord(true); }
                 // Always shown, also after Stop: the accepted answers of the last step that has any.
                 updateDebateModelCardOutput('Custom', [
                     result.answers.length ? result.answers.map((text, index) => (result.answers.length > 1 ? `Ответ ${index + 1}:\n${text}` : text)).join('\n\n') : 'Принятых ответов нет.',
@@ -6506,6 +6538,7 @@ document.addEventListener('click', (event) => {
             } catch (err) {
                 console.error('[RESULTS] Custom run failed', err);
                 showNotification(`Pipeline: error (${err?.message || String(err)})`, 'error');
+                if (record && !record.finishedAt) { window.CustomRunRecord.finishRun(record, { stopReason: 'error' }); await saveRecord(true); }
                 return false;
             } finally {
                 // Stop while a pause dialog was open: close it, the run is over.
@@ -7063,7 +7096,9 @@ document.addEventListener('click', (event) => {
                 getDebateTranscriptStore: () => debateTranscriptStore,
                 getApprovalWaiting: () => debateExecutionContext?.hasApprovalWaiter?.() === true,
                 customStepsFromPlan,
-                // Lazy: renamePipeline is declared further down.
+                // Lazy: declared further down.
+                customAttemptHtmlForTest: (record, attempt) => customAttemptHtml(record, attempt),
+                customBlockRefForTest: (block) => customBlockRef(block),
                 renamePipelineForTest: (oldName, newName) => renamePipeline(oldName, newName)
             };
         }
@@ -7985,6 +8020,116 @@ document.addEventListener('click', (event) => {
             return details;
         };
 
+        // Custom: the model card shows facts of the real request path. Before a run — the request
+        // template (known parts filled, future data marked, transport lines listed apart). After —
+        // every attempt of this model in this step as recorded: instructions, input with sources,
+        // the prompt as dispatched, the answer and the outcome. Nothing here is rebuilt from settings.
+        const CUSTOM_INPUT_TEXT = Object.freeze({ none: 'только задача', previous: 'ответы предыдущего шага', all: 'всё принятое за предыдущие шаги' });
+        const customBlockRef = (block) => {
+            const stackId = block.closest('.model-stack')?.id || '';
+            if (stackId === 'synthesis-stack') return 'final';
+            const match = /^r(\d+)-models$/.exec(stackId);
+            return match ? `r${match[1]}` : '';
+        };
+        const customSourceText = (source) => (source ? `${source.label} · ${source.model} · попытка ${source.attempt}` : 'источник не записан');
+        const customAttemptHtml = (record, attempt) => {
+            const textOf = (ref) => window.CustomRunRecord.textOf(record, ref);
+            const reasons = window.CustomEngine?.REASON_TEXT || {};
+            const outcome = attempt.state === 'unknown' ? 'исход неизвестен: прогон прерван до ответа'
+                : attempt.state === 'sent' ? 'ждёт ответа'
+                    : attempt.accepted ? 'принят' : `не принят: ${reasons[attempt.reason] || attempt.reason || attempt.status || 'без ответа'}`;
+            const parts = attempt.parts || {};
+            const instructions = parts.correction
+                ? `<pre>${escapeHtml(textOf(parts.correction.textRef))}</pre>`
+                : `<dl class="pipeline-block-info-grid">
+                    <dt>Задача</dt><dd>${escapeHtml(textOf(parts.instructions?.taskRef) || '—')}</dd>
+                    <dt>Задание шага</dt><dd>${escapeHtml(textOf(parts.instructions?.stepTaskRef) || '—')}</dd>
+                    <dt>Дополнение модели</dt><dd>${escapeHtml(textOf(parts.instructions?.extraRef) || '—')}</dd>
+                    ${(parts.instructions?.ownerAnswers || []).length ? `<dt>Ответы владельца</dt><dd>${escapeHtml(parts.instructions.ownerAnswers.map((item) => `${item.question}: ${item.answer}`).join('; '))}</dd>` : ''}
+                    ${parts.instructions?.askInstructionRef ? '<dt>Инструкция [[ASK]]</dt><dd>добавлена</dd>' : ''}
+                </dl>`;
+            const inputItems = [...(parts.input?.items || []), ...(parts.input?.earlier || []).map((item) => ({ ...item, earlier: true }))];
+            const input = parts.correction ? '<p>Повтор в том же чате: вход не передаётся заново.</p>'
+                : `<p>Вход: ${escapeHtml(CUSTOM_INPUT_TEXT[parts.input?.mode] || parts.input?.mode || '—')}${inputItems.length ? '' : ' — ничего не передано'}</p>`
+                + inputItems.map((item) => `<details><summary>${escapeHtml(`${item.earlier ? 'До тебя в этом раунде: ' : ''}${customSourceText(item.source)}`)}</summary><pre>${escapeHtml(textOf(item.textRef))}</pre></details>`).join('');
+            const time = (value) => (value ? new Date(value).toLocaleTimeString() : '—');
+            return `<article class="custom-attempt" data-state="${escapeHtml(attempt.state)}">
+                <h4>Попытка ${attempt.attempt}${attempt.retryOf ? ` · повтор попытки ${attempt.retryOf}` : ''} — ${escapeHtml(outcome)}</h4>
+                <h5>Инструкции</h5>${instructions}
+                <h5>Входные данные</h5>${input}
+                <details open><summary>Отправлено — как ушло в транспорт (метка и предел длины включены)</summary><pre>${escapeHtml(textOf(attempt.sentPromptRef) || (attempt.state === 'done' ? 'Транспорт не вернул отправленный текст.' : 'Ещё не отправлено транспортом.'))}</pre></details>
+                <details open><summary>Ответ</summary><pre>${escapeHtml(textOf(attempt.answerRef) || '—')}</pre></details>
+                <dl class="pipeline-block-info-grid">
+                    <dt>Статус</dt><dd>${escapeHtml(attempt.status || '—')}</dd>
+                    <dt>Метка доставки</dt><dd>${attempt.attribution === 'verified' ? 'получена' : attempt.attribution === 'unproven' ? 'нет в ответе' : '—'}</dd>
+                    <dt>Запрос</dt><dd>${escapeHtml(attempt.transportRequestId || '—')}</dd>
+                    <dt>Отправлено / получено</dt><dd>${time(attempt.sentAt)} / ${time(attempt.finishedAt)}</dd>
+                </dl>
+            </article>`;
+        };
+        const renderCustomBlockInspector = async (block, modal) => {
+            const title = modal.querySelector('#pipeline-block-info-title');
+            const grid = modal.querySelector('#pipeline-block-info-grid');
+            const prompts = modal.querySelector('#pipeline-block-info-prompts');
+            const modelName = block.querySelector('.model-name')?.textContent?.trim() || '';
+            const ref = customBlockRef(block);
+            const name = customPipelineName();
+            const steps = customStepsFromPlan(draftPlanForCanvas(getActiveDraftPlan()));
+            const stepIndex = steps.findIndex((step) => step.ref === ref);
+            const semiAuto = getDebateRunPolicy() !== 'auto';
+            const preview = stepIndex >= 0 ? window.CustomEngine?.previewPrompt?.({
+                task: getModeratorDispatchText() || '‹задача из поля ввода›', steps, stepIndex, modelName, semiAuto,
+                askInstruction: window.StageMarkers?.instructions?.() || ''
+            }) : null;
+            if (title) title.textContent = `${modelName} · ${preview?.label || ref || 'шаг'} · ${name}`;
+            if (grid) {
+                grid.innerHTML = [
+                    ['Pipeline', name], ['Движок', 'Custom'], ['Шаг', preview?.label || '—'],
+                    ['Порядок', preview?.order === 'sequential' ? 'по очереди' : 'параллельно'],
+                    ['Вход', CUSTOM_INPUT_TEXT[preview?.inputMode] || '—'], ['Режим', semiAuto ? 'подтверждение между шагами' : 'Авто']
+                ].map(([key, value]) => `<dt>${escapeHtml(key)}</dt><dd>${escapeHtml(value)}</dd>`).join('');
+            }
+            if (!prompts) return;
+            const previewHtml = preview ? `<section class="custom-inspect-preview">
+                <h4>Шаблон запроса — до запуска</h4>
+                <dl class="pipeline-block-info-grid">
+                    <dt>Задача</dt><dd>${escapeHtml(preview.instructions.task)}</dd>
+                    <dt>Задание шага</dt><dd>${escapeHtml(preview.instructions.stepTask || '—')}</dd>
+                    <dt>Дополнение модели</dt><dd>${escapeHtml(preview.instructions.extra || '—')}</dd>
+                </dl>
+                <h5>Транспорт добавит</h5><ul>${preview.transportLines.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>
+                <details><summary>Шаблон целиком</summary><pre>${escapeHtml(preview.prompt)}</pre></details>
+            </section>` : '<section><p>Шаг этой карточки не найден в плане canvas.</p></section>';
+            prompts.innerHTML = `${previewHtml}<section class="custom-inspect-run"><p>Загрузка записи прогона…</p></section>`;
+            let record = liveCustomRecord?.pipelineName === name ? liveCustomRecord : null;
+            if (!record && customRunStore) {
+                try { record = await customRunStore.latest(name); } catch (error) { console.warn('[RESULTS] Custom run record not read', error); }
+            }
+            const runSection = prompts.querySelector('.custom-inspect-run');
+            if (!runSection) return;
+            const recordStep = record ? record.steps.findIndex((step) => step.ref === ref) : -1;
+            const attempts = record ? record.attempts.filter((item) => item.step === recordStep && item.model === modelName) : [];
+            if (!record || !attempts.length) {
+                runSection.innerHTML = `<h4>Прогон</h4><p>${record ? 'В последнем прогоне эта модель в этом шаге не вызывалась.' : 'Прогонов этого pipeline ещё нет.'}</p>`;
+                return;
+            }
+            const stopText = record.stopReason ? (window.CustomEngine?.STOP_TEXT?.[record.stopReason] || record.stopReason) : 'идёт';
+            runSection.innerHTML = `<h4>Прогон ${escapeHtml(new Date(record.startedAt).toLocaleString())} · ${escapeHtml(stopText)}</h4>
+                ${attempts.map((attempt) => customAttemptHtml(record, attempt)).join('')}
+                <button type="button" class="modal-button" data-custom-export>Экспорт прогона (JSON)</button>`;
+            runSection.querySelector('[data-custom-export]')?.addEventListener('click', () => {
+                const blob = new Blob([JSON.stringify(window.CustomRunRecord.exportRun(record), null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `custom-run-${record.runId}.json`;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 0);
+            });
+        };
+
         const showPipelineBlockInfo = (block) => {
             if (!block || block.classList.contains('pipeline-empty-slot')) return;
             let modal = document.getElementById('pipeline-block-info-modal');
@@ -8018,6 +8163,14 @@ document.addEventListener('click', (event) => {
                     modal.setAttribute('aria-hidden', 'true');
                     document.body.classList.remove('modal-open');
                 });
+            }
+            if (window.PipelinePresets?.getPipelinePreset?.(getSelectedPipelinePresetId())?.runner === 'custom' && window.CustomEngine) {
+                void renderCustomBlockInspector(block, modal);
+                modal.style.display = 'flex';
+                modal.classList.add('is-visible');
+                modal.setAttribute('aria-hidden', 'false');
+                document.body.classList.add('modal-open');
+                return;
             }
             const modelName = block.querySelector('.model-name')?.textContent?.trim() || 'Model';
             const stageColumn = block.closest('.stage-column');

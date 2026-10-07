@@ -389,6 +389,7 @@ async function loadResultsScript() {
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-projections.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-prompt-catalog.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'pipeline-presets.js'), 'utf8'));
+  ['custom-engine', 'custom-run-record'].forEach((mod) => { window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', `${mod}.js`), 'utf8')); });
   ['boot-utils', 'dom-utils', 'attachments', 'pasted-text', 'tooltips', 'debate-ui', 'debate-transport', 'debate-controller', 'debate-renderer', 'debate-sessions-store', 'debate-export', 'debate-plan-view-model', 'debate-telemetry-view'].forEach((mod) => { window.eval(fs.readFileSync(path.join(__dirname, '..', 'results', `${mod}.js`), 'utf8')); });
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'utils', 'selection-block-format.js'), 'utf8'));
   const script = fs.readFileSync(path.join(__dirname, '..', 'results.js'), 'utf8');
@@ -1975,11 +1976,33 @@ describe('Pipeline debate favorites view', () => {
       { plannedStageId: 'planned-final-synthesis', participantIds: ['Claude'], outputIntent: 'candidate_final' }
     ] });
     expect(steps).toEqual([
-      { kind: 'round', order: 'parallel', task: '', input: 'none', models: ['GPT', 'Claude'] },
-      { kind: 'synthesis', models: ['Gemini'] },
-      { kind: 'round', order: 'parallel', task: expect.stringContaining('Учти ответы'), input: 'previous', models: ['GPT'] },
-      { kind: 'synthesis', models: ['Claude'] }
+      { kind: 'round', ref: 'r1', order: 'parallel', task: '', input: 'none', models: ['GPT', 'Claude'] },
+      { kind: 'synthesis', ref: 'synth:planned-working-synthesis-after-canvas-r1', models: ['Gemini'] },
+      { kind: 'round', ref: 'r2', order: 'parallel', task: expect.stringContaining('Учти ответы'), input: 'previous', models: ['GPT'] },
+      { kind: 'synthesis', ref: 'final', models: ['Claude'] }
     ]);
+  });
+
+  test('the Custom model card shows a recorded attempt as it went: instructions, input with sources, the dispatched prompt, the answer', () => {
+    const Record = window.CustomRunRecord;
+    const record = Record.createRun({ runId: 'r', pipelineName: 'Custom', task: 'T', steps: [{ ref: 'r1', kind: 'round', models: ['GPT'] }, { ref: 'r2', kind: 'round', models: ['Claude'] }] });
+    const entry = {
+      step: 1, label: 'Раунд 2', model: 'Claude', attempt: 1, prompt: 'Задача:\nT',
+      parts: { instructions: { task: 'T', stepTask: 'Улучши', extra: '<b>Кратко</b>' }, input: { mode: 'previous', items: [{ text: 'ответ GPT', source: { step: 0, label: 'Раунд 1', model: 'GPT', attempt: 1 } }], earlier: [] } }
+    };
+    Record.recordAttempt(record, entry);
+    Record.recordAttempt(record, { ...entry, state: 'done', sentPrompt: 'Задача:\nT\n\nПоследней строкой ответа напиши только метку [[AO-abc123]]',
+      answer: 'улучшено', attribution: 'verified', accepted: true, status: 'SUCCESS', transportRequestId: 'tr-9' });
+    const html = window.__pipelineLifecycleDebug.customAttemptHtmlForTest(record, record.attempts[0]);
+    expect(html).toContain('Попытка 1 — принят');
+    expect(html).toContain('Раунд 1 · GPT · попытка 1');
+    expect(html).toContain('[[AO-abc123]]');
+    expect(html).toContain('&lt;b&gt;Кратко&lt;/b&gt;');
+    expect(html).toContain('tr-9');
+    const unknown = Record.revive(Record.serialize(Record.createRun({ runId: 'u', steps: [] })));
+    Record.recordAttempt(unknown, { step: 0, label: 'Раунд 1', model: 'GPT', attempt: 1, prompt: 'p', parts: {} });
+    unknown.attempts[0].state = 'unknown';
+    expect(window.__pipelineLifecycleDebug.customAttemptHtmlForTest(unknown, unknown.attempts[0])).toContain('исход неизвестен');
   });
 
   test('templates keep their names: no renaming a template and no taking a template name', async () => {

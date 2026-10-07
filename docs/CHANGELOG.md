@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-07 — Custom model card: control view and run record, version 2.81.634
+
+- The 📝 card of a model in a Custom round now shows facts of the real request path. Before a run: the request template with the known parts filled, future data marked, and the transport lines (response limit, delivery token — not editable) listed apart. After a run: every attempt of this model in this step — instructions apart from input data, input items with their source (step · model · attempt), the prompt exactly as dispatched (token and limit included), the answer, status, delivery token received or not, `transportRequestId`, times and the outcome. A retry is a new attempt referring to the previous one; nothing is rewritten. Export of a run as JSON.
+- New `disput/custom-run-record.js`: the run record in `chrome.storage.local`, each text stored once under its fingerprint, bounded by size (4 MB, whole oldest runs removed first), saved during and after the run. After a reload a record is history only: an attempt sent but never finished is "unknown" and is never re-sent automatically.
+- Engine: every attempt is recorded with instructions and input apart (`onRequest` / `onResponse`), input items carry their source; `previewPrompt` builds the pre-run template. `runModelBatch` returns the dispatched prompts read-only (`sentPrompts`); sending and receiving are unchanged.
+- Validation: engine (19), run record and preview (8), page tests for the plan mapping and the attempt card pass; full suite: only the known failures. Live provider run was not performed.
+
 ### 2026-10-07 — Custom runs on the page; templates are protected, version 2.81.633
 
 - **Custom** is enabled and selectable like the other templates; it runs on the shared engine (`runCustomFromPage`). Steps come from the canvas plan in order: round cards, an intermediate synthesis insert (with its own model) and the final synthesis. Rounds run in parallel; later rounds get the accepted answers of the previous step. Auto or confirmation follows the run policy switch; pauses use the confirm dialog (continue / retry / stop, or skip / retry / stop without accepted answers); `[[ASK]]` uses the owner-question dialog; Run is Stop during the run; the result is a **Custom** card. A new pipeline ("+") runs on the Custom engine and is saved with it. The round-card editor (order, task, input, per-model addition) is the next step.
