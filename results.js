@@ -15811,6 +15811,13 @@ document.addEventListener('click', (event) => {
             if (!downloadDiagnosticsJson('Disput Flow', report, null, { fileName: sourceFile })) {
                 throw new Error('Could not download Disput Flow');
             }
+            // The extract reads Debate stages. A run that did not go through the Debate engine
+            // (Polishing, a manual send) has none: its delivery journal is in the JSON just saved.
+            if (!report.metadata?.debateRunId || !Array.isArray(report.stageExecutions)) {
+                showNotification('Extract: в этом прогоне нет этапов Debate (Polishing, ручная отправка), разбирать нечего. Журнал доставки — в сохранённом Disput Flow .json.', 'info');
+                flashButtonFeedback(button, 'warn');
+                return;
+            }
             const extract = window.ReportDigest.extractTransport(report, sourceFile);
             const markdown = window.ReportDigest.renderTransportMarkdown(extract);
             if (!downloadDiagnosticsMarkdown('extract_transport', markdown, button, {

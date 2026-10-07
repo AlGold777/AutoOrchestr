@@ -1,10 +1,16 @@
 # CHANGELOG — Project
 
+### 2026-10-07 — Extract explains a run without Debate stages, version 2.81.628
+
+- The Transport **Extract** button needs Debate stages (`debateRunId`, `stageExecutions`). After a Polishing run or a manual send it saved the Disput Flow JSON and then failed with "Transport extraction requires a Disput Flow report". It now saves the JSON and shows an info message that such a run has no stages to extract and that its delivery journal (including `polishing_answer` / `polishing_end`) is in that JSON. The extractor itself is unchanged.
+- Validation: `tests/polishing-pipeline.test.js` (11) pass; live Extract click was not run.
+
 ### 2026-10-07 — Pipeline Delta: word game, version 2.81.627
 
 - New built-in pipeline **Delta** (`presetId: DELTA`, `disput/delta-pipeline.js`; the name was freed by renaming the idea-collecting pipeline to Polishing). Models of a canvas round take turns adding exactly one word to the phrase from the input field. A model gets the whole phrase on its first turn and only the words added after its own word on later turns; after a turn without an answer it gets the whole phrase again. The first word of an answer is taken, the rest is dropped. Stops after the last round, a round with no word added, or Stop (the phrase built so far stays in the final card).
 - Runs on its own page loop `runDeltaFromPage` over `runModelBatch`, like Polishing; Polishing is unchanged. `RETIRED_PIPELINE_PRESET_IDS` still lists `DELTA` but ignores it while the preset exists.
 - Transport: a pipeline run now opens a new page for each model on that model's first dispatch (`newPagesModels`), not only for the first dispatch of the run. Before, in turn-by-turn runs only the first model started in a new chat.
+
 ### 2026-10-07 — Rename pipeline Delta to Polishing, version 2.81.626
 
 - The pipeline that collects fresh improvements of an idea is renamed **Polishing** everywhere: preset `POLISHING` (runner `polishing`, K setting `polishingMaxIdeas`), `disput/polishing-pipeline.js` / `window.PolishingPipeline`, `runPolishingFromPage`, telemetry events `polishing_answer` / `polishing_end`, the result card, notifications, tests and `docs/Pipeline scenarios/polishing-pipeline.md`. Entries of 2.81.623–2.81.625 below describe the same pipeline under its former name Delta. Behaviour is unchanged.
