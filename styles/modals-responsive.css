@@ -921,7 +921,7 @@ body.pro-features-hidden .comparison-section {
     height: 100%;
     min-height: 0;
     margin-top: 0;
-    padding: 2.5px 9px 0;
+    padding: 3.5px 10px 0;
     box-sizing: border-box;
 }
 .prompt-container.prompt-sandwich.debate-composer.has-debate-feed .moderator-input {
@@ -1281,7 +1281,8 @@ body.pro-features-hidden .comparison-section {
     gap: 6px;
     min-width: 0;
 }
-.msg-head-right-top > .debate-btn {
+.msg-head-right-top > .debate-btn,
+.msg-head-right-top .pipeline-main-page-actions > .debate-btn {
     flex: 0 0 32px;
     width: 32px;
     min-width: 32px;
@@ -1566,8 +1567,8 @@ body.pro-features-hidden .comparison-section {
     grid-template-columns: auto minmax(0, 1fr) auto;
     gap: 6px;
     width: 100%;
-    margin-top: 13px;
-    padding: 0 4px 0 0;
+    margin-top: 12px;
+    padding: 0;
     box-sizing: border-box;
 }
 
@@ -1577,9 +1578,21 @@ body.pro-features-hidden .comparison-section {
 }
 
 .prompt-container.prompt-sandwich.debate-composer:not(.has-debate-feed) .msg-head-right-top {
-    gap: 4px;
-    justify-content: flex-end;
     overflow: visible;
+}
+.pipeline-page .prompt-container.prompt-sandwich.debate-composer .msg-head-right-top {
+    gap: 0;
+    justify-content: flex-end;
+}
+.pipeline-page .prompt-container.prompt-sandwich.debate-composer .pipeline-main-page-actions {
+    gap: 4px;
+    margin-left: 0;
+}
+.pipeline-page .prompt-container.prompt-sandwich.debate-composer #pipeline-get-it-btn {
+    margin-right: 5.2px; /* 1.3 × the compact 4px New pages-to-Run gap. */
+}
+.prompt-container.prompt-sandwich.debate-composer:not(.has-debate-feed) #pipeline-get-it-btn {
+    margin-right: 11.7px; /* 1.3 × the main-page 9px gap (4px + 5px). */
 }
 
 .prompt-container.prompt-sandwich.debate-composer:not(.has-debate-feed) .msg-head-center {
@@ -1608,7 +1621,7 @@ body.pro-features-hidden .comparison-section {
     height: 100%;
     min-height: 0;
     max-height: none;
-    padding: 10px 15px;
+    padding: 5px 15px;
     border-radius: 8px;
     font-size: 16px;
     line-height: 1.45;
@@ -1636,6 +1649,14 @@ body.pro-features-hidden .comparison-section {
 }
 .prompt-container.prompt-sandwich.debate-composer:not(.has-debate-feed) .msg-head-right-top .top-new-pages-checkbox:checked + .top-toggle-track {
     background: #1f3b4c;
+}
+
+/* Main closed prompt: 122px - 2px border - 5px top - 10px bottom = 105px
+   content. Its 70px editor + 32px footer + three 6px gaps occupy 120px, so
+   center alignment shifts by -7.5px: editor y=1+5+6-7.5=4.5px. The footer
+   starts at y=4.5+70+12=86.5px. Match that box model here. */
+.prompt-container.prompt-sandwich.debate-composer:not(.has-debate-feed) .mod-middle {
+    height: 70px;
 }
 .mod-send-btn {
     flex: 0 0 32px;
@@ -2999,4 +3020,28 @@ hr.section-divider {
     width: var(--pipeline-composer-width);
     max-width: none;
     margin-left: calc((100% - var(--pipeline-composer-width)) / 2);
+}
+
+/* The closed Pipeline composer mirrors .main-inner's 980px outer width and
+   16px side padding. Its moderator frame supplies the single visible border. */
+.pipeline-page .prompt-container.prompt-sandwich.debate-composer:not(.has-debate-feed) {
+    --pipeline-composer-width: min(calc(var(--center-max-width) - 32px), calc(100cqw - 32px));
+    border: 0;
+}
+/* The main page compresses to 70px editor + 32px footer + 2px border after
+   model selection: 104px total, with the editor at y=1 and controls at y=71. */
+.pipeline-page .prompt-container.prompt-sandwich.debate-composer.has-selected-models:not(.has-debate-feed) {
+    min-height: 102px;
+    height: auto;
+    max-height: none;
+    justify-content: flex-start;
+}
+.pipeline-page .prompt-container.prompt-sandwich.debate-composer.has-selected-models:not(.has-debate-feed) .moderator-input {
+    padding: 0 10px;
+}
+.pipeline-page .prompt-container.prompt-sandwich.debate-composer.has-selected-models:not(.has-debate-feed) .mod-middle {
+    gap: 0;
+}
+.pipeline-page .prompt-container.prompt-sandwich.debate-composer.has-selected-models:not(.has-debate-feed) .msg-header {
+    margin-top: 0;
 }

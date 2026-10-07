@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-07 — Match closed Pipeline composer to the main prompt, version 2.81.621
+
+- The closed Pipeline composer uses the same responsive content column as `.main-inner` (948px at the 980px maximum). Before model selection its frame is 122px tall, with a 70px editor at y=4.5px and controls at y=86.5px. After selection it mirrors the main page's compact 104px frame, with editor/buttons at y=1px/71px. The moderator frame replaces the former nested outer border.
+- Get it sits before New pages. Its edge-to-edge gap is 11.7px versus the 9px New pages-to-Run gap (30% larger). In the compact feed layout the equivalent gaps are 5.2px and 4px.
+- Validation: box-model/CSS cascade calculation; tests and live extension rendering were not run.
+
 ### 2026-10-07 — Restore main-page stacking in full-height previews, version 2.81.620
 
 - Full-height stream previews now retain Sticky Card Stacking in single-column and tiled views. The former preview exclusion disabled stacking before prompt submission, including when restored answers were visible. Transitions between preview and submitted answers keep the same reading deck.

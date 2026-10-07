@@ -7798,7 +7798,7 @@ document.addEventListener('click', (event) => {
         // Pressing a composer control must not take the focus out of the moderator input: when the feed
         // overflows, the input shrinks to one line as soon as it loses the focus, the buttons below it
         // move up from under the pointer and the click never happens (the first click on Run was lost).
-        debateRunToggleBtn?.closest('.msg-header')?.addEventListener('mousedown', (event) => {
+        debateRunToggleBtn?.closest('.moderator-input')?.addEventListener('mousedown', (event) => {
             if (event.target.closest?.('button')) event.preventDefault();
         });
         debateRunToggleBtn?.addEventListener('click', (event) => {
