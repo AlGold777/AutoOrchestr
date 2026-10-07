@@ -1,28 +1,28 @@
 const fs = require('fs');
 const path = require('path');
-const Delta = require('../disput/delta-pipeline');
+const Polishing = require('../disput/polishing-pipeline');
 const Presets = require('../disput/pipeline-presets');
 
-describe('Delta pipeline', () => {
+describe('Polishing pipeline', () => {
   test('one line is one idea: bullets and numbering are stripped, refusals and repeats dropped', () => {
     const known = [{ text: 'Добавить кэш' }];
-    expect(Delta.parseIdeas('1. Добавить кэш.\n- **Ввести роли**\n\n2) Логировать отказы\nНовых улучшений нет.', known))
+    expect(Polishing.parseIdeas('1. Добавить кэш.\n- **Ввести роли**\n\n2) Логировать отказы\nНовых улучшений нет.', known))
       .toEqual(['Ввести роли', 'Логировать отказы']);
-    expect(Delta.parseIdeas('Нет новых улучшений')).toEqual([]);
+    expect(Polishing.parseIdeas('Нет новых улучшений')).toEqual([]);
   });
 
   test('the prompt carries the idea, the whole list and K', () => {
-    const prompt = Delta.buildPrompt({ idea: 'Сервис заметок', ideas: [{ text: 'A' }, { text: 'B' }], maxIdeas: 2 });
+    const prompt = Polishing.buildPrompt({ idea: 'Сервис заметок', ideas: [{ text: 'A' }, { text: 'B' }], maxIdeas: 2 });
     expect(prompt).toContain('Сервис заметок');
     expect(prompt).toContain('1. A\n2. B');
     expect(prompt).toContain('не больше 2');
-    expect(Delta.buildPrompt({ idea: 'x' })).toContain('Пока нет.');
+    expect(Polishing.buildPrompt({ idea: 'x' })).toContain('Пока нет.');
   });
 
   test('models run in order, each sees the lines added before it', async () => {
     const prompts = [];
     const answers = { A: ['a1\na2', 'a3', 'a1'], B: ['b1', '', ''] };
-    const result = await Delta.run({
+    const result = await Polishing.run({
       idea: 'idea',
       rounds: [['A', 'B'], ['A', 'B'], ['A', 'B']],
       send: async (model, prompt, { round }) => {
@@ -39,7 +39,7 @@ describe('Delta pipeline', () => {
   });
 
   test('a failing model is skipped, the chain goes on', async () => {
-    const result = await Delta.run({
+    const result = await Polishing.run({
       idea: 'idea',
       rounds: [['A', 'B']],
       send: async (model) => { if (model === 'A') throw new Error('timeout'); return { text: 'b1' }; }
@@ -51,29 +51,29 @@ describe('Delta pipeline', () => {
 
   test('one silent round is survived, two in a row stop with all_failed; nothing new is EMPTY', async () => {
     let calls = 0;
-    const recovered = await Delta.run({
+    const recovered = await Polishing.run({
       idea: 'i', rounds: [['A'], ['A'], ['A']],
       send: async () => { calls += 1; return { text: calls === 2 ? 'a1' : '' }; }
     });
     expect(recovered.ideas.map((item) => item.text)).toEqual(['a1']);
     expect(recovered.stopReason).toBe('rounds_done');
-    const failed = await Delta.run({ idea: 'i', rounds: [['A'], ['A'], ['A']], send: async () => ({ text: '' }) });
+    const failed = await Polishing.run({ idea: 'i', rounds: [['A'], ['A'], ['A']], send: async () => ({ text: '' }) });
     expect(failed.log).toHaveLength(2);
     expect(failed.stopReason).toBe('all_failed');
-    const empty = await Delta.run({ idea: 'i', rounds: [['A']], send: async () => ({ text: 'Новых улучшений нет' }) });
+    const empty = await Polishing.run({ idea: 'i', rounds: [['A']], send: async () => ({ text: 'Новых улучшений нет' }) });
     expect(empty.log[0].status).toBe('EMPTY');
     expect(empty.stopReason).toBe('no_new_ideas');
   });
 
   test('Stop keeps what was collected', async () => {
     const controller = new AbortController();
-    const result = await Delta.run({
+    const result = await Polishing.run({
       idea: 'i', rounds: [['A', 'B']], signal: controller.signal,
       send: async () => { controller.abort(); return { text: 'x' }; }
     });
     expect(result.ideas.map((item) => item.text)).toEqual(['x']);
     expect(result.stopReason).toBe('cancelled');
-    const thrown = await Delta.run({
+    const thrown = await Polishing.run({
       idea: 'i', rounds: [['A']],
       send: async () => { throw new DOMException('cancelled', 'AbortError'); }
     });
@@ -81,7 +81,7 @@ describe('Delta pipeline', () => {
   });
 
   test('stops before the prompt with the whole list outgrows its budget', async () => {
-    const result = await Delta.run({
+    const result = await Polishing.run({
       idea: 'i', rounds: [['A'], ['A'], ['A']], maxPromptChars: 360,
       send: async (model, prompt, { round }) => ({ text: `улучшение номер ${round} `.repeat(4) })
     });
@@ -91,13 +91,13 @@ describe('Delta pipeline', () => {
   });
 
   test('headings, fences, emphasis and an echo of the idea are not ideas', () => {
-    expect(Delta.parseIdeas('Улучшения:\n## Идеи\n```\n**Кэшировать ответы**\nСервис заметок', ['Сервис заметок']))
+    expect(Polishing.parseIdeas('Улучшения:\n## Идеи\n```\n**Кэшировать ответы**\nСервис заметок', ['Сервис заметок']))
       .toEqual(['Кэшировать ответы']);
   });
 
   test('the result names author and round of every line, the answers of every round and the stop', () => {
-    expect(Delta.formatIdeas([{ text: 'a', model: 'GPT', round: 2 }])).toBe('1. a — GPT, круг 2');
-    expect(Delta.formatResult({
+    expect(Polishing.formatIdeas([{ text: 'a', model: 'GPT', round: 2 }])).toBe('1. a — GPT, круг 2');
+    expect(Polishing.formatResult({
       ideas: [{ text: 'a', model: 'GPT', round: 1 }],
       log: [{ round: 1, model: 'GPT', status: 'OK', added: 1 }, { round: 1, model: 'Claude', status: 'EMPTY', added: 0 },
         { round: 1, model: 'Gemini', status: 'FAILED', reason: 'timeout', added: 0 }],
@@ -105,20 +105,24 @@ describe('Delta pipeline', () => {
     })).toBe('1. a — GPT, круг 1\n\nКруг 1: GPT +1, Claude пусто, Gemini сбой (timeout)\n\nОстановка: остановлено пользователем.');
   });
 
-  test('the Delta preset runs its own loop on the page; while it runs Run is Stop', () => {
-    expect(Presets.getPipelinePreset('DELTA').runner).toBe('delta');
-    expect(Presets.BUILTIN_PIPELINE_DEFINITIONS.find((item) => item.presetId === 'DELTA')).toMatchObject({ name: 'Delta', deltaMaxIdeas: 3, defaultModelCount: 0 });
+  test('the Polishing preset runs its own loop on the page; while it runs Run is Stop', () => {
+    expect(Presets.getPipelinePreset('POLISHING').runner).toBe('polishing');
+    expect(Presets.BUILTIN_PIPELINE_DEFINITIONS.find((item) => item.presetId === 'POLISHING')).toMatchObject({ name: 'Polishing', polishingMaxIdeas: 3, defaultModelCount: 0 });
     const source = fs.readFileSync(path.join(__dirname, '..', 'results.js'), 'utf8');
-    expect(source).toContain("if (selectedPreset?.runner === 'delta') {");
+    expect(source).toContain("if (selectedPreset?.runner === 'polishing') {");
     expect(source).toContain("return { action: 'stop', icon: 'ti ti-player-stop'");
-    const glue = source.slice(source.indexOf('const runDeltaFromPage'), source.indexOf('const startDebateFromPage'));
+    const glue = source.slice(source.indexOf('const runPolishingFromPage'), source.indexOf('const startDebateFromPage'));
     expect(glue).toContain('anonymizeParticipants: false');
     expect(glue).toContain('maxPromptChars,');
-    expect(glue).toContain("updateDebateModelCardOutput('Delta', delta.formatResult(result)");
+    expect(glue).toContain("updateDebateModelCardOutput('Polishing', polishing.formatResult(result)");
     expect(glue).not.toContain('renderDebateModelCards(');
     expect(source).toMatch(/if \(controls\.action === 'stop'\) \{\s*event\.preventDefault\(\);\s*void cancelPipelineRun\(\);/);
+    expect(source).toContain("const RETIRED_PIPELINE_PRESET_IDS = ['DELTA'];");
+    // The name Delta belongs to no built-in Polishing artefact any more.
+    expect(JSON.stringify(Presets.PIPELINE_PRESETS)).not.toMatch(/delta/i);
+    expect(glue).not.toMatch(/delta/i);
     ['result_new.html', 'pipeline_panel.html'].forEach((page) => {
-      expect(fs.readFileSync(path.join(__dirname, '..', page), 'utf8')).toContain('<script src="disput/delta-pipeline.js"></script>');
+      expect(fs.readFileSync(path.join(__dirname, '..', page), 'utf8')).toContain('<script src="disput/polishing-pipeline.js"></script>');
     });
   });
 });

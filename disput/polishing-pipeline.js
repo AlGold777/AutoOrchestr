@@ -1,4 +1,4 @@
-// Delta: collects fresh improvements of one idea. The idea itself never changes;
+// Polishing: collects fresh improvements of one idea. The idea itself never changes;
 // there is no merge, ranking or synthesis — only an append-only list of lines.
 // A round calls the round's models one after another; every model sees the idea and
 // the whole list collected so far and adds at most K new lines. The transport adds the
@@ -6,7 +6,7 @@
 // Stops after the last round, after a round that answered but added nothing, after two
 // rounds in a row without any answer, before the prompt outgrows its budget, or on Stop.
 // What was collected is always returned, also on Stop.
-(function initDeltaPipeline(root) {
+(function initPolishingPipeline(root) {
   'use strict';
 
   const DEFAULT_MAX_IDEAS = 3;
@@ -136,6 +136,6 @@
   }
 
   const api = Object.freeze({ DEFAULT_MAX_IDEAS, MAX_SILENT_ROUNDS, STOP_TEXT, buildPrompt, parseIdeas, run, formatIdeas, formatRounds, formatResult });
-  root.DeltaPipeline = api;
+  root.PolishingPipeline = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

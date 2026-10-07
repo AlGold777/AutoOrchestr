@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-07 — Rename pipeline Delta to Polishing, version 2.81.626
+
+- The pipeline that collects fresh improvements of an idea is renamed **Polishing** everywhere: preset `POLISHING` (runner `polishing`, K setting `polishingMaxIdeas`), `disput/polishing-pipeline.js` / `window.PolishingPipeline`, `runPolishingFromPage`, telemetry events `polishing_answer` / `polishing_end`, the result card, notifications, tests and `docs/Pipeline scenarios/polishing-pipeline.md`. Entries of 2.81.623–2.81.625 below describe the same pipeline under its former name Delta. Behaviour is unchanged.
+- The name **Delta** is freed for another scenario (the pipeline that passes on only what changed). A pipeline saved as Delta by 2.81.623–2.81.625 (preset id `DELTA`) is removed on load, otherwise it would run as Universal; custom pipelines are untouched.
+- Validation: `tests/polishing-pipeline.test.js` and preset/list tests pass; a one-off page test with a saved Delta in storage confirmed that it is dropped and a custom pipeline stays. Full suite: the same 18 failures as on the base commit, no new ones.
+
 ### 2026-10-07 — Pipeline Delta: keep results on Stop, guard the prompt budget, version 2.81.625
 
 - Stop no longer loses the run: the **Delta** card with the collected list is shown after every run, also after Stop, with a per-round line of who added how many, who answered nothing new and who failed (and why).

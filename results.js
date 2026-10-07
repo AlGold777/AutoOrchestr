@@ -2714,8 +2714,8 @@ document.addEventListener('click', (event) => {
         resolve: null
     };
     let activePipelineAbortController = null;
-    // Set while a Delta run (runDeltaFromPage) is going: the Run button becomes Stop.
-    let deltaAbortController = null;
+    // Set while a Polishing run (runPolishingFromPage) is going: the Run button becomes Stop.
+    let polishingAbortController = null;
     let activePipelineRunContext = null;
     const debateAggregateStore = window.DebateRunStore?.createStore?.() || null;
     const debateCaseStore = window.DebateCaseStore?.createStore?.({ storage: chrome?.storage?.local }) || null;
@@ -4235,6 +4235,7 @@ document.addEventListener('click', (event) => {
         };
 
         const LEGACY_EXAMPLE_PIPELINE_NAMES = ['Research & Analysis', 'Content Gen', 'Idea Validation'];
+        const RETIRED_PIPELINE_PRESET_IDS = ['DELTA'];
         const getAllPipelineModelNames = () => (Array.isArray(PIPELINE_MODELS) ? PIPELINE_MODELS : [])
             .map((model) => model?.name)
             .filter(Boolean);
@@ -4451,9 +4452,16 @@ document.addEventListener('click', (event) => {
                 pipelineStore.version = PIPELINE_STORE_VERSION;
                 return true;
             }
+            // A saved pipeline of a retired preset is dropped: an unknown presetId would run as Universal.
+            // 'DELTA' was Polishing's id in 2.81.623-2.81.625; the name Delta is free for another pipeline.
+            const isRetiredPreset = (config) => {
+                const id = String(config?.protocol?.presetId || '');
+                return RETIRED_PIPELINE_PRESET_IDS.includes(id)
+                    && !(window.PipelinePresets?.PIPELINE_PRESETS || []).some((preset) => preset.id === id);
+            };
             Object.keys(pipelineStore.pipelines).forEach((name) => {
                 const config = pipelineStore.pipelines[name];
-                if (defaultNames.includes(name) || config?.protocol?.type === 'universal') return;
+                if (!isRetiredPreset(config) && (defaultNames.includes(name) || config?.protocol?.type === 'universal')) return;
                 delete pipelineStore.pipelines[name];
                 pipelineStore.order = pipelineStore.order.filter((item) => item !== name);
                 if (pipelineStore.active === name) pipelineStore.active = '';
@@ -5363,8 +5371,8 @@ document.addEventListener('click', (event) => {
         let debateApplication = null;
         let phantomRunStateReported = false;
         const getDebateRunControls = () => {
-            if (deltaAbortController) {
-                return { action: 'stop', icon: 'ti ti-player-stop', title: 'Остановить Delta', active: true, enabled: true, stepEnabled: false };
+            if (polishingAbortController) {
+                return { action: 'stop', icon: 'ti ti-player-stop', title: 'Остановить Polishing', active: true, enabled: true, stepEnabled: false };
             }
             let aggregate = debateAggregateStore?.getState?.() || null;
             // No run exists on this page (none started here, no engine): whatever state the aggregate
@@ -6213,25 +6221,25 @@ document.addEventListener('click', (event) => {
                 return '';
             }
         };
-        // Delta (disput/delta-pipeline.js): its own loop over runModelBatch, like the judge and the
+        // Polishing (disput/polishing-pipeline.js): its own loop over runModelBatch, like the judge and the
         // moderator dispatch — no plan, StateMap or ContextBroker. Every model sees the whole list.
-        const runDeltaFromPage = async ({ idea, presetId }) => {
-            const delta = window.DeltaPipeline;
+        const runPolishingFromPage = async ({ idea, presetId }) => {
+            const polishing = window.PolishingPipeline;
             const definition = (window.PipelinePresets?.BUILTIN_PIPELINE_DEFINITIONS || []).find((item) => item.presetId === presetId) || {};
             const draftPlan = draftPlanForCanvas(getActiveDraftPlan());
             const rounds = (draftPlan?.plannedStages || [])
                 .filter((stage) => /^canvas-r\d+$/.test(String(stage.plannedStageId || '')))
                 .map((stage) => (stage.participantIds || []).filter(Boolean))
                 .filter((models) => models.length);
-            if (!delta || !rounds.length) {
-                showNotification('Delta: выберите модели хотя бы в одном круге.', 'warn');
+            if (!polishing || !rounds.length) {
+                showNotification('Polishing: выберите модели хотя бы в одном круге.', 'warn');
                 return false;
             }
-            const maxIdeas = Number(definition.deltaMaxIdeas) || delta.DEFAULT_MAX_IDEAS;
+            const maxIdeas = Number(definition.polishingMaxIdeas) || polishing.DEFAULT_MAX_IDEAS;
             const maxWords = getDebateMaxWords();
             const useApiFallback = apiModeCheckbox ? apiModeCheckbox.checked : true;
             pipelineRunActive = true;
-            deltaAbortController = new AbortController();
+            polishingAbortController = new AbortController();
             activePipelineRunContext = {
                 pipelineRunId: makePipelineRunId(),
                 sessionId: debateTabsState?.activeSessionId
@@ -6256,12 +6264,12 @@ document.addEventListener('click', (event) => {
                 // context budget, which would cut the prompt's tail with the instruction.
                 const budgetLimits = window.DebateContextBudget?.DEFAULT_LIMITS;
                 const maxPromptChars = budgetLimits ? budgetLimits.promptChars - budgetLimits.reservedOutputChars - 500 : Infinity;
-                const result = await delta.run({
+                const result = await polishing.run({
                     idea,
                     rounds,
                     maxIdeas,
                     maxPromptChars,
-                    signal: deltaAbortController.signal,
+                    signal: polishingAbortController.signal,
                     send: async (model, prompt, { round }) => {
                         const pipelineRoundId = `r${round}`;
                         const batch = await runModelBatch({
@@ -6270,7 +6278,7 @@ document.addEventListener('click', (event) => {
                             attachments: attached.has(model) ? [] : attachments,
                             forceNewTabs: runContext.forceNewTabs,
                             useApiFallback,
-                            signal: deltaAbortController.signal,
+                            signal: polishingAbortController.signal,
                             context: {
                                 ...runContext,
                                 pipelineRoundId,
@@ -6278,7 +6286,7 @@ document.addEventListener('click', (event) => {
                                 // The list carries no participant names; a preset left over from an
                                 // earlier run must not rewrite the idea's text with aliases.
                                 anonymizeParticipants: false,
-                                delta: true
+                                polishing: true
                             },
                             generationProfile: 'long'
                         });
@@ -6289,7 +6297,7 @@ document.addEventListener('click', (event) => {
                         // reach it. Same run/round/request as the live card, so it is not a second card.
                         if (text.trim()) {
                             updateDebateModelCardOutput(model, text, '', {
-                                status: modelResult.status || 'SUCCESS', source: 'delta', role: `Delta · круг ${round}`,
+                                status: modelResult.status || 'SUCCESS', source: 'polishing', role: `Polishing · круг ${round}`,
                                 pipelineRunId: runContext.pipelineRunId, pipelineRoundId,
                                 transportRequestId: modelResult.transportRequestId || '', requestId: modelResult.transportRequestId || ''
                             });
@@ -6297,33 +6305,33 @@ document.addEventListener('click', (event) => {
                         return { text, status: modelResult.status || '' };
                     },
                     onAnswer: (entry, ideas) => {
-                        window.MessageDelivery?.batchEvent?.('delta_answer', {
+                        window.MessageDelivery?.batchEvent?.('polishing_answer', {
                             pipelineRunId: runContext.pipelineRunId, round: entry.round, model: entry.model,
                             status: entry.status, added: entry.added, overLimit: Boolean(entry.overLimit),
                             reason: entry.reason || null, total: ideas.length
                         });
                     }
                 });
-                const stopText = delta.STOP_TEXT[result.stopReason] || result.stopReason;
-                window.MessageDelivery?.batchEvent?.('delta_end', {
+                const stopText = polishing.STOP_TEXT[result.stopReason] || result.stopReason;
+                window.MessageDelivery?.batchEvent?.('polishing_end', {
                     pipelineRunId: runContext.pipelineRunId, stopReason: result.stopReason,
                     ideas: result.ideas.length, answers: result.log.length
                 });
                 // Always shown, also after Stop: what was collected is the run's result.
-                updateDebateModelCardOutput('Delta', delta.formatResult(result), '', {
-                    status: 'SUCCESS', source: 'delta', role: 'Delta · итог',
-                    pipelineRunId: runContext.pipelineRunId, pipelineRoundId: 'delta-result'
+                updateDebateModelCardOutput('Polishing', polishing.formatResult(result), '', {
+                    status: 'SUCCESS', source: 'polishing', role: 'Polishing · итог',
+                    pipelineRunId: runContext.pipelineRunId, pipelineRoundId: 'polishing-result'
                 });
-                showNotification(`Delta: собрано улучшений ${result.ideas.length} (${stopText}).`, result.ideas.length ? 'info' : 'warn');
+                showNotification(`Polishing: собрано улучшений ${result.ideas.length} (${stopText}).`, result.ideas.length ? 'info' : 'warn');
                 return result.stopReason !== 'cancelled';
             } catch (err) {
-                console.error('[RESULTS] Delta run failed', err);
+                console.error('[RESULTS] Polishing run failed', err);
                 showNotification(`Pipeline: error (${err?.message || String(err)})`, 'error');
                 return false;
             } finally {
                 clearPromptAttachments();
                 pipelineRunActive = false;
-                deltaAbortController = null;
+                polishingAbortController = null;
                 activePipelineRunContext = null;
                 setPipelineEditingEnabled(true);
                 setPipelineRunUi(false);
@@ -6347,8 +6355,8 @@ document.addEventListener('click', (event) => {
                 showNotification('Этот профиль пока недоступен.', 'warn');
                 return false;
             }
-            if (selectedPreset?.runner === 'delta') {
-                return runDeltaFromPage({ idea: moderatorEntryText || pipelineNameText, presetId });
+            if (selectedPreset?.runner === 'polishing') {
+                return runPolishingFromPage({ idea: moderatorEntryText || pipelineNameText, presetId });
             }
             const presetConfig = buildPipelinePresetRuntimeConfig(presetId);
             const draftPlan = draftPlanForCanvas(getActiveDraftPlan());
@@ -6556,9 +6564,9 @@ document.addEventListener('click', (event) => {
             }
         };
         const cancelPipelineRun = async () => {
-            if (deltaAbortController) {
+            if (polishingAbortController) {
                 const runId = activePipelineRunContext?.pipelineRunId;
-                deltaAbortController.abort();
+                polishingAbortController.abort();
                 try { await debateTransportPort?.cancelRun?.(runId); } catch (_) {}
                 return true;
             }
