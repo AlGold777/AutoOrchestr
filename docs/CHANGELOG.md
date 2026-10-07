@@ -1,5 +1,15 @@
 # CHANGELOG — Project
 
+### 2026-10-07 — Pipeline Delta: keep results on Stop, guard the prompt budget, version 2.81.625
+
+- Stop no longer loses the run: the **Delta** card with the collected list is shown after every run, also after Stop, with a per-round line of who added how many, who answered nothing new and who failed (and why).
+- The run stops with `list_full` before a prompt with the whole list would exceed the transport's context budget (52 000 characters); before, the transport would cut the prompt's tail together with the instruction.
+- One round without any answer no longer ends the run; two rounds in a row do (`all_failed`).
+- Parsing drops headings, code fences and an echo of the idea, and unwraps `**emphasis**` around a whole line.
+- Model cards: no pre-created placeholders that stayed "printing" for a model that failed; the answer card is bound to its run, round and request, so a later round never revises an earlier card. Anonymization from a previously used preset no longer applies to Delta prompts.
+- Telemetry: `delta_answer` (round, model, status, lines added, total) and `delta_end` (stop reason, totals) in the message-delivery journal.
+- Validation: `tests/delta-pipeline.test.js` (10) pass; full suite: the same 18 failures as on the base commit, no new ones. Live provider run was not performed.
+
 ### 2026-10-07 — Pipeline Delta: collect fresh improvements of an idea, version 2.81.623
 
 - New built-in pipeline **Delta** (`presetId: DELTA`, `disput/delta-pipeline.js`). Models of a canvas round are called one after another; each receives the idea, the whole numbered list collected so far and the instruction to add at most K (3) new improvements, one per line. Lines are appended to the list as they arrive; the idea is never changed, there is no merge, ranking or synthesis.

@@ -7,7 +7,7 @@ describe('Delta pipeline', () => {
   test('one line is one idea: bullets and numbering are stripped, refusals and repeats dropped', () => {
     const known = [{ text: 'Добавить кэш' }];
     expect(Delta.parseIdeas('1. Добавить кэш.\n- **Ввести роли**\n\n2) Логировать отказы\nНовых улучшений нет.', known))
-      .toEqual(['**Ввести роли**', 'Логировать отказы']);
+      .toEqual(['Ввести роли', 'Логировать отказы']);
     expect(Delta.parseIdeas('Нет новых улучшений')).toEqual([]);
   });
 
@@ -49,25 +49,60 @@ describe('Delta pipeline', () => {
     expect(result.stopReason).toBe('rounds_done');
   });
 
-  test('a round where nobody answered stops with all_failed; an answer with nothing new is EMPTY', async () => {
-    const failed = await Delta.run({ idea: 'i', rounds: [['A'], ['A']], send: async () => ({ text: '' }) });
+  test('one silent round is survived, two in a row stop with all_failed; nothing new is EMPTY', async () => {
+    let calls = 0;
+    const recovered = await Delta.run({
+      idea: 'i', rounds: [['A'], ['A'], ['A']],
+      send: async () => { calls += 1; return { text: calls === 2 ? 'a1' : '' }; }
+    });
+    expect(recovered.ideas.map((item) => item.text)).toEqual(['a1']);
+    expect(recovered.stopReason).toBe('rounds_done');
+    const failed = await Delta.run({ idea: 'i', rounds: [['A'], ['A'], ['A']], send: async () => ({ text: '' }) });
+    expect(failed.log).toHaveLength(2);
     expect(failed.stopReason).toBe('all_failed');
     const empty = await Delta.run({ idea: 'i', rounds: [['A']], send: async () => ({ text: 'Новых улучшений нет' }) });
     expect(empty.log[0].status).toBe('EMPTY');
     expect(empty.stopReason).toBe('no_new_ideas');
   });
 
-  test('Stop aborts the run', async () => {
+  test('Stop keeps what was collected', async () => {
     const controller = new AbortController();
-    const run = Delta.run({
+    const result = await Delta.run({
       idea: 'i', rounds: [['A', 'B']], signal: controller.signal,
       send: async () => { controller.abort(); return { text: 'x' }; }
     });
-    await expect(run).rejects.toMatchObject({ name: 'AbortError' });
+    expect(result.ideas.map((item) => item.text)).toEqual(['x']);
+    expect(result.stopReason).toBe('cancelled');
+    const thrown = await Delta.run({
+      idea: 'i', rounds: [['A']],
+      send: async () => { throw new DOMException('cancelled', 'AbortError'); }
+    });
+    expect(thrown.stopReason).toBe('cancelled');
   });
 
-  test('the result list names the author and the round', () => {
+  test('stops before the prompt with the whole list outgrows its budget', async () => {
+    const result = await Delta.run({
+      idea: 'i', rounds: [['A'], ['A'], ['A']], maxPromptChars: 360,
+      send: async (model, prompt, { round }) => ({ text: `улучшение номер ${round} `.repeat(4) })
+    });
+    expect(result.stopReason).toBe('list_full');
+    expect(result.ideas.length).toBeGreaterThan(0);
+    expect(result.ideas.length).toBeLessThan(3);
+  });
+
+  test('headings, fences, emphasis and an echo of the idea are not ideas', () => {
+    expect(Delta.parseIdeas('Улучшения:\n## Идеи\n```\n**Кэшировать ответы**\nСервис заметок', ['Сервис заметок']))
+      .toEqual(['Кэшировать ответы']);
+  });
+
+  test('the result names author and round of every line, the answers of every round and the stop', () => {
     expect(Delta.formatIdeas([{ text: 'a', model: 'GPT', round: 2 }])).toBe('1. a — GPT, круг 2');
+    expect(Delta.formatResult({
+      ideas: [{ text: 'a', model: 'GPT', round: 1 }],
+      log: [{ round: 1, model: 'GPT', status: 'OK', added: 1 }, { round: 1, model: 'Claude', status: 'EMPTY', added: 0 },
+        { round: 1, model: 'Gemini', status: 'FAILED', reason: 'timeout', added: 0 }],
+      stopReason: 'cancelled'
+    })).toBe('1. a — GPT, круг 1\n\nКруг 1: GPT +1, Claude пусто, Gemini сбой (timeout)\n\nОстановка: остановлено пользователем.');
   });
 
   test('the Delta preset runs its own loop on the page; while it runs Run is Stop', () => {
@@ -76,6 +111,11 @@ describe('Delta pipeline', () => {
     const source = fs.readFileSync(path.join(__dirname, '..', 'results.js'), 'utf8');
     expect(source).toContain("if (selectedPreset?.runner === 'delta') {");
     expect(source).toContain("return { action: 'stop', icon: 'ti ti-player-stop'");
+    const glue = source.slice(source.indexOf('const runDeltaFromPage'), source.indexOf('const startDebateFromPage'));
+    expect(glue).toContain('anonymizeParticipants: false');
+    expect(glue).toContain('maxPromptChars,');
+    expect(glue).toContain("updateDebateModelCardOutput('Delta', delta.formatResult(result)");
+    expect(glue).not.toContain('renderDebateModelCards(');
     expect(source).toMatch(/if \(controls\.action === 'stop'\) \{\s*event\.preventDefault\(\);\s*void cancelPipelineRun\(\);/);
     ['result_new.html', 'pipeline_panel.html'].forEach((page) => {
       expect(fs.readFileSync(path.join(__dirname, '..', page), 'utf8')).toContain('<script src="disput/delta-pipeline.js"></script>');

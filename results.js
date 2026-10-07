@@ -6252,14 +6252,18 @@ document.addEventListener('click', (event) => {
                 const attachments = await buildAttachmentPayload();
                 // Attachments go with the first message to each model only: later rounds continue in that chat.
                 const attached = new Set();
+                // The prompt carries the whole list: stop before it outgrows the transport's
+                // context budget, which would cut the prompt's tail with the instruction.
+                const budgetLimits = window.DebateContextBudget?.DEFAULT_LIMITS;
+                const maxPromptChars = budgetLimits ? budgetLimits.promptChars - budgetLimits.reservedOutputChars - 500 : Infinity;
                 const result = await delta.run({
                     idea,
                     rounds,
                     maxIdeas,
+                    maxPromptChars,
                     signal: deltaAbortController.signal,
                     send: async (model, prompt, { round }) => {
-                        const role = `Delta · круг ${round}`;
-                        renderDebateModelCards(role, [model], { approvalSelectable: false });
+                        const pipelineRoundId = `r${round}`;
                         const batch = await runModelBatch({
                             prompt: `${prompt}\n\n${DISPUT_RESPONSE_LIMIT_MARKER} Ответ — не более ${maxWords} слов.`,
                             models: [model],
@@ -6269,31 +6273,52 @@ document.addEventListener('click', (event) => {
                             signal: deltaAbortController.signal,
                             context: {
                                 ...runContext,
-                                pipelineRoundId: `r${round}`,
+                                pipelineRoundId,
                                 pipelineBatchId: makePipelineBatchId({ runId: runContext.pipelineRunId, roundIndex: round, groupIndex: 0 }),
+                                // The list carries no participant names; a preset left over from an
+                                // earlier run must not rewrite the idea's text with aliases.
+                                anonymizeParticipants: false,
                                 delta: true
                             },
                             generationProfile: 'long'
                         });
                         attached.add(model);
                         const text = String(batch?.responses?.[model] || '');
-                        const status = batch?.results?.[model]?.status || '';
-                        if (text.trim()) updateDebateModelCardOutput(model, text, '', { status: status || 'SUCCESS', source: 'delta', role });
-                        return { text, status };
+                        const modelResult = batch?.results?.[model] || {};
+                        // The live feed already shows the answer; this only covers a path that did not
+                        // reach it. Same run/round/request as the live card, so it is not a second card.
+                        if (text.trim()) {
+                            updateDebateModelCardOutput(model, text, '', {
+                                status: modelResult.status || 'SUCCESS', source: 'delta', role: `Delta · круг ${round}`,
+                                pipelineRunId: runContext.pipelineRunId, pipelineRoundId,
+                                transportRequestId: modelResult.transportRequestId || '', requestId: modelResult.transportRequestId || ''
+                            });
+                        }
+                        return { text, status: modelResult.status || '' };
+                    },
+                    onAnswer: (entry, ideas) => {
+                        window.MessageDelivery?.batchEvent?.('delta_answer', {
+                            pipelineRunId: runContext.pipelineRunId, round: entry.round, model: entry.model,
+                            status: entry.status, added: entry.added, overLimit: Boolean(entry.overLimit),
+                            reason: entry.reason || null, total: ideas.length
+                        });
                     }
                 });
-                const stopText = { rounds_done: 'все круги пройдены', no_new_ideas: 'круг без новых улучшений', all_failed: 'в круге не ответила ни одна модель' }[result.stopReason] || result.stopReason;
-                renderDebateModelCards('Delta · итог', ['Delta'], { approvalSelectable: false });
-                updateDebateModelCardOutput('Delta', `${delta.formatIdeas(result.ideas) || 'Новых улучшений нет.'}\n\nОстановка: ${stopText}.`, '', { status: 'SUCCESS', source: 'delta', role: 'Delta · итог' });
+                const stopText = delta.STOP_TEXT[result.stopReason] || result.stopReason;
+                window.MessageDelivery?.batchEvent?.('delta_end', {
+                    pipelineRunId: runContext.pipelineRunId, stopReason: result.stopReason,
+                    ideas: result.ideas.length, answers: result.log.length
+                });
+                // Always shown, also after Stop: what was collected is the run's result.
+                updateDebateModelCardOutput('Delta', delta.formatResult(result), '', {
+                    status: 'SUCCESS', source: 'delta', role: 'Delta · итог',
+                    pipelineRunId: runContext.pipelineRunId, pipelineRoundId: 'delta-result'
+                });
                 showNotification(`Delta: собрано улучшений ${result.ideas.length} (${stopText}).`, result.ideas.length ? 'info' : 'warn');
-                return true;
+                return result.stopReason !== 'cancelled';
             } catch (err) {
-                if (err?.name === 'AbortError') {
-                    showNotification('Pipeline: cancelled', 'warn');
-                } else {
-                    console.error('[RESULTS] Delta run failed', err);
-                    showNotification(`Pipeline: error (${err?.message || String(err)})`, 'error');
-                }
+                console.error('[RESULTS] Delta run failed', err);
+                showNotification(`Pipeline: error (${err?.message || String(err)})`, 'error');
                 return false;
             } finally {
                 clearPromptAttachments();
