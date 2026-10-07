@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-07 — Custom engine module, version 2.81.630
+
+- New shared pipeline engine `disput/custom-engine.js` (`window.CustomEngine`) for the Custom pipeline: a run is one sequence of steps (round cards and synthesis inserts). Per step: models in card order with an optional per-model addition, parallel or sequential order, a round task, and an explicit input (none / answers of the previous step / everything accepted). Empty and token-only answers are not accepted; rejected answers get a correction retry in the same chat (2 attempts); a prompt over the budget stops the run (`context_full`). Auto goes on with a partial step and pauses only without accepted answers; semi-automatic pauses after every step with continue / retry / skip / stop (continue only with accepted answers). Stop keeps what was collected. `[[ASK]]` answers reach the following steps. Every request is in the run history and in the delivery journal (`custom_*` events with `transportRequestId`).
+- Not yet on the page: the Custom preset, the round card and the page wiring are the next step. Principles and the round card: `docs/Pipeline scenarios/custom-pipeline.md`.
+- Validation: `tests/custom-engine.test.js` (16) pass.
+
 ### 2026-10-07 — Polishing: a token-only answer is EMPTY, K is a hard limit, version 2.81.629
 
 - An answer of the delivery token alone (the instructed way to say "nothing new") became empty once the transport removed the token and was recorded as a failure. A round in which every model said "nothing new" therefore counted as a round without answers: the run made an extra round and stopped with the wrong reason (`all_failed`). Such an answer is now `EMPTY` when the request finished with `SUCCESS` and its token was seen (`attribution: verified`), so the round stops at once with `no_new_ideas`. An empty text without that proof stays a failure.
