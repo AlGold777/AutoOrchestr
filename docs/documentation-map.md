@@ -5,11 +5,11 @@
 
 | Раздел | Содержание и точки входа |
 | --- | --- |
-| [Automation](Automation) | [Комплект Product→Architecture Automation Layer](<Automation/Automation GPT комплект Документов/README.md>): спецификации, контракты, исходные материалы и прототип. Внутренняя структура комплекта сохранена. |
+| [Automation](Automation) | [Стек оркестрации](Automation/orchestration-osi-stack.md), [маркеры](Automation/markers.md) и [комплект Product→Architecture Automation Layer](<Automation/Automation GPT комплект Документов/README.md>): спецификации, контракты, исходные материалы и прототип. Внутренняя структура комплекта сохранена. |
 | [Transport](Transport) | [Доставка сообщений](Transport/message-delivery.md), [протокол завершения](Transport/completion-protocol-v2.md), [тайминги](Transport/timings-settings.md), [обзоры проблем и решений](Transport/Reviews), [отчёт восстановления отправки](Transport/Reports/dispatch-recovery-2026-09-05.md). |
 | [Telemetry](Telemetry) | [Телеметрия](Telemetry/telemetry.md), [полуавтоматический режим](Telemetry/telemetry-semi-auto-spec.md), [инструкция анализа отчёта](Telemetry/report-analysis-prompt.md), [проверки Transport Extract и сжатия отчётов](Telemetry/Reports). |
 | [Architecture](Architecture) | [Архитектура вкладок моделей](Architecture/model-tabs-architecture.md), [концепция Universal Engine](<Architecture/Universal Engine/README.md>) и проекты контрактов/протоколов. |
-| [Pipeline](Pipeline) | [Проект Pipelines universal](<Pipeline/Pipelines universal/README.md>) и [Pre-Dispute](Pipeline/Pre-Dispute): исходный снимок, аудит архитектуры, требования и планы миграции/очистки. |
+| [Pipeline](<Pipeline scenarios>) | [Проект Pipelines universal](<Pipeline scenarios/Pipelines universal/README.md>), [Pre-Dispute](<Pipeline scenarios/Pre-Dispute>): исходный снимок, аудит архитектуры, требования и планы миграции/очистки; сценарии Research. |
 | [History](History) | [Прежний журнал Codex](History/change-log-codex.md) и [разбор отката 2.81.576–2.81.577](History/uncommitted-page-cleanup-2.81.576-577-diff.md). |
 
 ## Статус и хранение материалов

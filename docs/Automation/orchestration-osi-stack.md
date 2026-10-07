@@ -1381,7 +1381,7 @@ DOM-состояния (полный снимок не хранится).
 
 | Слой | Компоненты |
 |---|---|
-| L6 | Методика Scenario Logic: `docs/scenarios/how-to-design-a-scenario.md`, сценарии в `docs/scenarios/`; код: `disput/pipeline-presets.js`, `pipeline-profile-store.js`, `debate-profile-schema.js`, `debate-draft-plan.js`, `debate-plan-revision.js` (Scenario Definition), `disput/debate-orchestrator.js`, `debate-planner.js`, `debate-protocols.js`, `debate-protocol-transition-service.js`, `debate-convergence.js`, `debate-stagnation-warning.js`, `debate-epistemic-outcome.js` |
+| L6 | Методика Scenario Logic: `docs/Pipeline scenarios/how-to-design-a-scenario.md`, сценарии в `docs/Pipeline scenarios/`; код: `disput/pipeline-presets.js`, `pipeline-profile-store.js`, `debate-profile-schema.js`, `debate-draft-plan.js`, `debate-plan-revision.js` (Scenario Definition), `disput/debate-orchestrator.js`, `debate-planner.js`, `debate-protocols.js`, `debate-protocol-transition-service.js`, `debate-convergence.js`, `debate-stagnation-warning.js`, `debate-epistemic-outcome.js` |
 | L5 | `disput/debate-prompt-compiler.js`, `debate-context-broker.js`, `debate-context-budget.js`, `debate-anonymization.js`, `debate-response-acceptance.js` |
 | L4 | `disput/debate-run-store.js`, `debate-trace-store.js`, `debate-orchestrator-persistence.js`, `debate-correlation-guard.js`, `debate-state-delta.js`, `shared/decision-ledger.js` |
 | L3 | `background/dispatch-coordinator.js`, `dispatch-state-machine.js`, `dispatch-retry.js`, `content-scripts/unified-answer-watcher.js`, `shared/completion-evidence-ladder.js`, Completion V2 |

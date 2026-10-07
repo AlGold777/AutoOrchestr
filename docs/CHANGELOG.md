@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-10-07 — Refresh stream preview styles, version 2.81.618
+
+- Keep the preview card at a definite height so its output fills the card from the start. Bump stylesheet URLs in both main pages and the CSS imports so the browser does not keep the previous preview styles from cache.
+
 ### 2026-10-07 — Expand empty stream preview cards, version 2.81.617
 
 - Give pre-prompt response cards a definite 450 px height so the output flexes to fill the card immediately, even before any response text arrives.

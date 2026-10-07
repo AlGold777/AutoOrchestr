@@ -555,8 +555,8 @@ With the **Auto** toggle off the moderator drives the pipeline stage by stage:
 - **Research** template: 15 stages (12 model stages, three gates G1–G3) from
   `ResearchFramework` (`disput/research-framework.js`), reached like the
   Architecture template through the registry `disput/stage-templates.js`. What is
-  implemented and what of `docs/scenarios/research-2.0.md` is not:
-  `docs/scenarios/research-template.md`.
+  implemented and what of `docs/Pipeline scenarios/research-2.0.md` is not:
+  `docs/Pipeline scenarios/research-template.md`.
 - **Architecture** template («Разработка архитектуры»): the 30-stage
   Product→Architecture Framework as 30 canvas rounds (round number = framework
   stage number; stages 13, 17, 22, 30 are moderator gates without models). Run

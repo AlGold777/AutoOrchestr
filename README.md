@@ -37,7 +37,7 @@ updates as new messages arrive. Click outside the window or press Esc to close i
 - Project setup and runtime overview: [docs/project-overview.md](docs/project-overview.md)
 - Main-page model tabs and dispatch: [docs/Architecture/model-tabs-architecture.md](docs/Architecture/model-tabs-architecture.md)
 - Timing architecture and current values: [docs/Transport/timings-settings.md](docs/Transport/timings-settings.md)
-- Pipeline baseline, audits and unfinished migration plans: [docs/Pipeline/Pre-Dispute](docs/Pipeline/Pre-Dispute)
+- Pipeline baseline, audits and unfinished migration plans: [docs/Pipeline scenarios/Pre-Dispute](<docs/Pipeline scenarios/Pre-Dispute>)
 - Universal task engine concept and draft contracts: [docs/Architecture/Universal Engine/README.md](<docs/Architecture/Universal Engine/README.md>)
 - Append-only change history: [docs/CHANGELOG.md](docs/CHANGELOG.md)
 

@@ -16,8 +16,8 @@
 
 Инструкция выведена из устройства сценария Architecture (30 этапов,
 4 контрольные точки; см. `docs/Automation GPT комплект Документов/`) и из
-правил стека оркестрации (`docs/orchestration-osi-stack.md`). Пока по ней
-написан один новый сценарий — Research (`docs/scenarios/research.md`).
+правил стека оркестрации (`docs/Automation/orchestration-osi-stack.md`). Пока по ней
+написан один новый сценарий — Research (`docs/Pipeline scenarios/research.md`).
 
 ---
 

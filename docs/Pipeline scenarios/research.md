@@ -579,7 +579,7 @@
 
 ## Для разработчика: соответствие стеку и коду
 
-Термины стека — `docs/orchestration-osi-stack.md`.
+Термины стека — `docs/Automation/orchestration-osi-stack.md`.
 
 | Здесь | В стеке |
 |---|---|
