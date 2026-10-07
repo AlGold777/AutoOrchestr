@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-07 — Pipeline Delta: collect fresh improvements of an idea, version 2.81.623
+
+- New built-in pipeline **Delta** (`presetId: DELTA`, `disput/delta-pipeline.js`). Models of a canvas round are called one after another; each receives the idea, the whole numbered list collected so far and the instruction to add at most K (3) new improvements, one per line. Lines are appended to the list as they arrive; the idea is never changed, there is no merge, ranking or synthesis.
+- Runs its own loop over `runModelBatch` (as the judge and moderator dispatch do), bypassing the Debate engine and ContextBroker, so every model sees the full list. Delivery token and stale-answer dropping are the transport's; an answer without the token is kept. A failed model is skipped and tries again in the next round.
+- Stops after the last canvas round, or after a round that added no line (`no_new_ideas` / `all_failed`). While Delta runs, the Run button is Stop and aborts the run. The final list with author and round appears as a **Delta** card.
+- Validation: `tests/delta-pipeline.test.js` (8) and preset tests pass; full suite 2598 passed, 18 failed — the same 18 failures as on the base commit. Live provider run was not performed.
+
 ### 2026-10-07 — Align Pipeline composer vertical position, version 2.81.622
 
 - Match the vertical spacing before Pipeline's input section to the main page and use the same 5px top inset when the composer is raised. The Pipeline composer now starts on the same vertical anchor as the main composer after model selection.

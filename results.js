@@ -2714,6 +2714,8 @@ document.addEventListener('click', (event) => {
         resolve: null
     };
     let activePipelineAbortController = null;
+    // Set while a Delta run (runDeltaFromPage) is going: the Run button becomes Stop.
+    let deltaAbortController = null;
     let activePipelineRunContext = null;
     const debateAggregateStore = window.DebateRunStore?.createStore?.() || null;
     const debateCaseStore = window.DebateCaseStore?.createStore?.({ storage: chrome?.storage?.local }) || null;
@@ -5361,6 +5363,9 @@ document.addEventListener('click', (event) => {
         let debateApplication = null;
         let phantomRunStateReported = false;
         const getDebateRunControls = () => {
+            if (deltaAbortController) {
+                return { action: 'stop', icon: 'ti ti-player-stop', title: 'Остановить Delta', active: true, enabled: true, stepEnabled: false };
+            }
             let aggregate = debateAggregateStore?.getState?.() || null;
             // No run exists on this page (none started here, no engine): whatever state the aggregate
             // shows is a phantom (it never ran in this session) and must not turn Run into
@@ -6208,6 +6213,98 @@ document.addEventListener('click', (event) => {
                 return '';
             }
         };
+        // Delta (disput/delta-pipeline.js): its own loop over runModelBatch, like the judge and the
+        // moderator dispatch — no plan, StateMap or ContextBroker. Every model sees the whole list.
+        const runDeltaFromPage = async ({ idea, presetId }) => {
+            const delta = window.DeltaPipeline;
+            const definition = (window.PipelinePresets?.BUILTIN_PIPELINE_DEFINITIONS || []).find((item) => item.presetId === presetId) || {};
+            const draftPlan = draftPlanForCanvas(getActiveDraftPlan());
+            const rounds = (draftPlan?.plannedStages || [])
+                .filter((stage) => /^canvas-r\d+$/.test(String(stage.plannedStageId || '')))
+                .map((stage) => (stage.participantIds || []).filter(Boolean))
+                .filter((models) => models.length);
+            if (!delta || !rounds.length) {
+                showNotification('Delta: выберите модели хотя бы в одном круге.', 'warn');
+                return false;
+            }
+            const maxIdeas = Number(definition.deltaMaxIdeas) || delta.DEFAULT_MAX_IDEAS;
+            const maxWords = getDebateMaxWords();
+            const useApiFallback = apiModeCheckbox ? apiModeCheckbox.checked : true;
+            pipelineRunActive = true;
+            deltaAbortController = new AbortController();
+            activePipelineRunContext = {
+                pipelineRunId: makePipelineRunId(),
+                sessionId: debateTabsState?.activeSessionId
+                    || document.querySelector('.debate-session-tab.active')?.dataset?.sessionId
+                    || '1',
+                startedAt: Date.now(),
+                forceNewTabs: newPagesCheckbox ? newPagesCheckbox.checked : true,
+                newPagesDispatched: false
+            };
+            const runContext = activePipelineRunContext;
+            if (runContext.forceNewTabs) resetNewPagesCheckboxAfterOpen();
+            clearModeratorComposer();
+            appendModeratorFeedEntry(idea);
+            setPipelineEditingEnabled(false);
+            setPipelineRunUi(true);
+            updateDebateButtonsUi();
+            try {
+                const attachments = await buildAttachmentPayload();
+                // Attachments go with the first message to each model only: later rounds continue in that chat.
+                const attached = new Set();
+                const result = await delta.run({
+                    idea,
+                    rounds,
+                    maxIdeas,
+                    signal: deltaAbortController.signal,
+                    send: async (model, prompt, { round }) => {
+                        const role = `Delta · круг ${round}`;
+                        renderDebateModelCards(role, [model], { approvalSelectable: false });
+                        const batch = await runModelBatch({
+                            prompt: `${prompt}\n\n${DISPUT_RESPONSE_LIMIT_MARKER} Ответ — не более ${maxWords} слов.`,
+                            models: [model],
+                            attachments: attached.has(model) ? [] : attachments,
+                            forceNewTabs: runContext.forceNewTabs,
+                            useApiFallback,
+                            signal: deltaAbortController.signal,
+                            context: {
+                                ...runContext,
+                                pipelineRoundId: `r${round}`,
+                                pipelineBatchId: makePipelineBatchId({ runId: runContext.pipelineRunId, roundIndex: round, groupIndex: 0 }),
+                                delta: true
+                            },
+                            generationProfile: 'long'
+                        });
+                        attached.add(model);
+                        const text = String(batch?.responses?.[model] || '');
+                        const status = batch?.results?.[model]?.status || '';
+                        if (text.trim()) updateDebateModelCardOutput(model, text, '', { status: status || 'SUCCESS', source: 'delta', role });
+                        return { text, status };
+                    }
+                });
+                const stopText = { rounds_done: 'все круги пройдены', no_new_ideas: 'круг без новых улучшений', all_failed: 'в круге не ответила ни одна модель' }[result.stopReason] || result.stopReason;
+                renderDebateModelCards('Delta · итог', ['Delta'], { approvalSelectable: false });
+                updateDebateModelCardOutput('Delta', `${delta.formatIdeas(result.ideas) || 'Новых улучшений нет.'}\n\nОстановка: ${stopText}.`, '', { status: 'SUCCESS', source: 'delta', role: 'Delta · итог' });
+                showNotification(`Delta: собрано улучшений ${result.ideas.length} (${stopText}).`, result.ideas.length ? 'info' : 'warn');
+                return true;
+            } catch (err) {
+                if (err?.name === 'AbortError') {
+                    showNotification('Pipeline: cancelled', 'warn');
+                } else {
+                    console.error('[RESULTS] Delta run failed', err);
+                    showNotification(`Pipeline: error (${err?.message || String(err)})`, 'error');
+                }
+                return false;
+            } finally {
+                clearPromptAttachments();
+                pipelineRunActive = false;
+                deltaAbortController = null;
+                activePipelineRunContext = null;
+                setPipelineEditingEnabled(true);
+                setPipelineRunUi(false);
+                updateDebateButtonsUi();
+            }
+        };
         const startDebateFromPage = async () => {
             if (pipelineRunActive) {
                 showNotification('Pipeline already running', 'warn');
@@ -6224,6 +6321,9 @@ document.addEventListener('click', (event) => {
             if (selectedPreset && window.PipelinePresets?.isPresetEnabled && !window.PipelinePresets.isPresetEnabled(presetId)) {
                 showNotification('Этот профиль пока недоступен.', 'warn');
                 return false;
+            }
+            if (selectedPreset?.runner === 'delta') {
+                return runDeltaFromPage({ idea: moderatorEntryText || pipelineNameText, presetId });
             }
             const presetConfig = buildPipelinePresetRuntimeConfig(presetId);
             const draftPlan = draftPlanForCanvas(getActiveDraftPlan());
@@ -6431,6 +6531,12 @@ document.addEventListener('click', (event) => {
             }
         };
         const cancelPipelineRun = async () => {
+            if (deltaAbortController) {
+                const runId = activePipelineRunContext?.pipelineRunId;
+                deltaAbortController.abort();
+                try { await debateTransportPort?.cancelRun?.(runId); } catch (_) {}
+                return true;
+            }
             const lifecycle = debateApplication?.getOrchestrator?.()?.getState?.()?.lifecycle;
             if (!pipelineRunActive && !['STARTING', 'RUNNING', 'PAUSE_REQUESTED', 'QUIESCING', 'PAUSED', 'RECONCILING', 'FINALIZING'].includes(lifecycle)) return false;
             await notifyPipelineControlState('CANCELLED', {
@@ -7808,6 +7914,11 @@ document.addEventListener('click', (event) => {
                 return;
             }
             promptContainer?.classList.add('is-pipeline-composer-raised');
+            if (controls.action === 'stop') {
+                event.preventDefault();
+                void cancelPipelineRun();
+                return;
+            }
             if (controls.action === 'resume') {
                 event.preventDefault();
                 setDebatePausedState(false, 'resume_button');

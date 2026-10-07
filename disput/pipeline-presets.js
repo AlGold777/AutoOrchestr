@@ -32,7 +32,9 @@
     makePreset('UNIVERSAL_RED_TEAM', 'Red Team', 'UNIVERSAL_RED_TEAM', REASONING_BUDGETS.RED_TEAM,
       { finalizationPolicy: 'after_audited_synthesis' }),
     makePreset('ARCHITECTURE', 'Architecture', 'UNIVERSAL_STANDARD', REASONING_BUDGETS.ARCHITECTURE,
-      { finalizationPolicy: 'readiness_or_moderator' })
+      { finalizationPolicy: 'readiness_or_moderator' }),
+    // Delta runs its own loop (disput/delta-pipeline.js), not the Debate engine.
+    makePreset('DELTA', 'Delta', 'UNIVERSAL_STANDARD', REASONING_BUDGETS.STANDARD, { runner: 'delta' })
   ]);
 
   const BUILTIN_PIPELINE_DEFINITIONS = Object.freeze([
@@ -43,7 +45,10 @@
     Object.freeze({ name: 'Red Team', presetId: 'UNIVERSAL_RED_TEAM', profileId: 'UNIVERSAL_RED_TEAM', runPolicy: 'auto', length: '900', defaultModelCount: 0, roles: ['proposer', 'critic', 'verifier', 'synthesizer'] }),
     // Разработка архитектуры: stage by stage with the moderator (semi-automatic by default).
     // The 30 stages come from ArchitectureFramework (disput/architecture-framework.js).
-    Object.freeze({ name: 'Architecture', presetId: 'ARCHITECTURE', profileId: 'UNIVERSAL_STANDARD', runPolicy: 'manual', length: '1000', roundLimit: '30', stageTemplate: 'architecture', defaultModelCount: 0, roles: ['participant', 'critic', 'verifier', 'synthesizer'] })
+    Object.freeze({ name: 'Architecture', presetId: 'ARCHITECTURE', profileId: 'UNIVERSAL_STANDARD', runPolicy: 'manual', length: '1000', roundLimit: '30', stageTemplate: 'architecture', defaultModelCount: 0, roles: ['participant', 'critic', 'verifier', 'synthesizer'] }),
+    // Delta: collects fresh improvements of one idea. Canvas rounds are the rounds, the order of
+    // models in a round is the call order; deltaMaxIdeas is K (lines per answer).
+    Object.freeze({ name: 'Delta', presetId: 'DELTA', profileId: 'UNIVERSAL_STANDARD', runPolicy: 'auto', noMiniPrompts: true, length: '300', roundLimit: '3', defaultModelCount: 0, roles: ['participant'], deltaMaxIdeas: 3 })
   ]);
 
   const PRESET_BY_ID = Object.freeze(Object.fromEntries(PIPELINE_PRESETS.map((preset) => [preset.id, preset])));
