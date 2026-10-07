@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-07 — Restore main-page stacking in full-height previews, version 2.81.620
+
+- Full-height stream previews now retain Sticky Card Stacking in single-column and tiled views. The former preview exclusion disabled stacking before prompt submission, including when restored answers were visible. Transitions between preview and submitted answers keep the same reading deck.
+- Cover card height takes precedence over the new fixed 450 px preview rule, so each card fills its reading viewport and the incoming row fully covers the previous row. Expanded cards and reduced-motion preferences retain the regular layout.
+- Synchronized the package lock version with the project version.
+- Validation: 16 targeted cover/viewer tests passed. `node tests/response-card-cover.browser-check.js` passed with actual main-page markup/styles, covering preview/restored grid cards, full viewport height, overlap, reverse scrolling, submitted-answer transition, single-column mode, a narrow viewport, and original node restoration. Syntax and whitespace checks passed.
+
 ### 2026-10-07 — Preserve flex layout on visible model cards, version 2.81.619
 
 - Model-selection handlers no longer set visible `.llm-panel` elements to inline `display: block`. Clearing the inline value preserves the stylesheet's column flex layout, allowing an empty stream output to fill its preview card immediately.

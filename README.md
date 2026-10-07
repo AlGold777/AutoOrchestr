@@ -15,7 +15,8 @@ as one block, including an incomplete final row. Narrower layouts group cards
 by the available number of columns.
 Small initial scrolls hold the current card in place; scrolling back reverses
 the transition. Long answers scroll inside each card. Switching layouts keeps
-the reading model in view. Streaming previews, expanded cards, and
+the reading model in view. Stacking also works in the full-height stream preview,
+before submitting a prompt and when viewing restored answers. Expanded cards and
 reduced-motion preferences use the normal layout.
 
 Pipeline answer cards show a small round badge beside the model name (`GPT R1`).

@@ -26,7 +26,6 @@
       ? clamp(Math.floor(((root.clientWidth || root.getBoundingClientRect().width || window.innerWidth) + 10) / 310), 1, 3)
       : 1;
     const enabled = () => (root.classList.contains('view-stack') || root.classList.contains('view-grid'))
-      && !document.body.classList.contains('llm-stream-preview-open')
       && !root.querySelector('.llm-panel-expanded') && !motion?.matches;
 
     function geometry() {

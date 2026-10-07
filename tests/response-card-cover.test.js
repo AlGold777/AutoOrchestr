@@ -107,13 +107,20 @@ describe('Response card cover reading view', () => {
     expect(transform(document.getElementById('b'))).toBe('translate3d(0, 0%, 0)');
   });
 
-  test('uses normal cards for previews, expanded panels and reduced motion', async () => {
+  test('keeps stacking through full-height preview and submitted-answer transitions', async () => {
     document.body.classList.add('llm-stream-preview-open');
     await flush();
-    expect(root.querySelector('.response-cover-sticky')).toBeNull();
+    const sticky = root.querySelector('.response-cover-sticky');
+    expect(sticky).not.toBeNull();
+    await scroll(920);
+    expect(transform(document.getElementById('b'))).toBe('translate3d(0, 0%, 0)');
     document.body.classList.remove('llm-stream-preview-open');
     await flush();
-    expect(root.querySelector('.response-cover-sticky')).not.toBeNull();
+    expect(root.querySelector('.response-cover-sticky')).toBe(sticky);
+    expect(transform(document.getElementById('b'))).toBe('translate3d(0, 0%, 0)');
+  });
+
+  test('uses normal cards for expanded panels and reduced motion', async () => {
     document.getElementById('a').classList.add('llm-panel-expanded');
     await flush();
     expect(root.querySelector('.response-cover-sticky')).toBeNull();
