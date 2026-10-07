@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-10-07 — Keep stream preview output full-height, version 2.81.615
+
+- Removed the `3.2em` cap from response cards while the pre-prompt stream preview is open. The output now fills the card and remains internally scrollable, including after the preview layout is reapplied by JavaScript.
+
 ### 2026-10-06 — Missing web research no longer blocks a Research run, version 2.81.614
 
 - The run start no longer refuses with «Профиль требует недоступный инструмент» when no selected model is known to have a tool the profile declares (`web_research`: only Perplexity/Sonar are recognised). The moderator gets a warning, and `DebateCapabilityRegistry.degradedNotes` lines are added to the current instruction of every prompt of the run (run notes): nothing found may be presented as checked against a source; claims without a checked source get a low confidence; the report starts with a warning.

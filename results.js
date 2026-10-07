@@ -247,7 +247,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const proToggleWrapper = document.querySelector('.pro-toggle-wrapper');
     const mainPromptContainer = document.querySelector('.prompt-container.prompt-sandwich.debate-composer')
         || document.querySelector('.prompt-container.prompt-sandwich');
-    const PREVIEW_PANEL_OUTPUT_MAX_HEIGHT = '3.2em';
+    const PREVIEW_PANEL_OUTPUT_MAX_HEIGHT = 'none';
 
     const syncProStreamVisibility = () => {
         const hasSelectedLLMs = Boolean(document.querySelector('.llm-button.active'));
@@ -261,7 +261,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         document.querySelectorAll('.llm-results .llm-panel:not(.favorite-panel)').forEach((panel) => {
             const outputEl = panel.querySelector('.output');
-            if (!outputEl || panel.classList.contains('llm-panel-expanded') || panel.classList.contains('llm-panel-session-restored')) return;
+            if (!outputEl || panel.classList.contains('llm-panel-expanded')) return;
             if (shouldShowPreview) {
                 outputEl.style.maxHeight = PREVIEW_PANEL_OUTPUT_MAX_HEIGHT;
                 outputEl.style.minHeight = '0';
@@ -334,7 +334,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     });
 
-    // Re-apply the two-line preview after output inline defaults are initialized.
+    // Re-apply full-height preview sizing after output inline defaults are initialized.
     syncProStreamVisibility();
 
     outputElements.forEach(decorateLinksForNewTab);

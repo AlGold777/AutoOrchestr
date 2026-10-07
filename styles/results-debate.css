@@ -634,9 +634,10 @@ body.llm-stream-preview-open .llm-results .llm-panel:not(.favorite-panel) {
 
 body.llm-stream-preview-open .llm-results .llm-panel:not(.favorite-panel) .output {
   display: block;
+  flex: 1 1 0;
   min-height: 0;
-  max-height: 3.2em;
-  overflow: hidden;
+  max-height: none;
+  overflow-y: auto;
 }
 
 .llm-panel.llm-panel-expanded {

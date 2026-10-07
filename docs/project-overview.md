@@ -95,7 +95,7 @@ Sessions let you save the current work on the results page so you can return to 
 - the Favourite card;
 - user-applied color highlights inside response text.
 
-The first item in the Sessions list is always `Current session`. It is the work currently open on the page. When you click a saved Session, the app returns to the main results page if you were in Debate, the visible response cards switch to that saved content, and the prompt field shows the saved tabs first, then the saved request text below them. Imported model answers are shown directly in the response area even if the page was previously showing the compact live preview. When you click `Current session`, the page returns to the content you were working on before switching.
+The first item in the Sessions list is always `Current session`. It is the work currently open on the page. When you click a saved Session, the app returns to the main results page if you were in Debate, the visible response cards switch to that saved content, and the prompt field shows the saved tabs first, then the saved request text below them. Imported model answers are shown directly in the response area even if the page was previously showing the pre-prompt stream preview. When you click `Current session`, the page returns to the content you were working on before switching.
 
 Use `Save` in Sessions mode to save the current card state. Use export/import as a backup or to move saved Sessions to another computer.
 

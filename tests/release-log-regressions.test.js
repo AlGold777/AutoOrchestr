@@ -607,8 +607,8 @@ describe('release log regression guards', () => {
     expect(source).toContain("outputEl.style.maxHeight = EXPANDED_PANEL_OUTPUT_MAX_HEIGHT;");
     expect(source).toContain("outputEl.style.minHeight = '240px';");
     expect(source).toContain('window.__sidebarSessionsDebug = {');
-    expect(css).toContain('body.llm-stream-preview-open .llm-results .llm-panel:not(.favorite-panel) .output {\n  display: block;\n  min-height: 0;\n  max-height: 3.2em;\n  overflow: hidden;');
-    expect(source).toContain("const PREVIEW_PANEL_OUTPUT_MAX_HEIGHT = '3.2em';");
+    expect(css).toContain('body.llm-stream-preview-open .llm-results .llm-panel:not(.favorite-panel) .output {\n  display: block;\n  flex: 1 1 0;\n  min-height: 0;\n  max-height: none;\n  overflow-y: auto;');
+    expect(source).toContain("const PREVIEW_PANEL_OUTPUT_MAX_HEIGHT = 'none';");
     expect(source).toContain("outputEl.style.maxHeight = PREVIEW_PANEL_OUTPUT_MAX_HEIGHT;");
     expect(source).toContain("outputEl.dataset.collapsedMaxHeight = document.body.classList.contains('llm-stream-preview-open')");
     expect(css).toContain('body.llm-stream-preview-open .llm-results .llm-panel.llm-panel-session-restored:not(.favorite-panel) .output {\n  display: block;');
