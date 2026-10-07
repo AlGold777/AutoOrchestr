@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-07 — Custom runs on the page; templates are protected, version 2.81.633
+
+- **Custom** is enabled and selectable like the other templates; it runs on the shared engine (`runCustomFromPage`). Steps come from the canvas plan in order: round cards, an intermediate synthesis insert (with its own model) and the final synthesis. Rounds run in parallel; later rounds get the accepted answers of the previous step. Auto or confirmation follows the run policy switch; pauses use the confirm dialog (continue / retry / stop, or skip / retry / stop without accepted answers); `[[ASK]]` uses the owner-question dialog; Run is Stop during the run; the result is a **Custom** card. A new pipeline ("+") runs on the Custom engine and is saved with it. The round-card editor (order, task, input, per-model addition) is the next step.
+- **Templates** (Custom, Polishing, Delta, Test, Research, Architecture) are never overwritten: Save on a template asks for a new name; a template cannot be renamed; no pipeline can be renamed to a template name (before, a user pipeline could replace a template's stored config under its name and lose its data on reload).
+- Validation: engine (19), presets, page-list and template-protection tests pass; full suite: the same failures as on the base commit, no new ones. Live provider run was not performed.
+
 ### 2026-10-07 — Pipeline list layout, version 2.81.632
 
 - Arrange the built-in list by columns: Custom / Polishing / Delta on the left, Test / Research / Architecture on the right. Custom is visible but disabled until its page integration is ready.

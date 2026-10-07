@@ -2718,6 +2718,8 @@ document.addEventListener('click', (event) => {
     let polishingAbortController = null;
     // Same for a Delta run (runDeltaFromPage).
     let deltaAbortController = null;
+    // Same for a Custom run (runCustomFromPage).
+    let customAbortController = null;
     let activePipelineRunContext = null;
     const debateAggregateStore = window.DebateRunStore?.createStore?.() || null;
     const debateCaseStore = window.DebateCaseStore?.createStore?.({ storage: chrome?.storage?.local }) || null;
@@ -5022,6 +5024,8 @@ document.addEventListener('click', (event) => {
             const activeConfig = activeName ? getPipelineConfigByName(activeName) : null;
             const configured = String(activeConfig?.protocol?.presetId || '').trim();
             if (configured && api?.getPipelinePreset?.(configured)) return configured;
+            // A new pipeline ("+") runs on the shared Custom engine and is saved with it.
+            if (pipelinePanel?.dataset?.pipelineDraft === 'true' && api?.getPipelinePreset?.('CUSTOM')?.id === 'CUSTOM') return 'CUSTOM';
             return fallback;
         }
         window.getSelectedPipelinePresetId = getSelectedPipelinePresetId;
@@ -5356,6 +5360,13 @@ document.addEventListener('click', (event) => {
             if (action === 'answer') {
                 const answers = window.OwnerAsk.collect(document.getElementById('owner-ask-list'), info.asks || []);
                 if (!answers.length) { showNotification('Выберите хотя бы один вариант или нажмите «Продолжить без ответа».', 'info'); return; }
+                if (typeof info.resolve === 'function') {
+                    // A Custom run waits on the dialog itself: it keeps the answers, nothing pauses here.
+                    pendingOwnerAsks = null;
+                    ownerAskDialog.close();
+                    info.resolve(answers);
+                    return;
+                }
                 if (activePipelineRunContext) (activePipelineRunContext.ownerAnswers ||= []).push(...answers.map((item) => ({ ...item, stage: info.plannedStageId || '' })));
                 globalThis.MessageDelivery?.batchEvent?.('owner_answer', { stage: info.plannedStageId || null, answered: answers.length, asked: (info.asks || []).length });
             } else if (action === 'skip') {
@@ -5363,6 +5374,8 @@ document.addEventListener('click', (event) => {
             }
             pendingOwnerAsks = null;
             ownerAskDialog.close();
+            // Custom: "skip" and "later" both go on without an answer.
+            if (typeof info.resolve === 'function') { info.resolve([]); return; }
             if (action !== 'later') setDebatePausedState(false, action === 'answer' ? 'owner_answer' : 'owner_skip');
         });
         const handleEnginePause = (info = {}) => {
@@ -5388,6 +5401,9 @@ document.addEventListener('click', (event) => {
         let debateApplication = null;
         let phantomRunStateReported = false;
         const getDebateRunControls = () => {
+            if (customAbortController) {
+                return { action: 'stop', icon: 'ti ti-player-stop', title: 'Остановить Custom', active: true, enabled: true, stepEnabled: false };
+            }
             if (polishingAbortController || deltaAbortController) {
                 return { action: 'stop', icon: 'ti ti-player-stop', title: polishingAbortController ? 'Остановить Polishing' : 'Остановить Delta', active: true, enabled: true, stepEnabled: false };
             }
@@ -6352,6 +6368,158 @@ document.addEventListener('click', (event) => {
                 updateDebateButtonsUi();
             }
         };
+        // Custom (disput/custom-engine.js): the shared pipeline engine. The canvas gives the steps
+        // in plan order: round cards (their models) and synthesis stages (an intermediate insert
+        // keeps its own model; the final synthesis follows the last round). Rounds are parallel and
+        // pass on the accepted answers of the previous step; the round card's own order, task and
+        // input come with the card editor. Semi-automatic (run policy not Auto) asks the owner after
+        // every step; a step without accepted answers asks in both modes.
+        const CUSTOM_ROUND_TASK = 'Учти ответы предыдущего шага и дай свой улучшенный ответ на задачу.';
+        const customStepsFromPlan = (plan) => {
+            let round = 0;
+            return (plan?.plannedStages || []).map((stage) => {
+                const models = (stage.participantIds || []).filter(Boolean);
+                if (/^canvas-r\d+$/.test(String(stage.plannedStageId || ''))) {
+                    round += 1;
+                    return round === 1
+                        ? { kind: 'round', order: 'parallel', task: '', input: 'none', models }
+                        : { kind: 'round', order: 'parallel', task: CUSTOM_ROUND_TASK, input: 'previous', models };
+                }
+                if (['working_synthesis', 'candidate_final'].includes(stage.outputIntent)) return { kind: 'synthesis', models };
+                return null;
+            }).filter((step) => step?.models?.length);
+        };
+        // The owner's choice on a pause, through the shared confirm dialog (three buttons).
+        let customDecisionOpen = false;
+        const askCustomDecision = async ({ label, accepted, failed, choices, reasons }) => {
+            const failedText = failed.map((name) => `${name}${reasons[name] ? ` (${window.CustomEngine?.REASON_TEXT?.[reasons[name]] || reasons[name]})` : ''}`).join(', ');
+            const message = accepted.length
+                ? `${label}: принято ${accepted.length}${failed.length ? `, без ответа: ${failedText}` : ''}. Что дальше?`
+                : `${label}: нет принятых ответов (${failedText}). Что дальше?`;
+            customDecisionOpen = true;
+            const answer = await showConfirm(message, accepted.length
+                ? { confirmText: 'Продолжить', cancelText: 'Stop', retryText: choices.includes('retry') ? 'Повторить без ответа' : '' }
+                : { confirmText: 'Пропустить шаг', cancelText: 'Stop', retryText: 'Повторить' });
+            customDecisionOpen = false;
+            if (answer === 'retry') return 'retry';
+            if (answer === true) return accepted.length ? 'continue' : 'skip';
+            return 'stop';
+        };
+        const askCustomOwner = (asks, { label }) => new Promise((resolve) => {
+            if (!ownerAskDialog || !window.OwnerAsk) { resolve([]); return; }
+            openOwnerAsk({ label, asks, resolve });
+        });
+        const runCustomFromPage = async ({ task }) => {
+            const engine = window.CustomEngine;
+            const steps = customStepsFromPlan(draftPlanForCanvas(getActiveDraftPlan()));
+            if (!engine || !steps.some((step) => step.kind === 'round')) {
+                showNotification('Custom: выберите модели хотя бы в одном раунде.', 'warn');
+                return false;
+            }
+            const useApiFallback = apiModeCheckbox ? apiModeCheckbox.checked : true;
+            const semiAuto = getDebateRunPolicy() !== 'auto';
+            pipelineRunActive = true;
+            customAbortController = new AbortController();
+            activePipelineRunContext = {
+                pipelineRunId: makePipelineRunId(),
+                sessionId: debateTabsState?.activeSessionId
+                    || document.querySelector('.debate-session-tab.active')?.dataset?.sessionId
+                    || '1',
+                startedAt: Date.now(),
+                forceNewTabs: newPagesCheckbox ? newPagesCheckbox.checked : true,
+                newPagesDispatched: false
+            };
+            const runContext = activePipelineRunContext;
+            const signal = customAbortController.signal;
+            if (runContext.forceNewTabs) resetNewPagesCheckboxAfterOpen();
+            clearModeratorComposer();
+            appendModeratorFeedEntry(task);
+            setPipelineEditingEnabled(false);
+            setPipelineRunUi(true);
+            updateDebateButtonsUi();
+            try {
+                const attachments = await buildAttachmentPayload();
+                // Attachments go with the first message to each model only: later steps continue in that chat.
+                const attached = new Set();
+                const budgetLimits = window.DebateContextBudget?.DEFAULT_LIMITS;
+                const result = await engine.run({
+                    task,
+                    steps,
+                    semiAuto,
+                    signal,
+                    maxPromptChars: budgetLimits ? budgetLimits.promptChars - budgetLimits.reservedOutputChars - 500 : Infinity,
+                    accept: ({ text, completion }) => window.DebateResponseAcceptance?.evaluate?.({ text, meta: { completion } }) || { ok: true },
+                    parseAsks: (text) => window.StageMarkers?.parse?.(text)?.askItems || [],
+                    askInstruction: window.StageMarkers?.instructions?.() || '',
+                    askOwner: askCustomOwner,
+                    decide: askCustomDecision,
+                    send: async (models, promptsByModel, { step, label, attempt }) => {
+                        const batch = await runModelBatch({
+                            prompt: promptsByModel[models[0]],
+                            promptsByModel,
+                            models,
+                            attachments: models.some((model) => !attached.has(model)) ? attachments : [],
+                            forceNewTabs: runContext.forceNewTabs,
+                            useApiFallback,
+                            signal,
+                            context: {
+                                ...runContext,
+                                pipelineRoundId: `s${step + 1}`,
+                                pipelineBatchId: makePipelineBatchId({ runId: runContext.pipelineRunId, roundIndex: step + 1, groupIndex: attempt - 1 }),
+                                anonymizeParticipants: false,
+                                custom: true
+                            },
+                            generationProfile: 'long'
+                        });
+                        models.forEach((model) => attached.add(model));
+                        const byModel = Object.fromEntries(models.map((model) => {
+                            const modelResult = batch?.results?.[model] || {};
+                            const text = String(batch?.responses?.[model] || '');
+                            if (text.trim()) {
+                                updateDebateModelCardOutput(model, text, '', {
+                                    status: modelResult.status || 'SUCCESS', source: 'custom', role: `Custom · ${label}`,
+                                    pipelineRunId: runContext.pipelineRunId, pipelineRoundId: `s${step + 1}`,
+                                    transportRequestId: modelResult.transportRequestId || '', requestId: modelResult.transportRequestId || ''
+                                });
+                            }
+                            return [model, {
+                                text, status: modelResult.status || '', completion: modelResult.completion || '',
+                                answered: String(modelResult.status || '').toUpperCase() === 'SUCCESS' && modelResult.attribution === 'verified',
+                                transportRequestId: modelResult.transportRequestId || ''
+                            }];
+                        }));
+                        return { byModel, closedByOwner: batch?.closeReason === 'moderator_closed' };
+                    },
+                    onEvent: (kind, fields) => window.MessageDelivery?.batchEvent?.(kind, { pipelineRunId: runContext.pipelineRunId, ...fields })
+                });
+                const stopText = engine.STOP_TEXT[result.stopReason] || result.stopReason;
+                // Always shown, also after Stop: the accepted answers of the last step that has any.
+                updateDebateModelCardOutput('Custom', [
+                    result.answers.length ? result.answers.map((text, index) => (result.answers.length > 1 ? `Ответ ${index + 1}:\n${text}` : text)).join('\n\n') : 'Принятых ответов нет.',
+                    `Остановка: ${stopText}.`
+                ].join('\n\n'), '', {
+                    status: 'SUCCESS', source: 'custom', role: 'Custom · итог',
+                    pipelineRunId: runContext.pipelineRunId, pipelineRoundId: 'custom-result'
+                });
+                showNotification(`Custom: ${stopText}.`, result.stopReason === 'steps_done' ? 'info' : 'warn');
+                return result.stopReason !== 'cancelled';
+            } catch (err) {
+                console.error('[RESULTS] Custom run failed', err);
+                showNotification(`Pipeline: error (${err?.message || String(err)})`, 'error');
+                return false;
+            } finally {
+                // Stop while a pause dialog was open: close it, the run is over.
+                if (customDecisionOpen) { customDecisionOpen = false; cancelConfirmBtn?.click?.(); }
+                if (pendingOwnerAsks?.resolve) { const pending = pendingOwnerAsks; pendingOwnerAsks = null; ownerAskDialog?.close?.(); pending.resolve([]); }
+                clearPromptAttachments();
+                pipelineRunActive = false;
+                customAbortController = null;
+                activePipelineRunContext = null;
+                setPipelineEditingEnabled(true);
+                setPipelineRunUi(false);
+                updateDebateButtonsUi();
+            }
+        };
         // Polishing (disput/polishing-pipeline.js): its own loop over runModelBatch, like the judge and the
         // moderator dispatch — no plan, StateMap or ContextBroker. Every model sees the whole list.
         const runPolishingFromPage = async ({ idea, presetId }) => {
@@ -6488,6 +6656,9 @@ document.addEventListener('click', (event) => {
             if (selectedPreset && window.PipelinePresets?.isPresetEnabled && !window.PipelinePresets.isPresetEnabled(presetId)) {
                 showNotification('Этот профиль пока недоступен.', 'warn');
                 return false;
+            }
+            if (selectedPreset?.runner === 'custom') {
+                return runCustomFromPage({ task: moderatorEntryText || pipelineNameText });
             }
             if (selectedPreset?.runner === 'polishing') {
                 return runPolishingFromPage({ idea: moderatorEntryText || pipelineNameText, presetId });
@@ -6701,9 +6872,9 @@ document.addEventListener('click', (event) => {
             }
         };
         const cancelPipelineRun = async () => {
-            if (polishingAbortController || deltaAbortController) {
+            if (customAbortController || polishingAbortController || deltaAbortController) {
                 const runId = activePipelineRunContext?.pipelineRunId;
-                (polishingAbortController || deltaAbortController).abort();
+                (customAbortController || polishingAbortController || deltaAbortController).abort();
                 try { await debateTransportPort?.cancelRun?.(runId); } catch (_) {}
                 return true;
             }
@@ -6890,7 +7061,10 @@ document.addEventListener('click', (event) => {
                     if (!pipelineStore.overrides.profiles) pipelineStore.overrides.profiles = {};
                 },
                 getDebateTranscriptStore: () => debateTranscriptStore,
-                getApprovalWaiting: () => debateExecutionContext?.hasApprovalWaiter?.() === true
+                getApprovalWaiting: () => debateExecutionContext?.hasApprovalWaiter?.() === true,
+                customStepsFromPlan,
+                // Lazy: renamePipeline is declared further down.
+                renamePipelineForTest: (oldName, newName) => renamePipeline(oldName, newName)
             };
         }
         triggerPipelineRun = (event) => {
@@ -7387,6 +7561,11 @@ document.addEventListener('click', (event) => {
             const trimmedNew = String(newName || '').trim();
             if (!trimmedOld || !trimmedNew) return false;
             if (trimmedOld === trimmedNew) return true;
+            // Templates keep their names, and no pipeline takes a template's name.
+            if (isDefaultPipelineName(trimmedOld) || isDefaultPipelineName(trimmedNew)) {
+                showNotification(`«${isDefaultPipelineName(trimmedOld) ? trimmedOld : trimmedNew}» — шаблон. Его имя не меняется и не занимается; сохраните копию через Save под новым именем.`, 'warn');
+                return false;
+            }
 
             const exists = pipelineStore.order.includes(trimmedNew);
             if (exists) {
@@ -7427,6 +7606,10 @@ document.addEventListener('click', (event) => {
             if (!nameSpan) return;
             const originalName = item.dataset.name || nameSpan.getAttribute('title') || nameSpan.textContent.trim();
             if (!originalName) return;
+            if (isDefaultPipelineName(originalName)) {
+                showNotification(`«${originalName}» — шаблон, его имя не меняется. Изменённый вариант сохраните через Save под новым именем.`, 'info');
+                return;
+            }
 
             item.classList.add('is-editing');
             nameSpan.style.display = 'none';
@@ -7641,12 +7824,14 @@ document.addEventListener('click', (event) => {
         const savePipeline = async () => {
             const currentName = getPipelineHeaderName();
             const isDraft = pipelinePanel?.dataset.pipelineDraft === 'true' || currentName === 'Unsaved Pipeline';
-            const defaultName = isDraft ? '' : currentName;
-            const name = await showPrompt('Pipeline name:', defaultName || '');
+            // A template is never overwritten: its changed variant is saved only under a new name.
+            const isTemplate = isDefaultPipelineName(currentName);
+            const defaultName = isDraft || isTemplate ? '' : currentName;
+            const name = await showPrompt(isTemplate ? `Шаблон «${currentName}» не перезаписывается. Имя нового pipeline:` : 'Pipeline name:', defaultName || '');
             if (name && name.trim()) {
                 const trimmed = name.trim();
                 if (isDefaultPipelineName(trimmed)) {
-                    showNotification('Choose a new name for a user pipeline.', 'warn');
+                    showNotification(`«${trimmed}» — имя шаблона. Сохраните под новым именем.`, 'warn');
                     return;
                 }
                 if (pipelineStore.order.includes(trimmed) && !isDefaultPipelineName(trimmed)) {

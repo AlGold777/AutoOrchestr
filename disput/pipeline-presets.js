@@ -26,9 +26,8 @@
 
   const PIPELINE_PRESETS = Object.freeze([
     makePreset('UNIVERSAL_STANDARD', 'Universal', 'UNIVERSAL_STANDARD', REASONING_BUDGETS.STANDARD),
-    // Listed now; enabling Custom waits for the round-card/page integration.
-    makePreset('CUSTOM', 'Custom', 'UNIVERSAL_STANDARD', REASONING_BUDGETS.STANDARD,
-      { runner: 'custom', status: 'disabled' }),
+    // Custom runs the shared pipeline engine (disput/custom-engine.js), not the Debate engine.
+    makePreset('CUSTOM', 'Custom', 'UNIVERSAL_STANDARD', REASONING_BUDGETS.STANDARD, { runner: 'custom' }),
     makePreset('TEST', 'Test', 'UNIVERSAL_STANDARD', REASONING_BUDGETS.STANDARD),
     makePreset('UNIVERSAL_RESEARCH', 'Research', 'DEEP_RESEARCH_ALPHA', REASONING_BUDGETS.RESEARCH,
       { finalizationPolicy: 'readiness_or_moderator' }),
@@ -44,7 +43,7 @@
 
   const BUILTIN_PIPELINE_DEFINITIONS = Object.freeze([
     // The list fills three rows down each column: Custom/Polishing/Delta | Test/Research/Architecture.
-    Object.freeze({ name: 'Custom', presetId: 'CUSTOM', profileId: 'UNIVERSAL_STANDARD', runPolicy: 'auto', noMiniPrompts: true, length: '700', roundLimit: '2', defaultModelCount: 0, roles: ['participant'], disabled: true, disabledReason: 'Custom: подключение движка к странице ещё не завершено.' }),
+    Object.freeze({ name: 'Custom', presetId: 'CUSTOM', profileId: 'UNIVERSAL_STANDARD', runPolicy: 'auto', noMiniPrompts: true, length: '700', roundLimit: '2', defaultModelCount: 0, roles: ['participant'] }),
     Object.freeze({ name: 'Polishing', presetId: 'POLISHING', profileId: 'UNIVERSAL_STANDARD', runPolicy: 'auto', noMiniPrompts: true, length: '300', roundLimit: '3', defaultModelCount: 0, roles: ['participant'], polishingMaxIdeas: 3 }),
     Object.freeze({ name: 'Delta', presetId: 'DELTA', profileId: 'UNIVERSAL_STANDARD', runPolicy: 'auto', noMiniPrompts: true, length: '300', roundLimit: '3', defaultModelCount: 0, roles: ['participant'] }),
     Object.freeze({ name: 'Test', presetId: 'TEST', profileId: 'UNIVERSAL_STANDARD', runPolicy: 'auto', noMiniPrompts: true, length: '700', roundLimit: '2', defaultModelCount: 0, roles: ['participant', 'critic'] }),

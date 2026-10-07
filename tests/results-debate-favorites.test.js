@@ -1963,7 +1963,36 @@ describe('Pipeline debate favorites view', () => {
       .map((item) => item.dataset.name);
     expect(names).toEqual(['Custom', 'Polishing', 'Delta', 'Test', 'Research', 'Architecture']);
     expect(document.querySelectorAll('#pipelineItems .pipeline-item-delete')).toHaveLength(0);
-    expect(document.querySelector('[data-name="Custom"] .pipeline-radio').disabled).toBe(true);
+    // Every template, Custom included, is selectable the same way.
+    document.querySelectorAll('#pipelineItems .pipeline-radio').forEach((radio) => expect(radio.disabled).toBe(false));
+  });
+
+  test('Custom turns the canvas plan into engine steps: rounds, an intermediate synthesis with its own model, the final synthesis', () => {
+    const steps = window.__pipelineLifecycleDebug.customStepsFromPlan({ plannedStages: [
+      { plannedStageId: 'canvas-r1', participantIds: ['GPT', 'Claude'], outputIntent: 'discussion_work' },
+      { plannedStageId: 'planned-working-synthesis-after-canvas-r1', participantIds: ['Gemini'], outputIntent: 'working_synthesis' },
+      { plannedStageId: 'canvas-r2', participantIds: ['GPT'], outputIntent: 'discussion_work' },
+      { plannedStageId: 'planned-final-synthesis', participantIds: ['Claude'], outputIntent: 'candidate_final' }
+    ] });
+    expect(steps).toEqual([
+      { kind: 'round', order: 'parallel', task: '', input: 'none', models: ['GPT', 'Claude'] },
+      { kind: 'synthesis', models: ['Gemini'] },
+      { kind: 'round', order: 'parallel', task: expect.stringContaining('Учти ответы'), input: 'previous', models: ['GPT'] },
+      { kind: 'synthesis', models: ['Claude'] }
+    ]);
+  });
+
+  test('templates keep their names: no renaming a template and no taking a template name', async () => {
+    const debug = window.__pipelineLifecycleDebug;
+    const mine = { protocol: { type: 'universal', presetId: 'CUSTOM' }, modelStacks: {} };
+    debug.setPipelineStoreForTest({ pipelines: { Mine: mine }, order: ['Mine'] });
+    debug.ensureDefaultPipelinePresets();
+    await expect(debug.renamePipelineForTest('Test', 'My test')).resolves.toBe(false);
+    await expect(debug.renamePipelineForTest('Mine', 'Polishing')).resolves.toBe(false);
+    const store = debug.getPipelineStoreSnapshot();
+    expect(store.pipelines.Mine).toEqual(mine);
+    expect(store.pipelines.Polishing.protocol.presetId).toBe('POLISHING');
+    expect(store.pipelines.Test.protocol.presetId).toBe('TEST');
   });
 
   test('retiring Red Team removes the built-in and preserves user-named copies', () => {

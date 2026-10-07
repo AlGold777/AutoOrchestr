@@ -10,7 +10,8 @@ describe('universal pipeline presets', () => {
       'Custom', 'Polishing', 'Delta', 'Test', 'Research', 'Architecture'
     ]);
     expect(JSON.stringify(Presets.PIPELINE_PRESETS)).not.toMatch(/topology|scheme|roundLimit|waveLimit|turnLimit/i);
-    expect(Presets.isPresetEnabled('CUSTOM')).toBe(false);
+    expect(Presets.isPresetEnabled('CUSTOM')).toBe(true);
+    expect(Presets.getPipelinePreset('CUSTOM').runner).toBe('custom');
     expect(Presets.isPresetEnabled('UNIVERSAL_RED_TEAM')).toBe(false);
   });
 

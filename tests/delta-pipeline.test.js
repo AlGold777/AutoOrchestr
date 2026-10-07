@@ -81,7 +81,7 @@ describe('Delta pipeline', () => {
     expect(Presets.BUILTIN_PIPELINE_DEFINITIONS.find((item) => item.presetId === 'DELTA')).toMatchObject({ name: 'Delta', defaultModelCount: 0 });
     const source = fs.readFileSync(path.join(__dirname, '..', 'results.js'), 'utf8');
     expect(source).toContain("if (selectedPreset?.runner === 'delta') {");
-    expect(source).toContain('(polishingAbortController || deltaAbortController).abort();');
+    expect(source).toContain('(customAbortController || polishingAbortController || deltaAbortController).abort();');
     expect(source).toContain('&& !models.some((model) => opened?.has?.(model));');
     expect(source).toContain('models.forEach((model) => activePipelineRunContext.newPagesModels.add(model));');
     const glue = source.slice(source.indexOf('const runDeltaFromPage'), source.indexOf('// Polishing (disput/polishing-pipeline.js)'));
