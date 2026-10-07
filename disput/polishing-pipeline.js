@@ -55,7 +55,10 @@
   }
 
   // rounds: [[model, ...], ...] — the order of models inside a round is the call order.
-  // send(model, prompt, { round }) → { text, status }; a thrown error skips the model.
+  // send(model, prompt, { round }) → { text, status, answered }; a thrown error skips the model.
+  // answered: the model finished its answer (delivery token seen) even if no text is left once the
+  // token is removed — "nothing new" is said with the token alone, and that is EMPTY, not a failure.
+  // K is a hard limit: lines beyond the first K of an answer are dropped (counted in `dropped`).
   // maxPromptChars: the run stops before a prompt (with the whole list) would exceed it,
   // instead of letting the transport cut the prompt's tail with the instruction.
   async function run({ idea, rounds = [], maxIdeas = DEFAULT_MAX_IDEAS, maxPromptChars = Infinity, send, signal = null, onAnswer = null }) {
@@ -79,14 +82,18 @@
         try {
           const result = await send(model, prompt, { round });
           const text = String(result?.text || '').trim();
-          if (!text) {
+          if (!text && result?.answered) {
+            answered += 1;
+            entry = { round, model, status: 'EMPTY', added: 0, dropped: 0, text: '' };
+          } else if (!text) {
             entry = { round, model, status: 'FAILED', reason: result?.status || 'no_answer', added: 0, text: '' };
           } else {
             const fresh = parseIdeas(text, known());
-            fresh.forEach((line) => ideas.push({ text: line, model, round }));
+            const kept = fresh.slice(0, maxIdeas);
+            kept.forEach((line) => ideas.push({ text: line, model, round }));
             answered += 1;
-            added += fresh.length;
-            entry = { round, model, status: fresh.length ? 'OK' : 'EMPTY', added: fresh.length, overLimit: fresh.length > maxIdeas, text };
+            added += kept.length;
+            entry = { round, model, status: kept.length ? 'OK' : 'EMPTY', added: kept.length, dropped: fresh.length - kept.length, text };
           }
         } catch (error) {
           if (error?.name === 'AbortError' || aborted()) { stopReason = 'cancelled'; break outer; }
@@ -119,7 +126,7 @@
   function formatRounds(log = []) {
     const byRound = new Map();
     log.forEach((entry) => {
-      const part = entry.status === 'OK' ? `${entry.model} +${entry.added}`
+      const part = entry.status === 'OK' ? `${entry.model} +${entry.added}${entry.dropped ? ` (сверх K отброшено ${entry.dropped})` : ''}`
         : entry.status === 'EMPTY' ? `${entry.model} пусто`
           : `${entry.model} сбой${entry.reason ? ` (${entry.reason})` : ''}`;
       byRound.set(entry.round, [...(byRound.get(entry.round) || []), part]);

@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-07 — Polishing: a token-only answer is EMPTY, K is a hard limit, version 2.81.629
+
+- An answer of the delivery token alone (the instructed way to say "nothing new") became empty once the transport removed the token and was recorded as a failure. A round in which every model said "nothing new" therefore counted as a round without answers: the run made an extra round and stopped with the wrong reason (`all_failed`). Such an answer is now `EMPTY` when the request finished with `SUCCESS` and its token was seen (`attribution: verified`), so the round stops at once with `no_new_ideas`. An empty text without that proof stays a failure.
+- K is now a hard limit, as the instruction and the scheme say: the first K lines of an answer are kept, the rest are dropped and counted (`dropped` in `polishing_answer`, "сверх K отброшено N" on the result card). Before, all lines were kept and only flagged.
+- Validation: `tests/polishing-pipeline.test.js` (13) pass. Live provider run was not performed.
+
 ### 2026-10-07 — Extract explains a run without Debate stages, version 2.81.628
 
 - The Transport **Extract** button needs Debate stages (`debateRunId`, `stageExecutions`). After a Polishing run or a manual send it saved the Disput Flow JSON and then failed with "Transport extraction requires a Disput Flow report". It now saves the JSON and shows an info message that such a run has no stages to extract and that its delivery journal (including `polishing_answer` / `polishing_end`) is in that JSON. The extractor itself is unchanged.

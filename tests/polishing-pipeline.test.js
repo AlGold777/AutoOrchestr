@@ -65,6 +65,28 @@ describe('Polishing pipeline', () => {
     expect(empty.stopReason).toBe('no_new_ideas');
   });
 
+  test('an answer of the delivery token alone is EMPTY, so such a round stops at once with no_new_ideas', async () => {
+    const result = await Polishing.run({
+      idea: 'i', rounds: [['A', 'B'], ['A', 'B']],
+      send: async (model, prompt, { round }) => (round === 1 && model === 'A' ? { text: 'a1', answered: true } : { text: '', status: 'SUCCESS', answered: true })
+    });
+    expect(result.log.map((entry) => entry.status)).toEqual(['OK', 'EMPTY', 'EMPTY', 'EMPTY']);
+    expect(result.stopReason).toBe('no_new_ideas');
+    // Without proof of a finished answer an empty text stays a failure.
+    const failed = await Polishing.run({ idea: 'i', rounds: [['A']], send: async () => ({ text: '', status: 'TIMEOUT' }) });
+    expect(failed.log[0]).toMatchObject({ status: 'FAILED', reason: 'TIMEOUT' });
+  });
+
+  test('K is a hard limit: lines beyond the first K are dropped and counted', async () => {
+    const result = await Polishing.run({
+      idea: 'i', rounds: [['A']], maxIdeas: 3,
+      send: async () => ({ text: 'l1\nl2\nl3\nl4\nl5' })
+    });
+    expect(result.ideas.map((item) => item.text)).toEqual(['l1', 'l2', 'l3']);
+    expect(result.log[0]).toMatchObject({ status: 'OK', added: 3, dropped: 2 });
+    expect(Polishing.formatRounds(result.log)).toBe('Круг 1: A +3 (сверх K отброшено 2)');
+  });
+
   test('Stop keeps what was collected', async () => {
     const controller = new AbortController();
     const result = await Polishing.run({
@@ -114,6 +136,8 @@ describe('Polishing pipeline', () => {
     const glue = source.slice(source.indexOf('const runPolishingFromPage'), source.indexOf('const startDebateFromPage'));
     expect(glue).toContain('anonymizeParticipants: false');
     expect(glue).toContain('maxPromptChars,');
+    expect(glue).toContain("&& modelResult.attribution === 'verified';");
+    expect(glue).toContain('return { text, status: modelResult.status || \'\', answered };');
     expect(glue).toContain("updateDebateModelCardOutput('Polishing', polishing.formatResult(result)");
     expect(glue).not.toContain('renderDebateModelCards(');
     expect(source).toMatch(/if \(controls\.action === 'stop'\) \{\s*event\.preventDefault\(\);\s*void cancelPipelineRun\(\);/);

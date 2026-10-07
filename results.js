@@ -6418,12 +6418,15 @@ document.addEventListener('click', (event) => {
                                 transportRequestId: modelResult.transportRequestId || '', requestId: modelResult.transportRequestId || ''
                             });
                         }
-                        return { text, status: modelResult.status || '' };
+                        // Only the delivery token, nothing else: the model finished and said "nothing new".
+                        const answered = String(modelResult.status || '').toUpperCase() === 'SUCCESS'
+                            && modelResult.attribution === 'verified';
+                        return { text, status: modelResult.status || '', answered };
                     },
                     onAnswer: (entry, ideas) => {
                         window.MessageDelivery?.batchEvent?.('polishing_answer', {
                             pipelineRunId: runContext.pipelineRunId, round: entry.round, model: entry.model,
-                            status: entry.status, added: entry.added, overLimit: Boolean(entry.overLimit),
+                            status: entry.status, added: entry.added, dropped: entry.dropped || 0,
                             reason: entry.reason || null, total: ideas.length
                         });
                     }
