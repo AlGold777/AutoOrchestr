@@ -8156,7 +8156,7 @@ document.addEventListener('click', (event) => {
             const resolved = resolveCustomFields(saved, step?.kind);
             const general = getDebateMaxWords();
             const defaults = customDisciplineDefaults();
-            const disciplineRows = [['limit', 'Длина'], ['content', 'Требования к содержанию'], ['delivery', 'Доставка'], ['correction', 'Запрос исправления (при повторе)']];
+            const disciplineRows = [['limit', 'Длина'], ['content', 'Требования к содержанию'], ['delivery', 'Доставка'], ['correction', 'Повторный запрос']];
             const rows = pipelineDefaults
                 ? [['roundTask', 'Задание раундов со входом (R2+)'], ['synthesisTask', 'Задание синтеза'], ...disciplineRows]
                 : [...(step.input !== 'none' ? [['task', step.kind === 'synthesis' ? 'Задание синтеза' : 'Задание раунда']] : []), ...disciplineRows];
