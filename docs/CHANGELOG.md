@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-08 — Unnamed canvas uses the Custom card and runner, version 2.81.638
+
+- Fix the unnamed canvas falling back to Universal and showing the old model inspector. Without a saved configuration, resolve Custom for the card, saved copy and execution; explicitly selected legacy pipelines retain their runner.
+- Regression coverage opens the editor through the real inspect button with no active pipeline or draft flag, edits a request and word limit, and checks the captured configuration. Isolated Chromium confirms the unnamed Gemini card opens via hover/click, preserves its edits, and fits four viewport sizes. Page suite: 72 passed, the same 4 existing failures; engine/record/preset suite: 34 passed.
+
 ### 2026-10-08 — Full Custom run texts in the Disput Flow export, version 2.81.637
 
 - The Disput Flow JSON export now includes `customRun`: the record of the latest Custom run with full texts (prompts as dispatched, input with sources, answers, attempt outcomes). The model card no longer exports, and the delivery journal keeps only excerpts. Redacted like the rest of the export.

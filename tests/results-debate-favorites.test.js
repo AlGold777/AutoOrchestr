@@ -1984,6 +1984,35 @@ describe('Pipeline debate favorites view', () => {
     ]);
   });
 
+  test('unnamed canvas opens the real Custom editor and saves the Custom runner without a draft flag', async () => {
+    const debug = window.__pipelineLifecycleDebug;
+    debug.setPipelineStoreForTest({ pipelines: {}, order: [], active: '' });
+    document.getElementById('pipeline-panel').removeAttribute('data-pipeline-draft');
+    document.getElementById('currentPipelineName').textContent = '';
+    document.getElementById('llm-gemini').click();
+    expect(window.getSelectedPipelinePresetId()).toBe('CUSTOM');
+    const block = [...document.querySelectorAll('#r2-models .model-block')].find((item) => item.querySelector('.model-name')?.textContent === 'Gemini');
+    expect(block).toBeDefined();
+    block.querySelector('.model-block-inspect-btn').click();
+    const modal = document.getElementById('pipeline-block-info-modal');
+    expect(modal.classList.contains('custom-model-card')).toBe(true);
+    expect(modal.querySelector('.custom-card-model').textContent).toBe('Gemini');
+    modal.querySelector('#custom-card-request').value = 'UNNAMED REQUEST {вход}';
+    modal.querySelector('#custom-card-length').value = '45';
+    modal.querySelector('#custom-card-save').click();
+    const config = debug.capturePipelineConfig();
+    expect(config.protocol.presetId).toBe('CUSTOM');
+    expect(config.customModelSettings.r2.Gemini).toEqual({ promptTemplate: 'UNNAMED REQUEST {вход}', maxWords: 45 });
+    modal.remove();
+  });
+
+  test('an explicitly saved legacy pipeline retains its runner', () => {
+    const debug = window.__pipelineLifecycleDebug;
+    document.getElementById('pipeline-panel').removeAttribute('data-pipeline-draft');
+    debug.setPipelineStoreForTest({ active: 'Legacy', order: ['Legacy'], pipelines: { Legacy: { protocol: { type: 'universal', presetId: 'UNIVERSAL_STANDARD' } } } });
+    expect(window.getSelectedPipelinePresetId()).toBe('UNIVERSAL_STANDARD');
+  });
+
   test('Custom card saves an editable request and per-model length through to actual background dispatch, including retries', async () => {
     const debug = window.__pipelineLifecycleDebug;
     const config = { version: 3, roundCounter: 2, protocol: { type: 'universal', presetId: 'CUSTOM', selectedModels: ['GPT', 'Claude'], length: '700', roundLimit: '2', synthesizer: '', runPolicy: 'auto' }, modelStacks: {} };

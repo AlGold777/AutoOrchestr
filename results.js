@@ -5028,8 +5028,10 @@ document.addEventListener('click', (event) => {
             const activeConfig = activeName ? getPipelineConfigByName(activeName) : null;
             const configured = String(activeConfig?.protocol?.presetId || '').trim();
             if (configured && api?.getPipelinePreset?.(configured)) return configured;
-            // A new pipeline ("+") runs on the shared Custom engine and is saved with it.
-            if (pipelinePanel?.dataset?.pipelineDraft === 'true' && api?.getPipelinePreset?.('CUSTOM')?.id === 'CUSTOM') return 'CUSTOM';
+            // Both an unnamed canvas and a new pipeline ("+") use Custom. The card,
+            // saved configuration and execution must all resolve the same runner.
+            if ((!activeConfig || pipelinePanel?.dataset?.pipelineDraft === 'true')
+                && api?.getPipelinePreset?.('CUSTOM')?.id === 'CUSTOM') return 'CUSTOM';
             return fallback;
         }
         window.getSelectedPipelinePresetId = getSelectedPipelinePresetId;
