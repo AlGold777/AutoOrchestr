@@ -204,9 +204,9 @@ function renderDebateDom() {
       </label>
       <input id="debate-max-turns-input" type="number" value="6" hidden aria-hidden="true">
       <div id="pipeline-panel">
-        <span id="currentPipelineName" class="pipeline-name"></span>
+        <span id="currentPipelineName" class="pipeline-name"></span><div class="entry-point" id="entryPoint">▶</div>
         <button type="button" id="pipeline-add-round-btn">+</button>
-        <button type="button" id="pipeline-add-btn">+</button>
+        <button type="button" id="pipeline-add-btn">+</button><button type="button" id="pipeline-save-btn">Save</button>
         <div class="stage-column" id="round1" data-round="1">
           <div class="model-stack" id="r1-models">
             <div class="model-block">
@@ -1975,12 +1975,12 @@ describe('Pipeline debate favorites view', () => {
       { plannedStageId: 'canvas-r2', participantIds: ['GPT'], outputIntent: 'discussion_work' },
       { plannedStageId: 'planned-final-synthesis', participantIds: ['Claude'], outputIntent: 'candidate_final' }
     ] });
-    expect(window.__pipelineLifecycleDebug.customStepsFromPlan({ plannedStages: [{ plannedStageId: 'canvas-r1', participantIds: [] }] }, { ref: 'r1', name: 'GPT' })[0].models).toEqual(['GPT']);
-    expect(steps).toEqual([
+    expect(window.__pipelineLifecycleDebug.customStepsFromPlan({ plannedStages: [{ plannedStageId: 'canvas-r1', participantIds: [] }] }, { ref: 'r1', name: 'GPT' })[0].models.map((model) => model.name)).toEqual(['GPT']);
+    expect(steps.map((step) => ({ ...step, models: step.models.map((model) => model.name) }))).toEqual([
       { kind: 'round', ref: 'r1', order: 'parallel', task: '', input: 'none', models: ['GPT', 'Claude'] },
-      { kind: 'synthesis', ref: 'synth:planned-working-synthesis-after-canvas-r1', models: ['Gemini'] },
+      { kind: 'synthesis', ref: 'synth:planned-working-synthesis-after-canvas-r1', task: expect.stringContaining('Сведи'), models: ['Gemini'] },
       { kind: 'round', ref: 'r2', order: 'parallel', task: expect.stringContaining('Учти ответы'), input: 'previous', models: ['GPT'] },
-      { kind: 'synthesis', ref: 'final', models: ['Claude'] }
+      { kind: 'synthesis', ref: 'final', task: expect.stringContaining('Сведи'), models: ['Claude'] }
     ]);
   });
 
@@ -2026,7 +2026,7 @@ describe('Pipeline debate favorites view', () => {
     debug.applyPipelineConfig(config);
     document.getElementById('debate-run-policy-select').value = 'auto';
     window.setSynthesisModelFromName('');
-    const block = [...document.querySelectorAll('#r2-models .model-block')].find((item) => item.querySelector('.model-name')?.textContent === 'GPT');
+    let block = [...document.querySelectorAll('#r2-models .model-block')].find((item) => item.querySelector('.model-name')?.textContent === 'GPT');
     expect(block).toBeDefined();
     const modal = document.createElement('div');
     modal.innerHTML = '<div class="modal-content"></div>';
@@ -2048,12 +2048,13 @@ describe('Pipeline debate favorites view', () => {
     expect(saved.customModelSettings.r2.GPT).toEqual({ promptTemplate: request.value, maxWords: 37 });
     // Reloading the saved configuration must restore the actual card controls.
     debug.applyPipelineConfig(JSON.parse(JSON.stringify(saved)));
+    block = [...document.querySelectorAll('#r2-models .model-block')].find((item) => item.querySelector('.model-name')?.textContent === 'GPT');
     await debug.renderCustomBlockInspector(block, modal);
     expect(modal.querySelector('#custom-card-request').value).toBe(request.value);
     expect(modal.querySelector('#custom-card-length').value).toBe('37');
     expect(modal.querySelector('#custom-discipline-limit').value).toBe('[DISPUT_RESPONSE_LIMIT] Объём ответа: 1-37 слов, не больше.');
     expect(modal.querySelector('#custom-discipline-content').value).toContain('убери повторы, длинные пересказы и второстепенные детали.');
-    expect([...modal.querySelectorAll('[data-discipline]')].map((row) => row.dataset.discipline)).toEqual(['ask', 'limit', 'content', 'delivery', 'correction']);
+    expect([...modal.querySelectorAll('[data-discipline]')].map((row) => row.dataset.discipline)).toEqual(['task', 'ask', 'limit', 'content', 'delivery', 'correction']);
     expect(modal.querySelector('#custom-discipline-ask').value).toBe(window.DebateStageMarkers.instructions());
     for (const [key, value] of Object.entries({ limit: '[DISPUT_RESPONSE_LIMIT] Ответ — не более {слов} слов. PERSONAL_LIMIT', content: 'PERSONAL_CONTENT', delivery: 'PERSONAL_DELIVERY {метка}', ask: 'PERSONAL_ASK', correction: 'PERSONAL_CORRECTION: {причина}' })) {
       const row = modal.querySelector(`[data-discipline="${key}"]`);
@@ -2062,10 +2063,10 @@ describe('Pipeline debate favorites view', () => {
       expect(field.readOnly).toBe(false);
       if (kind !== 'cleared') { field.value = value; field.dispatchEvent(new Event('input')); }
       row.querySelector('[data-action="save"]').click();
-      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
     }
     await debug.renderCustomBlockInspector(block, modal);
-    expect(modal.querySelector('#custom-discipline-delivery').value).toBe(kind === 'cleared' ? '' : 'PERSONAL_DELIVERY {метка}');
+    expect(modal.querySelector('#custom-discipline-delivery').value).toBe(kind === 'cleared' ? 'Последней строкой ответа напиши только метку {метка}' : 'PERSONAL_DELIVERY {метка}');
     const starts = [];
     const oldDelivery = window.MessageDelivery;
     window.MessageDelivery = require('../shared/message-delivery.js');
@@ -2094,9 +2095,9 @@ describe('Pipeline debate favorites view', () => {
       expect(sent).toContain('Accepted Claude answer from batch 1.');
       expect(sent).not.toContain('{вход}');
       if (kind === 'cleared') {
-        expect(sent).not.toContain('[DISPUT_RESPONSE_LIMIT]');
-        expect(sent).not.toContain('Сосредоточься на ясной концепции');
-        expect(sent).not.toContain('Последней строкой ответа');
+        expect(sent).toContain('[DISPUT_RESPONSE_LIMIT] Объём ответа: 1-37 слов');
+        expect(sent).toContain('Сосредоточься на ясной концепции');
+        expect(sent).toContain('Последней строкой ответа');
       } else {
         expect(sent).toContain('не более 37 слов. PERSONAL_LIMIT');
         expect(sent.indexOf('PERSONAL_CONTENT')).toBeGreaterThan(sent.indexOf('PERSONAL_LIMIT'));
@@ -2113,7 +2114,7 @@ describe('Pipeline debate favorites view', () => {
       expect(starts[1].promptsByModel.CLAUDE).not.toContain('PERSONAL_');
       expect(starts[0].promptsByModel.GPT).not.toContain('PERSONAL_');
       expect(starts[2].selectedLLMs).toEqual(['GPT']);
-      if (kind === 'cleared') expect(starts[2].promptsByModel.GPT).not.toContain('[DISPUT_RESPONSE_LIMIT]');
+      if (kind === 'cleared') expect(starts[2].promptsByModel.GPT).toContain('[DISPUT_RESPONSE_LIMIT] Объём ответа: 1-37 слов');
       else {
         expect(starts[2].promptsByModel.GPT).toContain('PERSONAL_CORRECTION:');
         expect(starts[2].promptsByModel.GPT).not.toContain('Твой предыдущий ответ');
@@ -2164,9 +2165,9 @@ describe('Pipeline debate favorites view', () => {
     const oldContent = 'Сосредоточься на ясной концепции и ключевых идеях; убери повторы, длинные пересказы и второстепенные детали.';
     const prompt = prepare(['GPT'], { GPT: 'T' }, { GPT: 300 }).GPT;
     expect(prompt).toContain('[DISPUT_RESPONSE_LIMIT] Объём ответа: 250-300 слов, не больше.\n\n' + oldContent);
-    expect(prepare(['GPT'], { GPT: 'T' }, {}, { GPT: { limit: '', content: oldContent } }).GPT).toBe('T\n\n' + oldContent);
-    expect(prepare(['GPT'], { GPT: 'T' }, { GPT: 300 }, { GPT: { content: '' } }).GPT).toBe('T\n\n[DISPUT_RESPONSE_LIMIT] Объём ответа: 250-300 слов, не больше.');
-    expect(prepare(['GPT'], { GPT: 'T' }, {}, { GPT: { limit: '' } }).GPT).toBe('T');
+    expect(prepare(['GPT'], { GPT: 'T' }, { GPT: 300 }, { GPT: { limit: '', content: oldContent } }).GPT).toBe(prompt);
+    expect(prepare(['GPT'], { GPT: 'T' }, { GPT: 300 }, { GPT: { content: '' } }).GPT).toBe(prompt);
+    expect(prepare(['GPT'], { GPT: 'T' }, { GPT: 300 }, { GPT: { limit: '' } }).GPT).toBe(prompt);
     const legacy = '[DISPUT_RESPONSE_LIMIT] Ответ — не более {слов} слов. ' + oldContent;
     expect(prepare(['GPT'], { GPT: 'T' }, { GPT: 300 }, { GPT: { limit: legacy } }).GPT).toBe(prompt);
   });
@@ -2179,7 +2180,7 @@ describe('Pipeline debate favorites view', () => {
     const compact = jest.fn(budget.compactPrompt);
     const delivery = require('../shared/message-delivery');
     delivery.reset();
-    const discipline = { limit: '', content: '', delivery: '', ask: '', correction: 'RETRY' };
+    const discipline = { limit: 'L', content: 'C', delivery: 'D', ask: 'A', correction: 'RETRY' };
     if (part !== 'input' && part !== 'token') discipline[part] = 'Z'.repeat(700);
     const promptTemplate = part === 'input' ? 'X'.repeat(700) : 'X';
     const config = { version: 3, roundCounter: 1, protocol: { type: 'universal', presetId: 'CUSTOM', selectedModels: ['GPT'], roundLimit: '1', synthesizer: '', runPolicy: part === 'ask' ? 'manual' : 'auto' }, modelStacks: {},
@@ -2190,7 +2191,7 @@ describe('Pipeline debate favorites view', () => {
     document.getElementById('debate-run-policy-select').value = config.protocol.runPolicy;
     const starts = [];
     window.MessageDelivery = delivery;
-    window.DebateContextBudget = { ...budget, DEFAULT_LIMITS: { promptChars: part === 'token' ? 1 : 600, reservedOutputChars: 0 }, compactPrompt: compact };
+    window.DebateContextBudget = { ...budget, DEFAULT_LIMITS: { promptChars: part === 'token' ? 11 : 600, reservedOutputChars: 0 }, compactPrompt: compact };
     chrome.runtime.sendMessage.mockImplementation((message, callback) => {
       if (message.type !== 'START_FULLPAGE_PROCESS') { callback?.({ status: 'ok', active: false }); return; }
       starts.push(message);
@@ -2211,6 +2212,188 @@ describe('Pipeline debate favorites view', () => {
       debug.pipelineWaiter.reset();
     }
   });
+
+  const settleCustomCard = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const setupCustomInheritance = (name, { synthesis = '' } = {}) => {
+    const debug = window.__pipelineLifecycleDebug;
+    const config = { version: 3, roundCounter: 2, protocol: { type: 'universal', presetId: 'CUSTOM', selectedModels: ['GPT', 'Claude'], length: '300', roundLimit: '2', synthesizer: synthesis, runPolicy: 'auto' }, modelStacks: {} };
+    debug.setPipelineStoreForTest({ active: name, pipelines: { [name]: config }, order: [name] });
+    debug.applyPipelineConfig(config);
+    document.getElementById('debate-run-policy-select').value = 'auto';
+    window.setSynthesisModelFromName(synthesis);
+    const oldDelivery = window.MessageDelivery;
+    window.MessageDelivery = require('../shared/message-delivery');
+    const starts = [];
+    let failSecondRound = false;
+    chrome.runtime.sendMessage.mockImplementation((message, callback) => {
+      if (message.type !== 'START_FULLPAGE_PROCESS') { callback?.({ status: 'ok', active: false }); return; }
+      starts.push(message);
+      const batchNumber = starts.length;
+      callback?.({ status: 'process_started' });
+      setTimeout(() => message.selectedLLMs.forEach((model) => debug.pipelineWaiter.handleFinal({ type: 'LLM_RESPONSE', llmName: model,
+        transportRequestId: message.pipelineContext.transportRequestIds[model],
+        answer: failSecondRound && batchNumber === 2 && model === 'GPT' ? '' : `Accepted ${model} response ${batchNumber}.`,
+        metadata: { ...message.pipelineContext, status: 'SUCCESS', attribution: 'verified', completion: 'complete' }
+      })), 0);
+    });
+    const modal = () => document.getElementById('pipeline-block-info-modal');
+    const openGeneral = () => { document.getElementById('entryPoint').click(); return modal(); };
+    const openModel = (model = 'GPT') => {
+      [...document.querySelectorAll('#r2-models .model-block')].find((block) => block.querySelector('.model-name')?.textContent === model).querySelector('.model-block-inspect-btn').click();
+      return modal();
+    };
+    const edit = async (card, values) => {
+      for (const [key, value] of Object.entries(values)) {
+        const field = card.querySelector(key === 'promptTemplate' ? '#custom-card-request' : `#custom-discipline-${key}`);
+        field.value = value;
+        field.dispatchEvent(new Event('input'));
+      }
+      card.querySelector('#custom-card-save').click();
+      await settleCustomCard();
+    };
+    return { debug, config, starts, modal, openGeneral, openModel,
+      general: (values) => edit(openGeneral(), values),
+      model: (values) => edit(openModel(), values),
+      async run({ retry = false } = {}) {
+        modal()?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        starts.length = 0; failSecondRound = retry;
+        document.getElementById('modTa').value = 'INHERITANCE TASK';
+        await window.runPipeline();
+        return starts;
+      },
+      cleanup() { window.MessageDelivery = oldDelivery; debug.pipelineWaiter.reset(); modal()?.remove(); }
+    };
+  };
+
+  test('Custom ▶ tasks and discipline reach dispatch in R2+ and synthesis without copying to models', async () => {
+    const h = setupCustomInheritance('General dispatch', { synthesis: 'Gemini' });
+    try {
+      const general = h.openGeneral();
+      expect(general.querySelector('#custom-card-request')).toBeNull();
+      expect(general.querySelector('#custom-card-length')).toBeNull();
+      await h.general({ roundTask: 'ROUND_GENERAL_A', synthesisTask: 'SYNTHESIS_GENERAL_A', content: 'CONTENT_GENERAL_A', delivery: 'DELIVERY_GENERAL {метка}', correction: 'FIX_GENERAL {причина}' });
+      expect(h.debug.capturePipelineConfig().customModelSettings).toEqual({});
+      await h.run();
+      expect(h.starts).toHaveLength(3);
+      for (const model of ['GPT', 'CLAUDE']) {
+        expect(h.starts[0].promptsByModel[model]).not.toContain('ROUND_GENERAL_A');
+        expect(h.starts[1].promptsByModel[model]).toContain('ROUND_GENERAL_A');
+        expect(h.starts[1].promptsByModel[model]).toContain('CONTENT_GENERAL_A');
+        expect(h.starts[1].promptsByModel[model]).toContain('DELIVERY_GENERAL [[AO-');
+      }
+      expect(h.starts[2].promptsByModel.GEMINI).toContain('SYNTHESIS_GENERAL_A');
+      await h.general({ roundTask: 'ROUND_GENERAL_B', content: 'CONTENT_GENERAL_B' });
+      await h.run({ retry: true });
+      expect(h.starts[1].promptsByModel.GPT).toContain('ROUND_GENERAL_B');
+      expect(h.starts[2].promptsByModel.GPT).toContain('FIX_GENERAL');
+      expect(h.starts[2].promptsByModel.GPT).toContain('CONTENT_GENERAL_B');
+      expect(h.debug.capturePipelineConfig().customModelSettings).toEqual({});
+      expect(h.openModel().querySelector('[data-source-for="content"]').textContent).toBe('общее (▶)');
+    } finally { h.cleanup(); }
+  }, 30000);
+
+  test('Custom model overrides, return to common and equal-value elision follow live ▶ changes', async () => {
+    const h = setupCustomInheritance('Model inheritance');
+    try {
+      await h.general({ roundTask: 'COMMON_A', content: 'CONTENT_A' });
+      await h.model({ task: 'OWN_TASK', content: 'OWN_CONTENT' });
+      expect(h.openModel().querySelector('[data-source-for="task"]').textContent).toBe('своё');
+      await h.general({ roundTask: 'COMMON_B', content: 'CONTENT_B' });
+      await h.run();
+      expect(h.starts[1].promptsByModel.GPT).toContain('OWN_TASK');
+      expect(h.starts[1].promptsByModel.GPT).toContain('OWN_CONTENT');
+      expect(h.starts[1].promptsByModel.CLAUDE).toContain('COMMON_B');
+      expect(h.starts[1].promptsByModel.CLAUDE).toContain('CONTENT_B');
+      let card = h.openModel();
+      card.querySelector('[data-discipline="task"] [data-action="inherit"]').click();
+      await settleCustomCard();
+      card = h.modal();
+      expect(card.querySelector('#custom-discipline-task').value).toBe('COMMON_B');
+      expect(card.querySelector('[data-source-for="task"]').textContent).toBe('общее (▶)');
+      expect(h.debug.capturePipelineConfig().customModelSettings.r2.GPT.task).toBeUndefined();
+      expect(document.activeElement).toBe(card.querySelector('textarea'));
+      document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      expect(card.style.display).toBe('none');
+      await h.model({ content: 'CONTENT_B' });
+      expect(h.debug.capturePipelineConfig().customModelSettings.r2.GPT.discipline).toBeUndefined();
+      await h.general({ roundTask: 'COMMON_C', content: 'CONTENT_C' });
+      await h.run();
+      expect(h.starts[1].promptsByModel.GPT).toContain('COMMON_C');
+      expect(h.starts[1].promptsByModel.GPT).toContain('CONTENT_C');
+      card = h.openModel();
+      expect(card.querySelector('#custom-card-request').value).toContain('COMMON_C');
+      expect(card.querySelector('#custom-card-personal-note').textContent).toBe('');
+      await h.model({ promptTemplate: 'PERSONAL_REQUEST {задача}' });
+      await h.general({ roundTask: 'COMMON_D', content: 'CONTENT_D' });
+      expect(h.openModel().querySelector('#custom-card-personal-note').textContent).toBe('Персональный запрос: общее задание не применяется; дисциплина применяется.');
+      await h.run();
+      expect(h.starts[1].promptsByModel.GPT).toContain('PERSONAL_REQUEST INHERITANCE TASK');
+      expect(h.starts[1].promptsByModel.GPT).not.toContain('COMMON_D');
+      expect(h.starts[1].promptsByModel.GPT).toContain('CONTENT_D');
+    } finally { h.cleanup(); }
+  }, 30000);
+
+  test('Custom ▶ persists in saved configs and export/import; templates and + keep separate session defaults', async () => {
+    const h = setupCustomInheritance('Defaults saved copy');
+    try {
+      await h.general({ roundTask: 'PERSISTED_ROUND', content: 'PERSISTED_CONTENT' });
+      const stored = (await chrome.storage.local.get('llmComparatorPipelines')).llmComparatorPipelines;
+      expect(stored.pipelines['Defaults saved copy'].customDefaults.roundTask).toBe('PERSISTED_ROUND');
+      const exported = JSON.parse(JSON.stringify(h.debug.buildPipelineExportPayload()));
+      const imported = h.debug.normalizePipelineStore(exported);
+      h.debug.clearCustomSessionForTest();
+      h.debug.setPipelineStoreForTest(imported);
+      h.debug.applyPipelineConfig(imported.pipelines['Defaults saved copy']);
+      await h.run();
+      expect(h.starts[1].promptsByModel.GPT).toContain('PERSISTED_ROUND');
+      expect(h.starts[1].promptsByModel.GPT).toContain('PERSISTED_CONTENT');
+      const template = { ...h.config, customDefaults: { roundTask: 'MUST_NOT_LOAD_IN_TEMPLATE' } };
+      h.debug.clearCustomSessionForTest();
+      h.debug.setPipelineStoreForTest({ active: 'Custom', order: ['Custom'], pipelines: { Custom: template } });
+      h.debug.applyPipelineConfig(template);
+      expect(h.debug.getCustomPipelineDefaults()).toEqual({});
+      await h.general({ roundTask: 'TEMPLATE_SESSION' });
+      expect(h.debug.getCustomPipelineDefaults().roundTask).toBe('TEMPLATE_SESSION');
+      expect(h.debug.getPipelineStoreSnapshot().pipelines.Custom.customDefaults.roundTask).toBe('MUST_NOT_LOAD_IN_TEMPLATE');
+      const oldPrompt = window.prompt;
+      window.prompt = jest.fn(() => 'Copy from template');
+      try { document.getElementById('pipeline-save-btn').click(); await settleCustomCard(); }
+      finally { window.prompt = oldPrompt; }
+      expect(h.debug.getPipelineStoreSnapshot().active).toBe('Copy from template');
+      expect(h.debug.getCustomPipelineDefaults().roundTask).toBe('TEMPLATE_SESSION');
+      await h.run();
+      expect(h.starts[1].promptsByModel.GPT).toContain('TEMPLATE_SESSION');
+      h.debug.setPipelineStoreForTest({ active: 'Custom', order: ['Custom'], pipelines: { Custom: template } });
+      h.debug.applyPipelineConfig(template);
+      expect(h.debug.getCustomPipelineDefaults().roundTask).toBe('TEMPLATE_SESSION');
+      h.debug.clearCustomSessionForTest();
+      h.debug.applyPipelineConfig(template);
+      expect(h.debug.resolveCustomFields().task.value).not.toContain('TEMPLATE_SESSION');
+      document.getElementById('pipeline-add-btn').click();
+      expect(h.debug.capturePipelineConfig().customDefaults).toEqual({});
+    } finally { h.cleanup(); }
+  }, 30000);
+
+  test('Custom ▶ is read-only during a run while its contents can still be copied', async () => {
+    const h = setupCustomInheritance('Read-only defaults');
+    const originalSend = chrome.runtime.sendMessage.getMockImplementation();
+    let release;
+    let first = true;
+    chrome.runtime.sendMessage.mockImplementation((message, callback) => {
+      if (first && message.type === 'START_FULLPAGE_PROCESS') { first = false; release = () => originalSend(message, callback); }
+      else return originalSend(message, callback);
+    });
+    let running;
+    try {
+      running = h.run();
+      for (let i = 0; i < 50 && !release; i++) await settleCustomCard();
+      const card = h.openGeneral();
+      expect([...card.querySelectorAll('textarea')].every((field) => field.readOnly)).toBe(true);
+      expect(card.querySelector('#custom-card-save').disabled).toBe(true);
+      expect(card.querySelector('[data-action="clear"]').disabled).toBe(true);
+      expect(card.querySelector('[data-action="copy"]').disabled).toBe(false);
+    } finally { release?.(); if (running) await running; h.cleanup(); }
+  }, 30000);
 
   test('templates keep their names: no renaming a template and no taking a template name', async () => {
     const debug = window.__pipelineLifecycleDebug;

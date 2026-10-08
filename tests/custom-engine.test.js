@@ -19,6 +19,14 @@ function transport(answers, { closedByOwner = false } = {}) {
 }
 
 describe('Custom engine', () => {
+  test('one setting resolver follows model, reserved round, pipeline, code; empty strings inherit', () => {
+    const values = { model: 'M', round: 'R', pipeline: 'P', fallback: 'C' };
+    expect(Engine.resolveSetting(values)).toEqual({ value: 'M', source: 'model' });
+    expect(Engine.resolveSetting({ ...values, model: '' })).toEqual({ value: 'R', source: 'round' });
+    expect(Engine.resolveSetting({ ...values, model: null, round: '  ' })).toEqual({ value: 'P', source: 'pipeline' });
+    expect(Engine.resolveSetting({ fallback: 'C' })).toEqual({ value: 'C', source: 'code' });
+  });
+
   test.each(['PERSONAL_ASK', ''])('owner instruction is personal, clearable and only active in semi-auto (%s)', async (instruction) => {
     const { send, calls } = transport({ A: ['a', 'a2'], B: ['b', 'b2'] });
     await Engine.run({ task: 'T', semiAuto: true, askInstruction: 'DEFAULT_ASK',

@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-08 — Shared Custom defaults from ▶, version 2.81.645
+
+- Reuse the model editor for the ▶ entry-point card: shared R2+ task, synthesis task and discipline, without duplicating task input or word count.
+- Resolve each field through one model → reserved round → pipeline → code resolver for execution, previews and model cards. Empty values inherit. Persist only personal differences; show provenance and return-to-common actions. Personal full requests remain independent of shared tasks while inheriting discipline.
+- Save `customDefaults` alongside model settings, preserve it through Save/copy and Export/Import, keep built-in edits session-only and reset on +. Lock both editors during execution.
+- Validation: actual dispatch checks for task/synthesis inheritance, own overrides, reset, equal-value elision, personal requests, retries and read-only mode. Isolated Chromium exercised entry/model cards, Run, Save, Export/Import, reload, template reset and + with a test receiver; four viewport sizes fit and no page errors occurred. Full suite: 2673 passed, the same 17 pre-existing failures (baseline: 2668 passed); no new failures. Live providers were not called.
+
 ### 2026-10-08 — Copy every Custom card field, version 2.81.644
 
 - Replace the edit action with a copy icon and make discipline fields editable immediately. Add copy to the request and response-length fields; copy the exact current value without saving it.

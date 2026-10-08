@@ -47,6 +47,14 @@
   const numbered = (items) => items.map((item, index) => `Ответ ${index + 1}:\n${item.text}`).join('\n\n');
   const labelled = (items) => items.map((item) => `${item.label}:\n${item.text}`).join('\n\n');
 
+  // One inheritance rule; the round slot is reserved for a future round editor.
+  function resolveSetting({ model, round, pipeline, fallback = '' } = {}) {
+    for (const [source, value] of [['model', model], ['round', round], ['pipeline', pipeline]]) {
+      if (typeof value === 'string' && value.trim()) return { value, source };
+    }
+    return { value: fallback, source: 'code' };
+  }
+
   function buildPrompt({ task, step, model, input = [], inputMode = 'none', earlier = [], ownerAnswers = [], askInstruction = '' }) {
     if (askInstruction && typeof model.discipline?.ask === 'string') askInstruction = model.discipline.ask;
     if (typeof model.promptTemplate === 'string' && model.promptTemplate.trim()) {
@@ -64,7 +72,8 @@
         : `Ответы предыдущего шага:\n\n${numbered(input)}`);
     }
     if (earlier.length) parts.push(`Ответы участников этого раунда до тебя:\n\n${numbered(earlier)}`);
-    if (text(step.task)) parts.push(`Задание:\n${text(step.task)}`);
+    const taskInstruction = model.task ?? step.task;
+    if (text(taskInstruction)) parts.push(`Задание:\n${text(taskInstruction)}`);
     if (text(model.extra)) parts.push(`Дополнительно для тебя:\n${text(model.extra)}`);
     if (ownerAnswers.length) parts.push(`Ответы владельца на вопросы:\n${ownerAnswers.map((item) => `- ${item.question}: ${item.answer}`).join('\n')}`);
     if (askInstruction) parts.push(askInstruction);
@@ -96,7 +105,7 @@
         task: kind === 'synthesis' && !text(step.task) ? SYNTHESIS_TASK : text(step.task),
         input: kind === 'synthesis' ? 'previous' : (['none', 'previous', 'all'].includes(step.input) ? step.input : 'previous'),
         models: (step.models || []).map((model) => (typeof model === 'string' ? { name: model, extra: '' } : {
-          name: model.name, extra: text(model.extra), promptTemplate: typeof model.promptTemplate === 'string' ? model.promptTemplate : null,
+          name: model.name, extra: text(model.extra), task: typeof model.task === 'string' ? model.task : null, promptTemplate: typeof model.promptTemplate === 'string' ? model.promptTemplate : null,
           discipline: model.discipline ? { ...model.discipline } : null,
           maxWords: Number.isSafeInteger(model.maxWords) && model.maxWords > 0 ? model.maxWords : null
         }))
@@ -162,7 +171,7 @@
     // Instructions (owner-editable behaviour) and input (data from other models) are kept apart.
     function partsFor(step, model, input, earlier) {
       return {
-        instructions: { task: text(task), stepTask: step.task, extra: model.extra || '', askInstruction: semiAuto ? (model.discipline?.ask ?? askInstruction) : '',
+        instructions: { task: text(task), stepTask: model.task ?? step.task, extra: model.extra || '', askInstruction: semiAuto ? (model.discipline?.ask ?? askInstruction) : '',
           ownerAnswers: ownerAnswers.slice() },
         input: { mode: step.input, items: input, earlier }
       };
@@ -333,10 +342,10 @@
       : buildPrompt({ task: '{задача}', step, model, input: input.length ? [{ label: 'Вход', text: '{вход}' }] : [],
         inputMode: step.input, earlier: earlier.length ? [{ text: '{ответы до тебя}' }] : [] });
     return { label: stepLabel(step), order: step.order, inputMode: step.input, prompt, template, transportLines: TRANSPORT_LINES.slice(),
-      instructions: { task: text(task), stepTask: step.task, extra: model.extra || '', askInstruction: semiAuto ? askInstruction : '' } };
+      instructions: { task: text(task), stepTask: model.task ?? step.task, extra: model.extra || '', askInstruction: semiAuto ? askInstruction : '' } };
   }
 
-  const api = Object.freeze({ DEFAULT_ATTEMPTS, CORRECTION_TEMPLATE, SYNTHESIS_TASK, STOP_TEXT, REASON_TEXT, PLACEHOLDER, TRANSPORT_LINES, buildPrompt, correctionPrompt, normalizeSteps, previewPrompt, run });
+  const api = Object.freeze({ DEFAULT_ATTEMPTS, CORRECTION_TEMPLATE, SYNTHESIS_TASK, STOP_TEXT, REASON_TEXT, resolveSetting, PLACEHOLDER, TRANSPORT_LINES, buildPrompt, correctionPrompt, normalizeSteps, previewPrompt, run });
   root.CustomEngine = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -4221,6 +4221,8 @@ document.addEventListener('click', (event) => {
         window.__getDraftPlanSynthesizer = getDraftPlanSynthesizer;
 
         // Saved copies keep their card settings; built-in templates keep edits only in this page.
+        const customPipelineDefaults = new Map();
+        const getCustomPipelineDefaults = () => customPipelineDefaults.get(draftPlanStorageKey()) || {};
         const customCardSettings = new Map();
         const getCustomCardSettings = () => customCardSettings.get(draftPlanStorageKey()) || {};
         const capturePipelineConfig = () => {
@@ -4238,7 +4240,8 @@ document.addEventListener('click', (event) => {
                 draftPlan,
                 roundCounter,
                 modelStacks,
-                customModelSettings: JSON.parse(JSON.stringify(getCustomCardSettings()))
+                customModelSettings: JSON.parse(JSON.stringify(getCustomCardSettings())),
+                customDefaults: JSON.parse(JSON.stringify(getCustomPipelineDefaults()))
             };
         };
 
@@ -6406,10 +6409,10 @@ document.addEventListener('click', (event) => {
                     round += 1;
                     return round === 1
                         ? { kind: 'round', ref: `r${round}`, order: 'parallel', task: '', input: 'none', models }
-                        : { kind: 'round', ref: `r${round}`, order: 'parallel', task: CUSTOM_ROUND_TASK, input: 'previous', models };
+                        : { kind: 'round', ref: `r${round}`, order: 'parallel', task: resolveCustomFields({}, 'round').task.value, input: 'previous', models };
                 }
-                if (stage.outputIntent === 'working_synthesis') return { kind: 'synthesis', ref: `synth:${stage.plannedStageId}`, models };
-                if (stage.outputIntent === 'candidate_final') return { kind: 'synthesis', ref: 'final', models };
+                if (stage.outputIntent === 'working_synthesis') return { kind: 'synthesis', ref: `synth:${stage.plannedStageId}`, task: resolveCustomFields({}, 'synthesis').task.value, models };
+                if (stage.outputIntent === 'candidate_final') return { kind: 'synthesis', ref: 'final', task: resolveCustomFields({}, 'synthesis').task.value, models };
                 return null;
             }).filter(Boolean).map((step) => {
                 // A model can be configured before its Send checkbox is enabled.
@@ -6420,7 +6423,10 @@ document.addEventListener('click', (event) => {
             }).filter((step) => step.models.length).map((step) => ({ ...step,
                 models: step.models.map((name) => {
                     const settings = getCustomCardSettings()[step.ref]?.[name];
-                    return settings ? { name, promptTemplate: settings.promptTemplate, maxWords: settings.maxWords, discipline: customDiscipline(settings.discipline) } : name;
+                    const resolved = resolveCustomFields(settings, step.kind);
+                    return { name, promptTemplate: settings?.promptTemplate || null, maxWords: settings?.maxWords || null,
+                        task: step.input === 'none' ? '' : resolved.task.value,
+                        discipline: Object.fromEntries(Object.entries(resolved.discipline).map(([key, item]) => [key, item.value])) };
                 })
             }));
         };
@@ -6435,7 +6441,6 @@ document.addEventListener('click', (event) => {
         });
         const customDiscipline = (saved = {}) => {
             const value = { ...saved };
-            if (value.limit === '' && value.content == null) value.content = '';
             // Split only the known old default suffix; preserve all personal text literally.
             if (typeof value.limit === 'string' && value.limit.endsWith(CUSTOM_CONTENT_REQUIREMENTS) && value.content == null) {
                 value.content = CUSTOM_CONTENT_REQUIREMENTS;
@@ -6444,15 +6449,27 @@ document.addEventListener('click', (event) => {
             }
             return value;
         };
+        const resolveCustomFields = (settings = {}, kind = 'round', round = {}) => {
+            const resolve = window.CustomEngine.resolveSetting;
+            const general = getCustomPipelineDefaults();
+            const personal = customDiscipline(settings?.discipline);
+            const defaults = customDisciplineDefaults();
+            const taskKey = kind === 'synthesis' ? 'synthesisTask' : 'roundTask';
+            return {
+                task: resolve({ model: settings?.task, round: round.task, pipeline: general[taskKey],
+                    fallback: kind === 'synthesis' ? window.CustomEngine.SYNTHESIS_TASK : CUSTOM_ROUND_TASK }),
+                discipline: Object.fromEntries(Object.entries(defaults).map(([key, fallback]) => [key,
+                    resolve({ model: personal[key], round: round.discipline?.[key], pipeline: general.discipline?.[key], fallback })]))
+            };
+        };
         const customLengthInstruction = (template, words) => template.replace(/\{от\}|\{слов\}/g,
             (key) => String(key === '{от}' ? Math.max(1, words - 50) : words));
         const prepareCustomPrompts = (models, prompts, limits = {}, discipline = {}) => Object.fromEntries(models.map((name) => {
             const words = Number.isSafeInteger(limits[name]) && limits[name] > 0 ? limits[name] : getDebateMaxWords();
-            const personal = customDiscipline(discipline[name]);
-            const defaults = customDisciplineDefaults();
-            const instruction = customLengthInstruction(personal.limit ?? defaults.limit, words);
+            const resolved = resolveCustomFields({ discipline: discipline[name] });
+            const instruction = customLengthInstruction(resolved.discipline.limit.value, words);
             const base = String(prompts[name] || '').replace(/\[DISPUT_RESPONSE_LIMIT\][^\n]*(?:\n|$)/g, '').trimEnd();
-            return [name, [base, instruction, personal.content ?? defaults.content].filter(Boolean).join('\n\n')];
+            return [name, [base, instruction, resolved.discipline.content.value].filter(Boolean).join('\n\n')];
         }));
         // The owner's choice on a pause, through the shared confirm dialog (three buttons).
         let customDecisionOpen = false;
@@ -6534,7 +6551,7 @@ document.addEventListener('click', (event) => {
                     maxPromptChars: budgetLimits ? window.DebateContextBudget.effectivePromptLimit(budgetLimits) : Infinity,
                     accept: ({ text, completion }) => window.DebateResponseAcceptance?.evaluate?.({ text, meta: { completion } }) || { ok: true },
                     parseAsks: (text) => window.DebateStageMarkers?.parse?.(text)?.askItems || [],
-                    askInstruction: window.DebateStageMarkers?.instructions?.() || '',
+                    askInstruction: resolveCustomFields().discipline.ask.value,
                     askOwner: askCustomOwner,
                     decide: askCustomDecision,
                     onRequest: recordAttempt,
@@ -6548,7 +6565,7 @@ document.addEventListener('click', (event) => {
                         const batch = await runModelBatch({
                             prompt: promptsByModel[models[0]],
                             promptsByModel,
-                            deliveryInstructionsByModel: Object.fromEntries(models.map((name) => [name, discipline[name].delivery ?? customDisciplineDefaults().delivery])),
+                            deliveryInstructionsByModel: Object.fromEntries(models.map((name) => [name, discipline[name].delivery])),
                             models,
                             attachments: models.some((model) => !attached.has(model)) ? attachments : [],
                             forceNewTabs: runContext.forceNewTabs,
@@ -7166,6 +7183,11 @@ document.addEventListener('click', (event) => {
                 getApprovalWaiting: () => debateExecutionContext?.hasApprovalWaiter?.() === true,
                 customStepsFromPlan,
                 prepareCustomPrompts,
+                resolveCustomFields,
+                getCustomPipelineDefaults,
+                buildPipelineExportPayload,
+                normalizePipelineStore,
+                clearCustomSessionForTest: () => { customPipelineDefaults.clear(); customCardSettings.clear(); },
                 capturePipelineConfig,
                 applyPipelineConfig: (...args) => applyPipelineConfig(...args),
                 runCustomFromPage,
@@ -7295,6 +7317,9 @@ document.addEventListener('click', (event) => {
         const applyPipelineConfig = (config = {}) => {
             if (!config || typeof config !== 'object') return;
             pipelineApplyingConfig = true;
+            if (!isDefaultPipelineName(draftPlanStorageKey()) || !customPipelineDefaults.has(draftPlanStorageKey())) {
+                customPipelineDefaults.set(draftPlanStorageKey(), isDefaultPipelineName(draftPlanStorageKey()) ? {} : JSON.parse(JSON.stringify(config.customDefaults || {})));
+            }
             if (!isDefaultPipelineName(draftPlanStorageKey()) || !customCardSettings.has(draftPlanStorageKey())) {
                 customCardSettings.set(draftPlanStorageKey(), JSON.parse(JSON.stringify(config.customModelSettings || {})));
             }
@@ -7705,6 +7730,8 @@ document.addEventListener('click', (event) => {
 
             if (pipelineStore.lastSaved === trimmedOld) pipelineStore.lastSaved = trimmedNew;
             if (pipelineStore.active === trimmedOld) pipelineStore.active = trimmedNew;
+            if (customPipelineDefaults.has(trimmedOld)) { customPipelineDefaults.set(trimmedNew, customPipelineDefaults.get(trimmedOld)); customPipelineDefaults.delete(trimmedOld); }
+            if (customCardSettings.has(trimmedOld)) { customCardSettings.set(trimmedNew, customCardSettings.get(trimmedOld)); customCardSettings.delete(trimmedOld); }
 
             renderPipelineList(pipelineStore.order, pipelineStore.active, pipelineStore.lastSaved);
             persistPipelineStore();
@@ -7912,6 +7939,7 @@ document.addEventListener('click', (event) => {
             delete pipelineStore.draftPlans['Unsaved Pipeline'];
             delete pipelineSessionDraftPlans['Unsaved Pipeline'];
             customCardSettings.delete('Unsaved Pipeline');
+            customPipelineDefaults.delete('Unsaved Pipeline');
             window.__pendingPipelineSynthesizer = '';
             const emptyFlowSelect = getSynthesizerFlowSelect();
             if (emptyFlowSelect) emptyFlowSelect.value = '';
@@ -7952,6 +7980,8 @@ document.addEventListener('click', (event) => {
                 }
                 const config = capturePipelineConfig();
                 pipelineStore.pipelines[trimmed] = config;
+                customPipelineDefaults.set(trimmed, JSON.parse(JSON.stringify(config.customDefaults || {})));
+                customCardSettings.set(trimmed, JSON.parse(JSON.stringify(config.customModelSettings || {})));
                 if (!pipelineStore.order.includes(trimmed)) {
                     pipelineStore.order.push(trimmed);
                 }
@@ -8105,146 +8135,166 @@ document.addEventListener('click', (event) => {
             const match = /^r(\d+)-models$/.exec(stackId);
             return match ? `r${match[1]}` : '';
         };
-        const renderCustomBlockInspector = async (block, modal) => {
-            const modelName = block.querySelector('.model-name')?.textContent?.trim() || '';
-            const ref = customBlockRef(block);
-            const steps = customStepsFromPlan(draftPlanForCanvas(getActiveDraftPlan()), { ref, name: modelName });
+        const renderCustomBlockInspector = async (block, modal, { pipelineDefaults = false } = {}) => {
+            const modelName = pipelineDefaults ? '' : block.querySelector('.model-name')?.textContent?.trim() || '';
+            const ref = pipelineDefaults ? '' : customBlockRef(block);
+            const steps = pipelineDefaults ? [] : customStepsFromPlan(draftPlanForCanvas(getActiveDraftPlan()), { ref, name: modelName });
             const stepIndex = steps.findIndex((step) => step.ref === ref);
-            if (stepIndex < 0) { showNotification('Шаг модели не найден в плане.', 'warn'); return; }
-            const automaticSteps = steps.map((step) => ({ ...step, models: step.models.map((model) => typeof model === 'string' ? model : { ...model, promptTemplate: null }) }));
-            const preview = window.CustomEngine.previewPrompt({ task: getModeratorDispatchText(), steps: automaticSteps, stepIndex, modelName });
-            const saved = getCustomCardSettings()[ref]?.[modelName] || {};
+            if (!pipelineDefaults && stepIndex < 0) { showNotification('Шаг модели не найден в плане.', 'warn'); return; }
+            const step = steps[stepIndex];
+            const automaticSteps = steps.map((item) => ({ ...item, models: item.models.map((model) => ({ ...model, promptTemplate: null })) }));
+            const preview = pipelineDefaults ? null : window.CustomEngine.previewPrompt({ task: getModeratorDispatchText(), steps: automaticSteps, stepIndex, modelName });
+            const saved = pipelineDefaults ? getCustomPipelineDefaults() : getCustomCardSettings()[ref]?.[modelName] || {};
+            const inherited = resolveCustomFields({}, step?.kind);
+            const resolved = resolveCustomFields(saved, step?.kind);
             const general = getDebateMaxWords();
             const defaults = customDisciplineDefaults();
-            const discipline = customDiscipline(saved.discipline);
             const disciplineRows = [['ask', 'Вопрос владельцу'], ['limit', 'Длина'], ['content', 'Требования к содержанию'], ['delivery', 'Доставка'], ['correction', 'Запрос исправления (при повторе)']];
+            const rows = pipelineDefaults
+                ? [['roundTask', 'Задание раундов со входом (R2+)'], ['synthesisTask', 'Задание синтеза'], ...disciplineRows]
+                : [...(step.input !== 'none' ? [['task', step.kind === 'synthesis' ? 'Задание синтеза' : 'Задание раунда']] : []), ...disciplineRows];
+            const isTask = (key) => ['task', 'roundTask', 'synthesisTask'].includes(key);
+            const fallbackFor = (key) => key === 'roundTask' ? CUSTOM_ROUND_TASK : key === 'synthesisTask' ? window.CustomEngine.SYNTHESIS_TASK : defaults[key];
+            const inheritedValue = (key) => pipelineDefaults ? fallbackFor(key) : key === 'task' ? inherited.task.value : inherited.discipline[key].value;
+            const rawValue = (key) => isTask(key) ? saved[key] : customDiscipline(saved.discipline)[key];
+            const effectiveValue = (key) => pipelineDefaults
+                ? window.CustomEngine.resolveSetting({ pipeline: rawValue(key), fallback: fallbackFor(key) }).value
+                : key === 'task' ? resolved.task.value : resolved.discipline[key].value;
             const copyButton = (id, label) => `<button type="button" data-action="copy" data-copy-field="${id}" title="Копировать" aria-label="Копировать: ${label}"><i class="ti ti-copy" aria-hidden="true"></i></button>`;
             const content = modal.querySelector('.modal-content');
             modal.classList.add('custom-model-card');
+            modal.classList.toggle('custom-defaults-card', pipelineDefaults);
             modal.setAttribute('role', 'dialog');
             modal.setAttribute('aria-modal', 'true');
             modal.setAttribute('aria-labelledby', 'pipeline-block-info-title');
             content.innerHTML = `
-                <header class="custom-card-top">
-                    <h3 class="custom-card-model" id="pipeline-block-info-title">${modelIconData[modelName] ? `<img src="${modelIconData[modelName]}" alt="" width="26" height="26">` : ''}${escapeHtml(modelName)}<span class="custom-card-where">${escapeHtml(preview.label)}</span></h3>
-                    <div class="custom-card-length"><label for="custom-card-length">Длина ответа:</label> <input id="custom-card-length" type="number" min="1" step="1" inputmode="numeric" placeholder="${general}" aria-describedby="custom-card-length-note"> слов<span class="custom-card-actions">${copyButton('custom-card-length', 'Длина ответа')}</span></div>
+                <header class="custom-card-top ${pipelineDefaults ? 'custom-defaults-top' : ''}">
+                    <h3 class="custom-card-model" id="pipeline-block-info-title">${pipelineDefaults ? '▶ Custom' : `${modelIconData[modelName] ? `<img src="${modelIconData[modelName]}" alt="" width="26" height="26">` : ''}${escapeHtml(modelName)}<span class="custom-card-where">${escapeHtml(preview.label)}</span>`}</h3>
+                    ${pipelineDefaults ? '' : `<div class="custom-card-length"><label for="custom-card-length">Длина ответа:</label> <input id="custom-card-length" type="number" min="1" step="1" inputmode="numeric" placeholder="${general}" aria-describedby="custom-card-length-note"> слов<span class="custom-card-actions">${copyButton('custom-card-length', 'Длина ответа')}</span></div>`}
                     <button type="button" class="modal-button accent" id="custom-card-save">Save</button>
                 </header>
                 <div class="custom-card-body">
-                    <div class="custom-card-field">
+                    ${pipelineDefaults ? '<p class="custom-card-note">Общие значения для всех шагов. Своё значение модели имеет приоритет; пустое поле наследует значение из кода.</p>' : `<div class="custom-card-field">
                         <div class="custom-card-head"><label for="custom-card-request">Запрос</label><span><code>{задача}</code> и <code>{вход}</code> подставляются при запуске. Изменённый текст используется только для этой модели в этом шаге.</span><span class="custom-card-actions">${copyButton('custom-card-request', 'Запрос')}</span></div>
                         <textarea id="custom-card-request" spellcheck="false"></textarea>
-                        <div class="custom-card-note"><button type="button" id="custom-card-reset">Вернуть автоматическую сборку</button></div>
-                    </div>
-                    <div class="custom-card-marks"><strong>Метки транспорта</strong>
-                        ${disciplineRows.map(([key, label]) => `<div class="custom-card-discipline" data-discipline="${key}">
-                            <div class="custom-card-discipline-head"><label for="custom-discipline-${key}">${label}${key === 'ask' && getDebateRunPolicy() === 'auto' ? ' (в Авто не добавляется)' : ''}</label>
+                        <div class="custom-card-note"><span id="custom-card-request-source"></span> <span id="custom-card-personal-note"></span> <button type="button" id="custom-card-reset">Вернуть к общему</button></div>
+                    </div>`}
+                    <div class="custom-card-marks"><strong>${pipelineDefaults ? 'Общие задания и дисциплина' : 'Метки транспорта'}</strong>
+                        ${rows.map(([key, label]) => `<div class="custom-card-discipline" data-discipline="${key}">
+                            <div class="custom-card-discipline-head"><label for="custom-discipline-${key}">${label}${key === 'ask' && getDebateRunPolicy() === 'auto' ? ' (в Авто не добавляется)' : ''}<span class="custom-card-source" data-source-for="${key}"></span></label>
                                 <div class="custom-card-actions">
                                     ${copyButton(`custom-discipline-${key}`, label)}
-                                    <button type="button" data-action="clear" title="Очистить" aria-label="Очистить: ${label}" class="custom-card-clear">×</button>
+                                    <button type="button" data-action="inherit" title="${pipelineDefaults ? 'Вернуть к коду' : 'Вернуть к общему'}" aria-label="Вернуть к общему: ${label}" hidden>↶</button>
+                                    <button type="button" data-action="clear" title="Очистить — наследовать" aria-label="Очистить: ${label}" class="custom-card-clear">×</button>
                                     <button type="button" data-action="save" title="Сохранить" aria-label="Сохранить: ${label}" class="custom-card-commit">✓</button>
                                 </div>
                             </div>
                             <textarea id="custom-discipline-${key}" rows="2" spellcheck="false"></textarea>
                         </div>`).join('')}
-                        <div class="custom-card-note">{от} — на 50 слов меньше предела из шапки; {слов} — сам предел; {метка} — новая метка; {причина} — причина повтора. При очистке инструкции доставки сама метка сохраняется. При повторе запрос заменяется инструкцией исправления.</div>
+                        <div class="custom-card-note">{от} — на 50 слов меньше предела; {слов} — предел из шапки pipeline; {метка} — новая метка; {причина} — причина повтора. Пустое поле наследуется. При повторе запрос заменяется инструкцией исправления.</div>
                     </div>
-                    <span id="custom-card-length-note" class="custom-card-sr-only">Пусто — общий предел pipeline (${general}).</span>
+                    ${pipelineDefaults ? '' : `<span id="custom-card-length-note" class="custom-card-sr-only">Пусто — общий предел pipeline (${general}).</span>`}
                 </div>`;
             const request = content.querySelector('#custom-card-request');
             const length = content.querySelector('#custom-card-length');
             const reset = content.querySelector('#custom-card-reset');
             const save = content.querySelector('#custom-card-save');
-            request.value = saved.promptTemplate ?? preview.template;
-            length.value = saved.maxWords || '';
-            // Inspect remains available during a run; its in-flight plan is immutable.
-            request.disabled = length.disabled = reset.disabled = save.disabled = pipelineRunActive;
+            if (request) { request.value = saved.promptTemplate || preview.template; request.disabled = pipelineRunActive; }
+            if (length) { length.value = saved.maxWords || ''; length.disabled = pipelineRunActive; }
+            if (reset) reset.disabled = pipelineRunActive;
+            save.disabled = pipelineRunActive;
             const dirtyFields = new Set();
-            const refresh = () => {
-                const own = request.value !== preview.template;
-                reset.hidden = !own;
-                const value = length.value === '' ? general : Number(length.value);
-                const limitField = content.querySelector('#custom-discipline-limit');
-                if (!dirtyFields.has('limit')) limitField.value = customLengthInstruction(discipline.limit ?? defaults.limit, Number.isSafeInteger(value) && value > 0 ? value : general);
-                length.title = `Пусто — общий предел pipeline (${general}). Только для этой модели в этом шаге.`;
-            };
-            request.addEventListener('input', refresh);
-            length.addEventListener('input', refresh);
-            reset.addEventListener('click', () => { request.value = preview.template; refresh(); });
             const fields = {};
-            disciplineRows.forEach(([key]) => {
+            const display = (key, value) => key === 'limit' ? customLengthInstruction(value, Number(length?.value || general)) : value;
+            const differs = (key, value) => typeof value === 'string' && value.trim()
+                && value !== inheritedValue(key) && value !== display(key, inheritedValue(key));
+            const refresh = () => {
+                if (request) {
+                    const own = request.value !== preview.template;
+                    reset.hidden = !own;
+                    content.querySelector('#custom-card-request-source').textContent = own ? 'своё' : 'общее (▶)';
+                    content.querySelector('#custom-card-personal-note').textContent = own ? 'Персональный запрос: общее задание не применяется; дисциплина применяется.' : '';
+                }
+                rows.forEach(([key]) => {
+                    if (!dirtyFields.has(key)) fields[key].value = display(key, effectiveValue(key));
+                    fields[key].placeholder = display(key, inheritedValue(key));
+                    const raw = rawValue(key);
+                    const own = dirtyFields.has(key) ? differs(key, fields[key].value) : typeof raw === 'string' && Boolean(raw.trim());
+                    const source = content.querySelector(`[data-source-for="${key}"]`);
+                    source.textContent = own ? 'своё' : pipelineDefaults ? 'из кода' : 'общее (▶)';
+                    source.dataset.source = own ? (pipelineDefaults ? 'pipeline' : 'model') : pipelineDefaults ? 'code' : (key === 'task' ? inherited.task.source : inherited.discipline[key].source);
+                    content.querySelector(`[data-discipline="${key}"] [data-action="inherit"]`).hidden = !own;
+                });
+            };
+            rows.forEach(([key]) => {
                 const row = content.querySelector(`[data-discipline="${key}"]`);
                 const field = row.querySelector('textarea');
                 fields[key] = field;
-                field.value = discipline[key] ?? defaults[key];
                 field.readOnly = pipelineRunActive;
-                field.addEventListener('input', () => dirtyFields.add(key));
+                field.addEventListener('input', () => { dirtyFields.add(key); refresh(); });
                 row.querySelectorAll('button:not([data-action="copy"])').forEach((button) => {
                     button.disabled = pipelineRunActive;
                     button.addEventListener('click', async () => {
                         if (pipelineRunActive) return;
-                        if (button.dataset.action === 'save') {
-                            if (!dirtyFields.has(key)) return;
-                            await saveSettings(false);
-                            refresh();
-                        } else {
+                        if (button.dataset.action === 'save') { if (dirtyFields.has(key)) await saveSettings(false); }
+                        else {
                             field.value = '';
                             dirtyFields.add(key);
-                            field.focus();
+                            refresh();
+                            if (button.dataset.action === 'inherit') await saveSettings(false);
+                            else field.focus();
                         }
                     });
                 });
             });
+            request?.addEventListener('input', refresh);
+            length?.addEventListener('input', refresh);
+            reset?.addEventListener('click', () => { request.value = preview.template; refresh(); });
             const saveSettings = async (close) => {
                 if (pipelineRunActive) return;
-                if (!request.value.trim()) { request.focus(); showNotification('Введите запрос.', 'warn'); return; }
-                if (!length.checkValidity() || (length.value !== '' && !Number.isSafeInteger(Number(length.value)))) { length.reportValidity(); return; }
-                const settings = getCustomCardSettings();
-                if (!settings[ref]) settings[ref] = {};
-                disciplineRows.forEach(([key]) => { if (dirtyFields.has(key)) discipline[key] = fields[key].value; });
-                if (Object.keys(discipline).length && discipline.content == null) discipline.content = defaults.content;
-                settings[ref][modelName] = { promptTemplate: request.value === preview.template ? null : request.value, maxWords: length.value === '' ? null : Number(length.value),
-                    ...(Object.keys(discipline).length ? { discipline: { ...discipline } } : {}) };
-                customCardSettings.set(draftPlanStorageKey(), settings);
+                if (request && !request.value.trim()) { request.focus(); showNotification('Введите запрос.', 'warn'); return; }
+                if (length && (!length.checkValidity() || (length.value !== '' && !Number.isSafeInteger(Number(length.value))))) { length.reportValidity(); return; }
+                const next = pipelineDefaults ? {} : { promptTemplate: request.value === preview.template ? null : request.value,
+                    maxWords: length.value === '' || Number(length.value) === general ? null : Number(length.value) };
+                const discipline = {};
+                rows.forEach(([key]) => {
+                    const value = dirtyFields.has(key) ? fields[key].value : rawValue(key);
+                    if (dirtyFields.has(key) ? differs(key, value) : typeof value === 'string' && value.trim()) { if (isTask(key)) next[key] = value; else discipline[key] = value; }
+                });
+                if (Object.keys(discipline).length) next.discipline = discipline;
+                if (pipelineDefaults) customPipelineDefaults.set(draftPlanStorageKey(), next);
+                else {
+                    const settings = getCustomCardSettings();
+                    if (!settings[ref]) settings[ref] = {};
+                    settings[ref][modelName] = next;
+                    customCardSettings.set(draftPlanStorageKey(), settings);
+                }
                 const name = draftPlanStorageKey();
                 if (!isDefaultPipelineName(name) && pipelineStore.pipelines[name]) {
-                    pipelineStore.pipelines[name].customModelSettings = JSON.parse(JSON.stringify(settings));
+                    pipelineStore.pipelines[name].customModelSettings = JSON.parse(JSON.stringify(getCustomCardSettings()));
+                    pipelineStore.pipelines[name].customDefaults = JSON.parse(JSON.stringify(getCustomPipelineDefaults()));
                     save.disabled = true;
-                    try {
-                        await persistPipelineStore();
-                    } catch (error) {
-                        save.disabled = false;
-                        showNotification('Не удалось сохранить настройки карточки.', 'error');
-                        return;
-                    }
+                    try { await persistPipelineStore(); }
+                    catch (_) { save.disabled = false; showNotification('Не удалось сохранить настройки карточки.', 'error'); return; }
                 }
-                dirtyFields.clear();
-                refresh();
-                save.disabled = pipelineRunActive;
                 if (close) {
-                    modal.style.display = 'none';
-                    modal.classList.remove('is-visible');
-                    modal.setAttribute('aria-hidden', 'true');
-                    document.body.classList.remove('modal-open');
+                    modal.style.display = 'none'; modal.classList.remove('is-visible'); modal.setAttribute('aria-hidden', 'true'); document.body.classList.remove('modal-open');
+                } else {
+                    await renderCustomBlockInspector(block, modal, { pipelineDefaults });
+                    modal.querySelector('textarea')?.focus();
                 }
                 return true;
             };
-            content.querySelectorAll('[data-copy-field]').forEach((button) => {
-                button.addEventListener('click', async () => {
-                    try {
-                        await navigator.clipboard.writeText(content.querySelector(`#${button.dataset.copyField}`).value);
-                        flashButtonFeedback(button, 'success');
-                    } catch (error) {
-                        showNotification('Не удалось скопировать текст.', 'error');
-                    }
-                });
-            });
+            content.querySelectorAll('[data-copy-field]').forEach((button) => button.addEventListener('click', async () => {
+                try { await navigator.clipboard.writeText(content.querySelector(`#${button.dataset.copyField}`).value); flashButtonFeedback(button, 'success'); }
+                catch (_) { showNotification('Не удалось скопировать текст.', 'error'); }
+            }));
             save.addEventListener('click', () => saveSettings(true));
             refresh();
         };
 
-        const showPipelineBlockInfo = (block) => {
-            if (!block || block.classList.contains('pipeline-empty-slot')) return;
+        const showPipelineBlockInfo = (block, { pipelineDefaults = false } = {}) => {
+            if (!pipelineDefaults && (!block || block.classList.contains('pipeline-empty-slot'))) return;
             let modal = document.getElementById('pipeline-block-info-modal');
             if (!modal) {
                 modal = document.createElement('div');
@@ -8286,12 +8336,12 @@ document.addEventListener('click', (event) => {
                 });
             }
             if (window.PipelinePresets?.getPipelinePreset?.(getSelectedPipelinePresetId())?.runner === 'custom' && window.CustomEngine) {
-                void renderCustomBlockInspector(block, modal);
+                void renderCustomBlockInspector(block, modal, { pipelineDefaults });
                 modal.style.display = 'flex';
                 modal.classList.add('is-visible');
                 modal.setAttribute('aria-hidden', 'false');
                 document.body.classList.add('modal-open');
-                modal.querySelector('#custom-card-request')?.focus();
+                (modal.querySelector('#custom-card-request') || modal.querySelector('textarea'))?.focus();
                 return;
             }
             if (modal.classList.contains('custom-model-card')) {
@@ -8690,6 +8740,17 @@ document.addEventListener('click', (event) => {
             syncPipelineRoundsToDebateLimit();
             updateDebateButtonsUi();
             console.log('[RESULTS] Debate run policy:', debateRunPolicySelect.value);
+        });
+        const customEntryPoint = document.getElementById('entryPoint');
+        customEntryPoint?.setAttribute('role', 'button');
+        customEntryPoint?.setAttribute('tabindex', '0');
+        customEntryPoint?.setAttribute('aria-label', 'Общие значения Custom');
+        const openCustomDefaults = () => {
+            if (window.PipelinePresets?.getPipelinePreset?.(getSelectedPipelinePresetId())?.runner === 'custom') showPipelineBlockInfo(null, { pipelineDefaults: true });
+        };
+        customEntryPoint?.addEventListener('click', openCustomDefaults);
+        customEntryPoint?.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openCustomDefaults(); }
         });
         pipelineAddBtn?.addEventListener('click', startEmptyPipelineFlow);
         pipelineRemoveRoundBtn?.addEventListener('click', removeLastRound);

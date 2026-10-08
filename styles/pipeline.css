@@ -1455,6 +1455,11 @@ body.pipeline-page #disput-state-map-panel .disput-state-map-actions > button:no
 .custom-card-discipline textarea:focus-visible { outline: 2px solid #86b9aa; outline-offset: 1px; }
 .custom-card-body code { color: #237565; font-size: 12px; }
 .custom-card-top #custom-card-save { justify-self: end; border: 1px solid #237565; border-radius: 9px; padding: 9px 18px; background: #237565; color: #fff; }
+.custom-defaults-card .modal-content { height: auto; }
+.custom-defaults-top { grid-template-columns: 1fr auto; }
+.custom-card-source { display: block; color: var(--pipeline-muted); font-size: 10px; font-weight: 400; }
+#entryPoint[role="button"] { cursor: pointer; }
+#entryPoint[role="button"]:focus-visible { outline: 2px solid #86b9aa; outline-offset: 3px; }
 .custom-card-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
 
 @media (max-width: 600px) {
