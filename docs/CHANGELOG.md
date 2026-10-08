@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-08 — Complete Custom instructions and strict full-prompt budget, version 2.81.642
+
+- Separate answer length (`Объём ответа: 250-300 слов, не больше.` at a 300-word limit) from content requirements; independently edit and clear both per model/step. Split the known old default suffix without rewriting personal instructions; preserve old cleared instructions.
+- Show ASK, length, content and delivery in dispatch order. Add a personal editable correction template with `{причина}` for retries.
+- Check fully prepared Custom prompts including delivery tokens before dispatching a batch. Overflows stop with `context_full`; never compact Custom requests, never retry a budget failure. Preserve collected answers and mark unsubmitted history entries `not_sent`.
+- Validation: public Run tests cover overflow from input, ASK, length, content, delivery, correction and the token itself, alongside separate length/content and personal retry dispatch. Related suites: 139 passed, the same 4 CSS assertions fail. Isolated Chromium verifies editing/persistence and a 51,990-character request whose full envelope exceeds the 52,000-character budget: zero background dispatches, `context_full`; no live provider run.
+
 ### 2026-10-08 — Personal model discipline instructions, version 2.81.641
 
 - Show full delivery, response-limit and owner-question instructions in the compact Custom model card. Each has the supplied edit icon, red clear cross and save checkmark; persist per model and step with the pipeline.

@@ -71,7 +71,8 @@
     return parts.join('\n\n');
   }
 
-  const correctionPrompt = (reason) => `Твой предыдущий ответ ${REASON_TEXT[reason] || 'не принят'}. Дай ответ на задание полностью.`;
+  const CORRECTION_TEMPLATE = 'Твой предыдущий ответ {причина}. Дай ответ на задание полностью.';
+  const correctionPrompt = (reason, template = CORRECTION_TEMPLATE) => (typeof template === 'string' ? template : CORRECTION_TEMPLATE).replace(/\{причина\}/g, REASON_TEXT[reason] || 'не принят');
 
   // Default technical check: non-empty text. The page passes the shared acceptance check.
   const defaultAccept = () => ({ ok: true, reason: '' });
@@ -196,6 +197,13 @@
             { step: step.index, kind: step.kind, label: stepLabel(step), attempt: tryNo,
               maxWordsByModel: Object.fromEntries(pending.map((name) => [name, step.models.find((model) => model.name === name)?.maxWords || null])) });
         } catch (error) {
+          if (error?.code === 'context_full') {
+            Object.values(entries).forEach((entry) => {
+              Object.assign(entry, { state: 'not_sent', reason: 'context_full', finishedAt: Date.now() });
+              if (typeof onResponse === 'function') onResponse(entry);
+            });
+            throw new StopRun('context_full');
+          }
           if (error?.name === 'AbortError' || aborted()) throw new StopRun('cancelled');
           reply = { byModel: Object.fromEntries(pending.map((name) => [name, { text: '', status: String(error?.message || error) }])) };
         }
@@ -219,8 +227,8 @@
         if (reply?.closedByOwner) return { closedByOwner: true };
         pending = retry;
         current = Object.fromEntries(retry.map((name) => [name, {
-          prompt: correctionPrompt(outcome[name].reason),
-          parts: { correction: { reason: outcome[name].reason, text: correctionPrompt(outcome[name].reason) } },
+          prompt: correctionPrompt(outcome[name].reason, step.models.find((model) => model.name === name)?.discipline?.correction),
+          parts: { correction: { reason: outcome[name].reason, text: correctionPrompt(outcome[name].reason, step.models.find((model) => model.name === name)?.discipline?.correction) } },
           retryOf: tryNo
         }]));
       }
@@ -328,7 +336,7 @@
       instructions: { task: text(task), stepTask: step.task, extra: model.extra || '', askInstruction: semiAuto ? askInstruction : '' } };
   }
 
-  const api = Object.freeze({ DEFAULT_ATTEMPTS, SYNTHESIS_TASK, STOP_TEXT, REASON_TEXT, PLACEHOLDER, TRANSPORT_LINES, buildPrompt, correctionPrompt, normalizeSteps, previewPrompt, run });
+  const api = Object.freeze({ DEFAULT_ATTEMPTS, CORRECTION_TEMPLATE, SYNTHESIS_TASK, STOP_TEXT, REASON_TEXT, PLACEHOLDER, TRANSPORT_LINES, buildPrompt, correctionPrompt, normalizeSteps, previewPrompt, run });
   root.CustomEngine = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

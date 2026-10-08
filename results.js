@@ -5747,7 +5747,7 @@ document.addEventListener('click', (event) => {
             const budget = window.DebateContextBudget;
             let contextBudget = null;
             let contextBudgetCompacted = false;
-            if (budget) {
+            if (budget && !context.custom) {
                 const limit = context?.contextBudget || budget.DEFAULT_LIMITS;
                 const compact = (value, structuredParts = []) => {
                     const checked = budget.check({ parts: [{ id: 'prompt', text: String(value || '') }], limits: limit });
@@ -5807,6 +5807,16 @@ document.addEventListener('click', (event) => {
             if (window.MessageDelivery) {
                 promptsByModel = window.MessageDelivery.prepare({ prompt, promptsByModel, models, instructionsByModel: deliveryInstructionsByModel, requestIds: transportRequestIds, batchId: context?.pipelineBatchId || context?.stageAttemptId || '',
                     promptLineageByModel: Object.fromEntries(models.map(model => [model, compiledPromptEvidence.get(`${context?.stageAttemptId}:${model}`) || null])) });
+            }
+            if (context.custom && budget) {
+                const limits = context.contextBudget || budget.DEFAULT_LIMITS;
+                const overflow = models.find((model) => !budget.check({ parts: [{ text: promptsByModel?.[model] ?? prompt }], limits }).ok);
+                if (overflow) {
+                    window.MessageDelivery?.closeBatch({ models, requestIds: transportRequestIds, cancelled: true, reason: 'context_full' });
+                    const error = new Error('Custom: полный запрос не помещается в бюджет контекста.');
+                    error.code = 'context_full';
+                    throw error;
+                }
             }
             if (!(await ensureNoOtherViewRun())) {
                 window.MessageDelivery?.closeBatch({ models, requestIds: transportRequestIds, cancelled: true, reason: 'other_view_active' });
@@ -6410,20 +6420,39 @@ document.addEventListener('click', (event) => {
             }).filter((step) => step.models.length).map((step) => ({ ...step,
                 models: step.models.map((name) => {
                     const settings = getCustomCardSettings()[step.ref]?.[name];
-                    return settings ? { name, promptTemplate: settings.promptTemplate, maxWords: settings.maxWords, discipline: settings.discipline } : name;
+                    return settings ? { name, promptTemplate: settings.promptTemplate, maxWords: settings.maxWords, discipline: customDiscipline(settings.discipline) } : name;
                 })
             }));
         };
+        const CUSTOM_CONTENT_REQUIREMENTS = 'Сосредоточься на ясной концепции и ключевых идеях; убери повторы, длинные пересказы и второстепенные детали.';
+        const CUSTOM_LENGTH_TEMPLATE = '[DISPUT_RESPONSE_LIMIT] Объём ответа: {от}-{слов} слов, не больше.';
         const customDisciplineDefaults = () => ({
-            limit: DISPUT_RESPONSE_LIMIT_TEMPLATE,
+            limit: CUSTOM_LENGTH_TEMPLATE,
+            content: CUSTOM_CONTENT_REQUIREMENTS,
             delivery: 'Последней строкой ответа напиши только метку {метка}',
-            ask: window.DebateStageMarkers?.instructions?.() || ''
+            ask: window.DebateStageMarkers?.instructions?.() || '',
+            correction: window.CustomEngine.CORRECTION_TEMPLATE
         });
+        const customDiscipline = (saved = {}) => {
+            const value = { ...saved };
+            if (value.limit === '' && value.content == null) value.content = '';
+            // Split only the known old default suffix; preserve all personal text literally.
+            if (typeof value.limit === 'string' && value.limit.endsWith(CUSTOM_CONTENT_REQUIREMENTS) && value.content == null) {
+                value.content = CUSTOM_CONTENT_REQUIREMENTS;
+                value.limit = value.limit === DISPUT_RESPONSE_LIMIT_TEMPLATE ? CUSTOM_LENGTH_TEMPLATE
+                    : value.limit.slice(0, -CUSTOM_CONTENT_REQUIREMENTS.length).trimEnd();
+            }
+            return value;
+        };
+        const customLengthInstruction = (template, words) => template.replace(/\{от\}|\{слов\}/g,
+            (key) => String(key === '{от}' ? Math.max(1, words - 50) : words));
         const prepareCustomPrompts = (models, prompts, limits = {}, discipline = {}) => Object.fromEntries(models.map((name) => {
             const words = Number.isSafeInteger(limits[name]) && limits[name] > 0 ? limits[name] : getDebateMaxWords();
-            const instruction = (discipline[name]?.limit ?? customDisciplineDefaults().limit).replace(/\{слов\}/g, String(words));
+            const personal = customDiscipline(discipline[name]);
+            const defaults = customDisciplineDefaults();
+            const instruction = customLengthInstruction(personal.limit ?? defaults.limit, words);
             const base = String(prompts[name] || '').replace(/\[DISPUT_RESPONSE_LIMIT\][^\n]*(?:\n|$)/g, '').trimEnd();
-            return [name, instruction ? `${base}\n\n${instruction}` : base];
+            return [name, [base, instruction, personal.content ?? defaults.content].filter(Boolean).join('\n\n')];
         }));
         // The owner's choice on a pause, through the shared confirm dialog (three buttons).
         let customDecisionOpen = false;
@@ -6502,7 +6531,7 @@ document.addEventListener('click', (event) => {
                     steps,
                     semiAuto,
                     signal,
-                    maxPromptChars: budgetLimits ? budgetLimits.promptChars - budgetLimits.reservedOutputChars - 500 : Infinity,
+                    maxPromptChars: budgetLimits ? window.DebateContextBudget.effectivePromptLimit(budgetLimits) : Infinity,
                     accept: ({ text, completion }) => window.DebateResponseAcceptance?.evaluate?.({ text, meta: { completion } }) || { ok: true },
                     parseAsks: (text) => window.DebateStageMarkers?.parse?.(text)?.askItems || [],
                     askInstruction: window.DebateStageMarkers?.instructions?.() || '',
@@ -8087,8 +8116,8 @@ document.addEventListener('click', (event) => {
             const saved = getCustomCardSettings()[ref]?.[modelName] || {};
             const general = getDebateMaxWords();
             const defaults = customDisciplineDefaults();
-            const discipline = { ...saved.discipline };
-            const disciplineRows = [['delivery', 'Доставка'], ['limit', 'Длина'], ['ask', 'Вопрос владельцу']];
+            const discipline = customDiscipline(saved.discipline);
+            const disciplineRows = [['ask', 'Вопрос владельцу'], ['limit', 'Длина'], ['content', 'Требования к содержанию'], ['delivery', 'Доставка'], ['correction', 'Запрос исправления (при повторе)']];
             const content = modal.querySelector('.modal-content');
             modal.classList.add('custom-model-card');
             modal.setAttribute('role', 'dialog');
@@ -8117,7 +8146,7 @@ document.addEventListener('click', (event) => {
                             </div>
                             <textarea id="custom-discipline-${key}" rows="2" readonly spellcheck="false"></textarea>
                         </div>`).join('')}
-                        <div class="custom-card-note">{слов} — длина из шапки; {метка} — новая метка каждой отправки. При очистке инструкции доставки сама метка сохраняется.</div>
+                        <div class="custom-card-note">{от} — на 50 слов меньше предела из шапки; {слов} — сам предел; {метка} — новая метка; {причина} — причина повтора. При очистке инструкции доставки сама метка сохраняется. При повторе запрос заменяется инструкцией исправления.</div>
                     </div>
                     <span id="custom-card-length-note" class="custom-card-sr-only">Пусто — общий предел pipeline (${general}).</span>
                 </div>
@@ -8136,7 +8165,7 @@ document.addEventListener('click', (event) => {
                 reset.hidden = !own;
                 const value = length.value === '' ? general : Number(length.value);
                 const limitField = content.querySelector('#custom-discipline-limit');
-                if (limitField.readOnly) limitField.value = (discipline.limit ?? defaults.limit).replace(/\{слов\}/g, String(Number.isSafeInteger(value) && value > 0 ? value : general));
+                if (limitField.readOnly) limitField.value = customLengthInstruction(discipline.limit ?? defaults.limit, Number.isSafeInteger(value) && value > 0 ? value : general);
                 length.title = `Пусто — общий предел pipeline (${general}). Только для этой модели в этом шаге.`;
             };
             request.addEventListener('input', refresh);
@@ -8175,6 +8204,7 @@ document.addEventListener('click', (event) => {
                 const settings = getCustomCardSettings();
                 if (!settings[ref]) settings[ref] = {};
                 disciplineRows.forEach(([key]) => { if (!fields[key].readOnly) discipline[key] = fields[key].value; });
+                if (Object.keys(discipline).length && discipline.content == null) discipline.content = defaults.content;
                 settings[ref][modelName] = { promptTemplate: request.value === preview.template ? null : request.value, maxWords: length.value === '' ? null : Number(length.value),
                     ...(Object.keys(discipline).length ? { discipline: { ...discipline } } : {}) };
                 customCardSettings.set(draftPlanStorageKey(), settings);

@@ -2051,9 +2051,11 @@ describe('Pipeline debate favorites view', () => {
     await debug.renderCustomBlockInspector(block, modal);
     expect(modal.querySelector('#custom-card-request').value).toBe(request.value);
     expect(modal.querySelector('#custom-card-length').value).toBe('37');
-    expect(modal.querySelector('#custom-discipline-limit').value).toContain('убери повторы, длинные пересказы и второстепенные детали.');
+    expect(modal.querySelector('#custom-discipline-limit').value).toBe('[DISPUT_RESPONSE_LIMIT] Объём ответа: 1-37 слов, не больше.');
+    expect(modal.querySelector('#custom-discipline-content').value).toContain('убери повторы, длинные пересказы и второстепенные детали.');
+    expect([...modal.querySelectorAll('[data-discipline]')].map((row) => row.dataset.discipline)).toEqual(['ask', 'limit', 'content', 'delivery', 'correction']);
     expect(modal.querySelector('#custom-discipline-ask').value).toBe(window.DebateStageMarkers.instructions());
-    for (const [key, value] of Object.entries({ limit: '[DISPUT_RESPONSE_LIMIT] Ответ — не более {слов} слов. PERSONAL_LIMIT', delivery: 'PERSONAL_DELIVERY {метка}', ask: 'PERSONAL_ASK' })) {
+    for (const [key, value] of Object.entries({ limit: '[DISPUT_RESPONSE_LIMIT] Ответ — не более {слов} слов. PERSONAL_LIMIT', content: 'PERSONAL_CONTENT', delivery: 'PERSONAL_DELIVERY {метка}', ask: 'PERSONAL_ASK', correction: 'PERSONAL_CORRECTION: {причина}' })) {
       const row = modal.querySelector(`[data-discipline="${key}"]`);
       row.querySelector(`[data-action="${kind === 'cleared' ? 'clear' : 'edit'}"]`).click();
       const field = row.querySelector('textarea');
@@ -2097,20 +2099,24 @@ describe('Pipeline debate favorites view', () => {
         expect(sent).not.toContain('Последней строкой ответа');
       } else {
         expect(sent).toContain('не более 37 слов. PERSONAL_LIMIT');
+        expect(sent.indexOf('PERSONAL_CONTENT')).toBeGreaterThan(sent.indexOf('PERSONAL_LIMIT'));
+        expect(sent.indexOf('PERSONAL_DELIVERY')).toBeGreaterThan(sent.indexOf('PERSONAL_CONTENT'));
         expect(sent).toContain('PERSONAL_DELIVERY [[AO-');
         expect(sent.match(/\[DISPUT_RESPONSE_LIMIT\]/g)).toHaveLength(1);
       }
       expect(sent).not.toContain('PERSONAL_ASK'); // Auto does not ask the owner.
       expect(sent).toMatch(/\[\[AO-[a-z0-9]+\]\]/i);
-      expect(starts[0].promptsByModel.GPT).toContain('не более 700 слов');
+      expect(starts[0].promptsByModel.GPT).toContain('Объём ответа: 650-700 слов, не больше.');
       expect(starts[0].promptsByModel.GPT).not.toContain('CARD_REQUEST');
-      expect(starts[1].promptsByModel.CLAUDE).toContain('не более 700 слов');
+      expect(starts[1].promptsByModel.CLAUDE).toContain('Объём ответа: 650-700 слов, не больше.');
       expect(starts[1].promptsByModel.CLAUDE).not.toContain('CARD_REQUEST');
       expect(starts[1].promptsByModel.CLAUDE).not.toContain('PERSONAL_');
       expect(starts[0].promptsByModel.GPT).not.toContain('PERSONAL_');
       expect(starts[2].selectedLLMs).toEqual(['GPT']);
       if (kind === 'cleared') expect(starts[2].promptsByModel.GPT).not.toContain('[DISPUT_RESPONSE_LIMIT]');
       else {
+        expect(starts[2].promptsByModel.GPT).toContain('PERSONAL_CORRECTION:');
+        expect(starts[2].promptsByModel.GPT).not.toContain('Твой предыдущий ответ');
         expect(starts[2].promptsByModel.GPT).toContain('не более 37 слов. PERSONAL_LIMIT');
         expect(starts[2].promptsByModel.GPT).toContain('PERSONAL_DELIVERY [[AO-');
       }
@@ -2149,8 +2155,61 @@ describe('Pipeline debate favorites view', () => {
     length.value = '';
     modal.querySelector('#custom-card-save').click();
     expect(debug.capturePipelineConfig().customModelSettings.r1.GPT).toEqual({ promptTemplate: null, maxWords: null });
-    expect(debug.prepareCustomPrompts(['GPT'], { GPT: 'TEST\n[DISPUT_RESPONSE_LIMIT] stale 999 words' }, { GPT: 44 }).GPT).toContain('не более 44 слов');
+    expect(debug.prepareCustomPrompts(['GPT'], { GPT: 'TEST\n[DISPUT_RESPONSE_LIMIT] stale 999 words' }, { GPT: 44 }).GPT).toContain('Объём ответа: 1-44 слов, не больше.');
     modal.remove();
+  });
+
+  test('Custom length and content are separate, with compatible old defaults and independent clearing', () => {
+    const prepare = window.__pipelineLifecycleDebug.prepareCustomPrompts;
+    const oldContent = 'Сосредоточься на ясной концепции и ключевых идеях; убери повторы, длинные пересказы и второстепенные детали.';
+    const prompt = prepare(['GPT'], { GPT: 'T' }, { GPT: 300 }).GPT;
+    expect(prompt).toContain('[DISPUT_RESPONSE_LIMIT] Объём ответа: 250-300 слов, не больше.\n\n' + oldContent);
+    expect(prepare(['GPT'], { GPT: 'T' }, {}, { GPT: { limit: '', content: oldContent } }).GPT).toBe('T\n\n' + oldContent);
+    expect(prepare(['GPT'], { GPT: 'T' }, { GPT: 300 }, { GPT: { content: '' } }).GPT).toBe('T\n\n[DISPUT_RESPONSE_LIMIT] Объём ответа: 250-300 слов, не больше.');
+    expect(prepare(['GPT'], { GPT: 'T' }, {}, { GPT: { limit: '' } }).GPT).toBe('T');
+    const legacy = '[DISPUT_RESPONSE_LIMIT] Ответ — не более {слов} слов. ' + oldContent;
+    expect(prepare(['GPT'], { GPT: 'T' }, { GPT: 300 }, { GPT: { limit: legacy } }).GPT).toBe(prompt);
+  });
+
+  test.each(['input', 'limit', 'content', 'delivery', 'ask', 'correction', 'token'])('Custom stops without dispatch or compaction when the full %s overflows', async (part) => {
+    const debug = window.__pipelineLifecycleDebug;
+    const originalBudget = window.DebateContextBudget;
+    const originalDelivery = window.MessageDelivery;
+    const budget = require('../disput/debate-context-budget');
+    const compact = jest.fn(budget.compactPrompt);
+    const delivery = require('../shared/message-delivery');
+    delivery.reset();
+    const discipline = { limit: '', content: '', delivery: '', ask: '', correction: 'RETRY' };
+    if (part !== 'input' && part !== 'token') discipline[part] = 'Z'.repeat(700);
+    const promptTemplate = part === 'input' ? 'X'.repeat(700) : 'X';
+    const config = { version: 3, roundCounter: 1, protocol: { type: 'universal', presetId: 'CUSTOM', selectedModels: ['GPT'], roundLimit: '1', synthesizer: '', runPolicy: part === 'ask' ? 'manual' : 'auto' }, modelStacks: {},
+      customModelSettings: { r1: { GPT: { promptTemplate, discipline } } } };
+    debug.setPipelineStoreForTest({ active: 'Budget check', pipelines: { 'Budget check': config }, order: ['Budget check'] });
+    debug.applyPipelineConfig(config);
+    window.setSynthesisModelFromName('');
+    document.getElementById('debate-run-policy-select').value = config.protocol.runPolicy;
+    const starts = [];
+    window.MessageDelivery = delivery;
+    window.DebateContextBudget = { ...budget, DEFAULT_LIMITS: { promptChars: part === 'token' ? 1 : 600, reservedOutputChars: 0 }, compactPrompt: compact };
+    chrome.runtime.sendMessage.mockImplementation((message, callback) => {
+      if (message.type !== 'START_FULLPAGE_PROCESS') { callback?.({ status: 'ok', active: false }); return; }
+      starts.push(message);
+      callback?.({ status: 'process_started' });
+      setTimeout(() => debug.pipelineWaiter.handleFinal({ type: 'LLM_RESPONSE', llmName: 'GPT',
+        transportRequestId: message.pipelineContext.transportRequestIds.GPT, answer: '',
+        metadata: { ...message.pipelineContext, status: 'SUCCESS', attribution: 'verified', completion: 'complete' } }), 0);
+    });
+    try {
+      document.getElementById('modTa').value = 'Budget test';
+      await window.runPipeline();
+      expect(starts).toHaveLength(part === 'correction' ? 1 : 0);
+      expect(compact).not.toHaveBeenCalled();
+      expect(delivery.journal().filter((event) => event.kind === 'custom_end').at(-1).stopReason).toBe('context_full');
+    } finally {
+      window.DebateContextBudget = originalBudget;
+      window.MessageDelivery = originalDelivery;
+      debug.pipelineWaiter.reset();
+    }
   });
 
   test('templates keep their names: no renaming a template and no taking a template name', async () => {
