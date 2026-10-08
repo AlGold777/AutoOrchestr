@@ -3706,6 +3706,26 @@ document.addEventListener('click', (event) => {
             return ordered.find((prompt) => prompt.id === promptId) || null;
         };
 
+        // «Custom» in the mini-request list exists only on the Custom engine. It means «use the round's
+        // text» (customDefaults.roundPrompts), not a catalog prompt, so it is not in getOrderedJudgePrompts.
+        const CUSTOM_ROLE_ID = 'custom';
+        const isCustomEnginePipeline = () => window.PipelinePresets?.getPipelinePreset?.(getSelectedPipelinePresetId())?.runner === 'custom';
+        const getRoleOptionPrompts = () => (isCustomEnginePipeline()
+            ? [...getOrderedJudgePrompts(), { id: CUSTOM_ROLE_ID, label: 'Custom' }]
+            : getOrderedJudgePrompts());
+        // Keeps the Custom option of existing role selectors in step with the pipeline's engine.
+        const syncCustomRoleOption = () => {
+            const enabled = isCustomEnginePipeline();
+            pipelinePanel?.querySelectorAll('.role-selector').forEach((select) => {
+                const option = select.querySelector(`option[value="${CUSTOM_ROLE_ID}"]`);
+                if (enabled && !option) select.insertAdjacentHTML('beforeend', `<option value="${CUSTOM_ROLE_ID}">Custom</option>`);
+                else if (!enabled && option) {
+                    if (select.value === CUSTOM_ROLE_ID) select.value = '';
+                    option.remove();
+                }
+            });
+        };
+
         const getCriticalJudgePromptId = () => {
             const ordered = getOrderedJudgePrompts();
             if (!ordered.length) return null;
@@ -3728,6 +3748,7 @@ document.addEventListener('click', (event) => {
 
         const resolveJudgePromptId = (value, index = 0) => {
             if (!value) return null;
+            if (value === CUSTOM_ROLE_ID) return CUSTOM_ROLE_ID;
             const ordered = getOrderedJudgePrompts();
             const byId = ordered.find((prompt) => prompt.id === value);
             if (byId) return byId.id;
@@ -3743,7 +3764,7 @@ document.addEventListener('click', (event) => {
         const buildJudgePromptOptionsHtml = (index) => {
             return PipelineRuntime?.buildJudgePromptOptionsHtml?.({
                 index,
-                orderedPrompts: getOrderedJudgePrompts(),
+                orderedPrompts: getRoleOptionPrompts(),
                 escapeHtml
             }) || '';
         };
@@ -3756,7 +3777,7 @@ document.addEventListener('click', (event) => {
                 activeIndices,
                 withRole,
                 onlyActive,
-                orderedPrompts: getOrderedJudgePrompts(),
+                orderedPrompts: getRoleOptionPrompts(),
                 escapeHtml
             }) || '';
         };
@@ -3765,7 +3786,7 @@ document.addEventListener('click', (event) => {
             PipelineRuntime?.hydratePipelineStacks?.({
                 document,
                 escapeHtml,
-                orderedPrompts: getOrderedJudgePrompts()
+                orderedPrompts: getRoleOptionPrompts()
             });
         };
 
@@ -4216,6 +4237,7 @@ document.addEventListener('click', (event) => {
             (plan?.plannedStages || []).find((stage) => stage.plannedStageId === 'planned-final-synthesis')?.participantIds?.[0]
         );
         window.__pipelineDraftPlanForCanvas = draftPlanForCanvas;
+        window.__updatePipelineAll = () => updatePipelineAll();
         window.__getActivePipelineDraftPlan = getActiveDraftPlan;
         window.__persistActivePipelineDraftPlan = persistActiveDraftPlan;
         window.__getDraftPlanSynthesizer = getDraftPlanSynthesizer;
@@ -4225,6 +4247,24 @@ document.addEventListener('click', (event) => {
         const getCustomPipelineDefaults = () => customPipelineDefaults.get(draftPlanStorageKey()) || {};
         const customCardSettings = new Map();
         const getCustomCardSettings = () => customCardSettings.get(draftPlanStorageKey()) || {};
+        // The round's text for the «Custom» role: customDefaults.roundPrompts[ref] (r2, r3, …), saved
+        // with the pipeline like the other ▶ values. Writing it persists a saved pipeline at once,
+        // as the ▶ card does on Save.
+        const getCustomRoundPrompt = (ref) => String(getCustomPipelineDefaults().roundPrompts?.[ref] || '').trim();
+        const setCustomRoundPrompt = async (ref, text) => {
+            const name = draftPlanStorageKey();
+            const next = JSON.parse(JSON.stringify(getCustomPipelineDefaults()));
+            const prompts = { ...(next.roundPrompts || {}) };
+            if (String(text || '').trim()) prompts[ref] = text;
+            else delete prompts[ref];
+            if (Object.keys(prompts).length) next.roundPrompts = prompts;
+            else delete next.roundPrompts;
+            customPipelineDefaults.set(name, next);
+            if (!isDefaultPipelineName(name) && pipelineStore.pipelines[name]) {
+                pipelineStore.pipelines[name].customDefaults = JSON.parse(JSON.stringify(next));
+                await persistPipelineStore();
+            }
+        };
         const capturePipelineConfig = () => {
             const modelStacks = {
                 'r1-models': captureModelStackState('r1-models')
@@ -4837,6 +4877,7 @@ document.addEventListener('click', (event) => {
         let deferredPipelineLayoutFrame = 0;
         const updatePipelineAll = ({ deferFinalLayout = true } = {}) => {
             updatePipelineLayout();
+            syncCustomRoleOption();
             pipelinePanel.querySelectorAll('.model-block').forEach((block) => {
                 const inputCb = block.querySelector('.model-input-checkbox');
                 const sendCb = block.querySelector('.model-send-checkbox');
@@ -6430,8 +6471,9 @@ document.addEventListener('click', (event) => {
                 models: step.models.map((name) => {
                     const settings = getCustomCardSettings()[step.ref]?.[name];
                     const resolved = resolveCustomFields(settings, step.kind);
+                    const role = roles?.[name];
                     return { name, promptTemplate: settings?.promptTemplate || null, maxWords: settings?.maxWords || null,
-                        extra: getJudgePromptById(roles?.[name])?.text || '',
+                        extra: role === CUSTOM_ROLE_ID ? getCustomRoundPrompt(step.ref) : getJudgePromptById(role)?.text || '',
                         task: step.input === 'none' ? '' : resolved.task.value,
                         discipline: Object.fromEntries(Object.entries(resolved.discipline).map(([key, item]) => [key, item.value])) };
                 })
@@ -8144,14 +8186,24 @@ document.addEventListener('click', (event) => {
 
         // Compact Custom editor. Changes apply to the next run, scoped to a step and model;
         // the immutable request/response record remains separate.
+        // An intermediate synthesis has no model block: its insert (between two rounds) is its entry.
+        const intermediateStageAfter = (afterStageId) => (draftPlanForCanvas(getActiveDraftPlan()).plannedStages || [])
+            .find((stage) => stage.outputIntent === 'working_synthesis' && stage.upstream?.includes(afterStageId)) || null;
         const customBlockRef = (block) => {
+            if (block.classList.contains('pipeline-stage-insert')) {
+                const stage = intermediateStageAfter(block.dataset.afterStageId);
+                return stage ? `synth:${stage.plannedStageId}` : '';
+            }
             const stackId = block.closest('.model-stack')?.id || '';
             if (stackId === 'synthesis-stack') return 'final';
             const match = /^r(\d+)-models$/.exec(stackId);
             return match ? `r${match[1]}` : '';
         };
+        const customBlockModel = (block) => (block.classList.contains('pipeline-stage-insert')
+            ? intermediateStageAfter(block.dataset.afterStageId)?.participantIds?.[0] || ''
+            : block.querySelector('.model-name')?.textContent?.trim() || '');
         const renderCustomBlockInspector = async (block, modal, { pipelineDefaults = false } = {}) => {
-            const modelName = pipelineDefaults ? '' : block.querySelector('.model-name')?.textContent?.trim() || '';
+            const modelName = pipelineDefaults ? '' : customBlockModel(block);
             const ref = pipelineDefaults ? '' : customBlockRef(block);
             const steps = pipelineDefaults ? [] : customStepsFromPlan(draftPlanForCanvas(getActiveDraftPlan()), { ref, name: modelName });
             const stepIndex = steps.findIndex((step) => step.ref === ref);
@@ -8200,6 +8252,7 @@ document.addEventListener('click', (event) => {
                         <div class="custom-card-note"><span id="custom-card-personal-note"></span> <button type="button" id="custom-card-reset">Вернуть к общему</button></div>
                     </div>`}
                     ${!pipelineDefaults && modelNotes[modelName] ? `<p class="custom-card-note">Особенность модели (из ▶): ${escapeHtml(modelNotes[modelName])}</p>` : ''}
+                    ${!pipelineDefaults && saved.promptTemplate && block.querySelector('.role-selector')?.value ? '<p class="custom-card-note">Роль не применяется: используется персональный запрос.</p>' : ''}
                     <div class="custom-card-marks"><strong>${pipelineDefaults ? 'Общие задания и дисциплина' : 'Метки транспорта'}</strong>
                         ${rows.map(([key, label]) => `<div class="custom-card-discipline" data-discipline="${key}">
                             <div class="custom-card-discipline-head"><label for="custom-discipline-${key}">${label}</label>
@@ -8287,6 +8340,8 @@ document.addEventListener('click', (event) => {
                 });
                 if (Object.keys(discipline).length) next.discipline = discipline;
                 if (pipelineDefaults) {
+                    // Round texts are written by the round card, not this form: keep them.
+                    if (getCustomPipelineDefaults().roundPrompts) next.roundPrompts = getCustomPipelineDefaults().roundPrompts;
                     // Notes of models that are off the canvas now stay saved.
                     const notes = { ...modelNotes };
                     content.querySelectorAll('[data-model-note]').forEach((field) => {
@@ -8467,8 +8522,9 @@ document.addEventListener('click', (event) => {
                 const stageRun = stages.filter((item) => item.plannedStageId === `canvas-r${round}`).pop() || null;
                 // Custom rounds with mini-request selectors (round 2+): one role for the round's models
                 // instead of the participant list. Round 1 has no selectors and keeps the list.
-                const roleChoice = !templateStage && window.PipelinePresets?.getPipelinePreset?.(getSelectedPipelinePresetId())?.runner === 'custom' && document.querySelector(`#r${round}-models .role-selector`)
-                    ? { prompts: getOrderedJudgePrompts(), roles: (stack?.items || []).map((item) => item.role || ''), disabled: pipelineRunActive }
+                const roleChoice = !templateStage && isCustomEnginePipeline() && document.querySelector(`#r${round}-models .role-selector`)
+                    ? { prompts: getRoleOptionPrompts(), roles: (stack?.items || []).map((item) => item.role || ''), disabled: pipelineRunActive,
+                        roundPrompt: getCustomRoundPrompt(`r${round}`) }
                     : null;
                 const model = window.StageCard.buildModel({
                     round,
@@ -8482,7 +8538,8 @@ document.addEventListener('click', (event) => {
                     onCopy: (text) => navigator.clipboard?.writeText?.(text)
                         .then(() => showNotification('Задание этапа скопировано.', 'info'))
                         .catch(() => showNotification('Не удалось скопировать задание.', 'warn')),
-                    onRole: (select) => applyRoundRole(round, select)
+                    onRole: (select) => applyRoundRole(round, select),
+                    onRoundPrompt: (text) => setCustomRoundPrompt(`r${round}`, text)
                 });
             }
             if (!dialog.open) dialog.showModal();
@@ -8491,7 +8548,16 @@ document.addEventListener('click', (event) => {
             if (event.target.closest?.('[data-stage-close]')) event.currentTarget.close();
         });
 
+        // An intermediate synthesis has its insert as its entry (Custom). A single click opens its card
+        // after a short wait, so the double click that adds or removes it does not open it.
+        let intermediateCardTimer = null;
         pipelinePanel.addEventListener('click', (event) => {
+            const insert = event.target?.closest?.('.pipeline-stage-insert');
+            if (insert && insert.classList.contains('has-intermediate-synthesis') && isCustomEnginePipeline()) {
+                clearTimeout(intermediateCardTimer);
+                intermediateCardTimer = setTimeout(() => showPipelineBlockInfo(insert), 200);
+                return;
+            }
             const stageBadge = event.target?.closest?.('.round-badge');
             if (stageBadge && pipelinePanel.contains(stageBadge)) {
                 event.preventDefault();
@@ -8535,6 +8601,7 @@ document.addEventListener('click', (event) => {
         });
 
         pipelinePanel.addEventListener('dblclick', (event) => {
+            if (event.target.closest?.('.pipeline-stage-insert')) clearTimeout(intermediateCardTimer);
             const roundBadge = event.target.closest('.round-badge');
             if (roundBadge && pipelinePanel.contains(roundBadge)) {
                 event.preventDefault();
@@ -20760,7 +20827,7 @@ function checkCompareButtonState() {
         }
         window.__persistActivePipelineDraftPlan?.(next);
         renderDraftPlanCanvas();
-        updatePipelineAll();
+        window.__updatePipelineAll?.();
         return true;
     }
     async function toggleIntermediateSynthesis(button) {
@@ -20790,7 +20857,7 @@ function checkCompareButtonState() {
         }
         window.__persistActivePipelineDraftPlan?.(result.plan);
         renderDraftPlanCanvas();
-        updatePipelineAll();
+        window.__updatePipelineAll?.();
         return true;
     }
     pipelinePanel?.addEventListener('click', (event) => {

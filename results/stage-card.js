@@ -25,7 +25,8 @@
   // participants: [{ name, send }] from the round's model stack; stageRun: the engine's
   // stage instance for this round (or null before / outside a run).
   // roleChoice (Custom rounds only): { prompts: [{ id, label }], roles: [prompt id or ''] per block,
-  // disabled } — one select for the whole round; mixed roles show 'разные' until chosen.
+  // disabled, roundPrompt } — one select for the whole round; mixed roles show 'разные' until chosen.
+  // The round's text field shows only while 'custom' is selected.
   function buildModel({ round, templateStage = null, participants = [], stageRun = null, roleChoice = null } = {}) {
     const working = list(participants.filter((item) => item && item.send).map((item) => item.name));
     const waiting = list(participants.filter((item) => item && !item.send).map((item) => item.name));
@@ -49,6 +50,7 @@
         model.role = {
           value: mixed ? 'mixed' : (distinct[0] || ''),
           disabled: Boolean(roleChoice.disabled),
+          text: String(roleChoice.roundPrompt || ''),
           options: [
             ...(mixed ? [{ value: 'mixed', label: 'разные', disabled: true }] : []),
             { value: '', label: 'None' },
@@ -88,7 +90,7 @@
     return node;
   };
 
-  function render(container, model, { onCopy = null, onRole = null } = {}) {
+  function render(container, model, { onCopy = null, onRole = null, onRoundPrompt = null } = {}) {
     const doc = container.ownerDocument;
     container.replaceChildren();
     if (model.subtitle) container.append(el(doc, 'p', 'stage-card-subtitle', model.subtitle));
@@ -107,10 +109,23 @@
       });
       select.value = model.role.value;
       select.disabled = model.role.disabled;
-      if (typeof onRole === 'function') select.addEventListener('change', () => onRole(select));
+      const area = el(doc, 'textarea', 'stage-card-role-prompt');
+      area.value = model.role.text;
+      area.rows = 3;
+      area.spellcheck = false;
+      area.disabled = model.role.disabled;
+      area.hidden = model.role.value !== 'custom';
+      area.setAttribute('aria-label', 'Текст Custom для всех моделей раунда');
+      area.addEventListener('change', () => { if (typeof onRoundPrompt === 'function') onRoundPrompt(area.value); });
+      // The text field follows the choice; a replacement the owner cancels hides it again.
+      select.addEventListener('change', async () => {
+        area.hidden = select.value !== 'custom';
+        if (typeof onRole === 'function') await onRole(select);
+        area.hidden = select.value !== 'custom';
+      });
       const row = el(doc, 'label', 'stage-card-role');
       row.append(doc.createTextNode('Роль для всех моделей раунда '), select);
-      container.append(row);
+      container.append(row, area);
     } else {
       const people = el(doc, 'div', 'stage-card-people');
       if (model.participants.working.length) {

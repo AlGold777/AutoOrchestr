@@ -2364,7 +2364,7 @@ describe('Pipeline debate favorites view', () => {
       const card = openRoundCard(2);
       expect(card.textContent).not.toContain('Участники раунда');
       const roundSelect = card.querySelector('.stage-card-role-select');
-      expect([...roundSelect.options].map((option) => option.textContent)).toEqual(['разные', 'None', 'Meta-Синтез', 'Критический аудит', 'Select ideas', 'Clustering']);
+      expect([...roundSelect.options].map((option) => option.textContent)).toEqual(['разные', 'None', 'Meta-Синтез', 'Критический аудит', 'Select ideas', 'Clustering', 'Custom']);
       expect(roundSelect.value).toBe('mixed');
 
       // Replacing mixed roles asks first; Cancel changes nothing.
@@ -2396,6 +2396,105 @@ describe('Pipeline debate favorites view', () => {
       await h.run();
       expect(h.starts[1].promptsByModel.GPT).not.toContain('Дополнительно для тебя');
       expect(h.starts[1].promptsByModel.CLAUDE).not.toContain('Дополнительно для тебя');
+    } finally { h.cleanup(); }
+  }, 30000);
+
+  test('Custom role «Custom» sends the round text to the blocks that chose it; other roles and an empty text stay as they are', async () => {
+    const h = setupCustomInheritance('Round custom text');
+    try {
+      // Custom is offered by the Custom engine's selectors only; round 1 has none.
+      expect([...canvasBlock('r2-models', 'GPT').querySelectorAll('.role-selector option')].map((option) => option.value)).toContain('custom');
+      expect(document.querySelectorAll('#r1-models .role-selector')).toHaveLength(0);
+
+      // The round card shows the text field only while Custom is selected.
+      const card = openRoundCard(2);
+      const roundSelect = card.querySelector('.stage-card-role-select');
+      const area = card.querySelector('.stage-card-role-prompt');
+      expect(area.hidden).toBe(true);
+      roundSelect.value = 'custom';
+      roundSelect.dispatchEvent(new Event('change'));
+      await answerRoleConfirm(true);
+      expect(area.hidden).toBe(false);
+      area.value = 'ROUND_CUSTOM_TEXT';
+      area.dispatchEvent(new Event('change'));
+      await delay(0);
+      expect(h.debug.capturePipelineConfig().customDefaults.roundPrompts).toEqual({ r2: 'ROUND_CUSTOM_TEXT' });
+      const stored = await chrome.storage.local.get('llmComparatorPipelines');
+      expect(stored.llmComparatorPipelines.pipelines['Round custom text'].customDefaults.roundPrompts).toEqual({ r2: 'ROUND_CUSTOM_TEXT' });
+
+      // Claude keeps its own role; GPT takes the round's text.
+      setBlockRole(canvasBlock('r2-models', 'Claude'), 'interaction_critical_audit');
+      await h.run();
+      expect(h.starts[1].promptsByModel.GPT).toContain('Дополнительно для тебя:\nROUND_CUSTOM_TEXT');
+      expect(h.starts[1].promptsByModel.CLAUDE).toContain('Дополнительно для тебя:\nПроведи экспертный аудит');
+      expect(h.starts[1].promptsByModel.CLAUDE).not.toContain('ROUND_CUSTOM_TEXT');
+      expect(h.starts[0].promptsByModel.GPT).not.toContain('ROUND_CUSTOM_TEXT');
+
+      // The selection survives a redraw of the stack (saved and loaded again).
+      const saved = JSON.parse(JSON.stringify(h.debug.capturePipelineConfig()));
+      h.debug.applyPipelineConfig(saved);
+      expect(canvasBlock('r2-models', 'GPT').querySelector('.role-selector').value).toBe('custom');
+      expect(canvasBlock('r2-models', 'Claude').querySelector('.role-selector').value).toBe('interaction_critical_audit');
+      expect(openRoundCard(2).querySelector('.stage-card-role-prompt').value).toBe('ROUND_CUSTOM_TEXT');
+
+      // An empty round text adds no extra line.
+      const emptyCard = openRoundCard(2);
+      const emptyArea = emptyCard.querySelector('.stage-card-role-prompt');
+      emptyArea.value = '';
+      emptyArea.dispatchEvent(new Event('change'));
+      await delay(0);
+      expect(h.debug.capturePipelineConfig().customDefaults.roundPrompts).toBeUndefined();
+      await h.run();
+      expect(h.starts[1].promptsByModel.GPT).not.toContain('Дополнительно для тебя');
+    } finally { h.cleanup(); }
+  }, 30000);
+
+  test('Custom is not offered on a pipeline that does not run on the Custom engine', () => {
+    const h = setupCustomInheritance('Universal roles');
+    try {
+      const config = { ...h.config, protocol: { ...h.config.protocol, presetId: 'UNIVERSAL_STANDARD' } };
+      h.debug.setPipelineStoreForTest({ active: 'Universal roles', pipelines: { 'Universal roles': config }, order: ['Universal roles'] });
+      h.debug.applyPipelineConfig(config);
+      expect(document.querySelectorAll('#r2-models .role-selector')).not.toHaveLength(0);
+      expect(document.querySelectorAll('#r2-models .role-selector option[value="custom"]')).toHaveLength(0);
+    } finally { h.cleanup(); }
+  });
+
+  test('a personal request in a Custom block notes that its role is not applied and sends no role text', async () => {
+    const h = setupCustomInheritance('Role note');
+    try {
+      setBlockRole(canvasBlock('r2-models', 'GPT'), 'interaction_critical_audit');
+      await h.model({ promptTemplate: 'PERSONAL_NOTE_REQ {задача}' });
+      expect(h.openModel('GPT').textContent).toContain('Роль не применяется: используется персональный запрос.');
+      expect(h.openModel('Claude').textContent).not.toContain('Роль не применяется');
+      await h.run();
+      expect(h.starts[1].promptsByModel.GPT).toContain('PERSONAL_NOTE_REQ');
+      expect(h.starts[1].promptsByModel.GPT).not.toContain('Дополнительно для тебя');
+    } finally { h.cleanup(); }
+  }, 30000);
+
+  test('an intermediate synthesis opens its own Custom card; its personal request reaches its model', async () => {
+    const h = setupCustomInheritance('Intermediate card', { synthesis: 'Gemini' });
+    try {
+      // The fixture has no insert buttons; the real panel puts one after each round.
+      const column = document.getElementById('round1');
+      if (!column.querySelector('.pipeline-stage-insert')) column.insertAdjacentHTML('afterbegin', '<button type="button" class="pipeline-stage-insert" data-after-stage-id="canvas-r1"></button>');
+      const insert = column.querySelector('.pipeline-stage-insert');
+      insert.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+      await delay(0);
+      expect(insert.classList.contains('has-intermediate-synthesis')).toBe(true);
+      insert.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await delay(250);
+      const modal = h.modal();
+      expect(modal.querySelector('.custom-card-model').textContent).toContain('Gemini');
+      modal.querySelector('#custom-card-request').value = 'SYNTH_PERSONAL {вход}';
+      modal.querySelector('#custom-card-save').click();
+      await delay(0);
+      expect(h.debug.capturePipelineConfig().customModelSettings['synth:planned-working-synthesis-after-canvas-r1'].Gemini)
+        .toEqual({ promptTemplate: 'SYNTH_PERSONAL {вход}', maxWords: null });
+      await h.run();
+      expect(h.starts[1].promptsByModel.GEMINI).toContain('SYNTH_PERSONAL');
+      expect(h.starts[1].promptsByModel.GEMINI).not.toContain('{вход}');
     } finally { h.cleanup(); }
   }, 30000);
 

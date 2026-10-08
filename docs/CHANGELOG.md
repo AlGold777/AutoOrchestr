@@ -1,5 +1,13 @@
 # CHANGELOG — Project
 
+### 2026-10-08 — Custom in the round role list and the intermediate synthesis card, version 2.81.652
+
+- Custom engine only: the mini-request list of a round's blocks and of the round card's «Роль для всех моделей раунда» ends with **Custom**. Choosing it shows a text field in the round card; the text is stored per round in `customDefaults.roundPrompts[r2…]` (saved, copied and exported with the other ▶ values) and reaches every model that chose Custom as «Дополнительно для тебя». Other roles and an empty text work as before.
+- Model card: when a block has a role and the model has a personal request, one line says the role is not applied (the assembly is unchanged).
+- Intermediate synthesis: one click on its insert opens its Custom card (personal request, length, discipline) under `synth:<plannedStageId>`; its personal request reaches its model. Adding or removing it by double click does not open the card.
+- Fixed: adding or removing an intermediate synthesis called an undefined `updatePipelineAll` after saving the plan; it now uses a bridge.
+- Tests: the round card's option list includes Custom; new tests check the text each model receives (`promptsByModel`), Custom absent from non-Custom pipelines, the personal-request note, and the intermediate card's request.
+
 ### 2026-10-08 — Round role selector for every Custom pipeline, version 2.81.651
 
 - The role selector on the round card now appears whenever the selected pipeline runs on the Custom engine (the same `runner === 'custom'` check as the ▶ card), not only for the built-in Custom template, so saved copies get it too.
