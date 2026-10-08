@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-08 — More room for the Custom request, version 2.81.643
+
+- Widen the card by 17% to 889 px and enlarge the request editor. Place the round beside the model name and move Save into the header.
+- Move the placeholder explanation beside “Запрос”; remove the automatic/personal status text. Arrange transport instructions in two columns, with one column on narrow screens.
+- Validation: existing card dispatch/save checks and isolated Chromium layout, viewport-fit, persistence and dispatch checks.
+
 ### 2026-10-08 — Complete Custom instructions and strict full-prompt budget, version 2.81.642
 
 - Separate answer length (`Объём ответа: 250-300 слов, не больше.` at a 300-word limit) from content requirements; independently edit and clear both per model/step. Split the known old default suffix without rewriting personal instructions; preserve old cleared instructions.

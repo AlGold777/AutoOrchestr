@@ -8125,17 +8125,17 @@ document.addEventListener('click', (event) => {
             modal.setAttribute('aria-labelledby', 'pipeline-block-info-title');
             content.innerHTML = `
                 <header class="custom-card-top">
-                    <h3 class="custom-card-model" id="pipeline-block-info-title">${modelIconData[modelName] ? `<img src="${modelIconData[modelName]}" alt="" width="26" height="26">` : ''}${escapeHtml(modelName)}</h3>
+                    <h3 class="custom-card-model" id="pipeline-block-info-title">${modelIconData[modelName] ? `<img src="${modelIconData[modelName]}" alt="" width="26" height="26">` : ''}${escapeHtml(modelName)}<span class="custom-card-where">${escapeHtml(preview.label)}</span></h3>
                     <label class="custom-card-length">Длина ответа: <input id="custom-card-length" type="number" min="1" step="1" inputmode="numeric" placeholder="${general}" aria-describedby="custom-card-length-note"> слов</label>
-                    <span class="custom-card-where">${escapeHtml(preview.label)}</span>
+                    <button type="button" class="modal-button accent" id="custom-card-save">Save</button>
                 </header>
                 <div class="custom-card-body">
                     <div class="custom-card-field">
-                        <div class="custom-card-head"><label for="custom-card-request">Запрос</label><span id="custom-card-state"></span></div>
+                        <div class="custom-card-head"><label for="custom-card-request">Запрос</label><span><code>{задача}</code> и <code>{вход}</code> подставляются при запуске. Изменённый текст используется только для этой модели в этом шаге.</span></div>
                         <textarea id="custom-card-request" spellcheck="false"></textarea>
-                        <div class="custom-card-note"><code>{задача}</code> и <code>{вход}</code> подставляются при запуске. Изменённый текст используется только для этой модели в этом шаге. <button type="button" id="custom-card-reset">Вернуть автоматическую сборку</button></div>
+                        <div class="custom-card-note"><button type="button" id="custom-card-reset">Вернуть автоматическую сборку</button></div>
                     </div>
-                    <div class="custom-card-marks"><strong>Метки, которые добавляет транспорт</strong>
+                    <div class="custom-card-marks"><strong>Метки транспорта</strong>
                         ${disciplineRows.map(([key, label]) => `<div class="custom-card-discipline" data-discipline="${key}">
                             <div class="custom-card-discipline-head"><label for="custom-discipline-${key}">${label}${key === 'ask' && getDebateRunPolicy() === 'auto' ? ' (в Авто не добавляется)' : ''}</label>
                                 <div class="custom-card-actions">
@@ -8149,8 +8149,7 @@ document.addEventListener('click', (event) => {
                         <div class="custom-card-note">{от} — на 50 слов меньше предела из шапки; {слов} — сам предел; {метка} — новая метка; {причина} — причина повтора. При очистке инструкции доставки сама метка сохраняется. При повторе запрос заменяется инструкцией исправления.</div>
                     </div>
                     <span id="custom-card-length-note" class="custom-card-sr-only">Пусто — общий предел pipeline (${general}).</span>
-                </div>
-                <footer class="custom-card-footer"><button type="button" class="modal-button accent" id="custom-card-save">Сохранить</button></footer>`;
+                </div>`;
             const request = content.querySelector('#custom-card-request');
             const length = content.querySelector('#custom-card-length');
             const reset = content.querySelector('#custom-card-reset');
@@ -8161,7 +8160,6 @@ document.addEventListener('click', (event) => {
             request.disabled = length.disabled = reset.disabled = save.disabled = pipelineRunActive;
             const refresh = () => {
                 const own = request.value !== preview.template;
-                content.querySelector('#custom-card-state').textContent = own ? 'Персональный запрос' : 'Собирается автоматически';
                 reset.hidden = !own;
                 const value = length.value === '' ? general : Number(length.value);
                 const limitField = content.querySelector('#custom-discipline-limit');

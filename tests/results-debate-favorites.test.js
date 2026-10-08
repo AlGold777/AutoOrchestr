@@ -1996,7 +1996,7 @@ describe('Pipeline debate favorites view', () => {
     block.querySelector('.model-block-inspect-btn').click();
     const modal = document.getElementById('pipeline-block-info-modal');
     expect(modal.classList.contains('custom-model-card')).toBe(true);
-    expect(modal.querySelector('.custom-card-model').textContent).toBe('Gemini');
+    expect(modal.querySelector('.custom-card-model').textContent).toContain('Gemini');
     modal.querySelector('#custom-card-request').value = 'UNNAMED REQUEST {вход}';
     modal.querySelector('#custom-card-length').value = '45';
     modal.querySelector('#custom-card-save').click();
