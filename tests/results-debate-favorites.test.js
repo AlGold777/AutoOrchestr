@@ -2013,10 +2013,16 @@ describe('Pipeline debate favorites view', () => {
     expect(window.getSelectedPipelinePresetId()).toBe('UNIVERSAL_STANDARD');
   });
 
-  test('Custom card saves an editable request and per-model length through to actual background dispatch, including retries', async () => {
+  test.each(['saved', 'unnamed'])('Custom card sends its edited request and length through Run, including retries (%s pipeline)', async (kind) => {
     const debug = window.__pipelineLifecycleDebug;
     const config = { version: 3, roundCounter: 2, protocol: { type: 'universal', presetId: 'CUSTOM', selectedModels: ['GPT', 'Claude'], length: '700', roundLimit: '2', synthesizer: '', runPolicy: 'auto' }, modelStacks: {} };
-    debug.setPipelineStoreForTest({ active: 'Card dispatch test', order: ['Card dispatch test'], pipelines: { 'Card dispatch test': config } });
+    debug.setPipelineStoreForTest(kind === 'saved'
+      ? { active: 'Card dispatch test', order: ['Card dispatch test'], pipelines: { 'Card dispatch test': config } }
+      : { active: '', order: [], pipelines: {} });
+    const header = document.getElementById('currentPipelineName');
+    header.textContent = '';
+    header.dataset.fullName = '';
+    document.getElementById('pipeline-panel').removeAttribute('data-pipeline-draft');
     debug.applyPipelineConfig(config);
     document.getElementById('debate-run-policy-select').value = 'auto';
     window.setSynthesisModelFromName('');
@@ -2035,7 +2041,9 @@ describe('Pipeline debate favorites view', () => {
     length.dispatchEvent(new Event('input'));
     modal.querySelector('#custom-card-save').click();
     const stored = await chrome.storage.local.get('llmComparatorPipelines');
-    expect(stored.llmComparatorPipelines.pipelines['Card dispatch test'].customModelSettings.r2.GPT.maxWords).toBe(37);
+    if (kind === 'saved') {
+      expect(stored.llmComparatorPipelines.pipelines['Card dispatch test'].customModelSettings.r2.GPT.maxWords).toBe(37);
+    }
     const saved = debug.capturePipelineConfig();
     expect(saved.customModelSettings.r2.GPT).toEqual({ promptTemplate: request.value, maxWords: 37 });
     // Reloading the saved configuration must restore the actual card controls.
@@ -2060,7 +2068,10 @@ describe('Pipeline debate favorites view', () => {
       }), 0);
     });
     try {
-      await debug.runCustomFromPage({ task: 'LIVE TASK VALUE' });
+      document.getElementById('modTa').value = 'LIVE TASK VALUE';
+      await window.runPipeline();
+      expect(header.textContent).toBe('LIVE TASK VALUE');
+      expect(debug.capturePipelineConfig().customModelSettings.r2.GPT.maxWords).toBe(37);
       expect(starts).toHaveLength(3);
       const sent = starts[1].promptsByModel.GPT;
       expect(sent).toContain('CARD_REQUEST LIVE TASK VALUE');

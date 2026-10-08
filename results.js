@@ -4187,7 +4187,8 @@ document.addEventListener('click', (event) => {
             return plan;
         };
 
-        const draftPlanStorageKey = () => String(pipelineStore.active || getPipelineHeaderName() || 'unsaved').trim() || 'unsaved';
+        // The visible header becomes the task on Run; it is not a stable pipeline identity.
+        const draftPlanStorageKey = () => String(pipelineStore.active || pipelineName?.dataset.fullName || 'unsaved').trim() || 'unsaved';
         const getActiveDraftPlan = () => pipelineSessionDraftPlans[draftPlanStorageKey()]
             || pipelineStore.draftPlans?.[draftPlanStorageKey()]
             || getPipelineConfigByName(draftPlanStorageKey())?.draftPlan

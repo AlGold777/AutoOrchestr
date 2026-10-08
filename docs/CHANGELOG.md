@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-08 — Keep Custom card edits on Run, version 2.81.640
+
+- Fix anonymous Custom runs losing edited model requests and personal word limits when Run replaces the visible pipeline heading with the task. Draft and card settings now use the active pipeline identity or explicit stored name, never the task display.
+- Regression tests enter through public Run for both saved and unnamed pipelines, verifying substituted requests, personal/inherited word limits and retry payloads. Isolated Chromium reproduces the original failure through the actual Run button and verifies the corrected background payload; no live provider run. Engine/card/record/preset checks: 107 passed, the same 4 existing CSS assertion failures; Custom Extract: 4 passed.
+
 ### 2026-10-08 — Extract (Transport) for Custom runs, version 2.81.639
 
 - Extract on a report without Debate stages now digests the latest Custom run instead of refusing: its steps become the stages, only its part of the delivery journal is taken (its custom events, batches and requests), and the result is the same compact transport extract as for Debate.
