@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-08 — Model roles and model notes in Custom, version 2.81.650
+
+- The model block's mini-request selector now reaches Custom: its text is the «Дополнительно для тебя» part of that model's request; None adds nothing.
+- Round card (Custom, rounds 2+): «Роль для всех моделей раунда» writes one role into every block of the round. Mixed manual roles show «разные»; replacing them asks first. Round 1 has no selectors and keeps its participant list.
+- ▶ card: «Особенности моделей» — one note per model on the canvas, stored in `customDefaults.modelNotes` (saved, copied and exported with the other ▶ fields). A note goes with every request of its model, after the request and the owner's answers and before the length limit; a correction request gets none. The model card shows the note read-only.
+- Validation: two Custom run tests check the text sent to each model (`promptsByModel`): roles, round-card replacement with confirmation, None, notes order, corrections, and saved/reloaded notes.
+
 ### 2026-10-08 — Show the effective response length, version 2.81.649
 
 - Pre-fill the model card response-length input with its effective number; remove its copy icon. Saving an unchanged shared number still keeps inheritance.

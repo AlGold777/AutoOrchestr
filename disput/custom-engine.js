@@ -11,7 +11,7 @@
 //     all      — every accepted answer of all earlier steps, rounds and syntheses alike.
 //   sequential — each model also gets the accepted answers of the models before it in this step;
 //   parallel   — every model gets the same input.
-// Discipline: send(models, promptsByModel, meta) → { byModel: { model: { text, status, answered,
+// Discipline: send(models, promptsByModel, meta) — meta marks correction requests (correctionByModel) → { byModel: { model: { text, status, answered,
 //   completion, transportRequestId } }, closedByOwner }. accept() judges the technical outcome;
 //   empty text (also a token-only answer) is never accepted. A rejected answer gets a correction
 //   retry in the same chat, up to maxAttempts, unless the owner closed the step.
@@ -204,7 +204,8 @@
         try {
           reply = await send(pending, Object.fromEntries(pending.map((name) => [name, current[name].prompt])),
             { step: step.index, kind: step.kind, label: stepLabel(step), attempt: tryNo,
-              maxWordsByModel: Object.fromEntries(pending.map((name) => [name, step.models.find((model) => model.name === name)?.maxWords || null])) });
+              maxWordsByModel: Object.fromEntries(pending.map((name) => [name, step.models.find((model) => model.name === name)?.maxWords || null])),
+              correctionByModel: Object.fromEntries(pending.map((name) => [name, Boolean(current[name].parts?.correction)])) });
         } catch (error) {
           if (error?.code === 'context_full') {
             Object.values(entries).forEach((entry) => {

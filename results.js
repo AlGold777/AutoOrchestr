@@ -6404,18 +6404,21 @@ document.addEventListener('click', (event) => {
         // input come with the card editor. Semi-automatic (run policy not Auto) asks the owner after
         // every step; a step without accepted answers asks in both modes.
         const CUSTOM_ROUND_TASK = 'Учти ответы предыдущего шага и дай свой улучшенный ответ на задачу.';
+        // The model's role (mini request from its block) reaches the model as `extra`, the same field
+        // as any other extra text; `roles` maps participant → prompt id from participantBindings.
         const customStepsFromPlan = (plan, previewModel = null) => {
             let round = 0;
             return (plan?.plannedStages || []).map((stage) => {
                 const models = (stage.participantIds || []).filter(Boolean);
+                const roles = Object.fromEntries((stage.participantBindings || []).map((item) => [item.participantId, item.promptId || null]));
                 if (/^canvas-r\d+$/.test(String(stage.plannedStageId || ''))) {
                     round += 1;
                     return round === 1
-                        ? { kind: 'round', ref: `r${round}`, order: 'parallel', task: '', input: 'none', models }
-                        : { kind: 'round', ref: `r${round}`, order: 'parallel', task: resolveCustomFields({}, 'round').task.value, input: 'previous', models };
+                        ? { kind: 'round', ref: `r${round}`, order: 'parallel', task: '', input: 'none', models, roles }
+                        : { kind: 'round', ref: `r${round}`, order: 'parallel', task: resolveCustomFields({}, 'round').task.value, input: 'previous', models, roles };
                 }
-                if (stage.outputIntent === 'working_synthesis') return { kind: 'synthesis', ref: `synth:${stage.plannedStageId}`, task: resolveCustomFields({}, 'synthesis').task.value, models };
-                if (stage.outputIntent === 'candidate_final') return { kind: 'synthesis', ref: 'final', task: resolveCustomFields({}, 'synthesis').task.value, models };
+                if (stage.outputIntent === 'working_synthesis') return { kind: 'synthesis', ref: `synth:${stage.plannedStageId}`, task: resolveCustomFields({}, 'synthesis').task.value, models, roles };
+                if (stage.outputIntent === 'candidate_final') return { kind: 'synthesis', ref: 'final', task: resolveCustomFields({}, 'synthesis').task.value, models, roles };
                 return null;
             }).filter(Boolean).map((step) => {
                 // A model can be configured before its Send checkbox is enabled.
@@ -6423,11 +6426,12 @@ document.addEventListener('click', (event) => {
                     step.models.push(previewModel.name);
                 }
                 return step;
-            }).filter((step) => step.models.length).map((step) => ({ ...step,
+            }).filter((step) => step.models.length).map(({ roles, ...step }) => ({ ...step,
                 models: step.models.map((name) => {
                     const settings = getCustomCardSettings()[step.ref]?.[name];
                     const resolved = resolveCustomFields(settings, step.kind);
                     return { name, promptTemplate: settings?.promptTemplate || null, maxWords: settings?.maxWords || null,
+                        extra: getJudgePromptById(roles?.[name])?.text || '',
                         task: step.input === 'none' ? '' : resolved.task.value,
                         discipline: Object.fromEntries(Object.entries(resolved.discipline).map(([key, item]) => [key, item.value])) };
                 })
@@ -6472,12 +6476,15 @@ document.addEventListener('click', (event) => {
         };
         const customLengthInstruction = (template, words) => template.replace(/\{от\}|\{слов\}/g,
             (key) => String(key === '{от}' ? Math.max(1, words - 50) : words));
-        const prepareCustomPrompts = (models, prompts, limits = {}, discipline = {}) => Object.fromEntries(models.map((name) => {
+        // ▶ «Особенности моделей» go after the request and the owner's answers, before the limit.
+        // A correction request is not a new request: it gets no note.
+        const prepareCustomPrompts = (models, prompts, limits = {}, discipline = {}, notes = {}, corrections = {}) => Object.fromEntries(models.map((name) => {
             const words = Number.isSafeInteger(limits[name]) && limits[name] > 0 ? limits[name] : getDebateMaxWords();
             const resolved = resolveCustomFields({ discipline: discipline[name] });
             const instruction = customLengthInstruction(resolved.discipline.limit.value, words);
             const base = String(prompts[name] || '').replace(RESPONSE_LIMIT_LINE, '').trimEnd();
-            return [name, [base, instruction, resolved.discipline.content.value].filter(Boolean).join('\n\n')];
+            const note = corrections[name] ? '' : String(notes[name] || '').trim();
+            return [name, [base, note, instruction, resolved.discipline.content.value].filter(Boolean).join('\n\n')];
         }));
         // The owner's choice on a pause, through the shared confirm dialog (three buttons).
         let customDecisionOpen = false;
@@ -6563,12 +6570,13 @@ document.addEventListener('click', (event) => {
                     decide: askCustomDecision,
                     onRequest: recordAttempt,
                     onResponse: recordAttempt,
-                    send: async (models, promptsByModel, { step, label, attempt, maxWordsByModel }) => {
+                    send: async (models, promptsByModel, { step, label, attempt, maxWordsByModel, correctionByModel }) => {
                         // Reuse the existing limit contract, on first attempts and corrections alike.
                         const discipline = Object.fromEntries(models.map((name) => [name,
                             steps[step].models.find((model) => model.name === name)?.discipline || {}
                         ]));
-                        promptsByModel = prepareCustomPrompts(models, promptsByModel, maxWordsByModel, discipline);
+                        promptsByModel = prepareCustomPrompts(models, promptsByModel, maxWordsByModel, discipline,
+                            getCustomPipelineDefaults().modelNotes || {}, correctionByModel || {});
                         const batch = await runModelBatch({
                             prompt: promptsByModel[models[0]],
                             promptsByModel,
@@ -8168,6 +8176,11 @@ document.addEventListener('click', (event) => {
                 ? window.CustomEngine.resolveSetting({ pipeline: rawValue(key), fallback: fallbackFor(key) }).value
                 : key === 'task' ? resolved.task.value : resolved.discipline[key].value;
             const copyButton = (id, label) => `<button type="button" data-action="copy" data-copy-field="${id}" title="Копировать" aria-label="Копировать: ${label}"><i class="ti ti-copy" aria-hidden="true"></i></button>`;
+            // ▶ «Особенности моделей»: one field per model on the canvas; the model card shows its own note read-only.
+            const modelNotes = getCustomPipelineDefaults().modelNotes || {};
+            // The synthesizer block shows «Synthesizer: …» as its label; only a chosen model is a name.
+            const canvasModels = pipelineDefaults ? [...new Set(Array.from(pipelinePanel.querySelectorAll('.model-block .model-name'), (node) => node.textContent.trim())
+                .filter((name) => name && !name.startsWith('Synthesizer:')))] : [];
             const content = modal.querySelector('.modal-content');
             modal.classList.add('custom-model-card');
             modal.classList.toggle('custom-defaults-card', pipelineDefaults);
@@ -8186,6 +8199,7 @@ document.addEventListener('click', (event) => {
                         <textarea id="custom-card-request" spellcheck="false"></textarea>
                         <div class="custom-card-note"><span id="custom-card-personal-note"></span> <button type="button" id="custom-card-reset">Вернуть к общему</button></div>
                     </div>`}
+                    ${!pipelineDefaults && modelNotes[modelName] ? `<p class="custom-card-note">Особенность модели (из ▶): ${escapeHtml(modelNotes[modelName])}</p>` : ''}
                     <div class="custom-card-marks"><strong>${pipelineDefaults ? 'Общие задания и дисциплина' : 'Метки транспорта'}</strong>
                         ${rows.map(([key, label]) => `<div class="custom-card-discipline" data-discipline="${key}">
                             <div class="custom-card-discipline-head"><label for="custom-discipline-${key}">${label}</label>
@@ -8200,6 +8214,13 @@ document.addEventListener('click', (event) => {
                         </div>`).join('')}
                         <div class="custom-card-note">{от} — на 50 слов меньше предела; {слов} — предел из шапки pipeline; {метка} — новая метка; {причина} — причина повтора. Пустое поле наследуется. При повторе запрос заменяется инструкцией исправления.</div>
                     </div>
+                    ${pipelineDefaults ? `<div class="custom-card-marks"><strong>Особенности моделей</strong>
+                        ${canvasModels.map((name) => `<div class="custom-card-discipline">
+                            <div class="custom-card-discipline-head"><span>${escapeHtml(name)}</span></div>
+                            <textarea data-model-note="${escapeHtml(name)}" aria-label="Особенность: ${escapeHtml(name)}" rows="2" spellcheck="false"${pipelineRunActive ? ' readonly' : ''}>${escapeHtml(modelNotes[name] || '')}</textarea>
+                        </div>`).join('') || '<div class="custom-card-note">На холсте нет моделей.</div>'}
+                        <div class="custom-card-note">Добавляется к каждому запросу модели после запроса и ответов владельца, перед лимитом. Пустое поле — ничего не добавлять.</div>
+                    </div>` : ''}
                     ${pipelineDefaults ? '' : `<span id="custom-card-length-note" class="custom-card-sr-only">Пусто — общий предел pipeline (${general}).</span>`}
                 </div>`;
             const request = content.querySelector('#custom-card-request');
@@ -8265,6 +8286,16 @@ document.addEventListener('click', (event) => {
                     if (dirtyFields.has(key) ? differs(key, value) : typeof value === 'string' && value.trim()) { if (isTask(key)) next[key] = value; else discipline[key] = value; }
                 });
                 if (Object.keys(discipline).length) next.discipline = discipline;
+                if (pipelineDefaults) {
+                    // Notes of models that are off the canvas now stay saved.
+                    const notes = { ...modelNotes };
+                    content.querySelectorAll('[data-model-note]').forEach((field) => {
+                        const value = field.value.trim();
+                        if (value) notes[field.dataset.modelNote] = value;
+                        else delete notes[field.dataset.modelNote];
+                    });
+                    if (Object.keys(notes).length) next.modelNotes = notes;
+                }
                 if (pipelineDefaults) customPipelineDefaults.set(draftPlanStorageKey(), next);
                 else {
                     const settings = getCustomCardSettings();
@@ -8397,6 +8428,25 @@ document.addEventListener('click', (event) => {
             document.body.classList.add('modal-open');
         };
 
+        // The card's round role goes to each block's own mini-request selector, through its change
+        // event, as a manual choice does. Mixed manual roles are replaced only after confirmation.
+        const applyRoundRole = async (round, select) => {
+            const blocks = Array.from(document.querySelectorAll(`#r${round}-models .model-block`))
+                .map((block) => block.querySelector('.role-selector'))
+                .filter(Boolean);
+            const value = select.value;
+            if (new Set(blocks.map((roleSelect) => roleSelect.value)).size > 1
+                && !(await showConfirm('Заменить роли моделей раунда?', { confirmText: 'Заменить', cancelText: 'Отмена' }))) {
+                select.value = 'mixed';
+                return;
+            }
+            blocks.forEach((roleSelect) => {
+                if (roleSelect.value === value) return;
+                roleSelect.value = value;
+                roleSelect.dispatchEvent(new Event('change', { bubbles: true }));
+            });
+        };
+
         // Stage card: the round badge opens the stage's card (template stage text,
         // who works, run status). Plain rounds show their participants.
         const openStageCard = (roundBadge) => {
@@ -8415,17 +8465,24 @@ document.addEventListener('click', (event) => {
                 const stack = captureModelStackState(`r${round}-models`);
                 const stages = debateApplication?.getOrchestrator?.()?.getState?.()?.stages || [];
                 const stageRun = stages.filter((item) => item.plannedStageId === `canvas-r${round}`).pop() || null;
+                // Custom rounds with mini-request selectors (round 2+): one role for the round's models
+                // instead of the participant list. Round 1 has no selectors and keeps the list.
+                const roleChoice = !templateStage && getSelectedPipelinePresetId() === 'CUSTOM' && document.querySelector(`#r${round}-models .role-selector`)
+                    ? { prompts: getOrderedJudgePrompts(), roles: (stack?.items || []).map((item) => item.role || ''), disabled: pipelineRunActive }
+                    : null;
                 const model = window.StageCard.buildModel({
                     round,
                     templateStage,
                     participants: (stack?.items || []).filter((item) => item.input || item.send),
-                    stageRun
+                    stageRun,
+                    roleChoice
                 });
                 title.textContent = model.title;
                 window.StageCard.render(body, model, {
                     onCopy: (text) => navigator.clipboard?.writeText?.(text)
                         .then(() => showNotification('Задание этапа скопировано.', 'info'))
-                        .catch(() => showNotification('Не удалось скопировать задание.', 'warn'))
+                        .catch(() => showNotification('Не удалось скопировать задание.', 'warn')),
+                    onRole: (select) => applyRoundRole(round, select)
                 });
             }
             if (!dialog.open) dialog.showModal();

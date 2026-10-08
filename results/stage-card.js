@@ -24,7 +24,9 @@
   // round: canvas round number; templateStage: ArchitectureFramework stage or null;
   // participants: [{ name, send }] from the round's model stack; stageRun: the engine's
   // stage instance for this round (or null before / outside a run).
-  function buildModel({ round, templateStage = null, participants = [], stageRun = null } = {}) {
+  // roleChoice (Custom rounds only): { prompts: [{ id, label }], roles: [prompt id or ''] per block,
+  // disabled } — one select for the whole round; mixed roles show 'разные' until chosen.
+  function buildModel({ round, templateStage = null, participants = [], stageRun = null, roleChoice = null } = {}) {
     const working = list(participants.filter((item) => item && item.send).map((item) => item.name));
     const waiting = list(participants.filter((item) => item && !item.send).map((item) => item.name));
     const gate = templateStage?.who === 'gate';
@@ -40,6 +42,21 @@
       instruction: templateStage?.instruction || ''
     };
     if (!templateStage) {
+      if (roleChoice) {
+        const roles = (Array.isArray(roleChoice.roles) ? roleChoice.roles : []).map((item) => String(item || ''));
+        const distinct = [...new Set(roles)];
+        const mixed = distinct.length > 1;
+        model.role = {
+          value: mixed ? 'mixed' : (distinct[0] || ''),
+          disabled: Boolean(roleChoice.disabled),
+          options: [
+            ...(mixed ? [{ value: 'mixed', label: 'разные', disabled: true }] : []),
+            { value: '', label: 'None' },
+            ...(Array.isArray(roleChoice.prompts) ? roleChoice.prompts : []).map((prompt) => ({ value: String(prompt.id), label: String(prompt.label || prompt.id) }))
+          ]
+        };
+        return model;
+      }
       model.sections.push({ title: 'Участники раунда', items: working.length ? working : ['никто не отправляет'] });
       return model;
     }
@@ -71,7 +88,7 @@
     return node;
   };
 
-  function render(container, model, { onCopy = null } = {}) {
+  function render(container, model, { onCopy = null, onRole = null } = {}) {
     const doc = container.ownerDocument;
     container.replaceChildren();
     if (model.subtitle) container.append(el(doc, 'p', 'stage-card-subtitle', model.subtitle));
@@ -80,16 +97,32 @@
     meta.append(el(doc, 'span', `stage-card-badge stage-card-status stage-card-status-${model.status.code}`, model.status.label));
     container.append(meta);
 
-    const people = el(doc, 'div', 'stage-card-people');
-    if (model.participants.working.length) {
-      people.append(el(doc, 'strong', '', 'Работают: '), doc.createTextNode(model.participants.working.join(', ')));
+    if (model.role) {
+      const select = el(doc, 'select', 'stage-card-role-select');
+      model.role.options.forEach((item) => {
+        const option = el(doc, 'option', '', item.label);
+        option.value = item.value;
+        option.disabled = Boolean(item.disabled);
+        select.append(option);
+      });
+      select.value = model.role.value;
+      select.disabled = model.role.disabled;
+      if (typeof onRole === 'function') select.addEventListener('change', () => onRole(select));
+      const row = el(doc, 'label', 'stage-card-role');
+      row.append(doc.createTextNode('Роль для всех моделей раунда '), select);
+      container.append(row);
     } else {
-      people.append(el(doc, 'strong', '', 'Работают: '), doc.createTextNode('никто'));
+      const people = el(doc, 'div', 'stage-card-people');
+      if (model.participants.working.length) {
+        people.append(el(doc, 'strong', '', 'Работают: '), doc.createTextNode(model.participants.working.join(', ')));
+      } else {
+        people.append(el(doc, 'strong', '', 'Работают: '), doc.createTextNode('никто'));
+      }
+      if (model.participants.waiting.length) {
+        people.append(doc.createElement('br'), el(doc, 'span', 'stage-card-muted', `Не участвуют: ${model.participants.waiting.join(', ')}`));
+      }
+      container.append(people);
     }
-    if (model.participants.waiting.length) {
-      people.append(doc.createElement('br'), el(doc, 'span', 'stage-card-muted', `Не участвуют: ${model.participants.waiting.join(', ')}`));
-    }
-    container.append(people);
 
     model.sections.forEach((section) => {
       const block = el(doc, 'section', 'stage-card-section');

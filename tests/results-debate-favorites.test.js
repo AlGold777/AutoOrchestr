@@ -2324,6 +2324,121 @@ describe('Pipeline debate favorites view', () => {
     } finally { h.cleanup(); }
   }, 30000);
 
+  const setBlockRole = (block, promptId) => {
+    const select = block.querySelector('.role-selector');
+    select.value = promptId;
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  };
+  const canvasBlock = (stackId, model) => [...document.querySelectorAll(`#${stackId} .model-block`)]
+    .find((block) => block.querySelector('.model-name')?.textContent === model);
+  const openRoundCard = (round) => {
+    require('../results/stage-card');
+    if (!document.getElementById('pipeline-stage-dialog')) {
+      document.body.insertAdjacentHTML('beforeend', '<dialog id="pipeline-stage-dialog"><h2 id="pipeline-stage-dialog-title"></h2><div id="pipeline-stage-card"></div></dialog>');
+    }
+    const dialog = document.getElementById('pipeline-stage-dialog');
+    if (typeof dialog.showModal !== 'function') dialog.showModal = () => dialog.setAttribute('open', '');
+    // The fixture has no badges; the real panel markup (pipeline_panel.html) puts one in each round column.
+    const column = document.getElementById(`round${round}`);
+    if (!column.querySelector('.round-badge')) column.insertAdjacentHTML('afterbegin', `<div class="stage-label"><span class="round-badge">R${round}</span></div>`);
+    column.querySelector('.round-badge').click();
+    return document.getElementById('pipeline-stage-card');
+  };
+  const answerRoleConfirm = async (confirmed) => {
+    document.getElementById(confirmed ? 'delete-confirm' : 'cancel-confirm').click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  };
+
+  test('Custom block role reaches its model as extra; the round card sets one role for all blocks after confirmation', async () => {
+    const h = setupCustomInheritance('Role test');
+    try {
+      setBlockRole(canvasBlock('r2-models', 'GPT'), 'interaction_critical_audit');
+      await h.run();
+      expect(h.starts).toHaveLength(2);
+      expect(h.starts[1].promptsByModel.GPT).toContain('Дополнительно для тебя:\nПроведи экспертный аудит');
+      expect(h.starts[1].promptsByModel.CLAUDE).not.toContain('Дополнительно для тебя');
+      expect(h.starts[0].promptsByModel.GPT).not.toContain('Дополнительно для тебя');
+
+      // Round card (round 2 has selectors): no participant list, one select with the mini-requests.
+      // GPT's own role and an empty one differ: the select shows «разные».
+      const card = openRoundCard(2);
+      expect(card.textContent).not.toContain('Участники раунда');
+      const roundSelect = card.querySelector('.stage-card-role-select');
+      expect([...roundSelect.options].map((option) => option.textContent)).toEqual(['разные', 'None', 'Meta-Синтез', 'Критический аудит', 'Select ideas', 'Clustering']);
+      expect(roundSelect.value).toBe('mixed');
+
+      // Replacing mixed roles asks first; Cancel changes nothing.
+      roundSelect.value = 'interaction_pattern_clustering';
+      roundSelect.dispatchEvent(new Event('change'));
+      await answerRoleConfirm(false);
+      expect(roundSelect.value).toBe('mixed');
+      expect(canvasBlock('r2-models', 'GPT').querySelector('.role-selector').value).toBe('interaction_critical_audit');
+      expect(canvasBlock('r2-models', 'Claude').querySelector('.role-selector').value).toBe('');
+
+      // Confirmed: every block of the round gets the chosen role.
+      roundSelect.value = 'interaction_pattern_clustering';
+      roundSelect.dispatchEvent(new Event('change'));
+      await answerRoleConfirm(true);
+      expect(canvasBlock('r2-models', 'GPT').querySelector('.role-selector').value).toBe('interaction_pattern_clustering');
+      expect(canvasBlock('r2-models', 'Claude').querySelector('.role-selector').value).toBe('interaction_pattern_clustering');
+
+      // A personal choice in one block overrides the round's role for that block only.
+      setBlockRole(canvasBlock('r2-models', 'Claude'), 'interaction_meta_synthesis');
+      await h.run();
+      expect(h.starts[1].promptsByModel.CLAUDE).toContain('Дополнительно для тебя:\nПострой собственное экспертное решение');
+      expect(h.starts[1].promptsByModel.GPT).toContain('Дополнительно для тебя:\nСгруппируй идеи');
+
+      // None is a real choice: the roles differ now, so the replacement is confirmed first.
+      const roundAgain = openRoundCard(2).querySelector('.stage-card-role-select');
+      roundAgain.value = '';
+      roundAgain.dispatchEvent(new Event('change'));
+      await answerRoleConfirm(true);
+      await h.run();
+      expect(h.starts[1].promptsByModel.GPT).not.toContain('Дополнительно для тебя');
+      expect(h.starts[1].promptsByModel.CLAUDE).not.toContain('Дополнительно для тебя');
+    } finally { h.cleanup(); }
+  }, 30000);
+
+  test('Custom ▶ model notes follow every request of their model after the request and before the limit; corrections get none', async () => {
+    const h = setupCustomInheritance('Model notes');
+    try {
+      const general = h.openGeneral();
+      expect([...general.querySelectorAll('[data-model-note]')].map((field) => field.dataset.modelNote)).toEqual(['Claude', 'GPT']);
+      general.querySelector('[data-model-note="GPT"]').value = 'NOTE_GPT без вступлений';
+      general.querySelector('#custom-card-save').click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(h.debug.capturePipelineConfig().customDefaults.modelNotes).toEqual({ GPT: 'NOTE_GPT без вступлений' });
+      const stored = await chrome.storage.local.get('llmComparatorPipelines');
+      expect(stored.llmComparatorPipelines.pipelines['Model notes'].customDefaults.modelNotes).toEqual({ GPT: 'NOTE_GPT без вступлений' });
+      h.debug.applyPipelineConfig(JSON.parse(JSON.stringify(h.debug.capturePipelineConfig())));
+      expect(h.openGeneral().querySelector('[data-model-note="GPT"]').value).toBe('NOTE_GPT без вступлений');
+
+      // The model card shows the note read-only; a personal request keeps it too.
+      const card = h.openModel('GPT');
+      expect(card.textContent).toContain('Особенность модели (из ▶): NOTE_GPT без вступлений');
+      await h.model({ promptTemplate: 'PERSONAL_REQ {задача}\nUSE_INPUT {вход}' });
+      await h.run({ retry: true });
+      const sentGpt = h.starts[1].promptsByModel.GPT;
+      expect(sentGpt).toContain('PERSONAL_REQ INHERITANCE TASK');
+      expect(sentGpt.indexOf('PERSONAL_REQ')).toBeLessThan(sentGpt.indexOf('NOTE_GPT'));
+      expect(sentGpt.indexOf('NOTE_GPT')).toBeLessThan(sentGpt.indexOf('Объём ответа'));
+      expect(h.starts[0].promptsByModel.GPT).toContain('NOTE_GPT');
+      expect(h.starts[0].promptsByModel.CLAUDE).not.toContain('NOTE_GPT');
+      expect(h.starts[1].promptsByModel.CLAUDE).not.toContain('NOTE_GPT');
+      // The retry of GPT is a correction: the note is not repeated there.
+      expect(h.starts[2].promptsByModel.GPT).toContain('Твой предыдущий ответ');
+      expect(h.starts[2].promptsByModel.GPT).not.toContain('NOTE_GPT');
+      expect(h.starts[2].promptsByModel.GPT).toContain('Объём ответа');
+
+      // Clearing the field removes the note; the saved ▶ has no notes any more.
+      const general2 = h.openGeneral();
+      general2.querySelector('[data-model-note="GPT"]').value = '';
+      general2.querySelector('#custom-card-save').click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(h.debug.capturePipelineConfig().customDefaults.modelNotes).toBeUndefined();
+    } finally { h.cleanup(); }
+  }, 30000);
+
   test('Custom model overrides, return to common and equal-value elision follow live ▶ changes', async () => {
     const h = setupCustomInheritance('Model inheritance');
     try {
