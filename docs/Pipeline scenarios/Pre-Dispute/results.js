@@ -4897,7 +4897,7 @@ document.addEventListener('click', (event) => {
             label: option.textContent || option.value
         }));
         const DEFAULT_DISPUT_MAX_WORDS = 300;
-        const DISPUT_RESPONSE_LIMIT_MARKER = '[DISPUT_RESPONSE_LIMIT]';
+        const DISPUT_RESPONSE_LIMIT_MARKER = '[RESPONSE_LIMIT]';
         const getDebateMaxWords = () => window.DebatePromptCatalog?.normalizeMaxWords?.(
             document.getElementById('debate-length-select')?.value
         ) ?? DEFAULT_DISPUT_MAX_WORDS;

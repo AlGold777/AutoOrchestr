@@ -2052,11 +2052,11 @@ describe('Pipeline debate favorites view', () => {
     await debug.renderCustomBlockInspector(block, modal);
     expect(modal.querySelector('#custom-card-request').value).toBe(request.value);
     expect(modal.querySelector('#custom-card-length').value).toBe('37');
-    expect(modal.querySelector('#custom-discipline-limit').value).toBe('[DISPUT_RESPONSE_LIMIT] Объём ответа: 1-37 слов, не больше.');
+    expect(modal.querySelector('#custom-discipline-limit').value).toBe('[RESPONSE_LIMIT] Объём ответа: 1-37 слов, не больше.');
     expect(modal.querySelector('#custom-discipline-content').value).toContain('убери повторы, длинные пересказы и второстепенные детали.');
     expect([...modal.querySelectorAll('[data-discipline]')].map((row) => row.dataset.discipline)).toEqual(['task', 'ask', 'limit', 'content', 'delivery', 'correction']);
     expect(modal.querySelector('#custom-discipline-ask').value).toBe(window.DebateStageMarkers.instructions());
-    for (const [key, value] of Object.entries({ limit: '[DISPUT_RESPONSE_LIMIT] Ответ — не более {слов} слов. PERSONAL_LIMIT', content: 'PERSONAL_CONTENT', delivery: 'PERSONAL_DELIVERY {метка}', ask: 'PERSONAL_ASK', correction: 'PERSONAL_CORRECTION: {причина}' })) {
+    for (const [key, value] of Object.entries({ limit: '[RESPONSE_LIMIT] Ответ — не более {слов} слов. PERSONAL_LIMIT', content: 'PERSONAL_CONTENT', delivery: 'PERSONAL_DELIVERY {метка}', ask: 'PERSONAL_ASK', correction: 'PERSONAL_CORRECTION: {причина}' })) {
       const row = modal.querySelector(`[data-discipline="${key}"]`);
       if (kind === 'cleared') row.querySelector('[data-action="clear"]').click();
       const field = row.querySelector('textarea');
@@ -2095,7 +2095,7 @@ describe('Pipeline debate favorites view', () => {
       expect(sent).toContain('Accepted Claude answer from batch 1.');
       expect(sent).not.toContain('{вход}');
       if (kind === 'cleared') {
-        expect(sent).toContain('[DISPUT_RESPONSE_LIMIT] Объём ответа: 1-37 слов');
+        expect(sent).toContain('[RESPONSE_LIMIT] Объём ответа: 1-37 слов');
         expect(sent).toContain('Сосредоточься на ясной концепции');
         expect(sent).toContain('Последней строкой ответа');
       } else {
@@ -2114,7 +2114,7 @@ describe('Pipeline debate favorites view', () => {
       expect(starts[1].promptsByModel.CLAUDE).not.toContain('PERSONAL_');
       expect(starts[0].promptsByModel.GPT).not.toContain('PERSONAL_');
       expect(starts[2].selectedLLMs).toEqual(['GPT']);
-      if (kind === 'cleared') expect(starts[2].promptsByModel.GPT).toContain('[DISPUT_RESPONSE_LIMIT] Объём ответа: 1-37 слов');
+      if (kind === 'cleared') expect(starts[2].promptsByModel.GPT).toContain('[RESPONSE_LIMIT] Объём ответа: 1-37 слов');
       else {
         expect(starts[2].promptsByModel.GPT).toContain('PERSONAL_CORRECTION:');
         expect(starts[2].promptsByModel.GPT).not.toContain('Твой предыдущий ответ');
@@ -2156,7 +2156,7 @@ describe('Pipeline debate favorites view', () => {
     length.value = '';
     modal.querySelector('#custom-card-save').click();
     expect(debug.capturePipelineConfig().customModelSettings.r1.GPT).toEqual({ promptTemplate: null, maxWords: null });
-    expect(debug.prepareCustomPrompts(['GPT'], { GPT: 'TEST\n[DISPUT_RESPONSE_LIMIT] stale 999 words' }, { GPT: 44 }).GPT).toContain('Объём ответа: 1-44 слов, не больше.');
+    expect(debug.prepareCustomPrompts(['GPT'], { GPT: 'TEST\n[RESPONSE_LIMIT] stale 999 words' }, { GPT: 44 }).GPT).toContain('Объём ответа: 1-44 слов, не больше.');
     modal.remove();
   });
 
@@ -2164,11 +2164,11 @@ describe('Pipeline debate favorites view', () => {
     const prepare = window.__pipelineLifecycleDebug.prepareCustomPrompts;
     const oldContent = 'Сосредоточься на ясной концепции и ключевых идеях; убери повторы, длинные пересказы и второстепенные детали.';
     const prompt = prepare(['GPT'], { GPT: 'T' }, { GPT: 300 }).GPT;
-    expect(prompt).toContain('[DISPUT_RESPONSE_LIMIT] Объём ответа: 250-300 слов, не больше.\n\n' + oldContent);
+    expect(prompt).toContain('[RESPONSE_LIMIT] Объём ответа: 250-300 слов, не больше.\n\n' + oldContent);
     expect(prepare(['GPT'], { GPT: 'T' }, { GPT: 300 }, { GPT: { limit: '', content: oldContent } }).GPT).toBe(prompt);
     expect(prepare(['GPT'], { GPT: 'T' }, { GPT: 300 }, { GPT: { content: '' } }).GPT).toBe(prompt);
     expect(prepare(['GPT'], { GPT: 'T' }, { GPT: 300 }, { GPT: { limit: '' } }).GPT).toBe(prompt);
-    const legacy = '[DISPUT_RESPONSE_LIMIT] Ответ — не более {слов} слов. ' + oldContent;
+    const legacy = '[RESPONSE_LIMIT] Ответ — не более {слов} слов. ' + oldContent;
     expect(prepare(['GPT'], { GPT: 'T' }, { GPT: 300 }, { GPT: { limit: legacy } }).GPT).toBe(prompt);
   });
 

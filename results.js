@@ -5224,8 +5224,8 @@ document.addEventListener('click', (event) => {
             label: option.textContent || option.value
         }));
         const DEFAULT_DISPUT_MAX_WORDS = 300;
-        const DISPUT_RESPONSE_LIMIT_MARKER = '[DISPUT_RESPONSE_LIMIT]';
-        const DISPUT_RESPONSE_LIMIT_TEMPLATE = '[DISPUT_RESPONSE_LIMIT] Ответ — не более {слов} слов. Сосредоточься на ясной концепции и ключевых идеях; убери повторы, длинные пересказы и второстепенные детали.';
+        const DISPUT_RESPONSE_LIMIT_MARKER = '[RESPONSE_LIMIT]';
+        const DISPUT_RESPONSE_LIMIT_TEMPLATE = '[RESPONSE_LIMIT] Ответ — не более {слов} слов. Сосредоточься на ясной концепции и ключевых идеях; убери повторы, длинные пересказы и второстепенные детали.';
         const getDebateMaxWords = () => window.DebatePromptCatalog?.normalizeMaxWords?.(
             document.getElementById('debate-length-select')?.value
         ) ?? DEFAULT_DISPUT_MAX_WORDS;
@@ -6431,7 +6431,7 @@ document.addEventListener('click', (event) => {
             }));
         };
         const CUSTOM_CONTENT_REQUIREMENTS = 'Сосредоточься на ясной концепции и ключевых идеях; убери повторы, длинные пересказы и второстепенные детали.';
-        const CUSTOM_LENGTH_TEMPLATE = '[DISPUT_RESPONSE_LIMIT] Объём ответа: {от}-{слов} слов, не больше.';
+        const CUSTOM_LENGTH_TEMPLATE = '[RESPONSE_LIMIT] Объём ответа: {от}-{слов} слов, не больше.';
         const customDisciplineDefaults = () => ({
             limit: CUSTOM_LENGTH_TEMPLATE,
             content: CUSTOM_CONTENT_REQUIREMENTS,
