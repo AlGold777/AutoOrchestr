@@ -6439,7 +6439,6 @@ document.addEventListener('click', (event) => {
             limit: CUSTOM_LENGTH_TEMPLATE,
             content: CUSTOM_CONTENT_REQUIREMENTS,
             delivery: 'Последней строкой ответа напиши только метку {метка}',
-            ask: window.DebateStageMarkers?.instructions?.() || '',
             correction: window.CustomEngine.CORRECTION_TEMPLATE
         });
         const customDiscipline = (saved = {}) => {
@@ -6560,7 +6559,6 @@ document.addEventListener('click', (event) => {
                     maxPromptChars: budgetLimits ? window.DebateContextBudget.effectivePromptLimit(budgetLimits) : Infinity,
                     accept: ({ text, completion }) => window.DebateResponseAcceptance?.evaluate?.({ text, meta: { completion } }) || { ok: true },
                     parseAsks: (text) => window.DebateStageMarkers?.parse?.(text)?.askItems || [],
-                    askInstruction: resolveCustomFields().discipline.ask.value,
                     askOwner: askCustomOwner,
                     decide: askCustomDecision,
                     onRequest: recordAttempt,
@@ -8158,7 +8156,7 @@ document.addEventListener('click', (event) => {
             const resolved = resolveCustomFields(saved, step?.kind);
             const general = getDebateMaxWords();
             const defaults = customDisciplineDefaults();
-            const disciplineRows = [['ask', 'Вопрос владельцу'], ['limit', 'Длина'], ['content', 'Требования к содержанию'], ['delivery', 'Доставка'], ['correction', 'Запрос исправления (при повторе)']];
+            const disciplineRows = [['limit', 'Длина'], ['content', 'Требования к содержанию'], ['delivery', 'Доставка'], ['correction', 'Запрос исправления (при повторе)']];
             const rows = pipelineDefaults
                 ? [['roundTask', 'Задание раундов со входом (R2+)'], ['synthesisTask', 'Задание синтеза'], ...disciplineRows]
                 : [...(step.input !== 'none' ? [['task', step.kind === 'synthesis' ? 'Задание синтеза' : 'Задание раунда']] : []), ...disciplineRows];
@@ -8190,7 +8188,7 @@ document.addEventListener('click', (event) => {
                     </div>`}
                     <div class="custom-card-marks"><strong>${pipelineDefaults ? 'Общие задания и дисциплина' : 'Метки транспорта'}</strong>
                         ${rows.map(([key, label]) => `<div class="custom-card-discipline" data-discipline="${key}">
-                            <div class="custom-card-discipline-head"><label for="custom-discipline-${key}">${label}${key === 'ask' && getDebateRunPolicy() === 'auto' ? ' (в Авто не добавляется)' : ''}</label>
+                            <div class="custom-card-discipline-head"><label for="custom-discipline-${key}">${label}</label>
                                 <div class="custom-card-actions">
                                     ${copyButton(`custom-discipline-${key}`, label)}
                                     <button type="button" data-action="inherit" title="${pipelineDefaults ? 'Вернуть к коду' : 'Вернуть к общему'}" aria-label="Вернуть к общему: ${label}" hidden>↶</button>

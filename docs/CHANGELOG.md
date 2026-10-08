@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-10-08 — Remove automatic owner-question instruction from Custom, version 2.81.648
+
+- Remove the owner-question field from both Custom cards and stop adding its instruction to requests, including saved overrides.
+
 ### 2026-10-08 — Remove repeated Custom field source labels, version 2.81.647
 
 - Remove source labels beneath fields in model and ▶ cards. Inheritance and return-to-common actions remain unchanged.

@@ -2054,9 +2054,9 @@ describe('Pipeline debate favorites view', () => {
     expect(modal.querySelector('#custom-card-length').value).toBe('37');
     expect(modal.querySelector('#custom-discipline-limit').value).toBe('[RESPONSE_LIMIT] Объём ответа: 1-37 слов, не больше.');
     expect(modal.querySelector('#custom-discipline-content').value).toContain('убери повторы, длинные пересказы и второстепенные детали.');
-    expect([...modal.querySelectorAll('[data-discipline]')].map((row) => row.dataset.discipline)).toEqual(['task', 'ask', 'limit', 'content', 'delivery', 'correction']);
-    expect(modal.querySelector('#custom-discipline-ask').value).toBe(window.DebateStageMarkers.instructions());
-    for (const [key, value] of Object.entries({ limit: '[RESPONSE_LIMIT] Ответ — не более {слов} слов. PERSONAL_LIMIT', content: 'PERSONAL_CONTENT', delivery: 'PERSONAL_DELIVERY {метка}', ask: 'PERSONAL_ASK', correction: 'PERSONAL_CORRECTION: {причина}' })) {
+    expect([...modal.querySelectorAll('[data-discipline]')].map((row) => row.dataset.discipline)).toEqual(['task', 'limit', 'content', 'delivery', 'correction']);
+    expect(modal.querySelector('#custom-discipline-ask')).toBeNull();
+    for (const [key, value] of Object.entries({ limit: '[RESPONSE_LIMIT] Ответ — не более {слов} слов. PERSONAL_LIMIT', content: 'PERSONAL_CONTENT', delivery: 'PERSONAL_DELIVERY {метка}', correction: 'PERSONAL_CORRECTION: {причина}' })) {
       const row = modal.querySelector(`[data-discipline="${key}"]`);
       if (kind === 'cleared') row.querySelector('[data-action="clear"]').click();
       const field = row.querySelector('textarea');
@@ -2182,7 +2182,7 @@ describe('Pipeline debate favorites view', () => {
     expect(prepare(['GPT'], { GPT: 'T' }, { GPT: 300 }, { GPT: { limit: '[DISPUT_RESPONSE_LIMIT] Свой лимит {слов}.' } }).GPT).toContain('[RESPONSE_LIMIT] Свой лимит 300.');
   });
 
-  test.each(['input', 'limit', 'content', 'delivery', 'ask', 'correction', 'token'])('Custom stops without dispatch or compaction when the full %s overflows', async (part) => {
+  test.each(['input', 'limit', 'content', 'delivery', 'correction', 'token'])('Custom stops without dispatch or compaction when the full %s overflows', async (part) => {
     const debug = window.__pipelineLifecycleDebug;
     const originalBudget = window.DebateContextBudget;
     const originalDelivery = window.MessageDelivery;
@@ -2274,6 +2274,26 @@ describe('Pipeline debate favorites view', () => {
       cleanup() { window.MessageDelivery = oldDelivery; debug.pipelineWaiter.reset(); modal()?.remove(); }
     };
   };
+
+  test('Custom omits owner-question instructions in manual mode, including old saved overrides', async () => {
+    const h = setupCustomInheritance('No owner instruction');
+    try {
+      const config = { ...h.config, roundCounter: 1,
+        protocol: { ...h.config.protocol, roundLimit: '1', runPolicy: 'manual' },
+        customDefaults: { discipline: { ask: 'OLD_SHARED_ASK' } },
+        customModelSettings: { r1: { GPT: { discipline: { ask: 'OLD_MODEL_ASK' } } } } };
+      h.debug.applyPipelineConfig(config);
+      document.getElementById('debate-run-policy-select').value = 'manual';
+      expect(h.openGeneral().querySelector('#custom-discipline-ask')).toBeNull();
+      await h.run();
+      expect(h.starts).toHaveLength(1);
+      for (const prompt of Object.values(h.starts[0].promptsByModel)) {
+        expect(prompt).not.toContain('[[ASK:');
+        expect(prompt).not.toContain('OLD_SHARED_ASK');
+        expect(prompt).not.toContain('OLD_MODEL_ASK');
+      }
+    } finally { h.cleanup(); }
+  });
 
   test('Custom ▶ tasks and discipline reach dispatch in R2+ and synthesis without copying to models', async () => {
     const h = setupCustomInheritance('General dispatch', { synthesis: 'Gemini' });
