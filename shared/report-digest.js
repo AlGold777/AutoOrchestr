@@ -916,8 +916,40 @@ function summarizeDelivery(d, options = {}) {
 }
 
 function extractTransport(report, sourceFile) { return buildTransportDigest(report, sourceFile); }
+
+// A Custom run has no Debate stages; its steps are in the delivery journal (custom_start, custom_step,
+// custom_end) and its batches carry the stage id `custom:<runId>:s<n>`. This builds the same report
+// shape the transport extract reads, from one run's part of the journal, so Extract stays one parser.
+const customStageId = (runId, step) => `custom:${runId}:s${Number(step) + 1}`;
+function latestCustomRunId(journal) {
+  return [...arr(journal)].reverse().find((e) => e.kind === 'custom_start' && e.pipelineRunId)?.pipelineRunId || null;
+}
+// The run's own journal entries: its custom events, its batches and every record of its requests.
+function customRunJournal(journal, runId) {
+  const mine = (e) => e.pipelineRunId === runId || String(e.batchId || '').startsWith(`${runId}:`) || String(e.stageId || '').startsWith(`custom:${runId}:`);
+  const requestIds = new Set(arr(journal).filter((e) => e.kind === 'batch_start' && mine(e)).flatMap((e) => Object.values(e.requestIds || {})));
+  return arr(journal).filter((e) => mine(e) || (e.requestId && requestIds.has(e.requestId)));
+}
+function customFlowReport({ runId, delivery }) {
+  const journal = arr(delivery?.journal);
+  const start = journal.find((e) => e.kind === 'custom_start' && e.pipelineRunId === runId);
+  if (!start) throw new Error('Custom extraction requires the custom_start event of the run');
+  const end = journal.find((e) => e.kind === 'custom_end' && e.pipelineRunId === runId) || null;
+  const stageExecutions = arr(start.steps).map((step) => {
+    const stageId = customStageId(runId, step.step);
+    const batches = journal.filter((e) => e.kind === 'batch_start' && e.stageId === stageId);
+    const closes = journal.filter((e) => e.kind === 'custom_step' && e.pipelineRunId === runId && e.step === step.step);
+    const startedAt = batches[0]?.at ?? null, completedAt = closes[closes.length - 1]?.at ?? null;
+    return { stageId, label: step.label, purpose: `custom:${step.order}:${step.input}`,
+      actual: { startedAt, completedAt, participants: arr(step.models) },
+      durationMs: startedAt != null && completedAt != null ? toMs(completedAt) - toMs(startedAt) : null };
+  });
+  return { metadata: { debateRunId: runId, flow: 'custom' }, stageExecutions, events: [], diagnoses: [],
+    runOutcome: { startedAt: start.at, stopReason: end?.stopReason || null }, delivery };
+}
+
 const api = Object.freeze({ DIGEST_VERSION, COMPRESSION, summarizeDisputFlow, summarizeDelivery, median,
-  extractTransport, buildTransportDigest, renderTransportMarkdown });
+  extractTransport, buildTransportDigest, renderTransportMarkdown, customStageId, latestCustomRunId, customRunJournal, customFlowReport });
 root.ReportDigest = api;
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

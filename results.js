@@ -6513,6 +6513,9 @@ document.addEventListener('click', (event) => {
                             signal,
                             context: {
                                 ...runContext,
+                                // Its own stage id: without it the batch would take the current Debate stage.
+                                stageId: window.ReportDigest?.customStageId?.(runContext.pipelineRunId, step) || `custom:${runContext.pipelineRunId}:s${step + 1}`,
+                                stageAttemptId: `custom:${runContext.pipelineRunId}:s${step + 1}:a${attempt}`,
                                 pipelineRoundId: `s${step + 1}`,
                                 pipelineBatchId: makePipelineBatchId({ runId: runContext.pipelineRunId, roundIndex: step + 1, groupIndex: attempt - 1 }),
                                 anonymizeParticipants: false,
@@ -16211,12 +16214,20 @@ document.addEventListener('click', (event) => {
             }
             // The extract reads Debate stages. A run that did not go through the Debate engine
             // (Polishing, a manual send) has none: its delivery journal is in the JSON just saved.
+            let source = report;
             if (!report.metadata?.debateRunId || !Array.isArray(report.stageExecutions)) {
-                showNotification('Extract: в этом прогоне нет этапов Debate (Polishing, ручная отправка), разбирать нечего. Журнал доставки — в сохранённом Disput Flow .json.', 'info');
-                flashButtonFeedback(button, 'warn');
-                return;
+                // No Debate stages: the latest Custom run, from its own part of the journal.
+                const runId = window.ReportDigest.latestCustomRunId(report.delivery?.journal);
+                if (!runId) {
+                    showNotification('Extract: в этом прогоне нет этапов Debate и прогона Custom (Polishing, ручная отправка), разбирать нечего. Журнал доставки — в сохранённом Disput Flow .json.', 'info');
+                    flashButtonFeedback(button, 'warn');
+                    return;
+                }
+                const journal = window.ReportDigest.customRunJournal(report.delivery.journal, runId);
+                const delivery = await window.MessageDeliveryView.buildReport({ journal });
+                source = window.ReportDigest.customFlowReport({ runId, delivery: JSON.parse(JSON.stringify(window.SecretRedaction?.redactDeep ? window.SecretRedaction.redactDeep(delivery) : delivery)) });
             }
-            const extract = window.ReportDigest.extractTransport(report, sourceFile);
+            const extract = window.ReportDigest.extractTransport(source, sourceFile);
             const markdown = window.ReportDigest.renderTransportMarkdown(extract);
             if (!downloadDiagnosticsMarkdown('extract_transport', markdown, button, {
                 fileName: `extract_transport_${stamp}.md`

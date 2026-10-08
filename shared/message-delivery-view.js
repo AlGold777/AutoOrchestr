@@ -198,8 +198,10 @@
     return out;
   }
 
-  async function buildReport() {
-    const journal = root.MessageDelivery?.journal ? root.MessageDelivery.journal() : await readJournal();
+  // options.journal: a part of the journal (one run) instead of all of it.
+  async function buildReport(options = {}) {
+    const journal = Array.isArray(options.journal) ? options.journal
+      : root.MessageDelivery?.journal ? root.MessageDelivery.journal() : await readJournal();
     const version = root.chrome?.runtime?.getManifest?.().version || null;
     return {
       report: 'message-delivery',

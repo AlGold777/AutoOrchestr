@@ -155,8 +155,8 @@ describe('Polishing pipeline', () => {
     const handler = source.slice(source.indexOf("const button = event.target.closest('#disput-extract')"));
     const guard = handler.indexOf('!report.metadata?.debateRunId || !Array.isArray(report.stageExecutions)');
     expect(guard).toBeGreaterThan(0);
-    expect(guard).toBeLessThan(handler.indexOf('window.ReportDigest.extractTransport(report, sourceFile)'));
-    expect(handler.slice(guard, guard + 400)).toContain('нет этапов Debate');
+    expect(guard).toBeLessThan(handler.indexOf('window.ReportDigest.extractTransport(source, sourceFile)'));
+    expect(handler.slice(guard, guard + 800)).toContain('нет этапов Debate');
     // The extractor itself still refuses a report that is not a Debate flow.
     expect(() => require('../shared/report-digest').buildTransportDigest({ metadata: {}, events: [] }))
       .toThrow('Transport extraction requires a Disput Flow report');
