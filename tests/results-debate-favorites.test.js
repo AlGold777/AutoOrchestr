@@ -1975,6 +1975,7 @@ describe('Pipeline debate favorites view', () => {
       { plannedStageId: 'canvas-r2', participantIds: ['GPT'], outputIntent: 'discussion_work' },
       { plannedStageId: 'planned-final-synthesis', participantIds: ['Claude'], outputIntent: 'candidate_final' }
     ] });
+    expect(window.__pipelineLifecycleDebug.customStepsFromPlan({ plannedStages: [{ plannedStageId: 'canvas-r1', participantIds: [] }] }, { ref: 'r1', name: 'GPT' })[0].models).toEqual(['GPT']);
     expect(steps).toEqual([
       { kind: 'round', ref: 'r1', order: 'parallel', task: '', input: 'none', models: ['GPT', 'Claude'] },
       { kind: 'synthesis', ref: 'synth:planned-working-synthesis-after-canvas-r1', models: ['Gemini'] },
@@ -1983,26 +1984,106 @@ describe('Pipeline debate favorites view', () => {
     ]);
   });
 
-  test('the Custom model card shows a recorded attempt as it went: instructions, input with sources, the dispatched prompt, the answer', () => {
-    const Record = window.CustomRunRecord;
-    const record = Record.createRun({ runId: 'r', pipelineName: 'Custom', task: 'T', steps: [{ ref: 'r1', kind: 'round', models: ['GPT'] }, { ref: 'r2', kind: 'round', models: ['Claude'] }] });
-    const entry = {
-      step: 1, label: 'Раунд 2', model: 'Claude', attempt: 1, prompt: 'Задача:\nT',
-      parts: { instructions: { task: 'T', stepTask: 'Улучши', extra: '<b>Кратко</b>' }, input: { mode: 'previous', items: [{ text: 'ответ GPT', source: { step: 0, label: 'Раунд 1', model: 'GPT', attempt: 1 } }], earlier: [] } }
-    };
-    Record.recordAttempt(record, entry);
-    Record.recordAttempt(record, { ...entry, state: 'done', sentPrompt: 'Задача:\nT\n\nПоследней строкой ответа напиши только метку [[AO-abc123]]',
-      answer: 'улучшено', attribution: 'verified', accepted: true, status: 'SUCCESS', transportRequestId: 'tr-9' });
-    const html = window.__pipelineLifecycleDebug.customAttemptHtmlForTest(record, record.attempts[0]);
-    expect(html).toContain('Попытка 1 — принят');
-    expect(html).toContain('Раунд 1 · GPT · попытка 1');
-    expect(html).toContain('[[AO-abc123]]');
-    expect(html).toContain('&lt;b&gt;Кратко&lt;/b&gt;');
-    expect(html).toContain('tr-9');
-    const unknown = Record.revive(Record.serialize(Record.createRun({ runId: 'u', steps: [] })));
-    Record.recordAttempt(unknown, { step: 0, label: 'Раунд 1', model: 'GPT', attempt: 1, prompt: 'p', parts: {} });
-    unknown.attempts[0].state = 'unknown';
-    expect(window.__pipelineLifecycleDebug.customAttemptHtmlForTest(unknown, unknown.attempts[0])).toContain('исход неизвестен');
+  test('Custom card saves an editable request and per-model length through to actual background dispatch, including retries', async () => {
+    const debug = window.__pipelineLifecycleDebug;
+    const config = { version: 3, roundCounter: 2, protocol: { type: 'universal', presetId: 'CUSTOM', selectedModels: ['GPT', 'Claude'], length: '700', roundLimit: '2', synthesizer: '', runPolicy: 'auto' }, modelStacks: {} };
+    debug.setPipelineStoreForTest({ active: 'Card dispatch test', order: ['Card dispatch test'], pipelines: { 'Card dispatch test': config } });
+    debug.applyPipelineConfig(config);
+    document.getElementById('debate-run-policy-select').value = 'auto';
+    window.setSynthesisModelFromName('');
+    const block = [...document.querySelectorAll('#r2-models .model-block')].find((item) => item.querySelector('.model-name')?.textContent === 'GPT');
+    expect(block).toBeDefined();
+    const modal = document.createElement('div');
+    modal.innerHTML = '<div class="modal-content"></div>';
+    document.body.appendChild(modal);
+    await debug.renderCustomBlockInspector(block, modal);
+    const request = modal.querySelector('#custom-card-request');
+    const length = modal.querySelector('#custom-card-length');
+    expect(modal.querySelector('.custom-card-top img')).not.toBeNull();
+    request.value = 'CARD_REQUEST {задача}\nUSE_INPUT {вход}';
+    request.dispatchEvent(new Event('input'));
+    length.value = '37';
+    length.dispatchEvent(new Event('input'));
+    modal.querySelector('#custom-card-save').click();
+    const stored = await chrome.storage.local.get('llmComparatorPipelines');
+    expect(stored.llmComparatorPipelines.pipelines['Card dispatch test'].customModelSettings.r2.GPT.maxWords).toBe(37);
+    const saved = debug.capturePipelineConfig();
+    expect(saved.customModelSettings.r2.GPT).toEqual({ promptTemplate: request.value, maxWords: 37 });
+    // Reloading the saved configuration must restore the actual card controls.
+    debug.applyPipelineConfig(JSON.parse(JSON.stringify(saved)));
+    await debug.renderCustomBlockInspector(block, modal);
+    expect(modal.querySelector('#custom-card-request').value).toBe(request.value);
+    expect(modal.querySelector('#custom-card-length').value).toBe('37');
+    const starts = [];
+    const oldDelivery = window.MessageDelivery;
+    window.MessageDelivery = require('../shared/message-delivery.js');
+    chrome.runtime.sendMessage.mockImplementation((message, callback) => {
+      if (message.type !== 'START_FULLPAGE_PROCESS') { callback?.({ status: 'ok', active: false }); return; }
+      starts.push(message);
+      callback?.({ status: 'process_started' });
+      setTimeout(() => message.selectedLLMs.forEach((name) => {
+        const empty = starts.length === 2 && name === 'GPT';
+        debug.pipelineWaiter.handleFinal({ type: 'LLM_RESPONSE', llmName: name,
+          transportRequestId: message.pipelineContext.transportRequestIds[name],
+          answer: empty ? '' : `Accepted ${name} answer from batch ${starts.length}.`,
+          metadata: { ...message.pipelineContext, status: 'SUCCESS', attribution: 'verified', completion: 'complete' }
+        });
+      }), 0);
+    });
+    try {
+      await debug.runCustomFromPage({ task: 'LIVE TASK VALUE' });
+      expect(starts).toHaveLength(3);
+      const sent = starts[1].promptsByModel.GPT;
+      expect(sent).toContain('CARD_REQUEST LIVE TASK VALUE');
+      expect(sent).toContain('Accepted GPT answer from batch 1.');
+      expect(sent).toContain('Accepted Claude answer from batch 1.');
+      expect(sent).not.toContain('{вход}');
+      expect(sent).toContain('не более 37 слов');
+      expect(sent.match(/\[DISPUT_RESPONSE_LIMIT\]/g)).toHaveLength(1);
+      expect(sent).toMatch(/\[\[AO-[a-z0-9]+\]\]/i);
+      expect(starts[0].promptsByModel.GPT).toContain('не более 700 слов');
+      expect(starts[0].promptsByModel.GPT).not.toContain('CARD_REQUEST');
+      expect(starts[1].promptsByModel.CLAUDE).toContain('не более 700 слов');
+      expect(starts[1].promptsByModel.CLAUDE).not.toContain('CARD_REQUEST');
+      expect(starts[2].selectedLLMs).toEqual(['GPT']);
+      expect(starts[2].promptsByModel.GPT).toContain('не более 37 слов');
+    } finally {
+      window.MessageDelivery = oldDelivery;
+      debug.pipelineWaiter.reset();
+      modal.remove();
+    }
+  });
+
+  test('the Custom model card rejects empty requests and invalid lengths; reset and inherited length persist', async () => {
+    const debug = window.__pipelineLifecycleDebug;
+    const config = { version: 3, roundCounter: 1, protocol: { type: 'universal', presetId: 'CUSTOM', selectedModels: ['GPT'], roundLimit: '1', synthesizer: '', runPolicy: 'auto' }, modelStacks: {} };
+    debug.setPipelineStoreForTest({ active: 'Card validation test', order: ['Card validation test'], pipelines: { 'Card validation test': config } });
+    debug.applyPipelineConfig(config);
+    const block = document.querySelector('#r1-models .model-block');
+    const modal = document.createElement('div');
+    modal.innerHTML = '<div class="modal-content"></div>';
+    document.body.appendChild(modal);
+    await debug.renderCustomBlockInspector(block, modal);
+    const request = modal.querySelector('#custom-card-request');
+    const length = modal.querySelector('#custom-card-length');
+    const original = request.value;
+    request.value = '';
+    modal.querySelector('#custom-card-save').click();
+    expect(debug.capturePipelineConfig().customModelSettings).toEqual({});
+    request.value = 'Edited request';
+    length.value = '0';
+    modal.querySelector('#custom-card-save').click();
+    expect(debug.capturePipelineConfig().customModelSettings).toEqual({});
+    length.value = '1.5';
+    modal.querySelector('#custom-card-save').click();
+    expect(debug.capturePipelineConfig().customModelSettings).toEqual({});
+    modal.querySelector('#custom-card-reset').click();
+    expect(request.value).toBe(original);
+    length.value = '';
+    modal.querySelector('#custom-card-save').click();
+    expect(debug.capturePipelineConfig().customModelSettings.r1.GPT).toEqual({ promptTemplate: null, maxWords: null });
+    expect(debug.prepareCustomPrompts(['GPT'], { GPT: 'TEST\n[DISPUT_RESPONSE_LIMIT] stale 999 words' }, { GPT: 44 }).GPT).toContain('не более 44 слов');
+    modal.remove();
   });
 
   test('templates keep their names: no renaming a template and no taking a template name', async () => {

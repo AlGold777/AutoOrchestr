@@ -3,7 +3,8 @@
 // improvement, check, synthesis) comes from the step's task; the engine executes and passes data.
 //
 // Step: { kind: 'round' | 'synthesis', order: 'parallel' | 'sequential', task, input, models }
-//   models: [{ name, extra }] — card order is call order; extra is the model's optional addition.
+//   models: [{ name, extra, promptTemplate, maxWords }] — card order is call order.
+//   promptTemplate replaces automatic assembly; maxWords reaches the caller on every attempt.
 //   input: 'none' | 'previous' | 'all'. The run's task is always sent.
 //     previous — accepted answers of the last step that has any (a synthesis replaces the round
 //                before it; a skipped step passes nothing on);
@@ -47,6 +48,14 @@
   const labelled = (items) => items.map((item) => `${item.label}:\n${item.text}`).join('\n\n');
 
   function buildPrompt({ task, step, model, input = [], inputMode = 'none', earlier = [], ownerAnswers = [], askInstruction = '' }) {
+    if (typeof model.promptTemplate === 'string' && model.promptTemplate.trim()) {
+      // One pass: placeholders occurring inside model answers remain data, never instructions.
+      const values = { '{задача}': text(task), '{вход}': inputMode === 'all' ? labelled(input) : numbered(input), '{ответы до тебя}': numbered(earlier) };
+      const parts = [model.promptTemplate.replace(/\{задача\}|\{вход\}|\{ответы до тебя\}/g, (key) => values[key])];
+      if (ownerAnswers.length) parts.push(`Ответы владельца на вопросы:\n${ownerAnswers.map((item) => `- ${item.question}: ${item.answer}`).join('\n')}`);
+      if (askInstruction) parts.push(askInstruction);
+      return parts.join('\n\n');
+    }
     const parts = [`Задача:\n${text(task)}`];
     if (input.length) {
       parts.push(inputMode === 'all'
@@ -84,7 +93,10 @@
         order: kind === 'round' && step.order === 'sequential' ? 'sequential' : 'parallel',
         task: kind === 'synthesis' && !text(step.task) ? SYNTHESIS_TASK : text(step.task),
         input: kind === 'synthesis' ? 'previous' : (['none', 'previous', 'all'].includes(step.input) ? step.input : 'previous'),
-        models: (step.models || []).map((model) => (typeof model === 'string' ? { name: model, extra: '' } : { name: model.name, extra: text(model.extra) }))
+        models: (step.models || []).map((model) => (typeof model === 'string' ? { name: model, extra: '' } : {
+          name: model.name, extra: text(model.extra), promptTemplate: typeof model.promptTemplate === 'string' ? model.promptTemplate : null,
+          maxWords: Number.isSafeInteger(model.maxWords) && model.maxWords > 0 ? model.maxWords : null
+        }))
           .filter((model) => model.name)
       };
     }).filter((step) => step.models.length);
@@ -179,7 +191,8 @@
         let reply;
         try {
           reply = await send(pending, Object.fromEntries(pending.map((name) => [name, current[name].prompt])),
-            { step: step.index, kind: step.kind, label: stepLabel(step), attempt: tryNo });
+            { step: step.index, kind: step.kind, label: stepLabel(step), attempt: tryNo,
+              maxWordsByModel: Object.fromEntries(pending.map((name) => [name, step.models.find((model) => model.name === name)?.maxWords || null])) });
         } catch (error) {
           if (error?.name === 'AbortError' || aborted()) throw new StopRun('cancelled');
           reply = { byModel: Object.fromEntries(pending.map((name) => [name, { text: '', status: String(error?.message || error) }])) };
@@ -306,7 +319,10 @@
     const earlier = step.order === 'sequential' && position > 0 ? [{ text: PLACEHOLDER.earlier }] : [];
     const prompt = buildPrompt({ task, step, model, input, inputMode: step.input, earlier, ownerAnswers: [],
       askInstruction: semiAuto ? askInstruction : '' });
-    return { label: stepLabel(step), order: step.order, inputMode: step.input, prompt, transportLines: TRANSPORT_LINES.slice(),
+    const template = typeof model.promptTemplate === 'string' && model.promptTemplate.trim() ? model.promptTemplate
+      : buildPrompt({ task: '{задача}', step, model, input: input.length ? [{ label: 'Вход', text: '{вход}' }] : [],
+        inputMode: step.input, earlier: earlier.length ? [{ text: '{ответы до тебя}' }] : [] });
+    return { label: stepLabel(step), order: step.order, inputMode: step.input, prompt, template, transportLines: TRANSPORT_LINES.slice(),
       instructions: { task: text(task), stepTask: step.task, extra: model.extra || '', askInstruction: semiAuto ? askInstruction : '' } };
   }
 

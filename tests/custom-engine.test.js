@@ -19,6 +19,28 @@ function transport(answers, { closedByOwner = false } = {}) {
 }
 
 describe('Custom engine', () => {
+  test('card request replaces the prompt only for its model and step; input is substituted at execution', async () => {
+    const { send, calls } = transport({ A: ['first {задача}', 'improved', 'third'], B: ['other'] });
+    await Engine.run({ task: 'actual task', steps: [
+      { input: 'none', models: ['A'] },
+      { input: 'previous', models: [{ name: 'A', promptTemplate: 'MY REQUEST: {задача}\nSOURCE: {вход}', maxWords: 77 }, 'B'] },
+      { input: 'previous', models: ['A'] }
+    ], send });
+    expect(calls[1].prompts.A).toBe('MY REQUEST: actual task\nSOURCE: Ответ 1:\nfirst {задача}');
+    expect(calls[1].prompts.B).not.toContain('MY REQUEST');
+    expect(calls[2].prompts.A).not.toContain('MY REQUEST');
+    expect(calls[1].meta.maxWordsByModel).toEqual({ A: 77, B: null });
+  });
+
+  test('correction retry preserves the card response length; sequential templates receive earlier answers', async () => {
+    const { send, calls } = transport({ A: ['first'], B: ['', 'second'] });
+    await Engine.run({ task: 'T', steps: [{ order: 'sequential', input: 'none', models: ['A',
+      { name: 'B', promptTemplate: 'Use {ответы до тебя}', maxWords: 51 }] }], send });
+    expect(calls[1].prompts.B).toBe('Use Ответ 1:\nfirst');
+    expect(calls[2].prompts.B).toBe(Engine.correctionPrompt('empty'));
+    expect(calls[1].meta.maxWordsByModel.B).toBe(51);
+    expect(calls[2].meta.maxWordsByModel.B).toBe(51);
+  });
   test('parallel rounds: every model gets the same input; the next round gets the accepted answers of the previous', async () => {
     const { send, calls } = transport({ A: ['a1', 'a2'], B: ['b1', 'b2'] });
     const result = await Engine.run({

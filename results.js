@@ -3658,7 +3658,7 @@ document.addEventListener('click', (event) => {
             if (window.CompressedStorage?.set) {
                 await window.CompressedStorage.set(PIPELINE_STORAGE_KEY, payload);
             } else if (chrome?.storage?.local?.set) {
-                chrome.storage.local.set({ [PIPELINE_STORAGE_KEY]: payload });
+                await chrome.storage.local.set({ [PIPELINE_STORAGE_KEY]: payload });
             } else {
                 try {
                     localStorage.setItem(PIPELINE_STORAGE_KEY, JSON.stringify(payload));
@@ -4219,6 +4219,9 @@ document.addEventListener('click', (event) => {
         window.__persistActivePipelineDraftPlan = persistActiveDraftPlan;
         window.__getDraftPlanSynthesizer = getDraftPlanSynthesizer;
 
+        // Saved copies keep their card settings; built-in templates keep edits only in this page.
+        const customCardSettings = new Map();
+        const getCustomCardSettings = () => customCardSettings.get(draftPlanStorageKey()) || {};
         const capturePipelineConfig = () => {
             const modelStacks = {
                 'r1-models': captureModelStackState('r1-models')
@@ -4233,7 +4236,8 @@ document.addEventListener('click', (event) => {
                 protocol: { ...getPipelineProtocolConfig(), synthesizer: getDraftPlanSynthesizer(draftPlan) },
                 draftPlan,
                 roundCounter,
-                modelStacks
+                modelStacks,
+                customModelSettings: JSON.parse(JSON.stringify(getCustomCardSettings()))
             };
         };
 
@@ -6379,7 +6383,7 @@ document.addEventListener('click', (event) => {
         // input come with the card editor. Semi-automatic (run policy not Auto) asks the owner after
         // every step; a step without accepted answers asks in both modes.
         const CUSTOM_ROUND_TASK = 'Учти ответы предыдущего шага и дай свой улучшенный ответ на задачу.';
-        const customStepsFromPlan = (plan) => {
+        const customStepsFromPlan = (plan, previewModel = null) => {
             let round = 0;
             return (plan?.plannedStages || []).map((stage) => {
                 const models = (stage.participantIds || []).filter(Boolean);
@@ -6392,8 +6396,23 @@ document.addEventListener('click', (event) => {
                 if (stage.outputIntent === 'working_synthesis') return { kind: 'synthesis', ref: `synth:${stage.plannedStageId}`, models };
                 if (stage.outputIntent === 'candidate_final') return { kind: 'synthesis', ref: 'final', models };
                 return null;
-            }).filter((step) => step?.models?.length);
+            }).filter(Boolean).map((step) => {
+                // A model can be configured before its Send checkbox is enabled.
+                if (step.ref === previewModel?.ref && !step.models.includes(previewModel.name)) {
+                    step.models.push(previewModel.name);
+                }
+                return step;
+            }).filter((step) => step.models.length).map((step) => ({ ...step,
+                models: step.models.map((name) => {
+                    const settings = getCustomCardSettings()[step.ref]?.[name];
+                    return settings ? { name, promptTemplate: settings.promptTemplate, maxWords: settings.maxWords } : name;
+                })
+            }));
         };
+        const prepareCustomPrompts = (models, prompts, limits = {}) => Object.fromEntries(models.map((name) => [name,
+            ensureDisputResponseLimit(String(prompts[name] || '').replace(/\[DISPUT_RESPONSE_LIMIT\][^\n]*(?:\n|$)/g, ''),
+                Number.isSafeInteger(limits[name]) && limits[name] > 0 ? limits[name] : getDebateMaxWords())
+        ]));
         // The owner's choice on a pause, through the shared confirm dialog (three buttons).
         let customDecisionOpen = false;
         const askCustomDecision = async ({ label, accepted, failed, choices, reasons }) => {
@@ -6418,8 +6437,6 @@ document.addEventListener('click', (event) => {
         const customRunStore = window.CustomRunRecord && chrome?.storage?.local
             ? window.CustomRunRecord.createStore({ storage: window.CustomRunRecord.chromeStorage(chrome.storage.local) })
             : null;
-        // The run in progress (or the last one of this page): the card reads it live.
-        let liveCustomRecord = null;
         const customPipelineName = () => String(pipelineStore.active || getPipelineHeaderName() || 'Custom').trim();
         const runCustomFromPage = async ({ task }) => {
             const engine = window.CustomEngine;
@@ -6444,7 +6461,6 @@ document.addEventListener('click', (event) => {
             const runContext = activePipelineRunContext;
             const signal = customAbortController.signal;
             const record = window.CustomRunRecord?.createRun?.({ runId: runContext.pipelineRunId, pipelineName: customPipelineName(), task, steps }) || null;
-            liveCustomRecord = record;
             let saveTimer = null;
             const saveRecord = async (now = false) => {
                 if (!record || !customRunStore) return;
@@ -6482,7 +6498,9 @@ document.addEventListener('click', (event) => {
                     decide: askCustomDecision,
                     onRequest: recordAttempt,
                     onResponse: recordAttempt,
-                    send: async (models, promptsByModel, { step, label, attempt }) => {
+                    send: async (models, promptsByModel, { step, label, attempt, maxWordsByModel }) => {
+                        // Reuse the existing limit contract, on first attempts and corrections alike.
+                        promptsByModel = prepareCustomPrompts(models, promptsByModel, maxWordsByModel);
                         const batch = await runModelBatch({
                             prompt: promptsByModel[models[0]],
                             promptsByModel,
@@ -7099,8 +7117,12 @@ document.addEventListener('click', (event) => {
                 getDebateTranscriptStore: () => debateTranscriptStore,
                 getApprovalWaiting: () => debateExecutionContext?.hasApprovalWaiter?.() === true,
                 customStepsFromPlan,
+                prepareCustomPrompts,
+                capturePipelineConfig,
+                applyPipelineConfig: (...args) => applyPipelineConfig(...args),
+                runCustomFromPage,
+                renderCustomBlockInspector: (...args) => renderCustomBlockInspector(...args),
                 // Lazy: declared further down.
-                customAttemptHtmlForTest: (record, attempt) => customAttemptHtml(record, attempt),
                 customBlockRefForTest: (block) => customBlockRef(block),
                 renamePipelineForTest: (oldName, newName) => renamePipeline(oldName, newName)
             };
@@ -7225,6 +7247,9 @@ document.addEventListener('click', (event) => {
         const applyPipelineConfig = (config = {}) => {
             if (!config || typeof config !== 'object') return;
             pipelineApplyingConfig = true;
+            if (!isDefaultPipelineName(draftPlanStorageKey()) || !customCardSettings.has(draftPlanStorageKey())) {
+                customCardSettings.set(draftPlanStorageKey(), JSON.parse(JSON.stringify(config.customModelSettings || {})));
+            }
             const protocol = config.protocol && typeof config.protocol === 'object' ? config.protocol : null;
             activeStageTemplate = String(protocol?.stageTemplate || '');
             if (protocol) {
@@ -7838,6 +7863,7 @@ document.addEventListener('click', (event) => {
             setPipelineHeaderName('Unsaved Pipeline');
             delete pipelineStore.draftPlans['Unsaved Pipeline'];
             delete pipelineSessionDraftPlans['Unsaved Pipeline'];
+            customCardSettings.delete('Unsaved Pipeline');
             window.__pendingPipelineSynthesizer = '';
             const emptyFlowSelect = getSynthesizerFlowSelect();
             if (emptyFlowSelect) emptyFlowSelect.value = '';
@@ -8023,114 +8049,94 @@ document.addEventListener('click', (event) => {
             return details;
         };
 
-        // Custom: the model card shows facts of the real request path. Before a run — the request
-        // template (known parts filled, future data marked, transport lines listed apart). After —
-        // every attempt of this model in this step as recorded: instructions, input with sources,
-        // the prompt as dispatched, the answer and the outcome. Nothing here is rebuilt from settings.
-        const CUSTOM_INPUT_TEXT = Object.freeze({ none: 'только задача', previous: 'ответы предыдущего шага', all: 'всё принятое за предыдущие шаги' });
+        // Compact Custom editor. Changes apply to the next run, scoped to a step and model;
+        // the immutable request/response record remains separate.
         const customBlockRef = (block) => {
             const stackId = block.closest('.model-stack')?.id || '';
             if (stackId === 'synthesis-stack') return 'final';
             const match = /^r(\d+)-models$/.exec(stackId);
             return match ? `r${match[1]}` : '';
         };
-        const customSourceText = (source) => (source ? `${source.label} · ${source.model} · попытка ${source.attempt}` : 'источник не записан');
-        const customAttemptHtml = (record, attempt) => {
-            const textOf = (ref) => window.CustomRunRecord.textOf(record, ref);
-            const reasons = window.CustomEngine?.REASON_TEXT || {};
-            const outcome = attempt.state === 'unknown' ? 'исход неизвестен: прогон прерван до ответа'
-                : attempt.state === 'sent' ? 'ждёт ответа'
-                    : attempt.accepted ? 'принят' : `не принят: ${reasons[attempt.reason] || attempt.reason || attempt.status || 'без ответа'}`;
-            const parts = attempt.parts || {};
-            const instructions = parts.correction
-                ? `<pre>${escapeHtml(textOf(parts.correction.textRef))}</pre>`
-                : `<dl class="pipeline-block-info-grid">
-                    <dt>Задача</dt><dd>${escapeHtml(textOf(parts.instructions?.taskRef) || '—')}</dd>
-                    <dt>Задание шага</dt><dd>${escapeHtml(textOf(parts.instructions?.stepTaskRef) || '—')}</dd>
-                    <dt>Дополнение модели</dt><dd>${escapeHtml(textOf(parts.instructions?.extraRef) || '—')}</dd>
-                    ${(parts.instructions?.ownerAnswers || []).length ? `<dt>Ответы владельца</dt><dd>${escapeHtml(parts.instructions.ownerAnswers.map((item) => `${item.question}: ${item.answer}`).join('; '))}</dd>` : ''}
-                    ${parts.instructions?.askInstructionRef ? '<dt>Инструкция [[ASK]]</dt><dd>добавлена</dd>' : ''}
-                </dl>`;
-            const inputItems = [...(parts.input?.items || []), ...(parts.input?.earlier || []).map((item) => ({ ...item, earlier: true }))];
-            const input = parts.correction ? '<p>Повтор в том же чате: вход не передаётся заново.</p>'
-                : `<p>Вход: ${escapeHtml(CUSTOM_INPUT_TEXT[parts.input?.mode] || parts.input?.mode || '—')}${inputItems.length ? '' : ' — ничего не передано'}</p>`
-                + inputItems.map((item) => `<details><summary>${escapeHtml(`${item.earlier ? 'До тебя в этом раунде: ' : ''}${customSourceText(item.source)}`)}</summary><pre>${escapeHtml(textOf(item.textRef))}</pre></details>`).join('');
-            const time = (value) => (value ? new Date(value).toLocaleTimeString() : '—');
-            return `<article class="custom-attempt" data-state="${escapeHtml(attempt.state)}">
-                <h4>Попытка ${attempt.attempt}${attempt.retryOf ? ` · повтор попытки ${attempt.retryOf}` : ''} — ${escapeHtml(outcome)}</h4>
-                <h5>Инструкции</h5>${instructions}
-                <h5>Входные данные</h5>${input}
-                <details open><summary>Отправлено — как ушло в транспорт (метка и предел длины включены)</summary><pre>${escapeHtml(textOf(attempt.sentPromptRef) || (attempt.state === 'done' ? 'Транспорт не вернул отправленный текст.' : 'Ещё не отправлено транспортом.'))}</pre></details>
-                <details open><summary>Ответ</summary><pre>${escapeHtml(textOf(attempt.answerRef) || '—')}</pre></details>
-                <dl class="pipeline-block-info-grid">
-                    <dt>Статус</dt><dd>${escapeHtml(attempt.status || '—')}</dd>
-                    <dt>Метка доставки</dt><dd>${attempt.attribution === 'verified' ? 'получена' : attempt.attribution === 'unproven' ? 'нет в ответе' : '—'}</dd>
-                    <dt>Запрос</dt><dd>${escapeHtml(attempt.transportRequestId || '—')}</dd>
-                    <dt>Отправлено / получено</dt><dd>${time(attempt.sentAt)} / ${time(attempt.finishedAt)}</dd>
-                </dl>
-            </article>`;
-        };
         const renderCustomBlockInspector = async (block, modal) => {
-            const title = modal.querySelector('#pipeline-block-info-title');
-            const grid = modal.querySelector('#pipeline-block-info-grid');
-            const prompts = modal.querySelector('#pipeline-block-info-prompts');
             const modelName = block.querySelector('.model-name')?.textContent?.trim() || '';
             const ref = customBlockRef(block);
-            const name = customPipelineName();
-            const steps = customStepsFromPlan(draftPlanForCanvas(getActiveDraftPlan()));
+            const steps = customStepsFromPlan(draftPlanForCanvas(getActiveDraftPlan()), { ref, name: modelName });
             const stepIndex = steps.findIndex((step) => step.ref === ref);
-            const semiAuto = getDebateRunPolicy() !== 'auto';
-            const preview = stepIndex >= 0 ? window.CustomEngine?.previewPrompt?.({
-                task: getModeratorDispatchText() || '‹задача из поля ввода›', steps, stepIndex, modelName, semiAuto,
-                askInstruction: window.StageMarkers?.instructions?.() || ''
-            }) : null;
-            if (title) title.textContent = `${modelName} · ${preview?.label || ref || 'шаг'} · ${name}`;
-            if (grid) {
-                grid.innerHTML = [
-                    ['Pipeline', name], ['Движок', 'Custom'], ['Шаг', preview?.label || '—'],
-                    ['Порядок', preview?.order === 'sequential' ? 'по очереди' : 'параллельно'],
-                    ['Вход', CUSTOM_INPUT_TEXT[preview?.inputMode] || '—'], ['Режим', semiAuto ? 'подтверждение между шагами' : 'Авто']
-                ].map(([key, value]) => `<dt>${escapeHtml(key)}</dt><dd>${escapeHtml(value)}</dd>`).join('');
-            }
-            if (!prompts) return;
-            const previewHtml = preview ? `<section class="custom-inspect-preview">
-                <h4>Шаблон запроса — до запуска</h4>
-                <dl class="pipeline-block-info-grid">
-                    <dt>Задача</dt><dd>${escapeHtml(preview.instructions.task)}</dd>
-                    <dt>Задание шага</dt><dd>${escapeHtml(preview.instructions.stepTask || '—')}</dd>
-                    <dt>Дополнение модели</dt><dd>${escapeHtml(preview.instructions.extra || '—')}</dd>
-                </dl>
-                <h5>Транспорт добавит</h5><ul>${preview.transportLines.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>
-                <details><summary>Шаблон целиком</summary><pre>${escapeHtml(preview.prompt)}</pre></details>
-            </section>` : '<section><p>Шаг этой карточки не найден в плане canvas.</p></section>';
-            prompts.innerHTML = `${previewHtml}<section class="custom-inspect-run"><p>Загрузка записи прогона…</p></section>`;
-            let record = liveCustomRecord?.pipelineName === name ? liveCustomRecord : null;
-            if (!record && customRunStore) {
-                try { record = await customRunStore.latest(name); } catch (error) { console.warn('[RESULTS] Custom run record not read', error); }
-            }
-            const runSection = prompts.querySelector('.custom-inspect-run');
-            if (!runSection) return;
-            const recordStep = record ? record.steps.findIndex((step) => step.ref === ref) : -1;
-            const attempts = record ? record.attempts.filter((item) => item.step === recordStep && item.model === modelName) : [];
-            if (!record || !attempts.length) {
-                runSection.innerHTML = `<h4>Прогон</h4><p>${record ? 'В последнем прогоне эта модель в этом шаге не вызывалась.' : 'Прогонов этого pipeline ещё нет.'}</p>`;
-                return;
-            }
-            const stopText = record.stopReason ? (window.CustomEngine?.STOP_TEXT?.[record.stopReason] || record.stopReason) : 'идёт';
-            runSection.innerHTML = `<h4>Прогон ${escapeHtml(new Date(record.startedAt).toLocaleString())} · ${escapeHtml(stopText)}</h4>
-                ${attempts.map((attempt) => customAttemptHtml(record, attempt)).join('')}
-                <button type="button" class="modal-button" data-custom-export>Экспорт прогона (JSON)</button>`;
-            runSection.querySelector('[data-custom-export]')?.addEventListener('click', () => {
-                const blob = new Blob([JSON.stringify(window.CustomRunRecord.exportRun(record), null, 2)], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const link = document.createElement('a');
-                link.href = url;
-                link.download = `custom-run-${record.runId}.json`;
-                document.body.appendChild(link);
-                link.click();
-                link.remove();
-                setTimeout(() => URL.revokeObjectURL(url), 0);
+            if (stepIndex < 0) { showNotification('Шаг модели не найден в плане.', 'warn'); return; }
+            const automaticSteps = steps.map((step) => ({ ...step, models: step.models.map((model) => typeof model === 'string' ? model : { ...model, promptTemplate: null }) }));
+            const preview = window.CustomEngine.previewPrompt({ task: getModeratorDispatchText(), steps: automaticSteps, stepIndex, modelName });
+            const saved = getCustomCardSettings()[ref]?.[modelName] || {};
+            const general = getDebateMaxWords();
+            const content = modal.querySelector('.modal-content');
+            modal.classList.add('custom-model-card');
+            modal.setAttribute('role', 'dialog');
+            modal.setAttribute('aria-modal', 'true');
+            modal.setAttribute('aria-labelledby', 'pipeline-block-info-title');
+            content.innerHTML = `
+                <header class="custom-card-top">
+                    <h3 class="custom-card-model" id="pipeline-block-info-title">${modelIconData[modelName] ? `<img src="${modelIconData[modelName]}" alt="" width="26" height="26">` : ''}${escapeHtml(modelName)}</h3>
+                    <label class="custom-card-length">Длина ответа: <input id="custom-card-length" type="number" min="1" step="1" inputmode="numeric" placeholder="${general}" aria-describedby="custom-card-length-note"> слов</label>
+                    <span class="custom-card-where">${escapeHtml(preview.label)}</span>
+                </header>
+                <div class="custom-card-body">
+                    <div class="custom-card-field">
+                        <div class="custom-card-head"><label for="custom-card-request">Запрос</label><span id="custom-card-state"></span></div>
+                        <textarea id="custom-card-request" spellcheck="false"></textarea>
+                        <div class="custom-card-note"><code>{задача}</code> и <code>{вход}</code> подставляются при запуске. Изменённый текст используется только для этой модели в этом шаге. <button type="button" id="custom-card-reset">Вернуть автоматическую сборку</button></div>
+                    </div>
+                    <div class="custom-card-marks"><strong>Метки, которые добавляет транспорт</strong><dl>
+                        <dt>Доставка</dt><dd><code>[[AO-…]]</code> последней строкой, новая на каждую отправку. Подтверждает принадлежность ответа запросу.</dd>
+                        <dt>Длина</dt><dd id="custom-card-limit-text"></dd>
+                        <dt>Вопрос владельцу</dt><dd><code>[[ASK]]</code> — только в режиме подтверждения</dd>
+                    </dl></div>
+                    <span id="custom-card-length-note" class="custom-card-sr-only">Пусто — общий предел pipeline (${general}).</span>
+                </div>
+                <footer class="custom-card-footer"><button type="button" class="modal-button accent" id="custom-card-save">Сохранить</button></footer>`;
+            const request = content.querySelector('#custom-card-request');
+            const length = content.querySelector('#custom-card-length');
+            const reset = content.querySelector('#custom-card-reset');
+            const save = content.querySelector('#custom-card-save');
+            request.value = saved.promptTemplate ?? preview.template;
+            length.value = saved.maxWords || '';
+            // Inspect remains available during a run; its in-flight plan is immutable.
+            request.disabled = length.disabled = reset.disabled = save.disabled = pipelineRunActive;
+            const refresh = () => {
+                const own = request.value !== preview.template;
+                content.querySelector('#custom-card-state').textContent = own ? 'Персональный запрос' : 'Собирается автоматически';
+                reset.hidden = !own;
+                const value = length.value === '' ? general : Number(length.value);
+                content.querySelector('#custom-card-limit-text').textContent = `«Ответ — не более ${Number.isSafeInteger(value) && value > 0 ? value : general} слов»`;
+                length.title = `Пусто — общий предел pipeline (${general}). Только для этой модели в этом шаге.`;
+            };
+            request.addEventListener('input', refresh);
+            length.addEventListener('input', refresh);
+            reset.addEventListener('click', () => { request.value = preview.template; refresh(); });
+            save.addEventListener('click', async () => {
+                if (pipelineRunActive) return;
+                if (!request.value.trim()) { request.focus(); showNotification('Введите запрос.', 'warn'); return; }
+                if (!length.checkValidity() || (length.value !== '' && !Number.isSafeInteger(Number(length.value)))) { length.reportValidity(); return; }
+                const settings = getCustomCardSettings();
+                if (!settings[ref]) settings[ref] = {};
+                settings[ref][modelName] = { promptTemplate: request.value === preview.template ? null : request.value, maxWords: length.value === '' ? null : Number(length.value) };
+                customCardSettings.set(draftPlanStorageKey(), settings);
+                const name = draftPlanStorageKey();
+                if (!isDefaultPipelineName(name) && pipelineStore.pipelines[name]) {
+                    pipelineStore.pipelines[name].customModelSettings = JSON.parse(JSON.stringify(settings));
+                    save.disabled = true;
+                    try {
+                        await persistPipelineStore();
+                    } catch (error) {
+                        save.disabled = false;
+                        showNotification('Не удалось сохранить настройки карточки.', 'error');
+                        return;
+                    }
+                }
+                modal.style.display = 'none';
+                modal.classList.remove('is-visible');
+                modal.setAttribute('aria-hidden', 'true');
+                document.body.classList.remove('modal-open');
             });
+            refresh();
         };
 
         const showPipelineBlockInfo = (block) => {
@@ -8152,6 +8158,14 @@ document.addEventListener('click', (event) => {
                     </div>
                 `;
                 document.body.appendChild(modal);
+                modal.addEventListener('keydown', (event) => {
+                    if (event.key === 'Escape') {
+                        modal.style.display = 'none';
+                        modal.classList.remove('is-visible');
+                        modal.setAttribute('aria-hidden', 'true');
+                        document.body.classList.remove('modal-open');
+                    }
+                });
                 modal.addEventListener('click', (event) => {
                     if (event.target === modal) {
                         modal.style.display = 'none';
@@ -8173,6 +8187,12 @@ document.addEventListener('click', (event) => {
                 modal.classList.add('is-visible');
                 modal.setAttribute('aria-hidden', 'false');
                 document.body.classList.add('modal-open');
+                modal.querySelector('#custom-card-request')?.focus();
+                return;
+            }
+            if (modal.classList.contains('custom-model-card')) {
+                modal.remove();
+                showPipelineBlockInfo(block);
                 return;
             }
             const modelName = block.querySelector('.model-name')?.textContent?.trim() || 'Model';

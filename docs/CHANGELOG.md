@@ -1,5 +1,13 @@
 # CHANGELOG — Project
 
+### 2026-10-08 — Compact Custom model request editor, version 2.81.636
+
+- Replace the verbose Custom inspector with the approved compact card: model icon, per-model word limit in the header, editable request, automatic reset and Save.
+- Persist request templates and word limits per model and step in user pipeline copies. Resolve task/input placeholders at execution; preserve input text literally during substitution. Built-in template edits remain session-only.
+- Apply the effective word-limit instruction before the existing transport, including correction attempts. Empty length inherits the pipeline limit; reject empty requests and invalid lengths. Existing transport and delivery markers remain unchanged.
+- Keep run records separate from the editor; edits cannot rewrite sent requests.
+- Validation: 32 focused engine/card/record checks; isolated Chromium verifies opening, editing, dispatch payloads, input substitution, persistence after reload and viewport fit at four sizes. Full suite: 2646 passed, the same 17 failures reproduced on 2.81.635, no new failures. Live provider execution was blocked by browser-tool URL policy and was not performed.
+
 ### 2026-10-08 — Custom telemetry: plan, owner answers, errors, version 2.81.635
 
 - `custom_start` records the plan of a Custom run (steps, order, input, models, mode). An answer to `[[ASK]]` in a Custom run is logged as `owner_answer` (before, only skipping was). A run ended by an error logs `custom_end` with `stopReason: error` and the message (before, only the console had it).
