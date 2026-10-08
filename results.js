@@ -5225,13 +5225,16 @@ document.addEventListener('click', (event) => {
         }));
         const DEFAULT_DISPUT_MAX_WORDS = 300;
         const DISPUT_RESPONSE_LIMIT_MARKER = '[RESPONSE_LIMIT]';
+        // Prompts and settings from before the rename carry the old marker: it is still recognised and removed.
+        const DISPUT_RESPONSE_LIMIT_LEGACY_MARKER = '[DISPUT_RESPONSE_LIMIT]';
+        const RESPONSE_LIMIT_LINE = /\[(?:DISPUT_)?RESPONSE_LIMIT\][^\n]*(?:\n|$)/g;
         const DISPUT_RESPONSE_LIMIT_TEMPLATE = '[RESPONSE_LIMIT] Ответ — не более {слов} слов. Сосредоточься на ясной концепции и ключевых идеях; убери повторы, длинные пересказы и второстепенные детали.';
         const getDebateMaxWords = () => window.DebatePromptCatalog?.normalizeMaxWords?.(
             document.getElementById('debate-length-select')?.value
         ) ?? DEFAULT_DISPUT_MAX_WORDS;
         const ensureDisputResponseLimit = (value, maxWords = getDebateMaxWords()) => {
             const source = String(value || '').trim();
-            if (!source || source.includes(DISPUT_RESPONSE_LIMIT_MARKER)) return source;
+            if (!source || source.includes(DISPUT_RESPONSE_LIMIT_MARKER) || source.includes(DISPUT_RESPONSE_LIMIT_LEGACY_MARKER)) return source;
             return `${source}\n\n${DISPUT_RESPONSE_LIMIT_TEMPLATE.replace(/\{слов\}/g, String(maxWords))}`;
         };
         const syncDebateLengthStepperUi = () => {
@@ -6441,12 +6444,18 @@ document.addEventListener('click', (event) => {
         });
         const customDiscipline = (saved = {}) => {
             const value = { ...saved };
+            // Only the marker of a saved length instruction is renamed; the personal text stays literal.
+            if (typeof value.limit === 'string' && value.limit.startsWith(DISPUT_RESPONSE_LIMIT_LEGACY_MARKER)) {
+                value.limit = DISPUT_RESPONSE_LIMIT_MARKER + value.limit.slice(DISPUT_RESPONSE_LIMIT_LEGACY_MARKER.length);
+            }
             // Split only the known old default suffix; preserve all personal text literally.
             if (typeof value.limit === 'string' && value.limit.endsWith(CUSTOM_CONTENT_REQUIREMENTS) && value.content == null) {
                 value.content = CUSTOM_CONTENT_REQUIREMENTS;
                 value.limit = value.limit === DISPUT_RESPONSE_LIMIT_TEMPLATE ? CUSTOM_LENGTH_TEMPLATE
                     : value.limit.slice(0, -CUSTOM_CONTENT_REQUIREMENTS.length).trimEnd();
             }
+            // A saved copy of the current default is not a personal value: it keeps following the shared one.
+            if (value.limit === CUSTOM_LENGTH_TEMPLATE) delete value.limit;
             return value;
         };
         const resolveCustomFields = (settings = {}, kind = 'round', round = {}) => {
@@ -6468,7 +6477,7 @@ document.addEventListener('click', (event) => {
             const words = Number.isSafeInteger(limits[name]) && limits[name] > 0 ? limits[name] : getDebateMaxWords();
             const resolved = resolveCustomFields({ discipline: discipline[name] });
             const instruction = customLengthInstruction(resolved.discipline.limit.value, words);
-            const base = String(prompts[name] || '').replace(/\[DISPUT_RESPONSE_LIMIT\][^\n]*(?:\n|$)/g, '').trimEnd();
+            const base = String(prompts[name] || '').replace(RESPONSE_LIMIT_LINE, '').trimEnd();
             return [name, [base, instruction, resolved.discipline.content.value].filter(Boolean).join('\n\n')];
         }));
         // The owner's choice on a pause, through the shared confirm dialog (three buttons).

@@ -2103,7 +2103,7 @@ describe('Pipeline debate favorites view', () => {
         expect(sent.indexOf('PERSONAL_CONTENT')).toBeGreaterThan(sent.indexOf('PERSONAL_LIMIT'));
         expect(sent.indexOf('PERSONAL_DELIVERY')).toBeGreaterThan(sent.indexOf('PERSONAL_CONTENT'));
         expect(sent).toContain('PERSONAL_DELIVERY [[AO-');
-        expect(sent.match(/\[DISPUT_RESPONSE_LIMIT\]/g)).toHaveLength(1);
+        expect(sent.match(/\[(?:DISPUT_)?RESPONSE_LIMIT\]/g)).toHaveLength(1);
       }
       expect(sent).not.toContain('PERSONAL_ASK'); // Auto does not ask the owner.
       expect(sent).toMatch(/\[\[AO-[a-z0-9]+\]\]/i);
@@ -2156,7 +2156,13 @@ describe('Pipeline debate favorites view', () => {
     length.value = '';
     modal.querySelector('#custom-card-save').click();
     expect(debug.capturePipelineConfig().customModelSettings.r1.GPT).toEqual({ promptTemplate: null, maxWords: null });
-    expect(debug.prepareCustomPrompts(['GPT'], { GPT: 'TEST\n[RESPONSE_LIMIT] stale 999 words' }, { GPT: 44 }).GPT).toContain('Объём ответа: 1-44 слов, не больше.');
+    const limited = (text) => debug.prepareCustomPrompts(['GPT'], { GPT: text }, { GPT: 44 }).GPT;
+    for (const stale of ['[RESPONSE_LIMIT] stale 999 words', '[DISPUT_RESPONSE_LIMIT] stale 999 words']) {
+      const sent = limited(`TEST\n${stale}`);
+      expect(sent).toContain('Объём ответа: 1-44 слов, не больше.');
+      expect(sent).not.toContain('999');
+      expect(sent.match(/\[(?:DISPUT_)?RESPONSE_LIMIT\]/g)).toHaveLength(1);
+    }
     modal.remove();
   });
 
@@ -2170,6 +2176,10 @@ describe('Pipeline debate favorites view', () => {
     expect(prepare(['GPT'], { GPT: 'T' }, { GPT: 300 }, { GPT: { limit: '' } }).GPT).toBe(prompt);
     const legacy = '[RESPONSE_LIMIT] Ответ — не более {слов} слов. ' + oldContent;
     expect(prepare(['GPT'], { GPT: 'T' }, { GPT: 300 }, { GPT: { limit: legacy } }).GPT).toBe(prompt);
+    // Settings saved before the marker was renamed keep working and still follow the shared default.
+    expect(prepare(['GPT'], { GPT: 'T' }, { GPT: 300 }, { GPT: { limit: legacy.replace('[RESPONSE_LIMIT]', '[DISPUT_RESPONSE_LIMIT]') } }).GPT).toBe(prompt);
+    expect(prepare(['GPT'], { GPT: 'T' }, { GPT: 300 }, { GPT: { limit: '[DISPUT_RESPONSE_LIMIT] Объём ответа: {от}-{слов} слов, не больше.' } }).GPT).toBe(prompt);
+    expect(prepare(['GPT'], { GPT: 'T' }, { GPT: 300 }, { GPT: { limit: '[DISPUT_RESPONSE_LIMIT] Свой лимит {слов}.' } }).GPT).toContain('[RESPONSE_LIMIT] Свой лимит 300.');
   });
 
   test.each(['input', 'limit', 'content', 'delivery', 'ask', 'correction', 'token'])('Custom stops without dispatch or compaction when the full %s overflows', async (part) => {

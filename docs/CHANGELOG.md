@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-08 — Response-limit marker rename: keep old prompts and settings working, version 2.81.646
+
+- The marker `[RESPONSE_LIMIT]` replaced `[DISPUT_RESPONSE_LIMIT]` in sent prompts. Custom now removes a stale limit line carrying either marker before adding its own, so a prompt never carries two limits; `ensureDisputResponseLimit` treats either marker as an existing limit.
+- Custom settings saved with the old marker are read with the new one; a saved length instruction equal to the current default is no longer a personal value and follows the shared one again. Personal text is not changed.
+- Historical material (`docs/Pipeline scenarios/Pre-Dispute/results.js`, the two JUL30 analysis texts) is restored to its original text.
+- Validation: two Custom run tests that expected the old marker pass again; added checks for one limit line with either marker and for saved old-marker settings. The seven CSS string tests that already failed on the previous commit are unchanged.
+
 ### 2026-10-08 — Shared Custom defaults from ▶, version 2.81.645
 
 - Reuse the model editor for the ▶ entry-point card: shared R2+ task, synthesis task and discipline, without duplicating task input or word count.
