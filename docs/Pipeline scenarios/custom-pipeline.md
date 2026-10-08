@@ -1,6 +1,6 @@
 # Pipeline Custom и общий движок
 
-Версия: **2.81.638, 8 октября 2026**. Движок [`disput/custom-engine.js`](../../disput/custom-engine.js)
+Версия: **2.81.639, 8 октября 2026**. Движок [`disput/custom-engine.js`](../../disput/custom-engine.js)
 (тесты [`tests/custom-engine.test.js`](../../tests/custom-engine.test.js)) подключён к странице:
 Custom выбирается в списке так же, как остальные шаблоны, и запускается (`runCustomFromPage`
 в [`results.js`](../../results.js)). Новый pipeline («+») и безымянный canvas без выбранного шаблона тоже работают на этом движке.

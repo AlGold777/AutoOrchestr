@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-08 — Extract (Transport) for Custom runs, version 2.81.639
+
+- Extract on a report without Debate stages now digests the latest Custom run instead of refusing: its steps become the stages, only its part of the delivery journal is taken (its custom events, batches and requests), and the result is the same compact transport extract as for Debate.
+- Custom batches now carry their own stage id `custom:<runId>:s<n>`; before, a Custom batch took the current Debate stage of an earlier run and was attributed to it in the journal.
+- Validation: Custom extract tests (4) with a mixed journal, existing extract and Polishing tests pass.
+
 ### 2026-10-08 — Unnamed canvas uses the Custom card and runner, version 2.81.638
 
 - Fix the unnamed canvas falling back to Universal and showing the old model inspector. Without a saved configuration, resolve Custom for the card, saved copy and execution; explicitly selected legacy pipelines retain their runner.
