@@ -133,3 +133,11 @@ describe('Custom request preview', () => {
     expect(preview.instructions).toMatchObject({ task: 'T', stepTask: 'y', extra: 'Кратко.' });
   });
 });
+
+test('the Disput Flow JSON export carries the latest Custom run record, redacted with the rest', () => {
+  const source = require('fs').readFileSync(require('path').join(__dirname, '..', 'results.js'), 'utf8');
+  const handler = source.slice(source.indexOf("const disputBtn = event.target.closest('#disput-export-json');"));
+  expect(handler.slice(0, 1500)).toContain('const customRun = await readLatestCustomRun();');
+  expect(handler.slice(0, 1500)).toContain("downloadDiagnosticsJson('Disput Flow', { ...(payload || {}), delivery, ...(customRun ? { customRun } : {}) }, disputBtn);");
+});
+

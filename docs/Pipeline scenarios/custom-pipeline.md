@@ -1,6 +1,6 @@
 # Pipeline Custom и общий движок
 
-Версия: **2.81.636, 8 октября 2026**. Движок [`disput/custom-engine.js`](../../disput/custom-engine.js)
+Версия: **2.81.637, 8 октября 2026**. Движок [`disput/custom-engine.js`](../../disput/custom-engine.js)
 (тесты [`tests/custom-engine.test.js`](../../tests/custom-engine.test.js)) подключён к странице:
 Custom выбирается в списке так же, как остальные шаблоны, и запускается (`runCustomFromPage`
 в [`results.js`](../../results.js)). Новый pipeline («+») тоже работает на этом движке.
@@ -96,7 +96,9 @@ Custom, Polishing, Delta, Test, Research, Architecture — шаблоны. По�
 
 Телеметрия Custom: транспортный уровень (отправка, доставка, метка, батчи) общий с остальными
 pipelines; события Custom ниже входят в журнал доставки и в экспорт Disput Flow. Extract (Transport)
-разбирает только этапы Debate — для Custom используйте экспорт Disput Flow.
+разбирает только этапы Debate — для Custom используйте экспорт Disput Flow (JSON): кроме журнала
+в нём есть `customRun` — запись последнего прогона Custom с полными текстами (отправленные промпты,
+вход с источниками, ответы, исходы попыток).
 
 Каждый запрос записан в истории прогона: шаг, модель, попытка, полный промпт, вход, исход
 (принят / причина) и `transportRequestId`. В журнал доставки пишутся события

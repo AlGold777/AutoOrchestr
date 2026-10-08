@@ -16138,6 +16138,22 @@ document.addEventListener('click', (event) => {
         downloadDiagnosticsMarkdown('Disput Flow', deliveryMarkdown ? `${markdown}\n\n${deliveryMarkdown}` : markdown, disputBtn);
     });
 
+    // A Custom run keeps full texts (prompts as dispatched, input, answers) in its run record
+    // (disput/custom-run-record.js); the journal holds excerpts only. The export carries the latest run.
+    const readLatestCustomRun = async () => {
+        const Record = window.CustomRunRecord;
+        if (!Record || !chrome?.storage?.local) return null;
+        try {
+            const store = Record.createStore({ storage: Record.chromeStorage(chrome.storage.local) });
+            const latest = (await store.list()).sort((a, b) => b.startedAt - a.startedAt)[0];
+            const record = latest ? await store.load(latest.runId) : null;
+            return record ? Record.exportRun(record) : null;
+        } catch (err) {
+            console.warn('[Diagnostics] Custom run record not read', err);
+            return null;
+        }
+    };
+
     document.addEventListener('click', async (event) => {
         const disputBtn = event.target.closest('#disput-export-json');
         if (!disputBtn) return;
@@ -16157,13 +16173,14 @@ document.addEventListener('click', (event) => {
         } catch (err) {
             console.warn('[Diagnostics] Disput JSON export failed to read the delivery journal', err);
         }
+        const customRun = await readLatestCustomRun();
         const hasDelivery = Boolean(delivery?.journal?.length);
         const hasFlowEvents = Boolean(payload?.events?.length || payload?.rows?.length || serialDebateTimeline.length);
-        if (!hasFlowEvents && !hasDelivery) {
+        if (!hasFlowEvents && !hasDelivery && !customRun) {
             flashButtonFeedback(disputBtn, 'warn');
             return;
         }
-        downloadDiagnosticsJson('Disput Flow', { ...(payload || {}), delivery }, disputBtn);
+        downloadDiagnosticsJson('Disput Flow', { ...(payload || {}), delivery, ...(customRun ? { customRun } : {}) }, disputBtn);
     });
 
     document.addEventListener('click', async (event) => {

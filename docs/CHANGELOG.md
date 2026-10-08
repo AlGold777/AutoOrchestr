@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-08 — Full Custom run texts in the Disput Flow export, version 2.81.637
+
+- The Disput Flow JSON export now includes `customRun`: the record of the latest Custom run with full texts (prompts as dispatched, input with sources, answers, attempt outcomes). The model card no longer exports, and the delivery journal keeps only excerpts. Redacted like the rest of the export.
+- Validation: run-record tests (9) pass.
+
 ### 2026-10-08 — Compact Custom model request editor, version 2.81.636
 
 - Replace the verbose Custom inspector with the approved compact card: model icon, per-model word limit in the header, editable request, automatic reset and Save.
