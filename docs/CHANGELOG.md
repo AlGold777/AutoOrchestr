@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-10-08 — Round role selector for every Custom pipeline, version 2.81.651
+
+- The role selector on the round card now appears whenever the selected pipeline runs on the Custom engine (the same `runner === 'custom'` check as the ▶ card), not only for the built-in Custom template, so saved copies get it too.
+
 ### 2026-10-08 — Model roles and model notes in Custom, version 2.81.650
 
 - The model block's mini-request selector now reaches Custom: its text is the «Дополнительно для тебя» part of that model's request; None adds nothing.

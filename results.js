@@ -8467,7 +8467,7 @@ document.addEventListener('click', (event) => {
                 const stageRun = stages.filter((item) => item.plannedStageId === `canvas-r${round}`).pop() || null;
                 // Custom rounds with mini-request selectors (round 2+): one role for the round's models
                 // instead of the participant list. Round 1 has no selectors and keeps the list.
-                const roleChoice = !templateStage && getSelectedPipelinePresetId() === 'CUSTOM' && document.querySelector(`#r${round}-models .role-selector`)
+                const roleChoice = !templateStage && window.PipelinePresets?.getPipelinePreset?.(getSelectedPipelinePresetId())?.runner === 'custom' && document.querySelector(`#r${round}-models .role-selector`)
                     ? { prompts: getOrderedJudgePrompts(), roles: (stack?.items || []).map((item) => item.role || ''), disabled: pipelineRunActive }
                     : null;
                 const model = window.StageCard.buildModel({
