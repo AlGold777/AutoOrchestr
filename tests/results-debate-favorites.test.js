@@ -389,7 +389,7 @@ async function loadResultsScript() {
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-projections.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-prompt-catalog.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'pipeline-presets.js'), 'utf8'));
-  ['custom-engine', 'custom-run-record'].forEach((mod) => { window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', `${mod}.js`), 'utf8')); });
+  ['stage-markers', 'custom-engine', 'custom-run-record'].forEach((mod) => { window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', `${mod}.js`), 'utf8')); });
   ['boot-utils', 'dom-utils', 'attachments', 'pasted-text', 'tooltips', 'debate-ui', 'debate-transport', 'debate-controller', 'debate-renderer', 'debate-sessions-store', 'debate-export', 'debate-plan-view-model', 'debate-telemetry-view'].forEach((mod) => { window.eval(fs.readFileSync(path.join(__dirname, '..', 'results', `${mod}.js`), 'utf8')); });
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'utils', 'selection-block-format.js'), 'utf8'));
   const script = fs.readFileSync(path.join(__dirname, '..', 'results.js'), 'utf8');
@@ -2013,7 +2013,7 @@ describe('Pipeline debate favorites view', () => {
     expect(window.getSelectedPipelinePresetId()).toBe('UNIVERSAL_STANDARD');
   });
 
-  test.each(['saved', 'unnamed'])('Custom card sends its edited request and length through Run, including retries (%s pipeline)', async (kind) => {
+  test.each(['saved', 'unnamed', 'cleared'])('Custom card sends its edited request and length through Run, including retries (%s pipeline)', async (kind) => {
     const debug = window.__pipelineLifecycleDebug;
     const config = { version: 3, roundCounter: 2, protocol: { type: 'universal', presetId: 'CUSTOM', selectedModels: ['GPT', 'Claude'], length: '700', roundLimit: '2', synthesizer: '', runPolicy: 'auto' }, modelStacks: {} };
     debug.setPipelineStoreForTest(kind === 'saved'
@@ -2051,6 +2051,19 @@ describe('Pipeline debate favorites view', () => {
     await debug.renderCustomBlockInspector(block, modal);
     expect(modal.querySelector('#custom-card-request').value).toBe(request.value);
     expect(modal.querySelector('#custom-card-length').value).toBe('37');
+    expect(modal.querySelector('#custom-discipline-limit').value).toContain('убери повторы, длинные пересказы и второстепенные детали.');
+    expect(modal.querySelector('#custom-discipline-ask').value).toBe(window.DebateStageMarkers.instructions());
+    for (const [key, value] of Object.entries({ limit: '[DISPUT_RESPONSE_LIMIT] Ответ — не более {слов} слов. PERSONAL_LIMIT', delivery: 'PERSONAL_DELIVERY {метка}', ask: 'PERSONAL_ASK' })) {
+      const row = modal.querySelector(`[data-discipline="${key}"]`);
+      row.querySelector(`[data-action="${kind === 'cleared' ? 'clear' : 'edit'}"]`).click();
+      const field = row.querySelector('textarea');
+      expect(field.readOnly).toBe(false);
+      if (kind !== 'cleared') field.value = value;
+      row.querySelector('[data-action="save"]').click();
+      await Promise.resolve();
+    }
+    await debug.renderCustomBlockInspector(block, modal);
+    expect(modal.querySelector('#custom-discipline-delivery').value).toBe(kind === 'cleared' ? '' : 'PERSONAL_DELIVERY {метка}');
     const starts = [];
     const oldDelivery = window.MessageDelivery;
     window.MessageDelivery = require('../shared/message-delivery.js');
@@ -2078,15 +2091,29 @@ describe('Pipeline debate favorites view', () => {
       expect(sent).toContain('Accepted GPT answer from batch 1.');
       expect(sent).toContain('Accepted Claude answer from batch 1.');
       expect(sent).not.toContain('{вход}');
-      expect(sent).toContain('не более 37 слов');
-      expect(sent.match(/\[DISPUT_RESPONSE_LIMIT\]/g)).toHaveLength(1);
+      if (kind === 'cleared') {
+        expect(sent).not.toContain('[DISPUT_RESPONSE_LIMIT]');
+        expect(sent).not.toContain('Сосредоточься на ясной концепции');
+        expect(sent).not.toContain('Последней строкой ответа');
+      } else {
+        expect(sent).toContain('не более 37 слов. PERSONAL_LIMIT');
+        expect(sent).toContain('PERSONAL_DELIVERY [[AO-');
+        expect(sent.match(/\[DISPUT_RESPONSE_LIMIT\]/g)).toHaveLength(1);
+      }
+      expect(sent).not.toContain('PERSONAL_ASK'); // Auto does not ask the owner.
       expect(sent).toMatch(/\[\[AO-[a-z0-9]+\]\]/i);
       expect(starts[0].promptsByModel.GPT).toContain('не более 700 слов');
       expect(starts[0].promptsByModel.GPT).not.toContain('CARD_REQUEST');
       expect(starts[1].promptsByModel.CLAUDE).toContain('не более 700 слов');
       expect(starts[1].promptsByModel.CLAUDE).not.toContain('CARD_REQUEST');
+      expect(starts[1].promptsByModel.CLAUDE).not.toContain('PERSONAL_');
+      expect(starts[0].promptsByModel.GPT).not.toContain('PERSONAL_');
       expect(starts[2].selectedLLMs).toEqual(['GPT']);
-      expect(starts[2].promptsByModel.GPT).toContain('не более 37 слов');
+      if (kind === 'cleared') expect(starts[2].promptsByModel.GPT).not.toContain('[DISPUT_RESPONSE_LIMIT]');
+      else {
+        expect(starts[2].promptsByModel.GPT).toContain('не более 37 слов. PERSONAL_LIMIT');
+        expect(starts[2].promptsByModel.GPT).toContain('PERSONAL_DELIVERY [[AO-');
+      }
     } finally {
       window.MessageDelivery = oldDelivery;
       debug.pipelineWaiter.reset();

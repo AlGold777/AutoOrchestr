@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-08 — Personal model discipline instructions, version 2.81.641
+
+- Show full delivery, response-limit and owner-question instructions in the compact Custom model card. Each has the supplied edit icon, red clear cross and save checkmark; persist per model and step with the pipeline.
+- Use saved instructions on Run and retries. `{слов}` follows the personal/inherited word limit; `{метка}` resolves to a fresh delivery token. Clearing an instruction is explicit and is not overwritten by defaults; delivery proof tokens remain automatic.
+- Use the actual `DebateStageMarkers` API for Custom owner instructions and parsing; Auto omits owner instructions.
+- Validation: public Run tests cover saved/unnamed pipelines, personal instructions, clearing and retries. Isolated Chromium verifies icon editing, saved values after reload, dispatched text and viewport fit at four sizes; no live provider run. Related suites: 179 passed, 7 existing CSS/HTML assertions fail.
+
 ### 2026-10-08 — Keep Custom card edits on Run, version 2.81.640
 
 - Fix anonymous Custom runs losing edited model requests and personal word limits when Run replaces the visible pipeline heading with the task. Draft and card settings now use the active pipeline identity or explicit stored name, never the task display.

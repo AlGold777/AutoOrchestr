@@ -19,6 +19,20 @@ function transport(answers, { closedByOwner = false } = {}) {
 }
 
 describe('Custom engine', () => {
+  test.each(['PERSONAL_ASK', ''])('owner instruction is personal, clearable and only active in semi-auto (%s)', async (instruction) => {
+    const { send, calls } = transport({ A: ['a', 'a2'], B: ['b', 'b2'] });
+    await Engine.run({ task: 'T', semiAuto: true, askInstruction: 'DEFAULT_ASK',
+      steps: [{ models: [{ name: 'A', discipline: { ask: instruction } }, 'B'] }, { models: ['A', 'B'] }],
+      decide: async () => 'continue', send });
+    if (instruction) expect(calls[0].prompts.A).toContain(instruction);
+    expect(calls[0].prompts.A).not.toContain('DEFAULT_ASK');
+    expect(calls[0].prompts.B).toContain('DEFAULT_ASK');
+    expect(calls[1].prompts.A).toContain('DEFAULT_ASK');
+    const auto = transport({ A: ['a'] });
+    await Engine.run({ task: 'T', steps: [{ models: [{ name: 'A', discipline: { ask: instruction } }] }], askInstruction: 'DEFAULT_ASK', send: auto.send });
+    expect(auto.calls[0].prompts.A).not.toContain('ASK');
+  });
+
   test('card request replaces the prompt only for its model and step; input is substituted at execution', async () => {
     const { send, calls } = transport({ A: ['first {задача}', 'improved', 'third'], B: ['other'] });
     await Engine.run({ task: 'actual task', steps: [

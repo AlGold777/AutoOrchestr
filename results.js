@@ -5222,13 +5222,14 @@ document.addEventListener('click', (event) => {
         }));
         const DEFAULT_DISPUT_MAX_WORDS = 300;
         const DISPUT_RESPONSE_LIMIT_MARKER = '[DISPUT_RESPONSE_LIMIT]';
+        const DISPUT_RESPONSE_LIMIT_TEMPLATE = '[DISPUT_RESPONSE_LIMIT] Ответ — не более {слов} слов. Сосредоточься на ясной концепции и ключевых идеях; убери повторы, длинные пересказы и второстепенные детали.';
         const getDebateMaxWords = () => window.DebatePromptCatalog?.normalizeMaxWords?.(
             document.getElementById('debate-length-select')?.value
         ) ?? DEFAULT_DISPUT_MAX_WORDS;
         const ensureDisputResponseLimit = (value, maxWords = getDebateMaxWords()) => {
             const source = String(value || '').trim();
             if (!source || source.includes(DISPUT_RESPONSE_LIMIT_MARKER)) return source;
-            return `${source}\n\n${DISPUT_RESPONSE_LIMIT_MARKER} Ответ — не более ${maxWords} слов. Сосредоточься на ясной концепции и ключевых идеях; убери повторы, длинные пересказы и второстепенные детали.`;
+            return `${source}\n\n${DISPUT_RESPONSE_LIMIT_TEMPLATE.replace(/\{слов\}/g, String(maxWords))}`;
         };
         const syncDebateLengthStepperUi = () => {
             const select = document.getElementById('debate-length-select');
@@ -5715,6 +5716,7 @@ document.addEventListener('click', (event) => {
         const runModelBatch = async ({
             prompt,
             promptsByModel = null,
+            deliveryInstructionsByModel = null,
             models,
             attachments = [],
             forceNewTabs = true,
@@ -5790,9 +5792,9 @@ document.addEventListener('click', (event) => {
                     promptsByModel = Object.fromEntries(Object.entries(promptsByModel).map(([model, value]) => [model, window.DebateAnonymization.anonymizeText(value, map)]));
                 }
             }
-            // Defense in depth: every Disput transport prompt carries an explicit
-            // finite answer budget, even if a custom/legacy compiler omitted it.
-            if (context?.pipelineRunId) {
+            // Legacy scenarios keep the default budget defense. Custom has already
+            // applied the model instruction, including an explicitly cleared instruction.
+            if (context?.pipelineRunId && !context.custom) {
                 prompt = ensureDisputResponseLimit(prompt);
                 if (promptsByModel && typeof promptsByModel === 'object') {
                     promptsByModel = Object.fromEntries(Object.entries(promptsByModel).map(([model, value]) => [
@@ -5803,7 +5805,7 @@ document.addEventListener('click', (event) => {
             }
             // Delivery proof: each model gets its own token to repeat on the last line.
             if (window.MessageDelivery) {
-                promptsByModel = window.MessageDelivery.prepare({ prompt, promptsByModel, models, requestIds: transportRequestIds, batchId: context?.pipelineBatchId || context?.stageAttemptId || '',
+                promptsByModel = window.MessageDelivery.prepare({ prompt, promptsByModel, models, instructionsByModel: deliveryInstructionsByModel, requestIds: transportRequestIds, batchId: context?.pipelineBatchId || context?.stageAttemptId || '',
                     promptLineageByModel: Object.fromEntries(models.map(model => [model, compiledPromptEvidence.get(`${context?.stageAttemptId}:${model}`) || null])) });
             }
             if (!(await ensureNoOtherViewRun())) {
@@ -6408,14 +6410,21 @@ document.addEventListener('click', (event) => {
             }).filter((step) => step.models.length).map((step) => ({ ...step,
                 models: step.models.map((name) => {
                     const settings = getCustomCardSettings()[step.ref]?.[name];
-                    return settings ? { name, promptTemplate: settings.promptTemplate, maxWords: settings.maxWords } : name;
+                    return settings ? { name, promptTemplate: settings.promptTemplate, maxWords: settings.maxWords, discipline: settings.discipline } : name;
                 })
             }));
         };
-        const prepareCustomPrompts = (models, prompts, limits = {}) => Object.fromEntries(models.map((name) => [name,
-            ensureDisputResponseLimit(String(prompts[name] || '').replace(/\[DISPUT_RESPONSE_LIMIT\][^\n]*(?:\n|$)/g, ''),
-                Number.isSafeInteger(limits[name]) && limits[name] > 0 ? limits[name] : getDebateMaxWords())
-        ]));
+        const customDisciplineDefaults = () => ({
+            limit: DISPUT_RESPONSE_LIMIT_TEMPLATE,
+            delivery: 'Последней строкой ответа напиши только метку {метка}',
+            ask: window.DebateStageMarkers?.instructions?.() || ''
+        });
+        const prepareCustomPrompts = (models, prompts, limits = {}, discipline = {}) => Object.fromEntries(models.map((name) => {
+            const words = Number.isSafeInteger(limits[name]) && limits[name] > 0 ? limits[name] : getDebateMaxWords();
+            const instruction = (discipline[name]?.limit ?? customDisciplineDefaults().limit).replace(/\{слов\}/g, String(words));
+            const base = String(prompts[name] || '').replace(/\[DISPUT_RESPONSE_LIMIT\][^\n]*(?:\n|$)/g, '').trimEnd();
+            return [name, instruction ? `${base}\n\n${instruction}` : base];
+        }));
         // The owner's choice on a pause, through the shared confirm dialog (three buttons).
         let customDecisionOpen = false;
         const askCustomDecision = async ({ label, accepted, failed, choices, reasons }) => {
@@ -6495,18 +6504,22 @@ document.addEventListener('click', (event) => {
                     signal,
                     maxPromptChars: budgetLimits ? budgetLimits.promptChars - budgetLimits.reservedOutputChars - 500 : Infinity,
                     accept: ({ text, completion }) => window.DebateResponseAcceptance?.evaluate?.({ text, meta: { completion } }) || { ok: true },
-                    parseAsks: (text) => window.StageMarkers?.parse?.(text)?.askItems || [],
-                    askInstruction: window.StageMarkers?.instructions?.() || '',
+                    parseAsks: (text) => window.DebateStageMarkers?.parse?.(text)?.askItems || [],
+                    askInstruction: window.DebateStageMarkers?.instructions?.() || '',
                     askOwner: askCustomOwner,
                     decide: askCustomDecision,
                     onRequest: recordAttempt,
                     onResponse: recordAttempt,
                     send: async (models, promptsByModel, { step, label, attempt, maxWordsByModel }) => {
                         // Reuse the existing limit contract, on first attempts and corrections alike.
-                        promptsByModel = prepareCustomPrompts(models, promptsByModel, maxWordsByModel);
+                        const discipline = Object.fromEntries(models.map((name) => [name,
+                            steps[step].models.find((model) => model.name === name)?.discipline || {}
+                        ]));
+                        promptsByModel = prepareCustomPrompts(models, promptsByModel, maxWordsByModel, discipline);
                         const batch = await runModelBatch({
                             prompt: promptsByModel[models[0]],
                             promptsByModel,
+                            deliveryInstructionsByModel: Object.fromEntries(models.map((name) => [name, discipline[name].delivery ?? customDisciplineDefaults().delivery])),
                             models,
                             attachments: models.some((model) => !attached.has(model)) ? attachments : [],
                             forceNewTabs: runContext.forceNewTabs,
@@ -8073,6 +8086,9 @@ document.addEventListener('click', (event) => {
             const preview = window.CustomEngine.previewPrompt({ task: getModeratorDispatchText(), steps: automaticSteps, stepIndex, modelName });
             const saved = getCustomCardSettings()[ref]?.[modelName] || {};
             const general = getDebateMaxWords();
+            const defaults = customDisciplineDefaults();
+            const discipline = { ...saved.discipline };
+            const disciplineRows = [['delivery', 'Доставка'], ['limit', 'Длина'], ['ask', 'Вопрос владельцу']];
             const content = modal.querySelector('.modal-content');
             modal.classList.add('custom-model-card');
             modal.setAttribute('role', 'dialog');
@@ -8090,11 +8106,19 @@ document.addEventListener('click', (event) => {
                         <textarea id="custom-card-request" spellcheck="false"></textarea>
                         <div class="custom-card-note"><code>{задача}</code> и <code>{вход}</code> подставляются при запуске. Изменённый текст используется только для этой модели в этом шаге. <button type="button" id="custom-card-reset">Вернуть автоматическую сборку</button></div>
                     </div>
-                    <div class="custom-card-marks"><strong>Метки, которые добавляет транспорт</strong><dl>
-                        <dt>Доставка</dt><dd><code>[[AO-…]]</code> последней строкой, новая на каждую отправку. Подтверждает принадлежность ответа запросу.</dd>
-                        <dt>Длина</dt><dd id="custom-card-limit-text"></dd>
-                        <dt>Вопрос владельцу</dt><dd><code>[[ASK]]</code> — только в режиме подтверждения</dd>
-                    </dl></div>
+                    <div class="custom-card-marks"><strong>Метки, которые добавляет транспорт</strong>
+                        ${disciplineRows.map(([key, label]) => `<div class="custom-card-discipline" data-discipline="${key}">
+                            <div class="custom-card-discipline-head"><label for="custom-discipline-${key}">${label}${key === 'ask' && getDebateRunPolicy() === 'auto' ? ' (в Авто не добавляется)' : ''}</label>
+                                <div class="custom-card-actions">
+                                    <button type="button" data-action="edit" title="Редактировать" aria-label="Редактировать: ${label}"><img src="icons/edit.svg" alt="" width="16" height="16"></button>
+                                    <button type="button" data-action="clear" title="Очистить" aria-label="Очистить: ${label}" class="custom-card-clear">×</button>
+                                    <button type="button" data-action="save" title="Сохранить" aria-label="Сохранить: ${label}" class="custom-card-commit">✓</button>
+                                </div>
+                            </div>
+                            <textarea id="custom-discipline-${key}" rows="2" readonly spellcheck="false"></textarea>
+                        </div>`).join('')}
+                        <div class="custom-card-note">{слов} — длина из шапки; {метка} — новая метка каждой отправки. При очистке инструкции доставки сама метка сохраняется.</div>
+                    </div>
                     <span id="custom-card-length-note" class="custom-card-sr-only">Пусто — общий предел pipeline (${general}).</span>
                 </div>
                 <footer class="custom-card-footer"><button type="button" class="modal-button accent" id="custom-card-save">Сохранить</button></footer>`;
@@ -8111,19 +8135,48 @@ document.addEventListener('click', (event) => {
                 content.querySelector('#custom-card-state').textContent = own ? 'Персональный запрос' : 'Собирается автоматически';
                 reset.hidden = !own;
                 const value = length.value === '' ? general : Number(length.value);
-                content.querySelector('#custom-card-limit-text').textContent = `«Ответ — не более ${Number.isSafeInteger(value) && value > 0 ? value : general} слов»`;
+                const limitField = content.querySelector('#custom-discipline-limit');
+                if (limitField.readOnly) limitField.value = (discipline.limit ?? defaults.limit).replace(/\{слов\}/g, String(Number.isSafeInteger(value) && value > 0 ? value : general));
                 length.title = `Пусто — общий предел pipeline (${general}). Только для этой модели в этом шаге.`;
             };
             request.addEventListener('input', refresh);
             length.addEventListener('input', refresh);
             reset.addEventListener('click', () => { request.value = preview.template; refresh(); });
-            save.addEventListener('click', async () => {
+            const fields = {};
+            disciplineRows.forEach(([key]) => {
+                const row = content.querySelector(`[data-discipline="${key}"]`);
+                const field = row.querySelector('textarea');
+                fields[key] = field;
+                field.value = discipline[key] ?? defaults[key];
+                row.querySelectorAll('button').forEach((button) => {
+                    button.disabled = pipelineRunActive;
+                    button.addEventListener('click', async () => {
+                        if (pipelineRunActive) return;
+                        if (button.dataset.action === 'save') {
+                            if (field.readOnly) return;
+                            discipline[key] = field.value;
+                            if (await saveSettings(false)) {
+                                field.readOnly = true;
+                                refresh();
+                            }
+                        } else {
+                            if (field.readOnly) field.value = discipline[key] ?? defaults[key];
+                            field.readOnly = false;
+                            if (button.dataset.action === 'clear') field.value = '';
+                            field.focus();
+                        }
+                    });
+                });
+            });
+            const saveSettings = async (close) => {
                 if (pipelineRunActive) return;
                 if (!request.value.trim()) { request.focus(); showNotification('Введите запрос.', 'warn'); return; }
                 if (!length.checkValidity() || (length.value !== '' && !Number.isSafeInteger(Number(length.value)))) { length.reportValidity(); return; }
                 const settings = getCustomCardSettings();
                 if (!settings[ref]) settings[ref] = {};
-                settings[ref][modelName] = { promptTemplate: request.value === preview.template ? null : request.value, maxWords: length.value === '' ? null : Number(length.value) };
+                disciplineRows.forEach(([key]) => { if (!fields[key].readOnly) discipline[key] = fields[key].value; });
+                settings[ref][modelName] = { promptTemplate: request.value === preview.template ? null : request.value, maxWords: length.value === '' ? null : Number(length.value),
+                    ...(Object.keys(discipline).length ? { discipline: { ...discipline } } : {}) };
                 customCardSettings.set(draftPlanStorageKey(), settings);
                 const name = draftPlanStorageKey();
                 if (!isDefaultPipelineName(name) && pipelineStore.pipelines[name]) {
@@ -8137,11 +8190,16 @@ document.addEventListener('click', (event) => {
                         return;
                     }
                 }
-                modal.style.display = 'none';
-                modal.classList.remove('is-visible');
-                modal.setAttribute('aria-hidden', 'true');
-                document.body.classList.remove('modal-open');
-            });
+                save.disabled = pipelineRunActive;
+                if (close) {
+                    modal.style.display = 'none';
+                    modal.classList.remove('is-visible');
+                    modal.setAttribute('aria-hidden', 'true');
+                    document.body.classList.remove('modal-open');
+                }
+                return true;
+            };
+            save.addEventListener('click', () => saveSettings(true));
             refresh();
         };
 

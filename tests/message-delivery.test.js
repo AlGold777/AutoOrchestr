@@ -11,6 +11,15 @@ describe('message delivery', () => {
     expect(new Set(tokens).size).toBe(2);
   });
 
+  test.each(['Use this token: {метка}', '', 'My instruction'])('personal delivery instruction preserves generated proof (%s)', (instruction) => {
+    const prompts = Delivery.prepare({ prompt: 'T', models: ['GPT', 'Claude'], instructionsByModel: { GPT: instruction } });
+    const token = /\[\[AO-[a-z0-9]{6}\]\]/.exec(prompts.GPT)[0];
+    expect(prompts.GPT).toBe('T\n\n' + (instruction.includes('{метка}') ? instruction.replace('{метка}', token) : instruction + (instruction ? ' ' : '') + token));
+    expect(prompts.Claude).toContain('Последней строкой ответа напиши только метку');
+    expect(Delivery.receive({ llmName: 'GPT', answer: `Answer\n${token}` }, { final: true }).answer).toBe('Answer');
+    expect(Delivery.journal().at(-1).kind).toBe('verified');
+  });
+
   test('verified, missing and foreign answers', () => {
     const prompts = Delivery.prepare({ prompt: 'Q', models: ['GPT'] });
     const token = /\[\[AO-[a-z0-9]{6}\]\]/.exec(prompts.GPT)[0];

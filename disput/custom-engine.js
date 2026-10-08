@@ -48,6 +48,7 @@
   const labelled = (items) => items.map((item) => `${item.label}:\n${item.text}`).join('\n\n');
 
   function buildPrompt({ task, step, model, input = [], inputMode = 'none', earlier = [], ownerAnswers = [], askInstruction = '' }) {
+    if (askInstruction && typeof model.discipline?.ask === 'string') askInstruction = model.discipline.ask;
     if (typeof model.promptTemplate === 'string' && model.promptTemplate.trim()) {
       // One pass: placeholders occurring inside model answers remain data, never instructions.
       const values = { '{задача}': text(task), '{вход}': inputMode === 'all' ? labelled(input) : numbered(input), '{ответы до тебя}': numbered(earlier) };
@@ -95,6 +96,7 @@
         input: kind === 'synthesis' ? 'previous' : (['none', 'previous', 'all'].includes(step.input) ? step.input : 'previous'),
         models: (step.models || []).map((model) => (typeof model === 'string' ? { name: model, extra: '' } : {
           name: model.name, extra: text(model.extra), promptTemplate: typeof model.promptTemplate === 'string' ? model.promptTemplate : null,
+          discipline: model.discipline ? { ...model.discipline } : null,
           maxWords: Number.isSafeInteger(model.maxWords) && model.maxWords > 0 ? model.maxWords : null
         }))
           .filter((model) => model.name)
@@ -159,7 +161,7 @@
     // Instructions (owner-editable behaviour) and input (data from other models) are kept apart.
     function partsFor(step, model, input, earlier) {
       return {
-        instructions: { task: text(task), stepTask: step.task, extra: model.extra || '', askInstruction: semiAuto ? askInstruction : '',
+        instructions: { task: text(task), stepTask: step.task, extra: model.extra || '', askInstruction: semiAuto ? (model.discipline?.ask ?? askInstruction) : '',
           ownerAnswers: ownerAnswers.slice() },
         input: { mode: step.input, items: input, earlier }
       };
@@ -298,15 +300,15 @@
   }
 
   // Before a run there is no exact prompt yet: the template shows what is known and marks the data
-  // that will come from other models. Lines the transport adds are listed apart, never as editable text.
+  // that will come from other models. Transport instructions are edited separately from the main request.
   const PLACEHOLDER = Object.freeze({
     previous: '‹ответы предыдущего шага появятся при запуске›',
     all: '‹все принятые ответы предыдущих шагов появятся при запуске›',
     earlier: '‹ответы моделей, работающих до тебя в этом раунде, появятся при запуске›'
   });
   const TRANSPORT_LINES = Object.freeze([
-    'Предел длины ответа — по настройке длины pipeline.',
-    'Метка доставки последней строкой — добавляет транспорт; не редактируется.'
+    'Предел длины ответа — по настройке модели или pipeline.',
+    'Метка доставки создаётся транспортом; инструкцию можно изменить у модели.'
   ]);
   function previewPrompt({ task, steps = [], stepIndex = 0, modelName = '', semiAuto = false, askInstruction = '' }) {
     const plan = normalizeSteps(steps);
