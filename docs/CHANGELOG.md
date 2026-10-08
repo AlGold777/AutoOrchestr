@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-08 — Copy every Custom card field, version 2.81.644
+
+- Replace the edit action with a copy icon and make discipline fields editable immediately. Add copy to the request and response-length fields; copy the exact current value without saving it.
+- Preserve untouched length templates when saving, so changes to the header word limit continue to update the generated instruction. During a run, editing remains locked and copying stays available.
+- Validation: 5 existing card/save/dispatch tests pass; isolated Chromium checks all seven copy buttons against clipboard content and verifies save, reload and dispatch.
+
 ### 2026-10-08 — More room for the Custom request, version 2.81.643
 
 - Widen the card by 17% to 889 px and enlarge the request editor. Place the round beside the model name and move Save into the header.

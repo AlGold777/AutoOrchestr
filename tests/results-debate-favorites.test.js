@@ -2057,10 +2057,10 @@ describe('Pipeline debate favorites view', () => {
     expect(modal.querySelector('#custom-discipline-ask').value).toBe(window.DebateStageMarkers.instructions());
     for (const [key, value] of Object.entries({ limit: '[DISPUT_RESPONSE_LIMIT] Ответ — не более {слов} слов. PERSONAL_LIMIT', content: 'PERSONAL_CONTENT', delivery: 'PERSONAL_DELIVERY {метка}', ask: 'PERSONAL_ASK', correction: 'PERSONAL_CORRECTION: {причина}' })) {
       const row = modal.querySelector(`[data-discipline="${key}"]`);
-      row.querySelector(`[data-action="${kind === 'cleared' ? 'clear' : 'edit'}"]`).click();
+      if (kind === 'cleared') row.querySelector('[data-action="clear"]').click();
       const field = row.querySelector('textarea');
       expect(field.readOnly).toBe(false);
-      if (kind !== 'cleared') field.value = value;
+      if (kind !== 'cleared') { field.value = value; field.dispatchEvent(new Event('input')); }
       row.querySelector('[data-action="save"]').click();
       await Promise.resolve();
     }

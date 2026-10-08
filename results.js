@@ -8118,6 +8118,7 @@ document.addEventListener('click', (event) => {
             const defaults = customDisciplineDefaults();
             const discipline = customDiscipline(saved.discipline);
             const disciplineRows = [['ask', 'Вопрос владельцу'], ['limit', 'Длина'], ['content', 'Требования к содержанию'], ['delivery', 'Доставка'], ['correction', 'Запрос исправления (при повторе)']];
+            const copyButton = (id, label) => `<button type="button" data-action="copy" data-copy-field="${id}" title="Копировать" aria-label="Копировать: ${label}"><i class="ti ti-copy" aria-hidden="true"></i></button>`;
             const content = modal.querySelector('.modal-content');
             modal.classList.add('custom-model-card');
             modal.setAttribute('role', 'dialog');
@@ -8126,12 +8127,12 @@ document.addEventListener('click', (event) => {
             content.innerHTML = `
                 <header class="custom-card-top">
                     <h3 class="custom-card-model" id="pipeline-block-info-title">${modelIconData[modelName] ? `<img src="${modelIconData[modelName]}" alt="" width="26" height="26">` : ''}${escapeHtml(modelName)}<span class="custom-card-where">${escapeHtml(preview.label)}</span></h3>
-                    <label class="custom-card-length">Длина ответа: <input id="custom-card-length" type="number" min="1" step="1" inputmode="numeric" placeholder="${general}" aria-describedby="custom-card-length-note"> слов</label>
+                    <div class="custom-card-length"><label for="custom-card-length">Длина ответа:</label> <input id="custom-card-length" type="number" min="1" step="1" inputmode="numeric" placeholder="${general}" aria-describedby="custom-card-length-note"> слов<span class="custom-card-actions">${copyButton('custom-card-length', 'Длина ответа')}</span></div>
                     <button type="button" class="modal-button accent" id="custom-card-save">Save</button>
                 </header>
                 <div class="custom-card-body">
                     <div class="custom-card-field">
-                        <div class="custom-card-head"><label for="custom-card-request">Запрос</label><span><code>{задача}</code> и <code>{вход}</code> подставляются при запуске. Изменённый текст используется только для этой модели в этом шаге.</span></div>
+                        <div class="custom-card-head"><label for="custom-card-request">Запрос</label><span><code>{задача}</code> и <code>{вход}</code> подставляются при запуске. Изменённый текст используется только для этой модели в этом шаге.</span><span class="custom-card-actions">${copyButton('custom-card-request', 'Запрос')}</span></div>
                         <textarea id="custom-card-request" spellcheck="false"></textarea>
                         <div class="custom-card-note"><button type="button" id="custom-card-reset">Вернуть автоматическую сборку</button></div>
                     </div>
@@ -8139,12 +8140,12 @@ document.addEventListener('click', (event) => {
                         ${disciplineRows.map(([key, label]) => `<div class="custom-card-discipline" data-discipline="${key}">
                             <div class="custom-card-discipline-head"><label for="custom-discipline-${key}">${label}${key === 'ask' && getDebateRunPolicy() === 'auto' ? ' (в Авто не добавляется)' : ''}</label>
                                 <div class="custom-card-actions">
-                                    <button type="button" data-action="edit" title="Редактировать" aria-label="Редактировать: ${label}"><img src="icons/edit.svg" alt="" width="16" height="16"></button>
+                                    ${copyButton(`custom-discipline-${key}`, label)}
                                     <button type="button" data-action="clear" title="Очистить" aria-label="Очистить: ${label}" class="custom-card-clear">×</button>
                                     <button type="button" data-action="save" title="Сохранить" aria-label="Сохранить: ${label}" class="custom-card-commit">✓</button>
                                 </div>
                             </div>
-                            <textarea id="custom-discipline-${key}" rows="2" readonly spellcheck="false"></textarea>
+                            <textarea id="custom-discipline-${key}" rows="2" spellcheck="false"></textarea>
                         </div>`).join('')}
                         <div class="custom-card-note">{от} — на 50 слов меньше предела из шапки; {слов} — сам предел; {метка} — новая метка; {причина} — причина повтора. При очистке инструкции доставки сама метка сохраняется. При повторе запрос заменяется инструкцией исправления.</div>
                     </div>
@@ -8158,12 +8159,13 @@ document.addEventListener('click', (event) => {
             length.value = saved.maxWords || '';
             // Inspect remains available during a run; its in-flight plan is immutable.
             request.disabled = length.disabled = reset.disabled = save.disabled = pipelineRunActive;
+            const dirtyFields = new Set();
             const refresh = () => {
                 const own = request.value !== preview.template;
                 reset.hidden = !own;
                 const value = length.value === '' ? general : Number(length.value);
                 const limitField = content.querySelector('#custom-discipline-limit');
-                if (limitField.readOnly) limitField.value = customLengthInstruction(discipline.limit ?? defaults.limit, Number.isSafeInteger(value) && value > 0 ? value : general);
+                if (!dirtyFields.has('limit')) limitField.value = customLengthInstruction(discipline.limit ?? defaults.limit, Number.isSafeInteger(value) && value > 0 ? value : general);
                 length.title = `Пусто — общий предел pipeline (${general}). Только для этой модели в этом шаге.`;
             };
             request.addEventListener('input', refresh);
@@ -8175,21 +8177,19 @@ document.addEventListener('click', (event) => {
                 const field = row.querySelector('textarea');
                 fields[key] = field;
                 field.value = discipline[key] ?? defaults[key];
-                row.querySelectorAll('button').forEach((button) => {
+                field.readOnly = pipelineRunActive;
+                field.addEventListener('input', () => dirtyFields.add(key));
+                row.querySelectorAll('button:not([data-action="copy"])').forEach((button) => {
                     button.disabled = pipelineRunActive;
                     button.addEventListener('click', async () => {
                         if (pipelineRunActive) return;
                         if (button.dataset.action === 'save') {
-                            if (field.readOnly) return;
-                            discipline[key] = field.value;
-                            if (await saveSettings(false)) {
-                                field.readOnly = true;
-                                refresh();
-                            }
+                            if (!dirtyFields.has(key)) return;
+                            await saveSettings(false);
+                            refresh();
                         } else {
-                            if (field.readOnly) field.value = discipline[key] ?? defaults[key];
-                            field.readOnly = false;
-                            if (button.dataset.action === 'clear') field.value = '';
+                            field.value = '';
+                            dirtyFields.add(key);
                             field.focus();
                         }
                     });
@@ -8201,7 +8201,7 @@ document.addEventListener('click', (event) => {
                 if (!length.checkValidity() || (length.value !== '' && !Number.isSafeInteger(Number(length.value)))) { length.reportValidity(); return; }
                 const settings = getCustomCardSettings();
                 if (!settings[ref]) settings[ref] = {};
-                disciplineRows.forEach(([key]) => { if (!fields[key].readOnly) discipline[key] = fields[key].value; });
+                disciplineRows.forEach(([key]) => { if (dirtyFields.has(key)) discipline[key] = fields[key].value; });
                 if (Object.keys(discipline).length && discipline.content == null) discipline.content = defaults.content;
                 settings[ref][modelName] = { promptTemplate: request.value === preview.template ? null : request.value, maxWords: length.value === '' ? null : Number(length.value),
                     ...(Object.keys(discipline).length ? { discipline: { ...discipline } } : {}) };
@@ -8218,6 +8218,8 @@ document.addEventListener('click', (event) => {
                         return;
                     }
                 }
+                dirtyFields.clear();
+                refresh();
                 save.disabled = pipelineRunActive;
                 if (close) {
                     modal.style.display = 'none';
@@ -8227,6 +8229,16 @@ document.addEventListener('click', (event) => {
                 }
                 return true;
             };
+            content.querySelectorAll('[data-copy-field]').forEach((button) => {
+                button.addEventListener('click', async () => {
+                    try {
+                        await navigator.clipboard.writeText(content.querySelector(`#${button.dataset.copyField}`).value);
+                        flashButtonFeedback(button, 'success');
+                    } catch (error) {
+                        showNotification('Не удалось скопировать текст.', 'error');
+                    }
+                });
+            });
             save.addEventListener('click', () => saveSettings(true));
             refresh();
         };
