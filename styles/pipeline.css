@@ -1430,8 +1430,8 @@ body.pipeline-page #disput-state-map-panel .disput-state-map-actions > button:no
 .custom-card-length { display: flex; align-items: center; gap: 7px; white-space: nowrap; font-size: 12px; }
 .custom-card-length input { width: 72px; padding: 6px 8px; border: 1px solid #c4d6cc; border-radius: 8px; background: #fff; color: #202936; font: inherit; }
 .custom-card-where { white-space: nowrap; font-size: 12px; font-weight: 400; color: var(--pipeline-muted); }
-.custom-card-body { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 18px 24px; overflow: auto; }
-.custom-card-field { display: flex; flex-direction: column; flex: 1; min-height: 260px; margin-bottom: 16px; }
+.custom-card-body { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 10px 24px; overflow: auto; }
+.custom-card-field { display: flex; flex-direction: column; flex: 1; min-height: 210px; margin-bottom: 1px; }
 .custom-card-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 8px; font-size: 13px; font-weight: 600; }
 .custom-card-head label { flex-shrink: 0; }
 .custom-card-head span { line-height: 1.4; color: var(--pipeline-muted); font-size: 11px; font-weight: 400; }
@@ -1439,7 +1439,7 @@ body.pipeline-page #disput-state-map-panel .disput-state-map-actions > button:no
 .custom-card-field textarea:focus-visible, .custom-card-length input:focus-visible { outline: 2px solid #86b9aa; outline-offset: 2px; }
 .custom-card-note { margin-top: 7px; color: var(--pipeline-muted); font-size: 12px; line-height: 1.5; }
 .custom-card-note button { padding: 0; border: 0; background: none; color: #237565; font: inherit; cursor: pointer; }
-.custom-card-marks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 18px; flex-shrink: 0; padding-top: 12px; border-top: 1px solid var(--pipeline-border); color: var(--pipeline-muted); font-size: 12px; line-height: 1.55; }
+.custom-card-marks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 18px; flex-shrink: 0; padding-top: 12px;  color: var(--pipeline-muted); font-size: 12px; line-height: 1.55; }
 .custom-card-marks > strong, .custom-card-marks > .custom-card-note { grid-column: 1 / -1; }
 .custom-card-marks strong { color: var(--pipeline-text); font-weight: 600; }
 .custom-card-discipline { margin-top: 7px; }
@@ -1454,7 +1454,7 @@ body.pipeline-page #disput-state-map-panel .disput-state-map-actions > button:no
 .custom-card-discipline textarea[readonly] { border-color: transparent; background: #f7f9f7; }
 .custom-card-discipline textarea:focus-visible { outline: 2px solid #86b9aa; outline-offset: 1px; }
 .custom-card-body code { color: #237565; font-size: 12px; }
-.custom-card-top #custom-card-save { justify-self: end; border: 1px solid #237565; border-radius: 9px; padding: 9px 18px; background: #237565; color: #fff; }
+.custom-card-top #custom-card-save { justify-self: end; border-radius: 9px; padding: 6px 18px; background: #2597f4; color: #fff; }
 .custom-defaults-card .modal-content { height: auto; }
 .custom-defaults-top { grid-template-columns: 1fr auto; }
 .custom-card-source { display: block; color: var(--pipeline-muted); font-size: 10px; font-weight: 400; }
