@@ -103,6 +103,9 @@
     const history = []; // every request: step, model, attempt, prompt, outcome
     const results = []; // per step: { step, outcome: { model: verdict }, skipped }
     let stopReason = 'steps_done';
+    // The plan as the run sees it: a report shows what was intended, not only what happened.
+    emit('custom_start', { semiAuto: Boolean(semiAuto), maxAttempts, taskChars: text(task).length,
+      steps: plan.map((step) => ({ step: step.index, label: stepLabel(step), order: step.order, input: step.input, models: step.models.map((model) => model.name) })) });
 
     class StopRun extends Error { constructor(reason) { super(reason); this.stopReason = reason; } }
 

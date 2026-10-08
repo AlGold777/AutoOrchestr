@@ -5362,6 +5362,7 @@ document.addEventListener('click', (event) => {
                 if (!answers.length) { showNotification('Выберите хотя бы один вариант или нажмите «Продолжить без ответа».', 'info'); return; }
                 if (typeof info.resolve === 'function') {
                     // A Custom run waits on the dialog itself: it keeps the answers, nothing pauses here.
+                    globalThis.MessageDelivery?.batchEvent?.('owner_answer', { stage: info.label || null, answered: answers.length, asked: (info.asks || []).length });
                     pendingOwnerAsks = null;
                     ownerAskDialog.close();
                     info.resolve(answers);
@@ -6537,6 +6538,8 @@ document.addEventListener('click', (event) => {
                 return result.stopReason !== 'cancelled';
             } catch (err) {
                 console.error('[RESULTS] Custom run failed', err);
+                // The engine reports its own end; a thrown error ends the run without it.
+                window.MessageDelivery?.batchEvent?.('custom_end', { pipelineRunId: runContext.pipelineRunId, stopReason: 'error', error: String(err?.message || err) });
                 showNotification(`Pipeline: error (${err?.message || String(err)})`, 'error');
                 if (record && !record.finishedAt) { window.CustomRunRecord.finishRun(record, { stopReason: 'error' }); await saveRecord(true); }
                 return false;

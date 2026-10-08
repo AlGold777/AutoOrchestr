@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-08 — Custom telemetry: plan, owner answers, errors, version 2.81.635
+
+- `custom_start` records the plan of a Custom run (steps, order, input, models, mode). An answer to `[[ASK]]` in a Custom run is logged as `owner_answer` (before, only skipping was). A run ended by an error logs `custom_end` with `stopReason: error` and the message (before, only the console had it).
+- Validation: engine and run-record tests (27) pass.
+
 ### 2026-10-07 — Custom model card: control view and run record, version 2.81.634
 
 - The 📝 card of a model in a Custom round now shows facts of the real request path. Before a run: the request template with the known parts filled, future data marked, and the transport lines (response limit, delivery token — not editable) listed apart. After a run: every attempt of this model in this step — instructions apart from input data, input items with their source (step · model · attempt), the prompt exactly as dispatched (token and limit included), the answer, status, delivery token received or not, `transportRequestId`, times and the outcome. A retry is a new attempt referring to the previous one; nothing is rewritten. Export of a run as JSON.

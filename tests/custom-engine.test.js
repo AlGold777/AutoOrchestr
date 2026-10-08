@@ -230,5 +230,7 @@ describe('Custom engine', () => {
       step: 0, label: 'Раунд 1', model: 'A', attempt: 1, input: 'none', accepted: true, transportRequestId: 'tr-1'
     });
     expect(events[events.length - 1]).toMatchObject({ kind: 'custom_end', stopReason: 'steps_done' });
+    expect(events[0]).toMatchObject({ kind: 'custom_start', semiAuto: false, taskChars: 1,
+      steps: [{ step: 0, label: 'Раунд 1', order: 'parallel', input: 'none', models: ['A'] }] });
   });
 });

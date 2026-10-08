@@ -1,6 +1,6 @@
 # Pipeline Custom и общий движок
 
-Версия: **2.81.634, 7 октября 2026**. Движок [`disput/custom-engine.js`](../../disput/custom-engine.js)
+Версия: **2.81.635, 8 октября 2026**. Движок [`disput/custom-engine.js`](../../disput/custom-engine.js)
 (тесты [`tests/custom-engine.test.js`](../../tests/custom-engine.test.js)) подключён к странице:
 Custom выбирается в списке так же, как остальные шаблоны, и запускается (`runCustomFromPage`
 в [`results.js`](../../results.js)). Новый pipeline («+») тоже работает на этом движке.
@@ -94,9 +94,14 @@ Custom, Polishing, Delta, Test, Research, Architecture — шаблоны. По�
 
 ## Результат и история
 
+Телеметрия Custom: транспортный уровень (отправка, доставка, метка, батчи) общий с остальными
+pipelines; события Custom ниже входят в журнал доставки и в экспорт Disput Flow. Extract (Transport)
+разбирает только этапы Debate — для Custom используйте экспорт Disput Flow и экспорт прогона из карточки 📝.
+
 Каждый запрос записан в истории прогона: шаг, модель, попытка, полный промпт, вход, исход
 (принят / причина) и `transportRequestId`. В журнал доставки пишутся события
-`custom_answer`, `custom_step`, `custom_decision`, `custom_end` — они связаны с диагностикой
+`custom_start` (план: шаги, порядок, вход, модели, режим), `custom_answer`, `custom_step`,
+`custom_decision`, `owner_answer` (ответ на `[[ASK]]`), `custom_end` (в том числе `error` с текстом ошибки) — они связаны с диагностикой
 отправки через `transportRequestId`. В конце известна причина остановки
 (`steps_done`, `context_full`, `stopped`, `cancelled`, `no_decision`).
 
