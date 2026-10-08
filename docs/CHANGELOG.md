@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-10-08 — Remove repeated Custom field source labels, version 2.81.647
+
+- Remove source labels beneath fields in model and ▶ cards. Inheritance and return-to-common actions remain unchanged.
+
 ### 2026-10-08 — Response-limit marker rename: keep old prompts and settings working, version 2.81.646
 
 - The marker `[RESPONSE_LIMIT]` replaced `[DISPUT_RESPONSE_LIMIT]` in sent prompts. Custom now removes a stale limit line carrying either marker before adding its own, so a prompt never carries two limits; `ensureDisputResponseLimit` treats either marker as an existing limit.

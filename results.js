@@ -8186,11 +8186,11 @@ document.addEventListener('click', (event) => {
                     ${pipelineDefaults ? '<p class="custom-card-note">Общие значения для всех шагов. Своё значение модели имеет приоритет; пустое поле наследует значение из кода.</p>' : `<div class="custom-card-field">
                         <div class="custom-card-head"><label for="custom-card-request">Запрос</label><span><code>{задача}</code> и <code>{вход}</code> подставляются при запуске. Изменённый текст используется только для этой модели в этом шаге.</span><span class="custom-card-actions">${copyButton('custom-card-request', 'Запрос')}</span></div>
                         <textarea id="custom-card-request" spellcheck="false"></textarea>
-                        <div class="custom-card-note"><span id="custom-card-request-source"></span> <span id="custom-card-personal-note"></span> <button type="button" id="custom-card-reset">Вернуть к общему</button></div>
+                        <div class="custom-card-note"><span id="custom-card-personal-note"></span> <button type="button" id="custom-card-reset">Вернуть к общему</button></div>
                     </div>`}
                     <div class="custom-card-marks"><strong>${pipelineDefaults ? 'Общие задания и дисциплина' : 'Метки транспорта'}</strong>
                         ${rows.map(([key, label]) => `<div class="custom-card-discipline" data-discipline="${key}">
-                            <div class="custom-card-discipline-head"><label for="custom-discipline-${key}">${label}${key === 'ask' && getDebateRunPolicy() === 'auto' ? ' (в Авто не добавляется)' : ''}<span class="custom-card-source" data-source-for="${key}"></span></label>
+                            <div class="custom-card-discipline-head"><label for="custom-discipline-${key}">${label}${key === 'ask' && getDebateRunPolicy() === 'auto' ? ' (в Авто не добавляется)' : ''}</label>
                                 <div class="custom-card-actions">
                                     ${copyButton(`custom-discipline-${key}`, label)}
                                     <button type="button" data-action="inherit" title="${pipelineDefaults ? 'Вернуть к коду' : 'Вернуть к общему'}" aria-label="Вернуть к общему: ${label}" hidden>↶</button>
@@ -8221,7 +8221,6 @@ document.addEventListener('click', (event) => {
                 if (request) {
                     const own = request.value !== preview.template;
                     reset.hidden = !own;
-                    content.querySelector('#custom-card-request-source').textContent = own ? 'своё' : 'общее (▶)';
                     content.querySelector('#custom-card-personal-note').textContent = own ? 'Персональный запрос: общее задание не применяется; дисциплина применяется.' : '';
                 }
                 rows.forEach(([key]) => {
@@ -8229,9 +8228,6 @@ document.addEventListener('click', (event) => {
                     fields[key].placeholder = display(key, inheritedValue(key));
                     const raw = rawValue(key);
                     const own = dirtyFields.has(key) ? differs(key, fields[key].value) : typeof raw === 'string' && Boolean(raw.trim());
-                    const source = content.querySelector(`[data-source-for="${key}"]`);
-                    source.textContent = own ? 'своё' : pipelineDefaults ? 'из кода' : 'общее (▶)';
-                    source.dataset.source = own ? (pipelineDefaults ? 'pipeline' : 'model') : pipelineDefaults ? 'code' : (key === 'task' ? inherited.task.source : inherited.discipline[key].source);
                     content.querySelector(`[data-discipline="${key}"] [data-action="inherit"]`).hidden = !own;
                 });
             };

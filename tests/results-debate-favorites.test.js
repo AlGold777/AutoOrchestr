@@ -2298,7 +2298,7 @@ describe('Pipeline debate favorites view', () => {
       expect(h.starts[2].promptsByModel.GPT).toContain('FIX_GENERAL');
       expect(h.starts[2].promptsByModel.GPT).toContain('CONTENT_GENERAL_B');
       expect(h.debug.capturePipelineConfig().customModelSettings).toEqual({});
-      expect(h.openModel().querySelector('[data-source-for="content"]').textContent).toBe('общее (▶)');
+      expect(h.openModel().querySelector('[data-source-for]')).toBeNull();
     } finally { h.cleanup(); }
   }, 30000);
 
@@ -2307,7 +2307,7 @@ describe('Pipeline debate favorites view', () => {
     try {
       await h.general({ roundTask: 'COMMON_A', content: 'CONTENT_A' });
       await h.model({ task: 'OWN_TASK', content: 'OWN_CONTENT' });
-      expect(h.openModel().querySelector('[data-source-for="task"]').textContent).toBe('своё');
+      expect(h.openModel().querySelector('[data-discipline="task"] [data-action="inherit"]').hidden).toBe(false);
       await h.general({ roundTask: 'COMMON_B', content: 'CONTENT_B' });
       await h.run();
       expect(h.starts[1].promptsByModel.GPT).toContain('OWN_TASK');
@@ -2319,7 +2319,7 @@ describe('Pipeline debate favorites view', () => {
       await settleCustomCard();
       card = h.modal();
       expect(card.querySelector('#custom-discipline-task').value).toBe('COMMON_B');
-      expect(card.querySelector('[data-source-for="task"]').textContent).toBe('общее (▶)');
+      expect(card.querySelector('[data-discipline="task"] [data-action="inherit"]').hidden).toBe(true);
       expect(h.debug.capturePipelineConfig().customModelSettings.r2.GPT.task).toBeUndefined();
       expect(document.activeElement).toBe(card.querySelector('textarea'));
       document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
