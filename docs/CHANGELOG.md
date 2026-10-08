@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-10-08 — Show the effective response length, version 2.81.649
+
+- Pre-fill the model card response-length input with its effective number; remove its copy icon. Saving an unchanged shared number still keeps inheritance.
+
 ### 2026-10-08 — Remove automatic owner-question instruction from Custom, version 2.81.648
 
 - Remove the owner-question field from both Custom cards and stop adding its instruction to requests, including saved overrides.

@@ -8177,7 +8177,7 @@ document.addEventListener('click', (event) => {
             content.innerHTML = `
                 <header class="custom-card-top ${pipelineDefaults ? 'custom-defaults-top' : ''}">
                     <h3 class="custom-card-model" id="pipeline-block-info-title">${pipelineDefaults ? '▶ Custom' : `${modelIconData[modelName] ? `<img src="${modelIconData[modelName]}" alt="" width="26" height="26">` : ''}${escapeHtml(modelName)}<span class="custom-card-where">${escapeHtml(preview.label)}</span>`}</h3>
-                    ${pipelineDefaults ? '' : `<div class="custom-card-length"><label for="custom-card-length">Длина ответа:</label> <input id="custom-card-length" type="number" min="1" step="1" inputmode="numeric" placeholder="${general}" aria-describedby="custom-card-length-note"> слов<span class="custom-card-actions">${copyButton('custom-card-length', 'Длина ответа')}</span></div>`}
+                    ${pipelineDefaults ? '' : `<div class="custom-card-length"><label for="custom-card-length">Длина ответа:</label> <input id="custom-card-length" type="number" min="1" step="1" inputmode="numeric" placeholder="${general}" aria-describedby="custom-card-length-note"> слов</div>`}
                     <button type="button" class="modal-button accent" id="custom-card-save">Save</button>
                 </header>
                 <div class="custom-card-body">
@@ -8207,7 +8207,7 @@ document.addEventListener('click', (event) => {
             const reset = content.querySelector('#custom-card-reset');
             const save = content.querySelector('#custom-card-save');
             if (request) { request.value = saved.promptTemplate || preview.template; request.disabled = pipelineRunActive; }
-            if (length) { length.value = saved.maxWords || ''; length.disabled = pipelineRunActive; }
+            if (length) { length.value = saved.maxWords || general; length.disabled = pipelineRunActive; }
             if (reset) reset.disabled = pipelineRunActive;
             save.disabled = pipelineRunActive;
             const dirtyFields = new Set();

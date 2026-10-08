@@ -2140,6 +2140,8 @@ describe('Pipeline debate favorites view', () => {
     await debug.renderCustomBlockInspector(block, modal);
     const request = modal.querySelector('#custom-card-request');
     const length = modal.querySelector('#custom-card-length');
+    expect(length.value).toBe(document.getElementById('debate-length-select').value);
+    expect(modal.querySelector('[data-copy-field="custom-card-length"]')).toBeNull();
     const original = request.value;
     request.value = '';
     modal.querySelector('#custom-card-save').click();
