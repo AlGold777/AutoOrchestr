@@ -167,7 +167,7 @@ describe('Delivery cards in the Disput tab (formerly the Automation tab)', () =>
 
   test('the Disput JSON and MD exports carry the delivery section', () => {
     const source = read('results.js');
-    expect(source).toContain("downloadDiagnosticsJson('Disput Flow', { ...(payload || {}), delivery }, disputBtn);");
+    expect(source).toContain("downloadDiagnosticsJson('Disput Flow', { ...(payload || {}), delivery, ...(customRun ? { customRun } : {}) }, disputBtn);");
     expect(source).toContain('window.MessageDeliveryView?.buildMarkdown?.(');
     // A remembered Automation tab opens Disput.
     expect(source).toContain("storedTabId === 'automation-tabpanel' ? 'disput-tabpanel' : storedTabId");

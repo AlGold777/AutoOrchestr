@@ -248,7 +248,7 @@ describe('release log regression guards', () => {
     expect(source).toContain('function buildDisputExportPayload(telemetryEvents = [])');
     // The Disput Flow export also carries the delivery section (formerly the Automation tab).
     expect(source).toContain("downloadDiagnosticsMarkdown('Disput Flow', deliveryMarkdown ? `${markdown}\\n\\n${deliveryMarkdown}` : markdown, disputBtn);");
-    expect(source).toContain("downloadDiagnosticsJson('Disput Flow', { ...(payload || {}), delivery }, disputBtn);");
+    expect(source).toContain("downloadDiagnosticsJson('Disput Flow', { ...(payload || {}), delivery, ...(customRun ? { customRun } : {}) }, disputBtn);");
     [pipelineHtml, resultHtml].forEach((html) => {
       expect(html).toContain('id="disput-health-summary"');
       expect(html).toContain('id="disput-problems"');
