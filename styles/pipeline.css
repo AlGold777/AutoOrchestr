@@ -1286,6 +1286,10 @@ body.pipeline-page #disput-state-map-panel .disput-state-map-actions > button:no
 .stage-card-muted { color: #64748b; }
 .stage-card-role { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
 .stage-card-role-select { min-width: 0; flex: 1; padding: 3px 6px; font: inherit; font-size: 12px; }
+.stage-card-setting { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 12px; }
+.stage-card-order-select, .stage-card-input-select { min-width: 0; flex: 1; padding: 3px 6px; font: inherit; font-size: 12px; }
+.stage-card-task-label { flex-direction: column; align-items: stretch; }
+.stage-card-task { width: 100%; box-sizing: border-box; padding: 6px 8px; font: inherit; font-size: 12px; }
 .stage-card-role-prompt { width: 100%; box-sizing: border-box; margin: 0 0 10px; padding: 6px 8px; font: inherit; font-size: 12px; }
 .stage-card-section h3 { margin: 12px 0 4px; font-size: 13px; }
 .stage-card-section ul { margin: 0; padding-left: 18px; }

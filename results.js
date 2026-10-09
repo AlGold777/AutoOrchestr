@@ -4277,6 +4277,9 @@ document.addEventListener('click', (event) => {
         const getCustomPipelineDefaults = () => customPipelineDefaults.get(draftPlanStorageKey()) || {};
         const customCardSettings = new Map();
         const getCustomCardSettings = () => customCardSettings.get(draftPlanStorageKey()) || {};
+        // The round card: customRoundSettings[ref] = { order, input, task }, only what the owner set.
+        const customRoundSettings = new Map();
+        const getCustomRoundSettings = () => customRoundSettings.get(draftPlanStorageKey()) || {};
         // The round's text for the «Custom» role: customDefaults.roundPrompts[ref] (r2, r3, …), saved
         // with the pipeline like the other ▶ values. Writing it persists a saved pipeline at once,
         // as the ▶ card does on Save.
@@ -4290,6 +4293,22 @@ document.addEventListener('click', (event) => {
             if (Object.keys(prompts).length) next.roundPrompts = prompts;
             else delete next.roundPrompts;
             customPipelineDefaults.set(name, next);
+            if (!isDefaultPipelineName(name) && pipelineStore.pipelines[name]) {
+                persistBasicSettings(name);
+                await persistPipelineStore();
+            }
+        };
+        // A field of the round card: a chosen order or input and a typed task are the owner's; the empty choice and an
+        // empty task give the inheritance back. A saved pipeline keeps it at once, like the round's text.
+        const setCustomRoundSetting = async (ref, field, value) => {
+            const name = draftPlanStorageKey();
+            const all = JSON.parse(JSON.stringify(getCustomRoundSettings()));
+            const own = { ...(all[ref] || {}) };
+            if (value === '' || (field === 'task' && !String(value).trim())) delete own[field];
+            else own[field] = value;
+            if (Object.keys(own).length) all[ref] = own;
+            else delete all[ref];
+            customRoundSettings.set(name, all);
             if (!isDefaultPipelineName(name) && pipelineStore.pipelines[name]) {
                 persistBasicSettings(name);
                 await persistPipelineStore();
@@ -6673,7 +6692,14 @@ document.addEventListener('click', (event) => {
         const basicSchemaFromPage = (plan, previewModel = null, { forSave = false, basedOn = '', run = null } = {}) => {
             const general = getCustomPipelineDefaults();
             const cards = getCustomCardSettings();
+            const roundSettings = getCustomRoundSettings();
             const put = (target, key, value) => { if (value !== undefined) target[key] = value; };
+            // The round card: the order, the input and the task the owner set, as the schema's step fields.
+            const roundFields = (ref) => {
+                const own = {};
+                ['order', 'input', 'task'].forEach((key) => put(own, key, legacyValue(roundSettings[ref]?.[key])));
+                return own;
+            };
             const defaults = {};
             ['roundTask', 'synthesisTask'].forEach((key) => put(defaults, key, legacyValue(general[key])));
             ['modelNotes', 'roundPrompts'].forEach((key) => put(defaults, key, legacyMap(general[key])));
@@ -6713,14 +6739,16 @@ document.addEventListener('click', (event) => {
                         if (Object.keys(model).length > 2) entries.push(model);
                     });
                 }
-                return { ref, kind, models: entries };
+                return { ref, kind, ...(kind === 'round' ? roundFields(ref) : {}), models: entries };
             }).filter(Boolean);
             if (forSave) {
                 // Settings of a card the canvas has no step for (a removed round, a final synthesis that is off) are kept too.
                 const present = new Set(steps.map((step) => step.ref));
-                Object.keys(cards).filter((ref) => !present.has(ref) && /^(r\d+|final|synth:.+)$/.test(ref)).forEach((ref) => {
+                [...new Set([...Object.keys(cards), ...Object.keys(roundSettings)])].filter((ref) => !present.has(ref) && /^(r\d+|final|synth:.+)$/.test(ref)).forEach((ref) => {
                     const models = Object.keys(cards[ref] || {}).map((name) => modelEntry(ref, name, { enabled: false })).filter((model) => Object.keys(model).length > 2);
-                    if (models.length) steps.push({ ref, kind: /^r\d+$/.test(ref) ? 'round' : 'synthesis', models });
+                    const isRound = /^r\d+$/.test(ref);
+                    const fields = isRound ? roundFields(ref) : {};
+                    if (models.length || Object.keys(fields).length) steps.push({ ref, kind: isRound ? 'round' : 'synthesis', ...fields, models });
                 });
             }
             const runValue = forSave ? (run || basicRunForSave()) : { policy: getDebateRunPolicy(), maxWords: getDebateMaxWords() };
@@ -6757,17 +6785,18 @@ document.addEventListener('click', (event) => {
                 const own = (map) => { if (map?.discipline?.limit === window.BasicSchema.DEFAULTS.discipline.limit) delete map.discipline.limit; return map; };
                 const cards = copy(config?.customModelSettings);
                 Object.values(cards).forEach((step) => Object.values(step || {}).forEach(own));
-                return { cards, defaults: own(copy(config?.customDefaults)), runExplicit: {}, schema: null, error: '' };
+                return { cards, rounds: {}, defaults: own(copy(config?.customDefaults)), runExplicit: {}, schema: null, error: '' };
             }
             const errors = window.BasicSchema.validate(config.schema);
-            if (errors.length) return { cards: {}, defaults: {}, runExplicit: {}, schema: null, error: window.BasicSchema.describeErrors(errors) };
+            if (errors.length) return { cards: {}, rounds: {}, defaults: {}, runExplicit: {}, schema: null, error: window.BasicSchema.describeErrors(errors) };
             const settings = window.BasicSchema.toSettings(config.schema);
-            return { cards: settings.customModelSettings, defaults: settings.customDefaults, schema: config.schema, error: '',
+            return { cards: settings.customModelSettings, rounds: settings.customRoundSettings, defaults: settings.customDefaults, schema: config.schema, error: '',
                 runExplicit: { policy: 'policy' in (config.schema.run || {}), maxWords: 'maxWords' in (config.schema.run || {}) } };
         };
         const adoptBasicWorking = (key, working) => {
             customPipelineDefaults.set(key, working.defaults);
             customCardSettings.set(key, working.cards);
+            customRoundSettings.set(key, working.rounds || {});
             basicRunExplicit.set(key, working.runExplicit);
             if (working.error) basicSchemaLoadErrors.set(key, working.error); else basicSchemaLoadErrors.delete(key);
         };
@@ -7606,12 +7635,14 @@ document.addEventListener('click', (event) => {
                 customStepsFromPlan,
                 prepareCustomPrompts,
                 composeCustomPrompts,
+                setCustomRoundSetting: (...args) => setCustomRoundSetting(...args),
+                getCustomRoundSettings: () => getCustomRoundSettings(),
                 buildBasicRun,
                 resolveCustomFields,
                 getCustomPipelineDefaults,
                 buildPipelineExportPayload,
                 normalizePipelineStore,
-                clearCustomSessionForTest: () => { customPipelineDefaults.clear(); customCardSettings.clear(); },
+                clearCustomSessionForTest: () => { customPipelineDefaults.clear(); customCardSettings.clear(); customRoundSettings.clear(); },
                 capturePipelineConfig,
                 installBasicSchema: (...args) => installBasicSchema(...args),
                 applyPipelineConfig: (...args) => applyPipelineConfig(...args),
@@ -7744,7 +7775,7 @@ document.addEventListener('click', (event) => {
             pipelineApplyingConfig = true;
             const working = basicWorkingFromConfig(config);
             if (!isDefaultPipelineName(draftPlanStorageKey()) || !customPipelineDefaults.has(draftPlanStorageKey())) {
-                adoptBasicWorking(draftPlanStorageKey(), isDefaultPipelineName(draftPlanStorageKey()) ? { cards: {}, defaults: {}, runExplicit: {}, error: '' } : working);
+                adoptBasicWorking(draftPlanStorageKey(), isDefaultPipelineName(draftPlanStorageKey()) ? { cards: {}, rounds: {}, defaults: {}, runExplicit: {}, error: '' } : working);
             }
             const protocol = config.protocol && typeof config.protocol === 'object' ? config.protocol : null;
             activeStageTemplate = String(protocol?.stageTemplate || '');
@@ -8163,7 +8194,7 @@ document.addEventListener('click', (event) => {
             if (pipelineStore.active === trimmedOld) pipelineStore.active = trimmedNew;
             if (customPipelineDefaults.has(trimmedOld)) { customPipelineDefaults.set(trimmedNew, customPipelineDefaults.get(trimmedOld)); customPipelineDefaults.delete(trimmedOld); }
             if (customCardSettings.has(trimmedOld)) { customCardSettings.set(trimmedNew, customCardSettings.get(trimmedOld)); customCardSettings.delete(trimmedOld); }
-            [basicRunExplicit, basicSchemaLoadErrors].forEach((map) => { if (map.has(trimmedOld)) { map.set(trimmedNew, map.get(trimmedOld)); map.delete(trimmedOld); } });
+            [customRoundSettings, basicRunExplicit, basicSchemaLoadErrors].forEach((map) => { if (map.has(trimmedOld)) { map.set(trimmedNew, map.get(trimmedOld)); map.delete(trimmedOld); } });
 
             renderPipelineList(pipelineStore.order, pipelineStore.active, pipelineStore.lastSaved);
             persistPipelineStore();
@@ -8371,6 +8402,7 @@ document.addEventListener('click', (event) => {
             delete pipelineStore.draftPlans.unsaved;
             delete pipelineSessionDraftPlans.unsaved;
             customCardSettings.delete('unsaved');
+            customRoundSettings.delete('unsaved');
             customPipelineDefaults.delete('unsaved');
             const defaultSynthesizer = window.__getDefaultSynthesizerName?.() || '';
             window.__pendingPipelineSynthesizer = defaultSynthesizer;
@@ -9107,7 +9139,10 @@ document.addEventListener('click', (event) => {
                 // instead of the participant list.
                 const roleChoice = !templateStage && isCustomEnginePipeline() && document.querySelector(`#r${round}-models .role-selector`)
                     ? { prompts: getRoleOptionPrompts(), roles: (stack?.items || []).map((item) => item.role || ''), disabled: pipelineRunActive,
-                        roundPrompt: getCustomRoundPrompt(`r${round}`) }
+                        roundPrompt: getCustomRoundPrompt(`r${round}`),
+                        // The round card of Basic: the order, the input and the task of the round.
+                        settings: { order: getCustomRoundSettings()[`r${round}`]?.order || '', input: getCustomRoundSettings()[`r${round}`]?.input || '', task: getCustomRoundSettings()[`r${round}`]?.task || '' },
+                        first: round === 1, inheritedTask: resolveCustomFields({}, 'round').task.value }
                     : null;
                 const model = window.StageCard.buildModel({
                     round,
@@ -9122,7 +9157,12 @@ document.addEventListener('click', (event) => {
                         .then(() => showNotification('Задание этапа скопировано.', 'info'))
                         .catch(() => showNotification('Не удалось скопировать задание.', 'warn')),
                     onRole: (select) => applyRoundRole(round, select),
-                    onRoundPrompt: (text) => setCustomRoundPrompt(`r${round}`, text)
+                    onRoundPrompt: (text) => setCustomRoundPrompt(`r${round}`, text),
+                    onSetting: async (field, value) => {
+                        if (pipelineRunActive) return;
+                        await setCustomRoundSetting(`r${round}`, field, value);
+                        openStageCard(roundBadge);
+                    }
                 });
             }
             if (!dialog.open) dialog.showModal();

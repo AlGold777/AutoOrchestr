@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-09 — The round card of Basic: order, input and task of a round, version 2.81.677
+
+- `results/stage-card.js`: the card opened by a round badge (Basic rounds) now holds, below «Роль для всех моделей раунда», **Порядок работы** (by default / parallel / by turns), **Вход раунда** (by default / nothing / previous step / everything accepted; the first round has none) and **Задание раунда** (shown while the input is not «nothing»; the placeholder shows the inherited text: ▶, then Basic). Fields are disabled during a run.
+- `results.js`: the settings live per pipeline (`customRoundSettings[ref] = { order, input, task }`), reach the run as the step's `order`, `input` and `task` (`basicSchemaFromPage`), are stored in the schema (a saved pipeline writes them at once, like the round's text), come back with a reload and with an installed schema (`BasicSchema.toSettings` gives `customRoundSettings`). A model's own task still outranks the round's. The empty choice and an empty task give the inheritance back.
+- Before this the engine ran such steps from a schema, but the canvas could not show them and a Save dropped them.
+- Tests: `tests/stage-card-basic.test.js` (model, render, schema), `tests/results-debate-favorites.test.js` (rows, task, order by turns, input, saved/reloaded/installed, read-only during a run).
+
 ### 2026-10-09 — A value the owner typed stays explicit; the header choice is remembered; length change handler fixed, version 2.81.676
 
 - Cards (`results.js`): a typed task, discipline text or length is saved as the owner's value even when it equals the inherited one; before, such a value was dropped and then followed ▶. Giving it back stays with «↶» and «×» (an emptied length field). A typed length instruction equal to the shown one (with the numbers filled in) is stored as its template and keeps following the limit. A request equal to the automatic one stays inherited (the automatic text is assembled, not a stored value). A length the owner did not touch is kept as saved.

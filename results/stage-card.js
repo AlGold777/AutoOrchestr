@@ -27,6 +27,9 @@
   // roleChoice (Custom rounds only): { prompts: [{ id, label }], roles: [prompt id or ''] per block,
   // disabled, roundPrompt } — one select for the whole round; mixed roles show 'разные' until chosen.
   // The round's text field shows only while 'custom' is selected.
+  // roleChoice.settings (the round card of Basic): { order, input, task } the owner set ('' = not set, inherited),
+  // inheritedTask (the text the round would take), first (the first round: nothing to feed in), disabled.
+  // They give the order of work, the input and the round's task.
   function buildModel({ round, templateStage = null, participants = [], stageRun = null, roleChoice = null } = {}) {
     const working = list(participants.filter((item) => item && item.send).map((item) => item.name));
     const waiting = list(participants.filter((item) => item && !item.send).map((item) => item.name));
@@ -57,6 +60,7 @@
             ...(Array.isArray(roleChoice.prompts) ? roleChoice.prompts : []).map((prompt) => ({ value: String(prompt.id), label: String(prompt.label || prompt.id) }))
           ]
         };
+        if (roleChoice.settings) model.settings = settingsModel(roleChoice.settings, roleChoice);
         return model;
       }
       model.sections.push({ title: 'Участники раунда', items: working.length ? working : ['никто не отправляет'] });
@@ -83,6 +87,24 @@
     return model;
   }
 
+  const ORDER_LABELS = { parallel: 'Параллельно', sequential: 'По очереди' };
+  const INPUT_LABELS = { none: 'Ничего', previous: 'Ответы предыдущего шага', all: 'Всё принятое за все предыдущие шаги' };
+  // The default of the input depends on the place: the first round has none, a later round takes the previous step.
+  function settingsModel(settings, { first = false, inheritedTask = '', disabled = false } = {}) {
+    const order = String(settings.order || '');
+    const input = String(settings.input || '');
+    const defaultInput = first ? 'none' : 'previous';
+    const effectiveInput = input || defaultInput;
+    return {
+      disabled: Boolean(disabled),
+      order: { value: order, options: [{ value: '', label: `По умолчанию (${ORDER_LABELS.parallel.toLowerCase()})` }, ...Object.entries(ORDER_LABELS).map(([value, label]) => ({ value, label }))] },
+      // The first round has no earlier step: its input is not offered.
+      input: first ? null : { value: input, options: [{ value: '', label: `По умолчанию (${INPUT_LABELS[defaultInput].toLowerCase()})` }, ...Object.entries(INPUT_LABELS).map(([value, label]) => ({ value, label }))] },
+      // The task is sent only with an input; with none it is not used.
+      task: effectiveInput === 'none' ? null : { value: String(settings.task || ''), placeholder: String(inheritedTask || '') }
+    };
+  }
+
   const el = (documentRef, tag, className, text) => {
     const node = documentRef.createElement(tag);
     if (className) node.className = className;
@@ -90,7 +112,7 @@
     return node;
   };
 
-  function render(container, model, { onCopy = null, onRole = null, onRoundPrompt = null } = {}) {
+  function render(container, model, { onCopy = null, onRole = null, onRoundPrompt = null, onSetting = null } = {}) {
     const doc = container.ownerDocument;
     container.replaceChildren();
     if (model.subtitle) container.append(el(doc, 'p', 'stage-card-subtitle', model.subtitle));
@@ -126,6 +148,35 @@
       const row = el(doc, 'label', 'stage-card-role');
       row.append(doc.createTextNode('Роль для всех моделей раунда '), select);
       container.append(row, area);
+      if (model.settings) {
+        const settings = model.settings;
+        const emit = (field, value) => { if (typeof onSetting === 'function') onSetting(field, value); };
+        const choice = (field, label, data) => {
+          const select = el(doc, 'select', `stage-card-${field}-select`);
+          data.options.forEach((item) => { const option = el(doc, 'option', '', item.label); option.value = item.value; select.append(option); });
+          select.value = data.value;
+          select.disabled = settings.disabled;
+          select.addEventListener('change', () => emit(field, select.value));
+          const wrap = el(doc, 'label', `stage-card-setting stage-card-${field}`);
+          wrap.append(doc.createTextNode(`${label} `), select);
+          container.append(wrap);
+        };
+        choice('order', 'Порядок работы', settings.order);
+        if (settings.input) choice('input', 'Вход раунда', settings.input);
+        if (settings.task) {
+          const area = el(doc, 'textarea', 'stage-card-task');
+          area.value = settings.task.value;
+          area.placeholder = settings.task.placeholder;
+          area.rows = 3;
+          area.spellcheck = false;
+          area.disabled = settings.disabled;
+          area.setAttribute('aria-label', 'Задание раунда');
+          area.addEventListener('change', () => emit('task', area.value));
+          const wrap = el(doc, 'label', 'stage-card-setting stage-card-task-label');
+          wrap.append(doc.createTextNode('Задание раунда (пусто — общее) '), area);
+          container.append(wrap);
+        }
+      }
     } else {
       const people = el(doc, 'div', 'stage-card-people');
       if (model.participants.working.length) {

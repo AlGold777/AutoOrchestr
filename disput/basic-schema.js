@@ -188,10 +188,15 @@
   }
 
   // The settings of the cards in the form the page edits them (the cards write only what the owner set):
-  // customModelSettings[ref][model] = { promptTemplate, maxWords, task, discipline }, customDefaults = the ▶ card.
+  // customModelSettings[ref][model] = { promptTemplate, maxWords, task, discipline }, customRoundSettings[ref] = { order, input, task }
+  // of a round (the round card), customDefaults = the ▶ card.
   function toSettings(schema) {
     const customModelSettings = {};
+    const customRoundSettings = {};
     (schema.steps || []).forEach((step) => {
+      const round = {};
+      if (step.kind === 'round') ['order', 'input', 'task'].forEach((key) => { if (key in step) round[key] = step[key]; });
+      if (Object.keys(round).length) customRoundSettings[step.ref] = round;
       (step.models || []).forEach((model) => {
         const own = {};
         if (typeof model.request === 'string') own.promptTemplate = model.request;
@@ -202,7 +207,7 @@
         (customModelSettings[step.ref] || (customModelSettings[step.ref] = {}))[model.name] = own;
       });
     });
-    return { customModelSettings, customDefaults: schema.defaults ? JSON.parse(JSON.stringify(schema.defaults)) : {} };
+    return { customModelSettings, customRoundSettings, customDefaults: schema.defaults ? JSON.parse(JSON.stringify(schema.defaults)) : {} };
   }
 
   // The canvas a schema stands for: the rounds, the models of each round with their roles, the final synthesizer

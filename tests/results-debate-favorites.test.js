@@ -3362,6 +3362,149 @@ describe('Pipeline debate favorites view', () => {
     }, 30000);
   });
 
+  describe('the round card of Basic: order, input and task of a round', () => {
+    const rows = (card) => ({
+      order: card.querySelector('.stage-card-order-select'), input: card.querySelector('.stage-card-input-select'), task: card.querySelector('.stage-card-task'),
+      role: card.querySelector('.stage-card-role-select')
+    });
+    const choose = async (select, value) => { select.value = value; select.dispatchEvent(new Event('change')); await settleCustomCard(); };
+    const type = async (area, value) => { area.value = value; area.dispatchEvent(new Event('change')); await settleCustomCard(); };
+
+    test('the first round offers the order only; a later round also the input and, with an input, the task with the inherited text', () => {
+      const h = setupCustomInheritance('Round card rows', { synthesis: '' });
+      try {
+        const first = rows(openRoundCard(1));
+        expect(first.order.value).toBe('');
+        expect([...first.order.options].map((option) => option.textContent)).toEqual(['По умолчанию (параллельно)', 'Параллельно', 'По очереди']);
+        expect(first.input).toBeNull();
+        expect(first.task).toBeNull();
+        const second = rows(openRoundCard(2));
+        expect([...second.input.options].map((option) => option.value)).toEqual(['', 'none', 'previous', 'all']);
+        expect(second.input.options[0].textContent).toBe('По умолчанию (ответы предыдущего шага)');
+        expect(second.task.value).toBe('');
+        expect(second.task.placeholder).toBe(window.BasicSchema.DEFAULTS.roundTask);
+        expect(second.role).not.toBeNull();
+      } finally { h.cleanup(); }
+    }, 30000);
+
+    test('the task placeholder follows ▶; "Nothing" as the input takes the task row away', async () => {
+      const h = setupCustomInheritance('Round card task', { synthesis: '' });
+      try {
+        await h.general({ roundTask: 'FROM_GENERAL' });
+        expect(rows(openRoundCard(2)).task.placeholder).toBe('FROM_GENERAL');
+        await choose(rows(openRoundCard(2)).input, 'none');
+        expect(rows(openRoundCard(2)).task).toBeNull();
+        expect(h.debug.getCustomRoundSettings().r2).toEqual({ input: 'none' });
+        await choose(rows(openRoundCard(2)).input, '');
+        expect(rows(openRoundCard(2)).task).not.toBeNull();
+        expect(h.debug.getCustomRoundSettings().r2).toBeUndefined();
+      } finally { h.cleanup(); }
+    }, 30000);
+
+    test('the typed task reaches every model of the round; a model\'s own task still wins', async () => {
+      const h = setupCustomInheritance('Round card own task', { synthesis: '' });
+      try {
+        await type(rows(openRoundCard(2)).task, 'ROUND_TASK_TEXT');
+        expect(h.debug.getCustomRoundSettings().r2).toEqual({ task: 'ROUND_TASK_TEXT' });
+        await h.run();
+        expect(h.starts[1].promptsByModel.GPT).toContain('ROUND_TASK_TEXT');
+        expect(h.starts[1].promptsByModel.CLAUDE).toContain('ROUND_TASK_TEXT');
+        await h.model({ task: 'MODEL_TASK_TEXT' });
+        await h.run();
+        expect(h.starts[1].promptsByModel.GPT).toContain('MODEL_TASK_TEXT');
+        expect(h.starts[1].promptsByModel.GPT).not.toContain('ROUND_TASK_TEXT');
+        expect(h.starts[1].promptsByModel.CLAUDE).toContain('ROUND_TASK_TEXT');
+        // An emptied field gives the inheritance back.
+        await type(rows(openRoundCard(2)).task, '  ');
+        expect(h.debug.getCustomRoundSettings().r2).toBeUndefined();
+      } finally { h.cleanup(); }
+    }, 30000);
+
+    test('"By turns" calls the models of the round one after another, each seeing the answers before it', async () => {
+      const h = setupCustomInheritance('Round card order', { synthesis: '' });
+      try {
+        await h.run();
+        expect(h.starts.map((start) => start.selectedLLMs.length)).toEqual([2, 2]);
+        await choose(rows(openRoundCard(2)).order, 'sequential');
+        expect(h.debug.getCustomRoundSettings().r2).toEqual({ order: 'sequential' });
+        await h.run();
+        expect(h.starts.map((start) => start.selectedLLMs.length)).toEqual([2, 1, 1]);
+        expect(h.starts[1].promptsByModel.CLAUDE || h.starts[1].promptsByModel.GPT).not.toContain('до тебя');
+        const second = h.starts[2].promptsByModel[h.starts[2].selectedLLMs[0]];
+        expect(second).toContain('Ответы участников этого раунда до тебя');
+        expect(second).toContain('Accepted');
+      } finally { h.cleanup(); }
+    }, 30000);
+
+    test('"Everything accepted" as the input gives a later round the answers of all earlier steps', async () => {
+      const h = setupCustomInheritance('Round card input', { synthesis: '' });
+      try {
+        await choose(rows(openRoundCard(2)).input, 'all');
+        await h.run();
+        expect(h.starts[1].promptsByModel.GPT).toContain('Принятые ответы всех предыдущих шагов');
+        await choose(rows(openRoundCard(2)).input, 'none');
+        await h.run();
+        expect(h.starts[1].promptsByModel.GPT).not.toContain('Ответы предыдущего шага');
+        expect(h.starts[1].promptsByModel.GPT).not.toContain('Принятые ответы');
+      } finally { h.cleanup(); }
+    }, 30000);
+
+    test('a saved pipeline keeps the round card in its schema; a reload and an installed schema show it', async () => {
+      const h = setupCustomInheritance('Round card saved', { synthesis: '' });
+      try {
+        await h.general({ roundTask: 'GENERAL_FOR_SAVE' });
+        await choose(rows(openRoundCard(2)).order, 'sequential');
+        await choose(rows(openRoundCard(2)).input, 'all');
+        await type(rows(openRoundCard(2)).task, 'SAVED_ROUND_TASK');
+        const record = h.debug.getPipelineStoreSnapshot().pipelines['Round card saved'];
+        expect(record.schema.steps.find((step) => step.ref === 'r2')).toMatchObject({ kind: 'round', order: 'sequential', input: 'all', task: 'SAVED_ROUND_TASK' });
+        expect(window.BasicSchema.validate(record.schema)).toEqual([]);
+        // Reload: the card shows what was saved.
+        const copy = JSON.parse(JSON.stringify(record));
+        h.debug.clearCustomSessionForTest();
+        h.debug.setPipelineStoreForTest({ active: 'Round card saved', order: ['Round card saved'], pipelines: { 'Round card saved': copy } });
+        h.debug.applyPipelineConfig(copy);
+        const card = rows(openRoundCard(2));
+        expect([card.order.value, card.input.value, card.task.value]).toEqual(['sequential', 'all', 'SAVED_ROUND_TASK']);
+        // Going back to the default removes the field from the schema.
+        await choose(card.order, '');
+        expect('order' in h.debug.getPipelineStoreSnapshot().pipelines['Round card saved'].schema.steps.find((step) => step.ref === 'r2')).toBe(false);
+        // An installed schema brings its round settings onto the card.
+        const result = await h.debug.installBasicSchema('Round card installed', { schemaVersion: 1, origin: 'user', steps: [
+          { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }, { name: 'Claude' }] },
+          { ref: 'r2', kind: 'round', order: 'sequential', input: 'none', models: [{ name: 'GPT' }, { name: 'Claude' }] }
+        ] });
+        expect(result.ok).toBe(true);
+        document.querySelector('.pipeline-item[data-name="Round card installed"]').click();
+        await settleCustomCard();
+        const installed = rows(openRoundCard(2));
+        expect([installed.order.value, installed.input.value]).toEqual(['sequential', 'none']);
+        expect(installed.task).toBeNull();
+        expect(h.debug.buildBasicRun(window.__pipelineDraftPlanForCanvas(window.__getActivePipelineDraftPlan())).steps[1]).toMatchObject({ order: 'sequential', input: 'none', task: '' });
+      } finally { h.cleanup(); }
+    }, 30000);
+
+    test('the round card is read-only during a run: the fields are disabled and a change does nothing', async () => {
+      const h = setupCustomInheritance('Round card running', { synthesis: '' });
+      const originalSend = chrome.runtime.sendMessage.getMockImplementation();
+      let release;
+      let first = true;
+      chrome.runtime.sendMessage.mockImplementation((message, callback) => {
+        if (first && message.type === 'START_FULLPAGE_PROCESS') { first = false; release = () => originalSend(message, callback); }
+        else return originalSend(message, callback);
+      });
+      let running;
+      try {
+        running = h.run();
+        for (let i = 0; i < 50 && !release; i++) await settleCustomCard();
+        const card = rows(openRoundCard(2));
+        expect([card.order.disabled, card.input.disabled, card.task.disabled, card.role.disabled]).toEqual([true, true, true, true]);
+        await choose(card.order, 'sequential');
+        expect(h.debug.getCustomRoundSettings().r2).toBeUndefined();
+      } finally { release?.(); if (running) await running; h.cleanup(); }
+    }, 30000);
+  });
+
   test('Custom ▶ is read-only during a run while its contents can still be copied', async () => {
     const h = setupCustomInheritance('Read-only defaults');
     const originalSend = chrome.runtime.sendMessage.getMockImplementation();
