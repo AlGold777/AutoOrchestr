@@ -1631,7 +1631,7 @@ body.pro-features-hidden .comparison-section {
     height: 100%;
     min-height: 0;
     max-height: none;
-    padding: 5px 15px;
+    /* padding: 5px 15px; */
     border-radius: 8px;
     font-size: 16px;
     line-height: 1.45;
