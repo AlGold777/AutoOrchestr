@@ -476,7 +476,7 @@ describe('release log regression guards', () => {
     expect(source).toContain('fullName.length > PIPELINE_HEADER_DISPLAY_LIMIT');
     expect(source).toContain('fullName.slice(0, PIPELINE_HEADER_DISPLAY_LIMIT - 1)}…');
     expect(source).toContain("delete pipelineStore.draftPlans['Unsaved Pipeline'];");
-    expect(source).toContain("window.__pendingPipelineSynthesizer = '';");
+    expect(source).toContain("window.__pendingPipelineSynthesizer = defaultSynthesizer;");
     expect(source).toContain("if (isDefaultPipelineName(key)) return '';");
     expect(source).toContain('block.classList.toggle(\'inactive\', !isActive);');
     expect(css).toContain('margin-left: auto;');

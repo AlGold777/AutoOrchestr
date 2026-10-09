@@ -4023,15 +4023,6 @@ document.addEventListener('click', (event) => {
                     draftPlan.plannedStages = draftPlan.plannedStages.filter((stage) => stage.plannedStageId !== 'planned-final-synthesis');
                 }
             }
-            // Intermediate synthesis checkpoints intentionally share the final
-            // synthesizer. There is no per-checkpoint model choice in the UI.
-            if (trimmed) {
-                draftPlan.plannedStages
-                    ?.filter((stage) => stage.outputIntent === 'working_synthesis')
-                    .forEach((stage) => {
-                        stage.participantIds = [trimmed];
-                    });
-            }
             persistActiveDraftPlan(draftPlan);
             const activeName = String(pipelineStore.active || getPipelineHeaderName()).trim();
             const activeConfig = activeName ? getPipelineConfigByName(activeName) : null;
@@ -4203,11 +4194,14 @@ document.addEventListener('click', (event) => {
             const selectedFromFlow = normalizeExplicitSynthesizer(
                 getSynthesizerFlowSelect?.()?.value || window.__pendingPipelineSynthesizer
             );
+            // Only a pipeline without any stored synthesizer decision (no plan, no persisted choice) starts with the default.
+            const hasSynthesizerDecision = !!existingPlan || window.__pendingPipelineSynthesizer !== undefined;
+            const defaultSynthesizer = hasSynthesizerDecision ? '' : (window.__getDefaultSynthesizerName?.() || '');
             let plan = window.DebateDraftPlan?.createCanvasPlan?.({
                 planId: `canvas-${String(pipelineStore.active || 'unsaved').replace(/[^a-z0-9_-]+/gi, '-')}`,
                 revision: Number(existingPlan?.revision || 0),
                 rounds,
-                synthesizer: selectedFromExisting || selectedFromFlow
+                synthesizer: selectedFromExisting || selectedFromFlow || defaultSynthesizer
             }) || { plannedStages: [] };
             // Reapply explicitly authored intermediate stages after rebuilding
             // Canvas-owned stages, preserving their IDs and assignments.
@@ -4248,6 +4242,12 @@ document.addEventListener('click', (event) => {
         const getDraftPlanSynthesizer = (plan = null) => normalizeExplicitSynthesizer(
             (plan?.plannedStages || []).find((stage) => stage.plannedStageId === 'planned-final-synthesis')?.participantIds?.[0]
         );
+        // Default synthesizer for a fresh pipeline and for new intermediate syntheses: Claude, else the first model.
+        const getDefaultSynthesizerName = () => {
+            const names = (Array.isArray(PipelineRuntime?.MODELS) ? PipelineRuntime.MODELS : []).map((model) => model?.name).filter(Boolean);
+            return names.includes('Claude') ? 'Claude' : (names[0] || '');
+        };
+        window.__getDefaultSynthesizerName = getDefaultSynthesizerName;
         window.__pipelineDraftPlanForCanvas = draftPlanForCanvas;
         window.__updatePipelineAll = () => updatePipelineAll();
         window.__getActivePipelineDraftPlan = getActiveDraftPlan;
@@ -8099,9 +8099,10 @@ document.addEventListener('click', (event) => {
             delete pipelineSessionDraftPlans['Unsaved Pipeline'];
             customCardSettings.delete('Unsaved Pipeline');
             customPipelineDefaults.delete('Unsaved Pipeline');
-            window.__pendingPipelineSynthesizer = '';
+            const defaultSynthesizer = window.__getDefaultSynthesizerName?.() || '';
+            window.__pendingPipelineSynthesizer = defaultSynthesizer;
             const emptyFlowSelect = getSynthesizerFlowSelect();
-            if (emptyFlowSelect) emptyFlowSelect.value = '';
+            if (emptyFlowSelect) emptyFlowSelect.value = defaultSynthesizer;
             pipelineItems?.querySelectorAll('.pipeline-item').forEach((el) => el.classList.remove('active'));
             pipelineItems?.querySelectorAll('.pipeline-radio').forEach((radio) => {
                 radio.checked = false;
@@ -8298,7 +8299,7 @@ document.addEventListener('click', (event) => {
             if (intermediateStageAfter(afterStageId, plan)) return plan;
             const result = window.DebateDraftPlan.insertSynthesis(JSON.parse(JSON.stringify(plan)), {
                 afterPlannedStageId: afterStageId,
-                participantIds: [window.__getDraftPlanSynthesizer?.(plan)],
+                participantIds: [window.__getDraftPlanSynthesizer?.(plan) || window.__getDefaultSynthesizerName?.()],
                 plannedStageId: intermediateStageId(afterStageId)
             });
             return result.ok ? result.plan : plan;
@@ -8636,7 +8637,8 @@ document.addEventListener('click', (event) => {
                 return;
             }
             const models = getSelectedLLMs();
-            const next = models.includes(lastFinalSynthesizer) ? lastFinalSynthesizer : models[0];
+            const next = models.includes(lastFinalSynthesizer) ? lastFinalSynthesizer
+                : (models.includes('Claude') ? 'Claude' : models[0]);
             if (!next || !window.setSynthesisModelFromName?.(next)) {
                 showNotification('Выберите модели, чтобы включить финальный синтез.', 'warn');
             }
@@ -8780,12 +8782,6 @@ document.addEventListener('click', (event) => {
 
         // Opens the card without changing the stage; an absent stage shows its card from a virtual plan.
         const openIntermediateCard = (insert) => {
-            const afterStageId = insert.dataset.afterStageId || '';
-            const plan = draftPlanForCanvas(getActiveDraftPlan());
-            if (!intermediateStageAfter(afterStageId, plan) && !window.__getDraftPlanSynthesizer?.(plan)) {
-                showNotification('Сначала выберите финального синтезатора.', 'warn');
-                return;
-            }
             showPipelineBlockInfo(insert);
         };
 
@@ -20985,7 +20981,6 @@ function checkCompareButtonState() {
     function syncStageInsertControls(plan = activeDraftPlanForCanvas()) {
         const lifecycle = String(window.DebateApplication?.getState?.()?.lifecycle || 'IDLE').toUpperCase();
         const editable = !['PLANNING', 'RUNNING', 'CANCELLING'].includes(lifecycle);
-        const synthesizer = window.__getDraftPlanSynthesizer?.(plan);
         const roundStageIds = (plan.plannedStages || [])
             .filter((stage) => /^canvas-r\d+$/.test(stage.plannedStageId || ''))
             .map((stage) => stage.plannedStageId);
@@ -20996,7 +20991,7 @@ function checkCompareButtonState() {
             const activeStage = workingStages.find((stage) => stage.upstream?.includes(afterStageId));
             const isBetweenRounds = roundStageIds.indexOf(afterStageId) >= 0
                 && roundStageIds.indexOf(afterStageId) < roundStageIds.length - 1;
-            const enabled = editable && isBetweenRounds && (!!activeStage || !!synthesizer);
+            const enabled = editable && isBetweenRounds;
             // Only the gaps between two rounds exist: the insert after the last round is hidden, not disabled.
             button.hidden = !isBetweenRounds;
             button.disabled = !enabled;
@@ -21008,9 +21003,7 @@ function checkCompareButtonState() {
                     ? 'Intermediate synthesis can be placed only between rounds'
                     : activeStage
                         ? 'Click to remove (double-click for its request)'
-                        : synthesizer
-                            ? 'Click to add intermediate synthesis'
-                            : 'Select the final synthesizer first';
+                        : 'Click to add intermediate synthesis';
         });
     }
     function renderDraftPlanCanvas() {
@@ -21046,7 +21039,8 @@ function checkCompareButtonState() {
         const existing = (plan.plannedStages || []).find((stage) =>
             stage.outputIntent === 'working_synthesis' && stage.upstream?.includes(afterPlannedStageId));
         if (existing) return removeIntermediateSynthesis(plan, existing);
-        const synthesizer = window.__getDraftPlanSynthesizer?.(plan);
+        // Independent of the final synthesis: an intermediate one falls back to the default synthesizer.
+        const synthesizer = window.__getDraftPlanSynthesizer?.(plan) || window.__getDefaultSynthesizerName?.();
         const result = window.DebateDraftPlan.insertSynthesis(plan, {
             afterPlannedStageId,
             participantIds: [synthesizer],

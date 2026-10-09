@@ -2585,6 +2585,25 @@ describe('Pipeline debate favorites view', () => {
     } finally { h.cleanup(); }
   }, 30000);
 
+  test('an intermediate synthesis is added with the final synthesis OFF and uses Claude', async () => {
+    const h = setupCustomInheritance('Intermediate without final', { synthesis: '' });
+    try {
+      await delay(0);
+      const column = document.getElementById('round1');
+      if (!column.querySelector('.pipeline-stage-insert')) column.insertAdjacentHTML('afterbegin', '<button type="button" class="pipeline-stage-insert" data-after-stage-id="canvas-r1"></button>');
+      const insert = column.querySelector('.pipeline-stage-insert');
+      expect(document.getElementById('synthesisColumn').classList.contains('pipeline-final-off')).toBe(true);
+      expect(insert.disabled).toBe(false);
+      insert.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await delay(300);
+      expect(insert.classList.contains('has-intermediate-synthesis')).toBe(true);
+      const plan = window.__pipelineDraftPlanForCanvas(window.__getActivePipelineDraftPlan());
+      expect(window.__getDraftPlanSynthesizer(plan)).toBe('');
+      const stage = plan.plannedStages.find((item) => item.outputIntent === 'working_synthesis');
+      expect(stage.participantIds).toEqual(['Claude']);
+    } finally { h.cleanup(); }
+  }, 30000);
+
   test('legacy role labels resolve to the renamed roles', () => {
     const catalog = require('../disput/debate-prompt-catalog.js');
     expect(catalog.resolveParticipantRoleText('Meta-Синтез')).toBe('Synthes');
@@ -2817,14 +2836,14 @@ describe('Pipeline debate favorites view', () => {
     expect(document.querySelectorAll('.model-stack .pipeline-empty-slot')).toHaveLength(3);
   });
 
-  test('new empty pipeline clears synthesizer and enables its selector after model choice', () => {
+  test('new empty pipeline starts with Claude as the final synthesizer and its selector stays enabled after model choice', () => {
     document.getElementById('pipeline-add-btn').click();
 
     const synthesisSelect = document.getElementById('synthesis-flow-select');
     const synthesisBlock = document.querySelector('.pipeline-synthesis-block');
-    expect(synthesisSelect.value).toBe('');
-    expect(synthesisBlock.classList.contains('selected-synthesizer')).toBe(false);
-    expect(synthesisBlock.classList.contains('inactive')).toBe(true);
+    expect(window.__getDefaultSynthesizerName()).toBe('Claude');
+    expect(synthesisSelect.value).toBe('Claude');
+    expect(synthesisBlock.classList.contains('selected-synthesizer')).toBe(true);
 
     document.getElementById('llm-gpt').click();
     expect(synthesisSelect.disabled).toBe(false);

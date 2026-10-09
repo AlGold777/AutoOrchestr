@@ -1,5 +1,13 @@
 # CHANGELOG — Project
 
+### 2026-10-09 — Claude is the default synthesizer, intermediate synthesis independent of Final, version 2.81.661 (changing the final synthesizer no longer rewrites intermediate ones)
+
+- A new empty pipeline starts with the final synthesis on, with Claude (`window.__getDefaultSynthesizerName`: Claude when the model list has it, else the first model). A saved pipeline keeps its stored choice, including an explicit off; the default applies only when there is no stored synthesizer decision.
+- Toggling the Final badge on, with no earlier choice, selects Claude when it is among the selected models, else the first selected model.
+- An intermediate synthesis can be added with the final synthesis off. Its stage uses the final synthesizer if one is set, else the default model. The insert is no longer disabled and has no «Select the final synthesizer first» title; the intermediate card opens without a final synthesizer.
+- The runtime and `DebateDraftPlan.insertSynthesis` do not require a final synthesis stage; no change there.
+- Tests: the new empty pipeline expects Claude; a new test adds an intermediate synthesis with Final off and checks the stage model is Claude.
+
 ### 2026-10-09 — Final block stays with Final off, insert after the last round hidden, role labels renamed, version 2.81.660
 
 - The insert button after the last round is hidden (`hidden`), not disabled. Only the gaps between two rounds show it; the CSS `[hidden]` rule is kept on `.pipeline-stage-insert`. The state is recomputed on every pipeline update, so a round added or removed moves the visible gap.
