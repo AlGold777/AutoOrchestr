@@ -5773,7 +5773,7 @@ document.addEventListener('click', (event) => {
                     if (name && roleSelect) roleByName.set(name, roleSelect.value || '');
                 });
                 const emptySlots = Math.max(0, getDebateModelSlotCount() - selectedIndices.length);
-                const nextHtml = buildModelBlocksHtml(selectedIndices, roundIndex > 1)
+                const nextHtml = buildModelBlocksHtml(selectedIndices, true)
                     + buildPipelineEmptySlotBlocksHtml(emptySlots);
                 if (stack.innerHTML.trim() !== nextHtml.trim()) {
                     stack.innerHTML = nextHtml;
@@ -8696,8 +8696,8 @@ document.addEventListener('click', (event) => {
                 const stack = captureModelStackState(`r${round}-models`);
                 const stages = debateApplication?.getOrchestrator?.()?.getState?.()?.stages || [];
                 const stageRun = stages.filter((item) => item.plannedStageId === `canvas-r${round}`).pop() || null;
-                // Custom rounds with mini-request selectors (round 2+): one role for the round's models
-                // instead of the participant list. Round 1 has no selectors and keeps the list.
+                // Custom rounds (R1 included) with mini-request selectors: one role for the round's models
+                // instead of the participant list.
                 const roleChoice = !templateStage && isCustomEnginePipeline() && document.querySelector(`#r${round}-models .role-selector`)
                     ? { prompts: getRoleOptionPrompts(), roles: (stack?.items || []).map((item) => item.role || ''), disabled: pipelineRunActive,
                         roundPrompt: getCustomRoundPrompt(`r${round}`) }

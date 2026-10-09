@@ -552,7 +552,7 @@ describe('release log regression guards', () => {
     expect(source).toContain("pipelineCanvas?.classList.remove('pipeline-canvas-empty');");
     expect(runtime).toContain('onlyActive = false,');
     expect(runtime).toContain('.filter(({ index }) => !onlyActive || activeSet.has(index))');
-    expect(runtime).toContain('activeIndices: [], withRole: false, onlyActive: true');
+    expect(runtime).toContain('renderModelStack(r1Stack, { activeIndices: [], withRole: true, onlyActive: true');
     expect(runtime).toContain('activeIndices: [], withRole: true, onlyActive: true');
     expect(source).toContain("pipelineCanvas?.classList.remove('pipeline-canvas-empty');");
     expect(source).toContain('const setR1ModelsFromSelectedLLMs = (options = {}) => syncPipelineRoundModelsFromSelectedLLMs(options);');

@@ -1,5 +1,13 @@
 # CHANGELOG — Project
 
+### 2026-10-09 — R1 model blocks get the role list, version 2.81.663
+
+- The R1 model blocks have the same `.role-selector` as R2+ (default None). The R1 stack is hydrated with roles (`pipeline/pipeline-runtime.js`, `hydratePipelineStacks`), and the sync that rebuilds blocks after a change of selected models keeps roles for R1 too (`results.js`, `syncPipelineRoundModelsFromSelectedLLMs`).
+- A role chosen for an R1 model is sent with that model's R1 request as «Дополнительно для тебя», after the user's original task. It is applied on the Custom engine only, as for R2+: the other engines do not apply role text to any round.
+- The R1 stage card (round badge) shows the round role select and the round «Custom» text, like R2+, on the Custom engine. Preset builders keep R1 roles at None.
+- Roles of R1 are captured with the pipeline config (`modelStacks['r1-models']`) and restored with it; the stored values were already captured, but were not applied to R1 blocks before.
+- Tests: a new test sets a role on one R1 model and checks that only its R1 prompt changes and that the role is saved and restored; the round-card and hydrate regression assertions expect R1 roles.
+
 ### 2026-10-09 — Final synthesis state after reload, round blocks keep their design, version 2.81.662
 
 - The round model blocks of the final synthesizer have the normal design again and are not marked as synthesizer blocks: `syncSynthesizerBlocks` no longer toggles `selected-synthesizer` / `pipeline-final-synthesizer` on round blocks, and the CSS for those classes on model blocks is removed. The final «Synthesis» block keeps its own markup and its green look.

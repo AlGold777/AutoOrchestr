@@ -93,7 +93,7 @@
 
     const hydratePipelineStacks = ({ document, escapeHtml = escapeFallback, orderedPrompts = [] } = {}) => {
         const r1Stack = document?.getElementById?.('r1-models');
-        renderModelStack(r1Stack, { activeIndices: [], withRole: false, onlyActive: true, orderedPrompts, escapeHtml });
+        renderModelStack(r1Stack, { activeIndices: [], withRole: true, onlyActive: true, orderedPrompts, escapeHtml });
         const r2Stack = document?.getElementById?.('r2-models');
         renderModelStack(r2Stack, { activeIndices: [], withRole: true, onlyActive: true, orderedPrompts, escapeHtml });
     };

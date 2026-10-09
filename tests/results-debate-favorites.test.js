@@ -2405,9 +2405,10 @@ describe('Pipeline debate favorites view', () => {
   test('Custom role «Custom» sends the round text to the blocks that chose it; other roles and an empty text stay as they are', async () => {
     const h = setupCustomInheritance('Round custom text');
     try {
-      // Custom is offered by the Custom engine's selectors only; round 1 has none.
+      // Custom is offered by the Custom engine's selectors only; round 1 has selectors too.
       expect([...canvasBlock('r2-models', 'GPT').querySelectorAll('.role-selector option')].map((option) => option.value)).toContain('custom');
-      expect(document.querySelectorAll('#r1-models .role-selector')).toHaveLength(0);
+      expect([...canvasBlock('r1-models', 'GPT').querySelectorAll('.role-selector option')].map((option) => option.value)).toContain('custom');
+      expect(document.querySelectorAll('#r1-models .role-selector')).toHaveLength(2);
 
       // The round card shows the text field only while Custom is selected.
       const card = openRoundCard(2);
@@ -2449,6 +2450,28 @@ describe('Pipeline debate favorites view', () => {
       expect(h.debug.capturePipelineConfig().customDefaults.roundPrompts).toBeUndefined();
       await h.run();
       expect(h.starts[1].promptsByModel.GPT).not.toContain('Дополнительно для тебя');
+    } finally { h.cleanup(); }
+  }, 30000);
+
+  test('R1 blocks have a role list; a role on one R1 model reaches only its R1 prompt and is saved and restored', async () => {
+    const h = setupCustomInheritance('R1 role');
+    try {
+      // Same selectors as R2+: None by default, Custom on the Custom engine, the round card too.
+      expect(canvasBlock('r1-models', 'GPT').querySelector('.role-selector').value).toBe('');
+      expect(openRoundCard(1).querySelector('.stage-card-role-select')).not.toBeNull();
+
+      setBlockRole(canvasBlock('r1-models', 'GPT'), 'interaction_critical_audit');
+      await h.run();
+      expect(h.starts[0].promptsByModel.GPT).toContain('INHERITANCE TASK');
+      expect(h.starts[0].promptsByModel.GPT).toContain('Дополнительно для тебя:\nПроведи экспертный аудит');
+      expect(h.starts[0].promptsByModel.CLAUDE).not.toContain('Дополнительно для тебя');
+      expect(h.starts[1].promptsByModel.GPT).not.toContain('Дополнительно для тебя');
+
+      const saved = JSON.parse(JSON.stringify(h.debug.capturePipelineConfig()));
+      expect(saved.modelStacks['r1-models'].items.find((item) => item.name === 'GPT').role).toBe('interaction_critical_audit');
+      expect(saved.modelStacks['r1-models'].items.find((item) => item.name === 'CLAUDE' || item.name === 'Claude').role).toBeNull();
+      h.debug.applyPipelineConfig(saved);
+      expect(canvasBlock('r1-models', 'GPT').querySelector('.role-selector').value).toBe('interaction_critical_audit');
     } finally { h.cleanup(); }
   }, 30000);
 
