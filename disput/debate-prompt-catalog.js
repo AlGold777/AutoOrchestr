@@ -7,7 +7,12 @@
   };
   const validateRequiredSections = (value, sections = []) => sections.filter((section) => !new RegExp(`(?:^|\\n)#{1,6}\\s*${String(section).replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}`, 'i').test(String(value || '')));
   const validateSynthesisSections = (value) => validateRequiredSections(value, SYNTHESIS_REQUIRED_SECTIONS);
-  const resolveParticipantRoleText = (role, index = 0) => String(role || `Participant ${index + 1}`).trim();
+  // Role labels renamed: a stored old label resolves to the new one (lookup is case-insensitive).
+  const LEGACY_ROLE_LABELS = Object.freeze({ 'meta-синтез': 'Synthes', 'критический аудит': 'Critique' });
+  const resolveParticipantRoleText = (role, index = 0) => {
+    const text = String(role || `Participant ${index + 1}`).trim();
+    return LEGACY_ROLE_LABELS[text.toLowerCase()] || text;
+  };
   const resolveProtocolMission = (profile = {}) => String(profile.mission || profile.description || 'Produce a verifiable contribution to the shared StateMap.');
   const resolveDiscussionTopic = ({ topic, moderatorMessage } = {}) => String(topic || moderatorMessage || '').trim();
   const api = Object.freeze({ SYNTHESIS_REQUIRED_SECTIONS, normalizeMaxWords, validateRequiredSections, validateSynthesisSections, resolveParticipantRoleText, resolveProtocolMission, resolveDiscussionTopic });

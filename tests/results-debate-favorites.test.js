@@ -2365,7 +2365,7 @@ describe('Pipeline debate favorites view', () => {
       const card = openRoundCard(2);
       expect(card.textContent).not.toContain('Участники раунда');
       const roundSelect = card.querySelector('.stage-card-role-select');
-      expect([...roundSelect.options].map((option) => option.textContent)).toEqual(['разные', 'None', 'Meta-Синтез', 'Критический аудит', 'Select ideas', 'Clustering', 'Custom']);
+      expect([...roundSelect.options].map((option) => option.textContent)).toEqual(['разные', 'None', 'Synthes', 'Critique', 'Select ideas', 'Clustering', 'Custom']);
       expect(roundSelect.value).toBe('mixed');
 
       // Replacing mixed roles asks first; Cancel changes nothing.
@@ -2556,6 +2556,41 @@ describe('Pipeline debate favorites view', () => {
       expect(insert.parentElement).toBe(column);
     } finally { h.cleanup(); }
   }, 30000);
+
+  test('the insert after the last round is hidden; the insert between two rounds stays', () => {
+    const h = setupCustomInheritance('Insert hidden', { synthesis: 'GPT' });
+    try {
+      const inserts = ['round1', 'round2'].map((id, index) => {
+        const column = document.getElementById(id);
+        if (!column.querySelector('.pipeline-stage-insert')) column.insertAdjacentHTML('afterbegin', `<button type="button" class="pipeline-stage-insert" data-after-stage-id="canvas-r${index + 1}"></button>`);
+        return column.querySelector('.pipeline-stage-insert');
+      });
+      window.__syncStageInsertControls();
+      expect(inserts[0].hidden).toBe(false);
+      expect(inserts[1].hidden).toBe(true);
+    } finally { h.cleanup(); }
+  }, 30000);
+
+  test('with no final synthesizer the final block stays in place, inactive, with its select disabled', async () => {
+    const h = setupCustomInheritance('Final off block', { synthesis: '' });
+    try {
+      await delay(0);
+      const block = document.querySelector('#synthesis-stack .pipeline-synthesis-block');
+      expect(block).not.toBeNull();
+      expect(document.getElementById('synthesisColumn').classList.contains('pipeline-final-off')).toBe(true);
+      expect(block.classList.contains('inactive')).toBe(true);
+      expect(block.classList.contains('selected-synthesizer')).toBe(false);
+      expect(block.querySelector('.model-name').textContent).toBe('Synthesis');
+      expect(document.getElementById('synthesis-flow-select').disabled).toBe(true);
+    } finally { h.cleanup(); }
+  }, 30000);
+
+  test('legacy role labels resolve to the renamed roles', () => {
+    const catalog = require('../disput/debate-prompt-catalog.js');
+    expect(catalog.resolveParticipantRoleText('Meta-Синтез')).toBe('Synthes');
+    expect(catalog.resolveParticipantRoleText('Критический аудит')).toBe('Critique');
+    expect(catalog.resolveParticipantRoleText('Critique')).toBe('Critique');
+  });
 
   test('double-clicking the final synthesis block opens the final synthesizer card; a single click does not', async () => {
     const h = setupCustomInheritance('Final card', { synthesis: 'Gemini' });

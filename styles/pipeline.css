@@ -370,8 +370,16 @@ body.is-resizing {
     color: #64748b;
 }
 
+/* No final synthesizer: the block stays in place, inactive (same look as .model-block.inactive). */
 #synthesisColumn.pipeline-final-off .pipeline-synthesis-block {
-    display: none;
+    border-color: #cbd5e1;
+    background: #f8fafc;
+    box-shadow: none;
+    opacity: 0.72;
+}
+
+#synthesisColumn.pipeline-final-off .pipeline-synthesis-block .model-name {
+    color: #94a3b8;
 }
 
 .pipeline-synthesis-block.selected-synthesizer,
@@ -456,6 +464,10 @@ body.is-resizing {
     cursor: pointer;
     display: inline-block;
     box-sizing: border-box;
+}
+
+.pipeline-stage-insert[hidden] {
+    display: none;
 }
 
 .pipeline-stage-insert::before,

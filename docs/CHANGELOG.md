@@ -1,5 +1,13 @@
 # CHANGELOG — Project
 
+### 2026-10-09 — Final block stays with Final off, insert after the last round hidden, role labels renamed, version 2.81.660
+
+- The insert button after the last round is hidden (`hidden`), not disabled. Only the gaps between two rounds show it; the CSS `[hidden]` rule is kept on `.pipeline-stage-insert`. The state is recomputed on every pipeline update, so a round added or removed moves the visible gap.
+- With the Final badge off, the final synthesis block stays in place: dimmed with the inactive look, its label «Synthesis», and its select disabled. A run, or a block with no synthesizer, disables the select. The badge is the only way to turn it on.
+- The connector to the final block is drawn in the inactive style when no synthesizer is selected, and it points at the centre of that block.
+- Role labels: «Meta-Синтез» → «Synthes», «Критический аудит» → «Critique» (prompts, Modifiers, selector). Old labels still resolve to the same roles: a legacy-label map in the pipeline's role lookup and in `DebatePromptCatalog.resolveParticipantRoleText`. Saved role ids are unchanged.
+- Tests: a new test covers the hidden last-round insert, a new test covers the inactive final block with a disabled select, a new test covers legacy labels; the round role list expects the new labels.
+
 ### 2026-10-09 — Synthesis blocks read «Synthesis», model cards open by double click, version 2.81.659
 
 - The final and intermediate synthesis blocks are labelled «Synthesis». The model is shown only in their select, so the label never changes; the model is read from the plan (final) or the stage participant (intermediate).

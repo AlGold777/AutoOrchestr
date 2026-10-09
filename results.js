@@ -457,13 +457,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     const DEFAULT_JUDGE_SYSTEM_PROMPTS = [
         {
             id: 'interaction_meta_synthesis',
-            label: 'Meta-Синтез',
+            label: 'Synthes',
             text: 'Построй собственное экспертное решение, используя представленные версии как сырьё, а не как источник консенсуса. Возьми из них только идеи, которые усиливают твоё решение; слабые отбрось, даже если они встречаются во всех версиях. Проверяй заимствованное на фактическую точность. Результат — новый цельный ответ, а не пересказ и не компиляция.',
             order: 101
         },
         {
             id: 'interaction_critical_audit',
-            label: 'Критический аудит',
+            label: 'Critique',
             text: 'Проведи экспертный аудит ответов и покажи то, что все пропустили:\n1. Слепые зоны — важные аспекты и следствия, которые никто не назвал.\n2. Ошибки — фактические неточности, логические противоречия, ложные причинно-следственные связи.\n3. Методология — неподходящие критерии и фреймворки, неучтённые ограничения и риски.\nКаждый пункт: конкретный пример → общий паттерн. Без вступлений, сразу к сути.',
             order: 102
         },
@@ -3682,6 +3682,11 @@ document.addEventListener('click', (event) => {
         }
         const PIPELINE_MODELS = PipelineRuntime?.MODELS || [];
         const PIPELINE_ROLE_BASE = ['Synthesis', 'Critic', 'Meta', 'Advocate'];
+        // Role labels were renamed; pipelines saved under the old labels still resolve to the same prompts.
+        const LEGACY_ROLE_LABEL_IDS = {
+            'meta-синтез': 'interaction_meta_synthesis',
+            'критический аудит': 'interaction_critical_audit'
+        };
         const DEFAULT_MODEL_INDICES = PipelineRuntime?.DEFAULT_MODEL_INDICES || [];
         const DEFAULT_JUDGE_INDICES = PipelineRuntime?.DEFAULT_JUDGE_INDICES || [];
         const DEFAULT_LATE_JUDGE_INDICES = PipelineRuntime?.DEFAULT_LATE_JUDGE_INDICES || [0];
@@ -3742,7 +3747,9 @@ document.addEventListener('click', (event) => {
             if (!catalog?.resolveParticipantRoleText) return '';
             const stack = captureModelStackState('r2-models');
             const storedRole = stack?.items?.[index]?.role || '';
-            const prompt = storedRole ? getJudgePromptById(storedRole) : null;
+            const prompt = storedRole
+                ? (getJudgePromptById(storedRole) || getJudgePromptById(LEGACY_ROLE_LABEL_IDS[String(storedRole).toLowerCase()]))
+                : null;
             return catalog.resolveParticipantRoleText(prompt?.label || storedRole, index);
         };
 
@@ -3755,6 +3762,8 @@ document.addEventListener('click', (event) => {
             const lowered = String(value).toLowerCase();
             const byLabel = ordered.find((prompt) => String(prompt.label || '').toLowerCase() === lowered);
             if (byLabel) return byLabel.id;
+            const legacyId = LEGACY_ROLE_LABEL_IDS[lowered];
+            if (legacyId && ordered.some((prompt) => prompt.id === legacyId)) return legacyId;
             const roleIndex = PIPELINE_ROLE_BASE.findIndex((role) => role.toLowerCase() === lowered);
             if (roleIndex !== -1 && ordered[roleIndex]) return ordered[roleIndex].id;
             if (ordered[index % Math.max(1, ordered.length)]) return ordered[index % ordered.length].id;
@@ -4960,6 +4969,8 @@ document.addEventListener('click', (event) => {
             const synthRounds = syncIntermediateSynthColumns();
             updatePipelineLayout();
             syncCustomRoleOption();
+            // Round add/remove changes which insert gaps exist (the one after the last round is hidden).
+            window.__syncStageInsertControls?.();
             pipelinePanel.querySelectorAll('.model-block').forEach((block) => {
                 const inputCb = block.querySelector('.model-input-checkbox');
                 const sendCb = block.querySelector('.model-send-checkbox');
@@ -20922,6 +20933,13 @@ function checkCompareButtonState() {
             .map((model) => model?.name)
             .filter(Boolean);
     }
+    // The flow select is disabled while the final synthesis is off (no synthesizer) or a run is active.
+    function syncFlowSelectLock(flowSelect, current) {
+        if (!flowSelect) return;
+        const lifecycle = String(window.DebateApplication?.getState?.()?.lifecycle || 'IDLE').toUpperCase();
+        const locked = !!pipelineRunActive || ['PLANNING', 'RUNNING', 'PAUSED', 'CANCELLING'].includes(lifecycle);
+        flowSelect.disabled = locked || !current;
+    }
     function renderSynthesisStage() {
         if (!synthesisStack) return;
         const current = normalizeExplicitSynthesizer(window.__getDraftPlanSynthesizer?.(
@@ -20948,6 +20966,7 @@ function checkCompareButtonState() {
         const flowSelect = getSynthesizerFlowSelect();
         if (flowSelect) {
             flowSelect.value = current;
+            syncFlowSelectLock(flowSelect, current);
             flowSelect.addEventListener('change', (event) => {
                 window.setSynthesisModelFromName?.(event.target?.value || '');
             });
@@ -20978,6 +20997,8 @@ function checkCompareButtonState() {
             const isBetweenRounds = roundStageIds.indexOf(afterStageId) >= 0
                 && roundStageIds.indexOf(afterStageId) < roundStageIds.length - 1;
             const enabled = editable && isBetweenRounds && (!!activeStage || !!synthesizer);
+            // Only the gaps between two rounds exist: the insert after the last round is hidden, not disabled.
+            button.hidden = !isBetweenRounds;
             button.disabled = !enabled;
             button.classList.toggle('has-intermediate-synthesis', !!activeStage);
             button.setAttribute('aria-pressed', String(!!activeStage));
@@ -20997,6 +21018,7 @@ function checkCompareButtonState() {
         const plan = activeDraftPlanForCanvas();
         syncStageInsertControls(plan);
     }
+    window.__syncStageInsertControls = () => syncStageInsertControls();
     async function removeIntermediateSynthesis(plan, target) {
         const next = JSON.parse(JSON.stringify(plan));
         next.plannedStages.forEach((stage) => {
@@ -21074,6 +21096,7 @@ function checkCompareButtonState() {
         const block = synthesisStack.querySelector('.pipeline-synthesis-block');
         synthesisColumn?.classList.toggle('pipeline-final-off', !current);
         if (flowSelect && flowSelect.value !== current) flowSelect.value = current;
+        syncFlowSelectLock(flowSelect, current);
         if (block) {
             block.classList.toggle('selected-synthesizer', !!current);
             block.title = current ? `Final synthesizer: ${current}` : 'Select a synthesizer model';
@@ -21124,7 +21147,10 @@ function checkCompareButtonState() {
         renderSynthesisStage();
         const currentFlowSelect = getSynthesizerFlowSelect();
         const hasActivePipelineModels = getSelectedLLMs().length > 0;
-        if (currentFlowSelect) currentFlowSelect.disabled = runActive || !shouldRenderSynthesisStage || !hasActivePipelineModels;
+        const hasFinalSynthesizer = !!normalizeExplicitSynthesizer(window.__getDraftPlanSynthesizer?.(
+            window.__pipelineDraftPlanForCanvas?.(window.__getActivePipelineDraftPlan?.())
+        ));
+        if (currentFlowSelect) currentFlowSelect.disabled = runActive || !shouldRenderSynthesisStage || !hasActivePipelineModels || !hasFinalSynthesizer;
         const activeSynthesisValue = String(window.__getDraftPlanSynthesizer?.(
             window.__pipelineDraftPlanForCanvas?.(window.__getActivePipelineDraftPlan?.())
         ) || '').trim();
