@@ -78,7 +78,6 @@
                         <span class="status-indicator" data-llm-name="${escapeHtml(model.name)}"></span>
                         <input type="checkbox" class="model-checkbox model-input-checkbox"${inputAttrs}>
                         <span class="model-name">${escapeHtml(model.name)}</span>
-                        <button type="button" class="model-block-inspect-btn" title="Inspect block prompts" aria-label="Inspect ${escapeHtml(model.name)} pipeline block">📝</button>
                         <input type="checkbox" class="model-checkbox model-send-checkbox"${sendAttrs}>
                     </div>
                     ${roleHtml}

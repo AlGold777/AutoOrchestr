@@ -621,8 +621,6 @@ describe('release log regression guards', () => {
     expect(css).toContain('.model-header {\n    display: flex;\n    align-items: center;\n    gap: 6px;\n    width: 100%;\n    min-width: 0;');
     expect(css).toContain('.model-name {\n    min-width: 0;\n    flex: 1 1 auto;\n    overflow: hidden;');
     expect(css).toContain('.model-checkbox {\n    width: 13px;\n    height: 13px;\n    flex: 0 0 13px;\n    margin: 0;');
-    expect(css).toContain('.model-block-inspect-btn {');
-    expect(css).toContain('flex: 0 0 18px;');
   });
 
   test('closed Disput composer keeps the run button inside the right edge of moderator input', () => {

@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-09 — Synthesis blocks read «Synthesis», model cards open by double click, version 2.81.659
+
+- The final and intermediate synthesis blocks are labelled «Synthesis». The model is shown only in their select, so the label never changes; the model is read from the plan (final) or the stage participant (intermediate).
+- The **Final** badge and the intermediate header stay on the top line with the round badges. The vertical centring now moves only the synthesis column's model stack; the final column is no longer centred as a whole.
+- The inspect button 📝 is removed from all model blocks and the final block. A double click on the empty body of a model block opens its card, as the final block already did. Clicks on checkboxes, status, role selector, select and buttons keep their own meaning. Single click on a block body has no meaning, so the double click does not conflict with it.
+- Tests: the card tests open by double click; the intermediate and final block tests expect the «Synthesis» label and the select value.
+
 ### 2026-10-09 — Intermediate synthesis block matches the final block, version 2.81.658
 
 - The intermediate synthesis column has no "Synthesis" header text. Its insert button moves into the header and sits on the card's center line; removing the stage returns the button to its round.

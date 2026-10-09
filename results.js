@@ -3974,11 +3974,10 @@ document.addEventListener('click', (event) => {
         const syncSynthesizerBlocks = () => {
             if (!pipelinePanel) return;
             const synthesizer = getDraftPlanSynthesizer(draftPlanForCanvas(getActiveDraftPlan()));
-            const flowLabel = getSynthesizerFlowName();
             const flowSelect = getSynthesizerFlowSelect();
-            if (flowLabel) flowLabel.textContent = synthesizer || 'Synthesizer: None';
             if (flowSelect && flowSelect.value !== synthesizer) flowSelect.value = synthesizer;
-            pipelinePanel.querySelectorAll('.model-block').forEach((block) => {
+            // Synthesizer blocks (final and intermediate) are labelled «Synthesis»; their state is set by their own renderers.
+            pipelinePanel.querySelectorAll('.model-block:not(.pipeline-synthesis-block)').forEach((block) => {
                 const modelName = block.querySelector('.model-name')?.textContent?.trim() || '';
                 const isSynthesizer = !!synthesizer
                     && modelName === synthesizer
@@ -4927,7 +4926,7 @@ document.addEventListener('click', (event) => {
                                 <div class="model-block inactive pipeline-synthesis-block selected-synthesizer">
                                     <div class="model-header">
                                         <span class="status-indicator" aria-hidden="true"></span>
-                                        <span class="model-name"></span>
+                                        <span class="model-name">Synthesis</span>
                                     </div>
                                     <select class="synthesis-flow-select" aria-label="Intermediate synthesis model"></select>
                                 </div>
@@ -4943,10 +4942,9 @@ document.addEventListener('click', (event) => {
                     select.append(...modelNames.map((name) => new Option(name, name)));
                     select.addEventListener('change', () => window.__setIntermediateSynthesisModel?.(`canvas-r${round}`, select.value));
                 }
+                // The label stays «Synthesis»; the chosen model is only the select's value.
                 const modelName = stage.participantIds?.[0] || '';
-                const nameEl = column.querySelector('.model-name');
                 const select = column.querySelector('select.synthesis-flow-select');
-                if (nameEl && nameEl.textContent !== modelName) nameEl.textContent = modelName;
                 if (select) {
                     if (select.value !== modelName) select.value = modelName;
                     select.disabled = !editable;
@@ -8304,9 +8302,12 @@ document.addEventListener('click', (event) => {
             const match = /^r(\d+)-models$/.exec(stackId);
             return match ? `r${match[1]}` : '';
         };
-        const customBlockModel = (block) => (block.classList.contains('pipeline-stage-insert')
-            ? intermediateStageAfter(block.dataset.afterStageId, cardPlanFor(block))?.participantIds?.[0] || ''
-            : block.querySelector('.model-name')?.textContent?.trim() || '');
+        // Synthesizer blocks are labelled «Synthesis», so their model comes from the plan, never from the label.
+        const customBlockModel = (block) => {
+            if (block.classList.contains('pipeline-stage-insert')) return intermediateStageAfter(block.dataset.afterStageId, cardPlanFor(block))?.participantIds?.[0] || '';
+            if (block.closest?.('#synthesis-stack')) return window.__getDraftPlanSynthesizer?.(cardPlanFor(block)) || '';
+            return block.querySelector('.model-name')?.textContent?.trim() || '';
+        };
         const renderCustomBlockInspector = async (block, modal, { pipelineDefaults = false } = {}) => {
             const modelName = pipelineDefaults ? '' : customBlockModel(block);
             const ref = pipelineDefaults ? '' : customBlockRef(block);
@@ -8338,9 +8339,9 @@ document.addEventListener('click', (event) => {
             const copyButton = (id, label) => `<button type="button" data-action="copy" data-copy-field="${id}" title="Копировать" aria-label="Копировать: ${label}"><i class="ti ti-copy" aria-hidden="true"></i></button>`;
             // ▶ «Особенности моделей»: one field per model on the canvas; the model card shows its own note read-only.
             const modelNotes = getCustomPipelineDefaults().modelNotes || {};
-            // The synthesizer block shows «Synthesizer: …» as its label; only a chosen model is a name.
-            const canvasModels = pipelineDefaults ? [...new Set(Array.from(pipelinePanel.querySelectorAll('.model-block .model-name'), (node) => node.textContent.trim())
-                .filter((name) => name && !name.startsWith('Synthesizer:')))] : [];
+            // Synthesizer blocks are labelled «Synthesis»; only the round models are canvas models.
+            const canvasModels = pipelineDefaults ? [...new Set(Array.from(pipelinePanel.querySelectorAll('.model-block:not(.pipeline-synthesis-block) .model-name'), (node) => node.textContent.trim())
+                .filter(Boolean))] : [];
             const content = modal.querySelector('.modal-content');
             modal.classList.add('custom-model-card');
             modal.classList.toggle('custom-defaults-card', pipelineDefaults);
@@ -8546,7 +8547,7 @@ document.addEventListener('click', (event) => {
                 showPipelineBlockInfo(block);
                 return;
             }
-            const modelName = block.querySelector('.model-name')?.textContent?.trim() || 'Model';
+            const modelName = customBlockModel(block) || 'Model';
             const stageColumn = block.closest('.stage-column');
             const stageLabel = stageColumn?.querySelector('.stage-label')?.textContent?.replace(/\s+/g, ' ').trim() || 'Pipeline block';
             const protocol = getPipelineProtocolConfig();
@@ -8591,9 +8592,10 @@ document.addEventListener('click', (event) => {
             document.body.classList.add('modal-open');
         };
 
-        // A double click on the final synthesis block or its column label opens the final synthesizer's card,
-        // the same card as its inspect button. It runs before the generic dblclick listener, which would
+        // A double click on the final synthesis block or its column label opens the final synthesizer's card
+        // (the same gesture as on a model block). It runs before the generic dblclick listener, which would
         // otherwise open the empty "Final" stage card from the round badge. The synthesizer select keeps its own clicks.
+        const BLOCK_CONTROL_SELECTOR = 'input, select, textarea, button, label, a, [contenteditable="true"], .role-selector, .status-indicator';
         const openFinalSynthesizerCard = () => {
             const block = document.querySelector('#synthesis-stack .pipeline-synthesis-block');
             if (!block) return;
@@ -8631,6 +8633,15 @@ document.addEventListener('click', (event) => {
         pipelinePanel.addEventListener('dblclick', (event) => {
             const target = event.target;
             if (!target?.closest || target.closest('#synthesis-flow-select') || target.closest('.pipeline-intermediate-synth')) return;
+            // A double click on the empty body of a model block opens its card. Controls keep their own clicks.
+            const modelBlock = target.closest('.model-block');
+            if (modelBlock && !modelBlock.classList.contains('pipeline-synthesis-block') && pipelinePanel.contains(modelBlock)
+                && !target.closest(BLOCK_CONTROL_SELECTOR)) {
+                event.preventDefault();
+                clearTimeout(finalSynthesisTimer);
+                showPipelineBlockInfo(modelBlock);
+                return;
+            }
             const finalTarget = target.closest('.pipeline-synthesis-block, #synthesisColumn .stage-label');
             if (!finalTarget || !pipelinePanel.contains(finalTarget)) return;
             event.preventDefault();
@@ -8745,13 +8756,6 @@ document.addEventListener('click', (event) => {
                 }
                 return;
             }
-            const inspectBtn = event.target?.closest?.('.model-block-inspect-btn');
-            if (!inspectBtn || !pipelinePanel.contains(inspectBtn)) return;
-            const block = inspectBtn.closest('.model-block');
-            if (!block) return;
-            event.preventDefault();
-            event.stopPropagation();
-            showPipelineBlockInfo(block);
         });
 
         const stageDialog = document.getElementById('pipeline-stage-dialog');
@@ -20870,9 +20874,6 @@ function checkCompareButtonState() {
     function getSynthesizerFlowSelect() {
         return synthesisStack?.querySelector('#synthesis-flow-select') || null;
     }
-    function getSynthesizerFlowName() {
-        return synthesisStack?.querySelector('#synthesis-flow-name') || null;
-    }
     const debateLengthSelect = document.getElementById('debate-length-select');
     const debateSelToolbar = document.getElementById('debateSelTb');
     const DEBATE_SELECTORS_STORAGE_KEY = 'llmCodexDebateSelectors.v1';
@@ -20926,10 +20927,7 @@ function checkCompareButtonState() {
         const current = normalizeExplicitSynthesizer(window.__getDraftPlanSynthesizer?.(
             window.__pipelineDraftPlanForCanvas?.(window.__getActivePipelineDraftPlan?.())
         ));
-        const emptyLabel = 'Synthesizer: None';
-        const inspectLabel = 'Inspect synthesis stage';
         const flowSelectId = 'synthesis-flow-select';
-        const flowNameId = 'synthesis-flow-name';
         const flowSelectClass = 'synthesis-flow-select';
         // No "None" option: the off state is the Final badge (no synthesizer selected leaves the select empty).
         const options = getAllModelNames()
@@ -20940,8 +20938,7 @@ function checkCompareButtonState() {
             <div class="model-block inactive pipeline-synthesis-block pipeline-final-synthesizer" data-synthesis-stage="true" data-synthesis-kind="universal">
                 <div class="model-header">
                     <span class="status-indicator" aria-hidden="true"></span>
-                <span class="model-name" id="${flowNameId}">${escapeHtml(current || emptyLabel)}</span>
-                    <button type="button" class="model-block-inspect-btn" title="${escapeHtml(inspectLabel)}" aria-label="Inspect synthesis block">📝</button>
+                    <span class="model-name">Synthesis</span>
                 </div>
                 <select id="${flowSelectId}" class="${flowSelectClass}" aria-label="Synthesis model in flow">
                     ${options}
@@ -21073,11 +21070,9 @@ function checkCompareButtonState() {
         const current = normalizeExplicitSynthesizer(window.__getDraftPlanSynthesizer?.(
             window.__pipelineDraftPlanForCanvas?.(window.__getActivePipelineDraftPlan?.())
         ));
-        const label = getSynthesizerFlowName();
         const flowSelect = getSynthesizerFlowSelect();
         const block = synthesisStack.querySelector('.pipeline-synthesis-block');
         synthesisColumn?.classList.toggle('pipeline-final-off', !current);
-        if (label) label.textContent = current || 'Synthesizer: None';
         if (flowSelect && flowSelect.value !== current) flowSelect.value = current;
         if (block) {
             block.classList.toggle('selected-synthesizer', !!current);

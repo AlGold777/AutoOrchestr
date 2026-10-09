@@ -1993,7 +1993,7 @@ describe('Pipeline debate favorites view', () => {
     expect(window.getSelectedPipelinePresetId()).toBe('CUSTOM');
     const block = [...document.querySelectorAll('#r2-models .model-block')].find((item) => item.querySelector('.model-name')?.textContent === 'Gemini');
     expect(block).toBeDefined();
-    block.querySelector('.model-block-inspect-btn').click();
+    block.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
     const modal = document.getElementById('pipeline-block-info-modal');
     expect(modal.classList.contains('custom-model-card')).toBe(true);
     expect(modal.querySelector('.custom-card-model').textContent).toContain('Gemini');
@@ -2251,7 +2251,8 @@ describe('Pipeline debate favorites view', () => {
     const modal = () => document.getElementById('pipeline-block-info-modal');
     const openGeneral = () => { document.getElementById('entryPoint').click(); return modal(); };
     const openModel = (model = 'GPT') => {
-      [...document.querySelectorAll('#r2-models .model-block')].find((block) => block.querySelector('.model-name')?.textContent === model).querySelector('.model-block-inspect-btn').click();
+      [...document.querySelectorAll('#r2-models .model-block')].find((block) => block.querySelector('.model-name')?.textContent === model)
+        .dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
       return modal();
     };
     const edit = async (card, values) => {
@@ -2534,11 +2535,10 @@ describe('Pipeline debate favorites view', () => {
       // No "Synthesis" text: the header is empty and the insert button sits in it.
       expect(synthColumn.querySelector('.pipeline-intermediate-synth-header').textContent.trim()).toBe('');
       expect(synthColumn.querySelector('.pipeline-intermediate-synth-header .pipeline-stage-insert')).toBe(insert);
-      expect(synthColumn.textContent).not.toMatch(/Synthesis/);
-      // The block is the final synthesis block's markup: status indicator, model name, model select.
+      // The block is the final synthesis block's markup: status indicator, constant «Synthesis» label, model select.
       const block = synthColumn.querySelector('.model-block.pipeline-synthesis-block');
       expect(block.querySelector('.status-indicator')).not.toBeNull();
-      expect(block.querySelector('.model-name').textContent).toBe('Gemini');
+      expect(block.querySelector('.model-name').textContent).toBe('Synthesis');
       const select = block.querySelector('select.synthesis-flow-select');
       expect(select.value).toBe('Gemini');
       // Choosing a model in the select sets this stage's participant.
@@ -2548,7 +2548,7 @@ describe('Pipeline debate favorites view', () => {
       const stage = window.__pipelineDraftPlanForCanvas(window.__getActivePipelineDraftPlan())
         .plannedStages.find((item) => item.outputIntent === 'working_synthesis');
       expect(stage.participantIds).toEqual(['Claude']);
-      expect(block.querySelector('.model-name').textContent).toBe('Claude');
+      expect(block.querySelector('.model-name').textContent).toBe('Synthesis');
       // A single click on the insert removes the stage and the button returns to its round.
       insert.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await delay(300);
@@ -2837,7 +2837,8 @@ describe('Pipeline debate favorites view', () => {
     expect(document.getElementById('synthesisColumn').hidden).toBe(false);
     expect(document.getElementById('connectorToSynthesis').hidden).toBe(false);
     expect(document.querySelector('#synthesis-stack .pipeline-synthesis-block .model-name').textContent)
-      .toBe('Claude');
+      .toBe('Synthesis');
+    expect(document.querySelector('#synthesis-stack .synthesis-flow-select').value).toBe('Claude');
   });
 
   test('terminal synthesis card aligns to the visible model-stack centre', () => {
