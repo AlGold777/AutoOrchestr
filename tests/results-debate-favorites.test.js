@@ -2419,6 +2419,37 @@ describe('Pipeline debate favorites view', () => {
     } finally { h.cleanup(); }
   }, 30000);
 
+  test('Custom ▶ own lines reach every model of every step, before the model\'s own lines', async () => {
+    const h = setupCustomInheritance('General lines', { synthesis: 'Gemini' });
+    try {
+      // Adds lines through «+» on a card, then saves it; the card of ▶ has the same «+» as the model card.
+      const addLines = async (card, lines) => {
+        lines.forEach((text) => {
+          card.querySelector('#custom-card-line-add').click();
+          const fields = card.querySelectorAll('[data-line] textarea');
+          const last = fields[fields.length - 1];
+          last.value = text;
+          last.dispatchEvent(new Event('input'));
+        });
+        card.querySelector('#custom-card-save').click();
+        await settleCustomCard();
+      };
+      await addLines(h.openGeneral(), ['SHARED_LINE']);
+      await addLines(h.openModel('GPT'), ['OWN_LINE']);
+      expect(h.debug.capturePipelineConfig().customDefaults.discipline.lines).toEqual(['SHARED_LINE']);
+      expect(h.debug.capturePipelineConfig().customModelSettings.r2.GPT.discipline.lines).toEqual(['OWN_LINE']);
+      await h.run();
+      expect(h.starts[0].promptsByModel.GPT).toContain('SHARED_LINE');
+      expect(h.starts[0].promptsByModel.GPT).not.toContain('OWN_LINE');
+      const gpt = h.starts[1].promptsByModel.GPT;
+      expect(gpt.indexOf('SHARED_LINE')).toBeGreaterThan(-1);
+      expect(gpt.indexOf('SHARED_LINE')).toBeLessThan(gpt.indexOf('OWN_LINE'));
+      expect(h.starts[1].promptsByModel.CLAUDE).toContain('SHARED_LINE');
+      expect(h.starts[1].promptsByModel.CLAUDE).not.toContain('OWN_LINE');
+      expect(h.starts[2].promptsByModel.GEMINI).toContain('SHARED_LINE');
+    } finally { h.cleanup(); }
+  }, 30000);
+
   const setBlockRole = (block, promptId) => {
     const select = block.querySelector('.role-selector');
     select.value = promptId;

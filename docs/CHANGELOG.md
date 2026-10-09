@@ -1,5 +1,13 @@
 # CHANGELOG — Project
 
+### 2026-10-09 — «+» lines in the ▶ card apply to every model; ▶ card as tall as the model card, 10% wider, version 2.81.669
+
+- The ▶ card («Общие задания и дисциплина») has the same «+» and lines as the model card («Строка N», copy, «×», «✓»). Lines are stored in `customDefaults.discipline.lines`; empty lines are not saved.
+- The request takes the ▶ lines first, then the model's own lines, for every model of every step (`customStepsFromPlan`, `results.js`). `prepareCustomPrompts` is unchanged.
+- The ▶ card keeps `roundPrompts` and `modelNotes` on save. During a run, «+» and the lines are disabled.
+- The ▶ card window is 978px wide (was 889px for the model card) and as tall as the model card (`min(760px, 100dvh - 32px)`); the body scrolls, the header with Save stays visible.
+- Tests in `tests/results-debate-favorites.test.js`: a ▶ line reaches every model of every step before the model's own line.
+
 ### 2026-10-09 — «+» in the model card's transport marks adds own instruction lines, version 2.81.668
 
 - The model card (Custom) has a «+» under the «Метки транспорта» rows. Each press adds an own line («Строка N») with a copy icon, «×» (removes the line) and «✓» (saves the card). No inheritance button.

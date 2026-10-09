@@ -1493,7 +1493,7 @@ body.pipeline-page #disput-state-map-panel .disput-state-map-actions > button:no
 .custom-card-discipline textarea:focus-visible { outline: 2px solid #86b9aa; outline-offset: 1px; }
 .custom-card-body code { color: #237565; font-size: 12px; }
 .custom-card-top #custom-card-save { justify-self: end; border-radius: 9px; padding: 6px 18px; background: #2597f4; color: #fff; }
-.custom-defaults-card .modal-content { height: auto; }
+.custom-defaults-card .modal-content { width: 978px; height: min(760px, calc(100dvh - 32px)); }
 .custom-defaults-top { grid-template-columns: 1fr auto; }
 #entryPoint[role="button"] { cursor: pointer; }
 #entryPoint[role="button"]:focus-visible { outline: 2px solid #86b9aa; outline-offset: 3px; }

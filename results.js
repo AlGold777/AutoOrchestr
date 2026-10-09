@@ -6629,15 +6629,16 @@ document.addEventListener('click', (event) => {
                 models: step.models.map((name) => {
                     const settings = getCustomCardSettings()[step.ref]?.[name];
                     const resolved = resolveCustomFields(settings, step.kind);
+                    const lines = [...(getCustomPipelineDefaults().discipline?.lines || []), ...(settings?.discipline?.lines || [])];
                     const role = roles?.[name];
                     // An intermediate synthesis without its own text runs the final synthesizer's text.
                     const finalText = step.ref.startsWith('synth:') ? getCustomCardSettings().final?.[name]?.promptTemplate : '';
                     return { name, promptTemplate: settings?.promptTemplate || finalText || null, maxWords: settings?.maxWords || null,
                         extra: role === CUSTOM_ROLE_ID ? getCustomRoundPrompt(step.ref) : getJudgePromptById(role)?.text || '',
                         task: step.input === 'none' ? '' : resolved.task.value,
-                        // Own lines of the card's «+» reach the request through the step's discipline.
+                        // Lines of ▶ (for every model) go first, then the model's own lines; both reach the request.
                         discipline: { ...Object.fromEntries(Object.entries(resolved.discipline).map(([key, item]) => [key, item.value])),
-                            ...(settings?.discipline?.lines ? { lines: settings.discipline.lines } : {}) } };
+                            ...(lines.length ? { lines } : {}) } };
                 })
             }));
         };
@@ -8478,8 +8479,8 @@ document.addEventListener('click', (event) => {
                             </div>
                             <textarea id="custom-discipline-${key}" rows="2" spellcheck="false"></textarea>
                         </div>`).join('')}
-                        ${pipelineDefaults ? '' : `<div class="custom-card-lines"></div>
-                        <div class="custom-card-actions"><button type="button" id="custom-card-line-add" aria-label="Добавить строку" title="Добавить строку">+</button></div>`}
+                        <div class="custom-card-lines"></div>
+                        <div class="custom-card-actions"><button type="button" id="custom-card-line-add" aria-label="Добавить строку" title="Добавить строку">+</button></div>
                         <div class="custom-card-note">{от} — на 50 слов меньше предела; {слов} — предел из шапки pipeline; {метка} — новая метка; {причина} — причина повтора. Пустое поле наследуется. При повторе запрос заменяется инструкцией исправления.</div>
                     </div>
                     ${pipelineDefaults ? `<div class="custom-card-marks"><strong>Особенности моделей</strong>
@@ -8501,7 +8502,7 @@ document.addEventListener('click', (event) => {
             save.disabled = pipelineRunActive;
             const dirtyFields = new Set();
             const fields = {};
-            // Own instruction lines of the model card, in the order they were added.
+            // Own instruction lines (the card's «+»), in the order they were added; ▶ keeps its shared lines the same way.
             const lineValues = [...(saved.discipline?.lines || [])];
             const display = (key, value) => key === 'limit' ? customLengthInstruction(value, Number(length?.value || general)) : value;
             const differs = (key, value) => typeof value === 'string' && value.trim()
@@ -8556,10 +8557,8 @@ document.addEventListener('click', (event) => {
                     if (dirtyFields.has(key) ? differs(key, value) : typeof value === 'string' && value.trim()) { if (isTask(key)) next[key] = value; else discipline[key] = value; }
                 });
                 // Empty lines are not saved.
-                if (!pipelineDefaults) {
-                    const lines = lineValues.map((line) => line.trim()).filter(Boolean);
-                    if (lines.length) discipline.lines = lines;
-                }
+                const lines = lineValues.map((line) => line.trim()).filter(Boolean);
+                if (lines.length) discipline.lines = lines;
                 if (Object.keys(discipline).length) next.discipline = discipline;
                 if (pipelineDefaults) {
                     // Round texts are written by the round card, not this form: keep them.
