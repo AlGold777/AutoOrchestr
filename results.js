@@ -4137,10 +4137,12 @@ document.addEventListener('click', (event) => {
             // title. A model column is much taller, so align the visible
             // synthesis stack body against the last model stack instead.
             const terminalColumns = [
-                { column: synthesisColumn, stack: synthesisStack }
+                { column: synthesisColumn, stack: synthesisStack },
+                ...Array.from(pipelinePanel.querySelectorAll('.stage-column.pipeline-intermediate-synth'))
+                    .map((column) => ({ column, stack: column.querySelector('.model-stack') }))
             ];
             const modelStacks = stacks.filter((stack) => (
-                stack.classList.contains('model-stack') && stack !== synthesisStack
+                stack.classList.contains('model-stack') && stack !== synthesisStack && !stack.closest('.pipeline-intermediate-synth')
             ));
             const referenceStack = modelStacks[modelStacks.length - 1] || null;
             if (!referenceStack) return { aligned: false, reason: 'no-reference-stack' };
@@ -4158,7 +4160,7 @@ document.addEventListener('click', (event) => {
                 if (Math.abs(offset - currentOffset) > 0.1) {
                     column.style.setProperty('--pipeline-terminal-offset', `${offset}px`);
                 }
-                appliedOffsets[column.id] = offset;
+                appliedOffsets[column.id || stack.id] = offset;
             });
             return {
                 aligned: Object.keys(appliedOffsets).length > 0,
@@ -4890,27 +4892,45 @@ document.addEventListener('click', (event) => {
             const synthRounds = new Set();
             if (!pipelinePanel) return synthRounds;
             const plan = window.__pipelineDraftPlanForCanvas?.(window.__getActivePipelineDraftPlan?.()) || { plannedStages: [] };
-            const wanted = new Set();
+            // Each round K maps to its intermediate stage; the stage's own model is shown and edited in its card.
+            const wanted = new Map();
             (plan.plannedStages || []).forEach((stage) => {
                 if (stage?.outputIntent !== 'working_synthesis') return;
                 const match = (stage.upstream || []).map((id) => /^canvas-r(\d+)$/.exec(String(id))).find(Boolean);
                 const round = match ? Number(match[1]) : 0;
-                if (round >= 1 && round < roundCounter) wanted.add(round);
+                if (round >= 1 && round < roundCounter) wanted.set(round, stage);
             });
+            // While the card exists, round K's insert button sits in the card header (its center line); it goes back when the card is removed.
+            const moveInsertButton = (round, host) => {
+                const button = pipelinePanel.querySelector(`.pipeline-stage-insert[data-after-stage-id="canvas-r${round}"]`);
+                if (button && host && button.parentElement !== host) host.appendChild(button);
+            };
+            const roundHostFor = (round) => pipelinePanel.querySelector(`.stage-column[data-round="${round}"]:not(.pipeline-intermediate-synth) > .stage-header-row`)
+                || pipelinePanel.querySelector(`.stage-column[data-round="${round}"]:not(.pipeline-intermediate-synth)`);
             pipelinePanel.querySelectorAll('.pipeline-intermediate-synth').forEach((el) => {
-                if (!wanted.has(Number(el.dataset.synthAfterRound || 0))) el.remove();
+                const round = Number(el.dataset.synthAfterRound || 0);
+                if (wanted.has(round)) return;
+                moveInsertButton(round, roundHostFor(round));
+                el.remove();
             });
-            const modelName = window.__getDraftPlanSynthesizer?.(plan) || '';
-            wanted.forEach((round) => {
+            const lifecycle = String(window.DebateApplication?.getState?.()?.lifecycle || 'IDLE').toUpperCase();
+            const editable = !['PLANNING', 'RUNNING', 'PAUSED', 'CANCELLING'].includes(lifecycle);
+            wanted.forEach((stage, round) => {
                 let column = pipelinePanel.querySelector(`.stage-column.pipeline-intermediate-synth[data-synth-after-round="${round}"]`);
                 if (!column) {
                     const leftGroup = document.getElementById(`svg-r${round}-r${round + 1}`)?.closest('.connector-group');
                     if (!leftGroup) return;
                     leftGroup.insertAdjacentHTML('afterend', `
                         <div class="stage-column pipeline-intermediate-synth" data-round="${round + 1}" data-synth-after-round="${round}">
-                            <div class="pipeline-intermediate-synth-header">Synthesis</div>
+                            <div class="pipeline-intermediate-synth-header"></div>
                             <div class="model-stack" id="synth-r${round}-stack">
-                                <div class="pipeline-intermediate-synth-block"><span class="pipeline-intermediate-synth-model"></span></div>
+                                <div class="model-block inactive pipeline-synthesis-block selected-synthesizer">
+                                    <div class="model-header">
+                                        <span class="status-indicator" aria-hidden="true"></span>
+                                        <span class="model-name"></span>
+                                    </div>
+                                    <select class="synthesis-flow-select" aria-label="Intermediate synthesis model"></select>
+                                </div>
                             </div>
                         </div>
                         <div class="connector-group pipeline-intermediate-synth" data-round="${round + 1}" data-synth-after-round="${round}">
@@ -4918,9 +4938,20 @@ document.addEventListener('click', (event) => {
                         </div>
                     `);
                     column = leftGroup.nextElementSibling;
+                    const select = column.querySelector('select.synthesis-flow-select');
+                    const modelNames = (Array.isArray(PipelineRuntime?.MODELS) ? PipelineRuntime.MODELS : []).map((model) => model?.name).filter(Boolean);
+                    select.append(...modelNames.map((name) => new Option(name, name)));
+                    select.addEventListener('change', () => window.__setIntermediateSynthesisModel?.(`canvas-r${round}`, select.value));
                 }
-                const nameEl = column.querySelector('.pipeline-intermediate-synth-model');
+                const modelName = stage.participantIds?.[0] || '';
+                const nameEl = column.querySelector('.model-name');
+                const select = column.querySelector('select.synthesis-flow-select');
                 if (nameEl && nameEl.textContent !== modelName) nameEl.textContent = modelName;
+                if (select) {
+                    if (select.value !== modelName) select.value = modelName;
+                    select.disabled = !editable;
+                }
+                moveInsertButton(round, column.querySelector('.pipeline-intermediate-synth-header'));
                 synthRounds.add(round);
             });
             return synthRounds;
@@ -8599,7 +8630,7 @@ document.addEventListener('click', (event) => {
         };
         pipelinePanel.addEventListener('dblclick', (event) => {
             const target = event.target;
-            if (!target?.closest || target.closest('#synthesis-flow-select')) return;
+            if (!target?.closest || target.closest('#synthesis-flow-select') || target.closest('.pipeline-intermediate-synth')) return;
             const finalTarget = target.closest('.pipeline-synthesis-block, #synthesisColumn .stage-label');
             if (!finalTarget || !pipelinePanel.contains(finalTarget)) return;
             event.preventDefault();
@@ -8744,6 +8775,14 @@ document.addEventListener('click', (event) => {
         };
 
         pipelinePanel.addEventListener('dblclick', (event) => {
+            const intermediateBlock = event.target.closest?.('.pipeline-intermediate-synth .pipeline-synthesis-block');
+            if (intermediateBlock && pipelinePanel.contains(intermediateBlock)) {
+                if (event.target.closest('select')) return;
+                event.preventDefault();
+                const headerInsert = intermediateBlock.closest('.stage-column')?.querySelector('.pipeline-stage-insert');
+                if (headerInsert && isCustomEnginePipeline()) openIntermediateCard(headerInsert);
+                return;
+            }
             const insertBtn = event.target.closest?.('.pipeline-stage-insert');
             if (insertBtn && pipelinePanel.contains(insertBtn)) {
                 event.preventDefault();
@@ -21011,6 +21050,19 @@ function checkCompareButtonState() {
         window.__updatePipelineAll?.();
         return true;
     }
+    // The intermediate card's select sets the model of its own stage (participantIds[0]).
+    window.__setIntermediateSynthesisModel = (afterPlannedStageId, modelName) => {
+        const plan = activeDraftPlanForCanvas();
+        const stage = (plan.plannedStages || []).find((item) =>
+            item.outputIntent === 'working_synthesis' && item.upstream?.includes(afterPlannedStageId));
+        if (!stage || !modelName) return false;
+        const next = JSON.parse(JSON.stringify(plan));
+        next.plannedStages.find((item) => item.plannedStageId === stage.plannedStageId).participantIds = [modelName];
+        window.__persistActivePipelineDraftPlan?.(next);
+        renderDraftPlanCanvas();
+        window.__updatePipelineAll?.();
+        return true;
+    };
     pipelinePanel?.addEventListener('click', (event) => {
         const insert = event.target.closest('.pipeline-stage-insert');
         if (!insert) return;

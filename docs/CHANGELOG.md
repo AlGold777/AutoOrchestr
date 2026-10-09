@@ -1,5 +1,13 @@
 # CHANGELOG — Project
 
+### 2026-10-09 — Intermediate synthesis block matches the final block, version 2.81.658
+
+- The intermediate synthesis column has no "Synthesis" header text. Its insert button moves into the header and sits on the card's center line; removing the stage returns the button to its round.
+- The intermediate block uses the final synthesis block's design and has a model select (default: the stage's model). Choosing a model sets that stage's participant. The select is disabled during a run and while paused.
+- Double click on the intermediate block opens the same card as the insert's double click.
+- The intermediate column is centered against the round stacks like the final column. Round header badges and insert buttons share one center line (14 px).
+- Tests: a new test covers the header text, the block markup, the model select, and the button's return on removal.
+
 ### 2026-10-09 — Final badge toggles the final synthesis, version 2.81.656
 
 - A single click on the **Final** badge turns the final synthesis on or off after 250 ms (a double click cancels it). Off sets the synthesizer to empty and remembers the previous one; on restores it, or the first selected model. Off hides the model block and turns the badge gray; on makes it blue. Disabled during a run.

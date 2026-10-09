@@ -440,7 +440,7 @@ body.is-resizing {
 .pipeline-stage-insert {
     position: absolute;
     right: -27px;
-    top: 50%;
+    top: 14px; /* centre of the 28px round badge */
     transform: translate(50%, -50%);
     z-index: 3;
     width: 18px;
@@ -500,31 +500,24 @@ body.is-resizing {
     display: none;
 }
 
+/* Same height as a round header row, so the card's stack lines up with the round stacks. */
 .pipeline-intermediate-synth-header {
-    min-height: 28px;
+    position: relative;
+    width: 100%;
+    height: 28px;
     margin-bottom: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--pipeline-blue);
 }
 
-.pipeline-intermediate-synth-block {
-    width: 139px;
-    height: var(--pipeline-block-height);
-    padding: 8px 10px;
-    background: var(--pipeline-blue-soft);
-    border: 1px solid var(--pipeline-blue);
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-sizing: border-box;
-    font-size: 12px;
-    text-align: center;
-    overflow: hidden;
+/* While the card exists, round K's insert button sits here, on the card's center line. */
+.pipeline-intermediate-synth-header .pipeline-stage-insert {
+    right: auto;
+    left: 50%;
+    transform: translate(-50%, -50%);
+}
+
+/* Centred against the round stacks, like the final synthesis column. */
+.pipeline-flow .stage-column.pipeline-intermediate-synth {
+    transform: translateY(var(--pipeline-terminal-offset, 0px));
 }
 
 .pipeline-stage-insert:disabled {

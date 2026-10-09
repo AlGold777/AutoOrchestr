@@ -2521,6 +2521,42 @@ describe('Pipeline debate favorites view', () => {
     } finally { h.cleanup(); }
   }, 30000);
 
+  test('an intermediate synthesis block has the final block design, no header text, and its own model select', async () => {
+    const h = setupCustomInheritance('Intermediate block', { synthesis: 'Gemini' });
+    try {
+      const column = document.getElementById('round1');
+      if (!column.querySelector('.pipeline-stage-insert')) column.insertAdjacentHTML('afterbegin', '<button type="button" class="pipeline-stage-insert" data-after-stage-id="canvas-r1"></button>');
+      const insert = column.querySelector('.pipeline-stage-insert');
+      insert.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await delay(300);
+      const synthColumn = document.querySelector('.stage-column.pipeline-intermediate-synth');
+      expect(synthColumn).not.toBeNull();
+      // No "Synthesis" text: the header is empty and the insert button sits in it.
+      expect(synthColumn.querySelector('.pipeline-intermediate-synth-header').textContent.trim()).toBe('');
+      expect(synthColumn.querySelector('.pipeline-intermediate-synth-header .pipeline-stage-insert')).toBe(insert);
+      expect(synthColumn.textContent).not.toMatch(/Synthesis/);
+      // The block is the final synthesis block's markup: status indicator, model name, model select.
+      const block = synthColumn.querySelector('.model-block.pipeline-synthesis-block');
+      expect(block.querySelector('.status-indicator')).not.toBeNull();
+      expect(block.querySelector('.model-name').textContent).toBe('Gemini');
+      const select = block.querySelector('select.synthesis-flow-select');
+      expect(select.value).toBe('Gemini');
+      // Choosing a model in the select sets this stage's participant.
+      select.value = 'Claude';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      await delay(0);
+      const stage = window.__pipelineDraftPlanForCanvas(window.__getActivePipelineDraftPlan())
+        .plannedStages.find((item) => item.outputIntent === 'working_synthesis');
+      expect(stage.participantIds).toEqual(['Claude']);
+      expect(block.querySelector('.model-name').textContent).toBe('Claude');
+      // A single click on the insert removes the stage and the button returns to its round.
+      insert.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await delay(300);
+      expect(document.querySelector('.stage-column.pipeline-intermediate-synth')).toBeNull();
+      expect(insert.parentElement).toBe(column);
+    } finally { h.cleanup(); }
+  }, 30000);
+
   test('double-clicking the final synthesis block opens the final synthesizer card; a single click does not', async () => {
     const h = setupCustomInheritance('Final card', { synthesis: 'Gemini' });
     try {
