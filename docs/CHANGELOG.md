@@ -1,5 +1,13 @@
 # CHANGELOG — Project
 
+### 2026-10-09 — Final badge toggles the final synthesis, version 2.81.656
+
+- A single click on the **Final** badge turns the final synthesis on or off after 250 ms (a double click cancels it). Off sets the synthesizer to empty and remembers the previous one; on restores it, or the first selected model. Off hides the model block and turns the badge gray; on makes it blue. Disabled during a run.
+- A double click on the Final badge opens the final synthesizer's card and does not toggle. Without a synthesizer it shows «Включите финальный синтез кликом по Final.».
+- The **None** option is removed from the final synthesizer select; the select is empty when off.
+- The Final badge no longer opens the generic stage card.
+- Tests: a new test covers the click toggle (off, then restored) and the double click (card opens, state kept).
+
 ### 2026-10-09 — Intermediate synthesis card opens without adding the stage, version 2.81.655
 
 - Double click on a stage insert opens the intermediate synthesis card and no longer adds or removes the stage; the button keeps its state. An absent stage shows its card from a virtual plan (id `planned-working-synthesis-after-<afterStageId>`, ref `synth:<id>`) that is never saved. Personal text saved there applies when a single click later adds the stage.

@@ -358,6 +358,22 @@ body.is-resizing {
     padding: 4px 6px;
 }
 
+/* Final badge: blue when the final synthesis is on, gray when off (the block is hidden). */
+#synthesisColumn .round-badge {
+    cursor: pointer;
+    background: var(--pipeline-blue);
+    color: #fff;
+}
+
+#synthesisColumn.pipeline-final-off .round-badge {
+    background: #e2e8f0;
+    color: #64748b;
+}
+
+#synthesisColumn.pipeline-final-off .pipeline-synthesis-block {
+    display: none;
+}
+
 .pipeline-synthesis-block.selected-synthesizer,
 .pipeline-synthesis-block.pipeline-final-synthesizer {
     border-color: #16a34a;

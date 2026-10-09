@@ -2535,6 +2535,33 @@ describe('Pipeline debate favorites view', () => {
     } finally { h.cleanup(); }
   }, 30000);
 
+  test('a single click on the Final badge turns the final synthesis off and on again; a double click opens the card without toggling', async () => {
+    const h = setupCustomInheritance('Final toggle', { synthesis: 'GPT' });
+    try {
+      // The fixture has no badge; the real panel puts "Final" in the synthesis column.
+      const column = document.getElementById('synthesisColumn');
+      if (!column.querySelector('.round-badge')) column.insertAdjacentHTML('afterbegin', '<div class="stage-label"><span class="round-badge">Final</span></div>');
+      const badge = column.querySelector('.round-badge');
+      const select = document.getElementById('synthesis-flow-select');
+      expect(select.querySelector('option[value=""]')).toBeNull();
+      badge.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await delay(300);
+      expect(select.value).toBe('');
+      expect(document.getElementById('synthesisColumn').classList.contains('pipeline-final-off')).toBe(true);
+      badge.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await delay(300);
+      expect(select.value).toBe('GPT');
+      expect(document.getElementById('synthesisColumn').classList.contains('pipeline-final-off')).toBe(false);
+      // The double click cancels the pending toggle and opens the final synthesizer card; the state stays on.
+      badge.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      badge.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      badge.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+      await delay(300);
+      expect(select.value).toBe('GPT');
+      expect(h.modal().querySelector('.custom-card-model').textContent).toContain('GPT');
+    } finally { h.cleanup(); }
+  }, 30000);
+
   test('Custom ▶ model notes follow every request of their model after the request and before the limit; corrections get none', async () => {
     const h = setupCustomInheritance('Model notes');
     try {

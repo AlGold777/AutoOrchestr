@@ -8570,11 +8570,32 @@ document.addEventListener('click', (event) => {
                 window.__pipelineDraftPlanForCanvas?.(window.__getActivePipelineDraftPlan?.())
             ));
             if (!synthesizer) {
-                showNotification('Сначала выберите синтезатора.', 'warn');
+                showNotification('Включите финальный синтез кликом по Final.', 'warn');
                 return;
             }
             document.getElementById('pipeline-stage-dialog')?.close?.();
             showPipelineBlockInfo(block);
+        };
+        // A single click on the Final badge toggles the final synthesis after a short wait (cancelled by a double click).
+        // Off remembers the chosen synthesizer; on restores it, or the first selected model.
+        let lastFinalSynthesizer = '';
+        let finalSynthesisTimer = null;
+        const toggleFinalSynthesis = () => {
+            const lifecycle = String(window.DebateApplication?.getState?.()?.lifecycle || 'IDLE').toUpperCase();
+            if (['PLANNING', 'RUNNING', 'CANCELLING'].includes(lifecycle)) return;
+            const current = normalizeExplicitSynthesizer(window.__getDraftPlanSynthesizer?.(
+                window.__pipelineDraftPlanForCanvas?.(window.__getActivePipelineDraftPlan?.())
+            ));
+            if (current) {
+                lastFinalSynthesizer = current;
+                window.setSynthesisModelFromName?.('');
+                return;
+            }
+            const models = getSelectedLLMs();
+            const next = models.includes(lastFinalSynthesizer) ? lastFinalSynthesizer : models[0];
+            if (!next || !window.setSynthesisModelFromName?.(next)) {
+                showNotification('Выберите модели, чтобы включить финальный синтез.', 'warn');
+            }
         };
         pipelinePanel.addEventListener('dblclick', (event) => {
             const target = event.target;
@@ -8583,6 +8604,7 @@ document.addEventListener('click', (event) => {
             if (!finalTarget || !pipelinePanel.contains(finalTarget)) return;
             event.preventDefault();
             event.stopImmediatePropagation();
+            clearTimeout(finalSynthesisTimer);
             openFinalSynthesizerCard();
         });
 
@@ -8666,6 +8688,11 @@ document.addEventListener('click', (event) => {
             const stageBadge = event.target?.closest?.('.round-badge');
             if (stageBadge && pipelinePanel.contains(stageBadge)) {
                 event.preventDefault();
+                if (stageBadge.closest('#synthesisColumn')) {
+                    clearTimeout(finalSynthesisTimer);
+                    finalSynthesisTimer = setTimeout(toggleFinalSynthesis, 250);
+                    return;
+                }
                 openStageCard(stageBadge);
                 return;
             }
@@ -20865,9 +20892,11 @@ function checkCompareButtonState() {
         const flowSelectId = 'synthesis-flow-select';
         const flowNameId = 'synthesis-flow-name';
         const flowSelectClass = 'synthesis-flow-select';
-        const options = ['<option value="">None</option>']
-            .concat(getAllModelNames().map((modelName) => `<option value="${escapeHtml(modelName)}">${escapeHtml(modelName)}</option>`))
+        // No "None" option: the off state is the Final badge (no synthesizer selected leaves the select empty).
+        const options = getAllModelNames()
+            .map((modelName) => `<option value="${escapeHtml(modelName)}">${escapeHtml(modelName)}</option>`)
             .join('');
+        synthesisColumn?.classList.toggle('pipeline-final-off', !current);
         synthesisStack.innerHTML = `
             <div class="model-block inactive pipeline-synthesis-block pipeline-final-synthesizer" data-synthesis-stage="true" data-synthesis-kind="universal">
                 <div class="model-header">
@@ -20995,6 +21024,7 @@ function checkCompareButtonState() {
         const label = getSynthesizerFlowName();
         const flowSelect = getSynthesizerFlowSelect();
         const block = synthesisStack.querySelector('.pipeline-synthesis-block');
+        synthesisColumn?.classList.toggle('pipeline-final-off', !current);
         if (label) label.textContent = current || 'Synthesizer: None';
         if (flowSelect && flowSelect.value !== current) flowSelect.value = current;
         if (block) {
