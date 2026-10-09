@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-10-09 — The «In» label sits on the same header line as the round badges, version 2.81.667
+
+- `#pipelineFlow` entry column: the «In» label is a badge of the same size and header height (28px) as `.round-badge`, centred like the other stage headers.
+
 ### 2026-10-09 — Custom run progress reaches the canvas, synthesis blocks follow it, version 2.81.666
 
 - The canvas did not move during a Custom run: the Custom engine does not write stage statuses to the orchestrator, so the sync read nothing. `runCustomFromPage` (`results.js`) now keeps the run's stage progress in `customRunProgress`, in the shape the sync reads (`lifecycle` + `stages[plannedStageId, status]`). A step is `running` when its batch is sent (`send`), `completed` when the engine reports accepted answers (`custom_step`) or the owner skips it (`custom_decision`). The run's end sets `COMPLETED` (steps done) or `CANCELLED`/`FAILED`; a stopped run never shows a stage as running.

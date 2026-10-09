@@ -451,6 +451,7 @@ body.is-resizing {
     right: 0;
 }
 
+.entry-column > .stage-label,
 .stage-column[data-stage="synthesis"] > .stage-label {
     display: flex;
     height: 28px;
@@ -612,7 +613,8 @@ body.is-resizing {
     color: #b91c1c;
 }
 
-.round-badge {
+.round-badge,
+.entry-badge {
     background: var(--pipeline-blue-soft);
     color: var(--pipeline-blue);
     display: inline-flex;
