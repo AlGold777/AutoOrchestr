@@ -2280,6 +2280,61 @@ describe('Pipeline debate favorites view', () => {
     };
   };
 
+  test('Custom run: canvas blocks and links follow the engine stages, synthesis blocks included, and end done', async () => {
+    const h = setupCustomInheritance('Custom canvas progress', { synthesis: 'Gemini' });
+    const gates = [0, 1, 2].map(() => { let open = null; const promise = new Promise((resolve) => { open = resolve; }); return { promise, open }; });
+    const answerLater = (message, batchNumber) => setTimeout(() => message.selectedLLMs.forEach((model) => h.debug.pipelineWaiter.handleFinal({ type: 'LLM_RESPONSE', llmName: model,
+      transportRequestId: message.pipelineContext.transportRequestIds[model],
+      answer: `Accepted ${model} response ${batchNumber}.`,
+      metadata: { ...message.pipelineContext, status: 'SUCCESS', attribution: 'verified', completion: 'complete' }
+    })), 0);
+    chrome.runtime.sendMessage.mockImplementation((message, callback) => {
+      if (message.type !== 'START_FULLPAGE_PROCESS') { callback?.({ status: 'ok', active: false }); return; }
+      h.starts.push(message);
+      const batchNumber = h.starts.length;
+      callback?.({ status: 'process_started' });
+      // Each batch is answered only when the test opens its gate: the run stays in that stage meanwhile.
+      if (gates[batchNumber - 1]) gates[batchNumber - 1].promise.then(() => answerLater(message, batchNumber));
+    });
+    const state = (selector) => document.querySelector(`${selector} .model-block`).className;
+    const link = (id) => document.getElementById(id).closest('.connector-group').className;
+    const until = async (check) => { for (let i = 0; i < 200 && !check(); i += 1) await delay(0); };
+    try {
+      document.getElementById('modTa').value = 'CANVAS PROGRESS';
+      const running = window.runPipeline();
+      await until(() => h.starts.length === 1);
+      expect(state('#round1')).toContain('pipeline-run-running');
+      expect(state('#round2')).toContain('pipeline-run-pending');
+      expect(link('svg-r1-r2')).toContain('pipeline-link-pending');
+      gates[0].open();
+
+      await until(() => h.starts.length === 2);
+      expect(state('#round1')).toContain('pipeline-run-done');
+      expect(state('#round2')).toContain('pipeline-run-running');
+      expect(link('svg-r1-r2')).toContain('pipeline-link-running');
+      gates[1].open();
+
+      await until(() => h.starts.length === 3);
+      expect(state('#round2')).toContain('pipeline-run-done');
+      expect(link('svg-r1-r2')).toContain('pipeline-link-done');
+      const synth = () => document.querySelector('#synthesis-stack .pipeline-synthesis-block').className;
+      expect(synth()).toContain('pipeline-run-running');
+      expect(synth()).not.toContain('pipeline-run-done');
+      gates[2].open();
+      await running;
+
+      // Run over: every stage is done and nothing keeps pulsing; the synthesis block is blue like the rounds.
+      expect(state('#round1')).toContain('pipeline-run-done');
+      expect(state('#round2')).toContain('pipeline-run-done');
+      expect(synth()).toContain('pipeline-run-done');
+      expect(document.querySelectorAll('.pipeline-run-running, .pipeline-link-running').length).toBe(0);
+      expect(link('svg-r-last-synthesis')).toContain('pipeline-link-done');
+    } finally {
+      gates.forEach((gate) => gate.open());
+      h.cleanup();
+    }
+  }, 30000);
+
   test('Custom omits owner-question instructions in manual mode, including old saved overrides', async () => {
     const h = setupCustomInheritance('No owner instruction');
     try {
@@ -3164,5 +3219,11 @@ describe('Pipeline canvas run state (engine-derived)', () => {
       expect(document.querySelectorAll('.pipeline-run-pending').length).toBeGreaterThan(0);
       expect(document.querySelectorAll('.pipeline-link-pending').length).toBeGreaterThan(0);
     });
+  });
+
+  test('no synthesis green rule can override the run states (synthesis blocks are gray before the run)', () => {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'styles', 'pipeline.css'), 'utf8');
+    expect(css).not.toContain('.pipeline-synthesis-block.selected-synthesizer:not(.inactive)');
+    expect(css).toContain('.pipeline-flow .model-block.pipeline-run-pending {');
   });
 });

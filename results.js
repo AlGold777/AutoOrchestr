@@ -5091,7 +5091,11 @@ document.addEventListener('click', (event) => {
         const PIPELINE_RUN_LIVE_LIFECYCLES = new Set(['STARTING', 'RUNNING', 'PAUSE_REQUESTED', 'QUIESCING', 'PAUSED', 'RECONCILING', 'FINALIZING']);
         const PIPELINE_RUN_TERMINAL_LIFECYCLES = new Set(['COMPLETED', 'CANCELLED', 'FAILED']);
         const PIPELINE_RUN_STATE_RANK = { pending: 0, done: 1, running: 2 };
+        // Custom runs do not write the orchestrator: runCustomFromPage keeps their stage progress here, in the same
+        // shape (lifecycle + stages[plannedStageId, status]). Universal, Polishing and Delta runs clear it at start.
+        let customRunProgress = null;
         const readPipelineEngineState = () => {
+            if (customRunProgress) return customRunProgress;
             try { return debateApplication?.getOrchestrator?.()?.getState?.() || null; } catch (_) { return null; }
         };
         const pipelinePlannedStageIdFor = (column) => {
@@ -5125,7 +5129,9 @@ document.addEventListener('click', (event) => {
                 const state = stateOfColumn(column);
                 column.querySelectorAll('.model-block').forEach((block) => {
                     Object.keys(PIPELINE_RUN_STATE_RANK).forEach((name) => block.classList.remove(`pipeline-run-${name}`));
-                    if (state && !block.classList.contains('inactive')) block.classList.add(`pipeline-run-${state}`);
+                    // A synthesis block's inactive class only means "not selected now": it still shows the stage state.
+                    const inRun = !block.classList.contains('inactive') || block.classList.contains('pipeline-synthesis-block');
+                    if (state && inRun) block.classList.add(`pipeline-run-${state}`);
                 });
             });
             pipelinePanel.querySelectorAll('.connector-group').forEach((group) => {
@@ -6495,6 +6501,7 @@ document.addEventListener('click', (event) => {
             }
             const useApiFallback = apiModeCheckbox ? apiModeCheckbox.checked : true;
             pipelineRunActive = true;
+            customRunProgress = null;
             deltaAbortController = new AbortController();
             activePipelineRunContext = {
                 pipelineRunId: makePipelineRunId(),
@@ -6745,6 +6752,22 @@ document.addEventListener('click', (event) => {
             if (runContext.forceNewTabs) resetNewPagesCheckboxAfterOpen();
             clearModeratorComposer();
             appendModeratorFeedEntry(task);
+            // Canvas progress from the engine's own events: a round is canvas-rN, a synthesis its planned stage id,
+            // the final one planned-final-synthesis. The step index is the position in `steps`.
+            const plannedIdOfRef = (ref) => (/^r\d+$/.test(ref) ? `canvas-${ref}` : ref === 'final' ? 'planned-final-synthesis' : ref.replace(/^synth:/, ''));
+            customRunProgress = { lifecycle: 'RUNNING', stages: steps.map((step) => ({ plannedStageId: plannedIdOfRef(step.ref), status: 'pending' })) };
+            const setCustomStepStatus = (index, status) => {
+                const stage = customRunProgress?.stages?.[index];
+                if (!stage || stage.status === 'completed') return;
+                stage.status = status;
+                syncPipelineRunStateVisuals();
+            };
+            const finishCustomRunProgress = (lifecycle) => {
+                if (!customRunProgress) return;
+                customRunProgress.lifecycle = lifecycle;
+                syncPipelineRunStateVisuals();
+            };
+            syncPipelineRunStateVisuals();
             setPipelineEditingEnabled(false);
             setPipelineRunUi(true);
             updateDebateButtonsUi();
@@ -6766,6 +6789,7 @@ document.addEventListener('click', (event) => {
                     onRequest: recordAttempt,
                     onResponse: recordAttempt,
                     send: async (models, promptsByModel, { step, label, attempt, maxWordsByModel, correctionByModel }) => {
+                        setCustomStepStatus(step, 'running');
                         // Reuse the existing limit contract, on first attempts and corrections alike.
                         const discipline = Object.fromEntries(models.map((name) => [name,
                             steps[step].models.find((model) => model.name === name)?.discipline || {}
@@ -6815,9 +6839,15 @@ document.addEventListener('click', (event) => {
                         }));
                         return { byModel, closedByOwner: batch?.closeReason === 'moderator_closed' };
                     },
-                    onEvent: (kind, fields) => window.MessageDelivery?.batchEvent?.(kind, { pipelineRunId: runContext.pipelineRunId, ...fields })
+                    onEvent: (kind, fields) => {
+                        // A step with accepted answers, or one the owner skipped, is done; otherwise it stays running until a decision.
+                        if (kind === 'custom_step' && fields.accepted > 0) setCustomStepStatus(fields.step, 'completed');
+                        if (kind === 'custom_decision' && fields.action === 'skip') setCustomStepStatus(fields.step, 'completed');
+                        window.MessageDelivery?.batchEvent?.(kind, { pipelineRunId: runContext.pipelineRunId, ...fields });
+                    }
                 });
                 const stopText = engine.STOP_TEXT[result.stopReason] || result.stopReason;
+                finishCustomRunProgress(result.stopReason === 'steps_done' ? 'COMPLETED' : 'CANCELLED');
                 if (record) { window.CustomRunRecord.finishRun(record, { stopReason: result.stopReason }); await saveRecord(true); }
                 // Always shown, also after Stop: the accepted answers of the last step that has any.
                 updateDebateModelCardOutput('Custom', [
@@ -6831,6 +6861,7 @@ document.addEventListener('click', (event) => {
                 return result.stopReason !== 'cancelled';
             } catch (err) {
                 console.error('[RESULTS] Custom run failed', err);
+                finishCustomRunProgress('FAILED');
                 // The engine reports its own end; a thrown error ends the run without it.
                 window.MessageDelivery?.batchEvent?.('custom_end', { pipelineRunId: runContext.pipelineRunId, stopReason: 'error', error: String(err?.message || err) });
                 showNotification(`Pipeline: error (${err?.message || String(err)})`, 'error');
@@ -6867,6 +6898,7 @@ document.addEventListener('click', (event) => {
             const maxWords = getDebateMaxWords();
             const useApiFallback = apiModeCheckbox ? apiModeCheckbox.checked : true;
             pipelineRunActive = true;
+            customRunProgress = null;
             polishingAbortController = new AbortController();
             activePipelineRunContext = {
                 pipelineRunId: makePipelineRunId(),
@@ -7024,6 +7056,7 @@ document.addEventListener('click', (event) => {
             }
 
             pipelineRunActive = true;
+            customRunProgress = null;
             debatePaused = false;
             debateRunState.status = 'running';
             debateRunState.turnCount = 0;
@@ -21027,6 +21060,8 @@ function checkCompareButtonState() {
             block.classList.toggle('selected-synthesizer', !!current);
             block.title = current ? `Final synthesizer: ${current}` : 'Select a synthesizer model';
         }
+        // The block is rebuilt from markup here: it gets the stage state again (no run classes come with the markup).
+        window.__syncPipelineRunStateVisuals?.();
         renderDraftPlanCanvas();
     }
 

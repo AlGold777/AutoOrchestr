@@ -1,6 +1,6 @@
 {
   "name": "llm-selector-manager",
-  "version": "2.81.665",
+  "version": "2.81.666",
   "private": true,
   "description": "Selector management and content scripts for multi-LLM browser extension",
   "scripts": {

@@ -423,16 +423,6 @@ body.is-resizing {
     color: #94a3b8;
 }
 
-/* Green only when a synthesizer is set AND models are selected (results.js sets .inactive from the selection). */
-.pipeline-synthesis-block.selected-synthesizer:not(.inactive) {
-    border-color: #16a34a;
-    box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.16);
-}
-
-.pipeline-synthesis-block.selected-synthesizer:not(.inactive) .model-name {
-    color: #15803d;
-}
-
 .stage-column {
     display: flex;
     flex-direction: column;

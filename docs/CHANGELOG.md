@@ -1,5 +1,13 @@
 # CHANGELOG — Project
 
+### 2026-10-09 — Custom run progress reaches the canvas, synthesis blocks follow it, version 2.81.666
+
+- The canvas did not move during a Custom run: the Custom engine does not write stage statuses to the orchestrator, so the sync read nothing. `runCustomFromPage` (`results.js`) now keeps the run's stage progress in `customRunProgress`, in the shape the sync reads (`lifecycle` + `stages[plannedStageId, status]`). A step is `running` when its batch is sent (`send`), `completed` when the engine reports accepted answers (`custom_step`) or the owner skips it (`custom_decision`). The run's end sets `COMPLETED` (steps done) or `CANCELLED`/`FAILED`; a stopped run never shows a stage as running.
+- Round `rK` maps to `canvas-rK`, a synthesis `synth:<plannedStageId>` to that planned id, the final `final` to `planned-final-synthesis`.
+- Universal, Polishing and Delta runs clear `customRunProgress` at their start, so the orchestrator is the source for them again.
+- Synthesis blocks take the run classes like model blocks: the green `.pipeline-synthesis-block.selected-synthesizer:not(.inactive)` rule (it overrode the run states) is removed, and the sync no longer skips a synthesis block because of its `inactive` class. `renderSynthesisStage` re-applies the run state after it rebuilds the block.
+- Tests: a Custom run with rounds and a final synthesis (batches gated in the harness) shows the running round and link during the stage, the done rounds and links after it, and the running and done final synthesis; a CSS check guards the removed green rule.
+
 ### 2026-10-09 — Before the run every canvas block and link is gray, version 2.81.665
 
 - Before the run starts (IDLE, CREATED) all blocks and links show as not yet involved (gray); the running and done states apply once the run is live.
