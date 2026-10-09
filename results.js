@@ -6627,54 +6627,71 @@ document.addEventListener('click', (event) => {
         // pass on the accepted answers of the previous step; the round card's own order, task and
         // input come with the card editor. Semi-automatic (run policy not Auto) asks the owner after
         // every step; a step without accepted answers asks in both modes.
-        const CUSTOM_ROUND_TASK = 'Учти ответы предыдущего шага и дай свой улучшенный ответ на задачу.';
-        // The model's role (mini request from its block) reaches the model as `extra`, the same field
-        // as any other extra text; `roles` maps participant → prompt id from participantBindings.
-        const customStepsFromPlan = (plan, previewModel = null) => {
+        // The page state as a Basic schema (disput/basic-schema.js): the canvas gives the steps, the cards
+        // and ▶ give the explicit overrides. Legacy empty strings are dropped here: in a schema an empty
+        // text is a value, not inheritance. A step with no models is switched off but keeps its place.
+        const nonEmpty = (value) => (typeof value === 'string' && value.trim() ? value : undefined);
+        const basicSchemaFromPage = (plan, previewModel = null) => {
+            const general = getCustomPipelineDefaults();
+            const cards = getCustomCardSettings();
+            const cleanDiscipline = (saved) => {
+                const source = customDiscipline(saved);
+                const discipline = {};
+                ['limit', 'content', 'delivery', 'correction'].forEach((key) => { if (nonEmpty(source[key]) !== undefined) discipline[key] = source[key]; });
+                const lines = (source.lines || []).filter((line) => nonEmpty(line) !== undefined);
+                if (lines.length) discipline.lines = lines;
+                return discipline;
+            };
+            const defaults = {};
+            ['roundTask', 'synthesisTask'].forEach((key) => { if (nonEmpty(general[key]) !== undefined) defaults[key] = general[key]; });
+            ['modelNotes', 'roundPrompts'].forEach((key) => {
+                const entries = Object.entries(general[key] || {}).filter(([, value]) => nonEmpty(value) !== undefined);
+                if (entries.length) defaults[key] = Object.fromEntries(entries);
+            });
+            const generalDiscipline = cleanDiscipline(general.discipline);
+            if (Object.keys(generalDiscipline).length) defaults.discipline = generalDiscipline;
             let round = 0;
-            return (plan?.plannedStages || []).map((stage) => {
+            const steps = (plan?.plannedStages || []).map((stage) => {
                 const models = (stage.participantIds || []).filter(Boolean);
                 const roles = Object.fromEntries((stage.participantBindings || []).map((item) => [item.participantId, item.promptId || null]));
-                if (/^canvas-r\d+$/.test(String(stage.plannedStageId || ''))) {
-                    round += 1;
-                    return round === 1
-                        ? { kind: 'round', ref: `r${round}`, order: 'parallel', task: '', input: 'none', models, roles }
-                        : { kind: 'round', ref: `r${round}`, order: 'parallel', task: resolveCustomFields({}, 'round').task.value, input: 'previous', models, roles };
-                }
-                if (stage.outputIntent === 'working_synthesis') return { kind: 'synthesis', ref: `synth:${stage.plannedStageId}`, task: resolveCustomFields({}, 'synthesis').task.value, models, roles };
-                if (stage.outputIntent === 'candidate_final') return { kind: 'synthesis', ref: 'final', task: resolveCustomFields({}, 'synthesis').task.value, models, roles };
-                return null;
-            }).filter(Boolean).map((step) => {
+                let ref = null;
+                let kind = null;
+                if (/^canvas-r\d+$/.test(String(stage.plannedStageId || ''))) { round += 1; ref = `r${round}`; kind = 'round'; }
+                else if (stage.outputIntent === 'working_synthesis') { ref = `synth:${stage.plannedStageId}`; kind = 'synthesis'; }
+                else if (stage.outputIntent === 'candidate_final') { ref = 'final'; kind = 'synthesis'; }
+                else return null;
                 // A model can be configured before its Send checkbox is enabled.
-                if (step.ref === previewModel?.ref && !step.models.includes(previewModel.name)) {
-                    step.models.push(previewModel.name);
-                }
-                return step;
-            }).filter((step) => step.models.length).map(({ roles, ...step }) => ({ ...step,
-                models: step.models.map((name) => {
-                    const settings = getCustomCardSettings()[step.ref]?.[name];
-                    const resolved = resolveCustomFields(settings, step.kind);
-                    const lines = [...(getCustomPipelineDefaults().discipline?.lines || []), ...(settings?.discipline?.lines || [])];
-                    const role = roles?.[name];
-                    // An intermediate synthesis without its own text runs the final synthesizer's text.
-                    const finalText = step.ref.startsWith('synth:') ? getCustomCardSettings().final?.[name]?.promptTemplate : '';
-                    return { name, promptTemplate: settings?.promptTemplate || finalText || null, maxWords: settings?.maxWords || null,
-                        extra: role === CUSTOM_ROLE_ID ? getCustomRoundPrompt(step.ref) : getJudgePromptById(role)?.text || '',
-                        task: step.input === 'none' ? '' : resolved.task.value,
-                        // Lines of ▶ (for every model) go first, then the model's own lines; both reach the request.
-                        discipline: { ...Object.fromEntries(Object.entries(resolved.discipline).map(([key, item]) => [key, item.value])),
-                            ...(lines.length ? { lines } : {}) } };
-                })
-            }));
+                if (ref === previewModel?.ref && !models.includes(previewModel.name)) models.push(previewModel.name);
+                return { ref, kind, models: models.map((name) => {
+                    const settings = cards[ref]?.[name];
+                    const model = { name };
+                    if (roles[name]) model.role = roles[name];
+                    if (nonEmpty(settings?.promptTemplate) !== undefined) model.request = settings.promptTemplate;
+                    if (settings?.maxWords) model.maxWords = settings.maxWords;
+                    if (nonEmpty(settings?.task) !== undefined) model.task = settings.task;
+                    const discipline = cleanDiscipline(settings?.discipline);
+                    if (Object.keys(discipline).length) model.discipline = discipline;
+                    return model;
+                }) };
+            }).filter(Boolean);
+            return { schemaVersion: window.BasicSchema.SCHEMA_VERSION, origin: 'user', ...(Object.keys(defaults).length ? { defaults } : {}), steps };
         };
-        const CUSTOM_CONTENT_REQUIREMENTS = 'Сосредоточься на ясной концепции и ключевых идеях; убери повторы, длинные пересказы и второстепенные детали.';
-        const CUSTOM_LENGTH_TEMPLATE = '[RESPONSE_LIMIT] Объём ответа: {от}-{слов} слов, не больше.';
-        const customDisciplineDefaults = () => ({
-            limit: CUSTOM_LENGTH_TEMPLATE,
-            content: CUSTOM_CONTENT_REQUIREMENTS,
-            delivery: 'Последней строкой ответа напиши только метку {метка}',
-            correction: window.CustomEngine.CORRECTION_TEMPLATE
-        });
+        // The model's role (mini request from its block) reaches the model as `extra`, the same field
+        // as any other extra text.
+        const customRoleText = (role, ref) => (role === CUSTOM_ROLE_ID ? getCustomRoundPrompt(ref) : getJudgePromptById(role)?.text || '');
+        // Page state → schema → check → engine steps: the one assembly the canvas, the request preview and
+        // the run share. `errors` stop a run before the first request.
+        const buildBasicRun = (plan, previewModel = null) => {
+            const schema = basicSchemaFromPage(plan, previewModel);
+            const errors = window.BasicSchema.validate(schema);
+            return { schema, errors, steps: errors.length ? [] : window.BasicSchema.assemble(schema, { roleText: customRoleText }) };
+        };
+        const customStepsFromPlan = (plan, previewModel = null) => buildBasicRun(plan, previewModel).steps;
+        // The defaults of Basic live in disput/basic-schema.js only.
+        const CUSTOM_ROUND_TASK = window.BasicSchema?.DEFAULTS.roundTask;
+        const CUSTOM_CONTENT_REQUIREMENTS = window.BasicSchema?.DEFAULTS.discipline.content;
+        const CUSTOM_LENGTH_TEMPLATE = window.BasicSchema?.DEFAULTS.discipline.limit;
+        const customDisciplineDefaults = () => ({ ...window.BasicSchema.DEFAULTS.discipline });
         const customDiscipline = (saved = {}) => {
             const value = { ...saved };
             // Only the marker of a saved length instruction is renamed; the personal text stays literal.
@@ -6691,18 +6708,15 @@ document.addEventListener('click', (event) => {
             if (value.limit === CUSTOM_LENGTH_TEMPLATE) delete value.limit;
             return value;
         };
+        // The value of a card: model → round → ▶ → Basic (BasicSchema.resolveFields). Legacy settings are
+        // cleaned first: a saved empty text is no value.
         const resolveCustomFields = (settings = {}, kind = 'round', round = {}) => {
-            const resolve = window.CustomEngine.resolveSetting;
             const general = getCustomPipelineDefaults();
-            const personal = customDiscipline(settings?.discipline);
-            const defaults = customDisciplineDefaults();
-            const taskKey = kind === 'synthesis' ? 'synthesisTask' : 'roundTask';
-            return {
-                task: resolve({ model: settings?.task, round: round.task, pipeline: general[taskKey],
-                    fallback: kind === 'synthesis' ? window.CustomEngine.SYNTHESIS_TASK : CUSTOM_ROUND_TASK }),
-                discipline: Object.fromEntries(Object.entries(defaults).map(([key, fallback]) => [key,
-                    resolve({ model: personal[key], round: round.discipline?.[key], pipeline: general.discipline?.[key], fallback })]))
-            };
+            const own = (saved) => Object.fromEntries(Object.entries(saved || {}).filter(([key, value]) => key !== 'lines' && nonEmpty(value) !== undefined));
+            return window.BasicSchema.resolveFields(
+                { task: nonEmpty(settings?.task), discipline: own(customDiscipline(settings?.discipline)) }, kind,
+                { task: nonEmpty(round.task), discipline: own(round.discipline) },
+                { roundTask: nonEmpty(general.roundTask), synthesisTask: nonEmpty(general.synthesisTask), discipline: own(customDiscipline(general.discipline)) });
         };
         const customLengthInstruction = (template, words) => template.replace(/\{от\}|\{слов\}/g,
             (key) => String(key === '{от}' ? Math.max(1, words - 50) : words));
@@ -6745,7 +6759,13 @@ document.addEventListener('click', (event) => {
         const customPipelineName = () => String(pipelineStore.active || getPipelineHeaderName() || 'Basic').trim();
         const runCustomFromPage = async ({ task }) => {
             const engine = window.CustomEngine;
-            const steps = customStepsFromPlan(draftPlanForCanvas(getActiveDraftPlan()));
+            const built = buildBasicRun(draftPlanForCanvas(getActiveDraftPlan()));
+            // A schema that cannot be run stops here with the place of the error; nothing is sent.
+            if (built.errors.length) {
+                showNotification(`Basic: схема не запущена. ${window.BasicSchema.describeErrors(built.errors)}`, 'error');
+                return false;
+            }
+            const steps = built.steps;
             if (!engine || !steps.some((step) => step.kind === 'round')) {
                 showNotification('Basic: выберите модели хотя бы в одном раунде.', 'warn');
                 return false;
@@ -8464,7 +8484,7 @@ document.addEventListener('click', (event) => {
             const inheritedValue = (key) => pipelineDefaults ? fallbackFor(key) : key === 'task' ? inherited.task.value : inherited.discipline[key].value;
             const rawValue = (key) => isTask(key) ? saved[key] : customDiscipline(saved.discipline)[key];
             const effectiveValue = (key) => pipelineDefaults
-                ? window.CustomEngine.resolveSetting({ pipeline: rawValue(key), fallback: fallbackFor(key) }).value
+                ? window.BasicSchema.pick([['pipeline', nonEmpty(rawValue(key))]], fallbackFor(key)).value
                 : key === 'task' ? resolved.task.value : resolved.discipline[key].value;
             const copyButton = (id, label) => `<button type="button" data-action="copy" data-copy-field="${id}" title="Копировать" aria-label="Копировать: ${label}"><i class="ti ti-copy" aria-hidden="true"></i></button>`;
             // ▶ «Особенности моделей»: one field per model on the canvas; the model card shows its own note read-only.

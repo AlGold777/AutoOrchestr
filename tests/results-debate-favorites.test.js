@@ -391,7 +391,7 @@ async function loadResultsScript(seededPipelineStore = null) {
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-projections.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-prompt-catalog.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'pipeline-presets.js'), 'utf8'));
-  ['stage-markers', 'custom-engine', 'custom-run-record'].forEach((mod) => { window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', `${mod}.js`), 'utf8')); });
+  ['stage-markers', 'custom-engine', 'basic-schema', 'custom-run-record'].forEach((mod) => { window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', `${mod}.js`), 'utf8')); });
   ['boot-utils', 'dom-utils', 'attachments', 'pasted-text', 'tooltips', 'debate-ui', 'debate-transport', 'debate-controller', 'debate-renderer', 'debate-sessions-store', 'debate-export', 'debate-plan-view-model', 'debate-telemetry-view'].forEach((mod) => { window.eval(fs.readFileSync(path.join(__dirname, '..', 'results', `${mod}.js`), 'utf8')); });
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'utils', 'selection-block-format.js'), 'utf8'));
   const script = fs.readFileSync(path.join(__dirname, '..', 'results.js'), 'utf8');
@@ -2316,6 +2316,25 @@ describe('Pipeline debate favorites view', () => {
       cleanup() { window.MessageDelivery = oldDelivery; debug.pipelineWaiter.reset(); modal()?.remove(); }
     };
   };
+
+  test('a saved pipeline with an invalid value is not run: Basic names the place and sends nothing', async () => {
+    const h = setupCustomInheritance('Invalid schema', { synthesis: 'Gemini' });
+    try {
+      const bad = { ...h.config, customModelSettings: { r1: { GPT: { maxWords: 'abc' } } } };
+      h.debug.clearCustomSessionForTest();
+      h.debug.setPipelineStoreForTest({ active: 'Invalid copy', order: ['Invalid copy'], pipelines: { 'Invalid copy': bad } });
+      h.debug.applyPipelineConfig(bad);
+      const starts = await h.run();
+      expect(starts).toHaveLength(0);
+      expect(document.getElementById('notification-message').textContent).toContain('steps[0].models[1].maxWords');
+      // The same pipeline with a valid value runs.
+      const good = { ...h.config, customModelSettings: { r1: { GPT: { maxWords: 120 } } } };
+      h.debug.clearCustomSessionForTest();
+      h.debug.setPipelineStoreForTest({ active: 'Valid copy', order: ['Valid copy'], pipelines: { 'Valid copy': good } });
+      h.debug.applyPipelineConfig(good);
+      expect((await h.run()).length).toBeGreaterThan(0);
+    } finally { h.cleanup(); }
+  }, 30000);
 
   test('Custom run: canvas blocks and links follow the engine stages, synthesis blocks included, and end done', async () => {
     const h = setupCustomInheritance('Custom canvas progress', { synthesis: 'Gemini' });

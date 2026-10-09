@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-09 — Basic schema format: one assembly and a check before the run, version 2.81.671
+
+- New `disput/basic-schema.js` (`BasicSchema`): the schema format (`schemaVersion` 1, `origin`), the Basic defaults (they now live only here), `resolveFields` (model → round → ▶ → Basic; an empty text is a value, a missing field is inheritance), `assemble` (schema → engine steps) and `validate` (errors with the place, e.g. `steps[0].models[1].maxWords`; a format newer than this Basic is refused; unknown fields and values are errors).
+- `results.js`: `basicSchemaFromPage` builds the schema from the canvas, the cards and ▶; `buildBasicRun` is the one path of the run, the request preview and the cards (`customStepsFromPlan`, `resolveCustomFields`). A run with an invalid schema stops with a notification naming the place; nothing is sent. Behavior of valid runs is unchanged. One edge: an intermediate synthesis no longer takes the request of a switched-off final synthesis.
+- Reference: `docs/Pipeline scenarios/basic-schema-reference.md` (fields, rules, a minimal example that the tests validate). Not done yet: Save still stores the previous shape, not the schema.
+- Tests: `tests/basic-schema.test.js` (inheritance, assembly, check, the reference example), a page test that an invalid saved value sends nothing.
+
 ### 2026-10-09 — The engine and template Custom are renamed Basic, version 2.81.670
 
 - The template name, the pipeline list, the ▶ card title, notifications, the run-card role and the stop button now say «Basic». Internal ids and saved keys (`CUSTOM`, `customDefaults`, `customModelSettings`, `disput/custom-engine.js`) are unchanged. The role «Custom» in the role list keeps its name: it is a role, not the engine.

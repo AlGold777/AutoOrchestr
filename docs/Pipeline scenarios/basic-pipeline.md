@@ -1,6 +1,6 @@
 # Pipeline Basic и общий движок
 
-> До 2.81.670 назывался Custom. Пункт «Custom» в списке ролей — отдельная вещь, он сохранил имя.
+> До 2.81.670 назывался Custom. Формат схемы и единая сборка (2.81.671): [basic-schema-reference.md](basic-schema-reference.md). Пункт «Custom» в списке ролей — отдельная вещь, он сохранил имя.
 
 Версия: **2.81.652, 8 октября 2026**. Движок [`disput/custom-engine.js`](../../disput/custom-engine.js)
 (тесты [`tests/custom-engine.test.js`](../../tests/custom-engine.test.js)) подключён к странице:
