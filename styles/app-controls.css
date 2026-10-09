@@ -427,6 +427,12 @@ body.left-sidebar-open .mode-pill .pill-dot {
 .pipeline-page .app-main .input-section:has(.prompt-container.is-pipeline-composer-raised) {
     padding-top: 5px;
 }
+.pipeline-page .app-main .input-section:has(.prompt-container.is-pipeline-composer-raised.has-debate-feed) {
+    padding-top: 2.5px;
+}
+.pipeline-page:has(.has-debate-feed) .main-controls-wrapper {
+    margin-bottom: 5px;
+}
 .pipeline-page .prompt-group:has(.prompt-container.prompt-sandwich.debate-composer.is-pipeline-composer-raised:not(.has-debate-feed)) {
     margin-top: 0;
 }

@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-09 — Pipeline composer with the answer feed looks as in 2.81.604 again, version 2.81.654
+
+- The closed-composer alignment (2.81.621–622) leaked into the state with the answer feed: the header row lost its spacing, the page top padding grew from 2.5px to 5px and the 5px gap under the empty controls wrapper was gone. These rules now apply only to the closed composer; the feed state restores the backup values (flat header row New pages, Get it, Run; 2.5px padding; 5px gap).
+- The card overlap effect is untouched: it only reads the feed height, which is re-measured.
+
 ### 2026-10-09 — Fix page boot broken by the Custom role option, version 2.81.653
 
 - 2.81.652 asked which engine is selected while the model stacks were built at load, before the pipeline store helpers existed (`Cannot access 'getPipelineConfigByName' before initialization`). The error stopped the rest of `results.js` initialisation: model blocks were not drawn or selectable and the main page lost the card layout switch and the overlap effect. Boot now builds the stacks from the plain mini-request list; the Custom option is added afterwards by the existing sync.
