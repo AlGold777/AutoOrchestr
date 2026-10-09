@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-09 — Intermediate synthesis: click toggles, double click opens its card, version 2.81.654
+
+- Single click on a stage insert adds or removes the intermediate synthesis after 250 ms; a double click cancels that and adds the synthesis if it is absent, then opens its Custom card (`synth:<plannedStageId>`). Previously a double click only toggled and a single click opened the card.
+- The card's request defaults to the final synthesizer's text (its saved personal text, or the built-in one) and the synthesis runs that text until it saves its own.
+- Button titles: «Click to add intermediate synthesis» / «Click to remove (double-click for its request)».
+- Tests: single-click toggle and double-click card updated; new test for single-click toggle. Four CSS-string tests in `results-debate-favorites.test.js` (session-bar, model cards, wide overlay, selection toolbar) fail because the test reader does not strip `?v=` from the `styles/*.css` imports; they fail independently of this change.
+
 ### 2026-10-09 — Fix page boot broken by the Custom role option, version 2.81.653
 
 - 2.81.652 asked which engine is selected while the model stacks were built at load, before the pipeline store helpers existed (`Cannot access 'getPipelineConfigByName' before initialization`). The error stopped the rest of `results.js` initialisation: model blocks were not drawn or selectable and the main page lost the card layout switch and the overlap effect. Boot now builds the stacks from the plain mini-request list; the Custom option is added afterwards by the existing sync.

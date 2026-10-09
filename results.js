@@ -4767,6 +4767,11 @@ document.addEventListener('click', (event) => {
             const modeLookup = (stackId, mode) => {
                 if (mode === 'input') return getModelInputIndices(stackId);
                 if (mode === 'send') return getModelSendIndices(stackId);
+                if (mode === 'all') {
+                    // Single-card stacks (intermediate synthesis): every child is an endpoint.
+                    const stack = document.getElementById(stackId);
+                    return stack ? Array.from(stack.children).map((_, index) => index) : [];
+                }
                 if (mode === 'synthesis') {
                     const stack = document.getElementById(stackId);
                     if (!stack || !hasSelectedPipelineModels()) return [];
@@ -4876,8 +4881,54 @@ document.addEventListener('click', (event) => {
             }
         };
 
+        // Intermediate synthesis (working_synthesis stage upstream of canvas-rK)
+        // is a single card column between round K and round K+1. The original
+        // K->K+1 connector keeps its id (svg-rK-rK+1) and now ends at the card;
+        // a second connector (svg-synth-rK-rK+1) leaves it toward round K+1.
+        // Returns the set of rounds K that currently have a card.
+        const syncIntermediateSynthColumns = () => {
+            const synthRounds = new Set();
+            if (!pipelinePanel) return synthRounds;
+            const plan = window.__pipelineDraftPlanForCanvas?.(window.__getActivePipelineDraftPlan?.()) || { plannedStages: [] };
+            const wanted = new Set();
+            (plan.plannedStages || []).forEach((stage) => {
+                if (stage?.outputIntent !== 'working_synthesis') return;
+                const match = (stage.upstream || []).map((id) => /^canvas-r(\d+)$/.exec(String(id))).find(Boolean);
+                const round = match ? Number(match[1]) : 0;
+                if (round >= 1 && round < roundCounter) wanted.add(round);
+            });
+            pipelinePanel.querySelectorAll('.pipeline-intermediate-synth').forEach((el) => {
+                if (!wanted.has(Number(el.dataset.synthAfterRound || 0))) el.remove();
+            });
+            const modelName = window.__getDraftPlanSynthesizer?.(plan) || '';
+            wanted.forEach((round) => {
+                let column = pipelinePanel.querySelector(`.stage-column.pipeline-intermediate-synth[data-synth-after-round="${round}"]`);
+                if (!column) {
+                    const leftGroup = document.getElementById(`svg-r${round}-r${round + 1}`)?.closest('.connector-group');
+                    if (!leftGroup) return;
+                    leftGroup.insertAdjacentHTML('afterend', `
+                        <div class="stage-column pipeline-intermediate-synth" data-round="${round + 1}" data-synth-after-round="${round}">
+                            <div class="pipeline-intermediate-synth-header">Synthesis</div>
+                            <div class="model-stack" id="synth-r${round}-stack">
+                                <div class="pipeline-intermediate-synth-block"><span class="pipeline-intermediate-synth-model"></span></div>
+                            </div>
+                        </div>
+                        <div class="connector-group pipeline-intermediate-synth" data-round="${round + 1}" data-synth-after-round="${round}">
+                            <svg class="connector-svg" id="svg-synth-r${round}-r${round + 1}"></svg>
+                        </div>
+                    `);
+                    column = leftGroup.nextElementSibling;
+                }
+                const nameEl = column.querySelector('.pipeline-intermediate-synth-model');
+                if (nameEl && nameEl.textContent !== modelName) nameEl.textContent = modelName;
+                synthRounds.add(round);
+            });
+            return synthRounds;
+        };
+
         let deferredPipelineLayoutFrame = 0;
         const updatePipelineAll = ({ deferFinalLayout = true } = {}) => {
+            const synthRounds = syncIntermediateSynthColumns();
             updatePipelineLayout();
             syncCustomRoleOption();
             pipelinePanel.querySelectorAll('.model-block').forEach((block) => {
@@ -4923,15 +4974,22 @@ document.addEventListener('click', (event) => {
                     });
                 }
             } else {
-                drawMergeSplitConnector('svg-r1-r2', 'r1-models', 'r2-models', 'brain-flow', {
-                    sourceMode: 'send',
-                    targetMode: 'input'
-                });
-                for (let r = 2; r < roundCounter; r++) {
-                    drawMergeSplitConnector(`svg-r${r}-r${r + 1}`, `r${r}-models`, `r${r + 1}-models`, 'brain-flow', {
-                        sourceMode: 'send',
-                        targetMode: 'input'
-                    });
+                for (let r = 1; r < roundCounter; r++) {
+                    if (synthRounds.has(r)) {
+                        drawMergeSplitConnector(`svg-r${r}-r${r + 1}`, `r${r}-models`, `synth-r${r}-stack`, 'brain-flow', {
+                            sourceMode: 'send',
+                            targetMode: 'all'
+                        });
+                        drawMergeSplitConnector(`svg-synth-r${r}-r${r + 1}`, `synth-r${r}-stack`, `r${r + 1}-models`, 'brain-flow', {
+                            sourceMode: 'all',
+                            targetMode: 'input'
+                        });
+                    } else {
+                        drawMergeSplitConnector(`svg-r${r}-r${r + 1}`, `r${r}-models`, `r${r + 1}-models`, 'brain-flow', {
+                            sourceMode: 'send',
+                            targetMode: 'input'
+                        });
+                    }
                 }
                 if (hasSynthesisFlow) {
                     drawMergeSplitConnector('svg-r-last-synthesis', `r${roundCounter}-models`, 'synthesis-stack', 'brain-flow', {
@@ -6474,7 +6532,9 @@ document.addEventListener('click', (event) => {
                     const settings = getCustomCardSettings()[step.ref]?.[name];
                     const resolved = resolveCustomFields(settings, step.kind);
                     const role = roles?.[name];
-                    return { name, promptTemplate: settings?.promptTemplate || null, maxWords: settings?.maxWords || null,
+                    // An intermediate synthesis without its own text runs the final synthesizer's text.
+                    const finalText = step.ref.startsWith('synth:') ? getCustomCardSettings().final?.[name]?.promptTemplate : '';
+                    return { name, promptTemplate: settings?.promptTemplate || finalText || null, maxWords: settings?.maxWords || null,
                         extra: role === CUSTOM_ROLE_ID ? getCustomRoundPrompt(step.ref) : getJudgePromptById(role)?.text || '',
                         task: step.input === 'none' ? '' : resolved.task.value,
                         discipline: Object.fromEntries(Object.entries(resolved.discipline).map(([key, item]) => [key, item.value])) };
@@ -8214,6 +8274,9 @@ document.addEventListener('click', (event) => {
             const automaticSteps = steps.map((item) => ({ ...item, models: item.models.map((model) => ({ ...model, promptTemplate: null })) }));
             const preview = pipelineDefaults ? null : window.CustomEngine.previewPrompt({ task: getModeratorDispatchText(), steps: automaticSteps, stepIndex, modelName });
             const saved = pipelineDefaults ? getCustomPipelineDefaults() : getCustomCardSettings()[ref]?.[modelName] || {};
+            // An intermediate synthesis without its own text follows the final synthesizer's text.
+            const finalSaved = ref.startsWith('synth:') ? getCustomCardSettings().final?.[modelName] || {} : {};
+            const baseTemplate = finalSaved.promptTemplate || preview?.template;
             const inherited = resolveCustomFields({}, step?.kind);
             const resolved = resolveCustomFields(saved, step?.kind);
             const general = getDebateMaxWords();
@@ -8282,7 +8345,7 @@ document.addEventListener('click', (event) => {
             const length = content.querySelector('#custom-card-length');
             const reset = content.querySelector('#custom-card-reset');
             const save = content.querySelector('#custom-card-save');
-            if (request) { request.value = saved.promptTemplate || preview.template; request.disabled = pipelineRunActive; }
+            if (request) { request.value = saved.promptTemplate || baseTemplate; request.disabled = pipelineRunActive; }
             if (length) { length.value = saved.maxWords || general; length.disabled = pipelineRunActive; }
             if (reset) reset.disabled = pipelineRunActive;
             save.disabled = pipelineRunActive;
@@ -8293,7 +8356,7 @@ document.addEventListener('click', (event) => {
                 && value !== inheritedValue(key) && value !== display(key, inheritedValue(key));
             const refresh = () => {
                 if (request) {
-                    const own = request.value !== preview.template;
+                    const own = request.value !== baseTemplate;
                     reset.hidden = !own;
                     content.querySelector('#custom-card-personal-note').textContent = own ? 'Персональный запрос: общее задание не применяется; дисциплина применяется.' : '';
                 }
@@ -8328,12 +8391,12 @@ document.addEventListener('click', (event) => {
             });
             request?.addEventListener('input', refresh);
             length?.addEventListener('input', refresh);
-            reset?.addEventListener('click', () => { request.value = preview.template; refresh(); });
+            reset?.addEventListener('click', () => { request.value = baseTemplate; refresh(); });
             const saveSettings = async (close) => {
                 if (pipelineRunActive) return;
                 if (request && !request.value.trim()) { request.focus(); showNotification('Введите запрос.', 'warn'); return; }
                 if (length && (!length.checkValidity() || (length.value !== '' && !Number.isSafeInteger(Number(length.value))))) { length.reportValidity(); return; }
-                const next = pipelineDefaults ? {} : { promptTemplate: request.value === preview.template ? null : request.value,
+                const next = pipelineDefaults ? {} : { promptTemplate: request.value === baseTemplate ? null : request.value,
                     maxWords: length.value === '' || Number(length.value) === general ? null : Number(length.value) };
                 const discipline = {};
                 rows.forEach(([key]) => {
@@ -8550,14 +8613,14 @@ document.addEventListener('click', (event) => {
             if (event.target.closest?.('[data-stage-close]')) event.currentTarget.close();
         });
 
-        // An intermediate synthesis has its insert as its entry (Custom). A single click opens its card
-        // after a short wait, so the double click that adds or removes it does not open it.
-        let intermediateCardTimer = null;
+        // A single click on a stage insert toggles the intermediate synthesis after a short wait;
+        // a double click cancels that toggle and opens the synthesis card (Custom only).
+        let intermediateTimer = null;
         pipelinePanel.addEventListener('click', (event) => {
             const insert = event.target?.closest?.('.pipeline-stage-insert');
-            if (insert && insert.classList.contains('has-intermediate-synthesis') && isCustomEnginePipeline()) {
-                clearTimeout(intermediateCardTimer);
-                intermediateCardTimer = setTimeout(() => showPipelineBlockInfo(insert), 200);
+            if (insert) {
+                clearTimeout(intermediateTimer);
+                intermediateTimer = setTimeout(() => void toggleIntermediateSynthesis(insert), 250);
                 return;
             }
             const stageBadge = event.target?.closest?.('.round-badge');
@@ -8602,8 +8665,22 @@ document.addEventListener('click', (event) => {
             if (outside) stageDialog.close();
         });
 
+        // Adds the intermediate synthesis first when it is absent, then opens its card.
+        const openIntermediateCard = async (insert) => {
+            const afterStageId = insert.dataset.afterStageId || '';
+            if (!intermediateStageAfter(afterStageId) && !(await toggleIntermediateSynthesis(insert))) return;
+            const current = [...pipelinePanel.querySelectorAll('.pipeline-stage-insert')].find((button) => button.dataset.afterStageId === afterStageId);
+            if (current && intermediateStageAfter(afterStageId)) showPipelineBlockInfo(current);
+        };
+
         pipelinePanel.addEventListener('dblclick', (event) => {
-            if (event.target.closest?.('.pipeline-stage-insert')) clearTimeout(intermediateCardTimer);
+            const insertBtn = event.target.closest?.('.pipeline-stage-insert');
+            if (insertBtn && pipelinePanel.contains(insertBtn)) {
+                event.preventDefault();
+                clearTimeout(intermediateTimer);
+                if (isCustomEnginePipeline()) void openIntermediateCard(insertBtn);
+                return;
+            }
             const roundBadge = event.target.closest('.round-badge');
             if (roundBadge && pipelinePanel.contains(roundBadge)) {
                 event.preventDefault();
@@ -20801,9 +20878,9 @@ function checkCompareButtonState() {
                 : !isBetweenRounds
                     ? 'Intermediate synthesis can be placed only between rounds'
                     : activeStage
-                        ? 'Double-click to remove intermediate synthesis'
+                        ? 'Click to remove (double-click for its request)'
                         : synthesizer
-                            ? 'Double-click to add intermediate synthesis'
+                            ? 'Click to add intermediate synthesis'
                             : 'Select the final synthesizer first';
         });
     }
@@ -20866,13 +20943,6 @@ function checkCompareButtonState() {
         const insert = event.target.closest('.pipeline-stage-insert');
         if (!insert) return;
         event.preventDefault();
-    });
-    pipelinePanel?.addEventListener('dblclick', (event) => {
-        const insert = event.target.closest('.pipeline-stage-insert');
-        if (!insert) return;
-        event.preventDefault();
-        event.stopPropagation();
-        void toggleIntermediateSynthesis(insert);
     });
     function syncSynthesizerFlowStage() {
         if (!synthesisStack) return;

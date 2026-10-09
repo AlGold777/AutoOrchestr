@@ -2480,11 +2480,12 @@ describe('Pipeline debate favorites view', () => {
       const column = document.getElementById('round1');
       if (!column.querySelector('.pipeline-stage-insert')) column.insertAdjacentHTML('afterbegin', '<button type="button" class="pipeline-stage-insert" data-after-stage-id="canvas-r1"></button>');
       const insert = column.querySelector('.pipeline-stage-insert');
-      insert.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
-      await delay(0);
-      expect(insert.classList.contains('has-intermediate-synthesis')).toBe(true);
+      // The double click cancels the pending single-click toggle, adds the synthesis and opens its card.
       insert.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await delay(250);
+      insert.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      insert.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+      await delay(300);
+      expect(insert.classList.contains('has-intermediate-synthesis')).toBe(true);
       const modal = h.modal();
       expect(modal.querySelector('.custom-card-model').textContent).toContain('Gemini');
       modal.querySelector('#custom-card-request').value = 'SYNTH_PERSONAL {вход}';
@@ -2495,6 +2496,22 @@ describe('Pipeline debate favorites view', () => {
       await h.run();
       expect(h.starts[1].promptsByModel.GEMINI).toContain('SYNTH_PERSONAL');
       expect(h.starts[1].promptsByModel.GEMINI).not.toContain('{вход}');
+    } finally { h.cleanup(); }
+  }, 30000);
+
+  test('a single click on an intermediate insert toggles it after a short wait', async () => {
+    const h = setupCustomInheritance('Intermediate toggle', { synthesis: 'Gemini' });
+    try {
+      const column = document.getElementById('round1');
+      if (!column.querySelector('.pipeline-stage-insert')) column.insertAdjacentHTML('afterbegin', '<button type="button" class="pipeline-stage-insert" data-after-stage-id="canvas-r1"></button>');
+      const insert = column.querySelector('.pipeline-stage-insert');
+      insert.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      expect(insert.classList.contains('has-intermediate-synthesis')).toBe(false);
+      await delay(300);
+      expect(insert.classList.contains('has-intermediate-synthesis')).toBe(true);
+      insert.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await delay(300);
+      expect(insert.classList.contains('has-intermediate-synthesis')).toBe(false);
     } finally { h.cleanup(); }
   }, 30000);
 
