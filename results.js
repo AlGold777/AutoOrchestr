@@ -3985,21 +3985,7 @@ document.addEventListener('click', (event) => {
             const synthesizer = getDraftPlanSynthesizer(draftPlanForCanvas(getActiveDraftPlan()));
             const flowSelect = getSynthesizerFlowSelect();
             if (flowSelect && flowSelect.value !== synthesizer) flowSelect.value = synthesizer;
-            // Synthesizer blocks (final and intermediate) are labelled «Synthesis»; their state is set by their own renderers.
-            pipelinePanel.querySelectorAll('.model-block:not(.pipeline-synthesis-block)').forEach((block) => {
-                const modelName = block.querySelector('.model-name')?.textContent?.trim() || '';
-                const isSynthesizer = !!synthesizer
-                    && modelName === synthesizer
-                    && !block.classList.contains('pipeline-empty-slot');
-                block.classList.toggle('selected-synthesizer', isSynthesizer);
-                block.classList.toggle('pipeline-final-synthesizer', isSynthesizer);
-                block.setAttribute('aria-pressed', isSynthesizer ? 'true' : 'false');
-                if (isSynthesizer) {
-                    block.title = 'Final synthesis model';
-                } else if (block.title === 'Final synthesis model') {
-                    block.removeAttribute('title');
-                }
-            });
+            // The final synthesizer is its own «Synthesis» block (renderSynthesisStage). Round model blocks keep their design.
         };
 
         const hasSelectedPipelineModels = () => getSelectedLLMs().length > 0;
@@ -4024,6 +4010,8 @@ document.addEventListener('click', (event) => {
                 }
             }
             persistActiveDraftPlan(draftPlan);
+            // An explicit choice (including OFF) replaces the seed of a new pipeline, which would otherwise win over ''.
+            delete window.__pendingPipelineSynthesizer;
             const activeName = String(pipelineStore.active || getPipelineHeaderName()).trim();
             const activeConfig = activeName ? getPipelineConfigByName(activeName) : null;
             if (activeConfig?.protocol) {
@@ -4215,7 +4203,12 @@ document.addEventListener('click', (event) => {
         };
 
         // The visible header becomes the task on Run; it is not a stable pipeline identity.
-        const draftPlanStorageKey = () => String(pipelineStore.active || pipelineName?.dataset.fullName || 'unsaved').trim() || 'unsaved';
+        // The unsaved pipeline has one key whether or not its header shows «Unsaved Pipeline», so its
+        // draft (including an explicit Final OFF) is found again after a reload, when the header is empty.
+        const draftPlanStorageKey = () => {
+            const headerName = pipelineName?.dataset.fullName === 'Unsaved Pipeline' ? '' : (pipelineName?.dataset.fullName || '');
+            return String(pipelineStore.active || headerName || 'unsaved').trim() || 'unsaved';
+        };
         const getActiveDraftPlan = () => pipelineSessionDraftPlans[draftPlanStorageKey()]
             || pipelineStore.draftPlans?.[draftPlanStorageKey()]
             || getPipelineConfigByName(draftPlanStorageKey())?.draftPlan
@@ -8095,10 +8088,10 @@ document.addEventListener('click', (event) => {
             pipelinePanel?.setAttribute('data-pipeline-draft', 'true');
             pipelineStore.active = '';
             setPipelineHeaderName('Unsaved Pipeline');
-            delete pipelineStore.draftPlans['Unsaved Pipeline'];
-            delete pipelineSessionDraftPlans['Unsaved Pipeline'];
-            customCardSettings.delete('Unsaved Pipeline');
-            customPipelineDefaults.delete('Unsaved Pipeline');
+            delete pipelineStore.draftPlans.unsaved;
+            delete pipelineSessionDraftPlans.unsaved;
+            customCardSettings.delete('unsaved');
+            customPipelineDefaults.delete('unsaved');
             const defaultSynthesizer = window.__getDefaultSynthesizerName?.() || '';
             window.__pendingPipelineSynthesizer = defaultSynthesizer;
             const emptyFlowSelect = getSynthesizerFlowSelect();
@@ -8148,6 +8141,9 @@ document.addEventListener('click', (event) => {
                 pipelineStore.lastSaved = trimmed;
                 pipelineStore.active = trimmed;
                 pipelinePanel?.removeAttribute('data-pipeline-draft');
+                // The saved copy carries the draft now; the unsaved draft must not resurface on the next start.
+                delete pipelineStore.draftPlans?.unsaved;
+                delete pipelineSessionDraftPlans.unsaved;
                 persistPipelineStore();
                 addPipelineToList(trimmed, { makeActive: true, markLast: true });
             }
@@ -20949,7 +20945,7 @@ function checkCompareButtonState() {
             .join('');
         synthesisColumn?.classList.toggle('pipeline-final-off', !current);
         synthesisStack.innerHTML = `
-            <div class="model-block inactive pipeline-synthesis-block pipeline-final-synthesizer" data-synthesis-stage="true" data-synthesis-kind="universal">
+            <div class="model-block inactive pipeline-synthesis-block" data-synthesis-stage="true" data-synthesis-kind="universal">
                 <div class="model-header">
                     <span class="status-indicator" aria-hidden="true"></span>
                     <span class="model-name">Synthesis</span>

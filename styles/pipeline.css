@@ -382,14 +382,13 @@ body.is-resizing {
     color: #94a3b8;
 }
 
-.pipeline-synthesis-block.selected-synthesizer,
-.pipeline-synthesis-block.pipeline-final-synthesizer {
+/* Green only when a synthesizer is set AND models are selected (results.js sets .inactive from the selection). */
+.pipeline-synthesis-block.selected-synthesizer:not(.inactive) {
     border-color: #16a34a;
     box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.16);
 }
 
-.pipeline-synthesis-block.selected-synthesizer .model-name,
-.pipeline-synthesis-block.pipeline-final-synthesizer .model-name {
+.pipeline-synthesis-block.selected-synthesizer:not(.inactive) .model-name {
     color: #15803d;
 }
 
@@ -645,19 +644,6 @@ body.is-resizing {
 .model-block.active {
     border-color: var(--pipeline-blue);
     background: var(--pipeline-blue-soft);
-}
-
-.model-block.selected-synthesizer,
-.model-block.pipeline-final-synthesizer {
-    border-color: var(--pipeline-green);
-    background: var(--pipeline-green-soft);
-    box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.16);
-}
-
-.model-block.selected-synthesizer .model-name,
-.model-block.pipeline-final-synthesizer .model-name {
-    color: #15803d;
-    font-weight: 700;
 }
 
 .model-block.inactive {

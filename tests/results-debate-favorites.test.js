@@ -354,8 +354,10 @@ async function saveDisputeTopicDialog(topic = 'Saved dispute topic') {
   return true;
 }
 
-async function loadResultsScript() {
+async function loadResultsScript(seededPipelineStore = null) {
   installChromeStorageMock();
+  // A seeded store plays the part of what a previous page load left in chrome.storage.
+  if (seededPipelineStore) chrome.storage.local.set({ llmComparatorPipelines: seededPipelineStore });
   installDomMocks();
   window.__RESULTS_TEST_DEBUG__ = true;
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'shared', 'status-contract.js'), 'utf8'));
@@ -2895,6 +2897,37 @@ describe('Pipeline debate favorites view', () => {
     expect(document.querySelector('#synthesis-stack .synthesis-flow-select').value).toBe('Claude');
   });
 
+  test('the final synthesizer keeps its round blocks in model order and in the normal block design', () => {
+    document.getElementById('debate-round-limit-select').value = '3';
+    ['llm-gpt', 'llm-gemini', 'llm-claude', 'llm-grok'].forEach((id) => document.getElementById(id).click());
+    window.setSynthesisModelFromName('Gemini');
+    window.syncPipelineModelsFromSelectedLLMs({ force: true });
+    const roundNames = (id) => [...document.querySelectorAll(`#${id} .model-block`)].map((block) => block.querySelector('.model-name').textContent);
+    const modelOrder = ['Claude', 'GPT', 'Gemini', 'Grok'];
+    ['r1-models', 'r2-models'].forEach((id) => {
+      expect(roundNames(id)).toEqual(modelOrder);
+      document.querySelectorAll(`#${id} .model-block`).forEach((block) => {
+        expect(block.classList.contains('selected-synthesizer')).toBe(false);
+        expect(block.classList.contains('pipeline-final-synthesizer')).toBe(false);
+      });
+    });
+    const synthesisBlock = document.querySelector('#synthesis-stack .pipeline-synthesis-block');
+    expect(synthesisBlock.querySelector('.model-name').textContent).toBe('Synthesis');
+    expect(synthesisBlock.classList.contains('selected-synthesizer')).toBe(true);
+    expect(synthesisBlock.classList.contains('pipeline-final-synthesizer')).toBe(false);
+  });
+
+  test('the final synthesis block is not active without selected models, and is active once models are selected', () => {
+    const synthesisBlock = () => document.querySelector('#synthesis-stack .pipeline-synthesis-block');
+    document.getElementById('pipeline-add-btn').click();
+    expect(synthesisBlock().classList.contains('selected-synthesizer')).toBe(true);
+    expect(synthesisBlock().classList.contains('inactive')).toBe(true);
+    document.getElementById('llm-gpt').click();
+    expect(synthesisBlock().classList.contains('inactive')).toBe(false);
+    document.getElementById('llm-gpt').click();
+    expect(synthesisBlock().classList.contains('inactive')).toBe(true);
+  });
+
   test('terminal synthesis card aligns to the visible model-stack centre', () => {
     document.getElementById('debate-round-limit-select').value = '3';
     window.syncDebateSchemeUi();
@@ -3015,4 +3048,29 @@ describe('Pipeline debate favorites view', () => {
     expect(document.querySelectorAll('.model-block').length).toBeGreaterThan(0);
   });
 
+});
+
+describe('Final synthesis state after a page reload', () => {
+  test('an explicit Final OFF on the unsaved pipeline survives a reload and the block is not shown active', async () => {
+    renderDebateDom();
+    document.body.classList.add('pipeline-page');
+    await loadResultsScript();
+    document.getElementById('pipeline-add-btn').click();
+    document.getElementById('llm-gpt').click();
+    expect(window.setSynthesisModelFromName('')).toBe(true);
+    expect(document.getElementById('synthesisColumn').classList.contains('pipeline-final-off')).toBe(true);
+    await delay(0);
+    const { llmComparatorPipelines: saved } = await chrome.storage.local.get('llmComparatorPipelines');
+    expect(saved.draftPlans.unsaved.plannedStages.some((stage) => stage.plannedStageId === 'planned-final-synthesis')).toBe(false);
+
+    renderDebateDom();
+    document.body.classList.add('pipeline-page');
+    await loadResultsScript(saved);
+    const column = document.getElementById('synthesisColumn');
+    const block = document.querySelector('#synthesis-stack .pipeline-synthesis-block');
+    expect(column.classList.contains('pipeline-final-off')).toBe(true);
+    expect(document.getElementById('synthesis-flow-select').value).toBe('');
+    expect(block.classList.contains('selected-synthesizer')).toBe(false);
+    expect(block.classList.contains('pipeline-final-synthesizer')).toBe(false);
+  }, 30000);
 });

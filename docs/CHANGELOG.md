@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-09 — Final synthesis state after reload, round blocks keep their design, version 2.81.662
+
+- The round model blocks of the final synthesizer have the normal design again and are not marked as synthesizer blocks: `syncSynthesizerBlocks` no longer toggles `selected-synthesizer` / `pipeline-final-synthesizer` on round blocks, and the CSS for those classes on model blocks is removed. The final «Synthesis» block keeps its own markup and its green look.
+- The final «Synthesis» block looks active only when a synthesizer is set and models are selected: the green style is `.pipeline-synthesis-block.selected-synthesizer:not(.inactive)`, and the template no longer hard-codes `pipeline-final-synthesizer`, which made it green after a reload even with Final off.
+- An explicit Final OFF on the unsaved pipeline survives a reload: its draft is stored under one key (`unsaved`), whether or not the header shows «Unsaved Pipeline». `setSynthesisModelFromName` clears the new-pipeline seed (`window.__pendingPipelineSynthesizer`), which had overridden an OFF choice.
+- Tests: round blocks keep model order and carry no synthesizer classes with Gemini as the final synthesizer; the final block is inactive without selected models; an OFF state is restored after a reload (the loader can seed the pipeline store).
+
 ### 2026-10-09 — Claude is the default synthesizer, intermediate synthesis independent of Final, version 2.81.661 (changing the final synthesizer no longer rewrites intermediate ones)
 
 - A new empty pipeline starts with the final synthesis on, with Claude (`window.__getDefaultSynthesizerName`: Claude when the model list has it, else the first model). A saved pipeline keeps its stored choice, including an explicit off; the default applies only when there is no stored synthesizer decision.
