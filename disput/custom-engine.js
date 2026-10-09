@@ -196,6 +196,8 @@
       let current = requests; // model → { prompt, parts, retryOf }
       for (let tryNo = firstAttempt; pending.length && tryNo < firstAttempt + maxAttempts; tryNo += 1) {
         if (aborted()) throw new StopRun('cancelled');
+        // The budget is checked before every send, a correction request included.
+        if (pending.some((name) => String(current[name].prompt || '').length > maxPromptChars)) throw new StopRun('context_full');
         const entries = Object.fromEntries(pending.map((name) => {
           const entry = { step: step.index, ref: step.ref, kind: step.kind, label: stepLabel(step), model: name, attempt: tryNo,
             retryOf: current[name].retryOf || null, prompt: current[name].prompt, parts: current[name].parts,

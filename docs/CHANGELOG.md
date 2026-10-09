@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-09 — Basic engine: the budget is checked before every send; a refused request stays not_sent, version 2.81.673
+
+- `disput/custom-engine.js`: `maxPromptChars` is checked before every send, a correction request included (before, only the first request of a step was checked; a correction could go out over the limit when the engine was used on its own). The run stops with `context_full`.
+- `disput/custom-run-record.js`: an attempt the transport refused for the budget (`state: not_sent`, `reason: context_full`) keeps that state and reason in the record, after storage and in the export; before, it stayed `sent` and became `unknown` after loading, which suggested a possible send.
+- Tests: `tests/custom-engine.test.js` (correction over and within the budget), `tests/custom-run-record.test.js` (not_sent through storage and export).
+- Empty values, wrong values and the numbering of switched-off rounds (found again in the same review) were fixed in 2.81.672.
+
 ### 2026-10-09 — Basic schema: four gaps of 2.81.671 closed, run policy and shared limit in the format, version 2.81.672
 
 2.81.671 said the assembly did not change behavior; four cases did, or were hidden. Fixed:

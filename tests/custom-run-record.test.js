@@ -53,6 +53,21 @@ describe('Custom run record', () => {
     expect(second).toMatchObject({ state: 'done', accepted: true, attribution: 'verified', transportRequestId: 'A-2' });
   });
 
+  test('a request the transport refused for the budget stays not_sent, with its reason, also after storage', async () => {
+    const record = Record.createRun({ runId: 'run-ns', pipelineName: 'Mine', task: 'T', steps: [{ task: 'x', input: 'none', models: ['A'] }] });
+    const send = async () => { throw Object.assign(new Error('too long'), { code: 'context_full' }); };
+    const result = await Engine.run({
+      task: 'T', steps: [{ task: 'x', input: 'none', models: ['A'] }], send,
+      onRequest: (entry) => Record.recordAttempt(record, entry), onResponse: (entry) => Record.recordAttempt(record, entry)
+    });
+    Record.finishRun(record, { stopReason: result.stopReason });
+    expect(result.stopReason).toBe('context_full');
+    expect(record.attempts[0]).toMatchObject({ state: 'not_sent', reason: 'context_full' });
+    const revived = Record.revive(JSON.parse(JSON.stringify(Record.serialize(record))));
+    expect(revived.attempts[0]).toMatchObject({ state: 'not_sent', reason: 'context_full' });
+    expect(Record.exportRun(revived).attempts[0]).toMatchObject({ state: 'not_sent', reason: 'context_full' });
+  });
+
   test('the prompt as dispatched is kept next to the engine prompt, token included', async () => {
     const { record } = await recordedRun({ steps: [{ task: 'x', input: 'none', models: ['A'] }], answers: { A: ['a1'] } });
     const [attempt] = Record.exportRun(record).attempts;

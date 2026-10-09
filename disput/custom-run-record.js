@@ -70,6 +70,10 @@
       };
       record.attempts.push(attempt);
     }
+    if (entry.state === 'not_sent') {
+      // The transport refused before sending (the budget): nothing left the extension, the reason is kept.
+      Object.assign(attempt, { state: 'not_sent', finishedAt: entry.finishedAt || Date.now(), reason: entry.reason || '' });
+    }
     if (entry.state === 'done') {
       Object.assign(attempt, {
         state: 'done', finishedAt: entry.finishedAt || Date.now(), sentPromptRef: record.put(entry.sentPrompt),

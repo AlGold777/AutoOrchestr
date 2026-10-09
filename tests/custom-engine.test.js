@@ -195,6 +195,27 @@ describe('Custom engine', () => {
     expect(result).toMatchObject({ stopReason: 'context_full', answers: ['x'.repeat(200)] });
   });
 
+  test('a correction request is checked against the budget before it is sent', async () => {
+    const { send, calls } = transport({ A: ['', 'fixed'] });
+    const sent = [];
+    const result = await Engine.run({
+      task: 'T', maxPromptChars: 50, onRequest: (entry) => sent.push(entry.prompt.length),
+      steps: [{ task: 'x', input: 'none', models: ['A'] }], send
+    });
+    expect(calls).toHaveLength(1);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toBeLessThanOrEqual(50);
+    expect(result.stopReason).toBe('context_full');
+    expect(Math.max(...result.history.map((entry) => entry.prompt.length))).toBeLessThanOrEqual(50);
+  });
+
+  test('a correction request that fits the budget is sent', async () => {
+    const { send, calls } = transport({ A: ['', 'fixed'] });
+    const result = await Engine.run({ task: 'T', maxPromptChars: 500, steps: [{ task: 'x', input: 'none', models: ['A'] }], send });
+    expect(calls).toHaveLength(2);
+    expect(result.stopReason).toBe('steps_done');
+  });
+
   test('Stop during a request: the run ends as cancelled with what was collected', async () => {
     const controller = new AbortController();
     const send = async (models) => {
