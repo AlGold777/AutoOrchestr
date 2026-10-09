@@ -400,6 +400,10 @@ async function loadResultsScript(seededPipelineStore = null) {
   await delay(20);
 }
 
+// The settings of the cards in a stored pipeline: from its schema (Basic), or from the earlier members.
+const settingsOf = (config) => (config.schema ? window.BasicSchema.toSettings(config.schema)
+  : { customModelSettings: config.customModelSettings, customDefaults: config.customDefaults });
+
 describe('Pipeline debate favorites view', () => {
   beforeAll(async () => {
     renderDebateDom();
@@ -2004,7 +2008,7 @@ describe('Pipeline debate favorites view', () => {
     modal.querySelector('#custom-card-save').click();
     const config = debug.capturePipelineConfig();
     expect(config.protocol.presetId).toBe('CUSTOM');
-    expect(config.customModelSettings.r2.Gemini).toEqual({ promptTemplate: 'UNNAMED REQUEST {вход}', maxWords: 45 });
+    expect(settingsOf(config).customModelSettings.r2.Gemini).toEqual({ promptTemplate: 'UNNAMED REQUEST {вход}', maxWords: 45 });
     modal.remove();
   });
 
@@ -2044,10 +2048,10 @@ describe('Pipeline debate favorites view', () => {
     modal.querySelector('#custom-card-save').click();
     const stored = await chrome.storage.local.get('llmComparatorPipelines');
     if (kind === 'saved') {
-      expect(stored.llmComparatorPipelines.pipelines['Card dispatch test'].customModelSettings.r2.GPT.maxWords).toBe(37);
+      expect(settingsOf(stored.llmComparatorPipelines.pipelines['Card dispatch test']).customModelSettings.r2.GPT.maxWords).toBe(37);
     }
     const saved = debug.capturePipelineConfig();
-    expect(saved.customModelSettings.r2.GPT).toEqual({ promptTemplate: request.value, maxWords: 37 });
+    expect(settingsOf(saved).customModelSettings.r2.GPT).toEqual({ promptTemplate: request.value, maxWords: 37 });
     // Reloading the saved configuration must restore the actual card controls.
     debug.applyPipelineConfig(JSON.parse(JSON.stringify(saved)));
     block = [...document.querySelectorAll('#r2-models .model-block')].find((item) => item.querySelector('.model-name')?.textContent === 'GPT');
@@ -2089,7 +2093,7 @@ describe('Pipeline debate favorites view', () => {
       document.getElementById('modTa').value = 'LIVE TASK VALUE';
       await window.runPipeline();
       expect(header.textContent).toBe('LIVE TASK VALUE');
-      expect(debug.capturePipelineConfig().customModelSettings.r2.GPT.maxWords).toBe(37);
+      expect(settingsOf(debug.capturePipelineConfig()).customModelSettings.r2.GPT.maxWords).toBe(37);
       expect(starts).toHaveLength(3);
       const sent = starts[1].promptsByModel.GPT;
       expect(sent).toContain('CARD_REQUEST LIVE TASK VALUE');
@@ -2147,19 +2151,19 @@ describe('Pipeline debate favorites view', () => {
     const original = request.value;
     request.value = '';
     modal.querySelector('#custom-card-save').click();
-    expect(debug.capturePipelineConfig().customModelSettings).toEqual({});
+    expect(settingsOf(debug.capturePipelineConfig()).customModelSettings).toEqual({});
     request.value = 'Edited request';
     length.value = '0';
     modal.querySelector('#custom-card-save').click();
-    expect(debug.capturePipelineConfig().customModelSettings).toEqual({});
+    expect(settingsOf(debug.capturePipelineConfig()).customModelSettings).toEqual({});
     length.value = '1.5';
     modal.querySelector('#custom-card-save').click();
-    expect(debug.capturePipelineConfig().customModelSettings).toEqual({});
+    expect(settingsOf(debug.capturePipelineConfig()).customModelSettings).toEqual({});
     modal.querySelector('#custom-card-reset').click();
     expect(request.value).toBe(original);
     length.value = '';
     modal.querySelector('#custom-card-save').click();
-    expect(debug.capturePipelineConfig().customModelSettings.r1.GPT).toEqual({ promptTemplate: null, maxWords: null });
+    expect(settingsOf(debug.capturePipelineConfig()).customModelSettings.r1?.GPT).toBeUndefined();
     const limited = (text) => debug.prepareCustomPrompts(['GPT'], { GPT: text }, { GPT: 44 }).GPT;
     for (const stale of ['[RESPONSE_LIMIT] stale 999 words', '[DISPUT_RESPONSE_LIMIT] stale 999 words']) {
       const sent = limited(`TEST\n${stale}`);
@@ -2212,14 +2216,14 @@ describe('Pipeline debate favorites view', () => {
     modal.querySelector('#custom-line-0').value = '  OWN  ';
     modal.querySelector('#custom-line-0').dispatchEvent(new Event('input'));
     modal.querySelector('#custom-card-save').click();
-    expect(debug.capturePipelineConfig().customModelSettings.r2.GPT.discipline.lines).toEqual(['OWN']);
+    expect(settingsOf(debug.capturePipelineConfig()).customModelSettings.r2.GPT.discipline.lines).toEqual(['OWN']);
     await debug.renderCustomBlockInspector(block, modal);
     expect(modal.querySelector('#custom-line-0').value).toBe('OWN');
     expect(modal.querySelectorAll('[data-line]')).toHaveLength(1);
     modal.querySelector('[data-line="0"] [data-action="remove"]').click();
     expect(modal.querySelectorAll('[data-line]')).toHaveLength(0);
     modal.querySelector('#custom-card-save').click();
-    expect(debug.capturePipelineConfig().customModelSettings.r2.GPT.discipline).toBeUndefined();
+    expect(settingsOf(debug.capturePipelineConfig()).customModelSettings.r2?.GPT?.discipline).toBeUndefined();
     modal.remove();
   });
 
@@ -2486,7 +2490,7 @@ describe('Pipeline debate favorites view', () => {
       expect(general.querySelector('#custom-card-request')).toBeNull();
       expect(general.querySelector('#custom-card-length')).toBeNull();
       await h.general({ roundTask: 'ROUND_GENERAL_A', synthesisTask: 'SYNTHESIS_GENERAL_A', content: 'CONTENT_GENERAL_A', delivery: 'DELIVERY_GENERAL {метка}', correction: 'FIX_GENERAL {причина}' });
-      expect(h.debug.capturePipelineConfig().customModelSettings).toEqual({});
+      expect(settingsOf(h.debug.capturePipelineConfig()).customModelSettings).toEqual({});
       await h.run();
       expect(h.starts).toHaveLength(3);
       for (const model of ['GPT', 'CLAUDE']) {
@@ -2501,7 +2505,7 @@ describe('Pipeline debate favorites view', () => {
       expect(h.starts[1].promptsByModel.GPT).toContain('ROUND_GENERAL_B');
       expect(h.starts[2].promptsByModel.GPT).toContain('FIX_GENERAL');
       expect(h.starts[2].promptsByModel.GPT).toContain('CONTENT_GENERAL_B');
-      expect(h.debug.capturePipelineConfig().customModelSettings).toEqual({});
+      expect(settingsOf(h.debug.capturePipelineConfig()).customModelSettings).toEqual({});
       expect(h.openModel().querySelector('[data-source-for]')).toBeNull();
     } finally { h.cleanup(); }
   }, 30000);
@@ -2523,8 +2527,8 @@ describe('Pipeline debate favorites view', () => {
       };
       await addLines(h.openGeneral(), ['SHARED_LINE']);
       await addLines(h.openModel('GPT'), ['OWN_LINE']);
-      expect(h.debug.capturePipelineConfig().customDefaults.discipline.lines).toEqual(['SHARED_LINE']);
-      expect(h.debug.capturePipelineConfig().customModelSettings.r2.GPT.discipline.lines).toEqual(['OWN_LINE']);
+      expect(settingsOf(h.debug.capturePipelineConfig()).customDefaults.discipline.lines).toEqual(['SHARED_LINE']);
+      expect(settingsOf(h.debug.capturePipelineConfig()).customModelSettings.r2.GPT.discipline.lines).toEqual(['OWN_LINE']);
       await h.run();
       expect(h.starts[0].promptsByModel.GPT).toContain('SHARED_LINE');
       expect(h.starts[0].promptsByModel.GPT).not.toContain('OWN_LINE');
@@ -2632,9 +2636,9 @@ describe('Pipeline debate favorites view', () => {
       area.value = 'ROUND_CUSTOM_TEXT';
       area.dispatchEvent(new Event('change'));
       await delay(0);
-      expect(h.debug.capturePipelineConfig().customDefaults.roundPrompts).toEqual({ r2: 'ROUND_CUSTOM_TEXT' });
+      expect(settingsOf(h.debug.capturePipelineConfig()).customDefaults.roundPrompts).toEqual({ r2: 'ROUND_CUSTOM_TEXT' });
       const stored = await chrome.storage.local.get('llmComparatorPipelines');
-      expect(stored.llmComparatorPipelines.pipelines['Round custom text'].customDefaults.roundPrompts).toEqual({ r2: 'ROUND_CUSTOM_TEXT' });
+      expect(settingsOf(stored.llmComparatorPipelines.pipelines['Round custom text']).customDefaults.roundPrompts).toEqual({ r2: 'ROUND_CUSTOM_TEXT' });
 
       // Claude keeps its own role; GPT takes the round's text.
       setBlockRole(canvasBlock('r2-models', 'Claude'), 'interaction_critical_audit');
@@ -2657,7 +2661,7 @@ describe('Pipeline debate favorites view', () => {
       emptyArea.value = '';
       emptyArea.dispatchEvent(new Event('change'));
       await delay(0);
-      expect(h.debug.capturePipelineConfig().customDefaults.roundPrompts).toBeUndefined();
+      expect(settingsOf(h.debug.capturePipelineConfig()).customDefaults.roundPrompts).toBeUndefined();
       await h.run();
       expect(h.starts[1].promptsByModel.GPT).not.toContain('Дополнительно для тебя');
     } finally { h.cleanup(); }
@@ -2727,8 +2731,8 @@ describe('Pipeline debate favorites view', () => {
       modal.querySelector('#custom-card-request').value = 'SYNTH_PERSONAL {вход}';
       modal.querySelector('#custom-card-save').click();
       await delay(0);
-      expect(h.debug.capturePipelineConfig().customModelSettings['synth:planned-working-synthesis-after-canvas-r1'].Gemini)
-        .toEqual({ promptTemplate: 'SYNTH_PERSONAL {вход}', maxWords: null });
+      expect(settingsOf(h.debug.capturePipelineConfig()).customModelSettings['synth:planned-working-synthesis-after-canvas-r1'].Gemini)
+        .toEqual({ promptTemplate: 'SYNTH_PERSONAL {вход}' });
       // The saved text applies once a single click adds the stage.
       insert.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await delay(300);
@@ -2895,9 +2899,9 @@ describe('Pipeline debate favorites view', () => {
       general.querySelector('[data-model-note="GPT"]').value = 'NOTE_GPT без вступлений';
       general.querySelector('#custom-card-save').click();
       await new Promise((resolve) => setTimeout(resolve, 0));
-      expect(h.debug.capturePipelineConfig().customDefaults.modelNotes).toEqual({ GPT: 'NOTE_GPT без вступлений' });
+      expect(settingsOf(h.debug.capturePipelineConfig()).customDefaults.modelNotes).toEqual({ GPT: 'NOTE_GPT без вступлений' });
       const stored = await chrome.storage.local.get('llmComparatorPipelines');
-      expect(stored.llmComparatorPipelines.pipelines['Model notes'].customDefaults.modelNotes).toEqual({ GPT: 'NOTE_GPT без вступлений' });
+      expect(settingsOf(stored.llmComparatorPipelines.pipelines['Model notes']).customDefaults.modelNotes).toEqual({ GPT: 'NOTE_GPT без вступлений' });
       h.debug.applyPipelineConfig(JSON.parse(JSON.stringify(h.debug.capturePipelineConfig())));
       expect(h.openGeneral().querySelector('[data-model-note="GPT"]').value).toBe('NOTE_GPT без вступлений');
 
@@ -2923,7 +2927,7 @@ describe('Pipeline debate favorites view', () => {
       general2.querySelector('[data-model-note="GPT"]').value = '';
       general2.querySelector('#custom-card-save').click();
       await new Promise((resolve) => setTimeout(resolve, 0));
-      expect(h.debug.capturePipelineConfig().customDefaults.modelNotes).toBeUndefined();
+      expect(settingsOf(h.debug.capturePipelineConfig()).customDefaults.modelNotes).toBeUndefined();
     } finally { h.cleanup(); }
   }, 30000);
 
@@ -2945,12 +2949,12 @@ describe('Pipeline debate favorites view', () => {
       card = h.modal();
       expect(card.querySelector('#custom-discipline-task').value).toBe('COMMON_B');
       expect(card.querySelector('[data-discipline="task"] [data-action="inherit"]').hidden).toBe(true);
-      expect(h.debug.capturePipelineConfig().customModelSettings.r2.GPT.task).toBeUndefined();
+      expect(settingsOf(h.debug.capturePipelineConfig()).customModelSettings.r2.GPT.task).toBeUndefined();
       expect(document.activeElement).toBe(card.querySelector('textarea'));
       document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
       expect(card.style.display).toBe('none');
       await h.model({ content: 'CONTENT_B' });
-      expect(h.debug.capturePipelineConfig().customModelSettings.r2.GPT.discipline).toBeUndefined();
+      expect(settingsOf(h.debug.capturePipelineConfig()).customModelSettings.r2?.GPT?.discipline).toBeUndefined();
       await h.general({ roundTask: 'COMMON_C', content: 'CONTENT_C' });
       await h.run();
       expect(h.starts[1].promptsByModel.GPT).toContain('COMMON_C');
@@ -2973,7 +2977,7 @@ describe('Pipeline debate favorites view', () => {
     try {
       await h.general({ roundTask: 'PERSISTED_ROUND', content: 'PERSISTED_CONTENT' });
       const stored = (await chrome.storage.local.get('llmComparatorPipelines')).llmComparatorPipelines;
-      expect(stored.pipelines['Defaults saved copy'].customDefaults.roundTask).toBe('PERSISTED_ROUND');
+      expect(settingsOf(stored.pipelines['Defaults saved copy']).customDefaults.roundTask).toBe('PERSISTED_ROUND');
       const exported = JSON.parse(JSON.stringify(h.debug.buildPipelineExportPayload()));
       const imported = h.debug.normalizePipelineStore(exported);
       h.debug.clearCustomSessionForTest();
@@ -3005,9 +3009,179 @@ describe('Pipeline debate favorites view', () => {
       h.debug.applyPipelineConfig(template);
       expect(h.debug.resolveCustomFields().task.value).not.toContain('TEMPLATE_SESSION');
       document.getElementById('pipeline-add-btn').click();
-      expect(h.debug.capturePipelineConfig().customDefaults).toEqual({});
+      expect(settingsOf(h.debug.capturePipelineConfig()).customDefaults).toEqual({});
     } finally { h.cleanup(); }
   }, 30000);
+
+  describe('Save stores the schema of a Basic pipeline', () => {
+    const planOf = () => window.__pipelineDraftPlanForCanvas(window.__getActivePipelineDraftPlan());
+    const saveAs = async (name) => {
+      const oldPrompt = window.prompt;
+      window.prompt = jest.fn(() => name);
+      try { document.getElementById('pipeline-save-btn').click(); await settleCustomCard(); }
+      finally { window.prompt = oldPrompt; }
+    };
+    const storedRecord = async (name) => (await chrome.storage.local.get('llmComparatorPipelines')).llmComparatorPipelines.pipelines[name];
+    const reload = (h, name) => {
+      const record = JSON.parse(JSON.stringify(h.debug.getPipelineStoreSnapshot().pipelines[name]));
+      h.debug.clearCustomSessionForTest();
+      h.debug.setPipelineStoreForTest({ active: name, order: [name], pipelines: { [name]: record } });
+      h.debug.applyPipelineConfig(record);
+      return record;
+    };
+
+    test('the saved record holds a valid schema with origin, version and only the owner\'s values; the earlier members are gone', async () => {
+      const h = setupCustomInheritance('Schema record', { synthesis: 'Gemini' });
+      try {
+        await h.general({ roundTask: 'GENERAL_TASK' });
+        await h.model({ promptTemplate: 'OWN REQUEST {задача}' });
+        const record = await storedRecord('Schema record');
+        expect(record.customModelSettings).toBeUndefined();
+        expect(record.customDefaults).toBeUndefined();
+        expect(window.BasicSchema.validate(record.schema)).toEqual([]);
+        expect(record.schema).toMatchObject({ schemaVersion: 1, origin: 'user', defaults: { roundTask: 'GENERAL_TASK' } });
+        expect(record.schema.basedOn).toBeUndefined();
+        const own = record.schema.steps.find((step) => step.ref === 'r2').models.find((model) => model.name === 'GPT');
+        expect(own).toEqual({ name: 'GPT', request: 'OWN REQUEST {задача}' });
+        // Nothing the owner did not set is written: no Basic text, no empty or null placeholders.
+        expect(JSON.stringify(record.schema)).not.toContain(window.BasicSchema.DEFAULTS.discipline.content);
+        expect(JSON.stringify(record.schema)).not.toContain('null');
+      } finally { h.cleanup(); }
+    }, 30000);
+
+    test('after a reload the cards, ▶ and the steps of the run are the same', async () => {
+      const h = setupCustomInheritance('Schema reload', { synthesis: 'Gemini' });
+      try {
+        await h.general({ roundTask: 'GENERAL_TASK', content: 'GENERAL_CONTENT' });
+        await h.model({ content: 'OWN_CONTENT' });
+        const before = JSON.stringify(h.debug.buildBasicRun(planOf()).steps);
+        reload(h, 'Schema reload');
+        const after = h.debug.buildBasicRun(planOf());
+        expect(after.errors).toEqual([]);
+        expect(JSON.stringify(after.steps)).toBe(before);
+        await h.run();
+        expect(h.starts[1].promptsByModel.GPT).toContain('GENERAL_TASK');
+        expect(h.starts[1].promptsByModel.GPT).toContain('OWN_CONTENT');
+        expect(h.starts[1].promptsByModel.GPT).not.toContain('GENERAL_CONTENT');
+      } finally { h.cleanup(); }
+    }, 30000);
+
+    test('a copy of a template remembers it in basedOn; saving it again keeps basedOn', async () => {
+      const h = setupCustomInheritance('Based source', { synthesis: '' });
+      try {
+        h.debug.clearCustomSessionForTest();
+        document.querySelector('.pipeline-item[data-name="Basic"]').click();
+        await settleCustomCard();
+        await saveAs('From template');
+        const record = () => h.debug.getPipelineStoreSnapshot().pipelines['From template'];
+        expect(record().schema).toMatchObject({ origin: 'user', basedOn: 'Basic' });
+        expect(window.BasicSchema.validate(record().schema)).toEqual([]);
+        // A card save and a ▶ save rewrite the schema and keep what it was based on.
+        await h.model({ promptTemplate: 'AFTER SAVE {задача}' });
+        expect(record().schema.basedOn).toBe('Basic');
+        await h.general({ roundTask: 'AFTER GENERAL' });
+        expect(record().schema).toMatchObject({ basedOn: 'Basic', defaults: { roundTask: 'AFTER GENERAL' } });
+      } finally { h.cleanup(); }
+    }, 30000);
+
+    test('the run policy and the limit are written only when set before or different from Basic', async () => {
+      const h = setupCustomInheritance('Run values', { synthesis: '' });
+      try {
+        const lengthSelect = document.getElementById('debate-length-select');
+        const policy = document.getElementById('debate-run-policy-select');
+        const withValues = (values) => { policy.value = values.policy; lengthSelect.value = values.length; return h.debug.capturePipelineConfig().schema.run; };
+        // Basic: manual, 300 words. Opening and saving a schema does not make them explicit.
+        expect(withValues({ policy: 'manual', length: '300' })).toBeUndefined();
+        expect(withValues({ policy: 'auto', length: '300' })).toEqual({ policy: 'auto' });
+        expect(withValues({ policy: 'manual', length: '700' })).toEqual({ maxWords: 700 });
+        // A value that was explicit when the schema was loaded stays explicit even when it equals Basic.
+        const record = JSON.parse(JSON.stringify(h.debug.capturePipelineConfig()));
+        record.schema.run = { policy: 'manual' };
+        h.debug.clearCustomSessionForTest();
+        h.debug.setPipelineStoreForTest({ active: 'Run values', order: ['Run values'], pipelines: { 'Run values': record } });
+        h.debug.applyPipelineConfig(record);
+        expect(withValues({ policy: 'manual', length: '300' })).toEqual({ policy: 'manual' });
+      } finally { h.cleanup(); }
+    }, 30000);
+
+    test('a schema takes the run policy and the limit from itself, not from the copy in the protocol', async () => {
+      const h = setupCustomInheritance('Run from schema', { synthesis: '' });
+      try {
+        const record = JSON.parse(JSON.stringify(h.debug.capturePipelineConfig()));
+        record.protocol.runPolicy = 'manual';
+        record.protocol.length = '300';
+        record.schema.run = { policy: 'auto', maxWords: 700 };
+        h.debug.clearCustomSessionForTest();
+        h.debug.setPipelineStoreForTest({ active: 'Run from schema', order: ['Run from schema'], pipelines: { 'Run from schema': record } });
+        h.debug.applyPipelineConfig(record);
+        expect(document.getElementById('debate-run-policy-select').value).toBe('auto');
+        expect(document.getElementById('debate-length-select').value).toBe('700');
+        expect(h.debug.buildBasicRun(planOf()).run).toEqual({ policy: 'auto', maxWords: 700 });
+      } finally { h.cleanup(); }
+    }, 30000);
+
+    test('settings of a switched-off model and of a step the canvas lacks are kept with enabled: false', async () => {
+      const h = setupCustomInheritance('Off models', { synthesis: '' });
+      try {
+        const legacy = { ...h.config, customModelSettings: { r2: { Grok: { promptTemplate: 'GROK REQUEST', maxWords: 80 } }, final: { Gemini: { task: 'FINAL OFF TASK' } } } };
+        h.debug.clearCustomSessionForTest();
+        h.debug.setPipelineStoreForTest({ active: 'Off models', order: ['Off models'], pipelines: { 'Off models': legacy } });
+        h.debug.applyPipelineConfig(legacy);
+        const schema = h.debug.capturePipelineConfig().schema;
+        expect(window.BasicSchema.validate(schema)).toEqual([]);
+        const entry = (ref, name) => schema.steps.find((step) => step.ref === ref)?.models.find((model) => model.name === name);
+        expect(entry('r2', 'Grok')).toEqual({ name: 'Grok', enabled: false, request: 'GROK REQUEST', maxWords: 80 });
+        expect(entry('final', 'Gemini')).toEqual({ name: 'Gemini', enabled: false, task: 'FINAL OFF TASK' });
+        // A switched-off model is not called, and its settings come back with the schema.
+        expect(window.BasicSchema.assemble(schema).flatMap((step) => step.models.map((model) => model.name))).not.toContain('Grok');
+        expect(window.BasicSchema.toSettings(schema).customModelSettings.r2.Grok).toEqual({ promptTemplate: 'GROK REQUEST', maxWords: 80 });
+      } finally { h.cleanup(); }
+    }, 30000);
+
+    test('a schema of a newer Basic is not run, whatever the earlier members say', async () => {
+      const h = setupCustomInheritance('Newer schema', { synthesis: '' });
+      try {
+        const record = JSON.parse(JSON.stringify(h.debug.capturePipelineConfig()));
+        record.schema.schemaVersion = 99;
+        record.customModelSettings = { r2: { GPT: { promptTemplate: 'MUST NOT BE USED' } } };
+        h.debug.clearCustomSessionForTest();
+        h.debug.setPipelineStoreForTest({ active: 'Newer schema', order: ['Newer schema'], pipelines: { 'Newer schema': record } });
+        h.debug.applyPipelineConfig(record);
+        const built = h.debug.buildBasicRun(planOf());
+        expect(window.BasicSchema.describeErrors(built.errors)).toContain('более новой версией Basic');
+        expect(await h.run()).toHaveLength(0);
+        expect(document.getElementById('notification-message').textContent).toContain('более новой версией Basic');
+        // Saving a valid schema over it clears the refusal.
+        const fresh = JSON.parse(JSON.stringify(h.debug.capturePipelineConfig()));
+        fresh.schema.schemaVersion = 1;
+        h.debug.clearCustomSessionForTest();
+        h.debug.setPipelineStoreForTest({ active: 'Newer schema', order: ['Newer schema'], pipelines: { 'Newer schema': fresh } });
+        h.debug.applyPipelineConfig(fresh);
+        expect((await h.run()).length).toBeGreaterThan(0);
+      } finally { h.cleanup(); }
+    }, 30000);
+
+    test('a record saved before the schema still loads and runs as before, and the first card save moves it to a schema', async () => {
+      const h = setupCustomInheritance('Earlier record', { synthesis: '' });
+      try {
+        const earlier = { ...h.config, customModelSettings: { r2: { GPT: { discipline: { content: 'EARLIER CONTENT' } } } }, customDefaults: { roundTask: 'EARLIER TASK' } };
+        h.debug.clearCustomSessionForTest();
+        h.debug.setPipelineStoreForTest({ active: 'Earlier record', order: ['Earlier record'], pipelines: { 'Earlier record': earlier } });
+        h.debug.applyPipelineConfig(earlier);
+        await h.run();
+        expect(h.starts[1].promptsByModel.GPT).toContain('EARLIER CONTENT');
+        expect(h.starts[1].promptsByModel.GPT).toContain('EARLIER TASK');
+        await h.model({ promptTemplate: 'EDITED REQUEST {задача}' });
+        const record = await storedRecord('Earlier record');
+        expect(record.customModelSettings).toBeUndefined();
+        expect(settingsOf(record).customDefaults.roundTask).toBe('EARLIER TASK');
+        expect(settingsOf(record).customModelSettings.r2.GPT.promptTemplate).toBe('EDITED REQUEST {задача}');
+        expect(settingsOf(record).customModelSettings.r2.GPT.discipline.content).toBe('EARLIER CONTENT');
+        // The run values of the earlier protocol (Auto here) go into the schema because they differ from Basic.
+        expect(record.schema.run).toEqual({ policy: 'auto' });
+      } finally { h.cleanup(); }
+    }, 30000);
+  });
 
   test('Custom ▶ is read-only during a run while its contents can still be copied', async () => {
     const h = setupCustomInheritance('Read-only defaults');

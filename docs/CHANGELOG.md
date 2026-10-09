@@ -1,5 +1,14 @@
 # CHANGELOG — Project
 
+### 2026-10-09 — Save stores the schema of a Basic pipeline, version 2.81.674
+
+- A Basic pipeline (runner `custom`) is stored as `schema` (`schemaVersion`, `origin: user`, `basedOn`, explicit `run`, `defaults`, `steps`); `customModelSettings` and `customDefaults` are no longer written for it. Save from a template sets `basedOn` to the template; later saves and card saves keep it. Saving a card or ▶ rewrites the schema of a saved pipeline (`persistBasicSettings`), also moving a record saved before the schema onto it, with the protocol's Auto/limit written to `run` where they differ from Basic.
+- Loading reads the cards, ▶ and the run values from the schema (`basicWorkingFromConfig`); the schema's `run` outranks the copies in the protocol; a schema that cannot be read (also one from a newer Basic) stops a run and names the reason; earlier records load as before.
+- `run` is written only when it differs from Basic or was explicit in the loaded schema, so opening and saving a schema does not make Basic's values explicit.
+- Format: a model may be `enabled: false` (settings kept, no call); `BasicSchema.toSettings` gives the card settings from a schema. Settings of a switched-off model and of a card the canvas has no step for stay in the schema.
+- Not done: the structure of the canvas still comes from the canvas members of the record, a schema without them is not unfolded; a card still drops a value equal to ▶. See `docs/Pipeline scenarios/basic-engine-and-schemas.md`.
+- Tests: `tests/results-debate-favorites.test.js` (record shape, reload, basedOn, run values, switched-off models, newer schema, earlier record); tests that read stored members now read them through the schema.
+
 ### 2026-10-09 — Basic engine: the budget is checked before every send; a refused request stays not_sent, version 2.81.673
 
 - `disput/custom-engine.js`: `maxPromptChars` is checked before every send, a correction request included (before, only the first request of a step was checked; a correction could go out over the limit when the engine was used on its own). The run stops with `context_full`.

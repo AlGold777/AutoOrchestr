@@ -9,7 +9,8 @@
 //   run: { policy?: 'auto' | 'manual', maxWords? } — the run policy and the shared answer limit
 //   defaults (the ▶ card): { roundTask?, synthesisTask?, discipline?, modelNotes?, roundPrompts? }
 //   step: { ref, kind: 'round' | 'synthesis', order?, input?, task?, models }
-//   model: { name, role?, request?, maxWords?, task?, discipline? }   (request: '' = no own request)
+//   model: { name, enabled?, role?, request?, maxWords?, task?, discipline? }   (request: '' = no own request)
+//   enabled: false keeps a switched-off model with its settings; assemble() gives the engine no call for it.
 //   discipline: { limit?, content?, delivery?, correction?, lines? }
 // A missing field is inherited; a given value applies, an empty string included (an empty text is
 // a value, not inheritance). Lists are replaced as a whole. A step with no models is switched off:
@@ -78,7 +79,7 @@
       if (step.kind === 'round') out.order = step.order || 'parallel';
       out.task = input === 'none' ? '' : stepFields.task.value;
       if (step.kind === 'round') out.input = input;
-      out.models = (step.models || []).map((model) => {
+      out.models = (step.models || []).filter((model) => model.enabled !== false).map((model) => {
         const resolved = resolveFields(model, step.kind, { task: step.task }, defaults);
         const lines = [...(defaults.discipline?.lines || []), ...(model.discipline?.lines || [])];
         // An intermediate synthesis without its own request runs the final synthesizer's request.
@@ -173,7 +174,8 @@
       step.models.forEach((model, at) => {
         const modelPath = `${path}.models[${at}]`;
         if (!isObject(model)) { fail(modelPath, 'ожидается объект'); return; }
-        unknownKeys(model, ['name', 'role', 'request', 'maxWords', 'task', 'discipline'], modelPath);
+        unknownKeys(model, ['name', 'enabled', 'role', 'request', 'maxWords', 'task', 'discipline'], modelPath);
+        if ('enabled' in model && typeof model.enabled !== 'boolean') fail(`${modelPath}.enabled`, 'ожидается true или false');
         if (typeof model.name !== 'string' || !model.name.trim()) fail(`${modelPath}.name`, 'имя модели не указано');
         else if (names.has(model.name)) fail(`${modelPath}.name`, `модель «${model.name}» повторяется в шаге`);
         else names.add(model.name);
@@ -185,6 +187,24 @@
     return errors;
   }
 
+  // The settings of the cards in the form the page edits them (the cards write only what the owner set):
+  // customModelSettings[ref][model] = { promptTemplate, maxWords, task, discipline }, customDefaults = the ▶ card.
+  function toSettings(schema) {
+    const customModelSettings = {};
+    (schema.steps || []).forEach((step) => {
+      (step.models || []).forEach((model) => {
+        const own = {};
+        if (typeof model.request === 'string') own.promptTemplate = model.request;
+        if ('maxWords' in model) own.maxWords = model.maxWords;
+        if (typeof model.task === 'string') own.task = model.task;
+        if (isObject(model.discipline)) own.discipline = JSON.parse(JSON.stringify(model.discipline));
+        if (!Object.keys(own).length) return;
+        (customModelSettings[step.ref] || (customModelSettings[step.ref] = {}))[model.name] = own;
+      });
+    });
+    return { customModelSettings, customDefaults: schema.defaults ? JSON.parse(JSON.stringify(schema.defaults)) : {} };
+  }
+
   // The run settings as the run takes them: the policy and the shared answer limit.
   const resolveRun = (schema) => ({
     policy: typeof schema.run?.policy === 'string' ? schema.run.policy : DEFAULTS.run.policy,
@@ -193,7 +213,7 @@
 
   const describeErrors = (errors) => errors.map((error) => (error.path ? `${error.path}: ${error.message}` : error.message)).join('; ');
 
-  const api = Object.freeze({ SCHEMA_VERSION, SUPPORTED_VERSIONS, ORIGINS, DEFAULTS, pick, resolveFields, assemble, resolveRun, validate, describeErrors });
+  const api = Object.freeze({ SCHEMA_VERSION, SUPPORTED_VERSIONS, ORIGINS, DEFAULTS, pick, resolveFields, assemble, resolveRun, toSettings, validate, describeErrors });
   root.BasicSchema = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

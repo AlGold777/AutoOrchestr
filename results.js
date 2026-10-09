@@ -4291,11 +4291,11 @@ document.addEventListener('click', (event) => {
             else delete next.roundPrompts;
             customPipelineDefaults.set(name, next);
             if (!isDefaultPipelineName(name) && pipelineStore.pipelines[name]) {
-                pipelineStore.pipelines[name].customDefaults = JSON.parse(JSON.stringify(next));
+                persistBasicSettings(name);
                 await persistPipelineStore();
             }
         };
-        const capturePipelineConfig = () => {
+        const capturePipelineConfig = ({ basedOn = '' } = {}) => {
             const modelStacks = {
                 'r1-models': captureModelStackState('r1-models')
             };
@@ -4304,15 +4304,20 @@ document.addEventListener('click', (event) => {
             }
 
             const draftPlan = draftPlanForCanvas(getActiveDraftPlan());
-            return {
+            const config = {
                 version: 3,
                 protocol: { ...getPipelineProtocolConfig(), synthesizer: getDraftPlanSynthesizer(draftPlan) },
                 draftPlan,
                 roundCounter,
-                modelStacks,
-                customModelSettings: JSON.parse(JSON.stringify(getCustomCardSettings())),
-                customDefaults: JSON.parse(JSON.stringify(getCustomPipelineDefaults()))
+                modelStacks
             };
+            // A Basic pipeline is stored as its schema; the cards' working copies are read back from it.
+            if (isCustomEnginePipeline()) config.schema = basicSchemaFromPage(draftPlan, null, { forSave: true, basedOn });
+            else {
+                config.customModelSettings = JSON.parse(JSON.stringify(getCustomCardSettings()));
+                config.customDefaults = JSON.parse(JSON.stringify(getCustomPipelineDefaults()));
+            }
+            return config;
         };
 
         const clonePipelineConfig = (config) => {
@@ -6650,7 +6655,10 @@ document.addEventListener('click', (event) => {
             const entries = Object.entries(saved).filter(([, value]) => legacyValue(value) !== undefined);
             return entries.length ? Object.fromEntries(entries) : undefined;
         };
-        const basicSchemaFromPage = (plan, previewModel = null) => {
+        // `forSave` builds the stored form: origin, basedOn, switched-off models and steps with their settings,
+        // and a `run` that holds only explicit values (see basicRunExplicit). The run path builds the same
+        // schema with the run taken from the header as it stands and the legacy fallback of the final request applied.
+        const basicSchemaFromPage = (plan, previewModel = null, { forSave = false, basedOn = '', run = null } = {}) => {
             const general = getCustomPipelineDefaults();
             const cards = getCustomCardSettings();
             const put = (target, key, value) => { if (value !== undefined) target[key] = value; };
@@ -6658,6 +6666,15 @@ document.addEventListener('click', (event) => {
             ['roundTask', 'synthesisTask'].forEach((key) => put(defaults, key, legacyValue(general[key])));
             ['modelNotes', 'roundPrompts'].forEach((key) => put(defaults, key, legacyMap(general[key])));
             put(defaults, 'discipline', legacyDiscipline(general.discipline));
+            const modelEntry = (ref, name, extra = {}) => {
+                const settings = cards[ref]?.[name];
+                const model = { name, ...extra };
+                put(model, 'request', legacyValue(settings?.promptTemplate));
+                put(model, 'maxWords', legacyValue(settings?.maxWords));
+                put(model, 'task', legacyValue(settings?.task));
+                put(model, 'discipline', legacyDiscipline(settings?.discipline));
+                return model;
+            };
             let round = 0;
             const steps = (plan?.plannedStages || []).map((stage) => {
                 const models = (stage.participantIds || []).filter(Boolean);
@@ -6670,23 +6687,86 @@ document.addEventListener('click', (event) => {
                 else return null;
                 // A model can be configured before its Send checkbox is enabled.
                 if (ref === previewModel?.ref && !models.includes(previewModel.name)) models.push(previewModel.name);
-                return { ref, kind, models: models.map((name) => {
-                    const settings = cards[ref]?.[name];
-                    const model = { name };
-                    if (roles[name]) model.role = roles[name];
-                    put(model, 'request', legacyValue(settings?.promptTemplate));
-                    put(model, 'maxWords', legacyValue(settings?.maxWords));
-                    put(model, 'task', legacyValue(settings?.task));
-                    put(model, 'discipline', legacyDiscipline(settings?.discipline));
+                const entries = models.map((name) => {
+                    const model = modelEntry(ref, name, roles[name] ? { role: roles[name] } : {});
                     // Before the schema an intermediate synthesis without its own request ran the saved request of
                     // the same model of the final synthesis, also when the final synthesis is switched off.
-                    if (model.request === undefined && ref.startsWith('synth:')) put(model, 'request', legacyValue(cards.final?.[name]?.promptTemplate));
+                    if (!forSave && model.request === undefined && ref.startsWith('synth:')) put(model, 'request', legacyValue(cards.final?.[name]?.promptTemplate));
                     return model;
-                }) };
+                });
+                // A switched-off model keeps its settings in the saved schema.
+                if (forSave) {
+                    Object.keys(cards[ref] || {}).filter((name) => !models.includes(name)).forEach((name) => {
+                        const model = modelEntry(ref, name, { enabled: false });
+                        if (Object.keys(model).length > 2) entries.push(model);
+                    });
+                }
+                return { ref, kind, models: entries };
             }).filter(Boolean);
-            return { schemaVersion: window.BasicSchema.SCHEMA_VERSION, origin: 'user',
-                run: { policy: getDebateRunPolicy(), maxWords: getDebateMaxWords() },
+            if (forSave) {
+                // Settings of a card the canvas has no step for (a removed round, a final synthesis that is off) are kept too.
+                const present = new Set(steps.map((step) => step.ref));
+                Object.keys(cards).filter((ref) => !present.has(ref) && /^(r\d+|final|synth:.+)$/.test(ref)).forEach((ref) => {
+                    const models = Object.keys(cards[ref] || {}).map((name) => modelEntry(ref, name, { enabled: false })).filter((model) => Object.keys(model).length > 2);
+                    if (models.length) steps.push({ ref, kind: /^r\d+$/.test(ref) ? 'round' : 'synthesis', models });
+                });
+            }
+            const runValue = forSave ? (run || basicRunForSave()) : { policy: getDebateRunPolicy(), maxWords: getDebateMaxWords() };
+            return { schemaVersion: window.BasicSchema.SCHEMA_VERSION, origin: 'user', ...(forSave && basedOn ? { basedOn } : {}),
+                ...(Object.keys(runValue).length ? { run: runValue } : {}),
                 ...(Object.keys(defaults).length ? { defaults } : {}), steps };
+        };
+        // The run values a saved schema holds: only those the owner set before (loaded as explicit) or that differ
+        // from Basic. Opening a schema and saving it does not make the shown Basic values explicit.
+        const basicRunExplicit = new Map();
+        const basicSchemaLoadErrors = new Map();
+        const basicRunForSave = () => {
+            const explicit = basicRunExplicit.get(draftPlanStorageKey()) || {};
+            const defaults = window.BasicSchema.DEFAULTS.run;
+            const policy = getDebateRunPolicy();
+            const maxWords = getDebateMaxWords();
+            return { ...(explicit.policy || policy !== defaults.policy ? { policy } : {}), ...(explicit.maxWords || maxWords !== defaults.maxWords ? { maxWords } : {}) };
+        };
+        // The working copies the cards edit, read from a stored record: a record with a schema gives them
+        // from the schema (a schema that cannot be read gives an error and nothing); an earlier record gives
+        // its customModelSettings / customDefaults as before.
+        const basicWorkingFromConfig = (config) => {
+            const copy = (value) => JSON.parse(JSON.stringify(value || {}));
+            if (!config?.schema) return { cards: copy(config?.customModelSettings), defaults: copy(config?.customDefaults), runExplicit: {}, schema: null, error: '' };
+            const errors = window.BasicSchema.validate(config.schema);
+            if (errors.length) return { cards: {}, defaults: {}, runExplicit: {}, schema: null, error: window.BasicSchema.describeErrors(errors) };
+            const settings = window.BasicSchema.toSettings(config.schema);
+            return { cards: settings.customModelSettings, defaults: settings.customDefaults, schema: config.schema, error: '',
+                runExplicit: { policy: 'policy' in (config.schema.run || {}), maxWords: 'maxWords' in (config.schema.run || {}) } };
+        };
+        const adoptBasicWorking = (key, working) => {
+            customPipelineDefaults.set(key, working.defaults);
+            customCardSettings.set(key, working.cards);
+            basicRunExplicit.set(key, working.runExplicit);
+            if (working.error) basicSchemaLoadErrors.set(key, working.error); else basicSchemaLoadErrors.delete(key);
+        };
+        // Writes the settings of a saved pipeline: a Basic pipeline stores its schema (and drops the earlier
+        // members), any other keeps the earlier members.
+        const persistBasicSettings = (name) => {
+            const record = pipelineStore.pipelines[name];
+            if (!record) return false;
+            if (getPresetMetaForConfig(record)?.runner !== 'custom') {
+                record.customModelSettings = JSON.parse(JSON.stringify(getCustomCardSettings()));
+                record.customDefaults = JSON.parse(JSON.stringify(getCustomPipelineDefaults()));
+                return true;
+            }
+            // The run values stay as the record has them: a schema keeps its own, an earlier record gives those of its
+            // protocol that differ from Basic. They change only on Save, from the header.
+            const defaults = window.BasicSchema.DEFAULTS.run;
+            const earlier = record.protocol || {};
+            const run = record.schema ? (record.schema.run || {}) : {
+                ...(earlier.runPolicy === 'auto' || earlier.runPolicy === 'manual' ? (earlier.runPolicy !== defaults.policy ? { policy: earlier.runPolicy } : {}) : {}),
+                ...(Number.isSafeInteger(Number(earlier.length)) && Number(earlier.length) > 0 && Number(earlier.length) !== defaults.maxWords ? { maxWords: Number(earlier.length) } : {})
+            };
+            record.schema = basicSchemaFromPage(draftPlanForCanvas(getActiveDraftPlan()), null, { forSave: true, basedOn: record.schema?.basedOn || '', run });
+            delete record.customModelSettings;
+            delete record.customDefaults;
+            return true;
         };
         // The model's role (mini request from its block) reaches the model as `extra`, the same field
         // as any other extra text.
@@ -6696,7 +6776,8 @@ document.addEventListener('click', (event) => {
         // the result (steps, policy, limit) for its whole length.
         const buildBasicRun = (plan, previewModel = null) => {
             const schema = basicSchemaFromPage(plan, previewModel);
-            const errors = window.BasicSchema.validate(schema);
+            const loadError = basicSchemaLoadErrors.get(draftPlanStorageKey());
+            const errors = [...(loadError ? [{ path: 'сохранённая схема', message: loadError }] : []), ...window.BasicSchema.validate(schema)];
             return { schema, errors, run: window.BasicSchema.resolveRun(schema), steps: errors.length ? [] : window.BasicSchema.assemble(schema, { roleText: customRoleText }) };
         };
         // The cards and the preview must open on a schema with a wrong value, to let the owner correct it;
@@ -7636,11 +7717,9 @@ document.addEventListener('click', (event) => {
         const applyPipelineConfig = (config = {}) => {
             if (!config || typeof config !== 'object') return;
             pipelineApplyingConfig = true;
+            const working = basicWorkingFromConfig(config);
             if (!isDefaultPipelineName(draftPlanStorageKey()) || !customPipelineDefaults.has(draftPlanStorageKey())) {
-                customPipelineDefaults.set(draftPlanStorageKey(), isDefaultPipelineName(draftPlanStorageKey()) ? {} : JSON.parse(JSON.stringify(config.customDefaults || {})));
-            }
-            if (!isDefaultPipelineName(draftPlanStorageKey()) || !customCardSettings.has(draftPlanStorageKey())) {
-                customCardSettings.set(draftPlanStorageKey(), JSON.parse(JSON.stringify(config.customModelSettings || {})));
+                adoptBasicWorking(draftPlanStorageKey(), isDefaultPipelineName(draftPlanStorageKey()) ? { cards: {}, defaults: {}, runExplicit: {}, error: '' } : working);
             }
             const protocol = config.protocol && typeof config.protocol === 'object' ? config.protocol : null;
             activeStageTemplate = String(protocol?.stageTemplate || '');
@@ -7681,6 +7760,14 @@ document.addEventListener('click', (event) => {
                 if (protocol.serviceRoles?.auditor) {
                     console.warn('[Disput migration] Loaded pipeline config contains serviceRoles.auditor — ignored (auditor selector removed).');
                 }
+            }
+            // A schema holds the run policy and the shared limit (or leaves them to Basic): they outrank the copies
+            // in the protocol of the record. The moderator's own Auto choice still outranks the policy.
+            if (working.schema) {
+                const run = window.BasicSchema.resolveRun(working.schema);
+                if (debateRunPolicySelect && !debateRunPolicySelect.dataset.explicitOverride) debateRunPolicySelect.value = run.policy;
+                const lengthSelect = document.getElementById('debate-length-select');
+                if (lengthSelect && Array.from(lengthSelect.options).some((option) => option.value === String(run.maxWords))) lengthSelect.value = String(run.maxWords);
             }
             const targetRounds = Math.max(1, Number(config.roundCounter) || 1);
             prunePipelineRoundsAfter(targetRounds);
@@ -8051,6 +8138,7 @@ document.addEventListener('click', (event) => {
             if (pipelineStore.active === trimmedOld) pipelineStore.active = trimmedNew;
             if (customPipelineDefaults.has(trimmedOld)) { customPipelineDefaults.set(trimmedNew, customPipelineDefaults.get(trimmedOld)); customPipelineDefaults.delete(trimmedOld); }
             if (customCardSettings.has(trimmedOld)) { customCardSettings.set(trimmedNew, customCardSettings.get(trimmedOld)); customCardSettings.delete(trimmedOld); }
+            [basicRunExplicit, basicSchemaLoadErrors].forEach((map) => { if (map.has(trimmedOld)) { map.set(trimmedNew, map.get(trimmedOld)); map.delete(trimmedOld); } });
 
             renderPipelineList(pipelineStore.order, pipelineStore.active, pipelineStore.lastSaved);
             persistPipelineStore();
@@ -8298,10 +8386,10 @@ document.addEventListener('click', (event) => {
                     const confirmed = await showConfirm(`Pipeline "${trimmed}" already exists. Replace it?`);
                     if (!confirmed) return;
                 }
-                const config = capturePipelineConfig();
+                // A copy of a template remembers it; saving a saved pipeline again keeps what it was based on.
+                const config = capturePipelineConfig({ basedOn: isTemplate ? currentName : (pipelineStore.pipelines[currentName]?.schema?.basedOn || '') });
                 pipelineStore.pipelines[trimmed] = config;
-                customPipelineDefaults.set(trimmed, JSON.parse(JSON.stringify(config.customDefaults || {})));
-                customCardSettings.set(trimmed, JSON.parse(JSON.stringify(config.customModelSettings || {})));
+                adoptBasicWorking(trimmed, basicWorkingFromConfig(config));
                 if (!pipelineStore.order.includes(trimmed)) {
                     pipelineStore.order.push(trimmed);
                 }
@@ -8651,8 +8739,7 @@ document.addEventListener('click', (event) => {
                 }
                 const name = draftPlanStorageKey();
                 if (!isDefaultPipelineName(name) && pipelineStore.pipelines[name]) {
-                    pipelineStore.pipelines[name].customModelSettings = JSON.parse(JSON.stringify(getCustomCardSettings()));
-                    pipelineStore.pipelines[name].customDefaults = JSON.parse(JSON.stringify(getCustomPipelineDefaults()));
+                    persistBasicSettings(name);
                     save.disabled = true;
                     try { await persistPipelineStore(); }
                     catch (_) { save.disabled = false; showNotification('Не удалось сохранить настройки карточки.', 'error'); return; }
