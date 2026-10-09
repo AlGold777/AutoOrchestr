@@ -352,8 +352,8 @@ describe('release log regression guards', () => {
     expect(css).not.toContain('#outputColumn');
     expect(css).toContain('align-self: center;');
     expect(css).toContain('justify-content: center;');
-    expect(css).toContain('.pipeline-flow .connector-group.pipeline-stage-future .connector-line,');
-    expect(css).toContain('.pipeline-flow .stage-column.pipeline-stage-future .model-block,');
+    expect(css).toContain('.pipeline-flow .connector-group.pipeline-link-pending .connector-line,');
+    expect(css).toContain('.pipeline-flow .model-block.pipeline-run-pending {');
     expect(source).toContain('class="model-block inactive pipeline-empty-slot" aria-hidden="false"');
     expect(css).toContain('.model-block.pipeline-empty-slot {');
     expect(css).toContain('display: flex;');
@@ -482,8 +482,8 @@ describe('release log regression guards', () => {
     expect(css).toContain('margin-left: auto;');
     expect(css).not.toContain('.output-column-hidden');
     expect(css).toContain('min-height: 0;');
-    expect(css).toContain('.pipeline-flow .connector-group.pipeline-stage-future .connector-line,');
-    expect(css).toContain('.pipeline-flow .stage-column.pipeline-stage-future .model-block,');
+    expect(css).toContain('.pipeline-flow .connector-group.pipeline-link-pending .connector-line,');
+    expect(css).toContain('.pipeline-flow .model-block.pipeline-run-pending {');
     expect(source).toContain("pipelineCanvas?.classList.remove('pipeline-canvas-empty');");
     expect(source).not.toContain('getPipelineOutputSelection');
     expect(source).not.toContain('handleDebateTerminalOutputs');

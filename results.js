@@ -5038,6 +5038,7 @@ document.addEventListener('click', (event) => {
             });
             syncRoundFilterChips();
             syncPipelineFlowVisualState();
+            syncPipelineRunStateVisuals();
             pipelinePanel?.querySelectorAll('.model-stack').forEach((stack) => pipelineAlignmentResizeObserver?.observe(stack));
             if (deferFinalLayout && typeof window.requestAnimationFrame === 'function') {
                 if (deferredPipelineLayoutFrame) window.cancelAnimationFrame?.(deferredPipelineLayoutFrame);
@@ -5082,6 +5083,60 @@ document.addEventListener('click', (event) => {
                 : '';
         };
 
+        // Run progress on the canvas, derived from the engine (orchestrator.getState(): lifecycle and
+        // stage instances with plannedStageId/status). A planned stage is running while an instance is
+        // running or awaiting a participant, done when an instance completed, otherwise pending.
+        // Blocks get pipeline-run-*, the connector group INTO a stage gets pipeline-link-* (the group
+        // element survives the svg redraws). No live or terminal lifecycle = no classes = today's look.
+        const PIPELINE_RUN_LIVE_LIFECYCLES = new Set(['STARTING', 'RUNNING', 'PAUSE_REQUESTED', 'QUIESCING', 'PAUSED', 'RECONCILING', 'FINALIZING']);
+        const PIPELINE_RUN_TERMINAL_LIFECYCLES = new Set(['COMPLETED', 'CANCELLED', 'FAILED']);
+        const PIPELINE_RUN_STATE_RANK = { pending: 0, done: 1, running: 2 };
+        const readPipelineEngineState = () => {
+            try { return debateApplication?.getOrchestrator?.()?.getState?.() || null; } catch (_) { return null; }
+        };
+        const pipelinePlannedStageIdFor = (column) => {
+            if (column.classList.contains('pipeline-intermediate-synth')) return `planned-working-synthesis-after-canvas-r${column.dataset.synthAfterRound}`;
+            if (column.id === 'synthesisColumn') return 'planned-final-synthesis';
+            return column.dataset.plannedStageId || (column.dataset.round ? `canvas-r${column.dataset.round}` : '');
+        };
+        const syncPipelineRunStateVisuals = (engineState = readPipelineEngineState()) => {
+            if (!pipelinePanel) return;
+            const lifecycle = String(engineState?.lifecycle || 'IDLE').toUpperCase();
+            const isTerminal = PIPELINE_RUN_TERMINAL_LIFECYCLES.has(lifecycle);
+            const hasRun = isTerminal || PIPELINE_RUN_LIVE_LIFECYCLES.has(lifecycle);
+            const stateByPlannedStage = new Map();
+            if (hasRun) {
+                (Array.isArray(engineState.stages) ? engineState.stages : []).forEach((stage) => {
+                    const plannedId = String(stage?.plannedStageId || '');
+                    let state = null;
+                    if (stage?.status === 'completed') state = 'done';
+                    // A stopped run must not keep a stage pulsing as if it were still executing.
+                    else if (!isTerminal && (stage?.status === 'running' || stage?.status === 'awaiting_participant')) state = 'running';
+                    if (!plannedId || !state) return;
+                    const previous = stateByPlannedStage.get(plannedId);
+                    if (!previous || PIPELINE_RUN_STATE_RANK[state] > PIPELINE_RUN_STATE_RANK[previous]) stateByPlannedStage.set(plannedId, state);
+                });
+            }
+            const stateOfColumn = (column) => (hasRun
+                ? (stateByPlannedStage.get(pipelinePlannedStageIdFor(column)) || 'pending')
+                : null);
+            pipelinePanel.querySelectorAll('.stage-column').forEach((column) => {
+                const state = stateOfColumn(column);
+                column.querySelectorAll('.model-block').forEach((block) => {
+                    Object.keys(PIPELINE_RUN_STATE_RANK).forEach((name) => block.classList.remove(`pipeline-run-${name}`));
+                    if (state && !block.classList.contains('inactive')) block.classList.add(`pipeline-run-${state}`);
+                });
+            });
+            pipelinePanel.querySelectorAll('.connector-group').forEach((group) => {
+                let target = group.nextElementSibling;
+                while (target && !target.classList.contains('stage-column') && !target.classList.contains('connector-group')) target = target.nextElementSibling;
+                const state = target?.classList.contains('stage-column') ? stateOfColumn(target) : null;
+                Object.keys(PIPELINE_RUN_STATE_RANK).forEach((name) => group.classList.remove(`pipeline-link-${name}`));
+                if (state) group.classList.add(`pipeline-link-${state}`);
+            });
+        };
+        window.__syncPipelineRunStateVisuals = (engineState) => syncPipelineRunStateVisuals(engineState);
+
         const setPipelineRunUi = (isRunning) => {
             debateRunToggleBtn?.setAttribute('aria-busy', String(Boolean(isRunning)));
         };
@@ -5116,6 +5171,8 @@ document.addEventListener('click', (event) => {
             window.__debateRunAggregate = aggregate;
             // The engine can pause or continue without a page call (stage gate): keep the controls true.
             try { updateDebateButtonsUi(); } catch (_) { /* not initialised yet */ }
+            // Stage events commit to the aggregate; the canvas follows the same change (engine state, no polling).
+            try { syncPipelineRunStateVisuals(); } catch (_) { /* canvas not initialised yet */ }
         });
         window.__getDebateRunAggregate = getDebateAggregateState;
         window.__exportDebateDomainEvents = () => (getDebateAggregateState()?.events || []).slice();
@@ -7136,6 +7193,7 @@ document.addEventListener('click', (event) => {
                     setPipelineRunUi(false);
                     updateDebateButtonsUi();
                 }
+                syncPipelineRunStateVisuals();
                 if (typeof recoverUiIfHidden === 'function') {
                     requestAnimationFrame(() => requestAnimationFrame(() => recoverUiIfHidden('run_complete')));
                 }

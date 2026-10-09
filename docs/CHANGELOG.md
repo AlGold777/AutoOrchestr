@@ -1,5 +1,14 @@
 # CHANGELOG — Project
 
+### 2026-10-09 — Pipeline canvas shows the run's progress, version 2.81.664
+
+- The canvas follows the engine instead of the model selection. `syncPipelineRunStateVisuals` (`results.js`) reads `orchestrator.getState()` (lifecycle and stage instances by `plannedStageId`/`status`). A stage is running while an instance is `running` or `awaiting_participant`, done when one is `completed`, otherwise pending.
+- Blocks get `pipeline-run-pending` (gray, as `.model-block.inactive`), `pipeline-run-running` (blue outline, pulsing) or `pipeline-run-done` (permanent blue outline). The connector group into a stage gets `pipeline-link-pending` (gray), `pipeline-link-running` (orange, pulsing) or `pipeline-link-done` (permanent orange). Pulsing stops under `prefers-reduced-motion`.
+- No live or terminal lifecycle (IDLE, CREATED) means no run classes, so edit mode looks as before. A finished run keeps its done colours. A cancelled or failed run never shows a stage as running.
+- The sync runs on every aggregate change, after each connector redraw, and when a run's `finally` block ends. It reads state only and does not poll.
+- The unused `.pipeline-stage-future/current/past` rules are removed (nothing set those classes). Their regression assertions in `tests/release-log-regressions.test.js` now point at the new selectors.
+- Tests: three jsdom tests in `tests/results-debate-favorites.test.js` (stage 1 done, stage 2 running, stage 3 pending; a finished and a stopped run; IDLE and CREATED without run classes).
+
 ### 2026-10-09 — R1 model blocks get the role list, version 2.81.663
 
 - The R1 model blocks have the same `.role-selector` as R2+ (default None). The R1 stack is hydrated with roles (`pipeline/pipeline-runtime.js`, `hydratePipelineStacks`), and the sync that rebuilds blocks after a change of selected models keeps roles for R1 too (`results.js`, `syncPipelineRoundModelsFromSelectedLLMs`).

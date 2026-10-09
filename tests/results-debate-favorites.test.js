@@ -3097,3 +3097,70 @@ describe('Final synthesis state after a page reload', () => {
     expect(block.classList.contains('pipeline-final-synthesizer')).toBe(false);
   }, 30000);
 });
+
+describe('Pipeline canvas run state (engine-derived)', () => {
+  const RUN_CLASSES = '.pipeline-run-pending,.pipeline-run-running,.pipeline-run-done,.pipeline-link-pending,.pipeline-link-running,.pipeline-link-done';
+
+  beforeAll(async () => {
+    renderDebateDom();
+    document.body.classList.add('pipeline-page');
+    await loadResultsScript();
+    // Round 1 and 2 get a model each; round 3 is added so the link into a pending stage exists.
+    document.getElementById('r1-models').innerHTML = '<div class="model-block active"><span class="model-name">GPT</span></div>';
+    document.getElementById('r2-models').innerHTML = '<div class="model-block active"><span class="model-name">Claude</span></div>';
+    document.getElementById('round2').insertAdjacentHTML('afterend', `
+      <div class="connector-group" id="grp-r2-r3"><svg class="connector-svg" id="svg-r2-r3"></svg></div>
+      <div class="stage-column" id="round3" data-round="3"><div class="model-stack" id="r3-models"><div class="model-block active"><span class="model-name">GPT</span></div></div></div>`);
+  });
+
+  test('stage 1 done, stage 2 running, stage 3 pending: blocks and links carry the run classes', () => {
+    window.__syncPipelineRunStateVisuals({
+      lifecycle: 'RUNNING',
+      stages: [
+        { plannedStageId: 'canvas-r1', status: 'completed' },
+        { plannedStageId: 'canvas-r2', status: 'running' }
+      ]
+    });
+    const gptR1 = document.querySelector('#round1 .model-block');
+    const claudeR2 = document.querySelector('#round2 .model-block');
+    const gptR3 = document.querySelector('#round3 .model-block');
+    expect(gptR1.classList.contains('pipeline-run-done')).toBe(true);
+    expect(claudeR2.classList.contains('pipeline-run-running')).toBe(true);
+    expect(gptR3.classList.contains('pipeline-run-pending')).toBe(true);
+    // The link into round 2 is the one running now; the link into round 3 waits.
+    expect(document.getElementById('svg-r1-r2').closest('.connector-group').classList.contains('pipeline-link-running')).toBe(true);
+    expect(document.getElementById('svg-r2-r3').closest('.connector-group').classList.contains('pipeline-link-pending')).toBe(true);
+  });
+
+  test('a finished run keeps done blocks and done links; a stopped run never shows a stage as running', () => {
+    window.__syncPipelineRunStateVisuals({
+      lifecycle: 'COMPLETED',
+      stages: [
+        { plannedStageId: 'canvas-r1', status: 'completed' },
+        { plannedStageId: 'canvas-r2', status: 'completed' }
+      ]
+    });
+    expect(document.querySelector('#round2 .model-block').classList.contains('pipeline-run-done')).toBe(true);
+    expect(document.getElementById('svg-r1-r2').closest('.connector-group').classList.contains('pipeline-link-done')).toBe(true);
+    expect(document.querySelector('#round3 .model-block').classList.contains('pipeline-run-pending')).toBe(true);
+
+    window.__syncPipelineRunStateVisuals({
+      lifecycle: 'CANCELLED',
+      stages: [{ plannedStageId: 'canvas-r2', status: 'running' }]
+    });
+    expect(document.querySelector('#round2 .model-block').classList.contains('pipeline-run-running')).toBe(false);
+    expect(document.querySelector('#round2 .model-block').classList.contains('pipeline-run-pending')).toBe(true);
+  });
+
+  test('IDLE and CREATED have no run classes, so edit mode keeps today\'s look', () => {
+    window.__syncPipelineRunStateVisuals({
+      lifecycle: 'RUNNING',
+      stages: [{ plannedStageId: 'canvas-r1', status: 'running' }]
+    });
+    expect(document.querySelectorAll(RUN_CLASSES).length).toBeGreaterThan(0);
+    window.__syncPipelineRunStateVisuals({ lifecycle: 'IDLE', stages: [] });
+    expect(document.querySelectorAll(RUN_CLASSES).length).toBe(0);
+    window.__syncPipelineRunStateVisuals({ lifecycle: 'CREATED', stages: [] });
+    expect(document.querySelectorAll(RUN_CLASSES).length).toBe(0);
+  });
+});

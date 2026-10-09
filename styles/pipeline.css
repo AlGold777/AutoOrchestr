@@ -297,42 +297,83 @@ body.is-resizing {
     display: none !important;
 }
 
-.pipeline-flow .connector-group.pipeline-stage-future .connector-line,
-.pipeline-flow .connector-group.pipeline-stage-future .merge-line {
+/* Run progress (results.js syncPipelineRunStateVisuals). Blocks: pipeline-run-pending (gray, as
+   .model-block.inactive), pipeline-run-running (blue outline pulsing), pipeline-run-done (permanent
+   blue outline). Links into a stage: pipeline-link-pending (gray), pipeline-link-running (orange
+   pulse), pipeline-link-done (permanent orange). No run = no classes = today's look. */
+.pipeline-flow .model-block.pipeline-run-pending {
+    border-color: #cbd5e1;
+    background: #ffffff;
+}
+
+.pipeline-flow .model-block.pipeline-run-pending .model-name {
+    color: #64748b;
+}
+
+.pipeline-flow .model-block.pipeline-run-done {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.14);
+}
+
+.pipeline-flow .model-block.pipeline-run-running {
+    border-color: #2563eb;
+    animation: pipelineBlockPulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pipelineBlockPulse {
+    0%, 100% { box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.14); }
+    50% { box-shadow: 0 0 0 6px rgba(37, 99, 235, 0); }
+}
+
+.pipeline-flow .connector-group.pipeline-link-pending .connector-line,
+.pipeline-flow .connector-group.pipeline-link-pending .merge-line {
     stroke: var(--pipeline-connector);
     opacity: 0.85;
     animation: none;
     stroke-dasharray: none;
 }
 
-.pipeline-flow .connector-group.pipeline-stage-future .arrow-head {
+.pipeline-flow .connector-group.pipeline-link-pending .arrow-head {
     fill: var(--pipeline-connector);
     opacity: 0.85;
 }
 
-.pipeline-flow .stage-column.pipeline-stage-future .stage-label {
-    color: #94a3b8;
+.pipeline-flow .connector-group.pipeline-link-done .connector-line:not(.inactive),
+.pipeline-flow .connector-group.pipeline-link-done .merge-line {
+    stroke: var(--pipeline-orange);
+    animation: none;
+    stroke-dasharray: none;
 }
 
-.pipeline-flow .stage-column.pipeline-stage-future .model-block,
-.pipeline-flow .stage-column.pipeline-stage-future .collector-row {
-    opacity: 1;
-    filter: none;
+.pipeline-flow .connector-group.pipeline-link-done .arrow-head:not(.inactive) {
+    fill: var(--pipeline-orange);
+    animation: none;
 }
 
-.pipeline-flow .stage-column.pipeline-stage-current .stage-label {
-    color: #2563eb;
+.pipeline-flow .connector-group.pipeline-link-running .connector-line:not(.inactive),
+.pipeline-flow .connector-group.pipeline-link-running .merge-line {
+    stroke: var(--pipeline-orange);
+    stroke-dasharray: none;
+    animation: pipelineLinkPulse 1.2s ease-in-out infinite;
 }
 
-.pipeline-flow .stage-column.pipeline-stage-current .model-block,
-.pipeline-flow .stage-column.pipeline-stage-current .collector-row {
-    border-color: #2563eb;
-    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.14);
+.pipeline-flow .connector-group.pipeline-link-running .arrow-head:not(.inactive) {
+    fill: var(--pipeline-orange);
+    animation: pipelineLinkPulse 1.2s ease-in-out infinite;
 }
 
-.pipeline-flow .stage-column.pipeline-stage-past .model-block,
-.pipeline-flow .stage-column.pipeline-stage-past .collector-row {
-    opacity: 1;
+@keyframes pipelineLinkPulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .pipeline-flow .model-block.pipeline-run-running,
+    .pipeline-flow .connector-group.pipeline-link-running .connector-line,
+    .pipeline-flow .connector-group.pipeline-link-running .merge-line,
+    .pipeline-flow .connector-group.pipeline-link-running .arrow-head {
+        animation: none;
+    }
 }
 
 .pipeline-synthesis-block {
