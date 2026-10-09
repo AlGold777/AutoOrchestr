@@ -1,5 +1,13 @@
 # CHANGELOG — Project
 
+### 2026-10-09 — A value the owner typed stays explicit; the header choice is remembered; length change handler fixed, version 2.81.676
+
+- Cards (`results.js`): a typed task, discipline text or length is saved as the owner's value even when it equals the inherited one; before, such a value was dropped and then followed ▶. Giving it back stays with «↶» and «×» (an emptied length field). A typed length instruction equal to the shown one (with the numbers filled in) is stored as its template and keeps following the limit. A request equal to the automatic one stays inherited (the automatic text is assembled, not a stored value). A length the owner did not touch is kept as saved.
+- Header: the policy (Auto) or the limit the owner changes is explicit for the pipeline even when it equals Basic (`markBasicRunExplicit`); applying a pipeline does not make it explicit.
+- A saved copy of the current default length instruction used to be dropped when read, for every record. It is settled once for records saved before the schema (`basicWorkingFromConfig`); in a schema such a value is explicit.
+- Fix: the handler of the length select stood outside the block where `syncDebateLengthStepperUi` is defined and threw a ReferenceError on every change; it now stands in the block, with the explicit mark.
+- Tests: `tests/results-debate-favorites.test.js` (typed equal value, length, header marks, earlier record vs schema); the test of «equal-value elision» now expects the explicit value and «↶».
+
 ### 2026-10-09 — A schema can be installed as a pipeline; loading keeps the Send marks, version 2.81.675
 
 - `BasicSchema.toCanvas` builds from a schema the rounds, the models with roles, the final synthesizer and the intermediate syntheses; it returns errors with the place when the canvas cannot show the schema (wrong round refs, a synthesis outside its place, two models in a synthesis, an unknown model or role).

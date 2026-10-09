@@ -2005,6 +2005,7 @@ describe('Pipeline debate favorites view', () => {
     expect(modal.querySelector('.custom-card-model').textContent).toContain('Gemini');
     modal.querySelector('#custom-card-request').value = 'UNNAMED REQUEST {вход}';
     modal.querySelector('#custom-card-length').value = '45';
+    modal.querySelector('#custom-card-length').dispatchEvent(new Event('input', { bubbles: true }));
     modal.querySelector('#custom-card-save').click();
     const config = debug.capturePipelineConfig();
     expect(config.protocol.presetId).toBe('CUSTOM');
@@ -2931,7 +2932,7 @@ describe('Pipeline debate favorites view', () => {
     } finally { h.cleanup(); }
   }, 30000);
 
-  test('Custom model overrides, return to common and equal-value elision follow live ▶ changes', async () => {
+  test('Custom model overrides, return to common and a typed value equal to ▶ stays explicit', async () => {
     const h = setupCustomInheritance('Model inheritance');
     try {
       await h.general({ roundTask: 'COMMON_A', content: 'CONTENT_A' });
@@ -2953,11 +2954,19 @@ describe('Pipeline debate favorites view', () => {
       expect(document.activeElement).toBe(card.querySelector('textarea'));
       document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
       expect(card.style.display).toBe('none');
+      // Typed equal to the shared text: the value is the owner's, it does not follow ▶ any more.
       await h.model({ content: 'CONTENT_B' });
-      expect(settingsOf(h.debug.capturePipelineConfig()).customModelSettings.r2?.GPT?.discipline).toBeUndefined();
+      expect(settingsOf(h.debug.capturePipelineConfig()).customModelSettings.r2?.GPT?.discipline).toEqual({ content: 'CONTENT_B' });
       await h.general({ roundTask: 'COMMON_C', content: 'CONTENT_C' });
       await h.run();
       expect(h.starts[1].promptsByModel.GPT).toContain('COMMON_C');
+      expect(h.starts[1].promptsByModel.GPT).toContain('CONTENT_B');
+      expect(h.starts[1].promptsByModel.GPT).not.toContain('CONTENT_C');
+      // ↶ gives it back: it follows ▶ again.
+      h.openModel().querySelector('[data-discipline="content"] [data-action="inherit"]').click();
+      await settleCustomCard();
+      expect(settingsOf(h.debug.capturePipelineConfig()).customModelSettings.r2?.GPT?.discipline).toBeUndefined();
+      await h.run();
       expect(h.starts[1].promptsByModel.GPT).toContain('CONTENT_C');
       card = h.openModel();
       expect(card.querySelector('#custom-card-request').value).toContain('COMMON_C');
@@ -3255,6 +3264,81 @@ describe('Pipeline debate favorites view', () => {
         } finally { window.prompt = oldPrompt; h.cleanup(); }
       }, 30000);
     });
+
+    test('a value the owner typed stays explicit when it equals the inherited one: the length instruction as its template, the length as a number', async () => {
+      const h = setupCustomInheritance('Explicit equal', { synthesis: '' });
+      try {
+        const lengthSelect = document.getElementById('debate-length-select');
+        lengthSelect.value = '300';
+        // The shown instruction has the numbers filled in; typed unchanged it is stored as its template and keeps following the limit.
+        await h.model({ limit: '[RESPONSE_LIMIT] Объём ответа: 250-300 слов, не больше.' });
+        expect(settingsOf(h.debug.capturePipelineConfig()).customModelSettings.r2.GPT.discipline.limit).toBe(window.BasicSchema.DEFAULTS.discipline.limit);
+        // A length typed equal to the shared limit is the owner's; one that was not touched is kept as it was.
+        let card = h.openModel();
+        card.querySelector('#custom-card-length').value = '300';
+        card.querySelector('#custom-card-length').dispatchEvent(new Event('input', { bubbles: true }));
+        card.querySelector('#custom-card-save').click();
+        await settleCustomCard();
+        expect(settingsOf(h.debug.capturePipelineConfig()).customModelSettings.r2.GPT.maxWords).toBe(300);
+        card = h.openModel();
+        card.querySelector('#custom-card-save').click();
+        await settleCustomCard();
+        expect(settingsOf(h.debug.capturePipelineConfig()).customModelSettings.r2.GPT.maxWords).toBe(300);
+        // An emptied length field gives it back.
+        card = h.openModel();
+        card.querySelector('#custom-card-length').value = '';
+        card.querySelector('#custom-card-length').dispatchEvent(new Event('input', { bubbles: true }));
+        card.querySelector('#custom-card-save').click();
+        await settleCustomCard();
+        expect(settingsOf(h.debug.capturePipelineConfig()).customModelSettings.r2?.GPT?.maxWords).toBeUndefined();
+        // The explicit instruction still follows the shared limit.
+        lengthSelect.value = '700';
+        await h.run();
+        expect(h.starts[1].promptsByModel.GPT).toContain('650-700');
+      } finally { h.cleanup(); }
+    }, 30000);
+
+    test('a policy or a limit the owner chose in the header is explicit even when it equals Basic; applying a pipeline does not make it so', async () => {
+      const h = setupCustomInheritance('Explicit header', { synthesis: '' });
+      try {
+        const lengthSelect = document.getElementById('debate-length-select');
+        const policy = document.getElementById('debate-run-policy-select');
+        const run = () => h.debug.capturePipelineConfig().schema.run;
+        h.debug.clearCustomSessionForTest();
+        document.querySelector('.pipeline-item[data-name="Basic"]').click();
+        await settleCustomCard();
+        policy.value = 'manual'; lengthSelect.value = '300';
+        expect(run()).toBeUndefined();
+        policy.dispatchEvent(new Event('change', { bubbles: true }));
+        expect(run()).toEqual({ policy: 'manual' });
+        lengthSelect.dispatchEvent(new Event('change', { bubbles: true }));
+        expect(run()).toEqual({ policy: 'manual', maxWords: 300 });
+        // Loading a schema without them does not turn the shown Basic values into explicit ones.
+        const record = JSON.parse(JSON.stringify(h.debug.capturePipelineConfig()));
+        delete record.schema.run;
+        h.debug.clearCustomSessionForTest();
+        h.debug.setPipelineStoreForTest({ active: 'Explicit header', order: ['Explicit header'], pipelines: { 'Explicit header': record } });
+        h.debug.applyPipelineConfig(record);
+        expect(run()).toBeUndefined();
+      } finally { h.cleanup(); }
+    }, 30000);
+
+    test('an earlier record with a copy of the current length instruction keeps following the shared one; a schema keeps it explicit', async () => {
+      const h = setupCustomInheritance('Default copy', { synthesis: '' });
+      try {
+        const template = window.BasicSchema.DEFAULTS.discipline.limit;
+        const earlier = { ...h.config, customModelSettings: { r2: { GPT: { discipline: { limit: template } } } } };
+        h.debug.clearCustomSessionForTest();
+        h.debug.setPipelineStoreForTest({ active: 'Default copy', order: ['Default copy'], pipelines: { 'Default copy': earlier } });
+        h.debug.applyPipelineConfig(earlier);
+        expect(settingsOf(h.debug.capturePipelineConfig()).customModelSettings.r2?.GPT?.discipline?.limit).toBeUndefined();
+        const schemaRecord = { ...h.config, schema: { schemaVersion: 1, origin: 'user', steps: [{ ref: 'r2', kind: 'round', models: [{ name: 'GPT', discipline: { limit: template } }] }] } };
+        h.debug.clearCustomSessionForTest();
+        h.debug.setPipelineStoreForTest({ active: 'Default copy', order: ['Default copy'], pipelines: { 'Default copy': schemaRecord } });
+        h.debug.applyPipelineConfig(schemaRecord);
+        expect(settingsOf(h.debug.capturePipelineConfig()).customModelSettings.r2.GPT.discipline.limit).toBe(template);
+      } finally { h.cleanup(); }
+    }, 30000);
 
     test('a record saved before the schema still loads and runs as before, and the first card save moves it to a schema', async () => {
       const h = setupCustomInheritance('Earlier record', { synthesis: '' });

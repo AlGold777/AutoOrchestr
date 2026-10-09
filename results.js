@@ -6731,6 +6731,13 @@ document.addEventListener('click', (event) => {
         // The run values a saved schema holds: only those the owner set before (loaded as explicit) or that differ
         // from Basic. Opening a schema and saving it does not make the shown Basic values explicit.
         const basicRunExplicit = new Map();
+        // The owner's own change of the policy or the limit in the header makes that value explicit for the pipeline,
+        // even when it equals Basic. Applying a pipeline sets the controls without this.
+        const markBasicRunExplicit = (field) => {
+            if (pipelineApplyingConfig) return;
+            const key = draftPlanStorageKey();
+            basicRunExplicit.set(key, { ...(basicRunExplicit.get(key) || {}), [field]: true });
+        };
         const basicSchemaLoadErrors = new Map();
         const basicRunForSave = () => {
             const explicit = basicRunExplicit.get(draftPlanStorageKey()) || {};
@@ -6744,7 +6751,14 @@ document.addEventListener('click', (event) => {
         // its customModelSettings / customDefaults as before.
         const basicWorkingFromConfig = (config) => {
             const copy = (value) => JSON.parse(JSON.stringify(value || {}));
-            if (!config?.schema) return { cards: copy(config?.customModelSettings), defaults: copy(config?.customDefaults), runExplicit: {}, schema: null, error: '' };
+            if (!config?.schema) {
+                // Before the schema a saved copy of the current default length instruction was not a personal value:
+                // it kept following the shared one. That is settled here, once, for earlier records only.
+                const own = (map) => { if (map?.discipline?.limit === window.BasicSchema.DEFAULTS.discipline.limit) delete map.discipline.limit; return map; };
+                const cards = copy(config?.customModelSettings);
+                Object.values(cards).forEach((step) => Object.values(step || {}).forEach(own));
+                return { cards, defaults: own(copy(config?.customDefaults)), runExplicit: {}, schema: null, error: '' };
+            }
             const errors = window.BasicSchema.validate(config.schema);
             if (errors.length) return { cards: {}, defaults: {}, runExplicit: {}, schema: null, error: window.BasicSchema.describeErrors(errors) };
             const settings = window.BasicSchema.toSettings(config.schema);
@@ -6816,8 +6830,6 @@ document.addEventListener('click', (event) => {
                 value.limit = value.limit === DISPUT_RESPONSE_LIMIT_TEMPLATE ? CUSTOM_LENGTH_TEMPLATE
                     : value.limit.slice(0, -CUSTOM_CONTENT_REQUIREMENTS.length).trimEnd();
             }
-            // A saved copy of the current default is not a personal value: it keeps following the shared one.
-            if (value.limit === CUSTOM_LENGTH_TEMPLATE) delete value.limit;
             return value;
         };
         // The value of a card: model → round → ▶ → Basic (BasicSchema.resolveFields), for saved settings
@@ -8749,8 +8761,9 @@ document.addEventListener('click', (event) => {
             // Own instruction lines (the card's «+»), in the order they were added; ▶ keeps its shared lines the same way.
             const lineValues = [...(saved.discipline?.lines || [])];
             const display = (key, value) => key === 'limit' ? customLengthInstruction(value, Number(length?.value || general)) : value;
-            const differs = (key, value) => typeof value === 'string' && value.trim()
-                && value !== inheritedValue(key) && value !== display(key, inheritedValue(key));
+            // A text the owner typed is theirs even when it equals the inherited one; ↶ and × give it back.
+            const typed = (value) => typeof value === 'string' && Boolean(value.trim());
+            let lengthDirty = false;
             const refresh = () => {
                 if (request) {
                     const own = request.value !== baseTemplate;
@@ -8761,7 +8774,7 @@ document.addEventListener('click', (event) => {
                     if (!dirtyFields.has(key)) fields[key].value = display(key, effectiveValue(key));
                     fields[key].placeholder = display(key, inheritedValue(key));
                     const raw = rawValue(key);
-                    const own = dirtyFields.has(key) ? differs(key, fields[key].value) : typeof raw === 'string' && Boolean(raw.trim());
+                    const own = dirtyFields.has(key) ? typed(fields[key].value) : typed(raw);
                     content.querySelector(`[data-discipline="${key}"] [data-action="inherit"]`).hidden = !own;
                 });
             };
@@ -8787,18 +8800,22 @@ document.addEventListener('click', (event) => {
                 });
             });
             request?.addEventListener('input', refresh);
-            length?.addEventListener('input', refresh);
+            length?.addEventListener('input', () => { lengthDirty = true; refresh(); });
             reset?.addEventListener('click', () => { request.value = baseTemplate; refresh(); });
             const saveSettings = async (close) => {
                 if (pipelineRunActive) return;
                 if (request && !request.value.trim()) { request.focus(); showNotification('Введите запрос.', 'warn'); return; }
                 if (length && (!length.checkValidity() || (length.value !== '' && !Number.isSafeInteger(Number(length.value))))) { length.reportValidity(); return; }
+                // The request equal to the automatic one stays inherited (that text is assembled, not a stored value).
+                // A length the owner typed is kept even when it equals the shared one; an empty field gives it back.
                 const next = pipelineDefaults ? {} : { promptTemplate: request.value === baseTemplate ? null : request.value,
-                    maxWords: length.value === '' || Number(length.value) === general ? null : Number(length.value) };
+                    maxWords: lengthDirty ? (length.value === '' ? null : Number(length.value)) : (saved.maxWords || null) };
                 const discipline = {};
                 rows.forEach(([key]) => {
-                    const value = dirtyFields.has(key) ? fields[key].value : rawValue(key);
-                    if (dirtyFields.has(key) ? differs(key, value) : typeof value === 'string' && value.trim()) { if (isTask(key)) next[key] = value; else discipline[key] = value; }
+                    let value = dirtyFields.has(key) ? fields[key].value : rawValue(key);
+                    // The shown length instruction has the numbers filled in; typed unchanged it stands for its template.
+                    if (dirtyFields.has(key) && key === 'limit' && value === display(key, inheritedValue(key))) value = inheritedValue(key);
+                    if (typed(value)) { if (isTask(key)) next[key] = value; else discipline[key] = value; }
                 });
                 // Empty lines are not saved.
                 const lines = lineValues.map((line) => line.trim()).filter(Boolean);
@@ -9422,6 +9439,12 @@ document.addEventListener('click', (event) => {
             debateRunState.maxTurns = getDebateMaxTurns();
             updateDebateButtonsUi();
         });
+        // The listener sits where syncDebateLengthStepperUi is defined (it used to stand outside that block and fail on every change).
+        document.getElementById('debate-length-select')?.addEventListener('change', () => {
+            syncDebateLengthStepperUi();
+            syncModeratorMiniPrompts();
+            markBasicRunExplicit('maxWords');
+        });
         debateAutoToggleBtn?.addEventListener('click', () => {
             if (!debateRunPolicySelect) return;
             debateRunPolicySelect.value = isDebateAutoPolicy() ? 'manual' : 'auto';
@@ -9431,6 +9454,7 @@ document.addEventListener('click', (event) => {
             const isAuto = debateRunPolicySelect.value === 'auto';
             if (!pipelineApplyingConfig) {
                 debateRunPolicySelect.dataset.explicitOverride = isAuto ? 'auto' : 'manual';
+                markBasicRunExplicit('policy');
             }
             if (autoCheckbox && autoCheckbox.checked !== isAuto) {
                 autoCheckbox.checked = isAuto;
@@ -25667,10 +25691,6 @@ function exportSingleTemplate(templateName, sourceData = null) {
     });
     syncDirectionIcon();
     restoreDebateSelectorState();
-        debateLengthSelect?.addEventListener('change', () => {
-            syncDebateLengthStepperUi();
-            syncModeratorMiniPrompts();
-        });
     debateSelToolbar?.addEventListener('pointerdown', (event) => {
         const btn = event.target.closest?.('button[data-fav]');
         if (!btn) return;
