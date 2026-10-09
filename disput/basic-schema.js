@@ -6,9 +6,10 @@
 // field reference: docs/Pipeline scenarios/basic-schema-reference.md.
 //
 // Schema: { schemaVersion, origin: 'builtin' | 'user', basedOn?, defaults?, steps }
+//   run: { policy?: 'auto' | 'manual', maxWords? } — the run policy and the shared answer limit
 //   defaults (the ▶ card): { roundTask?, synthesisTask?, discipline?, modelNotes?, roundPrompts? }
 //   step: { ref, kind: 'round' | 'synthesis', order?, input?, task?, models }
-//   model: { name, role?, request?, maxWords?, task?, discipline? }
+//   model: { name, role?, request?, maxWords?, task?, discipline? }   (request: '' = no own request)
 //   discipline: { limit?, content?, delivery?, correction?, lines? }
 // A missing field is inherited; a given value applies, an empty string included (an empty text is
 // a value, not inheritance). Lists are replaced as a whole. A step with no models is switched off:
@@ -25,8 +26,10 @@
   const KINDS = Object.freeze(['round', 'synthesis']);
   const ORDERS = Object.freeze(['parallel', 'sequential']);
   const INPUTS = Object.freeze(['none', 'previous', 'all']);
+  const POLICIES = Object.freeze(['auto', 'manual']);
 
   const DEFAULTS = Object.freeze({
+    run: Object.freeze({ policy: 'manual', maxWords: 300 }),
     roundTask: 'Учти ответы предыдущего шага и дай свой улучшенный ответ на задачу.',
     synthesisTask: Engine.SYNTHESIS_TASK,
     discipline: Object.freeze({
@@ -69,6 +72,9 @@
       const input = step.input || defaultInput(step.kind, roundIndex);
       const stepFields = resolveFields({ task: step.task }, step.kind, {}, defaults);
       const out = { kind: step.kind, ref: step.ref };
+      // The number a step keeps even when the rounds before it are switched off.
+      if (step.kind === 'round') out.round = roundIndex + 1;
+      else out.afterRound = rounds;
       if (step.kind === 'round') out.order = step.order || 'parallel';
       out.task = input === 'none' ? '' : stepFields.task.value;
       if (step.kind === 'round') out.input = input;
@@ -76,11 +82,12 @@
         const resolved = resolveFields(model, step.kind, { task: step.task }, defaults);
         const lines = [...(defaults.discipline?.lines || []), ...(model.discipline?.lines || [])];
         // An intermediate synthesis without its own request runs the final synthesizer's request.
-        const finalRequest = step.ref.startsWith('synth:') ? finalStep?.models?.find((item) => item.name === model.name)?.request : '';
+        const finalRequest = step.ref.startsWith('synth:') ? finalStep?.models?.find((item) => item.name === model.name)?.request : undefined;
         return {
           name: model.name,
-          promptTemplate: model.request || finalRequest || null,
-          maxWords: model.maxWords || null,
+          // An own request, an empty one included, is a value; only a missing one takes the final synthesizer's.
+          promptTemplate: typeof model.request === 'string' ? model.request : (typeof finalRequest === 'string' ? finalRequest : null),
+          maxWords: 'maxWords' in model ? model.maxWords : null,
           extra: roleText(model.role || '', step.ref) || '',
           task: input === 'none' ? '' : resolved.task.value,
           discipline: {
@@ -107,7 +114,15 @@
     else if (!SUPPORTED_VERSIONS.includes(schema.schemaVersion)) fail('schemaVersion', `версия формата ${schema.schemaVersion} не поддерживается`);
     oneOf(schema.origin, ORIGINS, 'origin', 'происхождение');
     if (schema.basedOn != null) text(schema.basedOn, 'basedOn');
-    unknownKeys(schema, ['schemaVersion', 'origin', 'basedOn', 'defaults', 'steps'], '');
+    unknownKeys(schema, ['schemaVersion', 'origin', 'basedOn', 'run', 'defaults', 'steps'], '');
+    if (schema.run != null) {
+      if (!isObject(schema.run)) fail('run', 'ожидается объект');
+      else {
+        unknownKeys(schema.run, ['policy', 'maxWords'], 'run');
+        if ('policy' in schema.run) oneOf(schema.run.policy, POLICIES, 'run.policy', 'политика запуска');
+        if ('maxWords' in schema.run && !(Number.isSafeInteger(schema.run.maxWords) && schema.run.maxWords > 0)) fail('run.maxWords', 'ожидается положительное целое число слов');
+      }
+    }
 
     const checkDiscipline = (value, path) => {
       if (!isObject(value)) { fail(path, 'ожидается объект'); return; }
@@ -170,9 +185,15 @@
     return errors;
   }
 
+  // The run settings as the run takes them: the policy and the shared answer limit.
+  const resolveRun = (schema) => ({
+    policy: typeof schema.run?.policy === 'string' ? schema.run.policy : DEFAULTS.run.policy,
+    maxWords: Number.isSafeInteger(schema.run?.maxWords) ? schema.run.maxWords : DEFAULTS.run.maxWords
+  });
+
   const describeErrors = (errors) => errors.map((error) => (error.path ? `${error.path}: ${error.message}` : error.message)).join('; ');
 
-  const api = Object.freeze({ SCHEMA_VERSION, SUPPORTED_VERSIONS, ORIGINS, DEFAULTS, pick, resolveFields, assemble, validate, describeErrors });
+  const api = Object.freeze({ SCHEMA_VERSION, SUPPORTED_VERSIONS, ORIGINS, DEFAULTS, pick, resolveFields, assemble, resolveRun, validate, describeErrors });
   root.BasicSchema = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

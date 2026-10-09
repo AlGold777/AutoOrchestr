@@ -1979,10 +1979,10 @@ describe('Pipeline debate favorites view', () => {
     ] });
     expect(window.__pipelineLifecycleDebug.customStepsFromPlan({ plannedStages: [{ plannedStageId: 'canvas-r1', participantIds: [] }] }, { ref: 'r1', name: 'GPT' })[0].models.map((model) => model.name)).toEqual(['GPT']);
     expect(steps.map((step) => ({ ...step, models: step.models.map((model) => model.name) }))).toEqual([
-      { kind: 'round', ref: 'r1', order: 'parallel', task: '', input: 'none', models: ['GPT', 'Claude'] },
-      { kind: 'synthesis', ref: 'synth:planned-working-synthesis-after-canvas-r1', task: expect.stringContaining('Сведи'), models: ['Gemini'] },
-      { kind: 'round', ref: 'r2', order: 'parallel', task: expect.stringContaining('Учти ответы'), input: 'previous', models: ['GPT'] },
-      { kind: 'synthesis', ref: 'final', task: expect.stringContaining('Сведи'), models: ['Claude'] }
+      { kind: 'round', ref: 'r1', round: 1, order: 'parallel', task: '', input: 'none', models: ['GPT', 'Claude'] },
+      { kind: 'synthesis', ref: 'synth:planned-working-synthesis-after-canvas-r1', afterRound: 1, task: expect.stringContaining('Сведи'), models: ['Gemini'] },
+      { kind: 'round', ref: 'r2', round: 2, order: 'parallel', task: expect.stringContaining('Учти ответы'), input: 'previous', models: ['GPT'] },
+      { kind: 'synthesis', ref: 'final', afterRound: 2, task: expect.stringContaining('Сведи'), models: ['Claude'] }
     ]);
   });
 
@@ -2335,6 +2335,74 @@ describe('Pipeline debate favorites view', () => {
       expect((await h.run()).length).toBeGreaterThan(0);
     } finally { h.cleanup(); }
   }, 30000);
+
+  test('wrong saved values reach the check: 0, false and a wrong type send nothing; the card still opens to correct them', async () => {
+    const h = setupCustomInheritance('Wrong values', { synthesis: 'Gemini' });
+    try {
+      const apply = (name, settings) => {
+        const config = { ...h.config, customModelSettings: settings };
+        h.debug.clearCustomSessionForTest();
+        h.debug.setPipelineStoreForTest({ active: name, order: [name], pipelines: { [name]: config } });
+        h.debug.applyPipelineConfig(config);
+      };
+      for (const [name, settings, place] of [
+        ['Zero', { r1: { GPT: { maxWords: 0 } } }, 'maxWords'],
+        ['False', { r1: { GPT: { maxWords: false } } }, 'maxWords'],
+        ['Number task', { r1: { GPT: { task: 5 } } }, 'task'],
+        ['Bad discipline', { r2: { GPT: { discipline: 'x' } } }, 'discipline']
+      ]) {
+        apply(name, settings);
+        expect(await h.run()).toHaveLength(0);
+        expect(document.getElementById('notification-message').textContent).toContain(place);
+        expect(h.debug.customStepsFromPlan(window.__pipelineDraftPlanForCanvas(window.__getActivePipelineDraftPlan())).length).toBeGreaterThan(0);
+      }
+    } finally { h.cleanup(); }
+  }, 30000);
+
+  test('explicit empty discipline texts of the assembled run stay empty; the saved-settings path keeps the Basic text', () => {
+    const debug = window.__pipelineLifecycleDebug;
+    const full = debug.composeCustomPrompts(['GPT'], { GPT: 'T' }, { GPT: 300 }, { GPT: { limit: '', content: '' } }).GPT;
+    expect(full).toBe('T');
+    expect(debug.composeCustomPrompts(['GPT'], { GPT: 'T' }, { GPT: 300 }, { GPT: { limit: '', content: 'C' } }).GPT).toBe('T\n\nC');
+    expect(debug.prepareCustomPrompts(['GPT'], { GPT: 'T' }, { GPT: 300 }, { GPT: { limit: '', content: '' } }).GPT).toBe(debug.composeCustomPrompts(['GPT'], { GPT: 'T' }, { GPT: 300 }, {}).GPT);
+    expect(debug.composeCustomPrompts(['GPT'], { GPT: 'T' }, {}, { GPT: { limit: '{слов}', content: '' } }, {}, {}, 123).GPT).toBe('T\n\n123');
+  });
+
+  test('an intermediate synthesis without a request still takes the saved final request while the final synthesis is off', () => {
+    const h = setupCustomInheritance('Final off request', { synthesis: '' });
+    try {
+      const config = { ...h.config, customModelSettings: { final: { Gemini: { promptTemplate: 'FINAL TEXT {задача}' } } } };
+      h.debug.clearCustomSessionForTest();
+      h.debug.setPipelineStoreForTest({ active: 'Final off request', order: ['Final off request'], pipelines: { 'Final off request': config } });
+      h.debug.applyPipelineConfig(config);
+      const steps = h.debug.customStepsFromPlan({ plannedStages: [
+        { plannedStageId: 'canvas-r1', participantIds: ['GPT'] },
+        { plannedStageId: 'planned-working-synthesis-after-canvas-r1', participantIds: ['Gemini', 'Claude'], outputIntent: 'working_synthesis' },
+        { plannedStageId: 'planned-final-synthesis', participantIds: [], outputIntent: 'candidate_final' }
+      ] });
+      expect(steps.find((step) => step.kind === 'synthesis').models.map((model) => model.promptTemplate)).toEqual(['FINAL TEXT {задача}', null]);
+    } finally { h.cleanup(); }
+  });
+
+  test('a switched-off first round keeps its number in the steps of the page', () => {
+    const h = setupCustomInheritance('Round numbers', { synthesis: '' });
+    try {
+      const steps = h.debug.customStepsFromPlan({ plannedStages: [
+        { plannedStageId: 'canvas-r1', participantIds: [] }, { plannedStageId: 'canvas-r2', participantIds: ['GPT'] }
+      ] });
+      expect(steps.map((step) => [step.ref, step.round, step.input])).toEqual([['r2', 2, 'previous']]);
+    } finally { h.cleanup(); }
+  });
+
+  test('the run keeps the policy and the shared limit it started with', async () => {
+    const h = setupCustomInheritance('Fixed run settings', { synthesis: '' });
+    try {
+      const built = h.debug.buildBasicRun(window.__pipelineDraftPlanForCanvas(window.__getActivePipelineDraftPlan()));
+      expect(built.errors).toEqual([]);
+      expect(built.schema.run).toEqual({ policy: 'auto', maxWords: 300 });
+      expect(built.run).toEqual({ policy: 'auto', maxWords: 300 });
+    } finally { h.cleanup(); }
+  });
 
   test('Custom run: canvas blocks and links follow the engine stages, synthesis blocks included, and end done', async () => {
     const h = setupCustomInheritance('Custom canvas progress', { synthesis: 'Gemini' });

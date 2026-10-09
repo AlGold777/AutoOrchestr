@@ -1,5 +1,16 @@
 # CHANGELOG — Project
 
+### 2026-10-09 — Basic schema: four gaps of 2.81.671 closed, run policy and shared limit in the format, version 2.81.672
+
+2.81.671 said the assembly did not change behavior; four cases did, or were hidden. Fixed:
+- An empty value is kept to the end: `request: ""` no longer falls back to the final synthesizer's request (`basic-schema.js`); the run composes prompts from the assembled discipline as it is (`composeCustomPrompts`), so an empty `limit`/`content` stays empty. The path for settings saved before the schema (`prepareCustomPrompts`) keeps the old meaning.
+- Wrong values reach the check: `maxWords` `0`/`false`/text and a wrong type of a text or of `discipline` are errors that stop the run; before, they were dropped. Only a saved empty text (never a value in the cards) and the retired `ask` are dropped at the page boundary.
+- A switched-off round keeps its number: steps carry `round`/`afterRound`; the engine uses them, so the preview, the journal and the run say «Раунд 2» for `r2` when `r1` is off. The step `ref` is in the journal (`custom_start`, request entries).
+- An intermediate synthesis keeps the previous effective request when the final synthesis is off: the saved request of the same model of `final` is read at the page boundary, as before 2.81.671.
+- The format now has `run` (`policy`, `maxWords`); the run takes the policy, the shared limit and the model notes from the built schema and keeps them for its whole length.
+- Cards and the preview still open on a schema with a wrong value so it can be corrected; only a run is refused.
+- Tests: `tests/basic-schema.test.js`, `tests/results-debate-favorites.test.js` (wrong values, empty texts, numbering, final off, fixed run settings).
+
 ### 2026-10-09 — Basic schema format: one assembly and a check before the run, version 2.81.671
 
 - New `disput/basic-schema.js` (`BasicSchema`): the schema format (`schemaVersion` 1, `origin`), the Basic defaults (they now live only here), `resolveFields` (model → round → ▶ → Basic; an empty text is a value, a missing field is inheritance), `assemble` (schema → engine steps) and `validate` (errors with the place, e.g. `steps[0].models[1].maxWords`; a format newer than this Basic is refused; unknown fields and values are errors).

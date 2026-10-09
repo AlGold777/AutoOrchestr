@@ -2,7 +2,9 @@
 // them as round cards and synthesis inserts, the engine knows only steps. Meaning (answer, critique,
 // improvement, check, synthesis) comes from the step's task; the engine executes and passes data.
 //
-// Step: { kind: 'round' | 'synthesis', order: 'parallel' | 'sequential', task, input, models }
+// Step: { kind: 'round' | 'synthesis', order: 'parallel' | 'sequential', task, input, models, ref?, round?, afterRound? }
+//   ref, round (the number of a round) and afterRound (a synthesis) come from the schema, so a switched-off
+//   round keeps its number in labels, previews and the journal; without them the engine counts the steps it gets.
 //   models: [{ name, extra, promptTemplate, maxWords }] — card order is call order.
 //   promptTemplate replaces automatic assembly; maxWords reaches the caller on every attempt.
 //   input: 'none' | 'previous' | 'all'. The run's task is always sent.
@@ -98,9 +100,11 @@
     let round = 0;
     return steps.map((step, index) => {
       const kind = step.kind === 'synthesis' ? 'synthesis' : 'round';
-      if (kind === 'round') round += 1;
+      // A switched-off round keeps its number: the schema gives the number, the engine only counts without it.
+      if (kind === 'round') round = Number.isSafeInteger(step.round) && step.round > 0 ? step.round : round + 1;
       return {
-        index, kind, round: kind === 'round' ? round : null, afterRound: kind === 'synthesis' ? round : null,
+        index, ref: typeof step.ref === 'string' ? step.ref : null, kind, round: kind === 'round' ? round : null,
+        afterRound: kind === 'synthesis' ? (Number.isSafeInteger(step.afterRound) && step.afterRound > 0 ? step.afterRound : round) : null,
         order: kind === 'round' && step.order === 'sequential' ? 'sequential' : 'parallel',
         task: kind === 'synthesis' && !text(step.task) ? SYNTHESIS_TASK : text(step.task),
         input: kind === 'synthesis' ? 'previous' : (['none', 'previous', 'all'].includes(step.input) ? step.input : 'previous'),
@@ -129,7 +133,7 @@
     let stopReason = 'steps_done';
     // The plan as the run sees it: a report shows what was intended, not only what happened.
     emit('custom_start', { semiAuto: Boolean(semiAuto), maxAttempts, taskChars: text(task).length,
-      steps: plan.map((step) => ({ step: step.index, label: stepLabel(step), order: step.order, input: step.input, models: step.models.map((model) => model.name) })) });
+      steps: plan.map((step) => ({ step: step.index, ref: step.ref, label: stepLabel(step), order: step.order, input: step.input, models: step.models.map((model) => model.name) })) });
 
     class StopRun extends Error { constructor(reason) { super(reason); this.stopReason = reason; } }
 
@@ -193,7 +197,7 @@
       for (let tryNo = firstAttempt; pending.length && tryNo < firstAttempt + maxAttempts; tryNo += 1) {
         if (aborted()) throw new StopRun('cancelled');
         const entries = Object.fromEntries(pending.map((name) => {
-          const entry = { step: step.index, kind: step.kind, label: stepLabel(step), model: name, attempt: tryNo,
+          const entry = { step: step.index, ref: step.ref, kind: step.kind, label: stepLabel(step), model: name, attempt: tryNo,
             retryOf: current[name].retryOf || null, prompt: current[name].prompt, parts: current[name].parts,
             state: 'sent', sentAt: Date.now() };
           history.push(entry);

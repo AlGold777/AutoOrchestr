@@ -6628,28 +6628,36 @@ document.addEventListener('click', (event) => {
         // input come with the card editor. Semi-automatic (run policy not Auto) asks the owner after
         // every step; a step without accepted answers asks in both modes.
         // The page state as a Basic schema (disput/basic-schema.js): the canvas gives the steps, the cards
-        // and ▶ give the explicit overrides. Legacy empty strings are dropped here: in a schema an empty
-        // text is a value, not inheritance. A step with no models is switched off but keeps its place.
-        const nonEmpty = (value) => (typeof value === 'string' && value.trim() ? value : undefined);
+        // and ▶ give the explicit overrides, the header gives the run policy and the shared limit. Settings
+        // saved before the schema keep their old meaning at this boundary: a saved empty text was never a
+        // value (the cards did not store one) and is dropped; the retired `ask` is ignored. Anything else,
+        // a wrong value included, goes on to the check unchanged.
+        const legacyValue = (value) => (value === undefined || value === null || (typeof value === 'string' && !value.trim()) ? undefined : value);
+        const RETIRED_DISCIPLINE_KEYS = ['ask'];
+        const legacyDiscipline = (saved) => {
+            if (saved === undefined || saved === null) return undefined;
+            if (typeof saved !== 'object' || Array.isArray(saved)) return saved;
+            const discipline = {};
+            Object.entries(customDiscipline(saved)).forEach(([key, value]) => {
+                if (RETIRED_DISCIPLINE_KEYS.includes(key)) return;
+                const kept = key === 'lines' && Array.isArray(value) ? value.filter((line) => legacyValue(line) !== undefined) : legacyValue(value);
+                if (kept !== undefined && !(Array.isArray(kept) && !kept.length)) discipline[key] = kept;
+            });
+            return Object.keys(discipline).length ? discipline : undefined;
+        };
+        const legacyMap = (saved) => {
+            if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return legacyValue(saved);
+            const entries = Object.entries(saved).filter(([, value]) => legacyValue(value) !== undefined);
+            return entries.length ? Object.fromEntries(entries) : undefined;
+        };
         const basicSchemaFromPage = (plan, previewModel = null) => {
             const general = getCustomPipelineDefaults();
             const cards = getCustomCardSettings();
-            const cleanDiscipline = (saved) => {
-                const source = customDiscipline(saved);
-                const discipline = {};
-                ['limit', 'content', 'delivery', 'correction'].forEach((key) => { if (nonEmpty(source[key]) !== undefined) discipline[key] = source[key]; });
-                const lines = (source.lines || []).filter((line) => nonEmpty(line) !== undefined);
-                if (lines.length) discipline.lines = lines;
-                return discipline;
-            };
+            const put = (target, key, value) => { if (value !== undefined) target[key] = value; };
             const defaults = {};
-            ['roundTask', 'synthesisTask'].forEach((key) => { if (nonEmpty(general[key]) !== undefined) defaults[key] = general[key]; });
-            ['modelNotes', 'roundPrompts'].forEach((key) => {
-                const entries = Object.entries(general[key] || {}).filter(([, value]) => nonEmpty(value) !== undefined);
-                if (entries.length) defaults[key] = Object.fromEntries(entries);
-            });
-            const generalDiscipline = cleanDiscipline(general.discipline);
-            if (Object.keys(generalDiscipline).length) defaults.discipline = generalDiscipline;
+            ['roundTask', 'synthesisTask'].forEach((key) => put(defaults, key, legacyValue(general[key])));
+            ['modelNotes', 'roundPrompts'].forEach((key) => put(defaults, key, legacyMap(general[key])));
+            put(defaults, 'discipline', legacyDiscipline(general.discipline));
             let round = 0;
             const steps = (plan?.plannedStages || []).map((stage) => {
                 const models = (stage.participantIds || []).filter(Boolean);
@@ -6666,27 +6674,38 @@ document.addEventListener('click', (event) => {
                     const settings = cards[ref]?.[name];
                     const model = { name };
                     if (roles[name]) model.role = roles[name];
-                    if (nonEmpty(settings?.promptTemplate) !== undefined) model.request = settings.promptTemplate;
-                    if (settings?.maxWords) model.maxWords = settings.maxWords;
-                    if (nonEmpty(settings?.task) !== undefined) model.task = settings.task;
-                    const discipline = cleanDiscipline(settings?.discipline);
-                    if (Object.keys(discipline).length) model.discipline = discipline;
+                    put(model, 'request', legacyValue(settings?.promptTemplate));
+                    put(model, 'maxWords', legacyValue(settings?.maxWords));
+                    put(model, 'task', legacyValue(settings?.task));
+                    put(model, 'discipline', legacyDiscipline(settings?.discipline));
+                    // Before the schema an intermediate synthesis without its own request ran the saved request of
+                    // the same model of the final synthesis, also when the final synthesis is switched off.
+                    if (model.request === undefined && ref.startsWith('synth:')) put(model, 'request', legacyValue(cards.final?.[name]?.promptTemplate));
                     return model;
                 }) };
             }).filter(Boolean);
-            return { schemaVersion: window.BasicSchema.SCHEMA_VERSION, origin: 'user', ...(Object.keys(defaults).length ? { defaults } : {}), steps };
+            return { schemaVersion: window.BasicSchema.SCHEMA_VERSION, origin: 'user',
+                run: { policy: getDebateRunPolicy(), maxWords: getDebateMaxWords() },
+                ...(Object.keys(defaults).length ? { defaults } : {}), steps };
         };
         // The model's role (mini request from its block) reaches the model as `extra`, the same field
         // as any other extra text.
         const customRoleText = (role, ref) => (role === CUSTOM_ROLE_ID ? getCustomRoundPrompt(ref) : getJudgePromptById(role)?.text || '');
-        // Page state → schema → check → engine steps: the one assembly the canvas, the request preview and
-        // the run share. `errors` stop a run before the first request.
+        // Page state → schema → check → engine steps and run settings: the one assembly the canvas, the
+        // request preview and the run share. `errors` stop a run before the first request; the run keeps
+        // the result (steps, policy, limit) for its whole length.
         const buildBasicRun = (plan, previewModel = null) => {
             const schema = basicSchemaFromPage(plan, previewModel);
             const errors = window.BasicSchema.validate(schema);
-            return { schema, errors, steps: errors.length ? [] : window.BasicSchema.assemble(schema, { roleText: customRoleText }) };
+            return { schema, errors, run: window.BasicSchema.resolveRun(schema), steps: errors.length ? [] : window.BasicSchema.assemble(schema, { roleText: customRoleText }) };
         };
-        const customStepsFromPlan = (plan, previewModel = null) => buildBasicRun(plan, previewModel).steps;
+        // The cards and the preview must open on a schema with a wrong value, to let the owner correct it;
+        // only a run is refused. Wrong data that cannot be assembled gives no steps.
+        const customStepsFromPlan = (plan, previewModel = null) => {
+            const built = buildBasicRun(plan, previewModel);
+            if (!built.errors.length) return built.steps;
+            try { return window.BasicSchema.assemble(built.schema, { roleText: customRoleText }); } catch (_) { return []; }
+        };
         // The defaults of Basic live in disput/basic-schema.js only.
         const CUSTOM_ROUND_TASK = window.BasicSchema?.DEFAULTS.roundTask;
         const CUSTOM_CONTENT_REQUIREMENTS = window.BasicSchema?.DEFAULTS.discipline.content;
@@ -6708,23 +6727,24 @@ document.addEventListener('click', (event) => {
             if (value.limit === CUSTOM_LENGTH_TEMPLATE) delete value.limit;
             return value;
         };
-        // The value of a card: model → round → ▶ → Basic (BasicSchema.resolveFields). Legacy settings are
-        // cleaned first: a saved empty text is no value.
+        // The value of a card: model → round → ▶ → Basic (BasicSchema.resolveFields), for saved settings
+        // read through the same legacy boundary as the run (legacyValue / legacyDiscipline).
         const resolveCustomFields = (settings = {}, kind = 'round', round = {}) => {
             const general = getCustomPipelineDefaults();
-            const own = (saved) => Object.fromEntries(Object.entries(saved || {}).filter(([key, value]) => key !== 'lines' && nonEmpty(value) !== undefined));
             return window.BasicSchema.resolveFields(
-                { task: nonEmpty(settings?.task), discipline: own(customDiscipline(settings?.discipline)) }, kind,
-                { task: nonEmpty(round.task), discipline: own(round.discipline) },
-                { roundTask: nonEmpty(general.roundTask), synthesisTask: nonEmpty(general.synthesisTask), discipline: own(customDiscipline(general.discipline)) });
+                { task: legacyValue(settings?.task), discipline: legacyDiscipline(settings?.discipline) }, kind,
+                { task: legacyValue(round.task), discipline: legacyDiscipline(round.discipline) },
+                { roundTask: legacyValue(general.roundTask), synthesisTask: legacyValue(general.synthesisTask), discipline: legacyDiscipline(general.discipline) });
         };
         const customLengthInstruction = (template, words) => template.replace(/\{от\}|\{слов\}/g,
             (key) => String(key === '{от}' ? Math.max(1, words - 50) : words));
         // ▶ «Особенности моделей» go after the request and the owner's answers, before the limit.
         // A correction request is not a new request: it gets no note.
-        const prepareCustomPrompts = (models, prompts, limits = {}, discipline = {}, notes = {}, corrections = {}) => Object.fromEntries(models.map((name) => {
-            const words = Number.isSafeInteger(limits[name]) && limits[name] > 0 ? limits[name] : getDebateMaxWords();
-            const resolved = resolveCustomFields({ discipline: discipline[name] });
+        // `discipline[name]` is the assembled discipline of the model (BasicSchema.assemble): its values are used
+        // as they are, an empty one included. `fallbackWords` is the shared limit fixed for the run.
+        const composeCustomPrompts = (models, prompts, limits = {}, discipline = {}, notes = {}, corrections = {}, fallbackWords = getDebateMaxWords()) => Object.fromEntries(models.map((name) => {
+            const words = Number.isSafeInteger(limits[name]) && limits[name] > 0 ? limits[name] : fallbackWords;
+            const resolved = window.BasicSchema.resolveFields({ discipline: discipline[name] });
             const instruction = customLengthInstruction(resolved.discipline.limit.value, words);
             const base = String(prompts[name] || '').replace(RESPONSE_LIMIT_LINE, '').trimEnd();
             const note = corrections[name] ? '' : String(notes[name] || '').trim();
@@ -6732,6 +6752,9 @@ document.addEventListener('click', (event) => {
             const lines = (discipline[name]?.lines || []).map((line) => String(line).trim()).filter(Boolean);
             return [name, [base, note, instruction, resolved.discipline.content.value, ...lines].filter(Boolean).join('\n\n')];
         }));
+        // The same for settings as they were saved (before the schema): the legacy boundary first.
+        const prepareCustomPrompts = (models, prompts, limits = {}, discipline = {}, ...rest) => composeCustomPrompts(models, prompts, limits,
+            Object.fromEntries(Object.entries(discipline).map(([name, saved]) => [name, legacyDiscipline(saved) || {}])), ...rest);
         // The owner's choice on a pause, through the shared confirm dialog (three buttons).
         let customDecisionOpen = false;
         const askCustomDecision = async ({ label, accepted, failed, choices, reasons }) => {
@@ -6771,7 +6794,7 @@ document.addEventListener('click', (event) => {
                 return false;
             }
             const useApiFallback = apiModeCheckbox ? apiModeCheckbox.checked : true;
-            const semiAuto = getDebateRunPolicy() !== 'auto';
+            const semiAuto = built.run.policy !== 'auto';
             pipelineRunActive = true;
             customAbortController = new AbortController();
             activePipelineRunContext = {
@@ -6844,8 +6867,8 @@ document.addEventListener('click', (event) => {
                         const discipline = Object.fromEntries(models.map((name) => [name,
                             steps[step].models.find((model) => model.name === name)?.discipline || {}
                         ]));
-                        promptsByModel = prepareCustomPrompts(models, promptsByModel, maxWordsByModel, discipline,
-                            getCustomPipelineDefaults().modelNotes || {}, correctionByModel || {});
+                        promptsByModel = composeCustomPrompts(models, promptsByModel, maxWordsByModel, discipline,
+                            built.schema.defaults?.modelNotes || {}, correctionByModel || {}, built.run.maxWords);
                         const batch = await runModelBatch({
                             prompt: promptsByModel[models[0]],
                             promptsByModel,
@@ -7477,6 +7500,8 @@ document.addEventListener('click', (event) => {
                 getApprovalWaiting: () => debateExecutionContext?.hasApprovalWaiter?.() === true,
                 customStepsFromPlan,
                 prepareCustomPrompts,
+                composeCustomPrompts,
+                buildBasicRun,
                 resolveCustomFields,
                 getCustomPipelineDefaults,
                 buildPipelineExportPayload,
@@ -8484,7 +8509,7 @@ document.addEventListener('click', (event) => {
             const inheritedValue = (key) => pipelineDefaults ? fallbackFor(key) : key === 'task' ? inherited.task.value : inherited.discipline[key].value;
             const rawValue = (key) => isTask(key) ? saved[key] : customDiscipline(saved.discipline)[key];
             const effectiveValue = (key) => pipelineDefaults
-                ? window.BasicSchema.pick([['pipeline', nonEmpty(rawValue(key))]], fallbackFor(key)).value
+                ? window.BasicSchema.pick([['pipeline', legacyValue(rawValue(key))]], fallbackFor(key)).value
                 : key === 'task' ? resolved.task.value : resolved.discipline[key].value;
             const copyButton = (id, label) => `<button type="button" data-action="copy" data-copy-field="${id}" title="Копировать" aria-label="Копировать: ${label}"><i class="ti ti-copy" aria-hidden="true"></i></button>`;
             // ▶ «Особенности моделей»: one field per model on the canvas; the model card shows its own note read-only.

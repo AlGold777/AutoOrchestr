@@ -116,6 +116,74 @@ describe('Basic schema: assembly of engine steps', () => {
   });
 });
 
+describe('Basic schema: values are kept as given until the end', () => {
+  test('an empty own request is a value: the intermediate synthesis does not take the final one', () => {
+    const steps = Schema.assemble(base([
+      round('r1', ['A']), synthesis('synth:x', [{ name: 'S', request: '' }, { name: 'T' }]), round('r2', ['A']),
+      synthesis('final', [{ name: 'S', request: 'FINAL TEXT' }, { name: 'T', request: 'FINAL T' }])
+    ]));
+    const synth = steps.find((step) => step.ref === 'synth:x');
+    expect(synth.models.map((model) => model.promptTemplate)).toEqual(['', 'FINAL T']);
+    expect(steps.find((step) => step.ref === 'r2').models[0].promptTemplate).toBeNull();
+  });
+
+  test('an empty discipline text reaches the model as empty, not as the Basic text', () => {
+    const [step] = Schema.assemble(base([round('r1', [{ name: 'A', discipline: { limit: '', content: '' } }])]));
+    expect(step.models[0].discipline).toMatchObject({ limit: '', content: '', delivery: Schema.DEFAULTS.discipline.delivery });
+  });
+
+  test('wrong values are errors, not inheritance: 0, false, text and the wrong type', () => {
+    [0, false, '300', -5, 1.5, null].forEach((value) => {
+      expect(errorPaths(base([round('r1', [{ name: 'A', maxWords: value }])]))).toEqual(['steps[0].models[0].maxWords']);
+    });
+    expect(errorPaths(base([round('r1', [{ name: 'A', task: 5 }])]))).toEqual(['steps[0].models[0].task']);
+    expect(errorPaths(base([round('r1', [{ name: 'A', discipline: 'x' }])]))).toEqual(['steps[0].models[0].discipline']);
+  });
+
+  test('the run policy and the shared limit are part of the schema', () => {
+    expect(Schema.resolveRun(base([]))).toEqual({ policy: 'manual', maxWords: 300 });
+    expect(Schema.resolveRun(base([], { run: { policy: 'auto' } }))).toEqual({ policy: 'auto', maxWords: 300 });
+    expect(Schema.resolveRun(base([], { run: { policy: 'manual', maxWords: 700 } }))).toEqual({ policy: 'manual', maxWords: 700 });
+    expect(Schema.validate(base([], { run: { policy: 'auto', maxWords: 700 } }))).toEqual([]);
+    expect(errorPaths(base([], { run: { policy: 'sometimes' } }))).toEqual(['run.policy']);
+    expect(errorPaths(base([], { run: { maxWords: 0 } }))).toEqual(['run.maxWords']);
+    expect(errorPaths(base([], { run: { speed: 1 } }))).toEqual(['run.speed']);
+    expect(errorPaths(base([], { run: 5 }))).toEqual(['run']);
+  });
+});
+
+describe('Basic schema: a switched-off round keeps its number', () => {
+  const schema = base([round('r1', []), round('r2', ['A', 'B']), synthesis('synth:x', ['S']), round('r3', ['A']), synthesis('final', ['S'])]);
+
+  test('assembly gives the original number and the id of every step', () => {
+    const steps = Schema.assemble(schema);
+    expect(steps.map((step) => [step.ref, step.round ?? null, step.afterRound ?? null])).toEqual([
+      ['r2', 2, null], ['synth:x', null, 2], ['r3', 3, null], ['final', null, 3]
+    ]);
+    expect(steps[0].input).toBe('previous');
+  });
+
+  test('the preview, the journal and the run use the same numbers and ids', async () => {
+    const steps = Schema.assemble(schema);
+    expect(Engine.previewPrompt({ task: 'T', steps, stepIndex: 0, modelName: 'A' }).label).toBe('Раунд 2');
+    expect(Engine.previewPrompt({ task: 'T', steps, stepIndex: 1, modelName: 'S' }).label).toBe('Синтез после раунда 2');
+    const events = [];
+    const send = async (models) => ({ byModel: Object.fromEntries(models.map((name) => [name, { text: `answer of ${name}`, status: 'SUCCESS' }])) });
+    const result = await Engine.run({ task: 'T', steps, send, onEvent: (kind, fields) => events.push([kind, fields]) });
+    const start = events.find(([kind]) => kind === 'custom_start')[1];
+    expect(start.steps.map((step) => [step.ref, step.label])).toEqual([
+      ['r2', 'Раунд 2'], ['synth:x', 'Синтез после раунда 2'], ['r3', 'Раунд 3'], ['final', 'Синтез после раунда 3']
+    ]);
+    expect(result.history.map((entry) => entry.ref)).toEqual(['r2', 'r2', 'synth:x', 'r3', 'final']);
+    expect(result.steps.map((step) => step.label)).toEqual(['Раунд 2', 'Синтез после раунда 2', 'Раунд 3', 'Синтез после раунда 3']);
+  });
+
+  test('without the numbers the engine counts the steps it got, as before', () => {
+    const labels = Engine.normalizeSteps([{ kind: 'round', models: ['A'] }, { kind: 'synthesis', models: ['S'] }, { kind: 'round', models: ['A'] }]);
+    expect(labels.map((step) => [step.round, step.afterRound])).toEqual([[1, null], [null, 1], [2, null]]);
+  });
+});
+
 describe('Basic schema: check before the first request', () => {
   test('the minimal example of the reference passes the check', () => {
     const doc = fs.readFileSync(path.join(__dirname, '..', 'docs', 'Pipeline scenarios', 'basic-schema-reference.md'), 'utf8');
