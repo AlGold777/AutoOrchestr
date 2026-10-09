@@ -6635,7 +6635,9 @@ document.addEventListener('click', (event) => {
                     return { name, promptTemplate: settings?.promptTemplate || finalText || null, maxWords: settings?.maxWords || null,
                         extra: role === CUSTOM_ROLE_ID ? getCustomRoundPrompt(step.ref) : getJudgePromptById(role)?.text || '',
                         task: step.input === 'none' ? '' : resolved.task.value,
-                        discipline: Object.fromEntries(Object.entries(resolved.discipline).map(([key, item]) => [key, item.value])) };
+                        // Own lines of the card's «+» reach the request through the step's discipline.
+                        discipline: { ...Object.fromEntries(Object.entries(resolved.discipline).map(([key, item]) => [key, item.value])),
+                            ...(settings?.discipline?.lines ? { lines: settings.discipline.lines } : {}) } };
                 })
             }));
         };
@@ -6686,7 +6688,9 @@ document.addEventListener('click', (event) => {
             const instruction = customLengthInstruction(resolved.discipline.limit.value, words);
             const base = String(prompts[name] || '').replace(RESPONSE_LIMIT_LINE, '').trimEnd();
             const note = corrections[name] ? '' : String(notes[name] || '').trim();
-            return [name, [base, note, instruction, resolved.discipline.content.value].filter(Boolean).join('\n\n')];
+            // Own lines go after the content requirements, one paragraph each; a correction request gets them too.
+            const lines = (discipline[name]?.lines || []).map((line) => String(line).trim()).filter(Boolean);
+            return [name, [base, note, instruction, resolved.discipline.content.value, ...lines].filter(Boolean).join('\n\n')];
         }));
         // The owner's choice on a pause, through the shared confirm dialog (three buttons).
         let customDecisionOpen = false;
@@ -8474,6 +8478,8 @@ document.addEventListener('click', (event) => {
                             </div>
                             <textarea id="custom-discipline-${key}" rows="2" spellcheck="false"></textarea>
                         </div>`).join('')}
+                        ${pipelineDefaults ? '' : `<div class="custom-card-lines"></div>
+                        <div class="custom-card-actions"><button type="button" id="custom-card-line-add" aria-label="Добавить строку" title="Добавить строку">+</button></div>`}
                         <div class="custom-card-note">{от} — на 50 слов меньше предела; {слов} — предел из шапки pipeline; {метка} — новая метка; {причина} — причина повтора. Пустое поле наследуется. При повторе запрос заменяется инструкцией исправления.</div>
                     </div>
                     ${pipelineDefaults ? `<div class="custom-card-marks"><strong>Особенности моделей</strong>
@@ -8495,6 +8501,8 @@ document.addEventListener('click', (event) => {
             save.disabled = pipelineRunActive;
             const dirtyFields = new Set();
             const fields = {};
+            // Own instruction lines of the model card, in the order they were added.
+            const lineValues = [...(saved.discipline?.lines || [])];
             const display = (key, value) => key === 'limit' ? customLengthInstruction(value, Number(length?.value || general)) : value;
             const differs = (key, value) => typeof value === 'string' && value.trim()
                 && value !== inheritedValue(key) && value !== display(key, inheritedValue(key));
@@ -8547,6 +8555,11 @@ document.addEventListener('click', (event) => {
                     const value = dirtyFields.has(key) ? fields[key].value : rawValue(key);
                     if (dirtyFields.has(key) ? differs(key, value) : typeof value === 'string' && value.trim()) { if (isTask(key)) next[key] = value; else discipline[key] = value; }
                 });
+                // Empty lines are not saved.
+                if (!pipelineDefaults) {
+                    const lines = lineValues.map((line) => line.trim()).filter(Boolean);
+                    if (lines.length) discipline.lines = lines;
+                }
                 if (Object.keys(discipline).length) next.discipline = discipline;
                 if (pipelineDefaults) {
                     // Round texts are written by the round card, not this form: keep them.
@@ -8587,6 +8600,49 @@ document.addEventListener('click', (event) => {
                 try { await navigator.clipboard.writeText(content.querySelector(`#${button.dataset.copyField}`).value); flashButtonFeedback(button, 'success'); }
                 catch (_) { showNotification('Не удалось скопировать текст.', 'error'); }
             }));
+            // Own lines: «×» removes the line from the list, «✓» saves the card; no inheritance button.
+            const drawLines = () => {
+                const box = content.querySelector('.custom-card-lines');
+                if (!box) return;
+                box.innerHTML = lineValues.map((value, index) => `<div class="custom-card-discipline" data-line="${index}">
+                    <div class="custom-card-discipline-head"><label for="custom-line-${index}">Строка ${index + 1}</label>
+                        <div class="custom-card-actions">
+                            ${copyButton(`custom-line-${index}`, `Строка ${index + 1}`)}
+                            <button type="button" data-action="remove" title="Удалить строку" aria-label="Удалить: Строка ${index + 1}" class="custom-card-clear">×</button>
+                            <button type="button" data-action="save" title="Сохранить" aria-label="Сохранить: Строка ${index + 1}" class="custom-card-commit">✓</button>
+                        </div>
+                    </div>
+                    <textarea id="custom-line-${index}" rows="2" spellcheck="false"${pipelineRunActive ? ' readonly' : ''}>${escapeHtml(value)}</textarea>
+                </div>`).join('');
+                box.querySelectorAll('[data-line]').forEach((row) => {
+                    const index = Number(row.dataset.line);
+                    const field = row.querySelector('textarea');
+                    const copy = row.querySelector('[data-action="copy"]');
+                    field.addEventListener('input', () => { lineValues[index] = field.value; });
+                    copy.addEventListener('click', async () => {
+                        try { await navigator.clipboard.writeText(field.value); flashButtonFeedback(copy, 'success'); }
+                        catch (_) { showNotification('Не удалось скопировать текст.', 'error'); }
+                    });
+                    row.querySelectorAll('button:not([data-action="copy"])').forEach((button) => { button.disabled = pipelineRunActive; });
+                    row.querySelector('[data-action="remove"]').addEventListener('click', () => {
+                        if (pipelineRunActive) return;
+                        lineValues.splice(index, 1);
+                        drawLines();
+                    });
+                    row.querySelector('[data-action="save"]').addEventListener('click', () => saveSettings(false));
+                });
+            };
+            const lineAdd = content.querySelector('#custom-card-line-add');
+            if (lineAdd) {
+                lineAdd.disabled = pipelineRunActive;
+                lineAdd.addEventListener('click', () => {
+                    if (pipelineRunActive) return;
+                    lineValues.push('');
+                    drawLines();
+                    content.querySelector(`#custom-line-${lineValues.length - 1}`).focus();
+                });
+            }
+            drawLines();
             save.addEventListener('click', () => saveSettings(true));
             refresh();
         };

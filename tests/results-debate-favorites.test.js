@@ -2186,6 +2186,43 @@ describe('Pipeline debate favorites view', () => {
     expect(prepare(['GPT'], { GPT: 'T' }, { GPT: 300 }, { GPT: { limit: '[DISPUT_RESPONSE_LIMIT] Свой лимит {слов}.' } }).GPT).toContain('[RESPONSE_LIMIT] Свой лимит 300.');
   });
 
+  test('Custom own lines follow the content requirements, trimmed, one paragraph each, also on corrections', () => {
+    const prepare = window.__pipelineLifecycleDebug.prepareCustomPrompts;
+    const base = prepare(['GPT'], { GPT: 'T' }, { GPT: 300 }).GPT;
+    expect(prepare(['GPT'], { GPT: 'T' }, { GPT: 300 }, { GPT: { lines: ['  OWN ONE  ', '', 'OWN TWO'] } }).GPT).toBe(base + '\n\nOWN ONE\n\nOWN TWO');
+    expect(prepare(['GPT'], { GPT: 'T' }, { GPT: 300 }, { GPT: { lines: ['   '] } }).GPT).toBe(base);
+    expect(prepare(['GPT'], { GPT: 'T' }, { GPT: 300 }, { GPT: { lines: ['OWN'] } }, {}, { GPT: 'fix' }).GPT).toBe(base + '\n\nOWN');
+  });
+
+  test('Custom card «+» adds own lines, saves only non-empty ones, and «×» removes a line', async () => {
+    const debug = window.__pipelineLifecycleDebug;
+    const config = { version: 3, roundCounter: 2, protocol: { type: 'universal', presetId: 'CUSTOM', selectedModels: ['GPT', 'Claude'], length: '700', roundLimit: '2', synthesizer: '', runPolicy: 'auto' }, modelStacks: {} };
+    debug.setPipelineStoreForTest({ active: '', order: [], pipelines: {} });
+    document.getElementById('pipeline-panel').removeAttribute('data-pipeline-draft');
+    debug.applyPipelineConfig(config);
+    const block = [...document.querySelectorAll('#r2-models .model-block')].find((item) => item.querySelector('.model-name')?.textContent === 'GPT');
+    const modal = document.createElement('div');
+    modal.innerHTML = '<div class="modal-content"></div>';
+    document.body.appendChild(modal);
+    await debug.renderCustomBlockInspector(block, modal);
+    modal.querySelector('#custom-card-line-add').click();
+    modal.querySelector('#custom-card-line-add').click();
+    expect(modal.querySelectorAll('[data-line]')).toHaveLength(2);
+    expect(modal.querySelector('[data-line="0"] [data-action="inherit"]')).toBeNull();
+    modal.querySelector('#custom-line-0').value = '  OWN  ';
+    modal.querySelector('#custom-line-0').dispatchEvent(new Event('input'));
+    modal.querySelector('#custom-card-save').click();
+    expect(debug.capturePipelineConfig().customModelSettings.r2.GPT.discipline.lines).toEqual(['OWN']);
+    await debug.renderCustomBlockInspector(block, modal);
+    expect(modal.querySelector('#custom-line-0').value).toBe('OWN');
+    expect(modal.querySelectorAll('[data-line]')).toHaveLength(1);
+    modal.querySelector('[data-line="0"] [data-action="remove"]').click();
+    expect(modal.querySelectorAll('[data-line]')).toHaveLength(0);
+    modal.querySelector('#custom-card-save').click();
+    expect(debug.capturePipelineConfig().customModelSettings.r2.GPT.discipline).toBeUndefined();
+    modal.remove();
+  });
+
   test.each(['input', 'limit', 'content', 'delivery', 'correction', 'token'])('Custom stops without dispatch or compaction when the full %s overflows', async (part) => {
     const debug = window.__pipelineLifecycleDebug;
     const originalBudget = window.DebateContextBudget;

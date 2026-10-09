@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-09 — «+» in the model card's transport marks adds own instruction lines, version 2.81.668
+
+- The model card (Custom) has a «+» under the «Метки транспорта» rows. Each press adds an own line («Строка N») with a copy icon, «×» (removes the line) and «✓» (saves the card). No inheritance button.
+- Lines are stored in `customModelSettings[шаг][модель].discipline.lines`, in the order they were added; empty lines are not saved. The step plan (`customStepsFromPlan`, `results.js`) passes them in the step's `discipline`, and `prepareCustomPrompts` adds them after the content requirements, one paragraph each (trimmed), on first requests and corrections alike.
+- The «+» and the line fields are disabled during a run. The ▶ card is unchanged.
+- Tests in `tests/results-debate-favorites.test.js`: the request gets the lines (trimmed, one paragraph each, also on corrections); the card adds lines, saves only non-empty ones and removes one with «×».
+
 ### 2026-10-09 — The «In» label sits on the same header line as the round badges, version 2.81.667
 
 - `#pipelineFlow` entry column: the «In» label is a badge of the same size and header height (28px) as `.round-badge`, centred like the other stage headers.

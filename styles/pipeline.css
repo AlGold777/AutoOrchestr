@@ -1480,6 +1480,7 @@ body.pipeline-page #disput-state-map-panel .disput-state-map-actions > button:no
 .custom-card-marks > strong, .custom-card-marks > .custom-card-note { grid-column: 1 / -1; }
 .custom-card-marks strong { color: var(--pipeline-text); font-weight: 600; }
 .custom-card-discipline { margin-top: 7px; }
+.custom-card-lines { display: contents; }
 .custom-card-discipline-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .custom-card-actions { display: flex; gap: 4px; }
 .custom-card-actions button { display: grid; place-items: center; width: 26px; height: 24px; padding: 0; border: 0; border-radius: 4px; background: transparent; cursor: pointer; font-size: 20px; }
