@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-10-09 — Before the run every canvas block and link is gray, version 2.81.665
+
+- Before the run starts (IDLE, CREATED) all blocks and links show as not yet involved (gray); the running and done states apply once the run is live.
+
 ### 2026-10-09 — Pipeline canvas shows the run's progress, version 2.81.664
 
 - The canvas follows the engine instead of the model selection. `syncPipelineRunStateVisuals` (`results.js`) reads `orchestrator.getState()` (lifecycle and stage instances by `plannedStageId`/`status`). A stage is running while an instance is `running` or `awaiting_participant`, done when one is `completed`, otherwise pending.

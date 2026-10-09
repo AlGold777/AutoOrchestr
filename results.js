@@ -5087,7 +5087,7 @@ document.addEventListener('click', (event) => {
         // stage instances with plannedStageId/status). A planned stage is running while an instance is
         // running or awaiting a participant, done when an instance completed, otherwise pending.
         // Blocks get pipeline-run-*, the connector group INTO a stage gets pipeline-link-* (the group
-        // element survives the svg redraws). No live or terminal lifecycle = no classes = today's look.
+        // element survives the svg redraws). No live or terminal lifecycle (before the run) = every stage and link is pending (gray).
         const PIPELINE_RUN_LIVE_LIFECYCLES = new Set(['STARTING', 'RUNNING', 'PAUSE_REQUESTED', 'QUIESCING', 'PAUSED', 'RECONCILING', 'FINALIZING']);
         const PIPELINE_RUN_TERMINAL_LIFECYCLES = new Set(['COMPLETED', 'CANCELLED', 'FAILED']);
         const PIPELINE_RUN_STATE_RANK = { pending: 0, done: 1, running: 2 };
@@ -5117,9 +5117,10 @@ document.addEventListener('click', (event) => {
                     if (!previous || PIPELINE_RUN_STATE_RANK[state] > PIPELINE_RUN_STATE_RANK[previous]) stateByPlannedStage.set(plannedId, state);
                 });
             }
+            // Before the run starts nothing is involved yet: every stage and link is pending (gray).
             const stateOfColumn = (column) => (hasRun
                 ? (stateByPlannedStage.get(pipelinePlannedStageIdFor(column)) || 'pending')
-                : null);
+                : 'pending');
             pipelinePanel.querySelectorAll('.stage-column').forEach((column) => {
                 const state = stateOfColumn(column);
                 column.querySelectorAll('.model-block').forEach((block) => {

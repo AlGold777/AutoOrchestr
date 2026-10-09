@@ -300,7 +300,7 @@ body.is-resizing {
 /* Run progress (results.js syncPipelineRunStateVisuals). Blocks: pipeline-run-pending (gray, as
    .model-block.inactive), pipeline-run-running (blue outline pulsing), pipeline-run-done (permanent
    blue outline). Links into a stage: pipeline-link-pending (gray), pipeline-link-running (orange
-   pulse), pipeline-link-done (permanent orange). No run = no classes = today's look. */
+   pulse), pipeline-link-done (permanent orange). Before the run everything is pending (gray). */
 .pipeline-flow .model-block.pipeline-run-pending {
     border-color: #cbd5e1;
     background: #ffffff;

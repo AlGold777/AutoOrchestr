@@ -3152,15 +3152,17 @@ describe('Pipeline canvas run state (engine-derived)', () => {
     expect(document.querySelector('#round2 .model-block').classList.contains('pipeline-run-pending')).toBe(true);
   });
 
-  test('IDLE and CREATED have no run classes, so edit mode keeps today\'s look', () => {
+  test('before the run (IDLE, CREATED) every block and link is pending (gray)', () => {
     window.__syncPipelineRunStateVisuals({
       lifecycle: 'RUNNING',
       stages: [{ plannedStageId: 'canvas-r1', status: 'running' }]
     });
-    expect(document.querySelectorAll(RUN_CLASSES).length).toBeGreaterThan(0);
-    window.__syncPipelineRunStateVisuals({ lifecycle: 'IDLE', stages: [] });
-    expect(document.querySelectorAll(RUN_CLASSES).length).toBe(0);
-    window.__syncPipelineRunStateVisuals({ lifecycle: 'CREATED', stages: [] });
-    expect(document.querySelectorAll(RUN_CLASSES).length).toBe(0);
+    expect(document.querySelectorAll('.pipeline-run-running').length).toBeGreaterThan(0);
+    ['IDLE', 'CREATED'].forEach((lifecycle) => {
+      window.__syncPipelineRunStateVisuals({ lifecycle, stages: [] });
+      expect(document.querySelectorAll('.pipeline-run-running, .pipeline-run-done, .pipeline-link-running, .pipeline-link-done').length).toBe(0);
+      expect(document.querySelectorAll('.pipeline-run-pending').length).toBeGreaterThan(0);
+      expect(document.querySelectorAll('.pipeline-link-pending').length).toBeGreaterThan(0);
+    });
   });
 });
