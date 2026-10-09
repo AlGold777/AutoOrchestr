@@ -5860,11 +5860,16 @@ document.addEventListener('click', (event) => {
                 const stack = document.getElementById(`r${roundIndex}-models`);
                 if (!stack) continue;
                 const roleByName = new Map();
+                const marksByName = new Map();
                 stack.querySelectorAll('.model-block').forEach((block) => {
                     const name = block.querySelector('.model-name')?.textContent?.trim();
                     const roleSelect = block.querySelector('.role-selector');
                     // An empty value is a real choice (None) and must survive the rebuild.
                     if (name && roleSelect) roleByName.set(name, roleSelect.value || '');
+                    // So must the Input / Send marks of a model that stays (a loaded pipeline stores them).
+                    if (name && !block.classList.contains('pipeline-empty-slot')) {
+                        marksByName.set(name, { input: block.querySelector('.model-input-checkbox')?.checked, send: block.querySelector('.model-send-checkbox')?.checked });
+                    }
                 });
                 const emptySlots = Math.max(0, getDebateModelSlotCount() - selectedIndices.length);
                 const nextHtml = buildModelBlocksHtml(selectedIndices, true)
@@ -5875,6 +5880,13 @@ document.addEventListener('click', (event) => {
                 }
                 stack.querySelectorAll('.model-block').forEach((block) => {
                     const name = block.querySelector('.model-name')?.textContent?.trim();
+                    const marks = name ? marksByName.get(name) : undefined;
+                    if (marks) {
+                        const inputCb = block.querySelector('.model-input-checkbox');
+                        const sendCb = block.querySelector('.model-send-checkbox');
+                        if (inputCb && typeof marks.input === 'boolean') inputCb.checked = marks.input;
+                        if (sendCb && typeof marks.send === 'boolean') sendCb.checked = marks.send;
+                    }
                     const role = block.querySelector('.role-selector');
                     const previousRole = name ? roleByName.get(name) : undefined;
                     if (role && previousRole !== undefined && Array.from(role.options).some((opt) => opt.value === previousRole)) {
@@ -7589,6 +7601,7 @@ document.addEventListener('click', (event) => {
                 normalizePipelineStore,
                 clearCustomSessionForTest: () => { customPipelineDefaults.clear(); customCardSettings.clear(); },
                 capturePipelineConfig,
+                installBasicSchema: (...args) => installBasicSchema(...args),
                 applyPipelineConfig: (...args) => applyPipelineConfig(...args),
                 runCustomFromPage,
                 renderCustomBlockInspector: (...args) => renderCustomBlockInspector(...args),
@@ -8425,6 +8438,74 @@ document.addEventListener('click', (event) => {
             setTimeout(() => URL.revokeObjectURL(url), 0);
         };
 
+        // Installs a schema as a pipeline: the canvas members of the record (rounds, models, roles, synthesizer,
+        // intermediate syntheses) are built from the schema, then the record is stored like a saved pipeline.
+        // Returns { ok, errors }; a schema that cannot be shown on the canvas is not installed or changed.
+        const installBasicSchema = async (name, schema) => {
+            const errors = window.BasicSchema.validate(schema);
+            if (errors.length) return { ok: false, errors };
+            const canvas = window.BasicSchema.toCanvas(schema, {
+                models: getAllPipelineModelNames(),
+                isRole: (id) => id === CUSTOM_ROLE_ID || Boolean(getJudgePromptById(id))
+            });
+            if (canvas.errors.length) return { ok: false, errors: canvas.errors };
+            const run = window.BasicSchema.resolveRun(schema);
+            const base = clonePipelineConfig(buildDefaultPipelinePresets().Basic);
+            delete base.disabled;
+            delete base.disabledReason;
+            const lengthSelect = document.getElementById('debate-length-select');
+            let plan = window.DebateDraftPlan.createCanvasPlan({
+                planId: `canvas-${String(name).replace(/[^a-z0-9_-]+/gi, '-')}`, revision: 0, synthesizer: canvas.synthesizer,
+                rounds: canvas.rounds.map((round, index) => ({
+                    plannedStageId: `canvas-${round.ref}`, label: index === 0 ? 'R1 Models' : `R${index + 1}`, purpose: index === 0 ? 'position' : 'response',
+                    participantIds: round.participantIds,
+                    participantBindings: round.participantIds.map((participantId) => ({ participantId, promptId: round.roles[participantId] }))
+                }))
+            });
+            for (const insert of canvas.inserts) {
+                const inserted = window.DebateDraftPlan.insertSynthesis(plan, { afterPlannedStageId: `canvas-r${insert.afterRound}`, participantIds: insert.participantIds, plannedStageId: insert.plannedStageId });
+                if (!inserted.ok) return { ok: false, errors: [{ path: `synth:${insert.plannedStageId}`, message: `промежуточный синтез не встал на холст (${inserted.reasonCode})` }] };
+                plan = inserted.plan;
+            }
+            const record = {
+                ...base,
+                version: 3,
+                protocol: { ...base.protocol, runPolicy: run.policy, synthesizer: canvas.synthesizer, selectedModels: canvas.selectedModels,
+                    ...(lengthSelect && Array.from(lengthSelect.options).some((option) => option.value === String(run.maxWords)) ? { length: String(run.maxWords) } : {}) },
+                draftPlan: plan,
+                roundCounter: canvas.roundCounter,
+                modelStacks: canvas.stacks,
+                schema: { ...JSON.parse(JSON.stringify(schema)), origin: 'user' }
+            };
+            delete record.customModelSettings;
+            delete record.customDefaults;
+            pipelineStore.pipelines[name] = record;
+            if (!pipelineStore.order.includes(name)) pipelineStore.order.push(name);
+            delete pipelineStore.draftPlans?.[name];
+            delete pipelineSessionDraftPlans[name];
+            adoptBasicWorking(name, basicWorkingFromConfig(record));
+            pipelineStore.lastSaved = name;
+            await persistPipelineStore();
+            renderPipelineList(pipelineStore.order, pipelineStore.active, pipelineStore.lastSaved);
+            return { ok: true, errors: [] };
+        };
+        // A file that is a schema, not an export of pipelines: it is added as a pipeline under a name the owner gives.
+        const importBasicSchemaFile = async (schema) => {
+            const name = String((await showPrompt('Имя pipeline для схемы:', '')) || '').trim();
+            if (!name) return;
+            if (isDefaultPipelineName(name)) { showNotification(`«${name}» — имя шаблона. Выберите другое имя.`, 'warn'); return; }
+            if (pipelineStore.order.includes(name) && !(await showConfirm(`Pipeline "${name}" already exists. Replace it?`))) return;
+            const result = await installBasicSchema(name, schema);
+            if (!result.ok) {
+                const shown = result.errors.slice(0, 5).map((error) => (error.path ? `${error.path}: ${error.message}` : error.message)).join('; ');
+                showNotification(`Схема не установлена. ${shown}`, 'error');
+                return;
+            }
+            const item = findPipelineItemByName(name);
+            if (item) selectPipeline(item, { applyConfig: true, persist: true });
+            showNotification(`Схема установлена как pipeline «${name}».`, 'success');
+        };
+
         const handlePipelineImportFile = async (event) => {
             const file = event.target.files?.[0];
             if (!file) return;
@@ -8432,6 +8513,11 @@ document.addEventListener('click', (event) => {
             reader.onload = async () => {
                 try {
                     const parsed = JSON.parse(String(reader.result || ''));
+                    // A bare schema (schemaVersion and steps, no pipelines) is added, it does not replace the store.
+                    if (parsed && typeof parsed === 'object' && !parsed.pipelines && 'schemaVersion' in parsed && 'steps' in parsed) {
+                        await importBasicSchemaFile(parsed);
+                        return;
+                    }
                     const normalized = normalizePipelineStore(parsed);
                     const hasExisting = pipelineStore.order.length || Object.keys(pipelineStore.pipelines).length;
                     if (hasExisting) {

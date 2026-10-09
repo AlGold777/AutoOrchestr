@@ -205,6 +205,56 @@
     return { customModelSettings, customDefaults: schema.defaults ? JSON.parse(JSON.stringify(schema.defaults)) : {} };
   }
 
+  // The canvas a schema stands for: the rounds, the models of each round with their roles, the final synthesizer
+  // and the intermediate syntheses. `models` is the list of the models the canvas knows, in its order; `isRole(id)`
+  // tells a known role. A schema the canvas cannot show gives errors (with the place), never a changed schema.
+  // The canvas shows rounds r1, r2, … in order, one intermediate synthesis between two rounds, the final
+  // synthesis last, one model in a synthesis. A switched-off model or synthesis is not on the canvas.
+  function toCanvas(schema, { models = [], isRole = () => true } = {}) {
+    const errors = [];
+    const fail = (path, message) => errors.push({ path, message });
+    const steps = schema.steps || [];
+    const enabledOf = (step) => (step.models || []).filter((model) => model.enabled !== false);
+    const rounds = [];
+    const inserts = [];
+    let finalStep = null;
+    steps.forEach((step, index) => {
+      const path = `steps[${index}]`;
+      const enabled = enabledOf(step);
+      enabled.forEach((model, at) => {
+        if (!models.includes(model.name)) fail(`${path}.models[${at}].name`, `модель «${model.name}» недоступна`);
+        if (model.role && !isRole(model.role)) fail(`${path}.models[${at}].role`, `роль «${model.role}» неизвестна`);
+      });
+      if (step.kind === 'round') {
+        rounds.push(step);
+        if (step.ref !== `r${rounds.length}`) fail(`${path}.ref`, `ref раунда должен быть «r${rounds.length}»`);
+        return;
+      }
+      if (enabled.length > 1) fail(`${path}.models`, 'в синтезе одна модель');
+      if (step.ref === 'final') {
+        finalStep = step;
+        if (index !== steps.length - 1) fail(`${path}.ref`, 'финальный синтез стоит последним');
+        return;
+      }
+      const id = step.ref.startsWith('synth:') ? step.ref.slice('synth:'.length) : '';
+      if (!id) fail(`${path}.ref`, 'ref промежуточного синтеза: «synth:<id>»');
+      if (steps[index - 1]?.kind !== 'round') fail(path, 'промежуточный синтез стоит сразу после раунда');
+      if (steps[index + 1]?.kind !== 'round') fail(path, 'промежуточный синтез стоит между двумя раундами');
+      if (enabled.length) inserts.push({ afterRound: rounds.length, plannedStageId: id, participantIds: enabled.map((model) => model.name) });
+    });
+    if (!rounds.length) fail('steps', 'нужен хотя бы один раунд');
+    if (rounds.length > 50) fail('steps', 'раундов не больше 50');
+    if (errors.length) return { errors };
+    const selectedModels = models.filter((name) => rounds.some((step) => enabledOf(step).some((model) => model.name === name)));
+    const stacks = Object.fromEntries(rounds.map((step, index) => [`r${index + 1}-models`, { items: selectedModels.map((name) => {
+      const model = enabledOf(step).find((item) => item.name === name);
+      return { name, input: Boolean(model), send: Boolean(model), role: model?.role || null };
+    }) }]));
+    return { errors, roundCounter: rounds.length, selectedModels, stacks,
+      rounds: rounds.map((step, index) => ({ ref: `r${index + 1}`, participantIds: selectedModels.filter((name) => enabledOf(step).some((model) => model.name === name)), roles: Object.fromEntries(enabledOf(step).map((model) => [model.name, model.role || null])) })),
+      synthesizer: finalStep ? (enabledOf(finalStep)[0]?.name || '') : '', inserts };
+  }
+
   // The run settings as the run takes them: the policy and the shared answer limit.
   const resolveRun = (schema) => ({
     policy: typeof schema.run?.policy === 'string' ? schema.run.policy : DEFAULTS.run.policy,
@@ -213,7 +263,7 @@
 
   const describeErrors = (errors) => errors.map((error) => (error.path ? `${error.path}: ${error.message}` : error.message)).join('; ');
 
-  const api = Object.freeze({ SCHEMA_VERSION, SUPPORTED_VERSIONS, ORIGINS, DEFAULTS, pick, resolveFields, assemble, resolveRun, toSettings, validate, describeErrors });
+  const api = Object.freeze({ SCHEMA_VERSION, SUPPORTED_VERSIONS, ORIGINS, DEFAULTS, pick, resolveFields, assemble, resolveRun, toSettings, toCanvas, validate, describeErrors });
   root.BasicSchema = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

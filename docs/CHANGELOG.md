@@ -1,5 +1,13 @@
 # CHANGELOG — Project
 
+### 2026-10-09 — A schema can be installed as a pipeline; loading keeps the Send marks, version 2.81.675
+
+- `BasicSchema.toCanvas` builds from a schema the rounds, the models with roles, the final synthesizer and the intermediate syntheses; it returns errors with the place when the canvas cannot show the schema (wrong round refs, a synthesis outside its place, two models in a synthesis, an unknown model or role).
+- `installBasicSchema` (`results.js`) stores a record with the canvas members built from the schema and the schema itself (`origin: user`). Import accepts a file that is a bare schema (`schemaVersion` + `steps`, no `pipelines`): it is added under the name the owner gives and does not replace the other pipelines. A schema that cannot be installed is named by place and nothing changes.
+- Fix: applying a pipeline rebuilt the blocks of the rounds and dropped the Input / Send marks it had just applied (seen with records saved before the schema too); the marks are now kept by model name through the rebuild.
+- Reference: how a schema stands on the canvas (`docs/Pipeline scenarios/basic-schema-reference.md`).
+- Tests: `tests/basic-schema.test.js` (`toCanvas`), `tests/results-debate-favorites.test.js` (install, refusal, Import of a schema file, Send marks on load).
+
 ### 2026-10-09 — Save stores the schema of a Basic pipeline, version 2.81.674
 
 - A Basic pipeline (runner `custom`) is stored as `schema` (`schemaVersion`, `origin: user`, `basedOn`, explicit `run`, `defaults`, `steps`); `customModelSettings` and `customDefaults` are no longer written for it. Save from a template sets `basedOn` to the template; later saves and card saves keep it. Saving a card or ▶ rewrites the schema of a saved pipeline (`persistBasicSettings`), also moving a record saved before the schema onto it, with the protocol's Auto/limit written to `run` where they differ from Basic.

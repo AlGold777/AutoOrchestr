@@ -116,6 +116,56 @@ describe('Basic schema: assembly of engine steps', () => {
   });
 });
 
+describe('Basic schema: the canvas a schema stands for', () => {
+  const canvasModels = ['Claude', 'GPT', 'Gemini', 'Grok'];
+  const toCanvas = (schema, extra = {}) => Schema.toCanvas(schema, { models: canvasModels, ...extra });
+
+  test('rounds, models with roles, the final synthesizer and the intermediate synthesis', () => {
+    const schema = base([
+      round('r1', [{ name: 'GPT' }, { name: 'Claude', role: 'critic' }]), synthesis('synth:mid', ['Gemini']),
+      round('r2', ['GPT']), synthesis('final', ['Claude'])
+    ]);
+    const canvas = toCanvas(schema);
+    expect(canvas.errors).toEqual([]);
+    expect(canvas.roundCounter).toBe(2);
+    expect(canvas.selectedModels).toEqual(['Claude', 'GPT']);
+    expect(canvas.stacks['r1-models'].items).toEqual([
+      { name: 'Claude', input: true, send: true, role: 'critic' }, { name: 'GPT', input: true, send: true, role: null }
+    ]);
+    expect(canvas.stacks['r2-models'].items.map((item) => [item.name, item.send])).toEqual([['Claude', false], ['GPT', true]]);
+    expect(canvas.rounds.map((item) => item.participantIds)).toEqual([['Claude', 'GPT'], ['GPT']]);
+    expect(canvas.synthesizer).toBe('Claude');
+    expect(canvas.inserts).toEqual([{ afterRound: 1, plannedStageId: 'mid', participantIds: ['Gemini'] }]);
+  });
+
+  test('a switched-off model, a switched-off synthesis and a final that is off are not on the canvas', () => {
+    const canvas = toCanvas(base([
+      round('r1', ['GPT', { name: 'Grok', enabled: false, request: 'KEPT' }]), synthesis('synth:x', [{ name: 'Gemini', enabled: false }]),
+      round('r2', []), synthesis('final', [])
+    ]));
+    expect(canvas.errors).toEqual([]);
+    expect(canvas.selectedModels).toEqual(['GPT']);
+    expect(canvas.inserts).toEqual([]);
+    expect(canvas.synthesizer).toBe('');
+    expect(canvas.roundCounter).toBe(2);
+    expect(canvas.stacks['r2-models'].items.every((item) => item.send === false)).toBe(true);
+  });
+
+  test('a schema the canvas cannot show is named, not changed', () => {
+    const places = (schema, extra) => toCanvas(schema, extra).errors.map((error) => error.path);
+    expect(places(base([round('r1', ['Nobody'])]))).toEqual(['steps[0].models[0].name']);
+    expect(places(base([round('r1', [{ name: 'GPT', role: 'ghost' }])]), { isRole: () => false })).toEqual(['steps[0].models[0].role']);
+    expect(places(base([round('r2', ['GPT'])]))).toEqual(['steps[0].ref']);
+    expect(places(base([synthesis('final', ['GPT']), round('r1', ['GPT'])]))).toContain('steps[0].ref');
+    expect(places(base([round('r1', ['GPT']), synthesis('synth:a', ['Claude'])]))).toEqual(['steps[1]']);
+    expect(places(base([synthesis('synth:a', ['Claude']), round('r1', ['GPT'])]))).toEqual(['steps[0]']);
+    expect(places(base([round('r1', ['GPT']), synthesis('synth:', ['Claude']), round('r2', ['GPT'])]))).toEqual(['steps[1].ref']);
+    expect(places(base([round('r1', ['GPT']), synthesis('final', ['Claude', 'Gemini'])]))).toEqual(['steps[1].models']);
+    expect(places(base([synthesis('final', ['Claude'])]))).toEqual(['steps']);
+    expect(places(base([round('r1', ['GPT']), synthesis('final', ['Claude']), round('r2', ['GPT'])]))).toContain('steps[1].ref');
+  });
+});
+
 describe('Basic schema: values are kept as given until the end', () => {
   test('an empty own request is a value: the intermediate synthesis does not take the final one', () => {
     const steps = Schema.assemble(base([

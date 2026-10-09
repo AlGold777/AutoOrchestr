@@ -206,7 +206,7 @@ function renderDebateDom() {
       <div id="pipeline-panel">
         <span id="currentPipelineName" class="pipeline-name">Universal</span><div class="entry-point" id="entryPoint">▶</div>
         <button type="button" id="pipeline-add-round-btn">+</button>
-        <button type="button" id="pipeline-add-btn">+</button><button type="button" id="pipeline-save-btn">Save</button>
+        <button type="button" id="pipeline-add-btn">+</button><button type="button" id="pipeline-save-btn">Save</button><button type="button" id="pipeline-import-btn">Import</button>
         <div class="stage-column" id="round1" data-round="1">
           <div class="model-stack" id="r1-models">
             <div class="model-block">
@@ -3160,6 +3160,101 @@ describe('Pipeline debate favorites view', () => {
         expect((await h.run()).length).toBeGreaterThan(0);
       } finally { h.cleanup(); }
     }, 30000);
+
+    describe('a schema is installed as a pipeline', () => {
+      const stackFlags = (stackId) => [...document.querySelectorAll(`#${stackId} .model-block:not(.pipeline-empty-slot)`)]
+        .map((block) => [block.querySelector('.model-name').textContent, block.querySelector('.model-send-checkbox').checked, block.querySelector('.role-selector')?.value || '']);
+      const select = (name) => document.querySelector(`.pipeline-item[data-name="${name}"]`).click();
+
+      test('the canvas shows the rounds, the models, the roles and the syntheses of the schema, and the run takes the schema\'s steps', async () => {
+        const h = setupCustomInheritance('Install host', { synthesis: '' });
+        try {
+          const schema = {
+            schemaVersion: 1, origin: 'builtin', basedOn: 'Idea', run: { policy: 'auto' },
+            defaults: { roundTask: 'INSTALLED_TASK' },
+            steps: [
+              { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }, { name: 'Claude' }, { name: 'Grok', enabled: false, request: 'KEPT REQUEST' }] },
+              { ref: 'synth:mid', kind: 'synthesis', models: [{ name: 'Gemini' }] },
+              { ref: 'r2', kind: 'round', models: [{ name: 'GPT', discipline: { content: 'R2_GPT_CONTENT' } }] },
+              { ref: 'final', kind: 'synthesis', models: [{ name: 'Claude' }] }
+            ]
+          };
+          const result = await h.debug.installBasicSchema('Installed', schema);
+          expect(result).toEqual({ ok: true, errors: [] });
+          const record = h.debug.getPipelineStoreSnapshot().pipelines.Installed;
+          expect(record.schema).toMatchObject({ origin: 'user', basedOn: 'Idea' });
+          expect(record.customModelSettings).toBeUndefined();
+          select('Installed');
+          await settleCustomCard();
+          expect(h.debug.getPipelineStoreSnapshot().active).toBe('Installed');
+          expect(stackFlags('r1-models').filter(([, send]) => send).map(([name]) => name).sort()).toEqual(['Claude', 'GPT']);
+          expect(stackFlags('r2-models').filter(([, send]) => send).map(([name]) => name)).toEqual(['GPT']);
+          expect(document.getElementById('debate-run-policy-select').value).toBe('auto');
+          expect(window.__getDraftPlanSynthesizer(planOf())).toBe('Claude');
+          const built = h.debug.buildBasicRun(planOf());
+          expect(built.errors).toEqual([]);
+          // The canvas keeps its own order of models; a parallel round does not depend on it.
+          const sortedModels = (steps) => JSON.stringify(steps.map((step) => ({ ...step, models: step.models.slice().sort((a, b) => a.name.localeCompare(b.name)) })));
+          expect(sortedModels(built.steps)).toBe(sortedModels(window.BasicSchema.assemble(schema)));
+          expect(built.steps.map((step) => step.ref)).toEqual(['r1', 'synth:mid', 'r2', 'final']);
+          expect(built.steps[1].models.map((model) => model.name)).toEqual(['Gemini']);
+          // The settings of a switched-off model came along.
+          expect(window.BasicSchema.toSettings(h.debug.getPipelineStoreSnapshot().pipelines.Installed.schema).customModelSettings.r1.Grok).toEqual({ promptTemplate: 'KEPT REQUEST' });
+          await h.run();
+          expect(h.starts.map((start) => start.selectedLLMs.slice().sort())).toEqual([['Claude', 'GPT'], ['Gemini'], ['GPT'], ['Claude']]);
+          expect(h.starts[2].promptsByModel.GPT).toContain('INSTALLED_TASK');
+          expect(h.starts[2].promptsByModel.GPT).toContain('R2_GPT_CONTENT');
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      test('loading a pipeline keeps the Send marks it stores, also for a record saved before the schema', async () => {
+        const h = setupCustomInheritance('Marks host', { synthesis: '' });
+        try {
+          const record = { ...h.config };
+          record.protocol = { ...record.protocol, selectedModels: ['Claude', 'GPT'] };
+          record.modelStacks = { 'r1-models': { items: [{ name: 'Claude', input: true, send: true, role: null }, { name: 'GPT', input: true, send: true, role: null }] },
+            'r2-models': { items: [{ name: 'Claude', input: false, send: false, role: null }, { name: 'GPT', input: true, send: true, role: null }] } };
+          h.debug.setPipelineStoreForTest({ active: 'Marks host', order: ['Marks host'], pipelines: { 'Marks host': record } });
+          h.debug.applyPipelineConfig(record);
+          expect(stackFlags('r2-models').map(([name, send]) => [name, send])).toEqual([['Claude', false], ['GPT', true]]);
+          expect(stackFlags('r1-models').map(([name, send]) => [name, send])).toEqual([['Claude', true], ['GPT', true]]);
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      test('a schema the canvas cannot show is not installed and names the place; the store stays as it was', async () => {
+        const h = setupCustomInheritance('Install refused', { synthesis: '' });
+        try {
+          const before = JSON.stringify(h.debug.getPipelineStoreSnapshot().pipelines);
+          const unknownModel = { schemaVersion: 1, origin: 'user', steps: [{ ref: 'r1', kind: 'round', models: [{ name: 'Nobody' }] }] };
+          const result = await h.debug.installBasicSchema('Refused', unknownModel);
+          expect(result.ok).toBe(false);
+          expect(result.errors[0]).toMatchObject({ path: 'steps[0].models[0].name' });
+          const invalid = await h.debug.installBasicSchema('Refused', { schemaVersion: 99, origin: 'user', steps: [] });
+          expect(invalid.errors[0].message).toContain('более новой версией Basic');
+          const unknownRole = await h.debug.installBasicSchema('Refused', { schemaVersion: 1, origin: 'user', steps: [{ ref: 'r1', kind: 'round', models: [{ name: 'GPT', role: 'ghost' }] }] });
+          expect(unknownRole.errors[0]).toMatchObject({ path: 'steps[0].models[0].role' });
+          expect(JSON.stringify(h.debug.getPipelineStoreSnapshot().pipelines)).toBe(before);
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      test('a schema file is added through Import under the given name and does not replace the pipelines', async () => {
+        const h = setupCustomInheritance('Import host', { synthesis: '' });
+        const oldPrompt = window.prompt;
+        try {
+          window.prompt = jest.fn(() => 'From file');
+          document.getElementById('pipeline-import-btn').click();
+          const input = [...document.querySelectorAll('input[type="file"]')].filter((node) => node.accept === 'application/json').pop();
+          const schema = { schemaVersion: 1, origin: 'user', steps: [{ ref: 'r1', kind: 'round', models: [{ name: 'GPT' }, { name: 'Claude' }] }, { ref: 'final', kind: 'synthesis', models: [{ name: 'Gemini' }] }] };
+          const file = new File([JSON.stringify(schema)], 'schema.json', { type: 'application/json' });
+          Object.defineProperty(input, 'files', { value: [file], configurable: true });
+          input.dispatchEvent(new Event('change'));
+          for (let i = 0; i < 100 && !h.debug.getPipelineStoreSnapshot().pipelines['From file']; i += 1) await new Promise((resolve) => setTimeout(resolve, 10));
+          const store = h.debug.getPipelineStoreSnapshot();
+          expect(store.pipelines['From file'].schema.steps.map((step) => step.ref)).toEqual(['r1', 'final']);
+          expect(store.pipelines['Import host']).toBeDefined();
+        } finally { window.prompt = oldPrompt; h.cleanup(); }
+      }, 30000);
+    });
 
     test('a record saved before the schema still loads and runs as before, and the first card save moves it to a schema', async () => {
       const h = setupCustomInheritance('Earlier record', { synthesis: '' });
