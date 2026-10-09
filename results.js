@@ -8249,25 +8249,37 @@ document.addEventListener('click', (event) => {
         // Compact Custom editor. Changes apply to the next run, scoped to a step and model;
         // the immutable request/response record remains separate.
         // An intermediate synthesis has no model block: its insert (between two rounds) is its entry.
-        const intermediateStageAfter = (afterStageId) => (draftPlanForCanvas(getActiveDraftPlan()).plannedStages || [])
+        const intermediateStageId = (afterStageId) => `planned-working-synthesis-after-${afterStageId}`;
+        const intermediateStageAfter = (afterStageId, plan = draftPlanForCanvas(getActiveDraftPlan())) => (plan.plannedStages || [])
             .find((stage) => stage.outputIntent === 'working_synthesis' && stage.upstream?.includes(afterStageId)) || null;
+        // The card of an absent intermediate synthesis is built from a never-persisted copy of the plan.
+        const intermediateCardPlan = (afterStageId) => {
+            const plan = draftPlanForCanvas(getActiveDraftPlan());
+            if (intermediateStageAfter(afterStageId, plan)) return plan;
+            const result = window.DebateDraftPlan.insertSynthesis(JSON.parse(JSON.stringify(plan)), {
+                afterPlannedStageId: afterStageId,
+                participantIds: [window.__getDraftPlanSynthesizer?.(plan)],
+                plannedStageId: intermediateStageId(afterStageId)
+            });
+            return result.ok ? result.plan : plan;
+        };
+        const cardPlanFor = (block) => (block.classList.contains('pipeline-stage-insert')
+            ? intermediateCardPlan(block.dataset.afterStageId)
+            : draftPlanForCanvas(getActiveDraftPlan()));
         const customBlockRef = (block) => {
-            if (block.classList.contains('pipeline-stage-insert')) {
-                const stage = intermediateStageAfter(block.dataset.afterStageId);
-                return stage ? `synth:${stage.plannedStageId}` : '';
-            }
+            if (block.classList.contains('pipeline-stage-insert')) return `synth:${intermediateStageId(block.dataset.afterStageId)}`;
             const stackId = block.closest('.model-stack')?.id || '';
             if (stackId === 'synthesis-stack') return 'final';
             const match = /^r(\d+)-models$/.exec(stackId);
             return match ? `r${match[1]}` : '';
         };
         const customBlockModel = (block) => (block.classList.contains('pipeline-stage-insert')
-            ? intermediateStageAfter(block.dataset.afterStageId)?.participantIds?.[0] || ''
+            ? intermediateStageAfter(block.dataset.afterStageId, cardPlanFor(block))?.participantIds?.[0] || ''
             : block.querySelector('.model-name')?.textContent?.trim() || '');
         const renderCustomBlockInspector = async (block, modal, { pipelineDefaults = false } = {}) => {
             const modelName = pipelineDefaults ? '' : customBlockModel(block);
             const ref = pipelineDefaults ? '' : customBlockRef(block);
-            const steps = pipelineDefaults ? [] : customStepsFromPlan(draftPlanForCanvas(getActiveDraftPlan()), { ref, name: modelName });
+            const steps = pipelineDefaults ? [] : customStepsFromPlan(cardPlanFor(block), { ref, name: modelName });
             const stepIndex = steps.findIndex((step) => step.ref === ref);
             if (!pipelineDefaults && stepIndex < 0) { showNotification('Шаг модели не найден в плане.', 'warn'); return; }
             const step = steps[stepIndex];
@@ -8548,6 +8560,32 @@ document.addEventListener('click', (event) => {
             document.body.classList.add('modal-open');
         };
 
+        // A double click on the final synthesis block or its column label opens the final synthesizer's card,
+        // the same card as its inspect button. It runs before the generic dblclick listener, which would
+        // otherwise open the empty "Final" stage card from the round badge. The synthesizer select keeps its own clicks.
+        const openFinalSynthesizerCard = () => {
+            const block = document.querySelector('#synthesis-stack .pipeline-synthesis-block');
+            if (!block) return;
+            const synthesizer = normalizeExplicitSynthesizer(window.__getDraftPlanSynthesizer?.(
+                window.__pipelineDraftPlanForCanvas?.(window.__getActivePipelineDraftPlan?.())
+            ));
+            if (!synthesizer) {
+                showNotification('Сначала выберите синтезатора.', 'warn');
+                return;
+            }
+            document.getElementById('pipeline-stage-dialog')?.close?.();
+            showPipelineBlockInfo(block);
+        };
+        pipelinePanel.addEventListener('dblclick', (event) => {
+            const target = event.target;
+            if (!target?.closest || target.closest('#synthesis-flow-select')) return;
+            const finalTarget = target.closest('.pipeline-synthesis-block, #synthesisColumn .stage-label');
+            if (!finalTarget || !pipelinePanel.contains(finalTarget)) return;
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            openFinalSynthesizerCard();
+        });
+
         // The card's round role goes to each block's own mini-request selector, through its change
         // event, as a manual choice does. Mixed manual roles are replaced only after confirmation.
         const applyRoundRole = async (round, select) => {
@@ -8616,11 +8654,13 @@ document.addEventListener('click', (event) => {
         // A single click on a stage insert toggles the intermediate synthesis after a short wait;
         // a double click cancels that toggle and opens the synthesis card (Custom only).
         let intermediateTimer = null;
+        // Function declarations are hoisted within this block; the bridge keeps the call explicit for tests and other scopes.
+        window.__toggleIntermediateSynthesis = toggleIntermediateSynthesis;
         pipelinePanel.addEventListener('click', (event) => {
             const insert = event.target?.closest?.('.pipeline-stage-insert');
             if (insert) {
                 clearTimeout(intermediateTimer);
-                intermediateTimer = setTimeout(() => void toggleIntermediateSynthesis(insert), 250);
+                intermediateTimer = setTimeout(() => void window.__toggleIntermediateSynthesis?.(insert), 250);
                 return;
             }
             const stageBadge = event.target?.closest?.('.round-badge');
@@ -8665,12 +8705,15 @@ document.addEventListener('click', (event) => {
             if (outside) stageDialog.close();
         });
 
-        // Adds the intermediate synthesis first when it is absent, then opens its card.
-        const openIntermediateCard = async (insert) => {
+        // Opens the card without changing the stage; an absent stage shows its card from a virtual plan.
+        const openIntermediateCard = (insert) => {
             const afterStageId = insert.dataset.afterStageId || '';
-            if (!intermediateStageAfter(afterStageId) && !(await toggleIntermediateSynthesis(insert))) return;
-            const current = [...pipelinePanel.querySelectorAll('.pipeline-stage-insert')].find((button) => button.dataset.afterStageId === afterStageId);
-            if (current && intermediateStageAfter(afterStageId)) showPipelineBlockInfo(current);
+            const plan = draftPlanForCanvas(getActiveDraftPlan());
+            if (!intermediateStageAfter(afterStageId, plan) && !window.__getDraftPlanSynthesizer?.(plan)) {
+                showNotification('Сначала выберите финального синтезатора.', 'warn');
+                return;
+            }
+            showPipelineBlockInfo(insert);
         };
 
         pipelinePanel.addEventListener('dblclick', (event) => {
@@ -8678,7 +8721,7 @@ document.addEventListener('click', (event) => {
             if (insertBtn && pipelinePanel.contains(insertBtn)) {
                 event.preventDefault();
                 clearTimeout(intermediateTimer);
-                if (isCustomEnginePipeline()) void openIntermediateCard(insertBtn);
+                if (isCustomEnginePipeline()) openIntermediateCard(insertBtn);
                 return;
             }
             const roundBadge = event.target.closest('.round-badge');

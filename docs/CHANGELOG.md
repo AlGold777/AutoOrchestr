@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-09 — Intermediate synthesis card opens without adding the stage, version 2.81.655
+
+- Double click on a stage insert opens the intermediate synthesis card and no longer adds or removes the stage; the button keeps its state. An absent stage shows its card from a virtual plan (id `planned-working-synthesis-after-<afterStageId>`, ref `synth:<id>`) that is never saved. Personal text saved there applies when a single click later adds the stage.
+- Double click with no final synthesizer selected shows a warning and does nothing.
+- The single-click toggle is called through a window bridge (`window.__toggleIntermediateSynthesis`); the jsdom toggle test checks that the bridge exists and that a real click adds the stage. A disabled insert (no final synthesizer, or a run in progress) receives no clicks at all; that is the existing rule, unchanged.
+- Tests: the double-click test expects no state change and then applies the saved text after a single click.
+
 ### 2026-10-09 — Intermediate synthesis: click toggles, double click opens its card, version 2.81.654
 
 - Single click on a stage insert adds or removes the intermediate synthesis after 250 ms; a double click cancels that and adds the synthesis if it is absent, then opens its Custom card (`synth:<plannedStageId>`). Previously a double click only toggled and a single click opened the card.

@@ -2480,12 +2480,12 @@ describe('Pipeline debate favorites view', () => {
       const column = document.getElementById('round1');
       if (!column.querySelector('.pipeline-stage-insert')) column.insertAdjacentHTML('afterbegin', '<button type="button" class="pipeline-stage-insert" data-after-stage-id="canvas-r1"></button>');
       const insert = column.querySelector('.pipeline-stage-insert');
-      // The double click cancels the pending single-click toggle, adds the synthesis and opens its card.
+      // The double click cancels the pending single-click toggle and opens the card; the stage is not added.
       insert.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       insert.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       insert.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
       await delay(300);
-      expect(insert.classList.contains('has-intermediate-synthesis')).toBe(true);
+      expect(insert.classList.contains('has-intermediate-synthesis')).toBe(false);
       const modal = h.modal();
       expect(modal.querySelector('.custom-card-model').textContent).toContain('Gemini');
       modal.querySelector('#custom-card-request').value = 'SYNTH_PERSONAL {вход}';
@@ -2493,6 +2493,10 @@ describe('Pipeline debate favorites view', () => {
       await delay(0);
       expect(h.debug.capturePipelineConfig().customModelSettings['synth:planned-working-synthesis-after-canvas-r1'].Gemini)
         .toEqual({ promptTemplate: 'SYNTH_PERSONAL {вход}', maxWords: null });
+      // The saved text applies once a single click adds the stage.
+      insert.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await delay(300);
+      expect(insert.classList.contains('has-intermediate-synthesis')).toBe(true);
       await h.run();
       expect(h.starts[1].promptsByModel.GEMINI).toContain('SYNTH_PERSONAL');
       expect(h.starts[1].promptsByModel.GEMINI).not.toContain('{вход}');
@@ -2505,6 +2509,8 @@ describe('Pipeline debate favorites view', () => {
       const column = document.getElementById('round1');
       if (!column.querySelector('.pipeline-stage-insert')) column.insertAdjacentHTML('afterbegin', '<button type="button" class="pipeline-stage-insert" data-after-stage-id="canvas-r1"></button>');
       const insert = column.querySelector('.pipeline-stage-insert');
+      // The click handler reaches the toggle only through this bridge; without it nothing is added.
+      expect(typeof window.__toggleIntermediateSynthesis).toBe('function');
       insert.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       expect(insert.classList.contains('has-intermediate-synthesis')).toBe(false);
       await delay(300);
@@ -2512,6 +2518,20 @@ describe('Pipeline debate favorites view', () => {
       insert.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await delay(300);
       expect(insert.classList.contains('has-intermediate-synthesis')).toBe(false);
+    } finally { h.cleanup(); }
+  }, 30000);
+
+  test('double-clicking the final synthesis block opens the final synthesizer card; a single click does not', async () => {
+    const h = setupCustomInheritance('Final card', { synthesis: 'Gemini' });
+    try {
+      const block = document.querySelector('#synthesis-stack .pipeline-synthesis-block');
+      expect(block).not.toBeNull();
+      block.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      expect(document.getElementById('pipeline-block-info-modal')?.style.display).not.toBe('flex');
+      block.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+      const modal = h.modal();
+      expect(modal.style.display).toBe('flex');
+      expect(modal.querySelector('.custom-card-model').textContent).toContain('Gemini');
     } finally { h.cleanup(); }
   }, 30000);
 
