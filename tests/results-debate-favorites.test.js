@@ -204,7 +204,7 @@ function renderDebateDom() {
       </label>
       <input id="debate-max-turns-input" type="number" value="6" hidden aria-hidden="true">
       <div id="pipeline-panel">
-        <span id="currentPipelineName" class="pipeline-name"></span><div class="entry-point" id="entryPoint">▶</div>
+        <span id="currentPipelineName" class="pipeline-name">Universal</span><div class="entry-point" id="entryPoint">▶</div>
         <button type="button" id="pipeline-add-round-btn">+</button>
         <button type="button" id="pipeline-add-btn">+</button><button type="button" id="pipeline-save-btn">Save</button>
         <div class="stage-column" id="round1" data-round="1">
@@ -2854,5 +2854,10 @@ describe('Pipeline debate favorites view', () => {
     expect(window.__pipelineLifecycleDebug.getModeratorDispatchText()).toBe('before  after');
   });
 
+
+  test('the page boots and renders model blocks with a non-empty template header', () => {
+    // The template header is non-empty, as on the real page: boot must not ask the store helpers before they exist.
+    expect(document.querySelectorAll('.model-block').length).toBeGreaterThan(0);
+  });
 
 });

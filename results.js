@@ -3783,10 +3783,12 @@ document.addEventListener('click', (event) => {
         };
 
         const hydratePipelineStacks = () => {
+            // Runs at load, before the pipeline store helpers exist, so it must not ask which engine is
+            // selected: the «Custom» option is added afterwards by syncCustomRoleOption.
             PipelineRuntime?.hydratePipelineStacks?.({
                 document,
                 escapeHtml,
-                orderedPrompts: getRoleOptionPrompts()
+                orderedPrompts: getOrderedJudgePrompts()
             });
         };
 

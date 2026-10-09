@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-09 — Fix page boot broken by the Custom role option, version 2.81.653
+
+- 2.81.652 asked which engine is selected while the model stacks were built at load, before the pipeline store helpers existed (`Cannot access 'getPipelineConfigByName' before initialization`). The error stopped the rest of `results.js` initialisation: model blocks were not drawn or selectable and the main page lost the card layout switch and the overlap effect. Boot now builds the stacks from the plain mini-request list; the Custom option is added afterwards by the existing sync.
+- Tests: the test page now has the non-empty header name of the real page (the empty one hid the error); added a boot check that model blocks render.
+
 ### 2026-10-08 — Custom in the round role list and the intermediate synthesis card, version 2.81.652
 
 - Custom engine only: the mini-request list of a round's blocks and of the round card's «Роль для всех моделей раунда» ends with **Custom**. Choosing it shows a text field in the round card; the text is stored per round in `customDefaults.roundPrompts[r2…]` (saved, copied and exported with the other ▶ values) and reaches every model that chose Custom as «Дополнительно для тебя». Other roles and an empty text work as before.
