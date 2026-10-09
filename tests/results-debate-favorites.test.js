@@ -1964,7 +1964,7 @@ describe('Pipeline debate favorites view', () => {
   test('default pipeline list exposes only universal purpose profiles', () => {
     const names = Array.from(document.querySelectorAll('#pipelineItems .pipeline-item'))
       .map((item) => item.dataset.name);
-    expect(names).toEqual(['Custom', 'Polishing', 'Delta', 'Test', 'Research', 'Architecture']);
+    expect(names).toEqual(['Basic', 'Polishing', 'Delta', 'Test', 'Research', 'Architecture']);
     expect(document.querySelectorAll('#pipelineItems .pipeline-item-delete')).toHaveLength(0);
     // Every template, Custom included, is selectable the same way.
     document.querySelectorAll('#pipelineItems .pipeline-radio').forEach((radio) => expect(radio.disabled).toBe(false));
@@ -2897,12 +2897,12 @@ describe('Pipeline debate favorites view', () => {
       expect(h.starts[1].promptsByModel.GPT).toContain('PERSISTED_CONTENT');
       const template = { ...h.config, customDefaults: { roundTask: 'MUST_NOT_LOAD_IN_TEMPLATE' } };
       h.debug.clearCustomSessionForTest();
-      h.debug.setPipelineStoreForTest({ active: 'Custom', order: ['Custom'], pipelines: { Custom: template } });
+      h.debug.setPipelineStoreForTest({ active: 'Basic', order: ['Basic'], pipelines: { Basic: template } });
       h.debug.applyPipelineConfig(template);
       expect(h.debug.getCustomPipelineDefaults()).toEqual({});
       await h.general({ roundTask: 'TEMPLATE_SESSION' });
       expect(h.debug.getCustomPipelineDefaults().roundTask).toBe('TEMPLATE_SESSION');
-      expect(h.debug.getPipelineStoreSnapshot().pipelines.Custom.customDefaults.roundTask).toBe('MUST_NOT_LOAD_IN_TEMPLATE');
+      expect(h.debug.getPipelineStoreSnapshot().pipelines.Basic.customDefaults.roundTask).toBe('MUST_NOT_LOAD_IN_TEMPLATE');
       const oldPrompt = window.prompt;
       window.prompt = jest.fn(() => 'Copy from template');
       try { document.getElementById('pipeline-save-btn').click(); await settleCustomCard(); }
@@ -2911,7 +2911,7 @@ describe('Pipeline debate favorites view', () => {
       expect(h.debug.getCustomPipelineDefaults().roundTask).toBe('TEMPLATE_SESSION');
       await h.run();
       expect(h.starts[1].promptsByModel.GPT).toContain('TEMPLATE_SESSION');
-      h.debug.setPipelineStoreForTest({ active: 'Custom', order: ['Custom'], pipelines: { Custom: template } });
+      h.debug.setPipelineStoreForTest({ active: 'Basic', order: ['Basic'], pipelines: { Basic: template } });
       h.debug.applyPipelineConfig(template);
       expect(h.debug.getCustomPipelineDefaults().roundTask).toBe('TEMPLATE_SESSION');
       h.debug.clearCustomSessionForTest();
@@ -2956,6 +2956,29 @@ describe('Pipeline debate favorites view', () => {
     expect(store.pipelines.Test.protocol.presetId).toBe('TEST');
   });
 
+  test('store version 8: the template Custom becomes Basic; a user pipeline saved as Basic keeps its data', () => {
+    const debug = window.__pipelineLifecycleDebug;
+    const config = (marker) => ({ protocol: { type: 'universal', presetId: 'CUSTOM' }, marker });
+    const old = debug.normalizePipelineStore({
+      version: 7, active: 'Custom', lastSaved: 'Custom', order: ['Custom', 'Mine'],
+      pipelines: { Custom: config('template'), Mine: config('mine') }, draftPlans: {}, overrides: { synthesizers: { Custom: 'GPT' } }
+    });
+    expect(old.active).toBe('Basic');
+    expect(old.lastSaved).toBe('Basic');
+    expect(old.order).toEqual(['Mine']);
+    expect(old.pipelines.Custom).toBeUndefined();
+    expect(old.overrides.synthesizers).toEqual({});
+    const clash = debug.normalizePipelineStore({
+      version: 7, active: 'Basic', order: ['Basic', 'Basic 2'], pipelines: { Basic: config('users'), 'Basic 2': config('other') }
+    });
+    expect(clash.active).toBe('Basic 3');
+    expect(clash.order).toEqual(['Basic 3', 'Basic 2']);
+    expect(clash.pipelines['Basic 3'].marker).toBe('users');
+    expect(clash.pipelines.Basic).toBeUndefined();
+    const current = debug.normalizePipelineStore({ version: 8, active: 'Basic', order: ['Basic'], pipelines: { Basic: config('template') } });
+    expect(current.pipelines.Basic.marker).toBe('template');
+  });
+
   test('retiring Red Team removes the built-in and preserves user-named copies', () => {
     const debug = window.__pipelineLifecycleDebug;
     const saved = { protocol: { type: 'universal', presetId: 'UNIVERSAL_RED_TEAM' }, modelStacks: { 'r1-models': { items: [{ name: 'GPT', send: true }] } } };
@@ -2965,7 +2988,7 @@ describe('Pipeline debate favorites view', () => {
     });
     expect(debug.ensureDefaultPipelinePresets()).toBe(true);
     const store = debug.getPipelineStoreSnapshot();
-    expect(store.order).toEqual(['Custom', 'Polishing', 'Delta', 'Test', 'Research', 'Architecture', 'My review']);
+    expect(store.order).toEqual(['Basic', 'Polishing', 'Delta', 'Test', 'Research', 'Architecture', 'My review']);
     expect(store.pipelines['Red Team']).toBeUndefined();
     expect(store.pipelines['My review'].modelStacks).toEqual(saved.modelStacks);
     expect(store.active).toBe('');

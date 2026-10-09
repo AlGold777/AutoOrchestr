@@ -3524,7 +3524,7 @@ document.addEventListener('click', (event) => {
         const pipelineList = pipelinePanel.querySelector('.pipeline-list');
         const pipelineListHeader = pipelineList ? pipelineList.querySelector('.pipeline-list-header') : null;
         const PIPELINE_STORAGE_KEY = 'llmComparatorPipelines';
-        const PIPELINE_STORE_VERSION = 7;
+        const PIPELINE_STORE_VERSION = 8;
         const pipelineStore = {
             version: PIPELINE_STORE_VERSION,
             pipelines: {},
@@ -3566,7 +3566,31 @@ document.addEventListener('click', (event) => {
             });
         }
 
-        const normalizePipelineStore = (value) => {
+        // Store version 8: the template «Custom» is now «Basic». The old template entry is dropped (the
+        // template is rebuilt from code), its active/last-saved mark moves to «Basic», and a pipeline the
+        // user saved as «Basic» keeps its data under the first free «Basic N».
+        const migrateBasicTemplateName = (value) => {
+            if ((Number(value.version) || 0) >= 8) return value;
+            const next = JSON.parse(JSON.stringify(value));
+            const nameMaps = () => [next.pipelines, next.draftPlans, next.overrides?.longRoundLimits, next.overrides?.synthesizers, next.overrides?.profiles]
+                .filter((map) => map && typeof map === 'object');
+            const taken = (name) => nameMaps().some((map) => name in map) || (Array.isArray(next.order) && next.order.includes(name));
+            const renameEverywhere = (from, to) => {
+                nameMaps().forEach((map) => { if (from in map) { map[to] = map[from]; delete map[from]; } });
+                if (Array.isArray(next.order)) next.order = next.order.map((name) => (name === from ? to : name));
+                ['active', 'lastSaved'].forEach((key) => { if (next[key] === from) next[key] = to; });
+            };
+            if (taken('Basic')) {
+                let index = 2;
+                while (taken(`Basic ${index}`)) index += 1;
+                renameEverywhere('Basic', `Basic ${index}`);
+            }
+            nameMaps().forEach((map) => { delete map.Custom; });
+            if (Array.isArray(next.order)) next.order = next.order.filter((name) => name !== 'Custom');
+            ['active', 'lastSaved'].forEach((key) => { if (next[key] === 'Custom') next[key] = 'Basic'; });
+            return next;
+        };
+        const normalizePipelineStore = (input) => {
             const base = {
                 version: PIPELINE_STORE_VERSION,
                 pipelines: {},
@@ -3580,7 +3604,8 @@ document.addEventListener('click', (event) => {
                 },
                 draftPlans: {}
             };
-            if (!value || typeof value !== 'object') return base;
+            if (!input || typeof input !== 'object') return base;
+            const value = migrateBasicTemplateName(input);
             const pipelines = value.pipelines && typeof value.pipelines === 'object' ? value.pipelines : {};
             const order = Array.isArray(value.order)
                 ? value.order.filter((name) => typeof name === 'string' && name.trim())
@@ -5615,7 +5640,7 @@ document.addEventListener('click', (event) => {
         let phantomRunStateReported = false;
         const getDebateRunControls = () => {
             if (customAbortController) {
-                return { action: 'stop', icon: 'ti ti-player-stop', title: 'Остановить Custom', active: true, enabled: true, stepEnabled: false };
+                return { action: 'stop', icon: 'ti ti-player-stop', title: 'Остановить Basic', active: true, enabled: true, stepEnabled: false };
             }
             if (polishingAbortController || deltaAbortController) {
                 return { action: 'stop', icon: 'ti ti-player-stop', title: polishingAbortController ? 'Остановить Polishing' : 'Остановить Delta', active: true, enabled: true, stepEnabled: false };
@@ -6017,7 +6042,7 @@ document.addEventListener('click', (event) => {
                 const overflow = models.find((model) => !budget.check({ parts: [{ text: promptsByModel?.[model] ?? prompt }], limits }).ok);
                 if (overflow) {
                     window.MessageDelivery?.closeBatch({ models, requestIds: transportRequestIds, cancelled: true, reason: 'context_full' });
-                    const error = new Error('Custom: полный запрос не помещается в бюджет контекста.');
+                    const error = new Error('Basic: полный запрос не помещается в бюджет контекста.');
                     error.code = 'context_full';
                     throw error;
                 }
@@ -6717,12 +6742,12 @@ document.addEventListener('click', (event) => {
         const customRunStore = window.CustomRunRecord && chrome?.storage?.local
             ? window.CustomRunRecord.createStore({ storage: window.CustomRunRecord.chromeStorage(chrome.storage.local) })
             : null;
-        const customPipelineName = () => String(pipelineStore.active || getPipelineHeaderName() || 'Custom').trim();
+        const customPipelineName = () => String(pipelineStore.active || getPipelineHeaderName() || 'Basic').trim();
         const runCustomFromPage = async ({ task }) => {
             const engine = window.CustomEngine;
             const steps = customStepsFromPlan(draftPlanForCanvas(getActiveDraftPlan()));
             if (!engine || !steps.some((step) => step.kind === 'round')) {
-                showNotification('Custom: выберите модели хотя бы в одном раунде.', 'warn');
+                showNotification('Basic: выберите модели хотя бы в одном раунде.', 'warn');
                 return false;
             }
             const useApiFallback = apiModeCheckbox ? apiModeCheckbox.checked : true;
@@ -6828,7 +6853,7 @@ document.addEventListener('click', (event) => {
                             const text = String(batch?.responses?.[model] || '');
                             if (text.trim()) {
                                 updateDebateModelCardOutput(model, text, '', {
-                                    status: modelResult.status || 'SUCCESS', source: 'custom', role: `Custom · ${label}`,
+                                    status: modelResult.status || 'SUCCESS', source: 'custom', role: `Basic · ${label}`,
                                     pipelineRunId: runContext.pipelineRunId, pipelineRoundId: `s${step + 1}`,
                                     transportRequestId: modelResult.transportRequestId || '', requestId: modelResult.transportRequestId || ''
                                 });
@@ -6855,14 +6880,14 @@ document.addEventListener('click', (event) => {
                 finishCustomRunProgress(result.stopReason === 'steps_done' ? 'COMPLETED' : 'CANCELLED');
                 if (record) { window.CustomRunRecord.finishRun(record, { stopReason: result.stopReason }); await saveRecord(true); }
                 // Always shown, also after Stop: the accepted answers of the last step that has any.
-                updateDebateModelCardOutput('Custom', [
+                updateDebateModelCardOutput('Basic', [
                     result.answers.length ? result.answers.map((text, index) => (result.answers.length > 1 ? `Ответ ${index + 1}:\n${text}` : text)).join('\n\n') : 'Принятых ответов нет.',
                     `Остановка: ${stopText}.`
                 ].join('\n\n'), '', {
-                    status: 'SUCCESS', source: 'custom', role: 'Custom · итог',
+                    status: 'SUCCESS', source: 'custom', role: 'Basic · итог',
                     pipelineRunId: runContext.pipelineRunId, pipelineRoundId: 'custom-result'
                 });
-                showNotification(`Custom: ${stopText}.`, result.stopReason === 'steps_done' ? 'info' : 'warn');
+                showNotification(`Basic: ${stopText}.`, result.stopReason === 'steps_done' ? 'info' : 'warn');
                 return result.stopReason !== 'cancelled';
             } catch (err) {
                 console.error('[RESULTS] Custom run failed', err);
@@ -8455,7 +8480,7 @@ document.addEventListener('click', (event) => {
             modal.setAttribute('aria-labelledby', 'pipeline-block-info-title');
             content.innerHTML = `
                 <header class="custom-card-top ${pipelineDefaults ? 'custom-defaults-top' : ''}">
-                    <h3 class="custom-card-model" id="pipeline-block-info-title">${pipelineDefaults ? '▶ Custom' : `${modelIconData[modelName] ? `<img src="${modelIconData[modelName]}" alt="" width="26" height="26">` : ''}${escapeHtml(modelName)}<span class="custom-card-where">${escapeHtml(preview.label)}</span>`}</h3>
+                    <h3 class="custom-card-model" id="pipeline-block-info-title">${pipelineDefaults ? '▶ Basic' : `${modelIconData[modelName] ? `<img src="${modelIconData[modelName]}" alt="" width="26" height="26">` : ''}${escapeHtml(modelName)}<span class="custom-card-where">${escapeHtml(preview.label)}</span>`}</h3>
                     ${pipelineDefaults ? '' : `<div class="custom-card-length"><label for="custom-card-length">Длина ответа:</label> <input id="custom-card-length" type="number" min="1" step="1" inputmode="numeric" placeholder="${general}" aria-describedby="custom-card-length-note"> слов</div>`}
                     <button type="button" class="modal-button accent" id="custom-card-save">Save</button>
                 </header>
@@ -9213,7 +9238,7 @@ document.addEventListener('click', (event) => {
         const customEntryPoint = document.getElementById('entryPoint');
         customEntryPoint?.setAttribute('role', 'button');
         customEntryPoint?.setAttribute('tabindex', '0');
-        customEntryPoint?.setAttribute('aria-label', 'Общие значения Custom');
+        customEntryPoint?.setAttribute('aria-label', 'Общие значения Basic');
         const openCustomDefaults = () => {
             if (window.PipelinePresets?.getPipelinePreset?.(getSelectedPipelinePresetId())?.runner === 'custom') showPipelineBlockInfo(null, { pipelineDefaults: true });
         };
@@ -16848,7 +16873,7 @@ document.addEventListener('click', (event) => {
                 // No Debate stages: the latest Custom run, from its own part of the journal.
                 const runId = window.ReportDigest.latestCustomRunId(report.delivery?.journal);
                 if (!runId) {
-                    showNotification('Extract: в этом прогоне нет этапов Debate и прогона Custom (Polishing, ручная отправка), разбирать нечего. Журнал доставки — в сохранённом Disput Flow .json.', 'info');
+                    showNotification('Extract: в этом прогоне нет этапов Debate и прогона Basic (Polishing, ручная отправка), разбирать нечего. Журнал доставки — в сохранённом Disput Flow .json.', 'info');
                     flashButtonFeedback(button, 'warn');
                     return;
                 }

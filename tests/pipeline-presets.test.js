@@ -7,7 +7,7 @@ describe('universal pipeline presets', () => {
       'UNIVERSAL_STANDARD', 'CUSTOM', 'TEST', 'UNIVERSAL_RESEARCH', 'UNIVERSAL_RED_TEAM', 'ARCHITECTURE', 'POLISHING', 'DELTA'
     ]);
     expect(Presets.BUILTIN_PIPELINE_DEFINITIONS.map((item) => item.name)).toEqual([
-      'Custom', 'Polishing', 'Delta', 'Test', 'Research', 'Architecture'
+      'Basic', 'Polishing', 'Delta', 'Test', 'Research', 'Architecture'
     ]);
     expect(JSON.stringify(Presets.PIPELINE_PRESETS)).not.toMatch(/topology|scheme|roundLimit|waveLimit|turnLimit/i);
     expect(Presets.isPresetEnabled('CUSTOM')).toBe(true);

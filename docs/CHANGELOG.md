@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-09 — The engine and template Custom are renamed Basic, version 2.81.670
+
+- The template name, the pipeline list, the ▶ card title, notifications, the run-card role and the stop button now say «Basic». Internal ids and saved keys (`CUSTOM`, `customDefaults`, `customModelSettings`, `disput/custom-engine.js`) are unchanged. The role «Custom» in the role list keeps its name: it is a role, not the engine.
+- Pipeline store version 8 (`migrateBasicTemplateName`, `results.js`): the old template entry «Custom» is dropped and rebuilt as «Basic»; the active/last-saved mark moves to «Basic»; a pipeline the user saved as «Basic» is kept as «Basic N» with all its data.
+- Docs: `custom-pipeline.md` is now `Pipeline scenarios/basic-pipeline.md`.
+- Tests: the template list and presets say Basic; a store test for the migration.
+
 ### 2026-10-09 — «+» lines in the ▶ card apply to every model; ▶ card as tall as the model card, 10% wider, version 2.81.669
 
 - The ▶ card («Общие задания и дисциплина») has the same «+» and lines as the model card («Строка N», copy, «×», «✓»). Lines are stored in `customDefaults.discipline.lines`; empty lines are not saved.
