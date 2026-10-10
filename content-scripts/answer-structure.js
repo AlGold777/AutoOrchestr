@@ -71,6 +71,12 @@
 
   function linearizeText(element, options = {}) {
     if (!element || element.nodeType !== 1 || isIgnored(element)) return '';
+    // Test the page's turn before discarding accessibility nodes. Otherwise the
+    // Gemini label disappears and its thinking heading becomes a valid answer.
+    const geminiTurn = element.closest?.('model-response');
+    const geminiLabel = geminiTurn?.querySelector('h6.screen-reader-model-response-label');
+    const labelText = normalizeText(geminiLabel?.textContent || '');
+    if (labelText && normalizeText(geminiTurn.innerText || geminiTurn.textContent || '').endsWith(labelText)) return '';
     const chunks = [];
     const maxChars = Math.max(1, Number(options.maxChars || 200000));
     let length = 0;
@@ -96,7 +102,11 @@
     try {
       if (element.shadowRoot) Array.from(element.shadowRoot.childNodes || []).forEach(visit);
     } catch (_) {}
-    return normalizeText(chunks.join(' ').slice(0, maxChars));
+    const text = normalizeText(chunks.join(' ').slice(0, maxChars));
+    // Preserve the requested page label in a complete turn, while continuing to
+    // ignore unrelated accessibility text everywhere else.
+    return text && labelText && element.contains(geminiLabel)
+      ? normalizeText(`${labelText} ${text}`) : text;
   }
 
   function directText(node) {

@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-10 — Gemini: wait for the answer body and fill the primary card, version 2.81.694
+
+- Check Gemini's raw turn before accessibility filtering: a thinking heading plus the screen-reader label cannot become answer text after the label is discarded. Keep «Ответ Gemini» in complete answers.
+- Resolve one whole Gemini turn instead of nested fragments. Legacy and snapshot recovery read the latest `model-response`, wait through the label-only gap, and cannot substitute an older turn. Background recovery/delivery also reject thinking-only candidates before publishing them.
+- A real answer replaces a closed Gemini label/thinking placeholder in the primary card. Stale label-only HTML cannot conceal committed text, including short answers. Feed layout and moderator input width are unchanged.
+- Regression: `tests/gemini-answer-gap.test.js` (13.5 s gap, eventual delivery token, legacy/snapshot paths, primary card and stale HTML). Investigation and validation: `docs/gemini-answer-gap-2.81.694.md`.
+
 ### 2026-10-10 — A Gemini text of only thinking + page label is not an answer anywhere, version 2.81.693
 
 - While Gemini thinks, the page text is «heading of the thinking\nОтвет Gemini» (28–46 characters), and for ~13 s between the end of the thinking and the first words of the answer it is the label alone. The heading plus the label passed the `length >= 20` bar of `AnswerContentClassifier`, so the pipeline finalized it and the card kept «Ответ Gemini» as the answer (the real answer came later as Δ revisions).

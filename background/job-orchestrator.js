@@ -480,6 +480,10 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
     } catch (_) {}
   };
   walkRoot(document);
+  if (normalizedModel === 'gemini') {
+    const turns = document.querySelectorAll('model-response');
+    if (turns.length) nodes.splice(0, nodes.length, turns[turns.length - 1]);
+  }
   if (normalizedModel === 'le chat') {
     const assistants = document.querySelectorAll('[data-message-author-role="assistant"], [data-role="assistant"]');
     const latest = assistants[assistants.length - 1];
@@ -493,7 +497,7 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
     if (node?.closest?.('textarea,input,button,nav,header,footer,form,[contenteditable="true"],[data-message-part-type="reasoning"],[data-message-author-role="user"],[data-role="user"],[hidden],[inert],[aria-hidden="true"]')) return true;
     return false;
   };
-  const getText = (node) => normalizedModel === 'le chat' && window.AnswerStructure
+  const getText = (node) => ['le chat', 'gemini'].includes(normalizedModel) && window.AnswerStructure
     ? window.AnswerStructure.linearizeText(node)
     : String(node?.innerText || node?.textContent || '').replace(/\s+/g, ' ').trim();
   const hashText = (value = '') => {
@@ -545,6 +549,7 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
       };
     })
     .filter((candidate) => candidate.text.length >= minChars)
+    .filter((candidate) => !(normalizedModel === 'gemini' && /(?:Ответ Gemini|Gemini said:?)\s*$/i.test(candidate.text)))
     .filter((candidate) => !excludeTextSignatures.has(normalizeSignature(candidate.text)))
     .filter((candidate) => !skipSelectors.has(candidate.selector) && !skipSelectors.has(candidate.descriptor));
   // F6.2: positional turn anchor from the dispatch baseline — candidates that
@@ -1097,6 +1102,7 @@ async function lateCollectAnswer({ llmName, tabId, reason = 'late_collect', meta
 
 function acceptLateCollectResult(llmName, result, meta = {}) {
   if (!llmName || !result?.ok || !result.text) return false;
+  if (String(llmName).toLowerCase() === 'gemini' && answerHasNoBodyYet(result.text)) return false;
   const entry = jobState?.llms?.[llmName] || null;
   const incomingText = String(result.text || '').trim();
   const incomingHtml = String(result.html || '');
@@ -2105,6 +2111,9 @@ function shouldAcceptMaterializeRecoveryResult(llmName, entry, result = {}, evid
   const source = String(result?.source || evidenceSummary?.source || '').toLowerCase();
   const text = String(result?.text || evidenceSummary?.text || '').trim();
   const length = text.length;
+  if (String(llmName).toLowerCase() === 'gemini' && answerHasNoBodyYet(text)) {
+    return { ok: false, reason: 'gemini_answer_body_pending', length, source: source || null };
+  }
   const dispatchId = evidenceSummary?.dispatchId || result?.dispatchId || entry?.lastDispatchMeta?.dispatchId || entry?.confirmedDispatchId || null;
   if (isStaleBaselineCandidate(entry, text, dispatchId)) {
     return { ok: false, reason: 'stale_baseline_answer', length, source: source || null, dispatchId };
@@ -8290,6 +8299,13 @@ function handleLLMResponse(llmName, answer, error = null, meta = null, answerHtm
     return typeof answer === 'string' ? answer : String(answer ?? '');
   })().trim();
   const earlyIsSuccess = !error && !!earlyAnswerText;
+  // Label/thinking is a pending turn, not a failed or successful answer. Keep
+  // collection open even for fallback deliveries that bypass DOM inspection.
+  if (llmName.toLowerCase() === 'gemini' && answerHasNoBodyYet(earlyAnswerText)) {
+    if (!error) return;
+    answer = '';
+    answerHtml = '';
+  }
   if (earlyIsSuccess && self.CompletionAuthorityRegistry?.validateDelivery) {
     const authorityGate = self.CompletionAuthorityRegistry.validateDelivery(llmName, {
       answer: earlyAnswerText,
