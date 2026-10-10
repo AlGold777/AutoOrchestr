@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-10-10 — Pipeline panel: the «Карта состояния» block is removed, version 2.81.682
+
+- `#disput-state-map-panel` (with the case export / import / delete buttons) is removed from `pipeline_panel.html`; `disput-state-map-view.js` skips the page when the block is absent.
+
 ### 2026-10-10 — Pipeline: Get it moves to a double click on Run; Auto takes its place, version 2.81.681
 
 - The Get it button of the Pipeline panel is removed; a double click on Run runs the same shared collection pass (`bindGetItButton`, all models). The second click of a double click no longer stops the run.
