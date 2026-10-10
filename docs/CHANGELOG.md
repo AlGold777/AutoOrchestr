@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-10 — A retry after a missing answer repeats the request, version 2.81.697
+
+- Field export for 2.81.695: Gemini round 3 failed with `completion_authority_dispatch_mismatch`, so the round had no text. The page shows the full round-3 request was never sent; the engine judged the missing text as an «empty answer» and sent «Твой предыдущий ответ пустой…» without the task. Gemini answered that line, so the round-3 answer is not an answer to the round.
+- `disput/custom-engine.js`: when an attempt returns no text at all (`empty`), the retry sends the same request again. The correction text is kept for answers that came back and were not accepted (`token_only`, too short, cut off, error).
+- The cause of the dispatch-id mismatch itself is not found; the log does not show which dispatch id the delivery carried. Open.
+
 ### 2026-10-10 — Bound an idle unconfirmed dispatch, version 2.81.696
 
 - Field exports for 2.81.695: Gemini round 1 delivered 2028 characters; round 2 accepted the command but had no confirmed submission or answer for several minutes. A subsequent run was refused 111 times with `RUN_ALREADY_ACTIVE`.

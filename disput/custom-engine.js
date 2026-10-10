@@ -242,7 +242,9 @@
         });
         if (reply?.closedByOwner) return { closedByOwner: true };
         pending = retry;
-        current = Object.fromEntries(retry.map((name) => [name, {
+        // No text at all means no answer exists to correct (a refused or unconfirmed dispatch looks the same):
+        // the same request goes out again. A correction is for an answer that came back and was not accepted.
+        current = Object.fromEntries(retry.map((name) => outcome[name].reason === 'empty' ? [name, { ...current[name], retryOf: tryNo }] : [name, {
           prompt: correctionPrompt(outcome[name].reason, step.models.find((model) => model.name === name)?.discipline?.correction),
           parts: { correction: { reason: outcome[name].reason, text: correctionPrompt(outcome[name].reason, step.models.find((model) => model.name === name)?.discipline?.correction) } },
           retryOf: tryNo
