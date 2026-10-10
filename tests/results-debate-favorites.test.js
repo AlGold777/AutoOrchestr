@@ -3383,6 +3383,83 @@ describe('Pipeline debate favorites view', () => {
       }, 30000);
     });
 
+    describe('Save and the card saves derive the record from the schema', () => {
+      const derived = (h, name) => {
+        const record = h.debug.getPipelineStoreSnapshot().pipelines[name];
+        return { record, again: h.debug.recordFromSchema(name, record.schema).record };
+      };
+
+      test('Save stores a record whose canvas members are exactly those derived from its schema', async () => {
+        const h = setupCustomInheritance('Derived save host', { synthesis: '' });
+        try {
+          h.debug.clearCustomSessionForTest();
+          document.querySelector('.pipeline-item[data-name="Basic"]').click();
+          await settleCustomCard();
+          await saveAs('Derived save');
+          const { record, again } = derived(h, 'Derived save');
+          expect(record.schema.basedOn).toBe('Basic');
+          expect(window.BasicSchema.validate(record.schema)).toEqual([]);
+          expect(record.roundCounter).toBe(again.roundCounter);
+          expect(record.modelStacks).toEqual(again.modelStacks);
+          expect(record.protocol.roundLimit).toBe(String(record.roundCounter));
+          expect(record.draftPlan.plannedStages.map((stage) => stage.plannedStageId)).toEqual(again.draftPlan.plannedStages.map((stage) => stage.plannedStageId));
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      test('Save keeps a round nobody sends in: three rounds stay three after saving and loading', async () => {
+        const h = setupCustomInheritance('Three save host', { synthesis: '' });
+        try {
+          expect((await h.debug.installBasicSchema('Three source', { schemaVersion: 1, origin: 'user', steps: [
+            { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }, { name: 'Claude' }] },
+            { ref: 'r2', kind: 'round', models: [] },
+            { ref: 'r3', kind: 'round', models: [{ name: 'GPT' }] }
+          ] })).ok).toBe(true);
+          document.querySelector('.pipeline-item[data-name="Three source"]').click();
+          await settleCustomCard();
+          await saveAs('Three saved');
+          const record = h.debug.getPipelineStoreSnapshot().pipelines['Three saved'];
+          expect(record.roundCounter).toBe(3);
+          expect(record.schema.steps.map((step) => step.ref)).toEqual(['r1', 'r2', 'r3']);
+          document.querySelector('.pipeline-item[data-name="Three source"]').click();
+          await settleCustomCard();
+          document.querySelector('.pipeline-item[data-name="Three saved"]').click();
+          await settleCustomCard();
+          expect(h.debug.basicSchemaFromPage(planOf(), null, { forSave: true }).steps.map((step) => step.ref)).toEqual(['r1', 'r2', 'r3']);
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      test('a card save after a change of the canvas rebuilds the whole record: schema and canvas members agree', async () => {
+        const h = setupCustomInheritance('Card rebuild host', { synthesis: '' });
+        try {
+          const gpt = [...document.querySelectorAll('#r2-models .model-block')].find((block) => block.querySelector('.model-name')?.textContent === 'GPT');
+          gpt.querySelector('.model-send-checkbox').checked = false;
+          gpt.querySelector('.model-send-checkbox').dispatchEvent(new Event('change', { bubbles: true }));
+          await h.model({ content: 'REBUILD_CONTENT' });
+          const { record, again } = derived(h, 'Card rebuild host');
+          const r2 = record.schema.steps.find((step) => step.ref === 'r2');
+          expect(r2.models.filter((model) => model.enabled !== false).map((model) => model.name)).not.toContain('GPT');
+          expect(record.modelStacks).toEqual(again.modelStacks);
+          expect(record.customModelSettings).toBeUndefined();
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      test('adding an intermediate synthesis to a saved pipeline rebuilds its record; the record is the only source of the plan', async () => {
+        const h = setupCustomInheritance('Insert rebuild host', { synthesis: 'Gemini' });
+        try {
+          await h.model({ content: 'FIRST_SAVE' });
+          const column = document.getElementById('round1');
+          if (!column.querySelector('.pipeline-stage-insert')) column.insertAdjacentHTML('afterbegin', '<button type="button" class="pipeline-stage-insert" data-after-stage-id="canvas-r1"></button>');
+          column.querySelector('.pipeline-stage-insert').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+          await delay(300);
+          const { record, again } = derived(h, 'Insert rebuild host');
+          expect(record.schema.steps.some((step) => step.ref.startsWith('synth:'))).toBe(true);
+          expect(record.draftPlan.plannedStages.some((stage) => stage.outputIntent === 'working_synthesis')).toBe(true);
+          expect(record.modelStacks).toEqual(again.modelStacks);
+          expect(h.debug.getPipelineStoreSnapshot().draftPlans['Insert rebuild host']).toBeUndefined();
+        } finally { h.cleanup(); }
+      }, 30000);
+    });
+
     test('a value the owner typed stays explicit when it equals the inherited one: the length instruction as its template, the length as a number', async () => {
       const h = setupCustomInheritance('Explicit equal', { synthesis: '' });
       try {

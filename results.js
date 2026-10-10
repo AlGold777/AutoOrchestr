@@ -4238,7 +4238,7 @@ document.addEventListener('click', (event) => {
             || pipelineStore.draftPlans?.[draftPlanStorageKey()]
             || getPipelineConfigByName(draftPlanStorageKey())?.draftPlan
             || null;
-        const persistActiveDraftPlan = (plan) => {
+        const persistActiveDraftPlan = (plan, { applied = false } = {}) => {
             const normalized = window.DebateDraftPlan?.normalize?.(plan);
             if (!normalized) return false;
             const key = draftPlanStorageKey();
@@ -4252,6 +4252,11 @@ document.addEventListener('click', (event) => {
             if (storedConfig) {
                 storedConfig.draftPlan = normalized;
                 if (storedConfig.protocol) storedConfig.protocol.synthesizer = getDraftPlanSynthesizer(normalized);
+                // A saved Basic pipeline is rebuilt from the canvas through its schema, so the plan and the schema agree.
+                // Not while a pipeline is being applied (the plan restored after an apply is the canvas, not an edit), and only when
+                // the cards of this pipeline are loaded.
+                if (!applied && !pipelineApplyingConfig && getPresetMetaForConfig(storedConfig)?.runner === 'custom'
+                    && customCardSettings.has(key) && customPipelineDefaults.has(key)) persistBasicSettings(key);
             }
             persistPipelineStore();
             return true;
@@ -6860,9 +6865,17 @@ document.addEventListener('click', (event) => {
                 ...(earlier.runPolicy === 'auto' || earlier.runPolicy === 'manual' ? (earlier.runPolicy !== defaults.policy ? { policy: earlier.runPolicy } : {}) : {}),
                 ...(Number.isSafeInteger(Number(earlier.length)) && Number(earlier.length) > 0 && Number(earlier.length) !== defaults.maxWords ? { maxWords: Number(earlier.length) } : {})
             };
-            record.schema = basicSchemaFromPage(draftPlanForCanvas(getActiveDraftPlan()), null, { forSave: true, basedOn: record.schema?.basedOn || '', run });
-            delete record.customModelSettings;
-            delete record.customDefaults;
+            // The record is derived from the schema as a whole, so its canvas members never differ from the schema.
+            const schema = basicSchemaFromPage(draftPlanForCanvas(getActiveDraftPlan()), null, { forSave: true, basedOn: record.schema?.basedOn || '', run });
+            const built = recordFromSchema(name, schema);
+            if (!built.ok) {
+                showNotification(`Настройки не сохранены. ${describeSchemaErrors(built.errors)}`, 'error');
+                return false;
+            }
+            pipelineStore.pipelines[name] = built.record;
+            // The record is the one source of the plan now.
+            delete pipelineStore.draftPlans?.[name];
+            delete pipelineSessionDraftPlans[name];
             return true;
         };
         // The model's role (mini request from its block) reaches the model as `extra`, the same field
@@ -7892,7 +7905,7 @@ document.addEventListener('click', (event) => {
             syncPipelineRoundsToDebateLimit();
             if (window.__pendingPipelineSynthesizer !== undefined) {
                 const restoredPlan = draftPlanForCanvas(getActiveDraftPlan());
-                persistActiveDraftPlan(restoredPlan);
+                persistActiveDraftPlan(restoredPlan, { applied: true });
                 delete window.__pendingPipelineSynthesizer;
             }
             window.syncDebateSchemeUi?.();
@@ -8488,13 +8501,25 @@ document.addEventListener('click', (event) => {
                     if (!confirmed) return;
                 }
                 // A copy of a template remembers it; saving a saved pipeline again keeps what it was based on.
-                const config = capturePipelineConfig({ basedOn: isTemplate ? currentName : (pipelineStore.pipelines[currentName]?.schema?.basedOn || '') });
-                pipelineStore.pipelines[trimmed] = config;
-                adoptBasicWorking(trimmed, basicWorkingFromConfig(config));
-                if (!pipelineStore.order.includes(trimmed)) {
-                    pipelineStore.order.push(trimmed);
+                const basedOn = isTemplate ? currentName : (pipelineStore.pipelines[currentName]?.schema?.basedOn || '');
+                if (isCustomEnginePipeline()) {
+                    // A Basic pipeline is saved through its schema, the way an imported one is installed: the record is
+                    // derived from the schema (recordFromSchema), never taken from the canvas separately.
+                    const schema = basicSchemaFromPage(draftPlanForCanvas(getActiveDraftPlan()), null, { forSave: true, basedOn });
+                    const saved = await installBasicSchema(trimmed, schema);
+                    if (!saved.ok) {
+                        showNotification(`Не сохранено. ${describeSchemaErrors(saved.errors)}`, 'error');
+                        return;
+                    }
+                } else {
+                    const config = capturePipelineConfig({ basedOn });
+                    pipelineStore.pipelines[trimmed] = config;
+                    adoptBasicWorking(trimmed, basicWorkingFromConfig(config));
+                    if (!pipelineStore.order.includes(trimmed)) {
+                        pipelineStore.order.push(trimmed);
+                    }
+                    pipelineStore.lastSaved = trimmed;
                 }
-                pipelineStore.lastSaved = trimmed;
                 pipelineStore.active = trimmed;
                 pipelinePanel?.removeAttribute('data-pipeline-draft');
                 // The saved copy carries the draft now; the unsaved draft must not resurface on the next start.
@@ -8526,6 +8551,8 @@ document.addEventListener('click', (event) => {
             setTimeout(() => URL.revokeObjectURL(url), 0);
         };
 
+        // The errors of a schema in one line: the place and the reason of each, at most five.
+        const describeSchemaErrors = (errors) => errors.slice(0, 5).map((error) => (error.path ? `${error.path}: ${error.message}` : error.message)).join('; ');
         // The record of a Basic pipeline built from its schema, and nowhere else: the schema is the content, the canvas
         // members (rounds, models, roles, synthesizer, intermediate syntheses) are derived from it here. Nothing is written
         // to the store. Returns { ok, errors, record }; a schema the canvas cannot show gives errors with the place.
