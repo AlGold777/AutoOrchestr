@@ -3025,12 +3025,12 @@ hr.section-divider {
     padding-bottom: 0;
 }
 
-/* Pipeline page: a wider composer (and the feed in it). .main-inner and the top bar keep
-   the width of the main page, so the bar does not jump between the two pages; only the
-   composer is wider, centered on that column. The width is bounded by the page column
-   (.app-main is a size container), so open sidebars cannot be overlapped. */
+/* Pipeline page: the composer (and the feed in it) has one width with the feed closed or
+   open, so the outline stays at the moderator input and does not move away from it. It is
+   centered on the .main-inner column and bounded by the page column (.app-main is a size
+   container), so open sidebars cannot be overlapped. */
 .pipeline-page {
-    --pipeline-main-max-width: 1280px;
+    --pipeline-main-max-width: calc(var(--center-max-width) - 32px);
 }
 .pipeline-page .app-main {
     container-type: inline-size;

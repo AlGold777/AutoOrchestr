@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-10 — The Pipeline composer keeps one width with the feed open, version 2.81.686
+
+- The composer (outline, feed and moderator input) is 948px at most (`--center-max-width − 32px`) with the feed closed and open, so the outline no longer stands away from the moderator input (2.81.680 had made the input fixed while the open composer stayed up to 1280px).
+- Round badges R1, R2… belong to cards of pipeline rounds; a card of a message sent by hand from the moderator input has no round and no badge, as in 2.81.604.
+
 ### 2026-10-10 — Pipeline panel: the profiles button gets the info icon, version 2.81.685
 
 - `#pipeline-profile-btn` shows the "info" glyph (inline SVG, `currentColor`) instead of the settings gear.
