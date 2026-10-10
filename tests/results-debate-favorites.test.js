@@ -1662,6 +1662,16 @@ describe('Pipeline debate favorites view', () => {
     expect(card.querySelector('.debate-model-card-output').textContent).toContain('Real answer.');
   });
 
+  test('text is the answer when the captured html holds only the thinking heading and the page label', () => {
+    const debug = window.__pipelineLifecycleDebug;
+    const meta = { requestId: 'thinking-only-html', pipelineRunId: 'thinking-only-run', pipelineRoundId: 'r2' };
+    const answer = 'Традиционный сатирический юмор Мьянмы служит мощным психологическим защитным механизмом. '.repeat(4);
+    debug.updateLLMPanelOutput('Gemini', answer, '<h3>Analyzing the Russian</h3><h6>Ответ Gemini</h6>', { ...meta, status: 'SUCCESS' });
+    const output = document.querySelector('.debate-model-card[data-llm-name="Gemini"] .debate-model-card-output');
+    expect(output.textContent).toContain('Традиционный сатирический юмор');
+    expect(output.textContent).not.toContain('Analyzing the Russian');
+  });
+
   test('the Gemini page label is cut at any depth and the answer text stays whole', () => {
     const debug = window.__pipelineLifecycleDebug;
     const meta = { requestId: 'nested-label', pipelineRunId: 'nested-label-run', pipelineRoundId: 'r1' };

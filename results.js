@@ -19344,7 +19344,12 @@ document.addEventListener('click', (event) => {
             && sameAnswerHead
             && missingTailChars >= 24
             && htmlProjection.length < textProjection.length * 0.99;
-        return htmlProjectionIsTruncated ? textHtml : sanitizedHtml;
+        // Captured while Gemini still showed only the heading of its thinking and the hidden
+        // page label: a short projection with nothing of the answer's beginning. The text is the answer.
+        const htmlHoldsNoAnswer = textProjection.length >= 200
+            && htmlProjection.replace(/Ответ Gemini|Gemini said:?/gi, '').trim().length < 120
+            && !htmlProjection.includes(textProjection.slice(0, 40));
+        return htmlProjectionIsTruncated || htmlHoldsNoAnswer ? textHtml : sanitizedHtml;
     }
 
     function updateLLMPanelOutput(llmName, answer, answerHtml = '', meta = {}) {

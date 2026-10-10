@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-10-10 — The answer text wins over html that holds only the thinking heading, version 2.81.690
+
+- A card whose captured html is a short projection (the heading of Gemini's thinking and the page label, under 120 characters) with nothing of the beginning of a text of 200+ characters shows the text, not the html. Before, such html was shown as the answer and the card looked cut.
+
 ### 2026-10-10 — The Gemini screen-reader label is dropped when the answer is collected, version 2.81.689
 
 - Gemini puts a hidden label ("Ответ Gemini" / "Gemini said", `<h6 class="cdk-visually-hidden screen-reader-model-response-label">` in `model-response-label-announcer`) before each answer. `buildInlineHtml` now removes it, so it no longer reaches the card, the stored answer or the prompts of other models. The cut at display time (2.81.688) stays as the fallback.
