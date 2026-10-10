@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-10 — Pipeline answer feed looks as in 2.81.604 again; moderator input keeps one width, version 2.81.680
+
+- Cover-deck cards no longer paint a white fill and 10px/8px padding: they use the page background (`#f3f4f6`, opaque so the cards still cover each other) and sit flush as in 2.81.604.
+- `.moderator-input` has one explicit width in every state — `min(center-max-width − 54px, 100cqw − 54px)` — so opening the feed, wide-expanded mode, sidebars and resizing no longer change it; it is centred in the composer.
+- The time of an answer card keeps a 6px gap before the action icons.
+
 ### 2026-10-10 — Save, Import and Export of Basic schemas on one path, version 2.81.679
 
 - One path from a schema to a record: `recordFromSchema` derives the record of a Basic pipeline (rounds, models, roles, synthesizer, intermediate syntheses, protocol) from its schema and nowhere else; `installBasicSchema` stores it. Save, Import, the card / ▶ / round-card saves and the edits of the structure of a saved pipeline all go through it, so the record and the schema cannot differ.

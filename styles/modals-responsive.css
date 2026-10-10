@@ -1817,6 +1817,9 @@ body.pro-features-hidden .comparison-section {
     color: #6b7280;
     font-size: 14px !important;
 }
+.debate-model-card-meta .debate-model-card-time {
+    margin-right: 6px;
+}
 .debate-approval-check {
     width: 14px;
     height: 14px;
@@ -3030,6 +3033,18 @@ hr.section-divider {
     width: var(--pipeline-composer-width);
     max-width: none;
     margin-left: calc((100% - var(--pipeline-composer-width)) / 2);
+}
+
+/* The moderator input keeps one width in every state (feed closed/open, wide-expanded,
+   sidebars, resizing): the closed 948px column minus the open composer's 10px padding and
+   1px border on each side, so it fits inside the open composer without shrinking. */
+.pipeline-page .prompt-container.prompt-sandwich.debate-composer .moderator-input {
+    box-sizing: border-box;
+    flex: 0 0 auto;
+    align-self: center;
+    width: min(calc(var(--center-max-width) - 54px), calc(100cqw - 54px));
+    min-width: 0;
+    max-width: none;
 }
 
 /* The closed Pipeline composer mirrors .main-inner's 980px outer width and
