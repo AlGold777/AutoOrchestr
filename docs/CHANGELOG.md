@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-10-10 — The Gemini screen-reader label is dropped when the answer is collected, version 2.81.689
+
+- Gemini puts a hidden label ("Ответ Gemini" / "Gemini said", `<h6 class="cdk-visually-hidden screen-reader-model-response-label">` in `model-response-label-announcer`) before each answer. `buildInlineHtml` now removes it, so it no longer reaches the card, the stored answer or the prompts of other models. The cut at display time (2.81.688) stays as the fallback.
+
 ### 2026-10-10 — The Gemini page label is cut at any depth, version 2.81.688
 
 - The label "Ответ Gemini" / "Gemini said" is removed when it is the very first text of the answer, also inside wrapper elements (2.81.687 looked only at the first child element). The answer text is not touched; a card whose whole text is the label keeps it.
