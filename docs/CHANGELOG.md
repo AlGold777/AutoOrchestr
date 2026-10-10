@@ -1,5 +1,13 @@
 # CHANGELOG — Project
 
+### 2026-10-10 — Save, Import and Export of Basic schemas on one path, version 2.81.679
+
+- One path from a schema to a record: `recordFromSchema` derives the record of a Basic pipeline (rounds, models, roles, synthesizer, intermediate syntheses, protocol) from its schema and nowhere else; `installBasicSchema` stores it. Save, Import, the card / ▶ / round-card saves and the edits of the structure of a saved pipeline all go through it, so the record and the schema cannot differ.
+- Save writes `schema` with `basedOn` and no longer takes the canvas members separately; a card save or a change of the structure rewrites the saved record from the canvas at once (`persistBasicSettings`, `persistActiveDraftPlan`).
+- The saved schema keeps every round r1…rN, also one nobody sends in; the round number comes from the stage id (`canvas-rN`), so an empty round no longer shifts the numbers; settings of a synthesis card set before the synthesis was added stay at the place its id names.
+- Export writes one bare schema (`<pipeline name>.json`), checked as Save checks it; the export of all pipelines is gone. Import takes a bare schema (the file name is proposed as the name) or a file of the earlier whole-store export, whose records with a schema are added without replacing anything; other files are refused with a reason. Buttons: «Export schema», «Import schema».
+- Tests: record derivation, empty rounds, extras, round trip, Save / card save / structure rebuild, Export, Import, bundle, refusals.
+
 ### 2026-10-10 — The schema guide; install refuses what the canvas would change silently, version 2.81.678
 
 - New `docs/Pipeline scenarios/basic-schema-guide.md`: one self-contained instruction for writing a Basic schema (for a person or a model, a small one included): how to use it, the format rules, a 7-step algorithm with the choice of `input` and `order`, what Basic takes by itself, every field, how the request of a model is assembled (with a real example), exact lists of models and roles, the canvas rules with reasons, five ready templates, a table of install errors with fixes, a self-check list and what not to do. `tests/basic-schema-guide.test.js` keeps it true to the code: every JSON example is validated, shown on the canvas and assembled; the lists of models, roles, defaults and limits, the error messages and the request example are compared with the code; the page test installs every example.
