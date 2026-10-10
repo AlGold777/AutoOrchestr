@@ -59,7 +59,7 @@ describe('Custom engine', () => {
     await Engine.run({ task: 'T', steps: [{ order: 'sequential', input: 'none', models: ['A',
       { name: 'B', promptTemplate: 'Use {ответы до тебя}', maxWords: 51 }] }], send });
     expect(calls[1].prompts.B).toBe('Use Ответ 1:\nfirst');
-    expect(calls[2].prompts.B).toBe(Engine.correctionPrompt('empty'));
+    expect(calls[2].prompts.B).toBe('Use Ответ 1:\nfirst'); // empty: the same request again, not a correction
     expect(calls[1].meta.maxWordsByModel.B).toBe(51);
     expect(calls[2].meta.maxWordsByModel.B).toBe(51);
   });
@@ -196,10 +196,11 @@ describe('Custom engine', () => {
   });
 
   test('a correction request is checked against the budget before it is sent', async () => {
-    const { send, calls } = transport({ A: ['', 'fixed'] });
+    const { send, calls } = transport({ A: ['cut', 'fixed.'] });
+    const accept = ({ text }) => (text.endsWith('.') ? { ok: true } : { ok: false, reason: 'incomplete_ending' });
     const sent = [];
     const result = await Engine.run({
-      task: 'T', maxPromptChars: 50, onRequest: (entry) => sent.push(entry.prompt.length),
+      task: 'T', maxPromptChars: 50, accept, onRequest: (entry) => sent.push(entry.prompt.length),
       steps: [{ task: 'x', input: 'none', models: ['A'] }], send
     });
     expect(calls).toHaveLength(1);
@@ -209,9 +210,17 @@ describe('Custom engine', () => {
     expect(Math.max(...result.history.map((entry) => entry.prompt.length))).toBeLessThanOrEqual(50);
   });
 
+  test('no text at all: the same request is sent again, not a correction', async () => {
+    const { send, calls } = transport({ A: ['', 'second'] });
+    await Engine.run({ task: 'T', steps: [{ task: 'x', input: 'none', models: ['A'] }], send });
+    expect(calls[1].prompts.A).toBe(calls[0].prompts.A);
+    expect(calls[1].prompts.A).not.toContain('Твой предыдущий ответ');
+  });
+
   test('a correction request that fits the budget is sent', async () => {
-    const { send, calls } = transport({ A: ['', 'fixed'] });
-    const result = await Engine.run({ task: 'T', maxPromptChars: 500, steps: [{ task: 'x', input: 'none', models: ['A'] }], send });
+    const { send, calls } = transport({ A: ['cut', 'fixed.'] });
+    const accept = ({ text }) => (text.endsWith('.') ? { ok: true } : { ok: false, reason: 'incomplete_ending' });
+    const result = await Engine.run({ task: 'T', maxPromptChars: 500, accept, steps: [{ task: 'x', input: 'none', models: ['A'] }], send });
     expect(calls).toHaveLength(2);
     expect(result.stopReason).toBe('steps_done');
   });

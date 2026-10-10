@@ -79,7 +79,8 @@ describe('Custom run record', () => {
     const { record } = await recordedRun({ steps: [{ task: 'x', input: 'none', models: ['A'] }], answers: { A: ['', 'a2'] } });
     const attempts = Record.exportRun(record).attempts;
     expect(attempts.map((item) => [item.attempt, item.retryOf, item.accepted, item.reason])).toEqual([[1, null, false, 'empty'], [2, 1, true, '']]);
-    expect(attempts[1].instructions.correction).toBe(Engine.correctionPrompt('empty'));
+    expect(attempts[1].prompt).toBe(attempts[0].prompt);
+    expect(attempts[1].instructions.correction).toBeUndefined();
     const first = record.attempts[0];
     Record.recordAttempt(record, { step: 0, model: 'A', attempt: 1, state: 'done', answer: 'rewritten', accepted: true });
     expect(record.attempts[0]).toBe(first);

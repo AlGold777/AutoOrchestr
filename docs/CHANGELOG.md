@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-10 — A retry after a missing answer repeats the request, version 2.81.697
+
+- Field export for 2.81.695: Gemini round 3 failed with `completion_authority_dispatch_mismatch`, so the round had no text. The page shows the full round-3 request was never sent; the engine judged the missing text as an «empty answer» and sent «Твой предыдущий ответ пустой…» without the task. Gemini answered that line, so the round-3 answer is not an answer to the round.
+- `disput/custom-engine.js`: when an attempt returns no text at all (`empty`), the retry sends the same request again. The correction text is kept for answers that came back and were not accepted (`token_only`, too short, cut off, error).
+- The cause of the dispatch-id mismatch itself is not found; the log does not show which dispatch id the delivery carried. Open.
+
 ### 2026-10-10 — Basic documentation cut from nine documents to four, without repeats (documents and tests only, no version change)
 
 - `basic-start-here.md` is now the one place that describes what Basic is and how a run goes (steps, acceptance and repeats, pause and Stop, what appears on the page, how «Basic · итог» is formed, the canvas, the journal events and the run record). `basic-developer.md` holds the code map, the schema rules and the reasons of the decisions, Save / Export / Import and the storage, the diagnostics, the open questions and the tests that fail all the time. `basic-windows.md` describes the setting windows. `basic-schema-guide.md` is unchanged and still self-contained.
