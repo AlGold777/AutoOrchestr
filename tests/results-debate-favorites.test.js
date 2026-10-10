@@ -2270,6 +2270,20 @@ describe('Pipeline debate favorites view', () => {
   });
 
   const settleCustomCard = () => new Promise((resolve) => setTimeout(resolve, 0));
+  // Imports a file through the Import button: `text` is the content, `fileName` the name, `answer` the name typed in the prompt.
+  const importFile = async (text, fileName, answer) => {
+    const oldPrompt = window.prompt;
+    const prompts = [];
+    window.prompt = jest.fn((message, proposed) => { prompts.push(proposed); return answer; });
+    try {
+      document.getElementById('pipeline-import-btn').click();
+      const input = [...document.querySelectorAll('input[type="file"]')].filter((node) => node.accept === 'application/json').pop();
+      Object.defineProperty(input, 'files', { value: [new File([text], fileName, { type: 'application/json' })], configurable: true });
+      input.dispatchEvent(new Event('change'));
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    } finally { window.prompt = oldPrompt; }
+    return prompts;
+  };
   const setupCustomInheritance = (name, { synthesis = '' } = {}) => {
     const debug = window.__pipelineLifecycleDebug;
     const config = { version: 3, roundCounter: 2, protocol: { type: 'universal', presetId: 'CUSTOM', selectedModels: ['GPT', 'Claude'], length: '300', roundLimit: '2', synthesizer: synthesis, runPolicy: 'auto' }, modelStacks: {} };
@@ -2987,11 +3001,12 @@ describe('Pipeline debate favorites view', () => {
       await h.general({ roundTask: 'PERSISTED_ROUND', content: 'PERSISTED_CONTENT' });
       const stored = (await chrome.storage.local.get('llmComparatorPipelines')).llmComparatorPipelines;
       expect(settingsOf(stored.pipelines['Defaults saved copy']).customDefaults.roundTask).toBe('PERSISTED_ROUND');
-      const exported = JSON.parse(JSON.stringify(h.debug.buildPipelineExportPayload()));
-      const imported = h.debug.normalizePipelineStore(exported);
+      const exported = h.debug.buildBasicExport();
+      expect(exported.ok).toBe(true);
+      expect(exported.fileName).toBe('Defaults saved copy.json');
       h.debug.clearCustomSessionForTest();
-      h.debug.setPipelineStoreForTest(imported);
-      h.debug.applyPipelineConfig(imported.pipelines['Defaults saved copy']);
+      await importFile(exported.text, exported.fileName, 'Defaults imported');
+      h.debug.applyPipelineConfig(h.debug.getPipelineStoreSnapshot().pipelines['Defaults imported']);
       await h.run();
       expect(h.starts[1].promptsByModel.GPT).toContain('PERSISTED_ROUND');
       expect(h.starts[1].promptsByModel.GPT).toContain('PERSISTED_CONTENT');
@@ -3381,6 +3396,75 @@ describe('Pipeline debate favorites view', () => {
           expect(store.pipelines['Import host']).toBeDefined();
         } finally { window.prompt = oldPrompt; h.cleanup(); }
       }, 30000);
+
+    describe('Export and Import of one schema', () => {
+      test('Export gives the bare schema of the canvas; its file name is the pipeline name', async () => {
+        const h = setupCustomInheritance('Export host', { synthesis: 'Gemini' });
+        try {
+          await h.general({ roundTask: 'EXPORT_TASK' });
+          await h.model({ content: 'EXPORT_CONTENT' });
+          const built = h.debug.buildBasicExport();
+          expect(built.ok).toBe(true);
+          expect(built.fileName).toBe('Export host.json');
+          const parsed = JSON.parse(built.text);
+          expect(parsed).toEqual(built.schema);
+          expect(parsed.pipelines).toBeUndefined();
+          expect(window.BasicSchema.validate(parsed)).toEqual([]);
+          expect(parsed.defaults.roundTask).toBe('EXPORT_TASK');
+          expect(parsed.steps.find((step) => step.ref === 'r2').models.find((model) => model.name === 'GPT').discipline).toEqual({ content: 'EXPORT_CONTENT' });
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      test('what Export writes, Import brings back: the same steps and settings under a new name', async () => {
+        const h = setupCustomInheritance('Round export host', { synthesis: 'Gemini' });
+        try {
+          await h.general({ roundTask: 'BACK_TASK' });
+          await h.model({ content: 'BACK_CONTENT' });
+          const built = h.debug.buildBasicExport();
+          const before = JSON.stringify(h.debug.buildBasicRun(planOf()).steps);
+          const prompts = await importFile(built.text, 'my-copy.json', 'Imported copy');
+          expect(prompts).toEqual(['my-copy']);
+          const record = h.debug.getPipelineStoreSnapshot().pipelines['Imported copy'];
+          expect(record.schema.steps).toEqual(built.schema.steps);
+          expect(record.schema.defaults).toEqual(built.schema.defaults);
+          expect(h.debug.getPipelineStoreSnapshot().active).toBe('Imported copy');
+          await settleCustomCard();
+          expect(JSON.stringify(h.debug.buildBasicRun(planOf()).steps)).toBe(before);
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      test('an old whole-store export adds its records with a schema, skips the others and replaces nothing', async () => {
+        const h = setupCustomInheritance('Bundle host', { synthesis: '' });
+        try {
+          const schema = { schemaVersion: 1, origin: 'user', steps: [{ ref: 'r1', kind: 'round', models: [{ name: 'GPT' }] }] };
+          const bundle = { version: 8, pipelines: { 'From bundle': { schema }, 'Old format': { protocol: { type: 'universal' } }, Basic: { schema } }, order: ['From bundle'] };
+          await importFile(JSON.stringify(bundle), 'pipelines.json', 'ignored');
+          let store = h.debug.getPipelineStoreSnapshot();
+          expect(store.pipelines['From bundle'].schema.steps).toEqual(schema.steps);
+          expect(store.pipelines['Old format']).toBeUndefined();
+          expect(store.pipelines['Bundle host']).toBeDefined();
+          expect(document.getElementById('notification-message').textContent).toContain('Добавлено схем: 1, пропущено: 2');
+          await importFile(JSON.stringify(bundle), 'pipelines.json', 'ignored');
+          store = h.debug.getPipelineStoreSnapshot();
+          expect(store.pipelines['From bundle (2)']).toBeDefined();
+          expect(store.pipelines['From bundle'].schema.steps).toEqual(schema.steps);
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      test('a file that is not a schema is refused with a reason and nothing changes', async () => {
+        const h = setupCustomInheritance('Refuse host', { synthesis: '' });
+        try {
+          const before = JSON.stringify(h.debug.getPipelineStoreSnapshot().pipelines);
+          await importFile('not json {', 'x.json', 'Nope');
+          expect(document.getElementById('notification-message').textContent).toContain('Файл не JSON');
+          await importFile(JSON.stringify([1, 2]), 'x.json', 'Nope');
+          expect(document.getElementById('notification-message').textContent).toContain('Файл не похож на схему Basic');
+          await importFile(JSON.stringify({ schemaVersion: 1, origin: 'user', steps: [{ ref: 'r1', kind: 'round', models: [{ name: 'Nobody' }] }] }), 'x.json', 'Nope');
+          expect(document.getElementById('notification-message').textContent).toContain('steps[0].models[0].name');
+          expect(JSON.stringify(h.debug.getPipelineStoreSnapshot().pipelines)).toBe(before);
+        } finally { h.cleanup(); }
+      }, 30000);
+    });
     });
 
     describe('Save and the card saves derive the record from the schema', () => {

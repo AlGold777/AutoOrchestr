@@ -331,10 +331,10 @@ describe('release log regression guards', () => {
     expect(html.indexOf('id="debate-round-limit-select"')).toBeLessThan(html.indexOf('id="debate-length-select"'));
     expect(html.indexOf('id="debate-round-limit-select"')).toBeGreaterThan(-1);
     expect(html).toContain('id="pipeline-export-btn"');
-    expect(html).toContain('title="Export pipelines"');
+    expect(html).toContain('title="Export schema"');
     expect(html).toContain('<i class="ti ti-download" aria-hidden="true"></i>');
     expect(html).toContain('id="pipeline-import-btn"');
-    expect(html).toContain('title="Import pipelines"');
+    expect(html).toContain('title="Import schema"');
     expect(html).toContain('<i class="ti ti-upload" aria-hidden="true"></i>');
     expect(html).toContain('aria-label="Add stage after R2"');
     expect(html).not.toContain('R2 Disput');

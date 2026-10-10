@@ -3691,16 +3691,6 @@ document.addEventListener('click', (event) => {
             }
         };
 
-        const buildPipelineExportPayload = () => ({
-            version: pipelineStore.version,
-            pipelines: pipelineStore.pipelines,
-            order: pipelineStore.order,
-            lastSaved: pipelineStore.lastSaved,
-            active: pipelineStore.active,
-            overrides: pipelineStore.overrides,
-            draftPlans: pipelineStore.draftPlans
-        });
-
         const PipelineRuntime = window.PipelineRuntime;
         if (!PipelineRuntime) {
             console.warn('[RESULTS] PipelineRuntime module missing; Pipeline UI renderer unavailable.');
@@ -7695,7 +7685,7 @@ document.addEventListener('click', (event) => {
                 buildBasicRun,
                 resolveCustomFields,
                 getCustomPipelineDefaults,
-                buildPipelineExportPayload,
+                buildBasicExport: () => buildBasicExport(),
                 normalizePipelineStore,
                 clearCustomSessionForTest: () => { customPipelineDefaults.clear(); customCardSettings.clear(); customRoundSettings.clear(); },
                 capturePipelineConfig,
@@ -8536,15 +8526,29 @@ document.addEventListener('click', (event) => {
 
         let pipelineImportInput = null;
 
-        const exportPipelines = () => {
-            const payload = buildPipelineExportPayload();
-            const json = JSON.stringify(payload, null, 2);
-            const blob = new Blob([json], { type: 'application/json' });
+        // Export: the schema of the pipeline on the canvas as one file, a bare schema (the form the guide describes and
+        // Import takes back). It is the schema Save would store, checked the way Save and Import check it.
+        const schemaFileName = (name) => `${String(name || '').trim().replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '_').replace(/\s+/g, ' ').slice(0, 80).trim() || 'schema'}.json`;
+        const buildBasicExport = () => {
+            if (!isCustomEnginePipeline()) return { ok: false, errors: [{ path: '', message: 'Экспорт доступен для схем Basic.' }] };
+            const name = String(pipelineStore.active || getPipelineHeaderName() || '').trim();
+            const basedOn = isDefaultPipelineName(name) ? '' : (pipelineStore.pipelines[name]?.schema?.basedOn || '');
+            const schema = basicSchemaFromPage(draftPlanForCanvas(getActiveDraftPlan()), null, { forSave: true, basedOn });
+            const checked = recordFromSchema(name || 'schema', schema);
+            if (!checked.ok) return checked;
+            return { ok: true, errors: [], name, schema, fileName: schemaFileName(name), text: `${JSON.stringify(schema, null, 2)}\n` };
+        };
+        const exportBasicSchema = () => {
+            const built = buildBasicExport();
+            if (!built.ok) {
+                showNotification(`Экспорт не выполнен. ${describeSchemaErrors(built.errors)}`, 'warn');
+                return;
+            }
+            const blob = new Blob([built.text], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
-            const stamp = new Date().toISOString().replace(/[:.]/g, '-');
             const link = document.createElement('a');
             link.href = url;
-            link.download = `pipelines-${stamp}.json`;
+            link.download = built.fileName;
             document.body.appendChild(link);
             link.click();
             link.remove();
@@ -8613,63 +8617,66 @@ document.addEventListener('click', (event) => {
             renderPipelineList(pipelineStore.order, pipelineStore.active, pipelineStore.lastSaved);
             return { ok: true, errors: [] };
         };
-        // A file that is a schema, not an export of pipelines: it is added as a pipeline under a name the owner gives.
-        const importBasicSchemaFile = async (schema) => {
-            const name = String((await showPrompt('Имя pipeline для схемы:', '')) || '').trim();
+        // Import takes schema files. A bare schema is added as one pipeline under a name the owner confirms (the file name
+        // is proposed). A file of the earlier whole-store export adds the records that already hold a schema and skips the
+        // others. Nothing that exists is replaced without the owner's confirmation of that one name.
+        const uniquePipelineName = (wanted) => {
+            let name = wanted;
+            let index = 2;
+            while (pipelineStore.order.includes(name) || isDefaultPipelineName(name)) {
+                name = `${wanted} (${index})`;
+                index += 1;
+            }
+            return name;
+        };
+        const importBasicSchemaFile = async (schema, suggestedName = '') => {
+            const wanted = isDefaultPipelineName(suggestedName) ? '' : suggestedName;
+            const name = String((await showPrompt('Имя pipeline для схемы:', wanted)) || '').trim();
             if (!name) return;
             if (isDefaultPipelineName(name)) { showNotification(`«${name}» — имя шаблона. Выберите другое имя.`, 'warn'); return; }
             if (pipelineStore.order.includes(name) && !(await showConfirm(`Pipeline "${name}" already exists. Replace it?`))) return;
             const result = await installBasicSchema(name, schema);
             if (!result.ok) {
-                const shown = result.errors.slice(0, 5).map((error) => (error.path ? `${error.path}: ${error.message}` : error.message)).join('; ');
-                showNotification(`Схема не установлена. ${shown}`, 'error');
+                showNotification(`Схема не установлена. ${describeSchemaErrors(result.errors)}`, 'error');
                 return;
             }
             const item = findPipelineItemByName(name);
             if (item) selectPipeline(item, { applyConfig: true, persist: true });
             showNotification(`Схема установлена как pipeline «${name}».`, 'success');
         };
-
+        const importBasicBundle = async (parsed) => {
+            let added = 0;
+            let skipped = 0;
+            let last = '';
+            for (const [name, record] of Object.entries(parsed.pipelines)) {
+                if (isDefaultPipelineName(name) || !record || typeof record !== 'object' || !record.schema) { skipped += 1; continue; }
+                const target = uniquePipelineName(name);
+                const result = await installBasicSchema(target, record.schema);
+                if (result.ok) { added += 1; last = target; } else skipped += 1;
+            }
+            showNotification(added
+                ? `Добавлено схем: ${added}${skipped ? `, пропущено: ${skipped}` : ''}.`
+                : `Ничего не добавлено${skipped ? ` (пропущено: ${skipped}, схемы в записи нет или она не подходит)` : ''}.`, added ? 'success' : 'warn');
+            if (last) {
+                const item = findPipelineItemByName(last);
+                if (item) selectPipeline(item, { applyConfig: true, persist: true });
+            }
+        };
         const handlePipelineImportFile = async (event) => {
             const file = event.target.files?.[0];
             if (!file) return;
             const reader = new FileReader();
             reader.onload = async () => {
-                try {
-                    const parsed = JSON.parse(String(reader.result || ''));
-                    // A bare schema (schemaVersion and steps, no pipelines) is added, it does not replace the store.
-                    if (parsed && typeof parsed === 'object' && !parsed.pipelines && 'schemaVersion' in parsed && 'steps' in parsed) {
-                        await importBasicSchemaFile(parsed);
-                        return;
-                    }
-                    const normalized = normalizePipelineStore(parsed);
-                    const hasExisting = pipelineStore.order.length || Object.keys(pipelineStore.pipelines).length;
-                    if (hasExisting) {
-                        const confirmed = await showConfirm('Replace existing pipelines with imported data?');
-                        if (!confirmed) return;
-                    }
-            pipelineStore.version = normalized.version || pipelineStore.version;
-                    pipelineStore.pipelines = normalized.pipelines;
-                    pipelineStore.order = normalized.order;
-                    pipelineStore.lastSaved = normalized.lastSaved;
-                    pipelineStore.active = normalized.active;
-                    persistPipelineStore();
-
-                    const activeName = pipelineStore.active || pipelineStore.order[0] || '';
-                    renderPipelineList(pipelineStore.order, activeName, pipelineStore.lastSaved);
-                    if (activeName) {
-                        const activeItem = findPipelineItemByName(activeName);
-                        if (activeItem) {
-                            selectPipeline(activeItem, {
-                                applyConfig: !!pipelineStore.pipelines[activeName],
-                                persist: false
-                            });
-                        }
-                    } else if (pipelineName) {
-                        setPipelineHeaderName('');
-                    }
-                } catch (_) {
-                    showNotification('Invalid pipelines JSON.');
+                let parsed;
+                try { parsed = JSON.parse(String(reader.result || '')); }
+                catch (_) { showNotification('Файл не JSON.', 'error'); return; }
+                const isObject = Boolean(parsed) && typeof parsed === 'object' && !Array.isArray(parsed);
+                if (isObject && 'schemaVersion' in parsed && 'steps' in parsed && !parsed.pipelines) {
+                    await importBasicSchemaFile(parsed, String(file.name || '').replace(/\.json$/i, '').trim());
+                } else if (isObject && parsed.pipelines && typeof parsed.pipelines === 'object') {
+                    await importBasicBundle(parsed);
+                } else {
+                    showNotification('Файл не похож на схему Basic.', 'error');
                 }
             };
             reader.readAsText(file);
@@ -9421,7 +9428,7 @@ document.addEventListener('click', (event) => {
         pipelineResetBtn?.addEventListener('click', resetPipeline);
         pipelineSaveBtn?.addEventListener('click', savePipeline);
         pipelineDeleteBtn?.addEventListener('click', deleteActivePipeline);
-        pipelineExportBtn?.addEventListener('click', exportPipelines);
+        pipelineExportBtn?.addEventListener('click', exportBasicSchema);
         pipelineImportBtn?.addEventListener('click', importPipelines);
         // Pipeline Get it: the main page's collection pass for the running stage's
         // models (or the selected models when no stage is waiting).
