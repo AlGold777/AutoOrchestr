@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-10-10 — The Gemini page label is cut at any depth, version 2.81.688
+
+- The label "Ответ Gemini" / "Gemini said" is removed when it is the very first text of the answer, also inside wrapper elements (2.81.687 looked only at the first child element). The answer text is not touched; a card whose whole text is the label keeps it.
+
 ### 2026-10-10 — Round badge on Custom/Basic steps; no repeated page label in the answer, version 2.81.687
 
 - Cards of a Custom/Basic run (round ids `s1`, `s2`…, a step is a round) show the round badge R1, R2… like Debate rounds.

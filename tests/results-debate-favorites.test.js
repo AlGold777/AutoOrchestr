@@ -1662,6 +1662,16 @@ describe('Pipeline debate favorites view', () => {
     expect(card.querySelector('.debate-model-card-output').textContent).toContain('Real answer.');
   });
 
+  test('the Gemini page label is cut at any depth and the answer text stays whole', () => {
+    const debug = window.__pipelineLifecycleDebug;
+    const meta = { requestId: 'nested-label', pipelineRunId: 'nested-label-run', pipelineRoundId: 'r1' };
+    debug.updateLLMPanelOutput('Gemini', '', '<div class="response"><div><h2 class="cdk-visually-hidden">Ответ Gemini</h2></div><div class="markdown"><p>First paragraph.</p><p>Second paragraph.</p></div></div>', { ...meta, status: 'SUCCESS' });
+    const output = document.querySelector('.debate-model-card[data-llm-name="Gemini"] .debate-model-card-output');
+    expect(output.textContent).not.toContain('Ответ Gemini');
+    expect(output.textContent).toContain('First paragraph.');
+    expect(output.textContent).toContain('Second paragraph.');
+  });
+
   test('feed retains each round’s response time and source URL independently', () => {
     const debug = window.__pipelineLifecycleDebug;
     const first = new Date(2026, 9, 5, 10, 33).getTime();

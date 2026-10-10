@@ -22462,14 +22462,35 @@ function checkCompareButtonState() {
             card.dataset.turnClosed = 'true';
         });
     }
+    // The hidden label of the Gemini page ("Ответ Gemini") duplicates the name in the card
+    // header. It is cut only when it is the very first text of the answer, at any depth.
+    const MODEL_PAGE_LABEL = /^(Ответ Gemini|Gemini said:?)\s*/i;
+    function stripModelPageLabel(outputEl) {
+        const lead = String(outputEl.textContent || '').trimStart();
+        const match = lead.match(MODEL_PAGE_LABEL);
+        if (!match || lead.length === match[0].length) return;
+        const walker = document.createTreeWalker(outputEl, NodeFilter.SHOW_TEXT);
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+            const value = String(node.nodeValue || '');
+            if (!value.trim()) continue;
+            const found = value.match(MODEL_PAGE_LABEL);
+            if (!found || !value.trimStart().startsWith(found[0].trim())) return;
+            node.nodeValue = value.trimStart().slice(found[0].length);
+            let holder = node.parentElement;
+            while (!node.nodeValue.trim() && holder && holder !== outputEl && !holder.textContent.trim()) {
+                const parent = holder.parentElement;
+                holder.remove();
+                holder = parent;
+            }
+            if (!node.nodeValue.trim() && node.parentNode) node.remove();
+            return;
+        }
+    }
     function renderDebateResponseBody(outputEl, text = '', html = '') {
         if (!outputEl) return '';
         const formattedHtml = resolveCompleteAnswerHtml(text, html);
         replaceChildrenFromSanitizedHtml(outputEl, formattedHtml);
-        // The hidden label of the model page ("Ответ Gemini") duplicates the name in the card header.
-        const first = outputEl.firstElementChild;
-        if (first && /^(Ответ Gemini|Gemini said:?)$/i.test(String(first.textContent || '').trim())
-            && outputEl.children.length > 1) first.remove();
+        stripModelPageLabel(outputEl);
         decorateLinksForNewTab(outputEl);
         return String(outputEl.innerHTML || '').trim();
     }
