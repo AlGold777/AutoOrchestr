@@ -2441,6 +2441,24 @@ describe('Pipeline debate favorites view', () => {
     } finally { h.cleanup(); }
   });
 
+  test('the end of a Basic run adds no second card with the answers already shown; the notification names the reason', async () => {
+    const h = setupCustomInheritance('No result card', { synthesis: 'Gemini' });
+    try {
+      await h.run();
+      const cards = [...document.querySelectorAll('.debate-model-card')];
+      expect(cards.filter((card) => card.dataset.llmName === 'Basic')).toHaveLength(0);
+      expect(cards.some((card) => /Basic · итог/.test(card.textContent))).toBe(false);
+      expect(cards.length).toBeGreaterThan(0);
+      expect(document.getElementById('notification-message').textContent).toBe('Basic: все шаги пройдены.');
+    } finally { h.cleanup(); }
+  }, 30000);
+
+  test('the notification of a Basic run says so when no answer was accepted', () => {
+    const notice = window.__pipelineLifecycleDebug.basicRunNotice;
+    expect(notice('все шаги пройдены', 2)).toBe('Basic: все шаги пройдены.');
+    expect(notice('остановлено владельцем', 0)).toBe('Basic: остановлено владельцем. Принятых ответов нет.');
+  });
+
   test('Custom run: canvas blocks and links follow the engine stages, synthesis blocks included, and end done', async () => {
     const h = setupCustomInheritance('Custom canvas progress', { synthesis: 'Gemini' });
     const gates = [0, 1, 2].map(() => { let open = null; const promise = new Promise((resolve) => { open = resolve; }); return { promise, open }; });

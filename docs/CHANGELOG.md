@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-10 — The end of a Basic run no longer adds a card that repeats the answers, version 2.81.698
+
+- Removed the card «Basic · итог» (`results.js`, `runCustomFromPage`): it repeated the accepted answers of the last step, which the cards of that step already show. The result of a run is the cards of its steps; the end is the notification «Basic: <причина>.», with «Принятых ответов нет.» added when no answer was accepted (`basicRunNotice`).
+- Docs: `basic-start-here.md` (what the user sees at the end of a run), `basic-developer.md`, `AGENTS.md`.
+- Tests: `tests/results-debate-favorites.test.js` (no second card; the text of the notification).
+
 ### 2026-10-10 — A retry after a missing answer repeats the request, version 2.81.697
 
 - Field export for 2.81.695: Gemini round 3 failed with `completion_authority_dispatch_mismatch`, so the round had no text. The page shows the full round-3 request was never sent; the engine judged the missing text as an «empty answer» and sent «Твой предыдущий ответ пустой…» without the task. Gemini answered that line, so the round-3 answer is not an answer to the round.

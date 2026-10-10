@@ -6959,6 +6959,8 @@ document.addEventListener('click', (event) => {
             ? window.CustomRunRecord.createStore({ storage: window.CustomRunRecord.chromeStorage(chrome.storage.local) })
             : null;
         const customPipelineName = () => String(pipelineStore.active || getPipelineHeaderName() || 'Basic').trim();
+        // The text of the notification at the end of a Basic run.
+        const basicRunNotice = (stopText, acceptedCount) => `Basic: ${stopText}.${acceptedCount ? '' : ' Принятых ответов нет.'}`;
         const runCustomFromPage = async ({ task }) => {
             const engine = window.CustomEngine;
             const built = buildBasicRun(draftPlanForCanvas(getActiveDraftPlan()));
@@ -7101,15 +7103,9 @@ document.addEventListener('click', (event) => {
                 const stopText = engine.STOP_TEXT[result.stopReason] || result.stopReason;
                 finishCustomRunProgress(result.stopReason === 'steps_done' ? 'COMPLETED' : 'CANCELLED');
                 if (record) { window.CustomRunRecord.finishRun(record, { stopReason: result.stopReason }); await saveRecord(true); }
-                // Always shown, also after Stop: the accepted answers of the last step that has any.
-                updateDebateModelCardOutput('Basic', [
-                    result.answers.length ? result.answers.map((text, index) => (result.answers.length > 1 ? `Ответ ${index + 1}:\n${text}` : text)).join('\n\n') : 'Принятых ответов нет.',
-                    `Остановка: ${stopText}.`
-                ].join('\n\n'), '', {
-                    status: 'SUCCESS', source: 'custom', role: 'Basic · итог',
-                    pipelineRunId: runContext.pipelineRunId, pipelineRoundId: 'custom-result'
-                });
-                showNotification(`Basic: ${stopText}.`, result.stopReason === 'steps_done' ? 'info' : 'warn');
+                // The answers of the last step are already in the feed as the cards of that step: no second card repeats
+                // them. The reason of the end is the notification; with no accepted answer at all it says so.
+                showNotification(basicRunNotice(stopText, result.answers.length), result.stopReason === 'steps_done' ? 'info' : 'warn');
                 return result.stopReason !== 'cancelled';
             } catch (err) {
                 console.error('[RESULTS] Custom run failed', err);
@@ -7690,6 +7686,7 @@ document.addEventListener('click', (event) => {
                 clearCustomSessionForTest: () => { customPipelineDefaults.clear(); customCardSettings.clear(); customRoundSettings.clear(); },
                 capturePipelineConfig,
                 installBasicSchema: (...args) => installBasicSchema(...args),
+                basicRunNotice: (...args) => basicRunNotice(...args),
                 recordFromSchema: (...args) => recordFromSchema(...args),
                 basicSchemaFromPage: (...args) => basicSchemaFromPage(...args),
                 applyPipelineConfig: (...args) => applyPipelineConfig(...args),
