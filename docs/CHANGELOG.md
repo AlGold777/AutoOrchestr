@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-10 — A Gemini text of only thinking + page label is not an answer anywhere, version 2.81.693
+
+- While Gemini thinks, the page text is «heading of the thinking\nОтвет Gemini» (28–46 characters), and for ~13 s between the end of the thinking and the first words of the answer it is the label alone. The heading plus the label passed the `length >= 20` bar of `AnswerContentClassifier`, so the pipeline finalized it and the card kept «Ответ Gemini» as the answer (the real answer came later as Δ revisions).
+- `AnswerContentClassifier` now classes a short text that ends with the label as `ui_noise` / `gemini_thinking_only` (not terminal-eligible): the pipeline finalization and the background acceptance both use it. The legacy wait of the Gemini adapter (`grabLatestAssistantMarkup`) skips such a text too. A text with the answer after the label is unchanged.
+
 ### 2026-10-10 — Gemini's stop button is seen in the Russian interface, version 2.81.692
 
 - The stop button of Gemini is named «Остановить генерацию ответа» in the Russian interface; the selector knew only «Stop», so the answer watcher saw no generation (`stop=0`) while the model was still thinking. `button[aria-label*="Остановить генерацию" i]` is added to the stop button of the Gemini pipeline selectors and to the generation elements of the Gemini adapter.

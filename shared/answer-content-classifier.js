@@ -63,6 +63,10 @@
     /\b(couldn('|’)?t (generate|complete)|failed to generate (a )?(response|answer))\b/i
   ];
 
+  // Gemini shows the heading of its thinking and then its hidden page label; the answer starts
+  // after the label. A short text that ends with the label holds only the thinking.
+  const GEMINI_THINKING_ONLY = /^(?:.{0,120}\s)?(?:Ответ Gemini|Gemini said:?)$/i;
+
   function normalize(text) {
     return String(text || '').replace(/\s+/g, ' ').trim();
   }
@@ -108,6 +112,9 @@
     }
     if (isProviderErrorSurface(norm)) {
       return decide(CLASSES.PROVIDER_ERROR, norm, { reason: 'provider_error' });
+    }
+    if (GEMINI_THINKING_ONLY.test(norm)) {
+      return decide(CLASSES.UI_NOISE, norm, { reason: 'gemini_thinking_only' });
     }
     if (norm.length < minValid) {
       // Short: either UI noise or a genuinely short answer ("Yes.", "Готово.").

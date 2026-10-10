@@ -16,6 +16,16 @@ describe('AnswerContentClassifier', () => {
     expect(Classifier.isTerminalEligible(prompt, { prompt })).toBe(false);
   });
 
+  test('Gemini thinking heading plus the page label is not an answer; the answer after the label is', () => {
+    for (const t of ['Ответ Gemini', 'Analyzing the Russian\nОтвет Gemini', 'Refining Hell Joke\n\nОтвет Gemini', 'Gemini said']) {
+      const r = Classifier.classify(t, { prompt });
+      expect(r.terminalEligible).toBe(false);
+      expect(r.reason).toBe('gemini_thinking_only');
+    }
+    const answer = 'Ответ Gemini\n\nСовременный японский юмор 2026 года строится на выразительном и коротком формате. [[AO-a2gmbb]]';
+    expect(Classifier.classify(answer, { prompt }).terminalEligible).toBe(true);
+  });
+
   test('provider error surfaces (longer than min, still not an answer)', () => {
     for (const t of [
       'Something went wrong. Please try again later.',

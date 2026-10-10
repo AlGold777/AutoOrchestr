@@ -108,6 +108,8 @@ function grabLatestAssistantMarkup() {
       if (node.closest?.('rich-textarea, form [contenteditable="true"], form textarea')) continue;
       const html = buildInlineHtml(node);
       const text = (node.innerText || node.textContent || '').trim();
+      // Only the thinking and the page label are shown: the answer has not started.
+      if (/^(?:.{0,120}\s)?(?:Ответ Gemini|Gemini said:?)$/i.test(text.replace(/\s+/g, ' '))) continue;
       if (html || text) return { html, text, node };
     }
   } catch (err) {
