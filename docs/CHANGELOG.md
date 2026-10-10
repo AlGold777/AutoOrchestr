@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-10-10 — Pipeline composer: the model selects sit in the middle of the block, version 2.81.684
+
+- In the Pipeline composer without a feed `.msg-head-center` is placed in the centre column of a `1fr auto 1fr` grid, so it is centred horizontally whatever the widths of the left and right blocks.
+
 ### 2026-10-10 — Pipeline panel: the header controls sit in the middle of the row, version 2.81.683
 
 - `.pipeline-panel .panel-header` is a three-column grid (`1fr auto 1fr`): the name on the left, `.panel-header-actions` in the middle, the pipeline actions on the right.
