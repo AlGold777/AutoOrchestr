@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-10 — Round badge on Custom/Basic steps; no repeated page label in the answer, version 2.81.687
+
+- Cards of a Custom/Basic run (round ids `s1`, `s2`…, a step is a round) show the round badge R1, R2… like Debate rounds.
+- The hidden label of the Gemini page ("Ответ Gemini" / "Gemini said") that came into the answer text as a first heading is removed from the card; the name is already in the card header.
+
 ### 2026-10-10 — The Pipeline composer keeps one width with the feed open, version 2.81.686
 
 - The composer (outline, feed and moderator input) is 948px at most (`--center-max-width − 32px`) with the feed closed and open, so the outline no longer stands away from the moderator input (2.81.680 had made the input fixed while the open composer stayed up to 1280px).

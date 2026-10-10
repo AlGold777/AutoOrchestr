@@ -22466,6 +22466,10 @@ function checkCompareButtonState() {
         if (!outputEl) return '';
         const formattedHtml = resolveCompleteAnswerHtml(text, html);
         replaceChildrenFromSanitizedHtml(outputEl, formattedHtml);
+        // The hidden label of the model page ("Ответ Gemini") duplicates the name in the card header.
+        const first = outputEl.firstElementChild;
+        if (first && /^(Ответ Gemini|Gemini said:?)$/i.test(String(first.textContent || '').trim())
+            && outputEl.children.length > 1) first.remove();
         decorateLinksForNewTab(outputEl);
         return String(outputEl.innerHTML || '').trim();
     }
@@ -23258,7 +23262,8 @@ function checkCompareButtonState() {
         };
     }
     function syncDebateCardRound(card) {
-        const match = String(card.dataset.pipelineRoundId || '').match(/^r(\d+)$/i);
+        // r1…: rounds of the Debate pipeline; s1…: steps of a Basic/Custom run (a step is a round).
+        const match = String(card.dataset.pipelineRoundId || '').match(/^[rs](\d+)$/i);
         const name = card.querySelector('.debate-model-card-name');
         if (!match || !name || card.dataset.kind === 'moderator' || card.dataset.kind === 'fragment') return;
         let badge = card.querySelector('.debate-model-card-round');

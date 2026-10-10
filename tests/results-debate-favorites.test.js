@@ -1652,6 +1652,16 @@ describe('Pipeline debate favorites view', () => {
     expect(card.querySelector('.debate-model-card-round')).toBe(badge);
   });
 
+  test('a Custom/Basic step shows its round badge and the page label "Ответ Gemini" is not repeated in the card', () => {
+    const debug = window.__pipelineLifecycleDebug;
+    const meta = { requestId: 'step-badge', pipelineRunId: 'step-badge-run', pipelineRoundId: 's2' };
+    debug.updateLLMPanelOutput('Gemini', '', '<h2>Ответ Gemini</h2><p>Real answer.</p>', { ...meta, status: 'SUCCESS' });
+    const card = document.querySelector('.debate-model-card[data-llm-name="Gemini"]');
+    expect(card.querySelector('.debate-model-card-round').textContent).toBe('R2');
+    expect(card.querySelector('.debate-model-card-output').textContent).not.toContain('Ответ Gemini');
+    expect(card.querySelector('.debate-model-card-output').textContent).toContain('Real answer.');
+  });
+
   test('feed retains each round’s response time and source URL independently', () => {
     const debug = window.__pipelineLifecycleDebug;
     const first = new Date(2026, 9, 5, 10, 33).getTime();
