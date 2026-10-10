@@ -4389,12 +4389,31 @@ const finalizeNoSendModelIfStalled = (llmName, sessionId, reason = 'round4_gate'
   if (dispatchAttempts <= 0) return false;
   const hasPromptConfirmation = !!entry.promptSubmittedAt;
   if (hasPromptConfirmation) return false;
+  const now = Date.now();
+  const sessionStart = Number(jobState?.session?.startTime || 0) || now;
+  const stallStartedAt = Number(entry.lastDispatchAt || sessionStart);
+  const elapsedMs = Math.max(0, now - stallStartedAt);
+  const dispatchId = entry.lastDispatchMeta?.dispatchId || null;
+  const currentProviderProgressAt = entry.providerDispatchStageDispatchId === dispatchId
+    ? Number(entry.providerDispatchStageAt || 0) : 0;
+  // The fixed foreground slot can end without submission evidence and leave
+  // only this flag behind. IDLE/ERROR is no longer an executing dispatch: give
+  // it the composer grace window, then let the ordinary materialize probe
+  // check for a real answer before closing it as NO_SEND.
+  const idleConfirmationExpired = entry.awaitingSubmitConfirmation === true
+    && entry.dispatchInFlight !== true
+    && ['IDLE', 'ERROR'].includes(String(entry.dispatchState || 'IDLE').toUpperCase())
+    && !['RECEIVING', 'STREAMING', 'GENERATING'].includes(String(entry.status || '').toUpperCase())
+    && !self.RecoveryIntent?.hasMatchingLifecycleEvidence?.(entry, dispatchId)
+    && elapsedMs >= ROUND_PROVIDER_PIPELINE_OWNERSHIP_TTL_MS
+    && now - Math.max(stallStartedAt, currentProviderProgressAt,
+      Number(entry.lastRuntimeActivityAt || 0)) >= NO_SEND_STALL_GRACE_MS;
   // A provider dispatch can remain queued behind the focus/visit lease well past
   // the ordinary no-send grace window. In that state "not confirmed yet" is not
   // evidence that the send failed. Let the round4 gate keep waiting; its bounded
   // timeout remains the final backstop if the dispatch never settles.
   const dispatchStillPending = Boolean(
-    entry.awaitingSubmitConfirmation === true
+    (entry.awaitingSubmitConfirmation === true && !idleConfirmationExpired)
     || entry.dispatchInFlight === true
     || ['QUEUED', 'ACTIVATING', 'READY', 'TYPING', 'SUBMITTING'].includes(
       String(entry.dispatchState || '').toUpperCase()
@@ -4420,9 +4439,6 @@ const finalizeNoSendModelIfStalled = (llmName, sessionId, reason = 'round4_gate'
     }
     return false;
   }
-  const sessionStart = Number(jobState?.session?.startTime || 0) || Date.now();
-  const stallStartedAt = Number(entry.lastDispatchAt || sessionStart || Date.now());
-  const elapsedMs = Math.max(0, Date.now() - stallStartedAt);
   if (elapsedMs < NO_SEND_STALL_GRACE_MS) return false;
   // Force-final is one-shot per dispatch: handleLLMResponse may defer terminal into
   // async materialize recovery, and re-firing on every gate poll re-enters that path.
