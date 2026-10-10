@@ -6719,7 +6719,8 @@ document.addEventListener('click', (event) => {
                 const roles = Object.fromEntries((stage.participantBindings || []).map((item) => [item.participantId, item.promptId || null]));
                 let ref = null;
                 let kind = null;
-                if (/^canvas-r\d+$/.test(String(stage.plannedStageId || ''))) { round += 1; ref = `r${round}`; kind = 'round'; }
+                // The round number is the one the stage id keeps: a round nobody sends in has no stage in the plan.
+                if (/^canvas-r\d+$/.test(String(stage.plannedStageId || ''))) { round = Number(String(stage.plannedStageId).slice('canvas-r'.length)); ref = `r${round}`; kind = 'round'; }
                 else if (stage.outputIntent === 'working_synthesis') { ref = `synth:${stage.plannedStageId}`; kind = 'synthesis'; }
                 else if (stage.outputIntent === 'candidate_final') { ref = 'final'; kind = 'synthesis'; }
                 else return null;
@@ -6742,14 +6743,55 @@ document.addEventListener('click', (event) => {
                 return { ref, kind, ...(kind === 'round' ? roundFields(ref) : {}), models: entries };
             }).filter(Boolean);
             if (forSave) {
-                // Settings of a card the canvas has no step for (a removed round, a final synthesis that is off) are kept too.
-                const present = new Set(steps.map((step) => step.ref));
-                [...new Set([...Object.keys(cards), ...Object.keys(roundSettings)])].filter((ref) => !present.has(ref) && /^(r\d+|final|synth:.+)$/.test(ref)).forEach((ref) => {
-                    const models = Object.keys(cards[ref] || {}).map((name) => modelEntry(ref, name, { enabled: false })).filter((model) => Object.keys(model).length > 2);
-                    const isRound = /^r\d+$/.test(ref);
-                    const fields = isRound ? roundFields(ref) : {};
-                    if (models.length || Object.keys(fields).length) steps.push({ ref, kind: isRound ? 'round' : 'synthesis', ...fields, models });
+                // The canvas keeps every round, also one nobody sends in; the schema holds them all in order (r1…rN), or
+                // the canvas could not show it again (the rounds are numbered by their place).
+                const total = Math.max(1, Number(roundCounter) || 1);
+                const have = new Set(steps.map((step) => step.ref));
+                const complete = [];
+                let nextRound = 1;
+                const addEmptyRounds = (upTo) => {
+                    for (; nextRound <= upTo; nextRound += 1) {
+                        const ref = `r${nextRound}`;
+                        if (have.has(ref)) continue;
+                        complete.push({ ref, kind: 'round', ...roundFields(ref),
+                            models: Object.keys(cards[ref] || {}).map((name) => modelEntry(ref, name, { enabled: false })).filter((model) => Object.keys(model).length > 2) });
+                        have.add(ref);
+                    }
+                };
+                steps.forEach((step) => {
+                    if (step.kind === 'round') {
+                        const number = Number(step.ref.slice(1));
+                        addEmptyRounds(number - 1);
+                        nextRound = Math.max(nextRound, number + 1);
+                    } else if (step.ref === 'final') {
+                        addEmptyRounds(total);
+                    }
+                    complete.push(step);
                 });
+                addEmptyRounds(total);
+                steps.splice(0, steps.length, ...complete);
+            }
+            if (forSave) {
+                // The card of an intermediate synthesis can be set before the synthesis is on the canvas; the id of such a
+                // synthesis says the round it stands after, so its settings are kept there as a step without active models.
+                const present = new Set(steps.map((step) => step.ref));
+                Object.keys(cards).filter((ref) => ref.startsWith('synth:') && !present.has(ref)).forEach((ref) => {
+                    const match = /^synth:planned-working-synthesis-after-canvas-r(\d+)$/.exec(ref);
+                    const after = match ? Number(match[1]) : 0;
+                    const at = steps.findIndex((step) => step.ref === `r${after}`);
+                    // Between two rounds only: not after the last round, not next to another synthesis.
+                    if (!match || after >= Math.max(1, Number(roundCounter) || 1) || at < 0 || steps[at + 1]?.kind === 'synthesis') return;
+                    const models = Object.keys(cards[ref] || {}).map((name) => modelEntry(ref, name, { enabled: false })).filter((model) => Object.keys(model).length > 2);
+                    if (models.length) steps.splice(at + 1, 0, { ref, kind: 'synthesis', models });
+                });
+            }
+            if (forSave) {
+                // A final synthesis that is switched off keeps its settings as a step without active models. Settings of a
+                // removed round or of an intermediate synthesis with no place between two rounds are dropped.
+                if (!steps.some((step) => step.ref === 'final')) {
+                    const models = Object.keys(cards.final || {}).map((name) => modelEntry('final', name, { enabled: false })).filter((model) => Object.keys(model).length > 2);
+                    if (models.length) steps.push({ ref: 'final', kind: 'synthesis', models });
+                }
             }
             const runValue = forSave ? (run || basicRunForSave()) : { policy: getDebateRunPolicy(), maxWords: getDebateMaxWords() };
             return { schemaVersion: window.BasicSchema.SCHEMA_VERSION, origin: 'user', ...(forSave && basedOn ? { basedOn } : {}),
@@ -7645,6 +7687,8 @@ document.addEventListener('click', (event) => {
                 clearCustomSessionForTest: () => { customPipelineDefaults.clear(); customCardSettings.clear(); customRoundSettings.clear(); },
                 capturePipelineConfig,
                 installBasicSchema: (...args) => installBasicSchema(...args),
+                recordFromSchema: (...args) => recordFromSchema(...args),
+                basicSchemaFromPage: (...args) => basicSchemaFromPage(...args),
                 applyPipelineConfig: (...args) => applyPipelineConfig(...args),
                 runCustomFromPage,
                 renderCustomBlockInspector: (...args) => renderCustomBlockInspector(...args),
@@ -8482,10 +8526,10 @@ document.addEventListener('click', (event) => {
             setTimeout(() => URL.revokeObjectURL(url), 0);
         };
 
-        // Installs a schema as a pipeline: the canvas members of the record (rounds, models, roles, synthesizer,
-        // intermediate syntheses) are built from the schema, then the record is stored like a saved pipeline.
-        // Returns { ok, errors }; a schema that cannot be shown on the canvas is not installed or changed.
-        const installBasicSchema = async (name, schema) => {
+        // The record of a Basic pipeline built from its schema, and nowhere else: the schema is the content, the canvas
+        // members (rounds, models, roles, synthesizer, intermediate syntheses) are derived from it here. Nothing is written
+        // to the store. Returns { ok, errors, record }; a schema the canvas cannot show gives errors with the place.
+        const recordFromSchema = (name, schema) => {
             const errors = window.BasicSchema.validate(schema);
             if (errors.length) return { ok: false, errors };
             const canvas = window.BasicSchema.toCanvas(schema, {
@@ -8525,11 +8569,18 @@ document.addEventListener('click', (event) => {
             };
             delete record.customModelSettings;
             delete record.customDefaults;
-            pipelineStore.pipelines[name] = record;
+            return { ok: true, errors: [], record };
+        };
+        // Installs a schema as a pipeline: the record from recordFromSchema is stored under the name and listed. This is the
+        // one place that writes the record of a Basic pipeline from a schema.
+        const installBasicSchema = async (name, schema) => {
+            const built = recordFromSchema(name, schema);
+            if (!built.ok) return built;
+            pipelineStore.pipelines[name] = built.record;
             if (!pipelineStore.order.includes(name)) pipelineStore.order.push(name);
             delete pipelineStore.draftPlans?.[name];
             delete pipelineSessionDraftPlans[name];
-            adoptBasicWorking(name, basicWorkingFromConfig(record));
+            adoptBasicWorking(name, basicWorkingFromConfig(built.record));
             pipelineStore.lastSaved = name;
             await persistPipelineStore();
             renderPipelineList(pipelineStore.order, pipelineStore.active, pipelineStore.lastSaved);

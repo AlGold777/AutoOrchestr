@@ -3279,6 +3279,91 @@ describe('Pipeline debate favorites view', () => {
         } finally { h.cleanup(); }
       }, 30000);
 
+      test('recordFromSchema builds the record without touching the store; the canvas members come from the schema', async () => {
+        const h = setupCustomInheritance('Record host', { synthesis: '' });
+        try {
+          const before = JSON.stringify(h.debug.getPipelineStoreSnapshot());
+          const schema = { schemaVersion: 1, origin: 'user', steps: [
+            { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }, { name: 'Claude' }] },
+            { ref: 'synth:mid', kind: 'synthesis', models: [{ name: 'Gemini' }] },
+            { ref: 'r2', kind: 'round', models: [{ name: 'GPT' }] },
+            { ref: 'final', kind: 'synthesis', models: [{ name: 'Claude' }] }
+          ] };
+          const built = h.debug.recordFromSchema('Record A', schema);
+          expect(built.ok).toBe(true);
+          expect(JSON.stringify(h.debug.getPipelineStoreSnapshot())).toBe(before);
+          expect(built.record.schema.steps).toEqual(schema.steps);
+          expect(built.record.roundCounter).toBe(2);
+          expect(built.record.protocol).toMatchObject({ presetId: 'CUSTOM', roundLimit: '2', synthesizer: 'Claude' });
+          expect(built.record.draftPlan.plannedStages.map((stage) => stage.plannedStageId)).toEqual(['canvas-r1', 'mid', 'canvas-r2', 'planned-final-synthesis']);
+          const refused = h.debug.recordFromSchema('Record B', { ...schema, schemaVersion: 99 });
+          expect(refused.ok).toBe(false);
+          expect(JSON.stringify(h.debug.getPipelineStoreSnapshot())).toBe(before);
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      test('a canvas with a round nobody sends in is saved with every round in order', async () => {
+        const h = setupCustomInheritance('Empty round host', { synthesis: '' });
+        try {
+          const installed = await h.debug.installBasicSchema('Three rounds', { schemaVersion: 1, origin: 'user', steps: [
+            { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }, { name: 'Claude' }] },
+            { ref: 'r2', kind: 'round', models: [] },
+            { ref: 'r3', kind: 'round', models: [{ name: 'GPT' }] }
+          ] });
+          expect(installed.ok).toBe(true);
+          document.querySelector('.pipeline-item[data-name="Three rounds"]').click();
+          await settleCustomCard();
+          const schema = h.debug.basicSchemaFromPage(planOf(), null, { forSave: true });
+          expect(schema.steps.map((step) => [step.ref, step.models.length])).toEqual([['r1', 2], ['r2', 0], ['r3', 1]]);
+          expect(window.BasicSchema.validate(schema)).toEqual([]);
+          const again = await h.debug.installBasicSchema('Three again', schema);
+          expect(again.ok).toBe(true);
+          expect(h.debug.getPipelineStoreSnapshot().pipelines['Three again'].roundCounter).toBe(3);
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      test('at save the settings of a removed round and of a gone intermediate synthesis are dropped, those of an off final synthesis stay', async () => {
+        const h = setupCustomInheritance('Extras host', { synthesis: '' });
+        try {
+          const earlier = { ...h.config, customModelSettings: { r5: { GPT: { promptTemplate: 'R5' } }, 'synth:gone': { Gemini: { task: 'G' } }, final: { Gemini: { task: 'FINAL OFF' } } } };
+          h.debug.clearCustomSessionForTest();
+          h.debug.setPipelineStoreForTest({ active: 'Extras host', order: ['Extras host'], pipelines: { 'Extras host': earlier } });
+          h.debug.applyPipelineConfig(earlier);
+          const schema = h.debug.basicSchemaFromPage(planOf(), null, { forSave: true });
+          expect(schema.steps.map((step) => step.ref)).toEqual(['r1', 'r2', 'final']);
+          expect(schema.steps[2].models).toEqual([{ name: 'Gemini', enabled: false, task: 'FINAL OFF' }]);
+          expect(h.debug.recordFromSchema('Extras A', schema).ok).toBe(true);
+          // A synthesis card set before the synthesis was added stays, at the place its id names.
+          const preset = { ...h.config, customModelSettings: { 'synth:planned-working-synthesis-after-canvas-r1': { Gemini: { promptTemplate: 'PRESET {вход}' } } } };
+          h.debug.clearCustomSessionForTest();
+          h.debug.setPipelineStoreForTest({ active: 'Extras host', order: ['Extras host'], pipelines: { 'Extras host': preset } });
+          h.debug.applyPipelineConfig(preset);
+          const kept = h.debug.basicSchemaFromPage(planOf(), null, { forSave: true });
+          expect(kept.steps.map((step) => step.ref)).toEqual(['r1', 'synth:planned-working-synthesis-after-canvas-r1', 'r2']);
+          expect(kept.steps[1].models).toEqual([{ name: 'Gemini', enabled: false, request: 'PRESET {вход}' }]);
+          expect(h.debug.recordFromSchema('Extras B', kept).ok).toBe(true);
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      test('a schema the canvas shows survives the round trip schema → record → canvas → schema', async () => {
+        const h = setupCustomInheritance('Round trip host', { synthesis: '' });
+        try {
+          const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, defaults: { roundTask: 'RT_TASK' }, steps: [
+            { ref: 'r1', kind: 'round', models: [{ name: 'Claude' }, { name: 'GPT', role: 'interaction_critical_audit' }] },
+            { ref: 'synth:mid', kind: 'synthesis', models: [{ name: 'Gemini' }] },
+            { ref: 'r2', kind: 'round', order: 'sequential', input: 'all', task: 'RT_ROUND', models: [{ name: 'Claude', maxWords: 90 }] },
+            { ref: 'final', kind: 'synthesis', models: [{ name: 'Claude' }] }
+          ] };
+          expect((await h.debug.installBasicSchema('Round trip', schema)).ok).toBe(true);
+          document.querySelector('.pipeline-item[data-name="Round trip"]').click();
+          await settleCustomCard();
+          const back = h.debug.basicSchemaFromPage(planOf(), null, { forSave: true });
+          expect(back.steps).toEqual(schema.steps);
+          expect(back.defaults).toEqual(schema.defaults);
+          expect(back.run).toEqual(schema.run);
+        } finally { h.cleanup(); }
+      }, 30000);
+
       test('a schema file is added through Import under the given name and does not replace the pipelines', async () => {
         const h = setupCustomInheritance('Import host', { synthesis: '' });
         const oldPrompt = window.prompt;
