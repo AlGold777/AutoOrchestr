@@ -41,6 +41,15 @@ body.is-resizing {
     flex-wrap: wrap;
 }
 
+/* Title left, controls in the middle of the row, pipeline actions right. */
+.pipeline-panel .panel-header {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+}
+.pipeline-panel .panel-header > .pipeline-list-header-actions {
+    justify-self: end;
+}
+
 .pipeline-panel .panel-title-group {
     flex: 0 0 auto;
 }

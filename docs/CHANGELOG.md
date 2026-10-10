@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-10-10 — Pipeline panel: the header controls sit in the middle of the row, version 2.81.683
+
+- `.pipeline-panel .panel-header` is a three-column grid (`1fr auto 1fr`): the name on the left, `.panel-header-actions` in the middle, the pipeline actions on the right.
+
 ### 2026-10-10 — Pipeline panel: the «Карта состояния» block is removed, version 2.81.682
 
 - `#disput-state-map-panel` (with the case export / import / delete buttons) is removed from `pipeline_panel.html`; `disput-state-map-view.js` skips the page when the block is absent.
