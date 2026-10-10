@@ -455,9 +455,16 @@ function answerHasDeliveryToken(llmName, text) {
 // answer (lastResortTerminal / lateCollectFinal / forceTerminalSuccess), so the
 // normal answer-verification gates do not turn it back into an open request.
 // Whether it really became final is checked and journaled.
+// Gemini puts a hidden label ("Ответ Gemini" / "Gemini said") between the thinking block and
+// the answer. A text that ends with it holds only the thinking: the answer has not started,
+// so a quiet text is no reason to commit it as the answer.
+function answerHasNoBodyYet(text) {
+  return /(?:Ответ Gemini|Gemini said:?)\s*$/i.test(String(text || '').trim());
+}
+
 function commitIncompleteAnswer(llmName, entry, { text, html = '', source, completionReason, extraMeta = {} } = {}) {
   const body = String(text || '').trim();
-  if (!entry || !body || typeof handleLLMResponse !== 'function') return false;
+  if (!entry || !body || answerHasNoBodyYet(body) || typeof handleLLMResponse !== 'function') return false;
   const sessionId = jobState?.session?.startTime || undefined;
   const dispatchId = entry.lastDispatchMeta?.dispatchId || entry.confirmedDispatchId || null;
   // With its own delivery token the text is complete: commit it as a success.

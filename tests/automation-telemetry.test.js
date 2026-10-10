@@ -757,6 +757,7 @@ describe('static answer watchdog', () => {
       isSessionActive: (id) => id === 7,
       isFinalizedEntry: (e) => Boolean(e?.finalStatusRecorded),
       answerHasDeliveryToken: tokenFor,
+      answerHasNoBodyYet: (text) => /(?:Ответ Gemini|Gemini said:?)\s*$/i.test(String(text || '').trim()),
       commitIncompleteAnswer: (...args) => { calls.commit.push(args); return true; },
       reportDispatchPhase: (...args) => calls.phases.push(args[2] + ':' + (args[3]?.reason || '')),
       runAutomaticGetItForModel: async (...args) => { calls.getIt.push(args); return { status: getItStatus }; }
@@ -804,6 +805,20 @@ describe('static answer watchdog', () => {
     withNow(31000, () => runStaticAnswerWatchTick(7));
     expect(calls.commit).toHaveLength(1);
     expect(calls.commit[0][2]).toMatchObject({ completionReason: 'static_text_quiet' });
+  });
+
+  test('a text that ends with the Gemini page label (only the thinking is shown) is never committed as the answer', () => {
+    const entry = { promptSubmittedAt: 1, answer: 'Analyzing the Russian\nОтвет Gemini' };
+    const { runStaticAnswerWatchTick, calls } = loadWatch({ X: entry });
+    withNow(0, () => runStaticAnswerWatchTick(7));
+    withNow(40000, () => runStaticAnswerWatchTick(7));
+    withNow(80000, () => runStaticAnswerWatchTick(7));
+    expect(calls.commit).toHaveLength(0);
+    expect(calls.getIt).toHaveLength(0);
+    entry.answer += '\nThe answer begins here.';
+    withNow(81000, () => runStaticAnswerWatchTick(7));
+    withNow(115000, () => runStaticAnswerWatchTick(7));
+    expect(calls.commit).toHaveLength(1);
   });
 
   test('a busy Get it is retried; finished, unsent, empty and deferred models are left alone', () => {

@@ -1121,11 +1121,9 @@
     'button',
     '[role="button"]',
     '[data-message-part-type="reasoning"]',
+    'h6.screen-reader-model-response-label',
     '[aria-hidden="true"]',
     '[inert]',
-    // Gemini's screen-reader label "Ответ Gemini" / "Gemini said" is not part of the answer.
-    'model-response-label-announcer',
-    '.screen-reader-model-response-label',
     'header',
     'footer',
     'nav',
@@ -1161,6 +1159,14 @@
 
   const extractSafeVisibleText = (el, maxChars = 10000) => {
     if (!el) return '';
+    const label = el.querySelector?.('h6.screen-reader-model-response-label');
+    if (label) {
+      const rawText = String(el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+      if (rawText.endsWith(String(label.textContent || '').trim())) return '';
+      return String(el.innerText || el.textContent || '')
+        .replace(String(label.innerText || label.textContent || '').trim(), '')
+        .replace(/\s+/g, ' ').trim().slice(0, Math.max(0, Number(maxChars) || 10000));
+    }
     let text = '';
     try {
       text = el.innerText || el.textContent || '';
@@ -1295,6 +1301,10 @@
       } catch (_) {}
     };
     visitRoot(document);
+    if (llmName === 'Gemini') {
+      const turns = document.querySelectorAll('model-response');
+      if (turns.length) nodes.splice(0, nodes.length, turns[turns.length - 1]);
+    }
     if (llmName === 'Le Chat') {
       const assistants = document.querySelectorAll('[data-message-author-role="assistant"], [data-role="assistant"]');
       const latest = assistants[assistants.length - 1];
@@ -1305,7 +1315,7 @@
     const candidates = nodes
       .filter((node) => node && !isLateSnapshotRejectedNode(node))
       .map((node, index) => {
-        const text = llmName === 'Le Chat' && window.AnswerStructure
+        const text = ['Le Chat', 'Gemini'].includes(llmName) && window.AnswerStructure
           ? window.AnswerStructure.linearizeText(node) : extractSafeVisibleText(node, 200000);
         let visible = true;
         try {
@@ -1314,7 +1324,8 @@
         } catch (_) {}
         return { node, text, visible, score: (visible ? 1000000 : 0) + index };
       })
-      .filter((item) => item.text.length >= minChars)
+      .filter((item) => item.text.length >= minChars
+        && !(llmName === 'Gemini' && /(?:Ответ Gemini|Gemini said:?)\s*$/i.test(item.text)))
       .sort((a, b) => b.score - a.score);
     const best = candidates[0] || null;
     return best

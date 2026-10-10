@@ -1,5 +1,33 @@
 # CHANGELOG — Project
 
+### 2026-10-10 — Remove Gemini's service response label from collected answers, version 2.81.695
+
+- At the user's request, complete Gemini answers no longer include the page's hidden «Ответ Gemini» label in text or HTML. This supersedes the label-retention preference for 2.81.694.
+- Keep the raw-turn body check before removing the label, so the thinking/label-only gap is still rejected. Clean structured, legacy, SelectorFinder, snapshot and inline recovery paths; strip the service element when rendering lifecycle HTML as well. The actual provider page and quoted occurrences inside answer content remain unchanged.
+- Updated `tests/gemini-answer-gap.test.js`: the 13.5-second gap remains covered, with additional checks for label removal, quote preservation and helper-unavailable recovery.
+
+### 2026-10-10 — Gemini: wait for the answer body and fill the primary card, version 2.81.694
+
+- Check Gemini's raw turn before accessibility filtering: a thinking heading plus the screen-reader label cannot become answer text after the label is discarded. Keep «Ответ Gemini» in complete answers.
+- Resolve one whole Gemini turn instead of nested fragments. Legacy and snapshot recovery read the latest `model-response`, wait through the label-only gap, and cannot substitute an older turn. Background recovery/delivery also reject thinking-only candidates before publishing them.
+- A real answer replaces a closed Gemini label/thinking placeholder in the primary card. Stale label-only HTML cannot conceal committed text, including short answers. Feed layout and moderator input width are unchanged.
+- Regression: `tests/gemini-answer-gap.test.js` (13.5 s gap, eventual delivery token, legacy/snapshot paths, primary card and stale HTML). Investigation and validation: `docs/gemini-answer-gap-2.81.694.md`.
+
+### 2026-10-10 — A Gemini text of only thinking + page label is not an answer anywhere, version 2.81.693
+
+- While Gemini thinks, the page text is «heading of the thinking\nОтвет Gemini» (28–46 characters), and for ~13 s between the end of the thinking and the first words of the answer it is the label alone. The heading plus the label passed the `length >= 20` bar of `AnswerContentClassifier`, so the pipeline finalized it and the card kept «Ответ Gemini» as the answer (the real answer came later as Δ revisions).
+- `AnswerContentClassifier` now classes a short text that ends with the label as `ui_noise` / `gemini_thinking_only` (not terminal-eligible): the pipeline finalization and the background acceptance both use it. The legacy wait of the Gemini adapter (`grabLatestAssistantMarkup`) skips such a text too. A text with the answer after the label is unchanged.
+
+### 2026-10-10 — Gemini's stop button is seen in the Russian interface, version 2.81.692
+
+- The stop button of Gemini is named «Остановить генерацию ответа» in the Russian interface; the selector knew only «Stop», so the answer watcher saw no generation (`stop=0`) while the model was still thinking. `button[aria-label*="Остановить генерацию" i]` is added to the stop button of the Gemini pipeline selectors and to the generation elements of the Gemini adapter.
+- Field log of one run (while thinking, the text of `model-response` is «heading of the thinking\nОтвет Gemini»; the answer starts with the label) confirms the rule of 2.81.691.
+
+### 2026-10-10 — A quiet text that holds only Gemini's thinking is not committed as the answer, version 2.81.691
+
+- The static answer watchdog (added after 2.81.604) committed a text that did not change for 30 s as an incomplete answer. While Gemini was still thinking, the page showed only the heading of the thinking and the hidden label "Ответ Gemini" — that became the card (R1/R2 without an answer). A text that ends with the label is now never committed (`answerHasNoBodyYet`, in the watchdog and in `commitIncompleteAnswer`, which also covers the commit after visits); the watchdog waits for the body of the answer.
+- The removal of the page label from cards and from the collected html (2.81.687–689) is reverted: the label stays as in 2.81.604.
+
 ### 2026-10-10 — Basic documentation for a model that knows nothing about the project (documents and a test only, no version change)
 
 - New entry and explanation documents in `docs/Pipeline scenarios/`: `basic-start-here.md` (what Basic and a schema are, glossary, the names interface → code, the reading order), `basic-how-it-works.md` (a run step by step, who does what, what appears on the page, how «Basic · итог» is formed, the journal events, questions with exact answers), `basic-code-map.md` (files, functions of `results.js`, tests, what to change for typical changes), `basic-diagnostics.md` (symptom → where to look, what to collect). `basic-engine-and-schemas.md` got «Решения и причины»; `basic-pipeline.md` lost its version marks and points to the new documents. `AGENTS.md`, `README.md`, `docs/project-overview.md` and `docs/documentation-map.md` lead to `basic-start-here.md`.

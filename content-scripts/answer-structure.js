@@ -71,6 +71,12 @@
 
   function linearizeText(element, options = {}) {
     if (!element || element.nodeType !== 1 || isIgnored(element)) return '';
+    // Test the page's turn before discarding accessibility nodes. Otherwise the
+    // Gemini label disappears and its thinking heading becomes a valid answer.
+    const geminiTurn = element.closest?.('model-response');
+    const geminiLabel = geminiTurn?.querySelector('h6.screen-reader-model-response-label');
+    const labelText = normalizeText(geminiLabel?.textContent || '');
+    if (labelText && normalizeText(geminiTurn.innerText || geminiTurn.textContent || '').endsWith(labelText)) return '';
     const chunks = [];
     const maxChars = Math.max(1, Number(options.maxChars || 200000));
     let length = 0;

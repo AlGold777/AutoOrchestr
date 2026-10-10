@@ -19326,7 +19326,14 @@ document.addEventListener('click', (event) => {
 
     function resolveCompleteAnswerHtml(answerText = '', answerHtml = '') {
         const text = String(answerText || '').trim();
-        const sanitizedHtml = sanitizeInlineHtml(String(answerHtml || '').trim());
+        const sourceHtml = sanitizeInlineHtml(String(answerHtml || '').trim());
+        let sanitizedHtml = sourceHtml;
+        if (sourceHtml.includes('screen-reader-model-response-label')) {
+            const fragment = document.createElement('template');
+            fragment.innerHTML = sourceHtml;
+            fragment.content.querySelectorAll('h6.screen-reader-model-response-label').forEach(label => label.remove());
+            sanitizedHtml = fragment.innerHTML;
+        }
         const textHtml = convertMarkdownToHTML(text);
         if (!sanitizedHtml || !text) return sanitizedHtml || textHtml;
 
@@ -19349,7 +19356,9 @@ document.addEventListener('click', (event) => {
         const htmlHoldsNoAnswer = textProjection.length >= 200
             && htmlProjection.replace(/Ответ Gemini|Gemini said:?/gi, '').trim().length < 120
             && !htmlProjection.includes(textProjection.slice(0, 40));
-        return htmlProjectionIsTruncated || htmlHoldsNoAnswer ? textHtml : sanitizedHtml;
+        const geminiHtmlBodyPending = /(?:Ответ Gemini|Gemini said:?)\s*$/i.test(normalizeRenderedAnswerText(plainTextFromHtml(sourceHtml)))
+            && !/(?:Ответ Gemini|Gemini said:?)\s*$/i.test(textProjection);
+        return htmlProjectionIsTruncated || htmlHoldsNoAnswer || geminiHtmlBodyPending ? textHtml : sanitizedHtml;
     }
 
     function updateLLMPanelOutput(llmName, answer, answerHtml = '', meta = {}) {
@@ -22467,35 +22476,10 @@ function checkCompareButtonState() {
             card.dataset.turnClosed = 'true';
         });
     }
-    // The hidden label of the Gemini page ("Ответ Gemini") duplicates the name in the card
-    // header. It is cut only when it is the very first text of the answer, at any depth.
-    const MODEL_PAGE_LABEL = /^(Ответ Gemini|Gemini said:?)\s*/i;
-    function stripModelPageLabel(outputEl) {
-        const lead = String(outputEl.textContent || '').trimStart();
-        const match = lead.match(MODEL_PAGE_LABEL);
-        if (!match || lead.length === match[0].length) return;
-        const walker = document.createTreeWalker(outputEl, NodeFilter.SHOW_TEXT);
-        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-            const value = String(node.nodeValue || '');
-            if (!value.trim()) continue;
-            const found = value.match(MODEL_PAGE_LABEL);
-            if (!found || !value.trimStart().startsWith(found[0].trim())) return;
-            node.nodeValue = value.trimStart().slice(found[0].length);
-            let holder = node.parentElement;
-            while (!node.nodeValue.trim() && holder && holder !== outputEl && !holder.textContent.trim()) {
-                const parent = holder.parentElement;
-                holder.remove();
-                holder = parent;
-            }
-            if (!node.nodeValue.trim() && node.parentNode) node.remove();
-            return;
-        }
-    }
     function renderDebateResponseBody(outputEl, text = '', html = '') {
         if (!outputEl) return '';
         const formattedHtml = resolveCompleteAnswerHtml(text, html);
         replaceChildrenFromSanitizedHtml(outputEl, formattedHtml);
-        stripModelPageLabel(outputEl);
         decorateLinksForNewTab(outputEl);
         return String(outputEl.innerHTML || '').trim();
     }
@@ -23545,10 +23529,17 @@ function checkCompareButtonState() {
         // the same request replaces it in place even when it is not a strict
         // continuation (partial markdown renders differently while streaming).
         const provisional = targetCard.dataset.turnClosed !== 'true' && sameRequest.includes(targetCard);
-        if (incomingShown && primaryText && (incomingShown.startsWith(primaryText) || provisional)) {
+        // Old runs may have closed on Gemini's announcer before the first token.
+        // The first actual answer belongs in that card, even if its thinking
+        // heading changed; it is not a revision of an existing answer.
+        const pendingGeminiBody = String(llmName).toLowerCase() === 'gemini'
+            && sameRequest.includes(targetCard)
+            && /(?:Ответ Gemini|Gemini said:?)\s*$/i.test(primaryText)
+            && !/(?:Ответ Gemini|Gemini said:?)\s*$/i.test(incomingShown);
+        if (incomingShown && primaryText && (incomingShown.startsWith(primaryText) || provisional || pendingGeminiBody)) {
             const now = new Date();
             const timeLabel = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-            if (provisional) renderDebateResponseBody(primaryOutput, normalizedText, normalizedHtml);
+            if (provisional || pendingGeminiBody) renderDebateResponseBody(primaryOutput, normalizedText, normalizedHtml);
             else appendDebateResponseGrowth(primaryOutput, normalizedText, normalizedHtml, primaryText);
             const timeEl = targetCard.querySelector('.debate-model-card-time');
             if (timeEl) timeEl.textContent = timeLabel;

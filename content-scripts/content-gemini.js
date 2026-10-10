@@ -49,7 +49,9 @@ const buildInlineHtml = (node) => {
   if (typeof builder === 'function') {
     return String(builder(node, { includeRoot: true }) || '').trim();
   }
-  return String(node.innerHTML || '').trim();
+  const clone = node.cloneNode(true);
+  clone.querySelectorAll('h6.screen-reader-model-response-label').forEach(label => label.remove());
+  return String(clone.innerHTML || '').trim();
 };
 
 const normalizeResponsePayload = (resp, fallbackHtml = '') => {
@@ -96,6 +98,8 @@ function grabLatestAssistantMarkup() {
       if (position & Node.DOCUMENT_POSITION_PRECEDING) return 1;
       return 0;
     });
+    const turns = document.querySelectorAll('model-response');
+    if (turns.length) nodes.splice(0, nodes.length, turns[turns.length - 1]);
     for (let i = nodes.length - 1; i >= 0; i--) {
       const node = nodes[i];
       const roleHost = node.closest?.('[data-message-author-role], [data-role], [data-author]');
@@ -107,7 +111,11 @@ function grabLatestAssistantMarkup() {
       if (/\b(user|human)\b/.test(role)) continue;
       if (node.closest?.('rich-textarea, form [contenteditable="true"], form textarea')) continue;
       const html = buildInlineHtml(node);
-      const text = (node.innerText || node.textContent || '').trim();
+      const rawText = (node.innerText || node.textContent || '').trim();
+      // Only the thinking and the page label are shown: the answer has not started.
+      if (/(?:Ответ Gemini|Gemini said:?)\s*$/i.test(rawText)) continue;
+      const label = node.querySelector('h6.screen-reader-model-response-label');
+      const text = label ? rawText.replace(String(label.innerText || label.textContent || '').trim(), '').trim() : rawText;
       if (html || text) return { html, text, node };
     }
   } catch (err) {
@@ -126,7 +134,9 @@ async function trySelectorFinderResponse(prompt, timeoutMs = 60000) {
       timeout: timeoutMs,
       prompt: prompt || ''
     });
-    return (res?.text || '').trim();
+    const text = (res?.text || '').trim();
+    if (/(?:Ответ Gemini|Gemini said:?)\s*$/i.test(text)) return '';
+    return text.replace(/^(?:Ответ Gemini|Gemini said:?)\s+/i, '');
   } catch (err) {
     console.warn('[content-gemini] SelectorFinder response fallback failed', err);
     return '';
@@ -522,7 +532,7 @@ async function tryGeminiPipeline(promptText = '', lifecycle = {}, baselineText =
     lifecycle.onPipeline?.(pipeline);
     const result = await pipeline.execute();
     console.log("[DIAGNOSTIC] Gemini pipeline result:", { success: result?.success, hasAnswer: !!result?.answer, answerLength: result?.answer?.length, error: result?.error });
-    if (result?.success && result.answer) {
+    if (result?.success && result.answer && !/(?:Ответ Gemini|Gemini said:?)\s*$/i.test(result.answer)) {
       heartbeat?.({
         stage: 'success',
         answerLength: result.answer.length,
@@ -1353,7 +1363,7 @@ async function injectAndGetResponse(prompt, attachments = [], meta = null) {
         const geminiSubmitConfirmation = window.ProviderSubmitConfirmation || null;
         const collectGeminiGenerationElements = () => Array.from(document.querySelectorAll([
             '[aria-busy="true"]', '[data-is-loading="true"]', '[data-streaming="true"]',
-            'button[aria-label*="Stop" i]', '[class*="streaming" i]'
+            'button[aria-label*="Stop" i]', 'button[aria-label*="Остановить генерацию" i]', '[class*="streaming" i]'
         ].join(',')));
         const countGeminiUserTurns = () => document.querySelectorAll(
             'user-query, [data-message-author-role="user"], [data-role="user"]'
@@ -1641,7 +1651,8 @@ async function injectAndGetResponse(prompt, attachments = [], meta = null) {
         try {
           const finderText = await trySelectorFinderResponse(prompt, 60000);
           const cleanedFinder = window.contentCleaner.cleanContent(finderText || '', { maxLength: 200000 });
-          if (cleanedFinder && !isGeminiBaselineCandidate({ text: cleanedFinder, node: null }, preDispatchBaseline)) {
+          if (cleanedFinder && !/(?:Ответ Gemini|Gemini said:?)\s*$/i.test(cleanedFinder)
+            && !isGeminiBaselineCandidate({ text: cleanedFinder, node: null }, preDispatchBaseline)) {
             console.warn('[content-gemini] DOM fallback empty, using SelectorFinder response');
             activity.stop({ status: 'success', answerLength: cleanedFinder.length, source: 'selector-finder' });
             return cleanedFinder;
