@@ -96,6 +96,9 @@ function createSandbox({ llms } = {}) {
   context.self = context;
 
   vm.createContext(context);
+  const coordinatorSource = fs.readFileSync(path.join(__dirname, '..', 'background', 'dispatch-coordinator.js'), 'utf8');
+  vm.runInContext(coordinatorSource.slice(coordinatorSource.indexOf('function answerHasNoBodyYet'),
+    coordinatorSource.indexOf('\nfunction commitIncompleteAnswer')), context);
   vm.runInContext(STATUS_CONTRACT_SOURCE, context, { filename: 'shared/status-contract.js' });
   vm.runInContext(ANSWER_EVIDENCE_SOURCE, context, { filename: 'shared/answer-evidence.js' });
   vm.runInContext(FINALIZATION_CONTROLLER_SOURCE, context, { filename: 'shared/finalization-controller.js' });
@@ -122,6 +125,64 @@ describe('round1 dispatch ordering', () => {
 });
 
 describe('round4 gate force-final idempotency', () => {
+  test.each(['IDLE', 'ERROR'])('an idle unconfirmed Gemini dispatch expires instead of holding the next run (%s)', async dispatchState => {
+    const now = Date.now();
+    const { context, telemetryEvents } = createSandbox({ llms: { Gemini: {
+      tabId: 303, dispatchAttempts: 1, status: 'IDLE', dispatchState,
+      lastDispatchAt: now - 181000,
+      lastDispatchMeta: { dispatchId: 'Gemini:stalled:1' },
+      awaitingSubmitConfirmation: true, awaitingSubmitConfirmationAt: now - 176000,
+      dispatchInFlight: false,
+      providerComposerTransactionActive: true,
+      providerComposerTransactionActiveAt: now - 181000,
+      providerDispatchStage: 'command_accepted',
+      providerDispatchStageDispatchId: 'Gemini:stalled:1',
+      providerDispatchStageAt: now - 181000
+    } } });
+    expect(context.finalizeNoSendModelIfStalled('Gemini', RUN_SESSION_ID)).toBe(true);
+    await new Promise(resolve => setTimeout(resolve, 400));
+    expect(context.jobState.llms.Gemini.finalStatus).toBe('NO_SEND');
+    expect(forceFinalEvents(telemetryEvents, 'no_send_stall')).toHaveLength(1);
+  });
+
+  test('fresh provider progress still protects a slow unconfirmed dispatch', () => {
+    const now = Date.now();
+    const { context } = createSandbox({ llms: { Gemini: {
+      tabId: 303, dispatchAttempts: 1, dispatchState: 'IDLE',
+      lastDispatchAt: now - 181000, lastDispatchMeta: { dispatchId: 'Gemini:slow:1' },
+      awaitingSubmitConfirmation: true,
+      providerDispatchStageDispatchId: 'Gemini:slow:1', providerDispatchStageAt: now - 1000
+    } } });
+    expect(context.finalizeNoSendModelIfStalled('Gemini', RUN_SESSION_ID)).toBe(false);
+  });
+
+  test.each([
+    { dispatchInFlight: true },
+    { dispatchState: 'SUBMITTING' },
+    { status: 'RECEIVING' },
+    { lastRuntimeActivityAt: Date.now() - 1000 },
+    { lastDispatchAt: Date.now() - 179000 }
+  ])('active or recent unconfirmed work is protected (%j)', overrides => {
+    const now = Date.now();
+    const { context } = createSandbox({ llms: { Gemini: {
+      tabId: 303, dispatchAttempts: 1, dispatchState: 'IDLE', status: 'IDLE',
+      lastDispatchAt: now - 181000, lastDispatchMeta: { dispatchId: 'Gemini:protected:1' },
+      awaitingSubmitConfirmation: true, ...overrides
+    } } });
+    expect(context.finalizeNoSendModelIfStalled('Gemini', RUN_SESSION_ID)).toBe(false);
+  });
+
+  test('progress from a different dispatch cannot keep a stalled confirmation alive', () => {
+    const now = Date.now();
+    const { context } = createSandbox({ llms: { Gemini: {
+      tabId: 303, dispatchAttempts: 1, dispatchState: 'IDLE', status: 'IDLE',
+      lastDispatchAt: now - 181000, lastDispatchMeta: { dispatchId: 'Gemini:current:1' },
+      awaitingSubmitConfirmation: true,
+      providerDispatchStageDispatchId: 'Gemini:previous:1', providerDispatchStageAt: now
+    } } });
+    expect(context.finalizeNoSendModelIfStalled('Gemini', RUN_SESSION_ID)).toBe(true);
+  });
+
   test('no_send stall force-final fires once per dispatch while recovery is deferred', async () => {
     const { context, telemetryEvents } = createSandbox({
       llms: {
