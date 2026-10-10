@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-10 — Basic documentation for a model that knows nothing about the project (documents and a test only, no version change)
+
+- New entry and explanation documents in `docs/Pipeline scenarios/`: `basic-start-here.md` (what Basic and a schema are, glossary, the names interface → code, the reading order), `basic-how-it-works.md` (a run step by step, who does what, what appears on the page, how «Basic · итог» is formed, the journal events, questions with exact answers), `basic-code-map.md` (files, functions of `results.js`, tests, what to change for typical changes), `basic-diagnostics.md` (symptom → where to look, what to collect). `basic-engine-and-schemas.md` got «Решения и причины»; `basic-pipeline.md` lost its version marks and points to the new documents. `AGENTS.md`, `README.md`, `docs/project-overview.md` and `docs/documentation-map.md` lead to `basic-start-here.md`.
+- `tests/basic-docs-refs.test.js` keeps them true to the code: the files and symbols of the code map exist, the journal events and the stop / rejection reasons match the engine, every relative link of the Basic documents leads to a file.
+- Checked by a cold read: a fresh model, given only the documents, answered 12 questions (among them how «Basic · итог» is formed); the gaps it found are closed.
+
 ### 2026-10-10 — Save, Import and Export of Basic schemas on one path, version 2.81.679
 
 - One path from a schema to a record: `recordFromSchema` derives the record of a Basic pipeline (rounds, models, roles, synthesizer, intermediate syntheses, protocol) from its schema and nowhere else; `installBasicSchema` stores it. Save, Import, the card / ▶ / round-card saves and the edits of the structure of a saved pipeline all go through it, so the record and the schema cannot differ.
