@@ -102,11 +102,7 @@
     try {
       if (element.shadowRoot) Array.from(element.shadowRoot.childNodes || []).forEach(visit);
     } catch (_) {}
-    const text = normalizeText(chunks.join(' ').slice(0, maxChars));
-    // Preserve the requested page label in a complete turn, while continuing to
-    // ignore unrelated accessibility text everywhere else.
-    return text && labelText && element.contains(geminiLabel)
-      ? normalizeText(`${labelText} ${text}`) : text;
+    return normalizeText(chunks.join(' ').slice(0, maxChars));
   }
 
   function directText(node) {

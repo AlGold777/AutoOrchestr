@@ -497,9 +497,18 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
     if (node?.closest?.('textarea,input,button,nav,header,footer,form,[contenteditable="true"],[data-message-part-type="reasoning"],[data-message-author-role="user"],[data-role="user"],[hidden],[inert],[aria-hidden="true"]')) return true;
     return false;
   };
-  const getText = (node) => ['le chat', 'gemini'].includes(normalizedModel) && window.AnswerStructure
-    ? window.AnswerStructure.linearizeText(node)
-    : String(node?.innerText || node?.textContent || '').replace(/\s+/g, ' ').trim();
+  const getText = (node) => {
+    if (['le chat', 'gemini'].includes(normalizedModel) && window.AnswerStructure) {
+      return window.AnswerStructure.linearizeText(node);
+    }
+    if (normalizedModel === 'gemini') {
+      const rawText = String(node?.innerText || node?.textContent || '').replace(/\s+/g, ' ').trim();
+      if (/(?:Ответ Gemini|Gemini said:?)\s*$/i.test(rawText)) return '';
+      const label = node.querySelector('h6.screen-reader-model-response-label');
+      return label ? rawText.replace(String(label.innerText || label.textContent || '').trim(), '').trim() : rawText;
+    }
+    return String(node?.innerText || node?.textContent || '').replace(/\s+/g, ' ').trim();
+  };
   const hashText = (value = '') => {
     const text = String(value || '');
     let hash = 2166136261;
@@ -526,9 +535,11 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
       const selector = nodeSelectors.get(node) || '';
       const descriptor = `${selector}#${index}`;
       const className = String(node.className || '');
+      const htmlNode = normalizedModel === 'gemini' ? node.cloneNode(true) : node;
+      if (normalizedModel === 'gemini') htmlNode.querySelectorAll('h6.screen-reader-model-response-label').forEach(label => label.remove());
       const html = normalizedModel === 'le chat' && window.ContentUtils?.buildInlineHtml
         ? window.ContentUtils.buildInlineHtml(node, { includeRoot: false })
-        : String(node.innerHTML || '').trim();
+        : String(htmlNode.innerHTML || '').trim();
       const isMarkdown = /markdown|prose|qwen-markdown|markdown-body/i.test(`${selector} ${className}`);
       const assistantNode = node.closest?.('[data-markdown-text-style="assistant-message"],[data-message-author-role="assistant"],[data-role="assistant"],.assistant-message,.qwen-chat-message-assistant,[class*="assistant" i]');
       const isAssistantRole = !!assistantNode;

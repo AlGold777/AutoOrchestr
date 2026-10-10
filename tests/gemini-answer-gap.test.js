@@ -37,7 +37,7 @@ function page(heading = '', answer = '') {
   });
 }
 
-test.each(['', 'Анализирую русский запрос'])('13+ seconds of heading/label are not a turn; then the full answer retains its label (%s)', async heading => {
+test.each(['', 'Анализирую русский запрос'])('13+ seconds of heading/label are not a turn; then the full answer excludes its service label (%s)', async heading => {
   page(heading);
   let candidate;
   const sample = () => {
@@ -52,7 +52,7 @@ test.each(['', 'Анализирую русский запрос'])('13+ seconds
   await jest.advanceTimersByTimeAsync(500);
   clearInterval(timer);
   expect(window.AnswerStructure.linearizeText(candidate)).toBe(
-    'Ответ Gemini Полный ответ со всеми абзацами. [[AO-abc123]]');
+    'Полный ответ со всеми абзацами. [[AO-abc123]]');
 });
 
 test.each(['inline', 'late snapshot'])('%s ignores a long thinking heading and the announcer, then collects the current full turn', route => {
@@ -63,7 +63,8 @@ test.each(['inline', 'late snapshot'])('%s ignores a long thinking heading and t
   page('', 'Полный ответ. [[AO-abc123]]');
   const result = collect();
   expect(result.ok).toBe(true);
-  expect(result.text).toBe('Ответ Gemini Полный ответ. [[AO-abc123]]');
+  expect(result.text).toBe('Полный ответ. [[AO-abc123]]');
+  expect(result.html).not.toContain('screen-reader-model-response-label');
 });
 
 test('inline recovery also waits for the body when content helpers are unavailable', () => {
@@ -71,7 +72,70 @@ test('inline recovery also waits for the body when content helpers are unavailab
   page('Размышление о задаче. '.repeat(10));
   expect(inline('Gemini', 1).ok).toBe(false);
   page('', 'Ответ после паузы. [[AO-abc123]]');
-  expect(inline('Gemini', 1).text).toBe('Ответ Gemini Ответ после паузы. [[AO-abc123]]');
+  expect(inline('Gemini', 1).text).toBe('Ответ после паузы. [[AO-abc123]]');
+});
+
+test.each(['structure', 'inline', 'inline without helpers', 'late snapshot', 'late snapshot without helpers', 'legacy'])(
+  '%s removes the service label but retains the same phrase inside the answer', route => {
+    const answer = 'Здесь есть цитата «Ответ Gemini», которую нужно сохранить. [[AO-abc123]]';
+    page('', answer);
+    if (route.includes('without helpers')) delete window.AnswerStructure;
+    let result;
+    if (route === 'structure') {
+      const node = document.querySelector('model-response');
+      result = { text: window.AnswerStructure.linearizeText(node), html: window.ContentUtils.buildInlineHtml(node) };
+    } else if (route.startsWith('inline')) result = inline('Gemini', 1);
+    else if (route.startsWith('late snapshot')) result = window.ContentUtils.collectLateSnapshotCandidate('Gemini', 1);
+    else {
+      const src = read('content-scripts/content-gemini.js');
+      const grab = new Function('window', 'document', 'Node', 'buildInlineHtml', 'GEMINI_FALLBACK_LAST_MESSAGE_SELECTORS',
+        src.slice(src.indexOf('function grabLatestAssistantMarkup()'), src.indexOf('\nasync function trySelectorFinderResponse'))
+        + '\nreturn grabLatestAssistantMarkup;')(window, document, Node, window.ContentUtils.buildInlineHtml, ['model-response']);
+      result = grab();
+    }
+    expect(result.text.replace(/\s+/g, ' ').trim()).toBe(answer);
+    expect(result.html).not.toContain('screen-reader-model-response-label');
+    expect(result.html).toContain('«Ответ Gemini»');
+    expect(document.querySelector('h6.screen-reader-model-response-label')).not.toBeNull();
+  }
+);
+
+test('SelectorFinder checks pending raw text before removing the leading service label', async () => {
+  const src = read('content-scripts/content-gemini.js');
+  const start = src.indexOf('async function trySelectorFinderResponse(');
+  const finder = new Function('window', 'MODEL', src.slice(start, src.indexOf('// --- Idempotency', start))
+    + '\nreturn trySelectorFinderResponse;')(window, 'Gemini');
+  window.SelectorFinder = { waitForElement: jest.fn(async () => ({ text: 'Ответ Gemini' })) };
+  expect(await finder('prompt')).toBe('');
+  window.SelectorFinder.waitForElement.mockResolvedValue({ text: 'Ответ Gemini\n\nПолный ответ с цитатой «Ответ Gemini».' });
+  expect(await finder('prompt')).toBe('Полный ответ с цитатой «Ответ Gemini».');
+  delete window.SelectorFinder;
+});
+
+test('label cleanup preserves the rendered separation between answer paragraphs', () => {
+  page('', 'Первый абзац.');
+  const turn = document.querySelector('model-response');
+  turn.querySelector('message-content').innerHTML = '<p>Первый абзац.</p><p>Второй абзац.</p>';
+  Object.defineProperty(turn, 'innerText', { configurable: true,
+    value: 'Ответ Gemini\n\nПервый абзац.\n\nВторой абзац.' });
+  delete window.AnswerStructure;
+  expect(inline('Gemini', 1).text).toBe('Первый абзац. Второй абзац.');
+  expect(window.ContentUtils.collectLateSnapshotCandidate('Gemini', 1).text).toBe('Первый абзац. Второй абзац.');
+});
+
+test('rendering removes the actual label from lifecycle HTML without removing quoted answer text', () => {
+  page('', 'В ответе остаётся цитата «Ответ Gemini».');
+  const src = read('results.js');
+  const start = src.indexOf('    const normalizeRenderedAnswerText =');
+  const end = src.indexOf('\n    function updateLLMPanelOutput', start);
+  const plainTextFromHtml = html => {
+    const node = document.createElement('div'); node.innerHTML = html; return node.textContent;
+  };
+  const resolve = new Function('sanitizeInlineHtml', 'convertMarkdownToHTML', 'plainTextFromHtml',
+    src.slice(start, end) + '\nreturn resolveCompleteAnswerHtml;')(x => x, x => `<p>${x}</p>`, plainTextFromHtml);
+  const html = resolve('В ответе остаётся цитата «Ответ Gemini».', document.querySelector('model-response').innerHTML);
+  expect(html).not.toContain('screen-reader-model-response-label');
+  expect(plainTextFromHtml(html).trim()).toBe('В ответе остаётся цитата «Ответ Gemini».');
 });
 
 test.each(['Настоящий ответ.', 'Настоящий ответ. '.repeat(20)])('the panel renders committed text when stale HTML contains only its heading and label (%s)', body => {

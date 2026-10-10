@@ -49,7 +49,9 @@ const buildInlineHtml = (node) => {
   if (typeof builder === 'function') {
     return String(builder(node, { includeRoot: true }) || '').trim();
   }
-  return String(node.innerHTML || '').trim();
+  const clone = node.cloneNode(true);
+  clone.querySelectorAll('h6.screen-reader-model-response-label').forEach(label => label.remove());
+  return String(clone.innerHTML || '').trim();
 };
 
 const normalizeResponsePayload = (resp, fallbackHtml = '') => {
@@ -109,9 +111,11 @@ function grabLatestAssistantMarkup() {
       if (/\b(user|human)\b/.test(role)) continue;
       if (node.closest?.('rich-textarea, form [contenteditable="true"], form textarea')) continue;
       const html = buildInlineHtml(node);
-      const text = (node.innerText || node.textContent || '').trim();
+      const rawText = (node.innerText || node.textContent || '').trim();
       // Only the thinking and the page label are shown: the answer has not started.
-      if (/(?:Ответ Gemini|Gemini said:?)\s*$/i.test(text)) continue;
+      if (/(?:Ответ Gemini|Gemini said:?)\s*$/i.test(rawText)) continue;
+      const label = node.querySelector('h6.screen-reader-model-response-label');
+      const text = label ? rawText.replace(String(label.innerText || label.textContent || '').trim(), '').trim() : rawText;
       if (html || text) return { html, text, node };
     }
   } catch (err) {
@@ -130,7 +134,9 @@ async function trySelectorFinderResponse(prompt, timeoutMs = 60000) {
       timeout: timeoutMs,
       prompt: prompt || ''
     });
-    return (res?.text || '').trim();
+    const text = (res?.text || '').trim();
+    if (/(?:Ответ Gemini|Gemini said:?)\s*$/i.test(text)) return '';
+    return text.replace(/^(?:Ответ Gemini|Gemini said:?)\s+/i, '');
   } catch (err) {
     console.warn('[content-gemini] SelectorFinder response fallback failed', err);
     return '';

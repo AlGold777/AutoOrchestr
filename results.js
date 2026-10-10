@@ -19326,7 +19326,14 @@ document.addEventListener('click', (event) => {
 
     function resolveCompleteAnswerHtml(answerText = '', answerHtml = '') {
         const text = String(answerText || '').trim();
-        const sanitizedHtml = sanitizeInlineHtml(String(answerHtml || '').trim());
+        const sourceHtml = sanitizeInlineHtml(String(answerHtml || '').trim());
+        let sanitizedHtml = sourceHtml;
+        if (sourceHtml.includes('screen-reader-model-response-label')) {
+            const fragment = document.createElement('template');
+            fragment.innerHTML = sourceHtml;
+            fragment.content.querySelectorAll('h6.screen-reader-model-response-label').forEach(label => label.remove());
+            sanitizedHtml = fragment.innerHTML;
+        }
         const textHtml = convertMarkdownToHTML(text);
         if (!sanitizedHtml || !text) return sanitizedHtml || textHtml;
 
@@ -19349,7 +19356,7 @@ document.addEventListener('click', (event) => {
         const htmlHoldsNoAnswer = textProjection.length >= 200
             && htmlProjection.replace(/Ответ Gemini|Gemini said:?/gi, '').trim().length < 120
             && !htmlProjection.includes(textProjection.slice(0, 40));
-        const geminiHtmlBodyPending = /(?:Ответ Gemini|Gemini said:?)\s*$/i.test(htmlProjection)
+        const geminiHtmlBodyPending = /(?:Ответ Gemini|Gemini said:?)\s*$/i.test(normalizeRenderedAnswerText(plainTextFromHtml(sourceHtml)))
             && !/(?:Ответ Gemini|Gemini said:?)\s*$/i.test(textProjection);
         return htmlProjectionIsTruncated || htmlHoldsNoAnswer || geminiHtmlBodyPending ? textHtml : sanitizedHtml;
     }

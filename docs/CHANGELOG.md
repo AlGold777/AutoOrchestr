@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-10 — Remove Gemini's service response label from collected answers, version 2.81.695
+
+- At the user's request, complete Gemini answers no longer include the page's hidden «Ответ Gemini» label in text or HTML. This supersedes the label-retention preference for 2.81.694.
+- Keep the raw-turn body check before removing the label, so the thinking/label-only gap is still rejected. Clean structured, legacy, SelectorFinder, snapshot and inline recovery paths; strip the service element when rendering lifecycle HTML as well. The actual provider page and quoted occurrences inside answer content remain unchanged.
+- Updated `tests/gemini-answer-gap.test.js`: the 13.5-second gap remains covered, with additional checks for label removal, quote preservation and helper-unavailable recovery.
+
 ### 2026-10-10 — Gemini: wait for the answer body and fill the primary card, version 2.81.694
 
 - Check Gemini's raw turn before accessibility filtering: a thinking heading plus the screen-reader label cannot become answer text after the label is discarded. Keep «Ответ Gemini» in complete answers.

@@ -1121,6 +1121,7 @@
     'button',
     '[role="button"]',
     '[data-message-part-type="reasoning"]',
+    'h6.screen-reader-model-response-label',
     '[aria-hidden="true"]',
     '[inert]',
     'header',
@@ -1158,6 +1159,14 @@
 
   const extractSafeVisibleText = (el, maxChars = 10000) => {
     if (!el) return '';
+    const label = el.querySelector?.('h6.screen-reader-model-response-label');
+    if (label) {
+      const rawText = String(el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+      if (rawText.endsWith(String(label.textContent || '').trim())) return '';
+      return String(el.innerText || el.textContent || '')
+        .replace(String(label.innerText || label.textContent || '').trim(), '')
+        .replace(/\s+/g, ' ').trim().slice(0, Math.max(0, Number(maxChars) || 10000));
+    }
     let text = '';
     try {
       text = el.innerText || el.textContent || '';
