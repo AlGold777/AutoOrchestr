@@ -160,6 +160,11 @@ describe('Basic schema: the canvas a schema stands for', () => {
     expect(places(base([round('r1', ['GPT']), synthesis('synth:a', ['Claude'])]))).toEqual(['steps[1]']);
     expect(places(base([synthesis('synth:a', ['Claude']), round('r1', ['GPT'])]))).toEqual(['steps[0]']);
     expect(places(base([round('r1', ['GPT']), synthesis('synth:', ['Claude']), round('r2', ['GPT'])]))).toEqual(['steps[1].ref']);
+    expect(places(base([round('r1', ['GPT']), synthesis('synth:проверка', ['Claude']), round('r2', ['GPT'])]))).toEqual(['steps[1].ref']);
+    expect(places(base([round('r1', ['GPT']), synthesis('synth:a b', ['Claude']), round('r2', ['GPT'])]))).toEqual(['steps[1].ref']);
+    expect(places(base([round('r1', ['GPT'])], { run: { maxWords: 250 } }), { runWords: [300, 500, 700, 1000] })).toEqual(['run.maxWords']);
+    expect(places(base([round('r1', ['GPT'])], { run: { maxWords: 500 } }), { runWords: [300, 500, 700, 1000] })).toEqual([]);
+    expect(places(base([round('r1', ['GPT'])], { run: { maxWords: 250 } }))).toEqual([]);
     expect(places(base([round('r1', ['GPT']), synthesis('final', ['Claude', 'Gemini'])]))).toEqual(['steps[1].models']);
     expect(places(base([synthesis('final', ['Claude'])]))).toEqual(['steps']);
     expect(places(base([round('r1', ['GPT']), synthesis('final', ['Claude']), round('r2', ['GPT'])]))).toContain('steps[1].ref');

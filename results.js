@@ -8490,7 +8490,8 @@ document.addEventListener('click', (event) => {
             if (errors.length) return { ok: false, errors };
             const canvas = window.BasicSchema.toCanvas(schema, {
                 models: getAllPipelineModelNames(),
-                isRole: (id) => id === CUSTOM_ROLE_ID || Boolean(getJudgePromptById(id))
+                isRole: (id) => id === CUSTOM_ROLE_ID || Boolean(getJudgePromptById(id)),
+                runWords: Array.from(document.getElementById('debate-length-select')?.options || []).map((option) => Number(option.value)).filter(Number.isFinite)
             });
             if (canvas.errors.length) return { ok: false, errors: canvas.errors };
             const run = window.BasicSchema.resolveRun(schema);
@@ -8514,7 +8515,8 @@ document.addEventListener('click', (event) => {
             const record = {
                 ...base,
                 version: 3,
-                protocol: { ...base.protocol, runPolicy: run.policy, synthesizer: canvas.synthesizer, selectedModels: canvas.selectedModels,
+                // The page grows or cuts the rounds to the round limit after loading: it is the number of the schema's rounds.
+                protocol: { ...base.protocol, runPolicy: run.policy, synthesizer: canvas.synthesizer, selectedModels: canvas.selectedModels, roundLimit: String(canvas.roundCounter),
                     ...(lengthSelect && Array.from(lengthSelect.options).some((option) => option.value === String(run.maxWords)) ? { length: String(run.maxWords) } : {}) },
                 draftPlan: plan,
                 roundCounter: canvas.roundCounter,

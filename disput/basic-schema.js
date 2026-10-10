@@ -215,7 +215,7 @@
   // tells a known role. A schema the canvas cannot show gives errors (with the place), never a changed schema.
   // The canvas shows rounds r1, r2, … in order, one intermediate synthesis between two rounds, the final
   // synthesis last, one model in a synthesis. A switched-off model or synthesis is not on the canvas.
-  function toCanvas(schema, { models = [], isRole = () => true } = {}) {
+  function toCanvas(schema, { models = [], isRole = () => true, runWords = null } = {}) {
     const errors = [];
     const fail = (path, message) => errors.push({ path, message });
     const steps = schema.steps || [];
@@ -242,11 +242,13 @@
         return;
       }
       const id = step.ref.startsWith('synth:') ? step.ref.slice('synth:'.length) : '';
-      if (!id) fail(`${path}.ref`, 'ref промежуточного синтеза: «synth:<id>»');
+      // The canvas keeps only A-Z a-z 0-9 _ - of an id; another character would make the settings follow another ref.
+      if (!/^[A-Za-z0-9_-]+$/.test(id)) fail(`${path}.ref`, 'ref промежуточного синтеза: «synth:<id>», id — латинские буквы, цифры, «_» и «-»');
       if (steps[index - 1]?.kind !== 'round') fail(path, 'промежуточный синтез стоит сразу после раунда');
       if (steps[index + 1]?.kind !== 'round') fail(path, 'промежуточный синтез стоит между двумя раундами');
       if (enabled.length) inserts.push({ afterRound: rounds.length, plannedStageId: id, participantIds: enabled.map((model) => model.name) });
     });
+    if (Array.isArray(runWords) && schema.run && 'maxWords' in schema.run && !runWords.includes(schema.run.maxWords)) fail('run.maxWords', `предел длины pipeline: допустимо ${runWords.join(', ')}`);
     if (!rounds.length) fail('steps', 'нужен хотя бы один раунд');
     if (rounds.length > 50) fail('steps', 'раундов не больше 50');
     if (errors.length) return { errors };

@@ -3,7 +3,7 @@
 Статус: **концепция согласована 9 октября 2026**. Реализовано в 2.81.671–2.81.677: формат (включая политику запуска
 и общий предел), единая сборка, проверка перед запуском и **Save схемы**
 ([`disput/basic-schema.js`](../../disput/basic-schema.js), справочник —
-[basic-schema-reference.md](basic-schema-reference.md)).
+[basic-schema-reference.md](basic-schema-reference.md); как написать схему — [basic-schema-guide.md](basic-schema-guide.md)).
 
 **Что хранит запись Basic-pipeline (2.81.674).** Поле `schema` — единственное место настроек Basic: карточки моделей,
 ▶, политика запуска и общий предел, `origin`, `basedOn`, `schemaVersion`. Прежние члены записи

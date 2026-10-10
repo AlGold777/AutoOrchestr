@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-10 — The schema guide; install refuses what the canvas would change silently, version 2.81.678
+
+- New `docs/Pipeline scenarios/basic-schema-guide.md`: one self-contained instruction for writing a Basic schema (for a person or a model, a small one included): how to use it, the format rules, a 7-step algorithm with the choice of `input` and `order`, what Basic takes by itself, every field, how the request of a model is assembled (with a real example), exact lists of models and roles, the canvas rules with reasons, five ready templates, a table of install errors with fixes, a self-check list and what not to do. `tests/basic-schema-guide.test.js` keeps it true to the code: every JSON example is validated, shown on the canvas and assembled; the lists of models, roles, defaults and limits, the error messages and the request example are compared with the code; the page test installs every example.
+- Install (`BasicSchema.toCanvas`, `installBasicSchema`): the id of `synth:<id>` must be Latin letters, digits, `_` and `-` (the canvas cleans the others, and the settings would follow another ref); `run.maxWords` must be a value of the length select (300, 500, 700, 1000) — before it was ignored silently.
+- Fix: an installed schema took the round limit of the Basic template (2), so the page added an empty second round after loading a schema of one round; the round limit is now the number of the schema's rounds.
+- Docs: links from the reference, the scenario how-to, the engine doc and the documentation map.
+
 ### 2026-10-09 — The round card of Basic: order, input and task of a round, version 2.81.677
 
 - `results/stage-card.js`: the card opened by a round badge (Basic rounds) now holds, below «Роль для всех моделей раунда», **Порядок работы** (by default / parallel / by turns), **Вход раунда** (by default / nothing / previous step / everything accepted; the first round has none) and **Задание раунда** (shown while the input is not «nothing»; the placeholder shows the inherited text: ▶, then Basic). Fields are disabled during a run.

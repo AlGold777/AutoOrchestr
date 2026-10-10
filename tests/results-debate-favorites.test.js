@@ -3246,6 +3246,39 @@ describe('Pipeline debate favorites view', () => {
         } finally { h.cleanup(); }
       }, 30000);
 
+      test('every example of the schema guide installs on the real page and shows its steps', async () => {
+        const h = setupCustomInheritance('Guide host', { synthesis: '' });
+        try {
+          const guide = require('fs').readFileSync(require('path').join(__dirname, '..', 'docs', 'Pipeline scenarios', 'basic-schema-guide.md'), 'utf8');
+          const examples = [...guide.matchAll(/```json\n([\s\S]*?)\n```/g)].map((match) => JSON.parse(match[1]));
+          expect(examples.length).toBeGreaterThanOrEqual(5);
+          let index = 0;
+          for (const schema of examples) {
+            index += 1;
+            const result = await h.debug.installBasicSchema(`Guide example ${index}`, schema);
+            expect(result.errors).toEqual([]);
+            document.querySelector(`.pipeline-item[data-name="Guide example ${index}"]`).click();
+            await settleCustomCard();
+            const built = h.debug.buildBasicRun(planOf());
+            expect(built.errors).toEqual([]);
+            expect(built.steps.map((step) => step.ref)).toEqual(window.BasicSchema.assemble(schema).map((step) => step.ref));
+          }
+        } finally { h.cleanup(); }
+      }, 60000);
+
+      test('a shared limit the header cannot take, and an id the canvas would change, are refused at install', async () => {
+        const h = setupCustomInheritance('Install limits', { synthesis: '' });
+        try {
+          const base = { schemaVersion: 1, origin: 'user', steps: [{ ref: 'r1', kind: 'round', models: [{ name: 'GPT' }] }] };
+          const limit = await h.debug.installBasicSchema('Limit 250', { ...base, run: { maxWords: 250 } });
+          expect(limit.errors[0]).toMatchObject({ path: 'run.maxWords' });
+          expect(limit.errors[0].message).toContain(Array.from(document.getElementById('debate-length-select').options).map((option) => option.value).join(', '));
+          expect((await h.debug.installBasicSchema('Limit 500', { ...base, run: { maxWords: 500 } })).ok).toBe(true);
+          const badId = await h.debug.installBasicSchema('Bad id', { ...base, steps: [...base.steps, { ref: 'synth:проверка', kind: 'synthesis', models: [{ name: 'GPT' }] }, { ref: 'r2', kind: 'round', models: [{ name: 'GPT' }] }] });
+          expect(badId.errors[0]).toMatchObject({ path: 'steps[1].ref' });
+        } finally { h.cleanup(); }
+      }, 30000);
+
       test('a schema file is added through Import under the given name and does not replace the pipelines', async () => {
         const h = setupCustomInheritance('Import host', { synthesis: '' });
         const oldPrompt = window.prompt;
