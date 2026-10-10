@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-10 — A quiet text that holds only Gemini's thinking is not committed as the answer, version 2.81.691
+
+- The static answer watchdog (added after 2.81.604) committed a text that did not change for 30 s as an incomplete answer. While Gemini was still thinking, the page showed only the heading of the thinking and the hidden label "Ответ Gemini" — that became the card (R1/R2 without an answer). A text that ends with the label is now never committed (`answerHasNoBodyYet`, in the watchdog and in `commitIncompleteAnswer`, which also covers the commit after visits); the watchdog waits for the body of the answer.
+- The removal of the page label from cards and from the collected html (2.81.687–689) is reverted: the label stays as in 2.81.604.
+
 ### 2026-10-10 — The answer text wins over html that holds only the thinking heading, version 2.81.690
 
 - A card whose captured html is a short projection (the heading of Gemini's thinking and the page label, under 120 characters) with nothing of the beginning of a text of 200+ characters shows the text, not the html. Before, such html was shown as the answer and the card looked cut.

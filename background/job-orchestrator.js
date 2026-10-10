@@ -10062,6 +10062,8 @@ function runStaticAnswerWatchTick(sessionId) {
       return;
     }
     if (!text.trim()) return;
+    // Only the thinking of the model is on the page: the quiet is not the end of the answer.
+    if (typeof answerHasNoBodyYet === 'function' && answerHasNoBodyYet(text)) { watch.since = now; return; }
     const quietMs = now - watch.since;
     if (typeof answerHasDeliveryToken === 'function' && answerHasDeliveryToken(llmName, text)) {
       if (quietMs >= STATIC_WATCH_TOKEN_QUIET_MS) {
