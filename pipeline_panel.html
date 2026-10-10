@@ -5,8 +5,8 @@
     <!-- LLM Discus: hidden search marker for developers -->
     <meta name="keywords" content="LLM Discus">
     <title>LLM Comparison</title>
-    <link rel="stylesheet" href="styles.css?v=2.81.622">
-    <link rel="stylesheet" href="styles/pipeline-card-cover.css?v=2.81.622">
+    <link rel="stylesheet" href="styles.css?v=2.81.690">
+    <link rel="stylesheet" href="styles/pipeline-card-cover.css?v=2.81.690">
 </head>
 <body class="pipeline-page">
     <div class="app-shell">
@@ -247,7 +247,10 @@
             </div>
             <div class="msg-head-right">
                 <div class="msg-head-right-top">
-                    <button type="button" id="pipeline-get-it-btn" class="debate-btn debate-get-it-btn" title="Get it: подтянуть ответы всех моделей этапа (двойной клик — только без ответа)" aria-label="Get it"><i class="ti ti-arrow-bar-to-down" aria-hidden="true"></i></button>
+                    <label class="debate-auto-toggle" title="Debate auto mode">
+                        <input type="checkbox" id="debate-auto-toggle-btn" class="pipeline-radio debate-auto-radio" aria-label="Auto mode" aria-pressed="false" data-persist-state="true">
+                        <span>Auto</span>
+                    </label>
                     <div class="prompt-footer-right pipeline-main-page-actions">
                         <label class="top-new-pages-toggle" data-tooltip="Open each model response in a new tab.">
                             <span class="top-new-pages-text">New pages</span>
@@ -290,10 +293,6 @@
                         <option value="manual" selected="">Manual</option>
                         <option value="auto">Auto</option>
                     </select>
-                    <label class="debate-auto-toggle" title="Debate auto mode">
-                        <input type="checkbox" id="debate-auto-toggle-btn" class="pipeline-radio debate-auto-radio" aria-label="Auto mode" aria-pressed="false" data-persist-state="true">
-                        <span>Auto</span>
-                    </label>
                     <div class="debate-round-control" title="Debate rounds" aria-label="Debate rounds">
                         <button type="button" class="debate-round-stepper-btn" id="debate-round-minus-btn" aria-label="Decrease rounds">−</button>
                         <input type="number" class="debate-round-value" id="debate-round-value" min="1" max="50" step="1" value="3" inputmode="numeric" aria-label="Debate rounds" title="Enter 1–50 rounds">
@@ -324,7 +323,7 @@
                     <button type="button" class="btn btn-icon" id="pipeline-save-btn" title="Save current pipeline as user pipeline" aria-label="Save current pipeline as user pipeline"><i class="ti ti-device-floppy" aria-hidden="true"></i></button>
                     <button type="button" class="btn" id="pipeline-export-btn" title="Export schema" aria-label="Export schema"><i class="ti ti-download" aria-hidden="true"></i></button>
                     <button type="button" class="btn" id="pipeline-import-btn" title="Import schema" aria-label="Import schema"><i class="ti ti-upload" aria-hidden="true"></i></button>
-                    <button type="button" class="btn btn-icon" id="pipeline-profile-btn" title="Pipeline profiles" aria-label="Pipeline profiles"><i class="ti ti-settings" aria-hidden="true"></i></button>
+                    <button type="button" class="btn btn-icon" id="pipeline-profile-btn" title="Pipeline profiles" aria-label="Pipeline profiles"><svg viewBox="96 64 320 384" width="16" height="16" fill="currentColor" aria-hidden="true"><circle cx="256" cy="112" r="42"/><path d="M206 196C218 184 236 176 254 176C278 176 294 190 294 214L294 354C294 372 302 382 320 389C331 393 339 400 339 409C339 419 330 426 317 426H194C181 426 172 419 172 409C172 400 180 393 191 389C209 382 217 372 217 354V232C217 221 212 216 202 216H194C184 216 178 211 178 203C178 196 183 190 190 190C196 190 201 192 206 196Z"/></svg></button>
                 </div>
             </div>
             <div class="pipeline-canvas">
@@ -399,18 +398,6 @@
                         <span class="pipeline-item-name" title="Architecture">Architecture</span>
                     </div>
                 </div>
-                <details class="disput-state-map-panel" id="disput-state-map-panel" aria-label="Карта состояния" open>
-                    <summary class="disput-state-map-toggle">
-                        <span class="disput-state-map-title">Карта состояния</span><span class="disput-state-map-caret" aria-hidden="true">⌄</span>
-                    </summary>
-                    <div class="disput-state-map-actions">
-                        <button type="button" class="disput-map-icon-action" data-case-export title="Экспорт дела" aria-label="Экспорт дела"><i class="ti ti-folder" aria-hidden="true"></i></button>
-                        <button type="button" class="disput-map-icon-action" data-map-export title="Экспорт карты" aria-label="Экспорт карты"><i class="ti ti-download" aria-hidden="true"></i></button>
-                        <button type="button" data-case-import-action title="Импорт дела" aria-label="Импорт дела"><i class="ti ti-upload" aria-hidden="true"></i></button>
-                        <button type="button" data-case-delete title="Удалить выбранное дело" aria-label="Удалить выбранное дело"><i class="ti ti-trash" aria-hidden="true"></i></button>
-                        <input type="file" accept="application/json" data-case-import hidden>
-                    </div>
-                </details>
                 <dialog class="pipeline-profile-dialog" id="pipeline-profile-dialog">
                     <header><strong>Pipeline profiles</strong><button type="button" data-profile-close aria-label="Закрыть">×</button></header>
                     <select data-profile-select aria-label="Профиль pipeline"></select>

@@ -6,6 +6,55 @@
 - `tests/basic-docs-refs.test.js` keeps them true to the code: the files and symbols of the code map exist, the journal events and the stop / rejection reasons match the engine, every relative link of the Basic documents leads to a file.
 - Checked by a cold read: a fresh model, given only the documents, answered 12 questions (among them how «Basic · итог» is formed); the gaps it found are closed.
 
+### 2026-10-10 — The answer text wins over html that holds only the thinking heading, version 2.81.690
+
+- A card whose captured html is a short projection (the heading of Gemini's thinking and the page label, under 120 characters) with nothing of the beginning of a text of 200+ characters shows the text, not the html. Before, such html was shown as the answer and the card looked cut.
+
+### 2026-10-10 — The Gemini screen-reader label is dropped when the answer is collected, version 2.81.689
+
+- Gemini puts a hidden label ("Ответ Gemini" / "Gemini said", `<h6 class="cdk-visually-hidden screen-reader-model-response-label">` in `model-response-label-announcer`) before each answer. `buildInlineHtml` now removes it, so it no longer reaches the card, the stored answer or the prompts of other models. The cut at display time (2.81.688) stays as the fallback.
+
+### 2026-10-10 — The Gemini page label is cut at any depth, version 2.81.688
+
+- The label "Ответ Gemini" / "Gemini said" is removed when it is the very first text of the answer, also inside wrapper elements (2.81.687 looked only at the first child element). The answer text is not touched; a card whose whole text is the label keeps it.
+
+### 2026-10-10 — Round badge on Custom/Basic steps; no repeated page label in the answer, version 2.81.687
+
+- Cards of a Custom/Basic run (round ids `s1`, `s2`…, a step is a round) show the round badge R1, R2… like Debate rounds.
+- The hidden label of the Gemini page ("Ответ Gemini" / "Gemini said") that came into the answer text as a first heading is removed from the card; the name is already in the card header.
+
+### 2026-10-10 — The Pipeline composer keeps one width with the feed open, version 2.81.686
+
+- The composer (outline, feed and moderator input) is 948px at most (`--center-max-width − 32px`) with the feed closed and open, so the outline no longer stands away from the moderator input (2.81.680 had made the input fixed while the open composer stayed up to 1280px).
+- Round badges R1, R2… belong to cards of pipeline rounds; a card of a message sent by hand from the moderator input has no round and no badge, as in 2.81.604.
+
+### 2026-10-10 — Pipeline panel: the profiles button gets the info icon, version 2.81.685
+
+- `#pipeline-profile-btn` shows the "info" glyph (inline SVG, `currentColor`) instead of the settings gear.
+
+### 2026-10-10 — Pipeline composer: the model selects sit in the middle of the block, version 2.81.684
+
+- In the Pipeline composer without a feed `.msg-head-center` is placed in the centre column of a `1fr auto 1fr` grid, so it is centred horizontally whatever the widths of the left and right blocks.
+
+### 2026-10-10 — Pipeline panel: the header controls sit in the middle of the row, version 2.81.683
+
+- `.pipeline-panel .panel-header` is a three-column grid (`1fr auto 1fr`): the name on the left, `.panel-header-actions` in the middle, the pipeline actions on the right.
+
+### 2026-10-10 — Pipeline panel: the «Карта состояния» block is removed, version 2.81.682
+
+- `#disput-state-map-panel` (with the case export / import / delete buttons) is removed from `pipeline_panel.html`; `disput-state-map-view.js` skips the page when the block is absent.
+
+### 2026-10-10 — Pipeline: Get it moves to a double click on Run; Auto takes its place, version 2.81.681
+
+- The Get it button of the Pipeline panel is removed; a double click on Run runs the same shared collection pass (`bindGetItButton`, all models). The second click of a double click no longer stops the run.
+- The Auto toggle moves from the panel header to the composer row, where Get it was.
+
+### 2026-10-10 — Pipeline answer feed looks as in 2.81.604 again; moderator input keeps one width, version 2.81.680
+
+- Cover-deck cards no longer paint a white fill and 10px/8px padding: they use the page background (`#f3f4f6`, opaque so the cards still cover each other) and sit flush as in 2.81.604.
+- `.moderator-input` has one explicit width in every state — `min(center-max-width − 54px, 100cqw − 54px)` — so opening the feed, wide-expanded mode, sidebars and resizing no longer change it; it is centred in the composer.
+- The time of an answer card keeps a 6px gap before the action icons.
+
 ### 2026-10-10 — Save, Import and Export of Basic schemas on one path, version 2.81.679
 
 - One path from a schema to a record: `recordFromSchema` derives the record of a Basic pipeline (rounds, models, roles, synthesizer, intermediate syntheses, protocol) from its schema and nowhere else; `installBasicSchema` stores it. Save, Import, the card / ▶ / round-card saves and the edits of the structure of a saved pipeline all go through it, so the record and the schema cannot differ.

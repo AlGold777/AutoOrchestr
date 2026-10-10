@@ -64,8 +64,8 @@ describe('pipeline feed layout styles', () => {
     expect(css).not.toMatch(/\.pipeline-page \.debate-model-cards\s*\{[^}]*(100vw|50vw)/);
   });
 
-  test('only the composer is wider on the pipeline page; the top bar column keeps the main page width', () => {
-    expect(css).toMatch(/\.pipeline-page \{\s*--pipeline-main-max-width: 1280px;/);
+  test('the composer keeps one width with the feed open or closed; the top bar column keeps the main page width', () => {
+    expect(css).toMatch(/\.pipeline-page \{\s*--pipeline-main-max-width: calc\(var\(--center-max-width\) - 32px\);/);
     // .main-inner (the column of the top bar) must not be widened here: the bar would differ from the main page.
     expect(css).not.toMatch(/\.pipeline-page \.main-inner\s*\{/);
     expect(css).toMatch(/\.pipeline-page \.app-main \{\s*container-type: inline-size;/);

@@ -1123,6 +1123,9 @@
     '[data-message-part-type="reasoning"]',
     '[aria-hidden="true"]',
     '[inert]',
+    // Gemini's screen-reader label "Ответ Gemini" / "Gemini said" is not part of the answer.
+    'model-response-label-announcer',
+    '.screen-reader-model-response-label',
     'header',
     'footer',
     'nav',

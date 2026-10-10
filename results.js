@@ -9430,12 +9430,12 @@ document.addEventListener('click', (event) => {
         pipelineDeleteBtn?.addEventListener('click', deleteActivePipeline);
         pipelineExportBtn?.addEventListener('click', exportBasicSchema);
         pipelineImportBtn?.addEventListener('click', importPipelines);
-        // Pipeline Get it: the main page's collection pass for the running stage's
-        // models (or the selected models when no stage is waiting).
-        const pipelineGetItBtn = document.getElementById('pipeline-get-it-btn');
-        if (pipelineGetItBtn) {
-            bindGetItButton(pipelineGetItBtn, {
+        // Pipeline Get it: double click on Run runs the main page's collection pass for the
+        // running stage's models (or the selected models when no stage is waiting).
+        if (debateRunToggleBtn) {
+            bindGetItButton(debateRunToggleBtn, {
                 surface: 'pipeline',
+                doubleClickOnly: true,
                 getModels: () => {
                     const stageModels = pipelineWaiter.openModels();
                     return stageModels.length ? stageModels : getSelectedLLMs();
@@ -9449,6 +9449,7 @@ document.addEventListener('click', (event) => {
             if (event.target.closest?.('button')) event.preventDefault();
         });
         debateRunToggleBtn?.addEventListener('click', (event) => {
+            if (event.detail > 1) { event.preventDefault(); return; } // 2nd click of a double click = Get it, not Stop
             const controls = getDebateRunControls();
             if (!controls.enabled || controls.action === 'wait') {
                 event.preventDefault();
@@ -19343,7 +19344,12 @@ document.addEventListener('click', (event) => {
             && sameAnswerHead
             && missingTailChars >= 24
             && htmlProjection.length < textProjection.length * 0.99;
-        return htmlProjectionIsTruncated ? textHtml : sanitizedHtml;
+        // Captured while Gemini still showed only the heading of its thinking and the hidden
+        // page label: a short projection with nothing of the answer's beginning. The text is the answer.
+        const htmlHoldsNoAnswer = textProjection.length >= 200
+            && htmlProjection.replace(/Ответ Gemini|Gemini said:?/gi, '').trim().length < 120
+            && !htmlProjection.includes(textProjection.slice(0, 40));
+        return htmlProjectionIsTruncated || htmlHoldsNoAnswer ? textHtml : sanitizedHtml;
     }
 
     function updateLLMPanelOutput(llmName, answer, answerHtml = '', meta = {}) {
@@ -22461,10 +22467,35 @@ function checkCompareButtonState() {
             card.dataset.turnClosed = 'true';
         });
     }
+    // The hidden label of the Gemini page ("Ответ Gemini") duplicates the name in the card
+    // header. It is cut only when it is the very first text of the answer, at any depth.
+    const MODEL_PAGE_LABEL = /^(Ответ Gemini|Gemini said:?)\s*/i;
+    function stripModelPageLabel(outputEl) {
+        const lead = String(outputEl.textContent || '').trimStart();
+        const match = lead.match(MODEL_PAGE_LABEL);
+        if (!match || lead.length === match[0].length) return;
+        const walker = document.createTreeWalker(outputEl, NodeFilter.SHOW_TEXT);
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+            const value = String(node.nodeValue || '');
+            if (!value.trim()) continue;
+            const found = value.match(MODEL_PAGE_LABEL);
+            if (!found || !value.trimStart().startsWith(found[0].trim())) return;
+            node.nodeValue = value.trimStart().slice(found[0].length);
+            let holder = node.parentElement;
+            while (!node.nodeValue.trim() && holder && holder !== outputEl && !holder.textContent.trim()) {
+                const parent = holder.parentElement;
+                holder.remove();
+                holder = parent;
+            }
+            if (!node.nodeValue.trim() && node.parentNode) node.remove();
+            return;
+        }
+    }
     function renderDebateResponseBody(outputEl, text = '', html = '') {
         if (!outputEl) return '';
         const formattedHtml = resolveCompleteAnswerHtml(text, html);
         replaceChildrenFromSanitizedHtml(outputEl, formattedHtml);
+        stripModelPageLabel(outputEl);
         decorateLinksForNewTab(outputEl);
         return String(outputEl.innerHTML || '').trim();
     }
@@ -23257,7 +23288,8 @@ function checkCompareButtonState() {
         };
     }
     function syncDebateCardRound(card) {
-        const match = String(card.dataset.pipelineRoundId || '').match(/^r(\d+)$/i);
+        // r1…: rounds of the Debate pipeline; s1…: steps of a Basic/Custom run (a step is a round).
+        const match = String(card.dataset.pipelineRoundId || '').match(/^[rs](\d+)$/i);
         const name = card.querySelector('.debate-model-card-name');
         if (!match || !name || card.dataset.kind === 'moderator' || card.dataset.kind === 'fragment') return;
         let badge = card.querySelector('.debate-model-card-round');
@@ -24448,8 +24480,8 @@ function checkCompareButtonState() {
 // bottom and re-reads its latest answer. Single click = all models, double
 // click = only models without a usable answer. The main page and the pipeline
 // page bind their own buttons here, so both share one collection route.
-function bindGetItButton(button, { getModels, surface = 'main', beforeRun = () => {}, afterRun = () => {} } = {}) {
-    button.disabled = false;
+function bindGetItButton(button, { getModels, surface = 'main', doubleClickOnly = false, beforeRun = () => {}, afterRun = () => {} } = {}) {
+    if (!doubleClickOnly) button.disabled = false;
     let clickTimer = null;
     const run = async (failedOnly = false) => {
         if (button.dataset.collecting === 'true') {
@@ -24482,6 +24514,10 @@ function bindGetItButton(button, { getModels, surface = 'main', beforeRun = () =
           afterRun();
         }
     };
+    if (doubleClickOnly) {
+        button.addEventListener('dblclick', () => run(false));
+        return;
+    }
     button.addEventListener('click', event => {
         if (event.detail > 1) return;
         clearTimeout(clickTimer);
