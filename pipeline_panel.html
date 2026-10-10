@@ -247,7 +247,10 @@
             </div>
             <div class="msg-head-right">
                 <div class="msg-head-right-top">
-                    <button type="button" id="pipeline-get-it-btn" class="debate-btn debate-get-it-btn" title="Get it: подтянуть ответы всех моделей этапа (двойной клик — только без ответа)" aria-label="Get it"><i class="ti ti-arrow-bar-to-down" aria-hidden="true"></i></button>
+                    <label class="debate-auto-toggle" title="Debate auto mode">
+                        <input type="checkbox" id="debate-auto-toggle-btn" class="pipeline-radio debate-auto-radio" aria-label="Auto mode" aria-pressed="false" data-persist-state="true">
+                        <span>Auto</span>
+                    </label>
                     <div class="prompt-footer-right pipeline-main-page-actions">
                         <label class="top-new-pages-toggle" data-tooltip="Open each model response in a new tab.">
                             <span class="top-new-pages-text">New pages</span>
@@ -290,10 +293,6 @@
                         <option value="manual" selected="">Manual</option>
                         <option value="auto">Auto</option>
                     </select>
-                    <label class="debate-auto-toggle" title="Debate auto mode">
-                        <input type="checkbox" id="debate-auto-toggle-btn" class="pipeline-radio debate-auto-radio" aria-label="Auto mode" aria-pressed="false" data-persist-state="true">
-                        <span>Auto</span>
-                    </label>
                     <div class="debate-round-control" title="Debate rounds" aria-label="Debate rounds">
                         <button type="button" class="debate-round-stepper-btn" id="debate-round-minus-btn" aria-label="Decrease rounds">−</button>
                         <input type="number" class="debate-round-value" id="debate-round-value" min="1" max="50" step="1" value="3" inputmode="numeric" aria-label="Debate rounds" title="Enter 1–50 rounds">

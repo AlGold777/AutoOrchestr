@@ -524,7 +524,7 @@ For non-developers: the Debate page now remembers more about the structure of a 
 
 With the **Auto** toggle off the moderator drives the pipeline stage by stage:
 
-- **Get it** (`#pipeline-get-it-btn`, next to the run button) is the main page's
+- **Get it** (a double click on the run button) is the main page's
   Get It pass for the running stage's models (or the selected models when no
   stage is waiting): one `GET_IT_BATCH` pulls every model tab to the bottom and
   re-reads its latest answer. Double click collects only models without a

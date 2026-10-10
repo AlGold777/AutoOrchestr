@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-10 — Pipeline: Get it moves to a double click on Run; Auto takes its place, version 2.81.681
+
+- The Get it button of the Pipeline panel is removed; a double click on Run runs the same shared collection pass (`bindGetItButton`, all models). The second click of a double click no longer stops the run.
+- The Auto toggle moves from the panel header to the composer row, where Get it was.
+
 ### 2026-10-10 — Pipeline answer feed looks as in 2.81.604 again; moderator input keeps one width, version 2.81.680
 
 - Cover-deck cards no longer paint a white fill and 10px/8px padding: they use the page background (`#f3f4f6`, opaque so the cards still cover each other) and sit flush as in 2.81.604.

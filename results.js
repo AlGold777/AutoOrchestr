@@ -9430,12 +9430,12 @@ document.addEventListener('click', (event) => {
         pipelineDeleteBtn?.addEventListener('click', deleteActivePipeline);
         pipelineExportBtn?.addEventListener('click', exportBasicSchema);
         pipelineImportBtn?.addEventListener('click', importPipelines);
-        // Pipeline Get it: the main page's collection pass for the running stage's
-        // models (or the selected models when no stage is waiting).
-        const pipelineGetItBtn = document.getElementById('pipeline-get-it-btn');
-        if (pipelineGetItBtn) {
-            bindGetItButton(pipelineGetItBtn, {
+        // Pipeline Get it: double click on Run runs the main page's collection pass for the
+        // running stage's models (or the selected models when no stage is waiting).
+        if (debateRunToggleBtn) {
+            bindGetItButton(debateRunToggleBtn, {
                 surface: 'pipeline',
+                doubleClickOnly: true,
                 getModels: () => {
                     const stageModels = pipelineWaiter.openModels();
                     return stageModels.length ? stageModels : getSelectedLLMs();
@@ -9449,6 +9449,7 @@ document.addEventListener('click', (event) => {
             if (event.target.closest?.('button')) event.preventDefault();
         });
         debateRunToggleBtn?.addEventListener('click', (event) => {
+            if (event.detail > 1) { event.preventDefault(); return; } // 2nd click of a double click = Get it, not Stop
             const controls = getDebateRunControls();
             if (!controls.enabled || controls.action === 'wait') {
                 event.preventDefault();
@@ -24448,8 +24449,8 @@ function checkCompareButtonState() {
 // bottom and re-reads its latest answer. Single click = all models, double
 // click = only models without a usable answer. The main page and the pipeline
 // page bind their own buttons here, so both share one collection route.
-function bindGetItButton(button, { getModels, surface = 'main', beforeRun = () => {}, afterRun = () => {} } = {}) {
-    button.disabled = false;
+function bindGetItButton(button, { getModels, surface = 'main', doubleClickOnly = false, beforeRun = () => {}, afterRun = () => {} } = {}) {
+    if (!doubleClickOnly) button.disabled = false;
     let clickTimer = null;
     const run = async (failedOnly = false) => {
         if (button.dataset.collecting === 'true') {
@@ -24482,6 +24483,10 @@ function bindGetItButton(button, { getModels, surface = 'main', beforeRun = () =
           afterRun();
         }
     };
+    if (doubleClickOnly) {
+        button.addEventListener('dblclick', () => run(false));
+        return;
+    }
     button.addEventListener('click', event => {
         if (event.detail > 1) return;
         clearTimeout(clickTimer);

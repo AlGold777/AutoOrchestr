@@ -122,8 +122,8 @@ describe('StageExecutor — skipped participant', () => {
 
 test('pipeline page binds Get it and the next action to the shared routes', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'pipeline_panel.html'), 'utf8');
-  expect(html).toContain('id="pipeline-get-it-btn"');
-  expect(source).toContain("bindGetItButton(pipelineGetItBtn, {");
+  expect(html).not.toContain('id="pipeline-get-it-btn"');
+  expect(source).toContain("bindGetItButton(debateRunToggleBtn, {");
   expect(source).toContain("pipelineWaiter.closeAnsweredBatches('moderator_closed')");
 });
 
