@@ -96,7 +96,22 @@ describe('Basic docs stay true to the code', () => {
   test('the entry points name the Basic documents', () => {
     expect(read('AGENTS.md')).toContain('basic-start-here.md');
     const map = read('docs/documentation-map.md');
-    ['basic-start-here.md', 'basic-how-it-works.md', 'basic-code-map.md', 'basic-diagnostics.md'].forEach((name) => expect(map).toContain(name));
+    ['basic-start-here.md', 'basic-how-it-works.md', 'basic-code-map.md', 'basic-diagnostics.md', 'basic-open-issues.md'].forEach((name) => expect(map).toContain(name));
+  });
+
+  test('the open-issues document: every item of the summary has a section, every code place exists, the listed test files exist', () => {
+    const issues = read('docs/Pipeline scenarios/basic-open-issues.md');
+    const codes = [...issues.matchAll(/^\| ((?:OI|LIM|TEST)-\d+) \|/gm)].map((match) => match[1]);
+    expect(codes.length).toBeGreaterThanOrEqual(10);
+    codes.forEach((code) => expect({ code, section: new RegExp(`^### ${code}\\.`, 'm').test(issues) }).toEqual({ code, section: true }));
+    const everything = ['results.js', ...fs.readdirSync(path.join(root, 'disput')).map((file) => `disput/${file}`), 'pipeline/pipeline-runtime.js']
+      .map((file) => read(file)).join('\n');
+    const places = issues.split('\n').filter((line) => line.includes('**Где в коде'));
+    expect(places.length).toBeGreaterThanOrEqual(8);
+    places.forEach((line) => ticks(line).filter((token) => /^[A-Za-z_]\w+$/.test(token)).forEach((token) => expect({ token, found: new RegExp(`\\b${token}\\b`).test(everything) }).toEqual({ token, found: true })));
+    const files = [...issues.matchAll(/`(tests\/[\w.-]+\.test\.js)`/g)].map((match) => match[1]);
+    expect(files.length).toBeGreaterThanOrEqual(6);
+    files.forEach((file) => expect({ file, exists: exists(file) }).toEqual({ file, exists: true }));
   });
 
   test('every .js name of the start-here vocabulary with a directory is an existing file', () => {

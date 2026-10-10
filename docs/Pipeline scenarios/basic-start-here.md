@@ -106,6 +106,7 @@
 | Автор схемы (человек или модель) | `basic-schema-guide.md` (одного его достаточно) |
 | Разработчик | `basic-code-map.md`, затем `basic-schema-reference.md`, `basic-engine-and-schemas.md` |
 | Тот, кто разбирает сбой | `basic-diagnostics.md` |
+| Тот, кто хочет знать, что не доделано и какие тесты падают постоянно | `basic-open-issues.md` |
 
 ## Где читать дальше
 
@@ -113,3 +114,4 @@
 - [Как написать схему Basic](basic-schema-guide.md)
 - [Где что в коде](basic-code-map.md)
 - [Диагностика сбоев Basic](basic-diagnostics.md)
+- [Открытые вопросы, ограничения и известные падения тестов](basic-open-issues.md)

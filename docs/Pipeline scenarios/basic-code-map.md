@@ -63,4 +63,5 @@
 
 - [basic-start-here.md](basic-start-here.md) — что такое Basic, схема, запись и основные термины.
 - [basic-how-it-works.md](basic-how-it-works.md) — как идёт прогон и что появляется на странице.
-- [basic-diagnostics.md](basic-diagnostics.md) — как искать причину, если прогон пошёл не так.
+- [basic-diagnostics.md](basic-diagnostics.md)
+- [basic-open-issues.md](basic-open-issues.md) — что не доделано; постоянно падающие тесты (TEST-1). — как искать причину, если прогон пошёл не так.

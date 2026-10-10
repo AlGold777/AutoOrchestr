@@ -267,6 +267,7 @@
 ## Где читать дальше
 
 - [basic-start-here.md](basic-start-here.md) — что такое Basic, схема, запись и основные термины.
+- [basic-open-issues.md](basic-open-issues.md) — что в прогоне не доделано (OI-2, OI-3, OI-4)
 - [basic-code-map.md](basic-code-map.md) — где в коде что лежит.
 - [basic-diagnostics.md](basic-diagnostics.md) — как искать причину, если прогон пошёл не так.
 - [basic-schema-guide.md](basic-schema-guide.md) — как писать схему, включая сборку запроса (раздел 6).

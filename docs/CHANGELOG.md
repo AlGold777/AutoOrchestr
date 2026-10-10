@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-10 — One document for what is open in Basic (documents and a test only, no version change)
+
+- New `docs/Pipeline scenarios/basic-open-issues.md`: the open questions (the parked model that disappears from the canvas, `owner_answer` with `stage: null` on a skip, the acceptance that does not check length, the card revision of a repeated answer, the old-format records in an import), the accepted limits, and the tests that fail all the time or at random, each with what happens, why, what to do, where in the code and how to check. The same blocks were removed from `basic-engine-and-schemas.md` and `basic-diagnostics.md`, which now point to it.
+- `basic-pipeline.md`: names damaged by the rename (`runBasicFromPage`, `BasicEngine`, `resolveBasicFields`) are corrected to the code's; the description of the ▶ window and of the order of resolution follows the round window.
+- `tests/basic-docs-refs.test.js`: every item of the summary has a section, the code places and the listed test files exist.
+
 ### 2026-10-10 — Remove Gemini's service response label from collected answers, version 2.81.695
 
 - At the user's request, complete Gemini answers no longer include the page's hidden «Ответ Gemini» label in text or HTML. This supersedes the label-retention preference for 2.81.694.
