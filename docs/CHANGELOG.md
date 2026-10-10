@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-10 — Gemini's stop button is seen in the Russian interface, version 2.81.692
+
+- The stop button of Gemini is named «Остановить генерацию ответа» in the Russian interface; the selector knew only «Stop», so the answer watcher saw no generation (`stop=0`) while the model was still thinking. `button[aria-label*="Остановить генерацию" i]` is added to the stop button of the Gemini pipeline selectors and to the generation elements of the Gemini adapter.
+- Field log of one run (while thinking, the text of `model-response` is «heading of the thinking\nОтвет Gemini»; the answer starts with the label) confirms the rule of 2.81.691.
+
 ### 2026-10-10 — A quiet text that holds only Gemini's thinking is not committed as the answer, version 2.81.691
 
 - The static answer watchdog (added after 2.81.604) committed a text that did not change for 30 s as an incomplete answer. While Gemini was still thinking, the page showed only the heading of the thinking and the hidden label "Ответ Gemini" — that became the card (R1/R2 without an answer). A text that ends with the label is now never committed (`answerHasNoBodyYet`, in the watchdog and in `commitIncompleteAnswer`, which also covers the commit after visits); the watchdog waits for the body of the answer.

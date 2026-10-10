@@ -1353,7 +1353,7 @@ async function injectAndGetResponse(prompt, attachments = [], meta = null) {
         const geminiSubmitConfirmation = window.ProviderSubmitConfirmation || null;
         const collectGeminiGenerationElements = () => Array.from(document.querySelectorAll([
             '[aria-busy="true"]', '[data-is-loading="true"]', '[data-streaming="true"]',
-            'button[aria-label*="Stop" i]', '[class*="streaming" i]'
+            'button[aria-label*="Stop" i]', 'button[aria-label*="Остановить генерацию" i]', '[class*="streaming" i]'
         ].join(',')));
         const countGeminiUserTurns = () => document.querySelectorAll(
             'user-query, [data-message-author-role="user"], [data-role="user"]'
