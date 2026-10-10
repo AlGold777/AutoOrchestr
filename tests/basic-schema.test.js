@@ -240,8 +240,8 @@ describe('Basic schema: a switched-off round keeps its number', () => {
 });
 
 describe('Basic schema: check before the first request', () => {
-  test('the minimal example of the reference passes the check', () => {
-    const doc = fs.readFileSync(path.join(__dirname, '..', 'docs', 'Pipeline scenarios', 'basic-schema-reference.md'), 'utf8');
+  test('the first example of the guide passes the check', () => {
+    const doc = fs.readFileSync(path.join(__dirname, '..', 'docs', 'Pipeline scenarios', 'basic-schema-guide.md'), 'utf8');
     const example = JSON.parse(doc.match(/```json\n([\s\S]*?)\n```/)[1]);
     expect(Schema.validate(example)).toEqual([]);
     expect(Schema.assemble(example).map((step) => step.ref)).toEqual(['r1', 'final']);

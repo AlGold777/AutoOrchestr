@@ -9,7 +9,6 @@
 # Basic (pipeline)
 
 - Basic — единственный развивающийся pipeline: универсальный движок и схема (JSON) поверх него. В коде называется `custom` (`disput/custom-engine.js`, `runCustomFromPage`), формат схемы — `disput/basic-schema.js`.
-- Начните с `docs/Pipeline scenarios/basic-start-here.md`: что это, словарь, соответствие имён интерфейс → код, порядок чтения.
-- Как идёт прогон и что создаёт «Basic · итог» — `basic-how-it-works.md`; где что в коде — `basic-code-map.md`; как писать схему — `basic-schema-guide.md`.
-- Что не доделано и какие тесты падают постоянно (не из-за вас) — `docs/Pipeline scenarios/basic-open-issues.md`.
+- Начните с `docs/Pipeline scenarios/basic-start-here.md`: что это, словарь, соответствие имён интерфейс → код, как идёт прогон и что создаёт «Basic · итог».
+- Как писать схему — `basic-schema-guide.md`; окна настроек — `basic-windows.md`; код, правила, диагностика, открытые вопросы и постоянно падающие тесты (не из-за вас) — `basic-developer.md`.
 - Документы Basic лежат в `docs/Pipeline scenarios/`. Изменяя поведение, обновляйте их в том же коммите (тесты `tests/basic-schema-guide.test.js` и `tests/basic-docs-refs.test.js` сверяют документы с кодом).

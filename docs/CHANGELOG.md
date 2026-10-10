@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-10 — Basic documentation cut from nine documents to four, without repeats (documents and tests only, no version change)
+
+- `basic-start-here.md` is now the one place that describes what Basic is and how a run goes (steps, acceptance and repeats, pause and Stop, what appears on the page, how «Basic · итог» is formed, the canvas, the journal events and the run record). `basic-developer.md` holds the code map, the schema rules and the reasons of the decisions, Save / Export / Import and the storage, the diagnostics, the open questions and the tests that fail all the time. `basic-windows.md` describes the setting windows. `basic-schema-guide.md` is unchanged and still self-contained.
+- Removed: `basic-how-it-works.md`, `basic-code-map.md`, `basic-diagnostics.md`, `basic-open-issues.md`, `basic-engine-and-schemas.md`, `basic-schema-reference.md`, `basic-pipeline.md` (their content moved; the accepted-limits block was dropped because each limit is already described where it belongs). From 1753 to 1257 lines. `AGENTS.md`, the documentation map, the scenario how-to and the comment in `disput/basic-schema.js` point to the new files.
+- Tests: `tests/basic-docs-refs.test.js` and `tests/basic-schema.test.js` read the new files.
+
 ### 2026-10-10 — Bound an idle unconfirmed dispatch, version 2.81.696
 
 - Field exports for 2.81.695: Gemini round 1 delivered 2028 characters; round 2 accepted the command but had no confirmed submission or answer for several minutes. A subsequent run was refused 111 times with `RUN_ALREADY_ACTIVE`.

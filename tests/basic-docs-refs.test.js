@@ -7,17 +7,19 @@ const docsDir = path.join(root, 'docs', 'Pipeline scenarios');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 const exists = (file) => fs.existsSync(path.join(root, file));
 
-const codeMap = fs.readFileSync(path.join(docsDir, 'basic-code-map.md'), 'utf8');
-const how = fs.readFileSync(path.join(docsDir, 'basic-how-it-works.md'), 'utf8');
+const codeMap = fs.readFileSync(path.join(docsDir, 'basic-developer.md'), 'utf8');
 const start = fs.readFileSync(path.join(docsDir, 'basic-start-here.md'), 'utf8');
+const how = start;
 const results = read('results.js');
 const engine = read('disput/custom-engine.js');
 
+// A section from its heading (any level) to the next heading of the same or a higher level.
 const section = (text, title) => {
-  const start = text.indexOf(`\n## ${title}`);
-  if (start < 0) throw new Error(`no section: ${title}`);
-  const next = text.slice(start + 3).search(/\n## /);
-  return text.slice(start, next < 0 ? undefined : start + 3 + next);
+  const match = new RegExp(`\\n(#{2,4}) ${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`).exec(text);
+  if (!match) throw new Error(`no section: ${title}`);
+  const rest = text.slice(match.index + 1);
+  const next = rest.slice(match[0].length).search(new RegExp(`\\n#{1,${match[1].length}} `));
+  return next < 0 ? rest : rest.slice(0, match[0].length - 1 + next + 1);
 };
 
 // Table rows of a section without the header row and the separator row.
@@ -96,18 +98,18 @@ describe('Basic docs stay true to the code', () => {
   test('the entry points name the Basic documents', () => {
     expect(read('AGENTS.md')).toContain('basic-start-here.md');
     const map = read('docs/documentation-map.md');
-    ['basic-start-here.md', 'basic-how-it-works.md', 'basic-code-map.md', 'basic-diagnostics.md', 'basic-open-issues.md'].forEach((name) => expect(map).toContain(name));
+    ['basic-start-here.md', 'basic-schema-guide.md', 'basic-windows.md', 'basic-developer.md'].forEach((name) => expect(map).toContain(name));
   });
 
   test('the open-issues document: every item of the summary has a section, every code place exists, the listed test files exist', () => {
-    const issues = read('docs/Pipeline scenarios/basic-open-issues.md');
+    const issues = read('docs/Pipeline scenarios/basic-developer.md');
     const codes = [...issues.matchAll(/^\| ((?:OI|LIM|TEST)-\d+) \|/gm)].map((match) => match[1]);
-    expect(codes.length).toBeGreaterThanOrEqual(10);
-    codes.forEach((code) => expect({ code, section: new RegExp(`^### ${code}\\.`, 'm').test(issues) }).toEqual({ code, section: true }));
+    expect(codes.length).toBeGreaterThanOrEqual(7);
+    codes.forEach((code) => expect({ code, section: new RegExp(`^#{3,4} ${code}\\.`, 'm').test(issues) }).toEqual({ code, section: true }));
     const everything = ['results.js', ...fs.readdirSync(path.join(root, 'disput')).map((file) => `disput/${file}`), 'pipeline/pipeline-runtime.js']
       .map((file) => read(file)).join('\n');
     const places = issues.split('\n').filter((line) => line.includes('**Где в коде'));
-    expect(places.length).toBeGreaterThanOrEqual(8);
+    expect(places.length).toBeGreaterThanOrEqual(4);
     places.forEach((line) => ticks(line).filter((token) => /^[A-Za-z_]\w+$/.test(token)).forEach((token) => expect({ token, found: new RegExp(`\\b${token}\\b`).test(everything) }).toEqual({ token, found: true })));
     const files = [...issues.matchAll(/`(tests\/[\w.-]+\.test\.js)`/g)].map((match) => match[1]);
     expect(files.length).toBeGreaterThanOrEqual(6);
