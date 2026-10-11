@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — Basic: windows for the route choice, the owner's text answer and the unknown request (shared choice dialog), version 2.81.740
+
+- Feat (`results/choice-dialog.js`, `ChoiceDialog.ask`): a modal with any number of buttons and an optional text field; Cancel and Escape give `null`.
+- Feat (`results.js`, `runCustomFromPage`): the engine gets `chooseRoute` (one button per case, labelled from the schema), `provideOwnerResult` (the owner's text; a file is not chosen yet) and `resolveUnknown` (resend or skip). The same run path serves «Продолжить прогон».
+- Docs: `basic-start-here.md` («Окна решений»), `basic-schema-guide.md` (5.9), `basic-windows.md`.
+- Test: `tests/choice-dialog.test.js`; `tests/results-debate-favorites.test.js` (the owner window: Cancel stops, text goes on; the route window: a button per case); `tests/custom-run-resume-wiring.test.js`.
+
 ### 2026-10-11 — Basic: a removed round takes its kept fields with it, version 2.81.739
 
 - Fix (`results.js`, `removeLastRound`): the fields kept from the source schema (`output`, `require`, `owner`, `chat`) of the removed round are dropped; a round added later does not inherit them.

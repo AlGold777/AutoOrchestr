@@ -7027,6 +7027,11 @@ document.addEventListener('click', (event) => {
             if (answer === true) return canContinue ? 'continue' : 'skip';
             return 'stop';
         };
+        // The windows of a pause of a Basic run (results/choice-dialog.js): a null answer is the owner's cancel.
+        const askChoiceDialog = (options) => {
+            if (!window.ChoiceDialog) throw new Error('окно выбора не загружено (results/choice-dialog.js)');
+            return window.ChoiceDialog.ask(options);
+        };
         const askCustomOwner = (asks, { label }) => new Promise((resolve) => {
             if (!ownerAskDialog || !window.OwnerAsk) { resolve([]); return; }
             openOwnerAsk({ label, asks, resolve });
@@ -7156,6 +7161,30 @@ document.addEventListener('click', (event) => {
                     parseAsks: (text) => window.DebateStageMarkers?.parse?.(text)?.askItems || [],
                     askOwner: askCustomOwner,
                     decide: askCustomDecision,
+                    // The route choice: the owner picks a case by its label from the schema (a cancel is null, the run stops).
+                    chooseRoute: ({ stepRef, choices, reason }) => {
+                        const cases = steps.find((item) => item.ref === stepRef)?.select?.cases || [];
+                        const label = (id) => String(cases.find((item) => item.id === id)?.label || id);
+                        return askChoiceDialog({
+                            title: 'Выбор маршрута',
+                            message: `${stepRef}: ${reason === 'conflict_owner' ? 'подошло несколько вариантов, выберите один' : 'выберите вариант'}.`,
+                            choices: choices.map((id) => ({ value: id, label: label(id) }))
+                        });
+                    },
+                    // The owner's answer of an owner step: a text (a file is not supported on this page yet).
+                    provideOwnerResult: ({ stepRef, task, reason, detail }) => askChoiceDialog({
+                        title: `Ответ владельца: ${stepRef}`,
+                        message: [task, reason ? `Прошлый ответ не принят: ${window.CustomEngine?.REASON_TEXT?.[reason] || reason}${detail ? ` (${detail})` : ''}.` : '']
+                            .filter(Boolean).join('\n'),
+                        textInput: { label: 'Ответ владельца' },
+                        choices: [{ value: 'send', label: 'Отправить' }]
+                    }),
+                    // The request whose sending is not confirmed: send it again, or skip it for this attempt only.
+                    resolveUnknown: ({ stepRef, items }) => askChoiceDialog({
+                        title: 'Неизвестный запрос',
+                        message: `${stepRef}: отправка не подтверждена (${items.map((item) => item.participantId).join(', ')}). Отправить заново или пропустить?`,
+                        choices: [{ value: 'resend', label: 'Отправить заново' }, { value: 'skip', label: 'Пропустить' }]
+                    }),
                     // The texts of the answers go to the record (the registry and the snapshot keep references to them).
                     ...(record ? {
                         putText: (value) => record.put(value),

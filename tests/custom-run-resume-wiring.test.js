@@ -35,8 +35,10 @@ describe('Basic page binds the engine to the run record (8.2, 8.3)', () => {
     expect(results).toMatch(/const canContinue = choices\.includes\('continue'\);[\s\S]*?confirmText: canContinue \? 'Продолжить' : 'Пропустить шаг'/);
   });
 
-  test('the owner input window and the window of unknown requests are not wired yet (A06): no guessed answer is passed', () => {
-    expect(results).not.toContain('provideOwnerResult');
-    expect(results).not.toContain('resolveUnknown');
+  test('the owner answer, the route choice and the unknown request are asked in windows (A06), no guessed answer is passed', () => {
+    expect(results).toContain('provideOwnerResult: ({ stepRef, task, reason, detail }) => askChoiceDialog({');
+    expect(results).toContain("chooseRoute: ({ stepRef, choices, reason }) => {");
+    expect(results).toContain("resolveUnknown: ({ stepRef, items }) => askChoiceDialog({");
+    expect(results).toContain("const askChoiceDialog = (options) => {");
   });
 });

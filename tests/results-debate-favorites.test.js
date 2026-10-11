@@ -3444,6 +3444,62 @@ describe('Pipeline debate favorites view', () => {
         } finally { h.cleanup(); }
       }, 30000);
 
+      test('A06: an owner step asks the owner in a window; Cancel stops the run, a text answer goes on', async () => {
+        require('../results/choice-dialog');
+        const h = setupCustomInheritance('Owner window host', { synthesis: '' });
+        const waitForDialog = async () => { for (let i = 0; i < 200 && !document.querySelector('.choice-dialog'); i += 1) await delay(10); };
+        try {
+          const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
+            { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }] },
+            { ref: 'owner:fix', kind: 'owner', models: [], task: 'Передайте текст' }
+          ] };
+          expect((await h.debug.installBasicSchema('Owner window', schema)).ok).toBe(true);
+          document.querySelector('.pipeline-item[data-name="Owner window"]').click();
+          await settleCustomCard();
+          const cancelled = h.debug.runCustomFromPage({ task: 'T' });
+          await waitForDialog();
+          expect(document.querySelector('.choice-dialog-title').textContent).toBe('Ответ владельца: owner:fix');
+          expect(document.querySelector('.choice-dialog-message').textContent).toContain('Передайте текст');
+          document.querySelector('.choice-dialog-cancel').click();
+          await cancelled;
+          expect(document.querySelector('.choice-dialog')).toBeNull();
+          expect(h.starts.length).toBe(1);
+          const answered = h.debug.runCustomFromPage({ task: 'T' });
+          await waitForDialog();
+          document.querySelector('.choice-dialog-text').value = 'OWNER TEXT';
+          document.querySelector('.choice-dialog-choice').click();
+          await answered;
+          expect(document.querySelector('.choice-dialog')).toBeNull();
+          expect(h.starts.length).toBe(2);
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      test('A06: the route window offers one button per case, labelled from the schema; a cancel is not a choice', async () => {
+        require('../results/choice-dialog');
+        const h = setupCustomInheritance('Route window host', { synthesis: '' });
+        const waitForDialog = async () => { for (let i = 0; i < 200 && !document.querySelector('.choice-dialog'); i += 1) await delay(10); };
+        try {
+          const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
+            { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }] },
+            { ref: 'route:pick', kind: 'route', models: [], select: { by: 'owner', cases: [
+              { id: 'ok', label: 'Принять', action: { stop: 'конец' } },
+              { id: 'no', label: 'Отклонить', action: { stop: 'конец' } },
+              { id: 'later', label: 'Отложить', action: { stop: 'конец' } }
+            ] } }
+          ] };
+          expect((await h.debug.installBasicSchema('Route window', schema)).ok).toBe(true);
+          document.querySelector('.pipeline-item[data-name="Route window"]').click();
+          await settleCustomCard();
+          const run = h.debug.runCustomFromPage({ task: 'T' });
+          await waitForDialog();
+          expect(document.querySelector('.choice-dialog-title').textContent).toBe('Выбор маршрута');
+          expect([...document.querySelectorAll('.choice-dialog-choice')].map((button) => button.textContent)).toEqual(['Принять', 'Отклонить', 'Отложить']);
+          document.querySelectorAll('.choice-dialog-choice')[1].click();
+          await run;
+          expect(document.querySelector('.choice-dialog')).toBeNull();
+        } finally { h.cleanup(); }
+      }, 30000);
+
       test('A06: a round removed on the canvas takes its kept fields with it; a round added later does not inherit them', async () => {
         const h = setupCustomInheritance('Removed round host', { synthesis: '' });
         try {
