@@ -30,6 +30,11 @@ describe('Basic page binds the engine to the run record (8.2, 8.3)', () => {
     expect(results).toContain('resumeCustomFromPage,');
   });
 
+  test('the run takes the limit of the schema, and the decision window offers «Продолжить» only where the engine allows it', () => {
+    expect(results).toContain('runMaxWords: built.run.maxWords,');
+    expect(results).toMatch(/const canContinue = choices\.includes\('continue'\);[\s\S]*?confirmText: canContinue \? 'Продолжить' : 'Пропустить шаг'/);
+  });
+
   test('the owner input window and the window of unknown requests are not wired yet (A06): no guessed answer is passed', () => {
     expect(results).not.toContain('provideOwnerResult');
     expect(results).not.toContain('resolveUnknown');

@@ -7008,18 +7008,23 @@ document.addEventListener('click', (event) => {
             Object.fromEntries(Object.entries(discipline).map(([name, saved]) => [name, legacyDiscipline(saved) || {}])), ...rest);
         // The owner's choice on a pause, through the shared confirm dialog (three buttons).
         let customDecisionOpen = false;
-        const askCustomDecision = async ({ label, accepted, failed, choices, reasons }) => {
+        // The buttons are the choices the engine allows: «Продолжить» only at the threshold (the engine refuses it below),
+        // below it «Пропустить шаг» and «Повторить».
+        const askCustomDecision = async ({ label, accepted, failed, choices, reasons, required = 0 }) => {
             const failedText = failed.map((name) => `${name}${reasons[name] ? ` (${window.CustomEngine?.REASON_TEXT?.[reasons[name]] || reasons[name]})` : ''}`).join(', ');
+            const canContinue = choices.includes('continue');
             const message = accepted.length
-                ? `${label}: принято ${accepted.length}${failed.length ? `, без ответа: ${failedText}` : ''}. Что дальше?`
+                ? `${label}: принято ${accepted.length}${required ? ` из ${required}` : ''}${failed.length ? `, без ответа: ${failedText}` : ''}. Что дальше?`
                 : `${label}: нет принятых ответов (${failedText}). Что дальше?`;
             customDecisionOpen = true;
-            const answer = await showConfirm(message, accepted.length
-                ? { confirmText: 'Продолжить', cancelText: 'Stop', retryText: choices.includes('retry') ? 'Повторить без ответа' : '' }
-                : { confirmText: 'Пропустить шаг', cancelText: 'Stop', retryText: 'Повторить' });
+            const answer = await showConfirm(message, {
+                confirmText: canContinue ? 'Продолжить' : 'Пропустить шаг',
+                cancelText: 'Stop',
+                retryText: choices.includes('retry') ? (canContinue ? 'Повторить без ответа' : 'Повторить') : ''
+            });
             customDecisionOpen = false;
             if (answer === 'retry') return 'retry';
-            if (answer === true) return accepted.length ? 'continue' : 'skip';
+            if (answer === true) return canContinue ? 'continue' : 'skip';
             return 'stop';
         };
         const askCustomOwner = (asks, { label }) => new Promise((resolve) => {
@@ -7145,6 +7150,8 @@ document.addEventListener('click', (event) => {
                     semiAuto,
                     signal,
                     maxPromptChars: budgetLimits ? window.DebateContextBudget.effectivePromptLimit(budgetLimits) : Infinity,
+                    // The shared limit of the run: the one the schema sets (the check of strictLength uses it).
+                    runMaxWords: built.run.maxWords,
                     accept: ({ text, completion }) => window.DebateResponseAcceptance?.evaluate?.({ text, meta: { completion } }) || { ok: true },
                     parseAsks: (text) => window.DebateStageMarkers?.parse?.(text)?.askItems || [],
                     askOwner: askCustomOwner,

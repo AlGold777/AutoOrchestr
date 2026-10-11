@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — Basic: the run takes the schema's length limit; the decision window offers only what the engine allows, version 2.81.738
+
+- Fix (`results.js`, `runCustomFromPage`): the engine gets `runMaxWords` (the run's `maxWords` of the schema); the check of `strictLength` no longer uses the default limit.
+- Fix (`results.js`, `askCustomDecision`): «Продолжить» is not offered below the threshold; there the window offers «Пропустить шаг» and «Повторить». The message shows «принято N из M».
+- Docs: `basic-start-here.md` (the pause window).
+- Test: `tests/custom-run-resume-wiring.test.js` (the limit is passed; the button text follows the choice).
+
 ### 2026-10-11 — Basic: the round card shows its task also for the first round and the input nothing, version 2.81.737
 
 - Feat (`results/stage-card.js`, `settingsModel`): the task field of a round is shown with any input. With the input nothing only the task written in the card is sent, so the shared task is not suggested in the field; the label says so. The first round (no input) now has the field (P00 sends the explicit task).
