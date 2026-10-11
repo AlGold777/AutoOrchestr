@@ -447,7 +447,13 @@ function answerHasDeliveryToken(llmName, text) {
     ? self.TransportPolicy.resolvePromptForModel(jobState?.session?.promptsByModel, llmName, '')
     : (jobState?.session?.promptsByModel?.[llmName] || ''));
   const token = (prompt.match(/\[\[AO-[a-z0-9]{6}\]\]/i) || [])[0];
-  return Boolean(token && String(text || '').toLowerCase().includes(token.toLowerCase()));
+  if (!token) return false;
+  // The token is the LAST line of the answer (provider chrome such as a time may follow,
+  // see TAIL_AFTER_TOKEN_RE in message-delivery.js). The same text earlier in the page
+  // is a quoted instruction or a prompt echo, not proof that the model finished.
+  const body = String(text || '').toLowerCase();
+  const at = body.lastIndexOf(token.toLowerCase());
+  return at >= 0 && body.length - (at + token.length) <= 40;
 }
 
 // Commit the text the model already produced as an incomplete answer ("неполный"),
