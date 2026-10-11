@@ -460,3 +460,64 @@ describe('tab-manager session scoping', () => {
     expect(context.TabMapManager.get('GPT')).toBeNull();
   });
 });
+
+describe('tab-manager participants of one model (T07, mock transport)', () => {
+  const twoTabs = () => [
+    { id: 2002, url: 'https://chatgpt.com/c/participant-a', windowId: 7, index: 0, status: 'complete', lastAccessed: Date.now() - 1000 },
+    { id: 2003, url: 'https://chatgpt.com/c/participant-b', windowId: 7, index: 1, status: 'complete', lastAccessed: Date.now() }
+  ];
+
+  test('a participant binding is kept apart from the model binding and survives in storage', async () => {
+    const { context } = createTabManagerSandbox({ queryTabs: twoTabs() });
+    await context.bindParticipantTab('A', 'GPT', 2002);
+    await context.bindParticipantTab('B', 'GPT', 2003);
+    expect(context.participantTabOf('A')).toBe(2002);
+    expect(context.participantTabOf('B')).toBe(2003);
+    expect(context.tabsOfOtherParticipants('GPT', 'A')).toEqual([2003]);
+    expect(context.tabsOfOtherParticipants('GPT', 'B')).toEqual([2002]);
+    expect(context.tabsOfOtherParticipants('Perplexity', 'A')).toEqual([]);
+    const stored = await context.chrome.storage.local.get('llmParticipantTabMap');
+    expect(stored.llmParticipantTabMap).toEqual({ A: { modelName: 'GPT', tabId: 2002 }, B: { modelName: 'GPT', tabId: 2003 } });
+  });
+
+  test('a participant keeps its own tab even when another tab of the model is newer', async () => {
+    const { context } = createTabManagerSandbox({ queryTabs: twoTabs() });
+    await context.bindParticipantTab('A', 'GPT', 2002);
+    await context.bindParticipantTab('B', 'GPT', 2003);
+    expect(await context.tryAttachExistingTab('GPT', 'to A', [], {
+      allowGlobalReuse: true, mandatoryReuse: true, preferTabId: 2002, excludeTabIds: [2003]
+    })).toBe(true);
+    expect(context.dispatchPromptToTab).toHaveBeenCalledWith('GPT', 2002, 'to A', [], 'attach_existing');
+  });
+
+  test('a participant whose tab is closed does not take the tab of another participant of the same model', async () => {
+    const tabs = twoTabs().filter((tab) => tab.id !== 2002);
+    const { context } = createTabManagerSandbox({ queryTabs: tabs });
+    await context.bindParticipantTab('A', 'GPT', 2002);
+    await context.bindParticipantTab('B', 'GPT', 2003);
+    // A's tab (2002) is closed; the only open tab of the model (2003) belongs to B and must not be taken.
+    expect(await context.tryAttachExistingTab('GPT', 'to A', [], {
+      allowGlobalReuse: true, mandatoryReuse: true, preferTabId: 2002, excludeTabIds: [2003]
+    })).toBe(false);
+    expect(context.dispatchPromptToTab).not.toHaveBeenCalledWith('GPT', 2003, expect.anything(), expect.anything(), expect.anything());
+  });
+
+  test('the model binding of the active participant does not decide the tab of another participant', async () => {
+    const { context } = createTabManagerSandbox({ queryTabs: twoTabs() });
+    await context.bindParticipantTab('A', 'GPT', 2002);
+    await context.bindParticipantTab('B', 'GPT', 2003);
+    // The model entry points at B (its wave is the active one); A's request must still go to A's tab.
+    await context.setTabBinding('GPT', 2003);
+    expect(await context.tryAttachExistingTab('GPT', 'to A', [], {
+      allowGlobalReuse: true, mandatoryReuse: true, preferTabId: 2002, excludeTabIds: [2003]
+    })).toBe(true);
+    expect(context.dispatchPromptToTab).toHaveBeenCalledWith('GPT', 2002, 'to A', [], 'attach_existing');
+  });
+
+  test('without participant options the model path is unchanged (name-keyed reuse)', async () => {
+    const { context } = createTabManagerSandbox({ queryTabs: twoTabs() });
+    await context.bindParticipantTab('A', 'GPT', 2002);
+    expect(await context.tryAttachExistingTab('GPT', 'legacy', [], { allowGlobalReuse: true })).toBe(true);
+    expect(context.dispatchPromptToTab).toHaveBeenCalledWith('GPT', 2003, 'legacy', [], 'attach_existing');
+  });
+});

@@ -26,7 +26,7 @@
 
 Реестр артефактов: `result.artifacts` (записи реестра), тексты: callbacks `putText(text) → ref` и `getText(ref) → text` (страница их пока не передаёт; без них движок хранит тексты в `result.texts`). Запись о прогоне (`CustomRunRecord`) реестр пока не сохраняет (пакет A05).
 
-Транспорт участников: `sendParticipants(requests, meta)` получает `requests` — `[{ participantId, modelName, prompt, chat, stepRef, visit, attempt }]`, `meta` — `{ step, kind, label, attempt, maxWordsByParticipant, correctionByParticipant }`, и возвращает `{ byParticipant: { [participantId]: ответ }, closedByOwner }`; ответ — `{ text, status, completion, answered, transportRequestId, sentPrompt, attribution }`. Без него движок вызывает `send(models, promptsByModel, meta)` и требует уникальные имена моделей в шаге. Страница пока передаёт только `send`.
+Транспорт участников: `sendParticipants(requests, meta)` получает `requests` — `[{ participantId, modelName, prompt, chat, stepRef, visit, attempt }]`, `meta` — `{ step, kind, label, attempt, maxWordsByParticipant, correctionByParticipant }`, и возвращает `{ byParticipant: { [participantId]: ответ }, closedByOwner }`; ответ — `{ text, status, completion, answered, transportRequestId, sentPrompt, attribution }`. Без него движок вызывает `send(models, promptsByModel, meta)` и требует уникальные имена моделей в шаге. Страница передаёт `sendParticipants` (`results.js`, `runCustomFromPage`): запросы делятся на волны (k-й запрос модели идёт в волну k, волны идут одна за другой), поэтому два участника одной модели — две вкладки, используемые по очереди; внутри волны у модели один запрос. Фон (`background/job-orchestrator.js`, `runParticipantThroughTabs`; `background/tab-manager.js`, `bindParticipantTab`, `participantTabOf`, `tabsOfOtherParticipants`) ведёт вкладку каждого участника по `participantId` (ключ `llmParticipantTabMap` в `chrome.storage.local`), `llmTabMap` остаётся по имени модели и указывает на вкладку участника активной волны. Поле `pipelineContext.participants` = `{ [modelName]: { participantId, newChat } }`; провайдер в `START_FULLPAGE_PROCESS` — по-прежнему имя модели. `chat: "new"` — новая вкладка при первой попытке захода, исправления идут в неё же. Участник без привязанной вкладки получает вкладку по существующему механизму модели, но никогда не вкладку другого участника этой модели. Привязки чатов — `state.chatBindings` (`participantId → { modelName, stepRef, visit, transportRequestId }`); снимок их пока не сохраняет (см. раздел 5, TRANSPORT-1).
 
 ### results.js: области и функции
 
@@ -53,6 +53,8 @@
 | `tests/custom-extract.test.js` | Разбор прогона в Extract (Transport) |
 | `tests/custom-engine-checkpoint.test.js` | Checkpoint: точки записи состояния, живое состояние, `checkpoint_failed`, автономный запуск без callback |
 | `tests/custom-run-resume-wiring.test.js` | Привязка страницы к записи: callbacks текстов, checkpoint, очередь записи, «Продолжить прогон» (контракт в `results.js`, без браузера) |
+| `tests/basic-participant-transport.test.js` | Участники в транспорте: волны, ответы по participantId, `chat`, привязки в снимке, фон не подменяет вкладку другого участника (контракт в коде, без браузера) |
+| `tests/tab-manager-session-scope.test.js` (блок «participants») | Вкладка участника на моках `chrome.tabs`: своя вкладка, исключение чужой вкладки модели, сохранение привязок |
 | `tests/custom-engine-resume.test.js` | Продолжение из снимка: неизвестный запрос, пропуск, решение владельца и окно после перезагрузки, счётчики, применённый переход, схема снимка |
 | `tests/custom-engine-owner.test.js` | Шаг владельца: текст и его проверка, пустой ответ, отмена и Stop, файлы, `unsupported_input` |
 | `tests/basic-artifacts.test.js` | Реестр артефактов: идемпотентность, последняя версия линии, авторы |
@@ -277,6 +279,7 @@
 | OI-3 | Приёмка ответа в прогоне Basic не проверяет длину и формат | открыт, нужно решение владельца |
 | OI-4 | Повторный ответ модели в том же шаге может стать ревизией карточки | открыт, нужно проверить |
 | OI-5 | Записи прежнего формата без схемы не импортируются из старого общего экспорта | принято как граница, зафиксировано |
+| TRANSPORT-1 | Участники: привязки чатов не сохраняются в снимке; `chat: "new"` не исполняется движком; ручная проверка в реальных вкладках не выполнена | открыт, нужны A02/A05 |
 | TEST-1 | Постоянно падающие тесты, не относящиеся к Basic | известно |
 | TEST-2 | Нестабильный тест `false success: watcher completion guards` | известно |
 

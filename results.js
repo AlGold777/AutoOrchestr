@@ -7111,9 +7111,12 @@ document.addEventListener('click', (event) => {
             };
             // A checkpoint (8.2) takes the state of the engine into the record and waits for its write: a failed write is
             // not swallowed here, the engine stops on it (checkpoint_failed).
+            // The chats of the participants of this run (T07): participantId → { modelName, stepRef, visit, transportRequestId }.
+            // The background keeps the tab of each participant; this record is what a resume and A05 read.
+            const chatBindings = {};
             const checkpointRecord = (state) => {
                 window.CustomRunRecord.setArtifacts(record, state.artifacts);
-                window.CustomRunRecord.setSnapshot(record, { schema: built.schema, runSettings: { semiAuto, maxAttempts: engine.DEFAULT_ATTEMPTS, runMaxWords: built.run.maxWords ?? null }, state, current: state.current, routes: state.routes, ownerAnswers: state.ownerAnswers, pendingOwner: state.pendingOwner });
+                window.CustomRunRecord.setSnapshot(record, { schema: built.schema, runSettings: { semiAuto, maxAttempts: engine.DEFAULT_ATTEMPTS, runMaxWords: built.run.maxWords ?? null }, state: { ...state, chatBindings: { ...chatBindings } }, current: state.current, routes: state.routes, ownerAnswers: state.ownerAnswers, pendingOwner: state.pendingOwner });
                 return writeRecord();
             };
             const recordAttempt = (entry) => {
@@ -7149,6 +7152,77 @@ document.addEventListener('click', (event) => {
                 const attachments = await buildAttachmentPayload();
                 // Attachments go with the first message to each model only: later steps continue in that chat.
                 const attached = new Set();
+                const isNewChat = (request) => request.attempt === 1 && (request.chat === 'new'
+                    || (!resumeRecord && runContext.forceNewTabs && !chatBindings[request.participantId]));
+                const sendWave = async (wave, meta, waveNo) => {
+                    const { step, label, attempt } = meta;
+                    const stepModels = steps[step]?.models || [];
+                    const models = wave.map((request) => request.modelName);
+                    const promptsByModel = Object.fromEntries(wave.map((request) => [request.modelName, request.prompt]));
+                    const maxWordsByModel = Object.fromEntries(wave.map((request) => [request.modelName, meta.maxWordsByParticipant?.[request.participantId] || null]));
+                    const correctionByModel = Object.fromEntries(wave.map((request) => [request.modelName, Boolean(meta.correctionByParticipant?.[request.participantId])]));
+                    const discipline = Object.fromEntries(wave.map((request) => [request.modelName,
+                        stepModels.find((model) => model.id === request.participantId)?.discipline || {}
+                    ]));
+                    const participants = Object.fromEntries(wave.map((request) => [request.modelName, {
+                        participantId: request.participantId, newChat: isNewChat(request)
+                    }]));
+                    // Reuse the existing limit contract, on first attempts and corrections alike.
+                    const composed = composeCustomPrompts(models, promptsByModel, maxWordsByModel, discipline,
+                        built.schema.defaults?.modelNotes || {}, correctionByModel, built.run.maxWords);
+                    const batch = await runModelBatch({
+                        prompt: composed[models[0]],
+                        promptsByModel: composed,
+                        deliveryInstructionsByModel: Object.fromEntries(models.map((name) => [name, discipline[name].delivery])),
+                        models,
+                        attachments: models.some((model) => !attached.has(model)) ? attachments : [],
+                        // The transport opens or continues the tab of each participant (participants); the run's new-pages flag is not used here.
+                        forceNewTabs: false,
+                        useApiFallback,
+                        signal,
+                        context: {
+                            ...runContext,
+                            participants,
+                            // Its own stage id: without it the batch would take the current Debate stage.
+                            stageId: window.ReportDigest?.customStageId?.(runContext.pipelineRunId, step) || `custom:${runContext.pipelineRunId}:s${step + 1}`,
+                            stageAttemptId: `custom:${runContext.pipelineRunId}:s${step + 1}:a${attempt}${waveNo ? `:w${waveNo}` : ''}`,
+                            pipelineRoundId: `s${step + 1}`,
+                            pipelineBatchId: makePipelineBatchId({ runId: runContext.pipelineRunId, roundIndex: step + 1, groupIndex: waveNo ? `${attempt - 1}w${waveNo}` : attempt - 1 }),
+                            anonymizeParticipants: false,
+                            custom: true
+                        },
+                        generationProfile: 'long'
+                    });
+                    models.forEach((model) => attached.add(model));
+                    const byModel = Object.fromEntries(models.map((model) => {
+                        const modelResult = batch?.results?.[model] || {};
+                        const text = String(batch?.responses?.[model] || '');
+                        if (text.trim()) {
+                            updateDebateModelCardOutput(model, text, '', {
+                                status: modelResult.status || 'SUCCESS', source: 'custom', role: `Basic · ${label}`,
+                                pipelineRunId: runContext.pipelineRunId, pipelineRoundId: `s${step + 1}`,
+                                transportRequestId: modelResult.transportRequestId || '', requestId: modelResult.transportRequestId || ''
+                            });
+                        }
+                        return [model, {
+                            text, status: modelResult.status || '', completion: modelResult.completion || '',
+                            // The prompt exactly as the transport dispatched it (token and limit included).
+                            sentPrompt: window.TransportPolicy?.resolvePromptForModel?.(batch?.sentPrompts, model, null) ?? null,
+                            attribution: modelResult.attribution || '',
+                            answered: String(modelResult.status || '').toUpperCase() === 'SUCCESS' && modelResult.attribution === 'verified',
+                            transportRequestId: modelResult.transportRequestId || ''
+                        }];
+                    }));
+                    const byParticipant = {};
+                    wave.forEach((request) => {
+                        byParticipant[request.participantId] = byModel[request.modelName];
+                        chatBindings[request.participantId] = {
+                            modelName: request.modelName, stepRef: request.stepRef, visit: request.visit,
+                            transportRequestId: byModel[request.modelName].transportRequestId
+                        };
+                    });
+                    return { byParticipant, closedByOwner: batch?.closeReason === 'moderator_closed' };
+                };
                 const budgetLimits = window.DebateContextBudget?.DEFAULT_LIMITS;
                 const result = await engine.run({
                     task,
@@ -7196,56 +7270,26 @@ document.addEventListener('click', (event) => {
                     ...(resumeRecord ? { resume: { ...resumeRecord.snapshot, artifacts: resumeRecord.artifacts } } : {}),
                     onRequest: recordAttempt,
                     onResponse: recordAttempt,
-                    send: async (models, promptsByModel, { step, label, attempt, maxWordsByModel, correctionByModel }) => {
-                        setCustomStepStatus(step, 'running');
-                        // Reuse the existing limit contract, on first attempts and corrections alike.
-                        const discipline = Object.fromEntries(models.map((name) => [name,
-                            steps[step].models.find((model) => model.name === name)?.discipline || {}
-                        ]));
-                        promptsByModel = composeCustomPrompts(models, promptsByModel, maxWordsByModel, discipline,
-                            built.schema.defaults?.modelNotes || {}, correctionByModel || {}, built.run.maxWords);
-                        const batch = await runModelBatch({
-                            prompt: promptsByModel[models[0]],
-                            promptsByModel,
-                            deliveryInstructionsByModel: Object.fromEntries(models.map((name) => [name, discipline[name].delivery])),
-                            models,
-                            attachments: models.some((model) => !attached.has(model)) ? attachments : [],
-                            forceNewTabs: runContext.forceNewTabs,
-                            useApiFallback,
-                            signal,
-                            context: {
-                                ...runContext,
-                                // Its own stage id: without it the batch would take the current Debate stage.
-                                stageId: window.ReportDigest?.customStageId?.(runContext.pipelineRunId, step) || `custom:${runContext.pipelineRunId}:s${step + 1}`,
-                                stageAttemptId: `custom:${runContext.pipelineRunId}:s${step + 1}:a${attempt}`,
-                                pipelineRoundId: `s${step + 1}`,
-                                pipelineBatchId: makePipelineBatchId({ runId: runContext.pipelineRunId, roundIndex: step + 1, groupIndex: attempt - 1 }),
-                                anonymizeParticipants: false,
-                                custom: true
-                            },
-                            generationProfile: 'long'
+                    sendParticipants: async (requests, meta) => {
+                        setCustomStepStatus(meta.step, 'running');
+                        // Waves: the k-th request of a model goes in wave k, the waves go one after another. Two participants
+                        // of one model are two tabs used in turn, never one tab at the same time.
+                        const countByModel = {};
+                        const waves = [];
+                        requests.forEach((request) => {
+                            const k = countByModel[request.modelName] || 0;
+                            countByModel[request.modelName] = k + 1;
+                            (waves[k] ||= []).push(request);
                         });
-                        models.forEach((model) => attached.add(model));
-                        const byModel = Object.fromEntries(models.map((model) => {
-                            const modelResult = batch?.results?.[model] || {};
-                            const text = String(batch?.responses?.[model] || '');
-                            if (text.trim()) {
-                                updateDebateModelCardOutput(model, text, '', {
-                                    status: modelResult.status || 'SUCCESS', source: 'custom', role: `Basic · ${label}`,
-                                    pipelineRunId: runContext.pipelineRunId, pipelineRoundId: `s${step + 1}`,
-                                    transportRequestId: modelResult.transportRequestId || '', requestId: modelResult.transportRequestId || ''
-                                });
-                            }
-                            return [model, {
-                                text, status: modelResult.status || '', completion: modelResult.completion || '',
-                                // The prompt exactly as the transport dispatched it (token and limit included).
-                                sentPrompt: window.TransportPolicy?.resolvePromptForModel?.(batch?.sentPrompts, model, null) ?? null,
-                                attribution: modelResult.attribution || '',
-                                answered: String(modelResult.status || '').toUpperCase() === 'SUCCESS' && modelResult.attribution === 'verified',
-                                transportRequestId: modelResult.transportRequestId || ''
-                            }];
-                        }));
-                        return { byModel, closedByOwner: batch?.closeReason === 'moderator_closed' };
+                        const byParticipant = {};
+                        let closedByOwner = false;
+                        for (const [waveNo, wave] of waves.entries()) {
+                            // eslint-disable-next-line no-await-in-loop
+                            const reply = await sendWave(wave, meta, waveNo);
+                            Object.assign(byParticipant, reply.byParticipant);
+                            closedByOwner = closedByOwner || reply.closedByOwner;
+                        }
+                        return { byParticipant, closedByOwner };
                     },
                     onEvent: (kind, fields) => {
                         // A step with accepted answers, or one the owner skipped, is done; otherwise it stays running until a decision.

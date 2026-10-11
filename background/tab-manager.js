@@ -243,6 +243,11 @@ const loadTabMapFromStorage = async () => {
   if (data.llmTabMap) {
     Object.assign(llmTabMap, data.llmTabMap);
   }
+  const participants = await chrome.storage.local.get(PARTICIPANT_TAB_MAP_KEY);
+  Object.keys(participantTabMap).forEach((key) => delete participantTabMap[key]);
+  Object.entries(participants[PARTICIPANT_TAB_MAP_KEY] || {}).forEach(([participantId, entry]) => {
+    if (entry?.modelName && isValidTabId(entry.tabId)) participantTabMap[participantId] = { modelName: entry.modelName, tabId: entry.tabId };
+  });
   let changed = false;
   await Promise.all(Object.entries(llmTabMap).map(async ([llmName, tabId]) => {
     if (!isValidTabId(tabId) || await isAppUiTabId(tabId)) {
@@ -258,6 +263,34 @@ const loadTabMapFromStorage = async () => {
 };
 
 const fallbackRecoveryUsed = new Set();
+
+// Basic participants (T07): participantId → { modelName, tabId }. llmTabMap keeps one tab per model name (the tab of the
+// participant whose request is in flight); this map keeps the tab of every participant, so two participants of one model
+// keep two chats. Stored apart from llmTabMap, so it survives a reload of the worker.
+const participantTabMap = {};
+const PARTICIPANT_TAB_MAP_KEY = 'llmParticipantTabMap';
+
+async function bindParticipantTab(participantId, modelName, tabId) {
+  if (!participantId) return;
+  if (isValidTabId(tabId) && modelName) {
+    participantTabMap[participantId] = { modelName, tabId };
+  } else {
+    delete participantTabMap[participantId];
+  }
+  await chrome.storage.local.set({ [PARTICIPANT_TAB_MAP_KEY]: { ...participantTabMap } });
+}
+
+function participantTabOf(participantId) {
+  const entry = participantTabMap[participantId];
+  return entry && isValidTabId(entry.tabId) ? entry.tabId : null;
+}
+
+// Tabs of the model that belong to other participants: a participant never takes one of them (8.3).
+function tabsOfOtherParticipants(modelName, participantId) {
+  return Object.entries(participantTabMap)
+    .filter(([id, entry]) => id !== participantId && entry?.modelName === modelName && isValidTabId(entry.tabId))
+    .map(([, entry]) => entry.tabId);
+}
 
 const TabMapManager = (() => {
   let mutex = Promise.resolve();
@@ -500,12 +533,14 @@ async function validateReusableTab(llmName, tabId, options = {}) {
   return ensureTabReadyForDispatch(tabId, llmName, { reason });
 }
 
-async function findReusableTabsForLlm(llmName) {
+async function findReusableTabsForLlm(llmName, options = {}) {
   const tabs = await getAllOpenTabs();
   if (!tabs.length) return [];
-  const boundTabId = jobState?.llms?.[llmName]?.tabId || TabMapManager.get(llmName);
+  const boundTabId = options.preferTabId || jobState?.llms?.[llmName]?.tabId || TabMapManager.get(llmName);
+  const excluded = new Set(options.excludeTabIds || []);
   return tabs
     .filter((tab) => tab && typeof tab.url === 'string' && /^https?:\/\//i.test(tab.url))
+    .filter((tab) => !excluded.has(tab.id))
     .filter((tab) => isEligibleTabForLlm(llmName, tab) && (tab.id === boundTabId || matchesQueryPatternUrl(tab.url, llmName)))
     .sort((a, b) => Number(b.id === boundTabId) - Number(a.id === boundTabId) || compareTabsByOpenRecency(a, b));
 }
@@ -817,7 +852,7 @@ function tryAttachExistingTab(llmName, prompt, attachments = [], options = {}) {
       resolve(false);
       return;
     }
-    findReusableTabsForLlm(llmName).then(async (tabs) => {
+    findReusableTabsForLlm(llmName, options).then(async (tabs) => {
       if (!tabs || !tabs.length) {
         resolve(false);
         return;
@@ -858,7 +893,7 @@ function tryAttachExistingTab(llmName, prompt, attachments = [], options = {}) {
       let firstSoftBlocked = null;
       for (const tabOption of eligibleTabs) {
         const isRunBound = !!(runBoundSet && runBoundSet.has(tabOption.id));
-        const isMapped = tabOption.id === (jobState?.llms?.[llmName]?.tabId || TabMapManager.get(llmName));
+        const isMapped = tabOption.id === (options.preferTabId || jobState?.llms?.[llmName]?.tabId || TabMapManager.get(llmName));
         // Keep a known conversation even if its composer is busy or has a draft.
         // Readiness belongs to dispatch; choosing another conversation is not recovery.
         if (options.deferDispatch || !allowGlobalReuse || isRunBound || isMapped) {
@@ -1558,6 +1593,9 @@ self.matchesUrlPrefix = matchesUrlPrefix;
 self.resolveTabForLlmName = resolveTabForLlmName;
 self.resolveTabForLlmNameAsync = resolveTabForLlmNameAsync;
 self.findReusableTabsForLlm = findReusableTabsForLlm;
+self.bindParticipantTab = bindParticipantTab;
+self.participantTabOf = participantTabOf;
+self.tabsOfOtherParticipants = tabsOfOtherParticipants;
 self.validateReusableTab = validateReusableTab;
 self.getAttachAllowPrefixes = getAttachAllowPrefixes;
 self.getAttachDenyPrefixes = getAttachDenyPrefixes;

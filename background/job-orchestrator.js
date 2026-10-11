@@ -5194,6 +5194,9 @@ function stopAllProcesses(reason = 'unspecified', { closeTabs = false } = {}) {
 // ToS read) and then both replaced the shared jobState. Held until
 // runDispatchRounds has marked the rounds active.
 let startProcessReserved = false;
+// Basic participants of the run (T07): modelName → { participantId, newChat }, given by the page in pipelineContext.participants.
+// The page sends one request per model in a batch, so the model name is unique here; a model without an entry is the legacy path.
+let activeParticipantRequests = {};
 async function startProcess(prompt, selectedLLMs, resultsTab, options = {}) {
   const runGuard = self.RunGuard?.canStartNewRun?.(jobState?.session, options, jobState?.llms);
   if (runGuard && runGuard.ok === false) {
@@ -5281,6 +5284,9 @@ async function startProcessReservedRun(prompt, selectedLLMs, resultsTab, options
   // Who drives the run (panel-issued): a moderator-driven run does not get the
   // system's own page visits; the moderator pulls answers with Get it.
   jobState.session.runMode = String(pipelineContext?.runMode || '') || null;
+  activeParticipantRequests = pipelineContext?.participants && typeof pipelineContext.participants === 'object'
+    ? { ...pipelineContext.participants }
+    : {};
   if (self.PipelineFSM?.startRun) {
     jobState.session.pipelineControl = self.PipelineFSM.startRun({
       pipelineRunId: pipelineContext?.pipelineRunId || null,
@@ -5635,9 +5641,48 @@ async function reuseMappedDonorProviderTab(llmName, prompt, attachments = [], op
   return false;
 }
 
+// A Basic participant (T07) has its own tab: a new chat opens a new root tab for it, otherwise it goes to its own bound tab.
+// A closed bound tab is reopened the way the model path does it (existing tabs of the provider, then a new tab), but never
+// a tab that belongs to another participant of the same model. The model entry (llmTabMap) follows the active participant.
+async function runParticipantThroughTabs(llmName, prompt, attachments = [], options = {}, participant) {
+  const participantId = String(participant.participantId || '');
+  if (!participant.newChat) {
+    const attached = await tryAttachExistingTab(llmName, prompt, attachments, {
+      ...options,
+      allowGlobalReuse: true,
+      mandatoryReuse: true,
+      preferTabId: participantTabOf(participantId),
+      excludeTabIds: tabsOfOtherParticipants(llmName, participantId)
+    }).catch((err) => {
+      console.warn(`[BACKGROUND] Failed to attach tab of participant ${participantId} for ${llmName}:`, err?.message || err);
+      return false;
+    });
+    if (attached) {
+      await bindParticipantTab(participantId, llmName, TabMapManager.get(llmName));
+      return true;
+    }
+    await setTabBinding(llmName, null);
+    broadcastGlobalState();
+    emitTelemetry(llmName, 'TAB_ISOLATION_FALLBACK_CREATE', {
+      level: 'warning',
+      details: 'participant_no_bound_tab',
+      meta: { reason: 'participant_no_bound_tab', participantId },
+      force: true
+    });
+  }
+  // No detach: the previous chat of this participant stays open, another participant is not touched.
+  const created = await createNewLlmTab(llmName, prompt, attachments, { ...options, forceCreate: true });
+  await bindParticipantTab(participantId, llmName, TabMapManager.get(llmName));
+  return created;
+}
+
 async function runModelThroughTabs(llmName, prompt, forceNewTabs, attachments = [], options = {}) {
   if (options.sessionId && !isSessionActive(options.sessionId)) {
     return false;
+  }
+  const participant = activeParticipantRequests[llmName];
+  if (participant) {
+    return runParticipantThroughTabs(llmName, prompt, attachments, options, participant);
   }
   if (forceNewTabs) {
     detachExistingTab(llmName);

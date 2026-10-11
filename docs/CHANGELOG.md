@@ -1,5 +1,13 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — Basic: participants keep their own chats in the transport (mock contract), version 2.81.743
+
+- Feat (`results.js`, `runCustomFromPage`): the engine gets `sendParticipants`; the requests of a step go in waves (the k-th request of a model in wave k), a wave holds one request per model; `chat: "new"` opens a chat at the first attempt of a visit, corrections go on in it; the chat bindings are kept by participant (`chatBindings`, passed to the checkpoint state).
+- Feat (`background/job-orchestrator.js`, `runParticipantThroughTabs`; `background/tab-manager.js`, `bindParticipantTab`, `participantTabOf`, `tabsOfOtherParticipants`, `findReusableTabsForLlm` options `preferTabId`, `excludeTabIds`): the tab of a participant is keyed by `participantId` (`llmParticipantTabMap` in storage); a participant never takes a tab of another participant of the same model. Other pipelines and the provider name in `START_FULLPAGE_PROCESS` are unchanged.
+- Not yet: the engine still refuses `chat: "new"` (`unsupported_field`) and the snapshot still writes `chatBindings: []` (`custom-run-record.js`); manual check in real provider tabs not done.
+- Docs: `basic-developer.md` (transport, OI TRANSPORT-1), `basic-start-here.md`, `basic-schema-guide.md`.
+- Test: `tests/basic-participant-transport.test.js`; `tests/tab-manager-session-scope.test.js` (block «participants»).
+
 ### 2026-10-11 — Basic: the end notice names the detail of the stop (the address of a missing input), version 2.81.742
 
 - Feat (`results.js`, `basicRunNotice`): the detail of the stop (`stopDetail`) follows the reason in brackets, e.g. `Basic: обязательный вход не получен (шаг …). Принятых ответов нет.`
