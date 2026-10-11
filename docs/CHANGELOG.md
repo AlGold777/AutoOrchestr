@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — A loaded Basic schema keeps the order of its round's models, version 2.81.703
+
+- `results.js`: the stack state is matched to the blocks by model name (not by position), and the blocks of a loaded stack are put back in the saved order after the canvas rebuild; the regression of 2.81.702 (a send mark on the wrong model) is fixed.
+
 ### 2026-10-11 — The canvas keeps the order of the models of each round, version 2.81.702
 
 - `BasicSchema.toCanvas` (`disput/basic-schema.js`): each round's stack lists its enabled models in the order of the schema, then the other selected models of the canvas (switched off for this round). Before, the stack and the round's participants followed the canvas order. The engine's run order is unchanged: it was already the schema's order.

@@ -4657,14 +4657,36 @@ document.addEventListener('click', (event) => {
             return changed;
         };
 
+        const modelBlockName = (block) => block.querySelector('.model-name')?.textContent?.trim() || '';
+
+        // Puts the blocks of a stack in the saved order (the order of the schema); a block without a saved item stays after them.
+        const orderModelStackBlocks = (stackId, state) => {
+            if (!state || !Array.isArray(state.items)) return;
+            const stack = document.getElementById(stackId);
+            const blocks = Array.from(stack?.querySelectorAll('.model-block') || []);
+            if (!blocks.length) return;
+            const ordered = [];
+            state.items.forEach((item) => {
+                const block = blocks.find((candidate) => !ordered.includes(candidate) && modelBlockName(candidate) === item.name);
+                if (block) ordered.push(block);
+            });
+            const sequence = [...ordered, ...blocks.filter((block) => !ordered.includes(block))];
+            if (sequence.every((block, index) => block === blocks[index])) return;
+            const anchor = blocks[blocks.length - 1].nextSibling;
+            sequence.forEach((block) => stack.insertBefore(block, anchor));
+        };
+
+        // Flags and roles go to the block of the same model name, never by position: the canvas may list the models in another order.
         const applyModelStackState = (stackId, state, sendOverrides = null) => {
             if (!state || !Array.isArray(state.items)) return;
             const stack = document.getElementById(stackId);
             if (!stack) return;
             const blocks = Array.from(stack.querySelectorAll('.model-block'));
-            blocks.forEach((block, index) => {
-                const item = state.items[index];
-                if (!item) return;
+            state.items.forEach((item, index) => {
+                const block = blocks.find((candidate) => modelBlockName(candidate) === item.name);
+                if (!block) return;
+                // A legacy send mark was saved by the position of the block on the canvas.
+                const position = blocks.indexOf(block);
                 const inputCb = block.querySelector('.model-input-checkbox');
                 const sendCb = block.querySelector('.model-send-checkbox');
                 const inputValue = typeof item.input === 'boolean'
@@ -4673,7 +4695,7 @@ document.addEventListener('click', (event) => {
                 if (inputCb && typeof inputValue === 'boolean') {
                     inputCb.checked = inputValue;
                 }
-                const sendFallback = Array.isArray(sendOverrides?.[stackId]) ? sendOverrides[stackId][index] : undefined;
+                const sendFallback = Array.isArray(sendOverrides?.[stackId]) ? sendOverrides[stackId][position] : undefined;
                 const sendValue = typeof item.send === 'boolean' ? item.send : sendFallback;
                 if (sendCb && typeof sendValue === 'boolean') {
                     sendCb.checked = sendValue;
@@ -7888,7 +7910,9 @@ document.addEventListener('click', (event) => {
             pipelineR1ManualDirty = !!modelStacks['r1-models'];
             debateRunState.maxTurns = getDebateMaxTurns();
             if (debateMaxTurnsInput) debateMaxTurnsInput.value = String(debateRunState.maxTurns);
+            // The sync rebuilds each stack in the canvas order (marks and roles are kept by name): the saved order is put back after it.
             syncPipelineRoundModelsFromSelectedLLMs({ force: true });
+            Object.entries(modelStacks).forEach(([stackId, state]) => orderModelStackBlocks(stackId, state));
             syncPipelineRoundsToDebateLimit();
             if (window.__pendingPipelineSynthesizer !== undefined) {
                 const restoredPlan = draftPlanForCanvas(getActiveDraftPlan());

@@ -3226,6 +3226,39 @@ describe('Pipeline debate favorites view', () => {
         .map((block) => [block.querySelector('.model-name').textContent, block.querySelector('.model-send-checkbox').checked, block.querySelector('.role-selector')?.value || '']);
       const select = (name) => document.querySelector(`.pipeline-item[data-name="${name}"]`).click();
 
+      test('the order of a round and the send marks of its models survive load and a second save', async () => {
+        const h = setupCustomInheritance('Order host', { synthesis: '' });
+        try {
+          // The schema order differs from the canvas order (Claude, GPT); the switched-off Claude of R2 comes first on the canvas.
+          const schema = {
+            schemaVersion: 1, origin: 'user', run: { policy: 'auto' },
+            steps: [
+              { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }, { name: 'Claude' }] },
+              { ref: 'r2', kind: 'round', models: [{ name: 'GPT' }, { name: 'Claude', enabled: false, request: 'KEPT REQUEST' }] },
+              { ref: 'final', kind: 'synthesis', models: [{ name: 'Claude' }] }
+            ]
+          };
+          expect(await h.debug.installBasicSchema('Ordered', schema)).toEqual({ ok: true, errors: [] });
+          select('Ordered');
+          await settleCustomCard();
+          expect(stackFlags('r1-models').map(([name, send]) => [name, send])).toEqual([['GPT', true], ['Claude', true]]);
+          expect(stackFlags('r2-models').map(([name, send]) => [name, send])).toEqual([['GPT', true], ['Claude', false]]);
+          const saved = h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' });
+          expect(saved.steps.slice(0, 2).map((step) => step.models.map((model) => [model.name, model.enabled !== false]))).toEqual([
+            [['GPT', true], ['Claude', true]], [['GPT', true], ['Claude', false]]
+          ]);
+          expect(saved.steps[1].models[1].request).toBe('KEPT REQUEST');
+          // Load the saved schema again and save it once more: the same schema.
+          expect(await h.debug.installBasicSchema('Ordered again', JSON.parse(JSON.stringify(saved)))).toEqual({ ok: true, errors: [] });
+          select('Ordered again');
+          await settleCustomCard();
+          expect(stackFlags('r2-models').map(([name, send]) => [name, send])).toEqual([['GPT', true], ['Claude', false]]);
+          expect(h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' }).steps).toEqual(saved.steps);
+        } finally {
+          h.cleanup();
+        }
+      });
+
       test('the canvas shows the rounds, the models, the roles and the syntheses of the schema, and the run takes the schema\'s steps', async () => {
         const h = setupCustomInheritance('Install host', { synthesis: '' });
         try {
