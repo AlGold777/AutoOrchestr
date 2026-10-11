@@ -24412,16 +24412,28 @@ function checkCompareButtonState() {
                 }
             }
 
+            // Delivery token by default: each model repeats its own token on the last line,
+            // and the background reads it as proof that the answer is complete.
+            const transportRequestIds = Object.fromEntries(selectedLLMs.map((name) => [
+                name,
+                window.TransportContract.makeTransportRequestId()
+            ]));
+            const promptsByModel = window.MessageDelivery?.prepare({
+                prompt: finalPrompt, models: selectedLLMs, requestIds: transportRequestIds
+            }) || null;
+
             let response = null;
             try {
                 response = await sendToBackground({
                     type: 'START_FULLPAGE_PROCESS',
                     prompt: finalPrompt,
+                    promptsByModel,
                     selectedLLMs: selectedLLMs,
                     forceNewTabs,
                     useApiFallback,
                     sourceView: getCurrentViewKey(),
-                    attachments: attachmentsPayload
+                    attachments: attachmentsPayload,
+                    pipelineContext: promptsByModel ? { transportRequestIds } : null
                 });
             } catch (err) {
                 console.warn('[RESULTS] Failed to start process', err);

@@ -758,6 +758,19 @@ describe('the delivery token is the model\'s own end-of-answer marker', () => {
   });
 });
 
+describe('the main page request carries the delivery token', () => {
+  test('result_new.html loads the module and results.js sends per-model prompts with request ids', () => {
+    expect(read('result_new.html')).toContain('<script src="shared/message-delivery.js"></script>');
+    const results = read('results.js');
+    const start = results.indexOf("type: 'START_FULLPAGE_PROCESS',\n                    prompt: finalPrompt,");
+    expect(start).toBeGreaterThan(0);
+    const send = results.slice(start - 900, start + 500);
+    expect(send).toContain('window.MessageDelivery?.prepare({');
+    expect(send).toContain('promptsByModel,');
+    expect(send).toContain('pipelineContext: promptsByModel ? { transportRequestIds } : null');
+  });
+});
+
 describe('static answer watchdog', () => {
   const orchestrator = read('background/job-orchestrator.js');
   function loadWatch(llms, { tokenFor = () => false, getItStatus = 'manual_ping_sent' } = {}) {
