@@ -33,6 +33,7 @@
   'use strict';
 
   const Output = root.BasicOutput || (typeof require === 'function' ? require('./basic-output') : null);
+  const Artifacts = root.BasicArtifacts || (typeof require === 'function' ? require('./basic-artifacts') : null);
   const DEFAULT_ATTEMPTS = 2;
   const SYNTHESIS_TASK = 'Сведи эти ответы в один итоговый ответ на задачу.';
   const REASON_TEXT = Object.freeze({
@@ -137,6 +138,16 @@
     return { ok: true, reason: '', text: value };
   }
 
+  // The content of an artifact: the whole answer for an empty pointer, else the value at the pointer (a text as it is,
+  // an object or a list as JSON). A pointer that the stored answer does not give is missing_content.
+  function contentOf(answer, pointer, address) {
+    if (pointer === '') return answer;
+    const value = Output.parseJsonAnswer(answer);
+    const read = value ? Output.readPointer(value, pointer) : { found: false };
+    if (!read.found) throw new EngineError('missing_content', address, `указатель ${pointer} не найден в сохранённом ответе`);
+    return typeof read.value === 'string' ? read.value : JSON.stringify(read.value);
+  }
+
   // Numbers the steps for labels: rounds by their card, syntheses by the round before them.
   function normalizeSteps(steps = []) {
     let round = 0;
@@ -178,12 +189,24 @@
   const EXECUTED_KINDS = Object.freeze(['round', 'synthesis']);
   const INPUT_VALUES = Object.freeze(['none', 'previous', 'all']);
   // An input (of a step or of a participant) that the engine cannot execute, or null. `fail` builds the error with its address.
+  const isPlain = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
   function inputProblem(spec, kind, fail, field) {
     if (Array.isArray(spec)) {
       if (!spec.length) return fail('invalid_input', field, 'список источников пуст');
-      if (spec.some((source) => source && typeof source === 'object' && 'artifact' in source)) return fail('unsupported_input', field, 'ссылка на артефакт движок пока не исполняет');
-      const bad = spec.findIndex((source) => !(typeof source === 'string' || (source && typeof source === 'object' && typeof source.step === 'string' && typeof source.participant === 'string')));
-      if (bad >= 0) return fail('invalid_input', `${field}[${bad}]`, 'источник: ref шага, или { step, participant, required? }');
+      const shape = (source) => {
+        if (typeof source === 'string') return true;
+        if (!isPlain(source)) return false;
+        if ('artifact' in source) {
+          const version = source.version;
+          const versionOk = version === 'latest' || (isPlain(version) && typeof version.step === 'string' && typeof version.participant === 'string'
+            && Number.isSafeInteger(version.visit) && version.visit > 0);
+          return isPlain(source.artifact) && typeof source.artifact.step === 'string' && typeof source.artifact.participant === 'string'
+            && typeof source.artifact.id === 'string' && versionOk;
+        }
+        return typeof source.step === 'string' && typeof source.participant === 'string';
+      };
+      const bad = spec.findIndex((source) => !shape(source));
+      if (bad >= 0) return fail('invalid_input', `${field}[${bad}]`, 'источник: ref шага, { step, participant, required? } или { artifact: { step, participant, id }, version, required? }');
       return null;
     }
     if (!INPUT_VALUES.includes(spec) || (kind === 'synthesis' && spec !== 'previous')) return fail('invalid_input', field, 'вход: none, previous, all или список источников; синтез — только previous');
@@ -205,7 +228,11 @@
       const output = step.output;
       if (!output || typeof output !== 'object' || Array.isArray(output)) return fail('invalid_field', 'output', 'выход шага: объект');
       if (output.format !== undefined && output.format !== 'json') return fail('unsupported_field', 'output.format', 'формат выхода движок пока не исполняет');
-      if (output.artifacts !== undefined) return fail('unsupported_field', 'output.artifacts', 'объявление артефактов движок пока не исполняет (реестр, пакет P02, шаг 7)');
+      if (output.artifacts !== undefined && (!Array.isArray(output.artifacts) || !output.artifacts.length)) return fail('invalid_field', 'output.artifacts', 'ожидается непустой список артефактов');
+      if (Array.isArray(output.artifacts)) {
+        const revision = output.artifacts.findIndex((item) => item && typeof item === 'object' && 'revisionOf' in item);
+        if (revision >= 0) return fail('unsupported_field', `output.artifacts[${revision}].revisionOf`, 'ссылка на предыдущую версию (revisionOf) движок пока не исполняет (пакет P02, шаг 8)');
+      }
     }
     if (step.require !== undefined && step.require !== 'any' && step.require !== 'all') {
       if (!Number.isSafeInteger(step.require) || step.require < 1) return fail('invalid_field', 'require', 'require: any, all или целое число больше 0');
@@ -244,14 +271,26 @@
       inputs.forEach(([field, spec]) => {
         if (!Array.isArray(spec)) return;
         spec.forEach((source, at) => {
-          const ref = typeof source === 'string' ? source : source.step;
-          const from = steps.findIndex((item) => item && item.ref === ref);
-          if (from < 0) return;
           const address = `шаг «${step.ref}» · ${field}[${at}]`;
-          if (from >= index) throw new EngineError('invalid_input', address, `шаг «${ref}» стоит не раньше этого шага`);
-          if (typeof source === 'string') return;
-          const declared = (Array.isArray(steps[from].models) ? steps[from].models : []).map((model) => (typeof model === 'string' ? model : (model?.id ?? model?.name)));
-          if (!declared.includes(source.participant)) throw new EngineError('invalid_input', address, `участник «${source.participant}» не объявлен в шаге «${ref}»`);
+          // The step a source names (its author, for an artifact) and the participant it names in that step.
+          const check = (ref, participant, artifactId = null) => {
+            const from = steps.findIndex((item) => item && item.ref === ref);
+            if (from < 0) return; // a switched-off step: it gives no answers, see sourceItems
+            if (from >= index) throw new EngineError('invalid_input', address, `шаг «${ref}» стоит не раньше этого шага`);
+            if (participant === undefined) return;
+            const declared = (Array.isArray(steps[from].models) ? steps[from].models : []).map((model) => (typeof model === 'string' ? model : (model?.id ?? model?.name)));
+            if (!declared.includes(participant)) throw new EngineError('invalid_input', address, `участник «${participant}» не объявлен в шаге «${ref}»`);
+            if (artifactId !== null && !(steps[from].output?.artifacts || []).some((item) => item && item.id === artifactId)) {
+              throw new EngineError('invalid_input', address, `артефакт «${artifactId}» не объявлен в шаге «${ref}»`);
+            }
+          };
+          if (typeof source === 'string') return check(source, undefined);
+          if ('artifact' in source) {
+            check(source.artifact.step, source.artifact.participant, source.artifact.id);
+            if (isPlain(source.version)) check(source.version.step, source.version.participant);
+            return;
+          }
+          check(source.step, source.participant);
         });
       });
     });
@@ -260,8 +299,17 @@
   async function run({
     task, steps = [], maxAttempts = DEFAULT_ATTEMPTS, semiAuto = false, maxPromptChars = Infinity,
     accept = defaultAccept, parseAsks = null, askOwner = null, askInstruction = '', decide = null,
-    send = null, sendParticipants = null, runMaxWords = null, signal = null, onEvent = null, onRequest = null, onResponse = null
+    send = null, sendParticipants = null, runMaxWords = null, putText: putCallback = null, getText: getCallback = null,
+    signal = null, onEvent = null, onRequest = null, onResponse = null
   }) {
+    // The texts of the answers: the record gives the callbacks (putText → ref, getText(ref) → text); without them the run keeps
+    // its own dictionary, which the result returns. An answer is put once, when it is accepted.
+    const texts = new Map();
+    let textSeq = 0;
+    const putText = typeof putCallback === 'function' ? putCallback : (value) => { textSeq += 1; const ref = `text${textSeq}`; texts.set(ref, value); return ref; };
+    const getText = typeof getCallback === 'function' ? getCallback : (ref) => texts.get(ref);
+    // The registry of the artifacts of the run (basic-artifacts.js): entries name an answer and a pointer, never a copy.
+    const registry = Artifacts.createRegistry();
     // The run's word limit: the page gives it; without it the default of Basic (BasicSchema.DEFAULTS.run) applies.
     const runLimit = Number.isSafeInteger(runMaxWords) ? runMaxWords : (root.BasicSchema || (typeof require === 'function' ? require('./basic-schema') : null))?.DEFAULTS?.run?.maxWords;
     // The check of an answer of one participant by the output of its step, or null when the step has no output.
@@ -308,9 +356,31 @@
     const acceptedOf = (entry) => (!entry || entry.skipped ? [] : entry.step.models.map((model) => ({ model, verdict: entry.outcome[model.id] }))
       .filter((item) => item.verdict?.ok)
       .map(({ model, verdict }) => ({ ...verdict, participant: model.id, source: { step: entry.step.index, label: stepLabel(entry.step), model: verdict.model, attempt: verdict.attempt } })));
+    // The content of an artifact version: the line, then its current version (latest) or the named one. Only that content.
+    function artifactItems(source, step) {
+      const required = Boolean(source.required);
+      const address = source.artifact;
+      const lineage = { step: address.step, participant: address.participant, id: address.id };
+      const found = source.version === 'latest' ? Artifacts.latest(registry, lineage) : Artifacts.version(registry, lineage, source.version);
+      if (!found || !found.valid) {
+        if (!required) return [];
+        throw new StopRun('missing_input', `артефакт «${address.id}» шага «${address.step}», участник «${address.participant}»: нет актуальной версии; шаг «${step.ref}» не отправлен`);
+      }
+      const answer = getText(found.content.answerRef);
+      if (answer === undefined || answer === null) throw new EngineError('missing_content', `шаг «${step.ref}» · input`, `текст ответа «${found.content.answerRef}» не найден`);
+      const author = results.find((item) => item.step.ref === found.lineage.step);
+      const where = author ? stepLabel(author.step) : found.lineage.step;
+      return [{
+        label: `Артефакт «${found.name}» (${where}, участник ${found.lineage.participant}, визит ${VISIT})`,
+        text: contentOf(answer, found.content.pointer, `шаг «${step.ref}» · input`),
+        source: { step: author ? author.step.index : null, label: where, model: found.lineage.participant, attempt: null },
+        artifact: { lineage: { ...found.lineage }, source: { ...found.source } }
+      }];
+    }
     // The items of one source list, in the order of the list. Each item names its step, participant and visit.
     function sourceItems(spec, step) {
       return spec.flatMap((source) => {
+        if (source && typeof source === 'object' && 'artifact' in source) return artifactItems(source, step);
         const required = Boolean(source?.required);
         const ref = typeof source === 'string' ? source : source.step;
         const entry = results.find((item) => item.step.ref === ref);
@@ -407,6 +477,17 @@
           let verdict = judge(result, accept, checkFor(step, model));
           if (!verdict.ok && reply?.closedByOwner && !text(result.text)) verdict = { ...verdict, reason: 'closed_by_owner' };
           outcome[model.id] = { ...verdict, model: model.name, participant: model.id, status: result.status || '', attempt: tryNo, transportRequestId: result.transportRequestId || '' };
+          // An accepted answer is stored once, then each artifact it declares is registered (one line, one version).
+          if (verdict.ok) {
+            const answerRef = putText(verdict.text);
+            outcome[model.id].textRef = answerRef;
+            const inputs = (current[model.id].parts?.input?.items || []).filter((item) => item.artifact).map((item) => item.artifact);
+            (step.output?.artifacts || []).forEach((declaration) => {
+              Artifacts.register(registry, { id: declaration.id, name: declaration.name,
+                lineage: { step: step.ref, participant: model.id, id: declaration.id },
+                source: { step: step.ref, participant: model.id, visit: VISIT }, answerRef, pointer: declaration.pointer, inputs });
+            });
+          }
           delete outcome[model.id].detail;
           if (verdict.detail) outcome[model.id].detail = verdict.detail;
           Object.assign(entries[model.id], {
@@ -509,7 +590,9 @@
     return {
       steps: results.map((entry) => ({ index: entry.step.index, kind: entry.step.kind, label: stepLabel(entry.step), skipped: entry.skipped, outcome: entry.outcome })),
       answers: inputFor({ input: 'previous' }).map((item) => item.text),
-      history, ownerAnswers, stopReason, stopDetail
+      history, ownerAnswers, stopReason, stopDetail,
+      artifacts: registry.entries.map((entry) => ({ ...entry, lineage: { ...entry.lineage }, source: { ...entry.source }, content: { ...entry.content } })),
+      texts: Object.fromEntries(texts)
     };
   }
 

@@ -318,11 +318,11 @@ describe('Custom engine refuses what it does not execute yet', () => {
     ['a route with no models is not dropped', [{ ref: 'route:x', kind: 'route', models: [] }], 'unsupported_kind', 'route:x'],
     ['an owner step', [{ ref: 'owner:o', kind: 'owner', models: [] }], 'unsupported_kind', 'owner:o'],
     ['an output format other than json', [{ ref: 'r1', kind: 'round', output: { format: 'xml' }, models: ['A'] }], 'unsupported_field', 'output.format'],
-    ['an output with artifacts', [{ ref: 'r1', kind: 'round', output: { format: 'json', requiredFields: ['/m'], artifacts: [{ id: 'm', name: 'M', pointer: '/m' }] }, models: ['A'] }], 'unsupported_field', 'output.artifacts'],
+    ['an empty list of artifacts', [{ ref: 'r1', kind: 'round', output: { format: 'json', requiredFields: ['/m'], artifacts: [] }, models: ['A'] }], 'invalid_field', 'output.artifacts'],
     ['require other than any, all or a number', [{ ref: 'r1', kind: 'round', require: 'some', models: ['A', 'B'] }], 'invalid_field', 'require'],
     ['an owner value other than approve', [{ ref: 'r1', kind: 'round', owner: 'sign', models: ['A'] }], 'invalid_field', 'owner'],
     ['chat new', [{ ref: 'r1', kind: 'round', chat: 'new', models: ['A'] }], 'unsupported_field', 'chat'],
-    ['an artifact source (the registry is not executed yet)', [{ ref: 'r1', kind: 'round', models: ['A'] }, { ref: 'r2', kind: 'round', input: [{ artifact: { step: 'r1', participant: 'A', id: 'map' }, version: 'latest' }], models: ['B'] }], 'unsupported_input', 'r2'],
+    ['an artifact source without its version', [{ ref: 'r1', kind: 'round', models: ['A'] }, { ref: 'r2', kind: 'round', input: [{ artifact: { step: 'r1', participant: 'A', id: 'map' } }], models: ['B'] }], 'invalid_input', 'r2'],
     ['a string input that is not a value', [{ ref: 'r1', kind: 'round', input: 'some', models: ['A'] }], 'invalid_input', 'r1'],
     ['a synthesis with input all', [{ ref: 'r1', kind: 'round', models: ['A'] }, { ref: 'synth:s', kind: 'synthesis', input: 'all', models: ['B'] }], 'invalid_input', 'synth:s'],
     ['two participants of one model', [{ ref: 'r1', kind: 'round', models: ['A', 'A'] }], 'participant_transport_required', 'r1']
@@ -641,11 +641,14 @@ describe('Custom engine output check', () => {
     expect(own.prompt).toContain('Формат ответа:\nСформируй карту и замечания');
   });
 
-  test('an output with artifacts is refused before the first request until the registry is executed', async () => {
-    const { send, calls } = transport({ A: ['a'] });
-    await expect(Engine.run({ task: 'T', send, steps: [{ ref: 'r1', kind: 'round', input: 'none', output: { format: 'json', requiredFields: ['/m'], artifacts: [{ id: 'm', name: 'M', pointer: '/m' }] }, models: ['A'] }] }))
-      .rejects.toMatchObject({ code: 'unsupported_field' });
-    expect(calls).toHaveLength(0);
+  test('a declared artifact whose pointer is missing is missing_artifact; the rejected attempt makes no version', async () => {
+    const { send } = transport({ A: ['{"correctedMap": {}}', '{"correctedMap": {"nodes": ["M1"]}, "auditFindings": ["F1"]}'] });
+    const result = await Engine.run({ task: 'T', send, steps: [{ ref: 'r1', kind: 'round', input: 'none', output: {
+      format: 'json', requiredFields: ['/correctedMap'], artifacts: [{ id: 'map', name: 'Corrected Map', pointer: '/correctedMap' }, { id: 'findings', name: 'Audit Findings', pointer: '/auditFindings' }]
+    }, models: ['A'] }] });
+    expect(result.history[0]).toMatchObject({ accepted: false, reason: 'missing_artifact', detail: '«findings» (/auditFindings)' });
+    expect(result.artifacts.map((item) => item.id)).toEqual(['map', 'findings']);
+    expect(result.artifacts.every((item) => item.source.visit === 1 && item.lineage.participant === 'A')).toBe(true);
   });
 });
 
@@ -776,6 +779,118 @@ describe('Custom engine owner approval', () => {
   test('an owner value other than approve is refused before the first request', async () => {
     const { send, calls } = transport({ A: ['a1'] });
     await expect(Engine.run({ task: 'T', send, steps: [approveStep({ owner: 'sign' })] })).rejects.toMatchObject({ code: 'invalid_field' });
+    expect(calls).toHaveLength(0);
+  });
+});
+
+// Artifact registry (A02, pack P02 step 7; ТЗ 5.2–5.3, 7): an accepted answer is stored once (putText) and each declared
+// artifact is a registry entry that names the answer and a pointer; a source with an artifact gives only that content.
+describe('Custom engine artifacts', () => {
+  const audit = (extra = {}) => ({ ref: 'r1', kind: 'round', input: 'none', models: ['A'], output: {
+    format: 'json', requiredFields: ['/correctedMap', '/auditFindings'],
+    artifacts: [{ id: 'map', name: 'Corrected Map', pointer: '/correctedMap' }, { id: 'findings', name: 'Audit Findings', pointer: '/auditFindings' }]
+  }, ...extra });
+  const reply = '{"correctedMap": {"nodes": ["M1"]}, "auditFindings": ["F1", "F2"]}';
+  const fromArtifact = (id, version = 'latest', required = true) => ({ artifact: { step: 'r1', participant: 'A', id }, version, required });
+
+  test('two artifacts of one answer reach two steps: each step gets only its own content, not the other one', async () => {
+    const { send, calls } = transport({ A: [reply], B: ['b'], C: ['c'] });
+    await Engine.run({ task: 'T', send, steps: [
+      audit(),
+      { ref: 'r2', kind: 'round', input: [fromArtifact('map')], models: ['B'] },
+      { ref: 'r3', kind: 'round', input: [fromArtifact('findings')], models: ['C'] }
+    ] });
+    const toB = calls[1].prompts.B;
+    const toC = calls[2].prompts.C;
+    expect(toB).toContain('Артефакт «Corrected Map» (Раунд 1, участник A, визит 1):\n{"nodes":["M1"]}');
+    expect(toB).not.toContain('F1');
+    expect(toC).toContain('Артефакт «Audit Findings» (Раунд 1, участник A, визит 1):\n["F1","F2"]');
+    expect(toC).not.toContain('M1');
+  });
+
+  test('the registry names the answer and the pointer; the body is stored once, in the answer', async () => {
+    const { send } = transport({ A: [reply] });
+    const result = await Engine.run({ task: 'T', send, steps: [audit()] });
+    expect(result.artifacts).toEqual([
+      expect.objectContaining({ id: 'map', name: 'Corrected Map', content: { answerRef: expect.any(String), pointer: '/correctedMap' }, valid: true }),
+      expect.objectContaining({ id: 'findings', content: { answerRef: result.artifacts[0].content.answerRef, pointer: '/auditFindings' } })
+    ]);
+    expect(JSON.stringify(result.artifacts)).not.toContain('M1');
+    expect(Object.values(result.texts)).toEqual([reply]);
+  });
+
+  test('a text answer with one artifact of an empty pointer is the whole answer', async () => {
+    const { send, calls } = transport({ A: ['Полный документ.'], B: ['b'] });
+    await Engine.run({ task: 'T', send, steps: [
+      { ref: 'r1', kind: 'round', input: 'none', models: ['A'], output: { artifacts: [{ id: 'doc', name: 'Doc', pointer: '' }] } },
+      { ref: 'r2', kind: 'round', input: [fromArtifact('doc')], models: ['B'] }
+    ] });
+    expect(calls[1].prompts.B).toContain('Артефакт «Doc» (Раунд 1, участник A, визит 1):\nПолный документ.');
+  });
+
+  test('a required artifact without a version stops the run before the request; an optional one gives no text', async () => {
+    const result = await Engine.run({ task: 'T', send: transport({ A: [reply] }).send, steps: [
+      audit(),
+      { ref: 'r2', kind: 'round', input: [fromArtifact('map', { step: 'r1', participant: 'A', visit: 2 }, true)], models: ['B'] }
+    ] });
+    expect(result).toMatchObject({ stopReason: 'missing_input', stopDetail: expect.stringContaining('map') });
+    const optional = transport({ A: [reply], B: ['b'] });
+    const done = await Engine.run({ task: 'T', send: optional.send, steps: [
+      audit(),
+      { ref: 'r2', kind: 'round', input: [fromArtifact('map', { step: 'r1', participant: 'A', visit: 2 }, false)], models: ['B'] }
+    ] });
+    expect(done.stopReason).toBe('steps_done');
+    expect(optional.calls[1].prompts.B).not.toContain('Артефакт');
+  });
+
+  test('two authors declare the same artifact id: two lines, each source gets its own author', async () => {
+    const { send, calls } = transport({ A: [reply], B: ['{"correctedMap": {"nodes": ["B1"]}, "auditFindings": []}'], C: ['c'] });
+    await Engine.run({ task: 'T', send, steps: [
+      { ref: 'r1', kind: 'round', input: 'none', models: ['A', 'B'], output: { format: 'json', requiredFields: ['/correctedMap', '/auditFindings'], artifacts: [{ id: 'map', name: 'Map', pointer: '/correctedMap' }] } },
+      { ref: 'r2', kind: 'round', input: [{ artifact: { step: 'r1', participant: 'B', id: 'map' }, version: 'latest', required: true }], models: ['C'] }
+    ] });
+    expect(calls[1].prompts.C).toContain('{"nodes":["B1"]}');
+    expect(calls[1].prompts.C).not.toContain('M1');
+  });
+
+  test('a source names an artifact that the step does not declare: refused before the first request', async () => {
+    const { send, calls } = transport({ A: [reply], B: ['b'] });
+    await expect(Engine.run({ task: 'T', send, steps: [audit(), { ref: 'r2', kind: 'round', input: [fromArtifact('nothing')], models: ['B'] }] }))
+      .rejects.toMatchObject({ code: 'invalid_input' });
+    expect(calls).toHaveLength(0);
+  });
+
+  test('putText and getText are the callbacks of the record: the answer is put once, the content is read back', async () => {
+    const store = {};
+    const putText = jest.fn((value) => { const ref = `ref-${Object.keys(store).length + 1}`; store[ref] = value; return ref; });
+    const getText = jest.fn((ref) => store[ref]);
+    const { send, calls } = transport({ A: [reply], B: ['b'] });
+    const result = await Engine.run({ task: 'T', send, putText, getText, steps: [audit(), { ref: 'r2', kind: 'round', input: [fromArtifact('map')], models: ['B'] }] });
+    expect(putText).toHaveBeenCalledTimes(2); // the accepted answers of A and B, each once
+    expect(putText).toHaveBeenCalledWith(reply);
+    expect(getText).toHaveBeenCalledWith('ref-1');
+    expect(calls[1].prompts.B).toContain('{"nodes":["M1"]}');
+    expect(result.texts).toEqual({});
+  });
+
+  test('a missing text of an artifact is missing_content, never an empty document', async () => {
+    const { send, calls } = transport({ A: [reply], B: ['b'] });
+    await expect(Engine.run({ task: 'T', send, putText: () => 'ref-1', getText: () => undefined,
+      steps: [audit(), { ref: 'r2', kind: 'round', input: [fromArtifact('map')], models: ['B'] }] }))
+      .rejects.toMatchObject({ code: 'missing_content' });
+    expect(calls).toHaveLength(1);
+  });
+
+  test('without artifacts the run has an empty registry and needs no callback', async () => {
+    const result = await Engine.run({ task: 'T', send: transport({ A: ['a'] }).send, steps: [{ ref: 'r1', kind: 'round', input: 'none', models: ['A'] }] });
+    expect(result.artifacts).toEqual([]);
+  });
+
+  test('revisionOf is refused before the first request until its step is executed (pack P02, step 8)', async () => {
+    const { send, calls } = transport({ A: [reply] });
+    await expect(Engine.run({ task: 'T', send, steps: [{ ...audit(), output: { format: 'json', requiredFields: ['/correctedMap'],
+      artifacts: [{ id: 'map', name: 'Map', pointer: '/correctedMap', revisionOf: fromArtifact('map') }] } }] }))
+      .rejects.toMatchObject({ code: 'unsupported_field', address: expect.stringContaining('revisionOf') });
     expect(calls).toHaveLength(0);
   });
 });

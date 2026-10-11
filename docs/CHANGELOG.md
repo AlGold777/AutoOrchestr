@@ -1,5 +1,14 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — Basic artifact registry: a declared artifact is a version of its line (P02, step 7), version 2.81.717
+
+- `BasicArtifacts` (new, `disput/basic-artifacts.js`, pure; loaded in `pipeline_panel.html` before `custom-engine.js`): one entry per version `{ id, name, lineage, source, content: { answerRef, pointer }, valid, inputs }`. The lineage is the address of the first declaration (step, participant, artifact id), the source is the creator's address (step, participant, visit). `register` is idempotent by lineage and source; `latest` is the last registered valid version of a line (registration order, not visit); `version` finds a named one. The content is never copied.
+- `CustomEngine.run`: an accepted answer is stored once (`putText`, or the run's own dictionary `result.texts`), then each declared artifact is registered (`result.artifacts`). Registration follows the whole check of the answer, so a rejected attempt makes no version. The callbacks `putText(text) → ref` and `getText(ref) → text` are the record's (the page does not pass them yet). A missing text of an artifact is `missing_content`, an error.
+- A source `{ artifact: { step, participant, id }, version, required? }` gives only that artifact's content (the pointer of the stored answer; an object or a list as JSON), labelled with its name, author step, participant and visit. A required source without a current version stops the run (`missing_input`) before the request; an optional one gives no text. The source is checked before the first request: the step, the participant and the declared id.
+- Not yet: `revisionOf` is refused (`unsupported_field`) until step 8; the record (`CustomRunRecord`) does not keep the registry (A05); the page does not pass the callbacks.
+- Docs: `basic-schema-guide.md` (5.7, 5.8, the row `output`), `basic-start-here.md` (the errors, the rows of the reasons, step 11), `basic-developer.md` (the module, the callbacks, the registry).
+- Tests: `tests/basic-artifacts.test.js` (new: the registry, the page loads the modules), `tests/custom-engine.test.js` (the block «Custom engine artifacts», 9 cases; `revisionOf` refusal).
+
 ### 2026-10-11 — Basic owner approval: a step waits for the owner (P02, step 6), version 2.81.716
 
 - `CustomEngine.run` (`disput/custom-engine.js`): a step with `owner: "approve"` asks the owner after the step in every mode, also in Auto and on the last step. The decision payload carries `approve: true` and `required`. Below the threshold, or with an approval, «continue» follows only a valid decision; an absent or invalid decision is `no_decision` even when answers were accepted. In manual the step has one pause, the usual one. `[[ASK]]` questions remain a separate call of `askOwner`. Stop ends the wait (`cancelled`).
