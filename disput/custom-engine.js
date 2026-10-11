@@ -530,7 +530,7 @@
     task, steps = [], maxAttempts = DEFAULT_ATTEMPTS, semiAuto = false, maxPromptChars = Infinity,
     accept = defaultAccept, parseAsks = null, askOwner = null, askInstruction = '', decide = null,
     send = null, sendParticipants = null, runMaxWords = null, putText: putCallback = null, getText: getCallback = null, chooseRoute = null, provideOwnerResult = null,
-    checkpoint = null,
+    checkpoint = null, resolveUnknown = null, resume = null,
     signal = null, onEvent = null, onRequest = null, onResponse = null
   }) {
     // The texts of the answers: the record gives the callbacks (putText → ref, getText(ref) → text); without them the run keeps
@@ -575,9 +575,12 @@
     // The state of the run (ТЗ 7): plain data. The visit of a step is the number of its executions; the feedback of a return
     // waits for the visit it starts; the stack keeps the points where a return goes back.
     // dependencies: the keys of the results and artifacts that each visit used (6.3); a stale key makes its consumer stale.
-    const state = { visits: {}, loopCounters: {}, continuationStack: [], feedback: {}, dependencies: {} };
+    const state = { visits: {}, loopCounters: {}, continuationStack: [], feedback: {}, dependencies: {}, decisions: {} };
     let activeVisit = 1;
     let activeFeedback = [];
+    let activeFeedbackRefs = []; // the feedback of the visit in progress, as references (for a checkpoint)
+    let inFlight = []; // the participants whose request is being sent now: unknown after a reload until their answer is judged
+    let openOwner = null; // the owner interaction that is open now (a decision, a route, an owner step, an ASK): kept on a stop
     let stopDetail = '';
     // The plan as the run sees it: a report shows what was intended, not only what happened.
     emit('custom_start', { semiAuto: Boolean(semiAuto), maxAttempts, taskChars: text(task).length,
@@ -587,21 +590,36 @@
 
     // The live state for a checkpoint (8.2): plain data only. The pointer is the step in progress (or the next one between steps);
     // a pending owner interaction and the pending participants of a send are named, so a reload can show them.
+    // The live state for a checkpoint (8.2): plain data only. The pointer is the step in progress (or the next one between steps).
+    // The step in progress keeps its visit, phase, accepted answers, the participants in flight, its feedback, route and owner answer.
+    const compactOutcome = (outcome) => Object.fromEntries(Object.entries(outcome || {}).map(([id, item]) => { const { text, ...rest } = item; return [id, rest]; }));
+    const ownerOf = (owner) => ({ textRef: owner.textRef ?? null, binary: Boolean(owner.binary), file: owner.file ?? null });
+    const savedEntry = (item) => ({ stepRef: item.step.ref, index: item.step.index, visit: item.visit, valid: item.valid !== false, skipped: Boolean(item.skipped),
+      outcome: compactOutcome(item.outcome), ...(item.route ? { route: item.route } : {}), ...(item.owner ? { owner: ownerOf(item.owner) } : {}) });
     function liveState(phase, extra = {}) {
       const step = plan[pos];
-      const accepted = current?.outcome ? Object.keys(current.outcome).filter((id) => current.outcome[id]?.ok) : [];
+      const outcomeNow = current?.outcome || {};
+      const finished = results.filter((item) => item !== current);
       return JSON.parse(JSON.stringify({
         pc: step ? step.ref : null, visits: state.visits, loopCounters: state.loopCounters, continuationStack: state.continuationStack,
-        feedback: state.feedback, dependencies: state.dependencies,
-        current: { stepRef: step ? step.ref : null, visit: activeVisit, phase, accepted, pending: extra.pending || [] },
-        routes: results.filter((item) => item.route).map((item) => ({ stepRef: item.step.ref, visit: item.visit, id: item.route.id, by: item.route.by, reason: item.route.reason })),
-        ownerAnswers, artifacts: registry.entries, pendingOwner: extra.pendingOwner || null
+        feedback: state.feedback, dependencies: state.dependencies, decisions: state.decisions,
+        // `active` is true while a step is in progress; between steps the current position is the next step, not started.
+        current: current && step ? { active: true, stepRef: step.ref, visit: activeVisit, phase, valid: current.valid !== false,
+          accepted: Object.keys(outcomeNow).filter((id) => outcomeNow[id]?.ok), pending: extra.pending ?? inFlight,
+          outcome: compactOutcome(outcomeNow), feedback: activeFeedbackRefs, route: current.route ?? null,
+          owner: current.owner ? ownerOf(current.owner) : null, ...(extra.applied ? { applied: extra.applied } : {}) }
+          : { active: false, stepRef: step ? step.ref : null, visit: step ? (state.visits[refKey(step)] || 0) : 0, phase, valid: true,
+            accepted: [], pending: [], outcome: {}, feedback: [], route: null, owner: null },
+        results: finished.map(savedEntry),
+        routes: finished.filter((item) => item.route).map((item) => ({ stepRef: item.step.ref, visit: item.visit, id: item.route.id, by: item.route.by, reason: item.route.reason })),
+        ownerAnswers, artifacts: registry.entries, pendingOwner: openOwner
       }));
     }
     // The checkpoint (8.2) is awaited before the next external action. A failed save is not swallowed: the run stops with
     // checkpoint_failed, so no request and no transition follows it. Without a callback the run is autonomous and saves nothing.
     async function checkpointNow(phase, extra = {}) {
       if (typeof checkpoint !== 'function') return;
+      if ('pendingOwner' in extra) openOwner = extra.pendingOwner;
       const step = plan[pos];
       try {
         await checkpoint(liveState(phase, extra));
@@ -740,11 +758,8 @@
     function takeFeedback(key) {
       const stored = state.feedback[key] || [];
       delete state.feedback[key];
-      return stored.map((item) => {
-        const answer = getText(item.textRef);
-        if (answer === undefined || answer === null) throw new EngineError('missing_content', `шаг «${key}» · feedback`, `текст ответа «${item.textRef}» не найден`);
-        return { label: item.label, text: contentOf(answer, item.pointer ?? '', `шаг «${key}» · feedback`) };
-      });
+      activeFeedbackRefs = stored.map((item) => ({ label: item.label, textRef: item.textRef, pointer: item.pointer ?? '' }));
+      return feedbackFrom(stored, key);
     }
 
     // Instructions (owner-editable behaviour) and input (data from other models) are kept apart.
@@ -783,7 +798,8 @@
           if (typeof onRequest === 'function') onRequest(entry);
           return [model.id, entry];
         }));
-        await checkpointNow('send', { pending: pending.map((model) => ({ participantId: model.id, attempt: tryNo, phase, stepRef: step.ref, visit: activeVisit })) });
+        inFlight = pending.map((model) => ({ participantId: model.id, attempt: tryNo, phase, stepRef: step.ref, visit: activeVisit }));
+        await checkpointNow('send');
         const meta = { step: step.index, kind: step.kind, label: stepLabel(step), attempt: tryNo, phase, stepRef: step.ref, visit: activeVisit };
         const maxWordsOf = Object.fromEntries(pending.map((model) => [model.id, model.maxWords || null]));
         const correctionOf = Object.fromEntries(pending.map((model) => [model.id, Boolean(current[model.id].parts?.correction)]));
@@ -808,6 +824,7 @@
               Object.assign(entry, { state: 'not_sent', reason: 'context_full', finishedAt: Date.now() });
               if (typeof onResponse === 'function') onResponse(entry);
             });
+            inFlight = [];
             throw new StopRun('context_full');
           }
           if (error?.name === 'AbortError' || aborted()) throw new StopRun('cancelled');
@@ -848,6 +865,7 @@
             transportRequestId: result.transportRequestId || null, promptChars: String(current[model.id].prompt || '').length });
           if (!verdict.ok && !reply?.closedByOwner) retry.push(model);
         });
+        inFlight = [];
         await checkpointNow('judge');
         if (reply?.closedByOwner) return { closedByOwner: true };
         pending = retry;
@@ -973,16 +991,21 @@
           emit('custom_owner', { step: step.index, ref: step.ref, visit: entry.visit, accepted: false, reason });
           continue;
         }
-        if (verdict.binary) return { binary: true, file: verdict.file };
+        if (verdict.binary) {
+          entry.owner = { binary: true, file: verdict.file, textRef: null, text: '' };
+          await checkpointNow('judge', { pendingOwner: null });
+          return entry.owner;
+        }
         const textRef = putText(verdict.text);
         (step.output?.artifacts || []).forEach((declaration) => {
           Artifacts.register(registry, { id: declaration.id, name: declaration.name,
             lineage: { step: step.ref, participant: OWNER_PARTICIPANT, id: declaration.id },
             source: { step: step.ref, participant: OWNER_PARTICIPANT, visit: entry.visit }, answerRef: textRef, pointer: declaration.pointer, inputs: [] });
         });
+        entry.owner = { text: verdict.text, textRef, ...(verdict.file ? { file: verdict.file } : {}) };
         emit('custom_owner', { step: step.index, ref: step.ref, visit: entry.visit, accepted: true, reason: null });
-        await checkpointNow('judge');
-        return { text: verdict.text, textRef, ...(verdict.file ? { file: verdict.file } : {}) };
+        await checkpointNow('judge', { pendingOwner: null });
+        return entry.owner;
       }
     }
 
@@ -992,7 +1015,7 @@
           ? await (async () => {
             await checkpointNow('decision', { pendingOwner: { kind: 'route', stepRef: step.ref, visit: entry.visit } });
             const chosen = await ownerWait(() => chooseRoute({ stepRef: step.ref, visit: entry.visit, choices, reason }));
-            await checkpointNow('decision');
+            await checkpointNow('decision', { pendingOwner: null });
             return chosen;
           })()
           : undefined;
@@ -1002,7 +1025,7 @@
       };
       if (step.select.by === 'owner') return { id: await ownerChoice(step.select.cases.map((item) => item.id), 'owner'), by: 'owner', reason: 'owner' };
       if (step.select.by === 'model') {
-        await execute(step, step.models, entry.outcome);
+        if (!entry.outcome[step.models[0].id]) await execute(step, step.models, entry.outcome);
         const verdict = entry.outcome[step.models[0].id];
         if (verdict?.ok) return { id: verdict.route, by: 'model', reason: 'model' };
         return { id: await ownerChoice(step.select.cases.map((item) => item.id), 'invalid_route'), by: 'owner', reason: 'invalid_route' };
@@ -1020,9 +1043,12 @@
 
     // The next position after a step: the next step, or the transition the step wrote (6.3, 6.4). A transition is taken only
     // while its limit allows it; a stop, a missing return point and a limit end the run with their reason.
-    async function transit(pos, action, caseId) {
+    async function transit(pos, action, caseId, applied = null) {
       const step = plan[pos];
       if (!action) return pos + 1;
+      // A transition that the reload found applied goes on to its saved target: its counter, feedback, validity and stack
+      // are not applied a second time (8.3).
+      if (applied) return plan.findIndex((item) => item.ref === applied.target);
       await checkpointNow('transition');
       const from = refKey(step);
       if ('stop' in action) {
@@ -1051,9 +1077,10 @@
         if (action.feedback) state.feedback[target] = feedbackOf(action.feedback, plan[to]);
         const named = (action.invalidate || []).flatMap((ref) => results.filter((entry) => entry.step.ref === ref));
         invalidateFrom([...results.filter((entry) => entry.step.index === plan[to].index), ...named].map(resultKey));
-        await checkpointNow('transition');
         if (action.resumeAt) state.continuationStack.push({ resumeAt: action.resumeAt, from });
       }
+      // The transition is applied: the state now says so, and a reload goes on from its target.
+      await checkpointNow('transition', { applied: { target } });
       emit('custom_transition', { from: step.ref, case: caseId, action: 'return' in action ? 'return' : 'goto', to: target, count, maxLoops: action.maxLoops ?? null });
       return to;
     }
@@ -1061,77 +1088,168 @@
     // The step in progress: on Stop its accepted answers are kept like those of finished steps.
     let current = null;
     let pos = 0; // the pointer (pc): the position of the step the run is at
+    let resumeAt = null; // the step that the saved state was in: its visit, phase, outcome, owner and route
+
+    // Resume (8.3): the saved state is taken back as it was. The steps are the ones the caller gives (the saved schema);
+    // the finished steps are not sent again, the accepted answers of the interrupted visit stay, the counters, the stack,
+    // the feedback and the validity are restored, not reset. Texts come back through getText.
+    const pointAt = (ref) => plan.findIndex((item) => item.ref === ref);
+    const restoredText = (ref, where) => {
+      const value = getText(ref);
+      if (value === undefined || value === null) throw new EngineError('missing_content', where, `текст ответа «${ref}» не найден`);
+      return value;
+    };
+    const restoredOutcome = (saved = {}) => Object.fromEntries(Object.entries(saved).map(([id, item]) => [id, {
+      ...item, text: item.ok ? restoredText(item.textRef, `участник «${id}»`) : '' }]));
+    const restoredOwner = (saved) => (saved.binary
+      ? { binary: true, file: saved.file, textRef: null, text: '' }
+      : { text: restoredText(saved.textRef, 'ответ владельца'), textRef: saved.textRef, ...(saved.file ? { file: saved.file } : {}) });
+    // The texts of the feedback of an interrupted visit, as the visit took them.
+    const feedbackFrom = (refs, key) => (refs || []).map((item) => ({
+      label: item.label, text: contentOf(restoredText(item.textRef, `шаг «${key}» · feedback`), item.pointer ?? '', `шаг «${key}» · feedback`)
+    }));
+    function restoreRun(saved) {
+      if (!isPlain(saved)) throw new EngineError('resume_invalid', 'resume', 'состояние для продолжения: объект снимка');
+      ['visits', 'loopCounters', 'feedback', 'dependencies', 'decisions'].forEach((field) => { state[field] = isPlain(saved[field]) ? JSON.parse(JSON.stringify(saved[field])) : {}; });
+      state.continuationStack = Array.isArray(saved.continuationStack) ? JSON.parse(JSON.stringify(saved.continuationStack)) : [];
+      ownerAnswers.push(...(Array.isArray(saved.ownerAnswers) ? saved.ownerAnswers : []));
+      registry.entries.push(...(Array.isArray(saved.artifacts) ? saved.artifacts : []).map((entry) => ({ ...entry, lineage: { ...entry.lineage }, source: { ...entry.source }, content: { ...entry.content } })));
+      (Array.isArray(saved.results) ? saved.results : []).forEach((item) => {
+        const step = plan[pointAt(item.stepRef)];
+        if (!step) throw new EngineError('resume_mismatch', `шаг «${item.stepRef}»`, 'шага сохранённого состояния нет в схеме продолжения');
+        const entry = { step, visit: item.visit, outcome: restoredOutcome(item.outcome), skipped: Boolean(item.skipped), valid: item.valid !== false };
+        if (item.route) entry.route = item.route;
+        if (item.owner) entry.owner = restoredOwner(item.owner);
+        results.push(entry);
+      });
+      const at = saved.pc == null ? -1 : pointAt(saved.pc);
+      if (saved.pc != null && at < 0) throw new EngineError('resume_mismatch', `шаг «${saved.pc}»`, 'шага сохранённого состояния нет в схеме продолжения');
+      pos = at < 0 ? plan.length : at;
+      const cur = saved.current;
+      if (cur && cur.active && at >= 0 && cur.stepRef === saved.pc) {
+        resumeAt = { index: at, visit: cur.visit, phase: cur.phase, pending: Array.isArray(cur.pending) ? cur.pending : [], outcome: restoredOutcome(cur.outcome),
+          feedback: Array.isArray(cur.feedback) ? cur.feedback : [], valid: cur.valid !== false,
+          owner: cur.owner ? restoredOwner(cur.owner) : null, route: cur.route || null, applied: cur.applied || null };
+      }
+    }
+    // A request that may have been sent before the reload has no known answer: the owner decides, and the request is never
+    // sent again on its own. The accepted answers of the visit stay. Resend is a new attempt; skip is recorded for it only.
+    async function settleUnknown(step, entry, pending = []) {
+      const items = pending.filter((item) => !entry.outcome[item.participantId]?.ok);
+      if (!items.length) return;
+      const choice = typeof resolveUnknown === 'function'
+        ? await ownerWait(() => resolveUnknown({ stepRef: step.ref, visit: entry.visit, items: items.map((item) => ({ participantId: item.participantId, attempt: item.attempt })), choices: ['resend', 'skip'] }))
+        : undefined;
+      if (choice === null) throw new StopRun('stopped');
+      if (!['resend', 'skip'].includes(choice)) throw new StopRun('no_decision', `шаг «${step.ref}»: нет решения о неизвестном ответе (отправить заново или пропустить)`);
+      const models = step.models.filter((model) => items.some((item) => item.participantId === model.id));
+      models.forEach((model) => {
+        const item = items.find((candidate) => candidate.participantId === model.id);
+        entry.outcome[model.id] = { ok: false, reason: choice === 'skip' ? 'skipped' : 'unknown', text: '', model: model.name, participant: model.id, attempt: item.attempt || 0, status: '', transportRequestId: '' };
+      });
+      if (choice === 'resend') await execute(step, models, entry.outcome, Math.max(...items.map((item) => item.attempt || 0)) + 1);
+    }
+
     try {
+      if (resume) restoreRun(resume);
       while (pos < plan.length) {
         const step = plan[pos];
-        // Every input of the step is resolved before its first request: a missing required one sends nothing, and
-        // a revision whose source an author did not get stops the step (its line would be unknown).
-        step.models.forEach((model) => {
-          const items = inputFor(step, specOf(step, model));
-          (step.output?.artifacts || []).forEach((declaration) => {
-            if (declaration.revisionOf && !revisionItem(declaration, items)) {
-              throw new StopRun('missing_input', `ревизия «${declaration.id}»: участник «${model.id}» не получил версию, которую она дорабатывает; шаг «${step.ref}» не отправлен`);
-            }
-          });
-        });
-        // A new execution of the step is a new visit; a technical retry is not. The feedback of a return is given to this visit.
         const key = refKey(step);
-        state.visits[key] = (state.visits[key] || 0) + 1;
-        activeVisit = state.visits[key];
-        activeFeedback = takeFeedback(key);
-        const outcome = {};
-        const entry = { step, visit: activeVisit, outcome, skipped: false, valid: true };
-        // What this visit uses (the results and artifacts it took) is recorded: a later stale key makes the visit stale (6.3).
-        state.dependencies[`${step.index}@${activeVisit}`] = usedKeysOf(step.models.length
-          ? step.models.flatMap((model) => inputFor(step, specOf(step, model))) : inputFor(step, step.input ?? 'none'));
+        const resumed = resumeAt && resumeAt.index === pos ? resumeAt : null;
+        resumeAt = null;
+        if (resumed) {
+          // The visit goes on: it is not a new execution, so its visit number and its feedback are kept.
+          activeVisit = resumed.visit;
+          activeFeedback = feedbackFrom(resumed.feedback, key);
+          activeFeedbackRefs = resumed.feedback.slice();
+        } else {
+          // Every input of the step is resolved before its first request: a missing required one sends nothing, and
+          // a revision whose source an author did not get stops the step (its line would be unknown).
+          step.models.forEach((model) => {
+            const items = inputFor(step, specOf(step, model));
+            (step.output?.artifacts || []).forEach((declaration) => {
+              if (declaration.revisionOf && !revisionItem(declaration, items)) {
+                throw new StopRun('missing_input', `ревизия «${declaration.id}»: участник «${model.id}» не получил версию, которую она дорабатывает; шаг «${step.ref}» не отправлен`);
+              }
+            });
+          });
+          // A new execution of the step is a new visit; a technical retry is not. The feedback of a return is given to this visit.
+          state.visits[key] = (state.visits[key] || 0) + 1;
+          activeVisit = state.visits[key];
+          activeFeedback = takeFeedback(key);
+          // What this visit uses (the results and artifacts it took) is recorded: a later stale key makes the visit stale (6.3).
+          state.dependencies[`${step.index}@${activeVisit}`] = usedKeysOf(step.models.length
+            ? step.models.flatMap((model) => inputFor(step, specOf(step, model))) : inputFor(step, step.input ?? 'none'));
+        }
+        const decidedKey = `${key}@${activeVisit}`;
+        const outcome = resumed ? resumed.outcome : {};
+        const entry = { step, visit: activeVisit, outcome, skipped: false, valid: resumed ? resumed.valid : true };
+        if (resumed?.owner) entry.owner = resumed.owner;
+        if (resumed?.route) entry.route = resumed.route;
+        // A transition that the reload found applied goes on to its saved target: nothing is applied twice (8.3).
+        const applied = resumed?.applied ?? null;
         current = entry;
         if (step.kind === 'route') {
           // A route sends nothing by itself: the rule decides, a model or the owner names the case. Its answer is not an answer of the step.
-          const choice = await routeChoice(step, entry);
-          entry.route = { id: choice.id, by: choice.by, reason: choice.reason };
-          emit('custom_route', { step: step.index, ref: step.ref, visit: entry.visit, case: choice.id, by: choice.by, reason: choice.reason });
+          if (resumed && !entry.route) await settleUnknown(step, entry, resumed.pending);
+          if (!entry.route) {
+            const choice = await routeChoice(step, entry);
+            entry.route = { id: choice.id, by: choice.by, reason: choice.reason };
+            emit('custom_route', { step: step.index, ref: step.ref, visit: entry.visit, case: choice.id, by: choice.by, reason: choice.reason });
+          }
           results.push(entry);
+          pos = await transit(pos, caseAction(step, entry.route.id), entry.route.id, applied);
           current = null;
-          pos = await transit(pos, caseAction(step, choice.id), choice.id);
           continue;
         }
         if (step.kind === 'owner') {
-          entry.owner = await ownerAnswer(step, entry);
+          // The owner's answer is asked until it is accepted; an accepted one (also one found after a reload) is not asked again.
+          if (!entry.owner) await ownerAnswer(step, entry);
           results.push(entry);
+          pos = await transit(pos, null, null, applied);
           current = null;
-          pos = await transit(pos, null, null);
           continue;
         }
-        await execute(step, step.models, outcome);
+        if (resumed) await settleUnknown(step, entry, resumed.pending);
+        // The participants that were never sent (a reload in the middle of a step) are sent now; a sent one is not sent again.
+        const never = step.models.filter((model) => !outcome[model.id]);
+        if (never.length) await execute(step, never, outcome);
         const last = step === plan[plan.length - 1];
-        for (;;) {
-          const accepted = step.models.filter((model) => outcome[model.id]?.ok).map((model) => model.id);
-          const failed = step.models.filter((model) => !outcome[model.id]?.ok).map((model) => model.id);
-          const required = neededOf(step);
-          const enough = accepted.length >= required;
-          // An owner approval (owner: approve) is asked after the step in every mode, also on the last step.
-          const approve = step.approve === true;
-          emit('custom_step', { step: step.index, label: stepLabel(step), accepted: accepted.length, failed: failed.length, required, approve });
-          // A failing gate with enough answers goes to its verdict below, not to the pause of a step.
-          if (step.kind === 'gate' && enough && !gatePass(step, outcome)) break;
-          if (enough && !semiAuto && !approve) break;
-          if (enough && semiAuto && last && !failed.length && !approve) break;
-          // Below the threshold "continue" is not offered: the owner repeats, skips or stops the step.
-          const choices = enough ? ['continue', ...(failed.length ? ['retry'] : []), 'stop'] : ['retry', 'skip', 'stop'];
-          if (typeof decide === 'function') await checkpointNow('decision', { pendingOwner: { kind: 'decision', stepRef: step.ref, visit: entry.visit } });
-          const action = typeof decide === 'function'
-            ? await ownerWait(() => decide({ step: step.index, label: stepLabel(step), accepted, failed, choices, last, required, approve,
-              reasons: Object.fromEntries(failed.map((id) => [id, outcome[id]?.reason || ''])) }))
-            : null;
-          if (typeof decide === 'function') await checkpointNow('decision');
-          // The fallback "an accepted answer goes on" holds only when the threshold is met and no approval is asked.
-          if (!choices.includes(action)) { if (enough && !approve) break; throw new StopRun('no_decision'); }
-          emit('custom_decision', { step: step.index, action });
-          if (action === 'continue') break;
-          if (action === 'stop') throw new StopRun('stopped');
-          if (action === 'skip') { entry.skipped = true; break; }
-          const firstAttempt = Math.max(0, ...failed.map((id) => outcome[id]?.attempt || 0)) + 1;
-          await execute(step, step.models.filter((model) => failed.includes(model.id)), outcome, firstAttempt);
+        // A visit whose decision is saved, or that has passed its decision (asks, transition), is not asked again.
+        const decided = Boolean(resumed) && (resumed.phase === 'asks' || resumed.phase === 'transition' || state.decisions[decidedKey] !== undefined);
+        if (decided) entry.skipped = state.decisions[decidedKey] === 'skip';
+        if (!decided) {
+          for (;;) {
+            const accepted = step.models.filter((model) => outcome[model.id]?.ok).map((model) => model.id);
+            const failed = step.models.filter((model) => !outcome[model.id]?.ok).map((model) => model.id);
+            const required = neededOf(step);
+            const enough = accepted.length >= required;
+            // An owner approval (owner: approve) is asked after the step in every mode, also on the last step.
+            const approve = step.approve === true;
+            emit('custom_step', { step: step.index, label: stepLabel(step), accepted: accepted.length, failed: failed.length, required, approve });
+            // A failing gate with enough answers goes to its verdict below, not to the pause of a step.
+            if (step.kind === 'gate' && enough && !gatePass(step, outcome)) break;
+            if (enough && !semiAuto && !approve) break;
+            if (enough && semiAuto && last && !failed.length && !approve) break;
+            // Below the threshold "continue" is not offered: the owner repeats, skips or stops the step.
+            const choices = enough ? ['continue', ...(failed.length ? ['retry'] : []), 'stop'] : ['retry', 'skip', 'stop'];
+            if (typeof decide === 'function') await checkpointNow('decision', { pendingOwner: { kind: 'decision', stepRef: step.ref, visit: entry.visit } });
+            const action = typeof decide === 'function'
+              ? await ownerWait(() => decide({ step: step.index, label: stepLabel(step), accepted, failed, choices, last, required, approve,
+                reasons: Object.fromEntries(failed.map((id) => [id, outcome[id]?.reason || ''])) }))
+              : null;
+            // The fallback "an accepted answer goes on" holds only when the threshold is met and no approval is asked.
+            if (!choices.includes(action)) { if (enough && !approve) break; throw new StopRun('no_decision'); }
+            // A decision that ends the step is saved before the checkpoint: a reload does not ask it again.
+            if (action === 'continue' || action === 'skip') state.decisions[decidedKey] = action;
+            if (typeof decide === 'function') await checkpointNow('decision', { pendingOwner: null });
+            emit('custom_decision', { step: step.index, action });
+            if (action === 'continue') break;
+            if (action === 'stop') throw new StopRun('stopped');
+            if (action === 'skip') { entry.skipped = true; break; }
+            const firstAttempt = Math.max(0, ...failed.map((id) => outcome[id]?.attempt || 0)) + 1;
+            await execute(step, step.models.filter((model) => failed.includes(model.id)), outcome, firstAttempt);
+          }
         }
         // The verdict of a gate (6.1): a pass takes onPass; a fail takes onFail (a transition), or stops the run (stop), or the
         // owner decides (ask). A skipped gate fails. The step's transition is then taken by transit().
@@ -1149,45 +1267,53 @@
             if (isPlain(step.onFail)) action = step.onFail;
             else if (step.onFail !== 'ask') throw new StopRun('gate_failed', unmet.join('; ') || (entry.skipped ? 'шаг пропущен владельцем' : 'недостаточно ответов проверяющих'));
             else {
-              const accepted = step.models.filter((model) => outcome[model.id]?.ok).map((model) => model.id);
-              const failed = step.models.filter((model) => !outcome[model.id]?.ok).map((model) => model.id);
-              if (typeof decide === 'function') await checkpointNow('decision', { pendingOwner: { kind: 'decision', stepRef: step.ref, visit: entry.visit } });
-              const decision = typeof decide === 'function'
-                ? await ownerWait(() => decide({ step: step.index, label: stepLabel(step), accepted, failed, choices: ['continue', 'stop'], last: step === plan[plan.length - 1],
-                  required: neededOf(step), approve: false, reasons: {}, unmet }))
-                : null;
-              if (typeof decide === 'function') await checkpointNow('decision');
-              if (!['continue', 'stop'].includes(decision)) throw new StopRun('no_decision');
+              // The decision of a failed gate is saved like the decision of a step: a reload does not ask it again.
+              const gateKey = `${decidedKey}:gate`;
+              let decision = state.decisions[gateKey];
+              if (decision === undefined) {
+                const accepted = step.models.filter((model) => outcome[model.id]?.ok).map((model) => model.id);
+                const failed = step.models.filter((model) => !outcome[model.id]?.ok).map((model) => model.id);
+                if (typeof decide === 'function') await checkpointNow('decision', { pendingOwner: { kind: 'decision', stepRef: step.ref, visit: entry.visit } });
+                decision = typeof decide === 'function'
+                  ? await ownerWait(() => decide({ step: step.index, label: stepLabel(step), accepted, failed, choices: ['continue', 'stop'], last: step === plan[plan.length - 1],
+                    required: neededOf(step), approve: false, reasons: {}, unmet }))
+                  : null;
+                if (!['continue', 'stop'].includes(decision)) throw new StopRun('no_decision');
+                state.decisions[gateKey] = decision;
+                if (typeof decide === 'function') await checkpointNow('decision', { pendingOwner: null });
+              }
               emit('custom_decision', { step: step.index, action: decision });
               if (decision === 'stop') throw new StopRun('stopped');
             }
           }
         }
         results.push(entry);
-        current = null;
         if (typeof parseAsks === 'function' && typeof askOwner === 'function' && !entry.skipped) {
           const asks = acceptedOf(entry).flatMap((item) => parseAsks(item.text) || []);
           if (asks.length) {
             await checkpointNow('asks', { pendingOwner: { kind: 'asks', stepRef: step.ref, visit: entry.visit } });
             ownerAnswers.push(...((await ownerWait(() => askOwner(asks, { step: step.index, label: stepLabel(step) }))) || []));
-            await checkpointNow('asks');
+            await checkpointNow('asks', { pendingOwner: null });
           }
         }
-        pos = await transit(pos, action, caseId);
+        pos = await transit(pos, action, caseId, applied);
+        current = null;
       }
     } catch (error) {
       if (!(error instanceof StopRun)) throw error;
       stopReason = error.stopReason;
       stopDetail = error.stopDetail || '';
-      if (current && acceptedOf(current).length) results.push(current);
+      // The step in progress keeps its accepted answers (and its route or owner answer) when it was not kept yet.
+      if (current && !results.includes(current) && (acceptedOf(current).length || current.route || current.owner)) results.push(current);
     }
+
     if (aborted() && stopReason === 'steps_done') stopReason = 'cancelled';
     await checkpointNow('done');
     emit('custom_end', { stopReason, stopDetail, steps: results.length });
     return {
       steps: results.map((entry) => ({ index: entry.step.index, ref: entry.step.ref, kind: entry.step.kind, label: stepLabel(entry.step), visit: entry.visit, valid: entry.valid, skipped: entry.skipped, outcome: entry.outcome, ...(entry.route ? { route: entry.route } : {}), ...(entry.owner?.file ? { file: entry.owner.file } : {}) })),
       // The state of the run as plain data (ТЗ 7): the pointer, the visits, the counters, the stack and the feedback.
-      state: JSON.parse(JSON.stringify({ pc: pos < plan.length ? plan[pos].ref : null, ...state })),
+      state: liveState('done'),
       answers: inputFor({ input: 'previous' }, 'previous', { strict: false }).map((item) => item.text),
       history, ownerAnswers, stopReason, stopDetail, checkpointed: typeof checkpoint === 'function',
       artifacts: registry.entries.map((entry) => ({ ...entry, lineage: { ...entry.lineage }, source: { ...entry.source }, content: { ...entry.content } })),

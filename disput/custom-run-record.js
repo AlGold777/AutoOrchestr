@@ -134,14 +134,15 @@
   const textOf = (record, ref) => (ref ? record.texts?.[ref] ?? '' : '');
 
   // A snapshot of the state of the run (8.2) as plain data: the schema as the run was started with, the pointer, the visits,
-  // the position of the current step, the routes, the counters, the stack, the feedback (text references), the dependencies and
-  // the owner's answers. The registry is record.artifacts (5.3), not a second copy here. chatBindings stays empty until chats are supported.
+  // the position of the current step, the finished results (their accepted answers by text reference), the decisions taken,
+  // the routes, the counters, the stack, the feedback (text references), the dependencies and the owner's answers. The registry is record.artifacts (5.3), not a second copy here. chatBindings stays empty until chats are supported.
   const copyOf = (value) => (value === undefined ? null : JSON.parse(JSON.stringify(value)));
   function setSnapshot(record, { schema = [], runSettings = {}, state = {}, current = null, routes = [], ownerAnswers = [], pendingOwner = null } = {}) {
     const visits = state.visits || {};
     record.snapshot = copyOf({
       schema, taskRef: record.taskRef, runSettings, pc: state.pc ?? null, visits,
       current: current || { stepRef: state.pc ?? null, visit: visits[state.pc] || 0, phase: 'done', accepted: [], pending: [] },
+      results: state.results || [], decisions: state.decisions || {},
       routes, loopCounters: state.loopCounters || {}, continuationStack: state.continuationStack || [], feedback: state.feedback || {},
       dependencies: state.dependencies || {}, ownerAnswers, pendingOwner, chatBindings: []
     });

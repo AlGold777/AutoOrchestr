@@ -1,5 +1,15 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — Basic: resume from the saved state (finished steps kept, unknown requests settled by the owner, decisions kept), version 2.81.733
+
+- `CustomEngine.run` (`disput/custom-engine.js`): `resume` takes back a saved state (the snapshot of `CustomRunRecord`, with `results`, `decisions`, the current step and the registry). The steps are the ones the caller gives (the saved schema). Finished steps are not sent again; the accepted answers of the step in progress stay; visits, loop counters, the stack, the feedback, the validity and the registry are restored. A step of the state missing from the steps is `resume_mismatch`.
+- A request that was in flight at the reload (`pending` of the saved current step) is unknown: the callback `resolveUnknown({stepRef, visit, items, choices: ['resend', 'skip']})` decides. `resend` is a new attempt (the next number); `skip` makes the participant not accepted for that attempt; the step's threshold is not bypassed. Without the callback the run stops with `no_decision`.
+- A decision that ends a step (`continue`, `skip`) and the decision of a failed gate are kept in `decisions`; a reload does not ask them again. A transition that was applied is kept as applied (`current.applied`): it is not applied a second time. An open owner interaction stays open after a Stop (`pendingOwner`) and is asked again with the same data.
+- The owner's accepted text is kept on the step (`entry.owner`); a reload does not ask the owner again.
+- Not yet: the check of an unknown request (it needs the request and tab IDs of the transport, A03); the chat that is not available; the page's «Продолжить прогон» (sub-package 5).
+- Docs: `basic-start-here.md` (resume, refusals), `basic-developer.md` (test table).
+- Tests: `tests/custom-engine-resume.test.js` (new); `tests/custom-run-record.test.js` (the snapshot keys).
+
 ### 2026-10-11 — Basic: checkpoint of the run state before every external action, version 2.81.732
 
 - `CustomEngine.run` (`disput/custom-engine.js`): the `checkpoint(state)` callback is awaited before each send (with the pending participants and their attempt), after each judgement, before and after an owner decision (`pendingOwner`: `decision`, `route`, `owner`, `asks`), before a transition and after its invalidation, and at the end (also at Stop). The state is plain data: the pointer (`pc`), visits, counters, stack, feedback, dependencies, the current position (`current`: step, visit, phase, accepted, pending), routes, owner answers, registry entries (`artifacts`) and the pending owner interaction.

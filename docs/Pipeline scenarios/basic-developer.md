@@ -52,6 +52,7 @@
 | `tests/custom-run-record.test.js` | Запись о прогоне, хранение, экспорт, состояние `not_sent` |
 | `tests/custom-extract.test.js` | Разбор прогона в Extract (Transport) |
 | `tests/custom-engine-checkpoint.test.js` | Checkpoint: точки записи состояния, живое состояние, `checkpoint_failed`, автономный запуск без callback |
+| `tests/custom-engine-resume.test.js` | Продолжение из снимка: неизвестный запрос, пропуск, решение владельца и окно после перезагрузки, счётчики, применённый переход, схема снимка |
 | `tests/custom-engine-owner.test.js` | Шаг владельца: текст и его проверка, пустой ответ, отмена и Stop, файлы, `unsupported_input` |
 | `tests/basic-artifacts.test.js` | Реестр артефактов: идемпотентность, последняя версия линии, авторы |
 | `tests/basic-output.test.js` | Проверка выхода: слова, JSON Pointer, порядок причин отказа |
