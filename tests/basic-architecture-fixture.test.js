@@ -215,7 +215,7 @@ describe('T18: runs of the whole architecture on a fake transport', () => {
     expect(result.stopDetail).toContain('r20');
   });
 
-  test('CHG S25 → AIP: the owner returns to owner:s25 after G2; the next transition is counted once; the stale PCA stops S28 with missing_input', async () => {
+  test('CHG S25 → AIP: the owner returns to owner:s25 after G2; the next transition is counted once; the stale backlog S24 stops S26 with missing_input (fail-closed)', async () => {
     let aip = false;
     let returned = false;
     // S25 asks for the change once; the owner returns at the choice after G2 that follows the change.
@@ -228,8 +228,10 @@ describe('T18: runs of the whole architecture on a fake transport', () => {
     const transport = fakeTransport(baseReply());
     const result = await run({ sendParticipants: transport.sendParticipants }, ask);
     expect(result.stopReason).toBe('missing_input');
-    expect(result.stopDetail).toContain('pca');
+    expect(result.stopDetail).toContain('S24-synth');
+    expect(result.stopDetail).toContain('r27');
     expect(result.steps.map((step) => step.ref)).toContain('owner:s25');
+    expect(transport.calls.some((call) => call[0].stepRef === 'r28')).toBe(false);
   });
 });
 
@@ -274,6 +276,14 @@ describe('T19: a large input is not cut and stops before the request (stress fix
     expect(transport.calls.some((call) => call[0].stepRef === 'r33')).toBe(false);
     const s28 = transport.calls.find((call) => call[0].stepRef === 'r28');
     expect(s28).toBeDefined();
+  });
+
+  test('S13: two large inputs (the map and the specification) stop before the request of S13 with context_full; nothing is cut', async () => {
+    const transport = fakeTransport(baseReply({ text: (ref, pid) => (pid === 'S08-producer' || pid === 'S12-producer' ? big : `ответ ${ref} ${pid}`) }));
+    const result = await run({ sendParticipants: transport.sendParticipants, maxPromptChars: 150000 }, owners());
+    expect(result.stopReason).toBe('context_full');
+    expect(transport.calls.some((call) => call[0].stepRef === 'r15')).toBe(false);
+    expect(transport.calls.some((call) => call[0].stepRef === 'r9')).toBe(true);
   });
 
   test('the same input within the budget is sent whole: the prompt keeps every character of the answer', async () => {

@@ -35,7 +35,11 @@
       "require": 2,
       "chat": "new",
       "input": [
-        "r1",
+        {
+          "step": "r1",
+          "participant": "S01-producer",
+          "required": true
+        },
         "owner:s01"
       ],
       "models": [
@@ -69,7 +73,11 @@
       "ref": "r3",
       "kind": "round",
       "input": [
-        "synth:s03"
+        {
+          "step": "synth:s03",
+          "participant": "S03-synth",
+          "required": true
+        }
       ],
       "models": [
         {
@@ -83,7 +91,11 @@
       "ref": "synth:s04",
       "kind": "synthesis",
       "input": [
-        "r3"
+        {
+          "step": "r3",
+          "participant": "S03-closer",
+          "required": true
+        }
       ],
       "models": [
         {
@@ -100,8 +112,16 @@
       "require": 2,
       "owner": "approve",
       "input": [
-        "r3",
-        "synth:s04"
+        {
+          "step": "r3",
+          "participant": "S03-closer",
+          "required": true
+        },
+        {
+          "step": "synth:s04",
+          "participant": "S04-synth",
+          "required": true
+        }
       ],
       "models": [
         {
@@ -134,7 +154,11 @@
       "ref": "r6",
       "kind": "round",
       "input": [
-        "r5"
+        {
+          "step": "r5",
+          "participant": "S06-closer",
+          "required": true
+        }
       ],
       "models": [
         {
@@ -252,7 +276,11 @@
           "version": "latest",
           "required": true
         },
-        "synth:s04"
+        {
+          "step": "synth:s04",
+          "participant": "S04-synth",
+          "required": true
+        }
       ],
       "models": [
         {
@@ -266,7 +294,11 @@
       "ref": "r10",
       "kind": "round",
       "input": [
-        "r9"
+        {
+          "step": "r9",
+          "participant": "S09-reviewer",
+          "required": true
+        }
       ],
       "models": [
         {
@@ -289,7 +321,11 @@
           "version": "latest",
           "required": true
         },
-        "r10",
+        {
+          "step": "r10",
+          "participant": "S09-verifier",
+          "required": true
+        },
         "owner:s01"
       ],
       "models": [
@@ -304,7 +340,11 @@
       "ref": "r12",
       "kind": "round",
       "input": [
-        "r11"
+        {
+          "step": "r11",
+          "participant": "S10-closer",
+          "required": true
+        }
       ],
       "models": [
         {
@@ -368,7 +408,11 @@
           "version": "latest",
           "required": true
         },
-        "r13"
+        {
+          "step": "r13",
+          "participant": "S12-reviewer",
+          "required": true
+        }
       ],
       "models": [
         {
@@ -452,8 +496,16 @@
           "version": "latest",
           "required": true
         },
-        "r11",
-        "synth:s04",
+        {
+          "step": "r11",
+          "participant": "S10-closer",
+          "required": true
+        },
+        {
+          "step": "synth:s04",
+          "participant": "S04-synth",
+          "required": true
+        },
         "owner:s01",
         {
           "artifact": {
@@ -488,7 +540,11 @@
       "ref": "gate:g1",
       "kind": "gate",
       "input": [
-        "r15"
+        {
+          "step": "r15",
+          "participant": "S13-closer",
+          "required": true
+        }
       ],
       "require": "all",
       "pass": "all",
@@ -543,7 +599,11 @@
       "require": 2,
       "chat": "new",
       "input": [
-        "r15"
+        {
+          "step": "r15",
+          "participant": "S13-closer",
+          "required": true
+        }
       ],
       "models": [
         {
@@ -575,7 +635,11 @@
       "ref": "r17",
       "kind": "round",
       "input": [
-        "synth:s15"
+        {
+          "step": "synth:s15",
+          "participant": "S15-synth",
+          "required": true
+        }
       ],
       "models": [
         {
@@ -589,8 +653,16 @@
       "ref": "synth:s17",
       "kind": "synthesis",
       "input": [
-        "r15",
-        "r17"
+        {
+          "step": "r15",
+          "participant": "S13-closer",
+          "required": true
+        },
+        {
+          "step": "r17",
+          "participant": "S16-verifier",
+          "required": true
+        }
       ],
       "models": [
         {
@@ -604,7 +676,11 @@
       "ref": "r18",
       "kind": "round",
       "input": [
-        "synth:s17"
+        {
+          "step": "synth:s17",
+          "participant": "S17-synth",
+          "required": true
+        }
       ],
       "models": [
         {
@@ -629,7 +705,11 @@
       "ref": "gate:g2",
       "kind": "gate",
       "input": [
-        "r18"
+        {
+          "step": "r18",
+          "participant": "S17-closer",
+          "required": true
+        }
       ],
       "require": "all",
       "pass": "all",
@@ -949,7 +1029,11 @@
           "version": "latest",
           "required": true
         },
-        "r18",
+        {
+          "step": "r18",
+          "participant": "S17-closer",
+          "required": true
+        },
         "r21"
       ],
       "models": [
@@ -964,7 +1048,11 @@
       "ref": "r24",
       "kind": "round",
       "input": [
-        "synth:s21"
+        {
+          "step": "synth:s21",
+          "participant": "S21-synth",
+          "required": true
+        }
       ],
       "models": [
         {
@@ -979,8 +1067,16 @@
       "kind": "round",
       "owner": "approve",
       "input": [
-        "r24",
-        "synth:s21",
+        {
+          "step": "r24",
+          "participant": "S21-reviewer",
+          "required": true
+        },
+        {
+          "step": "synth:s21",
+          "participant": "S21-synth",
+          "required": true
+        },
         "owner:s01"
       ],
       "models": [
@@ -1006,7 +1102,11 @@
       "ref": "gate:g3",
       "kind": "gate",
       "input": [
-        "r25"
+        {
+          "step": "r25",
+          "participant": "S22-closer",
+          "required": true
+        }
       ],
       "require": "all",
       "pass": "all",
@@ -1032,7 +1132,11 @@
       "ref": "r26",
       "kind": "round",
       "input": [
-        "r25"
+        {
+          "step": "r25",
+          "participant": "S22-closer",
+          "required": true
+        }
       ],
       "models": [
         {
@@ -1057,10 +1161,26 @@
       "ref": "r27",
       "kind": "round",
       "input": [
-        "r17",
-        "synth:s21",
-        "r25",
-        "r26"
+        {
+          "step": "r17",
+          "participant": "S16-verifier",
+          "required": true
+        },
+        {
+          "step": "synth:s21",
+          "participant": "S21-synth",
+          "required": true
+        },
+        {
+          "step": "r25",
+          "participant": "S22-closer",
+          "required": true
+        },
+        {
+          "step": "r26",
+          "participant": "S23-synth",
+          "required": true
+        }
       ],
       "models": [
         {
@@ -1112,7 +1232,11 @@
       "input": [
         "owner:s25",
         "owner:s01",
-        "r27"
+        {
+          "step": "r27",
+          "participant": "S24-synth",
+          "required": true
+        }
       ],
       "models": [
         {
@@ -1170,8 +1294,16 @@
       "require": 2,
       "chat": "new",
       "input": [
-        "r26",
-        "r28"
+        {
+          "step": "r26",
+          "participant": "S23-synth",
+          "required": true
+        },
+        {
+          "step": "r28",
+          "participant": "S26-closer",
+          "required": true
+        }
       ],
       "models": [
         {
@@ -1246,7 +1378,11 @@
           "version": "latest",
           "required": true
         },
-        "r28",
+        {
+          "step": "r28",
+          "participant": "S26-closer",
+          "required": true
+        },
         "r29"
       ],
       "models": [
@@ -1281,7 +1417,11 @@
       "ref": "r31",
       "kind": "round",
       "input": [
-        "r30"
+        {
+          "step": "r30",
+          "participant": "S28-producer",
+          "required": true
+        }
       ],
       "models": [
         {
@@ -1302,8 +1442,16 @@
       "ref": "r32",
       "kind": "round",
       "input": [
-        "r30",
-        "r31"
+        {
+          "step": "r30",
+          "participant": "S28-producer",
+          "required": true
+        },
+        {
+          "step": "r31",
+          "participant": "S29-reviewer",
+          "required": true
+        }
       ],
       "models": [
         {
@@ -1385,7 +1533,11 @@
           "version": "latest",
           "required": true
         },
-        "r32",
+        {
+          "step": "r32",
+          "participant": "S29-verifier",
+          "required": true
+        },
         "owner:s01"
       ],
       "models": [
@@ -1411,7 +1563,11 @@
       "ref": "gate:g4",
       "kind": "gate",
       "input": [
-        "r33"
+        {
+          "step": "r33",
+          "participant": "S30-closer",
+          "required": true
+        }
       ],
       "require": "all",
       "pass": "all",
