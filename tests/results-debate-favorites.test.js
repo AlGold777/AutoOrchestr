@@ -3645,6 +3645,54 @@ describe('Pipeline debate favorites view', () => {
         } finally { h.cleanup(); }
       }, 30000);
 
+      test('A06 owner: an owner step is added after a round, its window sets the task and the output, and Save → load → Save keeps them', async () => {
+        const h = setupCustomInheritance('Owner window host', { synthesis: '' });
+        try {
+          const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
+            { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }] },
+            { ref: 'r2', kind: 'round', models: [{ name: 'Claude' }] }
+          ] };
+          expect((await h.debug.installBasicSchema('Owner step', schema)).ok).toBe(true);
+          document.querySelector('.pipeline-item[data-name="Owner step"]').click();
+          await settleCustomCard();
+          document.querySelector('#round1').insertAdjacentHTML('afterbegin', '<div class="stage-header-row"><div class="stage-label"><span class="round-badge">R1</span></div></div>');
+          window.__updatePipelineAll();
+          const add = document.querySelector('#round1 .pipeline-control-add');
+          add.value = 'owner';
+          add.dispatchEvent(new Event('change', { bubbles: true }));
+          await settleCustomCard();
+          expect(document.querySelector('.pipeline-control-step[data-control-ref="owner:1"]')).not.toBeNull();
+          expect(h.debug.basicSchemaFromPage(planOf(), null, { forSave: true }).steps[1]).toEqual({ ref: 'owner:1', kind: 'owner', models: [] });
+
+          require('../results/stage-card');
+          if (!document.getElementById('pipeline-stage-dialog')) {
+            document.body.insertAdjacentHTML('beforeend', '<dialog id="pipeline-stage-dialog"><h2 id="pipeline-stage-dialog-title"></h2><div id="pipeline-stage-card"></div></dialog>');
+          }
+          const stageDialog = document.getElementById('pipeline-stage-dialog');
+          if (typeof stageDialog.showModal !== 'function') stageDialog.showModal = () => stageDialog.setAttribute('open', '');
+          document.querySelector('.pipeline-control-card[data-control-card="owner:1"]').click();
+          await settleCustomCard();
+          const q = (selector) => document.getElementById('pipeline-stage-card').querySelector(selector);
+          q('.stage-card-owner-task').value = 'Передайте файл';
+          q('.stage-card-owner-task').dispatchEvent(new Event('change'));
+          await settleCustomCard();
+          q('.stage-card-output-name').value = 'Итог';
+          q('.stage-card-output-name').dispatchEvent(new Event('change'));
+          await settleCustomCard();
+          q('.stage-card-output-sections').value = 'Вывод\nДоводы';
+          q('.stage-card-output-sections').dispatchEvent(new Event('change'));
+          await settleCustomCard();
+
+          const built = h.debug.basicSchemaFromPage(planOf(), null, { forSave: true });
+          expect(built.steps[1]).toEqual({ ref: 'owner:1', kind: 'owner', models: [], task: 'Передайте файл', output: { name: 'Итог', sections: ['Вывод', 'Доводы'] } });
+          expect(window.BasicSchema.validate(built)).toEqual([]);
+          expect((await h.debug.installBasicSchema('Owner again', built)).ok).toBe(true);
+          document.querySelector('.pipeline-item[data-name="Owner again"]').click();
+          await settleCustomCard();
+          expect(h.debug.basicSchemaFromPage(planOf(), null, { forSave: true }).steps).toEqual(built.steps);
+        } finally { h.cleanup(); }
+      }, 30000);
+
       test('A06 control steps: a control can follow another one; the chain keeps its order in the canvas and in the schema, and a removed one leaves its successor in place', async () => {
         const h = setupCustomInheritance('Gate chain host', { synthesis: '' });
         try {

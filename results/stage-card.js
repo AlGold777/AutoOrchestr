@@ -853,12 +853,82 @@
     }
   }
 
+  // The window of an owner (6.1 of the spec, 8.1): the task the owner has to provide and the output of the step (as the round
+  // windows have it). The input of an owner is not edited here; it stays as the schema has it.
+  function ownerWindowModel(step = {}, { disabled = false } = {}) {
+    const output = isPlain(step.output) ? step.output : {};
+    return {
+      ref: String(step.ref || ''),
+      disabled: Boolean(disabled),
+      task: typeof step.task === 'string' ? step.task : '',
+      output: {
+        name: String(output.name || ''),
+        form: String(output.form || ''),
+        sections: Array.isArray(output.sections) ? output.sections.map(String).join('\n') : '',
+        strictLength: output.strictLength === true,
+        json: output.format === 'json'
+      }
+    };
+  }
+  // An edit of an owner: { field: 'task', value } | { field: 'output', value: { name, form, sections (lines), strictLength } }.
+  function ownerAfterEdit(step = {}, edit = {}) {
+    const next = { ...step };
+    if (edit.field === 'task') {
+      if (String(edit.value || '').trim()) next.task = String(edit.value);
+      else delete next.task;
+    } else if (edit.field === 'output') {
+      const output = outputAfterEdit(step.output, edit.value);
+      if (Object.keys(output).length) next.output = output;
+      else delete next.output;
+    }
+    return next;
+  }
+  // The window of an owner. A change goes to emit(edit) with the field (see ownerAfterEdit).
+  function renderOwnerWindow(container, model, emit) {
+    const doc = container.ownerDocument;
+    const disabled = Boolean(model.disabled);
+    const send = (edit) => { if (typeof emit === 'function') emit(edit); };
+    const task = el(doc, 'textarea', 'stage-card-owner-task');
+    task.rows = 4; task.value = model.task; task.disabled = disabled; task.spellcheck = false;
+    task.setAttribute('aria-label', 'Что должен предоставить владелец');
+    task.addEventListener('change', () => send({ field: 'task', value: task.value }));
+    const taskWrap = el(doc, 'label', 'stage-card-setting stage-card-owner-task-label');
+    taskWrap.append(doc.createTextNode('Что должен предоставить владелец '), task);
+    container.append(taskWrap);
+
+    const output = model.output;
+    const group = el(doc, 'section', 'stage-card-output');
+    group.append(el(doc, 'h3', '', 'Выход этапа'));
+    const name = el(doc, 'input', 'stage-card-output-name');
+    name.type = 'text'; name.value = output.name; name.disabled = disabled; name.setAttribute('aria-label', 'Имя результата');
+    const form = el(doc, 'textarea', 'stage-card-output-form');
+    form.rows = 2; form.value = output.form; form.disabled = disabled; form.setAttribute('aria-label', 'Форма ответа');
+    const sections = el(doc, 'textarea', 'stage-card-output-sections');
+    sections.rows = 3; sections.value = output.sections; sections.disabled = disabled || output.json;
+    sections.setAttribute('aria-label', 'Разделы ответа, по одному на строку');
+    const strict = el(doc, 'input', 'stage-card-output-strict');
+    strict.type = 'checkbox'; strict.checked = output.strictLength; strict.disabled = disabled;
+    const emitOutput = () => send({ field: 'output', value: { name: name.value, form: form.value, sections: sections.value.split('\n'), strictLength: strict.checked } });
+    [[name, 'Имя результата'], [form, 'Форма ответа'], [sections, 'Разделы ответа (по одному на строку)']].forEach(([node, text]) => {
+      const wrap = el(doc, 'label', 'stage-card-output-field');
+      wrap.append(doc.createTextNode(`${text} `), node);
+      group.append(wrap);
+      node.addEventListener('change', emitOutput);
+    });
+    const strictWrap = el(doc, 'label', 'stage-card-output-field');
+    strictWrap.append(strict, doc.createTextNode(' Строгая длина (предел слов)'));
+    group.append(strictWrap);
+    strict.addEventListener('change', emitOutput);
+    container.append(group);
+  }
+
   // The text of a control on its canvas card (the owner's words; a switched-off checker is not named).
   function controlSummary(step = {}) {
     if (step.kind === 'gate') {
       const checkers = (Array.isArray(step.models) ? step.models : []).filter((model) => isPlain(model) && model.enabled !== false).map((model) => model.name);
       return `проверяют: ${checkers.length ? checkers.join(', ') : 'никто'}`;
     }
+    if (step.kind === 'owner') return step.task ? `задание: ${String(step.task).split('\n')[0]}` : 'задание не задано';
     if (step.kind === 'route') {
       const by = isPlain(step.select) ? step.select.by : '';
       const count = isPlain(step.select) && Array.isArray(step.select.cases) ? step.select.cases.length : 0;
@@ -870,7 +940,7 @@
 
   const api = Object.freeze({ buildModel, render, renderStepFields, stepFieldsModel, stepsAfterToggle, outputAfterEdit, STATUS, feed,
     gateWindowModel, gateAfterEdit, renderGateWindow, controlSummary, transitionView, transitionAfterEdit,
-    routeWindowModel, routeAfterEdit, renderRouteWindow });
+    routeWindowModel, routeAfterEdit, renderRouteWindow, ownerWindowModel, ownerAfterEdit, renderOwnerWindow });
   root.StageCard = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

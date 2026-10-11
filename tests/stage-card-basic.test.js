@@ -387,3 +387,40 @@ describe('Route window of Basic: model and edits', () => {
     expect(StageCard.routeAfterEdit({ ...route, input: [{ step: 'r1', participant: 'GPT' }] }, { field: 'source', step: 'r1', participant: 'GPT', checked: false })).not.toHaveProperty('input');
   });
 });
+
+describe('Owner window of Basic: model and edits', () => {
+  const owner = { ref: 'owner:1', kind: 'owner', models: [], task: 'Передайте текст', input: 'previous', output: { name: 'Итог', sections: ['Вывод'], format: 'json', requiredFields: ['/answer'] } };
+
+  test('the window shows the task and the output; a json output has no sections', () => {
+    const model = StageCard.ownerWindowModel(owner);
+    expect(model.task).toBe('Передайте текст');
+    expect(model.output).toEqual({ name: 'Итог', form: '', sections: 'Вывод', strictLength: false, json: true });
+    expect(StageCard.controlSummary(owner)).toBe('задание: Передайте текст');
+    expect(StageCard.controlSummary({ ref: 'owner:2', kind: 'owner', models: [] })).toBe('задание не задано');
+  });
+
+  test('a task is written as typed, an empty one is not; the input stays; the output keeps its other fields', () => {
+    expect(StageCard.ownerAfterEdit(owner, { field: 'task', value: '  ' })).not.toHaveProperty('task');
+    expect(StageCard.ownerAfterEdit(owner, { field: 'task', value: 'Новый текст' }).task).toBe('Новый текст');
+    const plain = { ref: 'owner:3', kind: 'owner', models: [], task: 'T', output: { requiredFields: ['/a'], format: 'json', artifacts: [{ id: 'report' }] } };
+    const edited = StageCard.ownerAfterEdit({ ...plain, output: { format: 'json', requiredFields: ['/a'], artifacts: [{ id: 'report' }], name: 'old' } }, { field: 'output', value: { name: '', form: 'кратко', sections: ['x'], strictLength: true } });
+    expect(edited.output).toEqual({ format: 'json', requiredFields: ['/a'], artifacts: [{ id: 'report' }], form: 'кратко', strictLength: true });
+    expect(StageCard.ownerAfterEdit({ ref: 'owner:4', kind: 'owner', models: [] }, { field: 'output', value: { name: '', form: '', sections: [''], strictLength: false } })).not.toHaveProperty('output');
+  });
+
+  test('the window reports the task and the output; a json output disables the sections', () => {
+    const container = document.createElement('div');
+    const seen = [];
+    StageCard.renderOwnerWindow(container, StageCard.ownerWindowModel({ ...owner, output: { name: 'Итог', sections: ['Вывод', 'Доводы'] } }), (edit) => seen.push(edit));
+    const task = container.querySelector('.stage-card-owner-task');
+    task.value = 'Текст';
+    task.dispatchEvent(new Event('change'));
+    container.querySelector('.stage-card-output-strict').checked = true;
+    container.querySelector('.stage-card-output-strict').dispatchEvent(new Event('change'));
+    expect(seen[0]).toEqual({ field: 'task', value: 'Текст' });
+    expect(seen[1]).toEqual({ field: 'output', value: { name: 'Итог', form: '', sections: ['Вывод', 'Доводы'], strictLength: true } });
+    const json = document.createElement('div');
+    StageCard.renderOwnerWindow(json, StageCard.ownerWindowModel(owner), () => {});
+    expect(json.querySelector('.stage-card-output-sections').disabled).toBe(true);
+  });
+});

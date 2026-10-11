@@ -4342,6 +4342,7 @@ document.addEventListener('click', (event) => {
         const controlAfterEdit = (step, edit) => {
             if (step.kind === 'gate') return window.StageCard.gateAfterEdit(step, edit);
             if (step.kind === 'route') return window.StageCard.routeAfterEdit(step, edit);
+            if (step.kind === 'owner') return window.StageCard.ownerAfterEdit(step, edit);
             return step;
         };
         // The control with the ref gets the edit; the list is saved (a saved pipeline at once).
@@ -4361,7 +4362,7 @@ document.addEventListener('click', (event) => {
             const ref = freshControlRef(kind);
             const list = getCustomControls().map((item) => (item.after === anchor ? { ...item, after: ref } : item));
             // A new control is empty: what the owner has not set is not written (a missing kind or a missing condition is an error).
-            const kindDefault = kind === 'gate' ? { models: [] } : kind === 'route' ? { models: [], select: {} } : {};
+            const kindDefault = kind === 'gate' ? { models: [] } : kind === 'route' ? { models: [], select: {} } : { models: [] };
             list.push({ after: anchor, step: { ref, kind, ...kindDefault } });
             await setCustomControls(list, { persist: false });
             updatePipelineAll();
@@ -5085,7 +5086,7 @@ document.addEventListener('click', (event) => {
             select.dataset.anchor = anchor;
             select.setAttribute('aria-label', `Добавить шаг управления после ${anchor}`);
             select.title = 'Добавить шаг управления: проверка (gate)';
-            [['', CONTROL_ADD_LABEL], ['gate', 'Проверка (gate)'], ['route', 'Маршрут (route)']].forEach(([value, label]) => {
+            [['', CONTROL_ADD_LABEL], ['gate', 'Проверка (gate)'], ['route', 'Маршрут (route)'], ['owner', 'Владелец (owner)']].forEach(([value, label]) => {
                 const option = document.createElement('option');
                 option.value = value;
                 option.textContent = label;
@@ -9805,7 +9806,7 @@ document.addEventListener('click', (event) => {
                 participants: (step.models || []).filter((model) => model.enabled !== false).map((model) => ({ id: model.id ?? model.name, name: model.name }))
             })).filter((item) => item.participants.length);
         };
-        // The window of a control step: a gate and a route have their windows; an owner gets its own with its kind.
+        // The window of a control step: a gate, a route and an owner have their windows.
         const openControlCard = (ref) => {
             const dialog = document.getElementById('pipeline-stage-dialog');
             const title = document.getElementById('pipeline-stage-dialog-title');
@@ -9823,6 +9824,7 @@ document.addEventListener('click', (event) => {
             };
             if (step.kind === 'gate') window.StageCard.renderGateWindow(body, window.StageCard.gateWindowModel(step, options), onEdit);
             if (step.kind === 'route') window.StageCard.renderRouteWindow(body, window.StageCard.routeWindowModel(step, options), onEdit);
+            if (step.kind === 'owner') window.StageCard.renderOwnerWindow(body, window.StageCard.ownerWindowModel(step, { disabled: pipelineRunActive }), onEdit);
             if (!dialog.open) dialog.showModal();
         };
         const openStageCard = (roundBadge) => {

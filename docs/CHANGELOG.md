@@ -1,5 +1,13 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — Basic: окно владельца (owner) на холсте, version 2.81.751
+
+- `results/stage-card.js`: окно владельца (`ownerWindowModel`, `ownerAfterEdit`, `renderOwnerWindow`): задание (`task`) и выход шага (имя, форма, разделы, строгая длина; для json разделы не редактируются). Вход владельца и прочие поля сохраняются.
+- `results.js`: владелец добавляется кнопкой «+ шаг»; окно открывается по карточке; карточка показывает задание.
+- Docs: `basic-windows.md` («Карточка владельца (owner)»), `basic-schema-guide.md` (5.9), `basic-start-here.md` (имена кода).
+- Tests: `tests/stage-card-basic.test.js` (окно владельца: модель, правки, отрисовка); `tests/results-debate-favorites.test.js` (владелец с холста: задание и выход, Save → загрузка → Save).
+- Не сделано: предпросмотр и Export/Import новых полей (следующий коммит). Не проверено в живом браузере: только jsdom.
+
 ### 2026-10-11 — Basic: окно маршрута (route) на холсте, version 2.81.750
 
 - `results/stage-card.js`: окно маршрута (`routeWindowModel`, `routeAfterEdit`, `renderRouteWindow`): вид выбора (`rule`/`model`/`owner`); для правила — источники (ответы участников раньше шага, номер = место в `input`), варианты с ID, названием, условием `source`/`pointer`/`op`/`value` и действием (goto с `maxLoops`, stop, return), `otherwise`, `conflict`; для модели — модель и задание. Составные условия, `feedback`, `invalidate`, `resumeAt` и строки/артефакты во `input` сохраняются. Смена вида убирает то, что новому виду не нужно.
