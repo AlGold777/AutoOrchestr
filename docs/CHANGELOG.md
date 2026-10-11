@@ -1,5 +1,14 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — Basic engine refuses what it does not execute yet (P02, step 1), version 2.81.711
+
+- `CustomEngine.run` (`disput/custom-engine.js`) checks the raw steps of the schema before the first request (`assertExecutable`). A field the engine does not execute stops the run with an `EngineError` (`code`, `address` of the step and the field, the message): `unsupported_kind` (a gate, a route, an owner), `unsupported_field` (`output`, `require` other than `any`, `owner`, `chat` other than `continue`, a participant `input`), `unsupported_input` (a list of sources), `invalid_input` (an input that is not a value; a synthesis with anything but `previous`), `participant_transport_required` (two participants of one model in a step). No request is sent.
+- `normalizeSteps` no longer replaces an input list with `previous`; a step with no models is not dropped before the check, so a route or an owner without models is refused, not hidden.
+- `previewPrompt` gives no prompt for a step the run would refuse (`unexecutedOf`).
+- Not yet: the executed forms come with the next steps of the pack P02 (addressed inputs, participants, output, require, approval, artifacts).
+- Docs: `basic-start-here.md` («Ошибки до первого запроса»), `basic-schema-guide.md` (5.7–5.9 say what stops the run), `basic-developer.md` (the symbols of the engine).
+- Tests: `tests/custom-engine.test.js` (the block «Custom engine refuses what it does not execute yet», 15 cases).
+
 ### 2026-10-11 — Schema projection: the canvas and the settings carry the new fields, version 2.81.710
 
 - `BasicSchema.toCanvas` (`disput/basic-schema.js`): a gate, a route and an owner are on the canvas as `controls` (`{ ref, kind, index, afterRound }`) in the order of the schema, and they may stand anywhere (the rule of the intermediate synthesis is kept). Two participants of one model in a round are two stack items, told apart by `id` (`stacks[r].items[i].id`, `rounds[i].participantIds` are ids). The old `rounds` and `stacks` keep their shape; the items get the field `id`. The rounds limit counts rounds only.

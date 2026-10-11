@@ -308,3 +308,55 @@ describe('Custom engine', () => {
       steps: [{ step: 0, label: 'Раунд 1', order: 'parallel', input: 'none', models: ['A'] }] });
   });
 });
+
+// Fail-closed (A02, pack P02 step 1): a field the engine does not execute stops the run before the first request,
+// with the address of the step. Nothing is replaced silently and no request is sent.
+describe('Custom engine refuses what it does not execute yet', () => {
+  const ask = () => transport({ A: ['a1'], B: ['b1'] });
+  const cases = [
+    ['a gate', [{ ref: 'gate:g1', kind: 'gate', models: [{ name: 'A' }] }], 'unsupported_kind', 'gate:g1'],
+    ['a route with no models is not dropped', [{ ref: 'route:x', kind: 'route', models: [] }], 'unsupported_kind', 'route:x'],
+    ['an owner step', [{ ref: 'owner:o', kind: 'owner', models: [] }], 'unsupported_kind', 'owner:o'],
+    ['an output', [{ ref: 'r1', kind: 'round', output: { name: 'X' }, models: ['A'] }], 'unsupported_field', 'output'],
+    ['require all', [{ ref: 'r1', kind: 'round', require: 'all', models: ['A', 'B'] }], 'unsupported_field', 'require'],
+    ['require 1', [{ ref: 'r1', kind: 'round', require: 1, models: ['A', 'B'] }], 'unsupported_field', 'require'],
+    ['owner approve', [{ ref: 'r1', kind: 'round', owner: 'approve', models: ['A'] }], 'unsupported_field', 'owner'],
+    ['chat new', [{ ref: 'r1', kind: 'round', chat: 'new', models: ['A'] }], 'unsupported_field', 'chat'],
+    ['a list of sources', [{ ref: 'r1', kind: 'round', models: ['A'] }, { ref: 'r2', kind: 'round', input: ['r1'], models: ['B'] }], 'unsupported_input', 'r2'],
+    ['a string input that is not a value', [{ ref: 'r1', kind: 'round', input: 'some', models: ['A'] }], 'invalid_input', 'r1'],
+    ['a synthesis with input all', [{ ref: 'r1', kind: 'round', models: ['A'] }, { ref: 'synth:s', kind: 'synthesis', input: 'all', models: ['B'] }], 'invalid_input', 'synth:s'],
+    ['a participant input', [{ ref: 'r1', kind: 'round', models: [{ name: 'A', input: 'none' }] }], 'unsupported_field', 'input'],
+    ['two participants of one model', [{ ref: 'r1', kind: 'round', models: ['A', 'A'] }], 'participant_transport_required', 'r1']
+  ];
+  test.each(cases)('%s stops the run before any request (%s)', async (_label, steps, code, mention) => {
+    const { send, calls } = ask();
+    const error = await Engine.run({ task: 'T', steps, send }).catch((item) => item);
+    expect(error).toBeInstanceOf(Engine.EngineError);
+    expect(error.code).toBe(code);
+    expect(error.message).toContain(mention);
+    expect(calls).toHaveLength(0);
+  });
+
+  test('a later unsupported step is refused before the first step is sent', async () => {
+    const { send, calls } = ask();
+    await expect(Engine.run({ task: 'T', send, steps: [{ ref: 'r1', kind: 'round', models: ['A'] }, { ref: 'r2', kind: 'round', output: {}, models: ['B'] }] }))
+      .rejects.toMatchObject({ code: 'unsupported_field' });
+    expect(calls).toHaveLength(0);
+  });
+
+  test('the executed fields still run: any, continue, a plain input, a synthesis with previous', async () => {
+    const { send, calls } = ask();
+    const result = await Engine.run({ task: 'T', send, steps: [
+      { ref: 'r1', kind: 'round', require: 'any', owner: undefined, chat: 'continue', input: 'none', models: ['A'] },
+      { ref: 'synth:s', kind: 'synthesis', input: 'previous', models: ['B'] }
+    ] });
+    expect(result.stopReason).toBe('steps_done');
+    expect(calls).toHaveLength(2);
+  });
+
+  test('the preview of an unsupported step gives no prompt; a supported step still has one', () => {
+    const steps = [{ ref: 'r1', kind: 'round', models: ['A'] }, { ref: 'r2', kind: 'round', output: {}, models: ['A'] }];
+    expect(Engine.previewPrompt({ task: 'T', steps, stepIndex: 1, modelName: 'A' })).toBeNull();
+    expect(Engine.previewPrompt({ task: 'T', steps, stepIndex: 0, modelName: 'A' }).label).toBe('Раунд 1');
+  });
+});

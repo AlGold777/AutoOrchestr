@@ -107,7 +107,8 @@
         afterRound: kind === 'synthesis' ? (Number.isSafeInteger(step.afterRound) && step.afterRound > 0 ? step.afterRound : round) : null,
         order: kind === 'round' && step.order === 'sequential' ? 'sequential' : 'parallel',
         task: kind === 'synthesis' && !text(step.task) ? SYNTHESIS_TASK : text(step.task),
-        input: kind === 'synthesis' ? 'previous' : (['none', 'previous', 'all'].includes(step.input) ? step.input : 'previous'),
+        // A list of sources stays a list here: a run refuses it until its input is executed (assertExecutable).
+        input: Array.isArray(step.input) ? step.input.slice() : (kind === 'synthesis' ? 'previous' : (step.input ?? 'previous')),
         models: (step.models || []).map((model) => (typeof model === 'string' ? { name: model, extra: '' } : {
           name: model.name, extra: text(model.extra), task: typeof model.task === 'string' ? model.task : null, promptTemplate: typeof model.promptTemplate === 'string' ? model.promptTemplate : null,
           discipline: model.discipline ? { ...model.discipline } : null,
@@ -118,12 +119,58 @@
     }).filter((step) => step.models.length);
   }
 
+  // A fault that stops a run before its first request. `address` names the step (its ref) and the field.
+  class EngineError extends Error {
+    constructor(code, address, message) {
+      super(`${code}: ${address} — ${message}`);
+      this.name = 'EngineError';
+      this.code = code;
+      this.address = address;
+    }
+  }
+
+  const EXECUTED_KINDS = Object.freeze(['round', 'synthesis']);
+  const INPUT_VALUES = Object.freeze(['none', 'previous', 'all']);
+  // The first field of one raw step (as the schema gives it) that the engine does not execute yet, or null. Every
+  // later step of the schema extends this list; a field that is not in it is refused, never replaced by a default.
+  function unexecutedOf(step, index) {
+    const at = typeof step?.ref === 'string' && step.ref ? `шаг «${step.ref}»` : `шаг №${index + 1}`;
+    const fail = (code, field, message) => new EngineError(code, `${at} · ${field}`, message);
+    if (!step || typeof step !== 'object') return new EngineError('invalid_step', at, 'шаг должен быть объектом');
+    if (step.kind !== undefined && !EXECUTED_KINDS.includes(step.kind)) return fail('unsupported_kind', 'kind', `вид «${step.kind}» движок пока не исполняет`);
+    if (step.input !== undefined) {
+      if (Array.isArray(step.input)) return fail('unsupported_input', 'input', 'список источников движок пока не исполняет');
+      if (!INPUT_VALUES.includes(step.input) || (step.kind === 'synthesis' && step.input !== 'previous')) return fail('invalid_input', 'input', 'вход: none, previous, all или список источников; синтез — только previous');
+    }
+    if (step.output !== undefined) return fail('unsupported_field', 'output', 'выход шага движок пока не исполняет');
+    if (step.require !== undefined && step.require !== 'any') return fail('unsupported_field', 'require', 'число ответов движок пока не исполняет');
+    if (step.owner !== undefined) return fail('unsupported_field', 'owner', 'подтверждение владельца движок пока не исполняет');
+    if (step.chat !== undefined && step.chat !== 'continue') return fail('unsupported_field', 'chat', 'чат «new» движок пока не исполняет');
+    const names = new Set();
+    for (const model of Array.isArray(step.models) ? step.models : []) {
+      const name = typeof model === 'string' ? model : model?.name;
+      if (model && typeof model === 'object' && model.input !== undefined) return fail('unsupported_field', `модель «${name}» · input`, 'вход участника движок пока не исполняет');
+      if (names.has(name)) return new EngineError('participant_transport_required', `${at} · модель «${name}»`, 'два участника одной модели требуют транспорта по участникам (callback sendParticipants)');
+      names.add(name);
+    }
+    return null;
+  }
+
+  // Refuses the whole schema before the first request: the first problem in the order of the steps.
+  function assertExecutable(steps = []) {
+    steps.forEach((step, index) => {
+      const problem = unexecutedOf(step, index);
+      if (problem) throw problem;
+    });
+  }
+
   async function run({
     task, steps = [], maxAttempts = DEFAULT_ATTEMPTS, semiAuto = false, maxPromptChars = Infinity,
     accept = defaultAccept, parseAsks = null, askOwner = null, askInstruction = '', decide = null,
     send, signal = null, onEvent = null, onRequest = null, onResponse = null
   }) {
     if (typeof send !== 'function') throw new Error('custom_send_required');
+    assertExecutable(steps);
     const emit = (kind, fields) => { if (typeof onEvent === 'function') onEvent(kind, fields); };
     const aborted = () => Boolean(signal?.aborted);
     const plan = normalizeSteps(steps);
@@ -340,6 +387,8 @@
     const plan = normalizeSteps(steps);
     const step = plan.find((item) => item.index === stepIndex) || plan[stepIndex];
     if (!step) return null;
+    // A step the run would refuse has no prompt to show.
+    if (unexecutedOf(steps[stepIndex], stepIndex)) return null;
     const model = step.models.find((item) => item.name === modelName) || { name: modelName, extra: '' };
     const input = step.input === 'none' || !plan.some((item) => item.index < step.index) ? []
       : [{ label: 'Вход', text: PLACEHOLDER[step.input] || PLACEHOLDER.previous }];
@@ -354,7 +403,7 @@
       instructions: { task: text(task), stepTask: model.task ?? step.task, extra: model.extra || '', askInstruction: semiAuto ? askInstruction : '' } };
   }
 
-  const api = Object.freeze({ DEFAULT_ATTEMPTS, CORRECTION_TEMPLATE, SYNTHESIS_TASK, STOP_TEXT, REASON_TEXT, resolveSetting, PLACEHOLDER, TRANSPORT_LINES, buildPrompt, correctionPrompt, normalizeSteps, previewPrompt, run });
+  const api = Object.freeze({ EngineError, unexecutedOf, DEFAULT_ATTEMPTS, CORRECTION_TEMPLATE, SYNTHESIS_TASK, STOP_TEXT, REASON_TEXT, resolveSetting, PLACEHOLDER, TRANSPORT_LINES, buildPrompt, correctionPrompt, normalizeSteps, previewPrompt, run });
   root.CustomEngine = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
