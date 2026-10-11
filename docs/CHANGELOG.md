@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — An explicit task reaches the first round with input none, version 2.81.701
+
+- Changed documented behaviour. `BasicSchema.assemble` (`disput/basic-schema.js`): with `input: none` the task the owner wrote in the schema, on the step or on the model, is now sent. Before, it was dropped. A model task still comes before the step task. The ▶ and Basic tasks are not sent with `input: none`, as before.
+- Docs: `basic-schema-guide.md` (the rule for `task` and for the first round).
+- Tests: `tests/basic-schema.test.js` (the block «an explicit task is sent with input none»).
+
 ### 2026-10-11 — The main page request carries the delivery token, version 2.81.700
 
 - `result_new.html` loads `shared/message-delivery.js`; the request of the main page (`START_FULLPAGE_PROCESS` in `results.js`) now sends a per-model prompt with its own token (`MessageDelivery.prepare`) and the transport request ids. Before, only pipeline runs carried the token, so on the main page the background had no token to check and the answer was never proven complete by it.

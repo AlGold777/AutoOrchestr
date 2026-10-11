@@ -294,3 +294,51 @@ describe('Basic schema: check before the first request', () => {
     expect(Schema.assemble(full)).toHaveLength(4);
   });
 });
+
+describe('Basic schema: an explicit task is sent with input none', () => {
+  test('a task of the step and of the model reaches the first round, the model task comes first', () => {
+    const steps = Schema.assemble(base([
+      round('r1', [{ name: 'A' }, { name: 'B', task: 'MODEL_TASK' }], { task: 'STEP_TASK' }),
+      synthesis('final', ['C'])
+    ]));
+    expect(steps[0].input).toBe('none');
+    expect(steps[0].task).toBe('STEP_TASK');
+    expect(steps[0].models.map((model) => model.task)).toEqual(['STEP_TASK', 'MODEL_TASK']);
+  });
+
+  test('the Basic and ▶ tasks are not sent with input none, the inherited value does not appear', () => {
+    const steps = Schema.assemble(base([round('r1', ['A']), synthesis('final', ['C'])], { defaults: { roundTask: 'PIPELINE_TASK' } }));
+    expect(steps[0].task).toBe('');
+    expect(steps[0].models[0].task).toBe('');
+    expect(JSON.stringify(steps)).not.toContain('PIPELINE_TASK');
+    expect(JSON.stringify(steps)).not.toContain(Schema.DEFAULTS.roundTask);
+  });
+
+  test('an explicit empty task is a value: it stops the ▶ task from coming in', () => {
+    const steps = Schema.assemble(base([round('r1', [{ name: 'A', task: '' }], { task: '' }), synthesis('final', ['C'])], { defaults: { roundTask: 'PIPELINE_TASK' } }));
+    expect(steps[0].task).toBe('');
+    expect(steps[0].models[0].task).toBe('');
+  });
+
+  test('a full own request of the model works as before, the task stays as given', () => {
+    const steps = Schema.assemble(base([round('r1', [{ name: 'A', request: 'Задача: {задача}', task: 'MODEL_TASK' }]), synthesis('final', ['C'])]));
+    expect(steps[0].models[0]).toMatchObject({ promptTemplate: 'Задача: {задача}', task: 'MODEL_TASK' });
+  });
+
+  test('the preview shows the explicit task of the first round and nothing inherited', () => {
+    const withTask = Schema.assemble(base([round('r1', ['A'], { task: 'STEP_TASK' }), synthesis('final', ['C'])]));
+    expect(Engine.previewPrompt({ task: 'T', steps: withTask, stepIndex: 0, modelName: 'A' }).prompt).toBe('Задача:\nT\n\nЗадание:\nSTEP_TASK');
+    const without = Schema.assemble(base([round('r1', ['A']), synthesis('final', ['C'])], { defaults: { roundTask: 'PIPELINE_TASK' } }));
+    expect(Engine.previewPrompt({ task: 'T', steps: without, stepIndex: 0, modelName: 'A' }).prompt).toBe('Задача:\nT');
+  });
+
+  test('explicit tasks survive the settings of the cards and a JSON round trip', () => {
+    const schema = base([round('r1', [{ name: 'A', task: 'MODEL_TASK' }], { task: 'STEP_TASK' }), synthesis('final', ['C'])]);
+    const reloaded = JSON.parse(JSON.stringify(schema));
+    expect(Schema.validate(reloaded)).toEqual([]);
+    expect(Schema.assemble(reloaded)).toEqual(Schema.assemble(schema));
+    const settings = Schema.toSettings(reloaded);
+    expect(settings.customRoundSettings.r1).toEqual({ task: 'STEP_TASK' });
+    expect(settings.customModelSettings.r1.A).toEqual({ task: 'MODEL_TASK' });
+  });
+});

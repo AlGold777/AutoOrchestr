@@ -63,6 +63,9 @@
   // The first round has no input; a later round gets the previous step; a synthesis always the previous step.
   const defaultInput = (kind, roundIndex) => (kind === 'round' && roundIndex === 0 ? 'none' : 'previous');
 
+  // With input none only a task written by the owner (on the model or the step) goes to the model; ▶ and Basic values do not.
+  const writtenTask = (field) => field.source === 'model' || field.source === 'round';
+
   // Engine steps from a schema. `context.roleText(role, ref)` turns a model's role into its extra text.
   function assemble(schema, { roleText = () => '' } = {}) {
     const defaults = schema.defaults || {};
@@ -77,7 +80,7 @@
       if (step.kind === 'round') out.round = roundIndex + 1;
       else out.afterRound = rounds;
       if (step.kind === 'round') out.order = step.order || 'parallel';
-      out.task = input === 'none' ? '' : stepFields.task.value;
+      out.task = input === 'none' && !writtenTask(stepFields.task) ? '' : stepFields.task.value;
       if (step.kind === 'round') out.input = input;
       out.models = (step.models || []).filter((model) => model.enabled !== false).map((model) => {
         const resolved = resolveFields(model, step.kind, { task: step.task }, defaults);
@@ -90,7 +93,7 @@
           promptTemplate: typeof model.request === 'string' ? model.request : (typeof finalRequest === 'string' ? finalRequest : null),
           maxWords: 'maxWords' in model ? model.maxWords : null,
           extra: roleText(model.role || '', step.ref) || '',
-          task: input === 'none' ? '' : resolved.task.value,
+          task: input === 'none' && !writtenTask(resolved.task) ? '' : resolved.task.value,
           discipline: {
             ...Object.fromEntries(Object.entries(resolved.discipline).map(([key, item]) => [key, item.value])),
             ...(lines.length ? { lines } : {})
