@@ -322,7 +322,7 @@ describe('Custom engine refuses what it does not execute yet', () => {
     ['require 1', [{ ref: 'r1', kind: 'round', require: 1, models: ['A', 'B'] }], 'unsupported_field', 'require'],
     ['owner approve', [{ ref: 'r1', kind: 'round', owner: 'approve', models: ['A'] }], 'unsupported_field', 'owner'],
     ['chat new', [{ ref: 'r1', kind: 'round', chat: 'new', models: ['A'] }], 'unsupported_field', 'chat'],
-    ['a list of sources', [{ ref: 'r1', kind: 'round', models: ['A'] }, { ref: 'r2', kind: 'round', input: ['r1'], models: ['B'] }], 'unsupported_input', 'r2'],
+    ['an artifact source (the registry is not executed yet)', [{ ref: 'r1', kind: 'round', models: ['A'] }, { ref: 'r2', kind: 'round', input: [{ artifact: { step: 'r1', participant: 'A', id: 'map' }, version: 'latest' }], models: ['B'] }], 'unsupported_input', 'r2'],
     ['a string input that is not a value', [{ ref: 'r1', kind: 'round', input: 'some', models: ['A'] }], 'invalid_input', 'r1'],
     ['a synthesis with input all', [{ ref: 'r1', kind: 'round', models: ['A'] }, { ref: 'synth:s', kind: 'synthesis', input: 'all', models: ['B'] }], 'invalid_input', 'synth:s'],
     ['a participant input', [{ ref: 'r1', kind: 'round', models: [{ name: 'A', input: 'none' }] }], 'unsupported_field', 'input'],
@@ -358,5 +358,111 @@ describe('Custom engine refuses what it does not execute yet', () => {
     const steps = [{ ref: 'r1', kind: 'round', models: ['A'] }, { ref: 'r2', kind: 'round', output: {}, models: ['A'] }];
     expect(Engine.previewPrompt({ task: 'T', steps, stepIndex: 1, modelName: 'A' })).toBeNull();
     expect(Engine.previewPrompt({ task: 'T', steps, stepIndex: 0, modelName: 'A' }).label).toBe('Раунд 1');
+  });
+});
+
+// Addressed inputs (4.3, A02 step 2): a string is all accepted answers of a step, an object is one participant's
+// answer; a list keeps its order; required missing stops the run before the first request; nothing is replaced.
+describe('Custom engine addressed inputs', () => {
+  const twoRounds = (extra = []) => [
+    { ref: 'r1', kind: 'round', input: 'none', models: ['A', 'B'] },
+    { ref: 'r2', kind: 'round', input: 'none', models: ['C', 'D'] },
+    ...extra
+  ];
+
+  test('a list gives exactly the chosen answers, in the order of the list, each with step, participant and visit', async () => {
+    const { send, calls } = transport({ A: ['a1', 'a3'], B: ['b1', 'b3'], C: ['c1'], D: ['d1'], E: ['e1'] });
+    await Engine.run({ task: 'T', send, steps: [
+      { ref: 'r1', kind: 'round', input: 'none', models: ['A', 'B'] },
+      { ref: 'r2', kind: 'round', input: 'none', models: ['C', 'D'] },
+      { ref: 'r3', kind: 'round', input: [{ step: 'r2', participant: 'D' }, 'r1'], models: ['E'] }
+    ] });
+    const prompt = calls[2].prompts.E;
+    expect(prompt).toContain('Ответы выбранных источников:\n\nРаунд 2, участник D, визит 1:\nd1\n\nРаунд 1, участник A, визит 1:\na1\n\nРаунд 1, участник B, визит 1:\nb1');
+    expect(prompt).not.toContain('c1');
+  });
+
+  test('a participant that failed is not replaced by the nearest accepted answer', async () => {
+    const { send, calls } = transport({ A: ['a1'], B: [], C: ['c1'] });
+    await Engine.run({ task: 'T', send, steps: [
+      { ref: 'r1', kind: 'round', input: 'none', models: ['A', 'B'] },
+      { ref: 'r2', kind: 'round', input: [{ step: 'r1', participant: 'B' }], models: ['C'] }
+    ] });
+    expect(calls[calls.length - 1].models).toEqual(['C']);
+    expect(calls[calls.length - 1].prompts.C).not.toContain('a1');
+    expect(calls[calls.length - 1].prompts.C).not.toContain('Ответы выбранных');
+  });
+
+  test('a required source without an actual answer stops the run before the request; nothing is sent', async () => {
+    const { send, calls } = transport({ A: ['a1'], B: [], C: ['c1'] });
+    const result = await Engine.run({ task: 'T', send, steps: [
+      { ref: 'r1', kind: 'round', input: 'none', models: ['A', 'B'] },
+      { ref: 'r2', kind: 'round', input: [{ step: 'r1', participant: 'B', required: true }], models: ['C'] }
+    ] });
+    expect(result).toMatchObject({ stopReason: 'missing_input', stopDetail: expect.stringContaining('r1') });
+    expect(result.stopDetail).toContain('B');
+    expect(calls.some((call) => call.models.includes('C'))).toBe(false);
+  });
+
+  test('an optional source without an answer gives no text; the others still go in', async () => {
+    const { send, calls } = transport({ A: ['a1'], B: [], C: ['c1'], E: ['e1'] });
+    const result = await Engine.run({ task: 'T', send, steps: [
+      { ref: 'r1', kind: 'round', input: 'none', models: ['A', 'B'] },
+      { ref: 'r2', kind: 'round', input: 'none', models: ['C'] },
+      { ref: 'r3', kind: 'round', input: [{ step: 'r1', participant: 'B' }, { step: 'r2', participant: 'C', required: true }, { step: 'r9', participant: 'Z' }], models: ['E'] }
+    ] });
+    expect(result.stopReason).toBe('steps_done');
+    const prompt = calls[calls.length - 1].prompts.E;
+    expect(prompt).toContain('Раунд 2, участник C, визит 1:\nc1');
+    expect(prompt).not.toContain('Раунд 1');
+  });
+
+  test('a switched-off step (not in the list) gives nothing: optional is empty, required stops', async () => {
+    const first = transport({ A: ['a1', 'a2'] });
+    const optional = await Engine.run({ task: 'T', send: first.send, steps: [
+      { ref: 'r1', kind: 'round', input: 'none', models: ['A'] },
+      { ref: 'r2', kind: 'round', input: ['r9'], models: ['A'] }
+    ] });
+    expect(optional.stopReason).toBe('steps_done');
+    expect(first.calls[1].prompts.A).not.toContain('Ответы выбранных');
+    const { send } = transport({ A: ['a1'] });
+    const required = await Engine.run({ task: 'T', send, steps: [
+      { ref: 'r1', kind: 'round', input: 'none', models: ['A'] },
+      { ref: 'r2', kind: 'round', input: [{ step: 'r9', participant: 'Z', required: true }], models: ['A'] }
+    ] });
+    expect(required.stopReason).toBe('missing_input');
+  });
+
+  test('a synthesis takes a list too; the answers of the list reach its request', async () => {
+    const { send, calls } = transport({ A: ['a1'], B: ['b1'], S: ['s1'] });
+    await Engine.run({ task: 'T', send, steps: [
+      { ref: 'r1', kind: 'round', input: 'none', models: ['A'] },
+      { ref: 'r2', kind: 'round', input: 'none', models: ['B'] },
+      { ref: 'synth:s', kind: 'synthesis', input: ['r1'], models: ['S'] }
+    ] });
+    expect(calls[2].prompts.S).toContain('Раунд 1, участник A, визит 1:\na1');
+    expect(calls[2].prompts.S).not.toContain('b1');
+  });
+
+  test('a source that is malformed, names an unknown participant or a later step is refused before the first request', async () => {
+    const { send, calls } = transport({ A: ['a1'], B: ['b1'] });
+    const base = { ref: 'r1', kind: 'round', input: 'none', models: ['A'] };
+    const cases = [
+      [[{ step: 'r1' }], 'invalid_input'],
+      [[42], 'invalid_input'],
+      [[{ step: 'r1', participant: 'Z' }], 'invalid_input'],
+      [['r2'], 'invalid_input']
+    ];
+    for (const [input, code] of cases) {
+      const error = await Engine.run({ task: 'T', send, steps: [base, { ref: 'r2', kind: 'round', input, models: ['B'] }] }).catch((item) => item);
+      expect(error).toMatchObject({ code });
+    }
+    expect(calls).toHaveLength(0);
+  });
+
+  test('the preview shows that the answers of the chosen steps come at the run', () => {
+    const steps = [{ ref: 'r1', kind: 'round', models: ['A'] }, { ref: 'r2', kind: 'round', input: [{ step: 'r1', participant: 'A' }], models: ['A'] }];
+    expect(Engine.previewPrompt({ task: 'T', steps, stepIndex: 1, modelName: 'A' }).prompt)
+      .toContain('‹ответы выбранных этапов появятся при запуске›');
   });
 });

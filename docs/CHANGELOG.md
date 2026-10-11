@@ -1,5 +1,15 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — Basic addressed inputs: a list of sources is executed (P02, step 2), version 2.81.712
+
+- `input` of a round or a synthesis is a list of sources (`CustomEngine`, `disput/custom-engine.js`): a step ref gives all accepted answers of that step in participant order; `{ step, participant, required? }` gives one participant's accepted answer. The list keeps its order. Each answer in the request is labelled with its step, participant and visit (`Раунд 1, участник A, визит 1:`), under the heading «Ответы выбранных источников».
+- A required source without an accepted answer stops the run with `StopRun('missing_input')` before the first request of the step (all inputs of a step are resolved before it sends anything). The address is in the event `custom_end` as `stopDetail` and in the result. An optional source without an answer gives no text; a failed answer is never replaced by the nearest accepted one.
+- The check before the first request (`assertExecutable`): a source names a step before the consumer and a participant declared there (a step that is not in the list is switched off and gives no answers). Malformed sources are `invalid_input`. A reference to an artifact stays `unsupported_input` until the registry is executed (step 7).
+- `previewPrompt` shows «‹ответы выбранных этапов появятся при запуске›» for a list.
+- Not yet: a participant's own `input` (`models[].input`, step 3), the output and the other fields of step 1 stay refused.
+- Docs: `basic-start-here.md` («Прогон по шагам», «Что видит пользователь»: `missing_input`), `basic-schema-guide.md` (5.7), `basic-developer.md`.
+- Tests: `tests/custom-engine.test.js` (the block «Custom engine addressed inputs», 8 cases; the list case of step 1 became the artifact case).
+
 ### 2026-10-11 — Basic engine refuses what it does not execute yet (P02, step 1), version 2.81.711
 
 - `CustomEngine.run` (`disput/custom-engine.js`) checks the raw steps of the schema before the first request (`assertExecutable`). A field the engine does not execute stops the run with an `EngineError` (`code`, `address` of the step and the field, the message): `unsupported_kind` (a gate, a route, an owner), `unsupported_field` (`output`, `require` other than `any`, `owner`, `chat` other than `continue`, a participant `input`), `unsupported_input` (a list of sources), `invalid_input` (an input that is not a value; a synthesis with anything but `previous`), `participant_transport_required` (two participants of one model in a step). No request is sent.

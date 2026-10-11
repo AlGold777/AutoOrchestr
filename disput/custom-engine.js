@@ -7,10 +7,12 @@
 //   round keeps its number in labels, previews and the journal; without them the engine counts the steps it gets.
 //   models: [{ name, extra, promptTemplate, maxWords }] — card order is call order.
 //   promptTemplate replaces automatic assembly; maxWords reaches the caller on every attempt.
-//   input: 'none' | 'previous' | 'all'. The run's task is always sent.
+//   input: 'none' | 'previous' | 'all' | [sources]. The run's task is always sent.
 //     previous — accepted answers of the last step that has any (a synthesis replaces the round
 //                before it; a skipped step passes nothing on);
-//     all      — every accepted answer of all earlier steps, rounds and syntheses alike.
+//     all      — every accepted answer of all earlier steps, rounds and syntheses alike;
+//     [sources] — a step ref (all its accepted answers), { step, participant, required? } (one answer);
+//                a required source without an answer stops the run before the request (missing_input).
 //   sequential — each model also gets the accepted answers of the models before it in this step;
 //   parallel   — every model gets the same input.
 // Discipline: send(models, promptsByModel, meta) — meta marks correction requests (correctionByModel) → { byModel: { model: { text, status, answered,
@@ -41,11 +43,16 @@
     context_full: 'промпт не помещается в бюджет',
     stopped: 'остановлено владельцем',
     cancelled: 'остановлено пользователем',
-    no_decision: 'нет принятых ответов, решение владельца не получено'
+    no_decision: 'нет принятых ответов, решение владельца не получено',
+    missing_input: 'обязательный вход не получен, запрос не отправлен'
   });
+  // The first visit of every step: the cycles that give later visits come with the pack P06.
+  const VISIT = 1;
 
   const text = (value) => String(value == null ? '' : value).trim();
   const stepLabel = (step) => (step.kind === 'synthesis' ? `Синтез после раунда ${step.afterRound}` : `Раунд ${step.round}`);
+  // The mode the prompt names: a list of sources is 'sources', the strings stay as they are.
+  const inputModeOf = (step) => (Array.isArray(step.input) ? 'sources' : step.input);
   const numbered = (items) => items.map((item, index) => `Ответ ${index + 1}:\n${item.text}`).join('\n\n');
   const labelled = (items) => items.map((item) => `${item.label}:\n${item.text}`).join('\n\n');
 
@@ -61,7 +68,7 @@
     if (askInstruction && typeof model.discipline?.ask === 'string') askInstruction = model.discipline.ask;
     if (typeof model.promptTemplate === 'string' && model.promptTemplate.trim()) {
       // One pass: placeholders occurring inside model answers remain data, never instructions.
-      const values = { '{задача}': text(task), '{вход}': inputMode === 'all' ? labelled(input) : numbered(input), '{ответы до тебя}': numbered(earlier) };
+      const values = { '{задача}': text(task), '{вход}': inputMode === 'all' || inputMode === 'sources' ? labelled(input) : numbered(input), '{ответы до тебя}': numbered(earlier) };
       const parts = [model.promptTemplate.replace(/\{задача\}|\{вход\}|\{ответы до тебя\}/g, (key) => values[key])];
       if (ownerAnswers.length) parts.push(`Ответы владельца на вопросы:\n${ownerAnswers.map((item) => `- ${item.question}: ${item.answer}`).join('\n')}`);
       if (askInstruction) parts.push(askInstruction);
@@ -69,7 +76,8 @@
     }
     const parts = [`Задача:\n${text(task)}`];
     if (input.length) {
-      parts.push(inputMode === 'all'
+      if (inputMode === 'sources') parts.push(`Ответы выбранных источников:\n\n${labelled(input)}`);
+      else parts.push(inputMode === 'all'
         ? `Принятые ответы всех предыдущих шагов:\n\n${labelled(input)}`
         : `Ответы предыдущего шага:\n\n${numbered(input)}`);
     }
@@ -109,8 +117,8 @@
         task: kind === 'synthesis' && !text(step.task) ? SYNTHESIS_TASK : text(step.task),
         // A list of sources stays a list here: a run refuses it until its input is executed (assertExecutable).
         input: Array.isArray(step.input) ? step.input.slice() : (kind === 'synthesis' ? 'previous' : (step.input ?? 'previous')),
-        models: (step.models || []).map((model) => (typeof model === 'string' ? { name: model, extra: '' } : {
-          name: model.name, extra: text(model.extra), task: typeof model.task === 'string' ? model.task : null, promptTemplate: typeof model.promptTemplate === 'string' ? model.promptTemplate : null,
+        models: (step.models || []).map((model) => (typeof model === 'string' ? { name: model, id: model, extra: '' } : {
+          name: model.name, id: model.id ?? model.name, extra: text(model.extra), task: typeof model.task === 'string' ? model.task : null, promptTemplate: typeof model.promptTemplate === 'string' ? model.promptTemplate : null,
           discipline: model.discipline ? { ...model.discipline } : null,
           maxWords: Number.isSafeInteger(model.maxWords) && model.maxWords > 0 ? model.maxWords : null
         }))
@@ -139,8 +147,12 @@
     if (!step || typeof step !== 'object') return new EngineError('invalid_step', at, 'шаг должен быть объектом');
     if (step.kind !== undefined && !EXECUTED_KINDS.includes(step.kind)) return fail('unsupported_kind', 'kind', `вид «${step.kind}» движок пока не исполняет`);
     if (step.input !== undefined) {
-      if (Array.isArray(step.input)) return fail('unsupported_input', 'input', 'список источников движок пока не исполняет');
-      if (!INPUT_VALUES.includes(step.input) || (step.kind === 'synthesis' && step.input !== 'previous')) return fail('invalid_input', 'input', 'вход: none, previous, all или список источников; синтез — только previous');
+      if (Array.isArray(step.input)) {
+        if (!step.input.length) return fail('invalid_input', 'input', 'список источников пуст');
+        const bad = step.input.findIndex((source) => !(typeof source === 'string' || (source && typeof source === 'object' && typeof source.step === 'string' && typeof source.participant === 'string' && !('artifact' in source))));
+        if (step.input.some((source) => source && typeof source === 'object' && 'artifact' in source)) return fail('unsupported_input', 'input', 'ссылка на артефакт движок пока не исполняет');
+        if (bad >= 0) return fail('invalid_input', `input[${bad}]`, 'источник: ref шага, или { step, participant, required? }');
+      } else if (!INPUT_VALUES.includes(step.input) || (step.kind === 'synthesis' && step.input !== 'previous')) return fail('invalid_input', 'input', 'вход: none, previous, all или список источников; синтез — только previous');
     }
     if (step.output !== undefined) return fail('unsupported_field', 'output', 'выход шага движок пока не исполняет');
     if (step.require !== undefined && step.require !== 'any') return fail('unsupported_field', 'require', 'число ответов движок пока не исполняет');
@@ -161,6 +173,18 @@
     steps.forEach((step, index) => {
       const problem = unexecutedOf(step, index);
       if (problem) throw problem;
+      // A source with a participant names a step that is in the list before this one, and a participant of it.
+      // A step that is not in the list is switched off: it gives no answers (see sourceItems), not an error.
+      (Array.isArray(step.input) ? step.input : []).forEach((source, at) => {
+        const ref = typeof source === 'string' ? source : source.step;
+        const from = steps.findIndex((item) => item && item.ref === ref);
+        if (from < 0) return;
+        const at2 = `шаг «${step.ref}» · input[${at}]`;
+        if (from >= index) throw new EngineError('invalid_input', at2, `шаг «${ref}» стоит не раньше этого шага`);
+        if (typeof source === 'string') return;
+        const declared = (Array.isArray(steps[from].models) ? steps[from].models : []).map((model) => (typeof model === 'string' ? model : model?.id ?? model?.name));
+        if (!declared.includes(source.participant)) throw new EngineError('invalid_input', at2, `участник «${source.participant}» не объявлен в шаге «${ref}»`);
+      });
     });
   }
 
@@ -178,11 +202,12 @@
     const history = []; // every request: step, model, attempt, prompt, outcome
     const results = []; // per step: { step, outcome: { model: verdict }, skipped }
     let stopReason = 'steps_done';
+    let stopDetail = '';
     // The plan as the run sees it: a report shows what was intended, not only what happened.
     emit('custom_start', { semiAuto: Boolean(semiAuto), maxAttempts, taskChars: text(task).length,
       steps: plan.map((step) => ({ step: step.index, ref: step.ref, label: stepLabel(step), order: step.order, input: step.input, models: step.models.map((model) => model.name) })) });
 
-    class StopRun extends Error { constructor(reason) { super(reason); this.stopReason = reason; } }
+    class StopRun extends Error { constructor(reason, detail = '') { super(reason); this.stopReason = reason; this.stopDetail = detail; } }
 
     // Waiting for the owner (a decision, an [[ASK]] answer) ends on Stop: the run is cancelled with
     // what was collected, also when the owner's dialog itself rejects with AbortError.
@@ -204,12 +229,29 @@
     }
 
     // Accepted answers of a step, each with its source (step, model, attempt) for the record.
-    const acceptedOf = (entry) => (entry?.skipped ? [] : entry.step.models.map((model) => entry.outcome[model.name])
-      .filter((item) => item?.ok)
-      .map((item) => ({ ...item, source: { step: entry.step.index, label: stepLabel(entry.step), model: item.model, attempt: item.attempt } })));
-    function inputFor(step) {
-      if (step.input === 'none') return [];
-      if (step.input === 'all') {
+    const acceptedOf = (entry) => (!entry || entry.skipped ? [] : entry.step.models.map((model) => ({ model, verdict: entry.outcome[model.name] }))
+      .filter((item) => item.verdict?.ok)
+      .map(({ model, verdict }) => ({ ...verdict, participant: model.id, source: { step: entry.step.index, label: stepLabel(entry.step), model: verdict.model, attempt: verdict.attempt } })));
+    // The items of one source list, in the order of the list. Each item names its step, participant and visit.
+    function sourceItems(spec, step) {
+      return spec.flatMap((source) => {
+        const required = Boolean(source?.required);
+        const ref = typeof source === 'string' ? source : source.step;
+        const entry = results.find((item) => item.step.ref === ref);
+        const answers = acceptedOf(entry).filter((item) => typeof source === 'string' || item.participant === source.participant);
+        if (!answers.length && required) {
+          const who = typeof source === 'string' ? '' : ` участник «${source.participant}»`;
+          throw new StopRun('missing_input', `шаг «${ref}»${who} не дал принятого ответа; шаг «${step.ref}» не отправлен`);
+        }
+        return answers.map((item) => ({
+          label: `${stepLabel(entry.step)}, участник ${item.participant}, визит ${VISIT}`, text: item.text, source: item.source
+        }));
+      });
+    }
+    function inputFor(step, spec = step.input) {
+      if (spec === 'none') return [];
+      if (Array.isArray(spec)) return sourceItems(spec, step);
+      if (spec === 'all') {
         return results.flatMap((entry) => acceptedOf(entry).map((item, index) => ({ label: `${stepLabel(entry.step)}, ответ ${index + 1}`, text: item.text, source: item.source })));
       }
       for (let index = results.length - 1; index >= 0; index -= 1) {
@@ -224,13 +266,13 @@
       return {
         instructions: { task: text(task), stepTask: model.task ?? step.task, extra: model.extra || '', askInstruction: semiAuto ? (model.discipline?.ask ?? askInstruction) : '',
           ownerAnswers: ownerAnswers.slice() },
-        input: { mode: step.input, items: input, earlier }
+        input: { mode: inputModeOf(step), items: input, earlier }
       };
     }
 
     function promptFor(step, model, earlier) {
       const input = inputFor(step);
-      const prompt = buildPrompt({ task, step, model, input, inputMode: step.input, earlier,
+      const prompt = buildPrompt({ task, step, model, input, inputMode: inputModeOf(step), earlier,
         ownerAnswers, askInstruction: semiAuto ? askInstruction : '' });
       if (prompt.length > maxPromptChars) throw new StopRun('context_full');
       return { prompt, parts: partsFor(step, model, input, earlier) };
@@ -327,6 +369,8 @@
     let current = null;
     try {
       for (const step of plan) {
+        // Every input of the step is resolved before its first request: a missing required one sends nothing.
+        inputFor(step);
         const outcome = {};
         const entry = { step, outcome, skipped: false };
         current = entry;
@@ -361,14 +405,15 @@
     } catch (error) {
       if (!(error instanceof StopRun)) throw error;
       stopReason = error.stopReason;
+      stopDetail = error.stopDetail || '';
       if (current && acceptedOf(current).length) results.push(current);
     }
     if (aborted() && stopReason === 'steps_done') stopReason = 'cancelled';
-    emit('custom_end', { stopReason, steps: results.length });
+    emit('custom_end', { stopReason, stopDetail, steps: results.length });
     return {
       steps: results.map((entry) => ({ index: entry.step.index, kind: entry.step.kind, label: stepLabel(entry.step), skipped: entry.skipped, outcome: entry.outcome })),
       answers: inputFor({ input: 'previous' }).map((item) => item.text),
-      history, ownerAnswers, stopReason
+      history, ownerAnswers, stopReason, stopDetail
     };
   }
 
@@ -376,6 +421,7 @@
   // that will come from other models. Transport instructions are edited separately from the main request.
   const PLACEHOLDER = Object.freeze({
     previous: '‹ответы предыдущего шага появятся при запуске›',
+    sources: '‹ответы выбранных этапов появятся при запуске›',
     all: '‹все принятые ответы предыдущих шагов появятся при запуске›',
     earlier: '‹ответы моделей, работающих до тебя в этом раунде, появятся при запуске›'
   });
@@ -391,15 +437,15 @@
     if (unexecutedOf(steps[stepIndex], stepIndex)) return null;
     const model = step.models.find((item) => item.name === modelName) || { name: modelName, extra: '' };
     const input = step.input === 'none' || !plan.some((item) => item.index < step.index) ? []
-      : [{ label: 'Вход', text: PLACEHOLDER[step.input] || PLACEHOLDER.previous }];
+      : [{ label: 'Вход', text: PLACEHOLDER[inputModeOf(step)] || PLACEHOLDER.previous }];
     const position = step.models.findIndex((item) => item.name === model.name);
     const earlier = step.order === 'sequential' && position > 0 ? [{ text: PLACEHOLDER.earlier }] : [];
-    const prompt = buildPrompt({ task, step, model, input, inputMode: step.input, earlier, ownerAnswers: [],
+    const prompt = buildPrompt({ task, step, model, input, inputMode: inputModeOf(step), earlier, ownerAnswers: [],
       askInstruction: semiAuto ? askInstruction : '' });
     const template = typeof model.promptTemplate === 'string' && model.promptTemplate.trim() ? model.promptTemplate
       : buildPrompt({ task: '{задача}', step, model, input: input.length ? [{ label: 'Вход', text: '{вход}' }] : [],
-        inputMode: step.input, earlier: earlier.length ? [{ text: '{ответы до тебя}' }] : [] });
-    return { label: stepLabel(step), order: step.order, inputMode: step.input, prompt, template, transportLines: TRANSPORT_LINES.slice(),
+        inputMode: inputModeOf(step), earlier: earlier.length ? [{ text: '{ответы до тебя}' }] : [] });
+    return { label: stepLabel(step), order: step.order, inputMode: inputModeOf(step), prompt, template, transportLines: TRANSPORT_LINES.slice(),
       instructions: { task: text(task), stepTask: model.task ?? step.task, extra: model.extra || '', askInstruction: semiAuto ? askInstruction : '' } };
   }
 

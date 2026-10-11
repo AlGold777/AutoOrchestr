@@ -10,7 +10,7 @@
 
 | Файл | Символы | Что там |
 | --- | --- | --- |
-| `disput/custom-engine.js` | `CustomEngine`, `run`, `attempt`, `normalizeSteps`, `buildPrompt`, `previewPrompt`, `correctionPrompt`, `inputFor`, `judge`, `resolveSetting`, `STOP_TEXT`, `REASON_TEXT`, `DEFAULT_ATTEMPTS`, `SYNTHESIS_TASK`, `EngineError`, `unexecutedOf`, `assertExecutable` | Движок: шаги, запросы, приём, повторы, пауза |
+| `disput/custom-engine.js` | `CustomEngine`, `run`, `attempt`, `normalizeSteps`, `buildPrompt`, `previewPrompt`, `correctionPrompt`, `inputFor`, `judge`, `resolveSetting`, `STOP_TEXT`, `REASON_TEXT`, `DEFAULT_ATTEMPTS`, `SYNTHESIS_TASK`, `EngineError`, `unexecutedOf`, `assertExecutable`, `sourceItems` | Движок: шаги, запросы, приём, повторы, пауза |
 | `disput/basic-schema.js` | `BasicSchema`, `DEFAULTS`, `validate`, `assemble`, `resolveFields`, `resolveRun`, `toSettings`, `toCanvas`, `describeErrors`, `graph` | Формат схемы: умолчания, проверка, сборка шагов, показ на холсте, граф переходов (`graph`: рёбра и цикл без ограниченного перехода) |
 | `disput/custom-run-record.js` | `CustomRunRecord`, `createRun`, `recordAttempt`, `finishRun`, `serialize`, `revive`, `exportRun`, `createStore` | Запись о прогоне |
 | `results/stage-card.js` | `StageCard`, `buildModel`, `render` | Окно настроек раунда |
