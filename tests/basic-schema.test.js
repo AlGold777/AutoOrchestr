@@ -700,7 +700,6 @@ describe('Basic schema: gate, route and owner steps (6.1, 6.2, 4.1)', () => {
       [{ criteria: [''] }, [`${at}.criteria[0]`]],
       [{ pass: 'some' }, [`${at}.pass`]],
       [{ onFail: 'retry' }, [`${at}.onFail`]],
-      [{ onPass: { stop: 'x' } }, [`${at}.onPass`]],
       [{ order: 'sequential' }, [`${at}.order`]]
     ];
     gateCases.forEach(([extra, paths]) => expect({ extra, paths: pathsOf(gate('gate:g1', ['Claude'], extra)) }).toEqual({ extra, paths }));
@@ -738,7 +737,7 @@ describe('Basic schema: gate, route and owner steps (6.1, 6.2, 4.1)', () => {
       [ruleRoute([ruleCase('x', { source: 0, pointer: '/route', op: 'exists' }, { goto: 'final', stop: 'z' })]), [`${at}.select.cases[0].action`]],
       [ruleRoute([ruleCase('x', { source: 0, pointer: '/route', op: 'exists' }, { goto: '' })]), [`${at}.select.cases[0].action.goto`]],
       [ruleRoute([ruleCase('x', { source: 0, pointer: '/route', op: 'exists' }, { stop: '' })]), [`${at}.select.cases[0].action.stop`]],
-      [ruleRoute([ruleCase('x', { source: 0, pointer: '/route', op: 'exists' }, { goto: 'final', maxLoops: 2 })]), [`${at}.select.cases[0].action.maxLoops`]]
+      [ruleRoute([ruleCase('x', { source: 0, pointer: '/route', op: 'exists' }, { goto: 'final', maxLoops: 2, colour: 'red' })]), [`${at}.select.cases[0].action.colour`]]
     ];
     cases.forEach(([step, paths], index) => expect({ index, paths: pathsOf(step) }).toEqual({ index, paths }));
 
@@ -758,3 +757,79 @@ describe('Basic schema: a control step is not on the canvas yet', () => {
     expect(JSON.stringify(schema)).toBe(before);
   });
 });
+
+describe('Basic schema: transitions, loop limits and the graph (6.3, 6.4)', () => {
+  const gate = (ref, models, extra = {}) => ({ ref, kind: 'gate', criteria: ['Есть источники'], models: models.map((name) => ({ name })), ...extra });
+  // A route by owner at index 1 whose cases and otherwise take the given actions.
+  const routeWith = (cases, extra = {}) => ({ ref: 'route:x', kind: 'route', models: [], select: { by: 'owner', cases: cases.map((action, at) => ({ id: `c${at}`, label: `Вариант ${at}`, action })), ...extra } });
+  const plan = (step, tail = []) => base([round('r1', ['A']), step, round('r2', ['A']), synthesis('final', ['B']), ...tail]);
+  const pathsOf = (schema) => errorPaths(schema);
+  const CASE = 'steps[1].select.cases[0].action';
+
+  test('a forward transition needs no limit, a backward one takes its limit from 1 to 5, a gate has onPass and onFail actions', () => {
+    expect(Schema.validate(plan(routeWith([{ goto: 'final' }])))).toEqual([]);
+    [1, 5].forEach((maxLoops) => expect(Schema.validate(plan(routeWith([{ goto: 'r1', maxLoops }])))).toEqual([]));
+    expect(Schema.validate(plan(gate('gate:g1', ['A'], { onPass: { goto: 'final' }, onFail: { goto: 'r1', maxLoops: 2 } })))).toEqual([]);
+  });
+
+  test('the spec return: S19 goes back to S10 with resumeAt S19, G1 returns to the point of continuation', () => {
+    const schema = base([
+      round('r1', ['A']), routeWith([{ goto: 'r1', maxLoops: 2, resumeAt: 'route:x' }]), gate('gate:g1', ['A'], { onPass: { return: true, maxLoops: 2 } }), synthesis('final', ['B'])
+    ]);
+    expect(Schema.validate(schema)).toEqual([]);
+    expect(Schema.assemble(schema)[2].onPass).toEqual({ return: true, maxLoops: 2 });
+  });
+
+  test('feedback may come from the current or a later step, invalidate names existing steps', () => {
+    expect(Schema.validate(plan(routeWith([{ goto: 'r1', maxLoops: 1, feedback: [{ step: 'r2', participant: 'A' }, 'final'], invalidate: ['r2'] }])))).toEqual([]);
+  });
+
+  test('a wrong transition is named with the path of its action', () => {
+    const cases = [
+      [routeWith([{ goto: 'r9' }]), [`${CASE}.goto`]],
+      [routeWith([{ goto: 'r1' }]), [CASE]],
+      [routeWith([{ goto: 'route:x' }]), [CASE]],
+      [routeWith([{ goto: 'r1', maxLoops: 0 }]), [`${CASE}.maxLoops`]],
+      [routeWith([{ goto: 'r1', maxLoops: 6 }]), [`${CASE}.maxLoops`]],
+      [routeWith([{ goto: 'r1', maxLoops: 1.5 }]), [`${CASE}.maxLoops`]],
+      [routeWith([{ goto: 'r1', maxLoops: '2' }]), [`${CASE}.maxLoops`]],
+      [routeWith([{ stop: 'Конец', maxLoops: 2 }]), [`${CASE}.maxLoops`]],
+      [routeWith([{ goto: 'final', resumeAt: 'r9' }]), [`${CASE}.resumeAt`]],
+      [routeWith([{ goto: 'final', feedback: [] }]), [`${CASE}.feedback`]],
+      [routeWith([{ goto: 'final', feedback: ['r9'] }]), [`${CASE}.feedback[0]`]],
+      [routeWith([{ goto: 'final', invalidate: [] }]), [`${CASE}.invalidate`]],
+      [routeWith([{ goto: 'final', invalidate: ['r9'] }]), [`${CASE}.invalidate[0]`]],
+      [routeWith([{ return: true }]), [CASE]],
+      [routeWith([{ goto: 'final', colour: 'red' }]), [`${CASE}.colour`]]
+    ];
+    cases.forEach(([step, paths], index) => expect({ index, paths: pathsOf(plan(step)) }).toEqual({ index, paths }));
+  });
+
+  test('a return back needs a limit, and a return must have a point of continuation', () => {
+    const back = base([round('r1', ['A']), routeWith([{ goto: 'r1', maxLoops: 1, resumeAt: 'route:x' }]), gate('gate:g1', ['A'], { onPass: { return: true } }), synthesis('final', ['B'])]);
+    expect(pathsOf(back)).toEqual(['steps[2].onPass']);
+    expect(pathsOf(plan(gate('gate:g1', ['A'], { onPass: { return: true } })))).toEqual(['steps[1].onPass']);
+  });
+
+  test('a gate without onPass goes on to the next step, and a stop action stops', () => {
+    expect(Schema.validate(plan(gate('gate:g1', ['A'], { onFail: { stop: 'Нет' } })))).toEqual([]);
+    expect(pathsOf(plan(gate('gate:g1', ['A'], { onFail: 'retry' })))).toEqual(['steps[1].onFail']);
+  });
+
+  test('a graph of transitions: linear steps, unlimited edges and limited edges; a cycle of unlimited edges is named by its action', () => {
+    const steps = [
+      { ref: 'r1', kind: 'round', models: [{ name: 'A' }] },
+      { ref: 'route:x', kind: 'route', models: [], select: { by: 'owner', cases: [{ id: 'back', label: 'Назад', action: { goto: 'r1' } }] } },
+      { ref: 'final', kind: 'synthesis', models: [{ name: 'B' }] }
+    ];
+    const graph = Schema.graph(steps);
+    expect(graph.edges).toEqual([
+      { from: 0, to: 1, limited: false, path: 'steps[0]' },
+      { from: 1, to: 0, limited: false, path: 'steps[1].select.cases[0].action' }
+    ]);
+    expect(graph.cycle).toBe('steps[1].select.cases[0].action');
+    steps[1].select.cases[0].action.maxLoops = 2;
+    expect(Schema.graph(steps).cycle).toBeNull();
+  });
+});
+

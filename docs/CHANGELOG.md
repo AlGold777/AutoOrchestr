@@ -1,5 +1,14 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — Schema: transitions, loop limits and the graph are checked, version 2.81.709
+
+- `BasicSchema.validate` (`disput/basic-schema.js`): every transition is checked where it is written: a gate's `onPass` and `onFail`, the cases and `otherwise` of a route. `goto` may carry `maxLoops` (1 to 5), `feedback` (sources; a current or later step is allowed), `invalidate` (existing refs) and `resumeAt` (an existing ref). A transition to the same or an earlier step needs `maxLoops`; a `return` needs a `resumeAt` somewhere in the schema, and `maxLoops` when it may go back. The unlimited cycles are refused, and the error names the transition that closes the cycle.
+- `BasicSchema.graph(steps)` (new export, pure): the edges between steps (`{ from, to, limited, path }`) and the path of a cycle of unlimited edges. The check of `validate` and any later use of the graph read the same edges.
+- `BasicSchema.assemble`: a gate's `onPass` is passed as it is.
+- Not yet: the engine runs no transition (the pack P02): counters of loops, the continuation stack, feedback and invalidation are its work; the canvas shows no transition (the pack P09).
+- Docs: `basic-schema-guide.md` (section 5.9, error rows of section 10), `basic-developer.md` (the symbol `graph`).
+- Tests: `tests/basic-schema.test.js` (the block «transitions, loop limits and the graph (6.3, 6.4)»; the item 7 table moved the two cases that are valid now).
+
 ### 2026-10-11 — Schema: gate, route and owner steps are checked, version 2.81.708
 
 - `BasicSchema.validate` (`disput/basic-schema.js`): three new kinds, `gate:<id>`, `route:<id>`, `owner:<id>`. A gate has `criteria` (non-empty), `pass` (`all`/`any`), `onFail` (`stop`/`ask`) and checkers in `models`. A route has `select` (`by`: `rule`, `model` or `owner`; `cases`; `otherwise` and `conflict` for a rule) and its models: none for a rule or an owner, exactly one enabled with a task for a model. An owner has a `task` and no models. A rule condition is an atomic `{source, pointer, op, value}` or `all`/`any`; the pointer goes through the same check as the output. A transition is shape-checked: exactly one of `goto`, `stop`, `return`. Control steps need no round and may stand anywhere; the rounds limit (50) does not count them.

@@ -42,6 +42,7 @@
   const ROUTE_BY = Object.freeze(['rule', 'model', 'owner']);
   const ROUTE_CONFLICT = Object.freeze(['stop', 'first', 'owner']);
   const ACTION_KINDS = Object.freeze(['goto', 'stop', 'return']);
+  const MAX_LOOPS = 5;
   const ROUTE_OPS = Object.freeze(['eq', 'in', 'exists']);
   const GATE_PASS = Object.freeze(['all', 'any']);
   const GATE_ON_FAIL = Object.freeze(['stop', 'ask']);
@@ -115,7 +116,10 @@
     ['require', 'chat'].forEach((key) => { if (key in step) out[key] = step[key]; });
     if (typeof step.task === 'string') out.task = step.task;
     if (step.kind === 'owner') return { ...out, models: [] };
-    if (step.kind === 'gate') Object.assign(out, { criteria: clone(step.criteria), pass: step.pass ?? DEFAULTS.gate.pass, onFail: step.onFail ?? DEFAULTS.gate.onFail });
+    if (step.kind === 'gate') {
+      Object.assign(out, { criteria: clone(step.criteria), pass: step.pass ?? DEFAULTS.gate.pass, onFail: clone(step.onFail ?? DEFAULTS.gate.onFail) });
+      if ('onPass' in step) out.onPass = clone(step.onPass);
+    }
     if (step.kind === 'route') {
       out.select = clone(step.select);
       if (out.select.by === 'rule' && !('conflict' in out.select)) out.select.conflict = DEFAULTS.route.conflict;
@@ -195,15 +199,15 @@
   // Returns the address of the source (for the duplicate check), or null when it has an error.
   // ctx: { fail, errors, steps, positions (ref → index), index (of the consumer step) }.
   function checkSource(source, path, ctx) {
-    const { fail, errors, steps, positions, index } = ctx;
+    const { fail, errors, steps, positions, index, later = false } = ctx;
     const mark = errors.length;
     const unknown = (value, allowed, at) => Object.keys(value).forEach((key) => { if (!allowed.includes(key)) fail(`${at}.${key}`, 'неизвестное поле'); });
     // The step a reference names: it exists and comes before the consumer; final is never an ordinary source.
     const stepAt = (ref, at) => {
       if (typeof ref !== 'string' || !positions.has(ref)) { fail(at, `неизвестный шаг «${ref}»`); return -1; }
       const position = positions.get(ref);
-      if (position >= index) fail(at, 'вход ссылается только на более ранний шаг');
-      else if (steps[position].ref === 'final') fail(at, 'результат финального синтеза нельзя указать во входе');
+      if (!later && position >= index) fail(at, 'вход ссылается только на более ранний шаг');
+      else if (!later && steps[position].ref === 'final') fail(at, 'результат финального синтеза нельзя указать во входе');
       else return position;
       return -1;
     };
@@ -311,12 +315,12 @@
     const positions = new Map();
     schema.steps.forEach((step, at) => { if (isObject(step) && typeof step.ref === 'string' && !positions.has(step.ref)) positions.set(step.ref, at); });
     const namesById = new Map();
-    const contextAt = (index) => ({ fail, errors, steps: schema.steps, positions, index });
-    const checkInputList = (list, path, index) => {
+    const contextAt = (index, later = false) => ({ fail, errors, steps: schema.steps, positions, index, later });
+    const checkInputList = (list, path, index, later = false) => {
       if (!list.length) { fail(path, 'ожидается непустой список источников'); return; }
       const addresses = new Set();
       list.forEach((source, at) => {
-        const address = checkSource(source, `${path}[${at}]`, contextAt(index));
+        const address = checkSource(source, `${path}[${at}]`, contextAt(index, later));
         if (!address) return;
         if (addresses.has(address)) fail(`${path}[${at}]`, 'источник повторяется');
         addresses.add(address);
@@ -391,16 +395,36 @@
       });
     };
 
-    // A transition (6.3): exactly one of goto, stop, return. The fields of the transition itself (maxLoops,
-    // feedback, invalidate, resumeAt) are checked with the graph of the steps, not here.
-    const checkAction = (action, path) => {
+    // A transition (6.3): exactly one of goto, stop, return. `origin` is the index of the step that writes it.
+    // A transition to an early or the current step (and a return back) needs its limit maxLoops from 1 to 5.
+    const checkAction = (action, path, origin, resumeTargets) => {
       if (!isObject(action)) { fail(path, 'переход: объект с одним полем goto, stop или return'); return; }
       const kinds = ACTION_KINDS.filter((key) => key in action);
       if (kinds.length !== 1) { fail(path, 'переход: ровно одно из goto, stop, return'); return; }
-      unknownKeys(action, [kinds[0]], path);
-      if (kinds[0] === 'goto' && (typeof action.goto !== 'string' || !action.goto)) fail(`${path}.goto`, 'ref перехода: непустой текст');
-      if (kinds[0] === 'stop' && (typeof action.stop !== 'string' || !action.stop.trim())) fail(`${path}.stop`, 'причина остановки: непустой текст');
-      if (kinds[0] === 'return' && action.return !== true) fail(`${path}.return`, 'return: только true');
+      const [kind] = kinds;
+      const fields = { goto: ['goto', 'maxLoops', 'feedback', 'invalidate', 'resumeAt'], stop: ['stop'], return: ['return', 'maxLoops'] }[kind];
+      unknownKeys(action, fields, path);
+      if ('maxLoops' in action && !(Number.isSafeInteger(action.maxLoops) && action.maxLoops >= 1 && action.maxLoops <= MAX_LOOPS)) fail(`${path}.maxLoops`, 'лимит переходов: целое от 1 до 5');
+      if (kind === 'stop' && (typeof action.stop !== 'string' || !action.stop.trim())) fail(`${path}.stop`, 'причина остановки: непустой текст');
+      if (kind === 'return') {
+        if (action.return !== true) fail(`${path}.return`, 'return: только true');
+        if (!resumeTargets.length) fail(path, 'возврат без точки продолжения: ни один переход не задаёт resumeAt');
+        else if (!('maxLoops' in action) && resumeTargets.some((target) => target <= origin)) fail(path, 'возврат назад без maxLoops: укажите лимит от 1 до 5');
+      }
+      if (kind === 'goto') {
+        if (typeof action.goto !== 'string' || !action.goto) fail(`${path}.goto`, 'ref перехода: непустой текст');
+        else if (!positions.has(action.goto)) fail(`${path}.goto`, `неизвестный шаг «${action.goto}»`);
+        else if (positions.get(action.goto) <= origin && !('maxLoops' in action)) fail(path, 'переход назад без maxLoops: укажите лимит от 1 до 5');
+      }
+      if ('feedback' in action) {
+        if (!Array.isArray(action.feedback)) fail(`${path}.feedback`, 'ожидается список источников');
+        else checkInputList(action.feedback, `${path}.feedback`, origin, true);
+      }
+      if ('invalidate' in action) {
+        if (!Array.isArray(action.invalidate) || !action.invalidate.length) fail(`${path}.invalidate`, 'ожидается непустой список ref');
+        else action.invalidate.forEach((ref, at) => { if (!positions.has(ref)) fail(`${path}.invalidate[${at}]`, `неизвестный шаг «${ref}»`); });
+      }
+      if ('resumeAt' in action && !positions.has(action.resumeAt)) fail(`${path}.resumeAt`, `неизвестный шаг «${action.resumeAt}»`);
     };
 
     // A rule condition (6.2): an atomic one { source, pointer, op, value? } or { all: [...] } / { any: [...] }.
@@ -441,8 +465,7 @@
         if (!Array.isArray(step.criteria) || !step.criteria.length) fail(`${path}.criteria`, 'критерии проверки: непустой список строк');
         else step.criteria.forEach((item, at) => { if (typeof item !== 'string' || !item.trim()) fail(`${path}.criteria[${at}]`, 'критерий: непустой текст'); });
         if ('pass' in step) oneOf(step.pass, GATE_PASS, `${path}.pass`, 'pass проверки');
-        if ('onFail' in step) oneOf(step.onFail, GATE_ON_FAIL, `${path}.onFail`, 'onFail проверки');
-        if ('onPass' in step) fail(`${path}.onPass`, 'переход по успеху пока не поддерживается');
+        if ('onFail' in step && !isObject(step.onFail)) oneOf(step.onFail, GATE_ON_FAIL, `${path}.onFail`, 'onFail проверки');
         return;
       }
       const select = step.select;
@@ -458,10 +481,7 @@
         if (!rule) fail(`${path}.select.conflict`, 'конфликт выбора задаётся только для правила');
         else oneOf(select.conflict, ROUTE_CONFLICT, `${path}.select.conflict`, 'конфликт выбора');
       }
-      if ('otherwise' in select) {
-        if (!rule) fail(`${path}.select.otherwise`, 'вариант по умолчанию задаётся только для правила');
-        checkAction(select.otherwise, `${path}.select.otherwise`);
-      }
+      if ('otherwise' in select && !rule) fail(`${path}.select.otherwise`, 'вариант по умолчанию задаётся только для правила');
       // A rule reads the exact sources of the route's input list; without the list the rule has nothing to read.
       const inputs = Array.isArray(step.input) ? step.input : null;
       if (rule && !inputs) fail(`${path}.input`, 'правило читает точные источники: укажите input списком');
@@ -481,10 +501,14 @@
           if ('when' in item) fail(`${at2}.when`, 'условие только для правила: варианты модели и владельца описываются label');
           if (typeof item.label !== 'string' || !item.label.trim()) fail(`${at2}.label`, 'название варианта: непустой текст');
         }
-        checkAction(item.action, `${at2}.action`);
       });
     };
 
+    // The points of continuation of the schema: a return goes back to one of them (6.3).
+    const resumeTargets = [];
+    schema.steps.forEach((step, at) => actionsOf(step, `steps[${at}]`).forEach(({ action }) => {
+      if (isObject(action) && positions.has(action.resumeAt)) resumeTargets.push(positions.get(action.resumeAt));
+    }));
     schema.steps.forEach((step, index) => {
       const path = `steps[${index}]`;
       if (!isObject(step)) { fail(path, 'ожидается объект'); return; }
@@ -535,7 +559,12 @@
         if ('discipline' in model) checkDiscipline(model.discipline, `${modelPath}.discipline`);
       });
       if (CONTROL_KINDS.includes(step.kind)) checkControl(step, path);
+      actionsOf(step, path).forEach(({ path: at, action }) => checkAction(action, at, index, resumeTargets));
     });
+    // A cycle that no limit stops is an error at the transition that closes it (6.4).
+    // The cycle comes from an unlimited transition, which is already named at its path: no second error there.
+    const { cycle } = graph(schema.steps);
+    if (cycle && !errors.some((error) => error.path === cycle)) fail(cycle, 'цикл без ограниченного перехода: укажите maxLoops');
     return errors;
   }
 
@@ -633,7 +662,71 @@
 
   const describeErrors = (errors) => errors.map((error) => (error.path ? `${error.path}: ${error.message}` : error.message)).join('; ');
 
-  const api = Object.freeze({ SCHEMA_VERSION, SUPPORTED_VERSIONS, ORIGINS, DEFAULTS, pick, resolveFields, assemble, resolveRun, toSettings, toCanvas, validate, describeErrors });
+  // The transitions a step writes, with their paths: a gate's onPass and onFail (when an action), the cases and otherwise of a route.
+  function actionsOf(step, path) {
+    if (!isObject(step)) return [];
+    if (step.kind === 'gate') {
+      return [...('onPass' in step ? [{ path: `${path}.onPass`, action: step.onPass }] : []),
+        ...(isObject(step.onFail) ? [{ path: `${path}.onFail`, action: step.onFail }] : [])];
+    }
+    if (step.kind === 'route' && isObject(step.select)) {
+      const cases = Array.isArray(step.select.cases) ? step.select.cases : [];
+      return [...cases.map((item, at) => (isObject(item) ? { path: `${path}.select.cases[${at}].action`, action: item.action } : null)).filter(Boolean),
+        ...('otherwise' in step.select ? [{ path: `${path}.select.otherwise`, action: step.select.otherwise }] : [])];
+    }
+    return [];
+  }
+
+  // The graph of the steps (6.3–6.4): edges { from, to, limited, path } between step indexes. A step with no written
+  // transition goes on to the next one (a route never does, a gate only when onPass or onFail 'ask' does not stand for it).
+  // A return may go to any resumeAt of the schema. A limited edge carries maxLoops.
+  function transitionsOf(steps) {
+    const positions = new Map();
+    steps.forEach((step, at) => { if (isObject(step) && typeof step.ref === 'string' && !positions.has(step.ref)) positions.set(step.ref, at); });
+    const resumeTargets = [];
+    steps.forEach((step, at) => actionsOf(step, `steps[${at}]`).forEach(({ action }) => {
+      if (isObject(action) && positions.has(action.resumeAt)) resumeTargets.push(positions.get(action.resumeAt));
+    }));
+    const edges = [];
+    steps.forEach((step, from) => {
+      if (!isObject(step)) return;
+      const linear = step.kind !== 'route' && (step.kind !== 'gate' || !('onPass' in step) || step.onFail === 'ask');
+      if (linear && from + 1 < steps.length) edges.push({ from, to: from + 1, limited: false, path: `steps[${from}]` });
+      actionsOf(step, `steps[${from}]`).forEach(({ path, action }) => {
+        if (!isObject(action)) return;
+        if (positions.has(action.goto)) edges.push({ from, to: positions.get(action.goto), limited: 'maxLoops' in action, path });
+        if (action.return === true) [...new Set(resumeTargets)].forEach((to) => edges.push({ from, to, limited: 'maxLoops' in action, path }));
+      });
+    });
+    return edges;
+  }
+
+  // The path of the edge that closes a cycle of unlimited edges, or null: the cycle has no limit to stop it.
+  function cycleOf(edges, count) {
+    const out = Array.from({ length: count }, () => []);
+    edges.forEach((edge) => { if (!edge.limited) out[edge.from].push(edge); });
+    const state = new Array(count).fill(0);
+    let found = null;
+    const visit = (node) => {
+      state[node] = 1;
+      for (const edge of out[node]) {
+        if (found) return;
+        if (state[edge.to] === 1) { found = edge; return; }
+        if (state[edge.to] === 0) visit(edge.to);
+      }
+      state[node] = 2;
+    };
+    for (let node = 0; node < count && !found; node += 1) if (state[node] === 0) visit(node);
+    return found ? found.path : null;
+  }
+
+  // The graph of a list of steps: its edges and the path of a cycle of unlimited edges (null when there is none).
+  const graph = (steps) => {
+    const edges = transitionsOf(steps);
+    return { edges, cycle: cycleOf(edges, steps.length) };
+  };
+
+  const api = Object.freeze({ SCHEMA_VERSION, SUPPORTED_VERSIONS, ORIGINS, DEFAULTS, pick, resolveFields, assemble, resolveRun, toSettings, toCanvas, validate, describeErrors, graph });
   root.BasicSchema = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
