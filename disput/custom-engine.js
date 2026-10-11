@@ -29,6 +29,8 @@
 // Require: a step ends when the accepted answers reach its threshold (any, all or N). Owner approval (owner: approve)
 //   asks the owner after the step in every mode. Artifacts (basic-artifacts.js): an accepted answer is stored once
 //   (putText) and its declared artifacts are registered; a source { artifact, version } gives only that content.
+// Gate (basic-control.js): checkers answer with a verdict; the gate passes by require (the answers) and pass (all | any).
+//   A fail stops the run (gate_failed) or asks the owner (onFail: ask). Transitions after a gate come later.
 // Transition: decide(problem) → 'continue' | 'retry' | 'skip' | 'stop'. Asked after every step in semi-automatic
 //   mode, in Auto when the threshold is not met, and after every step with approval. 'continue' is never offered
 //   below the threshold. A prompt over maxPromptChars stops the run before sending.
@@ -39,6 +41,7 @@
 
   const Output = root.BasicOutput || (typeof require === 'function' ? require('./basic-output') : null);
   const Artifacts = root.BasicArtifacts || (typeof require === 'function' ? require('./basic-artifacts') : null);
+  const Control = root.BasicControl || (typeof require === 'function' ? require('./basic-control') : null);
   const DEFAULT_ATTEMPTS = 2;
   const SYNTHESIS_TASK = 'Сведи эти ответы в один итоговый ответ на задачу.';
   const REASON_TEXT = Object.freeze({
@@ -53,7 +56,8 @@
     missing_section: 'не содержит раздел',
     invalid_output: 'не в формате ответа',
     missing_field: 'без обязательного поля',
-    missing_artifact: 'без объявленного артефакта'
+    missing_artifact: 'без объявленного артефакта',
+    no_verdict: 'без вердикта'
   });
   const STOP_TEXT = Object.freeze({
     steps_done: 'все шаги пройдены',
@@ -61,13 +65,17 @@
     stopped: 'остановлено владельцем',
     cancelled: 'остановлено пользователем',
     no_decision: 'нет принятых ответов, решение владельца не получено',
-    missing_input: 'обязательный вход не получен, запрос не отправлен'
+    missing_input: 'обязательный вход не получен, запрос не отправлен',
+    gate_failed: 'проверка не пройдена'
   });
   // The first visit of every step: the cycles that give later visits come with the pack P06.
   const VISIT = 1;
 
   const text = (value) => String(value == null ? '' : value).trim();
-  const stepLabel = (step) => (step.kind === 'synthesis' ? `Синтез после раунда ${step.afterRound}` : `Раунд ${step.round}`);
+  const stepLabel = (step) => {
+    if (step.kind === 'gate') return `Проверка ${step.ref}`;
+    return step.kind === 'synthesis' ? `Синтез после раунда ${step.afterRound}` : `Раунд ${step.round}`;
+  };
   // The mode the prompt names: a list of sources is 'sources', the strings stay as they are.
   const modeOf = (spec) => (Array.isArray(spec) ? 'sources' : spec);
   // The input of a participant: its own when it has one, else the input of the step.
@@ -96,6 +104,9 @@
     return lines.length ? `Формат ответа:\n${lines.join('\n')}` : '';
   }
 
+  // The block of a gate: its criteria, and the verdict the answer ends with (6.1).
+  const gateBlock = (step) => `Критерии проверки:\n${step.criteria.map((item) => `- ${item}`).join('\n')}\n${Control.verdictInstruction(step.output?.format === 'json')}`;
+
   function buildPrompt({ task, step, model, input = [], inputMode = 'none', earlier = [], ownerAnswers = [], askInstruction = '', output = null }) {
     if (askInstruction && typeof model.discipline?.ask === 'string') askInstruction = model.discipline.ask;
     if (typeof model.promptTemplate === 'string' && model.promptTemplate.trim()) {
@@ -103,6 +114,7 @@
       const values = { '{задача}': text(task), '{вход}': inputMode === 'all' || inputMode === 'sources' ? labelled(input) : numbered(input), '{ответы до тебя}': numbered(earlier) };
       const parts = [model.promptTemplate.replace(/\{задача\}|\{вход\}|\{ответы до тебя\}/g, (key) => values[key])];
       if (formatBlock(output)) parts.push(formatBlock(output));
+      if (step.kind === 'gate') parts.push(gateBlock(step));
       if (ownerAnswers.length) parts.push(`Ответы владельца на вопросы:\n${ownerAnswers.map((item) => `- ${item.question}: ${item.answer}`).join('\n')}`);
       if (askInstruction) parts.push(askInstruction);
       return parts.join('\n\n');
@@ -118,6 +130,7 @@
     const taskInstruction = model.task ?? step.task;
     if (text(taskInstruction)) parts.push(`Задание:\n${text(taskInstruction)}`);
     if (formatBlock(output)) parts.push(formatBlock(output));
+    if (step.kind === 'gate') parts.push(gateBlock(step));
     if (text(model.extra)) parts.push(`Дополнительно для тебя:\n${text(model.extra)}`);
     if (ownerAnswers.length) parts.push(`Ответы владельца на вопросы:\n${ownerAnswers.map((item) => `- ${item.question}: ${item.answer}`).join('\n')}`);
     if (askInstruction) parts.push(askInstruction);
@@ -140,7 +153,8 @@
     if (verdict.ok === false) return { ok: false, reason: verdict.reason || 'rejected', text: value };
     const shape = check ? check(value) : null;
     if (shape && !shape.ok) return { ok: false, reason: shape.reason, detail: shape.detail || '', text: value };
-    return { ok: true, reason: '', text: value };
+    // A gate's checker carries its verdict (basic-control.js) with the answer.
+    return { ok: true, reason: '', text: value, ...(shape && 'verdict' in shape ? { verdict: shape.verdict, unmet: shape.unmet } : {}) };
   }
 
   // The input item that a revision names (5.2): an artifact of the same line, and the same version when the revision names one.
@@ -172,7 +186,7 @@
   function normalizeSteps(steps = []) {
     let round = 0;
     return steps.map((step, index) => {
-      const kind = step.kind === 'synthesis' ? 'synthesis' : 'round';
+      const kind = ['synthesis', 'gate', 'route'].includes(step.kind) ? step.kind : 'round';
       // A switched-off round keeps its number: the schema gives the number, the engine only counts without it.
       if (kind === 'round') round = Number.isSafeInteger(step.round) && step.round > 0 ? step.round : round + 1;
       return {
@@ -185,6 +199,10 @@
         output: step.output ?? null,
         require: step.require ?? 'any',
         approve: step.owner === 'approve',
+        // A gate: its criteria, the rule of its checkers (all | any) and what a fail does (stop | ask).
+        criteria: Array.isArray(step.criteria) ? step.criteria.slice() : null,
+        pass: step.pass === 'any' ? 'any' : 'all',
+        onFail: step.onFail === 'ask' ? 'ask' : 'stop',
         models: (step.models || []).map((model) => (typeof model === 'string' ? { name: model, id: model, extra: '' } : {
           name: model.name, id: model.id ?? model.name, extra: text(model.extra), task: typeof model.task === 'string' ? model.task : null, promptTemplate: typeof model.promptTemplate === 'string' ? model.promptTemplate : null,
           discipline: model.discipline ? { ...model.discipline } : null,
@@ -206,7 +224,7 @@
     }
   }
 
-  const EXECUTED_KINDS = Object.freeze(['round', 'synthesis']);
+  const EXECUTED_KINDS = Object.freeze(['round', 'synthesis', 'gate']);
   const INPUT_VALUES = Object.freeze(['none', 'previous', 'all']);
   // An input (of a step or of a participant) that the engine cannot execute, or null. `fail` builds the error with its address.
   function inputProblem(spec, kind, fail, field) {
@@ -239,6 +257,13 @@
     const fail = (code, field, message) => new EngineError(code, `${at} · ${field}`, message);
     if (!step || typeof step !== 'object') return new EngineError('invalid_step', at, 'шаг должен быть объектом');
     if (step.kind !== undefined && !EXECUTED_KINDS.includes(step.kind)) return fail('unsupported_kind', 'kind', `вид «${step.kind}» движок пока не исполняет`);
+    if (step.kind === 'gate') {
+      if (!Array.isArray(step.criteria) || !step.criteria.length || step.criteria.some((item) => typeof item !== 'string' || !item.trim())) return fail('invalid_field', 'criteria', 'критерии: непустой список непустых строк');
+      if (step.pass !== undefined && step.pass !== 'all' && step.pass !== 'any') return fail('invalid_field', 'pass', 'pass: all или any');
+      if (step.onPass !== undefined) return fail('unsupported_field', 'onPass', 'переход после проверки движок пока не исполняет');
+      if (typeof step.onFail === 'object') return fail('unsupported_field', 'onFail', 'переход после провала движок пока не исполняет');
+      if (step.onFail !== undefined && step.onFail !== 'stop' && step.onFail !== 'ask') return fail('invalid_field', 'onFail', 'onFail: stop или ask');
+    }
     if (step.input !== undefined) {
       const problem = inputProblem(step.input, step.kind, fail, 'input');
       if (problem) return problem;
@@ -350,8 +375,16 @@
     // The run's word limit: the page gives it; without it the default of Basic (BasicSchema.DEFAULTS.run) applies.
     const runLimit = Number.isSafeInteger(runMaxWords) ? runMaxWords : (root.BasicSchema || (typeof require === 'function' ? require('./basic-schema') : null))?.DEFAULTS?.run?.maxWords;
     // The check of an answer of one participant by the output of its step, or null when the step has no output.
-    const checkFor = (step, model) => (step.output ? (value) => Output.checkAnswer(value, step.output, { limit: model.maxWords ?? runLimit }) : null);
-    if (!Output || !Artifacts) throw new Error('basic_modules_missing: загружены не все модули Basic (basic-output.js, basic-artifacts.js)');
+    // A gate's checker is also checked for its verdict (6.1), after the output.
+    const checkFor = (step, model) => {
+      const shape = step.output ? (value) => Output.checkAnswer(value, step.output, { limit: model.maxWords ?? runLimit }) : null;
+      if (step.kind !== 'gate') return shape;
+      return (value) => {
+        const base = shape ? shape(value) : { ok: true };
+        return base.ok ? Control.verdictOf(value, { json: step.output?.format === 'json' }) : base;
+      };
+    };
+    if (!Output || !Artifacts || !Control) throw new Error('basic_modules_missing: загружены не все модули Basic (basic-output.js, basic-artifacts.js, basic-control.js)');
     const participants = typeof sendParticipants === 'function';
     if (!participants && typeof send !== 'function') throw new Error('custom_send_required');
     assertExecutable(steps, { participants });
@@ -391,6 +424,11 @@
     // Accepted answers of a step, each with its participant and its source (step, model, attempt) for the record.
     // The answers the step needs (ТЗ 4.2): all → every enabled participant, a number → that number, any → one.
     const neededOf = (step) => (step.require === 'all' ? step.models.length : (Number.isSafeInteger(step.require) ? step.require : 1));
+    // A gate passes when its accepted checkers reach the threshold (require) and their verdicts pass by the rule (pass).
+    // A skipped gate has no verdict, so it does not pass.
+    const verdictsOf = (step, outcome) => step.models.filter((model) => outcome[model.id]?.ok).map((model) => outcome[model.id].verdict);
+    const gatePass = (step, outcome, skipped = false) => !skipped && verdictsOf(step, outcome).length >= neededOf(step)
+      && Control.passed(verdictsOf(step, outcome), step.pass);
     const acceptedOf = (entry) => (!entry || entry.skipped ? [] : entry.step.models.map((model) => ({ model, verdict: entry.outcome[model.id] }))
       .filter((item) => item.verdict?.ok)
       .map(({ model, verdict }) => ({ ...verdict, participant: model.id, source: { step: entry.step.index, label: stepLabel(entry.step), model: verdict.model, attempt: verdict.attempt } })));
@@ -476,12 +514,12 @@
         const entries = Object.fromEntries(pending.map((model) => {
           const entry = { step: step.index, ref: step.ref, kind: step.kind, label: stepLabel(step), model: model.name, participant: model.id, attempt: tryNo,
             retryOf: current[model.id].retryOf || null, prompt: current[model.id].prompt, parts: current[model.id].parts,
-            state: 'sent', sentAt: Date.now() };
+            phase: 'answer', visit: VISIT, state: 'sent', sentAt: Date.now() };
           history.push(entry);
           if (typeof onRequest === 'function') onRequest(entry);
           return [model.id, entry];
         }));
-        const meta = { step: step.index, kind: step.kind, label: stepLabel(step), attempt: tryNo };
+        const meta = { step: step.index, kind: step.kind, label: stepLabel(step), attempt: tryNo, phase: 'answer', stepRef: step.ref, visit: VISIT };
         const maxWordsOf = Object.fromEntries(pending.map((model) => [model.id, model.maxWords || null]));
         const correctionOf = Object.fromEntries(pending.map((model) => [model.id, Boolean(current[model.id].parts?.correction)]));
         let reply;
@@ -536,6 +574,7 @@
           Object.assign(entries[model.id], {
             state: 'done', finishedAt: Date.now(), sentPrompt: typeof result.sentPrompt === 'string' ? result.sentPrompt : null,
             answer: text(result.text), attribution: result.attribution || '', accepted: verdict.ok, reason: verdict.reason || '', ...(verdict.detail ? { detail: verdict.detail } : {}),
+            ...(verdict.verdict ? { verdict: verdict.verdict, unmet: verdict.unmet } : {}),
             status: result.status || '', transportRequestId: result.transportRequestId || ''
           });
           if (typeof onResponse === 'function') onResponse(entries[model.id]);
@@ -607,6 +646,8 @@
           // An owner approval (owner: approve) is asked after the step in every mode, also on the last step.
           const approve = step.approve === true;
           emit('custom_step', { step: step.index, label: stepLabel(step), accepted: accepted.length, failed: failed.length, required, approve });
+          // A failing gate with enough answers goes to its verdict below, not to the pause of a step.
+          if (step.kind === 'gate' && enough && !gatePass(step, outcome)) break;
           if (enough && !semiAuto && !approve) break;
           if (enough && semiAuto && last && !failed.length && !approve) break;
           // Below the threshold "continue" is not offered: the owner repeats, skips or stops the step.
@@ -623,6 +664,25 @@
           if (action === 'skip') { entry.skipped = true; break; }
           const firstAttempt = Math.max(0, ...failed.map((id) => outcome[id]?.attempt || 0)) + 1;
           await execute(step, step.models.filter((model) => failed.includes(model.id)), outcome, firstAttempt);
+        }
+        // The verdict of a gate (6.1): a fail stops the run, or the owner decides when onFail is ask. A skipped gate fails.
+        if (step.kind === 'gate') {
+          const pass = gatePass(step, outcome, entry.skipped);
+          const unmet = [...new Set(step.models.filter((model) => outcome[model.id]?.verdict === 'fail').flatMap((model) => outcome[model.id].unmet || []))];
+          emit('custom_gate', { step: step.index, ref: step.ref, pass, unmet, rule: step.pass });
+          if (!pass) {
+            const detail = unmet.join('; ') || (entry.skipped ? 'шаг пропущен владельцем' : 'недостаточно ответов проверяющих');
+            if (step.onFail !== 'ask') throw new StopRun('gate_failed', detail);
+            const accepted = step.models.filter((model) => outcome[model.id]?.ok).map((model) => model.id);
+            const failed = step.models.filter((model) => !outcome[model.id]?.ok).map((model) => model.id);
+            const action = typeof decide === 'function'
+              ? await ownerWait(() => decide({ step: step.index, label: stepLabel(step), accepted, failed, choices: ['continue', 'stop'], last: step === plan[plan.length - 1],
+                required: neededOf(step), approve: false, reasons: {}, unmet }))
+              : null;
+            if (!['continue', 'stop'].includes(action)) throw new StopRun('no_decision');
+            emit('custom_decision', { step: step.index, action });
+            if (action === 'stop') throw new StopRun('stopped');
+          }
         }
         results.push(entry);
         current = null;

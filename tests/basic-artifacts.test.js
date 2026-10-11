@@ -46,7 +46,9 @@ describe('the pages load the Basic modules', () => {
     const at = (name) => html.indexOf(`src="disput/${name}"`);
     expect(at('basic-artifacts.js')).toBeGreaterThan(-1);
     expect(at('basic-output.js')).toBeGreaterThan(-1);
+    expect(at('basic-control.js')).toBeGreaterThan(-1);
     expect(at('basic-artifacts.js')).toBeLessThan(at('custom-engine.js'));
     expect(at('basic-output.js')).toBeLessThan(at('custom-engine.js'));
+    expect(at('basic-control.js')).toBeLessThan(at('custom-engine.js'));
   });
 });

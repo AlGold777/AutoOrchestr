@@ -1,5 +1,13 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — Basic gate: a checker's verdict decides the step, version 2.81.723
+
+- `disput/basic-control.js` (new, pure): `verdictOf` reads the verdict of a checker answer (text: the last line «ВЕРДИКТ: ПРОШЁЛ» or «ВЕРДИКТ: НЕ ПРОШЁЛ», a fail names its «НЕ ВЫПОЛНЕНО: …» lines above it; json: `verdict` pass/fail and a non-empty `unmet` on fail); `passed` applies `pass` all/any.
+- `CustomEngine.run` (`disput/custom-engine.js`): `kind: gate` runs as a parallel step of checkers with the criteria in the request. An answer without a verdict is corrected in the same chat (`no_verdict`). The gate passes when the accepted checkers reach `require` and their verdicts pass by `pass`; a skipped gate does not pass. `onFail: stop` stops with `gate_failed` (the unmet criteria in `stopDetail`); `onFail: ask` asks the owner for `continue` or `stop`. Event `custom_gate`. Requests carry `phase: 'answer'`, `stepRef`, `visit: 1`.
+- Not yet: transitions `onPass` and a transition as the value of `onFail` (refused before the first request, `unsupported_field`), `route` and `owner` (`unsupported_kind`); visits above 1 come with the next packs.
+- Docs: `basic-start-here.md` (events, stop and rejection reasons), `basic-schema-guide.md` (5.9), `basic-developer.md` (file table).
+- Tests: `tests/basic-control.test.js`, `tests/custom-engine-gate.test.js` (new); `tests/custom-engine.test.js` (refusal list); `tests/basic-artifacts.test.js` and `tests/results-debate-favorites.test.js` (the page loads `basic-control.js` before the engine).
+
 ### 2026-10-11 — Schema: a gate without an enabled checker is a named error, control steps are not dropped, version 2.81.722
 
 - `BasicSchema.validate` (`disput/basic-schema.js`): a gate with no enabled checker is an error at `steps[i].models` (a gate is a check by its models, 6.1); before, such a gate vanished from the run without a trace.
