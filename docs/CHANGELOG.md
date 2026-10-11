@@ -1,5 +1,13 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — Basic: тесты предпросмотра и Export → Import для новых полей, version 2.81.752
+
+- Проверка по коду и тестом: окно модели раунда (предпросмотр запроса) показывает вход «выбранные этапы» (`Ответы выбранных источников:` с `{вход}`) и блок «Формат ответа» из выхода шага; код страницы не менялся.
+- Export → Import схемы с полями gate (criteria, checkers, pass, onFail/onPass с goto, feedback, invalidate), route (rule с источником, условия, maxLoops, otherwise, conflict) и owner (task, output) и вход/выход раунда: схема возвращается без изменений; новая запись проходит валидацию.
+- Docs: `basic-windows.md` (предпросмотр в окне модели).
+- Tests: `tests/results-debate-favorites.test.js` (два новых теста: Export → Import, предпросмотр).
+- Не проверено в живом браузере: только jsdom.
+
 ### 2026-10-11 — Basic: окно владельца (owner) на холсте, version 2.81.751
 
 - `results/stage-card.js`: окно владельца (`ownerWindowModel`, `ownerAfterEdit`, `renderOwnerWindow`): задание (`task`) и выход шага (имя, форма, разделы, строгая длина; для json разделы не редактируются). Вход владельца и прочие поля сохраняются.

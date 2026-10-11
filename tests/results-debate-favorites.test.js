@@ -3839,6 +3839,55 @@ describe('Pipeline debate favorites view', () => {
         } finally { h.cleanup(); }
       }, 30000);
 
+      test('A06 export: every field of a gate, a route and an owner, and the input and output of a round, come back by Import unchanged', async () => {
+        const h = setupCustomInheritance('Control export host', { synthesis: '' });
+        try {
+          const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
+            { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }, { name: 'Claude' }] },
+            { ref: 'gate:1', kind: 'gate', models: [{ name: 'Gemini' }, { name: 'GPT', enabled: false }], criteria: ['полнота', 'ясность'], pass: 'any',
+              onFail: { goto: 'r1', maxLoops: 2, feedback: [{ step: 'r1', participant: 'GPT' }], invalidate: ['r1'] }, onPass: { goto: 'r2' } },
+            { ref: 'r2', kind: 'round', input: ['r1'], output: { name: 'Итог', form: 'кратко', sections: ['Вывод'] }, models: [{ name: 'GPT' }] },
+            { ref: 'route:1', kind: 'route', models: [], input: [{ step: 'r2', participant: 'GPT' }], select: { by: 'rule', conflict: 'first',
+              cases: [{ id: 'again', label: 'Ещё', when: { source: 0, pointer: '/route', op: 'in', value: ['close', 'end'] }, action: { goto: 'r2', maxLoops: 2 } },
+                { id: 'close', when: { source: 0, pointer: '/route', op: 'exists' }, action: { goto: 'owner:1' } }],
+              otherwise: { stop: 'конец' } } },
+            { ref: 'owner:1', kind: 'owner', models: [], task: 'Передайте файл', output: { name: 'Файл', sections: ['Описание'] } },
+            { ref: 'final', kind: 'synthesis', models: [{ name: 'Claude' }] }
+          ] };
+          expect(window.BasicSchema.validate(schema)).toEqual([]);
+          expect((await h.debug.installBasicSchema('Control export', schema)).ok).toBe(true);
+          document.querySelector('.pipeline-item[data-name="Control export"]').click();
+          await settleCustomCard();
+          const built = h.debug.buildBasicExport();
+          expect(built.ok).toBe(true);
+          expect(built.schema.steps).toEqual(schema.steps);
+          const prompts = await importFile(built.text, 'control-copy.json', 'Control copy');
+          expect(prompts).toEqual(['control-copy']);
+          const record = h.debug.getPipelineStoreSnapshot().pipelines['Control copy'];
+          expect(record.schema.steps).toEqual(schema.steps);
+          expect(h.debug.recordFromSchema('Control again', JSON.parse(built.text)).ok).toBe(true);
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      test('A06 preview: the request of a round model shows the input of the chosen steps and the answer format', async () => {
+        const h = setupCustomInheritance('Preview host', { synthesis: '' });
+        try {
+          const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
+            { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }] },
+            { ref: 'r2', kind: 'round', input: ['r1'], output: { form: 'кратко', sections: ['Вывод'] }, models: [{ name: 'Claude' }] }
+          ] };
+          expect((await h.debug.installBasicSchema('Preview request', schema)).ok).toBe(true);
+          document.querySelector('.pipeline-item[data-name="Preview request"]').click();
+          await settleCustomCard();
+          const card = h.openModel('Claude');
+          const request = card.querySelector('#custom-card-request').value;
+          // The field shows the template: the sources' heading and {вход}, and the answer format of the step.
+          expect(request).toContain('Ответы выбранных источников:');
+          expect(request).toContain('{вход}');
+          expect(request).toContain('Формат ответа:\nкратко\nРазделы ответа: «Вывод».');
+        } finally { h.cleanup(); }
+      }, 30000);
+
       test('an old whole-store export adds its records with a schema, skips the others and replaces nothing', async () => {
         const h = setupCustomInheritance('Bundle host', { synthesis: '' });
         try {
