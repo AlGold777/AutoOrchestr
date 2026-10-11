@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — The delivery token proves completeness only at the end of the answer, version 2.81.699
+
+- `answerHasDeliveryToken` counts the token only when it is the last line of the text (provider chrome up to 40 characters may follow). The same text in the middle (a quoted instruction, a prompt echo) no longer makes a cut answer look complete.
+- A committed text with its own token is journaled as `static_answer_committed`, not `incomplete_answer_committed`.
+
 ### 2026-10-10 — The end of a Basic run no longer adds a card that repeats the answers, version 2.81.698
 
 - Removed the card «Basic · итог» (`results.js`, `runCustomFromPage`): it repeated the accepted answers of the last step, which the cards of that step already show. The result of a run is the cards of its steps; the end is the notification «Basic: <причина>.», with «Принятых ответов нет.» added when no answer was accepted (`basicRunNotice`).
