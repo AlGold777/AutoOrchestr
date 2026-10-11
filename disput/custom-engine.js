@@ -153,6 +153,7 @@
         input: Array.isArray(step.input) ? step.input.slice() : (kind === 'synthesis' ? 'previous' : (step.input ?? 'previous')),
         output: step.output ?? null,
         require: step.require ?? 'any',
+        approve: step.owner === 'approve',
         models: (step.models || []).map((model) => (typeof model === 'string' ? { name: model, id: model, extra: '' } : {
           name: model.name, id: model.id ?? model.name, extra: text(model.extra), task: typeof model.task === 'string' ? model.task : null, promptTemplate: typeof model.promptTemplate === 'string' ? model.promptTemplate : null,
           discipline: model.discipline ? { ...model.discipline } : null,
@@ -211,7 +212,7 @@
       const count = Array.isArray(step.models) ? step.models.length : 0;
       if (step.require > count) return fail('invalid_field', 'require', `требуется больше ответов, чем участников: ${count}`);
     }
-    if (step.owner !== undefined) return fail('unsupported_field', 'owner', 'подтверждение владельца движок пока не исполняет');
+    if (step.owner !== undefined && step.owner !== 'approve') return fail('invalid_field', 'owner', 'owner: только approve');
     if (step.chat !== undefined && step.chat !== 'continue') return fail('unsupported_field', 'chat', 'чат «new» движок пока не исполняет');
     const ids = new Set();
     const names = new Set();
@@ -470,17 +471,19 @@
           const failed = step.models.filter((model) => !outcome[model.id]?.ok).map((model) => model.id);
           const required = neededOf(step);
           const enough = accepted.length >= required;
-          emit('custom_step', { step: step.index, label: stepLabel(step), accepted: accepted.length, failed: failed.length, required });
-          if (enough && !semiAuto) break;
-          if (enough && semiAuto && last && !failed.length) break;
+          // An owner approval (owner: approve) is asked after the step in every mode, also on the last step.
+          const approve = step.approve === true;
+          emit('custom_step', { step: step.index, label: stepLabel(step), accepted: accepted.length, failed: failed.length, required, approve });
+          if (enough && !semiAuto && !approve) break;
+          if (enough && semiAuto && last && !failed.length && !approve) break;
           // Below the threshold "continue" is not offered: the owner repeats, skips or stops the step.
           const choices = enough ? ['continue', ...(failed.length ? ['retry'] : []), 'stop'] : ['retry', 'skip', 'stop'];
           const action = typeof decide === 'function'
-            ? await ownerWait(() => decide({ step: step.index, label: stepLabel(step), accepted, failed, choices, last, required,
+            ? await ownerWait(() => decide({ step: step.index, label: stepLabel(step), accepted, failed, choices, last, required, approve,
               reasons: Object.fromEntries(failed.map((id) => [id, outcome[id]?.reason || ''])) }))
             : null;
-          // The fallback "an accepted answer goes on" holds only when the threshold is met; otherwise the run stops.
-          if (!choices.includes(action)) { if (enough) break; throw new StopRun('no_decision'); }
+          // The fallback "an accepted answer goes on" holds only when the threshold is met and no approval is asked.
+          if (!choices.includes(action)) { if (enough && !approve) break; throw new StopRun('no_decision'); }
           emit('custom_decision', { step: step.index, action });
           if (action === 'continue') break;
           if (action === 'stop') throw new StopRun('stopped');

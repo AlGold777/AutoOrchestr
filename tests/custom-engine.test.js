@@ -320,7 +320,7 @@ describe('Custom engine refuses what it does not execute yet', () => {
     ['an output format other than json', [{ ref: 'r1', kind: 'round', output: { format: 'xml' }, models: ['A'] }], 'unsupported_field', 'output.format'],
     ['an output with artifacts', [{ ref: 'r1', kind: 'round', output: { format: 'json', requiredFields: ['/m'], artifacts: [{ id: 'm', name: 'M', pointer: '/m' }] }, models: ['A'] }], 'unsupported_field', 'output.artifacts'],
     ['require other than any, all or a number', [{ ref: 'r1', kind: 'round', require: 'some', models: ['A', 'B'] }], 'invalid_field', 'require'],
-    ['owner approve', [{ ref: 'r1', kind: 'round', owner: 'approve', models: ['A'] }], 'unsupported_field', 'owner'],
+    ['an owner value other than approve', [{ ref: 'r1', kind: 'round', owner: 'sign', models: ['A'] }], 'invalid_field', 'owner'],
     ['chat new', [{ ref: 'r1', kind: 'round', chat: 'new', models: ['A'] }], 'unsupported_field', 'chat'],
     ['an artifact source (the registry is not executed yet)', [{ ref: 'r1', kind: 'round', models: ['A'] }, { ref: 'r2', kind: 'round', input: [{ artifact: { step: 'r1', participant: 'A', id: 'map' }, version: 'latest' }], models: ['B'] }], 'unsupported_input', 'r2'],
     ['a string input that is not a value', [{ ref: 'r1', kind: 'round', input: 'some', models: ['A'] }], 'invalid_input', 'r1'],
@@ -706,5 +706,76 @@ describe('Custom engine required answers', () => {
     const decide = jest.fn();
     await Engine.run({ task: 'T', send, decide, steps: [two('all')] });
     expect(decide).not.toHaveBeenCalled();
+  });
+});
+
+// Owner approval (A02, pack P02 step 6; ТЗ 4.2, plan 1.4): owner "approve" asks the owner after the step even in Auto and
+// on the last step; an absent or invalid decision is no_decision, also when answers were accepted; in manual the step
+// has one pause; [[ASK]] stays a separate channel; Stop ends the wait.
+describe('Custom engine owner approval', () => {
+  const approveStep = (extra = {}) => ({ ref: 'r1', kind: 'round', input: 'none', owner: 'approve', models: ['A'], ...extra });
+
+  test('auto: an approved step asks the owner after the answers, and "continue" goes on', async () => {
+    const { send } = transport({ A: ['a1'], B: ['b1'] });
+    const decide = jest.fn(async () => 'continue');
+    const result = await Engine.run({ task: 'T', send, decide, steps: [approveStep(), { ref: 'r2', kind: 'round', input: 'previous', models: ['B'] }] });
+    expect(decide).toHaveBeenCalledTimes(1);
+    expect(decide.mock.calls[0][0]).toMatchObject({ choices: ['continue', 'stop'], accepted: ['A'], failed: [] });
+    expect(result).toMatchObject({ stopReason: 'steps_done', answers: ['b1'] });
+  });
+
+  test('the last step with approve does not finish without the decision: absent or invalid is no_decision', async () => {
+    const absent = await Engine.run({ task: 'T', send: transport({ A: ['a1'] }).send, steps: [approveStep()] });
+    expect(absent).toMatchObject({ stopReason: 'no_decision', answers: ['a1'] });
+    const invalid = await Engine.run({ task: 'T', send: transport({ A: ['a1'] }).send, decide: async () => 'retry-me', steps: [approveStep()] });
+    expect(invalid.stopReason).toBe('no_decision');
+    const ok = await Engine.run({ task: 'T', send: transport({ A: ['a1'] }).send, decide: async () => 'continue', steps: [approveStep()] });
+    expect(ok.stopReason).toBe('steps_done');
+  });
+
+  test('approve with a threshold not met: the owner gets no "continue", and an invalid answer stops the run', async () => {
+    const { send, calls } = transport({ A: ['a1'], B: [''] });
+    const decide = jest.fn(async () => 'continue');
+    const result = await Engine.run({ task: 'T', send, decide, steps: [
+      { ref: 'r1', kind: 'round', input: 'none', owner: 'approve', require: 'all', models: ['A', 'B'] },
+      { ref: 'r2', kind: 'round', input: 'previous', models: ['A'] }
+    ] });
+    expect(decide.mock.calls[0][0].choices).toEqual(['retry', 'skip', 'stop']);
+    expect(result.stopReason).toBe('no_decision');
+    expect(calls.map((call) => call.models)).toEqual([['A', 'B'], ['B']]); // the second step is never requested
+  });
+
+  test('manual: an approved step has one pause, not two; the last step with no failures does not pause again', async () => {
+    const { send } = transport({ A: ['a1'], B: ['b1'] });
+    const decide = jest.fn(async () => 'continue');
+    await Engine.run({ task: 'T', semiAuto: true, send, decide, steps: [approveStep(), { ref: 'r2', kind: 'round', input: 'previous', models: ['B'] }] });
+    expect(decide).toHaveBeenCalledTimes(1);
+    expect(decide.mock.calls[0][0].step).toBe(0);
+  });
+
+  test('[[ASK]] goes to the owner in its own call; the approval and the answer are two decisions', async () => {
+    const { send } = transport({ A: ['a1\n[[ASK: Срок? || неделя || месяц]]'] });
+    const decide = jest.fn(async () => 'continue');
+    const askOwner = jest.fn(async (asks) => asks.map((item) => ({ question: item.question, answer: 'неделя' })));
+    const result = await Engine.run({ task: 'T', send, decide, askOwner,
+      parseAsks: (value) => (/\[\[ASK: ([^|]+)/.exec(value) ? [{ question: /\[\[ASK: ([^|]+)/.exec(value)[1].trim() }] : []),
+      steps: [approveStep()] });
+    expect(decide).toHaveBeenCalledTimes(1);
+    expect(askOwner).toHaveBeenCalledTimes(1);
+    expect(result.ownerAnswers).toEqual([{ question: 'Срок?', answer: 'неделя' }]);
+  });
+
+  test('Stop while the owner is asked ends the run as cancelled with what was collected', async () => {
+    const controller = new AbortController();
+    const { send } = transport({ A: ['a1'] });
+    const decide = () => { setTimeout(() => controller.abort(), 0); return new Promise(() => {}); };
+    const result = await Engine.run({ task: 'T', signal: controller.signal, send, decide, steps: [approveStep()] });
+    expect(result).toMatchObject({ stopReason: 'cancelled', answers: ['a1'] });
+  });
+
+  test('an owner value other than approve is refused before the first request', async () => {
+    const { send, calls } = transport({ A: ['a1'] });
+    await expect(Engine.run({ task: 'T', send, steps: [approveStep({ owner: 'sign' })] })).rejects.toMatchObject({ code: 'invalid_field' });
+    expect(calls).toHaveLength(0);
   });
 });

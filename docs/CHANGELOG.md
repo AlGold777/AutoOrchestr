@@ -1,5 +1,13 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — Basic owner approval: a step waits for the owner (P02, step 6), version 2.81.716
+
+- `CustomEngine.run` (`disput/custom-engine.js`): a step with `owner: "approve"` asks the owner after the step in every mode, also in Auto and on the last step. The decision payload carries `approve: true` and `required`. Below the threshold, or with an approval, «continue» follows only a valid decision; an absent or invalid decision is `no_decision` even when answers were accepted. In manual the step has one pause, the usual one. `[[ASK]]` questions remain a separate call of `askOwner`. Stop ends the wait (`cancelled`).
+- `owner` other than `approve` is `invalid_field` before the first request.
+- Not yet: the page does not pass `owner` of a step from its settings into the run (the pack P08); the page's decision window still offers «Продолжить» below the threshold.
+- Docs: `basic-start-here.md` (the policy and the pause, the errors before the first request), `basic-schema-guide.md` (the row `owner`).
+- Tests: `tests/custom-engine.test.js` (the block «Custom engine owner approval», 7 cases).
+
 ### 2026-10-11 — Basic required answers: the threshold ends a step (P02, step 5), version 2.81.715
 
 - `CustomEngine.run` (`disput/custom-engine.js`): the step ends when the accepted answers reach the threshold of its `require`: `any` — one; `all` — every enabled participant; a number N — N (a number above the participants is `invalid_field` before the first request). Both automatic branches of the run check the threshold, not only the presence of an accepted answer.
