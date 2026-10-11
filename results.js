@@ -9607,6 +9607,8 @@ document.addEventListener('click', (event) => {
         pipelineDeleteBtn?.addEventListener('click', deleteActivePipeline);
         pipelineExportBtn?.addEventListener('click', exportBasicSchema);
         pipelineImportBtn?.addEventListener('click', importPipelines);
+        // «Продолжить прогон»: the latest run of the pipeline goes on from its saved state (resumeCustomFromPage explains a refusal).
+        document.getElementById('pipeline-resume-btn')?.addEventListener('click', () => { void resumeCustomFromPage(); });
         // Pipeline Get it: double click on Run runs the main page's collection pass for the
         // running stage's models (or the selected models when no stage is waiting).
         if (debateRunToggleBtn) {

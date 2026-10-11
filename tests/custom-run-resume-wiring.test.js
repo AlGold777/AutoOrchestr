@@ -30,6 +30,12 @@ describe('Basic page binds the engine to the run record (8.2, 8.3)', () => {
     expect(results).toContain('resumeCustomFromPage,');
   });
 
+  test('«Продолжить прогон» is a button of the panel and goes on from the latest record through resumeCustomFromPage', () => {
+    const panel = fs.readFileSync(path.join(__dirname, '..', 'pipeline_panel.html'), 'utf8');
+    expect(panel).toContain('id="pipeline-resume-btn"');
+    expect(results).toContain("document.getElementById('pipeline-resume-btn')?.addEventListener('click', () => { void resumeCustomFromPage(); });");
+  });
+
   test('the run takes the limit of the schema, and the decision window offers «Продолжить» only where the engine allows it', () => {
     expect(results).toContain('runMaxWords: built.run.maxWords,');
     expect(results).toMatch(/const canContinue = choices\.includes\('continue'\);[\s\S]*?confirmText: canContinue \? 'Продолжить' : 'Пропустить шаг'/);

@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — Basic: «Продолжить прогон» is a button of the panel, version 2.81.741
+
+- Feat (`pipeline_panel.html`, `results.js`): the button `#pipeline-resume-btn` calls `resumeCustomFromPage` (the latest run of the pipeline goes on from its saved state; a refusal is explained in a notification).
+- Docs: `basic-start-here.md` (the button).
+- Test: `tests/custom-run-resume-wiring.test.js` (the button and its binding).
+
 ### 2026-10-11 — Basic: windows for the route choice, the owner's text answer and the unknown request (shared choice dialog), version 2.81.740
 
 - Feat (`results/choice-dialog.js`, `ChoiceDialog.ask`): a modal with any number of buttons and an optional text field; Cancel and Escape give `null`.
