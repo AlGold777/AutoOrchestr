@@ -1,5 +1,13 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — Basic required answers: the threshold ends a step (P02, step 5), version 2.81.715
+
+- `CustomEngine.run` (`disput/custom-engine.js`): the step ends when the accepted answers reach the threshold of its `require`: `any` — one; `all` — every enabled participant; a number N — N (a number above the participants is `invalid_field` before the first request). Both automatic branches of the run check the threshold, not only the presence of an accepted answer.
+- Below the threshold «continue» is not offered: the owner gets `retry` (when some participant failed), `skip` or `stop`, and the decision payload names the `required` count. An absent or invalid decision below the threshold ends the run with `no_decision`, also when some answers are accepted; the old fallback «an accepted answer goes on» holds only when the threshold is met. A retry sends only the participants that were not accepted; the accepted ones count towards the threshold.
+- Not yet: the page does not pass `require` of a step from its settings into the run (the pack P08), and its decision window still offers «Продолжить» below the threshold (the engine then answers `no_decision`).
+- Docs: `basic-start-here.md` (the run policy and the window of a pause, the stop reasons, the errors before the first request), `basic-schema-guide.md` (the row `require`).
+- Tests: `tests/custom-engine.test.js` (the block «Custom engine required answers», 7 cases; the steps with `require` of step 1 are now executed).
+
 ### 2026-10-11 — Basic output: the answer of a step is checked by its form (P02, step 4), version 2.81.714
 
 - `BasicOutput` (new, `disput/basic-output.js`, pure; loaded in `pipeline_panel.html` before `custom-engine.js`): `checkAnswer(answer, output, { limit })` in the order of the technical spec 5.1 — length (`strictLength`, exactly the limit is allowed), then the JSON answer and its `requiredFields`, or the `sections` (a substring of a line, without regard to case), then the declared artifacts (`missing_artifact`). Reasons: `too_long` (with the count of words), `missing_section`, `invalid_output`, `missing_field` (`null` is present), `missing_artifact`; each carries its detail. `readPointer` reads JSON Pointers (`~0`, `~1`), never reads `__proto__`, `prototype`, `constructor`, and changes nothing. `countWords` is the one word counter.

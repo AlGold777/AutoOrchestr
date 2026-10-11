@@ -152,6 +152,7 @@
         // A list of sources stays a list here: the input is checked before the run (assertExecutable).
         input: Array.isArray(step.input) ? step.input.slice() : (kind === 'synthesis' ? 'previous' : (step.input ?? 'previous')),
         output: step.output ?? null,
+        require: step.require ?? 'any',
         models: (step.models || []).map((model) => (typeof model === 'string' ? { name: model, id: model, extra: '' } : {
           name: model.name, id: model.id ?? model.name, extra: text(model.extra), task: typeof model.task === 'string' ? model.task : null, promptTemplate: typeof model.promptTemplate === 'string' ? model.promptTemplate : null,
           discipline: model.discipline ? { ...model.discipline } : null,
@@ -205,7 +206,11 @@
       if (output.format !== undefined && output.format !== 'json') return fail('unsupported_field', 'output.format', 'формат выхода движок пока не исполняет');
       if (output.artifacts !== undefined) return fail('unsupported_field', 'output.artifacts', 'объявление артефактов движок пока не исполняет (реестр, пакет P02, шаг 7)');
     }
-    if (step.require !== undefined && step.require !== 'any') return fail('unsupported_field', 'require', 'число ответов движок пока не исполняет');
+    if (step.require !== undefined && step.require !== 'any' && step.require !== 'all') {
+      if (!Number.isSafeInteger(step.require) || step.require < 1) return fail('invalid_field', 'require', 'require: any, all или целое число больше 0');
+      const count = Array.isArray(step.models) ? step.models.length : 0;
+      if (step.require > count) return fail('invalid_field', 'require', `требуется больше ответов, чем участников: ${count}`);
+    }
     if (step.owner !== undefined) return fail('unsupported_field', 'owner', 'подтверждение владельца движок пока не исполняет');
     if (step.chat !== undefined && step.chat !== 'continue') return fail('unsupported_field', 'chat', 'чат «new» движок пока не исполняет');
     const ids = new Set();
@@ -297,6 +302,8 @@
     }
 
     // Accepted answers of a step, each with its participant and its source (step, model, attempt) for the record.
+    // The answers the step needs (ТЗ 4.2): all → every enabled participant, a number → that number, any → one.
+    const neededOf = (step) => (step.require === 'all' ? step.models.length : (Number.isSafeInteger(step.require) ? step.require : 1));
     const acceptedOf = (entry) => (!entry || entry.skipped ? [] : entry.step.models.map((model) => ({ model, verdict: entry.outcome[model.id] }))
       .filter((item) => item.verdict?.ok)
       .map(({ model, verdict }) => ({ ...verdict, participant: model.id, source: { step: entry.step.index, label: stepLabel(entry.step), model: verdict.model, attempt: verdict.attempt } })));
@@ -461,15 +468,19 @@
         for (;;) {
           const accepted = step.models.filter((model) => outcome[model.id]?.ok).map((model) => model.id);
           const failed = step.models.filter((model) => !outcome[model.id]?.ok).map((model) => model.id);
-          emit('custom_step', { step: step.index, label: stepLabel(step), accepted: accepted.length, failed: failed.length });
-          if (accepted.length && !semiAuto) break;
-          if (accepted.length && semiAuto && last && !failed.length) break;
-          const choices = accepted.length ? ['continue', ...(failed.length ? ['retry'] : []), 'stop'] : ['retry', 'skip', 'stop'];
+          const required = neededOf(step);
+          const enough = accepted.length >= required;
+          emit('custom_step', { step: step.index, label: stepLabel(step), accepted: accepted.length, failed: failed.length, required });
+          if (enough && !semiAuto) break;
+          if (enough && semiAuto && last && !failed.length) break;
+          // Below the threshold "continue" is not offered: the owner repeats, skips or stops the step.
+          const choices = enough ? ['continue', ...(failed.length ? ['retry'] : []), 'stop'] : ['retry', 'skip', 'stop'];
           const action = typeof decide === 'function'
-            ? await ownerWait(() => decide({ step: step.index, label: stepLabel(step), accepted, failed, choices, last,
+            ? await ownerWait(() => decide({ step: step.index, label: stepLabel(step), accepted, failed, choices, last, required,
               reasons: Object.fromEntries(failed.map((id) => [id, outcome[id]?.reason || ''])) }))
             : null;
-          if (!choices.includes(action)) { if (accepted.length) break; throw new StopRun('no_decision'); }
+          // The fallback "an accepted answer goes on" holds only when the threshold is met; otherwise the run stops.
+          if (!choices.includes(action)) { if (enough) break; throw new StopRun('no_decision'); }
           emit('custom_decision', { step: step.index, action });
           if (action === 'continue') break;
           if (action === 'stop') throw new StopRun('stopped');

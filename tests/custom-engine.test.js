@@ -319,8 +319,7 @@ describe('Custom engine refuses what it does not execute yet', () => {
     ['an owner step', [{ ref: 'owner:o', kind: 'owner', models: [] }], 'unsupported_kind', 'owner:o'],
     ['an output format other than json', [{ ref: 'r1', kind: 'round', output: { format: 'xml' }, models: ['A'] }], 'unsupported_field', 'output.format'],
     ['an output with artifacts', [{ ref: 'r1', kind: 'round', output: { format: 'json', requiredFields: ['/m'], artifacts: [{ id: 'm', name: 'M', pointer: '/m' }] }, models: ['A'] }], 'unsupported_field', 'output.artifacts'],
-    ['require all', [{ ref: 'r1', kind: 'round', require: 'all', models: ['A', 'B'] }], 'unsupported_field', 'require'],
-    ['require 1', [{ ref: 'r1', kind: 'round', require: 1, models: ['A', 'B'] }], 'unsupported_field', 'require'],
+    ['require other than any, all or a number', [{ ref: 'r1', kind: 'round', require: 'some', models: ['A', 'B'] }], 'invalid_field', 'require'],
     ['owner approve', [{ ref: 'r1', kind: 'round', owner: 'approve', models: ['A'] }], 'unsupported_field', 'owner'],
     ['chat new', [{ ref: 'r1', kind: 'round', chat: 'new', models: ['A'] }], 'unsupported_field', 'chat'],
     ['an artifact source (the registry is not executed yet)', [{ ref: 'r1', kind: 'round', models: ['A'] }, { ref: 'r2', kind: 'round', input: [{ artifact: { step: 'r1', participant: 'A', id: 'map' }, version: 'latest' }], models: ['B'] }], 'unsupported_input', 'r2'],
@@ -339,7 +338,7 @@ describe('Custom engine refuses what it does not execute yet', () => {
 
   test('a later unsupported step is refused before the first step is sent', async () => {
     const { send, calls } = ask();
-    await expect(Engine.run({ task: 'T', send, steps: [{ ref: 'r1', kind: 'round', models: ['A'] }, { ref: 'r2', kind: 'round', require: 'all', models: ['B'] }] }))
+    await expect(Engine.run({ task: 'T', send, steps: [{ ref: 'r1', kind: 'round', models: ['A'] }, { ref: 'r2', kind: 'round', chat: 'new', models: ['B'] }] }))
       .rejects.toMatchObject({ code: 'unsupported_field' });
     expect(calls).toHaveLength(0);
   });
@@ -355,7 +354,7 @@ describe('Custom engine refuses what it does not execute yet', () => {
   });
 
   test('the preview of an unsupported step gives no prompt; a supported step still has one', () => {
-    const steps = [{ ref: 'r1', kind: 'round', models: ['A'] }, { ref: 'r2', kind: 'round', require: 'all', models: ['A'] }];
+    const steps = [{ ref: 'r1', kind: 'round', models: ['A'] }, { ref: 'r2', kind: 'round', chat: 'new', models: ['A'] }];
     expect(Engine.previewPrompt({ task: 'T', steps, stepIndex: 1, modelName: 'A' })).toBeNull();
     expect(Engine.previewPrompt({ task: 'T', steps, stepIndex: 0, modelName: 'A' }).label).toBe('Раунд 1');
   });
@@ -647,5 +646,65 @@ describe('Custom engine output check', () => {
     await expect(Engine.run({ task: 'T', send, steps: [{ ref: 'r1', kind: 'round', input: 'none', output: { format: 'json', requiredFields: ['/m'], artifacts: [{ id: 'm', name: 'M', pointer: '/m' }] }, models: ['A'] }] }))
       .rejects.toMatchObject({ code: 'unsupported_field' });
     expect(calls).toHaveLength(0);
+  });
+});
+
+// Required number of answers (A02, pack P02 step 5; ТЗ 4.2, plan 1.3): the step ends when the threshold is met;
+// below it the owner decides (retry, skip, stop), and "continue" is never offered; an absent or invalid decision
+// below the threshold is no_decision, even when some answers were accepted.
+describe('Custom engine required answers', () => {
+  const two = (require) => ({ ref: 'r1', kind: 'round', input: 'none', require, models: ['A', 'B'] });
+
+  test('all: one failed participant leaves the step below the threshold; the owner decides and gets no "continue"', async () => {
+    // B fails its request and its correction: only then the owner decides (a correction inside the attempt comes first).
+    const { send, calls } = transport({ A: ['a1'], B: ['', '', 'b3'] });
+    const decide = jest.fn(async ({ choices }) => (choices.includes('retry') ? 'retry' : 'continue'));
+    const result = await Engine.run({ task: 'T', send, decide, steps: [two('all')] });
+    expect(decide).toHaveBeenCalledTimes(1);
+    expect(decide.mock.calls[0][0]).toMatchObject({ accepted: ['A'], failed: ['B'], choices: ['retry', 'skip', 'stop'], required: 2 });
+    expect(calls.map((call) => call.models)).toEqual([['A', 'B'], ['B'], ['B']]);
+    expect(result.steps[0].outcome.B).toMatchObject({ ok: true, attempt: 3 });
+    expect(result.stopReason).toBe('steps_done');
+  });
+
+  test('N of the participants: the threshold is met by accepted answers, a retry counts them; below it the step is not left by the fallback', async () => {
+    const met = transport({ A: ['a1'], B: ['b1'], C: [''] });
+    const enough = await Engine.run({ task: 'T', send: met.send, steps: [{ ref: 'r1', kind: 'round', input: 'none', require: 2, models: ['A', 'B', 'C'] }] });
+    expect(enough.stopReason).toBe('steps_done');
+    expect(met.calls.map((call) => call.models)).toEqual([['A', 'B', 'C'], ['C']]); // the usual retry of C, then the step goes on
+    const short = transport({ A: ['a1'], B: [''], C: [''] });
+    const result = await Engine.run({ task: 'T', send: short.send, decide: jest.fn(async () => 'continue'), steps: [{ ref: 'r1', kind: 'round', input: 'none', require: 2, models: ['A', 'B', 'C'] }] });
+    expect(result.stopReason).toBe('no_decision');
+  });
+
+  test('below the threshold without a decision the run stops with no_decision, even with an accepted answer', async () => {
+    const { send } = transport({ A: ['a1'], B: [''] });
+    const result = await Engine.run({ task: 'T', send, steps: [two('all')] });
+    expect(result).toMatchObject({ stopReason: 'no_decision' });
+    const invalid = transport({ A: ['a1'], B: [''] });
+    const bad = await Engine.run({ task: 'T', send: invalid.send, decide: async () => 'continue', steps: [two('all')] });
+    expect(bad.stopReason).toBe('no_decision');
+  });
+
+  test('the manual last step asks the owner when the threshold is not met, and does not finish on its own', async () => {
+    const { send } = transport({ A: ['a1'], B: [''] });
+    const decide = jest.fn(async () => 'stop');
+    const result = await Engine.run({ task: 'T', semiAuto: true, send, decide, steps: [{ ref: 'r1', kind: 'round', input: 'none', require: 'all', models: ['A', 'B'] }] });
+    expect(decide).toHaveBeenCalledTimes(1);
+    expect(result.stopReason).toBe('stopped');
+  });
+
+  test('a threshold above the number of participants is refused before the first request', async () => {
+    const { send, calls } = transport({ A: ['a1'] });
+    await expect(Engine.run({ task: 'T', send, steps: [{ ref: 'r1', kind: 'round', input: 'none', require: 2, models: ['A'] }] }))
+      .rejects.toMatchObject({ code: 'invalid_field' });
+    expect(calls).toHaveLength(0);
+  });
+
+  test('"any" and the whole threshold met: the run goes on without a question, as before', async () => {
+    const { send } = transport({ A: ['a1'], B: ['b1'] });
+    const decide = jest.fn();
+    await Engine.run({ task: 'T', send, decide, steps: [two('all')] });
+    expect(decide).not.toHaveBeenCalled();
   });
 });
