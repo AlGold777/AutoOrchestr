@@ -663,6 +663,8 @@
         })));
       }
       for (let index = entries.length - 1; index >= 0; index -= 1) {
+        // A stale step is not passed over: an older answer never replaces it (6.3, 5.3). A skipped step passes nothing on.
+        if (entries[index].valid === false) return [];
         const accepted = acceptedOf(entries[index]);
         if (accepted.length) return accepted.map((item) => ({ text: item.text, source: item.source }));
       }

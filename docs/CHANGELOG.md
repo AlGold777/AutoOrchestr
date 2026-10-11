@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — Basic: controlled change (return, resumeAt, nested stack), version 2.81.727
+
+- `CustomEngine.run` (`disput/custom-engine.js`): a stale step gives no input to `previous` or `all`, and an older answer is not substituted for it (before: `previous` went back to the last step with answers). A skipped step still passes nothing on, as before.
+- The controlled change (T12 in the technical spec) is tested as one path: S10 → G1 → S14 → S19 (goto S10 with resumeAt S19); the return of G1 goes to S19, not through S14; S14 stays stale. A required source that is stale stops the run (`missing_input`), the designated route is not bypassed. Nested returns use the stack in order; an empty stack is `return_missing`.
+- Docs: `basic-start-here.md` (11, input), `basic-schema-guide.md` (5.9).
+- Tests: `tests/custom-engine-chg.test.js` (new).
+
 ### 2026-10-11 — Basic: stale results and artifacts after a backward goto, version 2.81.726
 
 - `CustomEngine.run` (`disput/custom-engine.js`): every visit records what it used (`state.dependencies`: the keys of the results and artifact versions of its inputs). A `goto` makes the target's results stale, the steps named in `invalidate`, and everything that used a stale key, by those dependencies (`invalidateFrom`). The results are kept with `valid: false` (`steps[].valid` in the result); a stale result gives no answers to `previous`, `all` or a source, and a later failed or skipped visit does not bring it back. A required source without a current answer is `missing_input`; an artifact without a current version is not replaced by an old one.
