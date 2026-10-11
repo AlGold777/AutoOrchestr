@@ -3430,6 +3430,43 @@ describe('Pipeline debate favorites view', () => {
         } finally { h.cleanup(); }
       }, 30000);
 
+      test('A06: two participants of one model in a step are refused at install with their place, nothing is saved without them', async () => {
+        const h = setupCustomInheritance('Twice host', { synthesis: '' });
+        try {
+          const twice = { schemaVersion: 1, origin: 'user', steps: [
+            { ref: 'r1', kind: 'round', models: [{ name: 'Claude', id: 'claude-a' }, { name: 'Claude', id: 'claude-b' }] }
+          ] };
+          const refused = await h.debug.installBasicSchema('Twice', twice);
+          expect(refused.ok).toBe(false);
+          expect(refused.errors).toEqual([{ path: 'steps[0].models', message: 'два участника модели «Claude» в одном шаге пока не показываются на холсте' }]);
+          expect(h.debug.getPipelineStoreSnapshot().pipelines.Twice).toBeUndefined();
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      test('A06: controls, the participant id and input, and the step fields survive Save → load → Save', async () => {
+        const h = setupCustomInheritance('Full round trip host', { synthesis: '' });
+        try {
+          const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
+            { ref: 'r1', kind: 'round', models: [{ name: 'Claude', id: 'claude-a' }, { name: 'GPT' }] },
+            { ref: 'gate:check', kind: 'gate', models: [{ name: 'Gemini' }], criteria: ['полнота'], pass: 'any', onFail: 'stop' },
+            { ref: 'r2', kind: 'round', input: 'previous', require: 2, owner: 'approve', chat: 'continue',
+              output: { name: 'Итог', form: 'кратко', sections: ['Вывод'], strictLength: true },
+              models: [{ name: 'GPT' }, { name: 'Claude', id: 'claude-a', input: 'none' }] },
+            { ref: 'owner:fix', kind: 'owner', models: [], task: 'Передайте файл' },
+            { ref: 'final', kind: 'synthesis', models: [{ name: 'Claude' }] }
+          ] };
+          expect(window.BasicSchema.validate(schema)).toEqual([]);
+          expect((await h.debug.installBasicSchema('Full round trip', schema)).ok).toBe(true);
+          document.querySelector('.pipeline-item[data-name="Full round trip"]').click();
+          await settleCustomCard();
+          const back = h.debug.basicSchemaFromPage(planOf(), null, { forSave: true });
+          expect(back.steps).toEqual(schema.steps);
+          expect(h.debug.recordFromSchema('Full again', back).ok).toBe(true);
+          // The run takes the same steps: the controls are not dropped by the assembly either.
+          expect(h.debug.buildBasicRun(planOf()).steps.map((step) => step.ref)).toEqual(['r1', 'gate:check', 'r2', 'owner:fix', 'final']);
+        } finally { h.cleanup(); }
+      }, 30000);
+
       test('a schema the canvas shows survives the round trip schema → record → canvas → schema', async () => {
         const h = setupCustomInheritance('Round trip host', { synthesis: '' });
         try {

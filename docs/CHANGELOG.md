@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — Basic: Save and Run keep the fields the canvas does not edit (gate, route, owner, output, require, owner, chat, participant id and input), version 2.81.736
+
+- Fix (`results.js`, `basicSchemaFromPage`): a schema that the canvas accepts is not cut on Save or on Run. The page keeps the source schema of the working copy (`basicSourceSchema`): control steps (gate, route, owner) stay in their place after the nearest earlier step still on the canvas; a round or a synthesis keeps `output`, `require`, `owner`, `chat` (a synthesis also `input` and `task`); a participant keeps its `id` and `input`.
+- Fix (`recordFromSchema`): two participants of one model in one step are refused at install with their place. The canvas does not show them yet (one block per model name), so they are not saved silently.
+- Test: `tests/results-debate-favorites.test.js` (A06: refusal of two participants of one model; Save → load → Save and the run keep the controls and the step fields).
+
 ### 2026-10-11 — Basic: an unknown request stays unknown until the owner decides, even after a Stop, version 2.81.735
 
 - Fix (`CustomEngine.run`, `disput/custom-engine.js`): while the owner decides on an unknown request (`resolveUnknown`), the request stays in flight; a Stop saves it as pending (`pendingOwner.kind: 'unknown'`). Before, the saved state lost it, and the next run sent it again without the owner's answer.

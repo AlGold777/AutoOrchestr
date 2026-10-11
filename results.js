@@ -6706,6 +6706,39 @@ document.addEventListener('click', (event) => {
         // `forSave` builds the stored form: origin, basedOn, switched-off models and steps with their settings,
         // and a `run` that holds only explicit values (see basicRunExplicit). The run path builds the same
         // schema with the run taken from the header as it stands and the legacy fallback of the final request applied.
+        // Fields of the schema the canvas does not edit come from basicSourceSchema, by ref: a round or a synthesis keeps its
+        // output, require, owner and chat (a synthesis also its input and task); a control step (gate, route, owner) keeps its
+        // place after the nearest earlier step of the source that is still on the canvas. A control step is copied as it is.
+        const CONTROL_STEP_KINDS = ['gate', 'route', 'owner'];
+        const keepSourceFields = (list) => {
+            const sourceSteps = (basicSourceSchema.get(draftPlanStorageKey())?.steps || []).filter((step) => step && typeof step === 'object');
+            if (!sourceSteps.length) return list;
+            const copy = (value) => JSON.parse(JSON.stringify(value));
+            const onCanvas = new Set(list.map((step) => step.ref));
+            const kept = list.map((step) => {
+                const from = sourceSteps.find((item) => item.ref === step.ref && item.kind === step.kind);
+                const keys = step.kind === 'round' ? ['output', 'require', 'owner', 'chat'] : ['input', 'task', 'output', 'require', 'owner', 'chat'];
+                const added = {};
+                keys.forEach((key) => { if (from && key in from && !(key in step)) added[key] = copy(from[key]); });
+                return { ...step, ...added };
+            });
+            const controlsAfter = new Map();
+            sourceSteps.forEach((step, at) => {
+                if (!CONTROL_STEP_KINDS.includes(step.kind)) return;
+                let anchor = '';
+                for (let back = at - 1; back >= 0; back -= 1) {
+                    const item = sourceSteps[back];
+                    if (!CONTROL_STEP_KINDS.includes(item.kind) && onCanvas.has(item.ref)) { anchor = item.ref; break; }
+                }
+                controlsAfter.set(anchor, [...(controlsAfter.get(anchor) || []), copy(step)]);
+            });
+            if (!controlsAfter.size) return kept;
+            const result = [...(controlsAfter.get('') || [])];
+            kept.forEach((step) => result.push(step, ...(controlsAfter.get(step.ref) || [])));
+            return result;
+        };
+        // A model entry with a field beyond name, id and enabled holds settings; only such a switched-off model is kept.
+        const hasOwnFields = (model) => Object.keys(model).some((key) => !['name', 'id', 'enabled'].includes(key));
         const basicSchemaFromPage = (plan, previewModel = null, { forSave = false, basedOn = '', run = null } = {}) => {
             const general = getCustomPipelineDefaults();
             const cards = getCustomCardSettings();
@@ -6721,9 +6754,19 @@ document.addEventListener('click', (event) => {
             ['roundTask', 'synthesisTask'].forEach((key) => put(defaults, key, legacyValue(general[key])));
             ['modelNotes', 'roundPrompts'].forEach((key) => put(defaults, key, legacyMap(general[key])));
             put(defaults, 'discipline', legacyDiscipline(general.discipline));
-            const modelEntry = (ref, name, extra = {}) => {
-                const settings = cards[ref]?.[name];
-                const model = { name, ...extra };
+            // The canvas names a participant by its name (its id is not on the canvas): the id, the model name and the input
+            // of the participant come from the source, and its settings are keyed by that id (toSettings).
+            const sourceModelOf = (ref, id) => {
+                const models = (basicSourceSchema.get(draftPlanStorageKey())?.steps || []).find((step) => step?.ref === ref)?.models || [];
+                return models.find((item) => item && (item.id ?? item.name) === id) || models.find((item) => item && item.name === id) || null;
+            };
+            const modelEntry = (ref, id, extra = {}) => {
+                const source = sourceModelOf(ref, id);
+                const name = source?.name || id;
+                const participantId = source ? (source.id ?? source.name) : id;
+                const settings = cards[ref]?.[participantId] ?? cards[ref]?.[id];
+                const model = { name, ...(participantId !== name ? { id: participantId } : {}), ...extra };
+                if (source && 'input' in source) model.input = JSON.parse(JSON.stringify(source.input));
                 put(model, 'request', legacyValue(settings?.promptTemplate));
                 put(model, 'maxWords', legacyValue(settings?.maxWords));
                 put(model, 'task', legacyValue(settings?.task));
@@ -6752,9 +6795,11 @@ document.addEventListener('click', (event) => {
                 });
                 // A switched-off model keeps its settings in the saved schema.
                 if (forSave) {
-                    Object.keys(cards[ref] || {}).filter((name) => !models.includes(name)).forEach((name) => {
+                    // A card of a participant on the canvas is not a switched-off model, whatever key it has (its id or its name).
+                    const shown = new Set(models.flatMap((id) => [id, sourceModelOf(ref, id)?.id].filter((key) => key !== undefined)));
+                    Object.keys(cards[ref] || {}).filter((name) => !shown.has(name)).forEach((name) => {
                         const model = modelEntry(ref, name, { enabled: false });
-                        if (Object.keys(model).length > 2) entries.push(model);
+                        if (hasOwnFields(model)) entries.push(model);
                     });
                 }
                 return { ref, kind, ...(kind === 'round' ? roundFields(ref) : {}), models: entries };
@@ -6771,7 +6816,7 @@ document.addEventListener('click', (event) => {
                         const ref = `r${nextRound}`;
                         if (have.has(ref)) continue;
                         complete.push({ ref, kind: 'round', ...roundFields(ref),
-                            models: Object.keys(cards[ref] || {}).map((name) => modelEntry(ref, name, { enabled: false })).filter((model) => Object.keys(model).length > 2) });
+                            models: Object.keys(cards[ref] || {}).map((name) => modelEntry(ref, name, { enabled: false })).filter((model) => hasOwnFields(model)) });
                         have.add(ref);
                     }
                 };
@@ -6798,7 +6843,7 @@ document.addEventListener('click', (event) => {
                     const at = steps.findIndex((step) => step.ref === `r${after}`);
                     // Between two rounds only: not after the last round, not next to another synthesis.
                     if (!match || after >= Math.max(1, Number(roundCounter) || 1) || at < 0 || steps[at + 1]?.kind === 'synthesis') return;
-                    const models = Object.keys(cards[ref] || {}).map((name) => modelEntry(ref, name, { enabled: false })).filter((model) => Object.keys(model).length > 2);
+                    const models = Object.keys(cards[ref] || {}).map((name) => modelEntry(ref, name, { enabled: false })).filter((model) => hasOwnFields(model));
                     if (models.length) steps.splice(at + 1, 0, { ref, kind: 'synthesis', models });
                 });
             }
@@ -6806,14 +6851,14 @@ document.addEventListener('click', (event) => {
                 // A final synthesis that is switched off keeps its settings as a step without active models. Settings of a
                 // removed round or of an intermediate synthesis with no place between two rounds are dropped.
                 if (!steps.some((step) => step.ref === 'final')) {
-                    const models = Object.keys(cards.final || {}).map((name) => modelEntry('final', name, { enabled: false })).filter((model) => Object.keys(model).length > 2);
+                    const models = Object.keys(cards.final || {}).map((name) => modelEntry('final', name, { enabled: false })).filter((model) => hasOwnFields(model));
                     if (models.length) steps.push({ ref: 'final', kind: 'synthesis', models });
                 }
             }
             const runValue = forSave ? (run || basicRunForSave()) : { policy: getDebateRunPolicy(), maxWords: getDebateMaxWords() };
             return { schemaVersion: window.BasicSchema.SCHEMA_VERSION, origin: 'user', ...(forSave && basedOn ? { basedOn } : {}),
                 ...(Object.keys(runValue).length ? { run: runValue } : {}),
-                ...(Object.keys(defaults).length ? { defaults } : {}), steps };
+                ...(Object.keys(defaults).length ? { defaults } : {}), steps: keepSourceFields(steps) };
         };
         // The run values a saved schema holds: only those the owner set before (loaded as explicit) or that differ
         // from Basic. Opening a schema and saving it does not make the shown Basic values explicit.
@@ -6826,6 +6871,9 @@ document.addEventListener('click', (event) => {
             basicRunExplicit.set(key, { ...(basicRunExplicit.get(key) || {}), [field]: true });
         };
         const basicSchemaLoadErrors = new Map();
+        // The schema the working copies were read from. The fields the canvas does not edit (control steps, output, require,
+        // owner, chat, a participant's input) are kept from it on Save and on Run (keepSourceFields).
+        const basicSourceSchema = new Map();
         const basicRunForSave = () => {
             const explicit = basicRunExplicit.get(draftPlanStorageKey()) || {};
             const defaults = window.BasicSchema.DEFAULTS.run;
@@ -6853,6 +6901,7 @@ document.addEventListener('click', (event) => {
                 runExplicit: { policy: 'policy' in (config.schema.run || {}), maxWords: 'maxWords' in (config.schema.run || {}) } };
         };
         const adoptBasicWorking = (key, working) => {
+            basicSourceSchema.set(key, working.schema || null);
             customPipelineDefaults.set(key, working.defaults);
             customCardSettings.set(key, working.cards);
             customRoundSettings.set(key, working.rounds || {});
@@ -6885,6 +6934,7 @@ document.addEventListener('click', (event) => {
                 return false;
             }
             pipelineStore.pipelines[name] = built.record;
+            basicSourceSchema.set(name, built.record.schema);
             // The record is the one source of the plan now.
             delete pipelineStore.draftPlans?.[name];
             delete pipelineSessionDraftPlans[name];
@@ -8319,7 +8369,7 @@ document.addEventListener('click', (event) => {
             if (pipelineStore.active === trimmedOld) pipelineStore.active = trimmedNew;
             if (customPipelineDefaults.has(trimmedOld)) { customPipelineDefaults.set(trimmedNew, customPipelineDefaults.get(trimmedOld)); customPipelineDefaults.delete(trimmedOld); }
             if (customCardSettings.has(trimmedOld)) { customCardSettings.set(trimmedNew, customCardSettings.get(trimmedOld)); customCardSettings.delete(trimmedOld); }
-            [customRoundSettings, basicRunExplicit, basicSchemaLoadErrors].forEach((map) => { if (map.has(trimmedOld)) { map.set(trimmedNew, map.get(trimmedOld)); map.delete(trimmedOld); } });
+            [customRoundSettings, basicRunExplicit, basicSchemaLoadErrors, basicSourceSchema].forEach((map) => { if (map.has(trimmedOld)) { map.set(trimmedNew, map.get(trimmedOld)); map.delete(trimmedOld); } });
 
             renderPipelineList(pipelineStore.order, pipelineStore.active, pipelineStore.lastSaved);
             persistPipelineStore();
@@ -8641,6 +8691,16 @@ document.addEventListener('click', (event) => {
         const recordFromSchema = (name, schema) => {
             const errors = window.BasicSchema.validate(schema);
             if (errors.length) return { ok: false, errors };
+            // The canvas shows one block per model name: two participants of one model in a step are refused with their place
+            // (not saved without them) until the canvas shows them.
+            const twice = [];
+            (schema.steps || []).forEach((step, at) => {
+                const names = (step.models || []).filter((model) => model.enabled !== false).map((model) => model.name);
+                names.forEach((name, index) => {
+                    if (names.indexOf(name) !== index) twice.push({ path: `steps[${at}].models`, message: `два участника модели «${name}» в одном шаге пока не показываются на холсте` });
+                });
+            });
+            if (twice.length) return { ok: false, errors: twice };
             const canvas = window.BasicSchema.toCanvas(schema, {
                 models: getAllPipelineModelNames(),
                 isRole: (id) => id === CUSTOM_ROLE_ID || Boolean(getJudgePromptById(id)),
