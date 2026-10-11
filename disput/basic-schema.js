@@ -24,7 +24,27 @@
   // Every released version stays supported; a newer one than this Basic is refused.
   const SUPPORTED_VERSIONS = Object.freeze([1]);
   const ORIGINS = Object.freeze(['builtin', 'user']);
-  const KINDS = Object.freeze(['round', 'synthesis']);
+  const KINDS = Object.freeze(['round', 'synthesis', 'gate', 'route', 'owner']);
+  const CONTROL_KINDS = Object.freeze(['gate', 'route', 'owner']);
+  // The fields a step of each kind may have (an unknown field is an error with its path).
+  const STEP_KEYS = Object.freeze({
+    round: Object.freeze(['ref', 'kind', 'order', 'input', 'task', 'models', 'output', 'require', 'owner', 'chat']),
+    synthesis: Object.freeze(['ref', 'kind', 'order', 'input', 'task', 'models', 'output', 'require', 'owner', 'chat']),
+    gate: Object.freeze(['ref', 'kind', 'input', 'task', 'models', 'output', 'require', 'chat', 'criteria', 'pass', 'onFail', 'onPass']),
+    route: Object.freeze(['ref', 'kind', 'input', 'task', 'models', 'select']),
+    owner: Object.freeze(['ref', 'kind', 'task', 'input', 'output', 'models'])
+  });
+  const CONTROL_REF = Object.freeze({
+    gate: 'ref проверки: «gate:<id>», id — латинские буквы, цифры, «_» и «-»',
+    route: 'ref маршрута: «route:<id>», id — латинские буквы, цифры, «_» и «-»',
+    owner: 'ref владельца: «owner:<id>», id — латинские буквы, цифры, «_» и «-»'
+  });
+  const ROUTE_BY = Object.freeze(['rule', 'model', 'owner']);
+  const ROUTE_CONFLICT = Object.freeze(['stop', 'first', 'owner']);
+  const ACTION_KINDS = Object.freeze(['goto', 'stop', 'return']);
+  const ROUTE_OPS = Object.freeze(['eq', 'in', 'exists']);
+  const GATE_PASS = Object.freeze(['all', 'any']);
+  const GATE_ON_FAIL = Object.freeze(['stop', 'ask']);
   const ORDERS = Object.freeze(['parallel', 'sequential']);
   const INPUTS = Object.freeze(['none', 'previous', 'all']);
   const POLICIES = Object.freeze(['auto', 'manual']);
@@ -47,6 +67,8 @@
 
   const DEFAULTS = Object.freeze({
     run: Object.freeze({ policy: 'manual', maxWords: 300 }),
+    gate: Object.freeze({ pass: 'all', onFail: 'stop' }),
+    route: Object.freeze({ conflict: 'stop' }),
     roundTask: 'Учти ответы предыдущего шага и дай свой улучшенный ответ на задачу.',
     synthesisTask: Engine.SYNTHESIS_TASK,
     discipline: Object.freeze({
@@ -82,12 +104,38 @@
   // With input none only a task written by the owner (on the model or the step) goes to the model; ▶ and Basic values do not.
   const writtenTask = (field) => field.source === 'model' || field.source === 'round';
 
+  const clone = (value) => JSON.parse(JSON.stringify(value));
+
+  // A gate, a route or an owner: the fields as the schema has them, with the Basic defaults of the kind written in.
+  // The task of their models is the owner's own text only: no inherited task reaches a checker or a chooser.
+  function assembleControl(step, roleText) {
+    const out = { kind: step.kind, ref: step.ref };
+    if ('input' in step) out.input = clone(step.input);
+    if ('output' in step) out.output = clone(step.output);
+    ['require', 'chat'].forEach((key) => { if (key in step) out[key] = step[key]; });
+    if (typeof step.task === 'string') out.task = step.task;
+    if (step.kind === 'owner') return { ...out, models: [] };
+    if (step.kind === 'gate') Object.assign(out, { criteria: clone(step.criteria), pass: step.pass ?? DEFAULTS.gate.pass, onFail: step.onFail ?? DEFAULTS.gate.onFail });
+    if (step.kind === 'route') {
+      out.select = clone(step.select);
+      if (out.select.by === 'rule' && !('conflict' in out.select)) out.select.conflict = DEFAULTS.route.conflict;
+    }
+    out.models = (step.models || []).filter((model) => model.enabled !== false).map((model) => ({
+      name: model.name,
+      id: idOf(model),
+      task: typeof model.task === 'string' ? model.task : (typeof step.task === 'string' ? step.task : ''),
+      extra: roleText(model.role || '', step.ref) || ''
+    }));
+    return out;
+  }
+
   // Engine steps from a schema. `context.roleText(role, ref)` turns a model's role into its extra text.
   function assemble(schema, { roleText = () => '' } = {}) {
     const defaults = schema.defaults || {};
     const finalStep = schema.steps.find((step) => step.ref === 'final');
     let rounds = 0;
     return schema.steps.map((step) => {
+      if (CONTROL_KINDS.includes(step.kind)) return assembleControl(step, roleText);
       const roundIndex = step.kind === 'round' ? rounds++ : -1;
       const input = step.input || defaultInput(step.kind, roundIndex);
       const stepFields = resolveFields({ task: step.task }, step.kind, {}, defaults);
@@ -124,7 +172,7 @@
         };
       });
       return out;
-    }).filter((step) => step.models.length);
+    }).filter((step) => step.models.length || step.kind === 'owner' || step.kind === 'route');
   }
 
   // A participant's id: the explicit one, or its name.
@@ -277,6 +325,7 @@
     // The input of a step or of a participant: a value of the list of inputs, or a list of sources.
     const checkInput = (value, path, kind, index) => {
       if (Array.isArray(value)) { checkInputList(value, path, index); return; }
+      if (kind === 'route' || kind === 'owner') { if (value !== 'previous') fail(path, 'вход: допустимо previous или список источников'); return; }
       oneOf(value, INPUTS, path, 'вход');
       if (kind === 'synthesis' && value !== 'previous') fail(path, 'синтез всегда получает ответы предыдущего шага');
     };
@@ -342,10 +391,104 @@
       });
     };
 
+    // A transition (6.3): exactly one of goto, stop, return. The fields of the transition itself (maxLoops,
+    // feedback, invalidate, resumeAt) are checked with the graph of the steps, not here.
+    const checkAction = (action, path) => {
+      if (!isObject(action)) { fail(path, 'переход: объект с одним полем goto, stop или return'); return; }
+      const kinds = ACTION_KINDS.filter((key) => key in action);
+      if (kinds.length !== 1) { fail(path, 'переход: ровно одно из goto, stop, return'); return; }
+      unknownKeys(action, [kinds[0]], path);
+      if (kinds[0] === 'goto' && (typeof action.goto !== 'string' || !action.goto)) fail(`${path}.goto`, 'ref перехода: непустой текст');
+      if (kinds[0] === 'stop' && (typeof action.stop !== 'string' || !action.stop.trim())) fail(`${path}.stop`, 'причина остановки: непустой текст');
+      if (kinds[0] === 'return' && action.return !== true) fail(`${path}.return`, 'return: только true');
+    };
+
+    // A rule condition (6.2): an atomic one { source, pointer, op, value? } or { all: [...] } / { any: [...] }.
+    // `inputs` is the list of the route's sources, or null when the route has no list (its error is already named).
+    const checkCondition = (cond, path, inputs) => {
+      if (!isObject(cond)) { fail(path, 'условие: объект с полями source, pointer, op, value'); return; }
+      const composite = ['all', 'any'].filter((key) => key in cond);
+      if (composite.length) {
+        if (composite.length > 1 || Object.keys(cond).length > 1) { fail(path, 'условие: либо all, либо any, без других полей'); return; }
+        const [key] = composite;
+        if (!Array.isArray(cond[key]) || !cond[key].length) { fail(`${path}.${key}`, 'условие: непустой список условий'); return; }
+        cond[key].forEach((item, at) => checkCondition(item, `${path}.${key}[${at}]`, inputs));
+        return;
+      }
+      unknownKeys(cond, ['source', 'pointer', 'op', 'value'], path);
+      if (inputs) {
+        if (!Number.isSafeInteger(cond.source) || cond.source < 0) fail(`${path}.source`, 'источник: номер входа маршрута, целое от 0');
+        else if (cond.source >= inputs.length) fail(`${path}.source`, 'источник: номер вне списка input маршрута');
+        else if (!isObject(inputs[cond.source])) fail(`${path}.source`, 'правило читает точный источник: участника или артефакт');
+      }
+      const problem = pointerError(cond.pointer);
+      if (problem) fail(`${path}.pointer`, problem);
+      oneOf(cond.op, ROUTE_OPS, `${path}.op`, 'оператор условия');
+      if (cond.op === 'eq' && !('value' in cond)) fail(`${path}.value`, 'для eq укажите value');
+      if (cond.op === 'in' && !(Array.isArray(cond.value) && cond.value.length)) fail(`${path}.value`, 'для in нужен непустой список значений');
+      if (cond.op === 'exists' && 'value' in cond) fail(`${path}.value`, 'для exists значение не указывают');
+    };
+
+    // A gate, a route or an owner (3.1, 6.1, 6.2, 4.1). Their transitions are checked as shape here.
+    const checkControl = (step, path) => {
+      const enabled = (Array.isArray(step.models) ? step.models : []).filter((model) => isObject(model) && model.enabled !== false);
+      if (step.kind === 'owner') {
+        if (typeof step.task !== 'string' || !step.task.trim()) fail(`${path}.task`, 'задание владельца: непустой текст');
+        if (Array.isArray(step.models) && step.models.length) fail(`${path}.models`, 'у владельца нет моделей');
+        return;
+      }
+      if (step.kind === 'gate') {
+        if (!Array.isArray(step.criteria) || !step.criteria.length) fail(`${path}.criteria`, 'критерии проверки: непустой список строк');
+        else step.criteria.forEach((item, at) => { if (typeof item !== 'string' || !item.trim()) fail(`${path}.criteria[${at}]`, 'критерий: непустой текст'); });
+        if ('pass' in step) oneOf(step.pass, GATE_PASS, `${path}.pass`, 'pass проверки');
+        if ('onFail' in step) oneOf(step.onFail, GATE_ON_FAIL, `${path}.onFail`, 'onFail проверки');
+        if ('onPass' in step) fail(`${path}.onPass`, 'переход по успеху пока не поддерживается');
+        return;
+      }
+      const select = step.select;
+      if (!isObject(select)) { fail(`${path}.select`, 'выбор маршрута: объект с полем by'); return; }
+      unknownKeys(select, ['by', 'conflict', 'cases', 'otherwise'], `${path}.select`);
+      oneOf(select.by, ROUTE_BY, `${path}.select.by`, 'выбор маршрута');
+      const rule = select.by === 'rule';
+      if (select.by === 'model') {
+        if (enabled.length !== 1) fail(`${path}.models`, 'маршрут по модели: ровно один включённый участник');
+        if (typeof step.task !== 'string' || !step.task.trim()) fail(`${path}.task`, 'задание маршрута по модели: непустой текст');
+      } else if (Array.isArray(step.models) && step.models.length) fail(`${path}.models`, 'у маршрута по правилу и владельцу моделей нет');
+      if ('conflict' in select) {
+        if (!rule) fail(`${path}.select.conflict`, 'конфликт выбора задаётся только для правила');
+        else oneOf(select.conflict, ROUTE_CONFLICT, `${path}.select.conflict`, 'конфликт выбора');
+      }
+      if ('otherwise' in select) {
+        if (!rule) fail(`${path}.select.otherwise`, 'вариант по умолчанию задаётся только для правила');
+        checkAction(select.otherwise, `${path}.select.otherwise`);
+      }
+      // A rule reads the exact sources of the route's input list; without the list the rule has nothing to read.
+      const inputs = Array.isArray(step.input) ? step.input : null;
+      if (rule && !inputs) fail(`${path}.input`, 'правило читает точные источники: укажите input списком');
+      if (!Array.isArray(select.cases) || !select.cases.length) { fail(`${path}.select.cases`, 'ожидается непустой список вариантов'); return; }
+      const caseIds = new Set();
+      select.cases.forEach((item, at) => {
+        const at2 = `${path}.select.cases[${at}]`;
+        if (!isObject(item)) { fail(at2, 'ожидается объект варианта'); return; }
+        unknownKeys(item, ['id', 'when', 'label', 'action'], at2);
+        if (typeof item.id !== 'string' || !item.id.trim()) fail(`${at2}.id`, 'ID варианта: непустой текст');
+        else if (caseIds.has(item.id)) fail(`${at2}.id`, `вариант «${item.id}» повторяется`);
+        else caseIds.add(item.id);
+        if (rule) {
+          checkCondition(item.when, `${at2}.when`, inputs);
+          if ('label' in item && typeof item.label !== 'string') fail(`${at2}.label`, 'название варианта: текст');
+        } else {
+          if ('when' in item) fail(`${at2}.when`, 'условие только для правила: варианты модели и владельца описываются label');
+          if (typeof item.label !== 'string' || !item.label.trim()) fail(`${at2}.label`, 'название варианта: непустой текст');
+        }
+        checkAction(item.action, `${at2}.action`);
+      });
+    };
+
     schema.steps.forEach((step, index) => {
       const path = `steps[${index}]`;
       if (!isObject(step)) { fail(path, 'ожидается объект'); return; }
-      unknownKeys(step, ['ref', 'kind', 'order', 'input', 'task', 'models', 'output', 'require', 'owner', 'chat'], path);
+      unknownKeys(step, STEP_KEYS[step.kind] || STEP_KEYS.round, path);
       if ('output' in step) checkOutput(step.output, `${path}.output`, step, index);
       // A number of answers is checked against the enabled participants; a switched-off step keeps its number.
       if ('require' in step && !REQUIRE_WORDS.includes(step.require)) {
@@ -359,6 +502,7 @@
       else if (refs.has(step.ref)) fail(`${path}.ref`, `ref «${step.ref}» повторяется`);
       else refs.add(step.ref);
       oneOf(step.kind, KINDS, `${path}.kind`, 'тип шага');
+      if (CONTROL_KINDS.includes(step.kind) && typeof step.ref === 'string' && !new RegExp(`^${step.kind}:[A-Za-z0-9_-]+$`).test(step.ref)) fail(`${path}.ref`, CONTROL_REF[step.kind]);
       if ('order' in step) {
         oneOf(step.order, ORDERS, `${path}.order`, 'порядок');
         if (step.kind === 'synthesis') fail(`${path}.order`, 'у синтеза порядка нет: он одна модель-синтезатор или параллельный');
@@ -390,6 +534,7 @@
         if ('maxWords' in model && !(Number.isSafeInteger(model.maxWords) && model.maxWords > 0)) fail(`${modelPath}.maxWords`, 'ожидается положительное целое число слов');
         if ('discipline' in model) checkDiscipline(model.discipline, `${modelPath}.discipline`);
       });
+      if (CONTROL_KINDS.includes(step.kind)) checkControl(step, path);
     });
     return errors;
   }
@@ -432,6 +577,8 @@
     let finalStep = null;
     steps.forEach((step, index) => {
       const path = `steps[${index}]`;
+      // Gate, route and owner are not on the canvas yet: the schema is named, not changed.
+      if (CONTROL_KINDS.includes(step.kind)) { fail(path, 'холст пока не показывает проверку, маршрут и владельца'); return; }
       const enabled = enabledOf(step);
       const stepNames = new Set();
       enabled.forEach((model, at) => {

@@ -649,3 +649,112 @@ describe('Basic schema: how many answers a step needs, owner approval and chat (
     cases.forEach(([extra, path]) => expect({ extra, paths: errorPaths(base([round('r1', ['A', 'B'], extra)])) }).toEqual({ extra, paths: [path] }));
   });
 });
+
+describe('Basic schema: gate, route and owner steps (6.1, 6.2, 4.1)', () => {
+  const gate = (ref, models, extra = {}) => ({ ref, kind: 'gate', criteria: ['Есть источники'], models: models.map((name) => (typeof name === 'string' ? { name } : name)), ...extra });
+  const owner = (ref, extra = {}) => ({ ref, kind: 'owner', task: 'Предоставьте исследование', models: [], ...extra });
+  const route = (ref, extra) => ({ ref, kind: 'route', models: [], ...extra });
+  // Route by rule reads the answer of participant A of r1 (its JSON answer) as its source 0.
+  const ruleRoute = (cases, extra = {}) => route('route:audit', { input: [{ step: 'r1', participant: 'A' }], select: { by: 'rule', cases, ...extra } });
+  const ruleCase = (id, when, action) => ({ id, when, action });
+  const eqCase = (id, value, action) => ruleCase(id, { source: 0, pointer: '/route', op: 'eq', value }, action);
+  // A schema with one control step between r1 and the final synthesis: the step under test is at index 1.
+  const around = (step) => base([round('r1', ['A', 'B']), step, synthesis('final', ['C'])]);
+  const pathsOf = (step) => errorPaths(around(step));
+
+  test('a control-only schema is valid: no round is needed, owner and route keep their place', () => {
+    const schema = base([owner('owner:evidence', { output: { format: 'json', requiredFields: ['/evidence'] } }), gate('gate:g1', ['Claude']), route('route:next', { select: { by: 'owner', cases: [{ id: 'go', label: 'Дальше', action: { stop: 'Готово' } }] } })]);
+    expect(Schema.validate(schema)).toEqual([]);
+    const steps = Schema.assemble(schema);
+    expect(steps.map((step) => [step.kind, step.ref])).toEqual([['owner', 'owner:evidence'], ['gate', 'gate:g1'], ['route', 'route:next']]);
+    expect(steps[0]).toMatchObject({ task: 'Предоставьте исследование', models: [] });
+  });
+
+  test('control steps may stand between rounds, and gate takes criteria, pass, onFail', () => {
+    const schema = base([round('r1', ['A']), gate('gate:g1', ['Claude'], { pass: 'any', onFail: 'ask' }), round('r2', ['A']), synthesis('final', ['B'])]);
+    expect(Schema.validate(schema)).toEqual([]);
+    const gateStep = Schema.assemble(schema)[1];
+    expect(gateStep).toMatchObject({ kind: 'gate', criteria: ['Есть источники'], pass: 'any', onFail: 'ask' });
+    expect(gateStep.models.map((model) => model.name)).toEqual(['Claude']);
+  });
+
+  test('gate, route and owner defaults come from DEFAULTS; a gate with no enabled checker is switched off, route and owner are kept', () => {
+    expect(Schema.DEFAULTS.gate).toEqual({ pass: 'all', onFail: 'stop' });
+    const steps = Schema.assemble(base([gate('gate:off', [{ name: 'Claude', enabled: false }]), owner('owner:o'), route('route:m', { task: 'Выбери', models: [{ name: 'GPT' }], select: { by: 'model', cases: [{ id: 'a', label: 'А', action: { stop: 'А' } }] } }), synthesis('final', ['B'])]));
+    expect(steps.map((step) => step.ref)).toEqual(['owner:o', 'route:m', 'final']);
+    expect(steps[1]).toMatchObject({ kind: 'route', models: [{ name: 'GPT' }] });
+    expect(steps[0].models).toEqual([]);
+  });
+
+  test('a rule route with exact sources and conditions, and a route by model with one participant, are valid', () => {
+    expect(pathsOf(ruleRoute([eqCase('close', 'close', { stop: 'Закрыть' }), eqCase('revise', 'revise', { stop: 'Доработать' })], { otherwise: { stop: 'Нет решения' } }))).toEqual([]);
+    expect(pathsOf(ruleRoute([ruleCase('any', { any: [{ source: 0, pointer: '/a', op: 'exists' }, { source: 0, pointer: '/b', op: 'in', value: [1, 2] }] }, { stop: 'Дальше' })], { conflict: 'first' }))).toEqual([]);
+    expect(pathsOf(route('route:m', { task: 'Выбери', models: [{ name: 'GPT' }], select: { by: 'model', cases: [{ id: 'a', label: 'Вариант А', action: { stop: 'А' } }, { id: 'b', label: 'Вариант Б', action: { stop: 'Б' } }] } }))).toEqual([]);
+  });
+
+  test('wrong gate, route and owner steps are named with their exact paths', () => {
+    const at = 'steps[1]';
+    const gateCases = [
+      [{ criteria: undefined }, [`${at}.criteria`]],
+      [{ criteria: [] }, [`${at}.criteria`]],
+      [{ criteria: [''] }, [`${at}.criteria[0]`]],
+      [{ pass: 'some' }, [`${at}.pass`]],
+      [{ onFail: 'retry' }, [`${at}.onFail`]],
+      [{ onPass: { stop: 'x' } }, [`${at}.onPass`]],
+      [{ order: 'sequential' }, [`${at}.order`]]
+    ];
+    gateCases.forEach(([extra, paths]) => expect({ extra, paths: pathsOf(gate('gate:g1', ['Claude'], extra)) }).toEqual({ extra, paths }));
+    expect(pathsOf(gate('check', ['Claude']))).toEqual([`${at}.ref`]);
+    expect(pathsOf(gate('gate:g1', []))).toEqual([]);
+
+    const cases = [
+      [route('audit', { select: { by: 'owner', cases: [{ id: 'x', label: 'x', action: { stop: 'y' } }] } }), [`${at}.ref`]],
+      [route('route:a', { select: { by: 'random', cases: [{ id: 'x', label: 'x', action: { stop: 'y' } }] } }), [`${at}.select.by`]],
+      [route('route:a'), [`${at}.select`]],
+      [route('route:a', { select: { by: 'owner', cases: [] } }), [`${at}.select.cases`]],
+      [route('route:a', { select: { by: 'owner', cases: [{ label: 'x', action: { stop: 'y' } }] } }), [`${at}.select.cases[0].id`]],
+      [route('route:a', { select: { by: 'owner', cases: [{ id: 'x', label: 'x', action: { stop: 'y' } }, { id: 'x', label: 'z', action: { stop: 'w' } }] } }), [`${at}.select.cases[1].id`]],
+      [route('route:a', { models: [{ name: 'GPT' }, { name: 'Claude' }], task: 'Выбери', select: { by: 'model', cases: [{ id: 'x', label: 'x', action: { stop: 'y' } }] } }), [`${at}.models`]],
+      [route('route:a', { models: [{ name: 'GPT' }], select: { by: 'owner', cases: [{ id: 'x', label: 'x', action: { stop: 'y' } }] } }), [`${at}.models`]],
+      [route('route:a', { task: 'Выбери', models: [{ name: 'GPT' }], select: { by: 'model', cases: [{ id: 'x', label: 'x', action: { stop: 'y' } }] } }), []],
+      [route('route:a', { models: [{ name: 'GPT' }], select: { by: 'model', cases: [{ id: 'x', label: 'x', action: { stop: 'y' } }] } }), [`${at}.task`]],
+      [route('route:a', { task: 'Выбери', models: [{ name: 'GPT' }], select: { by: 'model', cases: [{ id: 'x', action: { stop: 'y' } }] } }), [`${at}.select.cases[0].label`]],
+      [route('route:a', { task: 'Выбери', models: [{ name: 'GPT' }], select: { by: 'model', cases: [{ id: 'x', label: 'x', when: { source: 0 }, action: { stop: 'y' } }] } }), [`${at}.select.cases[0].when`]],
+      [route('route:a', { task: 'Выбери', models: [{ name: 'GPT' }], select: { by: 'model', cases: [{ id: 'x', label: 'x', action: { stop: 'y' } }], otherwise: { stop: 'z' } } }), [`${at}.select.otherwise`]],
+      [route('route:a', { task: 'Выбери', models: [{ name: 'GPT' }], select: { by: 'model', conflict: 'first', cases: [{ id: 'x', label: 'x', action: { stop: 'y' } }] } }), [`${at}.select.conflict`]],
+      [route('route:a', { input: 'none', select: { by: 'owner', cases: [{ id: 'x', label: 'x', action: { stop: 'y' } }] } }), [`${at}.input`]],
+      [route('route:a', { select: { by: 'rule', cases: [eqCase('x', 'y', { stop: 'z' })] } }), [`${at}.input`]],
+      [route('route:a', { input: [{ step: 'r1', participant: 'A' }], select: { by: 'rule', cases: [{ id: 'x', action: { stop: 'z' } }] } }), [`${at}.select.cases[0].when`]],
+      [ruleRoute([eqCase('x', 'y', { stop: 'z' })].map((item) => ({ ...item, when: { source: 1, pointer: '/route', op: 'eq', value: 'y' } }))), [`${at}.select.cases[0].when.source`]],
+      [ruleRoute([ruleCase('x', { source: 'A', pointer: '/route', op: 'eq', value: 'y' }, { stop: 'z' })]), [`${at}.select.cases[0].when.source`]],
+      [ruleRoute([ruleCase('x', { source: 0, pointer: 'route', op: 'eq', value: 'y' }, { stop: 'z' })]), [`${at}.select.cases[0].when.pointer`]],
+      [ruleRoute([ruleCase('x', { source: 0, pointer: '/route', op: 'like', value: 'y' }, { stop: 'z' })]), [`${at}.select.cases[0].when.op`]],
+      [ruleRoute([ruleCase('x', { source: 0, pointer: '/route', op: 'eq' }, { stop: 'z' })]), [`${at}.select.cases[0].when.value`]],
+      [ruleRoute([ruleCase('x', { source: 0, pointer: '/route', op: 'exists', value: 1 }, { stop: 'z' })]), [`${at}.select.cases[0].when.value`]],
+      [ruleRoute([ruleCase('x', { source: 0, pointer: '/route', op: 'in', value: [] }, { stop: 'z' })]), [`${at}.select.cases[0].when.value`]],
+      [ruleRoute([ruleCase('x', { all: [], }, { stop: 'z' })]), [`${at}.select.cases[0].when.all`]],
+      [ruleRoute([ruleCase('x', { all: [{ source: 0, pointer: '/a', op: 'exists' }], any: [{ source: 0, pointer: '/a', op: 'exists' }] }, { stop: 'z' })]), [`${at}.select.cases[0].when`]],
+      [ruleRoute([ruleCase('x', { source: 0, pointer: '/route', op: 'exists' }, undefined)]), [`${at}.select.cases[0].action`]],
+      [ruleRoute([ruleCase('x', { source: 0, pointer: '/route', op: 'exists' }, { goto: 'final', stop: 'z' })]), [`${at}.select.cases[0].action`]],
+      [ruleRoute([ruleCase('x', { source: 0, pointer: '/route', op: 'exists' }, { goto: '' })]), [`${at}.select.cases[0].action.goto`]],
+      [ruleRoute([ruleCase('x', { source: 0, pointer: '/route', op: 'exists' }, { stop: '' })]), [`${at}.select.cases[0].action.stop`]],
+      [ruleRoute([ruleCase('x', { source: 0, pointer: '/route', op: 'exists' }, { goto: 'final', maxLoops: 2 })]), [`${at}.select.cases[0].action.maxLoops`]]
+    ];
+    cases.forEach(([step, paths], index) => expect({ index, paths: pathsOf(step) }).toEqual({ index, paths }));
+
+    expect(pathsOf(owner('evidence'))).toEqual([`${at}.ref`]);
+    expect(pathsOf(owner('owner:o', { task: '' }))).toEqual([`${at}.task`]);
+    expect(pathsOf(owner('owner:o', { models: [{ name: 'GPT' }] }))).toEqual([`${at}.models`]);
+    expect(pathsOf(owner('owner:o', { owner: 'approve' }))).toEqual([`${at}.owner`]);
+  });
+});
+
+describe('Basic schema: a control step is not on the canvas yet', () => {
+  test('the canvas names a gate, a route or an owner and changes nothing', () => {
+    const schema = base([round('r1', ['GPT']), { ref: 'gate:g1', kind: 'gate', criteria: ['Есть источники'], models: [{ name: 'GPT' }] }, synthesis('final', ['GPT'])]);
+    const before = JSON.stringify(schema);
+    const canvas = Schema.toCanvas(schema, { models: ['GPT'] });
+    expect(canvas.errors.map((error) => error.path)).toEqual(['steps[1]']);
+    expect(JSON.stringify(schema)).toBe(before);
+  });
+});

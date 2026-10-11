@@ -1,5 +1,14 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — Schema: gate, route and owner steps are checked, version 2.81.708
+
+- `BasicSchema.validate` (`disput/basic-schema.js`): three new kinds, `gate:<id>`, `route:<id>`, `owner:<id>`. A gate has `criteria` (non-empty), `pass` (`all`/`any`), `onFail` (`stop`/`ask`) and checkers in `models`. A route has `select` (`by`: `rule`, `model` or `owner`; `cases`; `otherwise` and `conflict` for a rule) and its models: none for a rule or an owner, exactly one enabled with a task for a model. An owner has a `task` and no models. A rule condition is an atomic `{source, pointer, op, value}` or `all`/`any`; the pointer goes through the same check as the output. A transition is shape-checked: exactly one of `goto`, `stop`, `return`. Control steps need no round and may stand anywhere; the rounds limit (50) does not count them.
+- `BasicSchema.assemble`: a gate, a route and an owner are assembled with their fields and the Basic defaults of the kind (`BasicSchema.DEFAULTS.gate`, `DEFAULTS.route`); an owner and a route are kept without models, a gate without an enabled checker is switched off as a round is.
+- `BasicSchema.toCanvas`: a gate, a route or an owner is named as a place the canvas does not show yet; the schema does not change.
+- Not yet: the engine does not run these kinds (`normalizeSteps` turns any non-synthesis step into a round: the pack P02 must refuse them or run them); transitions with `maxLoops`, `resumeAt`, `feedback`, `invalidate` and the graph check come with the next step; the canvas shows them with the pack P09.
+- Docs: `basic-schema-guide.md` (section 5.9, the defaults in section 4, the kinds in 5.4, error rows of section 10).
+- Tests: `tests/basic-schema.test.js` (the block «gate, route and owner steps (6.1, 6.2, 4.1)» and «a control step is not on the canvas yet»).
+
 ### 2026-10-11 — Schema: the number of answers, owner approval and chat of a step are checked, version 2.81.707
 
 - `BasicSchema.validate` (`disput/basic-schema.js`): a step may have `require` (`any`, `all` or a whole number from 1 to the enabled participants; a switched-off step keeps its number and is checked again when it is switched on), `owner: "approve"` and `chat` (`continue` or `new`). Each wrong value is named with its path.
