@@ -609,3 +609,43 @@ describe('Basic schema: output of a step, artifacts and revisions (5.1–5.2)', 
     expect(errorPaths(schema)).toEqual(['steps[1].input[0].artifact.id']);
   });
 });
+
+describe('Basic schema: how many answers a step needs, owner approval and chat (4.2, 1.3, 1.4)', () => {
+  test('require any, all or a number from 1 to the enabled participants are valid and reach assemble', () => {
+    [['any'], ['all'], [2]].forEach(([require]) => {
+      const schema = base([round('r1', ['A', 'B', { name: 'C', enabled: false }], { require }), synthesis('final', ['D'])]);
+      expect(Schema.validate(schema)).toEqual([]);
+      expect(Schema.assemble(schema)[0].require).toBe(require);
+    });
+  });
+
+  test('a switched-off step keeps its number of answers, and the number is checked again when the step is switched on', () => {
+    expect(Schema.validate(base([round('r1', [{ name: 'A', enabled: false }], { require: 2 }), synthesis('final', ['B'])]))).toEqual([]);
+    expect(errorPaths(base([round('r1', ['A'], { require: 2 }), synthesis('final', ['B'])]))).toEqual(['steps[0].require']);
+  });
+
+  test('owner approval and the chat of the step reach assemble; the defaults are not written', () => {
+    const schema = base([round('r1', ['A'], { owner: 'approve', chat: 'new' }), synthesis('final', ['B'], { owner: 'approve' })]);
+    expect(Schema.validate(schema)).toEqual([]);
+    const steps = Schema.assemble(schema);
+    expect(steps[0]).toMatchObject({ owner: 'approve', chat: 'new' });
+    expect(steps[1].owner).toBe('approve');
+    expect(steps[1]).not.toHaveProperty('chat');
+    expect(steps[1]).not.toHaveProperty('require');
+  });
+
+  test('wrong values are named with their exact path', () => {
+    const cases = [
+      [{ require: 0 }, 'steps[0].require'],
+      [{ require: 1.5 }, 'steps[0].require'],
+      [{ require: '2' }, 'steps[0].require'],
+      [{ require: 'some' }, 'steps[0].require'],
+      [{ require: true }, 'steps[0].require'],
+      [{ require: 3 }, 'steps[0].require'],
+      [{ owner: 'auto' }, 'steps[0].owner'],
+      [{ owner: '' }, 'steps[0].owner'],
+      [{ chat: 'keep' }, 'steps[0].chat']
+    ];
+    cases.forEach(([extra, path]) => expect({ extra, paths: errorPaths(base([round('r1', ['A', 'B'], extra)])) }).toEqual({ extra, paths: [path] }));
+  });
+});

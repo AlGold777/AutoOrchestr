@@ -1,5 +1,13 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — Schema: the number of answers, owner approval and chat of a step are checked, version 2.81.707
+
+- `BasicSchema.validate` (`disput/basic-schema.js`): a step may have `require` (`any`, `all` or a whole number from 1 to the enabled participants; a switched-off step keeps its number and is checked again when it is switched on), `owner: "approve"` and `chat` (`continue` or `new`). Each wrong value is named with its path.
+- `BasicSchema.assemble`: the three fields are passed as they are when given; nothing is written by default.
+- Not yet: the engine does not wait for the number of answers, does not ask the owner after a step with `approve`, and does not start a new chat (the pack P02).
+- Docs: `basic-schema-guide.md` (the fields of the step in section 5.4, error rows of section 10).
+- Tests: `tests/basic-schema.test.js` (the block «how many answers a step needs, owner approval and chat (4.2, 1.3, 1.4)»).
+
 ### 2026-10-11 — Schema: the output of a step and its artifacts are checked, version 2.81.706
 
 - `BasicSchema.validate` (`disput/basic-schema.js`): a step has an optional `output`: `name`, `form`, `sections` (text), `strictLength`, `format: "json"` with `requiredFields` (JSON Pointers; the forbidden segments `__proto__`, `prototype`, `constructor` are refused), and `artifacts` (`id`, `name`, `pointer`, `revisionOf`). Several artifacts need json; in text an artifact is the whole answer with `pointer: ""`. A `revisionOf` must be an artifact reference that is in the input of every enabled participant. An input artifact is accepted only when the earlier step declares it.

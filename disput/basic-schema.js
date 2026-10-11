@@ -29,6 +29,9 @@
   const INPUTS = Object.freeze(['none', 'previous', 'all']);
   const POLICIES = Object.freeze(['auto', 'manual']);
   const OUTPUT_FORMATS = Object.freeze(['json']);
+  const REQUIRE_WORDS = Object.freeze(['any', 'all']);
+  const OWNER_STEPS = Object.freeze(['approve']);
+  const CHAT_MODES = Object.freeze(['continue', 'new']);
   const POINTER_FORBIDDEN = Object.freeze(['__proto__', 'prototype', 'constructor']);
 
   // The problem of a JSON Pointer (RFC 6901, ~0 and ~1 only) or null. Forbidden segments are refused, nothing is read.
@@ -94,6 +97,7 @@
       else out.afterRound = rounds;
       if (step.kind === 'round') out.order = step.order || 'parallel';
       if ('output' in step) out.output = JSON.parse(JSON.stringify(step.output));
+      ['require', 'owner', 'chat'].forEach((key) => { if (key in step) out[key] = step[key]; });
       out.task = input === 'none' && !writtenTask(stepFields.task) ? '' : stepFields.task.value;
       // A list of sources goes to the engine as it is; a synthesis without a list keeps its old shape (no input field).
       if (step.kind === 'round' || Array.isArray(input)) out.input = Array.isArray(input) ? JSON.parse(JSON.stringify(input)) : input;
@@ -341,8 +345,16 @@
     schema.steps.forEach((step, index) => {
       const path = `steps[${index}]`;
       if (!isObject(step)) { fail(path, 'ожидается объект'); return; }
-      unknownKeys(step, ['ref', 'kind', 'order', 'input', 'task', 'models', 'output'], path);
+      unknownKeys(step, ['ref', 'kind', 'order', 'input', 'task', 'models', 'output', 'require', 'owner', 'chat'], path);
       if ('output' in step) checkOutput(step.output, `${path}.output`, step, index);
+      // A number of answers is checked against the enabled participants; a switched-off step keeps its number.
+      if ('require' in step && !REQUIRE_WORDS.includes(step.require)) {
+        const enabledCount = (Array.isArray(step.models) ? step.models : []).filter((model) => isObject(model) && model.enabled !== false).length;
+        if (!(Number.isSafeInteger(step.require) && step.require > 0)) fail(`${path}.require`, 'require: допустимо any, all или целое число больше 0');
+        else if (enabledCount && step.require > enabledCount) fail(`${path}.require`, `требуется больше ответов, чем включённых участников: ${enabledCount}`);
+      }
+      if ('owner' in step) oneOf(step.owner, OWNER_STEPS, `${path}.owner`, 'владелец шага');
+      if ('chat' in step) oneOf(step.chat, CHAT_MODES, `${path}.chat`, 'чат шага');
       if (typeof step.ref !== 'string' || !step.ref) fail(`${path}.ref`, 'ref шага не указан');
       else if (refs.has(step.ref)) fail(`${path}.ref`, `ref «${step.ref}» повторяется`);
       else refs.add(step.ref);
