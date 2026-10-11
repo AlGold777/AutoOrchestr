@@ -40,7 +40,7 @@
 | Явные значения и запуск | `basicRunForSave`, `markBasicRunExplicit`, `basicRunExplicit`, `basicSchemaLoadErrors` | Какие значения считаются явными и проверка перед запуском |
 | Окна настроек | `renderCustomBlockInspector`, `openStageCard`, `setCustomRoundSetting`, `setCustomRoundPrompt`, `resolveCustomFields`, `customDisciplineDefaults` | Окно настроек модели, открытие окна раунда, значения раунда и модели |
 | Сборка запроса | `composeCustomPrompts`, `prepareCustomPrompts`, `customLengthInstruction` | Дописывает особенность модели, инструкцию длины и требования к содержанию |
-| Прогон | `runCustomFromPage`, `basicRunNotice`, `startDebateFromPage`, `askCustomDecision`, `askCustomOwner`, `customRunProgress`, `isCustomEnginePipeline` | Запуск Basic со страницы, окна паузы и вопросов, состояние холста |
+| Прогон | `runCustomFromPage`, `resumeCustomFromPage`, `builtFromRecord`, `basicRunNotice`, `startDebateFromPage`, `askCustomDecision`, `askCustomOwner`, `customRunProgress`, `isCustomEnginePipeline` | Запуск Basic со страницы, окна паузы и вопросов, состояние холста |
 | Транспорт и карточки ответа | `runModelBatch`, `pipelineWaiter`, `updateDebateModelCardOutput` | Отправка запросов моделям, ожидание ответов, карточки ответа |
 | Холст | `draftPlanForCanvas`, `applyPipelineConfig`, `syncPipelineRoundModelsFromSelectedLLMs`, `getActiveDraftPlan` | План холста и применение конфигурации к холсту |
 
@@ -52,6 +52,7 @@
 | `tests/custom-run-record.test.js` | Запись о прогоне, хранение, экспорт, состояние `not_sent` |
 | `tests/custom-extract.test.js` | Разбор прогона в Extract (Transport) |
 | `tests/custom-engine-checkpoint.test.js` | Checkpoint: точки записи состояния, живое состояние, `checkpoint_failed`, автономный запуск без callback |
+| `tests/custom-run-resume-wiring.test.js` | Привязка страницы к записи: callbacks текстов, checkpoint, очередь записи, «Продолжить прогон» (контракт в `results.js`, без браузера) |
 | `tests/custom-engine-resume.test.js` | Продолжение из снимка: неизвестный запрос, пропуск, решение владельца и окно после перезагрузки, счётчики, применённый переход, схема снимка |
 | `tests/custom-engine-owner.test.js` | Шаг владельца: текст и его проверка, пустой ответ, отмена и Stop, файлы, `unsupported_input` |
 | `tests/basic-artifacts.test.js` | Реестр артефактов: идемпотентность, последняя версия линии, авторы |

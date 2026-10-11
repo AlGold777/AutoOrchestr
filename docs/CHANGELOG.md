@@ -1,5 +1,13 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — Basic: the page binds the engine to the run record; «Продолжить прогон» goes on from the saved state, version 2.81.734
+
+- `results.js` (`runCustomFromPage`): accepts a saved record (`resumeRecord`): the schema of the snapshot (`builtFromRecord`), the same record and run ID, the saved state (`resume`). A record without a saved state is refused with a notice (`CustomRunRecord.canResume`).
+- `resumeCustomFromPage` (`results.js`): the latest run of the pipeline goes on from its saved state. Not wired yet: a button on the canvas, the owner's text window (an owner step stops with `provide_owner_required`), the window of unknown requests (without the decision a run stops with `no_decision`).
+- The writes of the record are one after another; the checkpoint writes the registry and the snapshot and waits for the write.
+- Docs: `basic-start-here.md` («Продолжить прогон»), `basic-developer.md` (function list, test table).
+- Tests: `tests/custom-run-resume-wiring.test.js` (new, the wiring contract of `results.js`; the page itself is not run in a browser here).
+
 ### 2026-10-11 — Basic: resume from the saved state (finished steps kept, unknown requests settled by the owner, decisions kept), version 2.81.733
 
 - `CustomEngine.run` (`disput/custom-engine.js`): `resume` takes back a saved state (the snapshot of `CustomRunRecord`, with `results`, `decisions`, the current step and the registry). The steps are the ones the caller gives (the saved schema). Finished steps are not sent again; the accepted answers of the step in progress stay; visits, loop counters, the stack, the feedback, the validity and the registry are restored. A step of the state missing from the steps is `resume_mismatch`.

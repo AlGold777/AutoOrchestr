@@ -6983,9 +6983,30 @@ document.addEventListener('click', (event) => {
         const customPipelineName = () => String(pipelineStore.active || getPipelineHeaderName() || 'Basic').trim();
         // The text of the notification at the end of a Basic run.
         const basicRunNotice = (stopText, acceptedCount) => `Basic: ${stopText}.${acceptedCount ? '' : ' Принятых ответов нет.'}`;
-        const runCustomFromPage = async ({ task }) => {
+        // A saved run goes on with the schema it was started with (8.3), never with the current canvas.
+        const builtFromRecord = (record) => {
+            const schema = record.snapshot?.schema;
+            try {
+                return { schema, errors: [], run: window.BasicSchema.resolveRun(schema), steps: window.BasicSchema.assemble(schema, { roleText: customRoleText }) };
+            } catch (error) {
+                return { schema, errors: [{ path: 'снимок прогона', message: String(error?.message || error) }], run: null, steps: [] };
+            }
+        };
+        // «Продолжить прогон»: the latest run of this pipeline goes on from its saved state. A run without one is only history.
+        const resumeCustomFromPage = async () => {
+            if (!customRunStore || !window.CustomRunRecord) { showNotification('Basic: записи прогонов недоступны.', 'warn'); return false; }
+            if (pipelineRunActive) { showNotification('Basic: прогон уже идёт.', 'warn'); return false; }
+            const latest = await customRunStore.latest(customPipelineName());
+            if (!latest) { showNotification('Basic: сохранённого прогона нет.', 'info'); return false; }
+            if (!window.CustomRunRecord.canResume(latest)) {
+                showNotification('Basic: прогон нельзя продолжить: в записи нет сохранённого состояния (запись прежней версии или прогон без снимка). Запись доступна для просмотра.', 'warn');
+                return false;
+            }
+            return runCustomFromPage({ task: window.CustomRunRecord.textOf(latest, latest.taskRef), resumeRecord: latest });
+        };
+        const runCustomFromPage = async ({ task, resumeRecord = null }) => {
             const engine = window.CustomEngine;
-            const built = buildBasicRun(draftPlanForCanvas(getActiveDraftPlan()));
+            const built = resumeRecord ? builtFromRecord(resumeRecord) : buildBasicRun(draftPlanForCanvas(getActiveDraftPlan()));
             // A schema that cannot be run stops here with the place of the error; nothing is sent.
             if (built.errors.length) {
                 showNotification(`Basic: схема не запущена. ${window.BasicSchema.describeErrors(built.errors)}`, 'error');
@@ -7001,7 +7022,7 @@ document.addEventListener('click', (event) => {
             pipelineRunActive = true;
             customAbortController = new AbortController();
             activePipelineRunContext = {
-                pipelineRunId: makePipelineRunId(),
+                pipelineRunId: resumeRecord ? resumeRecord.runId : makePipelineRunId(),
                 sessionId: debateTabsState?.activeSessionId
                     || document.querySelector('.debate-session-tab.active')?.dataset?.sessionId
                     || '1',
@@ -7011,7 +7032,7 @@ document.addEventListener('click', (event) => {
             };
             const runContext = activePipelineRunContext;
             const signal = customAbortController.signal;
-            const record = window.CustomRunRecord?.createRun?.({ runId: runContext.pipelineRunId, pipelineName: customPipelineName(), task, steps }) || null;
+            const record = resumeRecord || window.CustomRunRecord?.createRun?.({ runId: runContext.pipelineRunId, pipelineName: customPipelineName(), task, steps }) || null;
             let saveTimer = null;
             // The writes of the record go one after another: an older write never lands after a newer one.
             let recordWrites = Promise.resolve();
@@ -7040,8 +7061,10 @@ document.addEventListener('click', (event) => {
                 void saveRecord();
             };
             if (runContext.forceNewTabs) resetNewPagesCheckboxAfterOpen();
-            clearModeratorComposer();
-            appendModeratorFeedEntry(task);
+            if (!resumeRecord) {
+                clearModeratorComposer();
+                appendModeratorFeedEntry(task);
+            }
             // Canvas progress from the engine's own events: a round is canvas-rN, a synthesis its planned stage id,
             // the final one planned-final-synthesis. The step index is the position in `steps`.
             const plannedIdOfRef = (ref) => (/^r\d+$/.test(ref) ? `canvas-${ref}` : ref === 'final' ? 'planned-final-synthesis' : ref.replace(/^synth:/, ''));
@@ -7082,6 +7105,8 @@ document.addEventListener('click', (event) => {
                         getText: (ref) => (ref && record.texts[ref] !== undefined ? record.texts[ref] : undefined)
                     } : {}),
                     ...(record && customRunStore ? { checkpoint: checkpointRecord } : {}),
+                    // The saved state of the run: the engine goes on from its pointer with the schema it was started with (8.3).
+                    ...(resumeRecord ? { resume: { ...resumeRecord.snapshot, artifacts: resumeRecord.artifacts } } : {}),
                     onRequest: recordAttempt,
                     onResponse: recordAttempt,
                     send: async (models, promptsByModel, { step, label, attempt, maxWordsByModel, correctionByModel }) => {
@@ -7744,6 +7769,7 @@ document.addEventListener('click', (event) => {
                 basicSchemaFromPage: (...args) => basicSchemaFromPage(...args),
                 applyPipelineConfig: (...args) => applyPipelineConfig(...args),
                 runCustomFromPage,
+                resumeCustomFromPage,
                 renderCustomBlockInspector: (...args) => renderCustomBlockInspector(...args),
                 // Lazy: declared further down.
                 customBlockRefForTest: (block) => customBlockRef(block),

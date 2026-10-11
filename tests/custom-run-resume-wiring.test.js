@@ -1,0 +1,37 @@
+const fs = require('fs');
+const path = require('path');
+
+// The page (results.js) passes the record's callbacks and the saved state to the engine. These checks read the wiring:
+// the page path itself (windows, transport) is verified on the page, not here.
+const results = fs.readFileSync(path.join(__dirname, '..', 'results.js'), 'utf8');
+
+describe('Basic page binds the engine to the run record (8.2, 8.3)', () => {
+  test('the texts go to the record: putText is record.put, getText reads record.texts', () => {
+    expect(results).toContain('putText: (value) => record.put(value),');
+    expect(results).toContain('getText: (ref) => (ref && record.texts[ref] !== undefined ? record.texts[ref] : undefined)');
+  });
+
+  test('the checkpoint writes the registry and the snapshot, and waits for the write (a failed write stops the run)', () => {
+    expect(results).toContain('...(record && customRunStore ? { checkpoint: checkpointRecord } : {}),');
+    expect(results).toMatch(/const checkpointRecord = \(state\) => \{[\s\S]*?setArtifacts\(record, state\.artifacts\);[\s\S]*?setSnapshot\(record[\s\S]*?return writeRecord\(\);\s*\};/);
+  });
+
+  test('writes of the record go one after another, debounced ones too', () => {
+    expect(results).toMatch(/const writeRecord = \(\) => \{\s*const next = recordWrites\.then\(\(\) => customRunStore\.save\(record\)\);/);
+    expect(results).toContain("const write = () => writeRecord().catch((error) => console.warn('[RESULTS] Custom run record not saved', error));");
+  });
+
+  test('«Продолжить прогон» takes the latest record only when it has a saved state, and goes on with its own schema and state', () => {
+    expect(results).toContain('if (!window.CustomRunRecord.canResume(latest)) {');
+    expect(results).toContain('const builtFromRecord = (record) => {');
+    expect(results).toContain('steps: window.BasicSchema.assemble(schema, { roleText: customRoleText })');
+    expect(results).toContain('...(resumeRecord ? { resume: { ...resumeRecord.snapshot, artifacts: resumeRecord.artifacts } } : {}),');
+    expect(results).toContain('pipelineRunId: resumeRecord ? resumeRecord.runId : makePipelineRunId(),');
+    expect(results).toContain('resumeCustomFromPage,');
+  });
+
+  test('the owner input window and the window of unknown requests are not wired yet (A06): no guessed answer is passed', () => {
+    expect(results).not.toContain('provideOwnerResult');
+    expect(results).not.toContain('resolveUnknown');
+  });
+});
