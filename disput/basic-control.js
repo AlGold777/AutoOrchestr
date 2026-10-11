@@ -48,7 +48,51 @@
     ? 'Поле verdict — "pass" или "fail"; поле unmet — список невыполненных критериев (непустой при "fail").'
     : `Заверши ответ строкой «${PASS_LINE}» или «${FAIL_LINE}». При «НЕ ПРОШЁЛ» перед ней — строка «${UNMET} …» по каждому невыполненному критерию.`);
 
-  const api = Object.freeze({ verdictOf, passed, verdictInstruction });
+  // The value of an answer read as json: the whole answer, or one block of json with nothing around it. Not json: ok false.
+  function jsonValueOf(raw) {
+    const body = String(raw == null ? '' : raw).trim();
+    const fenced = /^```json[ \t]*\r?\n([\s\S]*?)\r?\n```$/.exec(body);
+    try {
+      return { ok: true, value: JSON.parse(fenced ? fenced[1] : body) };
+    } catch (_) {
+      return { ok: false };
+    }
+  }
+
+  // Strict equality of JSON values: no type coercion; the keys of an object in any order, the items of a list in order.
+  function sameJson(left, right) {
+    if (Array.isArray(left) || Array.isArray(right)) {
+      return Array.isArray(left) && Array.isArray(right) && left.length === right.length && left.every((item, at) => sameJson(item, right[at]));
+    }
+    if (left !== null && right !== null && typeof left === 'object' && typeof right === 'object') {
+      const keys = Object.keys(left);
+      return keys.length === Object.keys(right).length && keys.every((key) => Object.prototype.hasOwnProperty.call(right, key) && sameJson(left[key], right[key]));
+    }
+    return left === right;
+  }
+
+  // A condition of a rule (6.2): { source, pointer, op, value? } or { all: [...] } / { any: [...] }. `read(source, pointer)` gives
+  // { found, value } (found is false for a missing field and for a source without an answer); it may throw for an unreadable source.
+  function matches(cond, read) {
+    if (Array.isArray(cond.all)) return cond.all.every((item) => matches(item, read));
+    if (Array.isArray(cond.any)) return cond.any.some((item) => matches(item, read));
+    const { found, value } = read(cond.source, cond.pointer);
+    if (cond.op === 'exists') return Boolean(found);
+    if (!found) return false;
+    if (cond.op === 'eq') return sameJson(value, cond.value);
+    return cond.value.some((item) => sameJson(item, value));
+  }
+
+  // The answer of a model route (6.2): one json object whose route is one of the case ids. Anything else is invalid_route.
+  function routeOf(raw, ids) {
+    const value = Output.parseJsonAnswer(raw);
+    if (!value || typeof value.route !== 'string' || !ids.includes(value.route)) {
+      return { ok: false, reason: 'invalid_route', detail: `(допустимо: ${ids.join(', ')})` };
+    }
+    return { ok: true, fields: { route: value.route } };
+  }
+
+  const api = Object.freeze({ verdictOf, passed, verdictInstruction, jsonValueOf, sameJson, matches, routeOf });
   root.BasicControl = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

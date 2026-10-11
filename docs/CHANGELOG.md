@@ -1,5 +1,16 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — Basic: route steps choose a transition by rule, model or owner, version 2.81.725
+
+- `CustomEngine.run` (`disput/custom-engine.js`): `kind: route` runs without requests unless it is a model route. `select.by: rule`: the conditions read the exact sources of the route's `input` (one answer each; a source without an answer does not match `eq` and `in`); none holds → `otherwise` or `route_not_found`; several → `route_ambiguous` (default), `conflict: first` (the first case, journal reason `conflict_first`) or `conflict: owner` (the owner chooses among the matching cases). An unreadable source is `invalid_route_input` before the choice. `select.by: model`: one model answers `{"route": "<id>"}` with the labels of the cases in its request (phase `route`); an answer that names no case is corrected (`invalid_route`), after the attempts the owner chooses. `select.by: owner`: the owner chooses a case.
+- The owner callback `chooseRoute({stepRef, visit, choices, reason})` returns a case id; `null` is a cancel (`stopped`), an absent or an invalid id is `no_decision`.
+- A route's answer is not an answer of its step: `previous` and `all` do not take it. Event `custom_route` (`step`, `ref`, `visit`, `case`, `by`, `reason`); the chosen route is kept in the step's journal entry.
+- `BasicControl` (`disput/basic-control.js`): `jsonValueOf`, `sameJson` (strict JSON equality, object keys in any order, list order matters), `matches` (`eq`, `in`, `exists`, `all`, `any`), `routeOf` (the model's answer).
+- Checked before the first request: the shape of `select`, the cases (unique ids, `when` for a rule, `label` for a model or owner), the conditions (`source` in the input list and an exact source, the pointer, the operator), one model with a task for a model route, no models for a rule or an owner.
+- Not yet: the owner step (`owner`) and `invalidate`.
+- Docs: `basic-start-here.md` (refusals, reasons `invalid_route`, `route_not_found`, `route_ambiguous`, `invalid_route_input`, event `custom_route`), `basic-schema-guide.md` (5.9), `basic-developer.md` (file table).
+- Tests: `tests/custom-engine-route.test.js` (new), `tests/basic-control.test.js` (conditions and the model answer); `tests/custom-engine.test.js` (the refusal row of a route without `select`).
+
 ### 2026-10-11 — Basic: the run has a pointer, visits and transitions of gates, version 2.81.724
 
 - `CustomEngine.run` (`disput/custom-engine.js`): the run walks a pointer (position in the plan), not a loop over the steps. A new execution of a step is a new visit (`visit`, from 1); a technical retry and a resume are not. The labels of sources name the visit; a source names the last visit of its step, and `previous`/`all` take the last valid visit of each earlier step (a step's older visit is never its current answer).

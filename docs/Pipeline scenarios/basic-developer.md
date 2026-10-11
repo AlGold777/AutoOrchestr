@@ -14,7 +14,7 @@
 | `disput/basic-schema.js` | `BasicSchema`, `DEFAULTS`, `validate`, `assemble`, `resolveFields`, `resolveRun`, `toSettings`, `toCanvas`, `describeErrors`, `graph` | Формат схемы: умолчания, проверка, сборка шагов, показ на холсте, граф переходов (`graph`: рёбра и цикл без ограниченного перехода) |
 | `disput/basic-artifacts.js` | `BasicArtifacts`, `createRegistry`, `register`, `latest`, `version`, `lineKey` | Реестр артефактов прогона: одна запись на версию, ссылка на ответ и указатель, без копии текста (чистые функции) |
 | `disput/basic-output.js` | `BasicOutput`, `checkAnswer`, `readPointer`, `parseJsonAnswer`, `countWords` | Проверка ответа по выходу шага: длина, JSON и поля, разделы, артефакты (чистые функции; вызывает движок) |
-| `disput/basic-control.js` | `BasicControl`, `verdictOf`, `passed`, `verdictInstruction` | Вердикт проверки (gate): текст и JSON, правило `pass` all/any; чистые функции (вызывает движок) |
+| `disput/basic-control.js` | `BasicControl`, `verdictOf`, `passed`, `verdictInstruction`, `jsonValueOf`, `sameJson`, `matches`, `routeOf` | Вердикт проверки (gate): текст и JSON, правило `pass` all/any; условия правила маршрута, точное сравнение JSON, ответ модели маршрута; чистые функции (вызывает движок) |
 | `disput/custom-run-record.js` | `CustomRunRecord`, `createRun`, `recordAttempt`, `finishRun`, `serialize`, `revive`, `exportRun`, `createStore` | Запись о прогоне |
 | `results/stage-card.js` | `StageCard`, `buildModel`, `render` | Окно настроек раунда |
 | `disput/pipeline-presets.js` | `BUILTIN_PIPELINE_DEFINITIONS`, `PIPELINE_PRESETS`, `makePreset` | Шаблон Basic и пресет `CUSTOM` |

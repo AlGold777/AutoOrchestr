@@ -59,7 +59,8 @@
     invalid_output: 'не в формате ответа',
     missing_field: 'без обязательного поля',
     missing_artifact: 'без объявленного артефакта',
-    no_verdict: 'без вердикта'
+    no_verdict: 'без вердикта',
+    invalid_route: 'не назвал вариант маршрута'
   });
   const STOP_TEXT = Object.freeze({
     steps_done: 'все шаги пройдены',
@@ -70,6 +71,9 @@
     missing_input: 'обязательный вход не получен, запрос не отправлен',
     gate_failed: 'проверка не пройдена',
     loop_limit: 'лимит переходов исчерпан',
+    route_not_found: 'ни один вариант маршрута не подошёл, иначе не задан',
+    route_ambiguous: 'подошло несколько вариантов маршрута',
+    invalid_route_input: 'источник правила маршрута не читается как JSON',
     return_missing: 'возврат без сохранённой точки продолжения'
   });
   const MAX_LOOPS = 5;
@@ -114,6 +118,8 @@
   // The block of a gate: its criteria, and the verdict the answer ends with (6.1).
   const gateBlock = (step) => `Критерии проверки:\n${step.criteria.map((item) => `- ${item}`).join('\n')}\n${Control.verdictInstruction(step.output?.format === 'json')}`;
   // The feedback of a return: a block of its own, given to the visit that the return starts (never to the first visit).
+  // The block of a model route: its cases with their labels, and the answer it names (6.2).
+  const routeBlock = (step) => `Варианты маршрута:\n${step.select.cases.map((item) => `- ${item.id} — ${item.label}`).join('\n')}\nОтвет — один JSON-объект {"route": "<id варианта>"} без текста вокруг.`;
   const feedbackBlock = (items) => `Замечания, вызвавшие возврат:\n\n${labelled(items)}`;
 
   function buildPrompt({ task, step, model, input = [], inputMode = 'none', earlier = [], feedback = [], ownerAnswers = [], askInstruction = '', output = null }) {
@@ -124,6 +130,7 @@
       const parts = [model.promptTemplate.replace(/\{задача\}|\{вход\}|\{ответы до тебя\}/g, (key) => values[key])];
       if (formatBlock(output)) parts.push(formatBlock(output));
       if (step.kind === 'gate') parts.push(gateBlock(step));
+      if (step.kind === 'route') parts.push(routeBlock(step));
       if (feedback.length) parts.push(feedbackBlock(feedback));
       if (ownerAnswers.length) parts.push(`Ответы владельца на вопросы:\n${ownerAnswers.map((item) => `- ${item.question}: ${item.answer}`).join('\n')}`);
       if (askInstruction) parts.push(askInstruction);
@@ -142,6 +149,7 @@
     if (text(taskInstruction)) parts.push(`Задание:\n${text(taskInstruction)}`);
     if (formatBlock(output)) parts.push(formatBlock(output));
     if (step.kind === 'gate') parts.push(gateBlock(step));
+    if (step.kind === 'route') parts.push(routeBlock(step));
     if (text(model.extra)) parts.push(`Дополнительно для тебя:\n${text(model.extra)}`);
     if (ownerAnswers.length) parts.push(`Ответы владельца на вопросы:\n${ownerAnswers.map((item) => `- ${item.question}: ${item.answer}`).join('\n')}`);
     if (askInstruction) parts.push(askInstruction);
@@ -164,8 +172,8 @@
     if (verdict.ok === false) return { ok: false, reason: verdict.reason || 'rejected', text: value };
     const shape = check ? check(value) : null;
     if (shape && !shape.ok) return { ok: false, reason: shape.reason, detail: shape.detail || '', text: value };
-    // A gate's checker carries its verdict (basic-control.js) with the answer.
-    return { ok: true, reason: '', text: value, ...(shape && 'verdict' in shape ? { verdict: shape.verdict, unmet: shape.unmet } : {}) };
+    // The fields of a check (a gate's verdict, a route's choice) go with the answer.
+    return { ok: true, reason: '', text: value, ...(shape?.fields ? { ...shape.fields } : {}) };
   }
 
   // The input item that a revision names (5.2): an artifact of the same line, and the same version when the revision names one.
@@ -193,6 +201,21 @@
     return typeof read.value === 'string' ? read.value : JSON.stringify(read.value);
   }
 
+  // A route's select as the run keeps it: the cases with their conditions, labels and actions; a rule keeps its conflict and otherwise.
+  function normalizeSelect(select) {
+    const plain = isPlain(select) ? select : {};
+    const cases = (Array.isArray(plain.cases) ? plain.cases : []).filter(isPlain).map((item) => ({
+      id: item.id, ...(item.when !== undefined ? { when: JSON.parse(JSON.stringify(item.when)) } : {}),
+      ...(item.label !== undefined ? { label: item.label } : {}), action: isPlain(item.action) ? { ...item.action } : item.action
+    }));
+    const out = { by: plain.by, cases };
+    if (plain.by === 'rule') {
+      out.conflict = plain.conflict === 'first' || plain.conflict === 'owner' ? plain.conflict : 'stop';
+      if (plain.otherwise !== undefined) out.otherwise = isPlain(plain.otherwise) ? { ...plain.otherwise } : plain.otherwise;
+    }
+    return out;
+  }
+
   // Numbers the steps for labels: rounds by their card, syntheses by the round before them.
   function normalizeSteps(steps = []) {
     let round = 0;
@@ -213,6 +236,7 @@
         // A gate: its criteria, the rule of its checkers (all | any) and what a fail does (stop | ask).
         criteria: Array.isArray(step.criteria) ? step.criteria.slice() : null,
         pass: step.pass === 'any' ? 'any' : 'all',
+        ...(kind === 'route' ? { select: normalizeSelect(step.select) } : {}),
         onFail: isPlain(step.onFail) ? { ...step.onFail } : (step.onFail === 'ask' ? 'ask' : 'stop'),
         ...(step.onPass !== undefined ? { onPass: isPlain(step.onPass) ? { ...step.onPass } : step.onPass } : {}),
         models: (step.models || []).map((model) => (typeof model === 'string' ? { name: model, id: model, extra: '' } : {
@@ -223,7 +247,7 @@
         }))
           .filter((model) => model.name)
       };
-    }).filter((step) => step.models.length);
+    }).filter((step) => step.models.length || step.kind === 'route');
   }
 
   // A fault that stops a run before its first request. `address` names the step (its ref) and the field.
@@ -236,7 +260,9 @@
     }
   }
 
-  const EXECUTED_KINDS = Object.freeze(['round', 'synthesis', 'gate']);
+  const EXECUTED_KINDS = Object.freeze(['round', 'synthesis', 'gate', 'route']);
+  const ROUTE_BY = Object.freeze(['rule', 'model', 'owner']);
+  const CONDITION_FIELDS = Object.freeze(['source', 'pointer', 'op', 'value']);
   const INPUT_VALUES = Object.freeze(['none', 'previous', 'all']);
   // An input (of a step or of a participant) that the engine cannot execute, or null. `fail` builds the error with its address.
   function inputProblem(spec, kind, fail, field) {
@@ -261,6 +287,63 @@
     if (!INPUT_VALUES.includes(spec) || (kind === 'synthesis' && spec !== 'previous')) return fail('invalid_input', field, 'вход: none, previous, all или список источников; синтез — только previous');
     return null;
   }
+  // A condition of a rule (6.2): its source is a number of the route's input list, and that input is one participant or artifact.
+  function conditionProblem(cond, input, fail, field) {
+    if (!isPlain(cond)) return fail('invalid_field', field, 'условие: объект с полями source, pointer, op, value');
+    const composite = ['all', 'any'].filter((key) => key in cond);
+    if (composite.length) {
+      if (composite.length > 1 || Object.keys(cond).length > 1) return fail('invalid_field', field, 'условие: либо all, либо any, без других полей');
+      const key = composite[0];
+      if (!Array.isArray(cond[key]) || !cond[key].length) return fail('invalid_field', `${field}.${key}`, 'условие: непустой список условий');
+      for (const [at, item] of cond[key].entries()) {
+        const problem = conditionProblem(item, input, fail, `${field}.${key}[${at}]`);
+        if (problem) return problem;
+      }
+      return null;
+    }
+    const extra = Object.keys(cond).find((key) => !CONDITION_FIELDS.includes(key));
+    if (extra !== undefined) return fail('invalid_field', `${field}.${extra}`, `поле «${extra}» не входит в условие`);
+    if (!Number.isSafeInteger(cond.source) || cond.source < 0 || cond.source >= input.length) return fail('invalid_field', `${field}.source`, 'источник: номер входа маршрута из input');
+    if (!isPlain(input[cond.source])) return fail('invalid_field', `${field}.source`, 'правило читает точный источник: участника или артефакт');
+    if (typeof cond.pointer !== 'string' || (cond.pointer !== '' && !cond.pointer.startsWith('/'))) return fail('invalid_field', `${field}.pointer`, 'указатель: пустой или начинается с «/»');
+    if (!['eq', 'in', 'exists'].includes(cond.op)) return fail('invalid_field', `${field}.op`, 'оператор условия: eq, in или exists');
+    if (cond.op === 'eq' && !('value' in cond)) return fail('invalid_field', `${field}.value`, 'для eq укажите value');
+    if (cond.op === 'in' && !(Array.isArray(cond.value) && cond.value.length)) return fail('invalid_field', `${field}.value`, 'для in нужен непустой список значений');
+    if (cond.op === 'exists' && 'value' in cond) return fail('invalid_field', `${field}.value`, 'для exists значение не указывают');
+    return null;
+  }
+  // A route (6.2) as the engine runs it: its select, its cases, its conditions and its models, checked before the first request.
+  function routeProblem(step, fail) {
+    const select = step.select;
+    if (!isPlain(select)) return fail('invalid_field', 'select', 'выбор маршрута: объект с полем by');
+    if (!ROUTE_BY.includes(select.by)) return fail('invalid_field', 'select.by', 'выбор маршрута: rule, model или owner');
+    const models = Array.isArray(step.models) ? step.models : [];
+    if (select.by === 'model') {
+      if (models.length !== 1) return fail('invalid_field', 'models', 'маршрут по модели: ровно один включённый участник');
+      if (!text(step.task) && !text(models[0]?.task)) return fail('invalid_field', 'task', 'задание маршрута по модели: непустой текст');
+    } else if (models.length) return fail('invalid_field', 'models', 'у маршрута по правилу и владельцу моделей нет');
+    if (select.by === 'rule' && !Array.isArray(step.input)) return fail('invalid_input', 'input', 'правило читает точные источники: укажите input списком');
+    if ('conflict' in select && (select.by !== 'rule' || !['stop', 'first', 'owner'].includes(select.conflict))) return fail('invalid_field', 'select.conflict', 'конфликт выбора: stop, first или owner, только для правила');
+    if ('otherwise' in select && select.by !== 'rule') return fail('invalid_field', 'select.otherwise', 'вариант по умолчанию задаётся только для правила');
+    if (!Array.isArray(select.cases) || !select.cases.length) return fail('invalid_field', 'select.cases', 'ожидается непустой список вариантов');
+    const ids = new Set();
+    for (const [at, item] of select.cases.entries()) {
+      const field = `select.cases[${at}]`;
+      if (!isPlain(item) || typeof item.id !== 'string' || !item.id.trim()) return fail('invalid_field', `${field}.id`, 'ID варианта: непустой текст');
+      if (ids.has(item.id)) return fail('invalid_field', `${field}.id`, `вариант «${item.id}» повторяется`);
+      ids.add(item.id);
+      if (select.by === 'rule') {
+        if (!('when' in item)) return fail('invalid_field', `${field}.when`, 'правило: условие when обязательно');
+        const problem = conditionProblem(item.when, step.input, fail, `${field}.when`);
+        if (problem) return problem;
+      } else {
+        if ('when' in item) return fail('invalid_field', `${field}.when`, 'условие задаётся только для правила');
+        if (typeof item.label !== 'string' || !item.label.trim()) return fail('invalid_field', `${field}.label`, 'название варианта: непустой текст');
+      }
+    }
+    return null;
+  }
+
   // The first field of one raw step (as the schema gives it) that the engine does not execute yet, or null. Every
   // later step of the schema extends this list; a field that is not in it is refused, never replaced by a default.
   // options.participants: the page gives sendParticipants, so two participants of one model may stand in a step.
@@ -269,6 +352,10 @@
     const fail = (code, field, message) => new EngineError(code, `${at} · ${field}`, message);
     if (!step || typeof step !== 'object') return new EngineError('invalid_step', at, 'шаг должен быть объектом');
     if (step.kind !== undefined && !EXECUTED_KINDS.includes(step.kind)) return fail('unsupported_kind', 'kind', `вид «${step.kind}» движок пока не исполняет`);
+    if (step.kind === 'route') {
+      const problem = routeProblem(step, fail);
+      if (problem) return problem;
+    }
     if (step.kind === 'gate') {
       if (!Array.isArray(step.criteria) || !step.criteria.length || step.criteria.some((item) => typeof item !== 'string' || !item.trim())) return fail('invalid_field', 'criteria', 'критерии: непустой список непустых строк');
       if (step.pass !== undefined && step.pass !== 'all' && step.pass !== 'any') return fail('invalid_field', 'pass', 'pass: all или any');
@@ -376,9 +463,13 @@
     const targetOf = (ref) => plan.findIndex((item) => item.ref === ref);
     const actions = [];
     plan.forEach((step, pos) => {
-      if (step.kind !== 'gate') return;
-      if (step.onPass !== undefined) actions.push({ step, pos, field: 'onPass', action: step.onPass });
-      if (isPlain(step.onFail)) actions.push({ step, pos, field: 'onFail', action: step.onFail });
+      if (step.kind === 'gate') {
+        if (step.onPass !== undefined) actions.push({ step, pos, field: 'onPass', action: step.onPass });
+        if (isPlain(step.onFail)) actions.push({ step, pos, field: 'onFail', action: step.onFail });
+      } else if (step.kind === 'route') {
+        step.select.cases.forEach((item, at) => actions.push({ step, pos, field: `select.cases[${at}]`, action: item.action }));
+        if (step.select.otherwise !== undefined) actions.push({ step, pos, field: 'select.otherwise', action: step.select.otherwise });
+      }
     });
     const resumePositions = actions.filter(({ action }) => isPlain(action) && typeof action.resumeAt === 'string')
       .map(({ action }) => targetOf(action.resumeAt)).filter((at) => at >= 0);
@@ -422,7 +513,7 @@
   async function run({
     task, steps = [], maxAttempts = DEFAULT_ATTEMPTS, semiAuto = false, maxPromptChars = Infinity,
     accept = defaultAccept, parseAsks = null, askOwner = null, askInstruction = '', decide = null,
-    send = null, sendParticipants = null, runMaxWords = null, putText: putCallback = null, getText: getCallback = null,
+    send = null, sendParticipants = null, runMaxWords = null, putText: putCallback = null, getText: getCallback = null, chooseRoute = null,
     signal = null, onEvent = null, onRequest = null, onResponse = null
   }) {
     // The texts of the answers: the record gives the callbacks (putText → ref, getText(ref) → text); without them the run keeps
@@ -438,11 +529,14 @@
     // The check of an answer of one participant by the output of its step, or null when the step has no output.
     // A gate's checker is also checked for its verdict (6.1), after the output.
     const checkFor = (step, model) => {
+      if (step.kind === 'route') return (value) => Control.routeOf(value, step.select.cases.map((item) => item.id));
       const shape = step.output ? (value) => Output.checkAnswer(value, step.output, { limit: model.maxWords ?? runLimit }) : null;
       if (step.kind !== 'gate') return shape;
       return (value) => {
         const base = shape ? shape(value) : { ok: true };
-        return base.ok ? Control.verdictOf(value, { json: step.output?.format === 'json' }) : base;
+        if (!base.ok) return base;
+        const verdict = Control.verdictOf(value, { json: step.output?.format === 'json' });
+        return verdict.ok ? { ok: true, fields: { verdict: verdict.verdict, unmet: verdict.unmet } } : verdict;
       };
     };
     if (!Output || !Artifacts || !Control) throw new Error('basic_modules_missing: загружены не все модули Basic (basic-output.js, basic-artifacts.js, basic-control.js)');
@@ -497,7 +591,7 @@
     const verdictsOf = (step, outcome) => step.models.filter((model) => outcome[model.id]?.ok).map((model) => outcome[model.id].verdict);
     const gatePass = (step, outcome, skipped = false) => !skipped && verdictsOf(step, outcome).length >= neededOf(step)
       && Control.passed(verdictsOf(step, outcome), step.pass);
-    const acceptedOf = (entry) => (!entry || entry.skipped ? [] : entry.step.models.map((model) => ({ model, verdict: entry.outcome[model.id] }))
+    const acceptedOf = (entry) => (!entry || entry.skipped || entry.step.kind === 'route' ? [] : entry.step.models.map((model) => ({ model, verdict: entry.outcome[model.id] }))
       .filter((item) => item.verdict?.ok)
       .map(({ model, verdict }) => ({ ...verdict, participant: model.id,
         source: { step: entry.step.index, visit: entry.visit, label: stepLabel(entry.step), model: verdict.model, attempt: verdict.attempt } })));
@@ -605,6 +699,7 @@
     // Sends the participants with their prompts, then corrections; fills `outcome` by participant id. Every attempt
     // is a history entry of its own: a retry never rewrites the attempt it follows, it refers to it.
     async function attempt(step, models, requests, outcome, firstAttempt = 1) {
+      const phase = step.kind === 'route' ? 'route' : 'answer';
       let pending = models.slice();
       let current = requests; // participant id → { prompt, parts, retryOf }
       for (let tryNo = firstAttempt; pending.length && tryNo < firstAttempt + maxAttempts; tryNo += 1) {
@@ -614,12 +709,12 @@
         const entries = Object.fromEntries(pending.map((model) => {
           const entry = { step: step.index, ref: step.ref, kind: step.kind, label: stepLabel(step), model: model.name, participant: model.id, attempt: tryNo,
             retryOf: current[model.id].retryOf || null, prompt: current[model.id].prompt, parts: current[model.id].parts,
-            phase: 'answer', visit: activeVisit, state: 'sent', sentAt: Date.now() };
+            phase, visit: activeVisit, state: 'sent', sentAt: Date.now() };
           history.push(entry);
           if (typeof onRequest === 'function') onRequest(entry);
           return [model.id, entry];
         }));
-        const meta = { step: step.index, kind: step.kind, label: stepLabel(step), attempt: tryNo, phase: 'answer', stepRef: step.ref, visit: activeVisit };
+        const meta = { step: step.index, kind: step.kind, label: stepLabel(step), attempt: tryNo, phase, stepRef: step.ref, visit: activeVisit };
         const maxWordsOf = Object.fromEntries(pending.map((model) => [model.id, model.maxWords || null]));
         const correctionOf = Object.fromEntries(pending.map((model) => [model.id, Boolean(current[model.id].parts?.correction)]));
         let reply;
@@ -719,6 +814,45 @@
       }
     }
 
+    // The value of a source of a rule route: its answer (or artifact) read as JSON at the pointer. No answer: found false.
+    function readSourceOf(step, index, pointer) {
+      const items = sourceItems([step.input[index]], step);
+      if (!items.length) return { found: false };
+      const json = Control.jsonValueOf(items[0].text);
+      if (!json.ok) throw new StopRun('invalid_route_input', `шаг «${step.ref}», источник ${index}: ответ не читается как JSON`);
+      return Output.readPointer(json.value, pointer);
+    }
+    const caseAction = (step, id) => (id === 'otherwise' ? step.select.otherwise : step.select.cases.find((item) => item.id === id).action);
+    // The choice of a route (6.2). A rule decides by its conditions: none holds → otherwise (or route_not_found); several → conflict
+    // (stop by default, first, or the owner among the matching cases). A model names a case; a failed answer goes to the owner.
+    // The owner's null is a cancel (stopped); an absent or an invalid id is no_decision.
+    async function routeChoice(step, entry) {
+      const ownerChoice = async (choices, reason) => {
+        const id = typeof chooseRoute === 'function'
+          ? await ownerWait(() => chooseRoute({ stepRef: step.ref, visit: entry.visit, choices, reason }))
+          : undefined;
+        if (id === null) throw new StopRun('stopped');
+        if (!choices.includes(id)) throw new StopRun('no_decision');
+        return id;
+      };
+      if (step.select.by === 'owner') return { id: await ownerChoice(step.select.cases.map((item) => item.id), 'owner'), by: 'owner', reason: 'owner' };
+      if (step.select.by === 'model') {
+        await execute(step, step.models, entry.outcome);
+        const verdict = entry.outcome[step.models[0].id];
+        if (verdict?.ok) return { id: verdict.route, by: 'model', reason: 'model' };
+        return { id: await ownerChoice(step.select.cases.map((item) => item.id), 'invalid_route'), by: 'owner', reason: 'invalid_route' };
+      }
+      const matched = step.select.cases.filter((item) => Control.matches(item.when, (index, pointer) => readSourceOf(step, index, pointer)));
+      if (!matched.length) {
+        if (step.select.otherwise !== undefined) return { id: 'otherwise', by: 'rule', reason: 'otherwise' };
+        throw new StopRun('route_not_found', step.ref);
+      }
+      if (matched.length === 1) return { id: matched[0].id, by: 'rule', reason: 'rule' };
+      if (step.select.conflict === 'first') return { id: matched[0].id, by: 'rule', reason: 'conflict_first' };
+      if (step.select.conflict === 'owner') return { id: await ownerChoice(matched.map((item) => item.id), 'conflict'), by: 'owner', reason: 'conflict_owner' };
+      throw new StopRun('route_ambiguous', matched.map((item) => item.id).join(', '));
+    }
+
     // The next position after a step: the next step, or the transition the step wrote (6.3, 6.4). A transition is taken only
     // while its limit allows it; a stop, a missing return point and a limit end the run with their reason.
     function transit(pos, action, caseId) {
@@ -778,6 +912,16 @@
         const outcome = {};
         const entry = { step, visit: activeVisit, outcome, skipped: false };
         current = entry;
+        if (step.kind === 'route') {
+          // A route sends nothing by itself: the rule decides, a model or the owner names the case. Its answer is not an answer of the step.
+          const choice = await routeChoice(step, entry);
+          entry.route = { id: choice.id, by: choice.by, reason: choice.reason };
+          emit('custom_route', { step: step.index, ref: step.ref, visit: entry.visit, case: choice.id, by: choice.by, reason: choice.reason });
+          results.push(entry);
+          current = null;
+          pos = transit(pos, caseAction(step, choice.id), choice.id);
+          continue;
+        }
         await execute(step, step.models, outcome);
         const last = step === plan[plan.length - 1];
         for (;;) {
@@ -852,7 +996,7 @@
     if (aborted() && stopReason === 'steps_done') stopReason = 'cancelled';
     emit('custom_end', { stopReason, stopDetail, steps: results.length });
     return {
-      steps: results.map((entry) => ({ index: entry.step.index, ref: entry.step.ref, kind: entry.step.kind, label: stepLabel(entry.step), visit: entry.visit, skipped: entry.skipped, outcome: entry.outcome })),
+      steps: results.map((entry) => ({ index: entry.step.index, ref: entry.step.ref, kind: entry.step.kind, label: stepLabel(entry.step), visit: entry.visit, skipped: entry.skipped, outcome: entry.outcome, ...(entry.route ? { route: entry.route } : {}) })),
       // The state of the run as plain data (ТЗ 7): the pointer, the visits, the counters, the stack and the feedback.
       state: JSON.parse(JSON.stringify({ pc: pos < plan.length ? plan[pos].ref : null, ...state })),
       answers: inputFor({ input: 'previous' }).map((item) => item.text),
@@ -878,8 +1022,8 @@
     const plan = normalizeSteps(steps);
     const step = plan.find((item) => item.index === stepIndex) || plan[stepIndex];
     if (!step) return null;
-    // A step the run would refuse has no prompt to show.
-    if (unexecutedOf(steps[stepIndex], stepIndex)) return null;
+    // A step the run would refuse, and a route (it sends nothing by itself), have no prompt to show.
+    if (unexecutedOf(steps[stepIndex], stepIndex) || step.kind === 'route') return null;
     const model = step.models.find((item) => item.name === modelName) || { name: modelName, extra: '' };
     const spec = specOf(step, model);
     const input = spec === 'none' || !plan.some((item) => item.index < step.index) ? []
