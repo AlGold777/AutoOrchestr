@@ -325,7 +325,6 @@ describe('Custom engine refuses what it does not execute yet', () => {
     ['an artifact source (the registry is not executed yet)', [{ ref: 'r1', kind: 'round', models: ['A'] }, { ref: 'r2', kind: 'round', input: [{ artifact: { step: 'r1', participant: 'A', id: 'map' }, version: 'latest' }], models: ['B'] }], 'unsupported_input', 'r2'],
     ['a string input that is not a value', [{ ref: 'r1', kind: 'round', input: 'some', models: ['A'] }], 'invalid_input', 'r1'],
     ['a synthesis with input all', [{ ref: 'r1', kind: 'round', models: ['A'] }, { ref: 'synth:s', kind: 'synthesis', input: 'all', models: ['B'] }], 'invalid_input', 'synth:s'],
-    ['a participant input', [{ ref: 'r1', kind: 'round', models: [{ name: 'A', input: 'none' }] }], 'unsupported_field', 'input'],
     ['two participants of one model', [{ ref: 'r1', kind: 'round', models: ['A', 'A'] }], 'participant_transport_required', 'r1']
   ];
   test.each(cases)('%s stops the run before any request (%s)', async (_label, steps, code, mention) => {
@@ -464,5 +463,117 @@ describe('Custom engine addressed inputs', () => {
     const steps = [{ ref: 'r1', kind: 'round', models: ['A'] }, { ref: 'r2', kind: 'round', input: [{ step: 'r1', participant: 'A' }], models: ['A'] }];
     expect(Engine.previewPrompt({ task: 'T', steps, stepIndex: 1, modelName: 'A' }).prompt)
       .toContain('‹ответы выбранных этапов появятся при запуске›');
+  });
+});
+
+// Participants (A02, pack P02 step 3): a participant is an id; two participants of one model are two requests
+// through sendParticipants; a participant's own input replaces the shared one; the answers before a participant
+// in a sequential round stay a separate block.
+describe('Custom engine participants', () => {
+  // A transport with participant ids: replies[participantId] is a list, one reply per request to that participant.
+  function participantTransport(replies) {
+    const calls = [];
+    const used = {};
+    const sendParticipants = async (requests, meta) => {
+      calls.push({ requests: requests.map((item) => ({ ...item })), meta });
+      const byParticipant = {};
+      requests.forEach(({ participantId }) => {
+        const index = used[participantId] || 0;
+        used[participantId] = index + 1;
+        const reply = (replies[participantId] || [])[index];
+        byParticipant[participantId] = typeof reply === 'object' ? reply : { text: reply || '', status: reply ? 'SUCCESS' : 'TIMEOUT' };
+      });
+      return { byParticipant, closedByOwner: false };
+    };
+    return { sendParticipants, calls };
+  }
+  const expert = (id, extra = {}) => ({ name: 'GPT', id, ...extra });
+
+  test('two participants of one model are two requests with their ids, chat and step; results are keyed by id', async () => {
+    const { sendParticipants, calls } = participantTransport({ 'expert-A': ['a1'], 'expert-B': ['b1'] });
+    const result = await Engine.run({ task: 'T', sendParticipants, steps: [
+      { ref: 'r1', kind: 'round', input: 'none', models: [expert('expert-A'), expert('expert-B')] }
+    ] });
+    expect(calls[0].requests).toEqual([
+      expect.objectContaining({ participantId: 'expert-A', modelName: 'GPT', chat: 'continue', stepRef: 'r1', visit: 1, attempt: 1 }),
+      expect.objectContaining({ participantId: 'expert-B', modelName: 'GPT', chat: 'continue', stepRef: 'r1', visit: 1, attempt: 1 })
+    ]);
+    expect(result.steps[0].outcome['expert-A']).toMatchObject({ ok: true, text: 'a1' });
+    expect(result.steps[0].outcome['expert-B']).toMatchObject({ ok: true, text: 'b1' });
+    expect(result.answers).toEqual(['a1', 'b1']);
+  });
+
+  test('two participants of one model without sendParticipants are refused before the first request', async () => {
+    const { sendParticipants } = participantTransport({});
+    const legacy = transport({ GPT: ['x'] });
+    await expect(Engine.run({ task: 'T', send: legacy.send, steps: [{ ref: 'r1', kind: 'round', input: 'none', models: [expert('expert-A'), expert('expert-B')] }] }))
+      .rejects.toMatchObject({ code: 'participant_transport_required' });
+    expect(legacy.calls).toHaveLength(0);
+    expect(sendParticipants).toBeDefined();
+  });
+
+  test('a participant with its own input gets that input only; the shared input goes to the others', async () => {
+    const { sendParticipants, calls } = participantTransport({ 'expert-A': ['a1'], 'expert-B': ['b1'], 'expert-C': ['c1'] });
+    await Engine.run({ task: 'T', sendParticipants, steps: [
+      { ref: 'r1', kind: 'round', input: 'none', models: [{ name: 'GPT', id: 'expert-A' }] },
+      { ref: 'r2', kind: 'round', input: 'previous', models: [expert('expert-B', { input: 'none' }), expert('expert-C')] }
+    ] });
+    const second = calls[1].requests;
+    expect(second.find((item) => item.participantId === 'expert-B').prompt).not.toContain('Ответы предыдущего шага');
+    expect(second.find((item) => item.participantId === 'expert-C').prompt).toContain('Ответы предыдущего шага:\n\nОтвет 1:\na1');
+  });
+
+  test('a participant input replaces the shared one; it does not add to it', async () => {
+    const { sendParticipants, calls } = participantTransport({ 'expert-A': ['a1'], 'expert-B': ['b1'], 'expert-C': ['c1'] });
+    await Engine.run({ task: 'T', sendParticipants, steps: [
+      { ref: 'r1', kind: 'round', input: 'none', models: [{ name: 'GPT', id: 'expert-A' }, { name: 'Gemini', id: 'expert-B' }] },
+      { ref: 'r2', kind: 'round', input: 'previous', models: [expert('expert-C', { input: [{ step: 'r1', participant: 'expert-B' }] })] }
+    ] });
+    const prompt = calls[1].requests[0].prompt;
+    expect(prompt).toContain('Ответы выбранных источников:\n\nРаунд 1, участник expert-B, визит 1:\nb1');
+    expect(prompt).not.toContain('a1');
+  });
+
+  test('in a sequential round the answers before a participant stay a separate block even when its input is none', async () => {
+    const { sendParticipants, calls } = participantTransport({ 'expert-A': ['a1'], 'expert-B': ['b1'] });
+    await Engine.run({ task: 'T', sendParticipants, steps: [
+      { ref: 'r1', kind: 'round', order: 'sequential', input: 'none', models: [expert('expert-A'), expert('expert-B', { input: 'none' })] }
+    ] });
+    expect(calls[1].requests[0].prompt).toContain('Ответы участников этого раунда до тебя:\n\nОтвет 1:\na1');
+  });
+
+  test('a retry sends only the failed participant, under the same id, in its own chat', async () => {
+    const { sendParticipants, calls } = participantTransport({ 'expert-A': ['a1'], 'expert-B': ['', 'b2'] });
+    const result = await Engine.run({ task: 'T', sendParticipants, steps: [
+      { ref: 'r1', kind: 'round', input: 'none', models: [expert('expert-A'), expert('expert-B')] }
+    ] });
+    expect(calls).toHaveLength(2);
+    expect(calls[1].requests.map((item) => item.participantId)).toEqual(['expert-B']);
+    expect(calls[1].requests[0]).toMatchObject({ attempt: 2, chat: 'continue' });
+    expect(result.steps[0].outcome['expert-A']).toMatchObject({ ok: true, attempt: 1 });
+    expect(result.steps[0].outcome['expert-B']).toMatchObject({ ok: true, attempt: 2, text: 'b2' });
+  });
+
+  test('a participant id that differs from its name is still one participant for the legacy send', async () => {
+    const { send, calls } = transport({ GPT: ['g1'] });
+    const result = await Engine.run({ task: 'T', send, steps: [{ ref: 'r1', kind: 'round', input: 'none', models: [{ name: 'GPT', id: 'expert-A' }] }] });
+    expect(calls[0].models).toEqual(['GPT']);
+    expect(result.steps[0].outcome['expert-A']).toMatchObject({ ok: true, model: 'GPT', text: 'g1' });
+  });
+
+  test('two participants with the same id in one step are refused before the first request', async () => {
+    const { sendParticipants, calls } = participantTransport({});
+    await expect(Engine.run({ task: 'T', sendParticipants, steps: [{ ref: 'r1', kind: 'round', input: 'none', models: [expert('same'), expert('same')] }] }))
+      .rejects.toMatchObject({ code: 'participant_duplicate' });
+    expect(calls).toHaveLength(0);
+  });
+
+  test('a participant input that names a missing participant is refused before the first request', async () => {
+    const { sendParticipants, calls } = participantTransport({});
+    await expect(Engine.run({ task: 'T', sendParticipants, steps: [
+      { ref: 'r1', kind: 'round', input: 'none', models: [expert('expert-A')] },
+      { ref: 'r2', kind: 'round', input: 'none', models: [expert('expert-B', { input: [{ step: 'r1', participant: 'nobody' }] })] }
+    ] })).rejects.toMatchObject({ code: 'invalid_input' });
+    expect(calls).toHaveLength(0);
   });
 });

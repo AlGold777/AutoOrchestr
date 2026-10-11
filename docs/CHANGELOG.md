@@ -1,5 +1,15 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — Basic participants: ids, their own input and the transport callback (P02, step 3), version 2.81.713
+
+- `CustomEngine.run` (`disput/custom-engine.js`): a participant is its `id` (the name by default). The outcome of a step is keyed by the participant id (`result.steps[i].outcome[id]`); `history` and the journal name the model and the participant.
+- `sendParticipants(requests, meta)` (new callback): `requests` are `{ participantId, modelName, prompt, chat, stepRef, visit, attempt }`, the result is `{ byParticipant, closedByOwner }`. When it is given, every request of a step goes through it; a retry sends only the failed participants, each under its id. Without it the legacy `send(models, promptsByModel, meta)` is used, and it needs unique model names in a step.
+- Two participants of one model: two entries with two ids when `sendParticipants` is given; without it `participant_transport_required`, and two equal ids are `participant_duplicate`. The engine refuses both before the first request.
+- `models[].input` (a participant's own input) replaces the shared input of the step; the answers before the participant in a sequential round stay a separate block. An input that names a participant or a step that the schema does not give is `invalid_input`, before the first request.
+- Not yet: the page does not pass `sendParticipants` and does not carry a participant's input from its settings into the run (the pack P08 and the transport A03); `chat: "new"` stays refused.
+- Docs: `basic-developer.md` (the contract of `sendParticipants`), `basic-start-here.md` (the errors before the first request, step 7), `basic-schema-guide.md` (`id` and `input` of a participant: not for use before the pack P08).
+- Tests: `tests/custom-engine.test.js` (the block «Custom engine participants», 9 cases; the case «a participant input» of the refusals is removed, the input is executed now).
+
 ### 2026-10-11 — Basic addressed inputs: a list of sources is executed (P02, step 2), version 2.81.712
 
 - `input` of a round or a synthesis is a list of sources (`CustomEngine`, `disput/custom-engine.js`): a step ref gives all accepted answers of that step in participant order; `{ step, participant, required? }` gives one participant's accepted answer. The list keeps its order. Each answer in the request is labelled with its step, participant and visit (`Раунд 1, участник A, визит 1:`), under the heading «Ответы выбранных источников».

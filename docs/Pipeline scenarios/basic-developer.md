@@ -10,7 +10,7 @@
 
 | Файл | Символы | Что там |
 | --- | --- | --- |
-| `disput/custom-engine.js` | `CustomEngine`, `run`, `attempt`, `normalizeSteps`, `buildPrompt`, `previewPrompt`, `correctionPrompt`, `inputFor`, `judge`, `resolveSetting`, `STOP_TEXT`, `REASON_TEXT`, `DEFAULT_ATTEMPTS`, `SYNTHESIS_TASK`, `EngineError`, `unexecutedOf`, `assertExecutable`, `sourceItems` | Движок: шаги, запросы, приём, повторы, пауза |
+| `disput/custom-engine.js` | `CustomEngine`, `run`, `attempt`, `normalizeSteps`, `buildPrompt`, `previewPrompt`, `correctionPrompt`, `inputFor`, `judge`, `resolveSetting`, `STOP_TEXT`, `REASON_TEXT`, `DEFAULT_ATTEMPTS`, `SYNTHESIS_TASK`, `EngineError`, `unexecutedOf`, `assertExecutable`, `sourceItems`, `sendParticipants` | Движок: шаги, запросы, приём, повторы, пауза |
 | `disput/basic-schema.js` | `BasicSchema`, `DEFAULTS`, `validate`, `assemble`, `resolveFields`, `resolveRun`, `toSettings`, `toCanvas`, `describeErrors`, `graph` | Формат схемы: умолчания, проверка, сборка шагов, показ на холсте, граф переходов (`graph`: рёбра и цикл без ограниченного перехода) |
 | `disput/custom-run-record.js` | `CustomRunRecord`, `createRun`, `recordAttempt`, `finishRun`, `serialize`, `revive`, `exportRun`, `createStore` | Запись о прогоне |
 | `results/stage-card.js` | `StageCard`, `buildModel`, `render` | Окно настроек раунда |
@@ -20,6 +20,8 @@
 | `shared/message-delivery.js` | `batchEvent` | Журнал доставки |
 | `shared/report-digest.js` | `customStageId`, `latestCustomRunId`, `customFlowReport` | Extract (Transport) для прогона Basic |
 | `pipeline/pipeline-runtime.js` | `MODELS` | Список моделей холста |
+
+Транспорт участников: `sendParticipants(requests, meta)` получает `requests` — `[{ participantId, modelName, prompt, chat, stepRef, visit, attempt }]`, `meta` — `{ step, kind, label, attempt, maxWordsByParticipant, correctionByParticipant }`, и возвращает `{ byParticipant: { [participantId]: ответ }, closedByOwner }`; ответ — `{ text, status, completion, answered, transportRequestId, sentPrompt, attribution }`. Без него движок вызывает `send(models, promptsByModel, meta)` и требует уникальные имена моделей в шаге. Страница пока передаёт только `send`.
 
 ### results.js: области и функции
 
