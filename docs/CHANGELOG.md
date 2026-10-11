@@ -1,5 +1,13 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — Basic: окно маршрута (route) на холсте, version 2.81.750
+
+- `results/stage-card.js`: окно маршрута (`routeWindowModel`, `routeAfterEdit`, `renderRouteWindow`): вид выбора (`rule`/`model`/`owner`); для правила — источники (ответы участников раньше шага, номер = место в `input`), варианты с ID, названием, условием `source`/`pointer`/`op`/`value` и действием (goto с `maxLoops`, stop, return), `otherwise`, `conflict`; для модели — модель и задание. Составные условия, `feedback`, `invalidate`, `resumeAt` и строки/артефакты во `input` сохраняются. Смена вида убирает то, что новому виду не нужно.
+- `results.js`: маршрут добавляется кнопкой «+ шаг» (как проверка); окно открывается по карточке; источники правила берутся из участников раундов и синтезов раньше шага (`participantsBefore`).
+- Docs: `basic-windows.md` («Карточка маршрута (route)»), `basic-schema-guide.md` (5.9), `basic-start-here.md` (имена кода).
+- Tests: `tests/stage-card-basic.test.js` (окно маршрута: модель, источники, условия по типам значений, составное условие, действия, смена вида, отрисовка); `tests/results-debate-favorites.test.js` (маршрут с холста: создание пустым, правило с источником, Save → загрузка → Save).
+- Не сделано: окно владельца, предпросмотр и Export/Import новых полей. Не проверено в живом браузере: только jsdom.
+
 ### 2026-10-11 — Basic: окно проверки (gate) и карточки шагов управления на холсте, version 2.81.749
 
 - `results/stage-card.js`: окно проверки (`gateWindowModel`, `gateAfterEdit`, `renderGateWindow`): критерии по строкам, проверяющие (модели из общего списка; снятая галочка оставляет модель с `enabled: false`), `pass` (`all`/`any`), `onFail` (stop/ask/переход), `onPass` (следующий шаг/переход); переход `goto` с `maxLoops` 1–5, поля `feedback`, `invalidate`, `resumeAt` и переходы другой формы сохраняются. Значения по умолчанию в схему не пишутся.

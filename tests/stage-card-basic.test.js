@@ -265,3 +265,125 @@ describe('Gate window of Basic: model and edits', () => {
     expect([...locked.querySelectorAll('select, textarea, input')].every((node) => node.disabled)).toBe(true);
   });
 });
+
+describe('Route window of Basic: model and edits', () => {
+  const route = {
+    ref: 'route:1', kind: 'route', input: [{ step: 'r1', participant: 'GPT' }], models: [],
+    select: {
+      by: 'rule', conflict: 'first',
+      cases: [
+        { id: 'close', label: 'Закрыть', when: { source: 0, pointer: '/route', op: 'eq', value: 'close' }, action: { goto: 'r2', maxLoops: 2, feedback: [{ step: 'r1' }] } },
+        { id: 'both', when: { all: [{ source: 0, pointer: '/a', op: 'exists' }, { source: 0, pointer: '/b', op: 'in', value: [1, 2] }] }, action: { stop: 'конец' } }
+      ],
+      otherwise: { goto: 'r2' }
+    }
+  };
+
+  test('the window shows the kind, the conditions with their values, a composite as kept, and the otherwise', () => {
+    const model = StageCard.routeWindowModel(route, { names: ['GPT', 'Claude'], refs: ['r1', 'route:1', 'r2'] });
+    expect(model.by).toBe('rule');
+    expect(model.conflict).toBe('first');
+    expect(model.sources).toEqual([]);
+    expect(model.otherSources).toBe(0);
+    expect(model.cases[0]).toEqual({ id: 'close', label: 'Закрыть', composite: false,
+      when: { source: 0, pointer: '/route', op: 'eq', value: 'close' }, action: { mode: 'goto', goto: 'r2', maxLoops: 2 } });
+    expect(model.cases[1].composite).toBe(true);
+    expect(model.cases[1].action).toEqual({ mode: 'stop', stop: 'конец' });
+    expect(model.otherwise).toEqual({ mode: 'goto', goto: 'r2', maxLoops: '' });
+    expect(model.refs).toEqual(['r1', 'r2']);
+  });
+
+  test('a condition value is typed as text or JSON: a quoted text, a number, a list for in, nothing for exists', () => {
+    const edit = (when) => StageCard.routeAfterEdit(route, { field: 'case', index: 0, id: 'close', label: '', when, action: { mode: 'goto', goto: 'r2', maxLoops: '' } });
+    expect(edit({ source: '0', pointer: '/n', op: 'eq', value: '3' }).select.cases[0].when).toEqual({ source: 0, pointer: '/n', op: 'eq', value: 3 });
+    expect(edit({ source: '0', pointer: '/n', op: 'eq', value: '"x"' }).select.cases[0].when.value).toBe('x');
+    expect(edit({ source: '0', pointer: '/n', op: 'in', value: 'a, 2' }).select.cases[0].when.value).toEqual(['a', 2]);
+    expect(edit({ source: '0', pointer: '/n', op: 'exists', value: 'ignored' }).select.cases[0].when).toEqual({ source: 0, pointer: '/n', op: 'exists' });
+    expect(edit({ source: '', pointer: '/n', op: 'eq', value: 'x' }).select.cases[0].when).not.toHaveProperty('source');
+  });
+
+  test('a composite condition stays as it is when the case is edited without a new condition', () => {
+    const after = StageCard.routeAfterEdit(route, { field: 'case', index: 1, id: 'both', label: 'Оба', when: undefined, action: { mode: 'stop', stop: 'конец' } });
+    expect(after.select.cases[1]).toEqual({ id: 'both', label: 'Оба', when: route.select.cases[1].when, action: { stop: 'конец' } });
+  });
+
+  test('the action of a case keeps feedback when it stays a goto; a stop reason is text', () => {
+    const goto = StageCard.routeAfterEdit(route, { field: 'case', index: 0, id: 'close', label: 'Закрыть', when: route.select.cases[0].when, action: { mode: 'goto', goto: 'r1', maxLoops: '4' } });
+    expect(goto.select.cases[0].action).toEqual({ goto: 'r1', maxLoops: 4, feedback: [{ step: 'r1' }] });
+    const stop = StageCard.routeAfterEdit(route, { field: 'case', index: 0, id: 'close', label: 'Закрыть', when: route.select.cases[0].when, action: { mode: 'stop', stop: 'готово' } });
+    expect(stop.select.cases[0].action).toEqual({ stop: 'готово' });
+  });
+
+  test('a case is added with a free id and removed by its place; the otherwise goes to a goto or away', () => {
+    const added = StageCard.routeAfterEdit(route, { field: 'caseAdd' });
+    expect(added.select.cases[2]).toEqual({ id: 'case3' });
+    expect(StageCard.routeAfterEdit(route, { field: 'caseRemove', index: 0 }).select.cases.map((item) => item.id)).toEqual(['both']);
+    expect(StageCard.routeAfterEdit(route, { field: 'otherwise', mode: 'none' }).select).not.toHaveProperty('otherwise');
+  });
+
+  test('a change of the kind drops what the new kind does not have, and keeps the rest', () => {
+    const model = StageCard.routeAfterEdit(route, { field: 'by', value: 'model' });
+    expect(model.select.by).toBe('model');
+    expect(model.select).not.toHaveProperty('conflict');
+    expect(model.select).not.toHaveProperty('otherwise');
+    expect(model.select.cases[0]).toEqual({ id: 'close', label: 'Закрыть', action: { goto: 'r2', maxLoops: 2, feedback: [{ step: 'r1' }] } });
+    expect(model.input).toEqual(route.input);
+    const owner = StageCard.routeAfterEdit(model, { field: 'by', value: 'owner' });
+    expect(owner.models).toEqual([]);
+    expect(StageCard.routeAfterEdit(route, { field: 'model', value: 'Claude' }).models).toEqual([{ name: 'Claude' }]);
+  });
+
+  test('the window reports each change: the kind, the conflict, a case as a whole, an add and a remove', () => {
+    const container = document.createElement('div');
+    const seen = [];
+    StageCard.renderRouteWindow(container, StageCard.routeWindowModel(route, { names: ['GPT'], refs: ['r1', 'r2'] }), (edit) => seen.push(edit));
+    const by = container.querySelector('.stage-card-route-by');
+    by.value = 'rule';
+    by.dispatchEvent(new Event('change'));
+    const conflict = container.querySelector('.stage-card-route-conflict');
+    conflict.value = 'owner';
+    conflict.dispatchEvent(new Event('change'));
+    const id = container.querySelectorAll('.stage-card-case-id')[0];
+    id.value = 'shut';
+    id.dispatchEvent(new Event('change'));
+    container.querySelector('.stage-card-case-add').click();
+    container.querySelectorAll('.stage-card-case-remove')[1].click();
+    expect(seen.map((edit) => edit.field)).toEqual(['by', 'conflict', 'case', 'caseAdd', 'caseRemove']);
+    expect(seen[2]).toEqual({ field: 'case', index: 0, id: 'shut', label: 'Закрыть', when: { source: 0, pointer: '/route', op: 'eq', value: 'close' },
+      action: { mode: 'goto', goto: 'r2', maxLoops: 2 } });
+    expect(seen[4]).toEqual({ field: 'caseRemove', index: 1 });
+  });
+
+  test('a model route shows the model and its task, a rule shows the conditions; a composite is said to be kept', () => {
+    const container = document.createElement('div');
+    StageCard.renderRouteWindow(container, StageCard.routeWindowModel({ ...route, models: [{ name: 'GPT' }], select: { by: 'model', cases: [{ id: 'a', label: 'A', action: { goto: 'r2' } }] }, task: 'Выберите' }, { names: ['GPT'], refs: ['r2'] }), () => {});
+    expect(container.querySelector('.stage-card-route-model').value).toBe('GPT');
+    expect(container.querySelector('.stage-card-route-task').value).toBe('Выберите');
+    expect(container.querySelector('.stage-card-case-when')).toBeNull();
+    const rule = document.createElement('div');
+    StageCard.renderRouteWindow(rule, StageCard.routeWindowModel(route, { names: ['GPT'], refs: ['r1', 'r2'] }), () => {});
+    expect(rule.querySelectorAll('.stage-card-case-source').length).toBe(1);
+    expect(rule.textContent).toContain('Составное условие (all/any): сохраняется как есть');
+  });
+
+  test('controlSummary of a route names its kind and the count of cases', () => {
+    expect(StageCard.controlSummary(route)).toBe('по правилу, вариантов: 2');
+    expect(StageCard.controlSummary({ kind: 'route', select: {} })).toBe('вид не выбран, вариантов: 0');
+  });
+
+  test('the sources of a rule are the answers of the earlier participants; checked ones keep their place in the input, others stay as they are', () => {
+    const earlier = [{ ref: 'r1', label: 'Раунд 1', participants: [{ id: 'GPT', name: 'GPT' }, { id: 'claude-a', name: 'Claude' }] }];
+    const withArtifact = { ...route, input: [{ step: 'r1', participant: 'GPT' }, { artifact: { step: 'r1', participant: 'GPT', id: 'report' }, version: 'latest' }] };
+    const model = StageCard.routeWindowModel(withArtifact, { names: ['GPT'], earlier });
+    expect(model.sources).toEqual([
+      { step: 'r1', participant: 'GPT', label: 'Раунд 1 · GPT', checked: true, number: 0 },
+      { step: 'r1', participant: 'claude-a', label: 'Раунд 1 · Claude', checked: false, number: -1 }
+    ]);
+    expect(model.otherSources).toBe(1);
+    const added = StageCard.routeAfterEdit(withArtifact, { field: 'source', step: 'r1', participant: 'claude-a', checked: true });
+    expect(added.input).toEqual([{ step: 'r1', participant: 'GPT' }, { artifact: { step: 'r1', participant: 'GPT', id: 'report' }, version: 'latest' }, { step: 'r1', participant: 'claude-a' }]);
+    const removed = StageCard.routeAfterEdit(withArtifact, { field: 'source', step: 'r1', participant: 'GPT', checked: false });
+    expect(removed.input).toEqual([{ artifact: { step: 'r1', participant: 'GPT', id: 'report' }, version: 'latest' }]);
+    expect(StageCard.routeAfterEdit({ ...route, input: [{ step: 'r1', participant: 'GPT' }] }, { field: 'source', step: 'r1', participant: 'GPT', checked: false })).not.toHaveProperty('input');
+  });
+});

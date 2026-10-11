@@ -3586,6 +3586,65 @@ describe('Pipeline debate favorites view', () => {
         } finally { h.cleanup(); }
       }, 30000);
 
+      test('A06 route: a route is added after a round, its rule reads a participant answer, and Save → load → Save keeps it', async () => {
+        const h = setupCustomInheritance('Route window host', { synthesis: '' });
+        try {
+          const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
+            { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }] },
+            { ref: 'r2', kind: 'round', models: [{ name: 'Claude' }] }
+          ] };
+          expect((await h.debug.installBasicSchema('Route window', schema)).ok).toBe(true);
+          document.querySelector('.pipeline-item[data-name="Route window"]').click();
+          await settleCustomCard();
+          document.querySelector('#round1').insertAdjacentHTML('afterbegin', '<div class="stage-header-row"><div class="stage-label"><span class="round-badge">R1</span></div></div>');
+          window.__updatePipelineAll();
+          const add = document.querySelector('#round1 .pipeline-control-add');
+          add.value = 'route';
+          add.dispatchEvent(new Event('change', { bubbles: true }));
+          await settleCustomCard();
+          expect(document.querySelector('.pipeline-control-step[data-control-ref="route:1"]')).not.toBeNull();
+          // A new route is empty: nothing is written until the owner sets it.
+          expect(h.debug.basicSchemaFromPage(planOf(), null, { forSave: true }).steps[1]).toEqual({ ref: 'route:1', kind: 'route', models: [], select: {} });
+
+          require('../results/stage-card');
+          if (!document.getElementById('pipeline-stage-dialog')) {
+            document.body.insertAdjacentHTML('beforeend', '<dialog id="pipeline-stage-dialog"><h2 id="pipeline-stage-dialog-title"></h2><div id="pipeline-stage-card"></div></dialog>');
+          }
+          const stageDialog = document.getElementById('pipeline-stage-dialog');
+          if (typeof stageDialog.showModal !== 'function') stageDialog.showModal = () => stageDialog.setAttribute('open', '');
+          const q = (selector) => document.getElementById('pipeline-stage-card').querySelector(selector);
+          const change = async (selector, value) => {
+            const node = q(selector);
+            if (node.type === 'checkbox') node.checked = value; else node.value = value;
+            node.dispatchEvent(new Event('change'));
+            await settleCustomCard();
+          };
+          document.querySelector('.pipeline-control-card[data-control-card="route:1"]').click();
+          await settleCustomCard();
+          await change('.stage-card-route-by', 'rule');
+          await change('.stage-card-source-check', true);
+          document.getElementById('pipeline-stage-card').querySelector('.stage-card-case-add').click();
+          await settleCustomCard();
+          await change('.stage-card-case-id', 'close');
+          await change('.stage-card-case-label', 'Закрыть');
+          await change('.stage-card-case-source', '0');
+          await change('.stage-card-case-pointer', '/route');
+          await change('.stage-card-case-op', 'eq');
+          await change('.stage-card-case-value', '"close"');
+          await change('.stage-card-case0-mode', 'goto');
+          await change('.stage-card-case0-goto', 'r2');
+
+          const built = h.debug.basicSchemaFromPage(planOf(), null, { forSave: true });
+          expect(built.steps[1]).toEqual({ ref: 'route:1', kind: 'route', models: [], input: [{ step: 'r1', participant: 'GPT' }],
+            select: { by: 'rule', cases: [{ id: 'close', label: 'Закрыть', when: { source: 0, pointer: '/route', op: 'eq', value: 'close' }, action: { goto: 'r2' } }] } });
+          expect(window.BasicSchema.validate(built)).toEqual([]);
+          expect((await h.debug.installBasicSchema('Route again', built)).ok).toBe(true);
+          document.querySelector('.pipeline-item[data-name="Route again"]').click();
+          await settleCustomCard();
+          expect(h.debug.basicSchemaFromPage(planOf(), null, { forSave: true }).steps).toEqual(built.steps);
+        } finally { h.cleanup(); }
+      }, 30000);
+
       test('A06 control steps: a control can follow another one; the chain keeps its order in the canvas and in the schema, and a removed one leaves its successor in place', async () => {
         const h = setupCustomInheritance('Gate chain host', { synthesis: '' });
         try {

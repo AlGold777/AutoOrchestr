@@ -4341,6 +4341,7 @@ document.addEventListener('click', (event) => {
         };
         const controlAfterEdit = (step, edit) => {
             if (step.kind === 'gate') return window.StageCard.gateAfterEdit(step, edit);
+            if (step.kind === 'route') return window.StageCard.routeAfterEdit(step, edit);
             return step;
         };
         // The control with the ref gets the edit; the list is saved (a saved pipeline at once).
@@ -4359,7 +4360,8 @@ document.addEventListener('click', (event) => {
             }
             const ref = freshControlRef(kind);
             const list = getCustomControls().map((item) => (item.after === anchor ? { ...item, after: ref } : item));
-            const kindDefault = kind === 'gate' ? { models: [] } : {};
+            // A new control is empty: what the owner has not set is not written (a missing kind or a missing condition is an error).
+            const kindDefault = kind === 'gate' ? { models: [] } : kind === 'route' ? { models: [], select: {} } : {};
             list.push({ after: anchor, step: { ref, kind, ...kindDefault } });
             await setCustomControls(list, { persist: false });
             updatePipelineAll();
@@ -5083,7 +5085,7 @@ document.addEventListener('click', (event) => {
             select.dataset.anchor = anchor;
             select.setAttribute('aria-label', `Добавить шаг управления после ${anchor}`);
             select.title = 'Добавить шаг управления: проверка (gate)';
-            [['', CONTROL_ADD_LABEL], ['gate', 'Проверка (gate)']].forEach(([value, label]) => {
+            [['', CONTROL_ADD_LABEL], ['gate', 'Проверка (gate)'], ['route', 'Маршрут (route)']].forEach(([value, label]) => {
                 const option = document.createElement('option');
                 option.value = value;
                 option.textContent = label;
@@ -9793,7 +9795,17 @@ document.addEventListener('click', (event) => {
 
         // Stage card: the round badge opens the stage's card (template stage text,
         // who works, run status). Plain rounds show their participants.
-        // The window of a control step: a gate has its own window; a route and an owner get theirs with their kinds.
+        // The answers a rule may read: the participants (enabled models) of the rounds and syntheses before the step.
+        const participantsBefore = (ref) => {
+            const steps = basicSchemaFromPage(draftPlanForCanvas(getActiveDraftPlan()), null, { forSave: true }).steps || [];
+            const at = steps.findIndex((step) => step.ref === ref);
+            return steps.slice(0, Math.max(0, at)).filter((step) => step.kind === 'round' || step.kind === 'synthesis').map((step) => ({
+                ref: step.ref,
+                label: stepLabel(step.ref),
+                participants: (step.models || []).filter((model) => model.enabled !== false).map((model) => ({ id: model.id ?? model.name, name: model.name }))
+            })).filter((item) => item.participants.length);
+        };
+        // The window of a control step: a gate and a route have their windows; an owner gets its own with its kind.
         const openControlCard = (ref) => {
             const dialog = document.getElementById('pipeline-stage-dialog');
             const title = document.getElementById('pipeline-stage-dialog-title');
@@ -9803,15 +9815,14 @@ document.addEventListener('click', (event) => {
             const { step } = entry;
             title.textContent = `${CONTROL_TITLE[step.kind] || step.kind} ${step.ref}`;
             body.replaceChildren();
-            if (step.kind === 'gate') {
-                window.StageCard.renderGateWindow(body, window.StageCard.gateWindowModel(step, {
-                    names: getAllPipelineModelNames(), refs: schemaRefsForWindows(), disabled: pipelineRunActive
-                }), async (edit) => {
-                    if (pipelineRunActive) return;
-                    await commitControl(ref, edit);
-                    openControlCard(ref);
-                });
-            }
+            const options = { names: getAllPipelineModelNames(), refs: schemaRefsForWindows(), earlier: participantsBefore(ref), disabled: pipelineRunActive };
+            const onEdit = async (edit) => {
+                if (pipelineRunActive) return;
+                await commitControl(ref, edit);
+                openControlCard(ref);
+            };
+            if (step.kind === 'gate') window.StageCard.renderGateWindow(body, window.StageCard.gateWindowModel(step, options), onEdit);
+            if (step.kind === 'route') window.StageCard.renderRouteWindow(body, window.StageCard.routeWindowModel(step, options), onEdit);
             if (!dialog.open) dialog.showModal();
         };
         const openStageCard = (roundBadge) => {

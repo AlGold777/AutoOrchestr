@@ -73,7 +73,7 @@
 | Export / Import схемы | `results.js`: `buildBasicExport`, `exportBasicSchema`, `importBasicSchemaFile`, `importBasicBundle`, `handlePipelineImportFile` |
 | Окно настроек модели | `results.js`: `renderCustomBlockInspector`, CSS-классы `custom-card-*` |
 | Окно настроек раунда | `results/stage-card.js` (`StageCard`), открывается из `results.js`: `openStageCard` |
-| Карточка и окно проверки | `results/stage-card.js`: `gateWindowModel`, `gateAfterEdit`, `renderGateWindow`; на странице `results.js`: `openControlCard`, `syncControlColumns`, `customControls` |
+| Карточка и окно проверки, маршрута | `results/stage-card.js`: `gateWindowModel`, `gateAfterEdit`, `renderGateWindow`, `routeWindowModel`, `routeAfterEdit`, `renderRouteWindow`; на странице `results.js`: `openControlCard`, `syncControlColumns`, `customControls` |
 | Запись о прогоне | `disput/custom-run-record.js` (`CustomRunRecord`), в JSON-экспорте Disput Flow — поле `customRun` |
 | События журнала | `custom_start`, `custom_answer`, `custom_step`, `custom_decision`, `custom_end` (движок), `owner_answer` (страница) |
 | Пресет | `presetId: 'CUSTOM'`, `runner: 'custom'`, `isCustomEnginePipeline()` |
