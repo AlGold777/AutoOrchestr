@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — Basic: the engine needs its modules and the page harness loads them, version 2.81.719
+
+- `CustomEngine.run` (`disput/custom-engine.js`): without `basic-output.js` and `basic-artifacts.js` the run stops at its start with the message `basic_modules_missing` instead of a failure inside the run.
+- Tests: the page harness of `tests/results-debate-favorites.test.js` loads the modules in the order of `pipeline_panel.html` (before the engine). The page suites are back to the 20 known failures of `basic-developer.md`, section 5.
+
 ### 2026-10-11 — Basic revisions: a revised artifact joins its line (P02, step 8), version 2.81.718
 
 - `CustomEngine.run` (`disput/custom-engine.js`): an artifact with `revisionOf` (`{ artifact, version }`) joins the line of the input it names; the version keeps its own author, step and visit. The revision must be in the input of every participant of the step (`invalid_input` before the first request otherwise), and it must be the version that the author really got: a required or optional source without that version stops the step with `missing_input`, before the request. Another author's version is never taken by a line of its own.

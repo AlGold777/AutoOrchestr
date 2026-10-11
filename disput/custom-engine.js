@@ -346,6 +346,7 @@
     const runLimit = Number.isSafeInteger(runMaxWords) ? runMaxWords : (root.BasicSchema || (typeof require === 'function' ? require('./basic-schema') : null))?.DEFAULTS?.run?.maxWords;
     // The check of an answer of one participant by the output of its step, or null when the step has no output.
     const checkFor = (step, model) => (step.output ? (value) => Output.checkAnswer(value, step.output, { limit: model.maxWords ?? runLimit }) : null);
+    if (!Output || !Artifacts) throw new Error('basic_modules_missing: загружены не все модули Basic (basic-output.js, basic-artifacts.js)');
     const participants = typeof sendParticipants === 'function';
     if (!participants && typeof send !== 'function') throw new Error('custom_send_required');
     assertExecutable(steps, { participants });
