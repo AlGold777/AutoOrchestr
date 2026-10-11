@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — Basic: owner step (text, file, output check, cancel and Stop), version 2.81.730
+
+- `CustomEngine.run` (`disput/custom-engine.js`): `kind: owner` runs without requests. The owner callback `provideOwnerResult({stepRef, visit, task, output})` returns a text or `{ file: { name, mime, size, ref, text? } }`; `null` is a cancel (`stopped`), Stop is `cancelled`. An empty text or a text that fails the step's output check is asked again with its reason (`custom_owner` with `accepted: false`). An accepted text is stored once (`putText`), and the artifacts it declares are registered under the owner step (participant `owner`). A text file is a text answer; a binary file is kept as a reference, and a step that takes it as input stops with `unsupported_input` before the request. A `blob:` reference or an incomplete file is `invalid_owner_result`. Without the callback the run is refused with `provide_owner_required`.
+- Not yet: the page does not pass `provideOwnerResult` (the owner window comes with the record and canvas work); an owner artifact cannot be named as a source (the address of an owner result is not set by the technical spec); the input of an owner step is not executed.
+- Docs: `basic-start-here.md` (refusals, stop reasons, journal), `basic-schema-guide.md` (5.9), `basic-developer.md` (test table).
+- Tests: `tests/custom-engine-owner.test.js` (new); `tests/custom-engine.test.js` (an owner step is no longer refused as unsupported kind).
+
 ### 2026-10-11 — Schema: transitions do not point at a switched-off step, version 2.81.729
 
 - `BasicSchema.validate` (`disput/basic-schema.js`): a `goto` (also a route case or `otherwise`), a `resumeAt`, an `invalidate` entry and a `feedback` source may not name a round or a synthesis with no enabled model; the error names the path (`…action.goto`, `…feedback[0].step`). An ordinary input may still name such a step (ТЗ 4.3): it has no answers.

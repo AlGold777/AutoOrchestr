@@ -318,7 +318,7 @@ describe('Custom engine refuses what it does not execute yet', () => {
     ['a gate whose transition on pass names no step', [{ ref: 'gate:g1', kind: 'gate', criteria: ['c'], onPass: { goto: 'nope', maxLoops: 1 }, models: [{ name: 'A' }] }], 'unknown_target', 'nope'],
     ['a gate with pass other than all or any', [{ ref: 'gate:g1', kind: 'gate', criteria: ['c'], pass: 'most', models: [{ name: 'A' }] }], 'invalid_field', 'pass'],
     ['a route with no select is refused', [{ ref: 'route:x', kind: 'route', models: [] }], 'invalid_field', 'select'],
-    ['an owner step', [{ ref: 'owner:o', kind: 'owner', models: [] }], 'unsupported_kind', 'owner:o'],
+    ['an owner step with models', [{ ref: 'owner:o', kind: 'owner', task: 'Дай ответ', models: [{ name: 'A' }] }], 'invalid_field', 'models'],
     ['an output format other than json', [{ ref: 'r1', kind: 'round', output: { format: 'xml' }, models: ['A'] }], 'unsupported_field', 'output.format'],
     ['an empty list of artifacts', [{ ref: 'r1', kind: 'round', output: { format: 'json', requiredFields: ['/m'], artifacts: [] }, models: ['A'] }], 'invalid_field', 'output.artifacts'],
     ['require other than any, all or a number', [{ ref: 'r1', kind: 'round', require: 'some', models: ['A', 'B'] }], 'invalid_field', 'require'],
