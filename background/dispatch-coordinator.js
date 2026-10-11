@@ -484,7 +484,8 @@ function commitIncompleteAnswer(llmName, entry, { text, html = '', source, compl
     const live = jobState?.llms?.[llmName];
     if (live !== entry || jobState?.session?.startTime !== sessionId) return;
     const final = Boolean(live.finalStatusRecorded || live.finalStatus);
-    reportDispatchPhase(llmName, live, final ? 'incomplete_answer_committed' : 'commit_not_final', {
+    // A text with its own delivery token is a complete answer, not an incomplete one.
+    reportDispatchPhase(llmName, live, final ? (complete ? 'static_answer_committed' : 'incomplete_answer_committed') : 'commit_not_final', {
       dispatchId,
       reason: final ? `${live.finalStatus || 'final'}:${source}` : `status=${live.status || 'unknown'}:${source}`,
       answerChars: body.length
