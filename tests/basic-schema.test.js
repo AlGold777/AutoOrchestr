@@ -879,3 +879,58 @@ describe('Basic schema: transitions, loop limits and the graph (6.3, 6.4)', () =
   });
 });
 
+
+describe('Basic schema: transitions never point at a switched-off step (A04 request)', () => {
+  // r3 has no enabled model: a switched-off step. The route at index 1 may point at it; the ordinary input may not stop there.
+  const offStep = (enabled) => round('r3', [{ name: 'B', enabled }]);
+  const plan = (action, enabled = false, extra = {}) => base([
+    round('r1', ['A']),
+    { ref: 'route:x', kind: 'route', models: [], select: { by: 'owner', cases: [{ id: 'c', label: 'Вариант', action }], ...extra } },
+    offStep(enabled),
+    synthesis('final', ['C'])
+  ]);
+  const ACTION = 'steps[1].select.cases[0].action';
+
+  test('the same schema with the step switched on is valid for every field', () => {
+    expect(Schema.validate(plan({ goto: 'r3' }, true))).toEqual([]);
+    expect(Schema.validate(plan({ goto: 'final', resumeAt: 'r3' }, true))).toEqual([]);
+    expect(Schema.validate(plan({ goto: 'final', invalidate: ['r3'] }, true))).toEqual([]);
+    expect(Schema.validate(plan({ goto: 'final', feedback: [{ step: 'r3', participant: 'B' }] }, true))).toEqual([]);
+  });
+
+  test('a goto, a resumeAt, an invalidate and a feedback to a switched-off step are named with their path', () => {
+    expect(errorPaths(plan({ goto: 'r3' }))).toEqual([`${ACTION}.goto`]);
+    expect(errorPaths(plan({ goto: 'final', resumeAt: 'r3' }))).toEqual([`${ACTION}.resumeAt`]);
+    expect(errorPaths(plan({ goto: 'final', invalidate: ['r3'] }))).toEqual([`${ACTION}.invalidate[0]`]);
+    expect(errorPaths(plan({ goto: 'final', feedback: ['r3'] }))).toEqual([`${ACTION}.feedback[0]`]);
+    expect(errorPaths(plan({ goto: 'final', feedback: [{ step: 'r3', participant: 'B' }] }))).toEqual([`${ACTION}.feedback[0].step`]);
+  });
+
+  test('an otherwise of a route to a switched-off step is named too', () => {
+    const rule = base([
+      round('r1', ['A']),
+      { ref: 'route:x', kind: 'route', models: [], input: [{ step: 'r1', participant: 'A' }], select: { by: 'rule', cases: [{ id: 'c', when: { source: 0, pointer: '/route', op: 'exists' }, action: { stop: 'Конец' } }], otherwise: { goto: 'r3' } } },
+      offStep(false),
+      synthesis('final', ['C'])
+    ]);
+    expect(errorPaths(rule)).toEqual(['steps[1].select.otherwise.goto']);
+  });
+
+  test('an ordinary input may still name a switched-off step: it has no answers, the step is a valid reference', () => {
+    const schema = base([round('r1', ['A']), offStep(false), round('r4', ['A'], { input: ['r3'] })]);
+    expect(Schema.validate(schema)).toEqual([]);
+  });
+
+  test('assembly keeps criteria, pass, onFail, onPass and select of a gate and a route', () => {
+    const schema = base([
+      round('r1', ['A']),
+      { ref: 'gate:g1', kind: 'gate', criteria: ['Есть источники'], pass: 'any', onFail: { stop: 'Нет' }, onPass: { goto: 'final' }, models: [{ name: 'Claude' }] },
+      { ref: 'route:x', kind: 'route', models: [], select: { by: 'owner', cases: [{ id: 'c', label: 'Вариант', action: { goto: 'final' } }] } },
+      synthesis('final', ['C'])
+    ]);
+    expect(Schema.validate(schema)).toEqual([]);
+    const [, gate, route] = Schema.assemble(schema);
+    expect(gate).toMatchObject({ criteria: ['Есть источники'], pass: 'any', onFail: { stop: 'Нет' }, onPass: { goto: 'final' } });
+    expect(route.select).toEqual({ by: 'owner', cases: [{ id: 'c', label: 'Вариант', action: { goto: 'final' } }] });
+  });
+});

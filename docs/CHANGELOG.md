@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — Schema: transitions do not point at a switched-off step, version 2.81.729
+
+- `BasicSchema.validate` (`disput/basic-schema.js`): a `goto` (also a route case or `otherwise`), a `resumeAt`, an `invalidate` entry and a `feedback` source may not name a round or a synthesis with no enabled model; the error names the path (`…action.goto`, `…feedback[0].step`). An ordinary input may still name such a step (ТЗ 4.3): it has no answers.
+- `BasicSchema.assemble`: unchanged; a test fixes that criteria, pass, onFail, onPass and select of a gate and a route are kept.
+- Docs: `basic-schema-guide.md` (section 5.9, error rows of section 10).
+- Tests: `tests/basic-schema.test.js` (the block «transitions never point at a switched-off step»).
+
 ### 2026-10-11 — Basic: tests of the transitions named in the plan (three ways, self-loop, feedback before invalidation), version 2.81.728
 
 - Tests only; no change of behaviour. `tests/custom-engine-route.test.js`: the three ways of a rule route (`revise` goes to its own target). `tests/custom-engine-flow.test.js`: a self-loop of a gate is limited (`loop_limit` on the third transition). `tests/custom-engine-validity.test.js`: the feedback is resolved before the invalidation, so it keeps the answer that the goto makes stale, and it goes only to the new visit of the target.

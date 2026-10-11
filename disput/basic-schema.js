@@ -199,7 +199,7 @@
   // Returns the address of the source (for the duplicate check), or null when it has an error.
   // ctx: { fail, errors, steps, positions (ref → index), index (of the consumer step) }.
   function checkSource(source, path, ctx) {
-    const { fail, errors, steps, positions, index, later = false } = ctx;
+    const { fail, errors, steps, positions, index, later = false, strictOff = false, switchedOff } = ctx;
     const mark = errors.length;
     const unknown = (value, allowed, at) => Object.keys(value).forEach((key) => { if (!allowed.includes(key)) fail(`${at}.${key}`, 'неизвестное поле'); });
     // The step a reference names: it exists and comes before the consumer; final is never an ordinary source.
@@ -208,6 +208,8 @@
       const position = positions.get(ref);
       if (!later && position >= index) fail(at, 'вход ссылается только на более ранний шаг');
       else if (!later && steps[position].ref === 'final') fail(at, 'результат финального синтеза нельзя указать во входе');
+      // A transition (feedback) never names a switched-off step; an ordinary input may (it has no answers, 4.3).
+      else if (strictOff && switchedOff(position)) fail(at, `обратная связь из выключенного шага «${ref}»`);
       else return position;
       return -1;
     };
@@ -315,12 +317,17 @@
     const positions = new Map();
     schema.steps.forEach((step, at) => { if (isObject(step) && typeof step.ref === 'string' && !positions.has(step.ref)) positions.set(step.ref, at); });
     const namesById = new Map();
-    const contextAt = (index, later = false) => ({ fail, errors, steps: schema.steps, positions, index, later });
-    const checkInputList = (list, path, index, later = false) => {
+    // A round or a synthesis with no enabled model is switched off: assembly takes it out, so a transition may not name it.
+    const switchedOff = (index) => {
+      const step = schema.steps[index];
+      return isObject(step) && (step.kind === 'round' || step.kind === 'synthesis') && !(Array.isArray(step.models) && step.models.some((model) => isObject(model) && model.enabled !== false));
+    };
+    const contextAt = (index, later = false, strictOff = false) => ({ fail, errors, steps: schema.steps, positions, index, later, strictOff, switchedOff });
+    const checkInputList = (list, path, index, later = false, strictOff = false) => {
       if (!list.length) { fail(path, 'ожидается непустой список источников'); return; }
       const addresses = new Set();
       list.forEach((source, at) => {
-        const address = checkSource(source, `${path}[${at}]`, contextAt(index, later));
+        const address = checkSource(source, `${path}[${at}]`, contextAt(index, later, strictOff));
         if (!address) return;
         if (addresses.has(address)) fail(`${path}[${at}]`, 'источник повторяется');
         addresses.add(address);
@@ -414,17 +421,24 @@
       if (kind === 'goto') {
         if (typeof action.goto !== 'string' || !action.goto) fail(`${path}.goto`, 'ref перехода: непустой текст');
         else if (!positions.has(action.goto)) fail(`${path}.goto`, `неизвестный шаг «${action.goto}»`);
+        else if (switchedOff(positions.get(action.goto))) fail(`${path}.goto`, `переход на выключенный шаг «${action.goto}»`);
         else if (positions.get(action.goto) <= origin && !('maxLoops' in action)) fail(path, 'переход назад без maxLoops: укажите лимит от 1 до 5');
       }
       if ('feedback' in action) {
         if (!Array.isArray(action.feedback)) fail(`${path}.feedback`, 'ожидается список источников');
-        else checkInputList(action.feedback, `${path}.feedback`, origin, true);
+        else checkInputList(action.feedback, `${path}.feedback`, origin, true, true);
       }
       if ('invalidate' in action) {
         if (!Array.isArray(action.invalidate) || !action.invalidate.length) fail(`${path}.invalidate`, 'ожидается непустой список ref');
-        else action.invalidate.forEach((ref, at) => { if (!positions.has(ref)) fail(`${path}.invalidate[${at}]`, `неизвестный шаг «${ref}»`); });
+        else action.invalidate.forEach((ref, at) => {
+          if (!positions.has(ref)) fail(`${path}.invalidate[${at}]`, `неизвестный шаг «${ref}»`);
+          else if (switchedOff(positions.get(ref))) fail(`${path}.invalidate[${at}]`, `пересмотр выключенного шага «${ref}»`);
+        });
       }
-      if ('resumeAt' in action && !positions.has(action.resumeAt)) fail(`${path}.resumeAt`, `неизвестный шаг «${action.resumeAt}»`);
+      if ('resumeAt' in action) {
+        if (!positions.has(action.resumeAt)) fail(`${path}.resumeAt`, `неизвестный шаг «${action.resumeAt}»`);
+        else if (switchedOff(positions.get(action.resumeAt))) fail(`${path}.resumeAt`, `точка продолжения на выключенный шаг «${action.resumeAt}»`);
+      }
     };
 
     // A rule condition (6.2): an atomic one { source, pointer, op, value? } or { all: [...] } / { any: [...] }.
