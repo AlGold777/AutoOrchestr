@@ -10,7 +10,7 @@
 
 | Файл | Символы | Что там |
 | --- | --- | --- |
-| `disput/custom-engine.js` | `CustomEngine`, `run`, `attempt`, `normalizeSteps`, `buildPrompt`, `previewPrompt`, `correctionPrompt`, `inputFor`, `judge`, `resolveSetting`, `STOP_TEXT`, `REASON_TEXT`, `DEFAULT_ATTEMPTS`, `SYNTHESIS_TASK`, `EngineError`, `unexecutedOf`, `assertExecutable`, `sourceItems`, `sendParticipants`, `artifactItems`, `contentOf` | Движок: шаги, запросы, приём, повторы, пауза |
+| `disput/custom-engine.js` | `CustomEngine`, `run`, `attempt`, `normalizeSteps`, `buildPrompt`, `previewPrompt`, `correctionPrompt`, `inputFor`, `judge`, `resolveSetting`, `STOP_TEXT`, `REASON_TEXT`, `DEFAULT_ATTEMPTS`, `SYNTHESIS_TASK`, `EngineError`, `unexecutedOf`, `assertExecutable`, `sourceItems`, `sendParticipants`, `artifactItems`, `contentOf`, `revisionItem` | Движок: шаги, запросы, приём, повторы, пауза |
 | `disput/basic-schema.js` | `BasicSchema`, `DEFAULTS`, `validate`, `assemble`, `resolveFields`, `resolveRun`, `toSettings`, `toCanvas`, `describeErrors`, `graph` | Формат схемы: умолчания, проверка, сборка шагов, показ на холсте, граф переходов (`graph`: рёбра и цикл без ограниченного перехода) |
 | `disput/basic-artifacts.js` | `BasicArtifacts`, `createRegistry`, `register`, `latest`, `version`, `lineKey` | Реестр артефактов прогона: одна запись на версию, ссылка на ответ и указатель, без копии текста (чистые функции) |
 | `disput/basic-output.js` | `BasicOutput`, `checkAnswer`, `readPointer`, `parseJsonAnswer`, `countWords` | Проверка ответа по выходу шага: длина, JSON и поля, разделы, артефакты (чистые функции; вызывает движок) |

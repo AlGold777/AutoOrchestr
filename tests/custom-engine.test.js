@@ -886,11 +886,64 @@ describe('Custom engine artifacts', () => {
     expect(result.artifacts).toEqual([]);
   });
 
-  test('revisionOf is refused before the first request until its step is executed (pack P02, step 8)', async () => {
-    const { send, calls } = transport({ A: [reply] });
-    await expect(Engine.run({ task: 'T', send, steps: [{ ...audit(), output: { format: 'json', requiredFields: ['/correctedMap'],
-      artifacts: [{ id: 'map', name: 'Map', pointer: '/correctedMap', revisionOf: fromArtifact('map') }] } }] }))
-      .rejects.toMatchObject({ code: 'unsupported_field', address: expect.stringContaining('revisionOf') });
+});
+
+// Revision (A02, pack P02 step 8; ТЗ 5.2): an artifact that revises another one joins its line (the line of the source the
+// author really got as input); the version keeps its own source; authors who do not revise stay in their own lines.
+describe('Custom engine revisions of artifacts', () => {
+  const declared = (id, extra = {}) => ({ id, name: id === 'map' ? 'Corrected Map' : id, pointer: '/map', ...extra });
+  const mapOutput = (extra = {}) => ({ format: 'json', requiredFields: ['/map'], artifacts: [declared('map', extra)] });
+  const from = (step, participant, id, version = 'latest', required = true) => ({ artifact: { step, participant, id }, version, required });
+
+  test('a revision joins the line of the source it got as input; the version keeps its own author and visit', async () => {
+    const { send, calls } = transport({ A: ['{"map": "v1"}'], B: ['{"map": "v2"}'], C: ['c'] });
+    const result = await Engine.run({ task: 'T', send, steps: [
+      { ref: 'r1', kind: 'round', input: 'none', models: ['A'], output: mapOutput() },
+      { ref: 'r2', kind: 'round', input: [from('r1', 'A', 'map')], models: ['B'], output: mapOutput({ revisionOf: from('r1', 'A', 'map') }) },
+      { ref: 'r3', kind: 'round', input: [from('r1', 'A', 'map')], models: ['C'] }
+    ] });
+    expect(result.artifacts.map((item) => [item.lineage.step, item.lineage.participant, item.source.step])).toEqual([['r1', 'A', 'r1'], ['r1', 'A', 'r2']]);
+    expect(result.artifacts[1].source).toEqual({ step: 'r2', participant: 'B', visit: 1 });
+    expect(calls[2].prompts.C).toContain('Артефакт «Corrected Map» (Раунд 2, участник B, визит 1):\nv2');
+  });
+
+  test('a revision of a source the author did not get is not attached: the step stops before the request (missing_input)', async () => {
+    const { send, calls } = transport({ A: ['{"map": "v1"}'], B: ['{"map": "v2"}'] });
+    const result = await Engine.run({ task: 'T', send, steps: [
+      { ref: 'r1', kind: 'round', input: 'none', models: ['A'], output: mapOutput() },
+      { ref: 'r2', kind: 'round', input: [from('r1', 'A', 'map', 'latest', false)], models: ['B'], output: mapOutput({ revisionOf: from('r1', 'A', 'map', { step: 'r1', participant: 'A', visit: 2 }, false) }) }
+    ] });
+    expect(result).toMatchObject({ stopReason: 'missing_input', stopDetail: expect.stringContaining('map') });
+    expect(calls.map((call) => call.models)).toEqual([['A']]);
+  });
+
+  test('the revision must be in the input of its author: otherwise refused before the first request', async () => {
+    const { send, calls } = transport({ A: ['{"map": "v1"}'], B: ['{"map": "v2"}'] });
+    await expect(Engine.run({ task: 'T', send, steps: [
+      { ref: 'r1', kind: 'round', input: 'none', models: ['A'], output: mapOutput() },
+      { ref: 'r2', kind: 'round', input: 'none', models: ['B'], output: mapOutput({ revisionOf: from('r1', 'A', 'map') }) }
+    ] })).rejects.toMatchObject({ code: 'invalid_input' });
     expect(calls).toHaveLength(0);
+  });
+
+  test('two authors stay two lines: a revision of A does not replace the map of B', async () => {
+    const { send, calls } = transport({ A: ['{"map": "a1"}'], B: ['{"map": "b1"}'], C: ['{"map": "a2"}'], D: ['d'] });
+    const result = await Engine.run({ task: 'T', send, steps: [
+      { ref: 'r1', kind: 'round', input: 'none', models: ['A', 'B'], output: mapOutput() },
+      { ref: 'r2', kind: 'round', input: [from('r1', 'A', 'map')], models: ['C'], output: mapOutput({ revisionOf: from('r1', 'A', 'map') }) },
+      { ref: 'r3', kind: 'round', input: [from('r1', 'B', 'map')], models: ['D'] }
+    ] });
+    expect(calls[calls.length - 1].prompts.D).toContain('Артефакт «Corrected Map» (Раунд 1, участник B, визит 1):\nb1');
+    expect(result.artifacts.filter((item) => item.lineage.participant === 'B')).toHaveLength(1);
+  });
+
+  test('a rejected revision makes no version; the accepted one is registered once', async () => {
+    const { send } = transport({ A: ['{"map": "v1"}'], B: ['{"other": 1}', '{"map": "v2"}'] });
+    const result = await Engine.run({ task: 'T', send, steps: [
+      { ref: 'r1', kind: 'round', input: 'none', models: ['A'], output: mapOutput() },
+      { ref: 'r2', kind: 'round', input: [from('r1', 'A', 'map')], models: ['B'], output: mapOutput({ revisionOf: from('r1', 'A', 'map') }) }
+    ] });
+    expect(result.artifacts.filter((item) => item.source.step === 'r2')).toHaveLength(1);
+    expect(result.history.find((item) => item.model === 'B' && item.attempt === 1)).toMatchObject({ accepted: false, reason: 'missing_field' });
   });
 });

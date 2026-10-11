@@ -1,5 +1,15 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — Basic revisions: a revised artifact joins its line (P02, step 8), version 2.81.718
+
+- `CustomEngine.run` (`disput/custom-engine.js`): an artifact with `revisionOf` (`{ artifact, version }`) joins the line of the input it names; the version keeps its own author, step and visit. The revision must be in the input of every participant of the step (`invalid_input` before the first request otherwise), and it must be the version that the author really got: a required or optional source without that version stops the step with `missing_input`, before the request. Another author's version is never taken by a line of its own.
+- A correction of an answer keeps the input of the request it corrects, so a revision made after a correction names the same input.
+- `revisionItem` (module level) finds the input item of a revision; the source of a registry entry is always its author.
+- The label of an artifact source names the author of the version (its step, participant and visit), not the author of the line.
+- Not yet: the record (`CustomRunRecord`) does not keep the registry (A05); invalidation of versions (`valid: false`) and the new visits come with the pack P03/P06 (3.3).
+- Docs: `basic-schema-guide.md` (5.8, the row `output`), `basic-start-here.md` (the errors before the first request), `basic-developer.md` (the symbols).
+- Tests: `tests/custom-engine.test.js` (the block «Custom engine revisions of artifacts», 5 cases: the line of the source, a missing version, a revision not in the input, two authors, a rejected revision).
+
 ### 2026-10-11 — Basic artifact registry: a declared artifact is a version of its line (P02, step 7), version 2.81.717
 
 - `BasicArtifacts` (new, `disput/basic-artifacts.js`, pure; loaded in `pipeline_panel.html` before `custom-engine.js`): one entry per version `{ id, name, lineage, source, content: { answerRef, pointer }, valid, inputs }`. The lineage is the address of the first declaration (step, participant, artifact id), the source is the creator's address (step, participant, visit). `register` is idempotent by lineage and source; `latest` is the last registered valid version of a line (registration order, not visit); `version` finds a named one. The content is never copied.

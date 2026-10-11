@@ -138,6 +138,21 @@
     return { ok: true, reason: '', text: value };
   }
 
+  // The input item that a revision names (5.2): an artifact of the same line, and the same version when the revision names one.
+  // Null when the author did not get it: the revision is never attached to another line.
+  function revisionItem(declaration, items) {
+    const revisionOf = declaration.revisionOf;
+    if (!isPlain(revisionOf) || !isPlain(revisionOf.artifact)) return null;
+    const want = revisionOf.artifact;
+    const key = Artifacts.lineKey({ step: want.step, participant: want.participant, id: want.id });
+    const version = revisionOf.version;
+    return items.find((item) => item.artifact && Artifacts.lineKey(item.artifact.lineage) === key
+      && (version === 'latest' || (item.artifact.source.step === version.step && item.artifact.source.participant === version.participant
+        && item.artifact.source.visit === version.visit))) || null;
+  }
+
+  const isPlain = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
   // The content of an artifact: the whole answer for an empty pointer, else the value at the pointer (a text as it is,
   // an object or a list as JSON). A pointer that the stored answer does not give is missing_content.
   function contentOf(answer, pointer, address) {
@@ -189,7 +204,6 @@
   const EXECUTED_KINDS = Object.freeze(['round', 'synthesis']);
   const INPUT_VALUES = Object.freeze(['none', 'previous', 'all']);
   // An input (of a step or of a participant) that the engine cannot execute, or null. `fail` builds the error with its address.
-  const isPlain = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
   function inputProblem(spec, kind, fail, field) {
     if (Array.isArray(spec)) {
       if (!spec.length) return fail('invalid_input', field, 'список источников пуст');
@@ -230,8 +244,12 @@
       if (output.format !== undefined && output.format !== 'json') return fail('unsupported_field', 'output.format', 'формат выхода движок пока не исполняет');
       if (output.artifacts !== undefined && (!Array.isArray(output.artifacts) || !output.artifacts.length)) return fail('invalid_field', 'output.artifacts', 'ожидается непустой список артефактов');
       if (Array.isArray(output.artifacts)) {
-        const revision = output.artifacts.findIndex((item) => item && typeof item === 'object' && 'revisionOf' in item);
-        if (revision >= 0) return fail('unsupported_field', `output.artifacts[${revision}].revisionOf`, 'ссылка на предыдущую версию (revisionOf) движок пока не исполняет (пакет P02, шаг 8)');
+        for (const [at, item] of output.artifacts.entries()) {
+          if (!item || typeof item !== 'object' || !('revisionOf' in item)) continue;
+          if (!isPlain(item.revisionOf) || !isPlain(item.revisionOf.artifact)) return fail('invalid_input', `output.artifacts[${at}].revisionOf`, 'ревизия: ссылка на артефакт { artifact: { step, participant, id }, version }');
+          const problem = inputProblem([item.revisionOf], step.kind, fail, `output.artifacts[${at}].revisionOf`);
+          if (problem) return problem;
+        }
       }
     }
     if (step.require !== undefined && step.require !== 'any' && step.require !== 'all') {
@@ -268,6 +286,20 @@
       const inputs = [['input', step.input], ...(Array.isArray(step.models) ? step.models : [])
         .filter((model) => model && typeof model === 'object' && model.input !== undefined)
         .map((model) => [`модель «${model.name}» · input`, model.input])];
+      // A revision names an artifact that the author really gets as input (5.2): the input of every author has it.
+      (Array.isArray(step.output?.artifacts) ? step.output.artifacts : []).forEach((declaration) => {
+        if (!declaration || !isPlain(declaration.revisionOf)) return;
+        const want = declaration.revisionOf.artifact;
+        (Array.isArray(step.models) ? step.models : []).forEach((model) => {
+          const spec = model && typeof model === 'object' && model.input !== undefined ? model.input : step.input;
+          const given = Array.isArray(spec) && spec.some((source) => isPlain(source) && isPlain(source.artifact)
+            && source.artifact.step === want.step && source.artifact.participant === want.participant && source.artifact.id === want.id);
+          if (!given) {
+            const name = typeof model === 'string' ? model : model?.name;
+            throw new EngineError('invalid_input', `шаг «${step.ref}» · output.artifacts`, `ревизия «${declaration.id}» требует во входе участника «${name}» ссылку на «${want.id}»`);
+          }
+        });
+      });
       inputs.forEach(([field, spec]) => {
         if (!Array.isArray(spec)) return;
         spec.forEach((source, at) => {
@@ -368,12 +400,13 @@
       }
       const answer = getText(found.content.answerRef);
       if (answer === undefined || answer === null) throw new EngineError('missing_content', `шаг «${step.ref}» · input`, `текст ответа «${found.content.answerRef}» не найден`);
-      const author = results.find((item) => item.step.ref === found.lineage.step);
-      const where = author ? stepLabel(author.step) : found.lineage.step;
+      // The label names the author of this version (its source), not the author of the line.
+      const author = results.find((item) => item.step.ref === found.source.step);
+      const where = author ? stepLabel(author.step) : found.source.step;
       return [{
-        label: `Артефакт «${found.name}» (${where}, участник ${found.lineage.participant}, визит ${VISIT})`,
+        label: `Артефакт «${found.name}» (${where}, участник ${found.source.participant}, визит ${found.source.visit})`,
         text: contentOf(answer, found.content.pointer, `шаг «${step.ref}» · input`),
-        source: { step: author ? author.step.index : null, label: where, model: found.lineage.participant, attempt: null },
+        source: { step: author ? author.step.index : null, label: where, model: found.source.participant, attempt: null },
         artifact: { lineage: { ...found.lineage }, source: { ...found.source } }
       }];
     }
@@ -481,10 +514,14 @@
           if (verdict.ok) {
             const answerRef = putText(verdict.text);
             outcome[model.id].textRef = answerRef;
-            const inputs = (current[model.id].parts?.input?.items || []).filter((item) => item.artifact).map((item) => item.artifact);
+            const items = current[model.id].parts?.input?.items || [];
+            const inputs = items.filter((item) => item.artifact).map((item) => item.artifact);
             (step.output?.artifacts || []).forEach((declaration) => {
+              // A revision joins the line of the source it got; any other artifact starts its own line.
+              const revision = declaration.revisionOf ? revisionItem(declaration, items) : null;
+              if (declaration.revisionOf && !revision) throw new EngineError('missing_input', `шаг «${step.ref}» · output.artifacts`, `ревизия «${declaration.id}» без полученной версии`);
               Artifacts.register(registry, { id: declaration.id, name: declaration.name,
-                lineage: { step: step.ref, participant: model.id, id: declaration.id },
+                lineage: revision ? { ...revision.artifact.lineage } : { step: step.ref, participant: model.id, id: declaration.id },
                 source: { step: step.ref, participant: model.id, visit: VISIT }, answerRef, pointer: declaration.pointer, inputs });
             });
           }
@@ -507,7 +544,8 @@
         // the same request goes out again. A correction is for an answer that came back and was not accepted.
         current = Object.fromEntries(retry.map((model) => (outcome[model.id].reason === 'empty' ? [model.id, { ...current[model.id], retryOf: tryNo }] : [model.id, (() => {
           const correction = correctionPrompt(outcome[model.id].reason, model.discipline?.correction, outcome[model.id].detail);
-          return { prompt: correction, parts: { correction: { reason: outcome[model.id].reason, text: correction } }, retryOf: tryNo };
+          // The correction keeps the input of the request it corrects: the answer is still made from that input.
+          return { prompt: correction, parts: { correction: { reason: outcome[model.id].reason, text: correction }, input: current[model.id].parts?.input }, retryOf: tryNo };
         })()])));
       }
       return { closedByOwner: false };
@@ -540,8 +578,16 @@
     let current = null;
     try {
       for (const step of plan) {
-        // Every input of the step is resolved before its first request: a missing required one sends nothing.
-        step.models.forEach((model) => inputFor(step, specOf(step, model)));
+        // Every input of the step is resolved before its first request: a missing required one sends nothing, and
+        // a revision whose source an author did not get stops the step (its line would be unknown).
+        step.models.forEach((model) => {
+          const items = inputFor(step, specOf(step, model));
+          (step.output?.artifacts || []).forEach((declaration) => {
+            if (declaration.revisionOf && !revisionItem(declaration, items)) {
+              throw new StopRun('missing_input', `ревизия «${declaration.id}»: участник «${model.id}» не получил версию, которую она дорабатывает; шаг «${step.ref}» не отправлен`);
+            }
+          });
+        });
         const outcome = {};
         const entry = { step, outcome, skipped: false };
         current = entry;
