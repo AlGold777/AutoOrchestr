@@ -176,7 +176,7 @@
         };
       });
       return out;
-    }).filter((step) => step.models.length || step.kind === 'owner' || step.kind === 'route');
+    }).filter((step) => step.models.length || CONTROL_KINDS.includes(step.kind));
   }
 
   // A participant's id: the explicit one, or its name.
@@ -462,6 +462,8 @@
         return;
       }
       if (step.kind === 'gate') {
+        // A gate is a check by its models (6.1): without an enabled checker it is an error, not a step that vanishes.
+        if (!enabled.length) fail(`${path}.models`, 'проверка без включённых проверяющих: включите хотя бы одного');
         if (!Array.isArray(step.criteria) || !step.criteria.length) fail(`${path}.criteria`, 'критерии проверки: непустой список строк');
         else step.criteria.forEach((item, at) => { if (typeof item !== 'string' || !item.trim()) fail(`${path}.criteria[${at}]`, 'критерий: непустой текст'); });
         if ('pass' in step) oneOf(step.pass, GATE_PASS, `${path}.pass`, 'pass проверки');

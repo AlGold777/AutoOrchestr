@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — Schema: a gate without an enabled checker is a named error, control steps are not dropped, version 2.81.722
+
+- `BasicSchema.validate` (`disput/basic-schema.js`): a gate with no enabled checker is an error at `steps[i].models` (a gate is a check by its models, 6.1); before, such a gate vanished from the run without a trace.
+- `BasicSchema.assemble`: the filter by `models.length` no longer drops a gate, a route or an owner; only rounds and syntheses without models are left out.
+- Docs: `basic-schema-guide.md` (section 5.9, error row of section 10).
+- Tests: `tests/basic-schema.test.js` (the block «gate, route and owner defaults» and «a gate without an enabled checker»).
+
 ### 2026-10-11 — Basic: result_new.html loads the Basic modules, version 2.81.721
 
 - `result_new.html` loads `disput/basic-artifacts.js` and `disput/basic-output.js` before `disput/custom-engine.js`, as `pipeline_panel.html` does. Without them a Basic run on that page stops with `basic_modules_missing`.

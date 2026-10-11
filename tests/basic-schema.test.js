@@ -681,12 +681,21 @@ describe('Basic schema: gate, route and owner steps (6.1, 6.2, 4.1)', () => {
     expect(gateStep.models.map((model) => model.name)).toEqual(['Claude']);
   });
 
-  test('gate, route and owner defaults come from DEFAULTS; a gate with no enabled checker is switched off, route and owner are kept', () => {
+  test('gate, route and owner defaults come from DEFAULTS; route and owner without models stay in the plan', () => {
     expect(Schema.DEFAULTS.gate).toEqual({ pass: 'all', onFail: 'stop' });
-    const steps = Schema.assemble(base([gate('gate:off', [{ name: 'Claude', enabled: false }]), owner('owner:o'), route('route:m', { task: 'Выбери', models: [{ name: 'GPT' }], select: { by: 'model', cases: [{ id: 'a', label: 'А', action: { stop: 'А' } }] } }), synthesis('final', ['B'])]));
-    expect(steps.map((step) => step.ref)).toEqual(['owner:o', 'route:m', 'final']);
+    const schema = base([owner('owner:o'), route('route:m', { task: 'Выбери', models: [{ name: 'GPT' }], select: { by: 'model', cases: [{ id: 'a', label: 'А', action: { stop: 'А' } }] } }), route('route:r', { select: { by: 'owner', cases: [{ id: 'b', label: 'Б', action: { stop: 'Б' } }] } }), synthesis('final', ['B'])]);
+    expect(Schema.validate(schema)).toEqual([]);
+    const steps = Schema.assemble(schema);
+    expect(steps.map((step) => step.ref)).toEqual(['owner:o', 'route:m', 'route:r', 'final']);
     expect(steps[1]).toMatchObject({ kind: 'route', models: [{ name: 'GPT' }] });
     expect(steps[0].models).toEqual([]);
+    expect(steps[2].models).toEqual([]);
+  });
+
+  test('a gate without an enabled checker is a named schema error and never disappears from the plan', () => {
+    const off = base([round('r1', ['A']), gate('gate:off', [{ name: 'Claude', enabled: false }]), synthesis('final', ['B'])]);
+    expect(errorPaths(off)).toEqual(['steps[1].models']);
+    expect(errorPaths(base([round('r1', ['A']), gate('gate:empty', []), synthesis('final', ['B'])]))).toEqual(['steps[1].models']);
   });
 
   test('a rule route with exact sources and conditions, and a route by model with one participant, are valid', () => {
@@ -707,7 +716,7 @@ describe('Basic schema: gate, route and owner steps (6.1, 6.2, 4.1)', () => {
     ];
     gateCases.forEach(([extra, paths]) => expect({ extra, paths: pathsOf(gate('gate:g1', ['Claude'], extra)) }).toEqual({ extra, paths }));
     expect(pathsOf(gate('check', ['Claude']))).toEqual([`${at}.ref`]);
-    expect(pathsOf(gate('gate:g1', []))).toEqual([]);
+    expect(pathsOf(gate('gate:g1', []))).toEqual([`${at}.models`]);
 
     const cases = [
       [route('audit', { select: { by: 'owner', cases: [{ id: 'x', label: 'x', action: { stop: 'y' } }] } }), [`${at}.ref`]],
