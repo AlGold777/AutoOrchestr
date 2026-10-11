@@ -183,3 +183,85 @@ describe('Step controls of Basic: require, owner, output', () => {
     expect(StageCard.outputAfterEdit({}, { name: 'N', form: 'F', sections: ['Карта', ''], strictLength: false })).toEqual({ name: 'N', form: 'F', sections: ['Карта'] });
   });
 });
+
+describe('Gate window of Basic: model and edits', () => {
+  const gate = {
+    ref: 'gate:1', kind: 'gate', models: [{ name: 'GPT', request: 'R', enabled: false }, { name: 'Claude' }],
+    criteria: ['полнота', 'ясность'], pass: 'any',
+    onFail: { goto: 'r1', maxLoops: 2, feedback: [{ step: 'r1', participant: 'GPT' }], invalidate: ['r1'], resumeAt: 'gate:1' },
+    onPass: 'ask'
+  };
+  const names = ['GPT', 'Claude', 'Gemini'];
+
+  test('the window shows the criteria, every available checker with its state, and the transitions as they are', () => {
+    const model = StageCard.gateWindowModel(gate, { names, refs: ['r1', 'gate:1', 'r2'] });
+    expect(model.criteria).toBe('полнота\nясность');
+    expect(model.checkers).toEqual([{ name: 'GPT', checked: false }, { name: 'Claude', checked: true }, { name: 'Gemini', checked: false }]);
+    expect(model.pass).toBe('any');
+    expect(model.onFail).toEqual({ mode: 'goto', goto: 'r1', maxLoops: 2 });
+    expect(model.onPass).toEqual({ mode: 'ask' });
+    expect(model.refs).toEqual(['r1', 'r2']);
+  });
+
+  test('a missing value is shown as the default, not written: pass and onFail stop, onPass the next step', () => {
+    const model = StageCard.gateWindowModel({ ref: 'gate:2', kind: 'gate', models: [] }, { names });
+    expect(model.pass).toBe('');
+    expect(model.onFail).toEqual({ mode: 'stop' });
+    expect(model.onPass).toEqual({ mode: 'next' });
+    const after = StageCard.gateAfterEdit({ ref: 'gate:2', kind: 'gate', models: [] }, { field: 'pass', value: '' });
+    expect(after).toEqual({ ref: 'gate:2', kind: 'gate', models: [] });
+  });
+
+  test('criteria are one per line; empty lines are dropped and an empty list is not written', () => {
+    expect(StageCard.gateAfterEdit(gate, { field: 'criteria', value: ' а \n\n б ' }).criteria).toEqual(['а', 'б']);
+    expect(StageCard.gateAfterEdit(gate, { field: 'criteria', value: '  \n' })).not.toHaveProperty('criteria');
+  });
+
+  test('a checker is switched off in place (its other fields stay) and back on without enabled; a new one is added', () => {
+    const off = StageCard.gateAfterEdit(gate, { field: 'checker', name: 'Claude', checked: false });
+    expect(off.models).toEqual([{ name: 'GPT', request: 'R', enabled: false }, { name: 'Claude', enabled: false }]);
+    const on = StageCard.gateAfterEdit(gate, { field: 'checker', name: 'GPT', checked: true });
+    expect(on.models).toEqual([{ name: 'GPT', request: 'R' }, { name: 'Claude' }]);
+    const added = StageCard.gateAfterEdit(gate, { field: 'checker', name: 'Gemini', checked: true });
+    expect(added.models[2]).toEqual({ name: 'Gemini' });
+  });
+
+  test('a goto keeps feedback, invalidate and resumeAt; the loop limit is a number; a switch to ask drops the goto', () => {
+    const loops = StageCard.gateAfterEdit(gate, { field: 'onFail', mode: 'goto', goto: 'r2', maxLoops: '3', stop: '' });
+    expect(loops.onFail).toEqual({ goto: 'r2', maxLoops: 3, feedback: [{ step: 'r1', participant: 'GPT' }], invalidate: ['r1'], resumeAt: 'gate:1' });
+    expect(StageCard.gateAfterEdit(gate, { field: 'onFail', mode: 'ask' }).onFail).toBe('ask');
+    expect(StageCard.gateAfterEdit(gate, { field: 'onFail', mode: 'stop' }).onFail).toBe('stop');
+    expect(StageCard.gateAfterEdit(gate, { field: 'onPass', mode: 'next' })).not.toHaveProperty('onPass');
+  });
+
+  test('a transition the window does not edit (its shape is other) stays unchanged by the other fields', () => {
+    const odd = { ...gate, onPass: { goto: 'r1', maxLoops: 1 } };
+    expect(StageCard.gateWindowModel(odd, { names }).onPass).toEqual({ mode: 'goto', goto: 'r1', maxLoops: 1 });
+    const json = { ...gate, onFail: { stop: 'конец', maxLoops: 1 } };
+    expect(StageCard.gateWindowModel(json, { names }).onFail).toEqual({ mode: 'json' });
+    expect(StageCard.gateAfterEdit(json, { field: 'criteria', value: 'x' }).onFail).toEqual({ stop: 'конец', maxLoops: 1 });
+  });
+
+  test('the window reports each change with its field name; disabled controls are disabled', () => {
+    const container = document.createElement('div');
+    const seen = [];
+    StageCard.renderGateWindow(container, StageCard.gateWindowModel(gate, { names, refs: ['r1'] }), (edit) => seen.push(edit));
+    const criteria = container.querySelector('.stage-card-criteria');
+    criteria.value = 'новый';
+    criteria.dispatchEvent(new Event('change'));
+    container.querySelector('.stage-card-pass-select').value = 'all';
+    container.querySelector('.stage-card-pass-select').dispatchEvent(new Event('change'));
+    const check = container.querySelectorAll('.stage-card-checker-check')[2];
+    check.checked = true;
+    check.dispatchEvent(new Event('change'));
+    const mode = container.querySelector('.stage-card-onPass-mode');
+    mode.value = 'goto';
+    mode.dispatchEvent(new Event('change'));
+    expect(seen.map((edit) => edit.field)).toEqual(['criteria', 'pass', 'checker', 'onPass']);
+    expect(seen[2]).toEqual({ field: 'checker', name: 'Gemini', checked: true });
+    expect(seen[3]).toEqual({ field: 'onPass', mode: 'goto', goto: '', maxLoops: '', stop: '' });
+    const locked = document.createElement('div');
+    StageCard.renderGateWindow(locked, StageCard.gateWindowModel(gate, { names, disabled: true }), () => {});
+    expect([...locked.querySelectorAll('select, textarea, input')].every((node) => node.disabled)).toBe(true);
+  });
+});

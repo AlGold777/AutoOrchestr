@@ -1816,3 +1816,38 @@ body.pipeline-page #disput-state-map-panel .disput-state-map-actions > button:no
         display: none;
     }
 }
+
+/* Control steps (gate, route, owner): a card column after its anchor; the add select sits at the left of the header. */
+.stage-header-row .pipeline-control-add {
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    max-width: 92px;
+    font-size: 11px;
+}
+
+.pipeline-control-title {
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.pipeline-control-delete-btn {
+    margin-left: 4px;
+    padding: 0 4px;
+    line-height: 1;
+}
+
+.pipeline-control-card {
+    display: block;
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px dashed currentColor;
+    border-radius: 8px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 12px;
+    text-align: left;
+    cursor: pointer;
+}

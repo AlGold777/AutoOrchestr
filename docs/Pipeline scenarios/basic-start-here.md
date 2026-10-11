@@ -54,6 +54,7 @@
 | Метка доставки | Служебная метка, которую транспорт использует для подтверждения доставки. Ответ, состоящий только из неё, не принимается. |
 | Журнал доставки | Журнал событий отправки (`MessageDelivery`). События Basic имеют имена `custom_*`. |
 | Политика запуска | `run.policy`: `auto` — шаги идут без остановки; `manual` — владелец подтверждает каждый шаг. |
+| Шаг управления | Проверка (`gate`), маршрут (`route`) или владелец (`owner`) — control-шаг схемы. На холсте — карточка после раунда или другого шага (кнопка «+ шаг»). Окно проверки — в `basic-windows.md`, «Карточка проверки (gate)». |
 | Окно настроек | Окно редактирования: модели (двойной клик по блоку), раунда (клик по значку R1, R2…: роль, порядок, вход, задание, порог, владелец, выход), ▶ (общие значения для всех шагов), промежуточного синтеза (двойной клик по его блоку) и финального синтеза (двойной клик по значку Final; вход, порог, владелец, выход сверху окна). |
 | Карточка ответа | Блок в ленте: один ответ модели с подписью `Basic · Раунд N` или `Basic · Синтез после раунда N`; при другом id участника добавляется `участник <id>`, со второго захода — `заход N`. |
 | Строка прогона | Компактная строка в ленте для проверки, маршрута и перехода, а также для реестра артефактов (см. `basic-windows.md`, «Лента прогона»). Не ответ модели. |
@@ -72,6 +73,7 @@
 | Export / Import схемы | `results.js`: `buildBasicExport`, `exportBasicSchema`, `importBasicSchemaFile`, `importBasicBundle`, `handlePipelineImportFile` |
 | Окно настроек модели | `results.js`: `renderCustomBlockInspector`, CSS-классы `custom-card-*` |
 | Окно настроек раунда | `results/stage-card.js` (`StageCard`), открывается из `results.js`: `openStageCard` |
+| Карточка и окно проверки | `results/stage-card.js`: `gateWindowModel`, `gateAfterEdit`, `renderGateWindow`; на странице `results.js`: `openControlCard`, `syncControlColumns`, `customControls` |
 | Запись о прогоне | `disput/custom-run-record.js` (`CustomRunRecord`), в JSON-экспорте Disput Flow — поле `customRun` |
 | События журнала | `custom_start`, `custom_answer`, `custom_step`, `custom_decision`, `custom_end` (движок), `owner_answer` (страница) |
 | Пресет | `presetId: 'CUSTOM'`, `runner: 'custom'`, `isCustomEnginePipeline()` |

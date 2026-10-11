@@ -465,7 +465,184 @@
     }
   });
 
-  const api = Object.freeze({ buildModel, render, renderStepFields, stepFieldsModel, stepsAfterToggle, outputAfterEdit, STATUS, feed });
+  // Control steps (6.1–6.3 of the spec): a gate, a route and an owner are cards on the canvas. A window edits only the fields
+  // listed here; controlAfterEdit gives back the whole step, so every other field stays as it is.
+  const isTransition = (value) => isPlain(value) && typeof value.goto === 'string';
+  // The view of a transition (onPass, onFail, a case's action, otherwise): `absent` is the mode of a missing value.
+  // A value the window does not edit (its shape is other) gives mode 'json'.
+  function transitionView(value, absent) {
+    if (value === undefined || value === null) return { mode: absent };
+    if (value === 'stop' || value === 'ask') return { mode: value };
+    if (isTransition(value)) return { mode: 'goto', goto: value.goto, maxLoops: value.maxLoops ?? '' };
+    if (isPlain(value) && Object.keys(value).length === 1 && typeof value.stop === 'string') return { mode: 'stop', stop: value.stop };
+    if (isPlain(value) && value.return === true && Object.keys(value).every((key) => key === 'return' || key === 'maxLoops')) return { mode: 'return', maxLoops: value.maxLoops ?? '' };
+    return { mode: 'json' };
+  }
+  // The value of a transition after an edit (`kind`: pass, fail, action, otherwise). A missing value is undefined.
+  // A goto keeps its feedback, invalidate and resumeAt: the window does not edit them.
+  function transitionAfterEdit(current, edit = {}, kind = 'action') {
+    if (edit.mode === 'next' || edit.mode === 'none') return undefined;
+    const limit = edit.maxLoops === '' || edit.maxLoops == null ? {} : { maxLoops: Number(edit.maxLoops) };
+    if (edit.mode === 'ask') return 'ask';
+    if (edit.mode === 'stop') return kind === 'fail' ? 'stop' : { stop: String(edit.stop ?? '') };
+    if (edit.mode === 'return') return { return: true, ...limit };
+    if (edit.mode === 'goto') {
+      const kept = isTransition(current) ? Object.fromEntries(Object.entries(current).filter(([key]) => key !== 'goto' && key !== 'maxLoops')) : {};
+      return { ...kept, goto: String(edit.goto ?? ''), ...limit };
+    }
+    return current;
+  }
+
+  // The window of a gate: criteria (one per line), its checkers (the available models; an unchecked one stays in the
+  // schema with enabled false), pass, and the transitions onFail and onPass. `names` are the models the page offers.
+  function gateWindowModel(step = {}, { names = [], refs = [], disabled = false } = {}) {
+    const models = Array.isArray(step.models) ? step.models.filter(isPlain) : [];
+    const checked = new Set(models.filter((model) => model.enabled !== false).map((model) => String(model.name)));
+    const known = [...new Set([...names.map(String), ...models.map((model) => String(model.name))])];
+    return {
+      ref: String(step.ref || ''),
+      disabled: Boolean(disabled),
+      criteria: Array.isArray(step.criteria) ? step.criteria.map(String).join('\n') : '',
+      checkers: known.map((name) => ({ name, checked: checked.has(name) })),
+      pass: typeof step.pass === 'string' ? step.pass : '',
+      onFail: transitionView(step.onFail, 'stop'),
+      onPass: transitionView(step.onPass, 'next'),
+      refs: refs.map(String).filter((ref) => ref !== String(step.ref || ''))
+    };
+  }
+  // An edit of a gate: { field: 'criteria', value } | { field: 'checker', name, checked } | { field: 'pass', value } |
+  // { field: 'onFail' | 'onPass', mode, goto, maxLoops, stop }. Returns the new step; the input is not changed.
+  function gateAfterEdit(step = {}, edit = {}) {
+    const next = { ...step };
+    if (edit.field === 'criteria') {
+      const lines = String(edit.value || '').split('\n').map((line) => line.trim()).filter(Boolean);
+      if (lines.length) next.criteria = lines;
+      else delete next.criteria;
+    } else if (edit.field === 'checker') {
+      const models = Array.isArray(step.models) ? step.models.map((model) => (isPlain(model) ? { ...model } : model)) : [];
+      const at = models.findIndex((model) => isPlain(model) && model.name === edit.name);
+      if (at < 0 && edit.checked) models.push({ name: String(edit.name) });
+      else if (at >= 0 && edit.checked) delete models[at].enabled;
+      else if (at >= 0) models[at].enabled = false;
+      next.models = models;
+    } else if (edit.field === 'pass') {
+      if (edit.value === 'all' || edit.value === 'any') next.pass = edit.value;
+      else delete next.pass;
+    } else if (edit.field === 'onFail' || edit.field === 'onPass') {
+      const key = edit.field;
+      const value = transitionAfterEdit(step[key], edit, key === 'onFail' ? 'fail' : 'pass');
+      if (value === undefined) delete next[key];
+      else next[key] = value;
+    }
+    return next;
+  }
+
+  // The window's controls: a select of a transition with its target (a ref of the canvas) and the number of loops.
+  // The change goes to emit(field, { mode, goto, maxLoops, stop }); a goto without a target is sent as it is (the schema says so).
+  function renderTransition(container, { field, label, view, options, refs, disabled, withStop, emit }) {
+    const doc = container.ownerDocument;
+    const state = { mode: view.mode, goto: view.goto || '', maxLoops: view.maxLoops ?? '', stop: view.stop || '' };
+    const box = el(doc, 'fieldset', `stage-card-transition stage-card-${field}`);
+    box.append(el(doc, 'legend', '', label));
+    const mode = el(doc, 'select', `stage-card-${field}-mode`);
+    mode.setAttribute('aria-label', label);
+    const choices = state.mode === 'json' ? [...options, { value: 'json', label: 'задан в JSON, сохраняется как есть', disabled: true }] : options;
+    choices.forEach((item) => { const option = el(doc, 'option', '', item.label); option.value = item.value; option.disabled = Boolean(item.disabled); mode.append(option); });
+    mode.value = state.mode;
+    mode.disabled = Boolean(disabled) || state.mode === 'json';
+    const send = () => { if (typeof emit === 'function') emit({ field, mode: state.mode, goto: state.goto, maxLoops: state.maxLoops, stop: state.stop }); };
+    mode.addEventListener('change', () => { state.mode = mode.value; send(); });
+    box.append(mode);
+    if (state.mode === 'goto' || state.mode === 'return') {
+      if (state.mode === 'goto') {
+        const target = el(doc, 'select', `stage-card-${field}-goto`);
+        target.setAttribute('aria-label', `${label}: переход на шаг`);
+        target.append(new Option('— выберите шаг —', ''));
+        [...new Set([...refs, state.goto].filter(Boolean))].forEach((ref) => target.append(new Option(ref, ref)));
+        target.value = state.goto;
+        target.disabled = Boolean(disabled);
+        target.addEventListener('change', () => { state.goto = target.value; send(); });
+        box.append(target);
+      }
+      const loops = el(doc, 'input', `stage-card-${field}-loops`);
+      loops.type = 'number'; loops.min = '1'; loops.max = '5'; loops.step = '1';
+      loops.value = state.maxLoops === '' ? '' : String(state.maxLoops);
+      loops.placeholder = 'лимит 1–5';
+      loops.disabled = Boolean(disabled);
+      loops.setAttribute('aria-label', `${label}: лимит переходов`);
+      loops.addEventListener('change', () => { state.maxLoops = loops.value; send(); });
+      box.append(loops);
+    }
+    if (withStop && state.mode === 'stop') {
+      const reason = el(doc, 'input', `stage-card-${field}-stop`);
+      reason.type = 'text'; reason.value = state.stop; reason.disabled = Boolean(disabled);
+      reason.setAttribute('aria-label', `${label}: причина остановки`);
+      reason.addEventListener('change', () => { state.stop = reason.value; send(); });
+      box.append(reason);
+    }
+    container.append(box);
+  }
+
+  // The window of a gate. Every change goes to emit(edit) with the edit's field (see gateAfterEdit).
+  function renderGateWindow(container, model, emit) {
+    const doc = container.ownerDocument;
+    const disabled = Boolean(model.disabled);
+    const send = (edit) => { if (typeof emit === 'function') emit(edit); };
+    const criteria = el(doc, 'textarea', 'stage-card-criteria');
+    criteria.rows = 4;
+    criteria.value = model.criteria;
+    criteria.disabled = disabled;
+    criteria.spellcheck = false;
+    criteria.setAttribute('aria-label', 'Критерии проверки, по одному на строку');
+    criteria.addEventListener('change', () => send({ field: 'criteria', value: criteria.value }));
+    const critWrap = el(doc, 'label', 'stage-card-setting stage-card-criteria-label');
+    critWrap.append(doc.createTextNode('Критерии (по одному на строку) '), criteria);
+    container.append(critWrap);
+
+    const checkers = el(doc, 'fieldset', 'stage-card-checkers');
+    checkers.append(el(doc, 'legend', '', 'Проверяющие'));
+    model.checkers.forEach((item) => {
+      const row = el(doc, 'label', 'stage-card-checker');
+      const check = el(doc, 'input', 'stage-card-checker-check');
+      check.type = 'checkbox';
+      check.checked = item.checked;
+      check.disabled = disabled;
+      check.addEventListener('change', () => send({ field: 'checker', name: item.name, checked: check.checked }));
+      row.append(check, doc.createTextNode(` ${item.name}`));
+      checkers.append(row);
+    });
+    if (!model.checkers.length) checkers.append(el(doc, 'p', 'stage-card-muted', 'Моделей нет.'));
+    container.append(checkers);
+
+    const pass = el(doc, 'select', 'stage-card-pass-select');
+    [['', 'По умолчанию (все проверяющие)'], ['all', 'Все проверяющие прошли'], ['any', 'Достаточно одного']].forEach(([value, label]) => {
+      const option = el(doc, 'option', '', label); option.value = value; pass.append(option);
+    });
+    pass.value = model.pass;
+    pass.disabled = disabled;
+    pass.setAttribute('aria-label', 'Проверка прошла, если');
+    pass.addEventListener('change', () => send({ field: 'pass', value: pass.value }));
+    const passWrap = el(doc, 'label', 'stage-card-setting stage-card-pass');
+    passWrap.append(doc.createTextNode('Проходит, если '), pass);
+    container.append(passWrap);
+
+    renderTransition(container, { field: 'onFail', label: 'При провале', view: model.onFail, refs: model.refs, disabled, withStop: false, emit: send,
+      options: [{ value: 'stop', label: 'Остановить прогон' }, { value: 'ask', label: 'Спросить владельца' }, { value: 'goto', label: 'Перейти к шагу' }] });
+    renderTransition(container, { field: 'onPass', label: 'После успеха', view: model.onPass, refs: model.refs, disabled, withStop: false, emit: send,
+      options: [{ value: 'next', label: 'Следующий шаг' }, { value: 'goto', label: 'Перейти к шагу' }] });
+  }
+
+  // The text of a control on its canvas card (the owner's words; a switched-off checker is not named).
+  function controlSummary(step = {}) {
+    if (step.kind === 'gate') {
+      const checkers = (Array.isArray(step.models) ? step.models : []).filter((model) => isPlain(model) && model.enabled !== false).map((model) => model.name);
+      return `проверяют: ${checkers.length ? checkers.join(', ') : 'никто'}`;
+    }
+    return '';
+  }
+
+  const api = Object.freeze({ buildModel, render, renderStepFields, stepFieldsModel, stepsAfterToggle, outputAfterEdit, STATUS, feed,
+    gateWindowModel, gateAfterEdit, renderGateWindow, controlSummary, transitionView, transitionAfterEdit });
   root.StageCard = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

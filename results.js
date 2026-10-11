@@ -4144,7 +4144,7 @@ document.addEventListener('click', (event) => {
                     .map((column) => ({ column, stack: column.querySelector('.model-stack') }))
             ];
             const modelStacks = stacks.filter((stack) => (
-                stack.classList.contains('model-stack') && stack !== synthesisStack && !stack.closest('.pipeline-intermediate-synth')
+                stack.classList.contains('model-stack') && stack !== synthesisStack && !stack.closest('.pipeline-intermediate-synth') && !stack.closest('.pipeline-control-step')
             ));
             const referenceStack = modelStacks[modelStacks.length - 1] || null;
             if (!referenceStack) return { aligned: false, reason: 'no-reference-stack' };
@@ -4312,6 +4312,72 @@ document.addEventListener('click', (event) => {
                 await persistPipelineStore();
             }
         };
+        // The control steps (gate, route, owner) of a Basic pipeline: [{ after, step }], where `after` is the ref of the step
+        // before it on the canvas (a round, an intermediate synthesis or another control). The step is kept whole, as the
+        // schema has it; a window edits some of its fields (StageCard). Placed after `after` by placeControls.
+        const customControls = new Map();
+        const getCustomControls = () => customControls.get(draftPlanStorageKey()) || [];
+        const CONTROL_KINDS_CANVAS = ['gate', 'route', 'owner'];
+        const CONTROL_TITLE = { gate: 'Проверка', route: 'Маршрут', owner: 'Владелец' };
+        const controlStackId = (ref) => `ctl-${String(ref).replace(/[^A-Za-z0-9_-]+/g, '-')}-stack`;
+        const controlLinkId = (ref) => `svg-in-${String(ref).replace(/[^A-Za-z0-9_-]+/g, '-')}`;
+        // Saves the list for the pipeline; a saved pipeline keeps it at once (as the round card does), a draft only in memory.
+        const setCustomControls = async (list, { persist = true } = {}) => {
+            const name = draftPlanStorageKey();
+            customControls.set(name, JSON.parse(JSON.stringify(list)));
+            if (persist && !isDefaultPipelineName(name) && pipelineStore.pipelines[name]) {
+                persistBasicSettings(name);
+                await persistPipelineStore();
+            }
+        };
+        // The refs a window may name as a target: the steps of the schema in their order, the final synthesis included.
+        const schemaRefsForWindows = () => (basicSchemaFromPage(draftPlanForCanvas(getActiveDraftPlan()), null, { forSave: true }).steps || []).map((step) => step.ref);
+        // The next free ref of a kind: kind:1, kind:2, … (ids are digits, so the schema accepts them).
+        const freshControlRef = (kind) => {
+            const taken = new Set([...getCustomControls().map((item) => item.step.ref), ...schemaRefsForWindows()]);
+            let n = 1;
+            while (taken.has(`${kind}:${n}`)) n += 1;
+            return `${kind}:${n}`;
+        };
+        const controlAfterEdit = (step, edit) => {
+            if (step.kind === 'gate') return window.StageCard.gateAfterEdit(step, edit);
+            return step;
+        };
+        // The control with the ref gets the edit; the list is saved (a saved pipeline at once).
+        const commitControl = async (ref, edit) => {
+            const list = getCustomControls().map((item) => (item.step.ref === ref ? { ...item, step: controlAfterEdit(item.step, edit) } : item));
+            await setCustomControls(list);
+            updatePipelineAll();
+        };
+        // Inserts a control after `anchor` (a round or another control): the control that stood after the anchor now stands
+        // after the new one, so the chain stays a line. A new control is a draft (not persisted) until its window is filled.
+        const insertControlAfter = async (anchor, kind) => {
+            if (pipelineRunActive || !CONTROL_KINDS_CANVAS.includes(kind)) return false;
+            if (intermediateAfterRound(anchor)) {
+                showNotification(INTERMEDIATE_CONTROL_NOTE, 'warn');
+                return false;
+            }
+            const ref = freshControlRef(kind);
+            const list = getCustomControls().map((item) => (item.after === anchor ? { ...item, after: ref } : item));
+            const kindDefault = kind === 'gate' ? { models: [] } : {};
+            list.push({ after: anchor, step: { ref, kind, ...kindDefault } });
+            await setCustomControls(list, { persist: false });
+            updatePipelineAll();
+            return true;
+        };
+        // A control is removed; the step after it stands after its anchor.
+        const deleteControl = async (ref) => {
+            const list = getCustomControls();
+            const gone = list.find((item) => item.step.ref === ref);
+            if (!gone) return;
+            const next = list.filter((item) => item !== gone).map((item) => (item.after === ref ? { ...item, after: gone.after } : item));
+            await setCustomControls(next);
+            updatePipelineAll();
+        };
+        // The canvas has an intermediate synthesis right after this round: a control there is refused (the schema
+        // needs the synthesis to stand directly after the round and before the next one).
+        const intermediateAfterRound = (anchor) => (draftPlanForCanvas(getActiveDraftPlan()).plannedStages || []).some((stage) => stage.outputIntent === 'working_synthesis' && stage.upstream?.includes(`canvas-${anchor}`));
+        const INTERMEDIATE_CONTROL_NOTE = 'Между раундом и его промежуточным синтезом проверку или маршрут не ставят: синтез стоит сразу после раунда и перед следующим раундом. Уберите синтез или шаг управления.';
         // The card of a round or a synthesis keeps the choices the schema does not hold yet as drafts, by pipeline and ref:
         // «выбранные этапы» before a step is picked, «число» before a number is typed. A draft shows until the owner makes the value.
         const stepDrafts = new Map();
@@ -5004,6 +5070,123 @@ document.addEventListener('click', (event) => {
             }
         };
 
+        // The control steps on the canvas (customControls): a card column placed right after its anchor (a round or the control
+        // before it), with the link that leads into it. Rebuilt from the list on each update, so the canvas shows the list.
+        // The outgoing link of a chain (the group that followed the anchor) now leads from the last control to the next step.
+        const CONTROL_ADD_LABEL = '+ шаг';
+        const controlledAfter = (ref) => getCustomControls().some((item) => item.after === ref);
+        // The bridge for the synthesis toggle (outside this block): a control after the round refuses an intermediate synthesis.
+        window.__controlledAfter = controlledAfter;
+        const addControlSelect = (anchor, editable) => {
+            const select = document.createElement('select');
+            select.className = 'pipeline-control-add';
+            select.dataset.anchor = anchor;
+            select.setAttribute('aria-label', `Добавить шаг управления после ${anchor}`);
+            select.title = 'Добавить шаг управления: проверка (gate)';
+            [['', CONTROL_ADD_LABEL], ['gate', 'Проверка (gate)']].forEach(([value, label]) => {
+                const option = document.createElement('option');
+                option.value = value;
+                option.textContent = label;
+                select.append(option);
+            });
+            select.disabled = !editable;
+            return select;
+        };
+        const buildControlColumn = (step, editable) => {
+            const column = document.createElement('div');
+            column.className = 'stage-column pipeline-control-step';
+            column.dataset.controlRef = step.ref;
+            column.dataset.controlKind = step.kind;
+            const header = document.createElement('div');
+            header.className = 'stage-header-row';
+            const label = document.createElement('div');
+            label.className = 'stage-label';
+            const title = document.createElement('span');
+            title.className = 'pipeline-control-title';
+            title.textContent = `${CONTROL_TITLE[step.kind] || step.kind} ${step.ref}`;
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'pipeline-control-delete-btn';
+            remove.dataset.controlDelete = step.ref;
+            remove.textContent = '×';
+            remove.title = 'Удалить шаг управления';
+            remove.setAttribute('aria-label', `Удалить: ${step.ref}`);
+            remove.disabled = !editable;
+            label.append(title, ' ', remove);
+            header.append(label, addControlSelect(step.ref, editable));
+            const stack = document.createElement('div');
+            stack.className = 'model-stack';
+            stack.id = controlStackId(step.ref);
+            const card = document.createElement('button');
+            card.type = 'button';
+            card.className = 'pipeline-control-card';
+            card.dataset.controlCard = step.ref;
+            const summary = window.StageCard?.controlSummary?.(step) || '';
+            card.textContent = summary || 'настройте в окне';
+            stack.append(card);
+            column.append(header, stack);
+            return column;
+        };
+        const syncControlColumns = () => {
+            if (!pipelinePanel) return;
+            pipelinePanel.querySelectorAll('.pipeline-control-step, .pipeline-control-link').forEach((node) => node.remove());
+            const lifecycle = String(window.DebateApplication?.getState?.()?.lifecycle || 'IDLE').toUpperCase();
+            const editable = !['PLANNING', 'RUNNING', 'PAUSED', 'CANCELLING'].includes(lifecycle) && !pipelineRunActive;
+            // The add select of each round: a control after a round with an intermediate synthesis is refused, so it is disabled.
+            pipelinePanel.querySelectorAll('.stage-column[data-round]:not(.pipeline-intermediate-synth):not(.pipeline-control-step) > .stage-header-row').forEach((row) => {
+                const anchor = `r${row.parentElement.dataset.round}`;
+                let select = row.querySelector(`.pipeline-control-add[data-anchor="${anchor}"]`);
+                if (!select) { select = addControlSelect(anchor, editable); row.append(select); }
+                select.disabled = !editable || intermediateAfterRound(anchor);
+                select.title = intermediateAfterRound(anchor) ? INTERMEDIATE_CONTROL_NOTE : 'Добавить шаг управления: проверка (gate)';
+            });
+            const entries = getCustomControls();
+            const byAfter = new Map(entries.map((item) => [item.after, item]));
+            const placed = new Set();
+            const drawn = [];
+            for (let round = 1; round <= roundCounter; round += 1) {
+                let anchor = `r${round}`;
+                let column = pipelinePanel.querySelector(`.stage-column[data-round="${round}"]:not(.pipeline-intermediate-synth):not(.pipeline-control-step)`);
+                let item = byAfter.get(anchor);
+                let last = null;
+                while (item && column && !placed.has(item.step.ref)) {
+                    placed.add(item.step.ref);
+                    const group = document.createElement('div');
+                    group.className = 'connector-group pipeline-control-link';
+                    group.innerHTML = `<svg class="connector-svg" id="${controlLinkId(item.step.ref)}"></svg>`;
+                    const card = buildControlColumn(item.step, editable);
+                    column.after(group, card);
+                    drawn.push({ ref: item.step.ref, from: anchor });
+                    anchor = item.step.ref;
+                    column = card;
+                    last = { column: card, round };
+                    item = byAfter.get(item.step.ref);
+                }
+                if (last) last.round = round;
+                if (last) drawn.push({ outgoing: true, column: last.column, round });
+            }
+            // Links: into each control from its anchor; out of the last control of a chain to the next round or the synthesis.
+            const hasSynthesisFlow = !!synthesisStack && synthesisColumn?.hidden !== true;
+            drawn.forEach((link) => {
+                if (!link.outgoing) {
+                    const source = /^r\d+$/.test(link.from) ? `${link.from}-models` : controlStackId(link.from);
+                    drawMergeSplitConnector(controlLinkId(link.ref), source, controlStackId(link.ref), 'brain-flow', {
+                        sourceMode: /^r\d+$/.test(link.from) ? 'send' : 'all',
+                        targetMode: 'all'
+                    });
+                    return;
+                }
+                const outgoing = link.column.nextElementSibling?.querySelector?.('svg.connector-svg');
+                if (!outgoing) return;
+                const source = controlStackId(link.column.dataset.controlRef);
+                if (link.round < roundCounter) {
+                    drawMergeSplitConnector(outgoing.id, source, `r${link.round + 1}-models`, 'brain-flow', { sourceMode: 'all', targetMode: 'input' });
+                } else if (hasSynthesisFlow) {
+                    drawMergeSplitConnector(outgoing.id, source, 'synthesis-stack', 'brain-flow', { sourceMode: 'all', targetMode: 'synthesis' });
+                }
+            });
+        };
+
         // Intermediate synthesis (working_synthesis stage upstream of canvas-rK)
         // is a single card column between round K and round K+1. The original
         // K->K+1 connector keeps its id (svg-rK-rK+1) and now ends at the card;
@@ -5079,6 +5262,7 @@ document.addEventListener('click', (event) => {
 
         let deferredPipelineLayoutFrame = 0;
         const updatePipelineAll = ({ deferFinalLayout = true } = {}) => {
+            syncControlColumns();
             const synthRounds = syncIntermediateSynthColumns();
             updatePipelineLayout();
             syncCustomRoleOption();
@@ -5120,7 +5304,7 @@ document.addEventListener('click', (event) => {
             const hasSynthesisFlow = !!synthesisStack && synthesisColumn?.hidden !== true;
 
             if (roundCounter === 1) {
-                if (hasSynthesisFlow) {
+                if (hasSynthesisFlow && !controlledAfter('r1')) {
                     drawMergeSplitConnector('svg-r-last-synthesis', 'r1-models', 'synthesis-stack', 'brain-flow', {
                         sourceMode: 'send',
                         targetMode: 'synthesis'
@@ -5128,6 +5312,7 @@ document.addEventListener('click', (event) => {
                 }
             } else {
                 for (let r = 1; r < roundCounter; r++) {
+                    if (controlledAfter(`r${r}`)) continue;
                     if (synthRounds.has(r)) {
                         drawMergeSplitConnector(`svg-r${r}-r${r + 1}`, `r${r}-models`, `synth-r${r}-stack`, 'brain-flow', {
                             sourceMode: 'send',
@@ -5144,7 +5329,7 @@ document.addEventListener('click', (event) => {
                         });
                     }
                 }
-                if (hasSynthesisFlow) {
+                if (hasSynthesisFlow && !controlledAfter(`r${roundCounter}`)) {
                     drawMergeSplitConnector('svg-r-last-synthesis', `r${roundCounter}-models`, 'synthesis-stack', 'brain-flow', {
                         sourceMode: 'send',
                         targetMode: 'synthesis'
@@ -6761,30 +6946,27 @@ document.addEventListener('click', (event) => {
         // and a `run` that holds only explicit values (see basicRunExplicit). The run path builds the same
         // schema with the run taken from the header as it stands and the legacy fallback of the final request applied.
         // The fields of a round or a synthesis are the page's own, by ref (customRoundSettings, see stepFieldsOf): nothing is
-        // copied for them from basicSourceSchema, so a field the owner cleared stays cleared. A control step (gate, route,
-        // owner) is not edited on the canvas: it keeps its place after the nearest earlier step of the source that is still on
-        // the canvas, and is copied as it is.
-        const CONTROL_STEP_KINDS = ['gate', 'route', 'owner'];
-        const keepSourceFields = (list) => {
-            const sourceSteps = (basicSourceSchema.get(draftPlanStorageKey())?.steps || []).filter((step) => step && typeof step === 'object');
-            if (!sourceSteps.length) return list;
-            const copy = (value) => JSON.parse(JSON.stringify(value));
-            const onCanvas = new Set(list.map((step) => step.ref));
-            const kept = list;
-            const controlsAfter = new Map();
-            sourceSteps.forEach((step, at) => {
-                if (!CONTROL_STEP_KINDS.includes(step.kind)) return;
-                let anchor = '';
-                for (let back = at - 1; back >= 0; back -= 1) {
-                    const item = sourceSteps[back];
-                    if (!CONTROL_STEP_KINDS.includes(item.kind) && onCanvas.has(item.ref)) { anchor = item.ref; break; }
+        // copied for them from basicSourceSchema, so a field the owner cleared stays cleared. The control steps (gate, route,
+        // owner) are the page's list (customControls): each stands right after its `after` step, and a chain of controls
+        // keeps its order. A control whose anchor is not on the canvas goes first (after '') or last.
+        const withControls = (list) => {
+            const entries = getCustomControls();
+            if (!entries.length) return list;
+            const byAfter = new Map(entries.map((item) => [item.after, item]));
+            const out = [];
+            const seen = new Set();
+            const chain = (ref) => {
+                let item = byAfter.get(ref);
+                while (item && !seen.has(item.step.ref)) {
+                    seen.add(item.step.ref);
+                    out.push(JSON.parse(JSON.stringify(item.step)));
+                    item = byAfter.get(item.step.ref);
                 }
-                controlsAfter.set(anchor, [...(controlsAfter.get(anchor) || []), copy(step)]);
-            });
-            if (!controlsAfter.size) return kept;
-            const result = [...(controlsAfter.get('') || [])];
-            kept.forEach((step) => result.push(step, ...(controlsAfter.get(step.ref) || [])));
-            return result;
+            };
+            entries.filter((item) => item.after === '').forEach((item) => { if (!seen.has(item.step.ref)) { seen.add(item.step.ref); out.push(JSON.parse(JSON.stringify(item.step))); chain(item.step.ref); } });
+            list.forEach((step) => { out.push(step); chain(step.ref); });
+            entries.forEach((item) => { if (!seen.has(item.step.ref)) { seen.add(item.step.ref); out.push(JSON.parse(JSON.stringify(item.step))); } });
+            return out;
         };
         // A model entry with a field beyond name, id and enabled holds settings; only such a switched-off model is kept.
         const hasOwnFields = (model) => Object.keys(model).some((key) => !['name', 'id', 'enabled'].includes(key));
@@ -6914,7 +7096,7 @@ document.addEventListener('click', (event) => {
             const runValue = forSave ? (run || basicRunForSave()) : { policy: getDebateRunPolicy(), maxWords: getDebateMaxWords() };
             return { schemaVersion: window.BasicSchema.SCHEMA_VERSION, origin: 'user', ...(forSave && basedOn ? { basedOn } : {}),
                 ...(Object.keys(runValue).length ? { run: runValue } : {}),
-                ...(Object.keys(defaults).length ? { defaults } : {}), steps: keepSourceFields(steps) };
+                ...(Object.keys(defaults).length ? { defaults } : {}), steps: withControls(steps) };
         };
         // The run values a saved schema holds: only those the owner set before (loaded as explicit) or that differ
         // from Basic. Opening a schema and saving it does not make the shown Basic values explicit.
@@ -6927,8 +7109,8 @@ document.addEventListener('click', (event) => {
             basicRunExplicit.set(key, { ...(basicRunExplicit.get(key) || {}), [field]: true });
         };
         const basicSchemaLoadErrors = new Map();
-        // The schema the working copies were read from. The fields the canvas does not edit (control steps, output, require,
-        // owner, chat, a participant's input) are kept from it on Save and on Run (keepSourceFields).
+        // The schema the working copies were read from. The fields the canvas does not edit (output, require, owner, chat,
+        // a participant's input) are kept from it on Save and on Run; the control steps come from customControls.
         const basicSourceSchema = new Map();
         const basicRunForSave = () => {
             const explicit = basicRunExplicit.get(draftPlanStorageKey()) || {};
@@ -6940,6 +7122,16 @@ document.addEventListener('click', (event) => {
         // The working copies the cards edit, read from a stored record: a record with a schema gives them
         // from the schema (a schema that cannot be read gives an error and nothing); an earlier record gives
         // its customModelSettings / customDefaults as before.
+        // The control steps of a schema with the ref of the step before each (see customControls).
+        const controlsOf = (schema) => {
+            let after = '';
+            const out = [];
+            (schema.steps || []).forEach((step) => {
+                if (CONTROL_KINDS_CANVAS.includes(step.kind)) out.push({ after, step: JSON.parse(JSON.stringify(step)) });
+                after = step.ref;
+            });
+            return out;
+        };
         const basicWorkingFromConfig = (config) => {
             const copy = (value) => JSON.parse(JSON.stringify(value || {}));
             if (!config?.schema) {
@@ -6948,20 +7140,21 @@ document.addEventListener('click', (event) => {
                 const own = (map) => { if (map?.discipline?.limit === window.BasicSchema.DEFAULTS.discipline.limit) delete map.discipline.limit; return map; };
                 const cards = copy(config?.customModelSettings);
                 Object.values(cards).forEach((step) => Object.values(step || {}).forEach(own));
-                return { cards, rounds: {}, defaults: own(copy(config?.customDefaults)), runExplicit: {}, schema: null, error: '' };
+                return { cards, rounds: {}, defaults: own(copy(config?.customDefaults)), runExplicit: {}, schema: null, error: '', controls: [] };
             }
             const errors = window.BasicSchema.validate(config.schema);
-            if (errors.length) return { cards: {}, rounds: {}, defaults: {}, runExplicit: {}, schema: null, error: window.BasicSchema.describeErrors(errors) };
+            if (errors.length) return { cards: {}, rounds: {}, defaults: {}, runExplicit: {}, schema: null, error: describeSchemaErrors(errors), controls: [] };
             const settings = window.BasicSchema.toSettings(config.schema);
             // The fields of rounds and syntheses are one store by ref (see stepFieldsOf).
             return { cards: settings.customModelSettings, rounds: { ...settings.customRoundSettings, ...settings.customStepSettings }, defaults: settings.customDefaults, schema: config.schema, error: '',
-                runExplicit: { policy: 'policy' in (config.schema.run || {}), maxWords: 'maxWords' in (config.schema.run || {}) } };
+                runExplicit: { policy: 'policy' in (config.schema.run || {}), maxWords: 'maxWords' in (config.schema.run || {}) }, controls: controlsOf(config.schema) };
         };
         const adoptBasicWorking = (key, working) => {
             basicSourceSchema.set(key, working.schema || null);
             customPipelineDefaults.set(key, working.defaults);
             customCardSettings.set(key, working.cards);
             customRoundSettings.set(key, working.rounds || {});
+            customControls.set(key, working.controls || []);
             basicRunExplicit.set(key, working.runExplicit);
             if (working.error) basicSchemaLoadErrors.set(key, working.error); else basicSchemaLoadErrors.delete(key);
         };
@@ -7195,7 +7388,7 @@ document.addEventListener('click', (event) => {
             const built = resumeRecord ? builtFromRecord(resumeRecord) : buildBasicRun(draftPlanForCanvas(getActiveDraftPlan()));
             // A schema that cannot be run stops here with the place of the error; nothing is sent.
             if (built.errors.length) {
-                showNotification(`Basic: схема не запущена. ${window.BasicSchema.describeErrors(built.errors)}`, 'error');
+                showNotification(`Basic: схема не запущена. ${describeSchemaErrors(built.errors)}`, 'error');
                 return false;
             }
             const steps = built.steps;
@@ -8040,6 +8233,7 @@ document.addEventListener('click', (event) => {
                 installBasicSchema: (...args) => installBasicSchema(...args),
                 basicRunNotice: (...args) => basicRunNotice(...args),
                 recordFromSchema: (...args) => recordFromSchema(...args),
+                describeSchemaErrors: (...args) => describeSchemaErrors(...args),
                 basicSchemaFromPage: (...args) => basicSchemaFromPage(...args),
                 applyPipelineConfig: (...args) => applyPipelineConfig(...args),
                 runCustomFromPage,
@@ -8147,6 +8341,8 @@ document.addEventListener('click', (event) => {
             delete remaining[removedRef];
             customRoundSettings.set(draftPlanStorageKey(), remaining);
             stepDrafts.delete(`${draftPlanStorageKey()}\n${removedRef}`);
+            // The controls after the removed round stand after the round before it.
+            customControls.set(draftPlanStorageKey(), getCustomControls().map((item) => (item.after === removedRef ? { ...item, after: `r${roundCounter - 1}` } : item)));
             roundCounter--;
             if (roundCounter <= 1 && pipelineRemoveRoundBtn) {
                 pipelineRemoveRoundBtn.style.display = 'none';
@@ -8917,7 +9113,11 @@ document.addEventListener('click', (event) => {
         };
 
         // The errors of a schema in one line: the place and the reason of each, at most five.
-        const describeSchemaErrors = (errors) => errors.slice(0, 5).map((error) => (error.path ? `${error.path}: ${error.message}` : error.message)).join('; ');
+        // The places of a validation error, with a note for the one a control between a round and its synthesis gives.
+        const describeSchemaErrors = (errors) => errors.slice(0, 5).map((error) => {
+            const text = error.path ? `${error.path}: ${error.message}` : error.message;
+            return /промежуточный синтез стоит (сразу после раунда|между двумя раундами)/.test(error.message) ? `${text}. ${INTERMEDIATE_CONTROL_NOTE}` : text;
+        }).join('; ');
         // The record of a Basic pipeline built from its schema, and nowhere else: the schema is the content, the canvas
         // members (rounds, models, roles, synthesizer, intermediate syntheses) are derived from it here. Nothing is written
         // to the store. Returns { ok, errors, record }; a schema the canvas cannot show gives errors with the place.
@@ -9593,6 +9793,27 @@ document.addEventListener('click', (event) => {
 
         // Stage card: the round badge opens the stage's card (template stage text,
         // who works, run status). Plain rounds show their participants.
+        // The window of a control step: a gate has its own window; a route and an owner get theirs with their kinds.
+        const openControlCard = (ref) => {
+            const dialog = document.getElementById('pipeline-stage-dialog');
+            const title = document.getElementById('pipeline-stage-dialog-title');
+            const body = document.getElementById('pipeline-stage-card');
+            const entry = getCustomControls().find((item) => item.step.ref === ref);
+            if (!dialog || !title || !body || !entry || !window.StageCard) return;
+            const { step } = entry;
+            title.textContent = `${CONTROL_TITLE[step.kind] || step.kind} ${step.ref}`;
+            body.replaceChildren();
+            if (step.kind === 'gate') {
+                window.StageCard.renderGateWindow(body, window.StageCard.gateWindowModel(step, {
+                    names: getAllPipelineModelNames(), refs: schemaRefsForWindows(), disabled: pipelineRunActive
+                }), async (edit) => {
+                    if (pipelineRunActive) return;
+                    await commitControl(ref, edit);
+                    openControlCard(ref);
+                });
+            }
+            if (!dialog.open) dialog.showModal();
+        };
         const openStageCard = (roundBadge) => {
             const dialog = document.getElementById('pipeline-stage-dialog');
             const title = document.getElementById('pipeline-stage-dialog-title');
@@ -9651,6 +9872,17 @@ document.addEventListener('click', (event) => {
         // Function declarations are hoisted within this block; the bridge keeps the call explicit for tests and other scopes.
         window.__toggleIntermediateSynthesis = toggleIntermediateSynthesis;
         pipelinePanel.addEventListener('click', (event) => {
+            const controlCard = event.target?.closest?.('.pipeline-control-card');
+            if (controlCard && pipelinePanel.contains(controlCard)) {
+                openControlCard(controlCard.dataset.controlCard);
+                return;
+            }
+            const controlDelete = event.target?.closest?.('.pipeline-control-delete-btn');
+            if (controlDelete && pipelinePanel.contains(controlDelete)) {
+                event.preventDefault();
+                void deleteControl(controlDelete.dataset.controlDelete);
+                return;
+            }
             const insert = event.target?.closest?.('.pipeline-stage-insert');
             if (insert) {
                 clearTimeout(intermediateTimer);
@@ -9686,6 +9918,16 @@ document.addEventListener('click', (event) => {
                 }
                 return;
             }
+        });
+
+        // The add select of a round or a control: the chosen kind goes after its anchor, and the select goes back to «+ шаг».
+        pipelinePanel.addEventListener('change', (event) => {
+            const select = event.target;
+            if (!select?.classList?.contains('pipeline-control-add') || !select.value) return;
+            const kind = select.value;
+            const anchor = select.dataset.anchor || '';
+            select.value = '';
+            void insertControlAfter(anchor, kind);
         });
 
         const stageDialog = document.getElementById('pipeline-stage-dialog');
@@ -21982,6 +22224,10 @@ function checkCompareButtonState() {
         const existing = (plan.plannedStages || []).find((stage) =>
             stage.outputIntent === 'working_synthesis' && stage.upstream?.includes(afterPlannedStageId));
         if (existing) return removeIntermediateSynthesis(plan, existing);
+        if (window.__controlledAfter?.(afterPlannedStageId.replace(/^canvas-/, ''))) {
+            showNotification(INTERMEDIATE_CONTROL_NOTE, 'warn');
+            return false;
+        }
         // Independent of the final synthesis: an intermediate one falls back to the default synthesizer.
         const synthesizer = window.__getDraftPlanSynthesizer?.(plan) || window.__getDefaultSynthesizerName?.();
         const result = window.DebateDraftPlan.insertSynthesis(plan, {

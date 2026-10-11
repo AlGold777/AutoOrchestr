@@ -3519,6 +3519,122 @@ describe('Pipeline debate favorites view', () => {
         } finally { h.cleanup(); }
       }, 30000);
 
+      test('A06 gate: a check is added after a round as a card, its window fills the fields, and Save → load → Save keeps them', async () => {
+        const h = setupCustomInheritance('Gate window host', { synthesis: '' });
+        try {
+          const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
+            { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }] },
+            { ref: 'r2', kind: 'round', models: [{ name: 'Claude' }] }
+          ] };
+          expect((await h.debug.installBasicSchema('Gate window', schema)).ok).toBe(true);
+          document.querySelector('.pipeline-item[data-name="Gate window"]').click();
+          await settleCustomCard();
+          // The fixture's round has no header row; the page has one (pipeline_panel.html), where the add select sits.
+          document.querySelector('#round1').insertAdjacentHTML('afterbegin', '<div class="stage-header-row"><div class="stage-label"><span class="round-badge">R1</span></div></div>');
+          window.__updatePipelineAll();
+          const add = document.querySelector('#round1 .pipeline-control-add');
+          add.value = 'gate';
+          add.dispatchEvent(new Event('change', { bubbles: true }));
+          await settleCustomCard();
+          const card = document.querySelector('.pipeline-control-step[data-control-ref="gate:1"]');
+          expect(card).not.toBeNull();
+          // The card stands between R1 and R2 with its own link on each side; it is not a synthesis column.
+          expect(card.previousElementSibling.classList.contains('pipeline-control-link')).toBe(true);
+          expect(card.nextElementSibling.classList.contains('connector-group')).toBe(true);
+          expect(card.nextElementSibling.nextElementSibling.id).toBe('round2');
+          expect(card.closest('.pipeline-intermediate-synth')).toBeNull();
+
+          require('../results/stage-card');
+          if (!document.getElementById('pipeline-stage-dialog')) {
+            document.body.insertAdjacentHTML('beforeend', '<dialog id="pipeline-stage-dialog"><h2 id="pipeline-stage-dialog-title"></h2><div id="pipeline-stage-card"></div></dialog>');
+          }
+          const stageDialog = document.getElementById('pipeline-stage-dialog');
+          if (typeof stageDialog.showModal !== 'function') stageDialog.showModal = () => stageDialog.setAttribute('open', '');
+          const dialogBody = () => document.getElementById('pipeline-stage-card');
+          card.querySelector('.pipeline-control-card').click();
+          await settleCustomCard();
+          const field = (selector) => dialogBody().querySelector(selector);
+          field('.stage-card-criteria').value = 'полнота\nясность';
+          field('.stage-card-criteria').dispatchEvent(new Event('change'));
+          await settleCustomCard();
+          const gptChecker = [...dialogBody().querySelectorAll('.stage-card-checker')].find((row) => row.textContent.trim() === 'GPT').querySelector('input');
+          gptChecker.checked = true;
+          gptChecker.dispatchEvent(new Event('change'));
+          await settleCustomCard();
+          field('.stage-card-pass-select').value = 'any';
+          field('.stage-card-pass-select').dispatchEvent(new Event('change'));
+          await settleCustomCard();
+          field('.stage-card-onFail-mode').value = 'goto';
+          field('.stage-card-onFail-mode').dispatchEvent(new Event('change'));
+          await settleCustomCard();
+          field('.stage-card-onFail-goto').value = 'r1';
+          field('.stage-card-onFail-goto').dispatchEvent(new Event('change'));
+          await settleCustomCard();
+          field('.stage-card-onFail-loops').value = '2';
+          field('.stage-card-onFail-loops').dispatchEvent(new Event('change'));
+          await settleCustomCard();
+
+          const built = h.debug.basicSchemaFromPage(planOf(), null, { forSave: true });
+          expect(built.steps.map((step) => step.ref)).toEqual(['r1', 'gate:1', 'r2']);
+          expect(built.steps[1]).toEqual({ ref: 'gate:1', kind: 'gate', models: [{ name: 'GPT' }], criteria: ['полнота', 'ясность'], pass: 'any', onFail: { goto: 'r1', maxLoops: 2 } });
+          expect(window.BasicSchema.validate(built)).toEqual([]);
+          const back = built;
+          expect((await h.debug.installBasicSchema('Gate again', back)).ok).toBe(true);
+          document.querySelector('.pipeline-item[data-name="Gate again"]').click();
+          await settleCustomCard();
+          expect(h.debug.basicSchemaFromPage(planOf(), null, { forSave: true }).steps).toEqual(back.steps);
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      test('A06 control steps: a control can follow another one; the chain keeps its order in the canvas and in the schema, and a removed one leaves its successor in place', async () => {
+        const h = setupCustomInheritance('Gate chain host', { synthesis: '' });
+        try {
+          const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
+            { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }] },
+            { ref: 'r2', kind: 'round', models: [{ name: 'Claude' }] }
+          ] };
+          expect((await h.debug.installBasicSchema('Gate chain', schema)).ok).toBe(true);
+          document.querySelector('.pipeline-item[data-name="Gate chain"]').click();
+          await settleCustomCard();
+          document.querySelector('#round1').insertAdjacentHTML('afterbegin', '<div class="stage-header-row"><div class="stage-label"><span class="round-badge">R1</span></div></div>');
+          window.__updatePipelineAll();
+          const addAfter = (anchor) => {
+            const select = document.querySelector(`.pipeline-control-add[data-anchor="${anchor}"]`);
+            select.value = 'gate';
+            select.dispatchEvent(new Event('change', { bubbles: true }));
+          };
+          addAfter('r1');
+          await settleCustomCard();
+          addAfter('gate:1');
+          await settleCustomCard();
+          expect(h.debug.basicSchemaFromPage(planOf(), null, { forSave: true }).steps.map((step) => step.ref)).toEqual(['r1', 'gate:1', 'gate:2', 'r2']);
+          expect(document.querySelector('.pipeline-control-step[data-control-ref="gate:2"]').previousElementSibling.previousElementSibling.classList.contains('pipeline-control-step')).toBe(true);
+          expect(document.querySelector('.pipeline-control-step[data-control-ref="gate:2"]').nextElementSibling.nextElementSibling.id).toBe('round2');
+          document.querySelector('.pipeline-control-delete-btn[data-control-delete="gate:1"]').click();
+          await settleCustomCard();
+          expect(h.debug.basicSchemaFromPage(planOf(), null, { forSave: true }).steps.map((step) => step.ref)).toEqual(['r1', 'gate:2', 'r2']);
+          expect(document.querySelector('.pipeline-control-step[data-control-ref="gate:1"]')).toBeNull();
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      test('A06 gate: a check between a round and its intermediate synthesis is refused, with the reason in the message', async () => {
+        const h = setupCustomInheritance('Gate synth host', { synthesis: '' });
+        try {
+          const bad = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
+            { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }] },
+            { ref: 'gate:1', kind: 'gate', models: [{ name: 'Claude' }], criteria: ['полнота'] },
+            { ref: 'synth:mid', kind: 'synthesis', models: [{ name: 'Gemini' }] },
+            { ref: 'r2', kind: 'round', models: [{ name: 'Claude' }] }
+          ] };
+          const refused = await h.debug.installBasicSchema('Gate synth', bad);
+          expect(refused.ok).toBe(false);
+          const text = h.debug.describeSchemaErrors(refused.errors);
+          expect(text).toContain('промежуточный синтез стоит сразу после раунда');
+          expect(text).toContain('проверку или маршрут не ставят');
+          expect(h.debug.getPipelineStoreSnapshot().pipelines['Gate synth']).toBeUndefined();
+        } finally { h.cleanup(); }
+      }, 30000);
+
       test('A06: controls, the participant id and input, and the step fields survive Save → load → Save', async () => {
         const h = setupCustomInheritance('Full round trip host', { synthesis: '' });
         try {
