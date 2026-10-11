@@ -53,7 +53,7 @@ describe('Basic schema: assembly of engine steps', () => {
     expect(steps[1].task).toBe(Schema.DEFAULTS.roundTask);
     expect(steps[2].task).toBe(Schema.DEFAULTS.synthesisTask);
     expect(steps[1].models[0]).toEqual({
-      name: 'A', promptTemplate: null, maxWords: null, extra: '', task: Schema.DEFAULTS.roundTask, discipline: { ...Schema.DEFAULTS.discipline }
+      name: 'A', id: 'A', promptTemplate: null, maxWords: null, extra: '', task: Schema.DEFAULTS.roundTask, discipline: { ...Schema.DEFAULTS.discipline }
     });
   });
 
@@ -456,5 +456,76 @@ describe('Basic schema: input by references (4.3)', () => {
   test('a final result cannot be an ordinary input, and a later step is not a source', () => {
     expect(errorPaths(base([round('r1', ['A']), synthesis('final', ['B']), round('r2', ['A'], { input: ['final'] })]))).toEqual(['steps[2].input[0]']);
     expect(errorPaths(base([round('r1', ['A'], { input: ['r2'] }), round('r2', ['A'])]))).toEqual(['steps[0].input[0]']);
+  });
+});
+
+describe('Basic schema: participants with an id and their own input (4.2)', () => {
+  test('two participants of one model in a round are two participants, each with its id', () => {
+    const schema = base([round('r1', [{ name: 'GPT', id: 'expert-1' }, { name: 'GPT', id: 'expert-2' }]), synthesis('final', ['Claude'])]);
+    expect(Schema.validate(schema)).toEqual([]);
+    expect(Schema.assemble(schema)[0].models.map((model) => [model.name, model.id])).toEqual([['GPT', 'expert-1'], ['GPT', 'expert-2']]);
+  });
+
+  test('a model without an id has the name as its id, and an explicit id may differ from another name', () => {
+    const schema = base([round('r1', ['A', { name: 'A', id: 'second' }]), synthesis('final', ['A'])]);
+    expect(Schema.validate(schema)).toEqual([]);
+    expect(Schema.assemble(schema)[0].models.map((model) => model.id)).toEqual(['A', 'second']);
+  });
+
+  test('the same explicit id in two steps is one participant with the same name', () => {
+    const schema = base([
+      round('r1', [{ name: 'GPT', id: 'author' }]),
+      round('r2', [{ name: 'GPT', id: 'author', input: ['r1'] }, { name: 'Claude', input: 'none' }]),
+      synthesis('final', [{ name: 'GPT', id: 'author' }])
+    ]);
+    expect(Schema.validate(schema)).toEqual([]);
+    const [, second] = Schema.assemble(schema);
+    expect(second.models[0]).toMatchObject({ id: 'author', input: ['r1'] });
+    expect(second.models[1]).toMatchObject({ id: 'Claude', input: 'none' });
+  });
+
+  test('a participant input replaces the step input in the assembled step, and a list of its own goes with it', () => {
+    const schema = base([round('r1', ['A']), round('r2', [{ name: 'B', input: [{ step: 'r1', participant: 'A' }] }], { input: 'all' }), synthesis('final', ['B'])]);
+    expect(Schema.validate(schema)).toEqual([]);
+    expect(Schema.assemble(schema)[1].models[0].input).toEqual([{ step: 'r1', participant: 'A' }]);
+  });
+
+  test('a shared id of a participant reaches the intermediate synthesis from the final one', () => {
+    const steps = Schema.assemble(base([
+      round('r1', ['A']), synthesis('synth:x', [{ name: 'S', id: 's1' }]), round('r2', ['A']),
+      synthesis('final', [{ name: 'S', id: 's1', request: 'FINAL FOR S1' }])
+    ]));
+    expect(steps.find((step) => step.ref === 'synth:x').models[0].promptTemplate).toBe('FINAL FOR S1');
+  });
+
+  test('wrong participants are named with their exact path', () => {
+    const cases = [
+      [[{ name: 'A', id: '' }], 'steps[0].models[0].id'],
+      [[{ name: 'A', id: 5 }], 'steps[0].models[0].id'],
+      [[{ name: 'A', id: 'x' }, { name: 'B', id: 'x' }], 'steps[0].models[1].id'],
+      [[{ name: 'A', id: 'B' }, { name: 'B' }], 'steps[0].models[1].name'],
+      [['A', 'A'], 'steps[0].models[1].name'],
+      [[{ name: 'A', input: 'everything' }], 'steps[0].models[0].input'],
+      [[{ name: 'A', input: [] }], 'steps[0].models[0].input'],
+      [[{ name: 'A', input: ['r9'] }], 'steps[0].models[0].input[0]'],
+      [[{ name: 'A', input: [{ step: 'r0', participant: 'A' }] }], 'steps[0].models[0].input[0].step']
+    ];
+    cases.forEach(([models, path]) => expect({ models, paths: errorPaths(base([round('r1', models)])) }).toEqual({ models, paths: [path] }));
+    expect(errorPaths(base([round('r1', ['A']), round('r2', [{ name: 'B', id: 'A' }]), synthesis('final', ['B'])]))).toEqual(['steps[1].models[0].name']);
+    expect(errorPaths(base([round('r1', [{ name: 'A', id: 'x' }]), round('r2', [{ name: 'B', id: 'x' }])]))).toEqual(['steps[1].models[0].name']);
+    expect(errorPaths(base([round('r1', ['A']), synthesis('final', [{ name: 'B', input: 'all' }])]))).toEqual(['steps[1].models[0].input']);
+    expect(errorPaths(base([round('r1', ['A']), round('r2', [{ name: 'B', input: [{ step: 'r1', participant: 'Z' }] }])]))).toEqual(['steps[1].models[0].input[0].participant']);
+  });
+
+  test('a participant cannot take the answers of its own step or of a later one', () => {
+    expect(errorPaths(base([round('r1', ['A']), round('r2', [{ name: 'A', input: ['r2'] }])]))).toEqual(['steps[1].models[0].input[0]']);
+    expect(errorPaths(base([round('r1', [{ name: 'A', input: ['r2'] }]), round('r2', ['A'])]))).toEqual(['steps[0].models[0].input[0]']);
+  });
+});
+
+describe('Basic schema: the canvas and participants with an id', () => {
+  test('two participants of one model in a step are named, not shown as one block', () => {
+    const canvas = Schema.toCanvas(base([round('r1', [{ name: 'GPT', id: 'a' }, { name: 'GPT', id: 'b' }]), synthesis('final', ['Claude'])]), { models: ['GPT', 'Claude'] });
+    expect(canvas.errors.map((error) => error.path)).toEqual(['steps[0].models[1].name']);
   });
 });

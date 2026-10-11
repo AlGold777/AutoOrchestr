@@ -1,5 +1,14 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — Schema: participants with an id and their own input are checked, version 2.81.705
+
+- `BasicSchema.validate` (`disput/basic-schema.js`): a participant (`models[]`) has an optional `id` (non-empty text, default the name) and an optional `input` (the same rules as the step input, a list included). One id is unique within a step, so one model may take two places in a step with different ids. One id keeps one name in all steps; a mismatch is named at `…models[i].name`.
+- `BasicSchema.assemble`: the participant keeps its `id` and, when given, its `input`; the task of a participant with `input: none` follows the rule of the step. The request of a model for an intermediate synthesis is taken from the final one of the same participant id.
+- The canvas (`toCanvas`) refuses two participants of one model in a step until the canvas shows them: the error names the place, the schema is not changed.
+- Not yet: the engine does not use `id` and `input` (it keys participants by name), the pack P02; the settings and the canvas do not show them, the pack P09.
+- Docs: `basic-schema-guide.md` (section 5.5, error rows of section 10).
+- Tests: `tests/basic-schema.test.js` (the blocks «participants with an id and their own input (4.2)» and «the canvas and participants with an id»; the legacy shape test now includes `id`).
+
 ### 2026-10-11 — Schema: input by references (step refs and participants) is checked, version 2.81.704
 
 - `BasicSchema.validate` (`disput/basic-schema.js`): `input` of a round or a synthesis may be a non-empty list of sources: a step ref, `{ step, participant, required? }`. An artifact source `{ artifact, version }` is checked, but refused until the step declares its artifact (the next package). Errors name the exact path (`steps[4].input[1].participant`). The check runs against the whole list of steps, switched-off ones included; a later step, `final` and a duplicate address are errors.

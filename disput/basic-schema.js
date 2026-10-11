@@ -87,14 +87,18 @@
         const resolved = resolveFields(model, step.kind, { task: step.task }, defaults);
         const lines = [...(defaults.discipline?.lines || []), ...(model.discipline?.lines || [])];
         // An intermediate synthesis without its own request runs the final synthesizer's request.
-        const finalRequest = step.ref.startsWith('synth:') ? finalStep?.models?.find((item) => item.name === model.name)?.request : undefined;
+        const finalRequest = step.ref.startsWith('synth:') ? finalStep?.models?.find((item) => idOf(item) === idOf(model))?.request : undefined;
+        // The input of the participant (when it has its own) decides whether an inherited task is dropped, as the step input does.
+        const own = 'input' in model ? model.input : input;
         return {
           name: model.name,
+          id: idOf(model),
+          ...('input' in model ? { input: Array.isArray(model.input) ? JSON.parse(JSON.stringify(model.input)) : model.input } : {}),
           // An own request, an empty one included, is a value; only a missing one takes the final synthesizer's.
           promptTemplate: typeof model.request === 'string' ? model.request : (typeof finalRequest === 'string' ? finalRequest : null),
           maxWords: 'maxWords' in model ? model.maxWords : null,
           extra: roleText(model.role || '', step.ref) || '',
-          task: input === 'none' && !writtenTask(resolved.task) ? '' : resolved.task.value,
+          task: own === 'none' && !writtenTask(resolved.task) ? '' : resolved.task.value,
           discipline: {
             ...Object.fromEntries(Object.entries(resolved.discipline).map(([key, item]) => [key, item.value])),
             ...(lines.length ? { lines } : {})
@@ -230,6 +234,7 @@
     // References are checked against the whole list of steps, switched-off ones included (the first step of a ref wins).
     const positions = new Map();
     schema.steps.forEach((step, at) => { if (isObject(step) && typeof step.ref === 'string' && !positions.has(step.ref)) positions.set(step.ref, at); });
+    const namesById = new Map();
     const checkInputList = (list, path, index) => {
       if (!list.length) { fail(path, 'ожидается непустой список источников'); return; }
       const addresses = new Set();
@@ -239,6 +244,12 @@
         if (addresses.has(address)) fail(`${path}[${at}]`, 'источник повторяется');
         addresses.add(address);
       });
+    };
+    // The input of a step or of a participant: a value of the list of inputs, or a list of sources.
+    const checkInput = (value, path, kind, index) => {
+      if (Array.isArray(value)) { checkInputList(value, path, index); return; }
+      oneOf(value, INPUTS, path, 'вход');
+      if (kind === 'synthesis' && value !== 'previous') fail(path, 'синтез всегда получает ответы предыдущего шага');
     };
     schema.steps.forEach((step, index) => {
       const path = `steps[${index}]`;
@@ -252,24 +263,29 @@
         oneOf(step.order, ORDERS, `${path}.order`, 'порядок');
         if (step.kind === 'synthesis') fail(`${path}.order`, 'у синтеза порядка нет: он одна модель-синтезатор или параллельный');
       }
-      if ('input' in step) {
-        if (Array.isArray(step.input)) checkInputList(step.input, `${path}.input`, index);
-        else {
-          oneOf(step.input, INPUTS, `${path}.input`, 'вход');
-          if (step.kind === 'synthesis' && step.input !== 'previous') fail(`${path}.input`, 'синтез всегда получает ответы предыдущего шага');
-        }
-      }
+      if ('input' in step) checkInput(step.input, `${path}.input`, step.kind, index);
       if ('task' in step) text(step.task, `${path}.task`);
       if (!Array.isArray(step.models)) { fail(`${path}.models`, 'ожидается список моделей'); return; }
-      const names = new Set();
+      const ids = new Set();
       step.models.forEach((model, at) => {
         const modelPath = `${path}.models[${at}]`;
         if (!isObject(model)) { fail(modelPath, 'ожидается объект'); return; }
-        unknownKeys(model, ['name', 'enabled', 'role', 'request', 'maxWords', 'task', 'discipline'], modelPath);
+        unknownKeys(model, ['name', 'id', 'enabled', 'role', 'request', 'maxWords', 'task', 'discipline', 'input'], modelPath);
         if ('enabled' in model && typeof model.enabled !== 'boolean') fail(`${modelPath}.enabled`, 'ожидается true или false');
         if (typeof model.name !== 'string' || !model.name.trim()) fail(`${modelPath}.name`, 'имя модели не указано');
-        else if (names.has(model.name)) fail(`${modelPath}.name`, `модель «${model.name}» повторяется в шаге`);
-        else names.add(model.name);
+        // One participant is one id in a step; a repeated name is fine when the ids differ. One id keeps one name in all steps.
+        const id = idOf(model);
+        if ('id' in model && (typeof model.id !== 'string' || !model.id.trim())) fail(`${modelPath}.id`, 'ID участника: непустой текст');
+        else if (typeof id === 'string') {
+          if (ids.has(id)) fail(`${modelPath}.${'id' in model ? 'id' : 'name'}`, 'id' in model ? `участник «${id}» повторяется в шаге` : `модель «${model.name}» повторяется в шаге`);
+          else {
+            ids.add(id);
+            const known = namesById.get(id);
+            if (typeof model.name === 'string' && known !== undefined && known !== model.name) fail(`${modelPath}.name`, `ID участника «${id}» уже записан с именем «${known}»`);
+            else if (typeof model.name === 'string') namesById.set(id, model.name);
+          }
+        }
+        if ('input' in model) checkInput(model.input, `${modelPath}.input`, step.kind, index);
         ['role', 'request', 'task'].forEach((key) => { if (key in model) text(model[key], `${modelPath}.${key}`); });
         if ('maxWords' in model && !(Number.isSafeInteger(model.maxWords) && model.maxWords > 0)) fail(`${modelPath}.maxWords`, 'ожидается положительное целое число слов');
         if ('discipline' in model) checkDiscipline(model.discipline, `${modelPath}.discipline`);
@@ -317,9 +333,13 @@
     steps.forEach((step, index) => {
       const path = `steps[${index}]`;
       const enabled = enabledOf(step);
+      const stepNames = new Set();
       enabled.forEach((model, at) => {
         if (!models.includes(model.name)) fail(`${path}.models[${at}].name`, `модель «${model.name}» недоступна`);
         if (model.role && !isRole(model.role)) fail(`${path}.models[${at}].role`, `роль «${model.role}» неизвестна`);
+        // The canvas shows one block per model of a step; two participants of one model wait for the canvas that shows them.
+        if (stepNames.has(model.name)) fail(`${path}.models[${at}].name`, 'холст пока не показывает два участника одной модели в шаге');
+        stepNames.add(model.name);
       });
       if (step.kind === 'round') {
         rounds.push(step);
