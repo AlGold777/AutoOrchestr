@@ -267,6 +267,25 @@ describe('T02, T04, T03: inputs of the architecture chosen by address', () => {
   });
 });
 
+describe('T04: a JSON answer without a required field is corrected alone; the accepted neighbour is not sent again', () => {
+  test('S27: S27-a lacks /failures (a required field), S27-b is accepted: only S27-a gets the correction, and the reason names the field', async () => {
+    const transport = fakeTransport((ref, pid, attempt) => {
+      if (ref === 'r29' && pid === 'S27-a' && attempt === 1) return JSON.stringify({ requiresVerification: false });
+      return baseReply()(ref, pid);
+    });
+    const result = await run({ sendParticipants: transport.sendParticipants }, owners());
+    expect(result.stopReason).toBe('steps_done');
+    const batches = transport.calls.filter((call) => call[0].stepRef === 'r29');
+    expect(batches).toHaveLength(2);
+    expect(batches[0].map((request) => request.participantId)).toEqual(['S27-a', 'S27-b']);
+    expect(batches[1].map((request) => request.participantId)).toEqual(['S27-a']);
+    expect(batches[1][0].prompt).toContain('failures');
+    // The first request of the visit opened the chat (chat new); the correction goes on in it (continue).
+    expect(batches[0][0].chat).toBe('new');
+    expect(batches[1][0].chat).toBe('continue');
+  });
+});
+
 describe('T19: a large input is not cut and stops before the request (stress fixture: synthetic sizes, not real documents)', () => {
   const big = 'Ж'.repeat(100000);
   test('the input of S30 larger than the budget stops before its request; the stored texts are whole', async () => {
