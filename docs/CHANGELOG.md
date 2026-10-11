@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — The delivery token proves completeness only at the end of the answer, version 2.81.691
+
+- `answerHasDeliveryToken` counts the token only when it is the last line of the text (provider chrome up to 40 characters may follow). The same text in the middle (a quoted instruction, a prompt echo) no longer makes a cut answer look complete.
+- A committed text with its own token is journaled as `static_answer_committed`, not `incomplete_answer_committed`.
+
 ### 2026-10-10 — The answer text wins over html that holds only the thinking heading, version 2.81.690
 
 - A card whose captured html is a short projection (the heading of Gemini's thinking and the page label, under 120 characters) with nothing of the beginning of a text of 200+ characters shows the text, not the html. Before, such html was shown as the answer and the card looked cut.
