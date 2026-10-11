@@ -81,7 +81,8 @@
       else out.afterRound = rounds;
       if (step.kind === 'round') out.order = step.order || 'parallel';
       out.task = input === 'none' && !writtenTask(stepFields.task) ? '' : stepFields.task.value;
-      if (step.kind === 'round') out.input = input;
+      // A list of sources goes to the engine as it is; a synthesis without a list keeps its old shape (no input field).
+      if (step.kind === 'round' || Array.isArray(input)) out.input = Array.isArray(input) ? JSON.parse(JSON.stringify(input)) : input;
       out.models = (step.models || []).filter((model) => model.enabled !== false).map((model) => {
         const resolved = resolveFields(model, step.kind, { task: step.task }, defaults);
         const lines = [...(defaults.discipline?.lines || []), ...(model.discipline?.lines || [])];
@@ -102,6 +103,77 @@
       });
       return out;
     }).filter((step) => step.models.length);
+  }
+
+  // A participant's id: the explicit one, or its name.
+  const idOf = (model) => model.id ?? model.name;
+
+  // One input source (4.3): a step ref, a participant of a step `{ step, participant, required? }` or an artifact
+  // `{ artifact: { step, participant, id }, version, required? }`. A version is `latest` or `{ step, participant, visit }`.
+  // Returns the address of the source (for the duplicate check), or null when it has an error.
+  // ctx: { fail, errors, steps, positions (ref → index), index (of the consumer step) }.
+  function checkSource(source, path, ctx) {
+    const { fail, errors, steps, positions, index } = ctx;
+    const mark = errors.length;
+    const unknown = (value, allowed, at) => Object.keys(value).forEach((key) => { if (!allowed.includes(key)) fail(`${at}.${key}`, 'неизвестное поле'); });
+    // The step a reference names: it exists and comes before the consumer; final is never an ordinary source.
+    const stepAt = (ref, at) => {
+      if (typeof ref !== 'string' || !positions.has(ref)) { fail(at, `неизвестный шаг «${ref}»`); return -1; }
+      const position = positions.get(ref);
+      if (position >= index) fail(at, 'вход ссылается только на более ранний шаг');
+      else if (steps[position].ref === 'final') fail(at, 'результат финального синтеза нельзя указать во входе');
+      else return position;
+      return -1;
+    };
+    const participantAt = (position, participant, at) => {
+      const models = Array.isArray(steps[position].models) ? steps[position].models.filter(isObject) : [];
+      if (models.some((model) => idOf(model) === participant)) return true;
+      fail(at, `участник «${participant}» не объявлен в шаге «${steps[position].ref}»`);
+      return false;
+    };
+    const checkRequired = (value, at) => { if ('required' in value && typeof value.required !== 'boolean') fail(`${at}.required`, 'ожидается true или false'); };
+    const failed = () => errors.length > mark;
+
+    if (typeof source === 'string') return stepAt(source, path) < 0 ? null : JSON.stringify(['step', source]);
+    if (!isObject(source)) { fail(path, 'ожидается ссылка на шаг, участника или артефакт'); return null; }
+
+    if ('artifact' in source) {
+      unknown(source, ['artifact', 'version', 'required'], path);
+      checkRequired(source, path);
+      if (!isObject(source.artifact)) { fail(`${path}.artifact`, 'ожидается объект: step, participant, id'); return null; }
+      const address = source.artifact;
+      unknown(address, ['step', 'participant', 'id'], `${path}.artifact`);
+      const position = stepAt(address.step, `${path}.artifact.step`);
+      if (position >= 0 && !('participant' in address)) fail(`${path}.artifact.participant`, 'участник не указан');
+      else if (position >= 0) participantAt(position, address.participant, `${path}.artifact.participant`);
+      if (position >= 0 && !('id' in address)) fail(`${path}.artifact.id`, 'ID артефакта не указан');
+      const output = position >= 0 ? steps[position].output : null;
+      const declared = isObject(output) && Array.isArray(output.artifacts) && output.artifacts.some((item) => isObject(item) && item.id === address.id);
+      if (position >= 0 && 'id' in address && !declared) fail(`${path}.artifact.id`, `артефакт «${address.id}» не объявлен в шаге «${steps[position].ref}»`);
+      let version = 'latest';
+      if (!('version' in source)) fail(`${path}.version`, 'версия не указана: latest или объект версии');
+      else if (source.version === 'latest') version = 'latest';
+      else if (isObject(source.version)) {
+        const at = `${path}.version`;
+        unknown(source.version, ['step', 'participant', 'visit'], at);
+        const creator = stepAt(source.version.step, `${at}.step`);
+        if (creator >= 0 && !('participant' in source.version)) fail(`${at}.participant`, 'участник не указан');
+        else if (creator >= 0) participantAt(creator, source.version.participant, `${at}.participant`);
+        if (!(Number.isSafeInteger(source.version.visit) && source.version.visit > 0)) fail(`${at}.visit`, 'ожидается целое число больше 0');
+        version = JSON.stringify([source.version.step, source.version.participant, source.version.visit]);
+      } else fail(`${path}.version`, 'ожидается latest или объект версии');
+      if (failed()) return null;
+      return JSON.stringify(['artifact', address.step, address.participant, address.id, version]);
+    }
+
+    if (!('step' in source)) { fail(path, 'ожидается ссылка на шаг, участника или артефакт'); return null; }
+    unknown(source, ['step', 'participant', 'required'], path);
+    checkRequired(source, path);
+    const position = stepAt(source.step, `${path}.step`);
+    if (position >= 0 && !('participant' in source)) fail(`${path}.participant`, 'участник не указан');
+    else if (position >= 0) participantAt(position, source.participant, `${path}.participant`);
+    if (failed()) return null;
+    return JSON.stringify(['participant', source.step, source.participant]);
   }
 
   // Errors before the first request: [{ path, message }]. A schema is never corrected silently.
@@ -155,6 +227,19 @@
 
     if (!Array.isArray(schema.steps)) { fail('steps', 'ожидается список шагов'); return errors; }
     const refs = new Set();
+    // References are checked against the whole list of steps, switched-off ones included (the first step of a ref wins).
+    const positions = new Map();
+    schema.steps.forEach((step, at) => { if (isObject(step) && typeof step.ref === 'string' && !positions.has(step.ref)) positions.set(step.ref, at); });
+    const checkInputList = (list, path, index) => {
+      if (!list.length) { fail(path, 'ожидается непустой список источников'); return; }
+      const addresses = new Set();
+      list.forEach((source, at) => {
+        const address = checkSource(source, `${path}[${at}]`, { fail, errors, steps: schema.steps, positions, index });
+        if (!address) return;
+        if (addresses.has(address)) fail(`${path}[${at}]`, 'источник повторяется');
+        addresses.add(address);
+      });
+    };
     schema.steps.forEach((step, index) => {
       const path = `steps[${index}]`;
       if (!isObject(step)) { fail(path, 'ожидается объект'); return; }
@@ -168,8 +253,11 @@
         if (step.kind === 'synthesis') fail(`${path}.order`, 'у синтеза порядка нет: он одна модель-синтезатор или параллельный');
       }
       if ('input' in step) {
-        oneOf(step.input, INPUTS, `${path}.input`, 'вход');
-        if (step.kind === 'synthesis' && step.input !== 'previous') fail(`${path}.input`, 'синтез всегда получает ответы предыдущего шага');
+        if (Array.isArray(step.input)) checkInputList(step.input, `${path}.input`, index);
+        else {
+          oneOf(step.input, INPUTS, `${path}.input`, 'вход');
+          if (step.kind === 'synthesis' && step.input !== 'previous') fail(`${path}.input`, 'синтез всегда получает ответы предыдущего шага');
+        }
       }
       if ('task' in step) text(step.task, `${path}.task`);
       if (!Array.isArray(step.models)) { fail(`${path}.models`, 'ожидается список моделей'); return; }

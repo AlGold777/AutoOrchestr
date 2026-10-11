@@ -1,5 +1,13 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — Schema: input by references (step refs and participants) is checked, version 2.81.704
+
+- `BasicSchema.validate` (`disput/basic-schema.js`): `input` of a round or a synthesis may be a non-empty list of sources: a step ref, `{ step, participant, required? }`. An artifact source `{ artifact, version }` is checked, but refused until the step declares its artifact (the next package). Errors name the exact path (`steps[4].input[1].participant`). The check runs against the whole list of steps, switched-off ones included; a later step, `final` and a duplicate address are errors.
+- `BasicSchema.assemble`: a list is passed to the engine as it is. A synthesis without a list keeps its old shape.
+- Not yet: the engine does not execute the list (`normalizeSteps` turns it into `previous`) — the pack P02; the canvas and the settings do not show it.
+- Docs: `basic-schema-guide.md` (section 5.7, error rows of section 10).
+- Tests: `tests/basic-schema.test.js` (the block «input by references (4.3)»).
+
 ### 2026-10-11 — A loaded Basic schema keeps the order of its round's models, version 2.81.703
 
 - `results.js`: the stack state is matched to the blocks by model name (not by position), and the blocks of a loaded stack are put back in the saved order after the canvas rebuild; the regression of 2.81.702 (a send mark on the wrong model) is fixed.

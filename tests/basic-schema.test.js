@@ -391,3 +391,70 @@ describe('Basic schema: the order of participants on the canvas', () => {
     expect(Schema.toSettings(schema).customModelSettings.r1.Claude).toEqual({ task: 'KEPT_TASK' });
   });
 });
+
+describe('Basic schema: input by references (4.3)', () => {
+  // r1 has A and B, r2 has A, synth:mid has S, r3 has A and a switched-off C; the step under test is r4.
+  const withInput = (input) => base([
+    round('r1', ['A', 'B']), round('r2', ['A']), synthesis('synth:mid', ['S']),
+    round('r3', ['A', { name: 'C', enabled: false }]), round('r4', ['A'], { input })
+  ]);
+
+  test('a list of step refs and participant addresses is valid, keeps its order and reaches assemble', () => {
+    const input = ['r1', { step: 'r3', participant: 'C', required: true }, 'synth:mid', { step: 'r2', participant: 'A' }];
+    expect(Schema.validate(withInput(input))).toEqual([]);
+    expect(Schema.assemble(withInput(input))[4].input).toEqual(input);
+  });
+
+  test('a step ref and a participant of the same step are two different sources', () => {
+    expect(Schema.validate(withInput(['r1', { step: 'r1', participant: 'A' }]))).toEqual([]);
+  });
+
+  test('a switched-off step stays a valid reference', () => {
+    expect(Schema.validate(base([round('r1', []), round('r2', ['A'], { input: ['r1'] })]))).toEqual([]);
+  });
+
+  test('a synthesis takes a list; none and all stay forbidden for it', () => {
+    const schema = base([round('r1', ['A']), round('r2', ['A']), synthesis('final', ['B'], { input: ['r1', 'r2'] })]);
+    expect(Schema.validate(schema)).toEqual([]);
+    expect(Schema.assemble(schema)[2].input).toEqual(['r1', 'r2']);
+    expect(errorPaths(base([round('r1', ['A']), synthesis('final', ['B'], { input: 'none' })]))).toEqual(['steps[1].input']);
+    expect(errorPaths(base([round('r1', ['A']), synthesis('final', ['B'], { input: 'all' })]))).toEqual(['steps[1].input']);
+  });
+
+  test('a list without the input of a step keeps the old assembly: no input field for a synthesis', () => {
+    const steps = Schema.assemble(base([round('r1', ['A']), synthesis('final', ['B'])]));
+    expect(steps[1]).not.toHaveProperty('input');
+  });
+
+  test('wrong sources are named with their exact path', () => {
+    const cases = [
+      [[], ['steps[4].input']],
+      [['r4'], ['steps[4].input[0]']],
+      [['r9'], ['steps[4].input[0]']],
+      [['r1', 'r1'], ['steps[4].input[1]']],
+      [[{ step: 'r1', participant: 'A' }, { step: 'r1', participant: 'A', required: true }], ['steps[4].input[1]']],
+      [[{ step: 'r1', participant: 'Z' }], ['steps[4].input[0].participant']],
+      [[{ step: 'r4', participant: 'A' }], ['steps[4].input[0].step']],
+      [[{ step: 'r1', participant: 'A', colour: 'x' }], ['steps[4].input[0].colour']],
+      [[{}], ['steps[4].input[0]']],
+      [[5], ['steps[4].input[0]']],
+      [[{ step: 'r1', participant: 'A', required: 'yes' }], ['steps[4].input[0].required']],
+      [[{ step: 'r1', participant: 'A', version: 'latest' }], ['steps[4].input[0].version']]
+    ];
+    cases.forEach(([input, paths]) => expect({ input, paths: errorPaths(withInput(input)) }).toEqual({ input, paths }));
+  });
+
+  test('an artifact source is refused until the step declares the artifact, and needs an explicit version', () => {
+    const artifact = { artifact: { step: 'r1', participant: 'A', id: 'map' }, version: 'latest' };
+    expect(errorPaths(withInput([artifact]))).toEqual(['steps[4].input[0].artifact.id']);
+    expect(errorPaths(withInput([{ artifact: artifact.artifact }]))).toEqual(expect.arrayContaining(['steps[4].input[0].version']));
+    expect(errorPaths(withInput([{ artifact: artifact.artifact, version: 'current' }]))).toEqual(expect.arrayContaining(['steps[4].input[0].version']));
+    expect(errorPaths(withInput([{ artifact: artifact.artifact, version: { step: 'r1', participant: 'A', visit: 0 } }]))).toEqual(expect.arrayContaining(['steps[4].input[0].version.visit']));
+    expect(errorPaths(withInput([{ artifact: { step: 'r1', participant: 'A' }, version: 'latest' }]))).toEqual(expect.arrayContaining(['steps[4].input[0].artifact.id']));
+  });
+
+  test('a final result cannot be an ordinary input, and a later step is not a source', () => {
+    expect(errorPaths(base([round('r1', ['A']), synthesis('final', ['B']), round('r2', ['A'], { input: ['final'] })]))).toEqual(['steps[2].input[0]']);
+    expect(errorPaths(base([round('r1', ['A'], { input: ['r2'] }), round('r2', ['A'])]))).toEqual(['steps[0].input[0]']);
+  });
+});
