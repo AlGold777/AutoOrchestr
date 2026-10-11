@@ -1137,11 +1137,16 @@
     async function settleUnknown(step, entry, pending = []) {
       const items = pending.filter((item) => !entry.outcome[item.participantId]?.ok);
       if (!items.length) return;
+      // Until the owner decides, the requests stay in flight: a Stop keeps them unknown in the saved state.
+      inFlight = items.map((item) => ({ participantId: item.participantId, attempt: item.attempt, phase: 'answer', stepRef: step.ref, visit: entry.visit }));
+      await checkpointNow('decision', { pendingOwner: { kind: 'unknown', stepRef: step.ref, visit: entry.visit } });
       const choice = typeof resolveUnknown === 'function'
         ? await ownerWait(() => resolveUnknown({ stepRef: step.ref, visit: entry.visit, items: items.map((item) => ({ participantId: item.participantId, attempt: item.attempt })), choices: ['resend', 'skip'] }))
         : undefined;
       if (choice === null) throw new StopRun('stopped');
       if (!['resend', 'skip'].includes(choice)) throw new StopRun('no_decision', `шаг «${step.ref}»: нет решения о неизвестном ответе (отправить заново или пропустить)`);
+      inFlight = [];
+      await checkpointNow('decision', { pendingOwner: null });
       const models = step.models.filter((model) => items.some((item) => item.participantId === model.id));
       models.forEach((model) => {
         const item = items.find((candidate) => candidate.participantId === model.id);

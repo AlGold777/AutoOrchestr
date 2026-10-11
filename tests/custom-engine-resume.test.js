@@ -237,3 +237,27 @@ describe('Custom engine resume (8.3, T15, T16, T13)', () => {
     expect(log2[0].prompts.B).toContain('Факты: 1');
   });
 });
+
+describe('Custom engine resume: an unknown request stays unknown until the owner decides (8.3)', () => {
+  test('a Stop while the owner decides on an unknown request keeps it unknown: the next run sends nothing before the owner answers', async () => {
+    const { saved, texts } = await stopInFlight(TWO_ROUNDS);
+    const controller = new AbortController();
+    const second = keeper();
+    const log2 = [];
+    const run2 = await Engine.run({
+      task: 'T', steps: TWO_ROUNDS, signal: controller.signal, checkpoint: second.checkpoint, putText: texts.putText, getText: texts.getText, resume: clone(saved),
+      send: transport({ B: ['b2'] }, log2),
+      resolveUnknown: async () => { controller.abort(); return new Promise(() => {}); }
+    });
+    expect(run2.stopReason).toBe('cancelled');
+    expect(log2).toEqual([]);
+    expect(second.last().current.pending).toEqual([expect.objectContaining({ participantId: 'B', attempt: 1 })]);
+    const log3 = [];
+    const run3 = await Engine.run({
+      task: 'T', steps: TWO_ROUNDS, checkpoint: keeper().checkpoint, putText: texts.putText, getText: texts.getText, resume: clone(second.last()),
+      send: transport({ B: ['b3'] }, log3), resolveUnknown: async () => 'resend'
+    });
+    expect(run3.stopReason).toBe('steps_done');
+    expect(log3.map((call) => [call.models[0], call.attempt])).toEqual([['B', 2]]);
+  });
+});

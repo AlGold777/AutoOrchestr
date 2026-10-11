@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — Basic: an unknown request stays unknown until the owner decides, even after a Stop, version 2.81.735
+
+- Fix (`CustomEngine.run`, `disput/custom-engine.js`): while the owner decides on an unknown request (`resolveUnknown`), the request stays in flight; a Stop saves it as pending (`pendingOwner.kind: 'unknown'`). Before, the saved state lost it, and the next run sent it again without the owner's answer.
+- Test: `tests/custom-engine-resume.test.js` (a Stop during the decision on an unknown request).
+
 ### 2026-10-11 — Basic: the page binds the engine to the run record; «Продолжить прогон» goes on from the saved state, version 2.81.734
 
 - `results.js` (`runCustomFromPage`): accepts a saved record (`resumeRecord`): the schema of the snapshot (`builtFromRecord`), the same record and run ID, the saved state (`resume`). A record without a saved state is refused with a notice (`CustomRunRecord.canResume`).
