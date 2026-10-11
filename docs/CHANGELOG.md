@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — The main page request is no longer wrapped in <Prompt> tags, version 2.81.701
+
+- `applySelectedModifiersToPrompt` (`results.js`) puts the prompt text as is between the modifier parts; the `<Prompt>` envelope and the `wrapPromptTag` option are removed.
+
 ### 2026-10-11 — The main page request carries the delivery token, version 2.81.700
 
 - `result_new.html` loads `shared/message-delivery.js`; the request of the main page (`START_FULLPAGE_PROCESS` in `results.js`) now sends a per-model prompt with its own token (`MessageDelivery.prepare`) and the transport request ids. Before, only pipeline runs carried the token, so on the main page the background had no token to check and the answer was never proven complete by it.

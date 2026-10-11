@@ -769,6 +769,11 @@ describe('the main page request carries the delivery token', () => {
     expect(send).toContain('promptsByModel,');
     expect(send).toContain('pipelineContext: promptsByModel ? { transportRequestIds } : null');
   });
+
+  test('the prompt is not wrapped in <Prompt> tags', () => {
+    expect(read('results.js')).not.toContain('<Prompt>');
+    expect(read('results.js')).not.toContain('wrapPromptTag');
+  });
 });
 
 describe('static answer watchdog', () => {

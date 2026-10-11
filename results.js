@@ -12775,7 +12775,7 @@ document.addEventListener('click', (event) => {
                 const baseText = pastedTextComposer.getText().trim();
                 if (!baseText) return '';
                 if (typeof applySelectedModifiersToPrompt === 'function') {
-                    return applySelectedModifiersToPrompt(baseText, { includeResponses: true, wrapPromptTag: false }).trim();
+                    return applySelectedModifiersToPrompt(baseText, { includeResponses: true }).trim();
                 }
                 return baseText;
             };
@@ -24322,7 +24322,6 @@ function checkCompareButtonState() {
 
     function applySelectedModifiersToPrompt(baseText, options = {}) {
         const includeResponses = !!options.includeResponses;
-        const wrapPromptTag = options.wrapPromptTag !== false;
         const prefixParts = [];
         const suffixParts = [];
         const { promptCore, embeddedResponses } = splitPromptAndEmbeddedResponses(baseText);
@@ -24352,13 +24351,7 @@ function checkCompareButtonState() {
         const finalParts = [];
         prefixParts.forEach(part => finalParts.push(part));
 
-        if (promptCore) {
-            if (wrapPromptTag) {
-                finalParts.push(`<Prompt>\n${promptCore}\n</Prompt>`);
-            } else {
-                finalParts.push(promptCore);
-            }
-        }
+        if (promptCore) finalParts.push(promptCore);
 
         if (includeResponses) {
             let responsesBlock = buildLLMResponsesBlock();
