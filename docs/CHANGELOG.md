@@ -1,5 +1,16 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — Basic: run record version 2 (registry, snapshot, attempt key, references), version 2.81.731
+
+- `CustomRunRecord` (`disput/custom-run-record.js`): a new record is version 2 with `artifacts` (the registry, one entry per version) and `snapshot` (the state of the run as plain data: schema, pointer, visits, current position, routes, counters, stack, feedback, dependencies, owner answers; `chatBindings` empty). `setSnapshot`, `setArtifacts`, `canResume` (true only for version 2 with a snapshot). A version 1 record is read and exported as before (`resumable: false`).
+- Attempt key: step, participant, visit, attempt number and phase. Two visits of one step, or an answer and a route of one visit, are different attempts.
+- `serialize` keeps every text that a field named `…Ref` refers to (attempts, registry, snapshot), so the cleanup no longer removes the text of an owner answer that only the registry names.
+- `exportRun`: `version`, `resumable`, `artifacts` (with their text), `snapshot` (feedback texts resolved).
+- `results.js` (`runCustomFromPage`): the engine's `putText`/`getText` are the record's `put`/`textOf`; at the end of a run the registry and the snapshot are written to the record.
+- Not yet: the snapshot is written at the end of the run only (checkpoints during the run come next); resume is not implemented.
+- Docs: `basic-start-here.md` (the record), `basic-developer.md` (file table).
+- Tests: `tests/custom-run-record.test.js` (version 2, version 1 readability, the owner answer after reload).
+
 ### 2026-10-11 — Basic: owner step (text, file, output check, cancel and Stop), version 2.81.730
 
 - `CustomEngine.run` (`disput/custom-engine.js`): `kind: owner` runs without requests. The owner callback `provideOwnerResult({stepRef, visit, task, output})` returns a text or `{ file: { name, mime, size, ref, text? } }`; `null` is a cancel (`stopped`), Stop is `cancelled`. An empty text or a text that fails the step's output check is asked again with its reason (`custom_owner` with `accepted: false`). An accepted text is stored once (`putText`), and the artifacts it declares are registered under the owner step (participant `owner`). A text file is a text answer; a binary file is kept as a reference, and a step that takes it as input stops with `unsupported_input` before the request. A `blob:` reference or an incomplete file is `invalid_owner_result`. Without the callback the run is refused with `provide_owner_required`.

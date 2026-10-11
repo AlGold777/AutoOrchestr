@@ -15,7 +15,7 @@
 | `disput/basic-artifacts.js` | `BasicArtifacts`, `createRegistry`, `register`, `latest`, `version`, `lineKey`, `markInvalid` | Реестр артефактов прогона: одна запись на версию, ссылка на ответ и указатель, без копии текста (чистые функции) |
 | `disput/basic-output.js` | `BasicOutput`, `checkAnswer`, `readPointer`, `parseJsonAnswer`, `countWords` | Проверка ответа по выходу шага: длина, JSON и поля, разделы, артефакты (чистые функции; вызывает движок) |
 | `disput/basic-control.js` | `BasicControl`, `verdictOf`, `passed`, `verdictInstruction`, `jsonValueOf`, `sameJson`, `matches`, `routeOf` | Вердикт проверки (gate): текст и JSON, правило `pass` all/any; условия правила маршрута, точное сравнение JSON, ответ модели маршрута; чистые функции (вызывает движок) |
-| `disput/custom-run-record.js` | `CustomRunRecord`, `createRun`, `recordAttempt`, `finishRun`, `serialize`, `revive`, `exportRun`, `createStore` | Запись о прогоне |
+| `disput/custom-run-record.js` | `CustomRunRecord`, `createRun`, `recordAttempt`, `attemptKey`, `finishRun`, `serialize`, `revive`, `textOf`, `setSnapshot`, `setArtifacts`, `canResume`, `exportRun`, `createStore` | Запись о прогоне (версия 2: реестр и снимок состояния) |
 | `results/stage-card.js` | `StageCard`, `buildModel`, `render` | Окно настроек раунда |
 | `disput/pipeline-presets.js` | `BUILTIN_PIPELINE_DEFINITIONS`, `PIPELINE_PRESETS`, `makePreset` | Шаблон Basic и пресет `CUSTOM` |
 | `disput/debate-draft-plan.js` | `createCanvasPlan`, `insertSynthesis`, `normalize` | План холста |

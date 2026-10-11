@@ -7062,6 +7062,11 @@ document.addEventListener('click', (event) => {
                     parseAsks: (text) => window.DebateStageMarkers?.parse?.(text)?.askItems || [],
                     askOwner: askCustomOwner,
                     decide: askCustomDecision,
+                    // The texts of the answers go to the record (the registry and the snapshot keep references to them).
+                    ...(record ? {
+                        putText: (value) => record.put(value),
+                        getText: (ref) => (ref && record.texts[ref] !== undefined ? record.texts[ref] : undefined)
+                    } : {}),
                     onRequest: recordAttempt,
                     onResponse: recordAttempt,
                     send: async (models, promptsByModel, { step, label, attempt, maxWordsByModel, correctionByModel }) => {
@@ -7124,7 +7129,18 @@ document.addEventListener('click', (event) => {
                 });
                 const stopText = engine.STOP_TEXT[result.stopReason] || result.stopReason;
                 finishCustomRunProgress(result.stopReason === 'steps_done' ? 'COMPLETED' : 'CANCELLED');
-                if (record) { window.CustomRunRecord.finishRun(record, { stopReason: result.stopReason }); await saveRecord(true); }
+                if (record) {
+                    // The registry and the state of the run at its end: what a later resume needs (8.2).
+                    const CustomRecord = window.CustomRunRecord;
+                    CustomRecord.setArtifacts(record, result.artifacts);
+                    CustomRecord.setSnapshot(record, {
+                        schema: built.schema, runSettings: { semiAuto, maxAttempts: engine.DEFAULT_ATTEMPTS, runMaxWords: built.run.maxWords ?? null },
+                        state: result.state, ownerAnswers: result.ownerAnswers,
+                        routes: result.steps.filter((item) => item.route).map((item) => ({ stepRef: item.ref, visit: item.visit, ...item.route }))
+                    });
+                    CustomRecord.finishRun(record, { stopReason: result.stopReason });
+                    await saveRecord(true);
+                }
                 // The answers of the last step are already in the feed as the cards of that step: no second card repeats
                 // them. The reason of the end is the notification; with no accepted answer at all it says so.
                 showNotification(basicRunNotice(stopText, result.answers.length), result.stopReason === 'steps_done' ? 'info' : 'warn');

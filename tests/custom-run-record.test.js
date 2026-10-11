@@ -157,3 +157,75 @@ test('the Disput Flow JSON export carries the latest Custom run record, redacted
   expect(handler.slice(0, 1500)).toContain("downloadDiagnosticsJson('Disput Flow', { ...(payload || {}), delivery, ...(customRun ? { customRun } : {}) }, disputBtn);");
 });
 
+
+// Version 2 (ТЗ 8.2): the registry and the snapshot keep their texts by reference; the texts are the record's own.
+function recordedOwnerRun({ runId = 'run-owner', text = 'Тезис владельца' } = {}) {
+  const record = Record.createRun({ runId, pipelineName: 'Mine', task: 'Задача T', steps: [{ ref: 'owner:evidence', kind: 'owner' }] });
+  const steps = [{ ref: 'owner:evidence', kind: 'owner', task: 'Дай тезис', output: { format: 'json', requiredFields: ['/thesis'], artifacts: [{ id: 'thesis', name: 'Тезис', pointer: '/thesis' }] } }];
+  return Engine.run({
+    task: 'Задача T', steps, send: async () => ({ byModel: {} }), runId,
+    provideOwnerResult: async () => JSON.stringify({ thesis: text }),
+    putText: (value) => record.put(value), getText: (ref) => (ref && record.texts[ref] !== undefined ? record.texts[ref] : undefined),
+    onRequest: (entry) => Record.recordAttempt(record, entry), onResponse: (entry) => Record.recordAttempt(record, entry)
+  }).then((result) => { record.artifacts = result.artifacts; Record.finishRun(record, { stopReason: result.stopReason }); return { record, result }; });
+}
+
+describe('Custom run record, version 2 (8.2)', () => {
+  test('a text that only the registry keeps (an owner answer has no attempt) survives serialize and reload', async () => {
+    const storage = memoryStorage();
+    const store = Record.createStore({ storage });
+    const { record, result } = await recordedOwnerRun();
+    expect(record.attempts).toEqual([]);
+    expect(result.artifacts[0].content.answerRef).toBeTruthy();
+    await store.save(record);
+    const back = await store.load('run-owner');
+    expect(Record.textOf(back, back.artifacts[0].content.answerRef)).toBe(JSON.stringify({ thesis: 'Тезис владельца' }));
+    expect(Record.exportRun(back).artifacts[0]).toMatchObject({ id: 'thesis', name: 'Тезис', text: JSON.stringify({ thesis: 'Тезис владельца' }), source: { step: 'owner:evidence', participant: 'owner', visit: 1 } });
+  });
+
+  test('a new record is version 2; an attempt key is the step, participant, visit, attempt and phase', () => {
+    const record = Record.createRun({ runId: 'k', pipelineName: 'Mine', task: 'T', steps: [{ ref: 'r1', kind: 'round', models: ['A'] }] });
+    expect(record.version).toBe(2);
+    const base = { ref: 'r1', participant: 'A', model: 'A', attempt: 1, phase: 'answer', prompt: 'p', parts: {} };
+    Record.recordAttempt(record, { ...base, step: 0, visit: 1, state: 'sent' });
+    Record.recordAttempt(record, { ...base, step: 0, visit: 2, state: 'sent' });
+    Record.recordAttempt(record, { ...base, step: 0, visit: 2, phase: 'route', state: 'sent' });
+    expect(record.attempts).toHaveLength(3);
+    Record.recordAttempt(record, { ...base, step: 0, visit: 2, state: 'done', answer: 'a', accepted: true });
+    expect(record.attempts[1]).toMatchObject({ state: 'done', accepted: true });
+    expect(record.attempts[0].state).toBe('sent');
+  });
+
+  test('version 1 stays readable and exportable; without a snapshot it is history, not a resumable run', () => {
+    const v1 = { version: 1, runId: 'old', pipelineName: 'Mine', startedAt: 1, finishedAt: 2, stopReason: 'steps_done', taskRef: 't1', steps: [],
+      texts: { t1: 'Задача' }, attempts: [{ key: 'k', step: 0, model: 'A', attempt: 1, state: 'done', accepted: true, promptRef: null, answerRef: 'a1', parts: {} }] };
+    const back = Record.revive(JSON.parse(JSON.stringify(v1)));
+    expect(back.version).toBe(1);
+    const exported = Record.exportRun(back);
+    expect(exported).toMatchObject({ task: 'Задача', resumable: false, attempts: [expect.objectContaining({ state: 'done' })] });
+  });
+
+  test('the snapshot has the fields of 8.2 and keeps every text by reference; it is plain JSON', async () => {
+    const { record, result } = await recordedOwnerRun();
+    Record.setSnapshot(record, { schema: [{ ref: 'owner:evidence', kind: 'owner' }], runSettings: { semiAuto: false, maxAttempts: 2 }, state: result.state,
+      routes: [], ownerAnswers: result.ownerAnswers });
+    const snapshot = record.snapshot;
+    // The registry is record.artifacts (5.3), not a second copy in the snapshot.
+    expect(Object.keys(snapshot).sort()).toEqual(['chatBindings', 'continuationStack', 'current', 'dependencies', 'feedback', 'loopCounters', 'ownerAnswers', 'pc', 'pendingOwner', 'routes', 'runSettings', 'schema', 'taskRef', 'visits']);
+    expect(snapshot.chatBindings).toEqual([]);
+    expect(snapshot.current).toMatchObject({ stepRef: null, phase: 'done' });
+    expect(Record.canResume(record)).toBe(true);
+    expect(JSON.parse(JSON.stringify(snapshot))).toEqual(snapshot);
+  });
+
+  test('serialize keeps the texts of the snapshot feedback; export resolves them with their sources', async () => {
+    const { record, result } = await recordedOwnerRun();
+    const feedbackText = 'Замечание по тезису';
+    const ref = record.put(feedbackText);
+    Record.setSnapshot(record, { schema: [], runSettings: {}, state: { pc: 'owner:evidence', visits: { 'owner:evidence': 1 }, feedback: { 'owner:evidence': [{ label: 'Владелец', source: { step: 0, visit: 1 }, textRef: ref, pointer: '' }] } }, routes: [], ownerAnswers: result.ownerAnswers });
+    const stored = JSON.parse(JSON.stringify(Record.serialize(record)));
+    const back = Record.revive(stored);
+    expect(Record.textOf(back, back.snapshot.feedback['owner:evidence'][0].textRef)).toBe(feedbackText);
+    expect(Record.exportRun(back).snapshot.feedback['owner:evidence'][0]).toMatchObject({ text: feedbackText, source: { step: 0, visit: 1 }, label: 'Владелец' });
+  });
+});
