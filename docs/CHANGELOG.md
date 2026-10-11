@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — The canvas keeps the order of the models of each round, version 2.81.702
+
+- `BasicSchema.toCanvas` (`disput/basic-schema.js`): each round's stack lists its enabled models in the order of the schema, then the other selected models of the canvas (switched off for this round). Before, the stack and the round's participants followed the canvas order. The engine's run order is unchanged: it was already the schema's order.
+- Docs: `basic-schema-guide.md` (the order of models in `models` is the order of calls and the canvas order).
+- Tests: `tests/basic-schema.test.js` (the block «the order of participants on the canvas»; the canvas test now expects the schema order).
+- Not in this change: the page's reverse build (`basicSchemaFromPage` in `results.js`) and the round-trip test through the page.
+
 ### 2026-10-11 — An explicit task reaches the first round with input none, version 2.81.701
 
 - Changed documented behaviour. `BasicSchema.assemble` (`disput/basic-schema.js`): with `input: none` the task the owner wrote in the schema, on the step or on the model, is now sent. Before, it was dropped. A model task still comes before the step task. The ▶ and Basic tasks are not sent with `input: none`, as before.

@@ -130,10 +130,10 @@ describe('Basic schema: the canvas a schema stands for', () => {
     expect(canvas.roundCounter).toBe(2);
     expect(canvas.selectedModels).toEqual(['Claude', 'GPT']);
     expect(canvas.stacks['r1-models'].items).toEqual([
-      { name: 'Claude', input: true, send: true, role: 'critic' }, { name: 'GPT', input: true, send: true, role: null }
+      { name: 'GPT', input: true, send: true, role: null }, { name: 'Claude', input: true, send: true, role: 'critic' }
     ]);
-    expect(canvas.stacks['r2-models'].items.map((item) => [item.name, item.send])).toEqual([['Claude', false], ['GPT', true]]);
-    expect(canvas.rounds.map((item) => item.participantIds)).toEqual([['Claude', 'GPT'], ['GPT']]);
+    expect(canvas.stacks['r2-models'].items.map((item) => [item.name, item.send])).toEqual([['GPT', true], ['Claude', false]]);
+    expect(canvas.rounds.map((item) => item.participantIds)).toEqual([['GPT', 'Claude'], ['GPT']]);
     expect(canvas.synthesizer).toBe('Claude');
     expect(canvas.inserts).toEqual([{ afterRound: 1, plannedStageId: 'mid', participantIds: ['Gemini'] }]);
   });
@@ -340,5 +340,54 @@ describe('Basic schema: an explicit task is sent with input none', () => {
     const settings = Schema.toSettings(reloaded);
     expect(settings.customRoundSettings.r1).toEqual({ task: 'STEP_TASK' });
     expect(settings.customModelSettings.r1.A).toEqual({ task: 'MODEL_TASK' });
+  });
+});
+
+describe('Basic schema: the order of participants on the canvas', () => {
+  const canvasModels = ['Claude', 'GPT', 'Gemini', 'Grok'];
+  const toCanvas = (schema, extra = {}) => Schema.toCanvas(schema, { models: canvasModels, ...extra });
+  const itemNames = (canvas, ref) => canvas.stacks[`${ref}-models`].items.map((item) => item.name);
+
+  test('a round keeps the order of its models from the schema, not the order of the canvas', () => {
+    const canvas = toCanvas(base([round('r1', ['GPT', 'Claude']), synthesis('final', ['Claude'])]));
+    expect(canvas.errors).toEqual([]);
+    expect(canvas.selectedModels).toEqual(['Claude', 'GPT']);
+    expect(itemNames(canvas, 'r1')).toEqual(['GPT', 'Claude']);
+    expect(canvas.rounds[0].participantIds).toEqual(['GPT', 'Claude']);
+  });
+
+  test('each round has its own order', () => {
+    const canvas = toCanvas(base([round('r1', ['GPT', 'Claude']), round('r2', ['Claude', 'GPT']), synthesis('final', ['Claude'])]));
+    expect(itemNames(canvas, 'r1')).toEqual(['GPT', 'Claude']);
+    expect(itemNames(canvas, 'r2')).toEqual(['Claude', 'GPT']);
+    expect(canvas.rounds.map((item) => item.participantIds)).toEqual([['GPT', 'Claude'], ['Claude', 'GPT']]);
+  });
+
+  test('the models of a round that are not in it follow the enabled ones, switched off for this round', () => {
+    const canvas = toCanvas(base([round('r1', ['GPT']), round('r2', ['Claude']), synthesis('final', ['Claude'])]));
+    expect(canvas.stacks['r1-models'].items).toEqual([
+      { name: 'GPT', input: true, send: true, role: null }, { name: 'Claude', input: false, send: false, role: null }
+    ]);
+    expect(canvas.stacks['r2-models'].items).toEqual([
+      { name: 'Claude', input: true, send: true, role: null }, { name: 'GPT', input: false, send: false, role: null }
+    ]);
+    expect(canvas.rounds.map((item) => item.participantIds)).toEqual([['GPT'], ['Claude']]);
+  });
+
+  test('the engine still runs the models in the order of the schema', () => {
+    const steps = Schema.assemble(base([round('r1', ['GPT', 'Claude']), synthesis('final', ['Claude'])]));
+    expect(steps[0].models.map((model) => model.name)).toEqual(['GPT', 'Claude']);
+  });
+
+  test('a switched-off model keeps its settings, and the canvas does not change the schema', () => {
+    const schema = base([round('r1', ['GPT', { name: 'Claude', enabled: false, task: 'KEPT_TASK' }]), synthesis('final', ['GPT'])]);
+    const before = JSON.stringify(schema);
+    const first = toCanvas(schema);
+    const second = toCanvas(schema);
+    expect(first.errors).toEqual([]);
+    expect(first.stacks).toEqual(second.stacks);
+    expect(first.rounds).toEqual(second.rounds);
+    expect(JSON.stringify(schema)).toBe(before);
+    expect(Schema.toSettings(schema).customModelSettings.r1.Claude).toEqual({ task: 'KEPT_TASK' });
   });
 });

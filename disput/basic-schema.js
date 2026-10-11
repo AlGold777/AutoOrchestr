@@ -256,12 +256,17 @@
     if (rounds.length > 50) fail('steps', 'раундов не больше 50');
     if (errors.length) return { errors };
     const selectedModels = models.filter((name) => rounds.some((step) => enabledOf(step).some((model) => model.name === name)));
-    const stacks = Object.fromEntries(rounds.map((step, index) => [`r${index + 1}-models`, { items: selectedModels.map((name) => {
-      const model = enabledOf(step).find((item) => item.name === name);
-      return { name, input: Boolean(model), send: Boolean(model), role: model?.role || null };
-    }) }]));
+    // Each round's stack: its enabled models in the order of the schema, then the other selected models of the canvas.
+    const stacks = Object.fromEntries(rounds.map((step, index) => {
+      const own = enabledOf(step);
+      const names = [...own.map((model) => model.name), ...selectedModels.filter((name) => !own.some((model) => model.name === name))];
+      return [`r${index + 1}-models`, { items: names.map((name) => {
+        const model = own.find((item) => item.name === name);
+        return { name, input: Boolean(model), send: Boolean(model), role: model?.role || null };
+      }) }];
+    }));
     return { errors, roundCounter: rounds.length, selectedModels, stacks,
-      rounds: rounds.map((step, index) => ({ ref: `r${index + 1}`, participantIds: selectedModels.filter((name) => enabledOf(step).some((model) => model.name === name)), roles: Object.fromEntries(enabledOf(step).map((model) => [model.name, model.role || null])) })),
+      rounds: rounds.map((step, index) => ({ ref: `r${index + 1}`, participantIds: enabledOf(step).map((model) => model.name), roles: Object.fromEntries(enabledOf(step).map((model) => [model.name, model.role || null])) })),
       synthesizer: finalStep ? (enabledOf(finalStep)[0]?.name || '') : '', inserts };
   }
 
