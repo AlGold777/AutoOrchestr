@@ -1,5 +1,16 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — Basic: лента прогона показывает события движка, version 2.81.747
+
+- `results.js` (`runCustomFromPage`): подпись карточки ответа содержит участника (если его id не совпадает с моделью) и заход со второго захода; второй заход шага — отдельная карточка (`pipelineRoundId` `s<n>v<заход>`), ответ предыдущего захода остаётся в ленте.
+- `results.js`: события `custom_gate`, `custom_route`, `custom_transition` идут в ленту короткими строками (`appendBasicRunLine`), не карточками ответов.
+- `results.js` (`markStaleBasicCards`): в конце прогона карточки шагов с `valid: false` получают метку «устарело»; ответ не удаляется.
+- `results.js` (`openBasicArtifacts`): в конце прогона строка «Артефакты прогона: N» открывает реестр через `ChoiceDialog`: список (название, участник или владелец, заход, устарело) и текст выбранного артефакта (`getText`, указатель `pointer`).
+- `results/stage-card.js`: `StageCard.feed` — тексты подписи, строк и артефактов (чистые функции).
+- `styles/modals-responsive.css`: строки прогона, метка «устарело».
+- Docs: `basic-windows.md` («Лента прогона»), `basic-start-here.md` (строки таблицы).
+- Tests: `tests/basic-run-feed.test.js` (new): тексты подписи, строк, артефактов и указателя; проводка в `results.js` и стили. Не проверено в живом браузере: только jsdom и проверка синтаксиса.
+
 ### 2026-10-11 — Basic: chat bindings of the participants are kept in the snapshot, version 2.81.746
 
 - `CustomEngine.run` (`disput/custom-engine.js`): the chat of each participant (`chatBindings`: participantId → `{ modelName, stepRef, visit, transportRequestId }`) is set by its accepted or failed reply with a transport request ID; it is in every checkpoint and in the result (`state.chatBindings`), and a resume takes it back. An old list in the snapshot is read as no bindings.

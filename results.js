@@ -7065,6 +7065,74 @@ document.addEventListener('click', (event) => {
             }
             return runCustomFromPage({ task: window.CustomRunRecord.textOf(latest, latest.taskRef), resumeRecord: latest });
         };
+        // A line of the run feed (a gate, a route, a transition, the artifacts): not an answer, so no model and no approval.
+        const appendBasicRunLine = (text, { buttonLabel = '', onButton = null } = {}) => {
+            if (!debateModelCards || !String(text || '').trim()) return null;
+            const session = ensureDebateSession(debateTabsState.activeSessionId);
+            const card = document.createElement('div');
+            const now = new Date();
+            const hh = String(now.getHours()).padStart(2, '0');
+            const mm = String(now.getMinutes()).padStart(2, '0');
+            card.className = 'debate-model-card debate-moderator-card basic-run-line';
+            card.dataset.sessionId = session.id;
+            card.dataset.llmName = 'Basic';
+            card.dataset.entryKind = 'response';
+            card.dataset.kind = 'moderator';
+            card.dataset.starred = 'false';
+            card.dataset.entryId = String(debateFeedState.nextId++);
+            card.dataset.approved = 'moderator';
+            card.innerHTML = `
+                <div class="debate-model-card-header">
+                    <span class="debate-model-card-title"><span class="debate-model-card-title-main"><span class="debate-model-card-name">Basic</span></span></span>
+                </div>
+                <div class="debate-model-card-output"></div>
+            `;
+            const body = card.querySelector('.debate-model-card-output');
+            body.textContent = String(text || '');
+            if (buttonLabel && onButton) {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'basic-run-line-button';
+                button.textContent = buttonLabel;
+                button.addEventListener('click', onButton);
+                body.append(button);
+            }
+            ensureDebateCardMessage(card, { kind: 'moderator', status: 'approved', model: 'Basic', text: String(text || ''), html: '', timeLabel: `${hh}:${mm}`, starred: false });
+            normalizeDebateCardState(card);
+            insertModeratorCard(card);
+            applyDebateSessionFilter();
+            return card;
+        };
+        // A version that a later decision made stale stays in the feed, marked «устарело»: its answer is kept, not an input.
+        const markStaleBasicCards = (steps) => {
+            const requests = new Set(steps.filter((item) => item.valid === false)
+                .flatMap((item) => Object.values(item.outcome || {}).map((verdict) => verdict?.transportRequestId).filter(Boolean)));
+            if (!requests.size || !debateModelCards) return;
+            debateModelCards.querySelectorAll('.debate-model-card').forEach((card) => {
+                if (!requests.has(card.dataset.requestId) || card.querySelector('.basic-run-stale')) return;
+                const mark = document.createElement('span');
+                mark.className = 'basic-run-stale';
+                mark.textContent = 'устарело';
+                card.querySelector('.debate-model-card-title-main')?.append(mark);
+            });
+        };
+        // The registry of the artifacts: a list, then the text of the chosen one (its answer, at its pointer).
+        const openBasicArtifacts = async (artifacts, textOf) => {
+            for (;;) {
+                const index = await askChoiceDialog({
+                    title: 'Артефакты прогона',
+                    choices: artifacts.map((item, at) => ({ value: at, label: window.StageCard.feed.artifactTitle(item) })),
+                    cancelText: 'Закрыть'
+                });
+                if (index === null || index === undefined) return;
+                const item = artifacts[index];
+                await askChoiceDialog({
+                    title: item.name,
+                    message: window.StageCard.feed.artifactText(textOf(item.content.answerRef), item.content.pointer, window.BasicOutput.readPointer),
+                    cancelText: 'Закрыть'
+                });
+            }
+        };
         const runCustomFromPage = async ({ task, resumeRecord = null }) => {
             const engine = window.CustomEngine;
             const built = resumeRecord ? builtFromRecord(resumeRecord) : buildBasicRun(draftPlanForCanvas(getActiveDraftPlan()));
@@ -7199,9 +7267,13 @@ document.addEventListener('click', (event) => {
                         const modelResult = batch?.results?.[model] || {};
                         const text = String(batch?.responses?.[model] || '');
                         if (text.trim()) {
+                            const request = wave.find((item) => item.modelName === model);
+                            // A later visit of the step is its own card: the answer of an earlier visit stays in the feed.
                             updateDebateModelCardOutput(model, text, '', {
-                                status: modelResult.status || 'SUCCESS', source: 'custom', role: `Basic · ${label}`,
-                                pipelineRunId: runContext.pipelineRunId, pipelineRoundId: `s${step + 1}`,
+                                status: modelResult.status || 'SUCCESS', source: 'custom',
+                                role: window.StageCard?.feed?.role({ label, modelName: model, participantId: request?.participantId, visit: request?.visit }) || `Basic · ${label}`,
+                                pipelineRunId: runContext.pipelineRunId,
+                                pipelineRoundId: `s${step + 1}${request?.visit > 1 ? `v${request.visit}` : ''}`,
                                 transportRequestId: modelResult.transportRequestId || '', requestId: modelResult.transportRequestId || ''
                             });
                         }
@@ -7296,6 +7368,13 @@ document.addEventListener('click', (event) => {
                         // A step with accepted answers, or one the owner skipped, is done; otherwise it stays running until a decision.
                         if (kind === 'custom_step' && fields.accepted > 0) setCustomStepStatus(fields.step, 'completed');
                         if (kind === 'custom_decision' && fields.action === 'skip') setCustomStepStatus(fields.step, 'completed');
+                        // The control events of the run go to the feed as short lines (not as answers of models).
+                        if (kind === 'custom_gate') appendBasicRunLine(window.StageCard?.feed?.gate(fields));
+                        if (kind === 'custom_route') {
+                            const cases = steps.find((item) => item.ref === fields.ref)?.select?.cases || [];
+                            appendBasicRunLine(window.StageCard?.feed?.route({ ref: fields.ref, caseLabel: String(cases.find((item) => item.id === fields.case)?.label ?? fields.case), reason: fields.reason }));
+                        }
+                        if (kind === 'custom_transition') appendBasicRunLine(window.StageCard?.feed?.transition(fields, (reason) => engine.STOP_TEXT[reason] || reason));
                         window.MessageDelivery?.batchEvent?.(kind, { pipelineRunId: runContext.pipelineRunId, ...fields });
                     }
                 });
@@ -7312,6 +7391,12 @@ document.addEventListener('click', (event) => {
                     });
                     CustomRecord.finishRun(record, { stopReason: result.stopReason });
                     await saveRecord(true);
+                }
+                markStaleBasicCards(result.steps);
+                const artifacts = result.artifacts || [];
+                if (artifacts.length) {
+                    const textOf = (ref) => (record ? window.CustomRunRecord.textOf(record, ref) : String(result.texts?.[ref] ?? ''));
+                    appendBasicRunLine(`Артефакты прогона: ${artifacts.length}`, { buttonLabel: 'Открыть', onButton: () => openBasicArtifacts(artifacts, textOf) });
                 }
                 // The answers of the last step are already in the feed as the cards of that step: no second card repeats
                 // them. The reason of the end is the notification; with no accepted answer at all it says so.

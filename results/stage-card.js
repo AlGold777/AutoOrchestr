@@ -214,7 +214,55 @@
     }
   }
 
-  const api = Object.freeze({ buildModel, render, STATUS });
+  // The run feed of Basic (results.js): pure texts of the events and of the answer cards. Old events without the
+  // new fields give the same text as before; a participant id equal to the model name is not repeated.
+  const ROUTE_REASON = {
+    rule: 'по правилу', otherwise: 'иначе', model: 'выбрала модель', owner: 'выбрал владелец',
+    conflict_first: 'первый из подходящих', conflict_owner: 'выбрал владелец из подходящих',
+    invalid_route: 'ответ модели не распознан, выбрал владелец'
+  };
+  const feed = Object.freeze({
+    // The label of an answer card: the step, the participant (when it is not the model) and the visit (from the second).
+    role({ label = '', modelName = '', participantId = '', visit = 1 } = {}) {
+      const parts = [`Basic · ${label}`];
+      if (participantId && participantId !== modelName) parts.push(`участник ${participantId}`);
+      if (Number(visit) > 1) parts.push(`заход ${visit}`);
+      return parts.join(' · ');
+    },
+    gate({ ref = '', pass = false, unmet = [] } = {}) {
+      const head = `Проверка ${ref}: ${pass ? 'пройдена' : 'не пройдена'}`;
+      return !pass && unmet.length ? `${head}. Не выполнено: ${unmet.join('; ')}` : head;
+    },
+    route({ ref = '', caseLabel = '', reason = '' } = {}) {
+      return `Маршрут ${ref}: вариант «${caseLabel}», ${ROUTE_REASON[reason] || reason}`;
+    },
+    // stopText: the text of a stop reason (the engine's STOP_TEXT); a limit names its count.
+    transition({ from = '', to = '', action = 'goto', count = null, maxLoops = null, reason = '' } = {}, stopText = (value) => value) {
+      if (action === 'stop') {
+        return reason === 'loop_limit'
+          ? `Переход ${from} → ${to} не выполнен: лимит ${maxLoops} исчерпан`
+          : `Прогон остановлен после ${from}: ${stopText(reason)}`;
+      }
+      const head = `${action === 'return' ? 'Возврат' : 'Переход'} ${from} → ${to}`;
+      return count != null && maxLoops != null ? `${head}, переход ${count} из ${maxLoops}` : head;
+    },
+    // The title of an artifact in the registry: name, participant (owner for an owner step), visit, validity.
+    artifactTitle({ name = '', source = {}, valid = true } = {}) {
+      const author = source.participant === 'owner' ? 'владелец' : `участник ${source.participant}`;
+      return `${name} · ${author} · заход ${source.visit}${valid === false ? ' · устарело' : ''}`;
+    },
+    // The text of an artifact: the whole answer for an empty pointer, else the value at the pointer (JSON as text).
+    artifactText(answer = '', pointer = '', readPointer) {
+      if (!pointer) return String(answer || '');
+      let value;
+      try { value = JSON.parse(answer); } catch (_) { return `Указатель ${pointer}: ответ не является JSON.`; }
+      const read = readPointer(value, pointer);
+      if (!read.found) return `Указатель ${pointer} не найден в ответе.`;
+      return typeof read.value === 'string' ? read.value : JSON.stringify(read.value, null, 2);
+    }
+  });
+
+  const api = Object.freeze({ buildModel, render, STATUS, feed });
   root.StageCard = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
