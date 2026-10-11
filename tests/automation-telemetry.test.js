@@ -613,6 +613,16 @@ describe('forced commit shape, stale background, skipped nudges', () => {
     expect(commitIncompleteAnswer('X', entry, { text: '   ', source: 's' })).toBe(false);
   });
 
+  test('a committed text carrying its delivery token is journaled as complete, not incomplete', () => {
+    const { commitIncompleteAnswer, timers, context } = loadCommit();
+    const entry = { lastDispatchMeta: { dispatchId: 'X:1:1', runSessionId: 5 }, finalStatusRecorded: true, finalStatus: 'SUCCESS' };
+    context.jobState.llms.X = entry;
+    context.jobState.session.promptsByModel = { X: 'Q\n[[AO-abc123]]' };
+    commitIncompleteAnswer('X', entry, { text: 'ответ\n[[AO-abc123]]', source: 'static_answer_snapshot', completionReason: 'c' });
+    timers.shift()();
+    expect(context.reportDispatchPhase).toHaveBeenLastCalledWith('X', entry, 'static_answer_committed', expect.objectContaining({ reason: 'SUCCESS:static_answer_snapshot' }));
+  });
+
   test('every dispatch phase names the background build; a build different from the panel is diagnosed', () => {
     expect(coordinator).toContain("backgroundVersion: chrome?.runtime?.getManifest?.()?.version || null,");
     const { Delivery, Diagnosis } = loadModules();
@@ -714,6 +724,8 @@ describe('the delivery token is the model\'s own end-of-answer marker', () => {
     expect(answerHasDeliveryToken('Le Chat', 'анекдот...\n\n[[AO-924htt]]\n\n12:53am')).toBe(true);
     expect(answerHasDeliveryToken('Le Chat', 'анекдот...\n[[AO-zzzzzz]]')).toBe(false);
     expect(answerHasDeliveryToken('Le Chat', 'анекдот без метки')).toBe(false);
+    // A token in the middle (quoted instruction, prompt echo) does not prove completeness.
+    expect(answerHasDeliveryToken('Le Chat', `напиши метку [[AO-924htt]]\n${'продолжение ответа '.repeat(10)}`)).toBe(false);
     expect(answerHasDeliveryToken('Grok', 'x [[AO-924htt]]')).toBe(false);
   });
 
@@ -743,6 +755,19 @@ describe('the delivery token is the model\'s own end-of-answer marker', () => {
     const { sends, problems } = Diagnosis.diagnose(Delivery.journal());
     expect(sends[0].result).toBe('delivered');
     expect(problems.some((p) => p.code === 'no_token')).toBe(false);
+  });
+});
+
+describe('the main page request carries the delivery token', () => {
+  test('result_new.html loads the module and results.js sends per-model prompts with request ids', () => {
+    expect(read('result_new.html')).toContain('<script src="shared/message-delivery.js"></script>');
+    const results = read('results.js');
+    const start = results.indexOf("type: 'START_FULLPAGE_PROCESS',\n                    prompt: finalPrompt,");
+    expect(start).toBeGreaterThan(0);
+    const send = results.slice(start - 900, start + 500);
+    expect(send).toContain('window.MessageDelivery?.prepare({');
+    expect(send).toContain('promptsByModel,');
+    expect(send).toContain('pipelineContext: promptsByModel ? { transportRequestIds } : null');
   });
 });
 
