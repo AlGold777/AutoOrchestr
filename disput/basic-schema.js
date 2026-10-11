@@ -28,6 +28,19 @@
   const ORDERS = Object.freeze(['parallel', 'sequential']);
   const INPUTS = Object.freeze(['none', 'previous', 'all']);
   const POLICIES = Object.freeze(['auto', 'manual']);
+  const OUTPUT_FORMATS = Object.freeze(['json']);
+  const POINTER_FORBIDDEN = Object.freeze(['__proto__', 'prototype', 'constructor']);
+
+  // The problem of a JSON Pointer (RFC 6901, ~0 and ~1 only) or null. Forbidden segments are refused, nothing is read.
+  function pointerError(pointer) {
+    if (typeof pointer !== 'string' || (pointer !== '' && !pointer.startsWith('/'))) return 'указатель JSON Pointer начинается с «/»';
+    for (const raw of pointer === '' ? [] : pointer.slice(1).split('/')) {
+      if (/~(?![01])/.test(raw)) return 'в указателе «~» допустим только как ~0 или ~1';
+      const segment = raw.replace(/~1/g, '/').replace(/~0/g, '~');
+      if (POINTER_FORBIDDEN.includes(segment)) return `сегмент «${segment}» запрещён`;
+    }
+    return null;
+  }
 
   const DEFAULTS = Object.freeze({
     run: Object.freeze({ policy: 'manual', maxWords: 300 }),
@@ -80,6 +93,7 @@
       if (step.kind === 'round') out.round = roundIndex + 1;
       else out.afterRound = rounds;
       if (step.kind === 'round') out.order = step.order || 'parallel';
+      if ('output' in step) out.output = JSON.parse(JSON.stringify(step.output));
       out.task = input === 'none' && !writtenTask(stepFields.task) ? '' : stepFields.task.value;
       // A list of sources goes to the engine as it is; a synthesis without a list keeps its old shape (no input field).
       if (step.kind === 'round' || Array.isArray(input)) out.input = Array.isArray(input) ? JSON.parse(JSON.stringify(input)) : input;
@@ -112,6 +126,18 @@
   // A participant's id: the explicit one, or its name.
   const idOf = (model) => model.id ?? model.name;
 
+  // The address of a well-formed source: the duplicate check and the revision check compare these.
+  function addressOf(source) {
+    if (typeof source === 'string') return JSON.stringify(['step', source]);
+    if (!isObject(source)) return JSON.stringify(['invalid']);
+    if ('artifact' in source) {
+      const address = isObject(source.artifact) ? source.artifact : {};
+      const version = isObject(source.version) ? [source.version.step, source.version.participant, source.version.visit] : 'latest';
+      return JSON.stringify(['artifact', address.step, address.participant, address.id, version]);
+    }
+    return JSON.stringify(['participant', source.step, source.participant]);
+  }
+
   // One input source (4.3): a step ref, a participant of a step `{ step, participant, required? }` or an artifact
   // `{ artifact: { step, participant, id }, version, required? }`. A version is `latest` or `{ step, participant, visit }`.
   // Returns the address of the source (for the duplicate check), or null when it has an error.
@@ -138,7 +164,7 @@
     const checkRequired = (value, at) => { if ('required' in value && typeof value.required !== 'boolean') fail(`${at}.required`, 'ожидается true или false'); };
     const failed = () => errors.length > mark;
 
-    if (typeof source === 'string') return stepAt(source, path) < 0 ? null : JSON.stringify(['step', source]);
+    if (typeof source === 'string') return stepAt(source, path) < 0 ? null : addressOf(source);
     if (!isObject(source)) { fail(path, 'ожидается ссылка на шаг, участника или артефакт'); return null; }
 
     if ('artifact' in source) {
@@ -154,9 +180,8 @@
       const output = position >= 0 ? steps[position].output : null;
       const declared = isObject(output) && Array.isArray(output.artifacts) && output.artifacts.some((item) => isObject(item) && item.id === address.id);
       if (position >= 0 && 'id' in address && !declared) fail(`${path}.artifact.id`, `артефакт «${address.id}» не объявлен в шаге «${steps[position].ref}»`);
-      let version = 'latest';
       if (!('version' in source)) fail(`${path}.version`, 'версия не указана: latest или объект версии');
-      else if (source.version === 'latest') version = 'latest';
+      else if (source.version === 'latest') { /* the last current version of the line */ }
       else if (isObject(source.version)) {
         const at = `${path}.version`;
         unknown(source.version, ['step', 'participant', 'visit'], at);
@@ -164,10 +189,9 @@
         if (creator >= 0 && !('participant' in source.version)) fail(`${at}.participant`, 'участник не указан');
         else if (creator >= 0) participantAt(creator, source.version.participant, `${at}.participant`);
         if (!(Number.isSafeInteger(source.version.visit) && source.version.visit > 0)) fail(`${at}.visit`, 'ожидается целое число больше 0');
-        version = JSON.stringify([source.version.step, source.version.participant, source.version.visit]);
       } else fail(`${path}.version`, 'ожидается latest или объект версии');
       if (failed()) return null;
-      return JSON.stringify(['artifact', address.step, address.participant, address.id, version]);
+      return addressOf(source);
     }
 
     if (!('step' in source)) { fail(path, 'ожидается ссылка на шаг, участника или артефакт'); return null; }
@@ -177,7 +201,7 @@
     if (position >= 0 && !('participant' in source)) fail(`${path}.participant`, 'участник не указан');
     else if (position >= 0) participantAt(position, source.participant, `${path}.participant`);
     if (failed()) return null;
-    return JSON.stringify(['participant', source.step, source.participant]);
+    return addressOf(source);
   }
 
   // Errors before the first request: [{ path, message }]. A schema is never corrected silently.
@@ -235,11 +259,12 @@
     const positions = new Map();
     schema.steps.forEach((step, at) => { if (isObject(step) && typeof step.ref === 'string' && !positions.has(step.ref)) positions.set(step.ref, at); });
     const namesById = new Map();
+    const contextAt = (index) => ({ fail, errors, steps: schema.steps, positions, index });
     const checkInputList = (list, path, index) => {
       if (!list.length) { fail(path, 'ожидается непустой список источников'); return; }
       const addresses = new Set();
       list.forEach((source, at) => {
-        const address = checkSource(source, `${path}[${at}]`, { fail, errors, steps: schema.steps, positions, index });
+        const address = checkSource(source, `${path}[${at}]`, contextAt(index));
         if (!address) return;
         if (addresses.has(address)) fail(`${path}[${at}]`, 'источник повторяется');
         addresses.add(address);
@@ -251,10 +276,73 @@
       oneOf(value, INPUTS, path, 'вход');
       if (kind === 'synthesis' && value !== 'previous') fail(path, 'синтез всегда получает ответы предыдущего шага');
     };
+    // The output of a step (5.1, 5.2): the text form, or json with fields; artifacts are declared in it.
+    const checkOutput = (output, path, step, index) => {
+      if (!isObject(output)) { fail(path, 'ожидается объект'); return; }
+      unknownKeys(output, ['name', 'form', 'sections', 'strictLength', 'format', 'requiredFields', 'artifacts'], path);
+      ['name', 'form'].forEach((key) => { if (key in output) text(output[key], `${path}.${key}`); });
+      if ('strictLength' in output && typeof output.strictLength !== 'boolean') fail(`${path}.strictLength`, 'ожидается true или false');
+      if ('format' in output) oneOf(output.format, OUTPUT_FORMATS, `${path}.format`, 'формат выхода');
+      const json = output.format === 'json';
+      if ('sections' in output) {
+        if (json) fail(`${path}.sections`, 'в формате json заголовки не проверяются: укажите requiredFields');
+        else if (!Array.isArray(output.sections) || !output.sections.length) fail(`${path}.sections`, 'ожидается непустой список заголовков');
+        else output.sections.forEach((item, at) => { if (typeof item !== 'string' || !item.trim()) fail(`${path}.sections[${at}]`, 'ожидается непустой текст'); });
+      }
+      if ('requiredFields' in output) {
+        if (!json) fail(`${path}.requiredFields`, 'список полей нужен только в формате json');
+        else if (!Array.isArray(output.requiredFields) || !output.requiredFields.length) fail(`${path}.requiredFields`, 'ожидается непустой список указателей');
+        else output.requiredFields.forEach((pointer, at) => {
+          const problem = pointer === '' ? 'укажите поле ответа' : pointerError(pointer);
+          if (problem) fail(`${path}.requiredFields[${at}]`, problem);
+        });
+      }
+      if (!('artifacts' in output)) return;
+      const list = output.artifacts;
+      if (!Array.isArray(list) || !list.length) { fail(`${path}.artifacts`, 'ожидается непустой список артефактов'); return; }
+      if (list.length > 1 && !json) fail(`${path}.artifacts`, 'несколько артефактов выделяются только в формате json');
+      const ids = new Set();
+      const pointers = new Set();
+      list.forEach((artifact, at) => {
+        const at2 = `${path}.artifacts[${at}]`;
+        if (!isObject(artifact)) { fail(at2, 'ожидается объект'); return; }
+        unknownKeys(artifact, ['id', 'name', 'pointer', 'revisionOf'], at2);
+        if (typeof artifact.id !== 'string' || !artifact.id.trim()) fail(`${at2}.id`, 'ID артефакта: непустой текст');
+        else if (ids.has(artifact.id)) fail(`${at2}.id`, `артефакт «${artifact.id}» повторяется`);
+        else ids.add(artifact.id);
+        if (typeof artifact.name !== 'string' || !artifact.name.trim()) fail(`${at2}.name`, 'название артефакта: непустой текст');
+        if (typeof artifact.pointer !== 'string') fail(`${at2}.pointer`, 'ожидается указатель: строка');
+        else if (artifact.pointer === '') {
+          // An empty pointer is the whole answer: the only artifact of a text answer (several are named at the list).
+          if (json) fail(`${at2}.pointer`, 'укажите поле ответа: JSON Pointer к полю');
+        } else if (!json) fail(`${at2}.pointer`, 'в текстовом формате указатель пустой: артефакт — весь ответ');
+        else {
+          const problem = pointerError(artifact.pointer);
+          if (problem) fail(`${at2}.pointer`, problem);
+          else if (pointers.has(artifact.pointer)) fail(`${at2}.pointer`, 'указатель повторяется');
+          else pointers.add(artifact.pointer);
+        }
+        if (!('revisionOf' in artifact)) return;
+        // A revision: a reference to an artifact that the author has in its input (every enabled participant writes it).
+        const revision = artifact.revisionOf;
+        if (!(isObject(revision) && 'artifact' in revision)) { fail(`${at2}.revisionOf`, 'ожидается ссылка на артефакт: объект с полем artifact'); return; }
+        const before = errors.length;
+        checkSource(revision, `${at2}.revisionOf`, contextAt(index));
+        if (errors.length > before) return;
+        const key = addressOf(revision);
+        const authors = (Array.isArray(step.models) ? step.models : []).filter((model) => isObject(model) && model.enabled !== false);
+        authors.forEach((model) => {
+          const own = 'input' in model ? model.input : step.input;
+          if (!(Array.isArray(own) && own.some((item) => addressOf(item) === key))) fail(`${at2}.revisionOf`, `ссылка на версию должна быть во входе участника «${idOf(model)}»`);
+        });
+      });
+    };
+
     schema.steps.forEach((step, index) => {
       const path = `steps[${index}]`;
       if (!isObject(step)) { fail(path, 'ожидается объект'); return; }
-      unknownKeys(step, ['ref', 'kind', 'order', 'input', 'task', 'models'], path);
+      unknownKeys(step, ['ref', 'kind', 'order', 'input', 'task', 'models', 'output'], path);
+      if ('output' in step) checkOutput(step.output, `${path}.output`, step, index);
       if (typeof step.ref !== 'string' || !step.ref) fail(`${path}.ref`, 'ref шага не указан');
       else if (refs.has(step.ref)) fail(`${path}.ref`, `ref «${step.ref}» повторяется`);
       else refs.add(step.ref);

@@ -1,5 +1,13 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — Schema: the output of a step and its artifacts are checked, version 2.81.706
+
+- `BasicSchema.validate` (`disput/basic-schema.js`): a step has an optional `output`: `name`, `form`, `sections` (text), `strictLength`, `format: "json"` with `requiredFields` (JSON Pointers; the forbidden segments `__proto__`, `prototype`, `constructor` are refused), and `artifacts` (`id`, `name`, `pointer`, `revisionOf`). Several artifacts need json; in text an artifact is the whole answer with `pointer: ""`. A `revisionOf` must be an artifact reference that is in the input of every enabled participant. An input artifact is accepted only when the earlier step declares it.
+- `BasicSchema.assemble`: `output` is passed as it is.
+- Not yet: the engine does not check the output or register artifacts (the pack P02); the output counts of words are the engine's helper, not the schema's.
+- Docs: `basic-schema-guide.md` (the field `output` in section 5.4, section 5.8, error rows of section 10).
+- Tests: `tests/basic-schema.test.js` (the block «output of a step, artifacts and revisions (5.1–5.2)»).
+
 ### 2026-10-11 — Schema: participants with an id and their own input are checked, version 2.81.705
 
 - `BasicSchema.validate` (`disput/basic-schema.js`): a participant (`models[]`) has an optional `id` (non-empty text, default the name) and an optional `input` (the same rules as the step input, a list included). One id is unique within a step, so one model may take two places in a step with different ids. One id keeps one name in all steps; a mismatch is named at `…models[i].name`.

@@ -529,3 +529,83 @@ describe('Basic schema: the canvas and participants with an id', () => {
     expect(canvas.errors.map((error) => error.path)).toEqual(['steps[0].models[1].name']);
   });
 });
+
+describe('Basic schema: output of a step, artifacts and revisions (5.1–5.2)', () => {
+  const textOutput = { name: 'Результаты аудита', form: 'Сформируй исправленную карту и замечания', sections: ['Карта', 'Замечания'], strictLength: true };
+  const jsonOutput = {
+    name: 'Аудит карты', format: 'json', requiredFields: ['/correctedMap', '/auditFindings'],
+    artifacts: [{ id: 'map', name: 'Corrected Map', pointer: '/correctedMap' }, { id: 'findings', name: 'Audit Findings', pointer: '/auditFindings' }]
+  };
+  const mapRef = { artifact: { step: 'r1', participant: 'A', id: 'map' }, version: 'latest' };
+
+  test('a text output with sections and a strict length, and a json output with artifacts, are valid and kept as given', () => {
+    const text = base([round('r1', ['A'], { output: textOutput }), synthesis('final', ['B'])]);
+    expect(Schema.validate(text)).toEqual([]);
+    expect(Schema.assemble(text)[0].output).toEqual(textOutput);
+    const json = base([round('r1', ['A'], { output: jsonOutput }), synthesis('final', ['B'])]);
+    expect(Schema.validate(json)).toEqual([]);
+    expect(Schema.assemble(json)[0].output).toEqual(jsonOutput);
+  });
+
+  test('a single text artifact covers the whole answer with an empty pointer, and a declared artifact can be an input', () => {
+    const schema = base([
+      round('r1', ['A'], { output: { artifacts: [{ id: 'map', name: 'Map', pointer: '' }] } }),
+      round('r2', [{ name: 'B', input: [mapRef] }]),
+      synthesis('final', ['B'])
+    ]);
+    expect(Schema.validate(schema)).toEqual([]);
+    expect(Schema.assemble(schema)[1].models[0].input).toEqual([mapRef]);
+  });
+
+  test('a revision names the earlier version it continues and that version is in the input of the author', () => {
+    const schema = base([
+      round('r1', ['A'], { output: { artifacts: [{ id: 'map', name: 'Map', pointer: '' }] } }),
+      round('r2', ['A'], { input: [mapRef], output: { artifacts: [{ id: 'map', name: 'Map v2', pointer: '', revisionOf: mapRef }] } }),
+      synthesis('final', ['B'])
+    ]);
+    expect(Schema.validate(schema)).toEqual([]);
+  });
+
+  test('wrong output is named with its exact path', () => {
+    const cases = [
+      [{ sections: [] }, ['steps[0].output.sections']],
+      [{ sections: [''] }, ['steps[0].output.sections[0]']],
+      [{ format: 'json', sections: ['Карта'] }, ['steps[0].output.sections']],
+      [{ strictLength: 'yes' }, ['steps[0].output.strictLength']],
+      [{ format: 'xml' }, ['steps[0].output.format']],
+      [{ requiredFields: ['/a'] }, ['steps[0].output.requiredFields']],
+      [{ format: 'json', requiredFields: [] }, ['steps[0].output.requiredFields']],
+      [{ format: 'json', requiredFields: ['field'] }, ['steps[0].output.requiredFields[0]']],
+      [{ format: 'json', requiredFields: ['/a/constructor'] }, ['steps[0].output.requiredFields[0]']],
+      [{ format: 'json', requiredFields: ['/__proto__'] }, ['steps[0].output.requiredFields[0]']],
+      [{ format: 'json', requiredFields: ['/a~2b'] }, ['steps[0].output.requiredFields[0]']],
+      [{ format: 'json', requiredFields: [''] }, ['steps[0].output.requiredFields[0]']],
+      [{ artifacts: [] }, ['steps[0].output.artifacts']],
+      [{ artifacts: [{ id: 'a', name: 'A', pointer: '' }, { id: 'b', name: 'B', pointer: '' }] }, ['steps[0].output.artifacts']],
+      [{ artifacts: [{ id: 'a', name: 'A', pointer: '/x' }] }, ['steps[0].output.artifacts[0].pointer']],
+      [{ format: 'json', artifacts: [{ id: 'a', name: 'A', pointer: '' }] }, ['steps[0].output.artifacts[0].pointer']],
+      [{ format: 'json', artifacts: [{ id: 'a', name: 'A', pointer: '/x' }, { id: 'a', name: 'B', pointer: '/y' }] }, ['steps[0].output.artifacts[1].id']],
+      [{ format: 'json', artifacts: [{ id: 'a', name: 'A', pointer: '/x' }, { id: 'b', name: 'B', pointer: '/x' }] }, ['steps[0].output.artifacts[1].pointer']],
+      [{ artifacts: [{ id: 'a', pointer: '' }] }, ['steps[0].output.artifacts[0].name']],
+      [{ artifacts: [{ id: 'a', name: 'A' }] }, ['steps[0].output.artifacts[0].pointer']],
+      [{ artifacts: [{ id: 'a', name: 'A', pointer: '', colour: 'red' }] }, ['steps[0].output.artifacts[0].colour']],
+      [{ extra: 1 }, ['steps[0].output.extra']]
+    ];
+    cases.forEach(([output, paths]) => expect({ output, paths: errorPaths(base([round('r1', ['A'], { output })])) }).toEqual({ output, paths }));
+    expect(errorPaths(base([round('r1', ['A'], { output: 'text' })]))).toEqual(['steps[0].output']);
+  });
+
+  test('a revision that is not in the input of its author, or is not a reference to an artifact, is named', () => {
+    const declared = { output: { artifacts: [{ id: 'map', name: 'Map', pointer: '' }] } };
+    const revision = (revisionOf) => base([round('r1', ['A'], declared), round('r2', ['A'], { input: ['r1'], output: { artifacts: [{ id: 'map', name: 'Map v2', pointer: '', revisionOf }] } }), synthesis('final', ['B'])]);
+    expect(errorPaths(revision(mapRef))).toEqual(['steps[1].output.artifacts[0].revisionOf']);
+    expect(errorPaths(revision('map'))).toEqual(['steps[1].output.artifacts[0].revisionOf']);
+    const notInInput = base([round('r1', ['A'], declared), round('r2', ['A'], { output: { artifacts: [{ id: 'map', name: 'Map v2', pointer: '', revisionOf: mapRef }] } })]);
+    expect(errorPaths(notInInput)).toEqual(['steps[1].output.artifacts[0].revisionOf']);
+  });
+
+  test('an input artifact that the step does not declare is refused by its id', () => {
+    const schema = base([round('r1', ['A'], { output: { artifacts: [{ id: 'map', name: 'Map', pointer: '' }] } }), round('r2', ['B'], { input: [{ artifact: { step: 'r1', participant: 'A', id: 'nope' }, version: 'latest' }] })]);
+    expect(errorPaths(schema)).toEqual(['steps[1].input[0].artifact.id']);
+  });
+});
