@@ -480,6 +480,10 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
     } catch (_) {}
   };
   walkRoot(document);
+  if (normalizedModel === 'gemini') {
+    const turns = document.querySelectorAll('model-response');
+    if (turns.length) nodes.splice(0, nodes.length, turns[turns.length - 1]);
+  }
   if (normalizedModel === 'le chat') {
     const assistants = document.querySelectorAll('[data-message-author-role="assistant"], [data-role="assistant"]');
     const latest = assistants[assistants.length - 1];
@@ -493,9 +497,18 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
     if (node?.closest?.('textarea,input,button,nav,header,footer,form,[contenteditable="true"],[data-message-part-type="reasoning"],[data-message-author-role="user"],[data-role="user"],[hidden],[inert],[aria-hidden="true"]')) return true;
     return false;
   };
-  const getText = (node) => normalizedModel === 'le chat' && window.AnswerStructure
-    ? window.AnswerStructure.linearizeText(node)
-    : String(node?.innerText || node?.textContent || '').replace(/\s+/g, ' ').trim();
+  const getText = (node) => {
+    if (['le chat', 'gemini'].includes(normalizedModel) && window.AnswerStructure) {
+      return window.AnswerStructure.linearizeText(node);
+    }
+    if (normalizedModel === 'gemini') {
+      const rawText = String(node?.innerText || node?.textContent || '').replace(/\s+/g, ' ').trim();
+      if (/(?:Ответ Gemini|Gemini said:?)\s*$/i.test(rawText)) return '';
+      const label = node.querySelector('h6.screen-reader-model-response-label');
+      return label ? rawText.replace(String(label.innerText || label.textContent || '').trim(), '').trim() : rawText;
+    }
+    return String(node?.innerText || node?.textContent || '').replace(/\s+/g, ' ').trim();
+  };
   const hashText = (value = '') => {
     const text = String(value || '');
     let hash = 2166136261;
@@ -522,9 +535,11 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
       const selector = nodeSelectors.get(node) || '';
       const descriptor = `${selector}#${index}`;
       const className = String(node.className || '');
+      const htmlNode = normalizedModel === 'gemini' ? node.cloneNode(true) : node;
+      if (normalizedModel === 'gemini') htmlNode.querySelectorAll('h6.screen-reader-model-response-label').forEach(label => label.remove());
       const html = normalizedModel === 'le chat' && window.ContentUtils?.buildInlineHtml
         ? window.ContentUtils.buildInlineHtml(node, { includeRoot: false })
-        : String(node.innerHTML || '').trim();
+        : String(htmlNode.innerHTML || '').trim();
       const isMarkdown = /markdown|prose|qwen-markdown|markdown-body/i.test(`${selector} ${className}`);
       const assistantNode = node.closest?.('[data-markdown-text-style="assistant-message"],[data-message-author-role="assistant"],[data-role="assistant"],.assistant-message,.qwen-chat-message-assistant,[class*="assistant" i]');
       const isAssistantRole = !!assistantNode;
@@ -545,6 +560,7 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
       };
     })
     .filter((candidate) => candidate.text.length >= minChars)
+    .filter((candidate) => !(normalizedModel === 'gemini' && /(?:Ответ Gemini|Gemini said:?)\s*$/i.test(candidate.text)))
     .filter((candidate) => !excludeTextSignatures.has(normalizeSignature(candidate.text)))
     .filter((candidate) => !skipSelectors.has(candidate.selector) && !skipSelectors.has(candidate.descriptor));
   // F6.2: positional turn anchor from the dispatch baseline — candidates that
@@ -1097,6 +1113,7 @@ async function lateCollectAnswer({ llmName, tabId, reason = 'late_collect', meta
 
 function acceptLateCollectResult(llmName, result, meta = {}) {
   if (!llmName || !result?.ok || !result.text) return false;
+  if (String(llmName).toLowerCase() === 'gemini' && answerHasNoBodyYet(result.text)) return false;
   const entry = jobState?.llms?.[llmName] || null;
   const incomingText = String(result.text || '').trim();
   const incomingHtml = String(result.html || '');
@@ -2105,6 +2122,9 @@ function shouldAcceptMaterializeRecoveryResult(llmName, entry, result = {}, evid
   const source = String(result?.source || evidenceSummary?.source || '').toLowerCase();
   const text = String(result?.text || evidenceSummary?.text || '').trim();
   const length = text.length;
+  if (String(llmName).toLowerCase() === 'gemini' && answerHasNoBodyYet(text)) {
+    return { ok: false, reason: 'gemini_answer_body_pending', length, source: source || null };
+  }
   const dispatchId = evidenceSummary?.dispatchId || result?.dispatchId || entry?.lastDispatchMeta?.dispatchId || entry?.confirmedDispatchId || null;
   if (isStaleBaselineCandidate(entry, text, dispatchId)) {
     return { ok: false, reason: 'stale_baseline_answer', length, source: source || null, dispatchId };
@@ -4369,12 +4389,31 @@ const finalizeNoSendModelIfStalled = (llmName, sessionId, reason = 'round4_gate'
   if (dispatchAttempts <= 0) return false;
   const hasPromptConfirmation = !!entry.promptSubmittedAt;
   if (hasPromptConfirmation) return false;
+  const now = Date.now();
+  const sessionStart = Number(jobState?.session?.startTime || 0) || now;
+  const stallStartedAt = Number(entry.lastDispatchAt || sessionStart);
+  const elapsedMs = Math.max(0, now - stallStartedAt);
+  const dispatchId = entry.lastDispatchMeta?.dispatchId || null;
+  const currentProviderProgressAt = entry.providerDispatchStageDispatchId === dispatchId
+    ? Number(entry.providerDispatchStageAt || 0) : 0;
+  // The fixed foreground slot can end without submission evidence and leave
+  // only this flag behind. IDLE/ERROR is no longer an executing dispatch: give
+  // it the composer grace window, then let the ordinary materialize probe
+  // check for a real answer before closing it as NO_SEND.
+  const idleConfirmationExpired = entry.awaitingSubmitConfirmation === true
+    && entry.dispatchInFlight !== true
+    && ['IDLE', 'ERROR'].includes(String(entry.dispatchState || 'IDLE').toUpperCase())
+    && !['RECEIVING', 'STREAMING', 'GENERATING'].includes(String(entry.status || '').toUpperCase())
+    && !self.RecoveryIntent?.hasMatchingLifecycleEvidence?.(entry, dispatchId)
+    && elapsedMs >= ROUND_PROVIDER_PIPELINE_OWNERSHIP_TTL_MS
+    && now - Math.max(stallStartedAt, currentProviderProgressAt,
+      Number(entry.lastRuntimeActivityAt || 0)) >= NO_SEND_STALL_GRACE_MS;
   // A provider dispatch can remain queued behind the focus/visit lease well past
   // the ordinary no-send grace window. In that state "not confirmed yet" is not
   // evidence that the send failed. Let the round4 gate keep waiting; its bounded
   // timeout remains the final backstop if the dispatch never settles.
   const dispatchStillPending = Boolean(
-    entry.awaitingSubmitConfirmation === true
+    (entry.awaitingSubmitConfirmation === true && !idleConfirmationExpired)
     || entry.dispatchInFlight === true
     || ['QUEUED', 'ACTIVATING', 'READY', 'TYPING', 'SUBMITTING'].includes(
       String(entry.dispatchState || '').toUpperCase()
@@ -4400,9 +4439,6 @@ const finalizeNoSendModelIfStalled = (llmName, sessionId, reason = 'round4_gate'
     }
     return false;
   }
-  const sessionStart = Number(jobState?.session?.startTime || 0) || Date.now();
-  const stallStartedAt = Number(entry.lastDispatchAt || sessionStart || Date.now());
-  const elapsedMs = Math.max(0, Date.now() - stallStartedAt);
   if (elapsedMs < NO_SEND_STALL_GRACE_MS) return false;
   // Force-final is one-shot per dispatch: handleLLMResponse may defer terminal into
   // async materialize recovery, and re-firing on every gate poll re-enters that path.
@@ -8290,6 +8326,13 @@ function handleLLMResponse(llmName, answer, error = null, meta = null, answerHtm
     return typeof answer === 'string' ? answer : String(answer ?? '');
   })().trim();
   const earlyIsSuccess = !error && !!earlyAnswerText;
+  // Label/thinking is a pending turn, not a failed or successful answer. Keep
+  // collection open even for fallback deliveries that bypass DOM inspection.
+  if (llmName.toLowerCase() === 'gemini' && answerHasNoBodyYet(earlyAnswerText)) {
+    if (!error) return;
+    answer = '';
+    answerHtml = '';
+  }
   if (earlyIsSuccess && self.CompletionAuthorityRegistry?.validateDelivery) {
     const authorityGate = self.CompletionAuthorityRegistry.validateDelivery(llmName, {
       answer: earlyAnswerText,
@@ -10062,6 +10105,8 @@ function runStaticAnswerWatchTick(sessionId) {
       return;
     }
     if (!text.trim()) return;
+    // Only the thinking of the model is on the page: the quiet is not the end of the answer.
+    if (typeof answerHasNoBodyYet === 'function' && answerHasNoBodyYet(text)) { watch.since = now; return; }
     const quietMs = now - watch.since;
     if (typeof answerHasDeliveryToken === 'function' && answerHasDeliveryToken(llmName, text)) {
       if (quietMs >= STATIC_WATCH_TOKEN_QUIET_MS) {

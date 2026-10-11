@@ -2,8 +2,8 @@
 // A schema holds only explicit overrides; every field it does not mention comes from DEFAULTS here.
 // One place assembles the final configuration: resolveFields (a value of a card) and assemble
 // (the engine's steps). The canvas, the request preview and the run all go through them, and
-// validate() runs before the first request. Rules: docs/Pipeline scenarios/basic-engine-and-schemas.md,
-// field reference: docs/Pipeline scenarios/basic-schema-reference.md.
+// validate() runs before the first request. Rules: docs/Pipeline scenarios/basic-developer.md,
+// field reference and how to write a schema: docs/Pipeline scenarios/basic-schema-guide.md.
 //
 // Schema: { schemaVersion, origin: 'builtin' | 'user', basedOn?, defaults?, steps }
 //   run: { policy?: 'auto' | 'manual', maxWords? } — the run policy and the shared answer limit

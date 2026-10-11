@@ -1,9 +1,74 @@
 # CHANGELOG — Project
 
-### 2026-10-11 — The delivery token proves completeness only at the end of the answer, version 2.81.691
+### 2026-10-11 — The delivery token proves completeness only at the end of the answer, version 2.81.699
 
 - `answerHasDeliveryToken` counts the token only when it is the last line of the text (provider chrome up to 40 characters may follow). The same text in the middle (a quoted instruction, a prompt echo) no longer makes a cut answer look complete.
 - A committed text with its own token is journaled as `static_answer_committed`, not `incomplete_answer_committed`.
+
+### 2026-10-10 — The end of a Basic run no longer adds a card that repeats the answers, version 2.81.698
+
+- Removed the card «Basic · итог» (`results.js`, `runCustomFromPage`): it repeated the accepted answers of the last step, which the cards of that step already show. The result of a run is the cards of its steps; the end is the notification «Basic: <причина>.», with «Принятых ответов нет.» added when no answer was accepted (`basicRunNotice`).
+- Docs: `basic-start-here.md` (what the user sees at the end of a run), `basic-developer.md`, `AGENTS.md`.
+- Tests: `tests/results-debate-favorites.test.js` (no second card; the text of the notification).
+
+### 2026-10-10 — A retry after a missing answer repeats the request, version 2.81.697
+
+- Field export for 2.81.695: Gemini round 3 failed with `completion_authority_dispatch_mismatch`, so the round had no text. The page shows the full round-3 request was never sent; the engine judged the missing text as an «empty answer» and sent «Твой предыдущий ответ пустой…» without the task. Gemini answered that line, so the round-3 answer is not an answer to the round.
+- `disput/custom-engine.js`: when an attempt returns no text at all (`empty`), the retry sends the same request again. The correction text is kept for answers that came back and were not accepted (`token_only`, too short, cut off, error).
+- The cause of the dispatch-id mismatch itself is not found; the log does not show which dispatch id the delivery carried. Open.
+
+### 2026-10-10 — Basic documentation cut from nine documents to four, without repeats (documents and tests only, no version change)
+
+- `basic-start-here.md` is now the one place that describes what Basic is and how a run goes (steps, acceptance and repeats, pause and Stop, what appears on the page, how «Basic · итог» is formed, the canvas, the journal events and the run record). `basic-developer.md` holds the code map, the schema rules and the reasons of the decisions, Save / Export / Import and the storage, the diagnostics, the open questions and the tests that fail all the time. `basic-windows.md` describes the setting windows. `basic-schema-guide.md` is unchanged and still self-contained.
+- Removed: `basic-how-it-works.md`, `basic-code-map.md`, `basic-diagnostics.md`, `basic-open-issues.md`, `basic-engine-and-schemas.md`, `basic-schema-reference.md`, `basic-pipeline.md` (their content moved; the accepted-limits block was dropped because each limit is already described where it belongs). From 1753 to 1257 lines. `AGENTS.md`, the documentation map, the scenario how-to and the comment in `disput/basic-schema.js` point to the new files.
+- Tests: `tests/basic-docs-refs.test.js` and `tests/basic-schema.test.js` read the new files.
+
+### 2026-10-10 — Bound an idle unconfirmed dispatch, version 2.81.696
+
+- Field exports for 2.81.695: Gemini round 1 delivered 2028 characters; round 2 accepted the command but had no confirmed submission or answer for several minutes. A subsequent run was refused 111 times with `RUN_ALREADY_ACTIVE`.
+- The round gate no longer treats a leftover `awaitingSubmitConfirmation` flag in an idle/error dispatch as active work for the full 500/950-second generation window. After the existing 180-second composer grace and 45 seconds without current-dispatch provider/runtime progress, run the ordinary answer materialization check and close missing delivery as `NO_SEND`.
+- Protect actual in-flight/queued dispatches, confirmed prompts, receiving/streaming answers and recent provider progress. Gemini service-label removal and panel layout are unchanged.
+- Regression tests fail twice before the fix; eight related suites pass (97 tests). The field exports do not identify why the Gemini Send gesture failed; a live three-round run has not been verified. See `docs/gemini-submit-stall-2.81.696.md`.
+
+### 2026-10-10 — One document for what is open in Basic (documents and a test only, no version change)
+
+- New `docs/Pipeline scenarios/basic-open-issues.md`: the open questions (the parked model that disappears from the canvas, `owner_answer` with `stage: null` on a skip, the acceptance that does not check length, the card revision of a repeated answer, the old-format records in an import), the accepted limits, and the tests that fail all the time or at random, each with what happens, why, what to do, where in the code and how to check. The same blocks were removed from `basic-engine-and-schemas.md` and `basic-diagnostics.md`, which now point to it.
+- `basic-pipeline.md`: names damaged by the rename (`runBasicFromPage`, `BasicEngine`, `resolveBasicFields`) are corrected to the code's; the description of the ▶ window and of the order of resolution follows the round window.
+- `tests/basic-docs-refs.test.js`: every item of the summary has a section, the code places and the listed test files exist.
+
+### 2026-10-10 — Remove Gemini's service response label from collected answers, version 2.81.695
+
+- At the user's request, complete Gemini answers no longer include the page's hidden «Ответ Gemini» label in text or HTML. This supersedes the label-retention preference for 2.81.694.
+- Keep the raw-turn body check before removing the label, so the thinking/label-only gap is still rejected. Clean structured, legacy, SelectorFinder, snapshot and inline recovery paths; strip the service element when rendering lifecycle HTML as well. The actual provider page and quoted occurrences inside answer content remain unchanged.
+- Updated `tests/gemini-answer-gap.test.js`: the 13.5-second gap remains covered, with additional checks for label removal, quote preservation and helper-unavailable recovery.
+
+### 2026-10-10 — Gemini: wait for the answer body and fill the primary card, version 2.81.694
+
+- Check Gemini's raw turn before accessibility filtering: a thinking heading plus the screen-reader label cannot become answer text after the label is discarded. Keep «Ответ Gemini» in complete answers.
+- Resolve one whole Gemini turn instead of nested fragments. Legacy and snapshot recovery read the latest `model-response`, wait through the label-only gap, and cannot substitute an older turn. Background recovery/delivery also reject thinking-only candidates before publishing them.
+- A real answer replaces a closed Gemini label/thinking placeholder in the primary card. Stale label-only HTML cannot conceal committed text, including short answers. Feed layout and moderator input width are unchanged.
+- Regression: `tests/gemini-answer-gap.test.js` (13.5 s gap, eventual delivery token, legacy/snapshot paths, primary card and stale HTML). Investigation and validation: `docs/gemini-answer-gap-2.81.694.md`.
+
+### 2026-10-10 — A Gemini text of only thinking + page label is not an answer anywhere, version 2.81.693
+
+- While Gemini thinks, the page text is «heading of the thinking\nОтвет Gemini» (28–46 characters), and for ~13 s between the end of the thinking and the first words of the answer it is the label alone. The heading plus the label passed the `length >= 20` bar of `AnswerContentClassifier`, so the pipeline finalized it and the card kept «Ответ Gemini» as the answer (the real answer came later as Δ revisions).
+- `AnswerContentClassifier` now classes a short text that ends with the label as `ui_noise` / `gemini_thinking_only` (not terminal-eligible): the pipeline finalization and the background acceptance both use it. The legacy wait of the Gemini adapter (`grabLatestAssistantMarkup`) skips such a text too. A text with the answer after the label is unchanged.
+
+### 2026-10-10 — Gemini's stop button is seen in the Russian interface, version 2.81.692
+
+- The stop button of Gemini is named «Остановить генерацию ответа» in the Russian interface; the selector knew only «Stop», so the answer watcher saw no generation (`stop=0`) while the model was still thinking. `button[aria-label*="Остановить генерацию" i]` is added to the stop button of the Gemini pipeline selectors and to the generation elements of the Gemini adapter.
+- Field log of one run (while thinking, the text of `model-response` is «heading of the thinking\nОтвет Gemini»; the answer starts with the label) confirms the rule of 2.81.691.
+
+### 2026-10-10 — A quiet text that holds only Gemini's thinking is not committed as the answer, version 2.81.691
+
+- The static answer watchdog (added after 2.81.604) committed a text that did not change for 30 s as an incomplete answer. While Gemini was still thinking, the page showed only the heading of the thinking and the hidden label "Ответ Gemini" — that became the card (R1/R2 without an answer). A text that ends with the label is now never committed (`answerHasNoBodyYet`, in the watchdog and in `commitIncompleteAnswer`, which also covers the commit after visits); the watchdog waits for the body of the answer.
+- The removal of the page label from cards and from the collected html (2.81.687–689) is reverted: the label stays as in 2.81.604.
+
+### 2026-10-10 — Basic documentation for a model that knows nothing about the project (documents and a test only, no version change)
+
+- New entry and explanation documents in `docs/Pipeline scenarios/`: `basic-start-here.md` (what Basic and a schema are, glossary, the names interface → code, the reading order), `basic-how-it-works.md` (a run step by step, who does what, what appears on the page, how «Basic · итог» is formed, the journal events, questions with exact answers), `basic-code-map.md` (files, functions of `results.js`, tests, what to change for typical changes), `basic-diagnostics.md` (symptom → where to look, what to collect). `basic-engine-and-schemas.md` got «Решения и причины»; `basic-pipeline.md` lost its version marks and points to the new documents. `AGENTS.md`, `README.md`, `docs/project-overview.md` and `docs/documentation-map.md` lead to `basic-start-here.md`.
+- `tests/basic-docs-refs.test.js` keeps them true to the code: the files and symbols of the code map exist, the journal events and the stop / rejection reasons match the engine, every relative link of the Basic documents leads to a file.
+- Checked by a cold read: a fresh model, given only the documents, answered 12 questions (among them how «Basic · итог» is formed); the gaps it found are closed.
 
 ### 2026-10-10 — The answer text wins over html that holds only the thinking heading, version 2.81.690
 
@@ -7440,7 +7505,7 @@ Backlog `what-to-do.md`, батч 1 (UI + Финализация).
 - Для чего: сделать подозрительно короткий SUCCESS диагностируемым (в реальном прогоне Claude закрылся `SUCCESS` на 233 символах при 2.4–5k у остальных моделей; правомерность ответа нельзя было оценить по экспорту). Изменение: `buildFinalizationEvidence()` пишет `lengthPolicy` (policyRef, пороги, `meetsTerminalMin`, `suspectShortSuccess`) в finalization evidence каждого terminal outcome; accepted SUCCESS короче 400 символов даёт warning `ANSWER_LENGTH_SUSPECT` (без смены статуса). Файлы: `background/job-orchestrator.js`, `background/telemetry-logs.js`.
 - Для чего: исправить telemetry/export completeness defect — JSON-экспорт того же прогона не содержал ни одного terminal/finalization события (при пустом UI-фильтре экспортировался только результат фильтра ≈ round events), тогда как MD-экспорт их содержал. Изменение: JSON-экспорт сериализует полный run-scoped кэш без UI-фильтров и добавляет группу `<RUN_SUMMARY>` (per-model `MODEL_OUTCOME` с финальным статусом/`no_terminal_outcome` и `RUN_EXPORT_STATE` c `export_during_active_run`/`run_complete` и списком pending-моделей) через новый `shared/telemetry-export.js`. Файлы: `results-devtools.js`, `shared/telemetry-export.js`, `result_new.html`, `pipeline_panel.html`.
 - Для чего: diagnostics storage не должен терять pinned terminal-события до экспорта (старый бюджет 200 записей/50KB вытеснял даже `MODEL_FINAL`). Изменение: бюджеты подняты до 400 записей/120KB в обоих write-путях, `FINALIZATION_DECISION` и `ANSWER_LENGTH_SUSPECT` добавлены в pinned labels read/write-трима. Файлы: `background/telemetry-logs.js`, `background/message-router.js`.
-- Для чего: закрепить регрессии тестами. Изменение: добавлены `tests/round4-gate.test.js` (one-shot force-final, re-arm на новый dispatch, gate timeout → `extract_failed`, повторный gate без повторного финала, `ROUND4_GATE_WAIT`), `tests/grok-dom-fallback.test.js` (single-flight loop), `tests/answer-length-policy.test.js` (policy thresholds, `lengthPolicy` в evidence, `ANSWER_LENGTH_SUSPECT` на короткий SUCCESS и его отсутствие на failure), `tests/telemetry-export.test.js` (terminal/no-terminal summary, приоритет `MODEL_FINAL` над `RECOVERABLE_ERROR`, `export_during_active_run` на replay реального прогона). Итог: 43 suites / 196 tests green (baseline 39/170).
+- Для чего: закрепить регрессии тестами. Изменение: добавлены `tests/round4-gate.test.js` (one-shot force-final, re-arm на новый dispatch, gate timeout → `extract_failed`, повторный gate без повторного финала, `ROUND4_GATE_WAIT`), `tests/grok-dom-fallback.test.js` (single-flight loop), `tests/answer-length-policy.test.js` (policy thresholds, `lengthPolicy` в evidence, `ANSWER_LENGTH_SUSPECT` на короткий SUCCESS и его отсутствие на failure), `tests/telemetry-export.test.js` (terminal/no-terminal summary, приоритет `MODEL_FINAL` над `RECOVERABLE_ERROR`, `export_during_active_run` на replay реального прогона). Итог: 43 suites / 197 tests green (baseline 39/170).
 - Версия: `manifest.json` 2.74.97 → 2.74.98. Примечание: green test suite ≠ release-ready; требуется реальный мульти-модельный smoke-run с анализом обоих экспортов (checklist в финальном отчёте).
 
 ### 2026-06-10 00:00 CEST

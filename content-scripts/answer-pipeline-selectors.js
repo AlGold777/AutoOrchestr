@@ -149,7 +149,7 @@
       streamStart: ['[data-test-id*=\"model-response\"]', '[data-testid*=\"model-response\"]', '.model-response', 'model-response', 'message-content', '[data-message-author-role=\"assistant\"]', '[data-role=\"assistant\"]'],
       generatingIndicators: ['.loading', '[aria-busy=\"true\"]', '[data-is-loading=\"true\"]', '[data-loading=\"true\"]', '[data-streaming=\"true\"]'],
       completionIndicators: ['rich-textarea', 'textarea[aria-label*=\"Prompt\" i]', 'textarea[aria-label*=\"Message\" i]', 'textarea[aria-label*=\"Ask\" i]'],
-      stopButton: 'button[aria-label*=\"Stop\" i]',
+      stopButton: 'button[aria-label*=\"Stop\" i], button[aria-label*=\"Остановить генерацию\" i]',
       copyButton: COPY_BUTTON_SELECTORS
     },
     grok: {

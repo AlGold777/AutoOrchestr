@@ -481,6 +481,15 @@ is `Only problems`; it never filters the JSON/MD export, which is always
 complete. Drill-down by request, stage or model is done on the export with
 `scripts/summarize-report.js`.
 
+## Basic Pipeline
+
+Basic is the single pipeline that is developed further: a universal engine
+(`disput/custom-engine.js`, named `custom` in code) and a schema (JSON) on top of
+it. The schema describes rounds and syntheses, models, tasks, inputs and run
+policy; it stores only explicit differences from the Basic defaults. Start with
+[Pipeline scenarios/basic-start-here.md](Pipeline%20scenarios/basic-start-here.md)
+for the glossary, the name map from interface to code, and the reading order.
+
 ## Debate / Disput Pipeline
 
 The Disput pipeline is implemented through:

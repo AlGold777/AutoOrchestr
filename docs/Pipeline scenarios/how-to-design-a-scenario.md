@@ -229,7 +229,7 @@
 
 ### 12. Записать как схему Basic
 
-Оформленный сценарий можно записать схемой движка Basic (поля и правила — в [basic-schema-reference.md](basic-schema-reference.md)):
+Оформленный сценарий можно записать схемой движка Basic (поля и правила — в [basic-schema-guide.md](basic-schema-guide.md)):
 
 - этапы → шаги `steps`: раунды — `r1`, `r2`… (`kind: round`), промежуточный синтез — `synth:<id>` (`kind: synthesis`), финальный — `final`;
 - модели этапа → `models` (`name`); задание этапа → `task`; порядок и вход раунда → `order` и `input`;

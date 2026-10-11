@@ -143,7 +143,7 @@
         && metadataByElement.get(parent)?.sourceKind === 'primary'
         && metadataByElement.get(node)?.sourceKind === 'primary'
         && parent.contains(node)
-        && (options.platform === 'chatgpt'
+        && (options.platform === 'chatgpt' || options.platform === 'gemini'
           || (enclosingMessage(node) && enclosingMessage(parent) !== parent
             && enclosingMessage(node) === enclosingMessage(parent)))));
     const sorted = sortDocumentOrder(turnCandidates);

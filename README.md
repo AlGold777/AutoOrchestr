@@ -40,6 +40,7 @@ updates as new messages arrive. Click outside the window or press Esc to close i
 - Timing architecture and current values: [docs/Transport/timings-settings.md](docs/Transport/timings-settings.md)
 - Pipeline baseline, audits and unfinished migration plans: [docs/Pipeline scenarios/Pre-Dispute](<docs/Pipeline scenarios/Pre-Dispute>)
 - Universal task engine concept and draft contracts: [docs/Architecture/Universal Engine/README.md](<docs/Architecture/Universal Engine/README.md>)
+- Basic pipeline (the engine and its schemas): start with [docs/Pipeline scenarios/basic-start-here.md](<docs/Pipeline scenarios/basic-start-here.md>)
 - Append-only change history: [docs/CHANGELOG.md](docs/CHANGELOG.md)
 
 ## Development

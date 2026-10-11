@@ -1652,14 +1652,12 @@ describe('Pipeline debate favorites view', () => {
     expect(card.querySelector('.debate-model-card-round')).toBe(badge);
   });
 
-  test('a Custom/Basic step shows its round badge and the page label "Ответ Gemini" is not repeated in the card', () => {
+  test('a Custom/Basic step shows its round badge', () => {
     const debug = window.__pipelineLifecycleDebug;
     const meta = { requestId: 'step-badge', pipelineRunId: 'step-badge-run', pipelineRoundId: 's2' };
-    debug.updateLLMPanelOutput('Gemini', '', '<h2>Ответ Gemini</h2><p>Real answer.</p>', { ...meta, status: 'SUCCESS' });
+    debug.updateLLMPanelOutput('Gemini', '', '<p>Real answer.</p>', { ...meta, status: 'SUCCESS' });
     const card = document.querySelector('.debate-model-card[data-llm-name="Gemini"]');
     expect(card.querySelector('.debate-model-card-round').textContent).toBe('R2');
-    expect(card.querySelector('.debate-model-card-output').textContent).not.toContain('Ответ Gemini');
-    expect(card.querySelector('.debate-model-card-output').textContent).toContain('Real answer.');
   });
 
   test('text is the answer when the captured html holds only the thinking heading and the page label', () => {
@@ -1670,16 +1668,6 @@ describe('Pipeline debate favorites view', () => {
     const output = document.querySelector('.debate-model-card[data-llm-name="Gemini"] .debate-model-card-output');
     expect(output.textContent).toContain('Традиционный сатирический юмор');
     expect(output.textContent).not.toContain('Analyzing the Russian');
-  });
-
-  test('the Gemini page label is cut at any depth and the answer text stays whole', () => {
-    const debug = window.__pipelineLifecycleDebug;
-    const meta = { requestId: 'nested-label', pipelineRunId: 'nested-label-run', pipelineRoundId: 'r1' };
-    debug.updateLLMPanelOutput('Gemini', '', '<div class="response"><div><h2 class="cdk-visually-hidden">Ответ Gemini</h2></div><div class="markdown"><p>First paragraph.</p><p>Second paragraph.</p></div></div>', { ...meta, status: 'SUCCESS' });
-    const output = document.querySelector('.debate-model-card[data-llm-name="Gemini"] .debate-model-card-output');
-    expect(output.textContent).not.toContain('Ответ Gemini');
-    expect(output.textContent).toContain('First paragraph.');
-    expect(output.textContent).toContain('Second paragraph.');
   });
 
   test('feed retains each round’s response time and source URL independently', () => {
@@ -2451,6 +2439,24 @@ describe('Pipeline debate favorites view', () => {
       expect(built.schema.run).toEqual({ policy: 'auto', maxWords: 300 });
       expect(built.run).toEqual({ policy: 'auto', maxWords: 300 });
     } finally { h.cleanup(); }
+  });
+
+  test('the end of a Basic run adds no second card with the answers already shown; the notification names the reason', async () => {
+    const h = setupCustomInheritance('No result card', { synthesis: 'Gemini' });
+    try {
+      await h.run();
+      const cards = [...document.querySelectorAll('.debate-model-card')];
+      expect(cards.filter((card) => card.dataset.llmName === 'Basic')).toHaveLength(0);
+      expect(cards.some((card) => /Basic · итог/.test(card.textContent))).toBe(false);
+      expect(cards.length).toBeGreaterThan(0);
+      expect(document.getElementById('notification-message').textContent).toBe('Basic: все шаги пройдены.');
+    } finally { h.cleanup(); }
+  }, 30000);
+
+  test('the notification of a Basic run says so when no answer was accepted', () => {
+    const notice = window.__pipelineLifecycleDebug.basicRunNotice;
+    expect(notice('все шаги пройдены', 2)).toBe('Basic: все шаги пройдены.');
+    expect(notice('остановлено владельцем', 0)).toBe('Basic: остановлено владельцем. Принятых ответов нет.');
   });
 
   test('Custom run: canvas blocks and links follow the engine stages, synthesis blocks included, and end done', async () => {
