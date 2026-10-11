@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — Basic: tests of the transitions named in the plan (three ways, self-loop, feedback before invalidation), version 2.81.728
+
+- Tests only; no change of behaviour. `tests/custom-engine-route.test.js`: the three ways of a rule route (`revise` goes to its own target). `tests/custom-engine-flow.test.js`: a self-loop of a gate is limited (`loop_limit` on the third transition). `tests/custom-engine-validity.test.js`: the feedback is resolved before the invalidation, so it keeps the answer that the goto makes stale, and it goes only to the new visit of the target.
+
 ### 2026-10-11 — Basic: controlled change (return, resumeAt, nested stack), version 2.81.727
 
 - `CustomEngine.run` (`disput/custom-engine.js`): a stale step gives no input to `previous` or `all`, and an older answer is not substituted for it (before: `previous` went back to the last step with answers). A skipped step still passes nothing on, as before.

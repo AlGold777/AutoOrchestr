@@ -69,6 +69,14 @@ describe('Custom engine transitions (6.3, 6.4)', () => {
     expect(result.state.loopCounters).toEqual({ 'gate:g1:onFail': 2 });
   });
 
+  test('a self-loop is limited like any other transition: the third transition to the same gate is not made', async () => {
+    const { send, calls } = transport({ A: ['карта'], B: [FAIL('срок'), FAIL('срок'), FAIL('срок')] });
+    const result = await Engine.run({ task: 'T', steps: [r1, gate({ goto: 'gate:g1', maxLoops: 2 })], send });
+    expect(result.stopReason).toBe('loop_limit');
+    expect(calls.map((call) => call.models[0])).toEqual(['A', 'B', 'B', 'B']);
+    expect(result.state.loopCounters).toEqual({ 'gate:g1:onFail': 2 });
+  });
+
   test('stop names its reason as the stop reason; the step result stays in the history', async () => {
     const { send, calls } = transport({ A: ['карта'], B: [FAIL('срок')] });
     const result = await Engine.run({ task: 'T', steps: [r1, gate({ stop: 'нужна ручная проверка' }), r2], send });

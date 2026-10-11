@@ -106,6 +106,21 @@ describe('Custom engine validity of results (6.3)', () => {
     expect(calls.find((call) => call.models[0] === 'B').prompts.B).not.toContain('m1');
   });
 
+  test('the feedback is resolved before the invalidation: it keeps the answer that the goto makes stale, and goes to the new visit only', async () => {
+    const steps = [
+      { ref: 'S1', kind: 'round', input: 'none', models: ['A'] },
+      { ref: 'S2', kind: 'round', models: ['B'] },
+      { ref: 'G', kind: 'gate', criteria: ['c'], models: ['C'], onFail: { goto: 'S1', maxLoops: 1, feedback: [{ step: 'S2', participant: 'B' }] } }
+    ];
+    const { send, calls } = transport({ A: ['a1', 'a2'], B: ['b1', 'b2'], C: [FAIL, PASS] });
+    const result = await Engine.run({ task: 'T', steps, send });
+    expect(result.stopReason).toBe('steps_done');
+    expect(visitsOf(result, 'S2')).toEqual([[1, false], [2, true]]);
+    expect(calls[3].prompts.A).toContain('Замечания, вызвавшие возврат');
+    expect(calls[3].prompts.A).toContain('b1');
+    expect(calls[4].prompts.B).not.toContain('Замечания, вызвавшие возврат');
+  });
+
   test('an explicit invalidate of a step that is not in the plan is refused before the first request', async () => {
     const steps = [
       { ref: 'S1', kind: 'round', input: 'none', models: ['A'] },

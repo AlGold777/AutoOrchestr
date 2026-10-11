@@ -51,6 +51,12 @@ describe('Custom engine rule routes (6.2)', () => {
     expect(result.steps.find((step) => step.ref === 'route:audit').route).toEqual({ id: 'close', by: 'rule', reason: 'rule' });
   });
 
+  test('three ways: the case that names revise goes to its own target; close and otherwise are the other two ways', async () => {
+    const { send, calls } = transport({ A: [routeOf('revise')], B: ['b'], C: ['c'], D: ['d'] });
+    await Engine.run({ task: 'T', steps: steps(rules()), send });
+    expect(calls.map((call) => call.models)).toEqual([['A'], ['B'], ['C'], ['D']]);
+  });
+
   test('no case holds: otherwise is taken; the answer is compared with eq, a missing field does not match', async () => {
     const { send, calls } = transport({ A: ['{"other":1}'], D: ['d'] });
     await Engine.run({ task: 'T', steps: steps(rules()), send });
