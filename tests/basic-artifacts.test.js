@@ -37,14 +37,13 @@ describe('Basic artifact registry (5.3)', () => {
   });
 });
 
-// The page loads the modules as the other Basic files: before the engine, which uses them at run time.
-describe('the page loads the Basic modules', () => {
+// The pages that load the engine (pipeline_panel.html and result_new.html) load the modules before it: the engine uses them at run time.
+describe('the pages load the Basic modules', () => {
   const fs = require('fs');
   const path = require('path');
-  const html = fs.readFileSync(path.join(__dirname, '..', 'pipeline_panel.html'), 'utf8');
-  const at = (name) => html.indexOf(`src="disput/${name}"`);
-
-  test('basic-artifacts.js and basic-output.js come before custom-engine.js', () => {
+  test.each(['pipeline_panel.html', 'result_new.html'])('%s: basic-artifacts.js and basic-output.js come before custom-engine.js', (page) => {
+    const html = fs.readFileSync(path.join(__dirname, '..', page), 'utf8');
+    const at = (name) => html.indexOf(`src="disput/${name}"`);
     expect(at('basic-artifacts.js')).toBeGreaterThan(-1);
     expect(at('basic-output.js')).toBeGreaterThan(-1);
     expect(at('basic-artifacts.js')).toBeLessThan(at('custom-engine.js'));

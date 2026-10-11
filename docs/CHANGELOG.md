@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — Basic: result_new.html loads the Basic modules, version 2.81.721
+
+- `result_new.html` loads `disput/basic-artifacts.js` and `disput/basic-output.js` before `disput/custom-engine.js`, as `pipeline_panel.html` does. Without them a Basic run on that page stops with `basic_modules_missing`.
+- Tests: `tests/basic-artifacts.test.js` checks the order in both pages.
+
 ### 2026-10-11 — Basic: the engine's header describes the threshold, the output and the artifacts, version 2.81.720
 
 - `disput/custom-engine.js`: the header comment names the output check, the threshold of `require`, the owner approval and the artifact registry; the rule of the transition says that «continue» is not offered below the threshold. No change of behaviour.
