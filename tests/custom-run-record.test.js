@@ -46,8 +46,8 @@ describe('Custom run record', () => {
     expect(second.instructions).toMatchObject({ task: 'Задача T', stepTask: 'Улучши', extra: 'Будь критиком.' });
     expect(second.input.mode).toBe('previous');
     expect(second.input.items).toEqual([
-      { label: '', source: { step: 0, label: 'Раунд 1', model: 'A', attempt: 1 }, text: 'a1' },
-      { label: '', source: { step: 0, label: 'Раунд 1', model: 'B', attempt: 1 }, text: 'b1' }
+      { label: '', source: { step: 0, visit: 1, label: 'Раунд 1', model: 'A', attempt: 1 }, text: 'a1' },
+      { label: '', source: { step: 0, visit: 1, label: 'Раунд 1', model: 'B', attempt: 1 }, text: 'b1' }
     ]);
     expect(second.answer).toBe('a2');
     expect(second).toMatchObject({ state: 'done', accepted: true, attribution: 'verified', transportRequestId: 'A-2' });

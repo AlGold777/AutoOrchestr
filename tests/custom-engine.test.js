@@ -315,7 +315,7 @@ describe('Custom engine refuses what it does not execute yet', () => {
   const ask = () => transport({ A: ['a1'], B: ['b1'] });
   const cases = [
     ['a gate without criteria', [{ ref: 'gate:g1', kind: 'gate', models: [{ name: 'A' }] }], 'invalid_field', 'criteria'],
-    ['a gate with a transition on pass (not yet executed)', [{ ref: 'gate:g1', kind: 'gate', criteria: ['c'], onPass: { goto: 'r1' }, models: [{ name: 'A' }] }], 'unsupported_field', 'onPass'],
+    ['a gate whose transition on pass names no step', [{ ref: 'gate:g1', kind: 'gate', criteria: ['c'], onPass: { goto: 'nope', maxLoops: 1 }, models: [{ name: 'A' }] }], 'unknown_target', 'nope'],
     ['a gate with pass other than all or any', [{ ref: 'gate:g1', kind: 'gate', criteria: ['c'], pass: 'most', models: [{ name: 'A' }] }], 'invalid_field', 'pass'],
     ['a route with no models is not dropped', [{ ref: 'route:x', kind: 'route', models: [] }], 'unsupported_kind', 'route:x'],
     ['an owner step', [{ ref: 'owner:o', kind: 'owner', models: [] }], 'unsupported_kind', 'owner:o'],

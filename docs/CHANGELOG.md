@@ -1,5 +1,17 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — Basic: the run has a pointer, visits and transitions of gates, version 2.81.724
+
+- `CustomEngine.run` (`disput/custom-engine.js`): the run walks a pointer (position in the plan), not a loop over the steps. A new execution of a step is a new visit (`visit`, from 1); a technical retry and a resume are not. The labels of sources name the visit; a source names the last visit of its step, and `previous`/`all` take the last valid visit of each earlier step (a step's older visit is never its current answer).
+- Transitions of a gate (`onPass`, `onFail`): `{goto, maxLoops, feedback, resumeAt}`, `{stop: reason}`, `{return: true, maxLoops}`. The shorthand `{goto, maxLoops}` is the same transition. A transition to an early or the current step counts in `loopCounters` under `ref:case` (`onPass`, `onFail`); the check comes before the transition: `loop_limit`. `goto` with `resumeAt` pushes a point of continuation, `return` pops it; an empty stack is `return_missing`.
+- `feedback` of a goto is resolved before the transition (addresses and text refs, the text stays in the record) and goes as the block «Замечания, вызвавшие возврат» only to the visit that the transition starts.
+- Checked before the first request (`transitionsProblem`): the shape and the fields of each action, `maxLoops` 1..5, a target that the plan has (`unknown_target`), a backward target without `maxLoops` (`invalid_field`), a cycle without a limit (`unbounded_cycle`, `BasicSchema.graph`). `invalidate` is refused (`unsupported_field`) until the next pack.
+- Journal: event `custom_transition` (`from`, `case`, `action`, `to`, `count`, `maxLoops`; `reason` for stop). Requests carry `visit`; `result.state` (`pc`, `visits`, `loopCounters`, `continuationStack`, `feedback`) is plain data for the checkpoint (A05). The source of an input item has `visit`.
+- Gate's `custom_gate` and `gate_failed` are unchanged. `onFail` as a transition no longer refuses the run.
+- Not yet: `invalidate` and the invalidation of dependent results and artifacts (P06, item 4); the route and the owner; the continuation after the reload (A05).
+- Docs: `basic-start-here.md` (refusals, stop reasons, events), `basic-schema-guide.md` (5.9).
+- Tests: `tests/custom-engine-flow.test.js` (new); `tests/custom-engine.test.js` (refusal row of gate transitions); `tests/custom-run-record.test.js` (the source item has `visit`).
+
 ### 2026-10-11 — Basic gate: a checker's verdict decides the step, version 2.81.723
 
 - `disput/basic-control.js` (new, pure): `verdictOf` reads the verdict of a checker answer (text: the last line «ВЕРДИКТ: ПРОШЁЛ» or «ВЕРДИКТ: НЕ ПРОШЁЛ», a fail names its «НЕ ВЫПОЛНЕНО: …» lines above it; json: `verdict` pass/fail and a non-empty `unmet` on fail); `passed` applies `pass` all/any.
