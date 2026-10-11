@@ -9,15 +9,16 @@ describe('Round card of Basic: model', () => {
   test('the first round has the order only; the default input is nothing there and the previous step later', () => {
     const first = build({ first: true }).settings;
     expect(first.input).toBeNull();
-    expect(first.task).toBeNull();
+    expect(first.task).toEqual({ value: '', placeholder: '', sent: false });
     const later = build().settings;
     expect(later.input.options[0].label).toBe('По умолчанию (ответы предыдущего шага)');
-    expect(later.task).toEqual({ value: '', placeholder: 'INHERITED' });
+    expect(later.task).toEqual({ value: '', placeholder: 'INHERITED', sent: true });
   });
 
-  test('the task is offered only while the input is not nothing', () => {
-    expect(build({ settings: { order: '', input: 'none', task: '' } }).settings.task).toBeNull();
-    expect(build({ settings: { order: '', input: 'all', task: 'T' } }).settings.task.value).toBe('T');
+  test('the task is offered with any input; with nothing it is sent only when written here, so the shared task is not suggested', () => {
+    expect(build({ settings: { order: '', input: 'none', task: '' } }).settings.task).toEqual({ value: '', placeholder: '', sent: false });
+    expect(build({ settings: { order: '', input: 'none', task: 'MINE' } }).settings.task.value).toBe('MINE');
+    expect(build({ settings: { order: '', input: 'all', task: 'T' } }).settings.task).toEqual({ value: 'T', placeholder: 'INHERITED', sent: true });
     expect(build({ settings: { order: 'sequential', input: 'previous', task: '' } }).settings.order.value).toBe('sequential');
   });
 
@@ -63,5 +64,16 @@ describe('Round card of Basic: schema', () => {
       { ref: 'final', kind: 'synthesis', task: 'S', models: [] }
     ] });
     expect(settings.customRoundSettings).toEqual({ r2: { order: 'sequential', input: 'all', task: 'T' } });
+  });
+});
+
+describe('Round card of Basic: the first round shows its task', () => {
+  test('the task field of the first round is on the card with the input nothing (P00 sends the explicit task)', () => {
+    const container = document.createElement('div');
+    StageCard.render(container, build({ first: true, settings: { order: '', input: '', task: 'FIRST TASK' } }), {});
+    const task = container.querySelector('.stage-card-task');
+    expect(task).not.toBeNull();
+    expect(task.value).toBe('FIRST TASK');
+    expect(container.querySelector('.stage-card-task-label').textContent).toContain('при входе «ничего» отправляется только оно');
   });
 });

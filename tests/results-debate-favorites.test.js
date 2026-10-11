@@ -3763,7 +3763,7 @@ describe('Pipeline debate favorites view', () => {
         expect(first.order.value).toBe('');
         expect([...first.order.options].map((option) => option.textContent)).toEqual(['По умолчанию (параллельно)', 'Параллельно', 'По очереди']);
         expect(first.input).toBeNull();
-        expect(first.task).toBeNull();
+        expect(first.task.placeholder).toBe('');
         const second = rows(openRoundCard(2));
         expect([...second.input.options].map((option) => option.value)).toEqual(['', 'none', 'previous', 'all']);
         expect(second.input.options[0].textContent).toBe('По умолчанию (ответы предыдущего шага)');
@@ -3779,7 +3779,7 @@ describe('Pipeline debate favorites view', () => {
         await h.general({ roundTask: 'FROM_GENERAL' });
         expect(rows(openRoundCard(2)).task.placeholder).toBe('FROM_GENERAL');
         await choose(rows(openRoundCard(2)).input, 'none');
-        expect(rows(openRoundCard(2)).task).toBeNull();
+        expect(rows(openRoundCard(2)).task.placeholder).toBe('');
         expect(h.debug.getCustomRoundSettings().r2).toEqual({ input: 'none' });
         await choose(rows(openRoundCard(2)).input, '');
         expect(rows(openRoundCard(2)).task).not.toBeNull();
@@ -3865,7 +3865,7 @@ describe('Pipeline debate favorites view', () => {
         await settleCustomCard();
         const installed = rows(openRoundCard(2));
         expect([installed.order.value, installed.input.value]).toEqual(['sequential', 'none']);
-        expect(installed.task).toBeNull();
+        expect(installed.task.value).toBe('');
         expect(h.debug.buildBasicRun(window.__pipelineDraftPlanForCanvas(window.__getActivePipelineDraftPlan())).steps[1]).toMatchObject({ order: 'sequential', input: 'none', task: '' });
       } finally { h.cleanup(); }
     }, 30000);

@@ -100,8 +100,9 @@
       order: { value: order, options: [{ value: '', label: `По умолчанию (${ORDER_LABELS.parallel.toLowerCase()})` }, ...Object.entries(ORDER_LABELS).map(([value, label]) => ({ value, label }))] },
       // The first round has no earlier step: its input is not offered.
       input: first ? null : { value: input, options: [{ value: '', label: `По умолчанию (${INPUT_LABELS[defaultInput].toLowerCase()})` }, ...Object.entries(INPUT_LABELS).map(([value, label]) => ({ value, label }))] },
-      // The task is sent only with an input; with none it is not used.
-      task: effectiveInput === 'none' ? null : { value: String(settings.task || ''), placeholder: String(inheritedTask || '') }
+      // The task is always shown. With the input nothing only the task written here is sent (the shared one is not), so the
+      // placeholder of the shared task stays empty and the label says so.
+      task: { value: String(settings.task || ''), placeholder: effectiveInput === 'none' ? '' : String(inheritedTask || ''), sent: effectiveInput !== 'none' }
     };
   }
 
@@ -173,7 +174,7 @@
           area.setAttribute('aria-label', 'Задание раунда');
           area.addEventListener('change', () => emit('task', area.value));
           const wrap = el(doc, 'label', 'stage-card-setting stage-card-task-label');
-          wrap.append(doc.createTextNode('Задание раунда (пусто — общее) '), area);
+          wrap.append(doc.createTextNode(settings.task.sent ? 'Задание раунда (пусто — общее) ' : 'Задание раунда (при входе «ничего» отправляется только оно) '), area);
           container.append(wrap);
         }
       }

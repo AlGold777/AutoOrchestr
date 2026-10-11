@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — Basic: the round card shows its task also for the first round and the input nothing, version 2.81.737
+
+- Feat (`results/stage-card.js`, `settingsModel`): the task field of a round is shown with any input. With the input nothing only the task written in the card is sent, so the shared task is not suggested in the field; the label says so. The first round (no input) now has the field (P00 sends the explicit task).
+- Docs: `basic-windows.md` (the round card).
+- Test: `tests/stage-card-basic.test.js` (the task with the input nothing; the field of the first round).
+
 ### 2026-10-11 — Basic: Save and Run keep the fields the canvas does not edit (gate, route, owner, output, require, owner, chat, participant id and input), version 2.81.736
 
 - Fix (`results.js`, `basicSchemaFromPage`): a schema that the canvas accepts is not cut on Save or on Run. The page keeps the source schema of the working copy (`basicSourceSchema`): control steps (gate, route, owner) stay in their place after the nearest earlier step still on the canvas; a round or a synthesis keeps `output`, `require`, `owner`, `chat` (a synthesis also `input` and `task`); a participant keeps its `id` and `input`.
