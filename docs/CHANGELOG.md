@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — Basic: the engine's header describes the threshold, the output and the artifacts, version 2.81.720
+
+- `disput/custom-engine.js`: the header comment names the output check, the threshold of `require`, the owner approval and the artifact registry; the rule of the transition says that «continue» is not offered below the threshold. No change of behaviour.
+
 ### 2026-10-11 — Basic: the engine needs its modules and the page harness loads them, version 2.81.719
 
 - `CustomEngine.run` (`disput/custom-engine.js`): without `basic-output.js` and `basic-artifacts.js` the run stops at its start with the message `basic_modules_missing` instead of a failure inside the run.

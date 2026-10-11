@@ -24,9 +24,14 @@
 //   outcome is keyed by participant id. accept() judges the technical outcome; empty text (also a token-only
 //   answer) is never accepted. A rejected answer gets a correction retry in the same chat, up to maxAttempts,
 //   unless the owner closed the step. Only the participants that were not accepted are sent again.
-// Transition: decide(problem) → 'continue' | 'retry' | 'skip' | 'stop'. Asked after every step in
-//   semi-automatic mode and, in Auto, only when a step has no accepted answer. 'continue' is never
-//   offered without an accepted answer. A prompt over maxPromptChars stops the run before sending.
+// Output (basic-output.js): an answer is checked after the technical acceptance by the step's output (length, sections,
+//   JSON fields, artifacts); a rejected participant is corrected with the reason and its detail.
+// Require: a step ends when the accepted answers reach its threshold (any, all or N). Owner approval (owner: approve)
+//   asks the owner after the step in every mode. Artifacts (basic-artifacts.js): an accepted answer is stored once
+//   (putText) and its declared artifacts are registered; a source { artifact, version } gives only that content.
+// Transition: decide(problem) → 'continue' | 'retry' | 'skip' | 'stop'. Asked after every step in semi-automatic
+//   mode, in Auto when the threshold is not met, and after every step with approval. 'continue' is never offered
+//   below the threshold. A prompt over maxPromptChars stops the run before sending.
 // Stop keeps what was collected. [[ASK: …]] lines of accepted answers go to askOwner; the answers
 // reach the prompts of the following steps.
 (function initCustomEngine(root) {
