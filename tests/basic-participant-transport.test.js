@@ -87,3 +87,18 @@ describe('Background keys the tab of a participant by its id (T07)', () => {
     expect(participantFn).toContain("const created = await createNewLlmTab(llmName, prompt, attachments, { ...options, forceCreate: true });");
   });
 });
+
+describe('Attachments follow the participant, not the model name (T07)', () => {
+  test('the attachments of a wave go to a participant that has not had them yet, keyed by participant id', () => {
+    expect(results).toContain('attachments: wave.some((request) => !attached.has(request.participantId)) ? attachments : [],');
+    expect(results).toContain('wave.forEach((request) => attached.add(request.participantId));');
+  });
+
+  test('the set of attached participants is not keyed by the model name in the Basic send', () => {
+    const sendAt = results.indexOf('const sendWave = async (wave, meta, waveNo) => {');
+    const sendBlock = results.slice(sendAt, results.indexOf('const budgetLimits = window.DebateContextBudget', sendAt));
+    expect(sendAt).toBeGreaterThan(0);
+    expect(sendBlock).not.toContain('attached.has(model)');
+    expect(sendBlock).not.toContain('attached.add(model)');
+  });
+});

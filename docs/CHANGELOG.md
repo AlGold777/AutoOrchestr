@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — Basic: attachments follow the participant (second participant of one model gets them), version 2.81.744
+
+- Fix (`results.js`, `runCustomFromPage` → `sendWave`): the set of attached participants is keyed by `participantId`, not by the model name; a participant that has not had the attachments yet gets them with its first message. Runs without explicit ids (id = name) behave as before.
+- Docs: `basic-developer.md` (transport paragraph).
+- Test: `tests/basic-participant-transport.test.js` (attachments keyed by participant).
+
 ### 2026-10-11 — Basic: participants keep their own chats in the transport (mock contract), version 2.81.743
 
 - Feat (`results.js`, `runCustomFromPage`): the engine gets `sendParticipants`; the requests of a step go in waves (the k-th request of a model in wave k), a wave holds one request per model; `chat: "new"` opens a chat at the first attempt of a visit, corrections go on in it; the chat bindings are kept by participant (`chatBindings`, passed to the checkpoint state).

@@ -7175,7 +7175,7 @@ document.addEventListener('click', (event) => {
                         promptsByModel: composed,
                         deliveryInstructionsByModel: Object.fromEntries(models.map((name) => [name, discipline[name].delivery])),
                         models,
-                        attachments: models.some((model) => !attached.has(model)) ? attachments : [],
+                        attachments: wave.some((request) => !attached.has(request.participantId)) ? attachments : [],
                         // The transport opens or continues the tab of each participant (participants); the run's new-pages flag is not used here.
                         forceNewTabs: false,
                         useApiFallback,
@@ -7193,7 +7193,8 @@ document.addEventListener('click', (event) => {
                         },
                         generationProfile: 'long'
                     });
-                    models.forEach((model) => attached.add(model));
+                    // Attachments follow the participant (its new chat), not the model name: a second participant of the same model gets them too.
+                    wave.forEach((request) => attached.add(request.participantId));
                     const byModel = Object.fromEntries(models.map((model) => {
                         const modelResult = batch?.results?.[model] || {};
                         const text = String(batch?.responses?.[model] || '');
