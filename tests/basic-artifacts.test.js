@@ -29,6 +29,17 @@ describe('Basic artifact registry (5.3)', () => {
     expect(Artifacts.latest(registry, { step: 'r8', participant: 'author-C', id: 'map' })).toBeNull();
   });
 
+  test('a stale version is not current any more, but stays in the history; the latest is the last valid one', () => {
+    const registry = Artifacts.createRegistry();
+    Artifacts.register(registry, { id: 'map', name: 'M', lineage, source, answerRef: 't1', pointer: '' });
+    Artifacts.register(registry, { id: 'map', name: 'M', lineage, source: { step: 'r8', participant: 'author-A', visit: 2 }, answerRef: 't2', pointer: '' });
+    expect(Artifacts.markInvalid(registry, (entry) => entry.source.visit === 2)).toBe(1);
+    expect(Artifacts.latest(registry, lineage).content.answerRef).toBe('t1');
+    expect(Artifacts.version(registry, lineage, { step: 'r8', participant: 'author-A', visit: 2 })).toMatchObject({ valid: false, content: { answerRef: 't2' } });
+    expect(Artifacts.markInvalid(registry, () => true)).toBe(1);
+    expect(Artifacts.latest(registry, lineage)).toBeNull();
+  });
+
   test('a specific version is found by its creator step, participant and visit; an unknown one is null', () => {
     const registry = Artifacts.createRegistry();
     Artifacts.register(registry, { id: 'map', name: 'M', lineage, source, answerRef: 't1', pointer: '' });

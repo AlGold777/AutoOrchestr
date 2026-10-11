@@ -492,7 +492,11 @@
       if (kind === 'goto') {
         if (typeof action.goto !== 'string' || !action.goto) return fail('invalid_field', `${field}.goto`, 'ref перехода: непустой текст');
         if (targetOf(action.goto) < 0) return fail('unknown_target', `${field}.goto`, `шаг «${action.goto}» не исполняется в этом прогоне`);
-        if ('invalidate' in action) return fail('unsupported_field', `${field}.invalidate`, 'пересмотр результатов (invalidate) движок пока не исполняет');
+        if ('invalidate' in action) {
+          if (!Array.isArray(action.invalidate) || !action.invalidate.length) return fail('invalid_field', `${field}.invalidate`, 'ожидается непустой список ref');
+          const unknown = action.invalidate.find((ref) => typeof ref !== 'string' || targetOf(ref) < 0);
+          if (unknown !== undefined) return fail('unknown_target', `${field}.invalidate`, `шаг «${unknown}» не исполняется в этом прогоне`);
+        }
         if ('feedback' in action) {
           if (!Array.isArray(action.feedback)) return fail('invalid_field', `${field}.feedback`, 'ожидается список источников');
           const problem = inputProblem(action.feedback, 'round', fail, `${field}.feedback`);
@@ -554,7 +558,8 @@
     let stopReason = 'steps_done';
     // The state of the run (ТЗ 7): plain data. The visit of a step is the number of its executions; the feedback of a return
     // waits for the visit it starts; the stack keeps the points where a return goes back.
-    const state = { visits: {}, loopCounters: {}, continuationStack: [], feedback: {} };
+    // dependencies: the keys of the results and artifacts that each visit used (6.3); a stale key makes its consumer stale.
+    const state = { visits: {}, loopCounters: {}, continuationStack: [], feedback: {}, dependencies: {} };
     let activeVisit = 1;
     let activeFeedback = [];
     let stopDetail = '';
@@ -591,7 +596,7 @@
     const verdictsOf = (step, outcome) => step.models.filter((model) => outcome[model.id]?.ok).map((model) => outcome[model.id].verdict);
     const gatePass = (step, outcome, skipped = false) => !skipped && verdictsOf(step, outcome).length >= neededOf(step)
       && Control.passed(verdictsOf(step, outcome), step.pass);
-    const acceptedOf = (entry) => (!entry || entry.skipped || entry.step.kind === 'route' ? [] : entry.step.models.map((model) => ({ model, verdict: entry.outcome[model.id] }))
+    const acceptedOf = (entry) => (!entry || entry.skipped || entry.valid === false || entry.step.kind === 'route' ? [] : entry.step.models.map((model) => ({ model, verdict: entry.outcome[model.id] }))
       .filter((item) => item.verdict?.ok)
       .map(({ model, verdict }) => ({ ...verdict, participant: model.id,
         source: { step: entry.step.index, visit: entry.visit, label: stepLabel(entry.step), model: verdict.model, attempt: verdict.attempt } })));
@@ -814,6 +819,42 @@
       }
     }
 
+    // The keys of results (schema index and visit) and of artifact versions: what a visit used, and what becomes stale.
+    const resultKey = (entry) => `${entry.step.index}@${entry.visit}`;
+    const artifactKey = (entry) => `art:${Artifacts.lineKey(entry.lineage)}@${entry.source.step}|${entry.source.participant}|${entry.source.visit}`;
+    const producerKey = (entry) => {
+      const step = plan.find((item) => item.ref === entry.source.step);
+      return step ? `${step.index}@${entry.source.visit}` : null;
+    };
+    const usedKeysOf = (items) => [...new Set(items.map((item) => {
+      if (item.artifact) return artifactKey(item.artifact);
+      return item.source ? `${item.source.step}@${item.source.visit}` : null;
+    }).filter(Boolean))];
+    // The results and artifacts that become stale (6.3): the seeds, and whatever used a stale key, by the recorded dependencies.
+    // A stale result stays in the history; it is no answer any more, and a later failed or skipped visit does not bring it back.
+    function invalidateFrom(seeds) {
+      const stale = new Set(seeds);
+      let grew = true;
+      while (grew) {
+        grew = false;
+        Object.entries(state.dependencies).forEach(([consumer, used]) => {
+          if (!stale.has(consumer) && used.some((key) => stale.has(key))) {
+            stale.add(consumer);
+            grew = true;
+          }
+        });
+        registry.entries.forEach((entry) => {
+          const key = artifactKey(entry);
+          if (!stale.has(key) && stale.has(producerKey(entry))) {
+            stale.add(key);
+            grew = true;
+          }
+        });
+      }
+      results.forEach((entry) => { if (stale.has(resultKey(entry))) entry.valid = false; });
+      Artifacts.markInvalid(registry, (entry) => stale.has(artifactKey(entry)));
+    }
+
     // The value of a source of a rule route: its answer (or artifact) read as JSON at the pointer. No answer: found false.
     function readSourceOf(step, index, pointer) {
       const items = sourceItems([step.input[index]], step);
@@ -881,7 +922,10 @@
       }
       if ('return' in action) state.continuationStack.pop();
       else {
+        // The feedback is resolved first, then the target and the steps the transition names are re-examined (6.3).
         if (action.feedback) state.feedback[target] = feedbackOf(action.feedback, plan[to]);
+        const named = (action.invalidate || []).flatMap((ref) => results.filter((entry) => entry.step.ref === ref));
+        invalidateFrom([...results.filter((entry) => entry.step.index === plan[to].index), ...named].map(resultKey));
         if (action.resumeAt) state.continuationStack.push({ resumeAt: action.resumeAt, from });
       }
       emit('custom_transition', { from: step.ref, case: caseId, action: 'return' in action ? 'return' : 'goto', to: target, count, maxLoops: action.maxLoops ?? null });
@@ -910,7 +954,10 @@
         activeVisit = state.visits[key];
         activeFeedback = takeFeedback(key);
         const outcome = {};
-        const entry = { step, visit: activeVisit, outcome, skipped: false };
+        const entry = { step, visit: activeVisit, outcome, skipped: false, valid: true };
+        // What this visit uses (the results and artifacts it took) is recorded: a later stale key makes the visit stale (6.3).
+        state.dependencies[`${step.index}@${activeVisit}`] = usedKeysOf(step.models.length
+          ? step.models.flatMap((model) => inputFor(step, specOf(step, model))) : inputFor(step, step.input ?? 'none'));
         current = entry;
         if (step.kind === 'route') {
           // A route sends nothing by itself: the rule decides, a model or the owner names the case. Its answer is not an answer of the step.
@@ -996,7 +1043,7 @@
     if (aborted() && stopReason === 'steps_done') stopReason = 'cancelled';
     emit('custom_end', { stopReason, stopDetail, steps: results.length });
     return {
-      steps: results.map((entry) => ({ index: entry.step.index, ref: entry.step.ref, kind: entry.step.kind, label: stepLabel(entry.step), visit: entry.visit, skipped: entry.skipped, outcome: entry.outcome, ...(entry.route ? { route: entry.route } : {}) })),
+      steps: results.map((entry) => ({ index: entry.step.index, ref: entry.step.ref, kind: entry.step.kind, label: stepLabel(entry.step), visit: entry.visit, valid: entry.valid, skipped: entry.skipped, outcome: entry.outcome, ...(entry.route ? { route: entry.route } : {}) })),
       // The state of the run as plain data (ТЗ 7): the pointer, the visits, the counters, the stack and the feedback.
       state: JSON.parse(JSON.stringify({ pc: pos < plan.length ? plan[pos].ref : null, ...state })),
       answers: inputFor({ input: 'previous' }).map((item) => item.text),

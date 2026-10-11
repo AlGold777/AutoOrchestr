@@ -1,5 +1,14 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — Basic: stale results and artifacts after a backward goto, version 2.81.726
+
+- `CustomEngine.run` (`disput/custom-engine.js`): every visit records what it used (`state.dependencies`: the keys of the results and artifact versions of its inputs). A `goto` makes the target's results stale, the steps named in `invalidate`, and everything that used a stale key, by those dependencies (`invalidateFrom`). The results are kept with `valid: false` (`steps[].valid` in the result); a stale result gives no answers to `previous`, `all` or a source, and a later failed or skipped visit does not bring it back. A required source without a current answer is `missing_input`; an artifact without a current version is not replaced by an old one.
+- `invalidate` is executed: a list of refs that exist in the plan (`unknown_target` before the first request otherwise).
+- `BasicArtifacts.markInvalid` (`disput/basic-artifacts.js`): marks the versions that a predicate names as not current; the history stays.
+- Not yet: the invalidation on `return` (the return follows the saved point; the required inputs of the steps after it are re-checked by their sources); the owner step.
+- Docs: `basic-start-here.md` (refusals), `basic-schema-guide.md` (5.9), `basic-developer.md` (file table).
+- Tests: `tests/custom-engine-validity.test.js` (new); `tests/basic-artifacts.test.js` (stale versions); `tests/custom-engine-flow.test.js` (the refusal of `invalidate` is gone).
+
 ### 2026-10-11 — Basic: route steps choose a transition by rule, model or owner, version 2.81.725
 
 - `CustomEngine.run` (`disput/custom-engine.js`): `kind: route` runs without requests unless it is a model route. `select.by: rule`: the conditions read the exact sources of the route's `input` (one answer each; a source without an answer does not match `eq` and `in`); none holds → `otherwise` or `route_not_found`; several → `route_ambiguous` (default), `conflict: first` (the first case, journal reason `conflict_first`) or `conflict: owner` (the owner chooses among the matching cases). An unreadable source is `invalid_route_input` before the choice. `select.by: model`: one model answers `{"route": "<id>"}` with the labels of the cases in its request (phase `route`); an answer that names no case is corrected (`invalid_route`), after the attempts the owner chooses. `select.by: owner`: the owner chooses a case.

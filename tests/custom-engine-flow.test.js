@@ -91,7 +91,6 @@ describe('Custom engine transitions (6.3, 6.4)', () => {
       [gate({ goto: 'nope', maxLoops: 1 }), 'unknown_target', 'nope'],
       [gate({ goto: 'r1', maxLoops: 1, stop: 'x' }), 'invalid_field', 'onFail'],
       [gate({ stop: '   ' }), 'invalid_field', 'onFail'],
-      [gate({ goto: 'r2', invalidate: ['r1'] }), 'unsupported_field', 'invalidate']
     ];
     for (const [step, code, mention] of cases) {
       const { send, calls } = transport({ A: ['a'], B: [FAIL('x')], C: ['c'] });

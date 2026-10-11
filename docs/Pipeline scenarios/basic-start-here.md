@@ -169,9 +169,9 @@
 Прогон не начинается, если схема содержит то, что движок пока не исполняет или не может исполнить однозначно. Ошибка называет шаг (его `ref`, а не номер в отфильтрованном списке) и поле; ни один запрос не отправляется:
 
 - `unsupported_kind` — вид шага, кроме раунда, синтеза, проверки и маршрута (`owner`);
-- `unsupported_field` — `output.format` кроме `json`; `chat` кроме `continue`; `invalidate` в переходе (пересмотр результатов — следующий пакет);
+- `unsupported_field` — `output.format` кроме `json`; `chat` кроме `continue`;
 - `invalid_field` — маршрут без `select`, с `by` не `rule`/`model`/`owner`, с пустым или повторяющимся списком вариантов, с условием не в правиле или без него, с `conflict` вне правила, с моделью не одной или без задания; `output` не является объектом; `require` не `any`, `all` или целое число от 1 до числа участников; `owner` не `approve`; проверка без `criteria`, с `pass` не `all`/`any` или `onFail` не `stop`/`ask`/переход; переход (`onPass`, `onFail`) с лишним полем, без ровно одного из `goto`/`stop`/`return`, с `maxLoops` не от 1 до 5, пустой причиной `stop`, либо назад без `maxLoops`;
-- `unknown_target` — `goto`, `resumeAt` или источник обратной связи указывают на шаг, которого нет в исполняемом плане (например, выключенный);
+- `unknown_target` — `goto`, `resumeAt`, шаг в `invalidate` или выбор маршрута указывают на шаг, которого нет в исполняемом плане (например, выключенный);
 - `unbounded_cycle` — цикл из переходов без ограниченного перехода (проверка `BasicSchema.graph`); в тексте ошибки — путь цикла;
 - `invalid_input` — вход, который не является значением `none`, `previous`, `all` или списком; ревизия (`revisionOf`), которой нет во входе участника; у синтеза — только `previous`; источник в списке, который не является ref шага или `{ step, participant }`; участник, которого нет в шаге-источнике; шаг-источник не раньше этого шага;
 - `participant_transport_required` — два участника одной модели в шаге без callback `sendParticipants`; страница его пока не передаёт;
@@ -310,7 +310,7 @@
 | `custom_answer` | движок, на каждый ответ каждой попытки | `step`, `label`, `model`, `attempt`, `input`, `accepted`, `reason`, `status`, `transportRequestId`, `promptChars` |
 | `custom_step` | движок, когда шаг завершил попытки | `step`, `label`, `accepted` (число), `failed` (число) |
 | `custom_decision` | движок, после ответа на окно паузы | `step`, `action` (`continue`, `retry`, `skip`, `stop`) |
-| `custom_transition` | движок, при каждом переходе из `onPass`/`onFail` и при остановке переходом | `from` (ref шага), `case` (`onPass`, `onFail`), `action` (`goto`, `return`, `stop`), `to` (ref шага), `count` (номер перехода по счётчику), `maxLoops`; при `stop` — `reason` |
+| `custom_transition` | движок, при каждом переходе из `onPass`/`onFail`, маршрута и при остановке переходом | `from` (ref шага), `case` (`onPass`, `onFail`), `action` (`goto`, `return`, `stop`), `to` (ref шага), `count` (номер перехода по счётчику), `maxLoops`; при `stop` — `reason` |
 | `custom_route` | движок, после выбора варианта маршрута | `step`, `ref`, `visit`, `case` (ID варианта или `otherwise`), `by` (`rule`, `model`, `owner`), `reason` (`rule`, `otherwise`, `conflict_first`, `conflict_owner`, `model`, `owner`, `invalid_route`) |
 | `custom_gate` | движок, после шага-проверки (`gate:<id>`) | `step`, `ref`, `pass` (итог вердиктов), `unmet` (невыполненные критерии), `rule` (`all` или `any`) |
 | `custom_end` | движок, в конце; страница — при ошибке | `stopReason`, `steps` (число шагов с результатом); при ошибке — `stopReason: 'error'` и `error` |
