@@ -7042,7 +7042,8 @@ document.addEventListener('click', (event) => {
             : null;
         const customPipelineName = () => String(pipelineStore.active || getPipelineHeaderName() || 'Basic').trim();
         // The text of the notification at the end of a Basic run.
-        const basicRunNotice = (stopText, acceptedCount) => `Basic: ${stopText}.${acceptedCount ? '' : ' Принятых ответов нет.'}`;
+        // The detail of the stop (the address of a missing input, the counter of a loop) goes in brackets after the reason.
+        const basicRunNotice = (stopText, acceptedCount, stopDetail = '') => `Basic: ${stopText}${stopDetail ? ` (${stopDetail})` : ''}.${acceptedCount ? '' : ' Принятых ответов нет.'}`;
         // A saved run goes on with the schema it was started with (8.3), never with the current canvas.
         const builtFromRecord = (record) => {
             const schema = record.snapshot?.schema;
@@ -7269,7 +7270,7 @@ document.addEventListener('click', (event) => {
                 }
                 // The answers of the last step are already in the feed as the cards of that step: no second card repeats
                 // them. The reason of the end is the notification; with no accepted answer at all it says so.
-                showNotification(basicRunNotice(stopText, result.answers.length), result.stopReason === 'steps_done' ? 'info' : 'warn');
+                showNotification(basicRunNotice(stopText, result.answers.length, result.stopDetail), result.stopReason === 'steps_done' ? 'info' : 'warn');
                 return result.stopReason !== 'cancelled';
             } catch (err) {
                 console.error('[RESULTS] Custom run failed', err);

@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — Basic: the end notice names the detail of the stop (the address of a missing input), version 2.81.742
+
+- Feat (`results.js`, `basicRunNotice`): the detail of the stop (`stopDetail`) follows the reason in brackets, e.g. `Basic: обязательный вход не получен (шаг …). Принятых ответов нет.`
+- Docs: `basic-start-here.md` (the end notice).
+- Test: `tests/custom-run-resume-wiring.test.js`.
+
 ### 2026-10-11 — Basic: «Продолжить прогон» is a button of the panel, version 2.81.741
 
 - Feat (`pipeline_panel.html`, `results.js`): the button `#pipeline-resume-btn` calls `resumeCustomFromPage` (the latest run of the pipeline goes on from its saved state; a refusal is explained in a notification).
