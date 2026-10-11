@@ -130,7 +130,7 @@ describe('Basic schema: the canvas a schema stands for', () => {
     expect(canvas.roundCounter).toBe(2);
     expect(canvas.selectedModels).toEqual(['Claude', 'GPT']);
     expect(canvas.stacks['r1-models'].items).toEqual([
-      { name: 'GPT', input: true, send: true, role: null }, { name: 'Claude', input: true, send: true, role: 'critic' }
+      { name: 'GPT', id: 'GPT', input: true, send: true, role: null }, { name: 'Claude', id: 'Claude', input: true, send: true, role: 'critic' }
     ]);
     expect(canvas.stacks['r2-models'].items.map((item) => [item.name, item.send])).toEqual([['GPT', true], ['Claude', false]]);
     expect(canvas.rounds.map((item) => item.participantIds)).toEqual([['GPT', 'Claude'], ['GPT']]);
@@ -366,10 +366,10 @@ describe('Basic schema: the order of participants on the canvas', () => {
   test('the models of a round that are not in it follow the enabled ones, switched off for this round', () => {
     const canvas = toCanvas(base([round('r1', ['GPT']), round('r2', ['Claude']), synthesis('final', ['Claude'])]));
     expect(canvas.stacks['r1-models'].items).toEqual([
-      { name: 'GPT', input: true, send: true, role: null }, { name: 'Claude', input: false, send: false, role: null }
+      { name: 'GPT', id: 'GPT', input: true, send: true, role: null }, { name: 'Claude', id: 'Claude', input: false, send: false, role: null }
     ]);
     expect(canvas.stacks['r2-models'].items).toEqual([
-      { name: 'Claude', input: true, send: true, role: null }, { name: 'GPT', input: false, send: false, role: null }
+      { name: 'Claude', id: 'Claude', input: true, send: true, role: null }, { name: 'GPT', id: 'GPT', input: false, send: false, role: null }
     ]);
     expect(canvas.rounds.map((item) => item.participantIds)).toEqual([['GPT'], ['Claude']]);
   });
@@ -524,9 +524,12 @@ describe('Basic schema: participants with an id and their own input (4.2)', () =
 });
 
 describe('Basic schema: the canvas and participants with an id', () => {
-  test('two participants of one model in a step are named, not shown as one block', () => {
-    const canvas = Schema.toCanvas(base([round('r1', [{ name: 'GPT', id: 'a' }, { name: 'GPT', id: 'b' }]), synthesis('final', ['Claude'])]), { models: ['GPT', 'Claude'] });
-    expect(canvas.errors.map((error) => error.path)).toEqual(['steps[0].models[1].name']);
+  test('two participants of one model in a round are two blocks, each with its id, in the order of the schema', () => {
+    const canvas = Schema.toCanvas(base([round('r1', [{ name: 'GPT', id: 'expert-2' }, { name: 'Claude' }, { name: 'GPT', id: 'expert-1' }]), synthesis('final', ['Claude'])]), { models: ['GPT', 'Claude'] });
+    expect(canvas.errors).toEqual([]);
+    expect(canvas.stacks['r1-models'].items.map((item) => [item.name, item.id])).toEqual([['GPT', 'expert-2'], ['Claude', 'Claude'], ['GPT', 'expert-1']]);
+    expect(canvas.rounds[0].participantIds).toEqual(['expert-2', 'Claude', 'expert-1']);
+    expect(canvas.selectedModels).toEqual(['GPT', 'Claude']);
   });
 });
 
@@ -748,13 +751,47 @@ describe('Basic schema: gate, route and owner steps (6.1, 6.2, 4.1)', () => {
   });
 });
 
-describe('Basic schema: a control step is not on the canvas yet', () => {
-  test('the canvas names a gate, a route or an owner and changes nothing', () => {
-    const schema = base([round('r1', ['GPT']), { ref: 'gate:g1', kind: 'gate', criteria: ['Есть источники'], models: [{ name: 'GPT' }] }, synthesis('final', ['GPT'])]);
+describe('Basic schema: control steps on the canvas (9)', () => {
+  const gateStep = { ref: 'gate:g1', kind: 'gate', criteria: ['Есть источники'], models: [{ name: 'GPT' }] };
+  const owner = (ref) => ({ ref, kind: 'owner', task: 'Предоставьте исследование', models: [] });
+
+  test('a gate, a route and an owner are on the canvas in the order of the schema, between rounds too', () => {
+    const schema = base([
+      owner('owner:evidence'), round('r1', ['GPT']), gateStep,
+      { ref: 'route:next', kind: 'route', models: [], select: { by: 'owner', cases: [{ id: 'go', label: 'Дальше', action: { goto: 'final' } }] } },
+      round('r2', ['GPT']), synthesis('final', ['GPT'])
+    ]);
     const before = JSON.stringify(schema);
     const canvas = Schema.toCanvas(schema, { models: ['GPT'] });
-    expect(canvas.errors.map((error) => error.path)).toEqual(['steps[1]']);
+    expect(canvas.errors).toEqual([]);
+    expect(canvas.controls).toEqual([
+      { ref: 'owner:evidence', kind: 'owner', index: 0, afterRound: 0 },
+      { ref: 'gate:g1', kind: 'gate', index: 2, afterRound: 1 },
+      { ref: 'route:next', kind: 'route', index: 3, afterRound: 1 }
+    ]);
+    expect(canvas.roundCounter).toBe(2);
     expect(JSON.stringify(schema)).toBe(before);
+  });
+
+  test('the rounds limit counts rounds only; an intermediate synthesis keeps its place after a round', () => {
+    const many = Array.from({ length: 50 }, (_, index) => round(`r${index + 1}`, ['GPT']));
+    expect(Schema.toCanvas(base([...many, gateStep, gateStep, synthesis('final', ['GPT'])]), { models: ['GPT'] }).errors).toEqual([]);
+    expect(Schema.toCanvas(base([...many, round('r51', ['GPT']), synthesis('final', ['GPT'])]), { models: ['GPT'] }).errors.map((error) => error.path)).toEqual(['steps']);
+    expect(Schema.toCanvas(base([round('r1', ['GPT']), gateStep, synthesis('synth:x', ['GPT']), round('r2', ['GPT'])]), { models: ['GPT'] }).errors.map((error) => error.path)).toEqual(['steps[2]']);
+  });
+
+  test('the settings keep every new field per kind and per participant, keyed by the participant id', () => {
+    const schema = base([
+      round('r1', [{ name: 'GPT', id: 'expert-1', input: 'none', task: 'T1' }, { name: 'GPT', id: 'expert-2', input: ['r0'] }], { require: 'all', owner: 'approve', chat: 'new', output: { name: 'Карта', sections: ['A'] } }),
+      { ref: 'route:x', kind: 'route', input: [{ step: 'r1', participant: 'expert-1' }], task: 'Выбери', models: [], select: { by: 'rule', cases: [] } },
+      synthesis('final', [{ name: 'Claude', request: 'R' }], { task: 'S' })
+    ]);
+    const settings = Schema.toSettings(schema);
+    expect(settings.customRoundSettings.r1).toEqual({ require: 'all', owner: 'approve', chat: 'new', output: { name: 'Карта', sections: ['A'] } });
+    expect(settings.customModelSettings.r1['expert-1']).toEqual({ task: 'T1', input: 'none' });
+    expect(settings.customModelSettings.r1['expert-2']).toEqual({ input: ['r0'] });
+    expect(settings.customStepSettings['route:x']).toEqual({ input: [{ step: 'r1', participant: 'expert-1' }], task: 'Выбери', select: { by: 'rule', cases: [] } });
+    expect(settings.customStepSettings.final).toEqual({ task: 'S' });
   });
 });
 

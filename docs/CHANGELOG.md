@@ -1,5 +1,13 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — Schema projection: the canvas and the settings carry the new fields, version 2.81.710
+
+- `BasicSchema.toCanvas` (`disput/basic-schema.js`): a gate, a route and an owner are on the canvas as `controls` (`{ ref, kind, index, afterRound }`) in the order of the schema, and they may stand anywhere (the rule of the intermediate synthesis is kept). Two participants of one model in a round are two stack items, told apart by `id` (`stacks[r].items[i].id`, `rounds[i].participantIds` are ids). The old `rounds` and `stacks` keep their shape; the items get the field `id`. The rounds limit counts rounds only.
+- `BasicSchema.toSettings`: `customModelSettings[ref]` is keyed by the participant id (the name when it has none) and keeps the participant's `input`; `customRoundSettings` keeps `require`, `owner`, `chat`, `output`; the new `customStepSettings[ref]` keeps the fields of a synthesis, a gate, a route and an owner.
+- Not yet: the page (`results.js`) does not show the controls nor the participants of one model, and its Save rebuilds the schema from the canvas, so it would drop them; the engine does not run them (the packs P02 and P08). Do not release the pack alone.
+- Docs: `basic-schema-guide.md` (sections 5.5, 5.9; the error rows of section 10 for the canvas are removed: the canvas no longer refuses them).
+- Tests: `tests/basic-schema.test.js` (the blocks «the canvas and participants with an id» and «control steps on the canvas (9)»; the stack items are checked with their `id`).
+
 ### 2026-10-11 — Schema: transitions, loop limits and the graph are checked, version 2.81.709
 
 - `BasicSchema.validate` (`disput/basic-schema.js`): every transition is checked where it is written: a gate's `onPass` and `onFail`, the cases and `otherwise` of a route. `goto` may carry `maxLoops` (1 to 5), `feedback` (sources; a current or later step is allowed), `invalidate` (existing refs) and `resumeAt` (an existing ref). A transition to the same or an earlier step needs `maxLoops`; a `return` needs a `resumeAt` somewhere in the schema, and `maxLoops` when it may go back. The unlimited cycles are refused, and the error names the transition that closes the cycle.

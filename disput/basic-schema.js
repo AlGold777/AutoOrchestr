@@ -569,33 +569,40 @@
   }
 
   // The settings of the cards in the form the page edits them (the cards write only what the owner set):
-  // customModelSettings[ref][model] = { promptTemplate, maxWords, task, discipline }, customRoundSettings[ref] = { order, input, task }
-  // of a round (the round card), customDefaults = the ▶ card.
+  // customModelSettings[ref][participantId] = { promptTemplate, maxWords, task, discipline, input } — the key is the id of
+  // the participant (its name when it has none); customRoundSettings[ref] = { order, input, task, require, owner, chat, output }
+  // of a round; customStepSettings[ref] = the fields of a synthesis, a gate, a route or an owner; customDefaults = the ▶ card.
+  const ROUND_FIELDS = ['order', 'input', 'task', 'require', 'owner', 'chat', 'output'];
+  const STEP_FIELDS = ['input', 'task', 'require', 'owner', 'chat', 'output', 'criteria', 'pass', 'onFail', 'onPass', 'select'];
   function toSettings(schema) {
     const customModelSettings = {};
     const customRoundSettings = {};
+    const customStepSettings = {};
     (schema.steps || []).forEach((step) => {
-      const round = {};
-      if (step.kind === 'round') ['order', 'input', 'task'].forEach((key) => { if (key in step) round[key] = step[key]; });
-      if (Object.keys(round).length) customRoundSettings[step.ref] = round;
+      const fields = step.kind === 'round' ? ROUND_FIELDS : STEP_FIELDS;
+      const own = {};
+      fields.forEach((key) => { if (key in step) own[key] = JSON.parse(JSON.stringify(step[key])); });
+      if (Object.keys(own).length) (step.kind === 'round' ? customRoundSettings : customStepSettings)[step.ref] = own;
       (step.models || []).forEach((model) => {
-        const own = {};
-        if (typeof model.request === 'string') own.promptTemplate = model.request;
-        if ('maxWords' in model) own.maxWords = model.maxWords;
-        if (typeof model.task === 'string') own.task = model.task;
-        if (isObject(model.discipline)) own.discipline = JSON.parse(JSON.stringify(model.discipline));
-        if (!Object.keys(own).length) return;
-        (customModelSettings[step.ref] || (customModelSettings[step.ref] = {}))[model.name] = own;
+        const participant = {};
+        if (typeof model.request === 'string') participant.promptTemplate = model.request;
+        if ('maxWords' in model) participant.maxWords = model.maxWords;
+        if (typeof model.task === 'string') participant.task = model.task;
+        if (isObject(model.discipline)) participant.discipline = JSON.parse(JSON.stringify(model.discipline));
+        if ('input' in model) participant.input = JSON.parse(JSON.stringify(model.input));
+        if (!Object.keys(participant).length) return;
+        (customModelSettings[step.ref] || (customModelSettings[step.ref] = {}))[idOf(model)] = participant;
       });
     });
-    return { customModelSettings, customRoundSettings, customDefaults: schema.defaults ? JSON.parse(JSON.stringify(schema.defaults)) : {} };
+    return { customModelSettings, customRoundSettings, customStepSettings, customDefaults: schema.defaults ? JSON.parse(JSON.stringify(schema.defaults)) : {} };
   }
 
-  // The canvas a schema stands for: the rounds, the models of each round with their roles, the final synthesizer
-  // and the intermediate syntheses. `models` is the list of the models the canvas knows, in its order; `isRole(id)`
-  // tells a known role. A schema the canvas cannot show gives errors (with the place), never a changed schema.
-  // The canvas shows rounds r1, r2, … in order, one intermediate synthesis between two rounds, the final
-  // synthesis last, one model in a synthesis. A switched-off model or synthesis is not on the canvas.
+  // The canvas a schema stands for: the rounds, the participants of each round with their roles, the final synthesizer,
+  // the intermediate syntheses and the control steps (gate, route, owner) in their order. `models` is the list of the models
+  // the canvas knows, in its order; `isRole(id)` tells a known role. A schema the canvas cannot show gives errors (with the
+  // place), never a changed schema. A round is one block per participant (two participants of one model are two blocks,
+  // told apart by id); the rounds limit counts rounds only. An intermediate synthesis is right after a round and before
+  // the next one; a control step may stand anywhere; a switched-off model or synthesis is not on the canvas.
   function toCanvas(schema, { models = [], isRole = () => true, runWords = null } = {}) {
     const errors = [];
     const fail = (path, message) => errors.push({ path, message });
@@ -603,20 +610,16 @@
     const enabledOf = (step) => (step.models || []).filter((model) => model.enabled !== false);
     const rounds = [];
     const inserts = [];
+    const controls = [];
     let finalStep = null;
     steps.forEach((step, index) => {
       const path = `steps[${index}]`;
-      // Gate, route and owner are not on the canvas yet: the schema is named, not changed.
-      if (CONTROL_KINDS.includes(step.kind)) { fail(path, 'холст пока не показывает проверку, маршрут и владельца'); return; }
       const enabled = enabledOf(step);
-      const stepNames = new Set();
       enabled.forEach((model, at) => {
         if (!models.includes(model.name)) fail(`${path}.models[${at}].name`, `модель «${model.name}» недоступна`);
         if (model.role && !isRole(model.role)) fail(`${path}.models[${at}].role`, `роль «${model.role}» неизвестна`);
-        // The canvas shows one block per model of a step; two participants of one model wait for the canvas that shows them.
-        if (stepNames.has(model.name)) fail(`${path}.models[${at}].name`, 'холст пока не показывает два участника одной модели в шаге');
-        stepNames.add(model.name);
       });
+      if (CONTROL_KINDS.includes(step.kind)) { controls.push({ ref: step.ref, kind: step.kind, index, afterRound: rounds.length }); return; }
       if (step.kind === 'round') {
         rounds.push(step);
         if (step.ref !== `r${rounds.length}`) fail(`${path}.ref`, `ref раунда должен быть «r${rounds.length}»`);
@@ -633,24 +636,25 @@
       if (!/^[A-Za-z0-9_-]+$/.test(id)) fail(`${path}.ref`, 'ref промежуточного синтеза: «synth:<id>», id — латинские буквы, цифры, «_» и «-»');
       if (steps[index - 1]?.kind !== 'round') fail(path, 'промежуточный синтез стоит сразу после раунда');
       if (steps[index + 1]?.kind !== 'round') fail(path, 'промежуточный синтез стоит между двумя раундами');
-      if (enabled.length) inserts.push({ afterRound: rounds.length, plannedStageId: id, participantIds: enabled.map((model) => model.name) });
+      if (enabled.length) inserts.push({ afterRound: rounds.length, plannedStageId: id, participantIds: enabled.map(idOf) });
     });
     if (Array.isArray(runWords) && schema.run && 'maxWords' in schema.run && !runWords.includes(schema.run.maxWords)) fail('run.maxWords', `предел длины pipeline: допустимо ${runWords.join(', ')}`);
     if (!rounds.length) fail('steps', 'нужен хотя бы один раунд');
     if (rounds.length > 50) fail('steps', 'раундов не больше 50');
     if (errors.length) return { errors };
     const selectedModels = models.filter((name) => rounds.some((step) => enabledOf(step).some((model) => model.name === name)));
-    // Each round's stack: its enabled models in the order of the schema, then the other selected models of the canvas.
+    // Each round's stack: its enabled participants in the order of the schema, then the other selected models of the canvas.
     const stacks = Object.fromEntries(rounds.map((step, index) => {
       const own = enabledOf(step);
-      const names = [...own.map((model) => model.name), ...selectedModels.filter((name) => !own.some((model) => model.name === name))];
-      return [`r${index + 1}-models`, { items: names.map((name) => {
-        const model = own.find((item) => item.name === name);
-        return { name, input: Boolean(model), send: Boolean(model), role: model?.role || null };
-      }) }];
+      const ownNames = new Set(own.map((model) => model.name));
+      const items = [
+        ...own.map((model) => ({ name: model.name, id: idOf(model), input: true, send: true, role: model.role || null })),
+        ...selectedModels.filter((name) => !ownNames.has(name)).map((name) => ({ name, id: name, input: false, send: false, role: null }))
+      ];
+      return [`r${index + 1}-models`, { items }];
     }));
-    return { errors, roundCounter: rounds.length, selectedModels, stacks,
-      rounds: rounds.map((step, index) => ({ ref: `r${index + 1}`, participantIds: enabledOf(step).map((model) => model.name), roles: Object.fromEntries(enabledOf(step).map((model) => [model.name, model.role || null])) })),
+    return { errors, roundCounter: rounds.length, selectedModels, stacks, controls,
+      rounds: rounds.map((step, index) => ({ ref: `r${index + 1}`, participantIds: enabledOf(step).map(idOf), roles: Object.fromEntries(enabledOf(step).map((model) => [idOf(model), model.role || null])) })),
       synthesizer: finalStep ? (enabledOf(finalStep)[0]?.name || '') : '', inserts };
   }
 
