@@ -235,6 +235,8 @@
         // A list of sources stays a list here: the input is checked before the run (assertExecutable).
         input: Array.isArray(step.input) ? step.input.slice() : (kind === 'synthesis' ? 'previous' : (kind === 'owner' ? 'none' : (step.input ?? 'previous'))),
         output: step.output ?? null,
+        // continue: the participant keeps its chat; new: a new chat on the first request of each visit (4.2).
+        chat: step.chat === 'new' ? 'new' : 'continue',
         require: step.require ?? 'any',
         approve: step.owner === 'approve',
         // A gate: its criteria, the rule of its checkers (all | any) and what a fail does (stop | ask).
@@ -398,7 +400,7 @@
       if (step.require > count) return fail('invalid_field', 'require', `требуется больше ответов, чем участников: ${count}`);
     }
     if (step.owner !== undefined && step.owner !== 'approve') return fail('invalid_field', 'owner', 'owner: только approve');
-    if (step.chat !== undefined && step.chat !== 'continue') return fail('unsupported_field', 'chat', 'чат «new» движок пока не исполняет');
+    if (step.chat !== undefined && step.chat !== 'continue' && step.chat !== 'new') return fail('unsupported_field', 'chat', 'чат: continue или new');
     const ids = new Set();
     const names = new Set();
     for (const model of Array.isArray(step.models) ? step.models : []) {
@@ -560,6 +562,13 @@
     const participants = typeof sendParticipants === 'function';
     if (!participants && typeof send !== 'function') throw new Error('custom_send_required');
     assertExecutable(steps, { participants });
+    // A new chat is a chat of a participant: only the transport by participants can keep chats apart.
+    steps.forEach((step, index) => {
+      if (!participants && step && step.chat === 'new') {
+        throw new EngineError('unsupported_field', `${typeof step.ref === 'string' && step.ref ? `шаг «${step.ref}»` : `шаг №${index + 1}`} · chat`,
+          'чат «new» нужен транспорту по участникам (callback sendParticipants)');
+      }
+    });
     const emit = (kind, fields) => { if (typeof onEvent === 'function') onEvent(kind, fields); };
     const aborted = () => Boolean(signal?.aborted);
     const plan = normalizeSteps(steps);
@@ -808,7 +817,8 @@
         try {
           if (participants) {
             reply = await sendParticipants(pending.map((model) => ({ participantId: model.id, modelName: model.name, prompt: current[model.id].prompt,
-              chat: 'continue', stepRef: step.ref, visit: activeVisit, attempt: tryNo })),
+              // A new chat starts on the first request of the visit only; a correction or a retry inside the visit goes to it.
+              chat: step.chat === 'new' && tryNo === 1 ? 'new' : 'continue', stepRef: step.ref, visit: activeVisit, attempt: tryNo })),
             { ...meta, maxWordsByParticipant: maxWordsOf, correctionByParticipant: correctionOf });
             byId = reply?.byParticipant || {};
           } else {

@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — Basic: chat new (a new chat on the first request of each visit), version 2.81.745
+
+- `CustomEngine.run` (`disput/custom-engine.js`): `chat: "new"` is executed by the transport by participants (`sendParticipants`): the first request of a visit goes to a new chat (`chat: "new"`), a correction or a retry inside the visit goes to the same chat (`continue`), and a new visit starts a new chat again. A chat other than `continue` or `new` is refused before the first request (`unsupported_field`, with the address of the step). With the legacy `send` a `chat: "new"` step is refused (`unsupported_field`): the chat cannot be kept apart there.
+- Docs: `basic-schema-guide.md` (the `chat` field), `basic-start-here.md` (refusals).
+- Tests: `tests/custom-engine-chat.test.js` (new); `tests/custom-engine.test.js` (the refusal cases now name a chat other than continue or new; the preview of a step with `chat: "new"` gives a prompt).
+
 ### 2026-10-11 — Basic: attachments follow the participant (second participant of one model gets them), version 2.81.744
 
 - Fix (`results.js`, `runCustomFromPage` → `sendWave`): the set of attached participants is keyed by `participantId`, not by the model name; a participant that has not had the attachments yet gets them with its first message. Runs without explicit ids (id = name) behave as before.
