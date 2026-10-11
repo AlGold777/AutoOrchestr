@@ -91,12 +91,13 @@ describe('T18: the architecture schema is valid, shows on the canvas and keeps i
     });
   });
 
-  test('the two participants of one model in S18 have their own ids; the author of S18 revises in its own chat (same id)', () => {
+  test('S18 has two independent participants with their own ids; the author revises in its own chat (same id, chat continue)', () => {
     const s18 = byRef[map.stages.find((item) => item.stage === 'S18').refs[0]];
-    expect(s18.models.map((model) => [model.name, model.id])).toEqual([['Claude', 'S18-a'], ['Claude', 'S18-b']]);
+    expect(s18.models.map((model) => [model.name, model.id])).toEqual([['Claude', 'S18-a'], ['GPT', 'S18-b']]);
     expect(s18.chat).toBe('new');
     const revisionA = byRef[map.stages.find((item) => item.stage === 'S20').refs[1]];
     expect(revisionA.models).toEqual([{ name: 'Claude', id: 'S18-a' }]);
+    expect(revisionA.chat).toBeUndefined();
     expect(revisionA.output.artifacts[0].revisionOf).toEqual({ artifact: { step: s18.ref, participant: 'S18-a', id: 'candidate' }, version: 'latest', required: true });
   });
 
@@ -141,6 +142,24 @@ describe('T18: the architecture schema is valid, shows on the canvas and keeps i
     });
     // Per-participant inputs of S19 (each reviewer sees the other candidate) are kept with the participant.
     expect(settings.customModelSettings['r20']['S19-a'].input).toEqual(byRef.r20.models[0].input);
+  });
+});
+
+// T07 (engine): two participants of one model in one step are two requests with two ids in two chats. The page does not
+// install such a step yet (A06 test in results-debate-favorites.test.js), so this runs on the engine only.
+describe('T07: two ids of one model in S18 go as two independent chats', () => {
+  test('two Claude ids in one step: two requests, each with its participant id and chat new; the author of the revision keeps its id', async () => {
+    const twin = { schemaVersion: 1, origin: 'user', steps: [
+      { ref: 'r1', kind: 'round', order: 'parallel', chat: 'new', require: 2, input: 'none', models: [{ name: 'Claude', id: 'S18-a' }, { name: 'Claude', id: 'S18-b' }] },
+      { ref: 'r2', kind: 'round', input: [{ step: 'r1', participant: 'S18-a', required: true }], models: [{ name: 'Claude', id: 'S18-a' }] }
+    ] };
+    expect(Schema.validate(twin)).toEqual([]);
+    const transport = fakeTransport((ref, pid) => `ответ ${ref} ${pid}`);
+    const result = await run({ sendParticipants: transport.sendParticipants, steps: Schema.assemble(twin) }, owners());
+    expect(result.stopReason).toBe('steps_done');
+    const first = transport.calls[0].map((request) => [request.participantId, request.modelName, request.chat]);
+    expect(first).toEqual([['S18-a', 'Claude', 'new'], ['S18-b', 'Claude', 'new']]);
+    expect(transport.calls[1][0]).toMatchObject({ participantId: 'S18-a', chat: 'continue' });
   });
 });
 

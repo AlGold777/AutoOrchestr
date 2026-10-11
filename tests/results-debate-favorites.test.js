@@ -3803,6 +3803,29 @@ describe('Pipeline debate favorites view', () => {
         } finally { window.prompt = oldPrompt; h.cleanup(); }
       }, 30000);
 
+    describe('the architecture fixture S01–S30 on the page (T17, T18)', () => {
+      test('installs without errors; Save → load from the list → Save gives the fixture steps back', async () => {
+        const h = setupCustomInheritance('Architecture page host', { synthesis: '' });
+        try {
+          const fixture = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'basic-architecture-s01-s30.json'), 'utf8'));
+          const installed = await h.debug.installBasicSchema('Architecture S01-S30', fixture);
+          expect(installed).toEqual({ ok: true, errors: [] });
+          h.debug.clearCustomSessionForTest();
+          document.querySelector('.pipeline-item[data-name="Architecture S01-S30"]').click();
+          await settleCustomCard();
+          await saveAs('Architecture saved once');
+          const first = JSON.parse(JSON.stringify((await storedRecord('Architecture saved once')).schema));
+          document.querySelector('.pipeline-item[data-name="Architecture saved once"]').click();
+          await settleCustomCard();
+          await saveAs('Architecture saved twice');
+          const second = JSON.parse(JSON.stringify((await storedRecord('Architecture saved twice')).schema));
+          expect(first.steps).toEqual(fixture.steps);
+          expect(second.steps).toEqual(fixture.steps);
+          expect(second.run).toEqual(fixture.run);
+        } finally { h.cleanup(); }
+      }, 240000);
+    });
+
     describe('Export and Import of one schema', () => {
       test('Export gives the bare schema of the canvas; its file name is the pipeline name', async () => {
         const h = setupCustomInheritance('Export host', { synthesis: 'Gemini' });

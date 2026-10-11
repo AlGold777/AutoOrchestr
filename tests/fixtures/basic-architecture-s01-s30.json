@@ -3,7 +3,7 @@
   "origin": "user",
   "run": {
     "policy": "auto",
-    "maxWords": 1500
+    "maxWords": 700
   },
   "steps": [
     {
@@ -700,7 +700,7 @@
           "id": "S18-a"
         },
         {
-          "name": "Claude",
+          "name": "GPT",
           "id": "S18-b"
         }
       ],
@@ -901,7 +901,7 @@
       ],
       "models": [
         {
-          "name": "Claude",
+          "name": "GPT",
           "id": "S18-b"
         }
       ],
