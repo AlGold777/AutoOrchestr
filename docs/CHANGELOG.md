@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — Basic: chat bindings of the participants are kept in the snapshot, version 2.81.746
+
+- `CustomEngine.run` (`disput/custom-engine.js`): the chat of each participant (`chatBindings`: participantId → `{ modelName, stepRef, visit, transportRequestId }`) is set by its accepted or failed reply with a transport request ID; it is in every checkpoint and in the result (`state.chatBindings`), and a resume takes it back. An old list in the snapshot is read as no bindings.
+- `CustomRunRecord` (`disput/custom-run-record.js`): `setSnapshot` keeps the bindings as a copy in `snapshot.chatBindings` (an object; a list or no value is `{}`). `setSnapshot` takes the current position from `state.current` when no `current` is given (before, a snapshot made from the state alone lost the step in progress).
+- Docs: `basic-start-here.md` (the record).
+- Tests: `tests/custom-run-chat-bindings.test.js` (new): a checkpoint keeps the bindings, a reload gives them back, a resume keeps them; an old list reads and resumes. `tests/custom-run-record.test.js`: an empty snapshot has `chatBindings: {}`.
+
 ### 2026-10-11 — Basic: chat new (a new chat on the first request of each visit), version 2.81.745
 
 - `CustomEngine.run` (`disput/custom-engine.js`): `chat: "new"` is executed by the transport by participants (`sendParticipants`): the first request of a visit goes to a new chat (`chat: "new"`), a correction or a retry inside the visit goes to the same chat (`continue`), and a new visit starts a new chat again. A chat other than `continue` or `new` is refused before the first request (`unsupported_field`, with the address of the step). With the legacy `send` a `chat: "new"` step is refused (`unsupported_field`): the chat cannot be kept apart there.

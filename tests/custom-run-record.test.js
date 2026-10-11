@@ -212,7 +212,7 @@ describe('Custom run record, version 2 (8.2)', () => {
     const snapshot = record.snapshot;
     // The registry is record.artifacts (5.3), not a second copy in the snapshot.
     expect(Object.keys(snapshot).sort()).toEqual(['chatBindings', 'continuationStack', 'current', 'decisions', 'dependencies', 'feedback', 'loopCounters', 'ownerAnswers', 'pc', 'pendingOwner', 'results', 'routes', 'runSettings', 'schema', 'taskRef', 'visits']);
-    expect(snapshot.chatBindings).toEqual([]);
+    expect(snapshot.chatBindings).toEqual({});
     expect(snapshot.current).toMatchObject({ stepRef: null, phase: 'done' });
     expect(Record.canResume(record)).toBe(true);
     expect(JSON.parse(JSON.stringify(snapshot))).toEqual(snapshot);

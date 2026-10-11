@@ -589,6 +589,7 @@
     let activeFeedback = [];
     let activeFeedbackRefs = []; // the feedback of the visit in progress, as references (for a checkpoint)
     let inFlight = []; // the participants whose request is being sent now: unknown after a reload until their answer is judged
+    let chatBindings = {}; // participantId → { modelName, stepRef, visit, transportRequestId }: the chat of each participant (kept on resume)
     let openOwner = null; // the owner interaction that is open now (a decision, a route, an owner step, an ASK): kept on a stop
     let stopDetail = '';
     // The plan as the run sees it: a report shows what was intended, not only what happened.
@@ -621,7 +622,7 @@
             accepted: [], pending: [], outcome: {}, feedback: [], route: null, owner: null },
         results: finished.map(savedEntry),
         routes: finished.filter((item) => item.route).map((item) => ({ stepRef: item.step.ref, visit: item.visit, id: item.route.id, by: item.route.by, reason: item.route.reason })),
-        ownerAnswers, artifacts: registry.entries, pendingOwner: openOwner
+        ownerAnswers, artifacts: registry.entries, pendingOwner: openOwner, chatBindings
       }));
     }
     // The checkpoint (8.2) is awaited before the next external action. A failed save is not swallowed: the run stops with
@@ -843,6 +844,7 @@
         const retry = [];
         pending.forEach((model) => {
           const result = byId[model.id] || {};
+          if (result.transportRequestId) chatBindings[model.id] = { modelName: model.name, stepRef: step.ref, visit: activeVisit, transportRequestId: result.transportRequestId };
           let verdict = judge(result, accept, checkFor(step, model));
           if (!verdict.ok && reply?.closedByOwner && !text(result.text)) verdict = { ...verdict, reason: 'closed_by_owner' };
           outcome[model.id] = { ...verdict, model: model.name, participant: model.id, status: result.status || '', attempt: tryNo, transportRequestId: result.transportRequestId || '' };
@@ -1123,6 +1125,8 @@
       ['visits', 'loopCounters', 'feedback', 'dependencies', 'decisions'].forEach((field) => { state[field] = isPlain(saved[field]) ? JSON.parse(JSON.stringify(saved[field])) : {}; });
       state.continuationStack = Array.isArray(saved.continuationStack) ? JSON.parse(JSON.stringify(saved.continuationStack)) : [];
       ownerAnswers.push(...(Array.isArray(saved.ownerAnswers) ? saved.ownerAnswers : []));
+      // A list (an old snapshot) is no bindings: the chats are taken from the next reply of each participant.
+      chatBindings = isPlain(saved.chatBindings) ? JSON.parse(JSON.stringify(saved.chatBindings)) : {};
       registry.entries.push(...(Array.isArray(saved.artifacts) ? saved.artifacts : []).map((entry) => ({ ...entry, lineage: { ...entry.lineage }, source: { ...entry.source }, content: { ...entry.content } })));
       (Array.isArray(saved.results) ? saved.results : []).forEach((item) => {
         const step = plan[pointAt(item.stepRef)];
