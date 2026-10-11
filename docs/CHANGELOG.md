@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — Basic: a removed round takes its kept fields with it, version 2.81.739
+
+- Fix (`results.js`, `removeLastRound`): the fields kept from the source schema (`output`, `require`, `owner`, `chat`) of the removed round are dropped; a round added later does not inherit them.
+- Test: `tests/results-debate-favorites.test.js` (the removed round; the added round has no `require`). The test fixture has the remove button (`#removeRoundBtn`).
+
 ### 2026-10-11 — Basic: the run takes the schema's length limit; the decision window offers only what the engine allows, version 2.81.738
 
 - Fix (`results.js`, `runCustomFromPage`): the engine gets `runMaxWords` (the run's `maxWords` of the schema); the check of `strictLength` no longer uses the default limit.

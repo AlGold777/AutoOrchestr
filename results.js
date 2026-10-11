@@ -7921,6 +7921,9 @@ document.addEventListener('click', (event) => {
             if (roundCounter <= 1) return;
 
             pipelinePanel.querySelectorAll(`[data-round="${roundCounter}"]`).forEach((el) => el.remove());
+            // The fields kept from the source belong to the removed round: a round added later starts without them.
+            const source = basicSourceSchema.get(draftPlanStorageKey());
+            if (source && Array.isArray(source.steps)) basicSourceSchema.set(draftPlanStorageKey(), { ...source, steps: source.steps.filter((step) => step?.ref !== `r${roundCounter}`) });
             roundCounter--;
             if (roundCounter <= 1 && pipelineRemoveRoundBtn) {
                 pipelineRemoveRoundBtn.style.display = 'none';

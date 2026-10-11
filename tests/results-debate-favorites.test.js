@@ -206,6 +206,7 @@ function renderDebateDom() {
       <div id="pipeline-panel">
         <span id="currentPipelineName" class="pipeline-name">Universal</span><div class="entry-point" id="entryPoint">▶</div>
         <button type="button" id="pipeline-add-round-btn">+</button>
+        <button type="button" id="removeRoundBtn">−</button>
         <button type="button" id="pipeline-add-btn">+</button><button type="button" id="pipeline-save-btn">Save</button><button type="button" id="pipeline-import-btn">Import</button>
         <div class="stage-column" id="round1" data-round="1">
           <div class="model-stack" id="r1-models">
@@ -3440,6 +3441,25 @@ describe('Pipeline debate favorites view', () => {
           expect(refused.ok).toBe(false);
           expect(refused.errors).toEqual([{ path: 'steps[0].models', message: 'два участника модели «Claude» в одном шаге пока не показываются на холсте' }]);
           expect(h.debug.getPipelineStoreSnapshot().pipelines.Twice).toBeUndefined();
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      test('A06: a round removed on the canvas takes its kept fields with it; a round added later does not inherit them', async () => {
+        const h = setupCustomInheritance('Removed round host', { synthesis: '' });
+        try {
+          const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
+            { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }] },
+            { ref: 'r2', kind: 'round', require: 1, models: [{ name: 'Claude' }] }
+          ] };
+          expect((await h.debug.installBasicSchema('Removed round', schema)).ok).toBe(true);
+          document.querySelector('.pipeline-item[data-name="Removed round"]').click();
+          await settleCustomCard();
+          document.getElementById('removeRoundBtn').click();
+          await settleCustomCard();
+          document.getElementById('pipeline-add-round-btn').click();
+          await settleCustomCard();
+          const back = h.debug.basicSchemaFromPage(planOf(), null, { forSave: true });
+          expect(back.steps.find((step) => step.ref === 'r2')).not.toHaveProperty('require');
         } finally { h.cleanup(); }
       }, 30000);
 
