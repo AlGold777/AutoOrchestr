@@ -1,5 +1,14 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — Basic: checkpoint of the run state before every external action, version 2.81.732
+
+- `CustomEngine.run` (`disput/custom-engine.js`): the `checkpoint(state)` callback is awaited before each send (with the pending participants and their attempt), after each judgement, before and after an owner decision (`pendingOwner`: `decision`, `route`, `owner`, `asks`), before a transition and after its invalidation, and at the end (also at Stop). The state is plain data: the pointer (`pc`), visits, counters, stack, feedback, dependencies, the current position (`current`: step, visit, phase, accepted, pending), routes, owner answers, registry entries (`artifacts`) and the pending owner interaction.
+- A failed checkpoint is not swallowed: the run stops with `checkpoint_failed`; no request and no transition follows it. Without the callback the run is autonomous and returns `checkpointed: false`.
+- `results.js` (`runCustomFromPage`): the checkpoint writes the registry and the snapshot into the record and waits for the write. The writes of the record go one after another (a debounced write never lands after a newer one).
+- Not yet: resume from the snapshot (next pack); the owner window and the chat bindings.
+- Docs: `basic-start-here.md` (the record, `checkpoint_failed`), `basic-developer.md` (test table).
+- Tests: `tests/custom-engine-checkpoint.test.js` (new).
+
 ### 2026-10-11 — Basic: run record version 2 (registry, snapshot, attempt key, references), version 2.81.731
 
 - `CustomRunRecord` (`disput/custom-run-record.js`): a new record is version 2 with `artifacts` (the registry, one entry per version) and `snapshot` (the state of the run as plain data: schema, pointer, visits, current position, routes, counters, stack, feedback, dependencies, owner answers; `chatBindings` empty). `setSnapshot`, `setArtifacts`, `canResume` (true only for version 2 with a snapshot). A version 1 record is read and exported as before (`resumable: false`).

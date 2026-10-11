@@ -530,6 +530,7 @@
     task, steps = [], maxAttempts = DEFAULT_ATTEMPTS, semiAuto = false, maxPromptChars = Infinity,
     accept = defaultAccept, parseAsks = null, askOwner = null, askInstruction = '', decide = null,
     send = null, sendParticipants = null, runMaxWords = null, putText: putCallback = null, getText: getCallback = null, chooseRoute = null, provideOwnerResult = null,
+    checkpoint = null,
     signal = null, onEvent = null, onRequest = null, onResponse = null
   }) {
     // The texts of the answers: the record gives the callbacks (putText → ref, getText(ref) → text); without them the run keeps
@@ -583,6 +584,31 @@
       steps: plan.map((step) => ({ step: step.index, ref: step.ref, label: stepLabel(step), order: step.order, input: modeOf(step.input), models: step.models.map((model) => model.name) })) });
 
     class StopRun extends Error { constructor(reason, detail = '') { super(reason); this.stopReason = reason; this.stopDetail = detail; } }
+
+    // The live state for a checkpoint (8.2): plain data only. The pointer is the step in progress (or the next one between steps);
+    // a pending owner interaction and the pending participants of a send are named, so a reload can show them.
+    function liveState(phase, extra = {}) {
+      const step = plan[pos];
+      const accepted = current?.outcome ? Object.keys(current.outcome).filter((id) => current.outcome[id]?.ok) : [];
+      return JSON.parse(JSON.stringify({
+        pc: step ? step.ref : null, visits: state.visits, loopCounters: state.loopCounters, continuationStack: state.continuationStack,
+        feedback: state.feedback, dependencies: state.dependencies,
+        current: { stepRef: step ? step.ref : null, visit: activeVisit, phase, accepted, pending: extra.pending || [] },
+        routes: results.filter((item) => item.route).map((item) => ({ stepRef: item.step.ref, visit: item.visit, id: item.route.id, by: item.route.by, reason: item.route.reason })),
+        ownerAnswers, artifacts: registry.entries, pendingOwner: extra.pendingOwner || null
+      }));
+    }
+    // The checkpoint (8.2) is awaited before the next external action. A failed save is not swallowed: the run stops with
+    // checkpoint_failed, so no request and no transition follows it. Without a callback the run is autonomous and saves nothing.
+    async function checkpointNow(phase, extra = {}) {
+      if (typeof checkpoint !== 'function') return;
+      const step = plan[pos];
+      try {
+        await checkpoint(liveState(phase, extra));
+      } catch (error) {
+        throw new EngineError('checkpoint_failed', `${step ? `шаг «${step.ref}»` : 'конец прогона'} · ${phase}`, `состояние не сохранено: ${error?.message || error}`);
+      }
+    }
 
     // Waiting for the owner (a decision, an [[ASK]] answer) ends on Stop: the run is cancelled with
     // what was collected, also when the owner's dialog itself rejects with AbortError.
@@ -757,6 +783,7 @@
           if (typeof onRequest === 'function') onRequest(entry);
           return [model.id, entry];
         }));
+        await checkpointNow('send', { pending: pending.map((model) => ({ participantId: model.id, attempt: tryNo, phase, stepRef: step.ref, visit: activeVisit })) });
         const meta = { step: step.index, kind: step.kind, label: stepLabel(step), attempt: tryNo, phase, stepRef: step.ref, visit: activeVisit };
         const maxWordsOf = Object.fromEntries(pending.map((model) => [model.id, model.maxWords || null]));
         const correctionOf = Object.fromEntries(pending.map((model) => [model.id, Boolean(current[model.id].parts?.correction)]));
@@ -821,6 +848,7 @@
             transportRequestId: result.transportRequestId || null, promptChars: String(current[model.id].prompt || '').length });
           if (!verdict.ok && !reply?.closedByOwner) retry.push(model);
         });
+        await checkpointNow('judge');
         if (reply?.closedByOwner) return { closedByOwner: true };
         pending = retry;
         // No text at all means no answer exists to correct (a refused or unconfirmed dispatch looks the same):
@@ -934,6 +962,7 @@
       let reason = '';
       let detail = '';
       for (;;) {
+        await checkpointNow('decision', { pendingOwner: { kind: 'owner', stepRef: step.ref, visit: entry.visit } });
         const reply = await ownerWait(() => provideOwnerResult({ stepRef: step.ref, visit: entry.visit, task: step.task, output: step.output,
           ...(reason ? { reason, detail } : {}) }));
         if (reply === null) throw new StopRun('stopped');
@@ -952,6 +981,7 @@
             source: { step: step.ref, participant: OWNER_PARTICIPANT, visit: entry.visit }, answerRef: textRef, pointer: declaration.pointer, inputs: [] });
         });
         emit('custom_owner', { step: step.index, ref: step.ref, visit: entry.visit, accepted: true, reason: null });
+        await checkpointNow('judge');
         return { text: verdict.text, textRef, ...(verdict.file ? { file: verdict.file } : {}) };
       }
     }
@@ -959,7 +989,12 @@
     async function routeChoice(step, entry) {
       const ownerChoice = async (choices, reason) => {
         const id = typeof chooseRoute === 'function'
-          ? await ownerWait(() => chooseRoute({ stepRef: step.ref, visit: entry.visit, choices, reason }))
+          ? await (async () => {
+            await checkpointNow('decision', { pendingOwner: { kind: 'route', stepRef: step.ref, visit: entry.visit } });
+            const chosen = await ownerWait(() => chooseRoute({ stepRef: step.ref, visit: entry.visit, choices, reason }));
+            await checkpointNow('decision');
+            return chosen;
+          })()
           : undefined;
         if (id === null) throw new StopRun('stopped');
         if (!choices.includes(id)) throw new StopRun('no_decision');
@@ -985,9 +1020,10 @@
 
     // The next position after a step: the next step, or the transition the step wrote (6.3, 6.4). A transition is taken only
     // while its limit allows it; a stop, a missing return point and a limit end the run with their reason.
-    function transit(pos, action, caseId) {
+    async function transit(pos, action, caseId) {
       const step = plan[pos];
       if (!action) return pos + 1;
+      await checkpointNow('transition');
       const from = refKey(step);
       if ('stop' in action) {
         emit('custom_transition', { from: step.ref, case: caseId, action: 'stop', reason: action.stop });
@@ -1015,6 +1051,7 @@
         if (action.feedback) state.feedback[target] = feedbackOf(action.feedback, plan[to]);
         const named = (action.invalidate || []).flatMap((ref) => results.filter((entry) => entry.step.ref === ref));
         invalidateFrom([...results.filter((entry) => entry.step.index === plan[to].index), ...named].map(resultKey));
+        await checkpointNow('transition');
         if (action.resumeAt) state.continuationStack.push({ resumeAt: action.resumeAt, from });
       }
       emit('custom_transition', { from: step.ref, case: caseId, action: 'return' in action ? 'return' : 'goto', to: target, count, maxLoops: action.maxLoops ?? null });
@@ -1055,14 +1092,14 @@
           emit('custom_route', { step: step.index, ref: step.ref, visit: entry.visit, case: choice.id, by: choice.by, reason: choice.reason });
           results.push(entry);
           current = null;
-          pos = transit(pos, caseAction(step, choice.id), choice.id);
+          pos = await transit(pos, caseAction(step, choice.id), choice.id);
           continue;
         }
         if (step.kind === 'owner') {
           entry.owner = await ownerAnswer(step, entry);
           results.push(entry);
           current = null;
-          pos = transit(pos, null, null);
+          pos = await transit(pos, null, null);
           continue;
         }
         await execute(step, step.models, outcome);
@@ -1081,10 +1118,12 @@
           if (enough && semiAuto && last && !failed.length && !approve) break;
           // Below the threshold "continue" is not offered: the owner repeats, skips or stops the step.
           const choices = enough ? ['continue', ...(failed.length ? ['retry'] : []), 'stop'] : ['retry', 'skip', 'stop'];
+          if (typeof decide === 'function') await checkpointNow('decision', { pendingOwner: { kind: 'decision', stepRef: step.ref, visit: entry.visit } });
           const action = typeof decide === 'function'
             ? await ownerWait(() => decide({ step: step.index, label: stepLabel(step), accepted, failed, choices, last, required, approve,
               reasons: Object.fromEntries(failed.map((id) => [id, outcome[id]?.reason || ''])) }))
             : null;
+          if (typeof decide === 'function') await checkpointNow('decision');
           // The fallback "an accepted answer goes on" holds only when the threshold is met and no approval is asked.
           if (!choices.includes(action)) { if (enough && !approve) break; throw new StopRun('no_decision'); }
           emit('custom_decision', { step: step.index, action });
@@ -1112,10 +1151,12 @@
             else {
               const accepted = step.models.filter((model) => outcome[model.id]?.ok).map((model) => model.id);
               const failed = step.models.filter((model) => !outcome[model.id]?.ok).map((model) => model.id);
+              if (typeof decide === 'function') await checkpointNow('decision', { pendingOwner: { kind: 'decision', stepRef: step.ref, visit: entry.visit } });
               const decision = typeof decide === 'function'
                 ? await ownerWait(() => decide({ step: step.index, label: stepLabel(step), accepted, failed, choices: ['continue', 'stop'], last: step === plan[plan.length - 1],
                   required: neededOf(step), approve: false, reasons: {}, unmet }))
                 : null;
+              if (typeof decide === 'function') await checkpointNow('decision');
               if (!['continue', 'stop'].includes(decision)) throw new StopRun('no_decision');
               emit('custom_decision', { step: step.index, action: decision });
               if (decision === 'stop') throw new StopRun('stopped');
@@ -1126,9 +1167,13 @@
         current = null;
         if (typeof parseAsks === 'function' && typeof askOwner === 'function' && !entry.skipped) {
           const asks = acceptedOf(entry).flatMap((item) => parseAsks(item.text) || []);
-          if (asks.length) ownerAnswers.push(...((await ownerWait(() => askOwner(asks, { step: step.index, label: stepLabel(step) }))) || []));
+          if (asks.length) {
+            await checkpointNow('asks', { pendingOwner: { kind: 'asks', stepRef: step.ref, visit: entry.visit } });
+            ownerAnswers.push(...((await ownerWait(() => askOwner(asks, { step: step.index, label: stepLabel(step) }))) || []));
+            await checkpointNow('asks');
+          }
         }
-        pos = transit(pos, action, caseId);
+        pos = await transit(pos, action, caseId);
       }
     } catch (error) {
       if (!(error instanceof StopRun)) throw error;
@@ -1137,13 +1182,14 @@
       if (current && acceptedOf(current).length) results.push(current);
     }
     if (aborted() && stopReason === 'steps_done') stopReason = 'cancelled';
+    await checkpointNow('done');
     emit('custom_end', { stopReason, stopDetail, steps: results.length });
     return {
       steps: results.map((entry) => ({ index: entry.step.index, ref: entry.step.ref, kind: entry.step.kind, label: stepLabel(entry.step), visit: entry.visit, valid: entry.valid, skipped: entry.skipped, outcome: entry.outcome, ...(entry.route ? { route: entry.route } : {}), ...(entry.owner?.file ? { file: entry.owner.file } : {}) })),
       // The state of the run as plain data (ТЗ 7): the pointer, the visits, the counters, the stack and the feedback.
       state: JSON.parse(JSON.stringify({ pc: pos < plan.length ? plan[pos].ref : null, ...state })),
       answers: inputFor({ input: 'previous' }, 'previous', { strict: false }).map((item) => item.text),
-      history, ownerAnswers, stopReason, stopDetail,
+      history, ownerAnswers, stopReason, stopDetail, checkpointed: typeof checkpoint === 'function',
       artifacts: registry.entries.map((entry) => ({ ...entry, lineage: { ...entry.lineage }, source: { ...entry.source }, content: { ...entry.content } })),
       texts: Object.fromEntries(texts)
     };

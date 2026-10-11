@@ -7013,12 +7013,26 @@ document.addEventListener('click', (event) => {
             const signal = customAbortController.signal;
             const record = window.CustomRunRecord?.createRun?.({ runId: runContext.pipelineRunId, pipelineName: customPipelineName(), task, steps }) || null;
             let saveTimer = null;
+            // The writes of the record go one after another: an older write never lands after a newer one.
+            let recordWrites = Promise.resolve();
+            const writeRecord = () => {
+                const next = recordWrites.then(() => customRunStore.save(record));
+                recordWrites = next.catch(() => {});
+                return next;
+            };
             const saveRecord = async (now = false) => {
                 if (!record || !customRunStore) return;
                 clearTimeout(saveTimer);
-                const write = () => customRunStore.save(record).catch((error) => console.warn('[RESULTS] Custom run record not saved', error));
+                const write = () => writeRecord().catch((error) => console.warn('[RESULTS] Custom run record not saved', error));
                 if (now) { await write(); return; }
                 saveTimer = setTimeout(write, 600);
+            };
+            // A checkpoint (8.2) takes the state of the engine into the record and waits for its write: a failed write is
+            // not swallowed here, the engine stops on it (checkpoint_failed).
+            const checkpointRecord = (state) => {
+                window.CustomRunRecord.setArtifacts(record, state.artifacts);
+                window.CustomRunRecord.setSnapshot(record, { schema: built.schema, runSettings: { semiAuto, maxAttempts: engine.DEFAULT_ATTEMPTS, runMaxWords: built.run.maxWords ?? null }, state, current: state.current, routes: state.routes, ownerAnswers: state.ownerAnswers, pendingOwner: state.pendingOwner });
+                return writeRecord();
             };
             const recordAttempt = (entry) => {
                 if (!record) return;
@@ -7067,6 +7081,7 @@ document.addEventListener('click', (event) => {
                         putText: (value) => record.put(value),
                         getText: (ref) => (ref && record.texts[ref] !== undefined ? record.texts[ref] : undefined)
                     } : {}),
+                    ...(record && customRunStore ? { checkpoint: checkpointRecord } : {}),
                     onRequest: recordAttempt,
                     onResponse: recordAttempt,
                     send: async (models, promptsByModel, { step, label, attempt, maxWordsByModel, correctionByModel }) => {
