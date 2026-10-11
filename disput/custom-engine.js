@@ -32,6 +32,7 @@
 (function initCustomEngine(root) {
   'use strict';
 
+  const Output = root.BasicOutput || (typeof require === 'function' ? require('./basic-output') : null);
   const DEFAULT_ATTEMPTS = 2;
   const SYNTHESIS_TASK = 'Сведи эти ответы в один итоговый ответ на задачу.';
   const REASON_TEXT = Object.freeze({
@@ -41,7 +42,12 @@
     truncation_marker: 'оборван',
     incomplete_ending: 'оборван на середине',
     error_output: 'ошибка вместо ответа',
-    closed_by_owner: 'раунд закрыт владельцем'
+    closed_by_owner: 'раунд закрыт владельцем',
+    too_long: 'длиннее допустимого',
+    missing_section: 'не содержит раздел',
+    invalid_output: 'не в формате ответа',
+    missing_field: 'без обязательного поля',
+    missing_artifact: 'без объявленного артефакта'
   });
   const STOP_TEXT = Object.freeze({
     steps_done: 'все шаги пройдены',
@@ -71,12 +77,26 @@
     return { value: fallback, source: 'code' };
   }
 
-  function buildPrompt({ task, step, model, input = [], inputMode = 'none', earlier = [], ownerAnswers = [], askInstruction = '' }) {
+  // The block «Формат ответа»: the form of the step, its sections, and the fields of a json answer.
+  function formatBlock(output) {
+    if (!output) return '';
+    const lines = [];
+    if (text(output.form)) lines.push(text(output.form));
+    if (output.format === 'json') {
+      lines.push('Ответ — один JSON-объект без текста вокруг.');
+      if (Array.isArray(output.requiredFields) && output.requiredFields.length) lines.push(`Обязательные поля: ${output.requiredFields.join(', ')}.`);
+    }
+    if (Array.isArray(output.sections) && output.sections.length) lines.push(`Разделы ответа: ${output.sections.map((item) => `«${item}»`).join(', ')}.`);
+    return lines.length ? `Формат ответа:\n${lines.join('\n')}` : '';
+  }
+
+  function buildPrompt({ task, step, model, input = [], inputMode = 'none', earlier = [], ownerAnswers = [], askInstruction = '', output = null }) {
     if (askInstruction && typeof model.discipline?.ask === 'string') askInstruction = model.discipline.ask;
     if (typeof model.promptTemplate === 'string' && model.promptTemplate.trim()) {
       // One pass: placeholders occurring inside model answers remain data, never instructions.
       const values = { '{задача}': text(task), '{вход}': inputMode === 'all' || inputMode === 'sources' ? labelled(input) : numbered(input), '{ответы до тебя}': numbered(earlier) };
       const parts = [model.promptTemplate.replace(/\{задача\}|\{вход\}|\{ответы до тебя\}/g, (key) => values[key])];
+      if (formatBlock(output)) parts.push(formatBlock(output));
       if (ownerAnswers.length) parts.push(`Ответы владельца на вопросы:\n${ownerAnswers.map((item) => `- ${item.question}: ${item.answer}`).join('\n')}`);
       if (askInstruction) parts.push(askInstruction);
       return parts.join('\n\n');
@@ -91,6 +111,7 @@
     if (earlier.length) parts.push(`Ответы участников этого раунда до тебя:\n\n${numbered(earlier)}`);
     const taskInstruction = model.task ?? step.task;
     if (text(taskInstruction)) parts.push(`Задание:\n${text(taskInstruction)}`);
+    if (formatBlock(output)) parts.push(formatBlock(output));
     if (text(model.extra)) parts.push(`Дополнительно для тебя:\n${text(model.extra)}`);
     if (ownerAnswers.length) parts.push(`Ответы владельца на вопросы:\n${ownerAnswers.map((item) => `- ${item.question}: ${item.answer}`).join('\n')}`);
     if (askInstruction) parts.push(askInstruction);
@@ -98,16 +119,22 @@
   }
 
   const CORRECTION_TEMPLATE = 'Твой предыдущий ответ {причина}. Дай ответ на задание полностью.';
-  const correctionPrompt = (reason, template = CORRECTION_TEMPLATE) => (typeof template === 'string' ? template : CORRECTION_TEMPLATE).replace(/\{причина\}/g, REASON_TEXT[reason] || 'не принят');
+  // The correction names the reason and its detail: the section, the pointer, the count of words.
+  const correctionPrompt = (reason, template = CORRECTION_TEMPLATE, detail = '') => (typeof template === 'string' ? template : CORRECTION_TEMPLATE)
+    .replace(/\{причина\}/g, `${REASON_TEXT[reason] || 'не принят'}${detail ? ` ${detail}` : ''}`);
 
   // Default technical check: non-empty text. The page passes the shared acceptance check.
   const defaultAccept = () => ({ ok: true, reason: '' });
 
-  function judge(result, accept) {
+  // The technical acceptance first, then the check of the output (`check`, when the step has an output).
+  function judge(result, accept, check = null) {
     const value = text(result?.text);
     if (!value) return { ok: false, reason: result?.answered ? 'token_only' : 'empty', text: '' };
     const verdict = accept({ text: value, completion: result?.completion || '', status: result?.status || '' }) || {};
-    return { ok: verdict.ok !== false, reason: verdict.ok === false ? (verdict.reason || 'rejected') : '', text: value };
+    if (verdict.ok === false) return { ok: false, reason: verdict.reason || 'rejected', text: value };
+    const shape = check ? check(value) : null;
+    if (shape && !shape.ok) return { ok: false, reason: shape.reason, detail: shape.detail || '', text: value };
+    return { ok: true, reason: '', text: value };
   }
 
   // Numbers the steps for labels: rounds by their card, syntheses by the round before them.
@@ -124,6 +151,7 @@
         task: kind === 'synthesis' && !text(step.task) ? SYNTHESIS_TASK : text(step.task),
         // A list of sources stays a list here: the input is checked before the run (assertExecutable).
         input: Array.isArray(step.input) ? step.input.slice() : (kind === 'synthesis' ? 'previous' : (step.input ?? 'previous')),
+        output: step.output ?? null,
         models: (step.models || []).map((model) => (typeof model === 'string' ? { name: model, id: model, extra: '' } : {
           name: model.name, id: model.id ?? model.name, extra: text(model.extra), task: typeof model.task === 'string' ? model.task : null, promptTemplate: typeof model.promptTemplate === 'string' ? model.promptTemplate : null,
           discipline: model.discipline ? { ...model.discipline } : null,
@@ -171,7 +199,12 @@
       const problem = inputProblem(step.input, step.kind, fail, 'input');
       if (problem) return problem;
     }
-    if (step.output !== undefined) return fail('unsupported_field', 'output', 'выход шага движок пока не исполняет');
+    if (step.output !== undefined) {
+      const output = step.output;
+      if (!output || typeof output !== 'object' || Array.isArray(output)) return fail('invalid_field', 'output', 'выход шага: объект');
+      if (output.format !== undefined && output.format !== 'json') return fail('unsupported_field', 'output.format', 'формат выхода движок пока не исполняет');
+      if (output.artifacts !== undefined) return fail('unsupported_field', 'output.artifacts', 'объявление артефактов движок пока не исполняет (реестр, пакет P02, шаг 7)');
+    }
     if (step.require !== undefined && step.require !== 'any') return fail('unsupported_field', 'require', 'число ответов движок пока не исполняет');
     if (step.owner !== undefined) return fail('unsupported_field', 'owner', 'подтверждение владельца движок пока не исполняет');
     if (step.chat !== undefined && step.chat !== 'continue') return fail('unsupported_field', 'chat', 'чат «new» движок пока не исполняет');
@@ -221,8 +254,12 @@
   async function run({
     task, steps = [], maxAttempts = DEFAULT_ATTEMPTS, semiAuto = false, maxPromptChars = Infinity,
     accept = defaultAccept, parseAsks = null, askOwner = null, askInstruction = '', decide = null,
-    send = null, sendParticipants = null, signal = null, onEvent = null, onRequest = null, onResponse = null
+    send = null, sendParticipants = null, runMaxWords = null, signal = null, onEvent = null, onRequest = null, onResponse = null
   }) {
+    // The run's word limit: the page gives it; without it the default of Basic (BasicSchema.DEFAULTS.run) applies.
+    const runLimit = Number.isSafeInteger(runMaxWords) ? runMaxWords : (root.BasicSchema || (typeof require === 'function' ? require('./basic-schema') : null))?.DEFAULTS?.run?.maxWords;
+    // The check of an answer of one participant by the output of its step, or null when the step has no output.
+    const checkFor = (step, model) => (step.output ? (value) => Output.checkAnswer(value, step.output, { limit: model.maxWords ?? runLimit }) : null);
     const participants = typeof sendParticipants === 'function';
     if (!participants && typeof send !== 'function') throw new Error('custom_send_required');
     assertExecutable(steps, { participants });
@@ -275,7 +312,7 @@
           throw new StopRun('missing_input', `шаг «${ref}»${who} не дал принятого ответа; шаг «${step.ref}» не отправлен`);
         }
         return answers.map((item) => ({
-          label: `${stepLabel(entry.step)}, участник ${item.participant}, визит ${VISIT}`, text: item.text, source: item.source
+          label: `${stepLabel(entry.step)}${entry.step.output?.name ? ` («${entry.step.output.name}»)` : ''}, участник ${item.participant}, визит ${VISIT}`, text: item.text, source: item.source
         }));
       });
     }
@@ -305,7 +342,7 @@
       const spec = specOf(step, model);
       const input = inputFor(step, spec);
       const prompt = buildPrompt({ task, step, model, input, inputMode: modeOf(spec), earlier,
-        ownerAnswers, askInstruction: semiAuto ? askInstruction : '' });
+        ownerAnswers, askInstruction: semiAuto ? askInstruction : '', output: step.output });
       if (prompt.length > maxPromptChars) throw new StopRun('context_full');
       return { prompt, parts: partsFor(step, model, input, earlier, spec) };
     }
@@ -359,12 +396,14 @@
         const retry = [];
         pending.forEach((model) => {
           const result = byId[model.id] || {};
-          let verdict = judge(result, accept);
+          let verdict = judge(result, accept, checkFor(step, model));
           if (!verdict.ok && reply?.closedByOwner && !text(result.text)) verdict = { ...verdict, reason: 'closed_by_owner' };
           outcome[model.id] = { ...verdict, model: model.name, participant: model.id, status: result.status || '', attempt: tryNo, transportRequestId: result.transportRequestId || '' };
+          delete outcome[model.id].detail;
+          if (verdict.detail) outcome[model.id].detail = verdict.detail;
           Object.assign(entries[model.id], {
             state: 'done', finishedAt: Date.now(), sentPrompt: typeof result.sentPrompt === 'string' ? result.sentPrompt : null,
-            answer: text(result.text), attribution: result.attribution || '', accepted: verdict.ok, reason: verdict.reason || '',
+            answer: text(result.text), attribution: result.attribution || '', accepted: verdict.ok, reason: verdict.reason || '', ...(verdict.detail ? { detail: verdict.detail } : {}),
             status: result.status || '', transportRequestId: result.transportRequestId || ''
           });
           if (typeof onResponse === 'function') onResponse(entries[model.id]);
@@ -378,7 +417,7 @@
         // No text at all means no answer exists to correct (a refused or unconfirmed dispatch looks the same):
         // the same request goes out again. A correction is for an answer that came back and was not accepted.
         current = Object.fromEntries(retry.map((model) => (outcome[model.id].reason === 'empty' ? [model.id, { ...current[model.id], retryOf: tryNo }] : [model.id, (() => {
-          const correction = correctionPrompt(outcome[model.id].reason, model.discipline?.correction);
+          const correction = correctionPrompt(outcome[model.id].reason, model.discipline?.correction, outcome[model.id].detail);
           return { prompt: correction, parts: { correction: { reason: outcome[model.id].reason, text: correction } }, retryOf: tryNo };
         })()])));
       }
@@ -485,15 +524,15 @@
     const position = step.models.findIndex((item) => item.name === model.name);
     const earlier = step.order === 'sequential' && position > 0 ? [{ text: PLACEHOLDER.earlier }] : [];
     const prompt = buildPrompt({ task, step, model, input, inputMode: modeOf(spec), earlier, ownerAnswers: [],
-      askInstruction: semiAuto ? askInstruction : '' });
+      askInstruction: semiAuto ? askInstruction : '', output: step.output });
     const template = typeof model.promptTemplate === 'string' && model.promptTemplate.trim() ? model.promptTemplate
       : buildPrompt({ task: '{задача}', step, model, input: input.length ? [{ label: 'Вход', text: '{вход}' }] : [],
-        inputMode: modeOf(spec), earlier: earlier.length ? [{ text: '{ответы до тебя}' }] : [] });
+        inputMode: modeOf(spec), earlier: earlier.length ? [{ text: '{ответы до тебя}' }] : [], output: step.output });
     return { label: stepLabel(step), order: step.order, inputMode: modeOf(spec), prompt, template, transportLines: TRANSPORT_LINES.slice(),
       instructions: { task: text(task), stepTask: model.task ?? step.task, extra: model.extra || '', askInstruction: semiAuto ? askInstruction : '' } };
   }
 
-  const api = Object.freeze({ EngineError, unexecutedOf, DEFAULT_ATTEMPTS, CORRECTION_TEMPLATE, SYNTHESIS_TASK, STOP_TEXT, REASON_TEXT, resolveSetting, PLACEHOLDER, TRANSPORT_LINES, buildPrompt, correctionPrompt, normalizeSteps, previewPrompt, run });
+  const api = Object.freeze({ EngineError, unexecutedOf, formatBlock, DEFAULT_ATTEMPTS, CORRECTION_TEMPLATE, SYNTHESIS_TASK, STOP_TEXT, REASON_TEXT, resolveSetting, PLACEHOLDER, TRANSPORT_LINES, buildPrompt, correctionPrompt, normalizeSteps, previewPrompt, run });
   root.CustomEngine = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

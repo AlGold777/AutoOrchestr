@@ -12,6 +12,7 @@
 | --- | --- | --- |
 | `disput/custom-engine.js` | `CustomEngine`, `run`, `attempt`, `normalizeSteps`, `buildPrompt`, `previewPrompt`, `correctionPrompt`, `inputFor`, `judge`, `resolveSetting`, `STOP_TEXT`, `REASON_TEXT`, `DEFAULT_ATTEMPTS`, `SYNTHESIS_TASK`, `EngineError`, `unexecutedOf`, `assertExecutable`, `sourceItems`, `sendParticipants` | Движок: шаги, запросы, приём, повторы, пауза |
 | `disput/basic-schema.js` | `BasicSchema`, `DEFAULTS`, `validate`, `assemble`, `resolveFields`, `resolveRun`, `toSettings`, `toCanvas`, `describeErrors`, `graph` | Формат схемы: умолчания, проверка, сборка шагов, показ на холсте, граф переходов (`graph`: рёбра и цикл без ограниченного перехода) |
+| `disput/basic-output.js` | `BasicOutput`, `checkAnswer`, `readPointer`, `parseJsonAnswer`, `countWords` | Проверка ответа по выходу шага: длина, JSON и поля, разделы, артефакты (чистые функции; вызывает движок) |
 | `disput/custom-run-record.js` | `CustomRunRecord`, `createRun`, `recordAttempt`, `finishRun`, `serialize`, `revive`, `exportRun`, `createStore` | Запись о прогоне |
 | `results/stage-card.js` | `StageCard`, `buildModel`, `render` | Окно настроек раунда |
 | `disput/pipeline-presets.js` | `BUILTIN_PIPELINE_DEFINITIONS`, `PIPELINE_PRESETS`, `makePreset` | Шаблон Basic и пресет `CUSTOM` |
@@ -46,6 +47,7 @@
 | `tests/custom-engine.test.js` | Движок: шаги, запросы, приём, повторы, бюджет, пауза, вопросы |
 | `tests/custom-run-record.test.js` | Запись о прогоне, хранение, экспорт, состояние `not_sent` |
 | `tests/custom-extract.test.js` | Разбор прогона в Extract (Transport) |
+| `tests/basic-output.test.js` | Проверка выхода: слова, JSON Pointer, порядок причин отказа |
 | `tests/basic-schema.test.js` | Формат схемы: наследование, сборка, проверка, `toCanvas`, `toSettings` |
 | `tests/basic-schema-guide.test.js` | Инструкция автора схем совпадает с кодом |
 | `tests/basic-docs-refs.test.js` | Ссылки и имена в документах Basic совпадают с кодом |

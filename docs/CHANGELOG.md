@@ -1,5 +1,14 @@
 # CHANGELOG — Project
 
+### 2026-10-11 — Basic output: the answer of a step is checked by its form (P02, step 4), version 2.81.714
+
+- `BasicOutput` (new, `disput/basic-output.js`, pure; loaded in `pipeline_panel.html` before `custom-engine.js`): `checkAnswer(answer, output, { limit })` in the order of the technical spec 5.1 — length (`strictLength`, exactly the limit is allowed), then the JSON answer and its `requiredFields`, or the `sections` (a substring of a line, without regard to case), then the declared artifacts (`missing_artifact`). Reasons: `too_long` (with the count of words), `missing_section`, `invalid_output`, `missing_field` (`null` is present), `missing_artifact`; each carries its detail. `readPointer` reads JSON Pointers (`~0`, `~1`), never reads `__proto__`, `prototype`, `constructor`, and changes nothing. `countWords` is the one word counter.
+- `CustomEngine.run`: the limit of an answer is the participant's `maxWords`, else `runMaxWords` (the page gives it), else `BasicSchema.DEFAULTS.run.maxWords`. The check runs after the technical acceptance; a rejected participant gets a correction that names the section, the pointer or the count (`REASON_TEXT` has the new reasons); the accepted ones are not sent again.
+- The request has the block «Формат ответа» (`form`, the sections, and for `json` the required fields), in the automatic request, in the request of the model itself and in the preview. `output.name` names the source in the inputs of the next steps: «Раунд 1 («Аудит»), участник A, визит 1».
+- Not yet: `output.artifacts` is refused before the first request (`unsupported_field`) until the registry is executed (step 7); `no_verdict` comes with the pack P06.
+- Docs: `basic-start-here.md` («Приём ответа и повторы», «Что получает модель», «Ошибки до первого запроса»), `basic-schema-guide.md` (the output row, 5.8), `basic-developer.md` (the file table).
+- Tests: `tests/basic-output.test.js` (new, 9 cases), `tests/custom-engine.test.js` (the block «Custom engine output check», 7 cases; the refusals of step 1 use the fields that are not executed).
+
 ### 2026-10-11 — Basic participants: ids, their own input and the transport callback (P02, step 3), version 2.81.713
 
 - `CustomEngine.run` (`disput/custom-engine.js`): a participant is its `id` (the name by default). The outcome of a step is keyed by the participant id (`result.steps[i].outcome[id]`); `history` and the journal name the model and the participant.

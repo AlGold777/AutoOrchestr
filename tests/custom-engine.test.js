@@ -317,7 +317,8 @@ describe('Custom engine refuses what it does not execute yet', () => {
     ['a gate', [{ ref: 'gate:g1', kind: 'gate', models: [{ name: 'A' }] }], 'unsupported_kind', 'gate:g1'],
     ['a route with no models is not dropped', [{ ref: 'route:x', kind: 'route', models: [] }], 'unsupported_kind', 'route:x'],
     ['an owner step', [{ ref: 'owner:o', kind: 'owner', models: [] }], 'unsupported_kind', 'owner:o'],
-    ['an output', [{ ref: 'r1', kind: 'round', output: { name: 'X' }, models: ['A'] }], 'unsupported_field', 'output'],
+    ['an output format other than json', [{ ref: 'r1', kind: 'round', output: { format: 'xml' }, models: ['A'] }], 'unsupported_field', 'output.format'],
+    ['an output with artifacts', [{ ref: 'r1', kind: 'round', output: { format: 'json', requiredFields: ['/m'], artifacts: [{ id: 'm', name: 'M', pointer: '/m' }] }, models: ['A'] }], 'unsupported_field', 'output.artifacts'],
     ['require all', [{ ref: 'r1', kind: 'round', require: 'all', models: ['A', 'B'] }], 'unsupported_field', 'require'],
     ['require 1', [{ ref: 'r1', kind: 'round', require: 1, models: ['A', 'B'] }], 'unsupported_field', 'require'],
     ['owner approve', [{ ref: 'r1', kind: 'round', owner: 'approve', models: ['A'] }], 'unsupported_field', 'owner'],
@@ -338,7 +339,7 @@ describe('Custom engine refuses what it does not execute yet', () => {
 
   test('a later unsupported step is refused before the first step is sent', async () => {
     const { send, calls } = ask();
-    await expect(Engine.run({ task: 'T', send, steps: [{ ref: 'r1', kind: 'round', models: ['A'] }, { ref: 'r2', kind: 'round', output: {}, models: ['B'] }] }))
+    await expect(Engine.run({ task: 'T', send, steps: [{ ref: 'r1', kind: 'round', models: ['A'] }, { ref: 'r2', kind: 'round', require: 'all', models: ['B'] }] }))
       .rejects.toMatchObject({ code: 'unsupported_field' });
     expect(calls).toHaveLength(0);
   });
@@ -354,7 +355,7 @@ describe('Custom engine refuses what it does not execute yet', () => {
   });
 
   test('the preview of an unsupported step gives no prompt; a supported step still has one', () => {
-    const steps = [{ ref: 'r1', kind: 'round', models: ['A'] }, { ref: 'r2', kind: 'round', output: {}, models: ['A'] }];
+    const steps = [{ ref: 'r1', kind: 'round', models: ['A'] }, { ref: 'r2', kind: 'round', require: 'all', models: ['A'] }];
     expect(Engine.previewPrompt({ task: 'T', steps, stepIndex: 1, modelName: 'A' })).toBeNull();
     expect(Engine.previewPrompt({ task: 'T', steps, stepIndex: 0, modelName: 'A' }).label).toBe('Раунд 1');
   });
@@ -574,6 +575,77 @@ describe('Custom engine participants', () => {
       { ref: 'r1', kind: 'round', input: 'none', models: [expert('expert-A')] },
       { ref: 'r2', kind: 'round', input: 'none', models: [expert('expert-B', { input: [{ step: 'r1', participant: 'nobody' }] })] }
     ] })).rejects.toMatchObject({ code: 'invalid_input' });
+    expect(calls).toHaveLength(0);
+  });
+});
+
+// Output (A02, pack P02 step 4): the answer is checked by the output of its step after the technical acceptance;
+// the failed participant is sent a correction that names the section, the pointer or the limit; the accepted one is not sent again.
+describe('Custom engine output check', () => {
+  test('a missing section is a rejection that names the section; only the rejected participant is corrected', async () => {
+    const { send, calls } = transport({ A: ['Карта: готово\nЗамечания: нет'], B: ['Только текст', 'Карта\nЗамечания'] });
+    const result = await Engine.run({ task: 'T', send, steps: [
+      { ref: 'r1', kind: 'round', input: 'none', output: { name: 'Аудит', sections: ['Карта', 'Замечания'] }, models: ['A', 'B'] }
+    ] });
+    expect(calls[1].models).toEqual(['B']);
+    expect(calls[1].prompts.B).toBe('Твой предыдущий ответ не содержит раздел «Карта». Дай ответ на задание полностью.');
+    expect(result.history.find((item) => item.model === 'B' && item.attempt === 1)).toMatchObject({ accepted: false, reason: 'missing_section', detail: '«Карта»' });
+    expect(result.steps[0].outcome.B).toMatchObject({ ok: true, attempt: 2 });
+    expect(result.steps[0].outcome.A).toMatchObject({ ok: true, attempt: 1 });
+  });
+
+  test('the sections are found in any case; the answer with them is accepted', async () => {
+    const { send } = transport({ A: ['КАРТА\nзамечания'] });
+    const result = await Engine.run({ task: 'T', send, steps: [{ ref: 'r1', kind: 'round', input: 'none', output: { sections: ['Карта', 'Замечания'] }, models: ['A'] }] });
+    expect(result.steps[0].outcome.A).toMatchObject({ ok: true });
+  });
+
+  test('a strict length: exactly the model limit is allowed, one word more is too_long with the count', async () => {
+    const five = 'один два три четыре пять';
+    const { send } = transport({ A: [five], B: [`${five} шесть`, five] });
+    const result = await Engine.run({ task: 'T', send, steps: [
+      { ref: 'r1', kind: 'round', input: 'none', output: { strictLength: true }, models: [{ name: 'A', maxWords: 5 }, { name: 'B', maxWords: 5 }] }
+    ] });
+    expect(result.steps[0].outcome.A).toMatchObject({ ok: true, attempt: 1 });
+    expect(result.history.find((item) => item.model === 'B' && item.attempt === 1)).toMatchObject({ accepted: false, reason: 'too_long', detail: '(6 из 5 слов)' });
+    expect(result.steps[0].outcome.B).toMatchObject({ ok: true, attempt: 2 });
+  });
+
+  test('without the model limit the run limit applies (default 300 words): 300 is allowed, 301 is not', async () => {
+    const words300 = Array.from({ length: 300 }, (_, index) => `w${index}`).join(' ');
+    const { send } = transport({ A: [`${words300} лишнее`, words300] });
+    const result = await Engine.run({ task: 'T', send, steps: [{ ref: 'r1', kind: 'round', input: 'none', output: { strictLength: true }, models: ['A'] }] });
+    expect(result.steps[0].outcome.A).toMatchObject({ ok: true, attempt: 2 });
+    expect(result.history[0]).toMatchObject({ attempt: 1 });
+    const explicit = await Engine.run({ task: 'T', runMaxWords: 4, send: transport({ A: ['а б в г д', 'а б в г'] }).send, steps: [{ ref: 'r1', kind: 'round', input: 'none', output: { strictLength: true }, models: ['A'] }] });
+    expect(explicit.stopReason).toBe('steps_done');
+    expect(explicit.history[0]).toMatchObject({ accepted: false, reason: 'too_long', detail: '(5 из 4 слов)' });
+    expect(explicit.steps[0].outcome.A).toMatchObject({ ok: true, attempt: 2 });
+  });
+
+  test('a json answer: the missing field is named in the correction; the fenced answer is accepted', async () => {
+    const { send, calls } = transport({ A: ['{"correctedMap": {}}', '```json\n{"correctedMap": null, "auditFindings": []}\n```'] });
+    const result = await Engine.run({ task: 'T', send, steps: [
+      { ref: 'r1', kind: 'round', input: 'none', output: { format: 'json', requiredFields: ['/correctedMap', '/auditFindings'] }, models: ['A'] }
+    ] });
+    expect(calls[1].prompts.A).toBe('Твой предыдущий ответ без обязательного поля /auditFindings. Дай ответ на задание полностью.');
+    expect(result.steps[0].outcome.A).toMatchObject({ ok: true, attempt: 2 });
+  });
+
+  test('the format of the output is in the request: its form, its sections, and in the request of the model itself', () => {
+    const output = { form: 'Сформируй карту и замечания', sections: ['Карта', 'Замечания'] };
+    const steps = [{ ref: 'r1', kind: 'round', input: 'none', output, models: ['A'] }, { ref: 'r2', kind: 'round', input: 'none', output, models: [{ name: 'B', promptTemplate: 'Свой запрос: {задача}' }] }];
+    const plain = Engine.previewPrompt({ task: 'T', steps, stepIndex: 0, modelName: 'A' });
+    expect(plain.prompt).toContain('Формат ответа:\nСформируй карту и замечания\nРазделы ответа: «Карта», «Замечания».');
+    const own = Engine.previewPrompt({ task: 'T', steps, stepIndex: 1, modelName: 'B' });
+    expect(own.prompt).toContain('Свой запрос: T');
+    expect(own.prompt).toContain('Формат ответа:\nСформируй карту и замечания');
+  });
+
+  test('an output with artifacts is refused before the first request until the registry is executed', async () => {
+    const { send, calls } = transport({ A: ['a'] });
+    await expect(Engine.run({ task: 'T', send, steps: [{ ref: 'r1', kind: 'round', input: 'none', output: { format: 'json', requiredFields: ['/m'], artifacts: [{ id: 'm', name: 'M', pointer: '/m' }] }, models: ['A'] }] }))
+      .rejects.toMatchObject({ code: 'unsupported_field' });
     expect(calls).toHaveLength(0);
   });
 });
