@@ -60,7 +60,10 @@
             ...(Array.isArray(roleChoice.prompts) ? roleChoice.prompts : []).map((prompt) => ({ value: String(prompt.id), label: String(prompt.label || prompt.id) }))
           ]
         };
-        if (roleChoice.settings) model.settings = settingsModel(roleChoice.settings, roleChoice);
+        if (roleChoice.settings) {
+          model.settings = settingsModel(roleChoice.settings, { ...roleChoice, enabledCount: working.length });
+          if (model.settings.owner.checked) model.badges.push('владелец: одобрение');
+        }
         return model;
       }
       model.sections.push({ title: 'Участники раунда', items: working.length ? working : ['никто не отправляет'] });
@@ -89,21 +92,229 @@
 
   const ORDER_LABELS = { parallel: 'Параллельно', sequential: 'По очереди' };
   const INPUT_LABELS = { none: 'Ничего', previous: 'Ответы предыдущего шага', all: 'Всё принятое за все предыдущие шаги' };
-  // The default of the input depends on the place: the first round has none, a later round takes the previous step.
-  function settingsModel(settings, { first = false, inheritedTask = '', disabled = false } = {}) {
+  const STEPS_LABEL = 'Выбранные этапы';
+  const REQUIRE_LABELS = { any: 'Любой ответ', all: 'Все включённые', count: 'Число' };
+  const isPlain = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
+  // The input «выбранные этапы» (4.3): the owner's list of step refs keeps its order; entries that are not step refs
+  // (a participant, an artifact written in JSON) stay in place. Returns the new list for the step ref.
+  function stepsAfterToggle(current, ref, checked) {
+    const list = Array.isArray(current) ? current.slice() : [];
+    const at = list.indexOf(ref);
+    if (checked && at < 0) list.push(ref);
+    if (!checked && at >= 0) list.splice(at, 1);
+    return list;
+  }
+
+  // The owner's edit of the output: name, form, sections (non-empty lines) and strictLength replace their values;
+  // the other fields (format, requiredFields, artifacts, revisionOf) stay as they are. A json format has no sections.
+  function outputAfterEdit(current = {}, edited = {}) {
+    const next = { ...(isPlain(current) ? current : {}) };
+    ['name', 'form', 'sections', 'strictLength'].forEach((key) => delete next[key]);
+    if (String(edited.name || '').trim()) next.name = String(edited.name);
+    if (String(edited.form || '').trim()) next.form = String(edited.form);
+    const sections = list(edited.sections).map((line) => line.trim()).filter(Boolean);
+    if (sections.length && next.format !== 'json') next.sections = sections;
+    if (edited.strictLength === true) next.strictLength = true;
+    return next;
+  }
+
+  // The fields of a step the card shows: input, require, owner, output. A draft is a choice the owner made in the card
+  // that the schema does not hold yet («выбранные этапы» without a step, the number of required answers).
+  function stepRestModel(settings = {}, { enabledCount = 0, drafts = {} } = {}) {
+    const req = settings.require;
+    const requireValue = typeof req === 'number' ? 'count' : (req === 'any' || req === 'all' ? req : (drafts.require === 'count' ? 'count' : ''));
+    const output = isPlain(settings.output) ? settings.output : {};
+    return {
+      require: {
+        value: requireValue,
+        count: typeof req === 'number' ? req : '',
+        max: Number(enabledCount) || 0,
+        options: [
+          { value: '', label: 'По умолчанию (любой ответ)' },
+          { value: 'any', label: REQUIRE_LABELS.any },
+          { value: 'all', label: REQUIRE_LABELS.all },
+          { value: 'count', label: REQUIRE_LABELS.count }
+        ]
+      },
+      owner: { checked: settings.owner === 'approve' },
+      output: {
+        name: String(output.name || ''),
+        form: String(output.form || ''),
+        sections: Array.isArray(output.sections) ? output.sections.map(String).join('\n') : '',
+        strictLength: output.strictLength === true,
+        json: output.format === 'json'
+      }
+    };
+  }
+
+  // The input of a step: `first` (the first round has nothing to feed in) gives null. An array of refs or a drafted
+  // «steps» shows the choice «выбранные этапы» with the earlier steps; `kind` decides the other options.
+  function stepInputModel(settings = {}, { kind = 'round', first = false, earlier = [], drafts = {} } = {}) {
+    if (first && kind === 'round') return null;
+    const input = Array.isArray(settings.input) ? settings.input : String(settings.input || '');
+    const picked = Array.isArray(input) ? input : [];
+    const defaultInput = kind === 'round' && first ? 'none' : 'previous';
+    const stepsMode = Array.isArray(input) || input === 'steps' || drafts.input === 'steps';
+    const refs = picked.filter((item) => typeof item === 'string');
+    const options = [
+      { value: '', label: `По умолчанию (${INPUT_LABELS[defaultInput].toLowerCase()})` },
+      ...(kind === 'round' ? Object.entries(INPUT_LABELS).map(([value, label]) => ({ value, label })) : [{ value: 'previous', label: INPUT_LABELS.previous }]),
+      { value: 'steps', label: STEPS_LABEL }
+    ];
+    return {
+      value: stepsMode ? 'steps' : input,
+      options,
+      steps: earlier.map((item) => {
+        const at = refs.indexOf(item.ref);
+        return { ref: item.ref, label: item.label, disabled: !item.enabled, checked: at >= 0, number: at >= 0 ? at + 1 : 0 };
+      }),
+      objectRefs: picked.length - refs.length
+    };
+  }
+
+  // The fields of a synthesis (its window): input, require, owner, output. Settings are the step's own fields.
+  function stepFieldsModel({ kind = 'round', settings = {}, earlier = [], enabledCount = 0, drafts = {}, disabled = false } = {}) {
+    return {
+      disabled: Boolean(disabled),
+      input: stepInputModel(settings, { kind, earlier, drafts }),
+      ...stepRestModel(settings, { enabledCount, drafts })
+    };
+  }
+
+  // The order, the input and the task of a round card; `first` and `inheritedTask` as before. The input of a later round
+  // is the previous step by default, the first round has no input (null).
+  function settingsModel(settings, { first = false, inheritedTask = '', disabled = false, earlier = [], enabledCount = 0, drafts = {} } = {}) {
     const order = String(settings.order || '');
-    const input = String(settings.input || '');
+    const input = stepInputModel(settings, { kind: 'round', first, earlier, drafts });
+    const stepsMode = input?.value === 'steps';
     const defaultInput = first ? 'none' : 'previous';
-    const effectiveInput = input || defaultInput;
+    const effectiveInput = stepsMode ? 'steps' : (input?.value || defaultInput);
     return {
       disabled: Boolean(disabled),
       order: { value: order, options: [{ value: '', label: `По умолчанию (${ORDER_LABELS.parallel.toLowerCase()})` }, ...Object.entries(ORDER_LABELS).map(([value, label]) => ({ value, label }))] },
-      // The first round has no earlier step: its input is not offered.
-      input: first ? null : { value: input, options: [{ value: '', label: `По умолчанию (${INPUT_LABELS[defaultInput].toLowerCase()})` }, ...Object.entries(INPUT_LABELS).map(([value, label]) => ({ value, label }))] },
+      input,
       // The task is always shown. With the input nothing only the task written here is sent (the shared one is not), so the
-      // placeholder of the shared task stays empty and the label says so.
-      task: { value: String(settings.task || ''), placeholder: effectiveInput === 'none' ? '' : String(inheritedTask || ''), sent: effectiveInput !== 'none' }
+      // placeholder of the shared task stays empty and the label says so. «выбранные этапы» sends the step's answers, so the task goes.
+      task: { value: String(settings.task || ''), placeholder: effectiveInput === 'none' ? '' : String(inheritedTask || ''), sent: effectiveInput !== 'none' },
+      ...stepRestModel(settings, { enabledCount, drafts })
     };
+  }
+
+  // A select row of a card (order, input): the choice goes to emit(field, value).
+  function choiceRow(container, field, label, data, emit) {
+    const doc = container.ownerDocument;
+    const select = el(doc, 'select', `stage-card-${field}-select`);
+    data.options.forEach((item) => { const option = el(doc, 'option', '', item.label); option.value = item.value; select.append(option); });
+    select.value = data.value;
+    select.disabled = Boolean(data.disabled);
+    select.addEventListener('change', () => emit(field, select.value));
+    const wrap = el(doc, 'label', `stage-card-setting stage-card-${field}`);
+    wrap.append(doc.createTextNode(`${label} `), select);
+    container.append(wrap);
+  }
+
+  // The list of steps of the input «выбранные этапы». emit('steps', { ref, checked }) — the page keeps the order of choice.
+  // The number is the place of the step in the owner's list; a switched-off step is marked, not hidden.
+  function renderSteps(container, input, emit, disabled = false) {
+    const doc = container.ownerDocument;
+    const box = el(doc, 'fieldset', 'stage-card-steps');
+    box.append(el(doc, 'legend', '', 'Этапы для входа (номер — порядок выбора)'));
+    if (!input.steps.length) box.append(el(doc, 'p', 'stage-card-muted', 'Раньше этих шагов нет.'));
+    input.steps.forEach((item) => {
+      const row = el(doc, 'label', 'stage-card-step-option');
+      const check = el(doc, 'input');
+      check.type = 'checkbox';
+      check.checked = item.checked;
+      check.disabled = Boolean(disabled);
+      check.addEventListener('change', () => emit('steps', { ref: item.ref, checked: check.checked }));
+      row.append(check, doc.createTextNode(` ${item.label}${item.disabled ? ' (выключен)' : ''}${item.number ? ` · ${item.number}` : ''}`));
+      box.append(row);
+    });
+    if (input.objectRefs) box.append(el(doc, 'p', 'stage-card-muted', `Ссылки на участников и артефакты (${input.objectRefs}) заданы в JSON и сохраняются.`));
+    container.append(box);
+  }
+
+  // The fields after the task: how many answers are needed, the owner's approval, the output of the step.
+  // A number of answers goes to emit('require', n) only when it is typed; 'count' is the choice of a number.
+  function renderRest(container, fields, emit) {
+    const doc = container.ownerDocument;
+    const disabled = Boolean(fields.disabled);
+    const requireSelect = el(doc, 'select', 'stage-card-require-select');
+    fields.require.options.forEach((item) => { const option = el(doc, 'option', '', item.label); option.value = item.value; requireSelect.append(option); });
+    requireSelect.value = fields.require.value;
+    requireSelect.disabled = disabled;
+    requireSelect.addEventListener('change', () => emit('require', requireSelect.value));
+    const requireWrap = el(doc, 'label', 'stage-card-setting stage-card-require');
+    requireWrap.append(doc.createTextNode('Сколько ответов нужно '), requireSelect);
+    if (fields.require.value === 'count') {
+      const count = el(doc, 'input', 'stage-card-require-count');
+      count.type = 'number';
+      count.min = '1';
+      count.max = String(fields.require.max);
+      count.step = '1';
+      count.value = fields.require.count === '' ? '' : String(fields.require.count);
+      count.disabled = disabled;
+      count.setAttribute('aria-label', 'Число ответов');
+      count.addEventListener('change', () => { if (count.value !== '') emit('require', Number(count.value)); });
+      requireWrap.append(count, doc.createTextNode(` из ${fields.require.max}`));
+    }
+    container.append(requireWrap);
+
+    const ownerBox = el(doc, 'input', 'stage-card-owner-check');
+    ownerBox.type = 'checkbox';
+    ownerBox.checked = fields.owner.checked;
+    ownerBox.disabled = disabled;
+    ownerBox.addEventListener('change', () => emit('owner', ownerBox.checked ? 'approve' : ''));
+    const ownerWrap = el(doc, 'label', 'stage-card-setting stage-card-owner');
+    ownerWrap.append(ownerBox, doc.createTextNode(' Спросить владельца после этапа'));
+    container.append(ownerWrap);
+
+    const output = fields.output;
+    const group = el(doc, 'section', 'stage-card-output');
+    group.append(el(doc, 'h3', '', 'Выход этапа'));
+    const nameInput = el(doc, 'input', 'stage-card-output-name');
+    nameInput.type = 'text';
+    nameInput.value = output.name;
+    nameInput.disabled = disabled;
+    nameInput.setAttribute('aria-label', 'Имя результата');
+    const formArea = el(doc, 'textarea', 'stage-card-output-form');
+    formArea.rows = 2;
+    formArea.value = output.form;
+    formArea.disabled = disabled;
+    formArea.setAttribute('aria-label', 'Форма ответа');
+    const sectionsArea = el(doc, 'textarea', 'stage-card-output-sections');
+    sectionsArea.rows = 3;
+    sectionsArea.value = output.sections;
+    sectionsArea.disabled = disabled || output.json;
+    sectionsArea.setAttribute('aria-label', 'Разделы ответа, по одному на строку');
+    const strict = el(doc, 'input', 'stage-card-output-strict');
+    strict.type = 'checkbox';
+    strict.checked = output.strictLength;
+    strict.disabled = disabled;
+    const emitOutput = () => emit('output', { name: nameInput.value, form: formArea.value, sections: sectionsArea.value.split('\n'), strictLength: strict.checked });
+    [[nameInput, 'Имя результата'], [formArea, 'Форма ответа'], [sectionsArea, 'Разделы ответа (по одному на строку)']].forEach(([node, text]) => {
+      const wrap = el(doc, 'label', 'stage-card-output-field');
+      wrap.append(doc.createTextNode(`${text} `), node);
+      group.append(wrap);
+      node.addEventListener('change', emitOutput);
+    });
+    const strictWrap = el(doc, 'label', 'stage-card-output-field');
+    strictWrap.append(strict, doc.createTextNode(' Строгая длина (предел слов)'));
+    group.append(strictWrap);
+    strict.addEventListener('change', emitOutput);
+    if (output.json) group.append(el(doc, 'p', 'stage-card-muted', 'Формат json: заголовки не проверяются, поля задаются в схеме (requiredFields).'));
+    container.append(group);
+  }
+
+  // The window of a synthesis: its input (with the steps list), then the same fields as a round card has after its task.
+  function renderStepFields(container, fields, onField) {
+    const emit = (field, value) => { if (typeof onField === 'function') onField(field, value); };
+    if (fields.input) {
+      choiceRow(container, 'input', 'Вход синтеза', { ...fields.input, disabled: fields.disabled }, emit);
+      if (fields.input.value === 'steps') renderSteps(container, fields.input, emit, fields.disabled);
+    }
+    renderRest(container, fields, emit);
   }
 
   const el = (documentRef, tag, className, text) => {
@@ -152,18 +363,9 @@
       if (model.settings) {
         const settings = model.settings;
         const emit = (field, value) => { if (typeof onSetting === 'function') onSetting(field, value); };
-        const choice = (field, label, data) => {
-          const select = el(doc, 'select', `stage-card-${field}-select`);
-          data.options.forEach((item) => { const option = el(doc, 'option', '', item.label); option.value = item.value; select.append(option); });
-          select.value = data.value;
-          select.disabled = settings.disabled;
-          select.addEventListener('change', () => emit(field, select.value));
-          const wrap = el(doc, 'label', `stage-card-setting stage-card-${field}`);
-          wrap.append(doc.createTextNode(`${label} `), select);
-          container.append(wrap);
-        };
-        choice('order', 'Порядок работы', settings.order);
-        if (settings.input) choice('input', 'Вход раунда', settings.input);
+        choiceRow(container, 'order', 'Порядок работы', { ...settings.order, disabled: settings.disabled }, emit);
+        if (settings.input) choiceRow(container, 'input', 'Вход раунда', { ...settings.input, disabled: settings.disabled }, emit);
+        if (settings.input?.value === 'steps') renderSteps(container, settings.input, emit, settings.disabled);
         if (settings.task) {
           const area = el(doc, 'textarea', 'stage-card-task');
           area.value = settings.task.value;
@@ -177,6 +379,7 @@
           wrap.append(doc.createTextNode(settings.task.sent ? 'Задание раунда (пусто — общее) ' : 'Задание раунда (при входе «ничего» отправляется только оно) '), area);
           container.append(wrap);
         }
+        renderRest(container, settings, emit);
       }
     } else {
       const people = el(doc, 'div', 'stage-card-people');
@@ -262,7 +465,7 @@
     }
   });
 
-  const api = Object.freeze({ buildModel, render, STATUS, feed });
+  const api = Object.freeze({ buildModel, render, renderStepFields, stepFieldsModel, stepsAfterToggle, outputAfterEdit, STATUS, feed });
   root.StageCard = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

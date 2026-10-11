@@ -3841,7 +3841,7 @@ describe('Pipeline debate favorites view', () => {
         expect(first.input).toBeNull();
         expect(first.task.placeholder).toBe('');
         const second = rows(openRoundCard(2));
-        expect([...second.input.options].map((option) => option.value)).toEqual(['', 'none', 'previous', 'all']);
+        expect([...second.input.options].map((option) => option.value)).toEqual(['', 'none', 'previous', 'all', 'steps']);
         expect(second.input.options[0].textContent).toBe('По умолчанию (ответы предыдущего шага)');
         expect(second.task.value).toBe('');
         expect(second.task.placeholder).toBe(window.BasicSchema.DEFAULTS.roundTask);
@@ -3965,6 +3965,85 @@ describe('Pipeline debate favorites view', () => {
         expect(h.debug.getCustomRoundSettings().r2).toBeUndefined();
       } finally { release?.(); if (running) await running; h.cleanup(); }
     }, 30000);
+
+    describe('the input of steps, the number of answers, the owner and the output', () => {
+      const planOf = () => window.__pipelineDraftPlanForCanvas(window.__getActivePipelineDraftPlan());
+      const toggle = async (box, checked) => { box.checked = checked; box.dispatchEvent(new Event('change')); await settleCustomCard(); };
+      const withoutModels = (steps) => steps.map(({ models, ...rest }) => rest);
+
+      test('a round and a synthesis keep their steps input, count, owner and output through save, load and a second save; a cleared field stays cleared', async () => {
+        const h = setupCustomInheritance('Step fields', { synthesis: 'Claude' });
+        try {
+          const schema = {
+            schemaVersion: 1, origin: 'user', run: { policy: 'auto' },
+            steps: [
+              { ref: 'r1', kind: 'round', output: { name: 'Карта', format: 'json', requiredFields: ['/map'] }, models: [{ name: 'GPT' }, { name: 'Claude' }] },
+              { ref: 'r2', kind: 'round', input: ['r1', { step: 'r1', participant: 'GPT' }], require: 1, owner: 'approve',
+                output: { name: 'Замечания', sections: ['Карта', 'Замечания'], strictLength: true }, models: [{ name: 'GPT' }, { name: 'Claude' }] },
+              { ref: 'final', kind: 'synthesis', input: ['r2'], owner: 'approve', output: { name: 'Итог', form: 'Сводка' }, models: [{ name: 'Claude' }] }
+            ]
+          };
+          expect(await h.debug.installBasicSchema('Step fields', schema)).toEqual({ ok: true, errors: [] });
+          document.querySelector('.pipeline-item[data-name="Step fields"]').click();
+          await settleCustomCard();
+          expect(withoutModels(h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' }).steps)).toEqual(withoutModels(schema.steps));
+
+          // The card of R2 shows the schema's values.
+          const card = openRoundCard(2);
+          expect(card.querySelector('.stage-card-input-select').value).toBe('steps');
+          expect([...card.querySelectorAll('.stage-card-steps input')].map((box) => box.checked)).toEqual([true]);
+          expect(card.querySelector('.stage-card-require-select').value).toBe('count');
+          expect(card.querySelector('.stage-card-require-count').value).toBe('1');
+          expect(card.querySelector('.stage-card-owner-check').checked).toBe(true);
+          expect(card.querySelector('.stage-card-output-name').value).toBe('Замечания');
+          expect(card.querySelector('.stage-card-output-sections').value).toBe('Карта\nЗамечания');
+          expect(card.querySelector('.stage-card-output-strict').checked).toBe(true);
+
+          // The owner's changes: a step off the list, the count above the models, the owner off, the output name.
+          await toggle(card.querySelector('.stage-card-steps input'), false);
+          expect(withoutModels(h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' }).steps)[1].input).toEqual([{ step: 'r1', participant: 'GPT' }]);
+          const count = openRoundCard(2).querySelector('.stage-card-require-count');
+          count.value = '5';
+          count.dispatchEvent(new Event('change'));
+          await settleCustomCard();
+          expect(document.getElementById('notification-message').textContent).toContain('от 1 до 2');
+          await toggle(openRoundCard(2).querySelector('.stage-card-owner-check'), false);
+          await toggle(openRoundCard(2).querySelector('.stage-card-steps input'), true);
+          const name = openRoundCard(2).querySelector('.stage-card-output-name');
+          name.value = 'Замечания 2';
+          name.dispatchEvent(new Event('change'));
+          await settleCustomCard();
+          const edited = withoutModels(h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' }).steps)[1];
+          expect(edited).toMatchObject({ input: [{ step: 'r1', participant: 'GPT' }, 'r1'], require: 1, output: { name: 'Замечания 2', sections: ['Карта', 'Замечания'], strictLength: true } });
+          expect(edited).not.toHaveProperty('owner');
+
+          // The input goes back to the default: nothing is written, and the source of the load does not bring it back.
+          const choice = openRoundCard(2).querySelector('.stage-card-input-select');
+          choice.value = '';
+          choice.dispatchEvent(new Event('change'));
+          await settleCustomCard();
+          expect(withoutModels(h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' }).steps)[1]).not.toHaveProperty('input');
+
+          // Synthesis window: the final synthesis lists R1 and R2 and keeps its own fields.
+          document.querySelector('#synthesis-stack .pipeline-synthesis-block').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+          await settleCustomCard();
+          const stepCard = document.getElementById('custom-card-step-fields');
+          expect(stepCard.querySelector('.stage-card-input-select').value).toBe('steps');
+          expect([...stepCard.querySelectorAll('.stage-card-steps')[0].querySelectorAll('input')].map((box) => box.checked)).toEqual([false, true]);
+          expect(stepCard.querySelector('.stage-card-owner-check').checked).toBe(true);
+          await toggle(stepCard.querySelectorAll('.stage-card-steps input')[0], true);
+          const finalSaved = withoutModels(h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' }).steps).find((step) => step.ref === 'final');
+          expect(finalSaved).toMatchObject({ input: ['r2', 'r1'], owner: 'approve', output: { name: 'Итог', form: 'Сводка' } });
+
+          // Save, load and save again: the same steps.
+          const once = h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' });
+          expect(await h.debug.installBasicSchema('Step fields again', JSON.parse(JSON.stringify(once)))).toEqual({ ok: true, errors: [] });
+          document.querySelector('.pipeline-item[data-name="Step fields again"]').click();
+          await settleCustomCard();
+          expect(h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' }).steps).toEqual(once.steps);
+        } finally { h.cleanup(); }
+      }, 30000);
+    });
   });
 
   test('Custom ▶ is read-only during a run while its contents can still be copied', async () => {

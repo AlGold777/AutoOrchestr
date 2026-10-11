@@ -4299,8 +4299,11 @@ document.addEventListener('click', (event) => {
             const name = draftPlanStorageKey();
             const all = JSON.parse(JSON.stringify(getCustomRoundSettings()));
             const own = { ...(all[ref] || {}) };
-            if (value === '' || (field === 'task' && !String(value).trim())) delete own[field];
-            else own[field] = value;
+            const empty = value === '' || value == null || (Array.isArray(value) && !value.length)
+                || (value && typeof value === 'object' && !Array.isArray(value) && !Object.keys(value).length)
+                || (field === 'task' && !String(value).trim());
+            if (empty) delete own[field];
+            else own[field] = JSON.parse(JSON.stringify(value));
             if (Object.keys(own).length) all[ref] = own;
             else delete all[ref];
             customRoundSettings.set(name, all);
@@ -4308,6 +4311,57 @@ document.addEventListener('click', (event) => {
                 persistBasicSettings(name);
                 await persistPipelineStore();
             }
+        };
+        // The card of a round or a synthesis keeps the choices the schema does not hold yet as drafts, by pipeline and ref:
+        // «выбранные этапы» before a step is picked, «число» before a number is typed. A draft shows until the owner makes the value.
+        const stepDrafts = new Map();
+        const stepDraftsOf = (ref) => stepDrafts.get(`${draftPlanStorageKey()}\n${ref}`) || {};
+        const stepLabel = (ref) => {
+            const round = /^r(\d+)$/.exec(ref);
+            if (round) return `Раунд ${round[1]}`;
+            const after = /^synth:planned-working-synthesis-after-canvas-r(\d+)$/.exec(ref);
+            if (after) return `Синтез после раунда ${after[1]}`;
+            return ref.startsWith('synth:') ? `Синтез (${ref.slice('synth:'.length)})` : ref;
+        };
+        // The rounds and syntheses before a step, in the schema's order; a switched-off one is marked by enabled.
+        // A planned intermediate synthesis that is not on the canvas stands after its round.
+        const stepsBefore = (ref) => {
+            const steps = (basicSchemaFromPage(draftPlanForCanvas(getActiveDraftPlan()), null, { forSave: true }).steps || [])
+                .filter((step) => step.kind === 'round' || step.kind === 'synthesis');
+            const planned = /^synth:planned-working-synthesis-after-canvas-r(\d+)$/.exec(ref);
+            let end = steps.findIndex((step) => step.ref === ref);
+            if (end < 0) end = planned ? steps.findIndex((step) => step.ref === `r${planned[1]}`) + 1 : steps.length;
+            return steps.slice(0, Math.max(0, end)).filter((step) => step.ref !== 'final').map((step) => ({
+                ref: step.ref,
+                label: stepLabel(step.ref),
+                enabled: (step.models || []).some((model) => model.enabled !== false)
+            }));
+        };
+        // A change of a field in the card of a step (the round card, the synthesis window). The value goes to the schema's field
+        // (saved at once, like the round card); a choice without a value yet is a draft. max: the number of enabled models.
+        const commitStepField = async (ref, field, value, max = 0) => {
+            const current = getCustomRoundSettings()[ref] || {};
+            const drafts = { ...stepDraftsOf(ref) };
+            let key = field;
+            let stored = value;
+            if (field === 'steps') {
+                key = 'input';
+                stored = window.StageCard.stepsAfterToggle(Array.isArray(current.input) ? current.input : [], value.ref, value.checked);
+            }
+            delete drafts[key];
+            if (key === 'input' && (stored === 'steps' || (Array.isArray(stored) && !stored.length))) { drafts.input = 'steps'; stored = ''; }
+            if (key === 'require') {
+                if (stored === 'count') {
+                    stored = typeof current.require === 'number' ? current.require : '';
+                    if (stored === '') drafts.require = 'count';
+                } else if (typeof stored === 'number' && (!Number.isSafeInteger(stored) || stored < 1 || stored > max)) {
+                    showNotification(`Число ответов: от 1 до ${max}.`, 'warn');
+                    return;
+                }
+            }
+            if (key === 'output') stored = window.StageCard.outputAfterEdit(current.output, value);
+            stepDrafts.set(`${draftPlanStorageKey()}\n${ref}`, drafts);
+            await setCustomRoundSetting(ref, key, stored);
         };
         const capturePipelineConfig = ({ basedOn = '' } = {}) => {
             const modelStacks = {
@@ -6706,22 +6760,17 @@ document.addEventListener('click', (event) => {
         // `forSave` builds the stored form: origin, basedOn, switched-off models and steps with their settings,
         // and a `run` that holds only explicit values (see basicRunExplicit). The run path builds the same
         // schema with the run taken from the header as it stands and the legacy fallback of the final request applied.
-        // Fields of the schema the canvas does not edit come from basicSourceSchema, by ref: a round or a synthesis keeps its
-        // output, require, owner and chat (a synthesis also its input and task); a control step (gate, route, owner) keeps its
-        // place after the nearest earlier step of the source that is still on the canvas. A control step is copied as it is.
+        // The fields of a round or a synthesis are the page's own, by ref (customRoundSettings, see stepFieldsOf): nothing is
+        // copied for them from basicSourceSchema, so a field the owner cleared stays cleared. A control step (gate, route,
+        // owner) is not edited on the canvas: it keeps its place after the nearest earlier step of the source that is still on
+        // the canvas, and is copied as it is.
         const CONTROL_STEP_KINDS = ['gate', 'route', 'owner'];
         const keepSourceFields = (list) => {
             const sourceSteps = (basicSourceSchema.get(draftPlanStorageKey())?.steps || []).filter((step) => step && typeof step === 'object');
             if (!sourceSteps.length) return list;
             const copy = (value) => JSON.parse(JSON.stringify(value));
             const onCanvas = new Set(list.map((step) => step.ref));
-            const kept = list.map((step) => {
-                const from = sourceSteps.find((item) => item.ref === step.ref && item.kind === step.kind);
-                const keys = step.kind === 'round' ? ['output', 'require', 'owner', 'chat'] : ['input', 'task', 'output', 'require', 'owner', 'chat'];
-                const added = {};
-                keys.forEach((key) => { if (from && key in from && !(key in step)) added[key] = copy(from[key]); });
-                return { ...step, ...added };
-            });
+            const kept = list;
             const controlsAfter = new Map();
             sourceSteps.forEach((step, at) => {
                 if (!CONTROL_STEP_KINDS.includes(step.kind)) return;
@@ -6744,10 +6793,17 @@ document.addEventListener('click', (event) => {
             const cards = getCustomCardSettings();
             const roundSettings = getCustomRoundSettings();
             const put = (target, key, value) => { if (value !== undefined) target[key] = value; };
-            // The round card: the order, the input and the task the owner set, as the schema's step fields.
-            const roundFields = (ref) => {
+            // The fields the owner set in the card of a round or a synthesis (by ref, customRoundSettings), as the schema's step
+            // fields. An empty value (nothing, an empty list, an empty object) is not written.
+            const ROUND_STEP_KEYS = ['order', 'input', 'task', 'require', 'owner', 'chat', 'output'];
+            const SYNTHESIS_STEP_KEYS = ['input', 'task', 'require', 'owner', 'chat', 'output'];
+            const stepFieldsOf = (ref, kind) => {
                 const own = {};
-                ['order', 'input', 'task'].forEach((key) => put(own, key, legacyValue(roundSettings[ref]?.[key])));
+                (kind === 'round' ? ROUND_STEP_KEYS : SYNTHESIS_STEP_KEYS).forEach((key) => {
+                    const value = legacyValue(roundSettings[ref]?.[key]);
+                    if (value === undefined || (Array.isArray(value) && !value.length) || (value && typeof value === 'object' && !Array.isArray(value) && !Object.keys(value).length)) return;
+                    own[key] = JSON.parse(JSON.stringify(value));
+                });
                 return own;
             };
             const defaults = {};
@@ -6802,7 +6858,7 @@ document.addEventListener('click', (event) => {
                         if (hasOwnFields(model)) entries.push(model);
                     });
                 }
-                return { ref, kind, ...(kind === 'round' ? roundFields(ref) : {}), models: entries };
+                return { ref, kind, ...stepFieldsOf(ref, kind), models: entries };
             }).filter(Boolean);
             if (forSave) {
                 // The canvas keeps every round, also one nobody sends in; the schema holds them all in order (r1…rN), or
@@ -6815,7 +6871,7 @@ document.addEventListener('click', (event) => {
                     for (; nextRound <= upTo; nextRound += 1) {
                         const ref = `r${nextRound}`;
                         if (have.has(ref)) continue;
-                        complete.push({ ref, kind: 'round', ...roundFields(ref),
+                        complete.push({ ref, kind: 'round', ...stepFieldsOf(ref, 'round'),
                             models: Object.keys(cards[ref] || {}).map((name) => modelEntry(ref, name, { enabled: false })).filter((model) => hasOwnFields(model)) });
                         have.add(ref);
                     }
@@ -6844,7 +6900,7 @@ document.addEventListener('click', (event) => {
                     // Between two rounds only: not after the last round, not next to another synthesis.
                     if (!match || after >= Math.max(1, Number(roundCounter) || 1) || at < 0 || steps[at + 1]?.kind === 'synthesis') return;
                     const models = Object.keys(cards[ref] || {}).map((name) => modelEntry(ref, name, { enabled: false })).filter((model) => hasOwnFields(model));
-                    if (models.length) steps.splice(at + 1, 0, { ref, kind: 'synthesis', models });
+                    if (models.length) steps.splice(at + 1, 0, { ref, kind: 'synthesis', ...stepFieldsOf(ref, 'synthesis'), models });
                 });
             }
             if (forSave) {
@@ -6852,7 +6908,7 @@ document.addEventListener('click', (event) => {
                 // removed round or of an intermediate synthesis with no place between two rounds are dropped.
                 if (!steps.some((step) => step.ref === 'final')) {
                     const models = Object.keys(cards.final || {}).map((name) => modelEntry('final', name, { enabled: false })).filter((model) => hasOwnFields(model));
-                    if (models.length) steps.push({ ref: 'final', kind: 'synthesis', models });
+                    if (models.length) steps.push({ ref: 'final', kind: 'synthesis', ...stepFieldsOf('final', 'synthesis'), models });
                 }
             }
             const runValue = forSave ? (run || basicRunForSave()) : { policy: getDebateRunPolicy(), maxWords: getDebateMaxWords() };
@@ -6897,7 +6953,8 @@ document.addEventListener('click', (event) => {
             const errors = window.BasicSchema.validate(config.schema);
             if (errors.length) return { cards: {}, rounds: {}, defaults: {}, runExplicit: {}, schema: null, error: window.BasicSchema.describeErrors(errors) };
             const settings = window.BasicSchema.toSettings(config.schema);
-            return { cards: settings.customModelSettings, rounds: settings.customRoundSettings, defaults: settings.customDefaults, schema: config.schema, error: '',
+            // The fields of rounds and syntheses are one store by ref (see stepFieldsOf).
+            return { cards: settings.customModelSettings, rounds: { ...settings.customRoundSettings, ...settings.customStepSettings }, defaults: settings.customDefaults, schema: config.schema, error: '',
                 runExplicit: { policy: 'policy' in (config.schema.run || {}), maxWords: 'maxWords' in (config.schema.run || {}) } };
         };
         const adoptBasicWorking = (key, working) => {
@@ -8084,6 +8141,12 @@ document.addEventListener('click', (event) => {
             // The fields kept from the source belong to the removed round: a round added later starts without them.
             const source = basicSourceSchema.get(draftPlanStorageKey());
             if (source && Array.isArray(source.steps)) basicSourceSchema.set(draftPlanStorageKey(), { ...source, steps: source.steps.filter((step) => step?.ref !== `r${roundCounter}`) });
+            // The card fields of the removed round (customRoundSettings, its drafts) go with it.
+            const removedRef = `r${roundCounter}`;
+            const remaining = JSON.parse(JSON.stringify(getCustomRoundSettings()));
+            delete remaining[removedRef];
+            customRoundSettings.set(draftPlanStorageKey(), remaining);
+            stepDrafts.delete(`${draftPlanStorageKey()}\n${removedRef}`);
             roundCounter--;
             if (roundCounter <= 1 && pipelineRemoveRoundBtn) {
                 pipelineRemoveRoundBtn.style.display = 'none';
@@ -9143,6 +9206,7 @@ document.addEventListener('click', (event) => {
                     <button type="button" class="modal-button accent" id="custom-card-save">Save</button>
                 </header>
                 <div class="custom-card-body">
+                    ${!pipelineDefaults && step?.kind === 'synthesis' ? '<div class="custom-card-steps" id="custom-card-step-fields"></div>' : ''}
                     ${pipelineDefaults ? '<p class="custom-card-note">Общие значения для всех шагов. Своё значение модели имеет приоритет; пустое поле наследует значение из кода.</p>' : `<div class="custom-card-field">
                         <div class="custom-card-head"><label for="custom-card-request">Запрос</label><span><code>{задача}</code> и <code>{вход}</code> подставляются при запуске. Изменённый текст используется только для этой модели в этом шаге.</span><span class="custom-card-actions">${copyButton('custom-card-request', 'Запрос')}</span></div>
                         <textarea id="custom-card-request" spellcheck="false"></textarea>
@@ -9175,6 +9239,21 @@ document.addEventListener('click', (event) => {
                     </div>` : ''}
                     ${pipelineDefaults ? '' : `<span id="custom-card-length-note" class="custom-card-sr-only">Пусто — общий предел pipeline (${general}).</span>`}
                 </div>`;
+            // The input, the number of answers, the owner and the output of a synthesis: saved at once, as the round card does.
+            const stepFieldsBox = content.querySelector('#custom-card-step-fields');
+            if (stepFieldsBox) {
+                const drawStepFields = () => {
+                    const fields = window.StageCard.stepFieldsModel({ kind: 'synthesis', settings: getCustomRoundSettings()[ref] || {}, earlier: stepsBefore(ref),
+                        enabledCount: step.models.length, drafts: stepDraftsOf(ref), disabled: pipelineRunActive });
+                    stepFieldsBox.replaceChildren();
+                    window.StageCard.renderStepFields(stepFieldsBox, fields, async (field, value) => {
+                        if (pipelineRunActive) return;
+                        await commitStepField(ref, field, value, step.models.length);
+                        drawStepFields();
+                    });
+                };
+                drawStepFields();
+            }
             const request = content.querySelector('#custom-card-request');
             const length = content.querySelector('#custom-card-length');
             const reset = content.querySelector('#custom-card-reset');
@@ -9535,8 +9614,8 @@ document.addEventListener('click', (event) => {
                 const roleChoice = !templateStage && isCustomEnginePipeline() && document.querySelector(`#r${round}-models .role-selector`)
                     ? { prompts: getRoleOptionPrompts(), roles: (stack?.items || []).map((item) => item.role || ''), disabled: pipelineRunActive,
                         roundPrompt: getCustomRoundPrompt(`r${round}`),
-                        // The round card of Basic: the order, the input and the task of the round.
-                        settings: { order: getCustomRoundSettings()[`r${round}`]?.order || '', input: getCustomRoundSettings()[`r${round}`]?.input || '', task: getCustomRoundSettings()[`r${round}`]?.task || '' },
+                        // The round card of Basic: the order, the input, the task, the number of answers, the owner and the output.
+                        settings: getCustomRoundSettings()[`r${round}`] || {}, drafts: stepDraftsOf(`r${round}`), earlier: stepsBefore(`r${round}`),
                         first: round === 1, inheritedTask: resolveCustomFields({}, 'round').task.value }
                     : null;
                 const model = window.StageCard.buildModel({
@@ -9555,7 +9634,7 @@ document.addEventListener('click', (event) => {
                     onRoundPrompt: (text) => setCustomRoundPrompt(`r${round}`, text),
                     onSetting: async (field, value) => {
                         if (pipelineRunActive) return;
-                        await setCustomRoundSetting(`r${round}`, field, value);
+                        await commitStepField(`r${round}`, field, value, (stack?.items || []).filter((item) => item.send).length);
                         openStageCard(roundBadge);
                     }
                 });

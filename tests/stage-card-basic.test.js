@@ -77,3 +77,109 @@ describe('Round card of Basic: the first round shows its task', () => {
     expect(container.querySelector('.stage-card-task-label').textContent).toContain('при входе «ничего» отправляется только оно');
   });
 });
+
+describe('Step controls of Basic: input «выбранные этапы»', () => {
+  const earlier = [
+    { ref: 'r1', label: 'Раунд 1', enabled: true },
+    { ref: 'synth:a', label: 'Синтез после раунда 1', enabled: true },
+    { ref: 'r2', label: 'Раунд 2', enabled: false }
+  ];
+  const roundWith = (settings) => build({ earlier, enabledCount: 2, settings: { order: '', input: '', task: '', ...settings } });
+
+  test('the input offers «выбранные этапы»; the list keeps the canvas order and marks switched-off steps', () => {
+    const input = roundWith({}).settings.input;
+    expect(input.options.map((item) => item.value)).toEqual(['', 'none', 'previous', 'all', 'steps']);
+    expect(input.steps.map((item) => [item.ref, item.disabled, item.checked])).toEqual([['r1', false, false], ['synth:a', false, false], ['r2', true, false]]);
+  });
+
+  test('an array input is the «выбранные этапы» choice; the order of the array is the order of choice', () => {
+    const model = roundWith({ input: ['synth:a', 'r1'] });
+    expect(model.settings.input.value).toBe('steps');
+    expect(model.settings.input.steps.map((item) => [item.ref, item.checked, item.number])).toEqual([['r1', true, 2], ['synth:a', true, 1], ['r2', false, 0]]);
+    expect(model.settings.task.sent).toBe(true);
+  });
+
+  test('a choice without a picked step stays «выбранные этапы» while the card asks for it', () => {
+    expect(build({ earlier, settings: { order: '', input: '', task: '' }, drafts: { input: 'steps' } }).settings.input.value).toBe('steps');
+  });
+
+  test('checking a step is reported as the step and its new state; the owner sees a list entry that is not a step as a note', () => {
+    const container = document.createElement('div');
+    const seen = [];
+    StageCard.render(container, roundWith({ input: ['r1', { step: 'r2', participant: 'GPT' }] }), { onSetting: (field, value) => seen.push([field, value]) });
+    const boxes = container.querySelectorAll('.stage-card-steps input[type="checkbox"]');
+    expect(boxes.length).toBe(3);
+    expect(boxes[1].checked).toBe(false);
+    boxes[1].checked = true;
+    boxes[1].dispatchEvent(new Event('change'));
+    expect(seen).toEqual([['steps', { ref: 'synth:a', checked: true }]]);
+    expect(container.querySelector('.stage-card-steps').textContent).toContain('заданы в JSON');
+    expect(container.querySelector('.stage-card-steps').textContent).toContain('(выключен)');
+  });
+
+  test('the toggle keeps the entries that are not step refs in place and does not repeat a step', () => {
+    const object = { step: 'r2', participant: 'GPT' };
+    expect(StageCard.stepsAfterToggle(['r1', object], 'synth:a', true)).toEqual(['r1', object, 'synth:a']);
+    expect(StageCard.stepsAfterToggle(['r1', object, 'synth:a'], 'r1', false)).toEqual([object, 'synth:a']);
+    expect(StageCard.stepsAfterToggle(['r1'], 'r1', true)).toEqual(['r1']);
+  });
+
+  test('the synthesis has its own input choice: the default (previous) and «выбранные этапы», no nothing and no all', () => {
+    const fields = StageCard.stepFieldsModel({ kind: 'synthesis', settings: { input: ['r1'] }, earlier, enabledCount: 2 });
+    expect(fields.input.options.map((item) => item.value)).toEqual(['', 'previous', 'steps']);
+    expect(fields.input.value).toBe('steps');
+    expect(StageCard.stepFieldsModel({ kind: 'synthesis', settings: {}, earlier }).input.value).toBe('');
+  });
+});
+
+describe('Step controls of Basic: require, owner, output', () => {
+  const fields = (settings, extra = {}) => StageCard.stepFieldsModel({ kind: 'round', settings, earlier: [], enabledCount: 3, ...extra });
+
+  test('require is any by default, all, or a number up to the enabled models; the number field shows only for a number', () => {
+    expect(fields({}).require.value).toBe('');
+    expect(fields({ require: 2 }).require).toMatchObject({ value: 'count', count: 2, max: 3 });
+    expect(fields({}, { drafts: { require: 'count' } }).require.value).toBe('count');
+    const container = document.createElement('div');
+    const seen = [];
+    StageCard.renderStepFields(container, fields({ require: 2 }), (field, value) => seen.push([field, value]));
+    const count = container.querySelector('.stage-card-require-count');
+    expect(count.value).toBe('2');
+    expect(count.max).toBe('3');
+    count.value = '1';
+    count.dispatchEvent(new Event('change'));
+    container.querySelector('.stage-card-require-select').value = 'all';
+    container.querySelector('.stage-card-require-select').dispatchEvent(new Event('change'));
+    expect(seen).toEqual([['require', 1], ['require', 'all']]);
+  });
+
+  test('owner asks the owner after the step: a checkbox that reports approve or nothing, and the round card marks it', () => {
+    expect(fields({ owner: 'approve' }).owner.checked).toBe(true);
+    const container = document.createElement('div');
+    const seen = [];
+    StageCard.renderStepFields(container, fields({}), (field, value) => seen.push([field, value]));
+    const box = container.querySelector('.stage-card-owner-check');
+    box.checked = true;
+    box.dispatchEvent(new Event('change'));
+    expect(seen).toEqual([['owner', 'approve']]);
+    const round = StageCard.buildModel({ round: 2, participants: [], roleChoice: { prompts: [], roles: [''], settings: { order: '', input: '', task: '', owner: 'approve' }, earlier: [], enabledCount: 1 } });
+    expect(round.badges).toContain('владелец: одобрение');
+  });
+
+  test('output: name, form and sections (one per line) and strict length are the fields; a json format turns the sections off', () => {
+    const settings = { output: { name: 'Итог', form: 'Форма', sections: ['Карта', 'Замечания'], strictLength: true } };
+    expect(fields(settings).output).toMatchObject({ name: 'Итог', form: 'Форма', sections: 'Карта\nЗамечания', strictLength: true, json: false });
+    const json = fields({ output: { format: 'json', requiredFields: ['/a'] } }).output;
+    expect(json.json).toBe(true);
+    const container = document.createElement('div');
+    StageCard.renderStepFields(container, fields({ output: { format: 'json' } }), () => {});
+    expect(container.querySelector('.stage-card-output-sections').disabled).toBe(true);
+  });
+
+  test('the output edit keeps the fields the card does not edit and drops the empty ones', () => {
+    const current = { name: 'Old', form: 'F', sections: ['A'], strictLength: true, format: 'json', requiredFields: ['/x'], artifacts: [{ id: 'map', name: 'Карта' }] };
+    expect(StageCard.outputAfterEdit(current, { name: '', form: '', sections: [], strictLength: false })).toEqual({ format: 'json', requiredFields: ['/x'], artifacts: [{ id: 'map', name: 'Карта' }] });
+    expect(StageCard.outputAfterEdit({ format: 'json', sections: ['A'] }, { name: 'N', form: '', sections: ['B'], strictLength: true }))
+      .toEqual({ name: 'N', format: 'json', strictLength: true });
+    expect(StageCard.outputAfterEdit({}, { name: 'N', form: 'F', sections: ['Карта', ''], strictLength: false })).toEqual({ name: 'N', form: 'F', sections: ['Карта'] });
+  });
+});
