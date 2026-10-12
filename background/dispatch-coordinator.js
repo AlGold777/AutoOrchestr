@@ -1194,7 +1194,11 @@ async function prepareReusableTabReceiver(tabId, llmName, current) {
     try {
       chrome.tabs.sendMessage(tabId, {type:'HEALTH_CHECK_PING'}, response => {
         const error = chrome.runtime.lastError?.message || '';
-        done(error.includes('Receiving end does not exist') ? 'missing'
+        // Shared listeners survive provider cleanup. Chrome then closes the
+        // health request without a response even though the tab has listeners.
+        // A completed empty reply means the provider receiver needs restoring;
+        // silence still waits for a slow renderer until the overall deadline.
+        done(error.includes('Receiving end does not exist') || response == null ? 'missing'
           // Readiness of this model's receiver: an anonymous PONG proves nothing.
           : response?.type === 'HEALTH_CHECK_PONG' && response.llmName === llmName
             ? 'ready' : 'unavailable');
