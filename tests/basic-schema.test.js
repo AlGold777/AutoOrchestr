@@ -966,3 +966,77 @@ describe('Basic schema: a whole step as a required source (3.1, D3)', () => {
     cases.forEach(([input, paths]) => expect({ input, paths: errorPaths(withInput(input)) }).toEqual({ input, paths }));
   });
 });
+
+describe('Basic schema: an own output of a participant (3.2, D4)', () => {
+  const proposalRef = (participant) => ({ artifact: { step: 'r1', participant, id: 'proposal' }, version: 'latest', required: true });
+  const shared = { artifacts: [{ id: 'proposal', name: 'Предложение', pointer: '' }] };
+  // Two authors of one parallel step r1 share the output; each author of r2 continues its own line.
+  const author = (participant, name, extra = {}) => ({ name, id: participant, input: [proposalRef(participant)], output: { artifacts: [{ id: 'proposal', name: `Доработанное ${name}`, pointer: '', revisionOf: proposalRef(participant) }] }, ...extra });
+  const valid = () => base([
+    round('r1', [{ name: 'claude', id: 'author-A' }, { name: 'gpt', id: 'author-B' }], { output: shared }),
+    round('r2', [author('author-A', 'claude'), author('author-B', 'gpt')]),
+    synthesis('final', ['claude'])
+  ]);
+  const pathsOf = (schema) => errorPaths(schema);
+
+  test('each author of one step has its own line; its declaration reaches assemble as the model output', () => {
+    const schema = valid();
+    expect(Schema.validate(schema)).toEqual([]);
+    const r2 = Schema.assemble(schema)[1];
+    expect(r2.models[0].output).toEqual(schema.steps[1].models[0].output);
+    expect(r2.models[1].output).toEqual(schema.steps[1].models[1].output);
+    expect(Schema.toSettings(schema).customModelSettings.r2['author-A'].output).toEqual(schema.steps[1].models[0].output);
+    expect(Schema.toCanvas(schema, { models: ['claude', 'gpt'] }).errors).toEqual([]);
+  });
+
+  test('an own declaration replaces the shared output as a whole; a participant without one inherits it', () => {
+    const schema = base([
+      round('r1', [{ name: 'claude', id: 'author-A' }, { name: 'gpt', id: 'author-B', output: { artifacts: [{ id: 'notes', name: 'Заметки', pointer: '' }] } }], { output: shared }),
+      round('r2', [{ name: 'claude', id: 'author-A', input: [proposalRef('author-A')], output: { artifacts: [{ id: 'proposal', name: 'Доработано', pointer: '', revisionOf: proposalRef('author-A') }] } }]),
+      synthesis('final', ['claude'])
+    ]);
+    expect(Schema.validate(schema)).toEqual([]);
+    const sourceOf = (participant, id) => ({ artifact: { step: 'r1', participant, id }, version: 'latest' });
+    // author-B no longer declares proposal: the shared one is not merged into its own output.
+    const reader = (source) => base([round('r1', [{ name: 'claude', id: 'author-A' }, { name: 'gpt', id: 'author-B', output: { artifacts: [{ id: 'notes', name: 'Заметки', pointer: '' }] } }], { output: shared }), round('r2', [{ name: 'claude', id: 'reader', input: [source] }]), synthesis('final', ['claude'])]);
+    expect(pathsOf(reader(sourceOf('author-A', 'proposal')))).toEqual([]);
+    expect(pathsOf(reader(sourceOf('author-B', 'proposal')))).toEqual(['steps[1].models[0].input[0].artifact.id']);
+    expect(pathsOf(reader(sourceOf('author-B', 'notes')))).toEqual([]);
+  });
+
+  test('a wrong own output is named with its full path', () => {
+    const cases = [
+      [{ artifacts: [{ id: 'x', name: 'X', pointer: '/x' }] }, ['steps[1].models[0].output.artifacts[0].pointer']],
+      [{ extra: 1 }, ['steps[1].models[0].output.extra']],
+      [{ format: 'json', artifacts: [{ id: 'x', name: 'X', pointer: '/x' }, { id: 'x', name: 'Y', pointer: '/y' }] }, ['steps[1].models[0].output.artifacts[1].id']]
+    ];
+    cases.forEach(([output, paths]) => {
+      const schema = valid();
+      schema.steps[1].models[0] = { ...schema.steps[1].models[0], output };
+      expect({ output, paths: pathsOf(schema) }).toEqual({ output, paths: expect.arrayContaining(paths) });
+      expect(pathsOf(schema).every((path) => path.startsWith('steps[1].models[0].output'))).toBe(true);
+    });
+  });
+
+  test('a revision must be in the input of this author with the same address; a route has no output', () => {
+    // author-A's input holds the line of author-B only: the revision of author-A is not in its own input.
+    const otherLine = valid();
+    otherLine.steps[1].models[0] = { ...otherLine.steps[1].models[0], input: [proposalRef('author-B')] };
+    expect(pathsOf(otherLine)).toEqual(['steps[1].models[0].output.artifacts[0].revisionOf']);
+    const otherAddress = valid();
+    otherAddress.steps[1].models[0].output.artifacts[0].revisionOf = { ...proposalRef('author-A'), version: { step: 'r1', participant: 'author-A', visit: 1 } };
+    expect(pathsOf(otherAddress)).toEqual(['steps[1].models[0].output.artifacts[0].revisionOf']);
+    const route = base([round('r1', ['A']), { ref: 'route:r', kind: 'route', models: [{ name: 'GPT', output: { artifacts: [] } }], task: 'Выбери', select: { by: 'model', cases: [{ id: 'a', label: 'А', action: { stop: 'А' } }] } }, synthesis('final', ['B'])]);
+    expect(pathsOf(route)).toEqual(['steps[1].models[0].output']);
+  });
+
+  test('a shared output of a step still checks its revisions against the authors that inherit it', () => {
+    const schema = base([
+      round('r1', [{ name: 'claude', id: 'author-A' }], { output: shared }),
+      round('r2', [{ name: 'claude', id: 'author-A', input: [proposalRef('author-A')] }], { output: { artifacts: [{ id: 'proposal', name: 'Доработано', pointer: '', revisionOf: proposalRef('author-A') }] } }),
+      synthesis('final', ['B'])
+    ]);
+    expect(Schema.validate(schema)).toEqual([]);
+    expect(pathsOf(base([round('r1', [{ name: 'claude', id: 'author-A' }], { output: shared }), round('r2', [{ name: 'claude', id: 'author-A' }], { output: { artifacts: [{ id: 'proposal', name: 'Доработано', pointer: '', revisionOf: proposalRef('author-A') }] } }), synthesis('final', ['B'])]))).toEqual(['steps[1].output.artifacts[0].revisionOf']);
+  });
+});

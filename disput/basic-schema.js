@@ -128,7 +128,8 @@
       name: model.name,
       id: idOf(model),
       task: typeof model.task === 'string' ? model.task : (typeof step.task === 'string' ? step.task : ''),
-      extra: roleText(model.role || '', step.ref) || ''
+      extra: roleText(model.role || '', step.ref) || '',
+      ...('output' in model ? { output: clone(model.output) } : {})
     }));
     return out;
   }
@@ -164,6 +165,7 @@
           name: model.name,
           id: idOf(model),
           ...('input' in model ? { input: Array.isArray(model.input) ? JSON.parse(JSON.stringify(model.input)) : model.input } : {}),
+          ...('output' in model ? { output: clone(model.output) } : {}),
           // An own request, an empty one included, is a value; only a missing one takes the final synthesizer's.
           promptTemplate: typeof model.request === 'string' ? model.request : (typeof finalRequest === 'string' ? finalRequest : null),
           maxWords: 'maxWords' in model ? model.maxWords : null,
@@ -181,6 +183,12 @@
 
   // A participant's id: the explicit one, or its name.
   const idOf = (model) => model.id ?? model.name;
+
+  // The output a participant answers with (3.2): its own declaration replaces the step's one as a whole, nothing is merged.
+  function outputOf(step, participant) {
+    const model = (Array.isArray(step.models) ? step.models : []).find((item) => isObject(item) && idOf(item) === participant);
+    return model && 'output' in model ? model.output : step.output;
+  }
 
   // The address of a well-formed source: the duplicate check and the revision check compare these.
   function addressOf(source) {
@@ -237,7 +245,7 @@
       if (position >= 0 && !('participant' in address)) fail(`${path}.artifact.participant`, 'участник не указан');
       else if (position >= 0) participantAt(position, address.participant, `${path}.artifact.participant`);
       if (position >= 0 && !('id' in address)) fail(`${path}.artifact.id`, 'ID артефакта не указан');
-      const output = position >= 0 ? steps[position].output : null;
+      const output = position >= 0 ? outputOf(steps[position], address.participant) : null;
       const declared = isObject(output) && Array.isArray(output.artifacts) && output.artifacts.some((item) => isObject(item) && item.id === address.id);
       if (position >= 0 && 'id' in address && !declared) fail(`${path}.artifact.id`, `артефакт «${address.id}» не объявлен в шаге «${steps[position].ref}»`);
       if (!('version' in source)) fail(`${path}.version`, 'версия не указана: latest или объект версии');
@@ -343,7 +351,8 @@
       if (kind === 'synthesis' && value !== 'previous') fail(path, 'синтез всегда получает ответы предыдущего шага');
     };
     // The output of a step (5.1, 5.2): the text form, or json with fields; artifacts are declared in it.
-    const checkOutput = (output, path, step, index) => {
+    // `authors` are the participants whose revisions the output declares: { id, input? } (the owner is its own author).
+    const checkOutput = (output, path, step, index, authors) => {
       if (!isObject(output)) { fail(path, 'ожидается объект'); return; }
       unknownKeys(output, ['name', 'form', 'sections', 'strictLength', 'format', 'requiredFields', 'artifacts'], path);
       ['name', 'form'].forEach((key) => { if (key in output) text(output[key], `${path}.${key}`); });
@@ -396,7 +405,6 @@
         checkSource(revision, `${at2}.revisionOf`, contextAt(index));
         if (errors.length > before) return;
         const key = addressOf(revision);
-        const authors = (Array.isArray(step.models) ? step.models : []).filter((model) => isObject(model) && model.enabled !== false);
         authors.forEach((model) => {
           const own = 'input' in model ? model.input : step.input;
           if (!(Array.isArray(own) && own.some((item) => addressOf(item) === key))) fail(`${at2}.revisionOf`, `ссылка на версию должна быть во входе участника «${idOf(model)}»`);
@@ -531,7 +539,11 @@
       const path = `steps[${index}]`;
       if (!isObject(step)) { fail(path, 'ожидается объект'); return; }
       unknownKeys(step, STEP_KEYS[step.kind] || STEP_KEYS.round, path);
-      if ('output' in step) checkOutput(step.output, `${path}.output`, step, index);
+      if ('output' in step) {
+        // A step's shared output is the answer of every author without its own; the owner is the author of its own.
+        const inheriting = step.kind === 'owner' ? [{ id: 'owner' }] : (Array.isArray(step.models) ? step.models : []).filter((model) => isObject(model) && model.enabled !== false && !('output' in model));
+        checkOutput(step.output, `${path}.output`, step, index, inheriting);
+      }
       // A number of answers is checked against the enabled participants; a switched-off step keeps its number.
       if ('require' in step && !REQUIRE_WORDS.includes(step.require)) {
         const enabledCount = (Array.isArray(step.models) ? step.models : []).filter((model) => isObject(model) && model.enabled !== false).length;
@@ -556,7 +568,10 @@
       step.models.forEach((model, at) => {
         const modelPath = `${path}.models[${at}]`;
         if (!isObject(model)) { fail(modelPath, 'ожидается объект'); return; }
-        unknownKeys(model, ['name', 'id', 'enabled', 'role', 'request', 'maxWords', 'task', 'discipline', 'input'], modelPath);
+        unknownKeys(model, ['name', 'id', 'enabled', 'role', 'request', 'maxWords', 'task', 'discipline', 'input', 'output'], modelPath);
+        // A participant of a route chooses; it has no answer of its own (its route output has its own contract).
+        if (step.kind === 'route' && 'output' in model) fail(`${modelPath}.output`, 'у участника маршрута выход не задаётся');
+        else if ('output' in model) checkOutput(model.output, `${modelPath}.output`, step, index, [model]);
         if ('enabled' in model && typeof model.enabled !== 'boolean') fail(`${modelPath}.enabled`, 'ожидается true или false');
         if (typeof model.name !== 'string' || !model.name.trim()) fail(`${modelPath}.name`, 'имя модели не указано');
         // One participant is one id in a step; a repeated name is fine when the ids differ. One id keeps one name in all steps.
@@ -608,6 +623,7 @@
         if (typeof model.task === 'string') participant.task = model.task;
         if (isObject(model.discipline)) participant.discipline = JSON.parse(JSON.stringify(model.discipline));
         if ('input' in model) participant.input = JSON.parse(JSON.stringify(model.input));
+        if ('output' in model) participant.output = JSON.parse(JSON.stringify(model.output));
         if (!Object.keys(participant).length) return;
         (customModelSettings[step.ref] || (customModelSettings[step.ref] = {}))[idOf(model)] = participant;
       });
