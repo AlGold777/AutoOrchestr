@@ -99,6 +99,37 @@ describe('Custom engine: the owner as a source of a revision and of feedback (R0
     expect(result.texts[result.artifacts[1].content.answerRef]).toBe('доработано');
   });
 
+  test('an owner revision joins the line of the artifact it got as input; the owner must get that artifact', async () => {
+    const source = { ...EVIDENCE, step: 'owner:first' };
+    const steps = [
+      OWNER({ ref: 'owner:first', output: { artifacts: [{ id: 'evidence', name: 'Первое', pointer: '' }] } }),
+      OWNER({ ref: 'owner:second', input: [{ artifact: source, version: 'latest', required: true }],
+        output: { artifacts: [{ id: 'evidence', name: 'Исправлено', pointer: '', revisionOf: { artifact: source, version: 'latest', required: true } }] } }),
+      { ref: 'S3', kind: 'round', input: [{ artifact: source, version: 'latest', required: true }], models: ['A'] }
+    ];
+    const { send, calls } = transport({ A: ['ок'] });
+    const { provideOwnerResult, calls: asked } = owner(['Первая версия', 'Вторая версия']);
+    const result = await Engine.run({ task: 'T', steps, send, provideOwnerResult, maxAttempts: 1 });
+    expect(result.stopReason).toBe('steps_done');
+    expect(asked[1].input[0]).toMatchObject({ step: 'owner:first', text: 'Первая версия' });
+    expect(result.artifacts.map((entry) => entry.lineage.step)).toEqual(['owner:first', 'owner:first']);
+    expect(calls[0].prompts.A).toContain('Вторая версия');
+    expect(calls[0].prompts.A).not.toContain('Первая версия');
+  });
+
+  test('an owner revision without its artifact in the owner input is refused before the first request', async () => {
+    const source = { ...EVIDENCE, step: 'owner:first' };
+    const steps = [
+      OWNER({ ref: 'owner:first', output: { artifacts: [{ id: 'evidence', name: 'Первое', pointer: '' }] } }),
+      OWNER({ ref: 'owner:second', output: { artifacts: [{ id: 'evidence', name: 'Исправлено', pointer: '', revisionOf: { artifact: source, version: 'latest', required: true } }] } })
+    ];
+    const { send, calls } = transport({});
+    const { provideOwnerResult, calls: asked } = owner(['Первая версия', 'Вторая версия']);
+    await expect(Engine.run({ task: 'T', steps, send, provideOwnerResult })).rejects.toMatchObject({ code: 'invalid_input', address: expect.stringContaining('шаг «owner:second»') });
+    expect(calls).toEqual([]);
+    expect(asked).toEqual([]);
+  });
+
   test('the feedback of the owner goes to the next visit of the author only, as its text', async () => {
     const steps = [
       OWNER({ ref: 'owner:o' }),

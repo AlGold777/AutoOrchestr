@@ -449,7 +449,8 @@
         .filter((model) => model && typeof model === 'object' && model.input !== undefined)
         .map((model) => [`модель «${model.name}» · input`, model.input])];
       // A revision names an artifact that its author really gets as input (5.2, 3.2): each author checks its own output and input.
-      (Array.isArray(step.models) ? step.models : []).forEach((model) => {
+      // The owner is the author of its step's output (3.3): its input is its input.
+      (step.kind === 'owner' ? [null] : (Array.isArray(step.models) ? step.models : [])).forEach((model) => {
         (outputOf(step, model)?.artifacts || []).forEach((declaration) => {
           if (!declaration || !isPlain(declaration.revisionOf)) return;
           const want = declaration.revisionOf.artifact;
@@ -457,7 +458,7 @@
           const given = Array.isArray(spec) && spec.some((source) => isPlain(source) && isPlain(source.artifact)
             && source.artifact.step === want.step && source.artifact.participant === want.participant && source.artifact.id === want.id);
           if (!given) {
-            const name = typeof model === 'string' ? model : model?.name;
+            const name = model === null ? OWNER_PARTICIPANT : (typeof model === 'string' ? model : model?.name);
             throw new EngineError('invalid_input', `шаг «${step.ref}» · output.artifacts`, `ревизия «${declaration.id}» требует во входе участника «${name}» ссылку на «${want.id}»`);
           }
         });
@@ -1032,8 +1033,15 @@
     async function ownerAnswer(step, entry) {
       let reason = '';
       let detail = '';
-      // The input of the owner step is resolved before the window opens (N07): a missing required source stops the run here.
-      const input = answersFor(step, step.input ?? 'none').map(ownerItemOf);
+      // The input of the owner step is resolved before the window opens (N07): a missing required source stops the run here,
+      // and so does a revision whose artifact the owner did not get (3.3).
+      const items = answersFor(step, step.input ?? 'none');
+      const input = items.map(ownerItemOf);
+      (step.output?.artifacts || []).forEach((declaration) => {
+        if (declaration.revisionOf && !revisionItem(declaration, items)) {
+          throw new StopRun('missing_input', `ревизия «${declaration.id}»: владелец не получил версию, которую она дорабатывает; шаг «${step.ref}» не открыт`);
+        }
+      });
       for (;;) {
         await checkpointNow('decision', { pendingOwner: { kind: 'owner', stepRef: step.ref, visit: entry.visit } });
         const reply = await ownerWait(() => provideOwnerResult({ stepRef: step.ref, visit: entry.visit, task: step.task, output: step.output,
@@ -1053,9 +1061,12 @@
         }
         const textRef = putText(verdict.text);
         (step.output?.artifacts || []).forEach((declaration) => {
+          // A revision joins the line of the artifact the owner got; any other artifact starts the owner's own line.
+          const revision = declaration.revisionOf ? revisionItem(declaration, items) : null;
           Artifacts.register(registry, { id: declaration.id, name: declaration.name,
-            lineage: { step: step.ref, participant: OWNER_PARTICIPANT, id: declaration.id },
-            source: { step: step.ref, participant: OWNER_PARTICIPANT, visit: entry.visit }, answerRef: textRef, pointer: declaration.pointer, inputs: [] });
+            lineage: revision ? { ...revision.artifact.lineage } : { step: step.ref, participant: OWNER_PARTICIPANT, id: declaration.id },
+            source: { step: step.ref, participant: OWNER_PARTICIPANT, visit: entry.visit }, answerRef: textRef, pointer: declaration.pointer,
+            inputs: items.filter((item) => item.artifact).map((item) => item.artifact) });
         });
         entry.owner = { text: verdict.text, textRef, ...(verdict.file ? { file: verdict.file } : {}) };
         emit('custom_owner', { step: step.index, ref: step.ref, visit: entry.visit, accepted: true, reason: null });
