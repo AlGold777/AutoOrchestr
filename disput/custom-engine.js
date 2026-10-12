@@ -236,7 +236,7 @@
         order: kind === 'round' && step.order === 'sequential' ? 'sequential' : 'parallel',
         task: kind === 'synthesis' && !text(step.task) ? SYNTHESIS_TASK : text(step.task),
         // A list of sources stays a list here: the input is checked before the run (assertExecutable).
-        input: Array.isArray(step.input) ? step.input.slice() : (kind === 'synthesis' ? 'previous' : (kind === 'owner' ? 'none' : (step.input ?? 'previous'))),
+        input: Array.isArray(step.input) ? step.input.slice() : (kind === 'synthesis' ? 'previous' : (step.input ?? (kind === 'owner' ? 'none' : 'previous'))),
         output: step.output ?? null,
         // continue: the participant keeps its chat; new: a new chat on the first request of each visit (4.2).
         chat: step.chat === 'new' ? 'new' : 'continue',
@@ -384,10 +384,9 @@
     if (!step || typeof step !== 'object') return new EngineError('invalid_step', at, 'шаг должен быть объектом');
     if (step.kind !== undefined && !EXECUTED_KINDS.includes(step.kind)) return fail('unsupported_kind', 'kind', `вид «${step.kind}» движок пока не исполняет`);
     if (step.kind === 'owner') {
-      // The owner (8.1) gives a text or a file; it has no models and no input yet (its input is not part of the contract).
+      // The owner (8.1) gives a text or a file; it has no models. Its input (N07) is checked below like a model's input.
       if (!text(step.task)) return fail('invalid_field', 'task', 'задание владельца: непустой текст');
       if (Array.isArray(step.models) && step.models.length) return fail('invalid_field', 'models', 'у владельца нет моделей');
-      if (step.input !== undefined && step.input !== 'none') return fail('unsupported_field', 'input', 'вход шага владельца движок пока не исполняет');
     }
     if (step.kind === 'route') {
       const problem = routeProblem(step, fail);
@@ -470,7 +469,9 @@
             if (from < 0) return; // a switched-off step: it gives no answers, see sourceItems
             if (from >= index) throw new EngineError('invalid_input', address, `шаг «${ref}» стоит не раньше этого шага`);
             if (participant === undefined) return;
-            const declared = (Array.isArray(steps[from].models) ? steps[from].models : []).map((model) => (typeof model === 'string' ? model : (model?.id ?? model?.name)));
+            // The owner step has one participant, the owner (3.3); a model of a round keeps its own id.
+            const declared = steps[from].kind === 'owner' ? [OWNER_PARTICIPANT]
+              : (Array.isArray(steps[from].models) ? steps[from].models : []).map((model) => (typeof model === 'string' ? model : (model?.id ?? model?.name)));
             if (!declared.includes(participant)) throw new EngineError('invalid_input', address, `участник «${participant}» не объявлен в шаге «${ref}»`);
             // The artifact is declared in the output of that participant (3.2): its own, or the step's when it has none.
             const author = (Array.isArray(steps[from].models) ? steps[from].models : []).find((model) => model && typeof model === 'object' && (model.id ?? model.name) === participant);
@@ -729,6 +730,7 @@
         text: contentOf(answer, found.content.pointer, `шаг «${step.ref}» · input`),
         source: { step: author ? author.step.index : null, visit: found.source.visit, label: where, model: found.source.participant, attempt: null },
         artifact: { lineage: { ...found.lineage }, source: { ...found.source } },
+        address: { step: found.source.step, participant: found.source.participant, visit: found.source.visit, artifact: found.lineage.id },
         textRef: found.content.answerRef, pointer: found.content.pointer
       }];
     }
@@ -754,7 +756,8 @@
         }
         return answers.map((item) => ({
           label: `${stepLabel(entry.step)}${entry.step.output?.name ? ` («${entry.step.output.name}»)` : ''}, участник ${item.participant}, визит ${entry.visit}`,
-          text: item.text, source: item.source, textRef: item.textRef, pointer: '', ...binaryOf(item)
+          text: item.text, source: item.source, textRef: item.textRef, pointer: '', ...binaryOf(item),
+          address: { step: entry.step.ref, participant: item.participant, visit: entry.visit }
         }));
       });
     }
@@ -773,14 +776,18 @@
       const entries = currentEntries(Number.isSafeInteger(step?.index) ? step.index : Infinity);
       if (spec === 'all') {
         return entries.flatMap((entry) => acceptedOf(entry).map((item, index) => ({
-          label: `${stepLabel(entry.step)}${entry.visit > 1 ? `, визит ${entry.visit}` : ''}, ответ ${index + 1}`, text: item.text, source: item.source, ...binaryOf(item)
+          label: `${stepLabel(entry.step)}${entry.visit > 1 ? `, визит ${entry.visit}` : ''}, ответ ${index + 1}`, text: item.text, source: item.source, ...binaryOf(item),
+          address: { step: entry.step.ref, participant: item.participant, visit: entry.visit }
         })));
       }
       for (let index = entries.length - 1; index >= 0; index -= 1) {
         // A stale step is not passed over: an older answer never replaces it (6.3, 5.3). A skipped step passes nothing on.
         if (entries[index].valid === false) return [];
         const accepted = acceptedOf(entries[index]);
-        if (accepted.length) return accepted.map((item) => ({ text: item.text, source: item.source, ...binaryOf(item) }));
+        if (accepted.length) {
+          return accepted.map((item) => ({ text: item.text, source: item.source, ...binaryOf(item),
+            address: { step: entries[index].step.ref, participant: item.participant, visit: entries[index].visit } }));
+        }
       }
       return [];
     }
@@ -1015,13 +1022,17 @@
       if (shape && !shape.ok) return { ok: false, reason: shape.reason, detail: shape.detail || '' };
       return { ok: true, text: value, ...(file ? { file: fileOf(file) } : {}) };
     }
+    // An input item as the owner window gets it (N07): its address, its label, and its text or the reference of its file.
+    const ownerItemOf = (item) => ({ label: item.label, ...item.address, ...(item.binary ? { file: item.file } : { text: item.text }) });
     async function ownerAnswer(step, entry) {
       let reason = '';
       let detail = '';
+      // The input of the owner step is resolved before the window opens (N07): a missing required source stops the run here.
+      const input = answersFor(step, step.input ?? 'none').map(ownerItemOf);
       for (;;) {
         await checkpointNow('decision', { pendingOwner: { kind: 'owner', stepRef: step.ref, visit: entry.visit } });
         const reply = await ownerWait(() => provideOwnerResult({ stepRef: step.ref, visit: entry.visit, task: step.task, output: step.output,
-          ...(reason ? { reason, detail } : {}) }));
+          ...(step.input !== 'none' ? { input } : {}), ...(reason ? { reason, detail } : {}) }));
         if (reply === null) throw new StopRun('stopped');
         const verdict = ownerVerdict(step, reply);
         if (!verdict.ok) {
@@ -1224,8 +1235,9 @@
           activeVisit = state.visits[key];
           activeFeedback = takeFeedback(key);
           // What this visit uses (the results and artifacts it took) is recorded: a later stale key makes the visit stale (6.3).
-          state.dependencies[`${step.index}@${activeVisit}`] = usedKeysOf(step.models.length
-            ? step.models.flatMap((model) => inputFor(step, specOf(step, model))) : inputFor(step, step.input ?? 'none'));
+          // The owner's answer is built on its input too: a change of that input makes the answer stale (N07, 6.3).
+          state.dependencies[`${step.index}@${activeVisit}`] = usedKeysOf(step.kind === 'owner' ? answersFor(step, step.input ?? 'none')
+            : (step.models.length ? step.models.flatMap((model) => inputFor(step, specOf(step, model))) : inputFor(step, step.input ?? 'none')));
         }
         const decidedKey = `${key}@${activeVisit}`;
         const outcome = resumed ? resumed.outcome : {};
