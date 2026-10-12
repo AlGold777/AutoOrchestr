@@ -660,6 +660,8 @@
         if (isObject(model.discipline)) participant.discipline = JSON.parse(JSON.stringify(model.discipline));
         if ('input' in model) participant.input = JSON.parse(JSON.stringify(model.input));
         if ('output' in model) participant.output = JSON.parse(JSON.stringify(model.output));
+        // A switched-off participant is a declaration of its own (R12): its name and off state stay, with or without other settings.
+        if (model.enabled === false) Object.assign(participant, { name: model.name, enabled: false });
         if (!Object.keys(participant).length) return;
         (customModelSettings[step.ref] || (customModelSettings[step.ref] = {}))[idOf(model)] = participant;
       });

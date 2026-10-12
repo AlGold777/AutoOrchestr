@@ -388,7 +388,8 @@ describe('Basic schema: the order of participants on the canvas', () => {
     expect(first.stacks).toEqual(second.stacks);
     expect(first.rounds).toEqual(second.rounds);
     expect(JSON.stringify(schema)).toBe(before);
-    expect(Schema.toSettings(schema).customModelSettings.r1.Claude).toEqual({ task: 'KEPT_TASK' });
+    // The switched-off declaration (name, enabled) stays with the task (R12).
+    expect(Schema.toSettings(schema).customModelSettings.r1.Claude).toEqual({ name: 'Claude', enabled: false, task: 'KEPT_TASK' });
   });
 });
 
@@ -1205,5 +1206,41 @@ describe('Basic schema: the order of a synthesis and control steps (R11)', () =>
     const first = base([synthesis('synth:x', ['S']), round('r1', ['A']), synthesis('final', ['B'])]);
     expect(errorPaths(first)).toEqual(['steps[0]']);
     expect(Schema.toCanvas(first, { models }).errors.map((error) => error.path)).toEqual(['steps[0]']);
+  });
+});
+
+describe('Basic schema: a switched-off declared participant keeps its declaration (R12)', () => {
+  const schemaWith = (r2Input) => base([
+    round('r1', ['A', { name: 'GPT', id: 'gpt-1' }, { name: 'C', id: 'c-1', enabled: false }], { require: 'all' }),
+    round('r2', [{ name: 'A', input: r2Input }]),
+    synthesis('final', ['B'])
+  ]);
+
+  test('the declaration of a switched-off participant reaches the settings even without other settings', () => {
+    const settings = Schema.toSettings(schemaWith(['r1']));
+    expect(settings.customModelSettings.r1['c-1']).toEqual({ name: 'C', enabled: false });
+    expect(settings.customModelSettings.r1.A).toBeUndefined();
+    expect(settings.customModelSettings.r1['gpt-1']).toBeUndefined();
+  });
+
+  test('an optional source to a switched-off participant is valid and keeps its id in the settings and assembly', () => {
+    const schema = schemaWith(['r1', { step: 'r1', participant: 'c-1' }]);
+    expect(Schema.validate(schema)).toEqual([]);
+    expect(Schema.toSettings(schema).customModelSettings.r2.A.input).toEqual(['r1', { step: 'r1', participant: 'c-1' }]);
+    expect(Schema.assemble(schema)[1].models[0].input).toEqual(['r1', { step: 'r1', participant: 'c-1' }]);
+  });
+
+  test('a required source to a switched-off participant is not a validator error: the run decides it; require all leaves it out', () => {
+    const schema = schemaWith([{ step: 'r1', participant: 'c-1', required: true }]);
+    expect(Schema.validate(schema)).toEqual([]);
+    const first = Schema.assemble(schema)[0];
+    expect(first.models.map((model) => model.id)).toEqual(['A', 'gpt-1']);
+    expect(first.require).toBe('all');
+  });
+
+  test('switching the participant on again keeps its id and its place in the step', () => {
+    const on = base([round('r1', ['A', { name: 'GPT', id: 'gpt-1' }, { name: 'C', id: 'c-1' }]), synthesis('final', ['B'])]);
+    expect(Schema.validate(on)).toEqual([]);
+    expect(Schema.assemble(on)[0].models.map((model) => model.id)).toEqual(['A', 'gpt-1', 'c-1']);
   });
 });
