@@ -347,6 +347,8 @@
       return false;
     }
     if (message.type === 'STOP_AND_CLEANUP' || message.type === 'HUMANOID_FORCE_STOP') {
+      if (typeof window.ContentUtils?.isStopCommandCurrent === 'function'
+          && !window.ContentUtils.isStopCommandCurrent(message)) return false;
       cleanup(message.reason || message.type);
       sendResponse?.({ status: 'stopped', llmName: MODEL });
       return false;

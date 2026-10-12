@@ -194,9 +194,17 @@ const attachmentHandler = window.AttachmentHandler || null;
     getReason: () => null
   };
   let scriptStopped = false;
+  let resolveProviderStop;
+  const providerStopSignal = new Promise((resolve) => { resolveProviderStop = resolve; });
+  const stopError = () => Object.assign(new Error('Provider stopped'), { code: 'background-force-stop' });
+  const raceWithProviderStop = (promise) => Promise.race([
+    Promise.resolve(promise),
+    providerStopSignal.then(() => { throw stopError(); })
+  ]);
   const stopContentScript = (reason = 'manual-stop') => {
     if (scriptStopped) return cleanupScope.getReason?.() || reason;
     scriptStopped = true;
+    try { resolveProviderStop?.(); } catch (_) {}
     console.warn('[content-chatgpt] Cleanup triggered:', reason);
     try {
       getForceStopRegistry().run(reason);
@@ -215,7 +223,12 @@ const attachmentHandler = window.AttachmentHandler || null;
   cleanupScope.addEventListener?.(window, 'pagehide', () => stopContentScript('pagehide'));
   cleanupScope.addEventListener?.(window, 'beforeunload', () => stopContentScript('beforeunload'));
 
-const sleep = (ms) => (window.ContentUtils?.sleep ? window.ContentUtils.sleep(ms) : new Promise((r) => setTimeout(r, ms)));
+const sleep = (ms) => {
+  if (scriptStopped) return Promise.reject(stopError());
+  return raceWithProviderStop(window.ContentUtils?.sleep
+    ? window.ContentUtils.sleep(ms)
+    : new Promise((r) => setTimeout(r, ms)));
+};
 const getHumanoid = () => (typeof window !== 'undefined' ? window.Humanoid : null);
 const isUserInteracting = () => {
   if (document.hidden) return true;
@@ -938,8 +951,10 @@ const chatgptScrollCoordinator = window.ScrollCoordinator
 
   // Self-Healing Selector Logic (упрощенная версия)
   async function findAndCacheElement(selectorKey, selectorArray, timeout = 30000) {
+      if (scriptStopped) throw stopError();
       if (window.ContentUtils?.findAndCacheElement) {
-          const found = await window.ContentUtils.findAndCacheElement(selectorKey, selectorArray, { timeout, model: MODEL, metricsCollector });
+          const found = await raceWithProviderStop(window.ContentUtils.findAndCacheElement(selectorKey, selectorArray, { timeout, model: MODEL, metricsCollector }));
+          if (scriptStopped) throw stopError();
           if (found) return found;
       }
       const storageKey = `selector_cache_${MODEL}_${selectorKey}`;
@@ -1143,6 +1158,7 @@ const chatgptScrollCoordinator = window.ScrollCoordinator
         try {
             inputField = await findAndCacheElement('inputField', inputSelectors, 10000);
         } catch (err) {
+            if (scriptStopped || err?.code === 'background-force-stop') throw stopError();
             console.warn('[CONTENT-GPT] Self-Healing failed, trying manual search...');
             
             // Manual fallback: ищем любой видимый textarea/contenteditable
@@ -1502,9 +1518,10 @@ const chatgptScrollCoordinator = window.ScrollCoordinator
     });
 
     gptSharedInjection = opPromise;
-    opPromise.finally(() => {
+    const clearSharedInjection = () => {
       if (gptSharedInjection === opPromise) gptSharedInjection = null;
-    });
+    };
+    opPromise.then(clearSharedInjection, clearSharedInjection);
     return opPromise;
   }
 
@@ -1514,6 +1531,8 @@ const chatgptScrollCoordinator = window.ScrollCoordinator
     if (!message) return false;
     console.log('[CONTENT-GPT] Received:', message.type);
     if (message?.type === 'STOP_AND_CLEANUP') {
+      if (typeof window.ContentUtils?.isStopCommandCurrent === 'function'
+          && !window.ContentUtils.isStopCommandCurrent(message)) return false;
       handleForceStopMessage(message.payload?.traceId);
       stopContentScript('manual-toggle');
       // A stopped run releases the tab for the next command.
@@ -1525,6 +1544,8 @@ const chatgptScrollCoordinator = window.ScrollCoordinator
       return false;
     }
     if (message?.type === 'HUMANOID_FORCE_STOP') {
+      if (typeof window.ContentUtils?.isStopCommandCurrent === 'function'
+          && !window.ContentUtils.isStopCommandCurrent(message)) return false;
       handleForceStopMessage(message.payload?.traceId);
       if (typeof sendResponse === 'function') {
         sendResponse({ status: 'force_stop_ack' });

@@ -61,6 +61,7 @@
     ? window.__LLMMainBridgeToken
     : null;
   let storedPipelineRunId = null;
+  let stoppedDispatchMeta = null;
   const getMainBridgeToken = () => mainBridgeToken || null;
   const setMainBridgeToken = (token) => {
     mainBridgeToken = typeof token === 'string' && token.trim() ? token.trim() : null;
@@ -242,6 +243,49 @@
       base.llmName = llmName;
     }
     return Object.keys(base).length ? base : null;
+  };
+
+  // A delayed, correlated Stop must not affect a newer known dispatch. The
+  // storage listener can require identity initialization; direct Stop messages
+  // remain able to cancel page startup before the first request is recorded.
+  const isStopCommandCurrent = (message, { requireKnownIdentity = false } = {}) => {
+    if (!message || typeof message !== 'object') return true;
+    const meta = message.meta && typeof message.meta === 'object' ? message.meta : {};
+    const readIdentity = (key, aliases = []) => {
+      for (const source of [meta, message]) {
+        for (const name of [key, ...aliases]) {
+          const value = source?.[name];
+          if (value !== undefined && value !== null && value !== '') return value;
+        }
+      }
+      return null;
+    };
+    const commandRunSessionId = readIdentity('runSessionId', ['sessionId']);
+    const commandDispatchId = readIdentity('dispatchId');
+    const commandPipelineRunId = readIdentity('pipelineRunId');
+    const commandDispatchIds = Array.isArray(message.activeDispatchIds)
+      ? message.activeDispatchIds
+      : (Array.isArray(meta.activeDispatchIds) ? meta.activeDispatchIds : null);
+    const hasIdentity = Boolean(commandRunSessionId || commandDispatchId || commandPipelineRunId || commandDispatchIds);
+    if (!hasIdentity) return true;
+
+    const currentMeta = ensureDispatchMeta({}) || {};
+    const currentRunSessionId = currentMeta.runSessionId || currentMeta.sessionId || getSessionId();
+    const currentDispatchId = currentMeta.dispatchId || null;
+    const currentPipelineRunId = currentMeta.pipelineRunId || storedPipelineRunId || null;
+    if (commandRunSessionId && (!currentRunSessionId
+        ? requireKnownIdentity
+        : String(commandRunSessionId) !== String(currentRunSessionId))) return false;
+    if (commandDispatchId && (!currentDispatchId
+        ? requireKnownIdentity
+        : String(commandDispatchId) !== String(currentDispatchId))) return false;
+    if (commandPipelineRunId && (!currentPipelineRunId
+        ? requireKnownIdentity
+        : String(commandPipelineRunId) !== String(currentPipelineRunId))) return false;
+    if (commandDispatchIds && (!currentDispatchId
+        ? requireKnownIdentity
+        : !commandDispatchIds.some((id) => String(id) === String(currentDispatchId)))) return false;
+    return true;
   };
 
   const FOCUS_REQUEST_THROTTLE_MS = 3000;
@@ -877,9 +921,61 @@
     }
     return { stopped: false, reason: 'stop_unconfirmed' };
   };
+  // Mark the page synchronously when Stop arrives, even if the Pragmatist
+  // runner has not finished its asynchronous boot yet. The runner has its own
+  // listener for stopping provider observers and command polling.
+  try {
+    chrome.runtime.onMessage.addListener((message) => {
+      if (message?.type !== 'STOP_AND_CLEANUP') return false;
+      if (!isStopCommandCurrent(message)) return false;
+      const explicitMeta = message.meta && typeof message.meta === 'object' ? message.meta : {};
+      const currentMeta = ensureDispatchMeta({}) || {};
+      stoppedDispatchMeta = {
+        runSessionId: explicitMeta.runSessionId || explicitMeta.sessionId
+          || message.runSessionId || message.sessionId
+          || currentMeta.runSessionId || currentMeta.sessionId || null,
+        dispatchId: explicitMeta.dispatchId || message.dispatchId || currentMeta.dispatchId || null
+      };
+      try {
+        window.__LLMScrollHardStop = true;
+        window.__LLMScrollStopEpoch = Number(window.__LLMScrollStopEpoch || 0) + 1;
+      } catch (_) {}
+      try {
+        window.humanSessionController?.forceHardStop?.('background-stop');
+      } catch (_) {}
+      return false;
+    });
+  } catch (_) {}
+
+  // A new prompt is the explicit boundary between a stopped request and the
+  // next one. Clear only the hard-stop bit; the incremented stop epoch remains
+  // so work that was already awaiting when Stop arrived cannot resume.
+  try {
+    chrome.runtime.onMessage.addListener((message) => {
+      if (message?.type !== 'GET_ANSWER') return false;
+      if (!String(message.prompt || '').trim()) return false;
+      if (!stoppedDispatchMeta) return false;
+
+      const incomingMeta = message.meta && typeof message.meta === 'object' ? message.meta : {};
+      const incomingRunSessionId = incomingMeta.runSessionId || incomingMeta.sessionId
+        || message.runSessionId || message.sessionId || null;
+      const incomingDispatchId = incomingMeta.dispatchId || message.dispatchId || null;
+      const hasNewRun = Boolean(incomingRunSessionId && stoppedDispatchMeta.runSessionId
+        && String(incomingRunSessionId) !== String(stoppedDispatchMeta.runSessionId));
+      const hasNewDispatch = Boolean(incomingDispatchId && stoppedDispatchMeta.dispatchId
+        && String(incomingDispatchId) !== String(stoppedDispatchMeta.dispatchId));
+      if (!hasNewRun && !hasNewDispatch) return false;
+
+      try { window.__LLMScrollHardStop = false; } catch (_) {}
+      stoppedDispatchMeta = null;
+      return false;
+    });
+  } catch (_) {}
+
   try {
     chrome.runtime.onMessage.addListener((message) => {
       if (message?.type !== 'STOP_AND_CLEANUP' || !hasActiveRequest()) return false;
+      if (!isStopCommandCurrent(message)) return false;
       stopProviderGeneration()
         .catch((err) => ({ stopped: false, reason: `stop_failed:${err?.message || err}` }))
         .then((result) => {
@@ -1423,6 +1519,7 @@
     storeDispatchMeta,
     getSessionId,
     ensureDispatchMeta,
+    isStopCommandCurrent,
     pasteTextFirst,
     promptMatchesComposer: pasteMatchesPrompt,
     countPromptOccurrences,

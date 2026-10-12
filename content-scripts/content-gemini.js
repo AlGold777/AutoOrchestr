@@ -1697,6 +1697,8 @@ const onRuntimeMessage = (message, sender, sendResponse) => {
     console.log('[content-gemini] Received:', message.type);
     
     if (message?.type === 'STOP_AND_CLEANUP') {
+        if (typeof window.ContentUtils?.isStopCommandCurrent === 'function'
+            && !window.ContentUtils.isStopCommandCurrent(message)) return false;
         handleForceStopMessage(message.payload?.traceId);
         stopContentScript('manual-toggle');
         if (typeof sendResponse === 'function') {
@@ -1706,6 +1708,8 @@ const onRuntimeMessage = (message, sender, sendResponse) => {
     }
     
     if (message?.type === 'HUMANOID_FORCE_STOP') {
+        if (typeof window.ContentUtils?.isStopCommandCurrent === 'function'
+            && !window.ContentUtils.isStopCommandCurrent(message)) return false;
         handleForceStopMessage(message.payload?.traceId);
         if (typeof sendResponse === 'function') {
             sendResponse({ status: 'force_stop_ack' });

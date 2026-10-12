@@ -2,6 +2,8 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 const StatusContract = require('../shared/status-contract.js');
+const MessageDelivery = require('../shared/message-delivery.js');
+const TransportContract = require('../shared/transport-contract.js');
 const source = fs.readFileSync(path.join(__dirname, '..', 'results.js'), 'utf8');
 
 function createPage() {
@@ -15,6 +17,7 @@ function createPage() {
     setMainRunActive: jest.fn(), getCurrentViewKey: () => 'main',
     mainRunActive: false,
     mergeLLMMetadata: jest.fn(), updateDebateModelCardOutput: jest.fn(() => ({ updated: true })),
+    receiveResultsAnswerMessage: message => message,
     looksLikeHtml: () => false, resolveCompleteAnswerHtml: text => text,
     applyAttributionMarker: jest.fn(), replaceChildrenFromSanitizedHtml: (element, html) => { element.textContent = html; },
     decorateLinksForNewTab: jest.fn(), revealPanelForLargeContent: jest.fn(),
@@ -26,6 +29,9 @@ function createPage() {
   const start = source.indexOf('const statusClassMap =');
   const end = source.indexOf('// --- END STATUS INDICATOR LOGIC ---', start);
   vm.runInContext(source.slice(start, end), context);
+  const normalizationStart = source.indexOf('const normalizeRenderedAnswerText =');
+  const normalizationEnd = source.indexOf('function resolveCompleteAnswerHtml(', normalizationStart);
+  vm.runInContext(source.slice(normalizationStart, normalizationEnd), context);
   const renderStart = source.indexOf('function emitAnswerCardRenderEvidence(');
   const renderEnd = source.indexOf('const normalizeRenderedAnswerText', renderStart);
   vm.runInContext(source.slice(renderStart, renderEnd), context);
@@ -35,6 +41,50 @@ function createPage() {
   const panel = document.getElementById('panel-gpt');
   const indicator = panel.querySelector('.status-indicator');
   return { context, panel, indicator, output: panel.querySelector('.output') };
+}
+
+function createRuntimePage() {
+  MessageDelivery.reset();
+  document.body.innerHTML = '<section id="panel-gpt" class="llm-panel"><span class="status-indicator" data-llm-name="GPT"></span><div class="output"></div></section>';
+  let runtimeListener;
+  const context = {
+    document, console, Date, Map, Object, Number, Boolean, String,
+    window: { LLMStatusContract: StatusContract, MessageDelivery, TransportContract },
+    TransportContract,
+    chrome: { runtime: { onMessage: { addListener: listener => { runtimeListener = listener; } }, sendMessage: jest.fn() } },
+    location: { pathname: '/result_new.html' },
+    statusStateByModel: {}, deferredSuccessStatusByModel: {},
+    isErrorOutput: () => false, sanitizeInlineHtml: value => value, setApiIndicatorState: jest.fn(),
+    setMainRunActive: jest.fn(), getCurrentViewKey: () => 'main', mainRunActive: false,
+    mergeLLMMetadata: jest.fn(), updateDebateModelCardOutput: jest.fn(() => ({ updated: true })),
+    looksLikeHtml: () => false, resolveCompleteAnswerHtml: text => text,
+    applyAttributionMarker: jest.fn(), replaceChildrenFromSanitizedHtml: (element, html) => { element.textContent = html; },
+    decorateLinksForNewTab: jest.fn(), revealPanelForLargeContent: jest.fn(),
+    ingestLogs: jest.fn(), makeLocalDiagEntry: () => ({}), autoCollapseDiagnostics: jest.fn(),
+    checkCompareButtonState: jest.fn(), convertMarkdownToHTML: text => text,
+    pipelineWaiter: { waiting: false, handleFinal: jest.fn(), handlePartial: jest.fn(), missReason: () => 'rejected' },
+    RESULTS_RUNTIME_MESSAGE_TYPES: new Set(['UPDATE_LLM_PANEL_OUTPUT', 'LLM_JOB_CREATED', 'STATUS_UPDATE'])
+  };
+  vm.createContext(context);
+
+  const pipelineStart = source.indexOf('const PIPELINE_TRANSPORT =');
+  const pipelineEnd = source.indexOf('const hasOwnKey =', pipelineStart);
+  vm.runInContext(source.slice(pipelineStart, pipelineEnd), context);
+  const statusStart = source.indexOf('const statusClassMap =');
+  const statusEnd = source.indexOf('// --- END STATUS INDICATOR LOGIC ---', statusStart);
+  vm.runInContext(source.slice(statusStart, statusEnd), context);
+  const evidenceStart = source.indexOf('function emitAnswerCardRenderEvidence(');
+  const evidenceEnd = source.indexOf('const normalizeRenderedAnswerText', evidenceStart);
+  vm.runInContext(source.slice(evidenceStart, evidenceEnd), context);
+  const renderStart = source.indexOf('const normalizeRenderedAnswerText =');
+  const renderEnd = source.indexOf('//-- 2. Добавляем обработчик для кнопки "Copy All"', renderStart);
+  vm.runInContext(source.slice(renderStart, renderEnd), context);
+  const listenerStart = source.indexOf('chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {');
+  const listenerEnd = source.indexOf('\n    });\n        \n    function emitAnswerCardRenderEvidence(', listenerStart) + '\n    });'.length;
+  vm.runInContext(source.slice(listenerStart, listenerEnd), context);
+
+  const panel = document.getElementById('panel-gpt');
+  return { context, panel, indicator: panel.querySelector('.status-indicator'), output: panel.querySelector('.output'), runtimeListener };
 }
 
 const expectGreen = (indicator) => {
@@ -59,6 +109,38 @@ test('a card end marker turns the indicator green and late forced statuses canno
   context.updateModelStatusUI('GPT', 'INITIALIZING', { reset: true, force: true });
   expect(indicator.classList.contains('success')).toBe(false);
   expect(indicator.dataset.currentStatus).toBe('INITIALIZING');
+});
+
+test('the runtime UPDATE path cleans and proves a real delivery marker, then duplicate job/status messages keep it green', () => {
+  const { context, panel, output, indicator, runtimeListener } = createRuntimePage();
+  const requestId = 'runtime-request';
+  const wrapped = MessageDelivery.prepare({ prompt: 'Question', models: ['GPT'], requestIds: { GPT: requestId } });
+  const marker = wrapped.GPT.match(/\[\[AO-[a-z0-9]{6}\]\]/i)?.[0];
+  expect(marker).toBeTruthy();
+  context.replaceCurrentMainRequestIds({ GPT: requestId });
+  context.clearModelStatusMemory('GPT');
+  context.updateModelStatusUI('GPT', 'RECEIVING', { reset: true, force: true });
+
+  runtimeListener({
+    type: 'UPDATE_LLM_PANEL_OUTPUT', llmName: 'GPT', transportRequestId: requestId,
+    answer: `A complete answer.\n${marker}`, metadata: { status: 'SUCCESS' }
+  }, {}, jest.fn());
+
+  const renderedMeta = context.updateDebateModelCardOutput.mock.calls.at(-1)[3];
+  expect(renderedMeta.answerEndMarkerSeen).toBe(true);
+  expect(output.textContent).toBe('A complete answer.');
+  expect(output.textContent).not.toContain(marker);
+  expect(indicator.classList.contains('success')).toBe(true);
+  expect(context.statusStateByModel.GPT.cardAnswerComplete).toBe(true);
+
+  runtimeListener({
+    type: 'LLM_JOB_CREATED', llmName: 'GPT', sourceView: 'main', transportRequestId: requestId
+  }, {}, jest.fn());
+  runtimeListener({ type: 'STATUS_UPDATE', llmName: 'GPT', status: 'ERROR', data: { force: true, reset: true } }, {}, jest.fn());
+  expect(indicator.classList.contains('success')).toBe(true);
+  expect(indicator.dataset.currentStatus).toBe('SUCCESS');
+  expect(context.statusStateByModel.GPT.cardAnswerComplete).toBe(true);
+  MessageDelivery.reset();
 });
 
 test('a late old completion cannot repaint the main card after a new job is created', () => {

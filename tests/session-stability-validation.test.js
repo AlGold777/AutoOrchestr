@@ -240,8 +240,9 @@ function createOrchestratorSandbox({ exposeTriggerResponseCollectionPing = false
   return context;
 }
 
-function createDispatchCoordinatorSandbox(entry = {}) {
+function createDispatchCoordinatorSandbox(entry = {}, { deferSendMessage = false } = {}) {
   const tabGetCallbacks = [];
+  const tabSendCallbacks = [];
   const sentMessages = [];
   const context = {
     console,
@@ -277,7 +278,8 @@ function createDispatchCoordinatorSandbox(entry = {}) {
         get: jest.fn((_tabId, callback) => tabGetCallbacks.push(callback)),
         sendMessage: jest.fn((tabId, message, callback) => {
           sentMessages.push({ tabId, message });
-          callback?.({ accepted: true });
+          if (deferSendMessage) tabSendCallbacks.push(callback);
+          else callback?.({ accepted: true });
         })
       }
     },
@@ -286,7 +288,7 @@ function createDispatchCoordinatorSandbox(entry = {}) {
   context.self = context;
   vm.createContext(context);
   vm.runInContext(DISPATCH_COORDINATOR_SOURCE, context, { filename: 'background/dispatch-coordinator.js' });
-  return { context, tabGetCallbacks, sentMessages };
+  return { context, tabGetCallbacks, tabSendCallbacks, sentMessages };
 }
 
 describe('session stability validation guards', () => {
@@ -546,6 +548,30 @@ describe('session stability validation guards', () => {
 
     expect(sentMessages).toEqual([]);
     expect(onSuccess).toHaveBeenCalledWith(expect.objectContaining({ status: 'ignored_stale' }));
+  });
+
+  test('a passive probe callback after Stop cannot report success for the old dispatch', () => {
+    const entry = { status: 'GENERATING', tabId: 101, lastDispatchMeta: { dispatchId: 'dispatch-old' } };
+    const { context, tabGetCallbacks, tabSendCallbacks, sentMessages } = createDispatchCoordinatorSandbox(entry, {
+      deferSendMessage: true
+    });
+    const onSuccess = jest.fn();
+    const onError = jest.fn();
+
+    context.sendPassiveMessageWithRetries(101, 'GPT', {
+      action: 'getResponses',
+      meta: { runSessionId: 12345, dispatchId: 'dispatch-old' }
+    }, { onSuccess, onError });
+    tabGetCallbacks[0]({ id: 101 });
+    expect(sentMessages).toHaveLength(1);
+
+    context.jobState = {};
+    tabSendCallbacks[0]({ status: 'sent' });
+
+    expect(onSuccess).toHaveBeenCalledWith(expect.objectContaining({
+      status: 'ignored_stale', reason: 'entry_missing'
+    }));
+    expect(onError).not.toHaveBeenCalled();
   });
 
   test('LLM_JOB_CREATED carries the producer request identity', () => {

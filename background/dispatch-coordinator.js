@@ -827,6 +827,41 @@ function waitForPromptInsertion(llmName, dispatchId, timeoutMs) {
   });
 }
 
+function cancelPendingDispatchCoordinatorWork(reason = 'session_stopped') {
+  const cancelReason = String(reason || 'session_stopped');
+  const submitResult = { ok: false, cancelled: true, reason: cancelReason };
+  promptSubmitWaiters.forEach((modelWaiters) => {
+    modelWaiters.forEach((waiters) => {
+      Array.from(waiters || []).forEach((settle) => {
+        try { settle(submitResult); } catch (_) {}
+      });
+    });
+  });
+  promptSubmitWaiters.clear();
+  promptSubmitWaiterArms.clear();
+
+  const insertionResult = { insertionState: 'cancelled', cancelled: true, reason: cancelReason };
+  promptInsertionWaiters.forEach((modelWaiters) => {
+    modelWaiters.forEach((waiters) => {
+      Array.from(waiters || []).forEach((settle) => {
+        try { settle(insertionResult); } catch (_) {}
+      });
+    });
+  });
+  promptInsertionWaiters.clear();
+
+  if (promptDispatchSupervisorTimer) {
+    clearTimeout(promptDispatchSupervisorTimer);
+    dispatchDeregisterSessionTimer(promptDispatchSupervisorTimer);
+    promptDispatchSupervisorTimer = null;
+  }
+  providerSendOnlyRecoveryTimers.forEach((timer) => {
+    clearTimeout(timer);
+    dispatchDeregisterSessionTimer(timer);
+  });
+  providerSendOnlyRecoveryTimers.clear();
+}
+
 async function waitForPromptFocusBoundary(submitWaiter, insertionWaiter, holdMs) {
   const never = () => new Promise(() => {});
   return Promise.race([
@@ -2204,6 +2239,12 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
         }
       } catch (_) {}
       const submittedPayload = options.skipSubmitWait ? null : (waiter ? await waiter : false);
+      if (!isCurrentDispatchContext()) {
+        return { ok: false, stale: true, reason: 'session_mismatch' };
+      }
+      if (isTerminalLlmEntry(entry)) {
+        return { ok: false, terminal: true, dispatchId, reason: 'model_terminal' };
+      }
       if (!options.skipSubmitWait && commandDeliveryReported) {
         reportDispatchPhase(llmName, entry, submittedPayload?.ok === true || submittedPayload === true ? 'submitted' : 'submit_unconfirmed', {
           dispatchId, tabId, reason: submittedPayload?.reason || null,
@@ -2316,6 +2357,15 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
         }
       }
     } catch (err) {
+      if (!isCurrentDispatchContext() || isTerminalLlmEntry(entry)) {
+        const isCurrent = isCurrentDispatchContext();
+        return {
+          ok: false,
+          stale: !isCurrent,
+          terminal: isCurrent && isTerminalLlmEntry(entry),
+          reason: 'dispatch_context_invalidated'
+        };
+      }
       console.warn('[DISPATCH] dispatchPromptToTab failed', llmName, err);
       broadcastDiagnostic(llmName, { type: 'DISPATCH', label: 'Prompt dispatch error', details: err?.message || String(err), level: 'error' });
       scheduleDispatchRetry(entry, llmName, { type: err?.message || 'dispatch_error' });
@@ -2328,11 +2378,13 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
       }
       return { ok: false, accepted: false, reason: err?.message || String(err) };
     } finally {
-      try {
-        saveJobState(jobState);
-      } catch (_) {}
+      if (isCurrentDispatchContext()) {
+        try {
+          saveJobState(jobState);
+        } catch (_) {}
+      }
       promptDispatchInProgress = Math.max(0, promptDispatchInProgress - 1);
-      schedulePromptDispatchSupervisor();
+      if (isCurrentDispatchContext()) schedulePromptDispatchSupervisor();
     }
   });
 }
@@ -2470,6 +2522,21 @@ function sendMessageSafely(tabId, llmName, message, attempt = 1, onSettled = nul
     globalThis.LLMLog?.debug?.(`[BACKGROUND] Sending message to ${llmName}:`, message);
     chrome.tabs.sendMessage(tabId, message, (response) => {
       const liveEntry = jobState?.llms?.[llmName] || null;
+      const callbackContextFailure = queuedTabMessageContextFailure(
+        llmName,
+        initialEntry,
+        capturedSessionId,
+        message
+      );
+      if (callbackContextFailure) {
+        settle({
+          ok: false,
+          stale: callbackContextFailure !== 'model_terminal',
+          terminal: callbackContextFailure === 'model_terminal',
+          reason: callbackContextFailure
+        });
+        return;
+      }
       const callbackSessionId = Number(message?.meta?.runSessionId || message?.meta?.sessionId || 0) || null;
       const liveSessionId = Number(jobState?.session?.startTime || 0) || null;
       const callbackDispatchId = message?.meta?.dispatchId || null;
@@ -2808,9 +2875,17 @@ function sendPassiveMessageWithRetries(tabId, llmName, message, {
     }
 
     chrome.tabs.sendMessage(tabId, message, (response) => {
-      const liveEntry = jobState?.llms?.[llmName] || null;
-      if (isTerminalLlmEntry(liveEntry)) {
-        onSuccess?.({ status: 'ignored_terminal' });
+      const callbackContextFailure = queuedTabMessageContextFailure(
+        llmName,
+        initialEntry,
+        capturedSessionId,
+        message
+      );
+      if (callbackContextFailure) {
+        onSuccess?.({
+          status: callbackContextFailure === 'model_terminal' ? 'ignored_terminal' : 'ignored_stale',
+          reason: callbackContextFailure
+        });
         return;
       }
       if (chrome.runtime.lastError) {
@@ -2949,6 +3024,7 @@ self.runPromptDispatchSupervisor = runPromptDispatchSupervisor;
 self.dispatchPromptToTab = dispatchPromptToTab;
 self.sendMessageSafely = sendMessageSafely;
 self.sendPassiveMessageWithRetries = sendPassiveMessageWithRetries;
+self.cancelPendingDispatchCoordinatorWork = cancelPendingDispatchCoordinatorWork;
 self.DISPATCH_MAX_ATTEMPTS = DISPATCH_MAX_ATTEMPTS;
 self.clearScriptRuntimeHardStop = clearScriptRuntimeHardStop;
 self.clearAllScriptRuntimeHardStops = clearAllScriptRuntimeHardStops;

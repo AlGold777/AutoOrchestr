@@ -1094,6 +1094,7 @@ async function dispatchKimiTrustedSend(tabId) {
 
 const isTerminalRouterEntry = (entry = null) => {
     if (!entry) return false;
+    if (entry.cardAnswerComplete === true) return true;
     if (self.ModelRunState?.isTerminalRunState?.(entry)) return true;
     const entryStatus = String(entry?.status || entry?.finalStatus || '').toUpperCase();
     return Boolean(entry.finalStatusRecorded || entry.finalStatus || TERMINAL_STATUSES.includes(entryStatus));
@@ -1940,7 +1941,7 @@ chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
     if (cleanupReason) {
         // Никогда не закрываем LLM-вкладки автоматически при закрытии results,
         // оставляем только очистку состояния.
-        stopAllProcesses(cleanupReason, { closeTabs: false });
+        self.stopAllProcesses(cleanupReason, { closeTabs: false });
     }
 });
 
@@ -2071,7 +2072,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (self.PipelineMessageHandlers?.handle?.(message, {
             jobState,
             sendResponse,
-            stopAllProcesses,
+            stopAllProcesses: self.stopAllProcesses,
             saveJobState,
             chromeApi: chrome,
             fsm: self.PipelineFSM
@@ -3925,6 +3926,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 }
 
                 const lifecycleEntry = jobState?.llms?.[llmName] || null;
+                if (isTerminalRouterEntry(lifecycleEntry)) {
+                    sendResponse({ status: 'humanoid_event_ignored', reason: 'terminal_entry' });
+                    break;
+                }
                 const lifecycleBlocker = lifecycleEntry?.transientBlocker || null;
                 if (llmName === 'Perplexity'
                     && event === 'activity:error'
@@ -4087,14 +4092,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     const completedTabId = self.getBoundTabId?.(llmName, entry) || entry.tabId;
                     if (isValidTabId(completedTabId)) {
                         try {
-                            chrome.tabs.sendMessage(completedTabId, { type: 'STOP_AND_CLEANUP', reason: 'answer_card_end_marker' }).catch(() => {});
+                            chrome.tabs.sendMessage(completedTabId, {
+                                type: 'STOP_AND_CLEANUP',
+                                reason: 'answer_card_end_marker',
+                                meta: {
+                                    runSessionId: jobState?.session?.startTime || null,
+                                    sessionId: jobState?.session?.startTime || null,
+                                    dispatchId: expectedDispatchId
+                                }
+                            }).catch(() => {});
                         } catch (_) {}
                     }
                     saveJobState(jobState);
                     const models = jobState?.session?.selectedModels || [];
                     if (!jobState?.session?.pipelineRunId && models.length
                         && models.every(name => jobState.llms?.[name]?.cardAnswerComplete)) {
-                        stopAllProcesses('answer_cards_complete', { closeTabs: false, preserveResults: true });
+                        self.stopAllProcesses('answer_cards_complete', { closeTabs: false, preserveResults: true });
                     }
                 }
                 emitTelemetry(llmName, 'ANSWER_CARD_RENDER_EVALUATED', {
@@ -4489,13 +4502,36 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             }
 
             case 'STOP_ALL': {
-                (async () => {
-                    const cmd = { action: 'STOP_ALL', timestamp: Date.now(), platforms: message.platforms };
-                    stopAllProcesses('stop_all_command', { closeTabs: false });
-                    await chrome.storage.local.set({ global_command: cmd });
-                    sendResponse({ success: true });
-                })();
-                return true;
+                const cmd = {
+                    action: 'STOP_ALL',
+                    timestamp: Date.now(),
+                    platforms: message.platforms,
+                    runSessionId: jobState?.session?.startTime || null,
+                    activeDispatchIds: Array.from(new Set(Object.values(jobState?.llms || {})
+                        .map((entry) => entry?.lastDispatchMeta?.dispatchId || entry?.runIdentity?.dispatchId || null)
+                        .filter(Boolean)))
+                };
+                try {
+                    self.stopAllProcesses('stop_all_command', { closeTabs: false });
+                } catch (err) {
+                    sendResponse({ success: false, error: err?.message || String(err) });
+                    break;
+                }
+                // Stopping is an in-memory lifecycle action; acknowledge it
+                // before legacy persistence so storage cannot hold up the UI.
+                sendResponse({ success: true });
+                // Scope the delayed command to the session/dispatches being
+                // stopped. A late storage change must not stop a replacement.
+                if (cmd.runSessionId || cmd.activeDispatchIds.length) {
+                    try {
+                        Promise.resolve()
+                            .then(() => chrome.storage.local.set({ global_command: cmd }))
+                            .catch((err) => console.warn('[BACKGROUND] Failed to persist STOP_ALL command:', err));
+                    } catch (err) {
+                        console.warn('[BACKGROUND] Failed to persist STOP_ALL command:', err);
+                    }
+                }
+                break;
             }
 
             case 'COMMAND_ACK': {

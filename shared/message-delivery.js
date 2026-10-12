@@ -168,9 +168,11 @@
     const metadata = { ...(message.metadata || {}) };
     // Preserve proof after removing the transport token from the visible text.
     const tokenAt = answer.toLowerCase().lastIndexOf(tag(entry.token).toLowerCase());
-    metadata.answerEndMarkerSeen = state === 'verified'
+    const endMarkerSeen = state === 'verified'
       && tokenAt >= 0 && answer.length - tokenAt - tag(entry.token).length <= 40
       && Boolean(clean(answer));
+    if (endMarkerSeen) entry.answerEndMarkerSeen = true;
+    metadata.answerEndMarkerSeen = entry.answerEndMarkerSeen === true;
     if (metadata.answerEndMarkerSeen) {
       metadata.terminal = true;
       metadata.status = 'SUCCESS';

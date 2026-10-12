@@ -11736,6 +11736,7 @@ if (typeof window !== 'undefined') {
     ? window.__LLMMainBridgeToken
     : null;
   let storedPipelineRunId = null;
+  let stoppedDispatchMeta = null;
   const getMainBridgeToken = () => mainBridgeToken || null;
   const setMainBridgeToken = (token) => {
     mainBridgeToken = typeof token === 'string' && token.trim() ? token.trim() : null;
@@ -11917,6 +11918,49 @@ if (typeof window !== 'undefined') {
       base.llmName = llmName;
     }
     return Object.keys(base).length ? base : null;
+  };
+
+  // A delayed, correlated Stop must not affect a newer known dispatch. The
+  // storage listener can require identity initialization; direct Stop messages
+  // remain able to cancel page startup before the first request is recorded.
+  const isStopCommandCurrent = (message, { requireKnownIdentity = false } = {}) => {
+    if (!message || typeof message !== 'object') return true;
+    const meta = message.meta && typeof message.meta === 'object' ? message.meta : {};
+    const readIdentity = (key, aliases = []) => {
+      for (const source of [meta, message]) {
+        for (const name of [key, ...aliases]) {
+          const value = source?.[name];
+          if (value !== undefined && value !== null && value !== '') return value;
+        }
+      }
+      return null;
+    };
+    const commandRunSessionId = readIdentity('runSessionId', ['sessionId']);
+    const commandDispatchId = readIdentity('dispatchId');
+    const commandPipelineRunId = readIdentity('pipelineRunId');
+    const commandDispatchIds = Array.isArray(message.activeDispatchIds)
+      ? message.activeDispatchIds
+      : (Array.isArray(meta.activeDispatchIds) ? meta.activeDispatchIds : null);
+    const hasIdentity = Boolean(commandRunSessionId || commandDispatchId || commandPipelineRunId || commandDispatchIds);
+    if (!hasIdentity) return true;
+
+    const currentMeta = ensureDispatchMeta({}) || {};
+    const currentRunSessionId = currentMeta.runSessionId || currentMeta.sessionId || getSessionId();
+    const currentDispatchId = currentMeta.dispatchId || null;
+    const currentPipelineRunId = currentMeta.pipelineRunId || storedPipelineRunId || null;
+    if (commandRunSessionId && (!currentRunSessionId
+        ? requireKnownIdentity
+        : String(commandRunSessionId) !== String(currentRunSessionId))) return false;
+    if (commandDispatchId && (!currentDispatchId
+        ? requireKnownIdentity
+        : String(commandDispatchId) !== String(currentDispatchId))) return false;
+    if (commandPipelineRunId && (!currentPipelineRunId
+        ? requireKnownIdentity
+        : String(commandPipelineRunId) !== String(currentPipelineRunId))) return false;
+    if (commandDispatchIds && (!currentDispatchId
+        ? requireKnownIdentity
+        : !commandDispatchIds.some((id) => String(id) === String(currentDispatchId)))) return false;
+    return true;
   };
 
   const FOCUS_REQUEST_THROTTLE_MS = 3000;
@@ -12528,6 +12572,95 @@ if (typeof window !== 'undefined') {
     });
   } catch (_) {}
 
+  // Cancelling a run must stop the provider generation it started, not only our
+  // observation of it: otherwise the site keeps generating and the next command
+  // lands in a busy conversation. Only a tab with a request of ours in flight is
+  // touched. Registered before the adapters' listeners (manifest order), so the
+  // active-request check runs before an adapter resets its counters.
+  const findProviderStopButton = () => {
+    const bundle = window.AnswerPipelineSelectors;
+    const platform = bundle?.detectPlatform?.();
+    const selector = platform ? bundle?.PLATFORM_SELECTORS?.[platform]?.stopButton : null;
+    if (!selector) return null;
+    return Array.from(document.querySelectorAll(selector))
+      .find((button) => !button.disabled && isElementInteractable(button)) || null;
+  };
+  const stopProviderGeneration = async (timeoutMs = 3000) => {
+    const button = findProviderStopButton();
+    if (!button) return { stopped: false, reason: 'no_stop_control' };
+    button.click();
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      if (!findProviderStopButton()) return { stopped: true, reason: 'stop_confirmed' };
+    }
+    return { stopped: false, reason: 'stop_unconfirmed' };
+  };
+  // Mark the page synchronously when Stop arrives, even if the Pragmatist
+  // runner has not finished its asynchronous boot yet. The runner has its own
+  // listener for stopping provider observers and command polling.
+  try {
+    chrome.runtime.onMessage.addListener((message) => {
+      if (message?.type !== 'STOP_AND_CLEANUP') return false;
+      if (!isStopCommandCurrent(message)) return false;
+      const explicitMeta = message.meta && typeof message.meta === 'object' ? message.meta : {};
+      const currentMeta = ensureDispatchMeta({}) || {};
+      stoppedDispatchMeta = {
+        runSessionId: explicitMeta.runSessionId || explicitMeta.sessionId
+          || message.runSessionId || message.sessionId
+          || currentMeta.runSessionId || currentMeta.sessionId || null,
+        dispatchId: explicitMeta.dispatchId || message.dispatchId || currentMeta.dispatchId || null
+      };
+      try {
+        window.__LLMScrollHardStop = true;
+        window.__LLMScrollStopEpoch = Number(window.__LLMScrollStopEpoch || 0) + 1;
+      } catch (_) {}
+      try {
+        window.humanSessionController?.forceHardStop?.('background-stop');
+      } catch (_) {}
+      return false;
+    });
+  } catch (_) {}
+
+  // A new prompt is the explicit boundary between a stopped request and the
+  // next one. Clear only the hard-stop bit; the incremented stop epoch remains
+  // so work that was already awaiting when Stop arrived cannot resume.
+  try {
+    chrome.runtime.onMessage.addListener((message) => {
+      if (message?.type !== 'GET_ANSWER') return false;
+      if (!String(message.prompt || '').trim()) return false;
+      if (!stoppedDispatchMeta) return false;
+
+      const incomingMeta = message.meta && typeof message.meta === 'object' ? message.meta : {};
+      const incomingRunSessionId = incomingMeta.runSessionId || incomingMeta.sessionId
+        || message.runSessionId || message.sessionId || null;
+      const incomingDispatchId = incomingMeta.dispatchId || message.dispatchId || null;
+      const hasNewRun = Boolean(incomingRunSessionId && stoppedDispatchMeta.runSessionId
+        && String(incomingRunSessionId) !== String(stoppedDispatchMeta.runSessionId));
+      const hasNewDispatch = Boolean(incomingDispatchId && stoppedDispatchMeta.dispatchId
+        && String(incomingDispatchId) !== String(stoppedDispatchMeta.dispatchId));
+      if (!hasNewRun && !hasNewDispatch) return false;
+
+      try { window.__LLMScrollHardStop = false; } catch (_) {}
+      stoppedDispatchMeta = null;
+      return false;
+    });
+  } catch (_) {}
+
+  try {
+    chrome.runtime.onMessage.addListener((message) => {
+      if (message?.type !== 'STOP_AND_CLEANUP' || !hasActiveRequest()) return false;
+      if (!isStopCommandCurrent(message)) return false;
+      stopProviderGeneration()
+        .catch((err) => ({ stopped: false, reason: `stop_failed:${err?.message || err}` }))
+        .then((result) => {
+          // Visible in the Pipeline Automation journal (provider_stop).
+          safeRuntimeSendMessage({ type: 'PROVIDER_STOP_RESULT', llmName: detectLlmNameFromLocation(), ...result });
+        });
+      return false;
+    });
+  } catch (_) {}
+
   const isElementInteractable = (el) => {
     if (!el) return false;
     const rect = el.getBoundingClientRect?.();
@@ -12758,6 +12891,10 @@ if (typeof window !== 'undefined') {
     'canvas',
     'button',
     '[role="button"]',
+    '[data-message-part-type="reasoning"]',
+    'h6.screen-reader-model-response-label',
+    '[aria-hidden="true"]',
+    '[inert]',
     'header',
     'footer',
     'nav',
@@ -12793,6 +12930,14 @@ if (typeof window !== 'undefined') {
 
   const extractSafeVisibleText = (el, maxChars = 10000) => {
     if (!el) return '';
+    const label = el.querySelector?.('h6.screen-reader-model-response-label');
+    if (label) {
+      const rawText = String(el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+      if (rawText.endsWith(String(label.textContent || '').trim())) return '';
+      return String(el.innerText || el.textContent || '')
+        .replace(String(label.innerText || label.textContent || '').trim(), '')
+        .replace(/\s+/g, ' ').trim().slice(0, Math.max(0, Number(maxChars) || 10000));
+    }
     let text = '';
     try {
       text = el.innerText || el.textContent || '';
@@ -12807,6 +12952,7 @@ if (typeof window !== 'undefined') {
 
   const lateSnapshotSelectorsByModel = {
     GPT: [
+      '[data-markdown-text-style="assistant-message"]',
       '[data-message-author-role="assistant"] .markdown',
       '[data-message-author-role="assistant"]',
       'article .markdown',
@@ -12837,6 +12983,7 @@ if (typeof window !== 'undefined') {
       'article'
     ],
     'Le Chat': [
+      '[data-message-author-role="assistant"] [data-message-part-type="answer"]',
       'div[data-testid="lechat-response"] .prose',
       '[data-testid="answer"] .prose',
       '[data-testid="message-content"]',
@@ -12896,7 +13043,7 @@ if (typeof window !== 'undefined') {
     const tag = String(node?.tagName || '').toLowerCase();
     if (['input', 'textarea', 'button', 'nav', 'header', 'footer', 'form', 'aside'].includes(tag)) return true;
     try {
-      return !!node?.closest?.('textarea,input,button,nav,header,footer,form,aside,[contenteditable="true"],[role="combobox"]');
+      return !!node?.closest?.('textarea,input,button,nav,header,footer,form,aside,[contenteditable="true"],[role="combobox"],[data-message-part-type="reasoning"],[data-message-author-role="user"],[data-role="user"],[hidden],[inert],[aria-hidden="true"]');
     } catch (_) {
       return false;
     }
@@ -12925,10 +13072,22 @@ if (typeof window !== 'undefined') {
       } catch (_) {}
     };
     visitRoot(document);
+    if (llmName === 'Gemini') {
+      const turns = document.querySelectorAll('model-response');
+      if (turns.length) nodes.splice(0, nodes.length, turns[turns.length - 1]);
+    }
+    if (llmName === 'Le Chat') {
+      const assistants = document.querySelectorAll('[data-message-author-role="assistant"], [data-role="assistant"]');
+      const latest = assistants[assistants.length - 1];
+      if (latest?.querySelector('[data-message-part-type]')) {
+        nodes.splice(0, nodes.length, ...latest.querySelectorAll('[data-message-part-type="answer"]'));
+      }
+    }
     const candidates = nodes
       .filter((node) => node && !isLateSnapshotRejectedNode(node))
       .map((node, index) => {
-        const text = extractSafeVisibleText(node, 50000);
+        const text = ['Le Chat', 'Gemini'].includes(llmName) && window.AnswerStructure
+          ? window.AnswerStructure.linearizeText(node) : extractSafeVisibleText(node, 200000);
         let visible = true;
         try {
           const style = window.getComputedStyle(node);
@@ -12936,7 +13095,8 @@ if (typeof window !== 'undefined') {
         } catch (_) {}
         return { node, text, visible, score: (visible ? 1000000 : 0) + index };
       })
-      .filter((item) => item.text.length >= minChars)
+      .filter((item) => item.text.length >= minChars
+        && !(llmName === 'Gemini' && /(?:Ответ Gemini|Gemini said:?)\s*$/i.test(item.text)))
       .sort((a, b) => b.score - a.score);
     const best = candidates[0] || null;
     return best
@@ -13034,6 +13194,7 @@ if (typeof window !== 'undefined') {
     storeDispatchMeta,
     getSessionId,
     ensureDispatchMeta,
+    isStopCommandCurrent,
     pasteTextFirst,
     promptMatchesComposer: pasteMatchesPrompt,
     countPromptOccurrences,
@@ -13048,6 +13209,7 @@ if (typeof window !== 'undefined') {
     requestFocusFromBackground,
     startActiveRequest,
     stopActiveRequest,
+    hasActiveRequest,
     withSmartScroll,
     findAndCacheElement,
     ensureMainWorldBridge,
@@ -15501,6 +15663,8 @@ if (typeof window !== 'undefined') {
   try {
     chrome.runtime?.onMessage?.addListener((message) => {
       if (message?.type === 'FORCE_HARD_STOP_RESTORE') {
+        if (typeof window.ContentUtils?.isStopCommandCurrent === 'function'
+            && !window.ContentUtils.isStopCommandCurrent(message)) return false;
         window.__LLMScrollHardStop = true;
         if (window.__ScrollGatekeeper) {
           window.__ScrollGatekeeper.engageHardStop();

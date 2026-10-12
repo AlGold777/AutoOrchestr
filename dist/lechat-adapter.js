@@ -1839,6 +1839,8 @@ const hydrateAttachments = (raw = []) =>
       if (baseAdapter?.handleMessage(msg, _sender, sendResponse)) return true;
       
       if (msg?.type === 'STOP_AND_CLEANUP') {
+        if (typeof window.ContentUtils?.isStopCommandCurrent === 'function'
+            && !window.ContentUtils.isStopCommandCurrent(msg)) return false;
         handleForceStopMessage(msg.payload?.traceId);
         stopContentScript('manual-toggle');
         if (typeof sendResponse === 'function') {
@@ -1848,6 +1850,8 @@ const hydrateAttachments = (raw = []) =>
       }
 
       if (msg?.type === 'HUMANOID_FORCE_STOP') {
+        if (typeof window.ContentUtils?.isStopCommandCurrent === 'function'
+            && !window.ContentUtils.isStopCommandCurrent(msg)) return false;
         handleForceStopMessage(msg.payload?.traceId);
         if (typeof sendResponse === 'function') {
           sendResponse({ status: 'force_stop_ack' });

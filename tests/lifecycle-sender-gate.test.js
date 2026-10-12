@@ -12,8 +12,16 @@ const MESSAGE_ROUTER_SOURCE = fs.readFileSync(
   path.join(__dirname, '..', 'background', 'message-router.js'),
   'utf8'
 );
+const JOB_ORCHESTRATOR_SOURCE = fs.readFileSync(
+  path.join(__dirname, '..', 'background', 'job-orchestrator.js'),
+  'utf8'
+);
+const DISPATCH_COORDINATOR_SOURCE = fs.readFileSync(
+  path.join(__dirname, '..', 'background', 'dispatch-coordinator.js'),
+  'utf8'
+);
 
-function createRouterSandbox() {
+function createRouterSandbox({ realStop = false } = {}) {
   let onMessageListener = null;
   const telemetryEvents = [];
   const context = {
@@ -31,6 +39,7 @@ function createRouterSandbox() {
     Boolean,
     RegExp,
     JSON,
+    AbortController,
     setTimeout,
     clearTimeout,
     TERMINAL_STATUSES: ['SUCCESS', 'PARTIAL', 'ERROR', 'NO_SEND', 'EXTRACT_FAILED', 'EXTERNAL_LLM_FAILURE', 'USER_ACTION_REQUIRED', 'UNCERTAIN'],
@@ -80,7 +89,8 @@ function createRouterSandbox() {
       get: jest.fn((llmName) => (llmName === 'GPT' ? 101 : null)),
       getNameByTabId: jest.fn((tabId) => (tabId === 101 ? 'GPT' : null)),
       entries: jest.fn(() => []),
-      removeByName: jest.fn()
+      removeByName: jest.fn(),
+      clear: jest.fn(() => Promise.resolve())
     },
     activateTabForDispatch: jest.fn(),
     chrome: {
@@ -122,6 +132,33 @@ function createRouterSandbox() {
   };
   context.self = context;
   vm.createContext(context);
+  if (realStop) {
+    context.TimingConfig = { getTiming: (_name, fallback) => fallback };
+    context.MutexManager = class { clear() {} };
+    context.CompressedStorage.get.mockResolvedValue(null);
+    Object.assign(context, {
+      activeListeners: new Map(),
+      pendingPings: new Map(),
+      pendingPingByTabId: new Map(),
+      healthCheckFailuresByTabId: new Map(),
+      lastHealthCheckReportAtByTabId: new Map(),
+      llmActivityMap: {},
+      evaluatorTabId: null,
+      jobMetadata: new Map(),
+      llmRequestMap: {},
+      postSuccessScrollTimers: new Map(),
+      deferredAnswerTimers: {},
+      rateLimitState: new Map(),
+      rateLimitTimers: new Map(),
+      stopHumanPresenceLoop: jest.fn(),
+      stopHeartbeatMonitor: jest.fn(),
+      clearPingState: jest.fn(),
+      closePingWindowForTab: jest.fn()
+    });
+    context.chrome.storage.local.remove = jest.fn(() => Promise.resolve());
+    vm.runInContext(JOB_ORCHESTRATOR_SOURCE, context, { filename: 'background/job-orchestrator.js' });
+    vm.runInContext(DISPATCH_COORDINATOR_SOURCE, context, { filename: 'background/dispatch-coordinator.js' });
+  }
   vm.runInContext(MESSAGE_ROUTER_SOURCE, context, { filename: 'background/message-router.js' });
   return {
     context,
@@ -240,6 +277,50 @@ function configurePerplexityHandshake(context, { deferProbe = false } = {}) {
 }
 
 describe('lifecycle sender gate', () => {
+  test('STOP_ALL uses the real orchestrator and ACKs without waiting for command persistence', async () => {
+    const { context, sendMessage } = createRouterSandbox({ realStop: true });
+    context.TabMapManager.entries.mockReturnValue([['GPT', 101]]);
+    context.chrome.storage.local.set.mockImplementation(() => new Promise(() => {}));
+    const submitWaiter = context.createPromptSubmittedWaiter('GPT', 'GPT:12345:1', 10000);
+    const insertionWaiter = context.waitForPromptInsertion('GPT', 'GPT:12345:1', 10000);
+
+    const response = await Promise.race([
+      sendMessage({ type: 'STOP_ALL' }, PAGE_SENDER),
+      new Promise((resolve) => setTimeout(() => resolve({ status: 'test_timeout' }), 100))
+    ]);
+
+    expect(response).toEqual({ success: true });
+    await expect(submitWaiter.promise).resolves.toEqual({
+      ok: false, cancelled: true, reason: 'stop_all_command'
+    });
+    await expect(insertionWaiter).resolves.toEqual({
+      insertionState: 'cancelled', cancelled: true, reason: 'stop_all_command'
+    });
+    expect(context.jobState).toEqual({});
+    expect(jest.isMockFunction(context.stopAllProcesses)).toBe(false);
+    await Promise.resolve();
+    expect(context.chrome.storage.local.set).toHaveBeenCalledWith(expect.objectContaining({
+      global_command: expect.objectContaining({
+        action: 'STOP_ALL', runSessionId: 12345, activeDispatchIds: ['GPT:12345:1']
+      })
+    }));
+    expect(context.chrome.tabs.sendMessage).toHaveBeenCalledWith(101, expect.objectContaining({
+      type: 'STOP_AND_CLEANUP',
+      reason: 'stop_all_command',
+      meta: { runSessionId: 12345, sessionId: 12345, dispatchId: 'GPT:12345:1' }
+    }));
+
+    await expect(sendMessage({ type: 'GET_ACTIVE_RUN_STATE' }, PAGE_SENDER))
+      .resolves.toMatchObject({ status: 'ok', active: false, sessionId: null });
+    const startProcess = jest.fn(() => Promise.resolve({ ok: true }));
+    context.startProcess = startProcess;
+    await expect(sendMessage({
+      type: 'START_FULLPAGE_PROCESS', prompt: 'Next request', selectedLLMs: ['GPT'],
+      sourceView: 'main', useApiFallback: false
+    }, RESULTS_SENDER)).resolves.toEqual({ status: 'process_started' });
+    expect(startProcess).toHaveBeenCalledWith('Next request', ['GPT'], 909, expect.objectContaining({ sourceView: 'main' }));
+  });
+
   test('Completion authority ACK is immediate even while job-state persistence is blocked', async () => {
     const { context, telemetryEvents, sendMessage } = createRouterSandbox();
     context.saveJobState.mockImplementation(() => new Promise(() => {}));
@@ -615,6 +696,20 @@ describe('lifecycle sender gate', () => {
     ]));
   });
 
+  test('HUMANOID_EVENT cannot regress a completed answer card status', async () => {
+    const { context, sendMessage } = createRouterSandbox();
+    context.jobState.llms.ChatGPT = { status: 'GENERATING', cardAnswerComplete: true };
+
+    const response = await sendMessage({
+      type: 'HUMANOID_EVENT',
+      event: 'activity:heartbeat',
+      detail: { source: 'chatgpt:inject', phase: 'waiting-response' }
+    }, BOUND_SENDER);
+
+    expect(response).toEqual({ status: 'humanoid_event_ignored', reason: 'terminal_entry' });
+    expect(context.updateModelState).not.toHaveBeenCalled();
+  });
+
   test('only a current card marker ends visits, and all markers stop a main-page request', async () => {
     const { context, sendMessage } = createRouterSandbox();
     context.completeHumanPresenceForModel = jest.fn();
@@ -632,6 +727,11 @@ describe('lifecycle sender gate', () => {
     await sendMessage(card('GPT', 'request-gpt', META.dispatchId), RESULTS_SENDER);
     expect(context.jobState.llms.GPT.cardAnswerComplete).toBe(true);
     expect(context.completeHumanPresenceForModel).toHaveBeenCalledWith('GPT', 'answer_card_end_marker');
+    expect(context.chrome.tabs.sendMessage).toHaveBeenCalledWith(101, expect.objectContaining({
+      type: 'STOP_AND_CLEANUP',
+      reason: 'answer_card_end_marker',
+      meta: { runSessionId: 12345, sessionId: 12345, dispatchId: META.dispatchId }
+    }));
     expect(context.stopAllProcesses).not.toHaveBeenCalled();
     await sendMessage(card('Claude', 'request-claude'), RESULTS_SENDER);
     expect(context.stopAllProcesses).toHaveBeenCalledWith('answer_cards_complete', { closeTabs: false, preserveResults: true });

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "_Opus",
-  "version": "2.81.745",
+  "version": "2.81.746",
   "description": "Compares LLMs with stable Debate pipelines, structured state maps, and optional synthesis.",
   "permissions": [
     "storage",
@@ -112,6 +112,7 @@
         "shared/observer-health.js",
         "shared/completion-evidence-ladder.js",
         "shared/provider-stream-semantics.js",
+        "utils/cleanup-registry.js",
         "content-scripts/fetch-monitor.js",
         "content-scripts/transport-evidence.js",
         "content-scripts/content-utils.js",

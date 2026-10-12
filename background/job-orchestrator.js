@@ -5093,6 +5093,9 @@ function stopAllProcesses(reason = 'unspecified', { closeTabs = false, preserveR
   // Purpose: cancel orchestrator waits tied to the previous session immediately.
   abortOrchestratorOperations(reason);
   resetOrchestratorAbortController();
+  if (typeof self.cancelPendingDispatchCoordinatorWork === 'function') {
+    self.cancelPendingDispatchCoordinatorWork(reason);
+  }
   clearSessionTimers();
   if (typeof self.clearAllScriptRuntimeHardStops === 'function') {
     self.clearAllScriptRuntimeHardStops();
@@ -5111,11 +5114,13 @@ function stopAllProcesses(reason = 'unspecified', { closeTabs = false, preserveR
   const tabsToClose = [];
   TabMapManager.entries().forEach(([llmName, tabId]) => {
     if (!isValidTabId(tabId)) return;
+    const entry = jobState?.llms?.[llmName];
+    const dispatchId = entry?.lastDispatchMeta?.dispatchId || entry?.runIdentity?.dispatchId || null;
     try {
       chrome.tabs.sendMessage(tabId, {
         type: 'STOP_AND_CLEANUP',
         reason,
-        meta: { sessionId }
+        meta: { runSessionId: sessionId, sessionId, dispatchId }
       }).catch(() => {});
     } catch (_) {}
     closePingWindowForTab(tabId);
@@ -5135,7 +5140,7 @@ function stopAllProcesses(reason = 'unspecified', { closeTabs = false, preserveR
       chrome.tabs.sendMessage(evaluatorTabId, {
         type: 'STOP_AND_CLEANUP',
         reason,
-        meta: { sessionId }
+        meta: { runSessionId: sessionId, sessionId, dispatchId: null }
       }).catch(() => {});
     } catch (_) {}
     if (closeTabs) tabsToClose.push(evaluatorTabId);

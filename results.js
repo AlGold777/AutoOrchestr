@@ -3136,9 +3136,28 @@ document.addEventListener('click', (event) => {
             transportRequestId: envelope.transportRequestId,
             pipelineRunId: envelope.pipelineRunId,
             pipelineRoundId: envelope.pipelineRoundId,
+            answerEndMarkerSeen: envelope.metadata.answerEndMarkerSeen === true
+                || message?.answerEndMarkerSeen === true,
             requestId: envelope.transportRequestId || message.requestId || envelope.metadata.requestId || '',
             status: envelope.status
         };
+    };
+    const receiveResultsAnswerMessage = (message, { final = false } = {}) => {
+        if (!message || !window.MessageDelivery?.receive) return message;
+        const metadata = message.metadata || message.meta || {};
+        const alreadyVerified = metadata.answerEndMarkerSeen === true || message.answerEndMarkerSeen === true;
+        const normalized = window.MessageDelivery.receive({
+            ...message,
+            metadata: { ...metadata }
+        }, { final });
+        if (!normalized) return null;
+        if (alreadyVerified) {
+            normalized.metadata = {
+                ...(normalized.metadata || {}),
+                answerEndMarkerSeen: true
+            };
+        }
+        return normalized;
     };
     const hasOwnKey = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
     // A wait holds something to close with: a final answer or shown, unfinished text.
@@ -18357,7 +18376,12 @@ document.addEventListener('click', (event) => {
         const requests = Object.entries(currentMainRequestIdsByModel);
         if (!requests.length) return true;
         const llms = state?.llms && typeof state.llms === 'object' ? state.llms : {};
-        if (!Object.keys(llms).length && !state.session?.startTime && !state.session?.roundsInProgress) return true;
+        // A STOP_ALL snapshot is empty because the background clears jobState.
+        // It can arrive after a new Start has already installed its request IDs,
+        // so an empty snapshot cannot authoritatively change that run's button.
+        // Registration/reload reconciliation clears the IDs first and can still
+        // accept an empty snapshot.
+        if (!Object.keys(llms).length) return false;
         return requests.some(([llmName, requestId]) => (
             !isCancelledMainRequest(llmName, { transportRequestId: requestId })
             && String(llms[llmName]?.transportRequestId || '').trim() === requestId
@@ -18375,6 +18399,12 @@ document.addEventListener('click', (event) => {
         if (sourceView === 'main' && !message.pipelineRunId && transportRequestId) {
             const currentRequestId = String(currentMainRequestIdsByModel[llmName] || '').trim();
             if (currentRequestId && currentRequestId !== transportRequestId) return false;
+            // A repeated creation broadcast for the already completed request
+            // must not clear the card's end-marker lock. A new main Start clears
+            // this state before dispatch and installs a different transport id.
+            if (currentRequestId === transportRequestId
+                && statusStateByModel[llmName]?.cardAnswerComplete === true
+                && statusStateByModel[llmName]?.transportRequestId === transportRequestId) return false;
             if (!currentRequestId && getCurrentViewKey() === 'main') {
                 currentMainRequestIdsByModel[llmName] = transportRequestId;
             }
@@ -18591,6 +18621,7 @@ document.addEventListener('click', (event) => {
             statusStateByModel[normalizedName] = {
                 status: normalizedStatus,
                 cardAnswerComplete: data.cardAnswerComplete === true,
+                transportRequestId: data?.transportRequestId || null,
                 rank: incomingRank,
                 modelRunState: data?.modelRunState || null,
                 resultMeta: derivedResultMeta,
@@ -18706,7 +18737,13 @@ document.addEventListener('click', (event) => {
         const unverifiedArtifact = entry?.unverifiedArtifact && typeof entry.unverifiedArtifact === 'object'
             ? entry.unverifiedArtifact
             : null;
-        if (!String(entry?.answer || '').trim() && String(unverifiedArtifact?.text || '').trim()) {
+        const unverifiedText = window.MessageDelivery?.clean
+            ? window.MessageDelivery.clean(String(unverifiedArtifact?.text || ''))
+            : String(unverifiedArtifact?.text || '').trim();
+        const unverifiedHtml = window.MessageDelivery?.cleanHtml
+            ? window.MessageDelivery.cleanHtml(String(unverifiedArtifact?.html || ''))
+            : String(unverifiedArtifact?.html || '');
+        if (!String(entry?.answer || '').trim() && unverifiedText) {
             // Restore an empty card without overwriting a manual recovery
             // with the older unverified artifact retained in global state.
             if (panelHasAnswer) return true;
@@ -18726,17 +18763,65 @@ document.addEventListener('click', (event) => {
                 pipelineRoundId: entry?.pipelineRoundId || ''
             };
             if (updateMainPanel) {
-                updateLLMPanelOutput(llmName, unverifiedArtifact.text, unverifiedArtifact.html || '', artifactMeta);
+                updateLLMPanelOutput(llmName, unverifiedText, unverifiedHtml, artifactMeta);
             } else if (updatePipelineCard) {
-                updateDebateModelCardOutput(llmName, unverifiedArtifact.text, unverifiedArtifact.html || '', artifactMeta);
+                updateDebateModelCardOutput(llmName, unverifiedText, unverifiedHtml, artifactMeta);
                 hydrateAnswerFromGlobalState.lastRendered = true;
             }
             return true;
         }
-        const answerText = String(entry?.answer || '').trim();
-        const answerHtml = sanitizeInlineHtml(String(entry?.answerHtml || '').trim());
+        const recoveredAnswer = receiveResultsAnswerMessage({
+            type: 'LLM_FINAL_RESPONSE',
+            llmName,
+            transportRequestId: entry?.transportRequestId || '',
+            answer: entry?.answer || '',
+            answerHtml: entry?.answerHtml || '',
+            metadata: {
+                ...(entry || {}),
+                answerEndMarkerSeen: entry?.cardAnswerComplete === true
+            }
+        }, { final: entry?.finalStatusRecorded === true });
+        if (!recoveredAnswer) return false;
+        const answerValue = recoveredAnswer.answer;
+        const answerText = String(typeof answerValue === 'object'
+            ? answerValue?.text || answerValue?.answer || ''
+            : answerValue || '').trim();
+        const answerHtml = sanitizeInlineHtml(String(
+            recoveredAnswer.answerHtml
+                || (typeof answerValue === 'object' ? answerValue?.html || answerValue?.answerHtml : '')
+                || ''
+        ).trim());
         if (!answerText) return false;
-        if (panelHasAnswer) return true;
+        const recoveryMeta = {
+            source: 'GLOBAL_STATE_ANSWER_RECOVERY',
+            transportRequestId: entry?.transportRequestId || '',
+            requestId: entry?.transportRequestId || '',
+            pipelineRunId: entry?.pipelineRunId || '',
+            pipelineRoundId: entry?.pipelineRoundId || '',
+            status: entry?.finalStatus || entry?.status || '',
+            answerEndMarkerSeen: recoveredAnswer.metadata?.answerEndMarkerSeen === true
+        };
+        if (panelHasAnswer) {
+            const existingText = normalizeRenderedAnswerText(outputElement.textContent || '');
+            const currentCardComplete = statusStateByModel[llmName]?.cardAnswerComplete === true;
+            if (existingText === normalizeRenderedAnswerText(answerText)) {
+                // The live partial may already show the same visible text as the
+                // final snapshot. Reuse its render as proof once the recovered
+                // message supplies a verified end marker.
+                if (recoveryMeta.answerEndMarkerSeen && !currentCardComplete) {
+                    emitAnswerCardRenderEvidence(
+                        llmName,
+                        document.getElementById(`panel-${panelId}`),
+                        outputElement,
+                        recoveryMeta
+                    );
+                }
+                return true;
+            }
+            if (currentCardComplete || !recoveryMeta.answerEndMarkerSeen) return true;
+            // A terminal snapshot can contain more text than the partial already
+            // on screen. Only a verified current completion can replace that text.
+        }
         if (updateMainPanel && outputElement) {
             hydrateAnswerFromGlobalState.lastRendered = true;
             const finalHtml = resolveCompleteAnswerHtml(answerText, answerHtml);
@@ -18745,15 +18830,8 @@ document.addEventListener('click', (event) => {
             outputElement.dataset.hash = String(finalHtml || '').length
                 ? String(finalHtml).length + ':' + String(finalHtml).slice(0, 64)
                 : '';
+            emitAnswerCardRenderEvidence(llmName, document.getElementById(`panel-${panelId}`), outputElement, recoveryMeta);
         }
-        const recoveryMeta = {
-            source: 'GLOBAL_STATE_ANSWER_RECOVERY',
-            transportRequestId: entry?.transportRequestId || '',
-            requestId: entry?.transportRequestId || '',
-            pipelineRunId: entry?.pipelineRunId || '',
-            pipelineRoundId: entry?.pipelineRoundId || '',
-            status: entry?.finalStatus || entry?.status || ''
-        };
         if (updateMainPanel) {
             updateDebateModelCardOutput(llmName, answerText, answerHtml, recoveryMeta);
         } else if (updatePipelineCard) {
@@ -18915,6 +18993,7 @@ document.addEventListener('click', (event) => {
                 updateModelStatusUI(llmName, status, {
                     ...(entry?.statusData || {}),
                     cardAnswerComplete: entry?.cardAnswerComplete === true,
+                    transportRequestId: entry?.transportRequestId || null,
                     modelRunState,
                     finalStatus: entry?.finalStatus || null,
                     finalStatusRecorded: !!entry?.finalStatusRecorded,
@@ -19316,8 +19395,8 @@ document.addEventListener('click', (event) => {
             window.MessageDelivery.observeRuntime(message);
         }
         if (JOURNAL_ONLY_TYPES.includes(message.type)) return false;
-        if (window.MessageDelivery && ['LLM_PARTIAL_RESPONSE', 'LLM_FINAL_RESPONSE', 'FINAL_LLM_RESPONSE'].includes(message.type)) {
-            message = window.MessageDelivery.receive(message, { final: isTerminalPipelineMessage(message) });
+        if (window.MessageDelivery && ['LLM_PARTIAL_RESPONSE', 'LLM_FINAL_RESPONSE', 'FINAL_LLM_RESPONSE', 'UPDATE_LLM_PANEL_OUTPUT'].includes(message.type)) {
+            message = receiveResultsAnswerMessage(message, { final: isTerminalPipelineMessage(message) });
             if (!message) return false; // stale answer of an earlier request
         }
         try {
@@ -19636,7 +19715,10 @@ document.addEventListener('click', (event) => {
         const currentMainRequest = isCurrentMainRequestResponse(llmName, meta);
         const pipelineEvidenceOnMainView = mainView && (isPipelineCard || isPipelineRequestMeta(meta));
         if (cardAnswerComplete && currentMainRequest && !pipelineEvidenceOnMainView) {
-            updateModelStatusUI(llmName, 'SUCCESS', { cardAnswerComplete: true });
+            updateModelStatusUI(llmName, 'SUCCESS', {
+                cardAnswerComplete: true,
+                transportRequestId: getMessageTransportRequestId(meta) || null
+            });
         } else if (cardAnswerComplete && currentMainRequest && pipelineEvidenceOnMainView && isPipelineCard) {
             const cardIndicator = panel.querySelector(`.status-indicator[data-llm-name="${llmName}"]`)
                 || panel.querySelector('.status-indicator');

@@ -173,6 +173,13 @@
     handleMessage(message, sender, sendResponse) {
       if (!message || typeof message !== 'object') return false;
       if (message.type === 'STOP_AND_CLEANUP') {
+        if (typeof window.ContentUtils?.isStopCommandCurrent === 'function'
+            && !window.ContentUtils.isStopCommandCurrent(message)) {
+          if (typeof sendResponse === 'function') {
+            sendResponse({ status: 'stale_stop_ignored', model: this.MODEL });
+          }
+          return true;
+        }
         this._cleanup(message.reason || 'stop_request');
         if (typeof sendResponse === 'function') {
           sendResponse({ status: 'stopped', model: this.MODEL });
