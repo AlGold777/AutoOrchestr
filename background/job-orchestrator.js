@@ -5394,9 +5394,25 @@ function startModelForLLM(llmName, prompt, forceNewTabs, attachments = [], optio
       return;
     }
 
-    const apiUsed = await tryApiDirect(llmName, prompt, attachments);
-    if (apiUsed) {
-      return;
+    // A participant chat (T07) is never sent by the stateless API path (R06). With the API mode on it is refused
+    // before the send; the mode the user selected is not changed.
+    if (activeParticipantRequests[llmName]) {
+      if (await isApiModeSelectedFor(llmName)) {
+        failParticipantRequest(llmName, {
+          ok: false,
+          type: 'participant_api_unsupported',
+          errorCode: 'participant_api_unsupported',
+          message: 'Для чата участника не поддержан API-режим: выключите API-режим для этого прогона. Запрос не отправлен.',
+          recoverable: false,
+          meta: { participantId: activeParticipantRequests[llmName].participantId || null, runId: activeParticipantRequests[llmName].runId || null }
+        });
+        return;
+      }
+    } else {
+      const apiUsed = await tryApiDirect(llmName, prompt, attachments);
+      if (apiUsed) {
+        return;
+      }
     }
 
     await runModelThroughTabs(llmName, prompt, forceNewTabs, attachments, { ...options, sessionId });
@@ -5404,6 +5420,12 @@ function startModelForLLM(llmName, prompt, forceNewTabs, attachments = [], optio
     console.error(`[BACKGROUND] Failed to start ${llmName}:`, err);
   });
   return llmStartChains[llmName];
+}
+
+// The API mode is selected for the model: the user has the API transport on and the model has an API endpoint.
+async function isApiModeSelectedFor(llmName) {
+  if (jobState?.useApiFallback === false || !apiFallbackConfig[llmName]) return false;
+  return isApiTransportFeatureEnabled();
 }
 
 async function tryApiDirect(llmName, prompt, attachments = []) {
@@ -8204,7 +8226,7 @@ const PRE_INSERTION_DEFERRAL_TIMEOUT_MS = 120000;
 // Blockers a repeat dispatch cannot clear - only a human can. Everything else
 // (attachment upload not confirmed, unclassified adapter error, transport loss)
 // is worth exactly one more attempt before the model is written off.
-const USER_ACTION_BLOCKER_PATTERN = /auth_required|required_login|\blogin\b|captcha|conversation_limit|unsafe_prompt_modal|wrong_page|rate_limit|quota_exceeded|participant_chat_lost|participant_binding_failed/;
+const USER_ACTION_BLOCKER_PATTERN = /auth_required|required_login|\blogin\b|captcha|conversation_limit|unsafe_prompt_modal|wrong_page|rate_limit|quota_exceeded|participant_api_unsupported|participant_chat_lost|participant_binding_failed/;
 
 function evaluatePreInsertionFailureDeferral(llmName, entry, context = {}) {
   const decline = (reason) => ({ defer: false, reason });
@@ -10813,6 +10835,7 @@ function sendCleanupCommand(llmName) {
   self.registerSessionTimer = registerSessionTimer;
   self.deregisterSessionTimer = deregisterSessionTimer;
   self.clearSessionTimers = clearSessionTimers;
+  self.startModelForLLM = startModelForLLM;
 
     globalThis.LLMLog?.debug?.('[JobOrchestrator] Module loaded');
   })();
