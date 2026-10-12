@@ -93,6 +93,9 @@
   };
   // The mode the prompt names: a list of sources is 'sources', the strings stay as they are.
   const modeOf = (spec) => (Array.isArray(spec) ? 'sources' : spec);
+  // The output a participant answers with (3.2): its own declaration replaces the step's one as a whole, nothing is merged.
+  // Works on the schema's steps and on the normalized ones: a participant's output sits on the participant.
+  const outputOf = (step, model) => (model && typeof model === 'object' && model.output != null ? model.output : (step.output ?? null));
   // The input of a participant: its own when it has one, else the input of the step.
   const specOf = (step, model) => (model && model.input !== undefined ? model.input : step.input);
   const numbered = (items) => items.map((item, index) => `Ответ ${index + 1}:\n${item.text}`).join('\n\n');
@@ -120,7 +123,7 @@
   }
 
   // The block of a gate: its criteria, and the verdict the answer ends with (6.1).
-  const gateBlock = (step) => `Критерии проверки:\n${step.criteria.map((item) => `- ${item}`).join('\n')}\n${Control.verdictInstruction(step.output?.format === 'json')}`;
+  const gateBlock = (step, output) => `Критерии проверки:\n${step.criteria.map((item) => `- ${item}`).join('\n')}\n${Control.verdictInstruction(output?.format === 'json')}`;
   // The feedback of a return: a block of its own, given to the visit that the return starts (never to the first visit).
   // The block of a model route: its cases with their labels, and the answer it names (6.2).
   const routeBlock = (step) => `Варианты маршрута:\n${step.select.cases.map((item) => `- ${item.id} — ${item.label}`).join('\n')}\nОтвет — один JSON-объект {"route": "<id варианта>"} без текста вокруг.`;
@@ -133,7 +136,7 @@
       const values = { '{задача}': text(task), '{вход}': inputMode === 'all' || inputMode === 'sources' ? labelled(input) : numbered(input), '{ответы до тебя}': numbered(earlier) };
       const parts = [model.promptTemplate.replace(/\{задача\}|\{вход\}|\{ответы до тебя\}/g, (key) => values[key])];
       if (formatBlock(output)) parts.push(formatBlock(output));
-      if (step.kind === 'gate') parts.push(gateBlock(step));
+      if (step.kind === 'gate') parts.push(gateBlock(step, output));
       if (step.kind === 'route') parts.push(routeBlock(step));
       if (feedback.length) parts.push(feedbackBlock(feedback));
       if (ownerAnswers.length) parts.push(`Ответы владельца на вопросы:\n${ownerAnswers.map((item) => `- ${item.question}: ${item.answer}`).join('\n')}`);
@@ -152,7 +155,7 @@
     const taskInstruction = model.task ?? step.task;
     if (text(taskInstruction)) parts.push(`Задание:\n${text(taskInstruction)}`);
     if (formatBlock(output)) parts.push(formatBlock(output));
-    if (step.kind === 'gate') parts.push(gateBlock(step));
+    if (step.kind === 'gate') parts.push(gateBlock(step, output));
     if (step.kind === 'route') parts.push(routeBlock(step));
     if (text(model.extra)) parts.push(`Дополнительно для тебя:\n${text(model.extra)}`);
     if (ownerAnswers.length) parts.push(`Ответы владельца на вопросы:\n${ownerAnswers.map((item) => `- ${item.question}: ${item.answer}`).join('\n')}`);
@@ -249,7 +252,8 @@
           name: model.name, id: model.id ?? model.name, extra: text(model.extra), task: typeof model.task === 'string' ? model.task : null, promptTemplate: typeof model.promptTemplate === 'string' ? model.promptTemplate : null,
           discipline: model.discipline ? { ...model.discipline } : null,
           maxWords: Number.isSafeInteger(model.maxWords) && model.maxWords > 0 ? model.maxWords : null,
-          ...(model.input !== undefined ? { input: Array.isArray(model.input) ? model.input.slice() : model.input } : {})
+          ...(model.input !== undefined ? { input: Array.isArray(model.input) ? model.input.slice() : model.input } : {}),
+          ...(model.output !== undefined ? { output: JSON.parse(JSON.stringify(model.output)) } : {})
         }))
           .filter((model) => model.name)
       };
@@ -354,6 +358,23 @@
     return null;
   }
 
+  // The output of a step or of a participant (5.8, 3.2): the fields the engine executes, or null. `field` names it in the error.
+  function outputProblem(output, kind, fail, field) {
+    if (!output || typeof output !== 'object' || Array.isArray(output)) return fail('invalid_field', field, 'выход: объект');
+    if (output.format !== undefined && output.format !== 'json') return fail('unsupported_field', `${field}.format`, 'формат выхода движок пока не исполняет');
+    if (output.artifacts !== undefined && (!Array.isArray(output.artifacts) || !output.artifacts.length)) return fail('invalid_field', `${field}.artifacts`, 'ожидается непустой список артефактов');
+    if (Array.isArray(output.artifacts)) {
+      for (const [at, item] of output.artifacts.entries()) {
+        if (!item || typeof item !== 'object' || !('revisionOf' in item)) continue;
+        const where = `${field}.artifacts[${at}].revisionOf`;
+        if (!isPlain(item.revisionOf) || !isPlain(item.revisionOf.artifact)) return fail('invalid_input', where, 'ревизия: ссылка на артефакт { artifact: { step, participant, id }, version }');
+        const problem = inputProblem([item.revisionOf], kind, fail, where);
+        if (problem) return problem;
+      }
+    }
+    return null;
+  }
+
   // The first field of one raw step (as the schema gives it) that the engine does not execute yet, or null. Every
   // later step of the schema extends this list; a field that is not in it is refused, never replaced by a default.
   // options.participants: the page gives sendParticipants, so two participants of one model may stand in a step.
@@ -383,18 +404,8 @@
       if (problem) return problem;
     }
     if (step.output !== undefined) {
-      const output = step.output;
-      if (!output || typeof output !== 'object' || Array.isArray(output)) return fail('invalid_field', 'output', 'выход шага: объект');
-      if (output.format !== undefined && output.format !== 'json') return fail('unsupported_field', 'output.format', 'формат выхода движок пока не исполняет');
-      if (output.artifacts !== undefined && (!Array.isArray(output.artifacts) || !output.artifacts.length)) return fail('invalid_field', 'output.artifacts', 'ожидается непустой список артефактов');
-      if (Array.isArray(output.artifacts)) {
-        for (const [at, item] of output.artifacts.entries()) {
-          if (!item || typeof item !== 'object' || !('revisionOf' in item)) continue;
-          if (!isPlain(item.revisionOf) || !isPlain(item.revisionOf.artifact)) return fail('invalid_input', `output.artifacts[${at}].revisionOf`, 'ревизия: ссылка на артефакт { artifact: { step, participant, id }, version }');
-          const problem = inputProblem([item.revisionOf], step.kind, fail, `output.artifacts[${at}].revisionOf`);
-          if (problem) return problem;
-        }
-      }
+      const problem = outputProblem(step.output, step.kind, fail, 'output');
+      if (problem) return problem;
     }
     if (step.require !== undefined && step.require !== 'any' && step.require !== 'all') {
       if (!Number.isSafeInteger(step.require) || step.require < 1) return fail('invalid_field', 'require', 'require: any, all или целое число больше 0');
@@ -410,6 +421,11 @@
       const id = typeof model === 'string' ? model : (model?.id ?? name);
       if (model && typeof model === 'object' && model.input !== undefined) {
         const problem = inputProblem(model.input, step.kind, fail, `модель «${name}» · input`);
+        if (problem) return problem;
+      }
+      if (model && typeof model === 'object' && model.output !== undefined) {
+        if (step.kind === 'route') return fail('invalid_field', `модель «${name}» · output`, 'у участника маршрута выход не задаётся');
+        const problem = outputProblem(model.output, step.kind, fail, `модель «${name}» · output`);
         if (problem) return problem;
       }
       if (names.has(name) && !participants) return new EngineError('participant_transport_required', `${at} · модель «${name}»`, 'два участника одной модели требуют транспорта по участникам (callback sendParticipants)');
@@ -430,11 +446,11 @@
       const inputs = [['input', step.input], ...(Array.isArray(step.models) ? step.models : [])
         .filter((model) => model && typeof model === 'object' && model.input !== undefined)
         .map((model) => [`модель «${model.name}» · input`, model.input])];
-      // A revision names an artifact that the author really gets as input (5.2): the input of every author has it.
-      (Array.isArray(step.output?.artifacts) ? step.output.artifacts : []).forEach((declaration) => {
-        if (!declaration || !isPlain(declaration.revisionOf)) return;
-        const want = declaration.revisionOf.artifact;
-        (Array.isArray(step.models) ? step.models : []).forEach((model) => {
+      // A revision names an artifact that its author really gets as input (5.2, 3.2): each author checks its own output and input.
+      (Array.isArray(step.models) ? step.models : []).forEach((model) => {
+        (outputOf(step, model)?.artifacts || []).forEach((declaration) => {
+          if (!declaration || !isPlain(declaration.revisionOf)) return;
+          const want = declaration.revisionOf.artifact;
           const spec = model && typeof model === 'object' && model.input !== undefined ? model.input : step.input;
           const given = Array.isArray(spec) && spec.some((source) => isPlain(source) && isPlain(source.artifact)
             && source.artifact.step === want.step && source.artifact.participant === want.participant && source.artifact.id === want.id);
@@ -456,7 +472,9 @@
             if (participant === undefined) return;
             const declared = (Array.isArray(steps[from].models) ? steps[from].models : []).map((model) => (typeof model === 'string' ? model : (model?.id ?? model?.name)));
             if (!declared.includes(participant)) throw new EngineError('invalid_input', address, `участник «${participant}» не объявлен в шаге «${ref}»`);
-            if (artifactId !== null && !(steps[from].output?.artifacts || []).some((item) => item && item.id === artifactId)) {
+            // The artifact is declared in the output of that participant (3.2): its own, or the step's when it has none.
+            const author = (Array.isArray(steps[from].models) ? steps[from].models : []).find((model) => model && typeof model === 'object' && (model.id ?? model.name) === participant);
+            if (artifactId !== null && !(outputOf(steps[from], author)?.artifacts || []).some((item) => item && item.id === artifactId)) {
               throw new EngineError('invalid_input', address, `артефакт «${artifactId}» не объявлен в шаге «${ref}»`);
             }
           };
@@ -551,12 +569,13 @@
     // A gate's checker is also checked for its verdict (6.1), after the output.
     const checkFor = (step, model) => {
       if (step.kind === 'route') return (value) => Control.routeOf(value, step.select.cases.map((item) => item.id));
-      const shape = step.output ? (value) => Output.checkAnswer(value, step.output, { limit: model.maxWords ?? runLimit }) : null;
+      const output = outputOf(step, model);
+      const shape = output ? (value) => Output.checkAnswer(value, output, { limit: model.maxWords ?? runLimit }) : null;
       if (step.kind !== 'gate') return shape;
       return (value) => {
         const base = shape ? shape(value) : { ok: true };
         if (!base.ok) return base;
-        const verdict = Control.verdictOf(value, { json: step.output?.format === 'json' });
+        const verdict = Control.verdictOf(value, { json: output?.format === 'json' });
         return verdict.ok ? { ok: true, fields: { verdict: verdict.verdict, unmet: verdict.unmet } } : verdict;
       };
     };
@@ -793,7 +812,7 @@
       const spec = specOf(step, model);
       const input = inputFor(step, spec);
       const prompt = buildPrompt({ task, step, model, input, inputMode: modeOf(spec), earlier, feedback: activeFeedback,
-        ownerAnswers, askInstruction: semiAuto ? askInstruction : '', output: step.output });
+        ownerAnswers, askInstruction: semiAuto ? askInstruction : '', output: outputOf(step, model) });
       if (prompt.length > maxPromptChars) throw new StopRun('context_full');
       return { prompt, parts: partsFor(step, model, input, earlier, spec) };
     }
@@ -862,7 +881,7 @@
             outcome[model.id].textRef = answerRef;
             const items = current[model.id].parts?.input?.items || [];
             const inputs = items.filter((item) => item.artifact).map((item) => item.artifact);
-            (step.output?.artifacts || []).forEach((declaration) => {
+            (outputOf(step, model)?.artifacts || []).forEach((declaration) => {
               // A revision joins the line of the source it got; any other artifact starts its own line.
               const revision = declaration.revisionOf ? revisionItem(declaration, items) : null;
               if (declaration.revisionOf && !revision) throw new EngineError('missing_input', `шаг «${step.ref}» · output.artifacts`, `ревизия «${declaration.id}» без полученной версии`);
@@ -1194,7 +1213,7 @@
           // a revision whose source an author did not get stops the step (its line would be unknown).
           step.models.forEach((model) => {
             const items = inputFor(step, specOf(step, model));
-            (step.output?.artifacts || []).forEach((declaration) => {
+            (outputOf(step, model)?.artifacts || []).forEach((declaration) => {
               if (declaration.revisionOf && !revisionItem(declaration, items)) {
                 throw new StopRun('missing_input', `ревизия «${declaration.id}»: участник «${model.id}» не получил версию, которую она дорабатывает; шаг «${step.ref}» не отправлен`);
               }
@@ -1373,10 +1392,10 @@
     const position = step.models.findIndex((item) => item.name === model.name);
     const earlier = step.order === 'sequential' && position > 0 ? [{ text: PLACEHOLDER.earlier }] : [];
     const prompt = buildPrompt({ task, step, model, input, inputMode: modeOf(spec), earlier, ownerAnswers: [],
-      askInstruction: semiAuto ? askInstruction : '', output: step.output });
+      askInstruction: semiAuto ? askInstruction : '', output: outputOf(step, model) });
     const template = typeof model.promptTemplate === 'string' && model.promptTemplate.trim() ? model.promptTemplate
       : buildPrompt({ task: '{задача}', step, model, input: input.length ? [{ label: 'Вход', text: '{вход}' }] : [],
-        inputMode: modeOf(spec), earlier: earlier.length ? [{ text: '{ответы до тебя}' }] : [], output: step.output });
+        inputMode: modeOf(spec), earlier: earlier.length ? [{ text: '{ответы до тебя}' }] : [], output: outputOf(step, model) });
     return { label: stepLabel(step), order: step.order, inputMode: modeOf(spec), prompt, template, transportLines: TRANSPORT_LINES.slice(),
       instructions: { task: text(task), stepTask: model.task ?? step.task, extra: model.extra || '', askInstruction: semiAuto ? askInstruction : '' } };
   }
