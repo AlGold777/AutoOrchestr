@@ -191,6 +191,8 @@
       const version = isObject(source.version) ? [source.version.step, source.version.participant, source.version.visit] : 'latest';
       return JSON.stringify(['artifact', address.step, address.participant, address.id, version]);
     }
+    // A whole step (no participant) has the address of the step itself: it is a duplicate of the plain ref.
+    if (!('participant' in source)) return JSON.stringify(['step', source.step]);
     return JSON.stringify(['participant', source.step, source.participant]);
   }
 
@@ -256,8 +258,8 @@
     unknown(source, ['step', 'participant', 'required'], path);
     checkRequired(source, path);
     const position = stepAt(source.step, `${path}.step`);
-    if (position >= 0 && !('participant' in source)) fail(`${path}.participant`, 'участник не указан');
-    else if (position >= 0) participantAt(position, source.participant, `${path}.participant`);
+    // Without a participant the source is the whole accepted result of the step (3.1).
+    if (position >= 0 && 'participant' in source) participantAt(position, source.participant, `${path}.participant`);
     if (failed()) return null;
     return addressOf(source);
   }

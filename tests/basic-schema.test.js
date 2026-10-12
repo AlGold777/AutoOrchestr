@@ -934,3 +934,35 @@ describe('Basic schema: transitions never point at a switched-off step (A04 requ
     expect(route.select).toEqual({ by: 'owner', cases: [{ id: 'c', label: 'Вариант', action: { goto: 'final' } }] });
   });
 });
+
+describe('Basic schema: a whole step as a required source (3.1, D3)', () => {
+  // r1 has A and B; r2 is the step under test (index 1).
+  const withInput = (input) => base([round('r1', ['A', 'B']), round('r2', ['A'], { input }), synthesis('final', ['C'])]);
+
+  test('{ step, required } is the whole accepted result of a step: valid, kept by assemble', () => {
+    const input = [{ step: 'r1', required: true }];
+    expect(Schema.validate(withInput(input))).toEqual([]);
+    expect(Schema.assemble(withInput(input))[1].input).toEqual(input);
+  });
+
+  test('a whole step and a participant of the same step are two different sources; a plain ref alone stays valid', () => {
+    expect(Schema.validate(withInput([{ step: 'r1', required: true }, { step: 'r1', participant: 'A', required: false }]))).toEqual([]);
+    expect(Schema.validate(withInput(['r1']))).toEqual([]);
+  });
+
+  test('a plain step ref and an object on the same whole step are a duplicate, named at the object', () => {
+    expect(errorPaths(withInput(['r1', { step: 'r1', required: true }]))).toEqual(['steps[1].input[1]']);
+    expect(errorPaths(withInput([{ step: 'r1' }, { step: 'r1', required: true }]))).toEqual(['steps[1].input[1]']);
+  });
+
+  test('wrong whole-step sources are named with their exact path', () => {
+    const cases = [
+      [[{ required: true }], ['steps[1].input[0]']],
+      [[{ step: 'r1', required: 'yes' }], ['steps[1].input[0].required']],
+      [[{ step: 'r1', colour: 'x' }], ['steps[1].input[0].colour']],
+      [[{ step: 'r9', required: true }], ['steps[1].input[0].step']],
+      [[{ step: 'r2', required: true }], ['steps[1].input[0].step']]
+    ];
+    cases.forEach(([input, paths]) => expect({ input, paths: errorPaths(withInput(input)) }).toEqual({ input, paths }));
+  });
+});
