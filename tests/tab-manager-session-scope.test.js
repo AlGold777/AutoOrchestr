@@ -707,3 +707,105 @@ describe('Basic participant chat restored from the saved snapshot (R01, resume)'
     });
   });
 });
+
+describe('Read-only check of an unconfirmed participant request (N04)', () => {
+  const chatUrl = (id) => `https://chatgpt.com/c/${id}`;
+  const liveTab = (id, index = 0) => ({ id, url: chatUrl(id), windowId: 7, index, status: 'complete', lastAccessed: Date.now() });
+
+  // The page-side extractor is a pure read of the chat; the scripting mock answers with what the chat holds.
+  function checkSandbox(queryTabs, answer) {
+    const { context } = createTabManagerSandbox({ queryTabs });
+    context.extractLatestAssistantSnapshotInPage = () => ({});
+    context.chrome.scripting.executeScript = jest.fn(async () => [{ result: answer }]);
+    context.ensureTabReadyForDispatch = jest.fn(async (tabId) => ({ ok: true, tab: { id: tabId, url: chatUrl(tabId) } }));
+    context.chrome.tabs.create = jest.fn();
+    return { context };
+  }
+  const expectNothingSent = (context) => {
+    expect(context.dispatchPromptToTab).not.toHaveBeenCalled();
+    expect(context.chrome.tabs.create).not.toHaveBeenCalled();
+    expect(context.prepareTabForUse).not.toHaveBeenCalled();
+  };
+  const check = (context, extra = {}) => context.checkParticipantAnswer({
+    llmName: 'GPT', runId: 'run-1', participantId: 'author-A', transportRequestId: 'req-1', ...extra
+  });
+
+  test('a found answer in the bound chat is returned as text, with its status of a read', async () => {
+    const { context } = checkSandbox([liveTab(2001)], { ok: true, text: 'Ответ участника', html: '<p>Ответ участника</p>', candidateCount: 1 });
+    await context.bindParticipantChat('run-1', 'author-A', 'GPT', 2001, { requestId: 'req-1', stageAttemptId: 'a1' });
+    const result = await check(context);
+    expect(result).toEqual(expect.objectContaining({ ok: true, status: 'found', text: 'Ответ участника', tabId: 2001 }));
+    expectNothingSent(context);
+  });
+
+  test('a found answer is handed over as it is: its validity is the engine check, not the read', async () => {
+    const { context } = checkSandbox([liveTab(2001)], { ok: true, text: 'слишком коротко' });
+    await context.bindParticipantChat('run-1', 'author-A', 'GPT', 2001, { requestId: 'req-1', stageAttemptId: 'a1' });
+    expect(await check(context)).toEqual(expect.objectContaining({ ok: true, status: 'found', text: 'слишком коротко' }));
+  });
+
+  test('no answer in the chat: status no_answer, never a success', async () => {
+    const { context } = checkSandbox([liveTab(2001)], { ok: false, length: 0, candidates: 0 });
+    await context.bindParticipantChat('run-1', 'author-A', 'GPT', 2001, { requestId: 'req-1', stageAttemptId: 'a1' });
+    const result = await check(context);
+    expect(result).toEqual(expect.objectContaining({ ok: false, status: 'no_answer', tabId: 2001 }));
+    expectNothingSent(context);
+  });
+
+  test('the bound tab is closed: chat_unavailable, a foreign open tab of the provider is not read or taken', async () => {
+    const { context } = checkSandbox([liveTab(2002, 1)], { ok: true, text: 'чужой ответ' });
+    await context.bindParticipantChat('run-1', 'author-A', 'GPT', 2001, { requestId: 'req-1', stageAttemptId: 'a1' });
+    const result = await check(context);
+    expect(result).toEqual(expect.objectContaining({ ok: false, status: 'chat_unavailable', tabId: 2001 }));
+    expect(context.chrome.scripting.executeScript).not.toHaveBeenCalled();
+    expectNothingSent(context);
+  });
+
+  test('a read that fails is chat_unavailable, never an answer', async () => {
+    const { context } = checkSandbox([liveTab(2001)], { ok: true, text: 'не должен попасть' });
+    context.chrome.scripting.executeScript = jest.fn(async () => { throw new Error('Cannot access contents of the page'); });
+    await context.bindParticipantChat('run-1', 'author-A', 'GPT', 2001, { requestId: 'req-1', stageAttemptId: 'a1' });
+    expect(await check(context)).toEqual(expect.objectContaining({ ok: false, status: 'chat_unavailable' }));
+  });
+
+  test('the chat was bound to a later request: ambiguous, the answer is not attributed to this request', async () => {
+    const { context } = checkSandbox([liveTab(2001)], { ok: true, text: 'ответ другого запроса' });
+    await context.bindParticipantChat('run-1', 'author-A', 'GPT', 2001, { requestId: 'req-2', stageAttemptId: 'a2' });
+    expect(await check(context)).toEqual(expect.objectContaining({ ok: false, status: 'ambiguous' }));
+  });
+
+  test('the chat the page saved differs from the bound one: ambiguous', async () => {
+    const { context } = checkSandbox([liveTab(2001), liveTab(2002, 1)], { ok: true, text: 'ответ' });
+    await context.bindParticipantChat('run-1', 'author-A', 'GPT', 2002, { requestId: 'req-1', stageAttemptId: 'a1' });
+    expect(await check(context, { tabId: 2001 })).toEqual(expect.objectContaining({ ok: false, status: 'ambiguous' }));
+  });
+
+  test('after a reload the bound chat is gone from the background: the chat the page saved is read, and only that one', async () => {
+    const { context } = checkSandbox([liveTab(2001), liveTab(2002, 1)], { ok: true, text: 'ответ после перезагрузки' });
+    expect(await check(context, { tabId: 2001 })).toEqual(expect.objectContaining({ ok: true, status: 'found', tabId: 2001 }));
+    expect(context.chrome.scripting.executeScript).toHaveBeenCalledWith(expect.objectContaining({ target: { tabId: 2001 } }));
+    expectNothingSent(context);
+  });
+
+  test('no chat at all (no binding, no saved chat): chat_unavailable and nothing is read', async () => {
+    const { context } = checkSandbox([liveTab(2001)], { ok: true, text: 'чужой' });
+    expect(await check(context)).toEqual(expect.objectContaining({ ok: false, status: 'chat_unavailable', reason: 'no_binding' }));
+    expect(context.chrome.scripting.executeScript).not.toHaveBeenCalled();
+  });
+
+  test('the previous answer of the participant is excluded from the read, so it is not taken as the new one', async () => {
+    const { context } = checkSandbox([liveTab(2001)], { ok: false, length: 0, candidates: 0 });
+    await context.bindParticipantChat('run-1', 'author-A', 'GPT', 2001, { requestId: 'req-1', stageAttemptId: 'a1' });
+    await check(context, { excludeText: 'старый ответ' });
+    const args = context.chrome.scripting.executeScript.mock.calls[0][0].args;
+    expect(args[2]).toEqual({ excludeTextSignatures: ['старый ответ'] });
+  });
+
+  test('a check does not change the binding of the run', async () => {
+    const { context } = checkSandbox([liveTab(2001)], { ok: true, text: 'ответ' });
+    await context.bindParticipantChat('run-1', 'author-A', 'GPT', 2001, { requestId: 'req-1', stageAttemptId: 'a1' });
+    const before = JSON.stringify(context.participantChatBindingsOf('run-1'));
+    await check(context);
+    expect(JSON.stringify(context.participantChatBindingsOf('run-1'))).toBe(before);
+  });
+});

@@ -68,7 +68,25 @@
     sendResponse({ success: true, pipelineRunId: message.pipelineRunId || null, bindings });
   }
 
+  // N04: the read-only check of a request whose sending is not confirmed. Never a send; a chat that cannot be read is not a success.
+  async function checkParticipantAnswerMessage(message, { sendResponse }) {
+    const result = await self.checkParticipantAnswer?.({
+      llmName: message.modelName,
+      runId: message.pipelineRunId || null,
+      participantId: message.participantId,
+      transportRequestId: message.transportRequestId || null,
+      tabId: message.tabId ?? null,
+      excludeText: typeof message.excludeText === 'string' ? message.excludeText : ''
+    }).catch((err) => ({ ok: false, status: 'chat_unavailable', reason: String(err?.message || err) }))
+      || { ok: false, status: 'chat_unavailable', reason: 'check_unavailable' };
+    sendResponse({ success: true, ...result });
+  }
+
   function handle(message, deps) {
+    if (message?.type === 'CHECK_PARTICIPANT_ANSWER') {
+      void checkParticipantAnswerMessage(message, deps);
+      return true;
+    }
     if (message?.type === 'PARTICIPANT_CHAT_BINDINGS') {
       participantBindings(message, deps);
       return true;

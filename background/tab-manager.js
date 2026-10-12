@@ -1166,6 +1166,44 @@ async function continueParticipantChat(llmName, visit, bound, prompt, attachment
   return sendToParticipantChat(llmName, bound.tabId, visit, prompt, attachments, options, 'participant_continue');
 }
 
+// N04: the answer of a request that was sent but whose sending is not confirmed. A read only: it never sends, never binds
+// and never takes another chat. It reads the chat bound to the participant of this run, or the chat the page saved for it.
+// A chat that cannot be read is never a success. Statuses: found (text), no_answer, ambiguous, chat_unavailable.
+async function checkParticipantAnswer({ llmName, runId, participantId, transportRequestId = null, tabId = null, excludeText = '' } = {}) {
+  const pid = String(participantId || '');
+  if (!llmName || !participantRunKey(runId) || !pid) return { ok: false, status: 'chat_unavailable', reason: 'missing_identity' };
+  const live = participantChatOf(runId, pid);
+  const savedTabId = isValidTabId(tabId) ? tabId : null;
+  if (live && live.modelName !== llmName) return { ok: false, status: 'chat_unavailable', reason: 'model_mismatch' };
+  // The chat the page saved and the chat the background bound must be the same one; otherwise the answer is not attributable.
+  if (live && savedTabId && live.tabId !== savedTabId) return { ok: false, status: 'ambiguous', reason: 'binding_mismatch', tabId: live.tabId };
+  const chat = live || (savedTabId ? { tabId: savedTabId, requestId: null } : null);
+  if (!chat) return { ok: false, status: 'chat_unavailable', reason: 'no_binding' };
+  if (live?.requestId && transportRequestId && live.requestId !== String(transportRequestId)) {
+    return { ok: false, status: 'ambiguous', reason: 'chat_bound_to_other_request', tabId: chat.tabId };
+  }
+  const tab = await getTabSafe(chat.tabId);
+  if (!tab || isAppUiTab(tab) || !isEligibleTabForLlm(llmName, tab)) {
+    return { ok: false, status: 'chat_unavailable', reason: 'tab_unavailable', tabId: chat.tabId };
+  }
+  let snapshot = null;
+  try {
+    const result = await chrome.scripting.executeScript({
+      target: { tabId: chat.tabId },
+      func: extractLatestAssistantSnapshotInPage,
+      args: [llmName, 1, { excludeTextSignatures: excludeText ? [String(excludeText)] : [] }]
+    });
+    snapshot = Array.isArray(result) ? result.find((item) => item?.result)?.result || null : null;
+  } catch (err) {
+    return { ok: false, status: 'chat_unavailable', reason: 'read_failed', tabId: chat.tabId };
+  }
+  if (!snapshot) return { ok: false, status: 'chat_unavailable', reason: 'no_result', tabId: chat.tabId };
+  if (snapshot.ok && String(snapshot.text || '').trim()) {
+    return { ok: true, status: 'found', text: String(snapshot.text), html: String(snapshot.html || ''), tabId: chat.tabId };
+  }
+  return { ok: false, status: 'no_answer', reason: 'no_answer_in_chat', tabId: chat.tabId };
+}
+
 // Binds the tab to the participant, then sends. A failed binding stops the request.
 async function sendToParticipantChat(llmName, tabId, visit, prompt, attachments, options, source) {
   await setTabBinding(llmName, tabId);
@@ -1785,6 +1823,7 @@ self.resolveTabForLlmNameAsync = resolveTabForLlmNameAsync;
 self.findReusableTabsForLlm = findReusableTabsForLlm;
 self.participantChatOf = participantChatOf;
 self.participantChatBindingsOf = participantChatBindingsOf;
+self.checkParticipantAnswer = checkParticipantAnswer;
 self.tabsOfOtherParticipants = tabsOfOtherParticipants;
 self.bindParticipantChat = bindParticipantChat;
 self.clearParticipantRun = clearParticipantRun;

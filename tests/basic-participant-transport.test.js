@@ -155,3 +155,35 @@ describe('Resumed Basic run keeps the chats of its participants (R01)', () => {
     expect(orchestrator).toContain('binding: participant.binding || null');
   });
 });
+
+describe('Unknown request: the answer is checked, never sent again (N04)', () => {
+  test('the page gives the engine a read-only check that asks the background for the chat of the participant', () => {
+    expect(results).toContain("type: 'CHECK_PARTICIPANT_ANSWER', pipelineRunId: runContext.pipelineRunId, participantId, modelName,");
+    expect(results).toContain('const checkUnknown = async ({ participantId, modelName, transportRequestId = null, excludeText = \'\' }) => {');
+    expect(results).toContain('                    checkUnknown,\n');
+  });
+
+  test('the check sends the saved tab of the participant only for its own model, and a failed check is not a success', () => {
+    expect(results).toContain('tabId: saved?.modelName === modelName ? (saved.tabId ?? null) : null');
+    expect(results).toContain("if (!response?.success) return { ok: false, status: 'chat_unavailable', reason: 'check_failed', text: '', tabId: null };");
+  });
+
+  test('the background check never sends or binds: it reads one chat through the scripting read only', () => {
+    const tabs = fs.readFileSync(path.join(__dirname, '..', 'background', 'tab-manager.js'), 'utf8');
+    const at = tabs.indexOf('async function checkParticipantAnswer(');
+    const block = tabs.slice(at, tabs.indexOf('// Binds the tab to the participant, then sends.', at));
+    expect(at).toBeGreaterThan(0);
+    expect(block).not.toContain('dispatchPromptToTab(');
+    expect(block).not.toContain('bindParticipantChat(');
+    expect(block).not.toContain('createNewLlmTab(');
+    expect(block).not.toContain('tryAttachExistingTab(');
+    expect(block).not.toContain('tabsOfOtherParticipants(');
+    expect(block).toContain('excludeTextSignatures');
+  });
+
+  test('the message is answered by the background handler and is routed before the legacy switch', () => {
+    const handlers = fs.readFileSync(path.join(__dirname, '..', 'background', 'pipeline-message-handlers.js'), 'utf8');
+    expect(handlers).toContain("if (message?.type === 'CHECK_PARTICIPANT_ANSWER') {");
+    expect(handlers).toContain('self.checkParticipantAnswer?.({');
+  });
+});

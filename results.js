@@ -7600,6 +7600,18 @@ document.addEventListener('click', (event) => {
                         };
                     });
                 };
+                // N04 (read-only): the answer of a request whose sending is not confirmed, read in its own chat. It never sends.
+                // Statuses: found (text as it is), no_answer, ambiguous, chat_unavailable; only found carries a text.
+                const checkUnknown = async ({ participantId, modelName, transportRequestId = null, excludeText = '' }) => {
+                    const saved = chatBindings[participantId];
+                    const response = await sendToBackground({
+                        type: 'CHECK_PARTICIPANT_ANSWER', pipelineRunId: runContext.pipelineRunId, participantId, modelName,
+                        transportRequestId, excludeText,
+                        tabId: saved?.modelName === modelName ? (saved.tabId ?? null) : null
+                    }).catch(() => null);
+                    if (!response?.success) return { ok: false, status: 'chat_unavailable', reason: 'check_failed', text: '', tabId: null };
+                    return { ok: response.ok === true, status: response.status, text: response.text || '', reason: response.reason || null, tabId: response.tabId ?? null };
+                };
                 const budgetLimits = window.DebateContextBudget?.DEFAULT_LIMITS;
                 const result = await engine.run({
                     task,
@@ -7624,6 +7636,7 @@ document.addEventListener('click', (event) => {
                         });
                     },
                     // The owner's answer of an owner step: a text (a file is not supported on this page yet).
+                    checkUnknown,
                     provideOwnerResult: ({ stepRef, task, reason, detail }) => askChoiceDialog({
                         title: `Ответ владельца: ${stepRef}`,
                         message: [task, reason ? `Прошлый ответ не принят: ${window.CustomEngine?.REASON_TEXT?.[reason] || reason}${detail ? ` (${detail})` : ''}.` : '']
