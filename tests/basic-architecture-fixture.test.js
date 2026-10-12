@@ -49,7 +49,7 @@ function owners(opts = {}) {
     asked,
     provideOwnerResult: async ({ stepRef }) => { asked.push(stepRef); return `текст владельца ${stepRef}`; },
     chooseRoute: async ({ stepRef }) => { asked.push(stepRef); return opts.choose?.(stepRef) ?? 'next'; },
-    decide: async () => { asked.push('decide'); return opts.decide ? opts.decide() : 'continue'; }
+    decide: async (arg) => { asked.push('decide'); return opts.decide ? opts.decide(arg) : 'continue'; }
   };
 }
 
@@ -61,9 +61,9 @@ describe('T18: the architecture schema is valid, shows on the canvas and keeps i
     const canvas = Schema.toCanvas(schema, { models: MODELS });
     expect(canvas.errors).toEqual([]);
     expect(canvas.rounds).toHaveLength(map.summary.rounds);
-    // Counted by the fixture generator: 30 business stages, 52 technical steps, 33 rounds (gates, routes, owner
+    // Counted by the fixture generator: 30 business stages, 53 technical steps (with the route of S18's change), 33 rounds (gates, routes, owner
     // steps and syntheses do not count toward the 50-round limit).
-    expect(map.summary).toMatchObject({ businessStages: 30, technicalSteps: 52, rounds: 33, syntheses: 5, gates: 4, routes: 8, owners: 2, ownerApprovals: 4 });
+    expect(map.summary).toMatchObject({ businessStages: 30, technicalSteps: 53, rounds: 33, syntheses: 5, gates: 4, routes: 9, owners: 2, ownerApprovals: 4 });
     expect(map.summary.rounds).toBeLessThanOrEqual(50);
     expect(Schema.graph(schema.steps).cycle).toBeNull();
   });
@@ -75,6 +75,12 @@ describe('T18: the architecture schema is valid, shows on the canvas and keeps i
     mapped.forEach((ref) => expect(byRef[ref]).toBeDefined());
     expect(new Set(mapped).size).toBe(mapped.length);
     expect(new Set(mapped)).toEqual(new Set(schema.steps.map((step) => step.ref)));
+  });
+
+  test('the table marks the mechanics of every stage: proven, or waiting for a business decision (the decisions are not guessed)', () => {
+    expect(map.stages.every((item) => ['доказана', 'ждёт бизнес-решения'].includes(item.mechanics))).toBe(true);
+    expect(map.stages.filter((item) => item.mechanics === 'ждёт бизнес-решения').map((item) => item.stage)).toEqual(['S25', 'S26', 'S27', 'S29']);
+    map.stages.filter((item) => item.mechanics === 'ждёт бизнес-решения').forEach((item) => expect(item.mechanicsNote).toBeTruthy());
   });
 
   test('the seven independent stages have parallel rounds with at least two participants', () => {
@@ -173,8 +179,8 @@ describe('T18: runs of the whole architecture on a fake transport', () => {
     // One request per participant of the schema (53); the transport gets one batch per wave of a step.
     expect(transport.calls.reduce((sum, call) => sum + call.length, 0)).toBe(map.summary.participantsTotal);
     // The owner in the order of the run: the text of owner:s01; approvals of S05, S13, S22, S30 (decide);
-    // route choices after G1 (chg13), after G2 (chg17), owner:s25 and its route (chg25).
-    expect(ask.asked).toEqual(['owner:s01', 'decide', 'decide', 'route:chg13', 'route:chg17', 'decide', 'owner:s25', 'route:chg25', 'decide']);
+    // route choices after G1 (chg13), after G2 (chg17), after the recomputed S18 (chg18), owner:s25 and its route (chg25).
+    expect(ask.asked).toEqual(['owner:s01', 'decide', 'decide', 'route:chg13', 'route:chg17', 'route:chg18', 'decide', 'owner:s25', 'route:chg25', 'decide']);
   });
 
   test('S12 returns to S10 once: the second visit of S10 gets the reviewer findings in the feedback block, the limit is 2', async () => {
@@ -203,18 +209,6 @@ describe('T18: runs of the whole architecture on a fake transport', () => {
     expect(result.steps.at(-1).ref).not.toBe('gate:g4');
   });
 
-  test('CHG S19 → S10 with resumeAt S19: the run stops with missing_input on S19 (the candidates of S18 are stale through the changed baseline); not a silent continuation', async () => {
-    let fired = false;
-    let returned = false;
-    const transport = fakeTransport(baseReply({ chg: (who) => who === 'S19-a' && !fired && (fired = true) }));
-    // The owner returns at the first choice after the change; before the change every choice is next.
-    const choose = (ref) => (ref === 'route:chg13' && fired && !returned ? (returned = true, 'return') : 'next');
-    const result = await run({ sendParticipants: transport.sendParticipants }, owners({ choose }));
-    expect(result.stopReason).toBe('missing_input');
-    expect(result.stopDetail).toContain('S18-b');
-    expect(result.stopDetail).toContain('r20');
-  });
-
   test('CHG S25 → AIP: the owner returns to owner:s25 after G2; the next transition is counted once; the stale backlog S24 stops S26 with missing_input (fail-closed)', async () => {
     let aip = false;
     let returned = false;
@@ -232,6 +226,127 @@ describe('T18: runs of the whole architecture on a fake transport', () => {
     expect(result.stopDetail).toContain('r27');
     expect(result.steps.map((step) => step.ref)).toContain('owner:s25');
     expect(transport.calls.some((call) => call[0].stepRef === 'r28')).toBe(false);
+  });
+});
+
+// T12 (N05): the controlled change of S19. S19-a asks the change once. The baseline is reviewed again (S10, G1), the owner
+// goes on (chg13), S14–S18 are recomputed (G2 passes, chg17 goes on), the candidates of S18 are recomputed (r19), and the
+// owner returns to S19 (chg18). The first candidates are «КАНДИДАТ_1», the recomputed ones «КАНДИДАТ_2».
+// Options are functions of the scenario state: `fired` is true once the change is asked.
+function changeRun(opts = {}) {
+  const state = { fired: false };
+  const transport = fakeTransport(baseReply({
+    chg: (who) => {
+      if (who !== 'S19-a') return false;
+      if (state.fired && !opts.chgAgain) return false;
+      state.fired = true;
+      return true;
+    },
+    text: (ref, pid) => {
+      if (ref !== 'r19') return undefined;
+      if (opts.dead?.(pid, state)) return '';
+      return `КАНДИДАТ_${state.fired ? 2 : 1}_${pid}`;
+    }
+  }));
+  const choose = (ref) => {
+    if (ref === 'route:chg13' && opts.returnAtChg13 && state.fired) return 'return';
+    if (ref === 'route:chg18' && state.fired) return 'return';
+    return 'next';
+  };
+  const ask = owners({ choose, decide: (arg) => (opts.decide ? opts.decide(arg, state) : 'continue') });
+  return { state, transport, ask };
+}
+const callsOf = (transport, ref) => transport.calls.filter((call) => call[0].stepRef === ref);
+const orderOf = (transport) => transport.calls.map((call) => call[0].stepRef);
+
+describe('T12: the change of S19 is run to the end (N05): recomputation, then return to S19', () => {
+  test('the run goes back to S19 after every recomputed input, and finishes: the stack is empty, the visits and the new versions are right', async () => {
+    const { transport, ask, state } = changeRun();
+    const result = await run({ sendParticipants: transport.sendParticipants }, ask);
+    expect(result.stopReason).toBe('steps_done');
+    expect(state.fired).toBe(true);
+    expect(result.state.continuationStack).toEqual([]);
+    const visits = (ref) => result.steps.filter((step) => step.ref === ref).map((step) => step.visit);
+    ['r11', 'r15', 'r16', 'r18', 'r19', 'r20', 'route:chg18'].forEach((ref) => expect(visits(ref)).toEqual([1, 2]));
+    // Order: the baseline, then the recomputed candidates, then S19 again; nothing of S19 before its candidates are new.
+    const order = orderOf(transport);
+    const second = (ref) => order.indexOf(ref, order.indexOf(ref) + 1);
+    expect(second('r11')).toBeLessThan(second('r19'));
+    expect(second('r19')).toBeLessThan(second('r20'));
+    // The second round of S18 sends both participants again without the first candidates; S19 reads the new candidate of the other one.
+    expect(callsOf(transport, 'r19')[1].every((request) => !request.prompt.includes('КАНДИДАТ_1'))).toBe(true);
+    const reviewB = callsOf(transport, 'r20')[1].find((request) => request.participantId === 'S19-a');
+    expect(reviewB.prompt).toContain('КАНДИДАТ_2_S18-b');
+    expect(reviewB.prompt).not.toContain('КАНДИДАТ_1');
+    // The author of the revision of S18-a (r22) takes the recomputed candidate of its own line, not the first one.
+    const revision = callsOf(transport, 'r22')[0][0];
+    expect(revision.prompt).toContain('КАНДИДАТ_2_S18-a');
+    expect(revision.prompt).not.toContain('КАНДИДАТ_1_S18-a');
+    // The line of S18-a: the first candidate is stale; the recomputed one and its revision (by S18-a, r22) are valid,
+    // and the revision starts from the recomputed candidate.
+    const line = result.artifacts.filter((entry) => entry.lineage.step === 'r19' && entry.lineage.participant === 'S18-a');
+    expect(line.find((entry) => entry.source.step === 'r19' && entry.source.visit === 1)).toMatchObject({ valid: false });
+    expect(line.filter((entry) => entry.valid).map((entry) => [entry.source.step, entry.source.participant])).toEqual([['r19', 'S18-a'], ['r22', 'S18-a']]);
+    expect(line.find((entry) => entry.source.step === 'r22').inputs[0].source).toMatchObject({ step: 'r19', visit: 2 });
+    expect(result.artifacts.find((entry) => entry.lineage.step === 'r19' && entry.lineage.participant === 'S18-b' && entry.source.visit === 2)).toMatchObject({ valid: true });
+  });
+
+  test('a reload in the change is applied once: from the snapshot before the transition and from the one after it, S10 is sent once', async () => {
+    const snapshots = [];
+    const first = changeRun();
+    const original = await run({ sendParticipants: first.transport.sendParticipants,
+      checkpoint: async (state) => { snapshots.push(JSON.parse(JSON.stringify(state))); } }, first.ask);
+    expect(original.stopReason).toBe('steps_done');
+    const before = snapshots.find((state) => state.pc === 'route:chg19' && state.current?.phase === 'transition' && !state.current.applied);
+    const after = snapshots.find((state) => state.pc === 'route:chg19' && state.current?.applied?.target === 'r11');
+    expect(before).toBeDefined();
+    expect(after).toBeDefined();
+    for (const snapshot of [before, after]) {
+      const store = { ...original.texts };
+      const replay = changeRun();
+      replay.state.fired = true;
+      const resumed = await run({ sendParticipants: replay.transport.sendParticipants, resume: snapshot,
+        getText: (ref) => store[ref], putText: (value) => { const ref = `new-${Object.keys(store).length}`; store[ref] = value; return ref; } }, replay.ask);
+      expect(resumed.stopReason).toBe('steps_done');
+      expect(callsOf(replay.transport, 'r11')).toHaveLength(1);
+      expect(resumed.state.loopCounters['route:chg19:chg_pfb_synthetic']).toBe(1);
+      expect(resumed.state.continuationStack).toEqual([]);
+    }
+  });
+
+  test('the change is not run twice: a second review that asks it again stops at the limit (loop_limit), and S10 is not sent a third time', async () => {
+    const { transport, ask } = changeRun({ chgAgain: true });
+    const result = await run({ sendParticipants: transport.sendParticipants }, ask);
+    expect(result.stopReason).toBe('loop_limit');
+    expect(result.stopDetail).toContain('chg_pfb_synthetic');
+    expect(callsOf(transport, 'r11')).toHaveLength(2);
+  });
+
+  test('stale input: the owner returns at chg13 before S18 is recomputed; S19 gets no request, the stop names S18-b and S19', async () => {
+    const { transport, ask } = changeRun({ returnAtChg13: true });
+    const result = await run({ sendParticipants: transport.sendParticipants }, ask);
+    expect(result.stopReason).toBe('missing_input');
+    expect(result.stopDetail).toContain('S18-b');
+    expect(result.stopDetail).toContain('r20');
+    // S19 was sent once (the first review); the second one did not go out.
+    expect(callsOf(transport, 'r20')).toHaveLength(1);
+  });
+
+  test('failed recomputation: a candidate of S18 with no answer in the recomputed round stops before the return; no owner route, no request of S19', async () => {
+    const { transport, ask } = changeRun({ dead: (pid, state) => state.fired && pid === 'S18-b', decide: (arg, state) => (state.fired && arg.failed.includes('S18-b') ? null : 'continue') });
+    const result = await run({ sendParticipants: transport.sendParticipants }, ask);
+    expect(result.stopReason).toBe('no_decision');
+    expect(callsOf(transport, 'r20')).toHaveLength(1);
+    expect(result.steps.some((step) => step.ref === 'route:chg18' && step.visit === 2)).toBe(false);
+  });
+
+  test('skipped recomputation: the owner skips the recomputed S18 round; the required candidate is missing, the route does not return to S19', async () => {
+    const { transport, ask } = changeRun({ dead: (pid, state) => state.fired && pid === 'S18-b', decide: (arg, state) => (state.fired && arg.failed.includes('S18-b') ? 'skip' : 'continue') });
+    const result = await run({ sendParticipants: transport.sendParticipants }, ask);
+    expect(result.stopReason).toBe('missing_input');
+    expect(result.stopDetail).toContain('r19');
+    expect(result.stopDetail).toContain('route:chg18');
+    expect(callsOf(transport, 'r20')).toHaveLength(1);
   });
 });
 

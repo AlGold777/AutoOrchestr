@@ -91,3 +91,78 @@ describe('Custom engine controlled change (6.3, T12)', () => {
     expect(last.prompts.D).not.toContain('Разбор.');
   });
 });
+
+// The route that returns after a recomputation names its required sources (N05): the engine checks them before the owner decides.
+// G1 fails once, which starts the change (return to S19); S18 is the recomputed round; chk is the owner's route with the return.
+const RECOMPUTE = (require) => [
+  { ref: 'S10', kind: 'round', input: 'none', models: ['A'] },
+  { ref: 'G1', kind: 'gate', criteria: ['c'], models: ['B'], onFail: { goto: 'S10', maxLoops: 1, resumeAt: 'S19' } },
+  { ref: 'S18', kind: 'round', order: 'parallel', require, input: 'none', models: ['C1', 'C2'] },
+  { ref: 'chk', kind: 'route', models: [], input: [{ step: 'S18', participant: 'C2', required: true }],
+    select: { by: 'owner', cases: [
+      { id: 'next', label: 'Продолжить', action: { goto: 'S19' } },
+      { id: 'return', label: 'Вернуться к точке изменения', action: { return: true, maxLoops: 1 } }] } },
+  { ref: 'S19', kind: 'round', input: 'none', models: ['D'] }
+];
+
+describe('Custom engine: the return of a change waits for its recomputed inputs (N05)', () => {
+  test('the recomputed input is there: the owner returns, the stack ends empty, S19 runs', async () => {
+    const { send, calls } = transport({ A: ['a1', 'a2'], B: [FAIL('x'), PASS], C1: ['c1a', 'c1b'], C2: ['c2a', 'c2b'], D: ['d1'] });
+    const result = await Engine.run({ task: 'T', steps: RECOMPUTE(2), send, chooseRoute: async () => 'return' });
+    expect(result.stopReason).toBe('steps_done');
+    expect(calls.map((call) => call.models.join(','))).toEqual(['A', 'B', 'A', 'B', 'C1,C2', 'D']);
+    expect(result.state.continuationStack).toEqual([]);
+  });
+
+  test('a failed recomputed input (no answer, the step goes on with enough others): missing_input names the source; the owner is not asked; S19 is not sent', async () => {
+    const { send, calls } = transport({ A: ['a1', 'a2'], B: [FAIL('x'), PASS], C1: ['c1a', 'c1b'], C2: [''], D: ['d1'] });
+    const asked = [];
+    const result = await Engine.run({ task: 'T', steps: RECOMPUTE(1), send, chooseRoute: async (arg) => { asked.push(arg.stepRef); return 'return'; } });
+    expect(result.stopReason).toBe('missing_input');
+    expect(result.stopDetail).toContain('C2');
+    expect(result.stopDetail).toContain('S18');
+    expect(result.stopDetail).toContain('chk');
+    expect(asked).toEqual([]);
+    expect(calls.some((call) => call.models.includes('D'))).toBe(false);
+  });
+
+  test('a skipped recomputed input: missing_input names the source; the return is not taken', async () => {
+    const { send, calls } = transport({ A: ['a1', 'a2'], B: [FAIL('x'), PASS], C1: ['c1a'], C2: [''], D: ['d1'] });
+    const result = await Engine.run({ task: 'T', steps: RECOMPUTE(2), send, chooseRoute: async () => 'return', decide: async () => 'skip' });
+    expect(result.stopReason).toBe('missing_input');
+    expect(result.stopDetail).toContain('C2');
+    expect(result.stopDetail).toContain('chk');
+    expect(calls.some((call) => call.models.includes('D'))).toBe(false);
+  });
+});
+
+describe('Custom engine: what a change makes stale (N05, 6.3)', () => {
+  test('the invalidation is the target, its explicit refs and what really used them: an unrelated step between the target and resumeAt stays valid', async () => {
+    const steps = [
+      { ref: 'S10', kind: 'round', input: 'none', models: ['A'] },
+      { ref: 'G1', kind: 'gate', criteria: ['c'], models: ['B'], onFail: { goto: 'S10', maxLoops: 1, resumeAt: 'S19' } },
+      { ref: 'S14', kind: 'round', input: 'none', models: ['C'] },
+      { ref: 'S19', kind: 'gate', criteria: ['d'], models: ['D'], input: 'none', onFail: { return: true, maxLoops: 1 } }
+    ];
+    const { send } = transport({ A: ['a1', 'a2'], B: [FAIL('x'), PASS], C: ['c1'], D: [PASS] });
+    const result = await Engine.run({ task: 'T', steps, send });
+    expect(result.stopReason).toBe('steps_done');
+    // S14 depends on nothing of the target: its visit is not stale although it lies between S10 and S19.
+    expect(visitsOf(result, 'S14')).toEqual([[1, true]]);
+  });
+
+  test('feedback of a change takes the remark of the exact visit of its source: the second return gives the second visit\'s text', async () => {
+    const steps = [
+      { ref: 'S1', kind: 'round', input: 'none', models: ['A'] },
+      { ref: 'S2', kind: 'round', input: 'none', models: ['B'] },
+      { ref: 'G', kind: 'gate', criteria: ['c'], models: ['C'], onFail: { goto: 'S1', maxLoops: 2, feedback: [{ step: 'S2', participant: 'B' }] } }
+    ];
+    const { send, calls } = transport({ A: ['a1', 'a2', 'a3'], B: ['REMARK_1', 'REMARK_2', 'REMARK_3'], C: [FAIL('x'), FAIL('y'), PASS] });
+    const result = await Engine.run({ task: 'T', steps, send });
+    expect(result.stopReason).toBe('steps_done');
+    const thirdA = calls.filter((call) => call.models[0] === 'A')[2].prompts.A;
+    expect(thirdA).toContain('REMARK_2');
+    expect(thirdA).not.toContain('REMARK_1');
+    expect(thirdA).toContain('визит 2');
+  });
+});

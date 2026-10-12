@@ -798,6 +798,53 @@
       "task": "S18, независимо: сформировать architecture candidate с assumptions и trade-offs; продукт не переопределять."
     },
     {
+      "ref": "route:chg18",
+      "kind": "route",
+      "models": [],
+      "input": [
+        {
+          "step": "r15",
+          "participant": "S13-closer",
+          "required": true
+        },
+        {
+          "step": "r18",
+          "participant": "S17-closer",
+          "required": true
+        },
+        {
+          "step": "r19",
+          "participant": "S18-a",
+          "required": true
+        },
+        {
+          "step": "r19",
+          "participant": "S18-b",
+          "required": true
+        }
+      ],
+      "select": {
+        "by": "owner",
+        "cases": [
+          {
+            "id": "next",
+            "label": "Продолжить к S19",
+            "action": {
+              "goto": "r20"
+            }
+          },
+          {
+            "id": "return",
+            "label": "Вернуться к точке изменения (S19)",
+            "action": {
+              "return": true,
+              "maxLoops": 1
+            }
+          }
+        ]
+      }
+    },
+    {
       "ref": "r20",
       "kind": "round",
       "order": "parallel",
