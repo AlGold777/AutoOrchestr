@@ -343,3 +343,80 @@ describe('Custom run record storage: the chrome.storage adapter rejects every fa
     await expect(Engine.run({ task: 'T', steps, send: ok, checkpoint: pageCheckpoint(record, failStore, steps) })).rejects.toThrow('checkpoint_failed');
   });
 });
+
+describe('Custom run record export is self-contained (R04)', () => {
+  // A run with a binary owner file, an owner answer that declares an artifact, the feedback of a gate that waits for the next
+  // round (the transport refuses its request, so the run stops there), and an attempt that was sent and never answered.
+  async function fullRun() {
+    const storage = memoryStorage();
+    const store = Record.createStore({ storage });
+    const record = Record.createRun({ runId: 'run-full', pipelineName: 'Mine', task: 'Задача T', steps: [] });
+    const fileContent = 'PDF-содержимое\u0000\u00ff';
+    const fileRef = record.put(fileContent);
+    const steps = [
+      { ref: 'O0', kind: 'owner', task: 'Приложи файл' },
+      { ref: 'O1', kind: 'owner', task: 'Дай тезис', output: { format: 'json', requiredFields: ['/thesis'], artifacts: [{ id: 'thesis', name: 'Тезис', pointer: '/thesis' }] } },
+      { ref: 'S1', kind: 'round', task: 'Тезис', input: 'none', models: ['A'] },
+      { ref: 'G1', kind: 'gate', criteria: ['c'], models: ['B'], onFail: { goto: 'S2', maxLoops: 1, feedback: [{ step: 'G1', participant: 'B' }] } },
+      { ref: 'S2', kind: 'round', task: 'Доработай', input: 'previous', models: ['C'] }
+    ];
+    const FAIL = 'Разбор.\nНЕ ВЫПОЛНЕНО: x\nВЕРДИКТ: НЕ ПРОШЁЛ';
+    const send = async (models, prompts) => { if (models.includes('C')) throw Object.assign(new Error('too long'), { code: 'context_full' }); return { byModel: Object.fromEntries(models.map((model) => [model, { text: model === 'A' ? 'a1' : FAIL, status: 'SUCCESS', attribution: 'verified', transportRequestId: model + '-1', sentPrompt: prompts[model] }])) }; };
+    const provideOwnerResult = async ({ stepRef }) => (stepRef === 'O0' ? { file: { name: 'brief.pdf', mime: 'application/pdf', size: fileContent.length, ref: fileRef } } : JSON.stringify({ thesis: 'Тезис владельца' }));
+    const result = await Engine.run({
+      task: 'Задача T', steps, send, runId: 'run-full', provideOwnerResult,
+      putText: (value) => record.put(value), getText: (ref) => (ref && record.texts[ref] !== undefined ? record.texts[ref] : undefined),
+      checkpoint: pageCheckpoint(record, store, steps),
+      onRequest: (entry) => Record.recordAttempt(record, entry), onResponse: (entry) => Record.recordAttempt(record, entry)
+    });
+    // An attempt sent and never answered (the page was closed): it stays unfinished in the record.
+    Record.recordAttempt(record, { step: 4, ref: 'S9', participant: 'C', model: 'C', visit: 1, attempt: 1, phase: 'answer', label: 'Незавершённый', prompt: 'Незавершённый запрос', parts: { instructions: { task: 'Задача T' } }, state: 'sent' });
+    Record.finishRun(record, { stopReason: result.stopReason });
+    await store.save(record);
+    return { record, result, fileContent, fileRef, back: await store.load('run-full') };
+  }
+
+  // Every text reference in the exported JSON: a field named *Ref (stepRef is an address) and the reference of a file.
+  function refsOf(value, out = new Set()) {
+    if (Array.isArray(value)) { value.forEach((item) => refsOf(item, out)); return out; }
+    if (!value || typeof value !== 'object') return out;
+    Object.entries(value).forEach(([key, item]) => {
+      if (/Ref$/.test(key) && key !== 'stepRef' && typeof item === 'string' && item) out.add(item);
+      if (key === 'file' && item && typeof item.ref === 'string') out.add(item.ref);
+      refsOf(item, out);
+    });
+    return out;
+  }
+
+  test('the export keeps every text reference of the record, and each one resolves to the same text after JSON', async () => {
+    const { record, back } = await fullRun();
+    const exported = JSON.parse(JSON.stringify(Record.exportRun(back)));
+    const refs = refsOf(exported);
+    expect(refs.size).toBeGreaterThan(5);
+    for (const ref of refs) {
+      expect(exported.texts).toHaveProperty([ref]);
+      expect(Record.fingerprint(exported.texts[ref])).toBe(ref);
+      expect(exported.texts[ref]).toBe(Record.textOf(record, ref));
+    }
+  });
+
+  test('the export has the owner answer, the feedback still waiting for an owner step, the registry, the owner file and the unfinished attempt', async () => {
+    const { fileContent, fileRef, back } = await fullRun();
+    const exported = JSON.parse(JSON.stringify(Record.exportRun(back)));
+    expect(exported).toMatchObject({ version: 2, resumable: true, task: 'Задача T', stopReason: 'context_full' });
+    expect(exported.artifacts).toEqual([expect.objectContaining({ id: 'thesis', text: JSON.stringify({ thesis: 'Тезис владельца' }), source: expect.objectContaining({ step: 'O1', participant: 'owner' }) })]);
+    const owner = exported.snapshot.results.find((item) => item.stepRef === 'O0');
+    expect(owner.owner.file).toEqual({ name: 'brief.pdf', mime: 'application/pdf', size: fileContent.length, ref: fileRef });
+    expect(exported.texts[fileRef]).toBe(fileContent);
+    const feedbackRef = exported.snapshot.current.feedback[0].textRef;
+    expect(exported.texts[feedbackRef]).toBe('Разбор.\nНЕ ВЫПОЛНЕНО: x\nВЕРДИКТ: НЕ ПРОШЁЛ');
+    const unfinished = exported.attempts.find((item) => item.label === 'Незавершённый');
+    expect(unfinished).toMatchObject({ state: 'unknown', ref: 'S9', participant: 'C', visit: 1, attempt: 1, phase: 'answer', prompt: 'Незавершённый запрос' });
+    expect(exported.snapshot).toEqual(expect.objectContaining({ chatBindings: expect.any(Object), dependencies: expect.any(Object) }));
+  });
+
+  test('a version 1 record is still exported, and it is not resumable', () => {
+    const v1 = { version: 1, runId: 'old', pipelineName: 'Mine', startedAt: 1, finishedAt: 2, stopReason: 'steps_done', taskRef: 't1', steps: [], texts: { t1: 'Задача' }, attempts: [] };
+    expect(Record.exportRun(Record.revive(JSON.parse(JSON.stringify(v1))))).toMatchObject({ version: 1, resumable: false, task: 'Задача' });
+  });
+});

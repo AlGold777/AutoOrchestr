@@ -49,7 +49,7 @@
 | Файл | Что проверяет |
 | --- | --- |
 | `tests/custom-engine.test.js` | Движок: шаги, запросы, приём, повторы, бюджет, пауза, вопросы |
-| `tests/custom-run-record.test.js` | Запись о прогоне, хранение, экспорт, состояние `not_sent` |
+| `tests/custom-run-record.test.js` | Запись о прогоне, хранение через адаптер `chrome.storage` (отказы), экспорт со всеми ссылками, состояние `not_sent` |
 | `tests/custom-extract.test.js` | Разбор прогона в Extract (Transport) |
 | `tests/custom-engine-checkpoint.test.js` | Checkpoint: точки записи состояния, живое состояние, `checkpoint_failed`, автономный запуск без callback |
 | `tests/custom-run-resume-wiring.test.js` | Привязка страницы к записи: callbacks текстов, checkpoint, очередь записи, «Продолжить прогон» (контракт в `results.js`, без браузера) |
@@ -233,7 +233,7 @@
 | --- | --- | --- |
 | Уведомления страницы | Всплывающие сообщения внизу страницы | Причина остановки и ошибки схемы: «Basic: …», «Схема не установлена. …», «Pipeline: error (…)». |
 | Журнал доставки (`delivery`) | Поле `delivery` в JSON Disput Flow | События прогона Basic: `custom_start`, `custom_answer`, `custom_step`, `custom_decision`, `custom_end` (движок) и `owner_answer` (ответ владельца на вопрос `[[ASK]]`). |
-| Запись о прогоне (`customRun`) | Поле `customRun` в JSON Disput Flow: кнопка на вкладке Disput панели диагностики, значок загрузки с подсказкой «Export Disput telemetry as JSON» (`#disput-export-json`) | Полные тексты прогона: задача, запросы по попыткам, входы, ответы, исходы, `state` каждой попытки (`sent`, `done`, `not_sent`, `unknown`). |
+| Запись о прогоне (`customRun`) | Поле `customRun` в JSON Disput Flow: кнопка на вкладке Disput панели диагностики, значок загрузки с подсказкой «Export Disput telemetry as JSON» (`#disput-export-json`) | Полные тексты прогона: задача, запросы по попыткам, входы, ответы, исходы, `state` каждой попытки (`sent`, `done`, `not_sent`, `unknown`). Экспорт самодостаточен: все ссылки на тексты (поля `*Ref` и `file.ref`; `stepRef` — адрес шага) разрешаются через поле `texts`; `snapshot` и `attempts` сохраняют ссылки, попытки несут `ref`, `participant`, `visit`, `attempt`, `phase`. `resumable: true` только у записи версии 2 с полным состоянием (схема, позиция, все тексты); у записи версии 1 `resumable: false`. Импорта записи прогона в интерфейсе нет. |
 | Extract (Transport) | Кнопка «Extract» на той же вкладке (`#disput-extract`) | Сохраняет JSON Disput Flow и разбор в Markdown. Для прогона Basic разбирает последний прогон: шаги как этапы. Если прогона Basic в журнале нет, выводит предупреждение. |
 | Холст | Шаги на холсте pipeline | Статусы шагов: серый `pending`, синий или оранжевый `running`, `completed`. Итоговое состояние прогона: `COMPLETED` (все шаги пройдены), `CANCELLED` (остановлено или ограничено бюджетом), `FAILED` (ошибка). |
 | Export schema | Кнопка «Export schema» в шапке pipeline | Схема того, что сейчас на холсте, одним JSON-файлом. |
