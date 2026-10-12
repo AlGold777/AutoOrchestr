@@ -287,11 +287,11 @@ describe('Basic schema: check before the first request', () => {
       steps: [
         round('r1', [{ name: 'A', role: 'x', request: 'q', maxWords: 10, task: 't', discipline: { limit: '', lines: [] } }]),
         round('r2', ['A'], { order: 'sequential', input: 'previous', task: '' }),
-        synthesis('synth:z', ['B'], { task: 'T' }), synthesis('final', ['B'])
+        synthesis('synth:z', ['B'], { task: 'T' }), round('r3', ['B']), synthesis('final', ['B'])
       ]
     };
     expect(Schema.validate(full)).toEqual([]);
-    expect(Schema.assemble(full)).toHaveLength(4);
+    expect(Schema.assemble(full)).toHaveLength(5);
   });
 });
 
@@ -786,7 +786,9 @@ describe('Basic schema: control steps on the canvas (9)', () => {
     const many = Array.from({ length: 50 }, (_, index) => round(`r${index + 1}`, ['GPT']));
     expect(Schema.toCanvas(base([...many, gateStep, gateStep, synthesis('final', ['GPT'])]), { models: ['GPT'] }).errors).toEqual([]);
     expect(Schema.toCanvas(base([...many, round('r51', ['GPT']), synthesis('final', ['GPT'])]), { models: ['GPT'] }).errors.map((error) => error.path)).toEqual(['steps']);
-    expect(Schema.toCanvas(base([round('r1', ['GPT']), gateStep, synthesis('synth:x', ['GPT']), round('r2', ['GPT'])]), { models: ['GPT'] }).errors.map((error) => error.path)).toEqual(['steps[2]']);
+    // A control step may stand between a round and its intermediate synthesis (R11); the synthesis still needs a round after it.
+    expect(Schema.toCanvas(base([round('r1', ['GPT']), gateStep, synthesis('synth:x', ['GPT']), round('r2', ['GPT'])]), { models: ['GPT'] }).errors).toEqual([]);
+    expect(Schema.toCanvas(base([round('r1', ['GPT']), gateStep, synthesis('synth:x', ['GPT']), synthesis('final', ['GPT'])]), { models: ['GPT'] }).errors.map((error) => error.path)).toEqual(['steps[2]']);
   });
 
   test('the settings keep every new field per kind and per participant, keyed by the participant id', () => {
@@ -1155,5 +1157,53 @@ describe('Basic schema: a pipeline without a round is checked the same way every
     const many = Array.from({ length: 50 }, (_, index) => round(`r${index + 1}`, ['A']));
     expect(Schema.toCanvas(base([...many, owner('owner:o')]), { models: ['A'] }).errors).toEqual([]);
     expect(Schema.toCanvas(base([...many, round('r51', ['A'])]), { models: ['A'] }).errors.map((error) => error.path)).toEqual(['steps']);
+  });
+});
+
+describe('Basic schema: the order of a synthesis and control steps (R11)', () => {
+  const gate = (ref, models) => ({ ref, kind: 'gate', criteria: ['Есть источники'], models: models.map((name) => ({ name })) });
+  const route = (ref) => ({ ref, kind: 'route', models: [], select: { by: 'owner', cases: [{ id: 'go', label: 'Дальше', action: { stop: 'Готово' } }] } });
+  const owner = (ref) => ({ ref, kind: 'owner', task: 'Предоставьте исследование', models: [] });
+  const refsOf = (steps) => steps.map((step) => step.ref);
+  const models = ['A', 'B', 'C', 'S'];
+
+  test('both orders are valid and the canvas keeps them: r1 → synth → gate → r2 and r1 → gate → synth → r2', () => {
+    const synthFirst = base([round('r1', ['A']), synthesis('synth:x', ['S']), gate('gate:g', ['C']), round('r2', ['A']), synthesis('final', ['B'])]);
+    const gateFirst = base([round('r1', ['A']), gate('gate:g', ['C']), synthesis('synth:x', ['S']), round('r2', ['A']), synthesis('final', ['B'])]);
+    [synthFirst, gateFirst].forEach((schema) => {
+      expect(Schema.validate(schema)).toEqual([]);
+      expect(refsOf(Schema.assemble(schema))).toEqual(refsOf(schema.steps));
+      const canvas = Schema.toCanvas(schema, { models });
+      expect(canvas.errors).toEqual([]);
+      expect(canvas.controls).toEqual([{ ref: 'gate:g', kind: 'gate', index: schema.steps.findIndex((step) => step.ref === 'gate:g'), afterRound: 1 }]);
+      expect(canvas.inserts).toEqual([expect.objectContaining({ afterRound: 1, plannedStageId: 'x' })]);
+    });
+  });
+
+  test('consecutive control steps keep their order next to a synthesis, and no round is needed beside them', () => {
+    const schema = base([round('r1', ['A']), gate('gate:g', ['C']), route('route:r'), synthesis('synth:x', ['S']), owner('owner:o'), round('r2', ['A']), synthesis('final', ['B'])]);
+    expect(Schema.validate(schema)).toEqual([]);
+    expect(refsOf(Schema.assemble(schema))).toEqual(['r1', 'gate:g', 'route:r', 'synth:x', 'owner:o', 'r2', 'final']);
+    expect(Schema.toCanvas(schema, { models }).errors).toEqual([]);
+  });
+
+  test('a synthesis after a synthesis stays refused, also with a control step between them', () => {
+    const adjacent = base([round('r1', ['A']), synthesis('synth:x', ['S']), synthesis('synth:y', ['S']), round('r2', ['A']), synthesis('final', ['B'])]);
+    expect(Schema.validate(adjacent).map((error) => [error.path, error.message])).toEqual([
+      ['steps[1]', 'промежуточный синтез стоит между двумя раундами'],
+      ['steps[2]', 'промежуточный синтез стоит сразу после раунда']
+    ]);
+    const withGate = base([round('r1', ['A']), synthesis('synth:x', ['S']), gate('gate:g', ['C']), synthesis('synth:y', ['S']), round('r2', ['A']), synthesis('final', ['B'])]);
+    expect(errorPaths(withGate)).toEqual(['steps[1]', 'steps[3]']);
+    expect(Schema.toCanvas(withGate, { models }).errors.map((error) => error.path)).toEqual(['steps[1]', 'steps[3]']);
+  });
+
+  test('an intermediate synthesis without a round on one side is named by validate and the canvas alike', () => {
+    const noRoundAfter = base([round('r1', ['A']), gate('gate:g', ['C']), synthesis('synth:x', ['S']), synthesis('final', ['B'])]);
+    expect(errorPaths(noRoundAfter)).toEqual(['steps[2]']);
+    expect(Schema.toCanvas(noRoundAfter, { models }).errors.map((error) => error.path)).toEqual(['steps[2]']);
+    const first = base([synthesis('synth:x', ['S']), round('r1', ['A']), synthesis('final', ['B'])]);
+    expect(errorPaths(first)).toEqual(['steps[0]']);
+    expect(Schema.toCanvas(first, { models }).errors.map((error) => error.path)).toEqual(['steps[0]']);
   });
 });

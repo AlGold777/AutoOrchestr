@@ -279,6 +279,23 @@
     return addressOf(source);
   }
 
+  // The place of an intermediate synthesis (R11), one rule for validate and toCanvas: the nearest steps around it that are
+  // not control steps (gate, route, owner) must be rounds. So `r1 → synth → gate → r2` and `r1 → gate → synth → r2` are
+  // both valid, and control steps never need a round next to them. Two syntheses never meet.
+  function synthesisPlaceErrors(steps) {
+    const errors = [];
+    const nearest = (index, step) => {
+      for (let at = index + step; at >= 0 && at < steps.length; at += step) if (!CONTROL_KINDS.includes(steps[at]?.kind)) return steps[at];
+      return null;
+    };
+    steps.forEach((step, index) => {
+      if (!isObject(step) || step.kind !== 'synthesis' || step.ref === 'final') return;
+      if (nearest(index, -1)?.kind !== 'round') errors.push({ path: `steps[${index}]`, message: 'промежуточный синтез стоит сразу после раунда' });
+      if (nearest(index, 1)?.kind !== 'round') errors.push({ path: `steps[${index}]`, message: 'промежуточный синтез стоит между двумя раундами' });
+    });
+    return errors;
+  }
+
   // The one check of executability (R09) for validate and toCanvas: a control step (gate, route, owner) runs by itself
   // (a gate's checkers are checked by their own rule); a round runs with an enabled model. A synthesis only works on
   // the answers of an earlier step, so it alone is not runnable. A pipeline without a round is valid; an empty one or
@@ -616,7 +633,7 @@
     // The cycle comes from an unlimited transition, which is already named at its path: no second error there.
     const { cycle } = graph(schema.steps);
     if (cycle && !errors.some((error) => error.path === cycle)) fail(cycle, 'цикл без ограниченного перехода: укажите maxLoops');
-    errors.push(...executabilityErrors(schema.steps));
+    errors.push(...synthesisPlaceErrors(schema.steps), ...executabilityErrors(schema.steps));
     return errors;
   }
 
@@ -687,11 +704,10 @@
       const id = step.ref.startsWith('synth:') ? step.ref.slice('synth:'.length) : '';
       // The canvas keeps only A-Z a-z 0-9 _ - of an id; another character would make the settings follow another ref.
       if (!/^[A-Za-z0-9_-]+$/.test(id)) fail(`${path}.ref`, 'ref промежуточного синтеза: «synth:<id>», id — латинские буквы, цифры, «_» и «-»');
-      if (steps[index - 1]?.kind !== 'round') fail(path, 'промежуточный синтез стоит сразу после раунда');
-      if (steps[index + 1]?.kind !== 'round') fail(path, 'промежуточный синтез стоит между двумя раундами');
       if (enabled.length) inserts.push({ afterRound: rounds.length, plannedStageId: id, participantIds: enabled.map(idOf) });
     });
     if (Array.isArray(runWords) && schema.run && 'maxWords' in schema.run && !runWords.includes(schema.run.maxWords)) fail('run.maxWords', `предел длины pipeline: допустимо ${runWords.join(', ')}`);
+    synthesisPlaceErrors(steps).forEach((error) => fail(error.path, error.message));
     executabilityErrors(steps).forEach((error) => fail(error.path, error.message));
     if (rounds.length > 50) fail('steps', 'раундов не больше 50');
     if (errors.length) return { errors };
