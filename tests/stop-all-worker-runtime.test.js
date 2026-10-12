@@ -197,6 +197,18 @@ function createWorkerRuntime() {
 }
 
 describe('full MV3 worker stop lifecycle', () => {
+  test('active run state identifies the owner when older sessions lack sourceView', async () => {
+    const { context, sendMessage } = createWorkerRuntime();
+    await vm.runInContext('ensureInitialState()', context);
+    vm.runInContext('jobState = { session: { startTime: 123, roundsInProgress: true }, llms: {} };', context);
+    await expect(sendMessage({ type: 'GET_ACTIVE_RUN_STATE' }))
+      .resolves.toMatchObject({ status: 'ok', active: true, sourceView: 'main' });
+    vm.runInContext('jobState.session.pipelineRunId = "basic-run";', context);
+    await expect(sendMessage({ type: 'GET_ACTIVE_RUN_STATE' }))
+      .resolves.toMatchObject({ status: 'ok', active: true, sourceView: 'pipeline' });
+    await sendMessage({ type: 'STOP_ALL' });
+  });
+
   test('tab cleanup cancels the real model retry and reports actual retry state', async () => {
     const { context, chrome } = createWorkerRuntime();
     await vm.runInContext('ensureInitialState()', context);

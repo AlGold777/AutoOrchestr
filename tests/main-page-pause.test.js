@@ -37,6 +37,41 @@ function createPage(sendToBackground) {
 
 const flush = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(); };
 
+function useRealRunGate(context) {
+  const start = source.indexOf('const getActiveRunState = async () => {');
+  const end = source.indexOf('// Floating tooltip controller', start);
+  vm.runInContext(source.slice(start, end), context);
+}
+
+test.each(['main', null])('an active %s main run restores Stop instead of trapping the next request behind a warning', async sourceView => {
+  let active = true;
+  const send = jest.fn(async message => {
+    if (message.type === 'GET_ACTIVE_RUN_STATE') return { status: 'ok', active, sourceView, sessionId: active ? 123 : null };
+    if (message.type === 'STOP_ALL') { active = false;return { success: true }; }
+    active = true;return { status: 'process_started' };
+  });
+  const { button, context, click } = createPage(send);
+  useRealRunGate(context);
+  await click();
+  expect(button.getAttribute('aria-label')).toBe('Стоп');
+  expect(send.mock.calls.some(([message]) => message.type === 'START_FULLPAGE_PROCESS')).toBe(false);
+  await click();
+  expect(button.getAttribute('aria-label')).toBe('Пуск');
+  await click();
+  expect(send.mock.calls.filter(([message]) => message.type === 'START_FULLPAGE_PROCESS')).toHaveLength(1);
+  expect(button.getAttribute('aria-label')).toBe('Стоп');
+});
+
+test('a run on Pipeline remains protected from a main-page Start', async () => {
+  const send = jest.fn(async () => ({ status: 'ok', active: true, sourceView: 'pipeline' }));
+  const { button, context, click } = createPage(send);
+  useRealRunGate(context);
+  await click();
+  expect(button.getAttribute('aria-label')).not.toBe('Стоп');
+  expect(send).toHaveBeenCalledTimes(1);
+  expect(context.showNotification).toHaveBeenCalledWith('Дождитесь завершения запроса на Pipeline.', 'warn');
+});
+
 test('Stop cancels an unfinished start, restores Start, and a late old reply cannot disturb the next request', async () => {
   const releases = [];
   const send = jest.fn(message => message.type === 'STOP_ALL'

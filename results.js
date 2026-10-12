@@ -2194,12 +2194,22 @@ document.addEventListener('click', (event) => {
         const runState = await getActiveRunState();
         if (!runState?.active) return true;
         const currentView = getCurrentViewKey();
-        if (runState.sourceView && runState.sourceView === currentView) return true;
+        const sourceView = runState.sourceView
+            || (runState.pipelineContext?.pipelineRunId ? 'pipeline' : 'main');
+        if (currentView === 'main' && sourceView === 'main') {
+            // A lost start reply or reload can leave Start visible while the
+            // worker owns an active request. Restore Stop instead of sending
+            // another Start that RunGuard will reject and hiding Stop again.
+            setMainRunActive(true);
+            showNotification('Запрос ещё выполняется. Нажмите «Стоп», чтобы остановить его и отправить новый.', 'warn');
+            return false;
+        }
+        if (sourceView === currentView) return true;
         if (runState.staleActiveRun) {
             showNotification('Предыдущий зависший запрос больше не блокирует запуск.', 'warn');
             return true;
         }
-        const sourceLabel = runState.sourceView === 'pipeline' ? 'Pipeline' : 'главной странице';
+        const sourceLabel = sourceView === 'pipeline' ? 'Pipeline' : 'главной странице';
         showNotification(`Дождитесь завершения запроса на ${sourceLabel}.`, 'warn');
         return false;
     };

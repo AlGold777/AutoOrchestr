@@ -2191,7 +2191,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     active,
                     staleActiveRun,
                     sessionAgeMs,
-                    sourceView: session?.sourceView || session?.pipelineContext?.sourceView || null,
+                    sourceView: session?.sourceView || session?.pipelineContext?.sourceView
+                        || (session?.startTime ? (session.pipelineRunId ? 'pipeline' : 'main') : null),
                     sessionId: session?.startTime || null,
                     roundsInProgress: !!session?.roundsInProgress,
                     totalModels,
