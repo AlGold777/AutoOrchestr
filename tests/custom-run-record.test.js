@@ -229,3 +229,117 @@ describe('Custom run record, version 2 (8.2)', () => {
     expect(Record.exportRun(back).snapshot.feedback['owner:evidence'][0]).toMatchObject({ text: feedbackText, source: { step: 0, visit: 1 }, label: 'Владелец' });
   });
 });
+
+// The real adapter (chromeStorage) over a fake chrome.storage.local: its callbacks report a failure through chrome.runtime.lastError.
+function chromeArea({ failGet = '', failSet = '', failRemove = '', throwOn = '', quotaBytes = Infinity, setFailFrom = Infinity } = {}) {
+  const data = {};
+  let setCalls = 0;
+  const reply = (callback, error, value) => {
+    globalThis.chrome = { runtime: { lastError: error ? { message: error } : undefined } };
+    try { callback(value); } finally { globalThis.chrome = { runtime: {} }; }
+  };
+  return {
+    data,
+    setCalls: () => setCalls,
+    get(key, callback) {
+      if (throwOn === 'get') throw new Error('get threw');
+      if (failGet) return reply(callback, failGet, {});
+      return reply(callback, '', { [key]: data[key] });
+    },
+    set(items, callback) {
+      if (throwOn === 'set') throw new Error('set threw');
+      setCalls += 1;
+      if (setCalls >= setFailFrom) return reply(callback, failSet || 'set failed', undefined);
+      if (JSON.stringify(items).length > quotaBytes) return reply(callback, 'QUOTA_BYTES quota exceeded', undefined);
+      Object.assign(data, JSON.parse(JSON.stringify(items)));
+      return reply(callback, '', undefined);
+    },
+    remove(key, callback) {
+      if (throwOn === 'remove') throw new Error('remove threw');
+      if (failRemove) return reply(callback, failRemove, undefined);
+      delete data[key];
+      return reply(callback, '', undefined);
+    }
+  };
+}
+
+// The page path of a run (results.js): the checkpoint takes the state into the record and waits for the store.
+function pageCheckpoint(record, store, steps) {
+  return (state) => {
+    Record.setArtifacts(record, state.artifacts);
+    Record.setSnapshot(record, { schema: steps, runSettings: {}, state, current: state.current, routes: state.routes, ownerAnswers: state.ownerAnswers, pendingOwner: state.pendingOwner });
+    return store.save(record);
+  };
+}
+
+describe('Custom run record storage: the chrome.storage adapter rejects every failure (R03)', () => {
+  const steps = [{ ref: 'S1', kind: 'round', input: 'none', models: ['A'] }, { ref: 'S2', kind: 'round', input: 'previous', models: ['B'] }];
+  const oneRun = (runId, answer = 'a1') => recordedRun({ runId, steps: [{ task: 'x', input: 'none', models: ['A'] }], answers: { A: [answer] } });
+
+  test('a successful write and read go through the adapter', async () => {
+    const store = Record.createStore({ storage: Record.chromeStorage(chromeArea()) });
+    const { record } = await oneRun('run-ok');
+    await store.save(record);
+    const back = await store.load('run-ok');
+    expect(Record.textOf(back, back.attempts[0].answerRef)).toBe('a1');
+  });
+
+  test('a read the area refuses rejects; it is not an empty record', async () => {
+    const store = Record.createStore({ storage: Record.chromeStorage(chromeArea({ failGet: 'get failed' })) });
+    await expect(store.load('run-x')).rejects.toThrow('get failed');
+    await expect(store.list()).rejects.toThrow('get failed');
+  });
+
+  test('a quota error on write rejects the save', async () => {
+    const store = Record.createStore({ storage: Record.chromeStorage(chromeArea({ quotaBytes: 50 })) });
+    const { record } = await oneRun('run-q');
+    await expect(store.save(record)).rejects.toThrow('QUOTA_BYTES');
+  });
+
+  test('a refused remove rejects the save that removes an old run', async () => {
+    const store = Record.createStore({ storage: Record.chromeStorage(chromeArea({ failRemove: 'remove failed' })), maxBytes: 6000 });
+    const first = await recordedRun({ runId: 'run-1', steps: [{ task: 'x', input: 'none', models: ['A'] }], answers: { A: ['1'.repeat(2000)] } });
+    await store.save(first.record);
+    const big = await recordedRun({ runId: 'run-2', steps: [{ task: 'x', input: 'none', models: ['A'] }], answers: { A: ['2'.repeat(9000)] } });
+    await expect(store.save(big.record)).rejects.toThrow('remove failed');
+  });
+
+  test('a synchronous throw of the area rejects the promise too', async () => {
+    const { record } = await oneRun('run-t');
+    await expect(Record.createStore({ storage: Record.chromeStorage(chromeArea({ throwOn: 'get' })) }).list()).rejects.toThrow('get threw');
+    await expect(Record.createStore({ storage: Record.chromeStorage(chromeArea({ throwOn: 'set' })) }).save(record)).rejects.toThrow('set threw');
+  });
+
+  test('engine → page → adapter: a failed checkpoint before the first send sends nothing', async () => {
+    const store = Record.createStore({ storage: Record.chromeStorage(chromeArea({ setFailFrom: 1 })) });
+    const record = Record.createRun({ runId: 'run-cp', pipelineName: 'Mine', task: 'T', steps });
+    const sent = [];
+    const send = async (models) => { sent.push(models.slice()); return { byModel: Object.fromEntries(models.map((model) => [model, { text: 'a', status: 'SUCCESS' }])) }; };
+    await expect(Engine.run({ task: 'T', steps, send, checkpoint: pageCheckpoint(record, store, steps) })).rejects.toThrow('checkpoint_failed');
+    expect(sent).toEqual([]);
+  });
+
+  test('engine → page → adapter: a refused save of an answer already received sends no next request and makes no transition', async () => {
+    // The checkpoint before the send of A writes two sets (the run, the index); the one after the answer of A is the third.
+    const store = Record.createStore({ storage: Record.chromeStorage(chromeArea({ setFailFrom: 3 })) });
+    const record = Record.createRun({ runId: 'run-ans', pipelineName: 'Mine', task: 'T', steps });
+    const sent = [];
+    const send = async (models) => { sent.push(models.slice()); return { byModel: Object.fromEntries(models.map((model) => [model, { text: 'a1', status: 'SUCCESS' }])) }; };
+    await expect(Engine.run({ task: 'T', steps, send, checkpoint: pageCheckpoint(record, store, steps) })).rejects.toThrow('checkpoint_failed');
+    expect(sent).toEqual([['A']]);
+  });
+
+  test('a refused save of the final checkpoint is not a success: the run rejects with checkpoint_failed', async () => {
+    const counting = chromeArea();
+    const store = Record.createStore({ storage: Record.chromeStorage(counting) });
+    const probe = Record.createRun({ runId: 'run-probe', pipelineName: 'Mine', task: 'T', steps });
+    const ok = async (models) => ({ byModel: Object.fromEntries(models.map((model) => [model, { text: 'a', status: 'SUCCESS' }])) });
+    await Engine.run({ task: 'T', steps, send: ok, checkpoint: pageCheckpoint(probe, store, steps) });
+    const total = counting.setCalls();
+    // The last checkpoint writes the run and then the index: the failure starts with its run write.
+    const failing = chromeArea({ setFailFrom: total - 1 });
+    const failStore = Record.createStore({ storage: Record.chromeStorage(failing) });
+    const record = Record.createRun({ runId: 'run-done', pipelineName: 'Mine', task: 'T', steps });
+    await expect(Engine.run({ task: 'T', steps, send: ok, checkpoint: pageCheckpoint(record, failStore, steps) })).rejects.toThrow('checkpoint_failed');
+  });
+});

@@ -231,12 +231,21 @@
     return { save, load, latest, list: readIndex };
   }
 
-  // chrome.storage.local as the storage interface of createStore.
+  // chrome.storage.local as the storage interface of createStore. A callback reports a failure through
+  // chrome.runtime.lastError: the promise is rejected with it (a synchronous throw of the area rejects too), so a failed
+  // write never looks saved.
   function chromeStorage(area) {
+    const call = (method, args) => new Promise((resolve, reject) => {
+      area[method](...args, (result) => {
+        const error = root.chrome?.runtime?.lastError;
+        if (error) reject(new Error(error.message || String(error)));
+        else resolve(result);
+      });
+    });
     return {
-      get: (key) => new Promise((resolve) => area.get(key, (result) => resolve(result?.[key]))),
-      set: (key, value) => new Promise((resolve) => area.set({ [key]: value }, () => resolve())),
-      remove: (key) => new Promise((resolve) => area.remove(key, () => resolve()))
+      get: (key) => call('get', [key]).then((result) => result?.[key]),
+      set: (key, value) => call('set', [{ [key]: value }]).then(() => undefined),
+      remove: (key) => call('remove', [key]).then(() => undefined)
     };
   }
 
