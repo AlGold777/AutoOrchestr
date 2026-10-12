@@ -1099,3 +1099,25 @@ describe('Basic schema: the participant of an owner step is owner (3.3, R08)', (
     expect(Schema.assemble(valid)[1]).toMatchObject({ kind: 'owner', input: [mapRef('A'), 'r1'], models: [] });
   });
 });
+
+describe('Basic schema: the input of an owner step (N07)', () => {
+  const ownerStep = (ref, extra = {}) => ({ ref, kind: 'owner', task: 'Ответьте', models: [], ...extra });
+  const source = { step: 'r1', participant: 'A', required: true };
+
+  test('an owner step without input keeps the empty input of before: no input field is assembled', () => {
+    const steps = Schema.assemble(base([round('r1', ['A']), ownerStep('owner:o'), synthesis('final', ['B'])]));
+    expect(steps[1]).not.toHaveProperty('input');
+  });
+
+  test('the owner input is kept by assemble and by the settings; the same sources as a model step', () => {
+    const schema = base([round('r1', ['A']), ownerStep('owner:o', { input: [source, 'r1'] }), synthesis('final', ['B'])]);
+    expect(Schema.validate(schema)).toEqual([]);
+    expect(Schema.assemble(schema)[1].input).toEqual([source, 'r1']);
+    expect(Schema.toSettings(schema).customStepSettings['owner:o']).toMatchObject({ input: [source, 'r1'] });
+  });
+
+  test('a wrong owner input is named with its exact path, as for a model step', () => {
+    const schema = base([round('r1', ['A']), ownerStep('owner:o', { input: [{ step: 'r1', participant: 'Z' }, 'owner:o'] }), synthesis('final', ['B'])]);
+    expect(errorPaths(schema)).toEqual(['steps[1].input[0].participant', 'steps[1].input[1]']);
+  });
+});
