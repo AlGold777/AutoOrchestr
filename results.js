@@ -1542,11 +1542,11 @@ document.addEventListener('click', (event) => {
     const setMainRunActive = (active) => {
         mainRunActive = Boolean(active);
         if (!startButton) return;
-        startButton.title = mainRunActive ? 'Пауза: остановить запрос' : 'Send prompt';
-        startButton.setAttribute('aria-label', mainRunActive ? 'Пауза' : 'Пуск');
+        startButton.title = mainRunActive ? 'Стоп: остановить запрос' : 'Send prompt';
+        startButton.setAttribute('aria-label', mainRunActive ? 'Стоп' : 'Пуск');
         startButton.setAttribute('aria-busy', String(mainRunActive));
         const icon = startButton.querySelector('i');
-        if (icon) icon.className = mainRunActive ? 'ti ti-player-pause' : 'ti ti-send';
+        if (icon) icon.className = mainRunActive ? 'ti ti-player-stop' : 'ti ti-send';
     };
     const promptInput = document.getElementById('modTa') || document.getElementById('prompt-input');
     const promptNoteView = document.getElementById('prompt-note-view');
@@ -18426,8 +18426,17 @@ document.addEventListener('click', (event) => {
 
     function updateModelStatusUI(llmName, status, data = {}) {
         const normalizedName = (llmName || '').trim();
+        // A card's end marker settles this request even if later diagnostics
+        // report receiving/errors or force a status reset. A new job clears it.
+        if (statusStateByModel[normalizedName]?.cardAnswerComplete) return;
+        if (data.cardAnswerComplete === true) {
+            status = 'SUCCESS';
+            data = { ...data, force: true, modelRunState: null, finalStatus: 'SUCCESS',
+                finalStatusRecorded: true, verificationState: 'verified', answerState: 'complete' };
+        }
         const requestedStatus = normalizeStatusValue(status);
         const successMustWaitForAnswer = ['SUCCESS', 'COPY_SUCCESS', 'DONE', 'COMPLETE'].includes(requestedStatus)
+            && data.cardAnswerComplete !== true
             && !livePanelHasAnswer(normalizedName);
         if (successMustWaitForAnswer) {
             deferredSuccessStatusByModel[normalizedName] = {
@@ -18454,6 +18463,7 @@ document.addEventListener('click', (event) => {
         }
         statusStateByModel[normalizedName] = {
             status: normalizedStatus,
+            cardAnswerComplete: data.cardAnswerComplete === true,
             rank: incomingRank,
             modelRunState: data?.modelRunState || null,
             resultMeta: window.LLMStatusContract?.deriveResultMeta
@@ -18746,6 +18756,7 @@ document.addEventListener('click', (event) => {
             const status = successWithoutAnswer ? 'UNCERTAIN' : rawStatus;
             updateModelStatusUI(llmName, status, {
                 ...(entry?.statusData || {}),
+                cardAnswerComplete: entry?.cardAnswerComplete === true,
                 modelRunState,
                 finalStatus: entry?.finalStatus || null,
                 finalStatusRecorded: !!entry?.finalStatusRecorded,
@@ -19463,6 +19474,9 @@ document.addEventListener('click', (event) => {
             : (!outputElement || !renderedText
                 ? 'empty'
                 : comparison.status);
+        const cardAnswerComplete = meta.answerEndMarkerSeen === true && Boolean(renderedText)
+            && !isErrorOutput(renderedText);
+        if (cardAnswerComplete) updateModelStatusUI(llmName, 'SUCCESS', { cardAnswerComplete: true });
         const terminalStatus = /^(?:SUCCESS|PARTIAL|ERROR|NO_SEND|EXTRACT_FAILED|STREAM_TIMEOUT|UNCERTAIN)$/.test(String(meta.status || '').toUpperCase());
         const evaluationBoundaryType = meta.evaluationBoundaryType
             || (terminalStatus ? 'automatic_terminal' : 'delivery_deadline');
@@ -19486,7 +19500,7 @@ document.addEventListener('click', (event) => {
                 type: 'ANSWER_CARD_RENDER_EVALUATED',
                 llmName,
                 meta: {
-                    answerEndMarkerSeen: meta.answerEndMarkerSeen === true && Boolean(renderedText) && !isErrorOutput(renderedText),
+                    answerEndMarkerSeen: cardAnswerComplete,
                     dispatchId: meta.dispatchId || null,
                     attemptId: meta.attemptId || null,
                     payloadEvidenceId: meta.payloadEvidenceId || null,

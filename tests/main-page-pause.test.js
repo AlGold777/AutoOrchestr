@@ -33,7 +33,7 @@ function createPage(sendToBackground) {
 
 const flush = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(); };
 
-test('Pause stops an unfinished start, restores Start, and a late old reply cannot disturb the next request', async () => {
+test('Stop cancels an unfinished start, restores Start, and a late old reply cannot disturb the next request', async () => {
   const releases = [];
   const send = jest.fn(message => message.type === 'STOP_ALL'
     ? Promise.resolve({ success: true })
@@ -41,7 +41,8 @@ test('Pause stops an unfinished start, restores Start, and a late old reply cann
   const { button, context, click } = createPage(send);
   const first = click();
   await flush();
-  expect(button.getAttribute('aria-label')).toBe('Пауза');
+  expect(button.getAttribute('aria-label')).toBe('Стоп');
+  expect(button.querySelector('i').className).toBe('ti ti-player-stop');
   context.pastedTextComposer.getText = () => '';
   await click();
   expect(send).toHaveBeenCalledWith({ type: 'STOP_ALL' });
@@ -53,7 +54,8 @@ test('Pause stops an unfinished start, restores Start, and a late old reply cann
   expect(releases).toHaveLength(2);
   releases[0]({ status: 'process_started' });
   await first;
-  expect(button.getAttribute('aria-label')).toBe('Пауза');
+  expect(button.getAttribute('aria-label')).toBe('Стоп');
+  expect(button.querySelector('i').className).toBe('ti ti-player-stop');
   expect(context.clearPromptAttachments).not.toHaveBeenCalled();
   releases[1]({ status: 'process_started' });
   await second;
@@ -66,6 +68,7 @@ test('a failed stop stays available for retry', async () => {
   await click();
   await click();
   expect(button.disabled).toBe(false);
-  expect(button.getAttribute('aria-label')).toBe('Пауза');
+  expect(button.getAttribute('aria-label')).toBe('Стоп');
+  expect(button.querySelector('i').className).toBe('ti ti-player-stop');
   expect(context.showNotification).toHaveBeenCalledWith('Не удалось остановить запрос', 'error');
 });

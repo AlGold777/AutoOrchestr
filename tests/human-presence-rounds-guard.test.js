@@ -121,13 +121,17 @@ describe('human presence yields to the dispatch rounds', () => {
     vm.runInContext(HUMAN_PRESENCE_SOURCE.slice(start, end), context);
     const activity = context.simulateHumanActivityInPage({ llmName: 'Claude', scrollDuration: 1000 });
     expect(page.scrollTo).toHaveBeenCalledTimes(1);
+    jest.advanceTimersByTime(700);
+    for (let i = 0; i < 4; i++) await Promise.resolve();
+    // While the answer is pending, activity continues between waits.
+    expect(page.scrollTo).toHaveBeenCalledTimes(2);
     page.__LLMScrollHardStop = true;
     page.__LLMScrollStopEpoch += 1;
     // A new request can resume scrolling, but the old script remains cancelled.
     page.__LLMScrollHardStop = false;
     jest.advanceTimersByTime(1000);
     await activity;
-    expect(page.scrollTo).toHaveBeenCalledTimes(1);
+    expect(page.scrollTo).toHaveBeenCalledTimes(2);
   });
 
   test('a missing entry cannot keep the visit loop alive', () => {
