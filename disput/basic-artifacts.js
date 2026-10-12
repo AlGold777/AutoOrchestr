@@ -24,12 +24,17 @@
     return { entry, created: true };
   }
 
-  // The latest current version of a line: by the order of registration, not by visit. Null when there is none.
-  function latest(registry, lineage) {
+  // The latest current version of a line: its last registered version (by the order of registration, not by visit), when that
+  // one is valid. A line whose last version is stale waits for a new version (ТЗ 3.4): null, and an older valid version is
+  // never put in its place. `base` gives the author of a revision its declared input: the last valid version of the line.
+  function latest(registry, lineage, { base = false } = {}) {
     const key = lineKey(lineage);
-    let found = null;
-    registry.entries.forEach((entry) => { if (entry.valid && lineKey(entry.lineage) === key) found = entry; });
-    return found;
+    const versions = registry.entries.filter((entry) => lineKey(entry.lineage) === key);
+    const head = versions[versions.length - 1];
+    if (!head) return null;
+    if (head.valid) return head;
+    if (!base) return null;
+    return versions.slice().reverse().find((entry) => entry.valid) || null;
   }
 
   // The version a source names: the line, then the creator step, participant and visit. Null when there is none.

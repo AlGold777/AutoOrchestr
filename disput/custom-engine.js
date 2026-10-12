@@ -197,6 +197,9 @@
   }
 
   const isPlain = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+  // Whether the output of a participant declares a revision of the line (the key of its lineage): it is the author of that line's next version.
+  const revisesLine = (step, model, key) => (Array.isArray(outputOf(step, model)?.artifacts) ? outputOf(step, model).artifacts : [])
+    .some((item) => isPlain(item) && isPlain(item.revisionOf) && isPlain(item.revisionOf.artifact) && Artifacts.lineKey(item.revisionOf.artifact) === key);
 
   // The content of an artifact: the whole answer for an empty pointer, else the value at the pointer (a text as it is,
   // an object or a list as JSON). A pointer that the stored answer does not give is missing_content.
@@ -711,11 +714,13 @@
       return [...last.values()].filter((entry) => entry.step.index < before).sort((a, b) => a.step.index - b.step.index);
     }
     // The content of an artifact version: the line, then its current version (latest) or the named one. Only that content.
-    function artifactItems(source, step) {
+    function artifactItems(source, step, model = null) {
       const required = Boolean(source.required);
       const address = source.artifact;
       const lineage = { step: address.step, participant: address.participant, id: address.id };
-      const found = source.version === 'latest' ? Artifacts.latest(registry, lineage) : Artifacts.version(registry, lineage, source.version);
+      // An author that revises this line starts from the last valid version of it (its declared input, 3.4).
+      const base = Boolean(model) && revisesLine(step, model, Artifacts.lineKey(lineage));
+      const found = source.version === 'latest' ? Artifacts.latest(registry, lineage, { base }) : Artifacts.version(registry, lineage, source.version);
       if (!found || !found.valid) {
         if (!required) return [];
         throw new StopRun('missing_input', `артефакт «${address.id}» шага «${address.step}», участник «${address.participant}»: нет актуальной версии; шаг «${step.ref}» не отправлен`);
@@ -737,9 +742,9 @@
     // A binary file of an owner step (8.1) is an item without text: it is passed on only as an attachment, never as text.
     const binaryOf = (item) => (item.binary ? { binary: true, file: item.file } : {});
     // The items of one source list, in the order of the list. Each item names its step, participant and visit.
-    function sourceItems(spec, step) {
+    function sourceItems(spec, step, model = null) {
       return spec.flatMap((source) => {
-        if (source && typeof source === 'object' && 'artifact' in source) return artifactItems(source, step);
+        if (source && typeof source === 'object' && 'artifact' in source) return artifactItems(source, step, model);
         const required = Boolean(source?.required);
         const ref = typeof source === 'string' ? source : source.step;
         const entry = currentOf(ref);
@@ -762,17 +767,17 @@
       });
     }
     // The input of a step (strict): a binary file in it stops the run before the request (unsupported_input). Not strict: the text only.
-    function inputFor(step, spec = step.input, { strict = true } = {}) {
-      const items = answersFor(step, spec);
+    function inputFor(step, spec = step.input, { strict = true, model = null } = {}) {
+      const items = answersFor(step, spec, model);
       if (!strict) return items.filter((item) => !item.binary);
       const binary = items.find((item) => item.binary);
       if (binary) throw new StopRun('unsupported_input', `файл «${binary.file.name}» (${binary.file.mime}) — двоичный, текстом моделям не передаётся; шаг «${step?.ref}» не отправлен`);
       return items;
     }
     // The current answers of a spec: 'all' and 'previous' take the entries before the step, the last visit of each.
-    function answersFor(step, spec = step.input) {
+    function answersFor(step, spec = step.input, model = null) {
       if (spec === 'none') return [];
-      if (Array.isArray(spec)) return sourceItems(spec, step);
+      if (Array.isArray(spec)) return sourceItems(spec, step, model);
       const entries = currentEntries(Number.isSafeInteger(step?.index) ? step.index : Infinity);
       if (spec === 'all') {
         return entries.flatMap((entry) => acceptedOf(entry).map((item, index) => ({
@@ -817,7 +822,7 @@
 
     function promptFor(step, model, earlier) {
       const spec = specOf(step, model);
-      const input = inputFor(step, spec);
+      const input = inputFor(step, spec, { model });
       const prompt = buildPrompt({ task, step, model, input, inputMode: modeOf(spec), earlier, feedback: activeFeedback,
         ownerAnswers, askInstruction: semiAuto ? askInstruction : '', output: outputOf(step, model) });
       if (prompt.length > maxPromptChars) throw new StopRun('context_full');
@@ -1223,7 +1228,7 @@
           // Every input of the step is resolved before its first request: a missing required one sends nothing, and
           // a revision whose source an author did not get stops the step (its line would be unknown).
           step.models.forEach((model) => {
-            const items = inputFor(step, specOf(step, model));
+            const items = inputFor(step, specOf(step, model), { model });
             (outputOf(step, model)?.artifacts || []).forEach((declaration) => {
               if (declaration.revisionOf && !revisionItem(declaration, items)) {
                 throw new StopRun('missing_input', `ревизия «${declaration.id}»: участник «${model.id}» не получил версию, которую она дорабатывает; шаг «${step.ref}» не отправлен`);
@@ -1237,7 +1242,7 @@
           // What this visit uses (the results and artifacts it took) is recorded: a later stale key makes the visit stale (6.3).
           // The owner's answer is built on its input too: a change of that input makes the answer stale (N07, 6.3).
           state.dependencies[`${step.index}@${activeVisit}`] = usedKeysOf(step.kind === 'owner' ? answersFor(step, step.input ?? 'none')
-            : (step.models.length ? step.models.flatMap((model) => inputFor(step, specOf(step, model))) : inputFor(step, step.input ?? 'none')));
+            : (step.models.length ? step.models.flatMap((model) => inputFor(step, specOf(step, model), { model })) : inputFor(step, step.input ?? 'none')));
         }
         const decidedKey = `${key}@${activeVisit}`;
         const outcome = resumed ? resumed.outcome : {};
