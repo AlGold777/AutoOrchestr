@@ -62,8 +62,7 @@ function createRuntimePage() {
     decorateLinksForNewTab: jest.fn(), revealPanelForLargeContent: jest.fn(),
     ingestLogs: jest.fn(), makeLocalDiagEntry: () => ({}), autoCollapseDiagnostics: jest.fn(),
     checkCompareButtonState: jest.fn(), convertMarkdownToHTML: text => text,
-    pipelineWaiter: { waiting: false, handleFinal: jest.fn(), handlePartial: jest.fn(), missReason: () => 'rejected' },
-    RESULTS_RUNTIME_MESSAGE_TYPES: new Set(['UPDATE_LLM_PANEL_OUTPUT', 'LLM_JOB_CREATED', 'STATUS_UPDATE'])
+    pipelineWaiter: { waiting: false, handleFinal: jest.fn(), handlePartial: jest.fn(), missReason: () => 'rejected' }
   };
   vm.createContext(context);
 
@@ -81,7 +80,8 @@ function createRuntimePage() {
   vm.runInContext(source.slice(renderStart, renderEnd), context);
   const listenerStart = source.indexOf('chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {');
   const listenerEnd = source.indexOf('\n    });\n        \n    function emitAnswerCardRenderEvidence(', listenerStart) + '\n    });'.length;
-  vm.runInContext(source.slice(listenerStart, listenerEnd), context);
+  const runtimeTypesStart = source.indexOf('const RESULTS_RUNTIME_MESSAGE_TYPES = new Set([');
+  vm.runInContext(source.slice(runtimeTypesStart, listenerEnd), context);
 
   const panel = document.getElementById('panel-gpt');
   return { context, panel, indicator: panel.querySelector('.status-indicator'), output: panel.querySelector('.output'), runtimeListener };
@@ -141,6 +141,32 @@ test('the runtime UPDATE path cleans and proves a real delivery marker, then dup
   expect(indicator.dataset.currentStatus).toBe('SUCCESS');
   expect(context.statusStateByModel.GPT.cardAnswerComplete).toBe(true);
   MessageDelivery.reset();
+});
+
+test.each(['STOP_ALL', 'START_FULLPAGE_PROCESS', 'ANSWER_CARD_RENDER_EVALUATED'])(
+  'the results runtime listener does not claim the %s response for the background',
+  (type) => {
+    const { runtimeListener } = createRuntimePage();
+    const sendResponse = jest.fn();
+    expect(runtimeListener({ type }, {}, sendResponse)).toBe(false);
+    expect(sendResponse).not.toHaveBeenCalled();
+  }
+);
+
+test('the background STOP acknowledgement wins when listeners receive the same message', () => {
+  const { runtimeListener } = createRuntimePage();
+  const listeners = [
+    runtimeListener,
+    (message, _sender, sendResponse) => {
+      if (message.type === 'STOP_ALL') sendResponse({ success: true });
+      return false;
+    }
+  ];
+  let firstResponse;
+  listeners.forEach((listener) => listener({ type: 'STOP_ALL' }, {}, (response) => {
+    if (firstResponse === undefined) firstResponse = response;
+  }));
+  expect(firstResponse).toEqual({ success: true });
 });
 
 test('a late old completion cannot repaint the main card after a new job is created', () => {

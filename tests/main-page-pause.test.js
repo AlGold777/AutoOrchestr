@@ -68,14 +68,14 @@ test('Stop cancels an unfinished start, restores Start, and a late old reply can
   expect(context.clearPromptAttachments).toHaveBeenCalledTimes(1);
 });
 
-test('a failed stop stays available for retry', async () => {
+test('a failed stop reports the background error and stays available for retry', async () => {
   const { button, context, click } = createPage(async message => message.type === 'STOP_ALL'
-    ? { success: false } : { status: 'process_started' });
+    ? { success: false, error: 'Stop cleanup failed' } : { status: 'process_started' });
   await click();
   await click();
   expect(button.disabled).toBe(false);
   expect(button.getAttribute('aria-label')).toBe('Стоп');
   expect(button.querySelector('i').className).toBe('ti ti-player-stop');
-  expect(context.showNotification).toHaveBeenCalledWith('Не удалось остановить запрос', 'error');
+  expect(context.showNotification).toHaveBeenCalledWith('Stop cleanup failed', 'error');
   expect(context.markCurrentMainRequestsCancelled).not.toHaveBeenCalled();
 });

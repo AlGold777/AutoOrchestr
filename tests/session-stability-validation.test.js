@@ -217,7 +217,6 @@ function createOrchestratorSandbox({ exposeTriggerResponseCollectionPing = false
     postSuccessScrollTimers: new Map(),
     deferredAnswerTimers: {},
     rateLimitState: new Map(),
-    rateLimitTimers: new Map(),
     stopHumanPresenceLoop: jest.fn(),
     stopHeartbeatMonitor: jest.fn(),
     clearActiveListeners: jest.fn(),

@@ -40,4 +40,25 @@ describe('rate-limit alarms', () => {
     handler({ name: 'rate_limit_retry::GPT' });
     expect(self.isRateLimited('GPT')).toBe(false);
   });
+
+  test('clearAllRateLimits cancels retry callbacks and alarms, then persists empty state', async () => {
+    require('../background/rate-limit');
+    self.setRateLimit('GPT', 60000);
+    const retry = jest.fn();
+    self.scheduleRateLimitRetry('GPT', retry);
+    const alarmHandler = chrome.alarms.onAlarm.addListener.mock.calls[0][0];
+    const modelStateCalls = updateModelState.mock.calls.length;
+    const broadcastCalls = broadcastGlobalState.mock.calls.length;
+
+    await self.clearAllRateLimits();
+
+    expect(chrome.alarms.clear).toHaveBeenCalledWith('rate_limit_retry::GPT');
+    expect(self.isRateLimited('GPT')).toBe(false);
+    expect(chrome.storage.session.set).toHaveBeenLastCalledWith({ 'rateLimitUntilByModel.v1': {} });
+
+    alarmHandler({ name: 'rate_limit_retry::GPT' });
+    expect(retry).not.toHaveBeenCalled();
+    expect(updateModelState).toHaveBeenCalledTimes(modelStateCalls);
+    expect(broadcastGlobalState).toHaveBeenCalledTimes(broadcastCalls);
+  });
 });

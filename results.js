@@ -24852,7 +24852,9 @@ function checkCompareButtonState() {
             startButton.disabled = true;
             try {
                 const stopped = await sendToBackground({ type: 'STOP_ALL' });
-                if (!stopped?.success) throw new Error('Не удалось остановить запрос');
+                if (!stopped?.success) {
+                    throw new Error(stopped?.error?.message || stopped?.error || 'Не удалось остановить запрос');
+                }
                 markCurrentMainRequestsCancelled();
                 setMainRunActive(false);
             } catch (err) {

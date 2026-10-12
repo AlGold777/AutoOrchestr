@@ -5185,9 +5185,13 @@ function stopAllProcesses(reason = 'unspecified', { closeTabs = false, preserveR
     Object.keys(jobState.llms).forEach((name) => clearBudgetPhases(name));
   }
 
-  rateLimitState.clear();
-  rateLimitTimers.forEach((id) => clearTimeout(id));
-  rateLimitTimers.clear();
+  if (typeof self.clearAllRateLimits === 'function') {
+    void Promise.resolve(self.clearAllRateLimits()).catch((err) => {
+      console.warn('[BACKGROUND] Failed to clear rate-limit retries on stop:', err?.message || err);
+    });
+  } else if (typeof rateLimitState !== 'undefined') {
+    rateLimitState.clear();
+  }
 
   if (jobState && Object.keys(jobState).length) {
     try {

@@ -149,7 +149,6 @@ function createRouterSandbox({ realStop = false } = {}) {
       postSuccessScrollTimers: new Map(),
       deferredAnswerTimers: {},
       rateLimitState: new Map(),
-      rateLimitTimers: new Map(),
       stopHumanPresenceLoop: jest.fn(),
       stopHeartbeatMonitor: jest.fn(),
       clearPingState: jest.fn(),
