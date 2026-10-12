@@ -279,6 +279,17 @@
     return addressOf(source);
   }
 
+  // The one check of executability (R09) for validate and toCanvas: a control step (gate, route, owner) runs by itself
+  // (a gate's checkers are checked by their own rule); a round runs with an enabled model. A synthesis only works on
+  // the answers of an earlier step, so it alone is not runnable. A pipeline without a round is valid; an empty one or
+  // one with no runnable step is named at `steps`.
+  function executabilityErrors(steps) {
+    const runnable = steps.some((step) => isObject(step) && (CONTROL_KINDS.includes(step.kind)
+      || (step.kind === 'round' && Array.isArray(step.models) && step.models.some((model) => isObject(model) && model.enabled !== false))));
+    if (runnable) return [];
+    return [{ path: 'steps', message: 'нет исполнимого шага: нужен раунд с включённой моделью или шаг проверки, маршрута или владельца' }];
+  }
+
   // Errors before the first request: [{ path, message }]. A schema is never corrected silently.
   function validate(schema) {
     const errors = [];
@@ -605,6 +616,7 @@
     // The cycle comes from an unlimited transition, which is already named at its path: no second error there.
     const { cycle } = graph(schema.steps);
     if (cycle && !errors.some((error) => error.path === cycle)) fail(cycle, 'цикл без ограниченного перехода: укажите maxLoops');
+    errors.push(...executabilityErrors(schema.steps));
     return errors;
   }
 
@@ -680,7 +692,7 @@
       if (enabled.length) inserts.push({ afterRound: rounds.length, plannedStageId: id, participantIds: enabled.map(idOf) });
     });
     if (Array.isArray(runWords) && schema.run && 'maxWords' in schema.run && !runWords.includes(schema.run.maxWords)) fail('run.maxWords', `предел длины pipeline: допустимо ${runWords.join(', ')}`);
-    if (!rounds.length) fail('steps', 'нужен хотя бы один раунд');
+    executabilityErrors(steps).forEach((error) => fail(error.path, error.message));
     if (rounds.length > 50) fail('steps', 'раундов не больше 50');
     if (errors.length) return { errors };
     const selectedModels = models.filter((name) => rounds.some((step) => enabledOf(step).some((model) => model.name === name)));

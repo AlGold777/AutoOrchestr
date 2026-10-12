@@ -196,14 +196,14 @@ describe('Basic schema: values are kept as given until the end', () => {
   });
 
   test('the run policy and the shared limit are part of the schema', () => {
-    expect(Schema.resolveRun(base([]))).toEqual({ policy: 'manual', maxWords: 300 });
-    expect(Schema.resolveRun(base([], { run: { policy: 'auto' } }))).toEqual({ policy: 'auto', maxWords: 300 });
-    expect(Schema.resolveRun(base([], { run: { policy: 'manual', maxWords: 700 } }))).toEqual({ policy: 'manual', maxWords: 700 });
-    expect(Schema.validate(base([], { run: { policy: 'auto', maxWords: 700 } }))).toEqual([]);
-    expect(errorPaths(base([], { run: { policy: 'sometimes' } }))).toEqual(['run.policy']);
-    expect(errorPaths(base([], { run: { maxWords: 0 } }))).toEqual(['run.maxWords']);
-    expect(errorPaths(base([], { run: { speed: 1 } }))).toEqual(['run.speed']);
-    expect(errorPaths(base([], { run: 5 }))).toEqual(['run']);
+    expect(Schema.resolveRun(base([round('r1', ['A'])]))).toEqual({ policy: 'manual', maxWords: 300 });
+    expect(Schema.resolveRun(base([round('r1', ['A'])], { run: { policy: 'auto' } }))).toEqual({ policy: 'auto', maxWords: 300 });
+    expect(Schema.resolveRun(base([round('r1', ['A'])], { run: { policy: 'manual', maxWords: 700 } }))).toEqual({ policy: 'manual', maxWords: 700 });
+    expect(Schema.validate(base([round('r1', ['A'])], { run: { policy: 'auto', maxWords: 700 } }))).toEqual([]);
+    expect(errorPaths(base([round('r1', ['A'])], { run: { policy: 'sometimes' } }))).toEqual(['run.policy']);
+    expect(errorPaths(base([round('r1', ['A'])], { run: { maxWords: 0 } }))).toEqual(['run.maxWords']);
+    expect(errorPaths(base([round('r1', ['A'])], { run: { speed: 1 } }))).toEqual(['run.speed']);
+    expect(errorPaths(base([round('r1', ['A'])], { run: 5 }))).toEqual(['run']);
   });
 });
 
@@ -258,12 +258,12 @@ describe('Basic schema: check before the first request', () => {
 
   test('every wrong place is named, nothing is corrected silently', () => {
     expect(errorPaths(null)).toEqual(['']);
-    expect(errorPaths({ steps: [] })).toEqual(['schemaVersion', 'origin']);
-    expect(errorPaths(base([{ ref: 'r1', kind: 'loop', models: [] }]))).toEqual(['steps[0].kind']);
+    expect(errorPaths({ steps: [] })).toEqual(['schemaVersion', 'origin', 'steps']);
+    expect(errorPaths(base([{ ref: 'r1', kind: 'loop', models: [] }]))).toEqual(['steps[0].kind', 'steps']);
     expect(errorPaths(base([round('r1', ['A'], { order: 'random' })]))).toEqual(['steps[0].order']);
     expect(errorPaths(base([round('r1', ['A'], { input: 'everything' })]))).toEqual(['steps[0].input']);
-    expect(errorPaths(base([synthesis('final', ['A'], { order: 'sequential' })]))).toEqual(['steps[0].order']);
-    expect(errorPaths(base([synthesis('final', ['A'], { input: 'all' })]))).toEqual(['steps[0].input']);
+    expect(errorPaths(base([synthesis('final', ['A'], { order: 'sequential' })]))).toEqual(['steps[0].order', 'steps']);
+    expect(errorPaths(base([synthesis('final', ['A'], { input: 'all' })]))).toEqual(['steps[0].input', 'steps']);
     expect(errorPaths(base([round('r1', ['A']), round('r1', ['B'])]))).toEqual(['steps[1].ref']);
     expect(errorPaths(base([round('r1', ['A', 'A'])]))).toEqual(['steps[0].models[1].name']);
     expect(errorPaths(base([round('r1', [{ name: 'A', maxWords: 0 }])]))).toEqual(['steps[0].models[0].maxWords']);
@@ -623,7 +623,7 @@ describe('Basic schema: how many answers a step needs, owner approval and chat (
   });
 
   test('a switched-off step keeps its number of answers, and the number is checked again when the step is switched on', () => {
-    expect(Schema.validate(base([round('r1', [{ name: 'A', enabled: false }], { require: 2 }), synthesis('final', ['B'])]))).toEqual([]);
+    expect(Schema.validate(base([round('r1', [{ name: 'A', enabled: false }], { require: 2 }), round('r2', ['B']), synthesis('final', ['B'])]))).toEqual([]);
     expect(errorPaths(base([round('r1', ['A'], { require: 2 }), synthesis('final', ['B'])]))).toEqual(['steps[0].require']);
   });
 
@@ -1119,5 +1119,41 @@ describe('Basic schema: the input of an owner step (N07)', () => {
   test('a wrong owner input is named with its exact path, as for a model step', () => {
     const schema = base([round('r1', ['A']), ownerStep('owner:o', { input: [{ step: 'r1', participant: 'Z' }, 'owner:o'] }), synthesis('final', ['B'])]);
     expect(errorPaths(schema)).toEqual(['steps[1].input[0].participant', 'steps[1].input[1]']);
+  });
+});
+
+describe('Basic schema: a pipeline without a round is checked the same way everywhere (R09)', () => {
+  const owner = (ref) => ({ ref, kind: 'owner', task: 'Предоставьте исследование', models: [] });
+  const gate = (ref, models) => ({ ref, kind: 'gate', criteria: ['Есть источники'], models: models.map((name) => ({ name })) });
+  const route = (ref) => ({ ref, kind: 'route', models: [], select: { by: 'owner', cases: [{ id: 'go', label: 'Дальше', action: { stop: 'Готово' } }] } });
+
+  test('an owner-only pipeline is valid: no round is added, the canvas shows the owner and no round', () => {
+    const schema = base([owner('owner:o')]);
+    expect(Schema.validate(schema)).toEqual([]);
+    expect(Schema.assemble(schema)).toEqual([expect.objectContaining({ kind: 'owner', ref: 'owner:o' })]);
+    const canvas = Schema.toCanvas(schema, { models: [] });
+    expect(canvas.errors).toEqual([]);
+    expect(canvas.rounds).toEqual([]);
+    expect(canvas.controls).toEqual([{ ref: 'owner:o', kind: 'owner', index: 0, afterRound: 0 }]);
+  });
+
+  test('a standalone owner route and a gate with a checker are valid pipelines too', () => {
+    expect(Schema.validate(base([route('route:next')]))).toEqual([]);
+    expect(Schema.validate(base([gate('gate:g1', ['Claude'])]))).toEqual([]);
+    expect(Schema.toCanvas(base([gate('gate:g1', ['Claude'])]), { models: ['Claude'] }).errors).toEqual([]);
+  });
+
+  test('an empty pipeline and a pipeline with no executable step are named at steps, validate and canvas alike', () => {
+    expect(errorPaths(base([]))).toEqual(['steps']);
+    expect(Schema.toCanvas(base([]), { models: [] }).errors.map((error) => error.path)).toEqual(['steps']);
+    const allOff = base([round('r1', [{ name: 'A', enabled: false }]), synthesis('final', [{ name: 'B', enabled: false }])]);
+    expect(errorPaths(allOff)).toEqual(['steps']);
+    expect(Schema.toCanvas(allOff, { models: ['A', 'B'] }).errors.map((error) => error.path)).toEqual(['steps']);
+  });
+
+  test('the limit of 50 counts rounds only: an owner between rounds does not count', () => {
+    const many = Array.from({ length: 50 }, (_, index) => round(`r${index + 1}`, ['A']));
+    expect(Schema.toCanvas(base([...many, owner('owner:o')]), { models: ['A'] }).errors).toEqual([]);
+    expect(Schema.toCanvas(base([...many, round('r51', ['A'])]), { models: ['A'] }).errors.map((error) => error.path)).toEqual(['steps']);
   });
 });
