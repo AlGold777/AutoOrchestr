@@ -54,7 +54,7 @@ describe('Basic page sends participants (ТЗ 7, T07)', () => {
   });
 });
 
-describe('Background keys the tab of a participant by its id (T07)', () => {
+describe('Background keys the chat of a participant by run and participant id (T07, R01)', () => {
   const branchAt = orchestrator.indexOf('async function runModelThroughTabs(');
   const branch = orchestrator.slice(branchAt, orchestrator.indexOf('//-- 3.1. Round 0', branchAt));
   const participantFn = orchestrator.slice(orchestrator.indexOf('async function runParticipantThroughTabs('), branchAt);
@@ -71,20 +71,20 @@ describe('Background keys the tab of a participant by its id (T07)', () => {
     expect(participantAt).toBeLessThan(forceAt);
   });
 
-  test('a new chat of a participant never detaches the tab of the model or of another participant', () => {
+  test('the participant request goes through the tab manager entry point; a refused request ends the model explicitly', () => {
+    expect(participantFn).toContain('openParticipantChat(llmName, {');
+    expect(participantFn).toContain('failParticipantRequest(llmName, result.error)');
+  });
+
+  test('a participant never detaches the tab of the model or of another participant', () => {
     expect(participantFn).not.toContain('detachExistingTab(');
-    expect(participantFn).toContain('if (!participant.newChat) {');
-    expect(participantFn).toContain('await bindParticipantTab(participantId, llmName, TabMapManager.get(llmName));');
+    expect(orchestrator).not.toContain('bindParticipantTab(');
+    expect(orchestrator).not.toContain('participantTabOf(');
   });
 
-  test('a continue attaches only the participant tab, and never another participant of the model', () => {
-    expect(participantFn).toContain('preferTabId: participantTabOf(participantId),');
-    expect(participantFn).toContain('excludeTabIds: tabsOfOtherParticipants(llmName, participantId)');
-    expect(participantFn).toContain("details: 'participant_no_bound_tab'");
-  });
-
-  test('a closed bound tab is reopened as the model path does: a new tab, bound to this participant', () => {
-    expect(participantFn).toContain("const created = await createNewLlmTab(llmName, prompt, attachments, { ...options, forceCreate: true });");
+  test('a lost chat of a participant is not reopened as a new chat in the orchestrator (R01)', () => {
+    expect(participantFn).not.toContain('createNewLlmTab(');
+    expect(participantFn).not.toContain('tabsOfOtherParticipants(');
   });
 });
 

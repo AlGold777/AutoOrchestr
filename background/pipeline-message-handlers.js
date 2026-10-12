@@ -37,6 +37,8 @@
       const nextControl = fsm.cancelRun(control, { pipelineRunId, reason: 'cancel_pipeline_run', stage: 'cancelled' });
       await persistControl({ jobState, nextControl, saveJobState, chromeApi, fsm });
     }
+    // A cancelled run keeps no chat bindings (R01); its chats stay open for the user.
+    await self.clearParticipantRun?.(pipelineRunId);
     stopAllProcesses('cancel_pipeline_run', { closeTabs: false });
     sendResponse({ success: true, pipelineRunId });
   }

@@ -5284,8 +5284,15 @@ async function startProcessReservedRun(prompt, selectedLLMs, resultsTab, options
   // Who drives the run (panel-issued): a moderator-driven run does not get the
   // system's own page visits; the moderator pulls answers with Get it.
   jobState.session.runMode = String(pipelineContext?.runMode || '') || null;
+  // The chats of the participants are bound per run (R01): each request carries its run and visit identity.
+  await self.pruneParticipantRuns?.(pipelineContext?.pipelineRunId || null);
   activeParticipantRequests = pipelineContext?.participants && typeof pipelineContext.participants === 'object'
-    ? { ...pipelineContext.participants }
+    ? Object.fromEntries(Object.entries(pipelineContext.participants).map(([modelName, participant]) => [modelName, {
+      ...participant,
+      runId: String(pipelineContext?.pipelineRunId || '') || null,
+      stageAttemptId: String(pipelineContext?.stageAttemptId || '') || null,
+      requestId: String(pipelineContext?.transportRequestIds?.[modelName] || '') || null
+    }]))
     : {};
   if (self.PipelineFSM?.startRun) {
     jobState.session.pipelineControl = self.PipelineFSM.startRun({
@@ -5641,39 +5648,37 @@ async function reuseMappedDonorProviderTab(llmName, prompt, attachments = [], op
   return false;
 }
 
-// A Basic participant (T07) has its own tab: a new chat opens a new root tab for it, otherwise it goes to its own bound tab.
-// A closed bound tab is reopened the way the model path does it (existing tabs of the provider, then a new tab), but never
-// a tab that belongs to another participant of the same model. The model entry (llmTabMap) follows the active participant.
+// A Basic participant (T07) has its own chat, bound per run and participant (R01); the chat decision is in openParticipantChat.
+// A continue whose bound chat is lost is refused before the send, it never falls back to another chat.
 async function runParticipantThroughTabs(llmName, prompt, attachments = [], options = {}, participant) {
-  const participantId = String(participant.participantId || '');
-  if (!participant.newChat) {
-    const attached = await tryAttachExistingTab(llmName, prompt, attachments, {
-      ...options,
-      allowGlobalReuse: true,
-      mandatoryReuse: true,
-      preferTabId: participantTabOf(participantId),
-      excludeTabIds: tabsOfOtherParticipants(llmName, participantId)
-    }).catch((err) => {
-      console.warn(`[BACKGROUND] Failed to attach tab of participant ${participantId} for ${llmName}:`, err?.message || err);
-      return false;
-    });
-    if (attached) {
-      await bindParticipantTab(participantId, llmName, TabMapManager.get(llmName));
-      return true;
+  const result = await openParticipantChat(llmName, {
+    runId: participant.runId,
+    participantId: String(participant.participantId || ''),
+    newChat: participant.newChat === true,
+    requestId: participant.requestId,
+    stageAttemptId: participant.stageAttemptId
+  }, prompt, attachments, options).catch((err) => ({
+    ok: false,
+    error: {
+      ok: false,
+      type: 'participant_chat_lost',
+      errorCode: 'participant_chat_lost',
+      message: err?.message || 'Чат участника не открыт.',
+      recoverable: false,
+      meta: { participantId: participant.participantId || null, runId: participant.runId || null }
     }
-    await setTabBinding(llmName, null);
-    broadcastGlobalState();
-    emitTelemetry(llmName, 'TAB_ISOLATION_FALLBACK_CREATE', {
-      level: 'warning',
-      details: 'participant_no_bound_tab',
-      meta: { reason: 'participant_no_bound_tab', participantId },
-      force: true
-    });
+  }));
+  if (!result.ok) {
+    if (result.error) failParticipantRequest(llmName, result.error);
+    return false;
   }
-  // No detach: the previous chat of this participant stays open, another participant is not touched.
-  const created = await createNewLlmTab(llmName, prompt, attachments, { ...options, forceCreate: true });
-  await bindParticipantTab(participantId, llmName, TabMapManager.get(llmName));
-  return created;
+  return true;
+}
+
+// A participant request that is refused before the send ends the model with an explicit status (not a deferred retry).
+function failParticipantRequest(llmName, error) {
+  handleLLMResponse(llmName, '', error);
+  updateModelState(llmName, 'USER_ACTION_REQUIRED', { message: error.message, errorCode: error.errorCode });
 }
 
 async function runModelThroughTabs(llmName, prompt, forceNewTabs, attachments = [], options = {}) {
@@ -8199,7 +8204,7 @@ const PRE_INSERTION_DEFERRAL_TIMEOUT_MS = 120000;
 // Blockers a repeat dispatch cannot clear - only a human can. Everything else
 // (attachment upload not confirmed, unclassified adapter error, transport loss)
 // is worth exactly one more attempt before the model is written off.
-const USER_ACTION_BLOCKER_PATTERN = /auth_required|required_login|\blogin\b|captcha|conversation_limit|unsafe_prompt_modal|wrong_page|rate_limit|quota_exceeded/;
+const USER_ACTION_BLOCKER_PATTERN = /auth_required|required_login|\blogin\b|captcha|conversation_limit|unsafe_prompt_modal|wrong_page|rate_limit|quota_exceeded|participant_chat_lost|participant_binding_failed/;
 
 function evaluatePreInsertionFailureDeferral(llmName, entry, context = {}) {
   const decline = (reason) => ({ defer: false, reason });

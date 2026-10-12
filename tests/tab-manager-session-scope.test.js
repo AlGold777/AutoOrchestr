@@ -469,21 +469,24 @@ describe('tab-manager participants of one model (T07, mock transport)', () => {
 
   test('a participant binding is kept apart from the model binding and survives in storage', async () => {
     const { context } = createTabManagerSandbox({ queryTabs: twoTabs() });
-    await context.bindParticipantTab('A', 'GPT', 2002);
-    await context.bindParticipantTab('B', 'GPT', 2003);
-    expect(context.participantTabOf('A')).toBe(2002);
-    expect(context.participantTabOf('B')).toBe(2003);
-    expect(context.tabsOfOtherParticipants('GPT', 'A')).toEqual([2003]);
-    expect(context.tabsOfOtherParticipants('GPT', 'B')).toEqual([2002]);
-    expect(context.tabsOfOtherParticipants('Perplexity', 'A')).toEqual([]);
+    await context.bindParticipantChat('run-1', 'A', 'GPT', 2002, {});
+    await context.bindParticipantChat('run-1', 'B', 'GPT', 2003, {});
+    expect(context.participantChatOf('run-1', 'A').tabId).toBe(2002);
+    expect(context.participantChatOf('run-1', 'B').tabId).toBe(2003);
+    expect(context.tabsOfOtherParticipants('GPT', 'run-1', 'A')).toEqual([2003]);
+    expect(context.tabsOfOtherParticipants('GPT', 'run-1', 'B')).toEqual([2002]);
+    expect(context.tabsOfOtherParticipants('Perplexity', 'run-1', 'A')).toEqual([]);
     const stored = await context.chrome.storage.local.get('llmParticipantTabMap');
-    expect(stored.llmParticipantTabMap).toEqual({ A: { modelName: 'GPT', tabId: 2002 }, B: { modelName: 'GPT', tabId: 2003 } });
+    expect(stored.llmParticipantTabMap).toEqual({ 'run-1': {
+      A: expect.objectContaining({ modelName: 'GPT', tabId: 2002 }),
+      B: expect.objectContaining({ modelName: 'GPT', tabId: 2003 })
+    } });
   });
 
   test('a participant keeps its own tab even when another tab of the model is newer', async () => {
     const { context } = createTabManagerSandbox({ queryTabs: twoTabs() });
-    await context.bindParticipantTab('A', 'GPT', 2002);
-    await context.bindParticipantTab('B', 'GPT', 2003);
+    await context.bindParticipantChat('run-1', 'A', 'GPT', 2002, {});
+    await context.bindParticipantChat('run-1', 'B', 'GPT', 2003, {});
     expect(await context.tryAttachExistingTab('GPT', 'to A', [], {
       allowGlobalReuse: true, mandatoryReuse: true, preferTabId: 2002, excludeTabIds: [2003]
     })).toBe(true);
@@ -493,8 +496,8 @@ describe('tab-manager participants of one model (T07, mock transport)', () => {
   test('a participant whose tab is closed does not take the tab of another participant of the same model', async () => {
     const tabs = twoTabs().filter((tab) => tab.id !== 2002);
     const { context } = createTabManagerSandbox({ queryTabs: tabs });
-    await context.bindParticipantTab('A', 'GPT', 2002);
-    await context.bindParticipantTab('B', 'GPT', 2003);
+    await context.bindParticipantChat('run-1', 'A', 'GPT', 2002, {});
+    await context.bindParticipantChat('run-1', 'B', 'GPT', 2003, {});
     // A's tab (2002) is closed; the only open tab of the model (2003) belongs to B and must not be taken.
     expect(await context.tryAttachExistingTab('GPT', 'to A', [], {
       allowGlobalReuse: true, mandatoryReuse: true, preferTabId: 2002, excludeTabIds: [2003]
@@ -504,8 +507,8 @@ describe('tab-manager participants of one model (T07, mock transport)', () => {
 
   test('the model binding of the active participant does not decide the tab of another participant', async () => {
     const { context } = createTabManagerSandbox({ queryTabs: twoTabs() });
-    await context.bindParticipantTab('A', 'GPT', 2002);
-    await context.bindParticipantTab('B', 'GPT', 2003);
+    await context.bindParticipantChat('run-1', 'A', 'GPT', 2002, {});
+    await context.bindParticipantChat('run-1', 'B', 'GPT', 2003, {});
     // The model entry points at B (its wave is the active one); A's request must still go to A's tab.
     await context.setTabBinding('GPT', 2003);
     expect(await context.tryAttachExistingTab('GPT', 'to A', [], {
@@ -516,8 +519,119 @@ describe('tab-manager participants of one model (T07, mock transport)', () => {
 
   test('without participant options the model path is unchanged (name-keyed reuse)', async () => {
     const { context } = createTabManagerSandbox({ queryTabs: twoTabs() });
-    await context.bindParticipantTab('A', 'GPT', 2002);
+    await context.bindParticipantChat('run-1', 'A', 'GPT', 2002, {});
     expect(await context.tryAttachExistingTab('GPT', 'legacy', [], { allowGlobalReuse: true })).toBe(true);
     expect(context.dispatchPromptToTab).toHaveBeenCalledWith('GPT', 2003, 'legacy', [], 'attach_existing');
+  });
+});
+
+describe('Basic participant chats are bound per run and never lost silently (R01)', () => {
+  const chatUrl = (id) => `https://chatgpt.com/c/${id}`;
+  const liveTab = (id, index = 0) => ({ id, url: chatUrl(id), windowId: 7, index, status: 'complete', lastAccessed: Date.now() });
+
+  function participantSandbox(queryTabs = []) {
+    const { context } = createTabManagerSandbox({ queryTabs });
+    context.ensureTabReadyForDispatch = jest.fn(async (tabId) => ({ ok: true, tab: { id: tabId, url: chatUrl(tabId) } }));
+    context.schedulePromptDispatchSupervisor = jest.fn();
+    context.chrome.tabs.create = jest.fn((_options, cb) => {
+      const tab = { id: 900 + context.chrome.tabs.create.mock.calls.length, url: 'https://chatgpt.com/', windowId: 7, index: 9, status: 'complete' };
+      queryTabs.push(tab);
+      cb(tab);
+    });
+    return { context, queryTabs };
+  }
+  const visit = (runId, participantId, extra = {}) => ({ runId, participantId, newChat: false, requestId: `req-${participantId}`, stageAttemptId: 'a1', ...extra });
+
+  test('a closed bound tab with a foreign open tab of the same provider: nothing is sent, the request stops before the send', async () => {
+    const { context } = participantSandbox([liveTab(2002)]);
+    await context.bindParticipantChat('run-1', 'author-A', 'GPT', 2001, { requestId: 'req-1', stageAttemptId: 'a1' });
+    const result = await context.openParticipantChat('GPT', visit('run-1', 'author-A', { stageAttemptId: 'a2' }), 'hello', []);
+    expect(result.ok).toBe(false);
+    expect(result.error.errorCode).toBe('participant_chat_lost');
+    expect(result.error.meta).toEqual(expect.objectContaining({ participantId: 'author-A', runId: 'run-1', tabId: 2001 }));
+    expect(context.dispatchPromptToTab).not.toHaveBeenCalled();
+    expect(context.chrome.tabs.create).not.toHaveBeenCalled();
+  });
+
+  test('a bound chat that is not eligible any more (other site) is lost too', async () => {
+    const { context } = participantSandbox([{ id: 2001, url: 'https://example.com/', windowId: 7, index: 0, status: 'complete' }]);
+    await context.bindParticipantChat('run-1', 'author-A', 'GPT', 2001, {});
+    const result = await context.openParticipantChat('GPT', visit('run-1', 'author-A'), 'hello', []);
+    expect(result.error.errorCode).toBe('participant_chat_lost');
+    expect(context.dispatchPromptToTab).not.toHaveBeenCalled();
+  });
+
+  test('a continue sends into its own bound chat and records the binding before the send', async () => {
+    const { context } = participantSandbox([liveTab(2001), liveTab(2002, 1)]);
+    await context.bindParticipantChat('run-1', 'author-A', 'GPT', 2001, { requestId: 'req-1', stageAttemptId: 'a1' });
+    context.dispatchPromptToTab = jest.fn(() => {
+      expect(context.participantChatOf('run-1', 'author-A')).toEqual(expect.objectContaining({ tabId: 2001, requestId: 'req-A' }));
+    });
+    const result = await context.openParticipantChat('GPT', visit('run-1', 'author-A', { requestId: 'req-A' }), 'hello', []);
+    expect(result).toEqual({ ok: true, tabId: 2001 });
+    expect(context.dispatchPromptToTab).toHaveBeenCalledTimes(1);
+    expect(context.dispatchPromptToTab).toHaveBeenCalledWith('GPT', 2001, 'hello', [], 'participant_continue');
+  });
+
+  test('two runs with one participant id keep their own bindings', async () => {
+    const { context } = participantSandbox([liveTab(2001), liveTab(2002, 1)]);
+    await context.bindParticipantChat('run-1', 'author-A', 'GPT', 2001, { stageAttemptId: 'a1' });
+    await context.bindParticipantChat('run-2', 'author-A', 'GPT', 2002, { stageAttemptId: 'a1' });
+    await context.openParticipantChat('GPT', visit('run-2', 'author-A'), 'run two', []);
+    expect(context.dispatchPromptToTab).toHaveBeenCalledWith('GPT', 2002, 'run two', [], 'participant_continue');
+    expect(context.participantChatOf('run-1', 'author-A').tabId).toBe(2001);
+    expect(context.participantChatOf('run-2', 'author-A').tabId).toBe(2002);
+  });
+
+  test('a continue without a binding never takes a chat bound to another participant', async () => {
+    const { context } = participantSandbox([liveTab(2002)]);
+    await context.bindParticipantChat('run-1', 'author-B', 'GPT', 2002, { stageAttemptId: 'a1' });
+    const result = await context.openParticipantChat('GPT', visit('run-1', 'author-A'), 'hello', []);
+    expect(result.ok).toBe(true);
+    expect(result.tabId).not.toBe(2002);
+    expect(context.participantChatOf('run-1', 'author-B').tabId).toBe(2002);
+  });
+
+  test('a new visit opens one chat; a repeat inside the same visit goes to that chat without a new tab', async () => {
+    const { context } = participantSandbox([]);
+    const first = await context.openParticipantChat('GPT', visit('run-1', 'author-A', { newChat: true, stageAttemptId: 'a1' }), 'p1', []);
+    expect(first.ok).toBe(true);
+    expect(context.chrome.tabs.create).toHaveBeenCalledTimes(1);
+    const boundTab = first.tabId;
+    const repeat = await context.openParticipantChat('GPT', visit('run-1', 'author-A', { newChat: true, stageAttemptId: 'a1' }), 'p1 again', []);
+    expect(repeat).toEqual({ ok: true, tabId: boundTab });
+    expect(context.chrome.tabs.create).toHaveBeenCalledTimes(1);
+    expect(context.dispatchPromptToTab).toHaveBeenLastCalledWith('GPT', boundTab, 'p1 again', [], 'participant_continue');
+  });
+
+  test('a correction inside the visit goes on in the bound chat; the next visit creates its own chat', async () => {
+    const { context } = participantSandbox([]);
+    const first = await context.openParticipantChat('GPT', visit('run-1', 'author-A', { newChat: true, stageAttemptId: 'a1' }), 'p1', []);
+    const correction = await context.openParticipantChat('GPT', visit('run-1', 'author-A', { stageAttemptId: 'a2' }), 'fix', []);
+    expect(correction).toEqual({ ok: true, tabId: first.tabId });
+    expect(context.chrome.tabs.create).toHaveBeenCalledTimes(1);
+    await context.openParticipantChat('GPT', visit('run-1', 'author-A', { newChat: true, stageAttemptId: 'a9' }), 'next', []);
+    expect(context.chrome.tabs.create).toHaveBeenCalledTimes(2);
+  });
+
+  test('a binding that cannot be written stops the request before the send', async () => {
+    const { context } = participantSandbox([]);
+    const realSet = context.chrome.storage.local.set;
+    context.chrome.storage.local.set = jest.fn((obj) => (obj && obj.llmParticipantTabMap
+      ? Promise.reject(new Error('quota exceeded'))
+      : realSet(obj)));
+    const result = await context.openParticipantChat('GPT', visit('run-1', 'author-A', { newChat: true, stageAttemptId: 'a1' }), 'p1', []);
+    expect(result.ok).toBe(false);
+    expect(result.error.errorCode).toBe('participant_binding_failed');
+    expect(context.dispatchPromptToTab).not.toHaveBeenCalled();
+  });
+
+  test('clearing a run removes only its bindings', async () => {
+    const { context } = participantSandbox([liveTab(2001), liveTab(2002, 1)]);
+    await context.bindParticipantChat('run-1', 'author-A', 'GPT', 2001, {});
+    await context.bindParticipantChat('run-2', 'author-A', 'GPT', 2002, {});
+    await context.clearParticipantRun('run-1');
+    expect(context.participantChatOf('run-1', 'author-A')).toBeNull();
+    expect(context.participantChatOf('run-2', 'author-A').tabId).toBe(2002);
   });
 });
