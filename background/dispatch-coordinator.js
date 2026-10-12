@@ -972,6 +972,7 @@ function isTypingGuardActive(entry) {
 
 function isTerminalLlmEntry(entry) {
   if (!entry) return false;
+  if (entry.cardAnswerComplete === true) return true;
   if (self.ModelRunState?.isTerminalRunState?.(entry)) return true;
   return TERMINAL_STATUSES.includes(entry.status)
     || Boolean(entry.finalStatusRecorded || entry.finalStatus);
@@ -2351,6 +2352,20 @@ const matchesPerplexityTransientBlockerTransport = (entry, llmName, tabId, messa
     && blocker.dispatchId === messageDispatchId;
 };
 
+function queuedTabMessageContextFailure(llmName, initialEntry, sessionId, message) {
+  const liveEntry = jobState?.llms?.[llmName] || null;
+  const liveSessionId = Number(jobState?.session?.startTime || 0) || null;
+  const messageSessionId = Number(message?.meta?.runSessionId || message?.meta?.sessionId || 0) || null;
+  const messageDispatchId = message?.meta?.dispatchId || null;
+  const liveDispatchId = liveEntry?.lastDispatchMeta?.dispatchId || liveEntry?.runIdentity?.dispatchId || null;
+  if (!liveEntry) return 'entry_missing';
+  if (liveEntry !== initialEntry) return 'entry_changed';
+  if (sessionId !== liveSessionId || (messageSessionId && messageSessionId !== liveSessionId)) return 'session_changed';
+  if (messageDispatchId && messageDispatchId !== liveDispatchId) return 'dispatch_changed';
+  if (isTerminalLlmEntry(liveEntry)) return 'model_terminal';
+  return null;
+}
+
 function sendMessageSafely(tabId, llmName, message, attempt = 1, onSettled = null) {
   globalThis.LLMLog?.debug?.(`[BACKGROUND] Safely sending message to ${llmName} (tab ${tabId}), attempt ${attempt}`);
   const settle = (result) => {
@@ -2365,6 +2380,7 @@ function sendMessageSafely(tabId, llmName, message, attempt = 1, onSettled = nul
     return;
   }
   const initialEntry = jobState?.llms?.[llmName] || null;
+  const capturedSessionId = Number(currentSessionId || 0) || null;
   if (isTerminalLlmEntry(initialEntry)) {
     appendLogEntry(llmName, {
       type: 'COMMAND',
@@ -2431,6 +2447,12 @@ function sendMessageSafely(tabId, llmName, message, attempt = 1, onSettled = nul
   }
 
   chrome.tabs.get(tabId, (tab) => {
+    const contextFailure = queuedTabMessageContextFailure(llmName, initialEntry, capturedSessionId, message);
+    if (contextFailure) {
+      const terminal = contextFailure === 'model_terminal';
+      settle({ ok: false, stale: !terminal, terminal, reason: contextFailure });
+      return;
+    }
     if (chrome.runtime.lastError || !tab) {
       console.error(`[BACKGROUND] Tab ${tabId} for ${llmName} not found.`, chrome.runtime.lastError?.message);
       appendLogEntry(llmName, {
@@ -2579,7 +2601,8 @@ function sendMessageSafely(tabId, llmName, message, attempt = 1, onSettled = nul
             maxAttempts: 3,
             baseDelay: 1000,
             allowRecovery: llmName === 'Perplexity',
-            onSuccess: () => {
+            onSuccess: (result) => {
+              if (result?.status === 'ignored_stale') return;
               broadcastDiagnostic(llmName, {
                 type: 'PING',
                 label: 'post-send recovery probe sent',
@@ -2763,11 +2786,20 @@ function sendPassiveMessageWithRetries(tabId, llmName, message, {
   onError
 } = {}) {
   const initialEntry = jobState?.llms?.[llmName] || null;
+  const capturedSessionId = Number(jobState?.session?.startTime || 0) || null;
   if (isTerminalLlmEntry(initialEntry)) {
     onSuccess?.({ status: 'ignored_terminal' });
     return;
   }
   chrome.tabs.get(tabId, (tab) => {
+    const contextFailure = queuedTabMessageContextFailure(llmName, initialEntry, capturedSessionId, message);
+    if (contextFailure) {
+      onSuccess?.({
+        status: contextFailure === 'model_terminal' ? 'ignored_terminal' : 'ignored_stale',
+        reason: contextFailure
+      });
+      return;
+    }
     if (chrome.runtime.lastError || !tab) {
       const errMsg = chrome.runtime.lastError?.message || 'Tab not found';
       console.warn(`[BACKGROUND] Passive message: tab ${tabId} for ${llmName} unavailable: ${errMsg}`);

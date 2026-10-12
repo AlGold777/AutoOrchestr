@@ -15,12 +15,16 @@ function createPage(sendToBackground) {
     ensureNoOtherViewRun: async () => true,
     applySelectedModifiersToPrompt: value => value,
     getSelectedLLMs: () => ['GPT'], getCurrentViewKey: () => 'main',
+    mainRunActive: false,
     buildAttachmentPayload: async () => [],
     newPagesCheckbox: null, apiModeCheckbox: null, longModeCheckbox: null,
     lastGenerationWaitProfile: '', ATTACH_CAPABILITY: {}, getItButton: null,
+    clearModelStatusMemory: jest.fn(), updateModelStatusUI: jest.fn(),
     syncProStreamVisibility: jest.fn(), resetPromptInputSize: jest.fn(), clearPromptAttachments: jest.fn(),
     showNotification: jest.fn()
   };
+  context.replaceCurrentMainRequestIds = jest.fn(requestIds => { context.currentMainRequestIds = { ...requestIds }; });
+  context.markCurrentMainRequestsCancelled = jest.fn();
   vm.createContext(context);
   const controlsStart = source.indexOf("const startButton = document.getElementById('start-button');");
   const controlsEnd = source.indexOf('const promptInput =', controlsStart);
@@ -41,11 +45,13 @@ test('Stop cancels an unfinished start, restores Start, and a late old reply can
   const { button, context, click } = createPage(send);
   const first = click();
   await flush();
+  expect(context.currentMainRequestIds).toEqual({ GPT: 'request' });
   expect(button.getAttribute('aria-label')).toBe('Стоп');
   expect(button.querySelector('i').className).toBe('ti ti-player-stop');
   context.pastedTextComposer.getText = () => '';
   await click();
   expect(send).toHaveBeenCalledWith({ type: 'STOP_ALL' });
+  expect(context.markCurrentMainRequestsCancelled).toHaveBeenCalledTimes(1);
   expect(button.disabled).toBe(false);
   expect(button.getAttribute('aria-label')).toBe('Пуск');
   context.pastedTextComposer.getText = () => 'Next request';
@@ -71,4 +77,5 @@ test('a failed stop stays available for retry', async () => {
   expect(button.getAttribute('aria-label')).toBe('Стоп');
   expect(button.querySelector('i').className).toBe('ti ti-player-stop');
   expect(context.showNotification).toHaveBeenCalledWith('Не удалось остановить запрос', 'error');
+  expect(context.markCurrentMainRequestsCancelled).not.toHaveBeenCalled();
 });

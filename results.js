@@ -18280,6 +18280,115 @@ document.addEventListener('click', (event) => {
         'API_PENDING': 'api-mode',
         'API_FAILED': 'error'
     };
+    const currentMainRequestIdsByModel = Object.create(null);
+    const cancelledMainRequestIdsByModel = Object.create(null);
+
+    function clearCancelledMainRequestIds() {
+        Object.keys(cancelledMainRequestIdsByModel).forEach((llmName) => {
+            delete cancelledMainRequestIdsByModel[llmName];
+        });
+    }
+
+    function replaceCurrentMainRequestIds(requestIds = {}) {
+        Object.keys(currentMainRequestIdsByModel).forEach((llmName) => {
+            delete currentMainRequestIdsByModel[llmName];
+        });
+        clearCancelledMainRequestIds();
+        Object.entries(requestIds || {}).forEach(([llmName, requestId]) => {
+            const id = String(requestId || '').trim();
+            if (llmName && id) currentMainRequestIdsByModel[llmName] = id;
+        });
+    }
+
+    function clearCurrentMainRequestIds() {
+        Object.keys(currentMainRequestIdsByModel).forEach((llmName) => {
+            delete currentMainRequestIdsByModel[llmName];
+        });
+        clearCancelledMainRequestIds();
+    }
+
+    function markCurrentMainRequestsCancelled() {
+        Object.entries(currentMainRequestIdsByModel).forEach(([llmName, requestId]) => {
+            cancelledMainRequestIdsByModel[llmName] = requestId;
+        });
+    }
+
+    function isCancelledMainRequest(llmName, meta = {}) {
+        if (getCurrentViewKey() !== 'main' || isPipelineRequestMeta(meta)) return false;
+        const cancelledRequestId = String(cancelledMainRequestIdsByModel[llmName] || '').trim();
+        if (!cancelledRequestId) return false;
+        const currentRequestId = String(currentMainRequestIdsByModel[llmName] || '').trim();
+        const responseRequestId = getMessageTransportRequestId(meta);
+        return currentRequestId === cancelledRequestId
+            && (!responseRequestId || responseRequestId === cancelledRequestId);
+    }
+
+    function getMessageTransportRequestId(message = {}) {
+        return String(message.transportRequestId || message.metadata?.transportRequestId || '').trim();
+    }
+
+    function isPipelineRequestMeta(meta = {}) {
+        return Boolean(meta.pipelineRunId || meta.pipelineRoundId || meta.stageAttemptId || meta.pipelineBatchId);
+    }
+
+    function isCurrentMainRequestResponse(llmName, meta = {}) {
+        if (getCurrentViewKey() !== 'main' || isPipelineRequestMeta(meta)) return true;
+        if (isCancelledMainRequest(llmName, meta)) return false;
+        const currentRequestId = String(currentMainRequestIdsByModel[llmName] || '').trim();
+        const responseRequestId = getMessageTransportRequestId(meta);
+        return !currentRequestId || !responseRequestId || currentRequestId === responseRequestId;
+    }
+
+    function isCurrentMainRequestSnapshot(llmName, entry = {}, state = {}) {
+        const session = state?.session || {};
+        if (getCurrentViewKey() !== 'main'
+            || session.pipelineRunId
+            || (session.sourceView && session.sourceView !== 'main')) return false;
+        const requestId = String(entry?.transportRequestId || '').trim();
+        if (isCancelledMainRequest(llmName, { transportRequestId: requestId })) return false;
+        if (!requestId) return !currentMainRequestIdsByModel[llmName];
+        const currentRequestId = String(currentMainRequestIdsByModel[llmName] || '').trim();
+        if (currentRequestId) return currentRequestId === requestId;
+        currentMainRequestIdsByModel[llmName] = requestId;
+        return true;
+    }
+
+    function isCurrentMainStateSnapshot(state = {}) {
+        const requests = Object.entries(currentMainRequestIdsByModel);
+        if (!requests.length) return true;
+        const llms = state?.llms && typeof state.llms === 'object' ? state.llms : {};
+        if (!Object.keys(llms).length && !state.session?.startTime && !state.session?.roundsInProgress) return true;
+        return requests.some(([llmName, requestId]) => (
+            !isCancelledMainRequest(llmName, { transportRequestId: requestId })
+            && String(llms[llmName]?.transportRequestId || '').trim() === requestId
+        ));
+    }
+
+    function handleLLMJobCreated(message = {}) {
+        const llmName = String(message.llmName || '').trim();
+        if (!llmName) return false;
+        const sourceView = String(message.sourceView || getCurrentViewKey() || '').trim();
+        if (sourceView && sourceView !== getCurrentViewKey()) return false;
+        const transportRequestId = String(message.transportRequestId || '').trim();
+        if (isCancelledMainRequest(llmName, { transportRequestId })) return false;
+        if (sourceView === 'main' && message.pipelineRunId && mainRunActive) return false;
+        if (sourceView === 'main' && !message.pipelineRunId && transportRequestId) {
+            const currentRequestId = String(currentMainRequestIdsByModel[llmName] || '').trim();
+            if (currentRequestId && currentRequestId !== transportRequestId) return false;
+            if (!currentRequestId && getCurrentViewKey() === 'main') {
+                currentMainRequestIdsByModel[llmName] = transportRequestId;
+            }
+        }
+        clearModelStatusMemory(llmName);
+        updateModelStatusUI(llmName, 'INITIALIZING', { reset: true, force: true });
+        mergeLLMMetadata(llmName, {
+            requestId: message.requestId || null,
+            url: message.metadata?.url || '',
+            createdAt: message.metadata?.createdAt || message.metadata?.timestamp || Date.now(),
+            completedAt: message.metadata?.completedAt || null
+        }, { reset: true });
+        return true;
+    }
     function normalizeStatusValue(status) {
         if (window.LLMStatusContract && typeof window.LLMStatusContract.normalizeStatus === 'function') {
             return window.LLMStatusContract.normalizeStatus(status);
@@ -18426,58 +18535,68 @@ document.addEventListener('click', (event) => {
 
     function updateModelStatusUI(llmName, status, data = {}) {
         const normalizedName = (llmName || '').trim();
+        const indicatorOnly = data?.indicatorOnly || null;
+        const cardAnswerComplete = data.cardAnswerComplete === true;
         // A card's end marker settles this request even if later diagnostics
         // report receiving/errors or force a status reset. A new job clears it.
-        if (statusStateByModel[normalizedName]?.cardAnswerComplete) return;
-        if (data.cardAnswerComplete === true) {
+        if (statusStateByModel[normalizedName]?.cardAnswerComplete && !indicatorOnly) return;
+        if (cardAnswerComplete) {
             status = 'SUCCESS';
             data = { ...data, force: true, modelRunState: null, finalStatus: 'SUCCESS',
-                finalStatusRecorded: true, verificationState: 'verified', answerState: 'complete' };
+                finalStatusRecorded: true, verificationState: 'verified', answerState: 'complete',
+                cardAnswerComplete: !indicatorOnly };
         }
+        const statusData = { ...(data || {}) };
+        delete statusData.indicatorOnly;
         const requestedStatus = normalizeStatusValue(status);
         const successMustWaitForAnswer = ['SUCCESS', 'COPY_SUCCESS', 'DONE', 'COMPLETE'].includes(requestedStatus)
-            && data.cardAnswerComplete !== true
+            && !cardAnswerComplete
             && !livePanelHasAnswer(normalizedName);
         if (successMustWaitForAnswer) {
             deferredSuccessStatusByModel[normalizedName] = {
                 status: requestedStatus,
-                data: { ...(data || {}) }
+                data: statusData
             };
         } else if (['SUCCESS', 'COPY_SUCCESS', 'DONE', 'COMPLETE'].includes(requestedStatus)) {
             delete deferredSuccessStatusByModel[normalizedName];
         }
         const normalizedStatus = requestedStatus;
         if (!normalizedName || !normalizedStatus) return;
-        const indicators = document.querySelectorAll(`.status-indicator[data-llm-name="${normalizedName}"]`);
+        const indicators = indicatorOnly
+            ? [indicatorOnly]
+            : document.querySelectorAll(`.status-indicator[data-llm-name="${normalizedName}"]`);
         if (!indicators.length) return;
         const incomingRank = getStatusRank(normalizedStatus);
-        const previous = statusStateByModel[normalizedName] || {};
+        const previous = indicatorOnly ? {} : (statusStateByModel[normalizedName] || {});
         const previousRank = Number(previous.rank || 0);
         const force = data?.force === true || data?.reset === true;
         if (window.LLMStatusContract && typeof window.LLMStatusContract.shouldApplyStatusUpdate === 'function') {
-            const decision = window.LLMStatusContract.shouldApplyStatusUpdate(previous.status, normalizedStatus, data || {});
+            const decision = window.LLMStatusContract.shouldApplyStatusUpdate(previous.status, normalizedStatus, statusData);
             if (!decision.apply) return;
         } else if (!force && previousRank > 0) {
             if (incomingRank <= 0) return;
             if (incomingRank < previousRank) return;
         }
-        statusStateByModel[normalizedName] = {
-            status: normalizedStatus,
-            cardAnswerComplete: data.cardAnswerComplete === true,
-            rank: incomingRank,
-            modelRunState: data?.modelRunState || null,
-            resultMeta: window.LLMStatusContract?.deriveResultMeta
-                ? window.LLMStatusContract.deriveResultMeta({
-                    ...(data || {}),
-                    status: normalizedStatus,
-                    finalStatus: data?.finalStatus || null,
-                    finalStatusRecorded: data?.finalStatusRecorded,
-                    modelRunState: data?.modelRunState || null,
-                    answer: data?.answer || data?.text || ''
-                })
-                : null,
-            updatedAt: Date.now()
-        };
+        const derivedResultMeta = window.LLMStatusContract?.deriveResultMeta
+            ? window.LLMStatusContract.deriveResultMeta({
+                ...statusData,
+                status: normalizedStatus,
+                finalStatus: data?.finalStatus || null,
+                finalStatusRecorded: data?.finalStatusRecorded,
+                modelRunState: data?.modelRunState || null,
+                answer: data?.answer || data?.text || ''
+            })
+            : null;
+        if (!indicatorOnly) {
+            statusStateByModel[normalizedName] = {
+                status: normalizedStatus,
+                cardAnswerComplete: data.cardAnswerComplete === true,
+                rank: incomingRank,
+                modelRunState: data?.modelRunState || null,
+                resultMeta: derivedResultMeta,
+                updatedAt: Date.now()
+            };
+        }
 
         indicators.forEach((indicator) => {
             // A settled debate-feed card must not be repainted by a later turn's
@@ -18505,7 +18624,7 @@ document.addEventListener('click', (event) => {
             indicator.tabIndex = 0;
             indicator.dataset.currentStatus = renderedStatus;
             indicator.dataset.statusRank = String(getStatusRank(renderedStatus));
-            const storedResultMeta = statusStateByModel[normalizedName]?.resultMeta || null;
+            const storedResultMeta = indicatorOnly ? derivedResultMeta : (statusStateByModel[normalizedName]?.resultMeta || null);
             const resultMeta = deferOnThisIndicator
                 ? { ...(storedResultMeta || {}), phase: 'verifying', label: 'Verifying answer' }
                 : storedResultMeta;
@@ -18523,7 +18642,7 @@ document.addEventListener('click', (event) => {
             }
             const statusTitle = deferOnThisIndicator
                 ? 'Verified answer waiting to be applied'
-                : resolveIndicatorTooltip(renderedStatus, data);
+                : resolveIndicatorTooltip(renderedStatus, statusData);
             const resultLabel = resultMeta?.label ? `Result: ${resultMeta.label}` : null;
             const titleParts = [statusTitle, resultLabel].filter(Boolean);
             const fullTitle = `${titleParts.join(' • ')} • Double-click to fetch this model answer`;
@@ -18538,14 +18657,15 @@ document.addEventListener('click', (event) => {
             }
         });
 
-        if (Object.prototype.hasOwnProperty.call(data, 'apiStatus')) {
-            setApiIndicatorState(normalizedName, data.apiStatus, data);
+        if (Object.prototype.hasOwnProperty.call(statusData, 'apiStatus')) {
+            setApiIndicatorState(normalizedName, statusData.apiStatus, statusData);
         }
     }
 
     function syncStatusFromResponseMessage(message = {}) {
         const status = message?.metadata?.status || message?.status || null;
         if (!message?.llmName || !status) return;
+        if (!isCurrentMainRequestResponse(message.llmName, { ...message, ...(message.metadata || {}) })) return;
         updateModelStatusUI(message.llmName, status, {
             ...(message.metadata || {}),
             source: 'LLM_PARTIAL_RESPONSE'
@@ -18578,11 +18698,11 @@ document.addEventListener('click', (event) => {
     // answer, and the empty card is hydrated from it instead of restoring only
     // a green status indicator over an empty output.
     // `lastRendered`: the last call wrote text into the card (telemetry: `displayed`).
-    function hydrateAnswerFromGlobalState(llmName, entry) {
+    function hydrateAnswerFromGlobalState(llmName, entry, { updateMainPanel = true, updatePipelineCard = true } = {}) {
         hydrateAnswerFromGlobalState.lastRendered = false;
         const panelId = String(llmName || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
         const outputElement = document.getElementById(`panel-${panelId}`)?.querySelector('.output');
-        const panelHasAnswer = Boolean(String(outputElement?.textContent || '').trim());
+        const panelHasAnswer = updateMainPanel && Boolean(String(outputElement?.textContent || '').trim());
         const unverifiedArtifact = entry?.unverifiedArtifact && typeof entry.unverifiedArtifact === 'object'
             ? entry.unverifiedArtifact
             : null;
@@ -18590,7 +18710,7 @@ document.addEventListener('click', (event) => {
             // Restore an empty card without overwriting a manual recovery
             // with the older unverified artifact retained in global state.
             if (panelHasAnswer) return true;
-            updateLLMPanelOutput(llmName, unverifiedArtifact.text, unverifiedArtifact.html || '', {
+            const artifactMeta = {
                 status: 'RECEIVING',
                 terminal: false,
                 answerState: 'candidate',
@@ -18601,16 +18721,23 @@ document.addEventListener('click', (event) => {
                 reason: unverifiedArtifact.reason || 'materialize_recovery_freshness_unproven',
                 source: 'GLOBAL_STATE_UNVERIFIED_ARTIFACT',
                 transportRequestId: entry?.transportRequestId || '',
+                requestId: entry?.transportRequestId || '',
                 pipelineRunId: entry?.pipelineRunId || '',
                 pipelineRoundId: entry?.pipelineRoundId || ''
-            });
+            };
+            if (updateMainPanel) {
+                updateLLMPanelOutput(llmName, unverifiedArtifact.text, unverifiedArtifact.html || '', artifactMeta);
+            } else if (updatePipelineCard) {
+                updateDebateModelCardOutput(llmName, unverifiedArtifact.text, unverifiedArtifact.html || '', artifactMeta);
+                hydrateAnswerFromGlobalState.lastRendered = true;
+            }
             return true;
         }
         const answerText = String(entry?.answer || '').trim();
         const answerHtml = sanitizeInlineHtml(String(entry?.answerHtml || '').trim());
         if (!answerText) return false;
         if (panelHasAnswer) return true;
-        if (outputElement) {
+        if (updateMainPanel && outputElement) {
             hydrateAnswerFromGlobalState.lastRendered = true;
             const finalHtml = resolveCompleteAnswerHtml(answerText, answerHtml);
             replaceChildrenFromSanitizedHtml(outputElement, finalHtml);
@@ -18619,13 +18746,20 @@ document.addEventListener('click', (event) => {
                 ? String(finalHtml).length + ':' + String(finalHtml).slice(0, 64)
                 : '';
         }
-        updateDebateModelCardOutput(llmName, answerText, answerHtml, {
+        const recoveryMeta = {
             source: 'GLOBAL_STATE_ANSWER_RECOVERY',
             transportRequestId: entry?.transportRequestId || '',
+            requestId: entry?.transportRequestId || '',
             pipelineRunId: entry?.pipelineRunId || '',
             pipelineRoundId: entry?.pipelineRoundId || '',
             status: entry?.finalStatus || entry?.status || ''
-        });
+        };
+        if (updateMainPanel) {
+            updateDebateModelCardOutput(llmName, answerText, answerHtml, recoveryMeta);
+        } else if (updatePipelineCard) {
+            updateDebateModelCardOutput(llmName, answerText, answerHtml, recoveryMeta);
+            hydrateAnswerFromGlobalState.lastRendered = true;
+        }
         return true;
     }
 
@@ -18671,22 +18805,45 @@ document.addEventListener('click', (event) => {
     }
 
     function syncStatusFromGlobalState(state = {}, options = {}) {
-        if (!state.session?.pipelineRunId && (!state.session?.sourceView || state.session.sourceView === getCurrentViewKey())) {
+        // Registration is the authoritative reload reconciliation point; use its
+        // snapshot to seed identities that could not be carried across a reload.
+        if (options?.replace === true) clearCurrentMainRequestIds();
+        const llms = state?.llms && typeof state.llms === 'object' ? state.llms : {};
+        const currentMainSnapshot = isCurrentMainStateSnapshot(state);
+        const mainSourceSnapshot = !state.session?.pipelineRunId
+            && (!state.session?.sourceView || state.session.sourceView === 'main');
+        const pipelineSourceSnapshot = Boolean(state.session?.pipelineRunId || state.session?.sourceView === 'pipeline');
+        if (mainSourceSnapshot && currentMainSnapshot && getCurrentViewKey() === 'main') {
             setMainRunActive(Boolean(state.session?.startTime)
                 && (state.session?.roundsInProgress || Object.values(state.llms || {}).some(entry =>
                     !entry.cardAnswerComplete && !entry.finalStatusRecorded && !entry.finalStatus)));
         }
-        if (options?.replace === true) {
+        if (options?.replace === true && (
+            (mainSourceSnapshot && getCurrentViewKey() === 'main')
+            || (pipelineSourceSnapshot && getCurrentViewKey() === 'pipeline')
+        )) {
             resetLiveStatusIndicators();
         }
-        const llms = state?.llms && typeof state.llms === 'object' ? state.llms : {};
         Object.entries(llms).forEach(([llmName, entry]) => {
             const modelRunState = entry?.modelRunState && typeof entry.modelRunState === 'object'
                 ? entry.modelRunState
                 : null;
             const rawStatus = modelRunState?.uiStatus || modelRunState?.terminalStatus || entry?.finalStatus || entry?.status || null;
             if (!rawStatus) return;
-            const answerVisible = hydrateAnswerFromGlobalState(llmName, entry);
+            const mainRequestCurrent = isCurrentMainRequestSnapshot(llmName, entry, state);
+            const pipelineSnapshot = Boolean(state.session?.pipelineRunId
+                || state.session?.sourceView === 'pipeline'
+                || entry?.pipelineRunId
+                || entry?.pipelineRoundId);
+            const applyMainSnapshot = mainRequestCurrent && mainSourceSnapshot && getCurrentViewKey() === 'main';
+            const applyPipelineSnapshot = pipelineSnapshot && getCurrentViewKey() === 'pipeline';
+            const answerVisible = (applyMainSnapshot || applyPipelineSnapshot)
+                ? hydrateAnswerFromGlobalState(llmName, entry, {
+                    updateMainPanel: applyMainSnapshot,
+                    updatePipelineCard: applyPipelineSnapshot
+                })
+                : false;
+            if (!applyMainSnapshot && !applyPipelineSnapshot) hydrateAnswerFromGlobalState.lastRendered = false;
             const hydrateRendered = hydrateAnswerFromGlobalState.lastRendered === true;
             let acceptedByWait = null;
             let rejectReason = null;
@@ -18754,22 +18911,24 @@ document.addEventListener('click', (event) => {
                 && !answerVisible
                 && !entry?.hasAnswer;
             const status = successWithoutAnswer ? 'UNCERTAIN' : rawStatus;
-            updateModelStatusUI(llmName, status, {
-                ...(entry?.statusData || {}),
-                cardAnswerComplete: entry?.cardAnswerComplete === true,
-                modelRunState,
-                finalStatus: entry?.finalStatus || null,
-                finalStatusRecorded: !!entry?.finalStatusRecorded,
-                terminalState: entry?.terminalState || modelRunState?.terminalState || null,
-                executionState: entry?.executionState || modelRunState?.executionState || null,
-                extractionState: entry?.extractionState || modelRunState?.extractionState || null,
-                verificationState: entry?.verificationState || modelRunState?.verificationState || entry?.answerVerification?.state || null,
-                answerState: entry?.answerState || modelRunState?.answerState || null,
-                attributionState: entry?.attributionState || entry?.unverifiedArtifact?.attributionState || null,
-                hasAnswer: !!entry?.hasAnswer,
-                statusDowngradedFromSuccess: successWithoutAnswer || undefined,
-                source: 'GLOBAL_STATE_BROADCAST'
-            });
+            if (applyMainSnapshot || applyPipelineSnapshot) {
+                updateModelStatusUI(llmName, status, {
+                    ...(entry?.statusData || {}),
+                    cardAnswerComplete: entry?.cardAnswerComplete === true,
+                    modelRunState,
+                    finalStatus: entry?.finalStatus || null,
+                    finalStatusRecorded: !!entry?.finalStatusRecorded,
+                    terminalState: entry?.terminalState || modelRunState?.terminalState || null,
+                    executionState: entry?.executionState || modelRunState?.executionState || null,
+                    extractionState: entry?.extractionState || modelRunState?.extractionState || null,
+                    verificationState: entry?.verificationState || modelRunState?.verificationState || entry?.answerVerification?.state || null,
+                    answerState: entry?.answerState || modelRunState?.answerState || null,
+                    attributionState: entry?.attributionState || entry?.unverifiedArtifact?.attributionState || null,
+                    hasAnswer: !!entry?.hasAnswer,
+                    statusDowngradedFromSuccess: successWithoutAnswer || undefined,
+                    source: 'GLOBAL_STATE_BROADCAST'
+                });
+            }
         });
     }
     // --- END STATUS INDICATOR LOGIC ---
@@ -19164,14 +19323,7 @@ document.addEventListener('click', (event) => {
         try {
             switch (message.type) {
                 case 'LLM_JOB_CREATED':
-                    clearModelStatusMemory(message.llmName);
-                    updateModelStatusUI(message.llmName, 'INITIALIZING', { reset: true, force: true });
-                    mergeLLMMetadata(message.llmName, {
-                        requestId: message.requestId || null,
-                        url: message.metadata?.url || '',
-                        createdAt: message.metadata?.createdAt || message.metadata?.timestamp || Date.now(),
-                        completedAt: message.metadata?.completedAt || null
-                    }, { reset: true });
+                    handleLLMJobCreated(message);
                     break;
                 case 'LLM_PARTIAL_RESPONSE': {
                     syncStatusFromResponseMessage(message);
@@ -19187,7 +19339,10 @@ document.addEventListener('click', (event) => {
                             html: String(message.answerHtml || message.html || '')
                         };
                     })();
-                    updateDebateModelCardOutput(message.llmName, previewPayload.text, previewPayload.html, debateFeedMessageMeta(message));
+                    const responseMeta = debateFeedMessageMeta(message);
+                    if (isCurrentMainRequestResponse(message.llmName, responseMeta)) {
+                        updateDebateModelCardOutput(message.llmName, previewPayload.text, previewPayload.html, responseMeta);
+                    }
                     const revealManualPing = manualPingReveal.has(message.llmName);
                     if (revealManualPing) {
                         const answerText = (() => {
@@ -19476,7 +19631,22 @@ document.addEventListener('click', (event) => {
                 : comparison.status);
         const cardAnswerComplete = meta.answerEndMarkerSeen === true && Boolean(renderedText)
             && !isErrorOutput(renderedText);
-        if (cardAnswerComplete) updateModelStatusUI(llmName, 'SUCCESS', { cardAnswerComplete: true });
+        const isPipelineCard = panel?.classList?.contains('debate-model-card');
+        const mainView = getCurrentViewKey() === 'main';
+        const currentMainRequest = isCurrentMainRequestResponse(llmName, meta);
+        const pipelineEvidenceOnMainView = mainView && (isPipelineCard || isPipelineRequestMeta(meta));
+        if (cardAnswerComplete && currentMainRequest && !pipelineEvidenceOnMainView) {
+            updateModelStatusUI(llmName, 'SUCCESS', { cardAnswerComplete: true });
+        } else if (cardAnswerComplete && currentMainRequest && pipelineEvidenceOnMainView && isPipelineCard) {
+            const cardIndicator = panel.querySelector(`.status-indicator[data-llm-name="${llmName}"]`)
+                || panel.querySelector('.status-indicator');
+            if (cardIndicator) {
+                updateModelStatusUI(llmName, 'SUCCESS', {
+                    cardAnswerComplete: true,
+                    indicatorOnly: cardIndicator
+                });
+            }
+        }
         const terminalStatus = /^(?:SUCCESS|PARTIAL|ERROR|NO_SEND|EXTRACT_FAILED|STREAM_TIMEOUT|UNCERTAIN)$/.test(String(meta.status || '').toUpperCase());
         const evaluationBoundaryType = meta.evaluationBoundaryType
             || (terminalStatus ? 'automatic_terminal' : 'delivery_deadline');
@@ -19591,8 +19761,14 @@ document.addEventListener('click', (event) => {
         const sanitizedHtml = sanitizeInlineHtml(rawHtml);
         const richHtml = sanitizedHtml || (looksLikeHtml(normalizedText) ? sanitizeInlineHtml(normalizedText) : '');
         const resolvedHtml = resolveCompleteAnswerHtml(normalizedText, richHtml);
+        const mainView = getCurrentViewKey() === 'main';
+        const isPipelineRequest = isPipelineRequestMeta(meta);
+        if (mainView && !isPipelineRequest && !isCurrentMainRequestResponse(llmName, meta)) {
+            return { updated: false, postTerminalRevision: false, staleMainRequest: true };
+        }
         const debateUpdate = updateDebateModelCardOutput(llmName, normalizedText, resolvedHtml, meta);
         if (debateUpdate?.postTerminalRevision) return debateUpdate;
+        if (mainView && isPipelineRequest) return debateUpdate;
         if (panel) {
             applyAttributionMarker(panel, meta);
             const outputElement = panel.querySelector('.output');
@@ -24595,6 +24771,7 @@ function checkCompareButtonState() {
             try {
                 const stopped = await sendToBackground({ type: 'STOP_ALL' });
                 if (!stopped?.success) throw new Error('Не удалось остановить запрос');
+                markCurrentMainRequestsCancelled();
                 setMainRunActive(false);
             } catch (err) {
                 showNotification(err?.message || 'Не удалось остановить запрос', 'error');
@@ -24646,6 +24823,13 @@ function checkCompareButtonState() {
                 name,
                 window.TransportContract.makeTransportRequestId()
             ]));
+            // Claim the new main request before dispatch so a late answer from the
+            // previous transport cannot repaint or complete this model's card.
+            replaceCurrentMainRequestIds(transportRequestIds);
+            selectedLLMs.forEach((name) => {
+                clearModelStatusMemory(name);
+                updateModelStatusUI(name, 'INITIALIZING', { reset: true, force: true });
+            });
             const promptsByModel = window.MessageDelivery?.prepare({
                 prompt: finalPrompt, models: selectedLLMs, requestIds: transportRequestIds
             }) || null;

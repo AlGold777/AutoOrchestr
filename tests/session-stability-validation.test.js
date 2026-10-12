@@ -5,6 +5,7 @@ const vm = require('vm');
 const repoRoot = path.join(__dirname, '..');
 const MESSAGE_ROUTER_SOURCE = fs.readFileSync(path.join(repoRoot, 'background', 'message-router.js'), 'utf8');
 const JOB_ORCHESTRATOR_SOURCE = fs.readFileSync(path.join(repoRoot, 'background', 'job-orchestrator.js'), 'utf8');
+const DISPATCH_COORDINATOR_SOURCE = fs.readFileSync(path.join(repoRoot, 'background', 'dispatch-coordinator.js'), 'utf8');
 
 const read = (relativePath) => fs.readFileSync(path.join(repoRoot, relativePath), 'utf8');
 
@@ -147,7 +148,7 @@ function createRouterSandbox() {
   };
 }
 
-function createOrchestratorSandbox() {
+function createOrchestratorSandbox({ exposeTriggerResponseCollectionPing = false } = {}) {
   const context = {
     console,
     Promise,
@@ -229,8 +230,63 @@ function createOrchestratorSandbox() {
   };
   context.self = context;
   vm.createContext(context);
-  vm.runInContext(JOB_ORCHESTRATOR_SOURCE, context, { filename: 'background/job-orchestrator.js' });
+  const source = exposeTriggerResponseCollectionPing
+    ? JOB_ORCHESTRATOR_SOURCE.replace(
+      'const triggerResponseCollectionPing =',
+      'const triggerResponseCollectionPing = self.triggerResponseCollectionPingForTest ='
+    )
+    : JOB_ORCHESTRATOR_SOURCE;
+  vm.runInContext(source, context, { filename: 'background/job-orchestrator.js' });
   return context;
+}
+
+function createDispatchCoordinatorSandbox(entry = {}) {
+  const tabGetCallbacks = [];
+  const sentMessages = [];
+  const context = {
+    console,
+    Promise,
+    Map,
+    Set,
+    Date,
+    Math,
+    Array,
+    Object,
+    Number,
+    String,
+    Boolean,
+    RegExp,
+    JSON,
+    setTimeout,
+    clearTimeout,
+    MutexManager: class { clear() {} },
+    TimingConfig: { getTiming: (_name, fallback) => fallback },
+    TERMINAL_STATUSES: ['SUCCESS', 'PARTIAL', 'ERROR', 'NO_SEND', 'EXTRACT_FAILED', 'STOPPED'],
+    jobState: {
+      session: { startTime: 12345 },
+      llms: { GPT: entry }
+    },
+    TabMapManager: { get: jest.fn(() => 101) },
+    appendLogEntry: jest.fn(),
+    extendPingWindowForTab: jest.fn(),
+    isValidTabId: (tabId) => Number.isInteger(tabId) && tabId > 0,
+    AUTO_PING_WINDOW_MS: 1000,
+    chrome: {
+      runtime: { lastError: null },
+      tabs: {
+        get: jest.fn((_tabId, callback) => tabGetCallbacks.push(callback)),
+        sendMessage: jest.fn((tabId, message, callback) => {
+          sentMessages.push({ tabId, message });
+          callback?.({ accepted: true });
+        })
+      }
+    },
+    self: null
+  };
+  context.self = context;
+  vm.createContext(context);
+  vm.runInContext(DISPATCH_COORDINATOR_SOURCE, context, { filename: 'background/dispatch-coordinator.js' });
+  return { context, tabGetCallbacks, sentMessages };
 }
 
 describe('session stability validation guards', () => {
@@ -366,6 +422,176 @@ describe('session stability validation guards', () => {
     expect(await context.startProcess('Duplicate', ['GPT'], 909)).toMatchObject({ ok: false, errorCode: 'RUN_ALREADY_ACTIVE' });
     reads[1]({ tos_acknowledged_v1: false });
     expect(await nextStart).toMatchObject({ ok: false, errorCode: 'TOS_ACK_REQUIRED' });
+  });
+
+  test('start cancelled during proof-ledger admission cannot continue into a replacement run', async () => {
+    const context = createOrchestratorSandbox();
+    const pendingAdmissions = [];
+    const admissionReached = [];
+    const createdStates = [];
+    context.chrome.storage.local.get = jest.fn((key) => key === 'tos_acknowledged_v1'
+      ? Promise.resolve({ tos_acknowledged_v1: true })
+      : Promise.resolve({}));
+    context.PipelineRunState = {
+      create: ({ prompt, selectedModels, startedAt }) => {
+        const state = { prompt, session: { startTime: startedAt, selectedModels }, llms: {} };
+        createdStates.push(state);
+        return state;
+      }
+    };
+    context.resultsTabId = null;
+    context.TELEMETRY_SAMPLE_RATE = 0.1;
+    context.llmStartChains = {};
+    context.promptSubmitWaiters = new Map();
+    context.dispatchMutexManager = { clear: jest.fn() };
+    context.resolveTelemetrySampling = () => false;
+    context.ProofTelemetryLedger = {
+      beginRun: jest.fn((sessionId) => new Promise((resolve) => {
+        pendingAdmissions.push(resolve);
+        admissionReached[pendingAdmissions.length - 1]?.(sessionId);
+      }))
+    };
+    const firstAdmission = new Promise((resolve) => { admissionReached[0] = resolve; });
+    const oldStart = context.startProcess('Old', ['GPT'], 909);
+    await Promise.race([
+      firstAdmission,
+      oldStart.then(() => { throw new Error('old start returned before proof-ledger admission'); })
+    ]);
+
+    context.stopAllProcesses('replace_run');
+    const secondAdmission = new Promise((resolve) => { admissionReached[1] = resolve; });
+    const nextStart = context.startProcess('Next', ['GPT'], 909);
+    await Promise.race([
+      secondAdmission,
+      nextStart.then(() => { throw new Error('replacement start returned before proof-ledger admission'); })
+    ]);
+    const replacementState = createdStates[1];
+    expect(replacementState.llms).toEqual({});
+    expect(replacementState.session.runMode).toBeUndefined();
+
+    pendingAdmissions[0]();
+    await expect(oldStart).resolves.toMatchObject({ ok: false, errorCode: 'RUN_CANCELLED' });
+    expect(context.jobState).toBe(replacementState);
+    expect(replacementState.llms).toEqual({});
+    expect(replacementState.session.runMode).toBeUndefined();
+
+    context.stopAllProcesses('finish_test');
+    pendingAdmissions[1]();
+    await expect(nextStart).resolves.toMatchObject({ ok: false, errorCode: 'RUN_CANCELLED' });
+  });
+
+  test.each([
+    ['Stop', (context) => { context.jobState.session.startTime = null; }],
+    ['completed card', (context) => { context.jobState.llms.GPT.cardAnswerComplete = true; }],
+    ['replaced dispatch', (context) => { context.jobState.llms.GPT.lastDispatchMeta.dispatchId = 'dispatch-new'; }]
+  ])('queued GET_ANSWER is not sent after %s while tabs.get is pending', (_label, invalidate) => {
+    const entry = { status: 'GENERATING', tabId: 101, lastDispatchMeta: { dispatchId: 'dispatch-old' } };
+    const { context, tabGetCallbacks, sentMessages } = createDispatchCoordinatorSandbox(entry);
+    const settled = jest.fn();
+
+    context.sendMessageSafely(101, 'GPT', {
+      type: 'GET_ANSWER',
+      meta: { runSessionId: 12345, dispatchId: 'dispatch-old' }
+    }, 2, settled);
+    expect(tabGetCallbacks).toHaveLength(1);
+
+    invalidate(context);
+    tabGetCallbacks[0]({ id: 101 });
+
+    expect(sentMessages).toEqual([]);
+    expect(settled).toHaveBeenCalledWith(expect.objectContaining({ ok: false }));
+  });
+
+  test('completed card rejects a new GET_ANSWER before tab lookup', () => {
+    const entry = { status: 'GENERATING', cardAnswerComplete: true, tabId: 101, lastDispatchMeta: { dispatchId: 'dispatch-old' } };
+    const { context, tabGetCallbacks, sentMessages } = createDispatchCoordinatorSandbox(entry);
+    const settled = jest.fn();
+
+    context.sendMessageSafely(101, 'GPT', {
+      type: 'GET_ANSWER',
+      meta: { runSessionId: 12345, dispatchId: 'dispatch-old' }
+    }, 2, settled);
+
+    expect(tabGetCallbacks).toHaveLength(0);
+    expect(sentMessages).toEqual([]);
+    expect(settled).toHaveBeenCalledWith(expect.objectContaining({ terminal: true, reason: 'model_terminal' }));
+  });
+
+  test('current GET_ANSWER still sends after the tab lookup resolves', () => {
+    const entry = { status: 'GENERATING', tabId: 101, lastDispatchMeta: { dispatchId: 'dispatch-current' } };
+    const { context, tabGetCallbacks, sentMessages } = createDispatchCoordinatorSandbox(entry);
+    const settled = jest.fn();
+    const message = { type: 'GET_ANSWER', meta: { runSessionId: 12345, dispatchId: 'dispatch-current' } };
+
+    context.sendMessageSafely(101, 'GPT', message, 2, settled);
+    tabGetCallbacks[0]({ id: 101 });
+
+    expect(sentMessages).toEqual([{ tabId: 101, message }]);
+    expect(settled).toHaveBeenCalledWith(expect.objectContaining({ ok: true }));
+  });
+
+  test('queued passive probes are not sent after Stop while tabs.get is pending', () => {
+    const entry = { status: 'GENERATING', tabId: 101, lastDispatchMeta: { dispatchId: 'dispatch-old' } };
+    const { context, tabGetCallbacks, sentMessages } = createDispatchCoordinatorSandbox(entry);
+    const onSuccess = jest.fn();
+
+    context.sendPassiveMessageWithRetries(101, 'GPT', {
+      action: 'getResponses',
+      meta: { runSessionId: 12345, dispatchId: 'dispatch-old' }
+    }, { onSuccess });
+    expect(tabGetCallbacks).toHaveLength(1);
+
+    context.jobState.session.startTime = null;
+    tabGetCallbacks[0]({ id: 101 });
+
+    expect(sentMessages).toEqual([]);
+    expect(onSuccess).toHaveBeenCalledWith(expect.objectContaining({ status: 'ignored_stale' }));
+  });
+
+  test('LLM_JOB_CREATED carries the producer request identity', () => {
+    const context = createOrchestratorSandbox();
+    const sendMessage = jest.fn();
+    context.sendMessageToResultsTab = sendMessage;
+    context.jobState.session.sourceView = 'main';
+    context.jobState.session.pipelineRunId = 'pipeline-1';
+    context.jobState.llms.GPT = { transportRequestId: 'transport-1' };
+
+    context.initRequestMetadata('GPT', 101, 'https://provider.test');
+
+    expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'LLM_JOB_CREATED',
+      llmName: 'GPT',
+      transportRequestId: 'transport-1',
+      sourceView: 'main',
+      pipelineRunId: 'pipeline-1'
+    }));
+  });
+
+  test('terminal response-collection callback does not recover or mutate a completed card', () => {
+    const context = createOrchestratorSandbox({ exposeTriggerResponseCollectionPing: true });
+    const entry = {
+      status: 'GENERATING',
+      cardAnswerComplete: false,
+      pingTransportErrorCount: 4,
+      lastDispatchMeta: { dispatchId: 'dispatch-current' }
+    };
+    let pingOptions;
+    const recover = jest.fn(() => Promise.resolve());
+    context.jobState.llms.GPT = entry;
+    context.sendPassiveMessageWithRetries = jest.fn((_tabId, _llmName, _message, options) => {
+      pingOptions = options;
+    });
+    context.extendPingWindowForLLM = jest.fn();
+    context.recoverAnswerViaDomSnapshot = recover;
+
+    context.triggerResponseCollectionPingForTest('GPT', 101, 'test', { forceEmitOnUnchanged: true });
+    expect(pingOptions).toBeDefined();
+
+    entry.cardAnswerComplete = true;
+    pingOptions.onSuccess({ status: 'ignored_terminal' });
+
+    expect(entry.pingTransportErrorCount).toBe(4);
+    expect(recover).not.toHaveBeenCalled();
   });
 
   test('automatic completion stops the session while preserving answers', () => {

@@ -1598,77 +1598,90 @@ async function simulateHumanActivityInPage(options = {}) {
     .filter((el) => (el.innerText || el.textContent || '').trim().length > 20)
     .slice(-3);
   const ensureScrollToolkit = () => {
-    if (window.__codexScrollToolkit) {
-      return window.__codexScrollToolkit;
-    }
-    if (typeof window.__codexBuildScrollToolkit === 'function') {
-      window.__codexScrollToolkit = window.__codexBuildScrollToolkit();
+    if (window.__codexScrollToolkit?.supportsInvocationStop === true) {
       return window.__codexScrollToolkit;
     }
     const buildScrollToolkit = () => {
       const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-      const waitForDomStability = (idleMs = 250, windowMs = 1400) => new Promise((resolve) => {
+      const waitForDomStability = (idleMs = 250, windowMs = 1400, isInvocationStopped) => new Promise((resolve) => {
+        if (isInvocationStopped()) {
+          resolve();
+          return;
+        }
         const target = document.body || document.documentElement;
         if (!target) {
           resolve();
           return;
         }
         let timer = null;
+        let windowTimer = null;
+        let finished = false;
+        let observer = null;
         const finish = () => {
-          observer.disconnect();
+          if (finished) return;
+          finished = true;
+          clearTimeout(timer);
+          clearTimeout(windowTimer);
+          observer?.disconnect();
           resolve();
         };
-        const observer = new MutationObserver(() => {
+        observer = new MutationObserver(() => {
+          if (isInvocationStopped()) {
+            finish();
+            return;
+          }
           clearTimeout(timer);
           timer = setTimeout(finish, idleMs);
         });
+        if (isInvocationStopped()) {
+          finish();
+          return;
+        }
         observer.observe(target, { subtree: true, childList: true });
         timer = setTimeout(finish, idleMs);
-        setTimeout(() => {
-          observer.disconnect();
-          resolve();
-        }, windowMs);
+        windowTimer = setTimeout(finish, windowMs);
       });
-      const isScrollable = (node) => {
+      const isScrollable = (node, isInvocationStopped) => {
+        if (isInvocationStopped()) return false;
         if (!node || !(node instanceof Element)) return false;
         const diff = (node.scrollHeight || 0) - (node.clientHeight || 0);
         if (diff <= 24) return false;
         const style = getComputedStyle(node);
         return /(auto|scroll)/.test(style.overflowY || '');
       };
-      const collectScrollableNodes = () => {
+      const collectScrollableNodes = (isInvocationStopped) => {
         const set = new Set();
         const add = (node) => {
-          if (!node || window.__LLMScrollHardStop) return;
+          if (isInvocationStopped() || !node) return;
           if (node === document || node === window) return;
           if (node === document.body || node === document.documentElement || node === document.scrollingElement) {
             set.add(document.scrollingElement || document.documentElement);
             return;
           }
-          if (isScrollable(node)) set.add(node);
+          if (isScrollable(node, isInvocationStopped)) set.add(node);
         };
         const scanShadow = (root, depth = 0) => {
-          if (!root || depth > 1) return;
+          if (isInvocationStopped() || !root || depth > 1) return;
           const elements = root.querySelectorAll('*');
           elements.forEach((el, idx) => {
-            if (idx > 200) return;
-            if (isScrollable(el)) add(el);
+            if (isInvocationStopped() || idx > 200) return;
+            if (isScrollable(el, isInvocationStopped)) add(el);
             if (el.shadowRoot) scanShadow(el.shadowRoot, depth + 1);
           });
         };
         const scanDocument = (doc, depth = 0) => {
-          if (!doc || depth > 1) return;
+          if (isInvocationStopped() || !doc || depth > 1) return;
           add(doc.scrollingElement || doc.documentElement);
           add(doc.body);
           const selectors = '[data-scrollable], [data-scroll="true"], main, section, article, div[class*="scroll"], .chat-container, .conversation, .chat-history';
           doc.querySelectorAll(selectors).forEach((el, idx) => {
-            if (idx > 500) return;
+            if (isInvocationStopped() || idx > 500) return;
             add(el);
             if (el.shadowRoot) scanShadow(el.shadowRoot, depth + 1);
           });
-          if (depth === 0) {
+          if (depth === 0 && !isInvocationStopped()) {
             doc.querySelectorAll('iframe').forEach((frame, idx) => {
-              if (idx > 5) return;
+              if (isInvocationStopped() || idx > 5) return;
               try {
                 const childDoc = frame.contentWindow?.document;
                 if (childDoc) scanDocument(childDoc, depth + 1);
@@ -1677,12 +1690,13 @@ async function simulateHumanActivityInPage(options = {}) {
           }
         };
         const addAnswerAncestors = () => {
+          if (isInvocationStopped()) return;
           const answers = getRecentAnswerElements();
           answers.forEach((node) => {
             let current = node;
             let steps = 0;
-            while (current && steps < 12) {
-              if (isScrollable(current)) set.add(current);
+            while (current && steps < 12 && !isInvocationStopped()) {
+              if (isScrollable(current, isInvocationStopped)) set.add(current);
               current = current.parentElement;
               steps++;
             }
@@ -1692,25 +1706,31 @@ async function simulateHumanActivityInPage(options = {}) {
         addAnswerAncestors();
         return Array.from(set);
       };
-      const scrollNode = async (node) => {
-        if (!node || window.__LLMScrollHardStop) return;
+      const scrollNode = async (node, isInvocationStopped) => {
+        if (isInvocationStopped() || !node) return;
         const maxScroll = (node.scrollHeight || 0) - (node.clientHeight || 0);
         if (maxScroll <= 0) return;
         const start = node.scrollTop || 0;
         const delta = Math.min(maxScroll - start, node.clientHeight * (0.4 + Math.random() * 0.4));
         const target = start + delta;
+        if (isInvocationStopped()) return;
         node.scrollTo({ top: target, behavior: 'smooth' });
         await sleep(260 + Math.random() * 240);
+        if (isInvocationStopped()) return;
       };
-      const scrollAllTargets = async () => {
-        await waitForDomStability(200, 1200);
-        if (window.__LLMScrollHardStop) return;
-        const nodes = collectScrollableNodes();
+      const scrollAllTargets = async (invocationIsStopped = () => Boolean(window.__LLMScrollHardStop)) => {
+        const isInvocationStopped = () => Boolean(window.__LLMScrollHardStop) || invocationIsStopped();
+        if (isInvocationStopped()) return;
+        await waitForDomStability(200, 1200, isInvocationStopped);
+        if (isInvocationStopped()) return;
+        const nodes = collectScrollableNodes(isInvocationStopped);
         for (const node of nodes.slice(0, 6)) {
-          await scrollNode(node);
+          if (isInvocationStopped()) return;
+          await scrollNode(node, isInvocationStopped);
+          if (isInvocationStopped()) return;
         }
       };
-      return { scrollAllTargets };
+      return { supportsInvocationStop: true, scrollAllTargets };
     };
     window.__codexBuildScrollToolkit = buildScrollToolkit;
     window.__codexScrollToolkit = buildScrollToolkit();
@@ -1945,7 +1965,9 @@ async function simulateHumanActivityInPage(options = {}) {
 
   if (isStopped()) return;
   try {
-    await ensureScrollToolkit().scrollAllTargets();
+    const scrollToolkit = ensureScrollToolkit();
+    if (isStopped()) return;
+    await scrollToolkit.scrollAllTargets(isStopped);
     if (isStopped()) return;
     await performCompletionScrollNudge();
   } catch (err) {

@@ -3826,7 +3826,9 @@ const triggerResponseCollectionPing = (llmName, tabId, source = 'auto_collect', 
     transportRetryDelays,
     allowRecovery,
     onSuccess: (response) => {
+      if (response?.status === 'ignored_stale') return;
       const successEntry = jobState?.llms?.[llmName];
+      if (successEntry?.cardAnswerComplete === true) return;
       if (successEntry) {
         successEntry.pingTransportErrorCount = 0;
       }
@@ -5276,6 +5278,7 @@ async function startProcessReservedRun(prompt, selectedLLMs, resultsTab, options
     startedAt: sessionStartTime,
     promptsByModel
   });
+  const reservedStartState = jobState;
   // A per-model start chain belongs to exactly one run. A promise left by an
   // interrupted MV3 worker/run must never hold the next run behind old work.
   selectedLLMs.forEach((llmName) => {
@@ -5290,6 +5293,11 @@ async function startProcessReservedRun(prompt, selectedLLMs, resultsTab, options
     wallTs: sessionStartTime,
     expectedModels: Array.isArray(selectedLLMs) ? selectedLLMs.slice() : []
   });
+  if (startGeneration !== jobStateStopGeneration
+    || jobState !== reservedStartState
+    || jobState?.session?.startTime !== sessionStartTime) {
+    return { ok: false, errorCode: 'RUN_CANCELLED' };
+  }
   humanPresencePaused = false;
   humanPresenceManuallyStopped = false;
   // Who drives the run (panel-issued): a moderator-driven run does not get the
@@ -10010,6 +10018,9 @@ function initRequestMetadata(llmName, tabId, initialUrl = '') {
     type: 'LLM_JOB_CREATED',
     requestId,
     llmName,
+    transportRequestId: jobState?.llms?.[llmName]?.transportRequestId || null,
+    sourceView: jobState?.session?.sourceView || null,
+    pipelineRunId: jobState?.session?.pipelineRunId || null,
     metadata: {
       url: snapshot.url,
       createdAt: snapshot.createdAt,
@@ -10466,6 +10477,7 @@ async function handleManualResponsePing(llmName, options = {}) {
       transportRetryDelays: HARD_STOP_PING_RETRY_DELAYS_MS,
       allowRecovery: true,
       onSuccess: (response) => {
+        if (response?.status === 'ignored_stale') return;
         const successEntry = jobState?.llms?.[llmName];
         if (successEntry) {
           successEntry.pingTransportErrorCount = 0;
