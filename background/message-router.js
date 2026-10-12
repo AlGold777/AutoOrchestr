@@ -2124,7 +2124,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     // to one batch: later stages of the same run keep the evidence of
                     // earlier stages.
                     const incomingPipelineRunId = message.pipelineContext?.pipelineRunId || null;
-                    const startGeneration = jobStateStopGeneration;
+                    const startGeneration = self.getOrchestratorStopGeneration();
                     const continuesPipelineRun = Boolean(incomingPipelineRunId)
                         && incomingPipelineRunId === (jobState?.session?.pipelineRunId || null);
                     if (!continuesPipelineRun) {
@@ -2136,7 +2136,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             console.warn('[DIAGNOSTICS] new run clear failed', err);
                         }
                     }
-                    if (startGeneration !== jobStateStopGeneration) {
+                    if (startGeneration !== self.getOrchestratorStopGeneration()) {
                         sendResponse({ success: false, errorCode: 'RUN_CANCELLED' });
                         return;
                     }

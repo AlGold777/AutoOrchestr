@@ -4941,6 +4941,7 @@ let pendingJobStateSaveWaiters = [];
 // Incremented by stopAllProcesses. A snapshot belongs to the stop generation it
 // was queued in; a stop/cancel invalidates every snapshot queued before it.
 let jobStateStopGeneration = 0;
+const getOrchestratorStopGeneration = () => jobStateStopGeneration;
 let pendingJobStateSaveGeneration = 0;
 function saveJobState(state) {
   pendingJobStateSave = state;
@@ -10776,6 +10777,7 @@ function sendCleanupCommand(llmName) {
   self.registerSessionTimer = registerSessionTimer;
   self.deregisterSessionTimer = deregisterSessionTimer;
   self.clearSessionTimers = clearSessionTimers;
+  self.getOrchestratorStopGeneration = getOrchestratorStopGeneration;
 
     globalThis.LLMLog?.debug?.('[JobOrchestrator] Module loaded');
   })();

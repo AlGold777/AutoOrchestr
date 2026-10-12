@@ -846,6 +846,42 @@ describe('Perplexity transient blocker router handshake', () => {
   });
 });
 
+describe('main-page request startup', () => {
+  test.each([true, false])('dispatches through the router with forceNewTabs=%s', async (forceNewTabs) => {
+    const { context, sendMessage } = createRouterSandbox();
+    context.getOrchestratorStopGeneration = jest.fn(() => 0);
+    const response = await sendMessage({
+      type: 'START_FULLPAGE_PROCESS', prompt: 'New request', selectedLLMs: ['GPT'],
+      forceNewTabs, sourceView: 'main', useApiFallback: false
+    }, RESULTS_SENDER);
+    expect(response).toEqual({ status: 'process_started' });
+    expect(context.getOrchestratorStopGeneration).toHaveBeenCalledTimes(2);
+    expect(context.startProcess).toHaveBeenCalledWith('New request', ['GPT'], 909,
+      expect.objectContaining({ forceNewTabs, sourceView: 'main' }));
+  });
+
+  test('Stop during startup still cancels the request before dispatch', async () => {
+    const { context, sendMessage } = createRouterSandbox();
+    await sendMessage({ type: 'ANSWER_CARD_RENDER_EVALUATED', llmName: 'GPT', meta: {} }, RESULTS_SENDER);
+    let generation = 0;
+    let releaseDiagnostics;
+    let preparationStarted;
+    const preparing = new Promise(resolve => { preparationStarted = resolve; });
+    context.getOrchestratorStopGeneration = () => generation;
+    context.ProofTelemetryLedger = { clear: () => new Promise(resolve => {
+      releaseDiagnostics = resolve;
+      preparationStarted();
+    }) };
+    const response = sendMessage({ type: 'START_FULLPAGE_PROCESS', prompt: 'Cancelled request',
+      selectedLLMs: ['GPT'], sourceView: 'main', useApiFallback: false }, RESULTS_SENDER);
+    await preparing;
+    generation += 1;
+    releaseDiagnostics();
+    expect(await response).toEqual({ success: false, errorCode: 'RUN_CANCELLED' });
+    expect(context.startProcess).not.toHaveBeenCalled();
+  });
+});
+
 describe('tabs.create failure handling', () => {
   test('tab-manager handles lastError / undefined tab instead of throwing', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'background', 'tab-manager.js'), 'utf8');

@@ -356,7 +356,9 @@ describe('session stability validation guards', () => {
     context.chrome.storage.local.get = jest.fn(key => key === 'tos_acknowledged_v1'
       ? new Promise(resolve => reads.push(resolve)) : Promise.resolve({}));
     const oldStart = context.startProcess('Old', ['GPT'], 909);
+    const beforeStop = context.getOrchestratorStopGeneration();
     context.stopAllProcesses('pause');
+    expect(context.getOrchestratorStopGeneration()).toBe(beforeStop + 1);
     const nextStart = context.startProcess('Next', ['GPT'], 909);
     expect(reads).toHaveLength(2);
     reads[0]({ tos_acknowledged_v1: true });
