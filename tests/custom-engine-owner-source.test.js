@@ -83,6 +83,40 @@ describe('Custom engine: the owner as a participant of its step (R08, ТЗ 3.3)'
   });
 });
 
+describe('Custom engine: the owner as a source of a revision and of feedback (R08, ТЗ 3.3)', () => {
+  test('a model revises an artifact of the owner step: the revision joins the owner line, the author is the model', async () => {
+    const steps = [
+      OWNER({ output: { artifacts: [{ id: 'evidence', name: 'Доказательство', pointer: '' }] } }),
+      { ref: 'S2', kind: 'round', input: 'none', models: [{ name: 'A', id: 'A',
+        input: [{ artifact: EVIDENCE, version: 'latest', required: true }],
+        output: { artifacts: [{ id: 'evidence', name: 'Доработка', pointer: '', revisionOf: { artifact: EVIDENCE, version: 'latest', required: true } }] } }] }
+    ];
+    const { send } = transport({ A: ['доработано'] });
+    const { provideOwnerResult } = owner(['Факты: 1']);
+    const result = await Engine.run({ task: 'T', steps, send, provideOwnerResult, maxAttempts: 1 });
+    expect(result.stopReason).toBe('steps_done');
+    expect(result.artifacts.map((entry) => [entry.lineage.participant, entry.source.participant])).toEqual([['owner', 'owner'], ['owner', 'A']]);
+    expect(result.texts[result.artifacts[1].content.answerRef]).toBe('доработано');
+  });
+
+  test('the feedback of the owner goes to the next visit of the author only, as its text', async () => {
+    const steps = [
+      OWNER({ ref: 'owner:o' }),
+      { ref: 'r1', kind: 'round', input: 'none', models: ['A'] },
+      { ref: 'g', kind: 'gate', input: 'previous', criteria: ['check'], models: ['G'],
+        onFail: { goto: 'r1', maxLoops: 1, feedback: ['owner:o'] } }
+    ];
+    const { send, calls } = transport({ A: ['a1', 'a2'], G: ['НЕ ВЫПОЛНЕНО: check\nВЕРДИКТ: НЕ ПРОШЁЛ', 'ВЕРДИКТ: ПРОШЁЛ'] });
+    const { provideOwnerResult } = owner(['Замечание владельца']);
+    const result = await Engine.run({ task: 'T', steps, send, provideOwnerResult, maxAttempts: 1 });
+    expect(result.stopReason).toBe('steps_done');
+    const author = calls.filter((call) => call.models.includes('A'));
+    expect(author[0].prompts.A).not.toContain('Замечание владельца');
+    expect(author[1].prompts.A).toContain('Замечание владельца');
+    expect(calls.some((call) => call.models.includes('owner'))).toBe(false);
+  });
+});
+
 describe('Custom engine: the input of the owner step (N07, ТЗ 3.3)', () => {
   test('the owner window gets the accepted answer of a participant with its address, the text and the visit', async () => {
     const steps = [R1, OWNER({ input: [{ step: 'r1', required: true }] })];
