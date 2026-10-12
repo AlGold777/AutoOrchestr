@@ -2124,6 +2124,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     // to one batch: later stages of the same run keep the evidence of
                     // earlier stages.
                     const incomingPipelineRunId = message.pipelineContext?.pipelineRunId || null;
+                    const startGeneration = jobStateStopGeneration;
                     const continuesPipelineRun = Boolean(incomingPipelineRunId)
                         && incomingPipelineRunId === (jobState?.session?.pipelineRunId || null);
                     if (!continuesPipelineRun) {
@@ -2134,6 +2135,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         } catch (err) {
                             console.warn('[DIAGNOSTICS] new run clear failed', err);
                         }
+                    }
+                    if (startGeneration !== jobStateStopGeneration) {
+                        sendResponse({ success: false, errorCode: 'RUN_CANCELLED' });
+                        return;
                     }
                     const startResult = await startProcess(message.prompt, message.selectedLLMs, sender.tab.id, {
                         forceNewTabs,
@@ -4068,6 +4073,30 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     sendResponse({ ok: false, reason: !entry ? 'missing_model_entry' : 'not_results_tab' });
                     break;
                 }
+                const markerRequestId = message?.meta?.transportRequestId || message?.meta?.requestId;
+                if (message?.meta?.answerEndMarkerSeen === true && message?.meta?.usableResult === true
+                    && markerRequestId && markerRequestId === entry.transportRequestId
+                    && (!expectedDispatchId || incomingDispatchId === expectedDispatchId)) {
+                    entry.cardAnswerComplete = true;
+                    if (!entry.answer && entry.pendingFinalAnswer) {
+                        entry.answer = entry.pendingFinalAnswer;
+                        entry.answerHtml = entry.pendingFinalAnswerHtml || '';
+                    }
+                    completeHumanPresenceForModel(llmName, 'answer_card_end_marker');
+                    clearDeferredAnswerTimer(llmName);
+                    const completedTabId = self.getBoundTabId?.(llmName, entry) || entry.tabId;
+                    if (isValidTabId(completedTabId)) {
+                        try {
+                            chrome.tabs.sendMessage(completedTabId, { type: 'STOP_AND_CLEANUP', reason: 'answer_card_end_marker' }).catch(() => {});
+                        } catch (_) {}
+                    }
+                    saveJobState(jobState);
+                    const models = jobState?.session?.selectedModels || [];
+                    if (!jobState?.session?.pipelineRunId && models.length
+                        && models.every(name => jobState.llms?.[name]?.cardAnswerComplete)) {
+                        stopAllProcesses('answer_cards_complete', { closeTabs: false, preserveResults: true });
+                    }
+                }
                 emitTelemetry(llmName, 'ANSWER_CARD_RENDER_EVALUATED', {
                     level: message?.meta?.outcome === 'matched' ? 'success' : 'warning',
                     details: message?.meta?.outcome || 'unknown',
@@ -4462,8 +4491,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             case 'STOP_ALL': {
                 (async () => {
                     const cmd = { action: 'STOP_ALL', timestamp: Date.now(), platforms: message.platforms };
-                    await chrome.storage.local.set({ global_command: cmd });
                     stopAllProcesses('stop_all_command', { closeTabs: false });
+                    await chrome.storage.local.set({ global_command: cmd });
                     sendResponse({ success: true });
                 })();
                 return true;

@@ -307,6 +307,7 @@ const runtimeBudgetTimerIds = new Set();
 
 const isTerminalEntry = (entry) => {
   if (!entry) return false;
+  if (entry.cardAnswerComplete) return true;
   if (self.ModelRunState?.isTerminalRunState && self.ModelRunState.isTerminalRunState(entry)) return true;
   const terminalStatuses = Array.isArray(TERMINAL_STATUSES) ? TERMINAL_STATUSES : ['COPY_SUCCESS'];
   if (terminalStatuses.includes(entry.status)) return true;
@@ -316,6 +317,7 @@ const isTerminalEntry = (entry) => {
 
 const isFinalizedEntry = (entry) => {
   if (!entry) return false;
+  if (entry.cardAnswerComplete) return true;
   if (self.ModelRunState?.isTerminalRunState && self.ModelRunState.isTerminalRunState(entry)) return true;
   return Boolean(entry.finalStatusRecorded || entry.finalStatus);
 };
@@ -5076,9 +5078,15 @@ function persistPipelineControlState(nextControl = null) {
   void self.PipelineFSM.persistControlState(control);
 }
 
-function stopAllProcesses(reason = 'unspecified', { closeTabs = false } = {}) {
+function stopAllProcesses(reason = 'unspecified', { closeTabs = false, preserveResults = false } = {}) {
+  const completedState = preserveResults ? {
+    ...jobState,
+    session: { ...jobState.session, startTime: null, roundsInProgress: false },
+    llms: Object.fromEntries(Object.entries(jobState.llms || {}).map(([name, entry]) => [name, { ...entry }]))
+  } : null;
   globalThis.LLMLog?.debug?.(`[BACKGROUND] stopAllProcesses: reason=${reason}, closeTabs=${closeTabs}`);
   jobStateStopGeneration += 1;
+  startProcessReserved = null;
   // Purpose: cancel orchestrator waits tied to the previous session immediately.
   abortOrchestratorOperations(reason);
   resetOrchestratorAbortController();
@@ -5185,7 +5193,8 @@ function stopAllProcesses(reason = 'unspecified', { closeTabs = false } = {}) {
       : self.PipelineFSM.stopRun(control, { reason, pipelineRunId: control.pipelineRunId || null, stage: 'stopped' });
     persistPipelineControlState(nextControl);
   }
-  jobState = {};
+  jobState = completedState || {};
+  if (completedState) saveJobState(jobState);
   broadcastGlobalState();
 }
 
@@ -5193,7 +5202,7 @@ function stopAllProcesses(reason = 'unspecified', { closeTabs = false } = {}) {
 // commands used to both pass RunGuard (busy is only known after the awaited
 // ToS read) and then both replaced the shared jobState. Held until
 // runDispatchRounds has marked the rounds active.
-let startProcessReserved = false;
+let startProcessReserved = null;
 async function startProcess(prompt, selectedLLMs, resultsTab, options = {}) {
   const runGuard = self.RunGuard?.canStartNewRun?.(jobState?.session, options, jobState?.llms);
   if (runGuard && runGuard.ok === false) {
@@ -5203,15 +5212,17 @@ async function startProcess(prompt, selectedLLMs, resultsTab, options = {}) {
   if (startProcessReserved && options.force !== true) {
     return { ok: false, errorCode: 'RUN_ALREADY_ACTIVE', activeSessionId: jobState?.session?.startTime || null };
   }
-  startProcessReserved = true;
+  const reservation = {};
+  startProcessReserved = reservation;
   try {
     return await startProcessReservedRun(prompt, selectedLLMs, resultsTab, options);
   } finally {
-    startProcessReserved = false;
+    if (startProcessReserved === reservation) startProcessReserved = null;
   }
 }
 
 async function startProcessReservedRun(prompt, selectedLLMs, resultsTab, options = {}) {
+  const startGeneration = jobStateStopGeneration;
   const runGuard = self.RunGuard?.canStartNewRun?.(jobState?.session, options, jobState?.llms);
   if (runGuard && runGuard.ok === false) {
     console.warn('[BACKGROUND] Refusing to start process while another run is active', runGuard);
@@ -5219,6 +5230,7 @@ async function startProcessReservedRun(prompt, selectedLLMs, resultsTab, options
   }
   const tosAck = await chrome.storage.local.get('tos_acknowledged_v1')
     .then((d) => d?.tos_acknowledged_v1 === true).catch(() => false);
+  if (startGeneration !== jobStateStopGeneration) return { ok: false, errorCode: 'RUN_CANCELLED' };
   if (!tosAck) {
     console.warn('[BACKGROUND] startProcess rejected: ToS consent missing');
     return { ok: false, errorCode: 'TOS_ACK_REQUIRED' };
@@ -5239,6 +5251,7 @@ async function startProcessReservedRun(prompt, selectedLLMs, resultsTab, options
   jobMetadata.clear();
   Object.keys(llmRequestMap).forEach((key) => delete llmRequestMap[key]);
   const snapshotCleanup = await clearLateAnswerSnapshotCache('start_process');
+  if (startGeneration !== jobStateStopGeneration) return { ok: false, errorCode: 'RUN_CANCELLED' };
   if (snapshotCleanup?.removed) {
     globalThis.LLMLog?.debug?.(`[LateAnswerCollector] Cleared ${snapshotCleanup.removed} stale snapshot keys before new run`);
   }

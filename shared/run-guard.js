@@ -23,7 +23,7 @@
     const guardMs = generationGuardMs();
     return Object.keys(llms).find((name) => {
       const entry = llms[name];
-      if (!entry || entry.finalStatusRecorded) return false;
+      if (!entry || entry.cardAnswerComplete || entry.finalStatusRecorded) return false;
       if (STOPPED_STATUSES.has(String(entry.status || '').toUpperCase())) return false;
       const submittedAt = Number(entry.promptSubmittedAt || 0);
       return submittedAt > 0 && now - submittedAt < guardMs;

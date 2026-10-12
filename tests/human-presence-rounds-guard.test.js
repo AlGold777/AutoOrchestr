@@ -91,6 +91,51 @@ describe('human presence yields to the dispatch rounds', () => {
     jest.useRealTimers();
   });
 
+  test('card completion is irreversible for this request, while other models remain pending', async () => {
+    const { context, jobState, visited } = createSandbox();
+    jobState.llms.GPT.cardAnswerComplete = true;
+    expect(context.hasPendingHumanVisits()).toBe(true);
+    context.scheduleHumanPresenceLoop(true);
+    await pumpLoop();
+    expect(visited).not.toContain(101);
+    jobState.llms.Claude.cardAnswerComplete = true;
+    expect(context.hasPendingHumanVisits()).toBe(false);
+    context.stopHumanPresenceLoop();
+    const count = visited.length;
+    await pumpLoop();
+    expect(visited).toHaveLength(count);
+    jobState.llms.GPT = { status: 'GENERATING', humanVisitDurations: [] };
+    expect(context.hasPendingHumanVisits()).toBe(true);
+  });
+
+  test('an injected activity script stays stopped when the next request releases the hard-stop flag', async () => {
+    const page = {
+      __LLMScrollStopEpoch: 0, __LLMScrollHardStop: false,
+      innerHeight: 800, scrollY: 0, scrollTo: jest.fn()
+    };
+    const context = { window: page, performance: { now: () => Date.now() }, Number, String, Boolean,
+      Math, Promise, setTimeout, console, document: { querySelectorAll: () => [] } };
+    vm.createContext(context);
+    const start = HUMAN_PRESENCE_SOURCE.indexOf('async function simulateHumanActivityInPage');
+    const end = HUMAN_PRESENCE_SOURCE.indexOf('function clearDeferredAnswerTimer', start);
+    vm.runInContext(HUMAN_PRESENCE_SOURCE.slice(start, end), context);
+    const activity = context.simulateHumanActivityInPage({ llmName: 'Claude', scrollDuration: 1000 });
+    expect(page.scrollTo).toHaveBeenCalledTimes(1);
+    page.__LLMScrollHardStop = true;
+    page.__LLMScrollStopEpoch += 1;
+    // A new request can resume scrolling, but the old script remains cancelled.
+    page.__LLMScrollHardStop = false;
+    jest.advanceTimersByTime(1000);
+    await activity;
+    expect(page.scrollTo).toHaveBeenCalledTimes(1);
+  });
+
+  test('a missing entry cannot keep the visit loop alive', () => {
+    const { context, jobState } = createSandbox();
+    jobState.llms = {};
+    expect(context.hasPendingHumanVisits()).toBe(false);
+  });
+
   test('the loop is not scheduled while rounds are running', () => {
     const { context, jobState } = createSandbox();
     jobState.session.roundsInProgress = true;

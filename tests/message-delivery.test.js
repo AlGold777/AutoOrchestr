@@ -35,6 +35,16 @@ describe('message delivery', () => {
     expect(kinds).toEqual(['prepared', 'stale_dropped', 'first_text', 'verified', 'prepared', 'first_text', 'missing_token']);
   });
 
+  test('the current request end marker survives cleaning even before a terminal status', () => {
+    const prompts = Delivery.prepare({ prompt: 'Q', models: ['GPT'], requestIds: { GPT: 'request-1' } });
+    const token = /\[\[AO-[a-z0-9]{6}\]\]/.exec(prompts.GPT)[0];
+    const message = (answer) => Delivery.receive({ llmName: 'GPT', transportRequestId: 'request-1', answer });
+    expect(message(`Full answer\n${token}`).metadata.answerEndMarkerSeen).toBe(true);
+    expect(message(`Quoted ${token}\n${'Still generating. '.repeat(10)}`).metadata.answerEndMarkerSeen).toBe(false);
+    expect(message(token).metadata.answerEndMarkerSeen).toBe(false);
+    expect(message('Incomplete answer').metadata.answerEndMarkerSeen).toBe(false);
+  });
+
   test('partial answers are cleaned but never marked', () => {
     Delivery.prepare({ prompt: 'Q', models: ['GPT'] });
     const partial = Delivery.receive({ llmName: 'GPT', answer: 'Печатает…' }, { final: false });

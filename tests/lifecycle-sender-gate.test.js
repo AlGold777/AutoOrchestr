@@ -18,6 +18,7 @@ function createRouterSandbox() {
   const telemetryEvents = [];
   const context = {
     console,
+    isValidTabId: tabId => Number.isInteger(tabId) && tabId > 0,
     Promise,
     Map,
     Set,
@@ -612,6 +613,42 @@ describe('lifecycle sender gate', () => {
         })
       })
     ]));
+  });
+
+  test('only a current card marker ends visits, and all markers stop a main-page request', async () => {
+    const { context, sendMessage } = createRouterSandbox();
+    context.completeHumanPresenceForModel = jest.fn();
+    context.clearDeferredAnswerTimer = jest.fn();
+    context.jobState.session.selectedModels = ['GPT', 'Claude'];
+    context.jobState.llms.GPT.transportRequestId = 'request-gpt';
+    context.jobState.llms.Claude = { transportRequestId: 'request-claude' };
+    const card = (llmName, transportRequestId, dispatchId) => ({
+      type: 'ANSWER_CARD_RENDER_EVALUATED', llmName,
+      meta: { transportRequestId, dispatchId, answerEndMarkerSeen: true, usableResult: true }
+    });
+    await sendMessage(card('GPT', 'old-request', META.dispatchId), RESULTS_SENDER);
+    await sendMessage(card('GPT', 'request-gpt', META.dispatchId), FOREIGN_SENDER);
+    expect(context.jobState.llms.GPT.cardAnswerComplete).toBeUndefined();
+    await sendMessage(card('GPT', 'request-gpt', META.dispatchId), RESULTS_SENDER);
+    expect(context.jobState.llms.GPT.cardAnswerComplete).toBe(true);
+    expect(context.completeHumanPresenceForModel).toHaveBeenCalledWith('GPT', 'answer_card_end_marker');
+    expect(context.stopAllProcesses).not.toHaveBeenCalled();
+    await sendMessage(card('Claude', 'request-claude'), RESULTS_SENDER);
+    expect(context.stopAllProcesses).toHaveBeenCalledWith('answer_cards_complete', { closeTabs: false, preserveResults: true });
+  });
+
+  test('a pipeline card marker does not cancel the next stage', async () => {
+    const { context, sendMessage } = createRouterSandbox();
+    context.completeHumanPresenceForModel = jest.fn();
+    context.clearDeferredAnswerTimer = jest.fn();
+    context.jobState.session.selectedModels = ['GPT'];
+    context.jobState.session.pipelineRunId = 'pipeline-1';
+    context.jobState.llms.GPT.transportRequestId = 'request-gpt';
+    await sendMessage({ type: 'ANSWER_CARD_RENDER_EVALUATED', llmName: 'GPT', meta: {
+      transportRequestId: 'request-gpt', dispatchId: META.dispatchId, answerEndMarkerSeen: true, usableResult: true
+    } }, RESULTS_SENDER);
+    expect(context.jobState.llms.GPT.cardAnswerComplete).toBe(true);
+    expect(context.stopAllProcesses).not.toHaveBeenCalled();
   });
 
   test('accepts card render evidence only from the registered results tab', async () => {

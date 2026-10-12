@@ -100,6 +100,7 @@ const resolveBoundTabIdForHuman = (llmName, entry = null) => {
 
 const isTerminalEntry = (entry) => {
   if (!entry) return false;
+  if (entry.cardAnswerComplete) return true;
   if (self.ModelRunState?.isTerminalRunState?.(entry)) return true;
   if (self.ModelRunState?.isTerminalStatus?.(entry.status)) return true;
   if (entry.finalStatusRecorded || entry.finalStatus) return true;
@@ -174,6 +175,10 @@ function completeHumanPresenceForModel(llmName, reason = 'terminal_success') {
 }
 
 function stopHumanPresenceLoop() {
+  if (currentHumanVisit?.cancel) {
+    try { currentHumanVisit.cancel(); } catch (_) {}
+    currentHumanVisit = null;
+  }
   if (humanPresenceLoopTimeout) {
     clearTimeout(humanPresenceLoopTimeout);
     humanPresenceLoopTimeout = null;
@@ -229,7 +234,7 @@ function hasPendingHumanVisits() {
   if (!selectedModels.length) return false;
   return selectedModels.some((llmName) => {
     const entry = jobState?.llms?.[llmName];
-    if (!entry) return true;
+    if (!entry) return false;
     if (isTerminalEntry(entry) || entry.skipHumanLoop) {
       return false;
     }
@@ -1235,7 +1240,7 @@ function visitTabWithHumanity(llmName, tabId) {
         resolve();
       };
       lease.onExpire = finalizeVisit;
-      const focusWindow = () => raiseWindowUnlessUserIsElsewhere(tab.windowId, `human_visit:${llmName}`, lease.isCurrent);
+      const focusWindow = () => raiseWindowUnlessUserIsElsewhere(tab.windowId, `human_visit:${llmName}`, () => sessionStillValid() && modelStillPending());
       focusWindow().then(() => {
         if (!sessionStillValid() || !modelStillPending()) {
           finalizeVisit();
@@ -1377,7 +1382,7 @@ function visitTabWithAutomation(llmName, tabId, options = {}) {
         resolve(visitSummary);
       };
       lease.onExpire = () => finalizeVisit('automation_operation_ended');
-      const focusWindow = () => raiseWindowUnlessUserIsElsewhere(tab.windowId, `automation_visit:${llmName}`, lease.isCurrent);
+      const focusWindow = () => raiseWindowUnlessUserIsElsewhere(tab.windowId, `automation_visit:${llmName}`, () => sessionStillValid() && modelStillPending());
         focusWindow().then(() => {
           if (!sessionStillValid() || !modelStillPending()) {
             finalizeVisit('automation_session_stale');
@@ -1448,6 +1453,7 @@ function scrollTabToBottom(tabId) {
   chrome.scripting.executeScript({
     target: { tabId },
     func: () => {
+      if (window.__LLMScrollHardStop) return;
       try {
         const toolkit = window.__UniversalScrollToolkit || window.ScrollToolkit || window.__codexScrollToolkit;
         if (toolkit?.scrollAllTargets) {
@@ -1478,7 +1484,7 @@ function clearPostSuccessScrollAudit(llmName) {
 }
 
 function schedulePostSuccessScrollAudit(llmName, tabId) {
-  if (!llmName || !isValidTabId(tabId)) return;
+  if (!llmName || !isValidTabId(tabId) || jobState?.llms?.[llmName]?.cardAnswerComplete) return;
   clearPostSuccessScrollAudit(llmName);
   const entry = jobState?.llms?.[llmName];
   if (entry) {
@@ -1491,6 +1497,7 @@ function schedulePostSuccessScrollAudit(llmName, tabId) {
     };
   }
   const timers = POST_SUCCESS_SCROLL_ATTEMPTS_MS.map((delay, idx) => setTimeout(() => {
+    if (jobState?.llms?.[llmName] !== entry || entry?.cardAnswerComplete) return;
     scrollTabToBottom(tabId);
     if (idx === POST_SUCCESS_SCROLL_ATTEMPTS_MS.length - 1) {
       postSuccessScrollTimers.delete(llmName);
@@ -1510,7 +1517,7 @@ function schedulePostSuccessScrollAudit(llmName, tabId) {
 async function runPostSuccessAnswerAudit(llmName, index) {
   const entry = jobState?.llms?.[llmName];
   const plan = entry?.postSuccessAudit;
-  if (!entry || !plan || Number(plan.generationEpoch || 0) !== Number(entry.generationEpoch || 0)) return;
+  if (!entry || entry.cardAnswerComplete || !plan || Number(plan.generationEpoch || 0) !== Number(entry.generationEpoch || 0)) return;
   const tabId = Number(plan.tabId || entry.tabId || 0);
   if (!isValidTabId(tabId)) return;
   scrollTabToBottom(tabId);
@@ -1519,7 +1526,7 @@ async function runPostSuccessAnswerAudit(llmName, index) {
     llmName, tabId, reason: 'post_success_answer_audit',
     meta: { dispatchId: plan.dispatchId, runSessionId: plan.runSessionId, generationEpoch: plan.generationEpoch }
   });
-  if (!result?.ok || !result.text) return;
+  if (jobState?.llms?.[llmName] !== entry || entry.cardAnswerComplete || !result?.ok || !result.text) return;
   const hash = self.AnswerVerification?.hashText?.(result.text) || null;
   const stable = Boolean(hash && plan.lastHash === hash && Number(plan.lastLength || 0) === String(result.text).trim().length);
   plan.lastHash = hash;
@@ -1568,6 +1575,9 @@ async function simulateHumanActivityInPage(options = {}) {
   if (window.__LLMScrollHardStop || window.__HumanoidSessionState?.state === 'HARD_STOP') {
     return { status: 'skipped', reason: 'hard-stop' };
   }
+  const stopEpoch = Number(window.__LLMScrollStopEpoch || 0);
+  const isStopped = () => Boolean(window.__LLMScrollHardStop)
+    || Number(window.__LLMScrollStopEpoch || 0) !== stopEpoch;
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const llmName = String(options?.llmName || '');
   const shouldRunContinuousPress = /^(Gemini|Perplexity|GPT)$/i.test(llmName);
@@ -1629,7 +1639,7 @@ async function simulateHumanActivityInPage(options = {}) {
       const collectScrollableNodes = () => {
         const set = new Set();
         const add = (node) => {
-          if (!node) return;
+          if (!node || window.__LLMScrollHardStop) return;
           if (node === document || node === window) return;
           if (node === document.body || node === document.documentElement || node === document.scrollingElement) {
             set.add(document.scrollingElement || document.documentElement);
@@ -1683,7 +1693,7 @@ async function simulateHumanActivityInPage(options = {}) {
         return Array.from(set);
       };
       const scrollNode = async (node) => {
-        if (!node) return;
+        if (!node || window.__LLMScrollHardStop) return;
         const maxScroll = (node.scrollHeight || 0) - (node.clientHeight || 0);
         if (maxScroll <= 0) return;
         const start = node.scrollTop || 0;
@@ -1694,6 +1704,7 @@ async function simulateHumanActivityInPage(options = {}) {
       };
       const scrollAllTargets = async () => {
         await waitForDomStability(200, 1200);
+        if (window.__LLMScrollHardStop) return;
         const nodes = collectScrollableNodes();
         for (const node of nodes.slice(0, 6)) {
           await scrollNode(node);
@@ -1712,7 +1723,7 @@ async function simulateHumanActivityInPage(options = {}) {
 
   const runScrollSequence = async () => {
     const start = performance.now();
-    while (performance.now() - start < scrollDuration) {
+    while (!isStopped() && performance.now() - start < scrollDuration) {
       const delta = window.innerHeight * (0.22 + Math.random() * 0.15);
       const target = Math.max(0, window.scrollY + delta);
       window.scrollTo({ top: target, behavior: 'smooth' });
@@ -1737,6 +1748,7 @@ async function simulateHumanActivityInPage(options = {}) {
     };
 
     const setTop = (top) => {
+      if (isStopped()) return;
       const targetTop = Math.max(0, Math.min(maxScroll, top));
       if (root === document.body || root === document.documentElement || root === document.scrollingElement) {
         window.scrollTo({ top: targetTop, behavior: 'auto' });
@@ -1762,6 +1774,7 @@ async function simulateHumanActivityInPage(options = {}) {
       pressure: pressed ? 0.5 : 0
     });
     const emitPointer = (type, x, y, pressed) => {
+      if (isStopped()) return;
       const target = document.elementFromPoint(clampX(x), clampY(y)) || document.body || document.documentElement;
       const init = makePointerInit(type, x, y, pressed);
       try {
@@ -1775,6 +1788,7 @@ async function simulateHumanActivityInPage(options = {}) {
 
     const dragSegment = async ({ fromY, toY, fromTop, toTop, steps }) => {
       for (let i = 1; i <= steps; i += 1) {
+        if (isStopped()) return;
         const t = i / steps;
         const y = fromY + (toY - fromY) * t;
         const top = fromTop + (toTop - fromTop) * t;
@@ -1837,6 +1851,7 @@ async function simulateHumanActivityInPage(options = {}) {
       return window.scrollY || 0;
     };
     const scrollToTop = (top) => {
+      if (isStopped()) return;
       const targetTop = Math.max(0, Math.min(maxScroll, top));
       if (root === document.body || root === document.documentElement || root === document.scrollingElement) {
         window.scrollTo({ top: targetTop, behavior: 'smooth' });
@@ -1852,7 +1867,7 @@ async function simulateHumanActivityInPage(options = {}) {
     }
     scrollToTop(maxScroll);
     await sleep(320 + Math.random() * 180);
-    window.dispatchEvent(new Event('scroll'));
+    if (!isStopped()) window.dispatchEvent(new Event('scroll'));
   };
 
   const hoverTargets = [
@@ -1869,6 +1884,7 @@ async function simulateHumanActivityInPage(options = {}) {
   ];
 
   const simulateHover = async (selectorList) => {
+    if (isStopped()) return null;
     for (const selector of selectorList) {
       const el = document.querySelector(selector);
       if (el) {
@@ -1886,6 +1902,7 @@ async function simulateHumanActivityInPage(options = {}) {
 
   try {
     await runScrollSequence();
+    if (isStopped()) return;
     if (shouldRunContinuousPress) {
       await runContinuousPressScrollGesture();
     }
@@ -1895,7 +1912,9 @@ async function simulateHumanActivityInPage(options = {}) {
         await humanoid.readPage(600 + Math.random() * 400);
       } catch (_) {}
     }
+    if (isStopped()) return;
     const composer = await simulateHover(hoverTargets);
+    if (isStopped()) return;
     if (composer) {
       if (humanoid?.moveTo) {
         try { await humanoid.moveTo(composer); } catch (_) {}
@@ -1905,7 +1924,9 @@ async function simulateHumanActivityInPage(options = {}) {
         composer.dispatchEvent(new Event('blur', { bubbles: true }));
       }
     }
+    if (isStopped()) return;
     const actionTarget = await simulateHover(actionTargets);
+    if (isStopped()) return;
     if (actionTarget && humanoid?.moveTo) {
       try { await humanoid.moveTo(actionTarget); } catch (_) {}
     }
@@ -1922,8 +1943,10 @@ async function simulateHumanActivityInPage(options = {}) {
     console.warn('[HUMAN-VISIT] simulateHumanActivityInPage error:', err);
   }
 
+  if (isStopped()) return;
   try {
     await ensureScrollToolkit().scrollAllTargets();
+    if (isStopped()) return;
     await performCompletionScrollNudge();
   } catch (err) {
     console.warn('[HUMAN-VISIT] final scroll error:', err);
@@ -1944,6 +1967,7 @@ function clearAllDeferredAnswerTimers() {
 }
 
 function scheduleDeferredAnswerVisit(llmName, tabId, delays = DEFERRED_VISIT_DELAYS_MS) {
+  if (!jobState?.llms?.[llmName] || jobState.llms[llmName].cardAnswerComplete) return;
   if (!llmName || !isValidTabId(tabId) || !Array.isArray(delays) || !delays.length) return;
   clearDeferredAnswerTimer(llmName);
   const [nextDelay, ...rest] = delays;
@@ -1959,10 +1983,13 @@ function scheduleDeferredAnswerVisit(llmName, tabId, delays = DEFERRED_VISIT_DEL
 }
 
 function runDeferredAnswerVisit(llmName, tabId) {
-  if (!isValidTabId(tabId)) return;
+  if (!isValidTabId(tabId) || !jobState?.llms?.[llmName] || jobState.llms[llmName].cardAnswerComplete) return;
   chrome.scripting.executeScript({
     target: { tabId },
     func: (modelName) => {
+      const stopEpoch = Number(window.__LLMScrollStopEpoch || 0);
+      const isStopped = () => Boolean(window.__LLMScrollHardStop)
+        || Number(window.__LLMScrollStopEpoch || 0) !== stopEpoch;
       const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
       const clickLatestAnswer = async () => {
         const selectors = [
@@ -1977,15 +2004,18 @@ function runDeferredAnswerVisit(llmName, tabId) {
         const nodes = Array.from(document.querySelectorAll(selectors.join(',')));
         const target = nodes.filter((el) => (el.innerText || el.textContent || '').trim().length > 20).pop();
         if (!target) return false;
+        if (isStopped()) return false;
         target.scrollIntoView({ behavior: 'smooth', block: 'end' });
         await sleep(220);
+        if (isStopped()) return false;
         target.dispatchEvent(new MouseEvent('click', { bubbles: true }));
         await sleep(140);
+        if (isStopped()) return false;
         window.scrollBy({ top: window.innerHeight * 0.25, behavior: 'smooth' });
         return true;
       };
       clickLatestAnswer().then((ok) => {
-        if (!ok) {
+        if (!ok && !isStopped()) {
           window.scrollTo({ top: document.body?.scrollHeight || 0, behavior: 'smooth' });
         }
       }).catch((err) => console.warn('[HUMAN-VISIT] deferred visit error', modelName, err));

@@ -350,6 +350,32 @@ describe('session stability validation guards', () => {
     expect(read('background/health-monitor.js')).toContain('self.registerSessionTimer');
   });
 
+  test('stopping an unfinished start releases the reservation without letting the old start resume', async () => {
+    const context = createOrchestratorSandbox();
+    const reads = [];
+    context.chrome.storage.local.get = jest.fn(key => key === 'tos_acknowledged_v1'
+      ? new Promise(resolve => reads.push(resolve)) : Promise.resolve({}));
+    const oldStart = context.startProcess('Old', ['GPT'], 909);
+    context.stopAllProcesses('pause');
+    const nextStart = context.startProcess('Next', ['GPT'], 909);
+    expect(reads).toHaveLength(2);
+    reads[0]({ tos_acknowledged_v1: true });
+    expect(await oldStart).toMatchObject({ ok: false, errorCode: 'RUN_CANCELLED' });
+    expect(await context.startProcess('Duplicate', ['GPT'], 909)).toMatchObject({ ok: false, errorCode: 'RUN_ALREADY_ACTIVE' });
+    reads[1]({ tos_acknowledged_v1: false });
+    expect(await nextStart).toMatchObject({ ok: false, errorCode: 'TOS_ACK_REQUIRED' });
+  });
+
+  test('automatic completion stops the session while preserving answers', () => {
+    const context = createOrchestratorSandbox();
+    context.jobState.llms.GPT = { answer: 'Complete answer', status: 'SUCCESS', cardAnswerComplete: true };
+    context.stopAllProcesses('answer_cards_complete', { preserveResults: true });
+    expect(context.jobState.session.startTime).toBeNull();
+    expect(context.jobState.session.roundsInProgress).toBe(false);
+    expect(context.jobState.llms.GPT).toMatchObject({ answer: 'Complete answer', status: 'SUCCESS', cardAnswerComplete: true });
+    expect(context.stopHeartbeatMonitor).toHaveBeenCalled();
+  });
+
   test('stopAllProcesses clears registered session timers before they can fire', () => {
     jest.useFakeTimers();
     try {

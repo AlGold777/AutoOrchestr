@@ -1537,6 +1537,17 @@ document.addEventListener('click', (event) => {
 
     // --- MAIN PAGE ELEMENTS ---
     const startButton = document.getElementById('start-button');
+    let mainRunActive = false;
+    let mainRunAction = 0;
+    const setMainRunActive = (active) => {
+        mainRunActive = Boolean(active);
+        if (!startButton) return;
+        startButton.title = mainRunActive ? 'Пауза: остановить запрос' : 'Send prompt';
+        startButton.setAttribute('aria-label', mainRunActive ? 'Пауза' : 'Пуск');
+        startButton.setAttribute('aria-busy', String(mainRunActive));
+        const icon = startButton.querySelector('i');
+        if (icon) icon.className = mainRunActive ? 'ti ti-player-pause' : 'ti ti-send';
+    };
     const promptInput = document.getElementById('modTa') || document.getElementById('prompt-input');
     const promptNoteView = document.getElementById('prompt-note-view');
     const promptContainer = document.querySelector('.prompt-container.prompt-sandwich.debate-composer')
@@ -18650,6 +18661,11 @@ document.addEventListener('click', (event) => {
     }
 
     function syncStatusFromGlobalState(state = {}, options = {}) {
+        if (!state.session?.pipelineRunId && (!state.session?.sourceView || state.session.sourceView === getCurrentViewKey())) {
+            setMainRunActive(Boolean(state.session?.startTime)
+                && (state.session?.roundsInProgress || Object.values(state.llms || {}).some(entry =>
+                    !entry.cardAnswerComplete && !entry.finalStatusRecorded && !entry.finalStatus)));
+        }
         if (options?.replace === true) {
             resetLiveStatusIndicators();
         }
@@ -19454,7 +19470,7 @@ document.addEventListener('click', (event) => {
             || `boundary:${String(meta.dispatchId || 'unknown')}:${String(meta.attemptId || 'unknown')}:${evaluationBoundaryType}`;
         const resolutionState = meta.resolutionState
             || (outcome === 'matched' ? 'delivered' : 'unresolved');
-        const renderKey = [meta.transportRequestId || meta.requestId, meta.dispatchId, meta.attemptId, meta.payloadEvidenceId, observedCardId, observed?.normalizedHash, outcome].join('|');
+        const renderKey = [meta.transportRequestId || meta.requestId, meta.dispatchId, meta.attemptId, meta.payloadEvidenceId, observedCardId, observed?.normalizedHash, outcome, meta.answerEndMarkerSeen === true].join('|');
         if (outputElement?.dataset?.proofRenderKey === renderKey) return;
         if (outputElement?.dataset) outputElement.dataset.proofRenderKey = renderKey;
         window.MessageDelivery?.batchEvent?.('displayed', {
@@ -19470,6 +19486,7 @@ document.addEventListener('click', (event) => {
                 type: 'ANSWER_CARD_RENDER_EVALUATED',
                 llmName,
                 meta: {
+                    answerEndMarkerSeen: meta.answerEndMarkerSeen === true && Boolean(renderedText) && !isErrorOutput(renderedText),
                     dispatchId: meta.dispatchId || null,
                     attemptId: meta.attemptId || null,
                     payloadEvidenceId: meta.payloadEvidenceId || null,
@@ -24558,7 +24575,21 @@ function checkCompareButtonState() {
     }
 
     startButton?.addEventListener('click', async () => {
-
+        if (mainRunActive) {
+            ++mainRunAction;
+            startButton.disabled = true;
+            try {
+                const stopped = await sendToBackground({ type: 'STOP_ALL' });
+                if (!stopped?.success) throw new Error('Не удалось остановить запрос');
+                setMainRunActive(false);
+            } catch (err) {
+                showNotification(err?.message || 'Не удалось остановить запрос', 'error');
+            } finally {
+                startButton.disabled = false;
+            }
+            return;
+        }
+        const action = ++mainRunAction;
         try {
             let finalPrompt = pastedTextComposer.getText();
             if (!finalPrompt) {
@@ -24587,6 +24618,7 @@ function checkCompareButtonState() {
             // Record which Generation Wait Profile this run uses (for the telemetry export).
             lastGenerationWaitProfile = (longModeCheckbox && longModeCheckbox.checked) ? 'long' : 'standard';
             const attachmentsPayload = await buildAttachmentPayload();
+            if (action !== mainRunAction) return;
             if (attachmentsPayload.length) {
                 const unsupported = selectedLLMs.filter((name) => ATTACH_CAPABILITY[name] === false);
                 if (unsupported.length) {
@@ -24605,6 +24637,7 @@ function checkCompareButtonState() {
             }) || null;
 
             let response = null;
+            setMainRunActive(true);
             try {
                 response = await sendToBackground({
                     type: 'START_FULLPAGE_PROCESS',
@@ -24625,6 +24658,7 @@ function checkCompareButtonState() {
                 throw err;
             }
 
+            if (action !== mainRunAction || response?.errorCode === 'RUN_CANCELLED') return;
             if (response?.errorCode === 'RUN_ALREADY_ACTIVE') {
                 showNotification('Another run is already in progress. Stop it before starting a new one.', 'warn');
                 throw new Error('run_already_active');
@@ -24649,6 +24683,8 @@ function checkCompareButtonState() {
                 resetNewPagesCheckboxAfterOpen();
             }
         } catch (err) {
+            if (action !== mainRunAction) return;
+            setMainRunActive(false);
             console.error('[RESULTS] Failed to start process', err);
             showNotification(`Failed to send request: ${err?.message || String(err)}`, 'error');
         } finally {

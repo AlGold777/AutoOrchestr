@@ -982,6 +982,8 @@ function tryAttachExistingTab(llmName, prompt, attachments = [], options = {}) {
 }
 
 function activateTabForDispatch(tabId, source = 'activate_tab_for_dispatch', options = {}) {
+  const activationState = jobState;
+  const activationEntry = Object.values(jobState?.llms || {}).find(entry => entry?.tabId === tabId);
   return new Promise((resolve) => {
     if (!isValidTabId(tabId)) {
       resolve(false);
@@ -1006,7 +1008,7 @@ function activateTabForDispatch(tabId, source = 'activate_tab_for_dispatch', opt
     chrome.tabs.update(tabId, { active: true }, (tab) => {
       const activationError = chrome.runtime.lastError;
       if (settled) return;
-      if (activationError || !tab) { finish(false); return; }
+      if (activationError || !tab || jobState !== activationState || activationEntry?.cardAnswerComplete) { finish(false); return; }
       // Issue this while we still own the visit; never issue it from a late
       // callback after the next model has acquired foreground ownership.
       try {

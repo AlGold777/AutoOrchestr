@@ -274,6 +274,7 @@
   };
 
   const stopAll = (reason = 'manual') => {
+    window.__LLMScrollStopEpoch = Number(window.__LLMScrollStopEpoch || 0) + 1;
     try { commandExecutor.stop(); } catch (_) {}
     try { navigationDetector.stop(); } catch (_) {}
     try { streamWatcher.disconnect(); } catch (_) {}
