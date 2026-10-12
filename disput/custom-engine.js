@@ -286,6 +286,8 @@
           return isPlain(source.artifact) && typeof source.artifact.step === 'string' && typeof source.artifact.participant === 'string'
             && typeof source.artifact.id === 'string' && versionOk;
         }
+        // Without a participant the source is the whole accepted result of the step (3.1).
+        if (!('participant' in source)) return typeof source.step === 'string';
         return typeof source.step === 'string' && typeof source.participant === 'string';
       };
       const bad = spec.findIndex((source) => !shape(source));
@@ -720,10 +722,16 @@
         const required = Boolean(source?.required);
         const ref = typeof source === 'string' ? source : source.step;
         const entry = currentOf(ref);
-        const answers = acceptedOf(entry).filter((item) => typeof source === 'string' || item.participant === source.participant);
-        if (!answers.length && required) {
-          const who = typeof source === 'string' ? '' : ` участник «${source.participant}»`;
-          throw new StopRun('missing_input', `шаг «${ref}»${who} не дал принятого ответа; шаг «${step.ref}» не отправлен`);
+        // A whole result (a string, or an object without a participant) is every accepted answer of the step (3.1).
+        const whole = typeof source === 'string' || !('participant' in source);
+        const answers = acceptedOf(entry).filter((item) => whole || item.participant === source.participant);
+        if (required) {
+          const who = whole ? '' : ` участник «${source.participant}»`;
+          const stopped = (why) => new StopRun('missing_input', `шаг «${ref}»${who} ${why}; шаг «${step.ref}» не отправлен`);
+          // A required source is complete: its answers reach the threshold and its gate passes (3.1).
+          if (!answers.length) throw stopped('не дал принятого ответа');
+          if (whole && answers.length < neededOf(entry.step)) throw stopped('не набрал порога принятых ответов');
+          if (entry.step.kind === 'gate' && !gatePass(entry.step, entry.outcome, entry.skipped)) throw stopped('не прошёл проверку');
         }
         return answers.map((item) => ({
           label: `${stepLabel(entry.step)}${entry.step.output?.name ? ` («${entry.step.output.name}»)` : ''}, участник ${item.participant}, визит ${entry.visit}`,

@@ -449,7 +449,7 @@ describe('Custom engine addressed inputs', () => {
     const { send, calls } = transport({ A: ['a1'], B: ['b1'] });
     const base = { ref: 'r1', kind: 'round', input: 'none', models: ['A'] };
     const cases = [
-      [[{ step: 'r1' }], 'invalid_input'],
+      // { step } without a participant is the whole result of the step now (ТЗ 3.1): see custom-engine-sources.test.js.
       [[42], 'invalid_input'],
       [[{ step: 'r1', participant: 'Z' }], 'invalid_input'],
       [['r2'], 'invalid_input']
