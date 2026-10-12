@@ -38,7 +38,7 @@ describe('Basic page sends participants (ТЗ 7, T07)', () => {
   });
 
   test('the chat bindings go into the state of the checkpoint (the snapshot takes them, A05)', () => {
-    expect(results).toContain('const chatBindings = {};');
+    expect(results).toContain('const chatBindings = resumeRecord ? { ...(resumeRecord.snapshot?.chatBindings || {}) } : {};');
     expect(results).toContain('state: { ...state, chatBindings: { ...chatBindings } },');
     expect(results).toContain('transportRequestId: byModel[request.modelName].transportRequestId');
   });
@@ -100,5 +100,30 @@ describe('Attachments follow the participant, not the model name (T07)', () => {
     expect(sendAt).toBeGreaterThan(0);
     expect(sendBlock).not.toContain('attached.has(model)');
     expect(sendBlock).not.toContain('attached.add(model)');
+  });
+});
+
+describe('Resumed Basic run keeps the chats of its participants (R01)', () => {
+  test('a resume starts from the saved chats of the snapshot, a new run from none', () => {
+    expect(results).toContain('const chatBindings = resumeRecord ? { ...(resumeRecord.snapshot?.chatBindings || {}) } : {};');
+  });
+
+  test('a continue sends the saved chat with the request; a new chat sends none', () => {
+    expect(results).toContain('const binding = !isNewChat(request) && saved?.modelName === request.modelName && saved.tabId != null');
+    expect(results).toContain('participantId: request.participantId, newChat: isNewChat(request), ...(binding ? { binding } : {})');
+  });
+
+  test('after each wave the page reads the chats the background bound and keeps them in the state before the next send', () => {
+    expect(results).toContain("sendToBackground({ type: 'PARTICIPANT_CHAT_BINDINGS', pipelineRunId })");
+    expect(results).toContain('await refreshParticipantChats(runContext.pipelineRunId, wave);');
+    const sendAt = results.indexOf('const sendWave = async (wave, meta, waveNo) => {');
+    expect(results.indexOf('await refreshParticipantChats(runContext.pipelineRunId, wave);', sendAt)).toBeGreaterThan(sendAt);
+  });
+
+  test('the background answers the bindings of one run and passes the saved binding to the participant', () => {
+    const handlers = fs.readFileSync(path.join(__dirname, '..', 'background', 'pipeline-message-handlers.js'), 'utf8');
+    expect(handlers).toContain("if (message?.type === 'PARTICIPANT_CHAT_BINDINGS') {");
+    expect(handlers).toContain('self.participantChatBindingsOf?.(message.pipelineRunId || null)');
+    expect(orchestrator).toContain('binding: participant.binding || null');
   });
 });

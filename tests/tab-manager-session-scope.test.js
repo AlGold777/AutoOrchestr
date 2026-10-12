@@ -635,3 +635,75 @@ describe('Basic participant chats are bound per run and never lost silently (R01
     expect(context.participantChatOf('run-2', 'author-A').tabId).toBe(2002);
   });
 });
+
+describe('Basic participant chat restored from the saved snapshot (R01, resume)', () => {
+  const chatUrl = (id) => `https://chatgpt.com/c/${id}`;
+  const liveTab = (id, index = 0) => ({ id, url: chatUrl(id), windowId: 7, index, status: 'complete', lastAccessed: Date.now() });
+  const saved = (tabId, extra = {}) => ({ tabId, requestId: 'req-saved', stageAttemptId: 'a1', ...extra });
+  const visit = (runId, participantId, extra = {}) => ({ runId, participantId, newChat: false, requestId: 'req-now', stageAttemptId: 'a2', ...extra });
+
+  function resumeSandbox(queryTabs = []) {
+    const { context } = createTabManagerSandbox({ queryTabs });
+    context.ensureTabReadyForDispatch = jest.fn(async (tabId) => ({ ok: true, tab: { id: tabId, url: chatUrl(tabId) } }));
+    context.schedulePromptDispatchSupervisor = jest.fn();
+    context.chrome.tabs.create = jest.fn((_options, cb) => {
+      const tab = { id: 950 + context.chrome.tabs.create.mock.calls.length, url: 'https://chatgpt.com/', windowId: 7, index: 9, status: 'complete' };
+      queryTabs.push(tab);
+      cb(tab);
+    });
+    return { context, queryTabs };
+  }
+
+  test('no binding in the background: the saved chat is restored and the send goes to it, not to a foreign tab', async () => {
+    const { context } = resumeSandbox([liveTab(2001), liveTab(2002, 1)]);
+    const result = await context.openParticipantChat('GPT', { ...visit('run-1', 'author-A'), binding: saved(2001) }, 'resume', []);
+    expect(result).toEqual({ ok: true, tabId: 2001 });
+    expect(context.dispatchPromptToTab).toHaveBeenCalledWith('GPT', 2001, 'resume', [], 'participant_continue');
+    expect(context.participantChatOf('run-1', 'author-A')).toEqual(expect.objectContaining({ tabId: 2001, requestId: 'req-now' }));
+  });
+
+  test('a saved chat whose tab is gone stops the request: no send, no foreign tab, no new chat', async () => {
+    const { context } = resumeSandbox([liveTab(2002, 1)]);
+    const result = await context.openParticipantChat('GPT', { ...visit('run-1', 'author-A'), binding: saved(2001) }, 'resume', []);
+    expect(result.ok).toBe(false);
+    expect(result.error.errorCode).toBe('participant_chat_lost');
+    expect(result.error.meta).toEqual(expect.objectContaining({ participantId: 'author-A', runId: 'run-1', tabId: 2001 }));
+    expect(context.dispatchPromptToTab).not.toHaveBeenCalled();
+    expect(context.chrome.tabs.create).not.toHaveBeenCalled();
+    expect(context.participantChatOf('run-1', 'author-A')).toBeNull();
+  });
+
+  test('a binding of the background wins over the saved one', async () => {
+    const { context } = resumeSandbox([liveTab(2001), liveTab(2002, 1)]);
+    await context.bindParticipantChat('run-1', 'author-A', 'GPT', 2002, { stageAttemptId: 'a1' });
+    await context.openParticipantChat('GPT', { ...visit('run-1', 'author-A'), binding: saved(2001) }, 'hello', []);
+    expect(context.dispatchPromptToTab).toHaveBeenCalledWith('GPT', 2002, 'hello', [], 'participant_continue');
+  });
+
+  test('a new visit ignores the saved chat and opens its own chat', async () => {
+    const { context } = resumeSandbox([liveTab(2001)]);
+    const result = await context.openParticipantChat('GPT', { ...visit('run-1', 'author-A', { newChat: true }), binding: saved(2001) }, 'next visit', []);
+    expect(result.ok).toBe(true);
+    expect(result.tabId).not.toBe(2001);
+    expect(context.chrome.tabs.create).toHaveBeenCalledTimes(1);
+  });
+
+  test('a run that another run has replaced goes on from its own saved chat (no shared binding)', async () => {
+    const { context } = resumeSandbox([liveTab(2001), liveTab(2003, 1)]);
+    await context.bindParticipantChat('run-1', 'author-A', 'GPT', 2001, { stageAttemptId: 'a1' });
+    await context.pruneParticipantRuns('run-2');
+    await context.bindParticipantChat('run-2', 'author-A', 'GPT', 2003, { stageAttemptId: 'a1' });
+    const result = await context.openParticipantChat('GPT', { ...visit('run-1', 'author-A'), binding: saved(2001) }, 'run one', []);
+    expect(result).toEqual({ ok: true, tabId: 2001 });
+    expect(context.participantChatOf('run-2', 'author-A').tabId).toBe(2003);
+  });
+
+  test('the bindings of one run are read back for the page; another run is not in them', async () => {
+    const { context } = resumeSandbox([liveTab(2001), liveTab(2002, 1)]);
+    await context.bindParticipantChat('run-1', 'author-A', 'GPT', 2001, { requestId: 'req-A', stageAttemptId: 'a1' });
+    await context.bindParticipantChat('run-2', 'author-B', 'GPT', 2002, { requestId: 'req-B', stageAttemptId: 'a1' });
+    expect(context.participantChatBindingsOf('run-1')).toEqual({
+      'author-A': { modelName: 'GPT', tabId: 2001, requestId: 'req-A', stageAttemptId: 'a1' }
+    });
+  });
+});

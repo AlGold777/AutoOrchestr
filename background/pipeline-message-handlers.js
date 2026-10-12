@@ -62,7 +62,17 @@
     }
   }
 
+  // The chats of the participants of one run as they are bound now (R01): the page writes them into its snapshot.
+  function participantBindings(message, { sendResponse }) {
+    const bindings = self.participantChatBindingsOf?.(message.pipelineRunId || null) || {};
+    sendResponse({ success: true, pipelineRunId: message.pipelineRunId || null, bindings });
+  }
+
   function handle(message, deps) {
+    if (message?.type === 'PARTICIPANT_CHAT_BINDINGS') {
+      participantBindings(message, deps);
+      return true;
+    }
     if (message?.type === 'CANCEL_PIPELINE_RUN') {
       void cancelPipelineRun(message, deps);
       return true;

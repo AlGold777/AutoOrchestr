@@ -7386,6 +7386,12 @@ document.addEventListener('click', (event) => {
                 });
             }
         };
+        // The text of a participant request refused before the send, by its code (shared/run-error.js).
+        const PARTICIPANT_REFUSAL_TEXT = {
+            participant_chat_lost: 'чат участника недоступен (вкладка закрыта или не чат провайдера). Запрос не отправлен, чужой чат не выбран.',
+            participant_binding_failed: 'не удалось сохранить привязку чата участника. Запрос не отправлен.',
+            participant_api_unsupported: 'для чата участника API-режим не поддержан: выключите API-режим и запустите снова. Запрос не отправлен.'
+        };
         const runCustomFromPage = async ({ task, resumeRecord = null }) => {
             const engine = window.CustomEngine;
             const built = resumeRecord ? builtFromRecord(resumeRecord) : buildBasicRun(draftPlanForCanvas(getActiveDraftPlan()));
@@ -7432,9 +7438,10 @@ document.addEventListener('click', (event) => {
             };
             // A checkpoint (8.2) takes the state of the engine into the record and waits for its write: a failed write is
             // not swallowed here, the engine stops on it (checkpoint_failed).
-            // The chats of the participants of this run (T07): participantId → { modelName, stepRef, visit, transportRequestId }.
-            // The background keeps the tab of each participant; this record is what a resume and A05 read.
-            const chatBindings = {};
+            // The chats of the participants of this run (T07): participantId → { modelName, stepRef, visit, transportRequestId,
+            // tabId, requestId, stageAttemptId }. The background keeps the tab of each participant; this record is what a resume
+            // reads. A resumed run starts from the saved chats (R01): the background takes them back only for its own run ID.
+            const chatBindings = resumeRecord ? { ...(resumeRecord.snapshot?.chatBindings || {}) } : {};
             const checkpointRecord = (state) => {
                 window.CustomRunRecord.setArtifacts(record, state.artifacts);
                 window.CustomRunRecord.setSnapshot(record, { schema: built.schema, runSettings: { semiAuto, maxAttempts: engine.DEFAULT_ATTEMPTS, runMaxWords: built.run.maxWords ?? null }, state: { ...state, chatBindings: { ...chatBindings } }, current: state.current, routes: state.routes, ownerAnswers: state.ownerAnswers, pendingOwner: state.pendingOwner });
@@ -7485,9 +7492,16 @@ document.addEventListener('click', (event) => {
                     const discipline = Object.fromEntries(wave.map((request) => [request.modelName,
                         stepModels.find((model) => model.id === request.participantId)?.discipline || {}
                     ]));
-                    const participants = Object.fromEntries(wave.map((request) => [request.modelName, {
-                        participantId: request.participantId, newChat: isNewChat(request)
-                    }]));
+                    const participants = Object.fromEntries(wave.map((request) => {
+                        const saved = chatBindings[request.participantId];
+                        // The saved chat of a continue goes with the request; the background uses it only without a binding of its own.
+                        const binding = !isNewChat(request) && saved?.modelName === request.modelName && saved.tabId != null
+                            ? { tabId: saved.tabId, requestId: saved.requestId || null, stageAttemptId: saved.stageAttemptId || null }
+                            : null;
+                        return [request.modelName, {
+                            participantId: request.participantId, newChat: isNewChat(request), ...(binding ? { binding } : {})
+                        }];
+                    }));
                     // Reuse the existing limit contract, on first attempts and corrections alike.
                     const composed = composeCustomPrompts(models, promptsByModel, maxWordsByModel, discipline,
                         built.schema.defaults?.modelNotes || {}, correctionByModel, built.run.maxWords);
@@ -7516,9 +7530,16 @@ document.addEventListener('click', (event) => {
                     });
                     // Attachments follow the participant (its new chat), not the model name: a second participant of the same model gets them too.
                     wave.forEach((request) => attached.add(request.participantId));
+                    // The chats as the background bound them (R01), written into the state before the next send.
+                    await refreshParticipantChats(runContext.pipelineRunId, wave);
                     const byModel = Object.fromEntries(models.map((model) => {
                         const modelResult = batch?.results?.[model] || {};
                         const text = String(batch?.responses?.[model] || '');
+                        if (!text.trim() && String(modelResult.status || '').toUpperCase() === 'USER_ACTION_REQUIRED') {
+                            // A participant request refused before the send (R01, R06): the reason is said, nothing is sent.
+                            const code = Object.values(window.RunError?.CODES || {}).find((item) => String(modelResult.reason || '').includes(item)) || '';
+                            showNotification(`${label}: ${PARTICIPANT_REFUSAL_TEXT[code] || 'запрос участника не отправлен.'}`, 'warn');
+                        }
                         if (text.trim()) {
                             const request = wave.find((item) => item.modelName === model);
                             // A later visit of the step is its own card: the answer of an earlier visit stays in the feed.
@@ -7543,11 +7564,25 @@ document.addEventListener('click', (event) => {
                     wave.forEach((request) => {
                         byParticipant[request.participantId] = byModel[request.modelName];
                         chatBindings[request.participantId] = {
+                            ...chatBindings[request.participantId],
                             modelName: request.modelName, stepRef: request.stepRef, visit: request.visit,
                             transportRequestId: byModel[request.modelName].transportRequestId
                         };
                     });
                     return { byParticipant, closedByOwner: batch?.closeReason === 'moderator_closed' };
+                };
+                // The chats of the wave as the background bound them (R01). A failed read keeps the chats the page has.
+                const refreshParticipantChats = async (pipelineRunId, wave) => {
+                    const response = await sendToBackground({ type: 'PARTICIPANT_CHAT_BINDINGS', pipelineRunId }).catch(() => null);
+                    const live = response?.bindings || {};
+                    wave.forEach((request) => {
+                        const bound = live[request.participantId];
+                        if (!bound || bound.modelName !== request.modelName) return;
+                        chatBindings[request.participantId] = {
+                            ...chatBindings[request.participantId],
+                            tabId: bound.tabId, requestId: bound.requestId || null, stageAttemptId: bound.stageAttemptId || null
+                        };
+                    });
                 };
                 const budgetLimits = window.DebateContextBudget?.DEFAULT_LIMITS;
                 const result = await engine.run({

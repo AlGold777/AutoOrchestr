@@ -282,6 +282,14 @@ function participantChatOf(runId, participantId) {
   return entry && isValidTabId(entry.tabId) ? { ...entry } : null;
 }
 
+// The bindings of one run as the page keeps them in its snapshot (R01): participantId → { modelName, tabId, requestId, stageAttemptId }.
+function participantChatBindingsOf(runId) {
+  const byParticipant = participantTabMap[participantRunKey(runId)] || {};
+  return Object.fromEntries(Object.entries(byParticipant)
+    .filter(([, entry]) => isValidTabId(entry?.tabId))
+    .map(([id, entry]) => [id, { ...entry }]));
+}
+
 // Tabs of the model that belong to other participants (of this run or of another one): a participant never takes one of them.
 function tabsOfOtherParticipants(modelName, runId, participantId) {
   const runKey = participantRunKey(runId);
@@ -1102,7 +1110,13 @@ async function openParticipantChat(llmName, participant = {}, prompt = '', attac
     stageAttemptId: participant.stageAttemptId || null
   };
   const bindingOf = (meta = {}) => ({ participantId, runId, modelName: llmName, ...meta });
-  const bound = participantChatOf(runId, participantId);
+  // The chat saved by the page (snapshot of a resumed run) is used only when the background has no binding of this run
+  // and participant, and only for a continue. It is checked like any binding: a lost tab stops the request.
+  const savedChat = participant.binding && typeof participant.binding === 'object' && participant.binding.tabId != null
+    ? { ...participant.binding, modelName: llmName }
+    : null;
+  const bound = participantChatOf(runId, participantId)
+    || (!participant.newChat && savedChat ? savedChat : null);
   const sameVisit = !!bound && !!visit.stageAttemptId && bound.stageAttemptId === visit.stageAttemptId;
 
   if (bound && (!participant.newChat || sameVisit)) {
@@ -1770,6 +1784,7 @@ self.resolveTabForLlmName = resolveTabForLlmName;
 self.resolveTabForLlmNameAsync = resolveTabForLlmNameAsync;
 self.findReusableTabsForLlm = findReusableTabsForLlm;
 self.participantChatOf = participantChatOf;
+self.participantChatBindingsOf = participantChatBindingsOf;
 self.tabsOfOtherParticipants = tabsOfOtherParticipants;
 self.bindParticipantChat = bindParticipantChat;
 self.clearParticipantRun = clearParticipantRun;
