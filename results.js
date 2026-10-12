@@ -7477,11 +7477,21 @@ document.addEventListener('click', (event) => {
             setPipelineRunUi(true);
             updateDebateButtonsUi();
             try {
-                const attachments = await buildAttachmentPayload();
-                // Attachments go with the first message to each model only: later steps continue in that chat.
-                const attached = new Set();
+                // A resumed run takes its files from the record of the run, never from the composer of the page (R05).
+                const attachments = resumeRecord
+                    ? (Array.isArray(resumeRecord.attachments) ? resumeRecord.attachments : [])
+                    : await buildAttachmentPayload();
                 const isNewChat = (request) => request.attempt === 1 && (request.chat === 'new'
                     || (!resumeRecord && runContext.forceNewTabs && !chatBindings[request.participantId]));
+                // The files go with the first message of each chat only (R05). A chat is confirmed to hold them when its answer
+                // came back: the visit that opened the chat (chatVisit) and the visit whose chat got the files (attachedChatVisit).
+                // A new chat always needs them; a retry or a later visit in a chat with confirmed files does not repeat them.
+                const filesNeeded = (request) => {
+                    if (!attachments.length) return false;
+                    if (isNewChat(request)) return true;
+                    const saved = chatBindings[request.participantId];
+                    return !saved || saved.attachedChatVisit !== saved.chatVisit;
+                };
                 const sendWave = async (wave, meta, waveNo) => {
                     const { step, label, attempt } = meta;
                     const stepModels = steps[step]?.models || [];
@@ -7505,12 +7515,13 @@ document.addEventListener('click', (event) => {
                     // Reuse the existing limit contract, on first attempts and corrections alike.
                     const composed = composeCustomPrompts(models, promptsByModel, maxWordsByModel, discipline,
                         built.schema.defaults?.modelNotes || {}, correctionByModel, built.run.maxWords);
+                    const filesSent = wave.some(filesNeeded);
                     const batch = await runModelBatch({
                         prompt: composed[models[0]],
                         promptsByModel: composed,
                         deliveryInstructionsByModel: Object.fromEntries(models.map((name) => [name, discipline[name].delivery])),
                         models,
-                        attachments: wave.some((request) => !attached.has(request.participantId)) ? attachments : [],
+                        attachments: filesSent ? attachments : [],
                         // The transport opens or continues the tab of each participant (participants); the run's new-pages flag is not used here.
                         forceNewTabs: false,
                         useApiFallback,
@@ -7528,8 +7539,6 @@ document.addEventListener('click', (event) => {
                         },
                         generationProfile: 'long'
                     });
-                    // Attachments follow the participant (its new chat), not the model name: a second participant of the same model gets them too.
-                    wave.forEach((request) => attached.add(request.participantId));
                     // The chats as the background bound them (R01), written into the state before the next send.
                     await refreshParticipantChats(runContext.pipelineRunId, wave);
                     const byModel = Object.fromEntries(models.map((model) => {
@@ -7562,11 +7571,18 @@ document.addEventListener('click', (event) => {
                     }));
                     const byParticipant = {};
                     wave.forEach((request) => {
-                        byParticipant[request.participantId] = byModel[request.modelName];
+                        const reply = byModel[request.modelName];
+                        byParticipant[request.participantId] = reply;
+                        const saved = chatBindings[request.participantId];
+                        // The chat of a new visit is opened by this request; a continue stays in the chat that opened earlier.
+                        const chatVisit = isNewChat(request) ? request.visit : (saved?.chatVisit ?? request.visit);
+                        const confirmed = filesSent && String(reply.status || '').toUpperCase() === 'SUCCESS';
                         chatBindings[request.participantId] = {
-                            ...chatBindings[request.participantId],
+                            ...saved,
                             modelName: request.modelName, stepRef: request.stepRef, visit: request.visit,
-                            transportRequestId: byModel[request.modelName].transportRequestId
+                            transportRequestId: reply.transportRequestId,
+                            chatVisit,
+                            attachedChatVisit: confirmed ? chatVisit : (isNewChat(request) ? null : (saved?.attachedChatVisit ?? null))
                         };
                     });
                     return { byParticipant, closedByOwner: batch?.closeReason === 'moderator_closed' };
@@ -7645,10 +7661,19 @@ document.addEventListener('click', (event) => {
                         const byParticipant = {};
                         let closedByOwner = false;
                         for (const [waveNo, wave] of waves.entries()) {
-                            // eslint-disable-next-line no-await-in-loop
-                            const reply = await sendWave(wave, meta, waveNo);
-                            Object.assign(byParticipant, reply.byParticipant);
-                            closedByOwner = closedByOwner || reply.closedByOwner;
+                            // A wave with a participant that takes the files and one that does not is split (R05): the files go to
+                            // the new chat only, nobody gets files again because of a neighbour.
+                            const withFiles = wave.filter(filesNeeded);
+                            const without = wave.filter((request) => !filesNeeded(request));
+                            const groups = withFiles.length && without.length
+                                ? [[`${waveNo}f`, withFiles], [`${waveNo}p`, without]]
+                                : [[waveNo, wave]];
+                            for (const [key, group] of groups) {
+                                // eslint-disable-next-line no-await-in-loop
+                                const reply = await sendWave(group, meta, key);
+                                Object.assign(byParticipant, reply.byParticipant);
+                                closedByOwner = closedByOwner || reply.closedByOwner;
+                            }
                         }
                         return { byParticipant, closedByOwner };
                     },

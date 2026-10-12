@@ -19,11 +19,11 @@ describe('Basic page sends participants (ТЗ 7, T07)', () => {
   test('a wave holds one request per model: the k-th request of a model goes to wave k, waves go one after another', () => {
     expect(results).toContain('const k = countByModel[request.modelName] || 0;');
     expect(results).toContain('(waves[k] ||= []).push(request);');
-    expect(results).toContain('const reply = await sendWave(wave, meta, waveNo);');
+    expect(results).toContain('const reply = await sendWave(group, meta, key);');
   });
 
   test('the replies go back by participant id, and the transport gets the participant of each model', () => {
-    expect(results).toContain('byParticipant[request.participantId] = byModel[request.modelName];');
+    expect(results).toContain('byParticipant[request.participantId] = reply;');
     expect(results).toContain('participants,');
     expect(results).toContain('participantId: request.participantId, newChat: isNewChat(request)');
   });
@@ -40,7 +40,7 @@ describe('Basic page sends participants (ТЗ 7, T07)', () => {
   test('the chat bindings go into the state of the checkpoint (the snapshot takes them, A05)', () => {
     expect(results).toContain('const chatBindings = resumeRecord ? { ...(resumeRecord.snapshot?.chatBindings || {}) } : {};');
     expect(results).toContain('state: { ...state, chatBindings: { ...chatBindings } },');
-    expect(results).toContain('transportRequestId: byModel[request.modelName].transportRequestId');
+    expect(results).toContain('transportRequestId: reply.transportRequestId,');
   });
 
   test('the wave id keeps the attempt of a wave apart; wave 0 keeps the legacy ids', () => {
@@ -88,18 +88,46 @@ describe('Background keys the chat of a participant by run and participant id (T
   });
 });
 
-describe('Attachments follow the participant, not the model name (T07)', () => {
-  test('the attachments of a wave go to a participant that has not had them yet, keyed by participant id', () => {
-    expect(results).toContain('attachments: wave.some((request) => !attached.has(request.participantId)) ? attachments : [],');
-    expect(results).toContain('wave.forEach((request) => attached.add(request.participantId));');
+describe('Attachments are confirmed per chat of a participant (R05)', () => {
+  const sendAt = results.indexOf('const sendWave = async (wave, meta, waveNo) => {');
+  const sendBlock = results.slice(sendAt, results.indexOf('const budgetLimits = window.DebateContextBudget', sendAt));
+  const sendParticipantsBlock = results.slice(results.indexOf('sendParticipants: async (requests, meta) => {'), results.indexOf('onEvent: (kind, fields) => {', sendAt));
+
+  test('a chat takes the files once: the page keeps the visit that opened the chat and the visit whose chat got the files', () => {
+    expect(results).toContain('const filesNeeded = (request) => {');
+    expect(results).toContain('return !saved || saved.attachedChatVisit !== saved.chatVisit;');
+    expect(sendBlock).toContain('attachments: filesSent ? attachments : [],');
+    expect(sendBlock).not.toContain('attached.has(');
+    expect(results.slice(results.indexOf('const runCustomFromPage = async'), sendAt)).not.toContain('const attached = new Set();');
   });
 
-  test('the set of attached participants is not keyed by the model name in the Basic send', () => {
-    const sendAt = results.indexOf('const sendWave = async (wave, meta, waveNo) => {');
-    const sendBlock = results.slice(sendAt, results.indexOf('const budgetLimits = window.DebateContextBudget', sendAt));
-    expect(sendAt).toBeGreaterThan(0);
-    expect(sendBlock).not.toContain('attached.has(model)');
-    expect(sendBlock).not.toContain('attached.add(model)');
+  test('a new chat (new visit) always takes the files; a continue of a chat with confirmed files takes none', () => {
+    const block = results.slice(results.indexOf('const filesNeeded = (request) => {'), results.indexOf('return !saved || saved.attachedChatVisit'));
+    expect(block).toContain('if (!attachments.length) return false;');
+    expect(block).toContain('if (isNewChat(request)) return true;');
+  });
+
+  test('the files are confirmed only when the answer of the chat came back (a failed delivery does not mark them)', () => {
+    expect(sendBlock).toContain('const filesSent = wave.some(filesNeeded);');
+    expect(sendBlock).toContain("const confirmed = filesSent && String(reply.status || '').toUpperCase() === 'SUCCESS';");
+    expect(sendBlock).toContain('attachedChatVisit: confirmed ? chatVisit : (isNewChat(request) ? null : (saved?.attachedChatVisit ?? null))');
+  });
+
+  test('a wave with a continue and a new chat is split: the files go to the new chat only, the old one gets none', () => {
+    expect(sendParticipantsBlock).toContain('const withFiles = wave.filter(filesNeeded);');
+    expect(sendParticipantsBlock).toContain('const without = wave.filter((request) => !filesNeeded(request));');
+    expect(sendParticipantsBlock).toContain("[`${waveNo}f`, withFiles], [`${waveNo}p`, without]");
+  });
+
+  test('two participants of one model stay in different waves, each decides its own files', () => {
+    expect(sendParticipantsBlock).toContain('const k = countByModel[request.modelName] || 0;');
+    expect(sendParticipantsBlock).toContain('for (const [waveNo, wave] of waves.entries())');
+  });
+
+  test('a resumed run takes its files from the saved record, never from the composer of the page', () => {
+    expect(results).toContain('const attachments = resumeRecord');
+    expect(results).toContain('? (Array.isArray(resumeRecord.attachments) ? resumeRecord.attachments : [])');
+    expect(results).toContain(': await buildAttachmentPayload();');
   });
 });
 
