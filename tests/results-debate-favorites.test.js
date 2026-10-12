@@ -2785,7 +2785,7 @@ describe('Pipeline debate favorites view', () => {
       modal.querySelector('#custom-card-save').click();
       await delay(0);
       expect(settingsOf(h.debug.capturePipelineConfig()).customModelSettings['synth:planned-working-synthesis-after-canvas-r1'].Gemini)
-        .toEqual({ promptTemplate: 'SYNTH_PERSONAL {вход}' });
+        .toEqual({ promptTemplate: 'SYNTH_PERSONAL {вход}', name: 'Gemini', enabled: false });
       // The saved text applies once a single click adds the stage.
       insert.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await delay(300);
@@ -3196,7 +3196,7 @@ describe('Pipeline debate favorites view', () => {
         expect(entry('final', 'Gemini')).toEqual({ name: 'Gemini', enabled: false, task: 'FINAL OFF TASK' });
         // A switched-off model is not called, and its settings come back with the schema.
         expect(window.BasicSchema.assemble(schema).flatMap((step) => step.models.map((model) => model.name))).not.toContain('Grok');
-        expect(window.BasicSchema.toSettings(schema).customModelSettings.r2.Grok).toEqual({ promptTemplate: 'GROK REQUEST', maxWords: 80 });
+        expect(window.BasicSchema.toSettings(schema).customModelSettings.r2.Grok).toEqual({ promptTemplate: 'GROK REQUEST', maxWords: 80, name: 'Grok', enabled: false });
       } finally { h.cleanup(); }
     }, 30000);
 
@@ -3294,7 +3294,7 @@ describe('Pipeline debate favorites view', () => {
           expect(built.steps.map((step) => step.ref)).toEqual(['r1', 'synth:mid', 'r2', 'final']);
           expect(built.steps[1].models.map((model) => model.name)).toEqual(['Gemini']);
           // The settings of a switched-off model came along.
-          expect(window.BasicSchema.toSettings(h.debug.getPipelineStoreSnapshot().pipelines.Installed.schema).customModelSettings.r1.Grok).toEqual({ promptTemplate: 'KEPT REQUEST' });
+          expect(window.BasicSchema.toSettings(h.debug.getPipelineStoreSnapshot().pipelines.Installed.schema).customModelSettings.r1.Grok).toEqual({ promptTemplate: 'KEPT REQUEST', name: 'Grok', enabled: false });
           await h.run();
           expect(h.starts.map((start) => start.selectedLLMs.slice().sort())).toEqual([['Claude', 'GPT'], ['Gemini'], ['GPT'], ['Claude']]);
           expect(h.starts[2].promptsByModel.GPT).toContain('INSTALLED_TASK');
@@ -3724,21 +3724,18 @@ describe('Pipeline debate favorites view', () => {
         } finally { h.cleanup(); }
       }, 30000);
 
-      test('A06 gate: a check between a round and its intermediate synthesis is refused, with the reason in the message', async () => {
+      test('A06 gate: a check between a round and its intermediate synthesis installs (R11 order r1 → gate → synth → r2)', async () => {
         const h = setupCustomInheritance('Gate synth host', { synthesis: '' });
         try {
-          const bad = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
+          const order = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
             { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }] },
             { ref: 'gate:1', kind: 'gate', models: [{ name: 'Claude' }], criteria: ['полнота'] },
             { ref: 'synth:mid', kind: 'synthesis', models: [{ name: 'Gemini' }] },
             { ref: 'r2', kind: 'round', models: [{ name: 'Claude' }] }
           ] };
-          const refused = await h.debug.installBasicSchema('Gate synth', bad);
-          expect(refused.ok).toBe(false);
-          const text = h.debug.describeSchemaErrors(refused.errors);
-          expect(text).toContain('промежуточный синтез стоит сразу после раунда');
-          expect(text).toContain('проверку или маршрут не ставят');
-          expect(h.debug.getPipelineStoreSnapshot().pipelines['Gate synth']).toBeUndefined();
+          const installed = await h.debug.installBasicSchema('Gate synth', order);
+          expect(installed.ok).toBe(true);
+          expect(h.debug.getPipelineStoreSnapshot().pipelines['Gate synth']).toBeDefined();
         } finally { h.cleanup(); }
       }, 30000);
 
