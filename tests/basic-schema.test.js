@@ -1040,3 +1040,62 @@ describe('Basic schema: an own output of a participant (3.2, D4)', () => {
     expect(pathsOf(base([round('r1', [{ name: 'claude', id: 'author-A' }], { output: shared }), round('r2', [{ name: 'claude', id: 'author-A' }], { output: { artifacts: [{ id: 'proposal', name: 'Доработано', pointer: '', revisionOf: proposalRef('author-A') }] } }), synthesis('final', ['B'])]))).toEqual(['steps[1].output.artifacts[0].revisionOf']);
   });
 });
+
+describe('Basic schema: the participant of an owner step is owner (3.3, R08)', () => {
+  const ownerStep = (ref, extra = {}) => ({ ref, kind: 'owner', task: 'Ответьте на вопрос', models: [], ...extra });
+  const mapRef = (participant = 'A', step = 'r1') => ({ artifact: { step, participant, id: 'map' }, version: 'latest' });
+  const mapOutput = { artifacts: [{ id: 'map', name: 'Карта', pointer: '' }] };
+  const ownerSource = { step: 'owner:o', participant: 'owner' };
+
+  test('the owner step takes owner as its one participant: step, artifact, exact version and feedback are valid', () => {
+    const schema = base([
+      round('r1', ['A'], { output: mapOutput }),
+      ownerStep('owner:o', { output: { artifacts: [{ id: 'approved', name: 'Утверждённая карта', pointer: '' }] } }),
+      round('r2', [{ name: 'A', input: [ownerSource, { artifact: { step: 'owner:o', participant: 'owner', id: 'approved' }, version: { step: 'owner:o', participant: 'owner', visit: 1 } }] }]),
+      { ref: 'gate:g1', kind: 'gate', criteria: ['Есть ответ'], models: [{ name: 'B' }], onFail: { goto: 'r2', maxLoops: 1, feedback: [ownerSource] } },
+      synthesis('final', ['B'])
+    ]);
+    expect(Schema.validate(schema)).toEqual([]);
+    expect(Schema.assemble(schema)[1]).toMatchObject({ kind: 'owner', ref: 'owner:o' });
+    expect(Schema.assemble(schema)[2].models[0].input).toEqual([ownerSource, { artifact: { step: 'owner:o', participant: 'owner', id: 'approved' }, version: { step: 'owner:o', participant: 'owner', visit: 1 } }]);
+  });
+
+  test('a revision of an owner artifact is valid when the author has it in its input', () => {
+    const revision = { artifact: { step: 'owner:o', participant: 'owner', id: 'map' }, version: 'latest' };
+    const schema = base([
+      ownerStep('owner:o', { output: mapOutput }),
+      round('r2', [{ name: 'A', input: [revision], output: { artifacts: [{ id: 'map', name: 'Карта v2', pointer: '', revisionOf: revision }] } }]),
+      synthesis('final', ['B'])
+    ]);
+    expect(Schema.validate(schema)).toEqual([]);
+    const missing = base([ownerStep('owner:o', { output: mapOutput }), round('r2', [{ name: 'A', output: { artifacts: [{ id: 'map', name: 'Карта v2', pointer: '', revisionOf: revision }] } }]), synthesis('final', ['B'])]);
+    expect(errorPaths(missing)).toEqual(['steps[1].models[0].output.artifacts[0].revisionOf']);
+  });
+
+  test('another participant of an owner step is named; the owner artifact of another participant is named too', () => {
+    const cases = [
+      [[{ step: 'owner:o', participant: 'A' }], ['steps[1].models[0].input[0].participant']],
+      [[{ artifact: { step: 'owner:o', participant: 'A', id: 'map' }, version: 'latest' }], ['steps[1].models[0].input[0].artifact.participant']],
+      [[{ artifact: { step: 'owner:o', participant: 'owner', id: 'nope' }, version: 'latest' }], ['steps[1].models[0].input[0].artifact.id']]
+    ];
+    cases.forEach(([input, paths]) => {
+      const schema = base([ownerStep('owner:o', { output: mapOutput }), round('r2', [{ name: 'A', input }]), synthesis('final', ['B'])]);
+      expect({ input, paths: errorPaths(schema) }).toEqual({ input, paths });
+    });
+  });
+
+  test('a model with the id owner in an ordinary step is an ordinary participant', () => {
+    const schema = base([round('r1', [{ name: 'Claude', id: 'owner' }], { output: mapOutput }), round('r2', [{ name: 'B', input: [{ step: 'r1', participant: 'owner' }, mapRef('owner')] }]), synthesis('final', ['B'])]);
+    expect(Schema.validate(schema)).toEqual([]);
+    expect(Schema.assemble(schema)[0].models[0]).toMatchObject({ name: 'Claude', id: 'owner' });
+  });
+
+  test('the owner keeps no models; its own sources are checked like a model step (a self or a later step is named)', () => {
+    const input = [mapRef('A'), 'r1', ownerSource, { step: 'r2', required: true }];
+    const schema = base([round('r1', ['A'], { output: mapOutput }), ownerStep('owner:o', { input, output: mapOutput }), round('r2', ['A']), synthesis('final', ['B'])]);
+    expect(errorPaths(schema)).toEqual(['steps[1].input[2].step', 'steps[1].input[3].step']);
+    const valid = base([round('r1', ['A'], { output: mapOutput }), ownerStep('owner:o', { input: [mapRef('A'), 'r1'], output: mapOutput }), synthesis('final', ['B'])]);
+    expect(Schema.validate(valid)).toEqual([]);
+    expect(Schema.assemble(valid)[1]).toMatchObject({ kind: 'owner', input: [mapRef('A'), 'r1'], models: [] });
+  });
+});

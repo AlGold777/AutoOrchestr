@@ -54,6 +54,7 @@
   const OWNER_STEPS = Object.freeze(['approve']);
   const CHAT_MODES = Object.freeze(['continue', 'new']);
   const POINTER_FORBIDDEN = Object.freeze(['__proto__', 'prototype', 'constructor']);
+  const OWNER_PARTICIPANT = 'owner';
 
   // The problem of a JSON Pointer (RFC 6901, ~0 and ~1 only) or null. Forbidden segments are refused, nothing is read.
   function pointerError(pointer) {
@@ -224,6 +225,12 @@
       return -1;
     };
     const participantAt = (position, participant, at) => {
+      // The owner step has one participant, the synthetic id `owner`, and no model (3.3); a model with that id elsewhere is a model.
+      if (steps[position].kind === 'owner') {
+        if (participant === OWNER_PARTICIPANT) return true;
+        fail(at, 'у владельца один участник «owner»');
+        return false;
+      }
       const models = Array.isArray(steps[position].models) ? steps[position].models.filter(isObject) : [];
       if (models.some((model) => idOf(model) === participant)) return true;
       fail(at, `участник «${participant}» не объявлен в шаге «${steps[position].ref}»`);
