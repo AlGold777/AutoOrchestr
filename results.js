@@ -24848,19 +24848,46 @@ function checkCompareButtonState() {
 
     startButton?.addEventListener('click', async () => {
         if (mainRunActive) {
-            ++mainRunAction;
+            const stopAction = ++mainRunAction;
             startButton.disabled = true;
+            // Stop must not strand the button on a lost MV3 reply. Keep this
+            // deadline local to control messages; prompt delivery retains its
+            // existing wait and acknowledgement contract.
+            const sendStopControl = async (payload) => {
+                let timeout;
+                try {
+                    return await Promise.race([
+                        sendToBackground(payload),
+                        new Promise((_, reject) => {
+                            timeout = setTimeout(() => reject(new Error('Не получено подтверждение остановки')), 2500);
+                        })
+                    ]);
+                } finally {
+                    clearTimeout(timeout);
+                }
+            };
             try {
-                const stopped = await sendToBackground({ type: 'STOP_ALL' });
+                const stopped = await sendStopControl({ type: 'STOP_ALL' });
                 if (!stopped?.success) {
                     throw new Error(stopped?.error?.message || stopped?.error || 'Не удалось остановить запрос');
                 }
+                if (stopAction !== mainRunAction) return;
                 markCurrentMainRequestsCancelled();
                 setMainRunActive(false);
             } catch (err) {
-                showNotification(err?.message || 'Не удалось остановить запрос', 'error');
+                // A closed response port does not prove Stop failed. Reconcile
+                // with the worker before unlocking the next prompt.
+                let state = null;
+                try { state = await sendStopControl({ type: 'GET_ACTIVE_RUN_STATE' }); } catch (_) {}
+                if (stopAction !== mainRunAction) return;
+                if (state?.status === 'ok' && state.active === false && !state.sessionId) {
+                    markCurrentMainRequestsCancelled();
+                    setMainRunActive(false);
+                } else {
+                    showNotification(err?.message || 'Не удалось остановить запрос', 'error');
+                }
             } finally {
-                startButton.disabled = false;
+                if (stopAction === mainRunAction) startButton.disabled = false;
             }
             return;
         }
