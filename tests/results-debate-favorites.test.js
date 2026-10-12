@@ -809,10 +809,10 @@ describe('Pipeline debate favorites view', () => {
     const panel = document.getElementById('panel-gpt');
     const card = document.querySelector('.debate-model-card[data-llm-name="GPT"]');
     expect(panel.classList.contains('has-unproven-attribution')).toBe(true);
-    expect(panel.querySelector(':scope > .attribution-unproven-banner')?.textContent).toBe('Attribution unverified');
+    expect(panel.querySelector('.attribution-unproven-banner')).toBeNull();
     expect(card.classList.contains('has-unproven-attribution')).toBe(true);
     expect(card.dataset.turnClosed).toBe('false');
-    expect(card.querySelector('.attribution-unproven-banner')?.textContent).toBe('Attribution unverified');
+    expect(card.querySelector('.attribution-unproven-banner')).toBeNull();
 
     debug.updateLLMPanelOutput('GPT', 'Verified replacement answer', '', { status: 'SUCCESS' });
     expect(panel.classList.contains('has-unproven-attribution')).toBe(false);

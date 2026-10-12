@@ -23677,7 +23677,7 @@ function checkCompareButtonState() {
             roleEl.textContent = roleValue ? String(roleValue).trim() : '';
         }
     }
-    // Gray "incomplete" mark to the right of the model name: the generation did not
+    // Inline "uncompleted" mark: the generation did not
     // finish cleanly (timeout, cut stream). It informs only; approving such an
     // answer stays the user's call (semi-automatic flow).
     function applyPartialMarker(container, meta = {}) {
@@ -23724,20 +23724,7 @@ function checkCompareButtonState() {
             approvalCheck.title = label;
             approvalCheck.setAttribute('aria-label', label);
         }
-        let marker = container.querySelector(':scope > .attribution-unproven-banner, .debate-model-card-title-main > .attribution-unproven-banner');
-        if (!unproven) {
-            marker?.remove();
-            return;
-        }
-        if (!marker) {
-            marker = document.createElement('span');
-            marker.className = 'attribution-unproven-banner';
-            const title = container.querySelector('.debate-model-card-title-main');
-            if (title) title.appendChild(marker);
-            else container.insertBefore(marker, container.firstChild);
-        }
-        marker.textContent = meta.attributionLabel || 'Attribution unverified';
-        marker.title = 'The content is complete, but its ownership by the current request is not proven.';
+        container.querySelectorAll('.attribution-unproven-banner').forEach(marker => marker.remove());
     }
     function resolveDebateFeedMeta(meta = {}) {
         const requestId = String(meta.transportRequestId || meta.requestId || '').trim();
