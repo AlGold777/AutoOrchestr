@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-15 — Basic: поле можно оставить пустым, а не только унаследовать, версия 2.81.774
+
+- Сообщение владельца: очищенное в карточке синтезатора поле возвращалось, потому что «пусто» означало «унаследовать» (из ▶ или кода); в самом ▶ очистить поле тоже было нельзя. Схема уже различает: «побеждает первый слой со строкой, в том числе пустой» (`BasicSchema.pick`), страница же теряла пустую строку.
+- Теперь для заданий (`task`, `roundTask`, `synthesisTask`), инструкции длины и требований к содержанию «×» и стирание текста с «✓» сохраняют пустую строку как значение, и запрос уходит без этого текста; «↶» убирает ключ и возвращает наследование. Метка доставки и инструкция повторного запроса пустыми не бывают: пустое поле там по-прежнему наследует. Записи до схемы читаются как раньше: их пустые строки убираются один раз при загрузке (`basicWorkingFromConfig`), путь `prepareCustomPrompts` не менялся.
+- Файл: `results.js` (`keepEmpty`, `EMPTYABLE_KEYS`, `legacyDiscipline(…, { keepEmptyValues })`, карточка `renderCustomBlockInspector`). Тесты: новый тест в `tests/results-debate-favorites.test.js`; тест «cleared pipeline» теперь ожидает пустую длину и содержание. Документ `basic-windows.md`. Не проверено вживую в браузере.
+
 ### 2026-10-14 — Удалены 17 файлов Debate, на которые никто не ссылается, версия 2.81.773
 
 - Шаг 2 удаления Debate по реестру `docs/Architecture/debate-removal-registry.md`. Удалены `disput/debate-artifact-definitions`, `-convergence`, `-correlation-guard`, `-decision-request`, `-epistemic-outcome`, `-model-signal`, `-process-audit`, `-protocol-transition-service`, `-protocols`, `-rule-engine`, `-service-roles`, `-stage-types`, `-stagnation-warning`, `-state-delta`, `-storage-migrations`, `shared/debate-schema.js`, `results/debate-plan-view-model.js`; их теги `<script>` в `pipeline_panel.html` и `result_new.html` и записи в `manifest.json`.

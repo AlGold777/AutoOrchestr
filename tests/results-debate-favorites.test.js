@@ -2118,8 +2118,9 @@ describe('Pipeline debate favorites view', () => {
       expect(sent).toContain('Accepted Claude answer from batch 1.');
       expect(sent).not.toContain('{вход}');
       if (kind === 'cleared') {
-        expect(sent).toContain('[RESPONSE_LIMIT] Объём ответа: 1-37 слов');
-        expect(sent).toContain('Сосредоточься на ясной концепции');
+        // × leaves the length instruction and the content requirements empty on purpose; the delivery mark is never empty.
+        expect(sent).not.toContain('[RESPONSE_LIMIT]');
+        expect(sent).not.toContain('Сосредоточься на ясной концепции');
         expect(sent).toContain('Последней строкой ответа');
       } else {
         expect(sent).toContain('не более 37 слов. PERSONAL_LIMIT');
@@ -2137,7 +2138,7 @@ describe('Pipeline debate favorites view', () => {
       expect(starts[1].promptsByModel.CLAUDE).not.toContain('PERSONAL_');
       expect(starts[0].promptsByModel.GPT).not.toContain('PERSONAL_');
       expect(starts[2].selectedLLMs).toEqual(['GPT']);
-      if (kind === 'cleared') expect(starts[2].promptsByModel.GPT).toContain('[RESPONSE_LIMIT] Объём ответа: 1-37 слов');
+      if (kind === 'cleared') expect(starts[2].promptsByModel.GPT).not.toContain('[RESPONSE_LIMIT]');
       else {
         expect(starts[2].promptsByModel.GPT).toContain('PERSONAL_CORRECTION:');
         expect(starts[2].promptsByModel.GPT).not.toContain('Твой предыдущий ответ');
@@ -2412,6 +2413,34 @@ describe('Pipeline debate favorites view', () => {
       }
     } finally { h.cleanup(); }
   }, 30000);
+
+  test('a task, a length instruction or content requirements the owner emptied stay empty (not inherited); ↶ gives the inherited value back; delivery and correction are never empty', async () => {
+    const h = setupCustomInheritance('Explicit empty', { synthesis: 'Gemini' });
+    try {
+      const planOf = () => window.__pipelineDraftPlanForCanvas(window.__getActivePipelineDraftPlan());
+      const saved = () => h.debug.basicSchemaFromPage(planOf(), null, { forSave: true });
+      // ▶: the round task, the length instruction and the content requirements are emptied on purpose.
+      await h.general({ roundTask: '', limit: '', content: '', delivery: '' });
+      const defaults = saved().defaults || {};
+      expect(defaults.roundTask).toBe('');
+      expect(defaults.discipline.limit).toBe('');
+      expect(defaults.discipline.content).toBe('');
+      // The delivery mark cannot be left empty: an empty field is the inherited value.
+      expect(defaults.discipline.delivery).toBeUndefined();
+      const starts = await h.run();
+      const second = starts[1].promptsByModel.GPT;
+      expect(second).not.toContain('Учти ответы предыдущего шага');
+      expect(second).not.toContain('Сосредоточься на ясной концепции');
+      // The card keeps the field empty when it is opened again.
+      const reopened = h.openGeneral();
+      expect(reopened.querySelector('#custom-discipline-roundTask').value).toBe('');
+      // ↶ on the field gives the inherited value back: the key is not written any more.
+      reopened.querySelector('[data-discipline="roundTask"] [data-action="inherit"]').click();
+      await settleCustomCard();
+      expect((saved().defaults || {}).roundTask).toBeUndefined();
+      expect((saved().defaults || {}).discipline.limit).toBe('');
+    } finally { h.cleanup(); }
+  }, 60000);
 
   test('explicit empty discipline texts of the assembled run stay empty; the saved-settings path keeps the Basic text', () => {
     const debug = window.__pipelineLifecycleDebug;

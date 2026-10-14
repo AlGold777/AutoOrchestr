@@ -6795,14 +6795,20 @@ document.addEventListener('click', (event) => {
         // value (the cards did not store one) and is dropped; the retired `ask` is ignored. Anything else,
         // a wrong value included, goes on to the check unchanged.
         const legacyValue = (value) => (value === undefined || value === null || (typeof value === 'string' && !value.trim()) ? undefined : value);
+        // An empty text the owner chose on purpose (the task, the length instruction, the content requirements) is a value:
+        // «send nothing here», not «inherit». The delivery mark and the correction request are never empty (the transport needs them).
+        const EMPTYABLE_KEYS = new Set(['task', 'roundTask', 'synthesisTask', 'limit', 'content']);
+        const keepEmpty = (value, key) => (value === '' && EMPTYABLE_KEYS.has(key) ? '' : legacyValue(value));
         const RETIRED_DISCIPLINE_KEYS = ['ask'];
-        const legacyDiscipline = (saved) => {
+        // `keepEmptyValues`: a record with a schema (and its working copy) holds an empty text as a value; the earlier settings
+        // (prepareCustomPrompts) read an empty text as not set.
+        const legacyDiscipline = (saved, { keepEmptyValues = false } = {}) => {
             if (saved === undefined || saved === null) return undefined;
             if (typeof saved !== 'object' || Array.isArray(saved)) return saved;
             const discipline = {};
             Object.entries(customDiscipline(saved)).forEach(([key, value]) => {
                 if (RETIRED_DISCIPLINE_KEYS.includes(key)) return;
-                const kept = key === 'lines' && Array.isArray(value) ? value.filter((line) => legacyValue(line) !== undefined) : legacyValue(value);
+                const kept = key === 'lines' && Array.isArray(value) ? value.filter((line) => legacyValue(line) !== undefined) : (keepEmptyValues ? keepEmpty(value, key) : legacyValue(value));
                 if (kept !== undefined && !(Array.isArray(kept) && !kept.length)) discipline[key] = kept;
             });
             return Object.keys(discipline).length ? discipline : undefined;
@@ -6852,16 +6858,16 @@ document.addEventListener('click', (event) => {
             const stepFieldsOf = (ref, kind) => {
                 const own = {};
                 (kind === 'round' ? ROUND_STEP_KEYS : SYNTHESIS_STEP_KEYS).forEach((key) => {
-                    const value = legacyValue(roundSettings[ref]?.[key]);
+                    const value = keepEmpty(roundSettings[ref]?.[key], key);
                     if (value === undefined || (Array.isArray(value) && !value.length) || (value && typeof value === 'object' && !Array.isArray(value) && !Object.keys(value).length)) return;
                     own[key] = JSON.parse(JSON.stringify(value));
                 });
                 return own;
             };
             const defaults = {};
-            ['roundTask', 'synthesisTask'].forEach((key) => put(defaults, key, legacyValue(general[key])));
+            ['roundTask', 'synthesisTask'].forEach((key) => put(defaults, key, keepEmpty(general[key], key)));
             ['modelNotes', 'roundPrompts'].forEach((key) => put(defaults, key, legacyMap(general[key])));
-            put(defaults, 'discipline', legacyDiscipline(general.discipline));
+            put(defaults, 'discipline', legacyDiscipline(general.discipline, { keepEmptyValues: true }));
             // The canvas names a participant by its name (its id is not on the canvas): the id, the model name and the input
             // of the participant come from the source, and its settings are keyed by that id (toSettings).
             const sourceModelOf = (ref, id) => {
@@ -6877,8 +6883,8 @@ document.addEventListener('click', (event) => {
                 if (source && 'input' in source) model.input = JSON.parse(JSON.stringify(source.input));
                 put(model, 'request', legacyValue(settings?.promptTemplate));
                 put(model, 'maxWords', legacyValue(settings?.maxWords));
-                put(model, 'task', legacyValue(settings?.task));
-                put(model, 'discipline', legacyDiscipline(settings?.discipline));
+                put(model, 'task', keepEmpty(settings?.task, 'task'));
+                put(model, 'discipline', legacyDiscipline(settings?.discipline, { keepEmptyValues: true }));
                 return model;
             };
             let round = 0;
@@ -7008,9 +7014,17 @@ document.addEventListener('click', (event) => {
                 // Before the schema a saved copy of the current default length instruction was not a personal value:
                 // it kept following the shared one. That is settled here, once, for earlier records only.
                 const own = (map) => { if (map?.discipline?.limit === window.BasicSchema.DEFAULTS.discipline.limit) delete map.discipline.limit; return map; };
+                // An empty text of an earlier record meant «not set»; from here on an empty text is a value, so it goes now.
+                const dropEmpty = (map) => {
+                    if (!map || typeof map !== 'object') return map;
+                    ['task', 'roundTask', 'synthesisTask'].forEach((key) => { if (map[key] === '') delete map[key]; });
+                    if (map.discipline && typeof map.discipline === 'object') Object.keys(map.discipline).forEach((key) => { if (map.discipline[key] === '') delete map.discipline[key]; });
+                    return map;
+                };
                 const cards = copy(config?.customModelSettings);
+                Object.values(cards).forEach((step) => Object.values(step || {}).forEach(dropEmpty));
                 Object.values(cards).forEach((step) => Object.values(step || {}).forEach(own));
-                return { cards, rounds: {}, defaults: own(copy(config?.customDefaults)), runExplicit: {}, schema: null, error: '', controls: [] };
+                return { cards, rounds: {}, defaults: dropEmpty(own(copy(config?.customDefaults))), runExplicit: {}, schema: null, error: '', controls: [] };
             }
             const errors = window.BasicSchema.validate(config.schema);
             if (errors.length) return { cards: {}, rounds: {}, defaults: {}, runExplicit: {}, schema: null, error: describeSchemaErrors(errors), controls: [] };
@@ -7103,9 +7117,9 @@ document.addEventListener('click', (event) => {
         const resolveCustomFields = (settings = {}, kind = 'round', round = {}) => {
             const general = getCustomPipelineDefaults();
             return window.BasicSchema.resolveFields(
-                { task: legacyValue(settings?.task), discipline: legacyDiscipline(settings?.discipline) }, kind,
-                { task: legacyValue(round.task), discipline: legacyDiscipline(round.discipline) },
-                { roundTask: legacyValue(general.roundTask), synthesisTask: legacyValue(general.synthesisTask), discipline: legacyDiscipline(general.discipline) });
+                { task: keepEmpty(settings?.task, 'task'), discipline: legacyDiscipline(settings?.discipline, { keepEmptyValues: true }) }, kind,
+                { task: keepEmpty(round.task, 'task'), discipline: legacyDiscipline(round.discipline, { keepEmptyValues: true }) },
+                { roundTask: keepEmpty(general.roundTask, 'roundTask'), synthesisTask: keepEmpty(general.synthesisTask, 'synthesisTask'), discipline: legacyDiscipline(general.discipline, { keepEmptyValues: true }) });
         };
         const customLengthInstruction = (template, words) => template.replace(/\{от\}|\{слов\}/g,
             (key) => String(key === '{от}' ? Math.max(1, words - 50) : words));
@@ -9237,7 +9251,7 @@ document.addEventListener('click', (event) => {
             const inheritedValue = (key) => pipelineDefaults ? fallbackFor(key) : key === 'task' ? inherited.task.value : inherited.discipline[key].value;
             const rawValue = (key) => isTask(key) ? saved[key] : customDiscipline(saved.discipline)[key];
             const effectiveValue = (key) => pipelineDefaults
-                ? window.BasicSchema.pick([['pipeline', legacyValue(rawValue(key))]], fallbackFor(key)).value
+                ? window.BasicSchema.pick([['pipeline', keepEmpty(rawValue(key), key)]], fallbackFor(key)).value
                 : key === 'task' ? resolved.task.value : resolved.discipline[key].value;
             const copyButton = (id, label) => `<button type="button" data-action="copy" data-copy-field="${id}" title="Копировать" aria-label="Копировать: ${label}"><i class="ti ti-copy" aria-hidden="true"></i></button>`;
             // ▶ «Особенности моделей»: one field per model on the canvas; the model card shows its own note read-only.
@@ -9272,7 +9286,7 @@ document.addEventListener('click', (event) => {
                                 <div class="custom-card-actions">
                                     ${copyButton(`custom-discipline-${key}`, label)}
                                     <button type="button" data-action="inherit" title="${pipelineDefaults ? 'Вернуть к коду' : 'Вернуть к общему'}" aria-label="Вернуть к общему: ${label}" hidden>↶</button>
-                                    <button type="button" data-action="clear" title="Очистить — наследовать" aria-label="Очистить: ${label}" class="custom-card-clear">×</button>
+                                    <button type="button" data-action="clear" title="${EMPTYABLE_KEYS.has(key) ? 'Оставить пустым (не наследовать)' : 'Очистить — наследовать'}" aria-label="Очистить: ${label}" class="custom-card-clear">×</button>
                                     <button type="button" data-action="save" title="Сохранить" aria-label="Сохранить: ${label}" class="custom-card-commit">✓</button>
                                 </div>
                             </div>
@@ -9321,6 +9335,10 @@ document.addEventListener('click', (event) => {
             const display = (key, value) => key === 'limit' ? customLengthInstruction(value, Number(length?.value || general)) : value;
             // A text the owner typed is theirs even when it equals the inherited one; ↶ and × give it back.
             const typed = (value) => typeof value === 'string' && Boolean(value.trim());
+            // A field that may be left empty on purpose (EMPTYABLE_KEYS): an empty text the owner left is a value too.
+            const isSet = (key, value) => typed(value) || (EMPTYABLE_KEYS.has(key) && value === '');
+            // Fields the owner sent back to the inherited value with ↶ (they are not written, whatever the field shows).
+            const inheritNow = new Set();
             let lengthDirty = false;
             const refresh = () => {
                 if (request) {
@@ -9332,7 +9350,7 @@ document.addEventListener('click', (event) => {
                     if (!dirtyFields.has(key)) fields[key].value = display(key, effectiveValue(key));
                     fields[key].placeholder = display(key, inheritedValue(key));
                     const raw = rawValue(key);
-                    const own = dirtyFields.has(key) ? typed(fields[key].value) : typed(raw);
+                    const own = dirtyFields.has(key) ? (typed(fields[key].value) || EMPTYABLE_KEYS.has(key)) : isSet(key, raw);
                     content.querySelector(`[data-discipline="${key}"] [data-action="inherit"]`).hidden = !own;
                 });
             };
@@ -9341,7 +9359,7 @@ document.addEventListener('click', (event) => {
                 const field = row.querySelector('textarea');
                 fields[key] = field;
                 field.readOnly = pipelineRunActive;
-                field.addEventListener('input', () => { dirtyFields.add(key); refresh(); });
+                field.addEventListener('input', () => { dirtyFields.add(key); inheritNow.delete(key); refresh(); });
                 row.querySelectorAll('button:not([data-action="copy"])').forEach((button) => {
                     button.disabled = pipelineRunActive;
                     button.addEventListener('click', async () => {
@@ -9350,8 +9368,9 @@ document.addEventListener('click', (event) => {
                         else {
                             field.value = '';
                             dirtyFields.add(key);
+                            if (button.dataset.action === 'inherit') inheritNow.add(key); else inheritNow.delete(key);
                             refresh();
-                            if (button.dataset.action === 'inherit') await saveSettings(false);
+                            if (button.dataset.action === 'inherit') { await saveSettings(false); inheritNow.delete(key); }
                             else field.focus();
                         }
                     });
@@ -9373,7 +9392,10 @@ document.addEventListener('click', (event) => {
                     let value = dirtyFields.has(key) ? fields[key].value : rawValue(key);
                     // The shown length instruction has the numbers filled in; typed unchanged it stands for its template.
                     if (dirtyFields.has(key) && key === 'limit' && value === display(key, inheritedValue(key))) value = inheritedValue(key);
-                    if (typed(value)) { if (isTask(key)) next[key] = value; else discipline[key] = value; }
+                    // A text the owner emptied on purpose stays empty (the field is written as ''); ↶ gives the inherited value back.
+                    if (inheritNow.has(key)) value = undefined;
+                    else if (dirtyFields.has(key) && EMPTYABLE_KEYS.has(key) && !typed(value)) value = '';
+                    if (isSet(key, value)) { if (isTask(key)) next[key] = value; else discipline[key] = value; }
                 });
                 // Empty lines are not saved.
                 const lines = lineValues.map((line) => line.trim()).filter(Boolean);
