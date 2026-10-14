@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-10-14 — Тест привязки окна владельца следует новой сигнатуре, версия 2.81.760
+
+- `tests/custom-run-resume-wiring.test.js`: проверка `provideOwnerResult` ждёт `input` и `output` и вызов `ownerAskMessage` (после 2.81.758 прежний текст не находился).
+
 ### 2026-10-14 — Basic: владелец S01 видит ответ Producer (шаг 4 плана ревью), версия 2.81.759
 
 - Fixture S01–S30: `owner:s01` получает вход `["r1"]`, то есть утверждает Decision Policy, видя предложение Producer. Тест `S01–S05 follow the Design System` проверяет, что колбэк владельца получает ответ `r1`. Таблица соответствия обновлена.
