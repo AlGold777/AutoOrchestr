@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-14 — Basic: файлы прогона сохраняются в записи (V08), версия 2.81.763
+
+- `CustomRunRecord.setAttachments`: файлы нового прогона (имя, тип, данные) сохраняются в записи, пока помещаются в 1,5 МБ; иначе запись хранит только имена и флаг `attachmentsStored: false`, страница предупреждает при запуске. Продолжение берёт те же байты из записи; запись с `attachmentsStored: false` страница не продолжает и называет файлы. Прежде продолжение читало несуществующее поле и новый чат уходил без файлов без сообщения.
+- Тесты: `tests/custom-run-record.test.js`, `tests/custom-run-resume-wiring.test.js`. Документы: `basic-developer.md` (строка TRANSPORT-2 закрыта и удалена, V08), `basic-start-here.md`, `basic_fixes_review_oct12.md`. Шаг 7 плана `basic_review_s01_s05_oct14.md`.
+
 ### 2026-10-14 — Basic: неполный снимок не возобновляется (V07), Stop закрывает окна прогона (R07), версия 2.81.762
 
 - V07: `CustomRunRecord.canResume` и экспорт (`resumable`) требуют `pc` и все поля состояния (`visits`, `decisions`, `loopCounters`, `feedback`, `dependencies`, `results`, `continuationStack`); `CustomEngine` при продолжении с неполным снимком отказывает `resume_invalid` с перечнем недостающих полей и ничего не отправляет. Прежде отсутствие `pc` читалось как «прогон закончен».

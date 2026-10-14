@@ -152,6 +152,22 @@
     });
     return record.snapshot;
   }
+  // The files of the run (V08): kept in the record while they fit its share of the store, as they were sent (name, type, data), so a
+  // resume sends the same bytes into a new chat. Files that do not fit are listed by name only (attachmentsStored: false): a resume
+  // that needs them is refused, it never goes on without them. A record without the field is an older one: no files are known.
+  const MAX_ATTACHMENT_RECORD_BYTES = 1.5 * 1024 * 1024;
+  function setAttachments(record, files = [], limit = MAX_ATTACHMENT_RECORD_BYTES) {
+    const list = Array.isArray(files) ? files.filter(Boolean) : [];
+    const size = list.reduce((sum, file) => sum + String(file.base64 || '').length, 0);
+    if (size <= limit) {
+      record.attachments = copyOf(list) || [];
+      record.attachmentsStored = true;
+      return true;
+    }
+    record.attachments = list.map(({ name, size: bytes, type }) => ({ name, size: bytes, type }));
+    record.attachmentsStored = false;
+    return false;
+  }
   // The chats of the participants go into the snapshot as soon as the background binds them, not at the next checkpoint (V01):
   // a stop or a reload before the first answer must not lose them. Without a snapshot there is nothing to update.
   function setChatBindings(record, bindings) {
@@ -271,7 +287,7 @@
     };
   }
 
-  const api = Object.freeze({ DEFAULT_MAX_BYTES, INDEX_KEY, RUN_KEY_PREFIX, fingerprint, createRun, recordAttempt, attemptKey, finishRun, serialize, revive, textOf, setSnapshot, setChatBindings, setArtifacts, canResume, exportRun, createStore, chromeStorage });
+  const api = Object.freeze({ DEFAULT_MAX_BYTES, INDEX_KEY, RUN_KEY_PREFIX, fingerprint, createRun, recordAttempt, attemptKey, finishRun, serialize, revive, textOf, setSnapshot, setChatBindings, setAttachments, MAX_ATTACHMENT_RECORD_BYTES, setArtifacts, canResume, exportRun, createStore, chromeStorage });
   root.CustomRunRecord = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

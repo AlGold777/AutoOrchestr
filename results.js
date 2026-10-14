@@ -7329,6 +7329,11 @@ document.addEventListener('click', (event) => {
             if (pipelineRunActive) { showNotification('Basic: прогон уже идёт.', 'warn'); return false; }
             const latest = await customRunStore.latest(customPipelineName());
             if (!latest) { showNotification('Basic: сохранённого прогона нет.', 'info'); return false; }
+            // Files that were not kept in the record are not replaced by the composer or by nothing (V08).
+            if (latest.attachmentsStored === false) {
+                showNotification(`Basic: прогон нельзя продолжить: его файлы (${(latest.attachments || []).map((file) => file.name).join(', ')}) не сохранены в записи. Запустите прогон заново.`, 'warn');
+                return false;
+            }
             if (!window.CustomRunRecord.canResume(latest)) {
                 showNotification('Basic: прогон нельзя продолжить: в записи нет сохранённого состояния (запись прежней версии или прогон без снимка). Запись доступна для просмотра.', 'warn');
                 return false;
@@ -7507,6 +7512,10 @@ document.addEventListener('click', (event) => {
                 const attachments = resumeRecord
                     ? (Array.isArray(resumeRecord.attachments) ? resumeRecord.attachments : [])
                     : await buildAttachmentPayload();
+                // The files of a new run go into its record, so a resume sends the same bytes (V08).
+                if (record && !resumeRecord && window.CustomRunRecord.setAttachments(record, attachments) === false) {
+                    showNotification(`Basic: файлы прогона (${attachments.length}) слишком велики для записи и в ней не сохранены; продолжить этот прогон с файлами будет нельзя.`, 'warn');
+                }
                 const isNewChat = (request) => request.attempt === 1 && (request.chat === 'new'
                     || (!resumeRecord && runContext.forceNewTabs && !chatBindings[request.participantId]));
                 // The files go with the first message of each chat only (R05). A chat is confirmed to hold them when its answer

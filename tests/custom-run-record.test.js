@@ -448,3 +448,25 @@ describe('V07: a record is resumable only with the whole state of the checkpoint
     expect(Record.canResume(record)).toBe(false);
   });
 });
+
+describe('V08: the files of a run are kept in its record, or the record says they are not', () => {
+  const file = (name, size) => ({ name, size, type: 'text/plain', base64: 'x'.repeat(size) });
+  test('files within the limit are kept with their data and survive the store round trip', () => {
+    const record = Record.createRun({ runId: 'run-f', pipelineName: 'Mine', task: 'T', steps: [{ task: 'x', input: 'none', models: ['A'] }] });
+    expect(Record.setAttachments(record, [file('a.txt', 10)])).toBe(true);
+    expect(record.attachmentsStored).toBe(true);
+    const back = Record.revive(JSON.parse(JSON.stringify(Record.serialize(record))));
+    expect(back.attachmentsStored).toBe(true);
+    expect(back.attachments).toEqual([file('a.txt', 10)]);
+  });
+
+  test('files above the limit are listed by name only and the record says they are not stored; no files is stored too', () => {
+    const record = Record.createRun({ runId: 'run-g', pipelineName: 'Mine', task: 'T', steps: [{ task: 'x', input: 'none', models: ['A'] }] });
+    expect(Record.setAttachments(record, [file('big.bin', 50)], 20)).toBe(false);
+    expect(record.attachmentsStored).toBe(false);
+    expect(record.attachments).toEqual([{ name: 'big.bin', size: 50, type: 'text/plain' }]);
+    expect(Record.setAttachments(record, [])).toBe(true);
+    expect(record.attachments).toEqual([]);
+    expect(record.attachmentsStored).toBe(true);
+  });
+});

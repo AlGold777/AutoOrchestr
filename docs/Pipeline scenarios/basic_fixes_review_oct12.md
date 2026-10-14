@@ -141,6 +141,8 @@ isComplete проверяет schema/current и текстовые ссылки,
 
 ### V08 · P2 · F03/F05 · Resume вложений читает незаписанное поле
 
+Статус (14.10.2026, 2.81.763): исправлено. `CustomRunRecord.setAttachments` сохраняет файлы нового прогона в записи (до 1,5 МБ), иначе помечает `attachmentsStored: false` и хранит только имена; `resumeCustomFromPage` отказывает с названием файлов. Текст ниже — описание дефекта на момент проверки.
+
 Код: `results.js:7481–7483`, `disput/custom-run-record.js:29–40`; путь runCustomFromPage не присваивает attachments в record.
 
 Resume читает resumeRecord.attachments или [] вместо composer, но исходные вложения в record не сохраняются. После reload новый чат получает [] даже если исходный run имел файлы. Отказ использовать новый composer правильный; замена исходных данных пустым списком не закрывает R05.
