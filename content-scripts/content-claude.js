@@ -275,7 +275,7 @@ if (typeof window.SelectorFinder === 'undefined') {
       }
     }
   }) : null;
-  const attachmentHandler = window.AttachmentHandler || null;
+  const getAttachmentHandler = () => window.AttachmentHandler || null;
   const getLifecycleMode = () => {
     if (typeof window !== 'undefined') {
       if (window.__humanoidActivityMode) return window.__humanoidActivityMode;
@@ -1909,6 +1909,7 @@ function isLikelyClaudeModelLabel(text = '') {
         
         if (Array.isArray(attachments) && attachments.length) {
           let attachmentsOk = false;
+          const attachmentHandler = getAttachmentHandler();
           if (attachmentHandler?.attach) {
             const result = await attachmentHandler.attach(MODEL, attachments);
             attachmentsOk = result.success;

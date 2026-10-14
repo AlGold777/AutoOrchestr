@@ -467,7 +467,7 @@ const baseAdapter = window.BaseLLMAdapter ? new window.BaseLLMAdapter({
     }
   }
 }) : null;
-const attachmentHandler = window.AttachmentHandler || null;
+const getAttachmentHandler = () => window.AttachmentHandler || null;
 const PERPLEXITY_FALLBACK_LAST_MESSAGE_SELECTORS = [
   '[data-testid="answer-card"]',
   '[data-testid="answer-card"] .prose',
@@ -1487,6 +1487,7 @@ async function injectAndGetResponse(prompt, attachments = [], meta = null) {
     }
 
     if (Array.isArray(attachments) && attachments.length) {
+      const attachmentHandler = getAttachmentHandler();
       if (!attachmentHandler?.attach) {
         throw { type: 'attachment_failed', message: 'Perplexity confirmed attachment handler unavailable' };
       }

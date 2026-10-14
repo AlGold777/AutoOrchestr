@@ -175,12 +175,10 @@
     });
 
     compacted.session = compactSession(state.session || {});
+    // This is execution state, not a telemetry preview. Metadata without the
+    // serialized bytes cannot be replayed after MV3 restores the worker.
     compacted.attachments = Array.isArray(state.attachments)
-      ? state.attachments.map((item) => ({
-        name: trimString(item?.name, 256),
-        size: Number(item?.size || 0) || 0,
-        type: trimString(item?.type, 256)
-      }))
+      ? state.attachments.map(item => clonePlain(item))
       : [];
 
     const llms = state.llms && typeof state.llms === 'object' ? state.llms : {};

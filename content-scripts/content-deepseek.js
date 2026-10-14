@@ -42,7 +42,7 @@
   // Run 1782940321214: dispatch crashed with "attachmentHandler is not defined"
   // (terminal UNCERTAIN before the prompt was ever inserted) because this
   // declaration was missing while the attachments block references it.
-  const attachmentHandler = window.AttachmentHandler || null;
+  const getAttachmentHandler = () => window.AttachmentHandler || null;
   const baseAdapter = window.BaseLLMAdapter ? new window.BaseLLMAdapter({
     model: MODEL,
     isValidUrl: (url) => {
@@ -1412,6 +1412,7 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
           }
 
           if (Array.isArray(options.attachments) && options.attachments.length) {
+            const attachmentHandler = getAttachmentHandler();
             if (!attachmentHandler?.attach) {
               throw { type: 'attachment_failed', message: 'DeepSeek confirmed attachment handler unavailable' };
             }

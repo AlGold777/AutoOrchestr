@@ -1257,8 +1257,26 @@ async function prepareReusableTabReceiver(tabId, llmName, current) {
   return finish(current() ? (lookupTimedOut ? 'tab_lookup_timeout' : 'receiver_timeout') : 'session_changed');
 }
 
+async function ensureAttachmentHandlerForDispatch(tabId, attachments = []) {
+  if (!attachments.length) return;
+  let timer;
+  try {
+    await Promise.race([
+      chrome.scripting.executeScript({
+        target: { tabId }, injectImmediately: true,
+        files: ['content-scripts/attachment-handler.js']
+      }),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('attachment_runtime_timeout')), 5000); })
+    ]);
+  } catch (error) {
+    throw { type: 'attachment_failed', message: `Attachment handler unavailable: ${error?.message || error}` };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function dispatchSimpleFirstPass(llmName, tabId, prompt, attachments, entry, options, machine) {
-  const meta = { ...entry.lastDispatchMeta, simpleFirstPass: true };
+  const meta = { ...entry.lastDispatchMeta, simpleFirstPass: true, attachmentCount: attachments?.length || 0 };
   const current = () => jobState?.session?.startTime === meta.runSessionId
     && jobState?.llms?.[llmName] === entry && entry.lastDispatchMeta?.dispatchId === meta.dispatchId;
   const pause = async ms => {
@@ -1297,6 +1315,8 @@ async function dispatchSimpleFirstPass(llmName, tabId, prompt, attachments, entr
     if (!current()) return {ok: false, reason: 'session_changed'};
     entry.receiverPreparation = preparation;
     if (!preparation.ok) return defer(preparation.reason || 'receiver_unavailable');
+    await ensureAttachmentHandlerForDispatch(tabId, attachments);
+    if (!current()) return {ok: false, reason: 'session_changed'};
     // Focus and editor settling overlap the write; ordinary storage latency
     // adds no extra pause. Still require ownership to be durable before Send.
     if (!await durable || !current()) return defer('checkpoint_not_ready');
@@ -1693,7 +1713,7 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
     meta: { queueWaitMs, ...dispatchIdentityMeta, dispatchReason: reason, attempt: entry.dispatchAttempts, visibilityState, hasFocus }
   });
   emitTelemetry(llmName, 'DISPATCH_START', {
-    meta: { ...dispatchIdentityMeta, dispatchReason: reason, attempt: entry.dispatchAttempts, visibilityState, hasFocus }
+    meta: { ...dispatchIdentityMeta, dispatchReason: reason, attempt: entry.dispatchAttempts, visibilityState, hasFocus, attachmentCount: attachments.length }
   });
     try {
       if (machine) {
@@ -1862,6 +1882,8 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
         dispatchId, tabId, dispatchReason: reason, attempt: entry.dispatchAttempts || 0
       });
 
+      await ensureAttachmentHandlerForDispatch(tabId, attachments);
+      if (!isCurrentDispatchContext()) return;
       let needsFocus = false;
       let noFocusResponse = null;
       if (options.skipNoFocusProbe) {

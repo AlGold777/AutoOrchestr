@@ -59,7 +59,7 @@
       }
     }
   }) : null;
-  const attachmentHandler = window.AttachmentHandler || null;
+  const getAttachmentHandler = () => window.AttachmentHandler || null;
   const GROK_FALLBACK_LAST_MESSAGE_SELECTORS = [
     'div.message-bubble div.response-content-markdown',
     'div.relative.response-content-markdown',
@@ -2036,6 +2036,7 @@
 
         if (Array.isArray(attachments) && attachments.length) {
           let attachmentsOk = false;
+          const attachmentHandler = getAttachmentHandler();
           if (attachmentHandler?.attach) {
             const result = await attachmentHandler.attach(MODEL, attachments);
             attachmentsOk = result.success;

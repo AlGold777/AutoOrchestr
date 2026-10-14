@@ -38,7 +38,7 @@
   // (terminal UNCERTAIN before the prompt was ever inserted, and a stale on-page
   // answer later upgraded it to a false SUCCESS) because this declaration was
   // missing while the attachments block references it.
-  const attachmentHandler = window.AttachmentHandler || null;
+  const getAttachmentHandler = () => window.AttachmentHandler || null;
   const baseAdapter = window.BaseLLMAdapter ? new window.BaseLLMAdapter({
     model: MODEL,
     isValidUrl: (url) => {
@@ -1509,6 +1509,7 @@ const hydrateAttachments = (raw = []) =>
         }
 
         if (Array.isArray(attachments) && attachments.length) {
+          const attachmentHandler = getAttachmentHandler();
           if (!attachmentHandler?.attach) {
             throw { type: 'attachment_failed', message: 'Le Chat confirmed attachment handler unavailable' };
           }

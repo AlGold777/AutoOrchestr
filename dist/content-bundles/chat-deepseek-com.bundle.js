@@ -297,6 +297,10 @@
     /\b(couldn('|’)?t (generate|complete)|failed to generate (a )?(response|answer))\b/i
   ];
 
+  // Gemini shows the heading of its thinking and then its hidden page label; the answer starts
+  // after the label. A short text that ends with the label holds only the thinking.
+  const GEMINI_THINKING_ONLY = /^(?:.{0,120}\s)?(?:Ответ Gemini|Gemini said:?)$/i;
+
   function normalize(text) {
     return String(text || '').replace(/\s+/g, ' ').trim();
   }
@@ -342,6 +346,9 @@
     }
     if (isProviderErrorSurface(norm)) {
       return decide(CLASSES.PROVIDER_ERROR, norm, { reason: 'provider_error' });
+    }
+    if (GEMINI_THINKING_ONLY.test(norm)) {
+      return decide(CLASSES.UI_NOISE, norm, { reason: 'gemini_thinking_only' });
     }
     if (norm.length < minValid) {
       // Short: either UI noise or a genuinely short answer ("Yes.", "Готово.").
@@ -3098,6 +3105,8 @@
             confidence: typeof payload.confidence === 'number' ? payload.confidence : null,
             answerMethod: payload.answerMethod || null,
             responsePhase: payload.responsePhase || null,
+            observerStoppedAt: payload.observerStoppedAt ?? null,
+            stopReason: payload.stopReason ?? null,
             phaseEvidence: payload.phaseEvidence || null
           }
         }
@@ -4647,6 +4656,10 @@
       emitLifecycleTelemetry('LIFECYCLE_TRACKING_STOPPED', {
         modelName: tracker.modelName,
         state: 'CANCELLED',
+        dispatchId: tracker.dispatchId,
+        runSessionId: tracker.runSessionId,
+        observerStoppedAt: tracker.cancelledAt,
+        stopReason: reason,
         level: 'info',
         textLength: tracker.lastTextLength || 0,
         phaseEvidence: { reason }
@@ -7412,6 +7425,7 @@
         modelName: llmName,
         dispatchId: meta?.dispatchId || null,
         runSessionId: meta?.runSessionId || meta?.sessionId || null,
+        generationEpoch: meta?.generationEpoch ?? null,
         promptSubmittedAt: Date.now(),
         traceId: meta?.traceId || meta?.dispatchId || null,
         baselineText: String(baselineText || ''),
@@ -8372,19 +8386,38 @@
   // second GET_ANSWER while the first request is still preparing the same
   // composer. Keep one transaction per tab and suppress that duplicate before
   // it can clear/insert the prompt again.
+  // Dispatch ids look like "<model>:<run start ms>:<n>". A dispatch of a LATER run start than the
+  // active one belongs to a later stage: the background never sends it while the earlier request of
+  // the same model is unfinished, so the old transaction is a leftover that never settled.
+  const runStartOf = (dispatchId) => {
+    const match = /:(\d{10,}):/.exec(String(dispatchId || ''));
+    return match ? Number(match[1]) : null;
+  };
   const createDispatchGate = () => {
     let active = null;
     const begin = ({ dispatchId = null, prompt = '' } = {}) => {
       const fingerprint = promptFingerprint(prompt);
+      let supersededDispatchId = null;
       if (active) {
         const sameDispatch = Boolean(dispatchId && active.dispatchId && dispatchId === active.dispatchId);
         const samePrompt = Boolean(fingerprint && fingerprint === active.promptFingerprint);
-        return {
-          accepted: false,
-          duplicate: sameDispatch || samePrompt,
-          activeDispatchId: active.dispatchId,
-          activeStartedAt: active.startedAt
-        };
+        const nextRun = runStartOf(dispatchId);
+        const activeRun = runStartOf(active.dispatchId);
+        // Field report: stage 1's transaction never settled (the page navigated, the wait hung), so
+        // stage 2's request was refused as "different request while provider transaction active" and
+        // the model dropped out of the run. A newer stage replaces the stale transaction; a parallel
+        // duplicate inside the same run is still refused.
+        if (!sameDispatch && !samePrompt && nextRun != null && activeRun != null && nextRun > activeRun) {
+          supersededDispatchId = active.dispatchId;
+          active = null;
+        } else {
+          return {
+            accepted: false,
+            duplicate: sameDispatch || samePrompt,
+            activeDispatchId: active.dispatchId,
+            activeStartedAt: active.startedAt
+          };
+        }
       }
       const token = Object.freeze({
         dispatchId: dispatchId || null,
@@ -8392,7 +8425,7 @@
         startedAt: Date.now()
       });
       active = token;
-      return { accepted: true, duplicate: false, token };
+      return { accepted: true, duplicate: false, token, ...(supersededDispatchId ? { supersededDispatchId } : {}) };
     };
     const finish = (token) => {
       if (!token || active !== token) return false;
@@ -8755,6 +8788,9 @@
       // still misses, the safe failure mode is "works, with a duplicate warning",
       // never "no file". A true fix needs the live ChatGPT attached-file selector.
       preferPaste: false,
+      settleMs: 1200,
+      persistentEvidenceRequired: true,
+      confirmGoneSelectors: ['[role="progressbar"]', '[aria-busy="true"]'],
       // Never paste a File into ChatGPT: text-like files are interpreted as
       // composer text, which can replace the actual prompt with file contents.
       strategies: ['drop', 'input'],
@@ -9463,7 +9499,11 @@
         ? Object.keys(requiredNames).length > 0 && Object.entries(requiredNames).every(([name, count]) =>
           (filenameCounts[name] || 0) >= (baselineState.filenameEvidenceByName[name] || 0) + count)
         : filenameEvidenceCount >= baselineFilenameEvidence + expectedCount;
-      const evidenceNow = selectorEvidence || inputEvidence || filenameEvidence;
+      // One file can render several matching wrappers/buttons. For a batch,
+      // generic selector counts cannot prove that every distinct file arrived.
+      const evidenceNow = files.length > 1
+        ? filenameEvidence || inputEvidence
+        : selectorEvidence || inputEvidence || filenameEvidence;
       if (selectorEvidence || filenameEvidence) providerEvidenceSeen = true;
       if (evidenceNow && !evidenceAt) evidenceAt = Date.now();
       const hasEvidence = evidenceNow
@@ -9546,6 +9586,26 @@
     return null;
   };
 
+  const acceptsAttachmentFiles = (input, files) => {
+    if (!input || input.disabled || (files.length > 1 && !input.multiple)) return false;
+    const accepted = String(input.getAttribute('accept') || '').toLowerCase().split(',').map(value => value.trim()).filter(Boolean);
+    return files.every(file => !accepted.length || accepted.some(rule =>
+      rule === '*/*' || rule === '*' || (rule.startsWith('.')
+        ? String(file.name || '').toLowerCase().endsWith(rule)
+        : rule.endsWith('/*') ? String(file.type || '').toLowerCase().startsWith(rule.slice(0, -1))
+          : String(file.type || '').toLowerCase() === rule)));
+  };
+
+  const findAttachmentInput = (files, selectors = []) => {
+    for (const root of collectOpenRoots()) {
+      for (const selector of [...selectors, 'input[type="file"]']) {
+        const input = Array.from(root.querySelectorAll(selector)).find(candidate => acceptsAttachmentFiles(candidate, files));
+        if (input) return input;
+      }
+    }
+    return null;
+  };
+
   const attachViaInput = async (files, config) => {
     const attachButton = await findFirst(config.attachSelectors, 1200, 120);
     if (attachButton) {
@@ -9554,7 +9614,12 @@
         await sleep(300);
       } catch (_) {}
     }
-    const input = await findFirst(config.inputSelectors, 3000, 120) || document.querySelector('input[type="file"]');
+    const deadline = Date.now() + 3000;
+    let input = findAttachmentInput(files, config.inputSelectors);
+    while (!input && Date.now() < deadline) {
+      await sleep(120);
+      input = findAttachmentInput(files, config.inputSelectors);
+    }
     if (!input) return false;
     const dt = new DataTransfer();
     files.forEach((file) => {
@@ -9756,9 +9821,9 @@
     }
     const config = resolveConfig(model, overrides);
     const files = hydrateAttachments(attachments).slice(0, config.maxFiles);
-    if (!files.length) {
-      reportFailure('NO_FILES');
-      return { success: false, delivered: false, uploadSettled: false, ready: false, evidence: null, uploadedCount: 0, failedFiles: attachments, reason: 'NO_FILES' };
+    if (files.length !== attachments.length) {
+      reportFailure('INCOMPLETE_FILE_BATCH');
+      return { success: false, delivered: false, uploadSettled: false, ready: false, evidence: null, uploadedCount: 0, failedFiles: attachments, reason: 'INCOMPLETE_FILE_BATCH' };
     }
     if (config.sequentialFiles === true && files.length > 1) {
       const limitedAttachments = attachments.slice(0, files.length);
@@ -10041,6 +10106,9 @@
         reason: attempted ? 'TIMEOUT' : 'MANUAL_REQUIRED'
       };
     }
+    global.ContentUtils?.reportDispatchStage?.(model, {}, 'attachment_upload_completed', {
+      outcome: 'confirmed', attachmentCount: attachments.length, uploadedCount: files.length
+    });
     try {
       chrome?.runtime?.sendMessage?.({
         type: 'SMART_ATTACHMENT_CONFIRMED',
@@ -10246,6 +10314,13 @@
     handleMessage(message, sender, sendResponse) {
       if (!message || typeof message !== 'object') return false;
       if (message.type === 'STOP_AND_CLEANUP') {
+        if (typeof window.ContentUtils?.isStopCommandCurrent === 'function'
+            && !window.ContentUtils.isStopCommandCurrent(message)) {
+          if (typeof sendResponse === 'function') {
+            sendResponse({ status: 'stale_stop_ignored', model: this.MODEL });
+          }
+          return true;
+        }
         this._cleanup(message.reason || 'stop_request');
         if (typeof sendResponse === 'function') {
           sendResponse({ status: 'stopped', model: this.MODEL });
@@ -10254,7 +10329,7 @@
       }
       if (message.type === 'HEALTH_CHECK_PING') {
         if (typeof sendResponse === 'function') {
-          sendResponse({ type: 'HEALTH_CHECK_PONG', pingId: message.pingId, model: this.MODEL });
+          sendResponse({ type: 'HEALTH_CHECK_PONG', pingId: message.pingId, llmName: this.MODEL, model: this.MODEL });
         }
         return true;
       }
@@ -14997,9 +15072,26 @@ const scrollIntoViewSmoothly = async (element) => {
       chrome.storage.local.get(STORAGE_KEY, (data) => {
         try { applyTimingProfile(data && data[STORAGE_KEY] ? 'long' : 'standard'); markProfileLoaded(); } catch (_) {}
       });
+      // Shortening the deadlines under a generation in flight made it time out
+      // early (e.g. a finished Disput restoring Standard while this tab still
+      // generates a Long answer). A downgrade waits until the tab has no request
+      // in flight, bounded by the Long hard maximum; an upgrade applies at once.
+      let pendingDowngradeTimer = null;
+      const applyWhenIdle = (profile, startedAt = Date.now()) => {
+        clearTimeout(pendingDowngradeTimer);
+        pendingDowngradeTimer = null;
+        const busy = window.ContentUtils?.hasActiveRequest?.() === true;
+        const expired = Date.now() - startedAt > LONG_OVERRIDES.streaming.adaptiveTimeout.hardMax;
+        if (profile === 'standard' && activeProfile === 'long' && busy && !expired) {
+          pendingDowngradeTimer = setTimeout(() => applyWhenIdle(profile, startedAt), 2000);
+          return;
+        }
+        applyTimingProfile(profile);
+        markProfileLoaded();
+      };
       chrome.storage.onChanged?.addListener?.((changes, area) => {
         if (area !== 'local' || !changes || !changes[STORAGE_KEY]) return;
-        try { applyTimingProfile(changes[STORAGE_KEY].newValue ? 'long' : 'standard'); markProfileLoaded(); } catch (_) {}
+        try { applyWhenIdle(changes[STORAGE_KEY].newValue ? 'long' : 'standard'); } catch (_) {}
       });
     } else {
       markProfileLoaded();
@@ -15509,9 +15601,10 @@ const scrollIntoViewSmoothly = async (element) => {
 
   const PLATFORM_SELECTORS = {
     chatgpt: {
-      messageRoot: '[data-testid="conversation-turn"][data-message-author-role="assistant"], [data-testid="conversation-turn"][data-author-role="assistant"], [data-testid="conversation-turn"][data-role="assistant"], [data-message-author-role="assistant"], [data-author-role="assistant"], [data-role="assistant"]',
+      messageRoot: '[data-markdown-text-style="assistant-message"], [data-testid="conversation-turn"][data-message-author-role="assistant"], [data-testid="conversation-turn"][data-author-role="assistant"], [data-testid="conversation-turn"][data-role="assistant"], [data-message-author-role="assistant"], [data-author-role="assistant"], [data-role="assistant"]',
       answerContainer: '[data-testid=\"conversation-panel\"], [data-testid=\"conversation-container\"], main, [data-testid=\"conversation-turn\"]',
       lastMessage: [
+        '[data-markdown-text-style="assistant-message"]',
         '[data-testid=\"conversation-turn\"][data-message-author-role=\"assistant\"]',
         '[data-testid=\"conversation-turn\"][data-author-role=\"assistant\"]',
         '[data-testid=\"conversation-turn\"][data-role=\"assistant\"]',
@@ -15520,6 +15613,7 @@ const scrollIntoViewSmoothly = async (element) => {
         '[data-role=\"assistant\"]'
       ].join(', '),
       streamStart: [
+        '[data-markdown-text-style="assistant-message"]',
         '[data-testid=\"conversation-turn\"][data-message-author-role=\"assistant\"]',
         '[data-testid=\"conversation-turn\"][data-author-role=\"assistant\"]',
         '[data-testid=\"conversation-turn\"][data-role=\"assistant\"]',
@@ -15625,7 +15719,7 @@ const scrollIntoViewSmoothly = async (element) => {
       streamStart: ['[data-test-id*=\"model-response\"]', '[data-testid*=\"model-response\"]', '.model-response', 'model-response', 'message-content', '[data-message-author-role=\"assistant\"]', '[data-role=\"assistant\"]'],
       generatingIndicators: ['.loading', '[aria-busy=\"true\"]', '[data-is-loading=\"true\"]', '[data-loading=\"true\"]', '[data-streaming=\"true\"]'],
       completionIndicators: ['rich-textarea', 'textarea[aria-label*=\"Prompt\" i]', 'textarea[aria-label*=\"Message\" i]', 'textarea[aria-label*=\"Ask\" i]'],
-      stopButton: 'button[aria-label*=\"Stop\" i]',
+      stopButton: 'button[aria-label*=\"Stop\" i], button[aria-label*=\"Остановить генерацию\" i]',
       copyButton: COPY_BUTTON_SELECTORS
     },
     grok: {
@@ -15777,6 +15871,8 @@ const scrollIntoViewSmoothly = async (element) => {
       ],
       answerContainer: 'main, article',
       lastMessage: [
+        '[data-message-author-role="assistant"] [data-message-part-type="answer"]',
+        '[data-role="assistant"] [data-message-part-type="answer"]',
         'div[data-testid=\"lechat-response\"] .prose',
         '[data-testid=\"answer\"] .prose',
         '[data-testid*=\"message-content\"]',
@@ -15787,7 +15883,7 @@ const scrollIntoViewSmoothly = async (element) => {
         'article',
         '.prose'
       ].join(', '),
-      streamStart: ['div[data-testid=\"lechat-response\"]', '[data-testid=\"answer\"]', '[data-testid*=\"message-content\"]', 'div[class*=\"message-content\"]', '[data-role=\"assistant\"]', '[data-message-author-role=\"assistant\"]', 'article', '.prose'],
+      streamStart: ['[data-message-author-role="assistant"] [data-message-part-type="answer"]', 'div[data-testid=\"lechat-response\"]', '[data-testid=\"answer\"]', '[data-testid*=\"message-content\"]', 'div[class*=\"message-content\"]', '[data-role=\"assistant\"]', '[data-message-author-role=\"assistant\"]', 'article', '.prose'],
       generatingIndicators: ['[aria-busy=\"true\"]', '.loading', '.animate-pulse', '.typing-indicator', '[class*=\"streaming\" i]', '[data-testid=\"generation\"]', '[data-testid*=\"loading\"]'],
       completionIndicators: ['button[type=\"submit\"]:not([disabled])', '[data-testid*=\"send\"]:not([disabled])', '[aria-label*=\"Send\" i]:not([disabled])', 'textarea[role=\"textbox\"]:not([disabled])'],
       stopButton: 'button[aria-label*=\"Stop\" i], button[aria-label*=\"Stop generation\" i], button[data-testid*=\"stop\" i], button[class*=\"stop\" i]',
@@ -16011,7 +16107,7 @@ const scrollIntoViewSmoothly = async (element) => {
         && metadataByElement.get(parent)?.sourceKind === 'primary'
         && metadataByElement.get(node)?.sourceKind === 'primary'
         && parent.contains(node)
-        && (options.platform === 'chatgpt'
+        && (options.platform === 'chatgpt' || options.platform === 'gemini'
           || (enclosingMessage(node) && enclosingMessage(parent) !== parent
             && enclosingMessage(node) === enclosingMessage(parent)))));
     const sorted = sortDocumentOrder(turnCandidates);
@@ -16034,7 +16130,7 @@ const scrollIntoViewSmoothly = async (element) => {
       const node = pool[index];
       const text = String(readNodeText(node) || '').trim();
       if (text.length < minimumTextLength) continue;
-      if (node.closest?.('[hidden], [aria-hidden="true"], [inert], [data-role="user"], [data-message-author-role="user"], [data-author-role="user"]')) {
+      if (node.closest?.('[hidden], [aria-hidden="true"], [inert], [data-message-part-type="reasoning"], [data-role="user"], [data-message-author-role="user"], [data-author-role="user"]')) {
         rejectedCandidates.push(node);
         continue;
       }
@@ -16186,14 +16282,31 @@ const scrollIntoViewSmoothly = async (element) => {
     if (/(?:^|[\s_-])(toolbar|actions?|controls?|feedback|copy-button|reaction)(?:$|[\s_-])/.test(structuralMarker)) return true;
     const semanticMarker = [
       node.getAttribute?.('data-testid'), node.getAttribute?.('data-type'),
-      node.getAttribute?.('data-content-type'), node.getAttribute?.('aria-label')
+      node.getAttribute?.('data-content-type'), node.getAttribute?.('data-message-part-type'),
+      node.getAttribute?.('aria-label')
     ].filter(Boolean).join(' ').toLowerCase();
     if (/(thinking|thought|reasoning|analysis|scratch|trace|internal|reflection)/.test(semanticMarker)) return true;
     return /(?:^|[\s_-])(thinking|thought|reasoning|scratchpad|chain-of-thought)(?:$|[\s_-])/.test(structuralMarker);
   }
 
+  // Providers with typed message parts explicitly separate public answers from
+  // reasoning and turn metadata. Their answer parts are the content boundary.
+  // null means an untyped layout; [] means no public answer has rendered yet.
+  function getAnswerParts(element) {
+    if (!element?.querySelectorAll) return null;
+    if (element.matches?.('[data-message-part-type="answer"]')) return [element];
+    const parts = Array.from(element.querySelectorAll('[data-message-part-type]'));
+    return parts.length ? parts.filter(part => part.getAttribute('data-message-part-type') === 'answer') : null;
+  }
+
   function linearizeText(element, options = {}) {
     if (!element || element.nodeType !== 1 || isIgnored(element)) return '';
+    // Test the page's turn before discarding accessibility nodes. Otherwise the
+    // Gemini label disappears and its thinking heading becomes a valid answer.
+    const geminiTurn = element.closest?.('model-response');
+    const geminiLabel = geminiTurn?.querySelector('h6.screen-reader-model-response-label');
+    const labelText = normalizeText(geminiLabel?.textContent || '');
+    if (labelText && normalizeText(geminiTurn.innerText || geminiTurn.textContent || '').endsWith(labelText)) return '';
     const chunks = [];
     const maxChars = Math.max(1, Number(options.maxChars || 200000));
     let length = 0;
@@ -16213,7 +16326,9 @@ const scrollIntoViewSmoothly = async (element) => {
         if (node.shadowRoot) Array.from(node.shadowRoot.childNodes || []).forEach(visit);
       } catch (_) {}
     };
-    Array.from(element.childNodes || []).forEach(visit);
+    const parts = getAnswerParts(element);
+    if (parts) parts.forEach(visit);
+    else Array.from(element.childNodes || []).forEach(visit);
     try {
       if (element.shadowRoot) Array.from(element.shadowRoot.childNodes || []).forEach(visit);
     } catch (_) {}
@@ -16285,8 +16400,9 @@ const scrollIntoViewSmoothly = async (element) => {
     if (messageRoot && selected && messageRoot !== selected && !messageRoot.contains?.(selected)) {
       issues.push('selected_outside_message_root');
     }
+    const parts = messageRoot ? getAnswerParts(messageRoot) : null;
     const omittedBlocks = issues.length === 0
-      ? enumerateContentBlocks(messageRoot, { selected })
+      ? enumerateContentBlocks(parts ? { children: parts } : messageRoot, { selected })
       : [];
     if (omittedBlocks.length) issues.push('uncovered_message_blocks');
     return {
@@ -16297,7 +16413,7 @@ const scrollIntoViewSmoothly = async (element) => {
     };
   }
 
-  const api = Object.freeze({ normalizeText, isIgnored, linearizeText, enumerateContentBlocks, inspect });
+  const api = Object.freeze({ normalizeText, isIgnored, getAnswerParts, linearizeText, enumerateContentBlocks, inspect });
   root.AnswerStructure = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
@@ -16633,6 +16749,66 @@ const scrollIntoViewSmoothly = async (element) => {
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 
 
+/* ==== utils/selection-block-format.js ==== */
+(function initSelectionBlockFormat() {
+  if (window.SelectionBlockFormat) return;
+
+  const BLOCK_SELECTOR = 'p, li, h1, h2, h3, h4, h5, h6, blockquote, pre, div';
+  const INDENT_PX = 24;
+
+  function selectedBlocks(range, root) {
+    if (!range || range.collapsed || !root?.contains(range.startContainer) || !root.contains(range.endContainer)) return [];
+    const blocks = new Set();
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node = walker.nextNode())) {
+      if (!node.nodeValue?.trim() || !range.intersectsNode(node)) continue;
+      let block = node.parentElement?.closest(BLOCK_SELECTOR);
+      while (block && block !== root && !root.contains(block)) block = block.parentElement?.closest(BLOCK_SELECTOR);
+      // A plain response body is itself the paragraph when it has no child blocks.
+      blocks.add(block && root.contains(block) ? block : root);
+    }
+    return Array.from(blocks);
+  }
+
+  function makeList(block) {
+    if (block.tagName === 'LI' || (block.closest('ul, ol') && block.tagName !== 'DIV')) return;
+    const item = document.createElement('li');
+    if (block.matches('p, h1, h2, h3, h4, h5, h6, blockquote, pre')) {
+      const previousList = block.previousElementSibling;
+      const list = previousList?.tagName === 'UL' ? previousList : document.createElement('ul');
+      if (list !== previousList) block.parentNode?.insertBefore(list, block);
+      item.appendChild(block);
+      list.appendChild(item);
+    } else {
+      // Keep the response root and its event handlers; move only its content.
+      const list = document.createElement('ul');
+      while (block.firstChild) item.appendChild(block.firstChild);
+      list.appendChild(item);
+      block.appendChild(list);
+    }
+  }
+
+  function apply(range, root, command) {
+    const blocks = selectedBlocks(range, root);
+    if (!blocks.length) return false;
+    blocks.forEach((block) => {
+      if (command === 'list') {
+        makeList(block);
+      } else if (command === 'indent' || command === 'outdent') {
+        const current = Number.parseFloat(block.style.marginLeft) || 0;
+        block.style.marginLeft = `${Math.max(0, current + (command === 'indent' ? INDENT_PX : -INDENT_PX))}px`;
+      } else if (['left', 'center', 'right'].includes(command)) {
+        block.style.textAlign = command;
+      }
+    });
+    return true;
+  }
+
+  window.SelectionBlockFormat = { apply };
+})();
+
+
 /* ==== content-scripts/model-selection-toolbar.js ==== */
 (function initModelSelectionToolbar() {
   if (window.__codexModelSelectionToolbarLoaded) return;
@@ -16762,6 +16938,7 @@ const scrollIntoViewSmoothly = async (element) => {
       position: fixed;
       z-index: 2147483647;
       display: flex;
+      flex-direction: column;
       align-items: center;
       gap: 4px;
       padding: 5px 6px;
@@ -16784,6 +16961,36 @@ const scrollIntoViewSmoothly = async (element) => {
       transform: translateY(0);
       transition: opacity 0.12s ease, transform 0.12s ease;
     }
+    #${TOOLBAR_ID} .selection-toolbar-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      width: 100%;
+    }
+    #${TOOLBAR_ID} .selection-toolbar-extra[hidden] { display: none; }
+    #${TOOLBAR_ID} .stb.selection-toolbar-toggle {
+      box-sizing: border-box;
+      width: 30px;
+      min-width: 30px;
+      padding: 0;
+      justify-content: center;
+    }
+    #${TOOLBAR_ID} .selection-toolbar-chevron {
+      display: block;
+      flex: none;
+      width: 16px;
+      height: 16px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      pointer-events: none;
+      transition: transform 0.15s ease;
+    }
+    #${TOOLBAR_ID} .selection-toolbar-toggle[aria-expanded="true"] .selection-toolbar-chevron { transform: rotate(180deg); }
+    #${TOOLBAR_ID} .stb[data-block="left"] { justify-content: flex-start; padding-left: 8px; }
+    #${TOOLBAR_ID} .stb[data-block="right"] { justify-content: flex-end; padding-right: 8px; }
     #${TOOLBAR_ID} .stb {
       position: relative;
       display: inline-flex;
@@ -16881,6 +17088,8 @@ const scrollIntoViewSmoothly = async (element) => {
   toolbar.id = TOOLBAR_ID;
   toolbar.setAttribute('aria-hidden', 'true');
   toolbar.innerHTML = `
+    <div class="selection-toolbar-row">
+    <button type="button" class="stb selection-toolbar-toggle" data-more="1" title="More formatting" aria-label="More formatting" aria-expanded="false" aria-controls="${TOOLBAR_ID}-extra"><svg class="selection-toolbar-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m3.25 6 4.75 4 4.75-4"/></svg></button>
     <button class="stb" data-clear-highlight="1" title="Remove highlight" aria-label="Remove highlight"><span class="stb-label">No colour</span></button>
     <button class="stb col" data-color="#FFEB3B" title="Yellow highlight" aria-label="Yellow highlight"><span class="stb-label">Yellow</span></button>
     <button class="stb col" data-color="#05e56d" title="Green highlight" aria-label="Green highlight"><span class="stb-label">Green</span></button>
@@ -16890,6 +17099,15 @@ const scrollIntoViewSmoothly = async (element) => {
     <button class="stb" data-cmd="italic" title="Italic" aria-label="Italic"><span class="stb-label">Italic</span></button>
     <div class="selection-sep" aria-hidden="true"></div>
     <button class="stb" data-fav="1" title="Add selected fragment to favorites" aria-label="Add selected fragment to favorites" aria-pressed="false"><span class="stb-label">Favourite</span></button>
+    </div>
+    <div class="selection-toolbar-row selection-toolbar-extra" id="${TOOLBAR_ID}-extra" hidden>
+      <button type="button" class="stb" data-block="left" title="Align left" aria-label="Align left">≡</button>
+      <button type="button" class="stb" data-block="center" title="Align center" aria-label="Align center">≡</button>
+      <button type="button" class="stb" data-block="right" title="Align right" aria-label="Align right">≡</button>
+      <button type="button" class="stb" data-block="list" title="Bulleted list" aria-label="Bulleted list">☷</button>
+      <button type="button" class="stb" data-block="outdent" title="Decrease indent" aria-label="Decrease indent">⇤</button>
+      <button type="button" class="stb" data-block="indent" title="Increase indent" aria-label="Increase indent">⇥</button>
+    </div>
   `;
   document.body.appendChild(toolbar);
 
@@ -16902,11 +17120,24 @@ const scrollIntoViewSmoothly = async (element) => {
   let favoriteActivationPending = false;
   let suppressFavoriteClickUntil = 0;
 
+  const setToolbarExtra = (expanded) => {
+    const extra = toolbar.querySelector('.selection-toolbar-extra');
+    const toggle = toolbar.querySelector('[data-more]');
+    const oldHeight = toolbar.offsetHeight;
+    extra.hidden = !expanded;
+    toggle.setAttribute('aria-expanded', String(expanded));
+    if (toolbar.classList.contains('is-visible') && toolbar.style.top) {
+      const top = Number.parseFloat(toolbar.style.top) || 0;
+      toolbar.style.top = `${Math.max(8, top - (toolbar.offsetHeight - oldHeight))}px`;
+    }
+  };
+
   const hideToolbar = () => {
     selectionState.range = null;
     selectionState.target = null;
     toolbar.classList.remove('is-visible');
     toolbar.setAttribute('aria-hidden', 'true');
+    setToolbarExtra(false);
   };
 
   const normalizeSelectionTarget = (node) => {
@@ -16955,6 +17186,7 @@ const scrollIntoViewSmoothly = async (element) => {
       hideToolbar();
       return;
     }
+    setToolbarExtra(false);
     const toolbarWidth = toolbar.offsetWidth || 220;
     const toolbarHeight = toolbar.offsetHeight || 34;
     let top = rect.top - toolbarHeight - GAP_PX;
@@ -17028,6 +17260,12 @@ const scrollIntoViewSmoothly = async (element) => {
       } catch (_) {}
     }
 
+    window.getSelection?.()?.removeAllRanges?.();
+    hideToolbar();
+  };
+
+  const applySelectionBlock = (command) => {
+    window.SelectionBlockFormat?.apply(selectionState.range, selectionState.target, command);
     window.getSelection?.()?.removeAllRanges?.();
     hideToolbar();
   };
@@ -17145,6 +17383,14 @@ const scrollIntoViewSmoothly = async (element) => {
     event.stopPropagation();
     const color = btn.dataset.color || '';
     const cmd = btn.dataset.cmd || '';
+    if (btn.dataset.more) {
+      setToolbarExtra(toolbar.querySelector('.selection-toolbar-extra').hidden);
+      return;
+    }
+    if (btn.dataset.block) {
+      applySelectionBlock(btn.dataset.block);
+      return;
+    }
     if (btn.dataset.clearHighlight) {
       clearSelectionHighlight();
       return;
@@ -17732,28 +17978,6 @@ const scrollIntoViewSmoothly = async (element) => {
         if (Date.now() - (cmd.timestamp || 0) > 5000) return;
         if (cmd.action === 'STOP_ALL') {
           if (Array.isArray(cmd.platforms) && this.platform && !cmd.platforms.includes(this.platform)) {
-            return;
-          }
-          const cmdMeta = cmd.meta && typeof cmd.meta === 'object' ? cmd.meta : {};
-          const commandRunSessionId = cmd.runSessionId || cmdMeta.runSessionId || cmd.sessionId || cmdMeta.sessionId || null;
-          const commandDispatchIds = Array.isArray(cmd.activeDispatchIds)
-            ? cmd.activeDispatchIds
-            : (cmd.dispatchId || cmdMeta.dispatchId ? [cmd.dispatchId || cmdMeta.dispatchId] : []);
-          let currentMeta = null;
-          try {
-            currentMeta = window.ContentUtils?.ensureDispatchMeta?.({}) || null;
-          } catch (_) {}
-          const currentRunSessionId = currentMeta?.runSessionId
-            || currentMeta?.sessionId
-            || window.__CURRENT_SESSION_ID__
-            || null;
-          if (commandRunSessionId && currentRunSessionId
-              && String(commandRunSessionId) !== String(currentRunSessionId)) {
-            return;
-          }
-          const currentDispatchId = currentMeta?.dispatchId || null;
-          if (commandDispatchIds.length && currentDispatchId
-              && !commandDispatchIds.some((id) => String(id) === String(currentDispatchId))) {
             return;
           }
           if (typeof window.ContentUtils?.isStopCommandCurrent === 'function'
@@ -20795,19 +21019,18 @@ const scrollIntoViewSmoothly = async (element) => {
     return target;
   };
 
-  const LOCAL_STATE_PREFIX = 'llm_ext_';
-  const persistLocalState = (sessionId, payload = {}) => {
-    if (!sessionId) return;
-    try {
-      const key = `${LOCAL_STATE_PREFIX}${sessionId}`;
-      const prev = window.localStorage.getItem(key);
-      const prevObj = prev ? JSON.parse(prev) : {};
-      const merged = Object.assign({}, prevObj, payload, { ts: Date.now() });
-      window.localStorage.setItem(key, JSON.stringify(merged));
-    } catch (err) {
-      console.warn('[Pipeline] persistLocalState failed', err);
+  // Run state used to be mirrored into the provider site's localStorage under
+  // llm_ext_<sessionId>: visible to the site, never cleaned up and never read
+  // back meaningfully. State lives in the extension; remove the leftovers once.
+  const LEGACY_LOCAL_STATE_PREFIX = 'llm_ext_';
+  try {
+    const storage = window.localStorage;
+    if (storage) {
+      Object.keys(storage)
+        .filter((key) => key.startsWith(LEGACY_LOCAL_STATE_PREFIX))
+        .forEach((key) => storage.removeItem(key));
     }
-  };
+  } catch (_) { /* storage may be unavailable on the provider page */ }
 
   const sendTabState = (payload = {}) => {
     try {
@@ -20962,7 +21185,6 @@ const scrollIntoViewSmoothly = async (element) => {
         maintenanceResult: null,
         initialScrollKick: null
       };
-      this._recoverLocalState();
 
       this.scrollToolkit = window.__UniversalScrollToolkit || null;
       this.lifecycle = window.HumanoidEvents || null;
@@ -21043,21 +21265,6 @@ const scrollIntoViewSmoothly = async (element) => {
       });
     }
 
-    _recoverLocalState() {
-      try {
-        const keys = Object.keys(window.localStorage || {}).filter((k) => k.startsWith(LOCAL_STATE_PREFIX));
-        if (!keys.length) return;
-        const lastKey = keys.sort().slice(-1)[0];
-        const cached = window.localStorage.getItem(lastKey);
-        if (cached) {
-          this.state.recoveredCache = JSON.parse(cached);
-          this.telemetry.logPhase('cache_recovered', { key: lastKey });
-        }
-      } catch (err) {
-        console.warn('[Pipeline] recoverLocalState failed', err);
-      }
-    }
-
     _initHumanSession() {
       const self = this;
       const cfg = Object.assign({
@@ -21082,7 +21289,6 @@ const scrollIntoViewSmoothly = async (element) => {
         const error = 'selectors_not_supported';
         console.error(`[UnifiedAnswerPipeline] FATAL: Platform selectors missing for ${this.platform}`);
         this.telemetry.logPhase('selectors_missing', { platform: this.platform, error });
-        persistLocalState(this.sessionId, { platform: this.platform, status: 'error', phase: 'preparation', error });
         sendTabState({ status: 'error', phase: 'preparation', error, platform: this.platform, sessionId: this.sessionId });
         return this.handleError('preparation', error);
       }
@@ -21097,7 +21303,6 @@ const scrollIntoViewSmoothly = async (element) => {
       this.state.startTime = Date.now();
       this.telemetry.logPhase('pipeline_start', { platform: this.platform });
       this._lifecycleHeartbeat('pipeline_start', 0.05);
-      persistLocalState(this.sessionId, { platform: this.platform, status: 'pipeline_start' });
       sendTabState({ status: 'pipeline_start', platform: this.platform, sessionId: this.sessionId });
 
       const lifecycle = this.lifecycle;
@@ -21120,12 +21325,10 @@ const scrollIntoViewSmoothly = async (element) => {
         const preparation = await this.runPreparationPhase();
         if (!preparation.success) {
           this._reportLifecycleError('preparation', preparation.error);
-          persistLocalState(this.sessionId, { status: 'error', phase: 'preparation', error: preparation.error });
           sendTabState({ status: 'error', phase: 'preparation', error: preparation.error, sessionId: this.sessionId });
           return this.handleError('preparation', preparation.error);
         }
         this._lifecycleHeartbeat('preparation', 0.3);
-        persistLocalState(this.sessionId, { status: 'streaming_start', phase: 'preparation_done' });
         sendTabState({ status: 'streaming_start', sessionId: this.sessionId });
 
         if (this.tabProtector) {
@@ -21144,7 +21347,6 @@ const scrollIntoViewSmoothly = async (element) => {
         const streaming = await this.runStreamingPhase(preparation);
         if (!streaming.success) {
           this._reportLifecycleError('streaming', streaming.error);
-          persistLocalState(this.sessionId, { status: 'error', phase: 'streaming', error: streaming.error });
           sendTabState({ status: 'error', phase: 'streaming', error: streaming.error, sessionId: this.sessionId });
           return this.handleError('streaming', streaming.error);
         }
@@ -21153,7 +21355,6 @@ const scrollIntoViewSmoothly = async (element) => {
         const finalization = await this.runFinalizationPhase(streaming);
         if (!finalization.success) {
           this._reportLifecycleError('finalization', finalization.error);
-          persistLocalState(this.sessionId, { status: 'error', phase: 'finalization', error: finalization.error });
           sendTabState({ status: 'error', phase: 'finalization', error: finalization.error, sessionId: this.sessionId });
           return this.handleError('finalization', finalization.error);
         }
@@ -21178,12 +21379,6 @@ const scrollIntoViewSmoothly = async (element) => {
           }
         });
         this.transitionState('DONE', { phase: 'complete' });
-        persistLocalState(this.sessionId, {
-          status: 'complete',
-          duration: report.totalDuration,
-          answerLength: finalization.answer?.length || 0,
-          completionReason: finalization.sanityCheck?.overallConfidence ? 'success' : report.completionReason
-        });
         sendTabState({
           status: 'complete',
           duration: report.totalDuration,
@@ -21217,7 +21412,6 @@ const scrollIntoViewSmoothly = async (element) => {
         if (this.lifecycleTraceId && lifecycle) {
           lifecycle.error(this.lifecycleTraceId, error, true);
         }
-        persistLocalState(this.sessionId, { status: 'error', phase: 'unexpected', error: error?.message || String(error) });
         sendTabState({ status: 'error', phase: 'unexpected', error: error?.message || String(error), sessionId: this.sessionId });
         return this.handleError('unexpected', error);
       } finally {
@@ -22668,6 +22862,7 @@ this.humanSession.on?.('session-stop', () => clearInterval(textStabilityMonitor)
         "button"
       ],
       "response": [
+        "[data-markdown-text-style=\"assistant-message\"]",
         "[data-testid=\"conversation-panel\"]",
         "[data-testid=\"conversation-container\"]",
         "[data-testid=\"chat-history\"]",
@@ -22684,6 +22879,7 @@ this.humanSession.on?.('session-stop', () => clearInterval(textStabilityMonitor)
     "observationDefaults": {
       "rootSelector": "main",
       "targetSelectors": [
+        "[data-markdown-text-style=\"assistant-message\"]",
         "[data-testid=\"conversation-panel\"]",
         "[data-testid=\"chat-history\"]",
         ".markdown",
@@ -23231,6 +23427,7 @@ this.humanSession.on?.('session-stop', () => clearInterval(textStabilityMonitor)
         "button"
       ],
       "response": [
+        "[data-message-author-role=\"assistant\"] [data-message-part-type=\"answer\"]",
         "main article",
         ".chat-response",
         ".prose",
@@ -23241,6 +23438,7 @@ this.humanSession.on?.('session-stop', () => clearInterval(textStabilityMonitor)
     "observationDefaults": {
       "rootSelector": "main",
       "targetSelectors": [
+        "[data-message-author-role=\"assistant\"] [data-message-part-type=\"answer\"]",
         ".chat-response",
         "main article",
         ".prose",
@@ -27261,7 +27459,7 @@ this.humanSession.on?.('session-stop', () => clearInterval(textStabilityMonitor)
   // Run 1782940321214: dispatch crashed with "attachmentHandler is not defined"
   // (terminal UNCERTAIN before the prompt was ever inserted) because this
   // declaration was missing while the attachments block references it.
-  const attachmentHandler = window.AttachmentHandler || null;
+  const getAttachmentHandler = () => window.AttachmentHandler || null;
   const baseAdapter = window.BaseLLMAdapter ? new window.BaseLLMAdapter({
     model: MODEL,
     isValidUrl: (url) => {
@@ -28236,11 +28434,18 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
     };
 
     const baselineCount = getProseNodes().length;
+    const startPath = location.pathname;
     const confirmDeepSeekSend = async (timeout = 2000) => {
       const deadline = Date.now() + timeout;
       while (Date.now() < deadline) {
         const typing = document.querySelector('[aria-busy="true"], .loading, .spinner, [data-streaming="true"]');
         if (typing) return true;
+        // The first message of a new chat moves the page to /a/chat/s/<id> and replaces the
+        // composer: the old input is detached and keeps its text, so "composer is empty" never
+        // comes true. A new chat address or a detached input proves the message went out
+        // (report 9: the page navigated, the answer came, and the send was called "not confirmed").
+        if (input.isConnected === false) return true;
+        if (location.pathname !== startPath && /\/a\/chat\/s\//.test(location.pathname)) return true;
         if (getProseNodes().length > baselineCount) return true;
         if (!readComposerValue(input)) return true;
         await sleep(120);
@@ -28624,6 +28829,7 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
           }
 
           if (Array.isArray(options.attachments) && options.attachments.length) {
+            const attachmentHandler = getAttachmentHandler();
             if (!attachmentHandler?.attach) {
               throw { type: 'attachment_failed', message: 'DeepSeek confirmed attachment handler unavailable' };
             }
@@ -28685,11 +28891,11 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
             await tryDeepseekPipeline(prompt, {
               heartbeat: (meta = {}) => activity.heartbeat(0.75, Object.assign({ phase: 'pipeline' }, meta)),
               stop: async ({ answer, answerHtml, metadata }) => {
-                let cleanedPipeline = contentCleaner.clean(answer, { maxLength: 50000 });
+                let cleanedPipeline = contentCleaner.clean(answer, { maxLength: 200000 });
                 let html = String(answerHtml || '').trim();
                 if (!String(cleanedPipeline || '').trim()) {
                   const domFallback = grabLatestAssistantText();
-                  cleanedPipeline = contentCleaner.clean(domFallback.text || domFallback.html || '', { maxLength: 50000 });
+                  cleanedPipeline = contentCleaner.clean(domFallback.text || domFallback.html || '', { maxLength: 200000 });
                   if (!html && domFallback.html) html = domFallback.html;
                 }
                 if (window.ContentUtils?.isBaselineEquivalent?.(cleanedPipeline, preDispatchBaseline)) {
@@ -28725,10 +28931,10 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
 
             const response = await waitForDeepSeekReply(prompt, 150000);
 
-            let cleanedResponse = contentCleaner.clean(response, { maxLength: 50000 });
+            let cleanedResponse = contentCleaner.clean(response, { maxLength: 200000 });
             if (!String(cleanedResponse || '').trim()) {
               const domFallback = grabLatestAssistantText();
-              cleanedResponse = contentCleaner.clean(domFallback.text || domFallback.html || '', { maxLength: 50000 });
+              cleanedResponse = contentCleaner.clean(domFallback.text || domFallback.html || '', { maxLength: 200000 });
               if (domFallback.html) lastResponseHtml = domFallback.html;
             }
             if (window.ContentUtils?.isBaselineEquivalent?.(cleanedResponse, preDispatchBaseline)) {

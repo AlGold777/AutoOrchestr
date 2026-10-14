@@ -39,7 +39,7 @@
     }
   }) : null;
   const sleep = window.ContentUtils?.sleep || ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
-  const attachmentHandler = window.AttachmentHandler || null;
+  const getAttachmentHandler = () => window.AttachmentHandler || null;
   let stopped = false;
   let lastResponse = { text: '', html: '' };
 
@@ -246,6 +246,7 @@
     }
     let composer = await waitForFirst(COMPOSER_SELECTORS);
     if (options.attachments?.length) {
+      const attachmentHandler = getAttachmentHandler();
       if (!attachmentHandler?.attach) {
         throw { type: 'attachment_failed', message: 'Z.ai confirmed attachment handler unavailable' };
       }

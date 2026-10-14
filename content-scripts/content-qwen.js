@@ -35,7 +35,7 @@
       }
     }
   }) : null;
-  const attachmentHandler = window.AttachmentHandler || null;
+  const getAttachmentHandler = () => window.AttachmentHandler || null;
   const getLifecycleMode = () => {
     if (typeof window !== 'undefined') {
       if (window.__humanoidActivityMode) return window.__humanoidActivityMode;
@@ -2716,6 +2716,7 @@ const keepAliveMutex = (() => {
           }
 
           if (Array.isArray(context.attachments) && context.attachments.length) {
+            const attachmentHandler = getAttachmentHandler();
             if (!attachmentHandler?.attach) {
               throw { type: 'attachment_failed', message: 'Qwen trusted attachment handler unavailable' };
             }
