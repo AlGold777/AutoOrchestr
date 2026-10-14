@@ -1831,9 +1831,11 @@ function scheduleInitialStorageMaintenance() {
         setTimeout(resolve, 1000);
     })
         .then(async () => {
+            // First, and on its own: with the storage full, the maintenance below may fail on the quota, and the viewer copies
+            // are what frees the room (pruneResponseViewerContent catches its own errors).
+            await pruneResponseViewerContent({ legacyLocal: true });
             await CompressedStorage.migrate(['results', 'notes', 'logs']);
             await CompressedStorage.pruneIfNeeded();
-            await pruneResponseViewerContent({ legacyLocal: true });
         })
         .catch((err) => {
             initialStorageMaintenancePromise = null;

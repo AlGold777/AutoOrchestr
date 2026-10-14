@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-10-14 — Очистка копий окна просмотра идёт первой и не зависит от остального обслуживания, версия 2.81.770
+
+- В замере после перезагрузки в `chrome.storage.local` остался ключ `llmResponseViewer.*`: очистка стояла после `CompressedStorage.migrate` и `pruneIfNeeded`, которые при заполненном хранилище могут упасть по квоте и пропустить её. Теперь `pruneResponseViewerContent({ legacyLocal: true })` выполняется первой (`scheduleInitialStorageMaintenance`, `background/message-router.js`), своими ошибками не прерывая остальное. Тест порядка в `tests/response-viewer-retention.test.js`.
+
 ### 2026-10-14 — HTML ответа в 5–10 раз компактнее: встроенные стили без повторов (V10), версия 2.81.769
 
 - Причина раздутого хранилища: `buildInlineStyle` (`content-scripts/content-utils.js`) писал в каждый элемент захваченного ответа все 31 вычисленное свойство, в том числе дублирующие `margin`/`padding`/`border` вместе с `margin-top…` и нулевые значения. Замер (ответ Le Chat): 1720 символов текста → 33 018 символов HTML при 41 элементе, около 800 байт на элемент. Этот HTML лежит в окне просмотра, делах дебатов и других записях.
