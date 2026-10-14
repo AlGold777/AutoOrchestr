@@ -77,7 +77,8 @@
           "step": "synth:s03",
           "participant": "S03-synth",
           "required": true
-        }
+        },
+        "owner:s01"
       ],
       "models": [
         {
@@ -110,7 +111,6 @@
       "kind": "round",
       "order": "parallel",
       "require": 2,
-      "owner": "approve",
       "input": [
         {
           "step": "r3",

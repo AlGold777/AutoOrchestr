@@ -55,6 +55,25 @@ function owners(opts = {}) {
 
 const run = (extra, options = {}) => Engine.run({ task: 'T', steps: Schema.assemble(schema), ...options, ...extra });
 
+// S01–S05 are the five stages checked in practice (docs/Pipeline scenarios/basic_review_s01_s05_oct14.md): the schema must keep what
+// the Design System says about them.
+describe('S01–S05 follow the Design System', () => {
+  const first = { ...schema, steps: schema.steps.slice(0, 7) };
+  test('the Decision Closer receives the Decision Policy, and S05 asks for no owner approval', async () => {
+    expect(byRef['r4'].owner).toBeUndefined();
+    const transport = fakeTransport(baseReply());
+    const decided = [];
+    const result = await Engine.run({
+      task: 'T', steps: Schema.assemble(first), sendParticipants: transport.sendParticipants,
+      provideOwnerResult: async () => 'ПОЛИТИКА_S01', decide: async () => { decided.push('decide'); return 'continue'; }
+    });
+    expect(result.stopReason).toBe('steps_done');
+    const closer = transport.calls.flat().find((request) => request.participantId === 'S03-closer');
+    expect(closer.prompt).toContain('ПОЛИТИКА_S01');
+    expect(decided).toEqual([]);
+  });
+});
+
 describe('T18: the architecture schema is valid, shows on the canvas and keeps its settings', () => {
   test('validate passes, the canvas has no errors, the rounds are counted (the limit is 50 rounds)', () => {
     expect(Schema.validate(schema)).toEqual([]);
@@ -63,7 +82,7 @@ describe('T18: the architecture schema is valid, shows on the canvas and keeps i
     expect(canvas.rounds).toHaveLength(map.summary.rounds);
     // Counted by the fixture generator: 30 business stages, 53 technical steps (with the route of S18's change), 33 rounds (gates, routes, owner
     // steps and syntheses do not count toward the 50-round limit).
-    expect(map.summary).toMatchObject({ businessStages: 30, technicalSteps: 53, rounds: 33, syntheses: 5, gates: 4, routes: 9, owners: 2, ownerApprovals: 4 });
+    expect(map.summary).toMatchObject({ businessStages: 30, technicalSteps: 53, rounds: 33, syntheses: 5, gates: 4, routes: 9, owners: 2, ownerApprovals: 3 });
     expect(map.summary.rounds).toBeLessThanOrEqual(50);
     expect(Schema.graph(schema.steps).cycle).toBeNull();
   });
@@ -178,9 +197,9 @@ describe('T18: runs of the whole architecture on a fake transport', () => {
     expect(result.steps.map((step) => step.ref)).toEqual(schema.steps.map((step) => step.ref));
     // One request per participant of the schema (53); the transport gets one batch per wave of a step.
     expect(transport.calls.reduce((sum, call) => sum + call.length, 0)).toBe(map.summary.participantsTotal);
-    // The owner in the order of the run: the text of owner:s01; approvals of S05, S13, S22, S30 (decide);
+    // The owner in the order of the run: the text of owner:s01; approvals of S13, S22, S30 (decide; S05 asks none: the Design System has only an escalation there);
     // route choices after G1 (chg13), after G2 (chg17), after the recomputed S18 (chg18), owner:s25 and its route (chg25).
-    expect(ask.asked).toEqual(['owner:s01', 'decide', 'decide', 'route:chg13', 'route:chg17', 'route:chg18', 'decide', 'owner:s25', 'route:chg25', 'decide']);
+    expect(ask.asked).toEqual(['owner:s01', 'decide', 'route:chg13', 'route:chg17', 'route:chg18', 'decide', 'owner:s25', 'route:chg25', 'decide']);
   });
 
   test('S12 returns to S10 once: the second visit of S10 gets the reviewer findings in the feedback block, the limit is 2', async () => {

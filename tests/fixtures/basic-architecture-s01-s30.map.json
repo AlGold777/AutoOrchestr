@@ -36,7 +36,7 @@
         "r3"
       ],
       "participants": 2,
-      "notes": "Synthesizer — synth:s03; Decision Closer — отдельный раунд (вход synth:s03).",
+      "notes": "Synthesizer — synth:s03; Decision Closer — отдельный раунд (вход synth:s03). Decision Closer (r3) получает и Decision Policy (owner:s01): вход S03 в документе — proposal sets и Decision Policy.",
       "mechanics": "доказана"
     },
     {
@@ -60,7 +60,7 @@
         "r4"
       ],
       "participants": 2,
-      "notes": "owner: approve — по плану волны 1 (владелец подтверждает S05).",
+      "notes": "Два независимых рецензента, parallel, require 2. В документе у S05 только эскалация владельцу: подтверждение владельца не задано.",
       "mechanics": "доказана"
     },
     {
@@ -435,7 +435,7 @@
     "gates": 4,
     "routes": 9,
     "owners": 2,
-    "ownerApprovals": 4,
+    "ownerApprovals": 3,
     "participantsTotal": 53,
     "controlSteps": [
       "owner:s01",
