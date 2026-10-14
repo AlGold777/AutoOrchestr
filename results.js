@@ -7372,6 +7372,15 @@ document.addEventListener('click', (event) => {
             applyDebateSessionFilter();
             return card;
         };
+        // A run that ended before its steps were done offers its own continuation as a line of the feed, where it is needed: the
+        // state is in the record, so a stop, an error or a lost page goes on from there (the button goes away once it is used).
+        const offerResumeLine = (record) => {
+            if (!record || !window.CustomRunRecord?.canResume?.(record)) return;
+            const line = appendBasicRunLine('Прогон остановлен. Его можно продолжить с сохранённого места.', {
+                buttonLabel: 'Продолжить',
+                onButton: () => { line?.querySelector('.basic-run-line-button')?.remove(); void resumeCustomFromPage(); }
+            });
+        };
         // A version that a later decision made stale stays in the feed, marked «устарело»: its answer is kept, not an input.
         const markStaleBasicCards = (steps) => {
             const requests = new Set(steps.filter((item) => item.valid === false)
@@ -7743,6 +7752,7 @@ document.addEventListener('click', (event) => {
                 // The answers of the last step are already in the feed as the cards of that step: no second card repeats
                 // them. The reason of the end is the notification; with no accepted answer at all it says so.
                 showNotification(basicRunNotice(stopText, result.answers.length, result.stopDetail), result.stopReason === 'steps_done' ? 'info' : 'warn');
+                if (result.stopReason !== 'steps_done') offerResumeLine(record);
                 return result.stopReason !== 'cancelled';
             } catch (err) {
                 console.error('[RESULTS] Custom run failed', err);
@@ -7751,6 +7761,7 @@ document.addEventListener('click', (event) => {
                 window.MessageDelivery?.batchEvent?.('custom_end', { pipelineRunId: runContext.pipelineRunId, stopReason: 'error', error: String(err?.message || err) });
                 showNotification(`Pipeline: error (${err?.message || String(err)})`, 'error');
                 if (record && !record.finishedAt) { window.CustomRunRecord.finishRun(record, { stopReason: 'error' }); await saveRecord(true); }
+                offerResumeLine(record);
                 return false;
             } finally {
                 // Stop while a pause dialog was open: close it, the run is over.
@@ -10162,8 +10173,6 @@ document.addEventListener('click', (event) => {
         pipelineDeleteBtn?.addEventListener('click', deleteActivePipeline);
         pipelineExportBtn?.addEventListener('click', exportBasicSchema);
         pipelineImportBtn?.addEventListener('click', importPipelines);
-        // «Продолжить прогон»: the latest run of the pipeline goes on from its saved state (resumeCustomFromPage explains a refusal).
-        document.getElementById('pipeline-resume-btn')?.addEventListener('click', () => { void resumeCustomFromPage(); });
         // Pipeline Get it: double click on Run runs the main page's collection pass for the
         // running stage's models (or the selected models when no stage is waiting).
         if (debateRunToggleBtn) {

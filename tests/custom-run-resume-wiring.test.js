@@ -35,10 +35,13 @@ describe('Basic page binds the engine to the run record (8.2, 8.3)', () => {
     expect(results).toMatch(/const basicRunNotice = \(stopText, acceptedCount, stopDetail = ''\) => `Basic: \$\{stopText\}\$\{stopDetail \? ` \(\$\{stopDetail\}\)` : ''\}\./);
   });
 
-  test('«Продолжить прогон» is a button of the panel and goes on from the latest record through resumeCustomFromPage', () => {
+  test('«Продолжить» is offered as a line of the feed after a run that did not finish, not as a button of the panel', () => {
     const panel = fs.readFileSync(path.join(__dirname, '..', 'pipeline_panel.html'), 'utf8');
-    expect(panel).toContain('id="pipeline-resume-btn"');
-    expect(results).toContain("document.getElementById('pipeline-resume-btn')?.addEventListener('click', () => { void resumeCustomFromPage(); });");
+    expect(panel).not.toContain('pipeline-resume-btn');
+    expect(results).toContain("if (result.stopReason !== 'steps_done') offerResumeLine(record);");
+    expect(results).toMatch(/const offerResumeLine = \(record\) => \{\s*if \(!record \|\| !window\.CustomRunRecord\?\.canResume\?\.\(record\)\) return;/);
+    expect(results).toContain("buttonLabel: 'Продолжить',");
+    expect(results).toContain('void resumeCustomFromPage(); }');
   });
 
   test('the run takes the limit of the schema, and the decision window offers «Продолжить» only where the engine allows it', () => {
