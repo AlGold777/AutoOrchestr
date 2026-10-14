@@ -1063,6 +1063,13 @@ describe('Basic schema: the participant of an owner step is owner (3.3, R08)', (
     expect(Schema.assemble(schema)[2].models[0].input).toEqual([ownerSource, { artifact: { step: 'owner:o', participant: 'owner', id: 'approved' }, version: { step: 'owner:o', participant: 'owner', visit: 1 } }]);
   });
 
+  test('V06: the owner step takes input none, previous, all or a list of sources; any other value is refused with its path', () => {
+    ['none', 'previous', 'all', ['r1']].forEach((input) => {
+      expect(errorPaths(base([round('r1', ['A']), ownerStep('owner:o', { input })]))).toEqual([]);
+    });
+    expect(errorPaths(base([round('r1', ['A']), ownerStep('owner:o', { input: 'last' })]))).toEqual(['steps[1].input']);
+  });
+
   test('a revision of an owner artifact is valid when the author has it in its input', () => {
     const revision = { artifact: { step: 'owner:o', participant: 'owner', id: 'map' }, version: 'latest' };
     const schema = base([

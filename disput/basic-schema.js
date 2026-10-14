@@ -381,7 +381,8 @@
     // The input of a step or of a participant: a value of the list of inputs, or a list of sources.
     const checkInput = (value, path, kind, index) => {
       if (Array.isArray(value)) { checkInputList(value, path, index); return; }
-      if (kind === 'route' || kind === 'owner') { if (value !== 'previous') fail(path, 'вход: допустимо previous или список источников'); return; }
+      // A route reads the previous answers or named sources; an owner takes any input a model step takes (none, previous, all, list).
+      if (kind === 'route') { if (value !== 'previous') fail(path, 'вход: допустимо previous или список источников'); return; }
       oneOf(value, INPUTS, path, 'вход');
       if (kind === 'synthesis' && value !== 'previous') fail(path, 'синтез всегда получает ответы предыдущего шага');
     };

@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-14 — Basic: шаг владельца принимает вход none, previous, all или список (V06), версия 2.81.757
+
+- `validate` у шага `owner`: `input` допускает `none`, `previous`, `all` и список источников, как у шага модели; прежде явные `none` и `all` отвергались, хотя движок их исполняет. У `route` по-прежнему `previous` или список. Не указано — пустой вход.
+- Тест `V06` в `tests/basic-schema.test.js`; строка `input` владельца в `basic-schema-guide.md`. Шаг 2 плана из `basic_review_s01_s05_oct14.md`.
+
 ### 2026-10-14 — Схема S01–S30 верна документу Design System на S03 и S05, версия 2.81.756
 
 - Fixture `tests/fixtures/basic-architecture-s01-s30.json`: Decision Closer (S03, `r3`) получает Decision Policy (`owner:s01`) — так вход S03 записан в документе; у S05 (`r4`) убрано подтверждение владельца `owner: approve`, которого в документе нет (там только эскалация). Подтверждений владельца в схеме три (S13, S22, S30). Таблица соответствия обновлена.
