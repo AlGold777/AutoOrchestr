@@ -470,3 +470,59 @@ describe('V08: the files of a run are kept in its record, or the record says the
     expect(record.attachmentsStored).toBe(true);
   });
 });
+
+describe('V09: a run record is saved even when the extension storage is nearly full', () => {
+  // A storage with a quota (like chrome.storage.local): a write that would pass the limit fails, as Chrome says it.
+  function quotaStorage(limit, others = {}) {
+    const data = new Map(Object.entries(others));
+    const used = () => [...data.entries()].reduce((sum, [key, value]) => sum + key.length + JSON.stringify(value).length, 0);
+    return {
+      data,
+      get: async (key) => (data.has(key) ? JSON.parse(JSON.stringify(data.get(key))) : undefined),
+      set: async (key, value) => {
+        const before = data.get(key);
+        data.set(key, JSON.parse(JSON.stringify(value)));
+        if (used() > limit) {
+          if (before === undefined) data.delete(key); else data.set(key, before);
+          throw new Error('Resource::kQuotaBytes quota exceeded');
+        }
+      },
+      remove: async (key) => { data.delete(key); }
+    };
+  }
+  const runWith = (runId, startedAt, size) => {
+    // The task text is referenced by the record, so it is stored (an unreferenced text is dropped on save).
+    return Record.createRun({ runId, pipelineName: 'Mine', task: 'x'.repeat(size), steps: [{ task: 'x', input: 'none', models: ['A'] }], startedAt });
+  };
+
+  test('the oldest runs go before the write, so a new run fits; the run being saved stays', async () => {
+    const storage = quotaStorage(1e9);
+    const store = Record.createStore({ storage, maxBytes: 3000 });
+    await store.save(runWith('old-1', 1, 1000));
+    await store.save(runWith('old-2', 2, 1000));
+    const saved = await store.save(runWith('new', 3, 1500));
+    expect(saved.removed[0]).toBe('old-1');
+    expect(saved.removed).not.toContain('new');
+    expect(saved.total).toBeLessThanOrEqual(3000);
+    expect(storage.data.has('customRunRecord.old-1')).toBe(false);
+    expect(storage.data.has('customRunRecord.new')).toBe(true);
+  });
+
+  test('a quota error of the storage removes old runs one by one and writes again', async () => {
+    const storage = quotaStorage(4500, { other: 'y'.repeat(2500) });
+    const store = Record.createStore({ storage, maxBytes: 1e9 });
+    await store.save(runWith('old-1', 1, 600));
+    await store.save(runWith('old-2', 2, 600));
+    const saved = await store.save(runWith('new', 3, 1200));
+    expect(saved.removed.length).toBeGreaterThan(0);
+    expect(storage.data.has('customRunRecord.new')).toBe(true);
+    expect(storage.data.has('other')).toBe(true);
+  });
+
+  test('when only the run itself is left and it does not fit, the error names its size', async () => {
+    const storage = quotaStorage(2000, { other: 'y'.repeat(1800) });
+    const store = Record.createStore({ storage, maxBytes: 1e9 });
+    await expect(store.save(runWith('big', 1, 1500))).rejects.toThrow(/quota.*занимает \d+ байт/);
+    expect(storage.data.has('customRunRecord.big')).toBe(false);
+  });
+});

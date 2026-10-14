@@ -239,23 +239,36 @@
       const index = await storage.get(INDEX_KEY);
       return Array.isArray(index) ? index : [];
     };
-    // Saves a run; then removes whole oldest runs until the records fit. The run being saved is
-    // never removed, even when it alone is over the limit.
+    // Saves a run. Room is made BEFORE the write (V09): whole oldest runs go until the records fit `maxBytes`, and when the
+    // storage still refuses with a quota error (other data of the extension fills its share) oldest runs go one by one and the
+    // write is repeated. The run being saved is never removed; when only it is left and it does not fit, the error says how big it is.
+    const isQuotaError = (error) => /quota/i.test(String(error?.message || error));
     async function save(record) {
       const stored = serialize(record);
       const bytes = bytesOf(stored);
-      await storage.set(`${RUN_KEY_PREFIX}${record.runId}`, stored);
       const index = (await readIndex()).filter((item) => item.runId !== record.runId);
-      index.push({ runId: record.runId, pipelineName: record.pipelineName, startedAt: record.startedAt, bytes });
       index.sort((a, b) => a.startedAt - b.startedAt);
-      let total = index.reduce((sum, item) => sum + item.bytes, 0);
+      let total = index.reduce((sum, item) => sum + item.bytes, 0) + bytes;
       const removed = [];
-      while (total > maxBytes && index.length > 1 && index[0].runId !== record.runId) {
+      const dropOldest = async () => {
         const oldest = index.shift();
         total -= oldest.bytes;
         removed.push(oldest.runId);
         await storage.remove(`${RUN_KEY_PREFIX}${oldest.runId}`);
+      };
+      while (total > maxBytes && index.length > 0) await dropOldest();
+      for (;;) {
+        try {
+          await storage.set(`${RUN_KEY_PREFIX}${record.runId}`, stored);
+          break;
+        } catch (error) {
+          if (!isQuotaError(error)) throw error;
+          if (!index.length) throw new Error(`${error?.message || error}: запись прогона занимает ${bytes} байт и не помещается в хранилище расширения`);
+          await dropOldest();
+        }
       }
+      index.push({ runId: record.runId, pipelineName: record.pipelineName, startedAt: record.startedAt, bytes });
+      index.sort((a, b) => a.startedAt - b.startedAt);
       await storage.set(INDEX_KEY, index);
       return { bytes, total, removed };
     }
