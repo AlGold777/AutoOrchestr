@@ -11,7 +11,7 @@
         "owner:s01"
       ],
       "participants": 1,
-      "notes": "Producer (r1) затем Owner: text owner step (owner:s01), вход владельца — none.",
+      "notes": "Producer (r1) затем Owner: text owner step (owner:s01); владелец получает ответ Producer (input: r1) и утверждает Decision Policy.",
       "mechanics": "доказана"
     },
     {

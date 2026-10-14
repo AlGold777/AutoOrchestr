@@ -63,14 +63,18 @@ describe('S01–S05 follow the Design System', () => {
     expect(byRef['r4'].owner).toBeUndefined();
     const transport = fakeTransport(baseReply());
     const decided = [];
+    const ownerGot = [];
     const result = await Engine.run({
       task: 'T', steps: Schema.assemble(first), sendParticipants: transport.sendParticipants,
-      provideOwnerResult: async () => 'ПОЛИТИКА_S01', decide: async () => { decided.push('decide'); return 'continue'; }
+      provideOwnerResult: async (arg) => { ownerGot.push(arg); return 'ПОЛИТИКА_S01'; }, decide: async () => { decided.push('decide'); return 'continue'; }
     });
     expect(result.stopReason).toBe('steps_done');
     const closer = transport.calls.flat().find((request) => request.participantId === 'S03-closer');
     expect(closer.prompt).toContain('ПОЛИТИКА_S01');
     expect(decided).toEqual([]);
+    // The owner of S01 sees the answer of the Producer when it approves the policy (N07).
+    expect(ownerGot).toHaveLength(1);
+    expect(ownerGot[0].input).toEqual([expect.objectContaining({ text: 'ответ r1 S01-producer' })]);
   });
 });
 

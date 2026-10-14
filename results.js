@@ -7662,10 +7662,9 @@ document.addEventListener('click', (event) => {
                     },
                     // The owner's answer of an owner step: a text (a file is not supported on this page yet).
                     checkUnknown,
-                    provideOwnerResult: ({ stepRef, task, reason, detail }) => askChoiceDialog({
+                    provideOwnerResult: ({ stepRef, task, input, output, reason, detail }) => askChoiceDialog({
                         title: `Ответ владельца: ${stepRef}`,
-                        message: [task, reason ? `Прошлый ответ не принят: ${window.CustomEngine?.REASON_TEXT?.[reason] || reason}${detail ? ` (${detail})` : ''}.` : '']
-                            .filter(Boolean).join('\n'),
+                        message: window.StageCard.ownerAskMessage({ task, input, output, reason, detail, reasonText: reason ? (window.CustomEngine?.REASON_TEXT?.[reason] || reason) : '' }),
                         textInput: { label: 'Ответ владельца' },
                         choices: [{ value: 'send', label: 'Отправить' }]
                     }),

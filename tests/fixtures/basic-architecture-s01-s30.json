@@ -22,11 +22,14 @@
       "ref": "owner:s01",
       "kind": "owner",
       "models": [],
-      "task": "S01, Owner: утвердить Decision Policy (текст) — классы A0–A4 и пороги риска.",
+      "input": [
+        "r1"
+      ],
       "output": {
         "name": "Decision Policy",
         "form": "Текст политики полномочий: классы A0–A4, пороги риска."
-      }
+      },
+      "task": "S01, Owner: утвердить Decision Policy (текст) — классы A0–A4 и пороги риска."
     },
     {
       "ref": "r2",

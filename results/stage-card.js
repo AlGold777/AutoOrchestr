@@ -948,6 +948,32 @@
     return select;
   }
 
+  // The text of the owner window (N07): the task, what the owner was given (the input items of the engine) and the form of
+  // the answer that is expected. A file item shows its name only: the page does not open files yet.
+  const OWNER_ITEM_LIMIT = 6000;
+  function ownerAskMessage({ task = '', input = [], output = null, reason = '', detail = '', reasonText = '' } = {}) {
+    const parts = [String(task || '')];
+    const items = Array.isArray(input) ? input : [];
+    if (items.length) {
+      parts.push('Вам передано:');
+      items.forEach((item) => {
+        const label = item.label || [item.step, item.participant].filter(Boolean).join(' / ') || 'источник';
+        let body;
+        if (item.file) body = `[файл${item.file.name ? ` «${item.file.name}»` : ''}]`;
+        else {
+          const text = String(item.text ?? '');
+          body = text.length > OWNER_ITEM_LIMIT ? `${text.slice(0, OWNER_ITEM_LIMIT)}\n… (показано ${OWNER_ITEM_LIMIT} из ${text.length} символов)` : text;
+        }
+        parts.push(`— ${label}:\n${body}`);
+      });
+    }
+    if (isPlain(output) && (output.name || output.form)) {
+      parts.push(`Ожидается: ${[output.name, output.form].filter(Boolean).join(' — ')}`);
+    }
+    if (reason) parts.push(`Прошлый ответ не принят: ${reasonText || reason}${detail ? ` (${detail})` : ''}.`);
+    return parts.filter(Boolean).join('\n');
+  }
+
   function controlSummary(step = {}) {
     if (step.kind === 'gate') {
       const checkers = (Array.isArray(step.models) ? step.models : []).filter((model) => isPlain(model) && model.enabled !== false).map((model) => model.name);
@@ -965,7 +991,7 @@
 
   const api = Object.freeze({ buildModel, render, renderStepFields, stepFieldsModel, stepsAfterToggle, outputAfterEdit, STATUS, feed,
     gateWindowModel, gateAfterEdit, renderGateWindow, controlSummary, transitionView, transitionAfterEdit,
-    routeWindowModel, routeAfterEdit, renderRouteWindow, ownerWindowModel, ownerAfterEdit, renderOwnerWindow, renderAddControl });
+    routeWindowModel, routeAfterEdit, renderRouteWindow, ownerWindowModel, ownerAfterEdit, renderOwnerWindow, renderAddControl, ownerAskMessage });
   root.StageCard = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

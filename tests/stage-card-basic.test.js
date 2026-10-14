@@ -424,3 +424,26 @@ describe('Owner window of Basic: model and edits', () => {
     expect(json.querySelector('.stage-card-output-sections').disabled).toBe(true);
   });
 });
+
+describe('N07: the text of the owner window', () => {
+  test('shows the task, the input items with their labels and texts, the expected output and the reason of a repeat', () => {
+    const text = StageCard.ownerAskMessage({
+      task: 'Утвердите политику',
+      input: [{ label: 'Раунд 1, участник S01-producer, визит 1', text: 'ПРЕДЛОЖЕНИЕ' }, { label: 'Файл', file: { name: 'a.pdf' } }],
+      output: { name: 'Decision Policy', form: 'Текст политики' },
+      reason: 'empty', reasonText: 'пустой ответ', detail: 'x'
+    });
+    expect(text).toContain('Утвердите политику');
+    expect(text).toContain('Вам передано:');
+    expect(text).toContain('— Раунд 1, участник S01-producer, визит 1:\nПРЕДЛОЖЕНИЕ');
+    expect(text).toContain('— Файл:\n[файл «a.pdf»]');
+    expect(text).toContain('Ожидается: Decision Policy — Текст политики');
+    expect(text).toContain('Прошлый ответ не принят: пустой ответ (x).');
+  });
+
+  test('a task alone gives the task alone; a long input is cut for display with its size named', () => {
+    expect(StageCard.ownerAskMessage({ task: 'Только задание', input: [] })).toBe('Только задание');
+    const long = StageCard.ownerAskMessage({ task: 'T', input: [{ label: 'L', text: 'x'.repeat(7000) }] });
+    expect(long).toContain('(показано 6000 из 7000 символов)');
+  });
+});

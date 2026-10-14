@@ -3465,6 +3465,7 @@ describe('Pipeline debate favorites view', () => {
 
       test('A06: an owner step asks the owner in a window; Cancel stops the run, a text answer goes on', async () => {
         require('../results/choice-dialog');
+        require('../results/stage-card');
         const h = setupCustomInheritance('Owner window host', { synthesis: '' });
         const waitForDialog = async () => { for (let i = 0; i < 200 && !document.querySelector('.choice-dialog'); i += 1) await delay(10); };
         try {
@@ -3490,6 +3491,30 @@ describe('Pipeline debate favorites view', () => {
           await answered;
           expect(document.querySelector('.choice-dialog')).toBeNull();
           expect(h.starts.length).toBe(2);
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      test('N07: the owner window shows what the owner was given (the answers of the input) and the form of the expected answer', async () => {
+        require('../results/choice-dialog');
+        require('../results/stage-card');
+        const h = setupCustomInheritance('Owner input host', { synthesis: '' });
+        const waitForDialog = async () => { for (let i = 0; i < 200 && !document.querySelector('.choice-dialog'); i += 1) await delay(10); };
+        try {
+          const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
+            { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }] },
+            { ref: 'owner:fix', kind: 'owner', models: [], input: ['r1'], task: 'Утвердите', output: { name: 'Политика', form: 'Текст политики' } }
+          ] };
+          expect((await h.debug.installBasicSchema('Owner input', schema)).ok).toBe(true);
+          document.querySelector('.pipeline-item[data-name="Owner input"]').click();
+          await settleCustomCard();
+          const run = h.debug.runCustomFromPage({ task: 'T' });
+          await waitForDialog();
+          const message = document.querySelector('.choice-dialog-message').textContent;
+          expect(message).toContain('Утвердите');
+          expect(message).toContain('Вам передано:');
+          expect(message).toContain('Ожидается: Политика — Текст политики');
+          document.querySelector('.choice-dialog-cancel').click();
+          await run;
         } finally { h.cleanup(); }
       }, 30000);
 
