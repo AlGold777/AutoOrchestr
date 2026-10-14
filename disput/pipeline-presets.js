@@ -26,33 +26,15 @@
 
   const PIPELINE_PRESETS = Object.freeze([
     makePreset('UNIVERSAL_STANDARD', 'Universal', 'UNIVERSAL_STANDARD', REASONING_BUDGETS.STANDARD),
-    // Basic runs the shared pipeline engine (disput/custom-engine.js), not the Debate engine.
-    makePreset('CUSTOM', 'Basic', 'UNIVERSAL_STANDARD', REASONING_BUDGETS.STANDARD, { runner: 'custom' }),
-    makePreset('TEST', 'Test', 'UNIVERSAL_STANDARD', REASONING_BUDGETS.STANDARD),
-    makePreset('UNIVERSAL_RESEARCH', 'Research', 'DEEP_RESEARCH_ALPHA', REASONING_BUDGETS.RESEARCH,
-      { finalizationPolicy: 'readiness_or_moderator' }),
+    // The Default template runs the Basic engine (disput/custom-engine.js), not the Debate engine.
+    makePreset('CUSTOM', 'Default', 'UNIVERSAL_STANDARD', REASONING_BUDGETS.STANDARD, { runner: 'custom' }),
     makePreset('UNIVERSAL_RED_TEAM', 'Red Team', 'UNIVERSAL_RED_TEAM', REASONING_BUDGETS.RED_TEAM,
       { finalizationPolicy: 'after_audited_synthesis', status: 'disabled' }),
-    makePreset('ARCHITECTURE', 'Architecture', 'UNIVERSAL_STANDARD', REASONING_BUDGETS.ARCHITECTURE,
-      { finalizationPolicy: 'readiness_or_moderator' }),
-    // Polishing runs its own loop (disput/polishing-pipeline.js), not the Debate engine.
-    makePreset('POLISHING', 'Polishing', 'UNIVERSAL_STANDARD', REASONING_BUDGETS.STANDARD, { runner: 'polishing' }),
-    // Delta runs its own loop too (disput/delta-pipeline.js).
-    makePreset('DELTA', 'Delta', 'UNIVERSAL_STANDARD', REASONING_BUDGETS.STANDARD, { runner: 'delta' })
   ]);
 
   const BUILTIN_PIPELINE_DEFINITIONS = Object.freeze([
-    // The list fills three rows down each column: Basic/Polishing/Delta | Test/Research/Architecture.
-    Object.freeze({ name: 'Basic', presetId: 'CUSTOM', profileId: 'UNIVERSAL_STANDARD', runPolicy: 'auto', noMiniPrompts: true, length: '700', roundLimit: '2', defaultModelCount: 0, roles: ['participant'] }),
-    Object.freeze({ name: 'Polishing', presetId: 'POLISHING', profileId: 'UNIVERSAL_STANDARD', runPolicy: 'auto', noMiniPrompts: true, length: '300', roundLimit: '3', defaultModelCount: 0, roles: ['participant'], polishingMaxIdeas: 3 }),
-    Object.freeze({ name: 'Delta', presetId: 'DELTA', profileId: 'UNIVERSAL_STANDARD', runPolicy: 'auto', noMiniPrompts: true, length: '300', roundLimit: '3', defaultModelCount: 0, roles: ['participant'] }),
-    Object.freeze({ name: 'Test', presetId: 'TEST', profileId: 'UNIVERSAL_STANDARD', runPolicy: 'auto', noMiniPrompts: true, length: '700', roundLimit: '2', defaultModelCount: 0, roles: ['participant', 'critic'] }),
-    // Исследование: 15 stages from ResearchFramework (disput/research-framework.js), automatic
-    // with three moderator gates (G1 specification, G2 sufficiency, G3 acceptance).
-    Object.freeze({ name: 'Research', presetId: 'UNIVERSAL_RESEARCH', profileId: 'DEEP_RESEARCH_ALPHA', runPolicy: 'auto', length: '1000', roundLimit: '15', stageTemplate: 'research', defaultModelCount: 0, roles: ['researcher', 'critic', 'verifier', 'synthesizer'] }),
-    // Разработка архитектуры: stage by stage with the moderator (semi-automatic by default).
-    // The 30 stages come from ArchitectureFramework (disput/architecture-framework.js).
-    Object.freeze({ name: 'Architecture', presetId: 'ARCHITECTURE', profileId: 'UNIVERSAL_STANDARD', runPolicy: 'manual', length: '1000', roundLimit: '30', stageTemplate: 'architecture', defaultModelCount: 0, roles: ['participant', 'critic', 'verifier', 'synthesizer'] })
+    // The one built-in template; the others (Polishing, Delta, Test, Research, Architecture) were removed.
+    Object.freeze({ name: 'Default', presetId: 'CUSTOM', profileId: 'UNIVERSAL_STANDARD', runPolicy: 'auto', noMiniPrompts: true, length: '700', roundLimit: '2', defaultModelCount: 0, roles: ['participant'] }),
   ]);
 
   const PRESET_BY_ID = Object.freeze(Object.fromEntries(PIPELINE_PRESETS.map((preset) => [preset.id, preset])));

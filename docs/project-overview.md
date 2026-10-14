@@ -561,26 +561,7 @@ With the **Auto** toggle off the moderator drives the pipeline stage by stage:
   `[[VERDICT: pass|issues_found]]` (blocking remarks or not; informational,
   shown at the pause). A marker is a line of its own; text in code fences and
   quotes is ignored. See the automation behavior described in this section; implementation history: `docs/CHANGELOG.md`, version 2.81.529.
-- **Research** template: 15 stages (12 model stages, three gates G1–G3) from
-  `ResearchFramework` (`disput/research-framework.js`), reached like the
-  Architecture template through the registry `disput/stage-templates.js`. What is
-  implemented and what of `docs/Pipeline scenarios/research-2.0.md` is not:
-  `docs/Pipeline scenarios/research-template.md`.
-- **Architecture** template («Разработка архитектуры»): the 30-stage
-  Product→Architecture Framework as 30 canvas rounds (round number = framework
-  stage number; stages 13, 17, 22, 30 are moderator gates without models). Run
-  it semi-automatically: Auto off, models chosen in the header (3 recommended).
-  Click a round badge to open the stage card (what the stage is for, who works,
-  inputs, what is forbidden, the brief the model gets, run status). The stage
-  text comes from `disput/architecture-framework.js`, generated from
-  `docs/Automation/Automation GPT комплект Документов/process/stages.json`
-  (`node scripts/build-architecture-framework.js`). Semi-automatic and manual
-  runs get no automatic page visits; Get it pulls answers, "next" closes a stage
-  with what is there (text without a final is adopted as incomplete).
-- Run a template stage by stage: switch **Auto** off (the choice outranks the
-  template's default policy, also when a template is selected afterwards) and
-  pick a template, e.g. **Test** (two stages). Auto off without a template is a
-  single moderator dispatch without stages.
+- The one built-in template is **Default** (the Basic engine, `disput/pipeline-presets.js`); the templates Polishing, Delta, Test, Research and Architecture were removed on 14.10.2026 and are to be rebuilt as Basic schemas. Run stage by stage: switch **Auto** off (the choice outranks the template's default policy) and pick a pipeline. Auto off without a pipeline is a single moderator dispatch without stages.
 
 Preset naming rule: built-in presets with the same suffix should be comparable.
 `Verdict` means a standard quick-to-final-answer budget across Duel, Triad, and

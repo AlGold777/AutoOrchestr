@@ -2735,10 +2735,6 @@ document.addEventListener('click', (event) => {
         resolve: null
     };
     let activePipelineAbortController = null;
-    // Set while a Polishing run (runPolishingFromPage) is going: the Run button becomes Stop.
-    let polishingAbortController = null;
-    // Same for a Delta run (runDeltaFromPage).
-    let deltaAbortController = null;
     // Same for a Custom run (runCustomFromPage).
     let customAbortController = null;
     let activePipelineRunContext = null;
@@ -3564,7 +3560,7 @@ document.addEventListener('click', (event) => {
         const pipelineList = pipelinePanel.querySelector('.pipeline-list');
         const pipelineListHeader = pipelineList ? pipelineList.querySelector('.pipeline-list-header') : null;
         const PIPELINE_STORAGE_KEY = 'llmComparatorPipelines';
-        const PIPELINE_STORE_VERSION = 8;
+        const PIPELINE_STORE_VERSION = 9;
         const pipelineStore = {
             version: PIPELINE_STORE_VERSION,
             pipelines: {},
@@ -3582,7 +3578,6 @@ document.addEventListener('click', (event) => {
         let pipelineR1ManualDirty = false;
         let pipelineApplyingConfig = false;
         // Stage template of the applied pipeline ('' = a plain round pipeline).
-        let activeStageTemplate = '';
 
         const togglePipelineListCollapsed = () => {
             if (!pipelineList) return;
@@ -3606,28 +3601,39 @@ document.addEventListener('click', (event) => {
             });
         }
 
-        // Store version 8: the template «Custom» is now «Basic». The old template entry is dropped (the
-        // template is rebuilt from code), its active/last-saved mark moves to «Basic», and a pipeline the
-        // user saved as «Basic» keeps its data under the first free «Basic N».
+        // The name of the built-in template changed twice. Store version 8: «Custom» became «Basic». Store version 9: «Basic» became
+        // «Default» (the name Basic belongs to the engine and the schemas). The old template entry is dropped (the template is
+        // rebuilt from code), its active/last-saved mark moves to «Default», and a pipeline the user saved as «Default» keeps its
+        // data under the first free «Default N» (and one saved as «Basic» before version 8 under «Basic N»).
         const migrateBasicTemplateName = (value) => {
-            if ((Number(value.version) || 0) >= 8) return value;
+            const from = Number(value.version) || 0;
+            if (from >= 9) return value;
             const next = JSON.parse(JSON.stringify(value));
             const nameMaps = () => [next.pipelines, next.draftPlans, next.overrides?.longRoundLimits, next.overrides?.synthesizers, next.overrides?.profiles]
                 .filter((map) => map && typeof map === 'object');
             const taken = (name) => nameMaps().some((map) => name in map) || (Array.isArray(next.order) && next.order.includes(name));
-            const renameEverywhere = (from, to) => {
-                nameMaps().forEach((map) => { if (from in map) { map[to] = map[from]; delete map[from]; } });
-                if (Array.isArray(next.order)) next.order = next.order.map((name) => (name === from ? to : name));
-                ['active', 'lastSaved'].forEach((key) => { if (next[key] === from) next[key] = to; });
+            const renameEverywhere = (fromName, toName) => {
+                nameMaps().forEach((map) => { if (fromName in map) { map[toName] = map[fromName]; delete map[fromName]; } });
+                if (Array.isArray(next.order)) next.order = next.order.map((name) => (name === fromName ? toName : name));
+                ['active', 'lastSaved'].forEach((key) => { if (next[key] === fromName) next[key] = toName; });
             };
-            if (taken('Basic')) {
+            const freeName = (base) => {
                 let index = 2;
-                while (taken(`Basic ${index}`)) index += 1;
-                renameEverywhere('Basic', `Basic ${index}`);
+                while (taken(`${base} ${index}`)) index += 1;
+                return `${base} ${index}`;
+            };
+            const dropTemplate = (name, to) => {
+                nameMaps().forEach((map) => { delete map[name]; });
+                if (Array.isArray(next.order)) next.order = next.order.filter((item) => item !== name);
+                ['active', 'lastSaved'].forEach((key) => { if (next[key] === name) next[key] = to; });
+            };
+            if (from < 8) {
+                if (taken('Basic')) renameEverywhere('Basic', freeName('Basic'));
+                dropTemplate('Custom', 'Basic');
             }
-            nameMaps().forEach((map) => { delete map.Custom; });
-            if (Array.isArray(next.order)) next.order = next.order.filter((name) => name !== 'Custom');
-            ['active', 'lastSaved'].forEach((key) => { if (next[key] === 'Custom') next[key] = 'Basic'; });
+            // A pipeline of the user named «Default» makes way; the template «Basic» (of version 8) goes to «Default».
+            if (taken('Default')) renameEverywhere('Default', freeName('Default'));
+            dropTemplate('Basic', 'Default');
             return next;
         };
         const normalizePipelineStore = (input) => {
@@ -4222,12 +4228,10 @@ document.addEventListener('click', (event) => {
                 const stack = captureModelStackState(`r${round}-models`);
                 const participantIds = (stack?.items || []).filter((item) => item.send).map((item) => item.name).filter(Boolean);
                 if (!participantIds.length) continue;
-                const templateStage = activeStageTemplate ? window.StageTemplates?.get?.(activeStageTemplate)?.byNumber?.(round) : null;
                 rounds.push({
                     plannedStageId: `canvas-r${round}`,
-                    label: templateStage ? `${round}. ${templateStage.titleRu}` : (round === 1 ? 'R1 Models' : `R${round}`),
-                    purpose: templateStage?.purpose || (round === 1 ? 'position' : 'response'),
-                    ...(templateStage ? { instruction: templateStage.instruction, meta: { stageTemplate: activeStageTemplate, stageNumber: templateStage.n, phase: templateStage.phase, ...(templateStage.gateAfter ? { gateAfter: templateStage.gateAfter } : {}) } } : {}),
+                    label: round === 1 ? 'R1 Models' : `R${round}`,
+                    purpose: round === 1 ? 'position' : 'response',
                     participantIds,
                     participantBindings: (stack?.items || []).filter((item) => item.send).map((item) => ({ participantId: item.name, promptId: item.role || null }))
                 });
@@ -4503,7 +4507,8 @@ document.addEventListener('click', (event) => {
         };
 
         const LEGACY_EXAMPLE_PIPELINE_NAMES = ['Research & Analysis', 'Content Gen', 'Idea Validation'];
-        const RETIRED_PIPELINE_PRESET_IDS = ['DELTA'];
+        // The templates Polishing, Delta, Test, Research and Architecture are removed: a saved pipeline of theirs is dropped on load.
+        const RETIRED_PIPELINE_PRESET_IDS = ['DELTA', 'POLISHING', 'TEST', 'UNIVERSAL_RESEARCH', 'ARCHITECTURE'];
         const getAllPipelineModelNames = () => (Array.isArray(PIPELINE_MODELS) ? PIPELINE_MODELS : [])
             .map((model) => model?.name)
             .filter(Boolean);
@@ -4549,7 +4554,6 @@ document.addEventListener('click', (event) => {
             profileId = '',
             profileVersion = '',
             resourceBudget = null,
-            stageTemplate = '',
             noMiniPrompts = false
         } = {}) => {
             const targetRounds = Math.max(1, Math.min(50, Number(roundLimit) || 1));
@@ -4557,18 +4561,8 @@ document.addEventListener('click', (event) => {
                 'r1-models': buildPresetModelStack(selectedModels, { withRoles: false })
             };
             for (let round = 2; round <= targetRounds; round++) {
-                // Universal and Test attach no mini prompt by default (None); other presets keep theirs.
-                modelStacks[`r${round}-models`] = buildPresetModelStack(selectedModels, { withRoles: !stageTemplate && !noMiniPrompts, roles });
-            }
-            // A stage template decides per stage who works (the rest stay visible, unsent).
-            if (stageTemplate) {
-                const ordered = orderModelNamesForPipeline(selectedModels);
-                Object.entries(modelStacks).forEach(([stackId, stack]) => {
-                    const framework = window.StageTemplates?.get?.(stageTemplate);
-                    const stage = framework?.byNumber?.(Number(stackId.replace(/\D+/g, '')));
-                    const wanted = new Set(framework?.participantsFor?.(stage, ordered) || []);
-                    stack.items.forEach((item) => { item.send = wanted.has(item.name); });
-                });
+                // The template attaches no mini prompt by default (None).
+                modelStacks[`r${round}-models`] = buildPresetModelStack(selectedModels, { withRoles: !noMiniPrompts, roles });
             }
             return {
                 version: 3,
@@ -4588,7 +4582,6 @@ document.addEventListener('click', (event) => {
                     profileId,
                     profileVersion,
                     resourceBudget: resourceBudget ? { ...resourceBudget } : null,
-                    ...(stageTemplate ? { stageTemplate } : {}),
                     roles: roles.slice(),
                     // A fixed preset's round plan is deliberately explicit: each
                     // wave emits these artifacts and hands them to the next wave.
@@ -4629,7 +4622,6 @@ document.addEventListener('click', (event) => {
                     profileId: definition.profileId || 'UNIVERSAL_STANDARD',
                     profileVersion: window.DebateProfileSchema?.BUILTIN_PROFILES?.[definition.profileId || 'UNIVERSAL_STANDARD']?.version || '',
                     resourceBudget: definition.resourceBudget || null,
-                    stageTemplate: definition.stageTemplate || '',
                     noMiniPrompts: definition.noMiniPrompts === true
                 });
                 return [definition.name, definition.disabled ? { ...config, disabled: true, disabledReason: definition.disabledReason || '' } : config];
@@ -5683,10 +5675,6 @@ document.addEventListener('click', (event) => {
         };
         const setDebateRoundLimitValue = (value) => {
             if (!debateRoundLimitSelect) return;
-            if (activeStageTemplate && !pipelineApplyingConfig) {
-                showNotification('Число этапов задаёт шаблон: его нельзя менять кнопками раундов.', 'info');
-                return;
-            }
             if (String(value) === 'infinite') {
                 debateRoundLimitSelect.value = 'infinite';
                 debateRoundLimitSelect.dispatchEvent(new Event('change', { bubbles: true }));
@@ -5941,9 +5929,6 @@ document.addEventListener('click', (event) => {
             if (customAbortController) {
                 return { action: 'stop', icon: 'ti ti-player-stop', title: 'Остановить Basic', active: true, enabled: true, stepEnabled: false };
             }
-            if (polishingAbortController || deltaAbortController) {
-                return { action: 'stop', icon: 'ti ti-player-stop', title: polishingAbortController ? 'Остановить Polishing' : 'Остановить Delta', active: true, enabled: true, stepEnabled: false };
-            }
             let aggregate = debateAggregateStore?.getState?.() || null;
             // No run exists on this page (none started here, no engine): whatever state the aggregate
             // shows is a phantom (it never ran in this session) and must not turn Run into
@@ -6124,28 +6109,6 @@ document.addEventListener('click', (event) => {
                 && modelNameSetsEqual(state.sendModels, defaults);
         };
 
-        // Stage template: who works at each stage follows the framework (all / lead /
-        // reviewer / nobody at a gate), computed from the currently selected models.
-        const applyStageTemplateAssignments = () => {
-            const framework = activeStageTemplate ? window.StageTemplates?.get?.(activeStageTemplate) : null;
-            if (!activeStageTemplate || !framework?.participantsFor) return false;
-            const models = orderModelNamesForPipeline(getSelectedLLMs());
-            let changed = false;
-            for (let round = 1; round <= roundCounter; round++) {
-                const wanted = new Set(framework.participantsFor(framework.byNumber(round), models));
-                document.querySelectorAll(`#r${round}-models .model-block`).forEach((block) => {
-                    const name = block.querySelector('.model-name')?.textContent?.trim();
-                    const send = block.querySelector('.model-send-checkbox');
-                    if (!name || !send || send.disabled) return;
-                    const on = wanted.has(name);
-                    if (send.checked !== on) { send.checked = on; changed = true; }
-                    // A template stage carries its own brief: no extra mini prompt on top of it.
-                    const roleSelect = block.querySelector('.role-selector');
-                    if (roleSelect && roleSelect.value !== '') { roleSelect.value = ''; changed = true; }
-                });
-            }
-            return changed;
-        };
         const syncPipelineRoundModelsFromSelectedLLMs = ({ force = false } = {}) => {
             if (!force && pipelineR1ManualDirty && !isR1DefaultSelection()) return false;
             const selectedIndices = getSelectedLLMIndicesForPipeline();
@@ -6188,7 +6151,6 @@ document.addEventListener('click', (event) => {
                     }
                 });
             }
-            if (applyStageTemplateAssignments()) changed = true;
             if (changed) updatePipelineAll();
             return changed;
         };
@@ -6821,117 +6783,6 @@ document.addEventListener('click', (event) => {
                 return '';
             }
         };
-        // Delta (disput/delta-pipeline.js): models take turns adding one word to the phrase; a model
-        // gets the whole phrase on its first turn and only the words added since on later turns.
-        // Its own loop over runModelBatch like Polishing — no plan, StateMap or ContextBroker.
-        const runDeltaFromPage = async ({ phrase }) => {
-            const delta = window.DeltaPipeline;
-            const draftPlan = draftPlanForCanvas(getActiveDraftPlan());
-            const rounds = (draftPlan?.plannedStages || [])
-                .filter((stage) => /^canvas-r\d+$/.test(String(stage.plannedStageId || '')))
-                .map((stage) => (stage.participantIds || []).filter(Boolean))
-                .filter((models) => models.length);
-            if (!delta || !rounds.length) {
-                showNotification('Delta: выберите модели хотя бы в одном круге.', 'warn');
-                return false;
-            }
-            const useApiFallback = apiModeCheckbox ? apiModeCheckbox.checked : true;
-            pipelineRunActive = true;
-            customRunProgress = null;
-            deltaAbortController = new AbortController();
-            activePipelineRunContext = {
-                pipelineRunId: makePipelineRunId(),
-                sessionId: debateTabsState?.activeSessionId
-                    || document.querySelector('.debate-session-tab.active')?.dataset?.sessionId
-                    || '1',
-                startedAt: Date.now(),
-                forceNewTabs: newPagesCheckbox ? newPagesCheckbox.checked : true,
-                newPagesDispatched: false
-            };
-            const runContext = activePipelineRunContext;
-            if (runContext.forceNewTabs) resetNewPagesCheckboxAfterOpen();
-            clearModeratorComposer();
-            appendModeratorFeedEntry(phrase);
-            setPipelineEditingEnabled(false);
-            setPipelineRunUi(true);
-            updateDebateButtonsUi();
-            try {
-                const attachments = await buildAttachmentPayload();
-                // Attachments go with the first message to each model only: later turns continue in that chat.
-                const attached = new Set();
-                const result = await delta.run({
-                    start: phrase,
-                    rounds,
-                    signal: deltaAbortController.signal,
-                    send: async (model, prompt, { round }) => {
-                        const pipelineRoundId = `r${round}`;
-                        const batch = await runModelBatch({
-                            // The prompt asks for one word itself: no generic length limit is added.
-                            prompt,
-                            models: [model],
-                            attachments: attached.has(model) ? [] : attachments,
-                            forceNewTabs: runContext.forceNewTabs,
-                            useApiFallback,
-                            signal: deltaAbortController.signal,
-                            context: {
-                                ...runContext,
-                                pipelineRoundId,
-                                pipelineBatchId: makePipelineBatchId({ runId: runContext.pipelineRunId, roundIndex: round, groupIndex: 0 }),
-                                // The phrase carries no participant names; a preset left over from an
-                                // earlier run must not rewrite its words with aliases.
-                                anonymizeParticipants: false,
-                                delta: true
-                            },
-                            generationProfile: 'long'
-                        });
-                        attached.add(model);
-                        const text = String(batch?.responses?.[model] || '');
-                        const modelResult = batch?.results?.[model] || {};
-                        // The live feed already shows the answer; this only covers a path that did not
-                        // reach it. Same run/round/request as the live card, so it is not a second card.
-                        if (text.trim()) {
-                            updateDebateModelCardOutput(model, text, '', {
-                                status: modelResult.status || 'SUCCESS', source: 'delta', role: `Delta · круг ${round}`,
-                                pipelineRunId: runContext.pipelineRunId, pipelineRoundId,
-                                transportRequestId: modelResult.transportRequestId || '', requestId: modelResult.transportRequestId || ''
-                            });
-                        }
-                        return { text, status: modelResult.status || '' };
-                    },
-                    onAnswer: (entry, words) => {
-                        window.MessageDelivery?.batchEvent?.('delta_answer', {
-                            pipelineRunId: runContext.pipelineRunId, round: entry.round, model: entry.model,
-                            status: entry.status, full: entry.full, extra: entry.extra || 0,
-                            reason: entry.reason || null, total: words.length
-                        });
-                    }
-                });
-                const stopText = delta.STOP_TEXT[result.stopReason] || result.stopReason;
-                window.MessageDelivery?.batchEvent?.('delta_end', {
-                    pipelineRunId: runContext.pipelineRunId, stopReason: result.stopReason,
-                    words: result.words.length, answers: result.log.length
-                });
-                // Always shown, also after Stop: the phrase built so far is the run's result.
-                updateDebateModelCardOutput('Delta', delta.formatResult(result), '', {
-                    status: 'SUCCESS', source: 'delta', role: 'Delta · итог',
-                    pipelineRunId: runContext.pipelineRunId, pipelineRoundId: 'delta-result'
-                });
-                showNotification(`Delta: добавлено слов ${result.words.length} (${stopText}).`, result.words.length ? 'info' : 'warn');
-                return result.stopReason !== 'cancelled';
-            } catch (err) {
-                console.error('[RESULTS] Delta run failed', err);
-                showNotification(`Pipeline: error (${err?.message || String(err)})`, 'error');
-                return false;
-            } finally {
-                clearPromptAttachments();
-                pipelineRunActive = false;
-                deltaAbortController = null;
-                activePipelineRunContext = null;
-                setPipelineEditingEnabled(true);
-                setPipelineRunUi(false);
-                updateDebateButtonsUi();
-            }
-        };
         // Custom (disput/custom-engine.js): the shared pipeline engine. The canvas gives the steps
         // in plan order: round cards (their models) and synthesis stages (an intermediate insert
         // keeps its own model; the final synthesis follows the last round). Rounds are parallel and
@@ -7310,7 +7161,7 @@ document.addEventListener('click', (event) => {
         const customRunStore = window.CustomRunRecord && chrome?.storage?.local
             ? window.CustomRunRecord.createStore({ storage: window.CustomRunRecord.chromeStorage(chrome.storage.local) })
             : null;
-        const customPipelineName = () => String(pipelineStore.active || getPipelineHeaderName() || 'Basic').trim();
+        const customPipelineName = () => String(pipelineStore.active || getPipelineHeaderName() || 'Default').trim();
         // The text of the notification at the end of a Basic run.
         // The detail of the stop (the address of a missing input, the counter of a loop) goes in brackets after the reason.
         const basicRunNotice = (stopText, acceptedCount, stopDetail = '') => `Basic: ${stopText}${stopDetail ? ` (${stopDetail})` : ''}.${acceptedCount ? '' : ' Принятых ответов нет.'}`;
@@ -7801,127 +7652,6 @@ document.addEventListener('click', (event) => {
                 updateDebateButtonsUi();
             }
         };
-        // Polishing (disput/polishing-pipeline.js): its own loop over runModelBatch, like the judge and the
-        // moderator dispatch — no plan, StateMap or ContextBroker. Every model sees the whole list.
-        const runPolishingFromPage = async ({ idea, presetId }) => {
-            const polishing = window.PolishingPipeline;
-            const definition = (window.PipelinePresets?.BUILTIN_PIPELINE_DEFINITIONS || []).find((item) => item.presetId === presetId) || {};
-            const draftPlan = draftPlanForCanvas(getActiveDraftPlan());
-            const rounds = (draftPlan?.plannedStages || [])
-                .filter((stage) => /^canvas-r\d+$/.test(String(stage.plannedStageId || '')))
-                .map((stage) => (stage.participantIds || []).filter(Boolean))
-                .filter((models) => models.length);
-            if (!polishing || !rounds.length) {
-                showNotification('Polishing: выберите модели хотя бы в одном круге.', 'warn');
-                return false;
-            }
-            const maxIdeas = Number(definition.polishingMaxIdeas) || polishing.DEFAULT_MAX_IDEAS;
-            const maxWords = getDebateMaxWords();
-            const useApiFallback = apiModeCheckbox ? apiModeCheckbox.checked : true;
-            pipelineRunActive = true;
-            customRunProgress = null;
-            polishingAbortController = new AbortController();
-            activePipelineRunContext = {
-                pipelineRunId: makePipelineRunId(),
-                sessionId: debateTabsState?.activeSessionId
-                    || document.querySelector('.debate-session-tab.active')?.dataset?.sessionId
-                    || '1',
-                startedAt: Date.now(),
-                forceNewTabs: newPagesCheckbox ? newPagesCheckbox.checked : true,
-                newPagesDispatched: false
-            };
-            const runContext = activePipelineRunContext;
-            if (runContext.forceNewTabs) resetNewPagesCheckboxAfterOpen();
-            clearModeratorComposer();
-            appendModeratorFeedEntry(idea);
-            setPipelineEditingEnabled(false);
-            setPipelineRunUi(true);
-            updateDebateButtonsUi();
-            try {
-                const attachments = await buildAttachmentPayload();
-                // Attachments go with the first message to each model only: later rounds continue in that chat.
-                const attached = new Set();
-                // The prompt carries the whole list: stop before it outgrows the transport's
-                // context budget, which would cut the prompt's tail with the instruction.
-                const budgetLimits = window.DebateContextBudget?.DEFAULT_LIMITS;
-                const maxPromptChars = budgetLimits ? budgetLimits.promptChars - budgetLimits.reservedOutputChars - 500 : Infinity;
-                const result = await polishing.run({
-                    idea,
-                    rounds,
-                    maxIdeas,
-                    maxPromptChars,
-                    signal: polishingAbortController.signal,
-                    send: async (model, prompt, { round }) => {
-                        const pipelineRoundId = `r${round}`;
-                        const batch = await runModelBatch({
-                            prompt: `${prompt}\n\n${DISPUT_RESPONSE_LIMIT_MARKER} Ответ — не более ${maxWords} слов.`,
-                            models: [model],
-                            attachments: attached.has(model) ? [] : attachments,
-                            forceNewTabs: runContext.forceNewTabs,
-                            useApiFallback,
-                            signal: polishingAbortController.signal,
-                            context: {
-                                ...runContext,
-                                pipelineRoundId,
-                                pipelineBatchId: makePipelineBatchId({ runId: runContext.pipelineRunId, roundIndex: round, groupIndex: 0 }),
-                                // The list carries no participant names; a preset left over from an
-                                // earlier run must not rewrite the idea's text with aliases.
-                                anonymizeParticipants: false,
-                                polishing: true
-                            },
-                            generationProfile: 'long'
-                        });
-                        attached.add(model);
-                        const text = String(batch?.responses?.[model] || '');
-                        const modelResult = batch?.results?.[model] || {};
-                        // The live feed already shows the answer; this only covers a path that did not
-                        // reach it. Same run/round/request as the live card, so it is not a second card.
-                        if (text.trim()) {
-                            updateDebateModelCardOutput(model, text, '', {
-                                status: modelResult.status || 'SUCCESS', source: 'polishing', role: `Polishing · круг ${round}`,
-                                pipelineRunId: runContext.pipelineRunId, pipelineRoundId,
-                                transportRequestId: modelResult.transportRequestId || '', requestId: modelResult.transportRequestId || ''
-                            });
-                        }
-                        // Only the delivery token, nothing else: the model finished and said "nothing new".
-                        const answered = String(modelResult.status || '').toUpperCase() === 'SUCCESS'
-                            && modelResult.attribution === 'verified';
-                        return { text, status: modelResult.status || '', answered };
-                    },
-                    onAnswer: (entry, ideas) => {
-                        window.MessageDelivery?.batchEvent?.('polishing_answer', {
-                            pipelineRunId: runContext.pipelineRunId, round: entry.round, model: entry.model,
-                            status: entry.status, added: entry.added, dropped: entry.dropped || 0,
-                            reason: entry.reason || null, total: ideas.length
-                        });
-                    }
-                });
-                const stopText = polishing.STOP_TEXT[result.stopReason] || result.stopReason;
-                window.MessageDelivery?.batchEvent?.('polishing_end', {
-                    pipelineRunId: runContext.pipelineRunId, stopReason: result.stopReason,
-                    ideas: result.ideas.length, answers: result.log.length
-                });
-                // Always shown, also after Stop: what was collected is the run's result.
-                updateDebateModelCardOutput('Polishing', polishing.formatResult(result), '', {
-                    status: 'SUCCESS', source: 'polishing', role: 'Polishing · итог',
-                    pipelineRunId: runContext.pipelineRunId, pipelineRoundId: 'polishing-result'
-                });
-                showNotification(`Polishing: собрано улучшений ${result.ideas.length} (${stopText}).`, result.ideas.length ? 'info' : 'warn');
-                return result.stopReason !== 'cancelled';
-            } catch (err) {
-                console.error('[RESULTS] Polishing run failed', err);
-                showNotification(`Pipeline: error (${err?.message || String(err)})`, 'error');
-                return false;
-            } finally {
-                clearPromptAttachments();
-                pipelineRunActive = false;
-                polishingAbortController = null;
-                activePipelineRunContext = null;
-                setPipelineEditingEnabled(true);
-                setPipelineRunUi(false);
-                updateDebateButtonsUi();
-            }
-        };
         const startDebateFromPage = async () => {
             if (pipelineRunActive) {
                 showNotification('Pipeline already running', 'warn');
@@ -7941,12 +7671,6 @@ document.addEventListener('click', (event) => {
             }
             if (selectedPreset?.runner === 'custom') {
                 return runCustomFromPage({ task: moderatorEntryText || pipelineNameText });
-            }
-            if (selectedPreset?.runner === 'polishing') {
-                return runPolishingFromPage({ idea: moderatorEntryText || pipelineNameText, presetId });
-            }
-            if (selectedPreset?.runner === 'delta') {
-                return runDeltaFromPage({ phrase: moderatorEntryText || pipelineNameText });
             }
             const presetConfig = buildPipelinePresetRuntimeConfig(presetId);
             const draftPlan = draftPlanForCanvas(getActiveDraftPlan());
@@ -8156,9 +7880,9 @@ document.addEventListener('click', (event) => {
             }
         };
         const cancelPipelineRun = async () => {
-            if (customAbortController || polishingAbortController || deltaAbortController) {
+            if (customAbortController) {
                 const runId = activePipelineRunContext?.pipelineRunId;
-                (customAbortController || polishingAbortController || deltaAbortController).abort();
+                customAbortController.abort();
                 try { await debateTransportPort?.cancelRun?.(runId); } catch (_) {}
                 return true;
             }
@@ -8508,7 +8232,6 @@ document.addEventListener('click', (event) => {
                 adoptBasicWorking(draftPlanStorageKey(), isDefaultPipelineName(draftPlanStorageKey()) ? { cards: {}, rounds: {}, defaults: {}, runExplicit: {}, error: '' } : working);
             }
             const protocol = config.protocol && typeof config.protocol === 'object' ? config.protocol : null;
-            activeStageTemplate = String(protocol?.stageTemplate || '');
             if (protocol) {
                 if (typeof window.setDebateSchemeValue === 'function') window.setDebateSchemeValue('universal');
                 const lengthSelect = document.getElementById('debate-length-select');
@@ -9269,7 +8992,7 @@ document.addEventListener('click', (event) => {
             });
             if (canvas.errors.length) return { ok: false, errors: canvas.errors };
             const run = window.BasicSchema.resolveRun(schema);
-            const base = clonePipelineConfig(buildDefaultPipelinePresets().Basic);
+            const base = clonePipelineConfig(buildDefaultPipelinePresets().Default);
             delete base.disabled;
             delete base.disabledReason;
             const lengthSelect = document.getElementById('debate-length-select');
@@ -9974,13 +9697,12 @@ document.addEventListener('click', (event) => {
                 body.replaceChildren();
             } else {
                 const round = Number(match[1]);
-                const templateStage = activeStageTemplate ? window.StageTemplates?.get?.(activeStageTemplate)?.byNumber?.(round) || null : null;
                 const stack = captureModelStackState(`r${round}-models`);
                 const stages = debateApplication?.getOrchestrator?.()?.getState?.()?.stages || [];
                 const stageRun = stages.filter((item) => item.plannedStageId === `canvas-r${round}`).pop() || null;
                 // Custom rounds (R1 included) with mini-request selectors: one role for the round's models
                 // instead of the participant list.
-                const roleChoice = !templateStage && isCustomEnginePipeline() && document.querySelector(`#r${round}-models .role-selector`)
+                const roleChoice = isCustomEnginePipeline() && document.querySelector(`#r${round}-models .role-selector`)
                     ? { prompts: getRoleOptionPrompts(), roles: (stack?.items || []).map((item) => item.role || ''), disabled: pipelineRunActive,
                         roundPrompt: getCustomRoundPrompt(`r${round}`),
                         // The round card of Basic: the order, the input, the task, the number of answers, the owner and the output.
@@ -9989,7 +9711,6 @@ document.addEventListener('click', (event) => {
                     : null;
                 const model = window.StageCard.buildModel({
                     round,
-                    templateStage,
                     participants: (stack?.items || []).filter((item) => item.input || item.send),
                     stageRun,
                     roleChoice

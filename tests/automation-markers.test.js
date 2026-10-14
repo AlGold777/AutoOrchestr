@@ -8,7 +8,6 @@ const Application = require('../disput/debate-application');
 const DraftPlan = require('../disput/debate-draft-plan');
 const Compiler = require('../disput/debate-prompt-compiler');
 const Contracts = require('../disput/debate-contracts');
-const Framework = require('../disput/architecture-framework');
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'results.js'), 'utf8');
 
@@ -253,11 +252,6 @@ describe('ASK marker pauses the run and hands the question out', () => {
 });
 
 describe('template wiring', () => {
-  test('gates of the framework stop the run in Auto: the stage before a gate carries gateAfter', () => {
-    expect(Framework.STAGES.filter((stage) => stage.gateAfter).map((stage) => [stage.n, stage.gateAfter]))
-      .toEqual([[12, 'G1'], [16, 'G2'], [21, 'G3'], [29, 'G4']]);
-  });
-
   test('the page derives the pause policy from the run mode and handles every pause reason', () => {
     expect(source).toContain("stagePause: { mode: compiledRunPolicy === 'auto' ? 'gates' : 'every_stage' }");
     expect(source).toContain('onEnginePause: (info) => handleEnginePause(info)');

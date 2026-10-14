@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-14 — Остался один шаблон Default; Polishing, Delta, Test, Research и Architecture удалены, версия 2.81.766
+
+- Встроенный шаблон «Basic» переименован в **Default**. Имя Basic остаётся за движком и форматом схемы. Хранилище pipelines поднято до версии 9: прежняя запись шаблона «Basic» отбрасывается (шаблон собирается из кода), метки «активный» и «последний сохранённый» переходят на «Default», pipeline пользователя с именем «Default» получает имя «Default 2» и далее. Миграции с версий 7 и 8 цепочкой: Custom → Basic → Default.
+- Удалены шаблоны Polishing, Delta, Test, Research, Architecture с их модулями (`disput/delta-pipeline.js`, `polishing-pipeline.js`, `research-framework.js`, `architecture-framework.js`, `stage-templates.js`, `scripts/build-architecture-framework.js`), запуском в `results.js` (`runPolishingFromPage`, `runDeltaFromPage`, ветки `stageTemplate`), подключениями в страницах и манифесте и тестами этих шаблонов. Сохранённые pipelines этих шаблонов отбрасываются при загрузке (`RETIRED_PIPELINE_PRESET_IDS`). Документы `delta-pipeline.md`, `polishing-pipeline.md`, `test-pipeline.md`, `research-template.md` удалены; `research.md` и `research-2.0.md` остаются как проект сценария. Остаточный код карточки этапа для шаблонных этапов (`templateStage` в `results/stage-card.js`) не используется и будет убран отдельно.
+- Тесты: списки шаблонов в `tests/pipeline-presets.test.js`, `tests/pipeline-none-mini-prompt.test.js`, `tests/results-debate-favorites.test.js` (миграции версий 8 и 9, имя шаблона) обновлены; число падающих тестов не выросло.
+
 ### 2026-10-14 — Design System: формат записан, пометки S01–S05 по исходнику, версия 2.81.765
 
 - Новый `design-system-format.md`: две функции документа, три слоя (pipeline в целом, схема процесса, этап), правила заполнения, правило переноса того, что Basic не умеет.

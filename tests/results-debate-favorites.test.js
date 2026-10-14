@@ -1988,9 +1988,9 @@ describe('Pipeline debate favorites view', () => {
   test('default pipeline list exposes only universal purpose profiles', () => {
     const names = Array.from(document.querySelectorAll('#pipelineItems .pipeline-item'))
       .map((item) => item.dataset.name);
-    expect(names).toEqual(['Basic', 'Polishing', 'Delta', 'Test', 'Research', 'Architecture']);
+    expect(names).toEqual(['Default']);
     expect(document.querySelectorAll('#pipelineItems .pipeline-item-delete')).toHaveLength(0);
-    // Every template, Custom included, is selectable the same way.
+    // The template is selectable like any pipeline.
     document.querySelectorAll('#pipelineItems .pipeline-radio').forEach((radio) => expect(radio.disabled).toBe(false));
   });
 
@@ -3069,12 +3069,12 @@ describe('Pipeline debate favorites view', () => {
       expect(h.starts[1].promptsByModel.GPT).toContain('PERSISTED_CONTENT');
       const template = { ...h.config, customDefaults: { roundTask: 'MUST_NOT_LOAD_IN_TEMPLATE' } };
       h.debug.clearCustomSessionForTest();
-      h.debug.setPipelineStoreForTest({ active: 'Basic', order: ['Basic'], pipelines: { Basic: template } });
+      h.debug.setPipelineStoreForTest({ active: 'Default', order: ['Default'], pipelines: { Default: template } });
       h.debug.applyPipelineConfig(template);
       expect(h.debug.getCustomPipelineDefaults()).toEqual({});
       await h.general({ roundTask: 'TEMPLATE_SESSION' });
       expect(h.debug.getCustomPipelineDefaults().roundTask).toBe('TEMPLATE_SESSION');
-      expect(h.debug.getPipelineStoreSnapshot().pipelines.Basic.customDefaults.roundTask).toBe('MUST_NOT_LOAD_IN_TEMPLATE');
+      expect(h.debug.getPipelineStoreSnapshot().pipelines.Default.customDefaults.roundTask).toBe('MUST_NOT_LOAD_IN_TEMPLATE');
       const oldPrompt = window.prompt;
       window.prompt = jest.fn(() => 'Copy from template');
       try { document.getElementById('pipeline-save-btn').click(); await settleCustomCard(); }
@@ -3083,7 +3083,7 @@ describe('Pipeline debate favorites view', () => {
       expect(h.debug.getCustomPipelineDefaults().roundTask).toBe('TEMPLATE_SESSION');
       await h.run();
       expect(h.starts[1].promptsByModel.GPT).toContain('TEMPLATE_SESSION');
-      h.debug.setPipelineStoreForTest({ active: 'Basic', order: ['Basic'], pipelines: { Basic: template } });
+      h.debug.setPipelineStoreForTest({ active: 'Default', order: ['Default'], pipelines: { Default: template } });
       h.debug.applyPipelineConfig(template);
       expect(h.debug.getCustomPipelineDefaults().roundTask).toBe('TEMPLATE_SESSION');
       h.debug.clearCustomSessionForTest();
@@ -3151,17 +3151,17 @@ describe('Pipeline debate favorites view', () => {
       const h = setupCustomInheritance('Based source', { synthesis: '' });
       try {
         h.debug.clearCustomSessionForTest();
-        document.querySelector('.pipeline-item[data-name="Basic"]').click();
+        document.querySelector('.pipeline-item[data-name="Default"]').click();
         await settleCustomCard();
         await saveAs('From template');
         const record = () => h.debug.getPipelineStoreSnapshot().pipelines['From template'];
-        expect(record().schema).toMatchObject({ origin: 'user', basedOn: 'Basic' });
+        expect(record().schema).toMatchObject({ origin: 'user', basedOn: 'Default' });
         expect(window.BasicSchema.validate(record().schema)).toEqual([]);
         // A card save and a ▶ save rewrite the schema and keep what it was based on.
         await h.model({ promptTemplate: 'AFTER SAVE {задача}' });
-        expect(record().schema.basedOn).toBe('Basic');
+        expect(record().schema.basedOn).toBe('Default');
         await h.general({ roundTask: 'AFTER GENERAL' });
-        expect(record().schema).toMatchObject({ basedOn: 'Basic', defaults: { roundTask: 'AFTER GENERAL' } });
+        expect(record().schema).toMatchObject({ basedOn: 'Default', defaults: { roundTask: 'AFTER GENERAL' } });
       } finally { h.cleanup(); }
     }, 30000);
 
@@ -3940,7 +3940,7 @@ describe('Pipeline debate favorites view', () => {
         const h = setupCustomInheritance('Bundle host', { synthesis: '' });
         try {
           const schema = { schemaVersion: 1, origin: 'user', steps: [{ ref: 'r1', kind: 'round', models: [{ name: 'GPT' }] }] };
-          const bundle = { version: 8, pipelines: { 'From bundle': { schema }, 'Old format': { protocol: { type: 'universal' } }, Basic: { schema } }, order: ['From bundle'] };
+          const bundle = { version: 8, pipelines: { 'From bundle': { schema }, 'Old format': { protocol: { type: 'universal' } }, Default: { schema } }, order: ['From bundle'] };
           await importFile(JSON.stringify(bundle), 'pipelines.json', 'ignored');
           let store = h.debug.getPipelineStoreSnapshot();
           expect(store.pipelines['From bundle'].schema.steps).toEqual(schema.steps);
@@ -3980,11 +3980,11 @@ describe('Pipeline debate favorites view', () => {
         const h = setupCustomInheritance('Derived save host', { synthesis: '' });
         try {
           h.debug.clearCustomSessionForTest();
-          document.querySelector('.pipeline-item[data-name="Basic"]').click();
+          document.querySelector('.pipeline-item[data-name="Default"]').click();
           await settleCustomCard();
           await saveAs('Derived save');
           const { record, again } = derived(h, 'Derived save');
-          expect(record.schema.basedOn).toBe('Basic');
+          expect(record.schema.basedOn).toBe('Default');
           expect(window.BasicSchema.validate(record.schema)).toEqual([]);
           expect(record.roundCounter).toBe(again.roundCounter);
           expect(record.modelStacks).toEqual(again.modelStacks);
@@ -4087,7 +4087,7 @@ describe('Pipeline debate favorites view', () => {
         const policy = document.getElementById('debate-run-policy-select');
         const run = () => h.debug.capturePipelineConfig().schema.run;
         h.debug.clearCustomSessionForTest();
-        document.querySelector('.pipeline-item[data-name="Basic"]').click();
+        document.querySelector('.pipeline-item[data-name="Default"]').click();
         await settleCustomCard();
         policy.value = 'manual'; lengthSelect.value = '300';
         expect(run()).toBeUndefined();
@@ -4387,28 +4387,27 @@ describe('Pipeline debate favorites view', () => {
     } finally { release?.(); if (running) await running; h.cleanup(); }
   }, 30000);
 
-  test('templates keep their names: no renaming a template and no taking a template name', async () => {
+  test('the template keeps its name: no renaming it and no taking its name', async () => {
     const debug = window.__pipelineLifecycleDebug;
     const mine = { protocol: { type: 'universal', presetId: 'CUSTOM' }, modelStacks: {} };
     debug.setPipelineStoreForTest({ pipelines: { Mine: mine }, order: ['Mine'] });
     debug.ensureDefaultPipelinePresets();
-    await expect(debug.renamePipelineForTest('Test', 'My test')).resolves.toBe(false);
-    await expect(debug.renamePipelineForTest('Mine', 'Polishing')).resolves.toBe(false);
+    await expect(debug.renamePipelineForTest('Default', 'My default')).resolves.toBe(false);
+    await expect(debug.renamePipelineForTest('Mine', 'Default')).resolves.toBe(false);
     const store = debug.getPipelineStoreSnapshot();
     expect(store.pipelines.Mine).toEqual(mine);
-    expect(store.pipelines.Polishing.protocol.presetId).toBe('POLISHING');
-    expect(store.pipelines.Test.protocol.presetId).toBe('TEST');
+    expect(store.pipelines.Default.protocol.presetId).toBe('CUSTOM');
   });
 
-  test('store version 8: the template Custom becomes Basic; a user pipeline saved as Basic keeps its data', () => {
+  test('store versions 8 and 9: the template Custom, then Basic, becomes Default; a user pipeline with a template name keeps its data', () => {
     const debug = window.__pipelineLifecycleDebug;
     const config = (marker) => ({ protocol: { type: 'universal', presetId: 'CUSTOM' }, marker });
     const old = debug.normalizePipelineStore({
       version: 7, active: 'Custom', lastSaved: 'Custom', order: ['Custom', 'Mine'],
       pipelines: { Custom: config('template'), Mine: config('mine') }, draftPlans: {}, overrides: { synthesizers: { Custom: 'GPT' } }
     });
-    expect(old.active).toBe('Basic');
-    expect(old.lastSaved).toBe('Basic');
+    expect(old.active).toBe('Default');
+    expect(old.lastSaved).toBe('Default');
     expect(old.order).toEqual(['Mine']);
     expect(old.pipelines.Custom).toBeUndefined();
     expect(old.overrides.synthesizers).toEqual({});
@@ -4419,8 +4418,19 @@ describe('Pipeline debate favorites view', () => {
     expect(clash.order).toEqual(['Basic 3', 'Basic 2']);
     expect(clash.pipelines['Basic 3'].marker).toBe('users');
     expect(clash.pipelines.Basic).toBeUndefined();
-    const current = debug.normalizePipelineStore({ version: 8, active: 'Basic', order: ['Basic'], pipelines: { Basic: config('template') } });
-    expect(current.pipelines.Basic.marker).toBe('template');
+    // Version 8 had the template under the name Basic: it goes, and the mark moves to Default.
+    const v8 = debug.normalizePipelineStore({ version: 8, active: 'Basic', lastSaved: 'Basic', order: ['Basic', 'Mine'], pipelines: { Basic: config('template'), Mine: config('mine') } });
+    expect(v8.active).toBe('Default');
+    expect(v8.lastSaved).toBe('Default');
+    expect(v8.order).toEqual(['Mine']);
+    expect(v8.pipelines.Basic).toBeUndefined();
+    // A pipeline the user saved as Default makes way for the template name.
+    const named = debug.normalizePipelineStore({ version: 8, active: 'Basic', order: ['Basic', 'Default'], pipelines: { Basic: config('template'), Default: config('users') } });
+    expect(named.order).toEqual(['Default 2']);
+    expect(named.pipelines['Default 2'].marker).toBe('users');
+    expect(named.active).toBe('Default');
+    const current = debug.normalizePipelineStore({ version: 9, active: 'Default', order: ['Default'], pipelines: { Default: config('template') } });
+    expect(current.pipelines.Default.marker).toBe('template');
   });
 
   test('retiring Red Team removes the built-in and preserves user-named copies', () => {
@@ -4432,7 +4442,7 @@ describe('Pipeline debate favorites view', () => {
     });
     expect(debug.ensureDefaultPipelinePresets()).toBe(true);
     const store = debug.getPipelineStoreSnapshot();
-    expect(store.order).toEqual(['Basic', 'Polishing', 'Delta', 'Test', 'Research', 'Architecture', 'My review']);
+    expect(store.order).toEqual(['Default', 'My review']);
     expect(store.pipelines['Red Team']).toBeUndefined();
     expect(store.pipelines['My review'].modelStacks).toEqual(saved.modelStacks);
     expect(store.active).toBe('');
@@ -4465,14 +4475,13 @@ describe('Pipeline debate favorites view', () => {
   });
 
   test('built-in pipeline round changes are not remembered after switching away and back', () => {
-    const testPipeline = document.querySelector('.pipeline-item[data-name="Test"]');
-    const research = document.querySelector('.pipeline-item[data-name="Research"]');
-    testPipeline.click();
+    document.getElementById('pipeline-add-btn').click();
+    document.querySelector('.pipeline-item[data-name="Default"]').click();
     const roundLimit = document.getElementById('debate-round-limit-select');
     roundLimit.value = '5';
     roundLimit.dispatchEvent(new Event('change', { bubbles: true }));
-    research.click();
-    document.querySelector('.pipeline-item[data-name="Test"]').click();
+    document.getElementById('pipeline-add-btn').click();
+    document.querySelector('.pipeline-item[data-name="Default"]').click();
 
     expect(roundLimit.value).toBe('2');
   });

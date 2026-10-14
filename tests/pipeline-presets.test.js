@@ -4,11 +4,9 @@ describe('universal pipeline presets', () => {
   test('offers purpose profiles without execution topologies', () => {
     expect(Presets.DEFAULT_PRESET_ID).toBe('UNIVERSAL_STANDARD');
     expect(Presets.PIPELINE_PRESETS.map((preset) => preset.id)).toEqual([
-      'UNIVERSAL_STANDARD', 'CUSTOM', 'TEST', 'UNIVERSAL_RESEARCH', 'UNIVERSAL_RED_TEAM', 'ARCHITECTURE', 'POLISHING', 'DELTA'
+      'UNIVERSAL_STANDARD', 'CUSTOM', 'UNIVERSAL_RED_TEAM'
     ]);
-    expect(Presets.BUILTIN_PIPELINE_DEFINITIONS.map((item) => item.name)).toEqual([
-      'Basic', 'Polishing', 'Delta', 'Test', 'Research', 'Architecture'
-    ]);
+    expect(Presets.BUILTIN_PIPELINE_DEFINITIONS.map((item) => item.name)).toEqual(['Default']);
     expect(JSON.stringify(Presets.PIPELINE_PRESETS)).not.toMatch(/topology|scheme|roundLimit|waveLimit|turnLimit/i);
     expect(Presets.isPresetEnabled('CUSTOM')).toBe(true);
     expect(Presets.getPipelinePreset('CUSTOM').runner).toBe('custom');
@@ -16,10 +14,10 @@ describe('universal pipeline presets', () => {
   });
 
   test('normalizes an explicit universal stage budget', () => {
-    expect(Presets.normalizePipelinePreset('UNIVERSAL_RESEARCH', {
+    expect(Presets.normalizePipelinePreset('UNIVERSAL_STANDARD', {
       currentUiLimits: { maxTotalStages: 18 }
     })).toMatchObject({
-      presetId: 'UNIVERSAL_RESEARCH', profileId: 'DEEP_RESEARCH_ALPHA',
+      presetId: 'UNIVERSAL_STANDARD', profileId: 'UNIVERSAL_STANDARD',
       maxTotalStages: 18, resourceBudget: { limit: 18 }
     });
   });
@@ -31,8 +29,6 @@ describe('universal pipeline presets', () => {
 
   test('maps each preset finalization policy into the runtime policy contract', () => {
     expect(Presets.normalizePipelinePreset('UNIVERSAL_STANDARD').finalization)
-      .toMatchObject({ mode: 'after_required_goals', synthesis: 'optional', audit: 'optional' });
-    expect(Presets.normalizePipelinePreset('UNIVERSAL_RESEARCH').finalization)
       .toMatchObject({ mode: 'after_required_goals', synthesis: 'optional', audit: 'optional' });
     expect(Presets.normalizePipelinePreset('UNIVERSAL_RED_TEAM').finalization)
       .toEqual({
