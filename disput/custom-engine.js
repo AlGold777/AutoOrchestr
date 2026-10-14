@@ -93,6 +93,9 @@
   };
   // The mode the prompt names: a list of sources is 'sources', the strings stay as they are.
   const modeOf = (spec) => (Array.isArray(spec) ? 'sources' : spec);
+  // The output a participant answers with (3.2): its own declaration replaces the step's one as a whole, nothing is merged.
+  // Works on the schema's steps and on the normalized ones: a participant's output sits on the participant.
+  const outputOf = (step, model) => (model && typeof model === 'object' && model.output != null ? model.output : (step.output ?? null));
   // The input of a participant: its own when it has one, else the input of the step.
   const specOf = (step, model) => (model && model.input !== undefined ? model.input : step.input);
   const numbered = (items) => items.map((item, index) => `Ответ ${index + 1}:\n${item.text}`).join('\n\n');
@@ -120,7 +123,7 @@
   }
 
   // The block of a gate: its criteria, and the verdict the answer ends with (6.1).
-  const gateBlock = (step) => `Критерии проверки:\n${step.criteria.map((item) => `- ${item}`).join('\n')}\n${Control.verdictInstruction(step.output?.format === 'json')}`;
+  const gateBlock = (step, output) => `Критерии проверки:\n${step.criteria.map((item) => `- ${item}`).join('\n')}\n${Control.verdictInstruction(output?.format === 'json')}`;
   // The feedback of a return: a block of its own, given to the visit that the return starts (never to the first visit).
   // The block of a model route: its cases with their labels, and the answer it names (6.2).
   const routeBlock = (step) => `Варианты маршрута:\n${step.select.cases.map((item) => `- ${item.id} — ${item.label}`).join('\n')}\nОтвет — один JSON-объект {"route": "<id варианта>"} без текста вокруг.`;
@@ -133,7 +136,7 @@
       const values = { '{задача}': text(task), '{вход}': inputMode === 'all' || inputMode === 'sources' ? labelled(input) : numbered(input), '{ответы до тебя}': numbered(earlier) };
       const parts = [model.promptTemplate.replace(/\{задача\}|\{вход\}|\{ответы до тебя\}/g, (key) => values[key])];
       if (formatBlock(output)) parts.push(formatBlock(output));
-      if (step.kind === 'gate') parts.push(gateBlock(step));
+      if (step.kind === 'gate') parts.push(gateBlock(step, output));
       if (step.kind === 'route') parts.push(routeBlock(step));
       if (feedback.length) parts.push(feedbackBlock(feedback));
       if (ownerAnswers.length) parts.push(`Ответы владельца на вопросы:\n${ownerAnswers.map((item) => `- ${item.question}: ${item.answer}`).join('\n')}`);
@@ -152,7 +155,7 @@
     const taskInstruction = model.task ?? step.task;
     if (text(taskInstruction)) parts.push(`Задание:\n${text(taskInstruction)}`);
     if (formatBlock(output)) parts.push(formatBlock(output));
-    if (step.kind === 'gate') parts.push(gateBlock(step));
+    if (step.kind === 'gate') parts.push(gateBlock(step, output));
     if (step.kind === 'route') parts.push(routeBlock(step));
     if (text(model.extra)) parts.push(`Дополнительно для тебя:\n${text(model.extra)}`);
     if (ownerAnswers.length) parts.push(`Ответы владельца на вопросы:\n${ownerAnswers.map((item) => `- ${item.question}: ${item.answer}`).join('\n')}`);
@@ -194,6 +197,9 @@
   }
 
   const isPlain = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+  // Whether the output of a participant declares a revision of the line (the key of its lineage): it is the author of that line's next version.
+  const revisesLine = (step, model, key) => (Array.isArray(outputOf(step, model)?.artifacts) ? outputOf(step, model).artifacts : [])
+    .some((item) => isPlain(item) && isPlain(item.revisionOf) && isPlain(item.revisionOf.artifact) && Artifacts.lineKey(item.revisionOf.artifact) === key);
 
   // The content of an artifact: the whole answer for an empty pointer, else the value at the pointer (a text as it is,
   // an object or a list as JSON). A pointer that the stored answer does not give is missing_content.
@@ -233,8 +239,10 @@
         order: kind === 'round' && step.order === 'sequential' ? 'sequential' : 'parallel',
         task: kind === 'synthesis' && !text(step.task) ? SYNTHESIS_TASK : text(step.task),
         // A list of sources stays a list here: the input is checked before the run (assertExecutable).
-        input: Array.isArray(step.input) ? step.input.slice() : (kind === 'synthesis' ? 'previous' : (kind === 'owner' ? 'none' : (step.input ?? 'previous'))),
+        input: Array.isArray(step.input) ? step.input.slice() : (kind === 'synthesis' ? 'previous' : (step.input ?? (kind === 'owner' ? 'none' : 'previous'))),
         output: step.output ?? null,
+        // continue: the participant keeps its chat; new: a new chat on the first request of each visit (4.2).
+        chat: step.chat === 'new' ? 'new' : 'continue',
         require: step.require ?? 'any',
         approve: step.owner === 'approve',
         // A gate: its criteria, the rule of its checkers (all | any) and what a fail does (stop | ask).
@@ -247,7 +255,8 @@
           name: model.name, id: model.id ?? model.name, extra: text(model.extra), task: typeof model.task === 'string' ? model.task : null, promptTemplate: typeof model.promptTemplate === 'string' ? model.promptTemplate : null,
           discipline: model.discipline ? { ...model.discipline } : null,
           maxWords: Number.isSafeInteger(model.maxWords) && model.maxWords > 0 ? model.maxWords : null,
-          ...(model.input !== undefined ? { input: Array.isArray(model.input) ? model.input.slice() : model.input } : {})
+          ...(model.input !== undefined ? { input: Array.isArray(model.input) ? model.input.slice() : model.input } : {}),
+          ...(model.output !== undefined ? { output: JSON.parse(JSON.stringify(model.output)) } : {})
         }))
           .filter((model) => model.name)
       };
@@ -284,6 +293,8 @@
           return isPlain(source.artifact) && typeof source.artifact.step === 'string' && typeof source.artifact.participant === 'string'
             && typeof source.artifact.id === 'string' && versionOk;
         }
+        // Without a participant the source is the whole accepted result of the step (3.1).
+        if (!('participant' in source)) return typeof source.step === 'string';
         return typeof source.step === 'string' && typeof source.participant === 'string';
       };
       const bad = spec.findIndex((source) => !shape(source));
@@ -350,6 +361,23 @@
     return null;
   }
 
+  // The output of a step or of a participant (5.8, 3.2): the fields the engine executes, or null. `field` names it in the error.
+  function outputProblem(output, kind, fail, field) {
+    if (!output || typeof output !== 'object' || Array.isArray(output)) return fail('invalid_field', field, 'выход: объект');
+    if (output.format !== undefined && output.format !== 'json') return fail('unsupported_field', `${field}.format`, 'формат выхода движок пока не исполняет');
+    if (output.artifacts !== undefined && (!Array.isArray(output.artifacts) || !output.artifacts.length)) return fail('invalid_field', `${field}.artifacts`, 'ожидается непустой список артефактов');
+    if (Array.isArray(output.artifacts)) {
+      for (const [at, item] of output.artifacts.entries()) {
+        if (!item || typeof item !== 'object' || !('revisionOf' in item)) continue;
+        const where = `${field}.artifacts[${at}].revisionOf`;
+        if (!isPlain(item.revisionOf) || !isPlain(item.revisionOf.artifact)) return fail('invalid_input', where, 'ревизия: ссылка на артефакт { artifact: { step, participant, id }, version }');
+        const problem = inputProblem([item.revisionOf], kind, fail, where);
+        if (problem) return problem;
+      }
+    }
+    return null;
+  }
+
   // The first field of one raw step (as the schema gives it) that the engine does not execute yet, or null. Every
   // later step of the schema extends this list; a field that is not in it is refused, never replaced by a default.
   // options.participants: the page gives sendParticipants, so two participants of one model may stand in a step.
@@ -359,10 +387,9 @@
     if (!step || typeof step !== 'object') return new EngineError('invalid_step', at, 'шаг должен быть объектом');
     if (step.kind !== undefined && !EXECUTED_KINDS.includes(step.kind)) return fail('unsupported_kind', 'kind', `вид «${step.kind}» движок пока не исполняет`);
     if (step.kind === 'owner') {
-      // The owner (8.1) gives a text or a file; it has no models and no input yet (its input is not part of the contract).
+      // The owner (8.1) gives a text or a file; it has no models. Its input (N07) is checked below like a model's input.
       if (!text(step.task)) return fail('invalid_field', 'task', 'задание владельца: непустой текст');
       if (Array.isArray(step.models) && step.models.length) return fail('invalid_field', 'models', 'у владельца нет моделей');
-      if (step.input !== undefined && step.input !== 'none') return fail('unsupported_field', 'input', 'вход шага владельца движок пока не исполняет');
     }
     if (step.kind === 'route') {
       const problem = routeProblem(step, fail);
@@ -379,18 +406,8 @@
       if (problem) return problem;
     }
     if (step.output !== undefined) {
-      const output = step.output;
-      if (!output || typeof output !== 'object' || Array.isArray(output)) return fail('invalid_field', 'output', 'выход шага: объект');
-      if (output.format !== undefined && output.format !== 'json') return fail('unsupported_field', 'output.format', 'формат выхода движок пока не исполняет');
-      if (output.artifacts !== undefined && (!Array.isArray(output.artifacts) || !output.artifacts.length)) return fail('invalid_field', 'output.artifacts', 'ожидается непустой список артефактов');
-      if (Array.isArray(output.artifacts)) {
-        for (const [at, item] of output.artifacts.entries()) {
-          if (!item || typeof item !== 'object' || !('revisionOf' in item)) continue;
-          if (!isPlain(item.revisionOf) || !isPlain(item.revisionOf.artifact)) return fail('invalid_input', `output.artifacts[${at}].revisionOf`, 'ревизия: ссылка на артефакт { artifact: { step, participant, id }, version }');
-          const problem = inputProblem([item.revisionOf], step.kind, fail, `output.artifacts[${at}].revisionOf`);
-          if (problem) return problem;
-        }
-      }
+      const problem = outputProblem(step.output, step.kind, fail, 'output');
+      if (problem) return problem;
     }
     if (step.require !== undefined && step.require !== 'any' && step.require !== 'all') {
       if (!Number.isSafeInteger(step.require) || step.require < 1) return fail('invalid_field', 'require', 'require: any, all или целое число больше 0');
@@ -398,7 +415,7 @@
       if (step.require > count) return fail('invalid_field', 'require', `требуется больше ответов, чем участников: ${count}`);
     }
     if (step.owner !== undefined && step.owner !== 'approve') return fail('invalid_field', 'owner', 'owner: только approve');
-    if (step.chat !== undefined && step.chat !== 'continue') return fail('unsupported_field', 'chat', 'чат «new» движок пока не исполняет');
+    if (step.chat !== undefined && step.chat !== 'continue' && step.chat !== 'new') return fail('unsupported_field', 'chat', 'чат: continue или new');
     const ids = new Set();
     const names = new Set();
     for (const model of Array.isArray(step.models) ? step.models : []) {
@@ -406,6 +423,11 @@
       const id = typeof model === 'string' ? model : (model?.id ?? name);
       if (model && typeof model === 'object' && model.input !== undefined) {
         const problem = inputProblem(model.input, step.kind, fail, `модель «${name}» · input`);
+        if (problem) return problem;
+      }
+      if (model && typeof model === 'object' && model.output !== undefined) {
+        if (step.kind === 'route') return fail('invalid_field', `модель «${name}» · output`, 'у участника маршрута выход не задаётся');
+        const problem = outputProblem(model.output, step.kind, fail, `модель «${name}» · output`);
         if (problem) return problem;
       }
       if (names.has(name) && !participants) return new EngineError('participant_transport_required', `${at} · модель «${name}»`, 'два участника одной модели требуют транспорта по участникам (callback sendParticipants)');
@@ -426,16 +448,17 @@
       const inputs = [['input', step.input], ...(Array.isArray(step.models) ? step.models : [])
         .filter((model) => model && typeof model === 'object' && model.input !== undefined)
         .map((model) => [`модель «${model.name}» · input`, model.input])];
-      // A revision names an artifact that the author really gets as input (5.2): the input of every author has it.
-      (Array.isArray(step.output?.artifacts) ? step.output.artifacts : []).forEach((declaration) => {
-        if (!declaration || !isPlain(declaration.revisionOf)) return;
-        const want = declaration.revisionOf.artifact;
-        (Array.isArray(step.models) ? step.models : []).forEach((model) => {
+      // A revision names an artifact that its author really gets as input (5.2, 3.2): each author checks its own output and input.
+      // The owner is the author of its step's output (3.3): its input is its input.
+      (step.kind === 'owner' ? [null] : (Array.isArray(step.models) ? step.models : [])).forEach((model) => {
+        (outputOf(step, model)?.artifacts || []).forEach((declaration) => {
+          if (!declaration || !isPlain(declaration.revisionOf)) return;
+          const want = declaration.revisionOf.artifact;
           const spec = model && typeof model === 'object' && model.input !== undefined ? model.input : step.input;
           const given = Array.isArray(spec) && spec.some((source) => isPlain(source) && isPlain(source.artifact)
             && source.artifact.step === want.step && source.artifact.participant === want.participant && source.artifact.id === want.id);
           if (!given) {
-            const name = typeof model === 'string' ? model : model?.name;
+            const name = model === null ? OWNER_PARTICIPANT : (typeof model === 'string' ? model : model?.name);
             throw new EngineError('invalid_input', `шаг «${step.ref}» · output.artifacts`, `ревизия «${declaration.id}» требует во входе участника «${name}» ссылку на «${want.id}»`);
           }
         });
@@ -450,9 +473,13 @@
             if (from < 0) return; // a switched-off step: it gives no answers, see sourceItems
             if (from >= index) throw new EngineError('invalid_input', address, `шаг «${ref}» стоит не раньше этого шага`);
             if (participant === undefined) return;
-            const declared = (Array.isArray(steps[from].models) ? steps[from].models : []).map((model) => (typeof model === 'string' ? model : (model?.id ?? model?.name)));
+            // The owner step has one participant, the owner (3.3); a model of a round keeps its own id.
+            const declared = steps[from].kind === 'owner' ? [OWNER_PARTICIPANT]
+              : (Array.isArray(steps[from].models) ? steps[from].models : []).map((model) => (typeof model === 'string' ? model : (model?.id ?? model?.name)));
             if (!declared.includes(participant)) throw new EngineError('invalid_input', address, `участник «${participant}» не объявлен в шаге «${ref}»`);
-            if (artifactId !== null && !(steps[from].output?.artifacts || []).some((item) => item && item.id === artifactId)) {
+            // The artifact is declared in the output of that participant (3.2): its own, or the step's when it has none.
+            const author = (Array.isArray(steps[from].models) ? steps[from].models : []).find((model) => model && typeof model === 'object' && (model.id ?? model.name) === participant);
+            if (artifactId !== null && !(outputOf(steps[from], author)?.artifacts || []).some((item) => item && item.id === artifactId)) {
               throw new EngineError('invalid_input', address, `артефакт «${artifactId}» не объявлен в шаге «${ref}»`);
             }
           };
@@ -547,12 +574,13 @@
     // A gate's checker is also checked for its verdict (6.1), after the output.
     const checkFor = (step, model) => {
       if (step.kind === 'route') return (value) => Control.routeOf(value, step.select.cases.map((item) => item.id));
-      const shape = step.output ? (value) => Output.checkAnswer(value, step.output, { limit: model.maxWords ?? runLimit }) : null;
+      const output = outputOf(step, model);
+      const shape = output ? (value) => Output.checkAnswer(value, output, { limit: model.maxWords ?? runLimit }) : null;
       if (step.kind !== 'gate') return shape;
       return (value) => {
         const base = shape ? shape(value) : { ok: true };
         if (!base.ok) return base;
-        const verdict = Control.verdictOf(value, { json: step.output?.format === 'json' });
+        const verdict = Control.verdictOf(value, { json: output?.format === 'json' });
         return verdict.ok ? { ok: true, fields: { verdict: verdict.verdict, unmet: verdict.unmet } } : verdict;
       };
     };
@@ -560,6 +588,13 @@
     const participants = typeof sendParticipants === 'function';
     if (!participants && typeof send !== 'function') throw new Error('custom_send_required');
     assertExecutable(steps, { participants });
+    // A new chat is a chat of a participant: only the transport by participants can keep chats apart.
+    steps.forEach((step, index) => {
+      if (!participants && step && step.chat === 'new') {
+        throw new EngineError('unsupported_field', `${typeof step.ref === 'string' && step.ref ? `шаг «${step.ref}»` : `шаг №${index + 1}`} · chat`,
+          'чат «new» нужен транспорту по участникам (callback sendParticipants)');
+      }
+    });
     const emit = (kind, fields) => { if (typeof onEvent === 'function') onEvent(kind, fields); };
     const aborted = () => Boolean(signal?.aborted);
     const plan = normalizeSteps(steps);
@@ -580,6 +615,7 @@
     let activeFeedback = [];
     let activeFeedbackRefs = []; // the feedback of the visit in progress, as references (for a checkpoint)
     let inFlight = []; // the participants whose request is being sent now: unknown after a reload until their answer is judged
+    let chatBindings = {}; // participantId → { modelName, stepRef, visit, transportRequestId }: the chat of each participant (kept on resume)
     let openOwner = null; // the owner interaction that is open now (a decision, a route, an owner step, an ASK): kept on a stop
     let stopDetail = '';
     // The plan as the run sees it: a report shows what was intended, not only what happened.
@@ -612,7 +648,7 @@
             accepted: [], pending: [], outcome: {}, feedback: [], route: null, owner: null },
         results: finished.map(savedEntry),
         routes: finished.filter((item) => item.route).map((item) => ({ stepRef: item.step.ref, visit: item.visit, id: item.route.id, by: item.route.by, reason: item.route.reason })),
-        ownerAnswers, artifacts: registry.entries, pendingOwner: openOwner
+        ownerAnswers, artifacts: registry.entries, pendingOwner: openOwner, chatBindings
       }));
     }
     // The checkpoint (8.2) is awaited before the next external action. A failed save is not swallowed: the run stops with
@@ -679,11 +715,13 @@
       return [...last.values()].filter((entry) => entry.step.index < before).sort((a, b) => a.step.index - b.step.index);
     }
     // The content of an artifact version: the line, then its current version (latest) or the named one. Only that content.
-    function artifactItems(source, step) {
+    function artifactItems(source, step, model = null) {
       const required = Boolean(source.required);
       const address = source.artifact;
       const lineage = { step: address.step, participant: address.participant, id: address.id };
-      const found = source.version === 'latest' ? Artifacts.latest(registry, lineage) : Artifacts.version(registry, lineage, source.version);
+      // An author that revises this line starts from the last valid version of it (its declared input, 3.4).
+      const base = Boolean(model) && revisesLine(step, model, Artifacts.lineKey(lineage));
+      const found = source.version === 'latest' ? Artifacts.latest(registry, lineage, { base }) : Artifacts.version(registry, lineage, source.version);
       if (!found || !found.valid) {
         if (!required) return [];
         throw new StopRun('missing_input', `артефакт «${address.id}» шага «${address.step}», участник «${address.participant}»: нет актуальной версии; шаг «${step.ref}» не отправлен`);
@@ -698,52 +736,64 @@
         text: contentOf(answer, found.content.pointer, `шаг «${step.ref}» · input`),
         source: { step: author ? author.step.index : null, visit: found.source.visit, label: where, model: found.source.participant, attempt: null },
         artifact: { lineage: { ...found.lineage }, source: { ...found.source } },
+        address: { step: found.source.step, participant: found.source.participant, visit: found.source.visit, artifact: found.lineage.id },
         textRef: found.content.answerRef, pointer: found.content.pointer
       }];
     }
     // A binary file of an owner step (8.1) is an item without text: it is passed on only as an attachment, never as text.
     const binaryOf = (item) => (item.binary ? { binary: true, file: item.file } : {});
     // The items of one source list, in the order of the list. Each item names its step, participant and visit.
-    function sourceItems(spec, step) {
+    function sourceItems(spec, step, model = null) {
       return spec.flatMap((source) => {
-        if (source && typeof source === 'object' && 'artifact' in source) return artifactItems(source, step);
+        if (source && typeof source === 'object' && 'artifact' in source) return artifactItems(source, step, model);
         const required = Boolean(source?.required);
         const ref = typeof source === 'string' ? source : source.step;
         const entry = currentOf(ref);
-        const answers = acceptedOf(entry).filter((item) => typeof source === 'string' || item.participant === source.participant);
-        if (!answers.length && required) {
-          const who = typeof source === 'string' ? '' : ` участник «${source.participant}»`;
-          throw new StopRun('missing_input', `шаг «${ref}»${who} не дал принятого ответа; шаг «${step.ref}» не отправлен`);
+        // A whole result (a string, or an object without a participant) is every accepted answer of the step (3.1).
+        const whole = typeof source === 'string' || !('participant' in source);
+        const answers = acceptedOf(entry).filter((item) => whole || item.participant === source.participant);
+        if (required) {
+          const who = whole ? '' : ` участник «${source.participant}»`;
+          const stopped = (why) => new StopRun('missing_input', `шаг «${ref}»${who} ${why}; шаг «${step.ref}» не отправлен`);
+          // A required source is complete: its answers reach the threshold and its gate passes (3.1).
+          if (!answers.length) throw stopped('не дал принятого ответа');
+          if (whole && answers.length < neededOf(entry.step)) throw stopped('не набрал порога принятых ответов');
+          if (entry.step.kind === 'gate' && !gatePass(entry.step, entry.outcome, entry.skipped)) throw stopped('не прошёл проверку');
         }
         return answers.map((item) => ({
           label: `${stepLabel(entry.step)}${entry.step.output?.name ? ` («${entry.step.output.name}»)` : ''}, участник ${item.participant}, визит ${entry.visit}`,
-          text: item.text, source: item.source, textRef: item.textRef, pointer: '', ...binaryOf(item)
+          text: item.text, source: item.source, textRef: item.textRef, pointer: '', ...binaryOf(item),
+          address: { step: entry.step.ref, participant: item.participant, visit: entry.visit }
         }));
       });
     }
     // The input of a step (strict): a binary file in it stops the run before the request (unsupported_input). Not strict: the text only.
-    function inputFor(step, spec = step.input, { strict = true } = {}) {
-      const items = answersFor(step, spec);
+    function inputFor(step, spec = step.input, { strict = true, model = null } = {}) {
+      const items = answersFor(step, spec, model);
       if (!strict) return items.filter((item) => !item.binary);
       const binary = items.find((item) => item.binary);
       if (binary) throw new StopRun('unsupported_input', `файл «${binary.file.name}» (${binary.file.mime}) — двоичный, текстом моделям не передаётся; шаг «${step?.ref}» не отправлен`);
       return items;
     }
     // The current answers of a spec: 'all' and 'previous' take the entries before the step, the last visit of each.
-    function answersFor(step, spec = step.input) {
+    function answersFor(step, spec = step.input, model = null) {
       if (spec === 'none') return [];
-      if (Array.isArray(spec)) return sourceItems(spec, step);
+      if (Array.isArray(spec)) return sourceItems(spec, step, model);
       const entries = currentEntries(Number.isSafeInteger(step?.index) ? step.index : Infinity);
       if (spec === 'all') {
         return entries.flatMap((entry) => acceptedOf(entry).map((item, index) => ({
-          label: `${stepLabel(entry.step)}${entry.visit > 1 ? `, визит ${entry.visit}` : ''}, ответ ${index + 1}`, text: item.text, source: item.source, ...binaryOf(item)
+          label: `${stepLabel(entry.step)}${entry.visit > 1 ? `, визит ${entry.visit}` : ''}, ответ ${index + 1}`, text: item.text, source: item.source, ...binaryOf(item),
+          address: { step: entry.step.ref, participant: item.participant, visit: entry.visit }
         })));
       }
       for (let index = entries.length - 1; index >= 0; index -= 1) {
         // A stale step is not passed over: an older answer never replaces it (6.3, 5.3). A skipped step passes nothing on.
         if (entries[index].valid === false) return [];
         const accepted = acceptedOf(entries[index]);
-        if (accepted.length) return accepted.map((item) => ({ text: item.text, source: item.source, ...binaryOf(item) }));
+        if (accepted.length) {
+          return accepted.map((item) => ({ text: item.text, source: item.source, ...binaryOf(item),
+            address: { step: entries[index].step.ref, participant: item.participant, visit: entries[index].visit } }));
+        }
       }
       return [];
     }
@@ -773,9 +823,9 @@
 
     function promptFor(step, model, earlier) {
       const spec = specOf(step, model);
-      const input = inputFor(step, spec);
+      const input = inputFor(step, spec, { model });
       const prompt = buildPrompt({ task, step, model, input, inputMode: modeOf(spec), earlier, feedback: activeFeedback,
-        ownerAnswers, askInstruction: semiAuto ? askInstruction : '', output: step.output });
+        ownerAnswers, askInstruction: semiAuto ? askInstruction : '', output: outputOf(step, model) });
       if (prompt.length > maxPromptChars) throw new StopRun('context_full');
       return { prompt, parts: partsFor(step, model, input, earlier, spec) };
     }
@@ -808,7 +858,8 @@
         try {
           if (participants) {
             reply = await sendParticipants(pending.map((model) => ({ participantId: model.id, modelName: model.name, prompt: current[model.id].prompt,
-              chat: 'continue', stepRef: step.ref, visit: activeVisit, attempt: tryNo })),
+              // A new chat starts on the first request of the visit only; a correction or a retry inside the visit goes to it.
+              chat: step.chat === 'new' && tryNo === 1 ? 'new' : 'continue', stepRef: step.ref, visit: activeVisit, attempt: tryNo })),
             { ...meta, maxWordsByParticipant: maxWordsOf, correctionByParticipant: correctionOf });
             byId = reply?.byParticipant || {};
           } else {
@@ -833,6 +884,7 @@
         const retry = [];
         pending.forEach((model) => {
           const result = byId[model.id] || {};
+          if (result.transportRequestId) chatBindings[model.id] = { modelName: model.name, stepRef: step.ref, visit: activeVisit, transportRequestId: result.transportRequestId };
           let verdict = judge(result, accept, checkFor(step, model));
           if (!verdict.ok && reply?.closedByOwner && !text(result.text)) verdict = { ...verdict, reason: 'closed_by_owner' };
           outcome[model.id] = { ...verdict, model: model.name, participant: model.id, status: result.status || '', attempt: tryNo, transportRequestId: result.transportRequestId || '' };
@@ -842,7 +894,7 @@
             outcome[model.id].textRef = answerRef;
             const items = current[model.id].parts?.input?.items || [];
             const inputs = items.filter((item) => item.artifact).map((item) => item.artifact);
-            (step.output?.artifacts || []).forEach((declaration) => {
+            (outputOf(step, model)?.artifacts || []).forEach((declaration) => {
               // A revision joins the line of the source it got; any other artifact starts its own line.
               const revision = declaration.revisionOf ? revisionItem(declaration, items) : null;
               if (declaration.revisionOf && !revision) throw new EngineError('missing_input', `шаг «${step.ref}» · output.artifacts`, `ревизия «${declaration.id}» без полученной версии`);
@@ -976,13 +1028,24 @@
       if (shape && !shape.ok) return { ok: false, reason: shape.reason, detail: shape.detail || '' };
       return { ok: true, text: value, ...(file ? { file: fileOf(file) } : {}) };
     }
+    // An input item as the owner window gets it (N07): its address, its label, and its text or the reference of its file.
+    const ownerItemOf = (item) => ({ label: item.label, ...item.address, ...(item.binary ? { file: item.file } : { text: item.text }) });
     async function ownerAnswer(step, entry) {
       let reason = '';
       let detail = '';
+      // The input of the owner step is resolved before the window opens (N07): a missing required source stops the run here,
+      // and so does a revision whose artifact the owner did not get (3.3).
+      const items = answersFor(step, step.input ?? 'none');
+      const input = items.map(ownerItemOf);
+      (step.output?.artifacts || []).forEach((declaration) => {
+        if (declaration.revisionOf && !revisionItem(declaration, items)) {
+          throw new StopRun('missing_input', `ревизия «${declaration.id}»: владелец не получил версию, которую она дорабатывает; шаг «${step.ref}» не открыт`);
+        }
+      });
       for (;;) {
         await checkpointNow('decision', { pendingOwner: { kind: 'owner', stepRef: step.ref, visit: entry.visit } });
         const reply = await ownerWait(() => provideOwnerResult({ stepRef: step.ref, visit: entry.visit, task: step.task, output: step.output,
-          ...(reason ? { reason, detail } : {}) }));
+          ...(step.input !== 'none' ? { input } : {}), ...(reason ? { reason, detail } : {}) }));
         if (reply === null) throw new StopRun('stopped');
         const verdict = ownerVerdict(step, reply);
         if (!verdict.ok) {
@@ -998,9 +1061,12 @@
         }
         const textRef = putText(verdict.text);
         (step.output?.artifacts || []).forEach((declaration) => {
+          // A revision joins the line of the artifact the owner got; any other artifact starts the owner's own line.
+          const revision = declaration.revisionOf ? revisionItem(declaration, items) : null;
           Artifacts.register(registry, { id: declaration.id, name: declaration.name,
-            lineage: { step: step.ref, participant: OWNER_PARTICIPANT, id: declaration.id },
-            source: { step: step.ref, participant: OWNER_PARTICIPANT, visit: entry.visit }, answerRef: textRef, pointer: declaration.pointer, inputs: [] });
+            lineage: revision ? { ...revision.artifact.lineage } : { step: step.ref, participant: OWNER_PARTICIPANT, id: declaration.id },
+            source: { step: step.ref, participant: OWNER_PARTICIPANT, visit: entry.visit }, answerRef: textRef, pointer: declaration.pointer,
+            inputs: items.filter((item) => item.artifact).map((item) => item.artifact) });
         });
         entry.owner = { text: verdict.text, textRef, ...(verdict.file ? { file: verdict.file } : {}) };
         emit('custom_owner', { step: step.index, ref: step.ref, visit: entry.visit, accepted: true, reason: null });
@@ -1113,6 +1179,8 @@
       ['visits', 'loopCounters', 'feedback', 'dependencies', 'decisions'].forEach((field) => { state[field] = isPlain(saved[field]) ? JSON.parse(JSON.stringify(saved[field])) : {}; });
       state.continuationStack = Array.isArray(saved.continuationStack) ? JSON.parse(JSON.stringify(saved.continuationStack)) : [];
       ownerAnswers.push(...(Array.isArray(saved.ownerAnswers) ? saved.ownerAnswers : []));
+      // A list (an old snapshot) is no bindings: the chats are taken from the next reply of each participant.
+      chatBindings = isPlain(saved.chatBindings) ? JSON.parse(JSON.stringify(saved.chatBindings)) : {};
       registry.entries.push(...(Array.isArray(saved.artifacts) ? saved.artifacts : []).map((entry) => ({ ...entry, lineage: { ...entry.lineage }, source: { ...entry.source }, content: { ...entry.content } })));
       (Array.isArray(saved.results) ? saved.results : []).forEach((item) => {
         const step = plan[pointAt(item.stepRef)];
@@ -1171,8 +1239,8 @@
           // Every input of the step is resolved before its first request: a missing required one sends nothing, and
           // a revision whose source an author did not get stops the step (its line would be unknown).
           step.models.forEach((model) => {
-            const items = inputFor(step, specOf(step, model));
-            (step.output?.artifacts || []).forEach((declaration) => {
+            const items = inputFor(step, specOf(step, model), { model });
+            (outputOf(step, model)?.artifacts || []).forEach((declaration) => {
               if (declaration.revisionOf && !revisionItem(declaration, items)) {
                 throw new StopRun('missing_input', `ревизия «${declaration.id}»: участник «${model.id}» не получил версию, которую она дорабатывает; шаг «${step.ref}» не отправлен`);
               }
@@ -1183,8 +1251,9 @@
           activeVisit = state.visits[key];
           activeFeedback = takeFeedback(key);
           // What this visit uses (the results and artifacts it took) is recorded: a later stale key makes the visit stale (6.3).
-          state.dependencies[`${step.index}@${activeVisit}`] = usedKeysOf(step.models.length
-            ? step.models.flatMap((model) => inputFor(step, specOf(step, model))) : inputFor(step, step.input ?? 'none'));
+          // The owner's answer is built on its input too: a change of that input makes the answer stale (N07, 6.3).
+          state.dependencies[`${step.index}@${activeVisit}`] = usedKeysOf(step.kind === 'owner' ? answersFor(step, step.input ?? 'none')
+            : (step.models.length ? step.models.flatMap((model) => inputFor(step, specOf(step, model), { model })) : inputFor(step, step.input ?? 'none')));
         }
         const decidedKey = `${key}@${activeVisit}`;
         const outcome = resumed ? resumed.outcome : {};
@@ -1351,10 +1420,10 @@
     const position = step.models.findIndex((item) => item.name === model.name);
     const earlier = step.order === 'sequential' && position > 0 ? [{ text: PLACEHOLDER.earlier }] : [];
     const prompt = buildPrompt({ task, step, model, input, inputMode: modeOf(spec), earlier, ownerAnswers: [],
-      askInstruction: semiAuto ? askInstruction : '', output: step.output });
+      askInstruction: semiAuto ? askInstruction : '', output: outputOf(step, model) });
     const template = typeof model.promptTemplate === 'string' && model.promptTemplate.trim() ? model.promptTemplate
       : buildPrompt({ task: '{задача}', step, model, input: input.length ? [{ label: 'Вход', text: '{вход}' }] : [],
-        inputMode: modeOf(spec), earlier: earlier.length ? [{ text: '{ответы до тебя}' }] : [], output: step.output });
+        inputMode: modeOf(spec), earlier: earlier.length ? [{ text: '{ответы до тебя}' }] : [], output: outputOf(step, model) });
     return { label: stepLabel(step), order: step.order, inputMode: modeOf(spec), prompt, template, transportLines: TRANSPORT_LINES.slice(),
       instructions: { task: text(task), stepTask: model.task ?? step.task, extra: model.extra || '', askInstruction: semiAuto ? askInstruction : '' } };
   }

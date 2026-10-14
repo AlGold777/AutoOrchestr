@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-14 — Слияние линий Basic (ревью 12.10) и Stop/доставки, версия 2.81.753
+
+- В одну ветку сведены линия Stop/доставки основного чекаута (2.81.742–752) и линия Basic из `codex/basic-fixes-review-oct12` (2.81.742–752). Номера версий пересекались, поэтому ниже записи обеих линий идут подряд, а результат получает 2.81.753.
+- Исправлено при слиянии: `tab-manager.js` (проверка неизвестной попытки, N04) вызывал `extractLatestAssistantSnapshotInPage`, спрятанную в блоке `job-orchestrator.js`; теперь функция выставлена как `self.extractLatestAssistantSnapshotInPage` (тест `tests/background-global-scope.test.js`).
+- Конфликты: `background/job-orchestrator.js` (резервирование запуска `startProcessReserved` — из линии Stop, `activeParticipantRequests` и `self.startModelForLLM` — из линии Basic), `docs/CHANGELOG.md`, `basic-developer.md` (обе части сохранены).
+
 ### 2026-10-14 — Подготовка GPT и привязка повторной отправки, версия 2.81.752
 
 - GPT использует общий цикл подготовки с повторным поиском живого редактора после вставки. Замена поля страницей не оставляет проверку на старом элементе; перед Send проверяется полный запрос, включая текст длиннее 20 000 символов.
@@ -60,6 +66,102 @@
 - Все карточки с метками завершают запрос главной страницы и останавливают автоматизацию, сохраняя полученные результаты. В pipeline завершение одной модели не отменяет последующие этапы.
 - «Пуск» во время запроса становится «Пауза». Нажатие останавливает скрипты и посещения без закрытия вкладок, возвращает «Пуск» и позволяет отправить следующий запрос даже при неполных ответах.
 - Остановка отменяет текущий визит и незавершённый запуск; запоздалые callbacks не возвращают фокус и не меняют следующий запрос.
+
+### 2026-10-11 — Basic: приёмка архитектуры S01–S30 (P09), version 2.81.752
+
+- Архитектура из 30 этапов Design System как схема Basic: `tests/fixtures/basic-architecture-s01-s30.json` — 52 шага: 33 раунда, 5 синтезов, 4 gate, 7 route, 2 owner, 4 approve. Таблица соответствия S01–S30 → ref: `tests/fixtures/basic-architecture-s01-s30.map.json`. Схема проходит `validate`, `toCanvas`; на странице установка, Save, загрузка из списка и повторный Save дают шаги fixture без изменений.
+- Прогоны на fake transport: линейный ход по всем шагам (53 участника), возврат S12→S10 с замечаниями в feedback, `loop_limit` на третьем переходе, `no_decision` без решения владельца, бюджет `context_full` до отправки без обрезки. CHG S19 и S25 останавливаются `missing_input` с адресом: пересчёт между точкой изменения и возвратом в документах не задан.
+- Синтетические условия (Q10: возвраты S12, S26, S27, S29 и CHG S19) помечены в таблице; реальные условия автора не заданы и не выдуманы.
+- Найденные ограничения: холст требует синтез между двумя раундами, поэтому S23 и S24 выражены раундами; страница не устанавливает два участника одной модели в шаге (S18 — Claude и GPT; два ID проверены на движке).
+- Docs: `basic-schema-guide.md` (5.5, 5.7, 5.8, 5.9: убраны устаревшие «пакет …» и «пока не исполняется»), `basic-developer.md` (OI-3 уточнён, TRANSPORT-1, список тестов, раздел «Что не проверено вживую»), `documentation-map.md`.
+- Tests: `tests/basic-architecture-fixture.test.js`, `tests/results-debate-favorites.test.js` (установка и Save архитектуры). Полный прогон: 20 известных падений в 6 файлах, новых нет.
+- Не проверено в живом браузере: только jsdom и моки.
+
+### 2026-10-11 — Basic: тесты предпросмотра и Export → Import для новых полей, version 2.81.752
+
+- Проверка по коду и тестом: окно модели раунда (предпросмотр запроса) показывает вход «выбранные этапы» (`Ответы выбранных источников:` с `{вход}`) и блок «Формат ответа» из выхода шага; код страницы не менялся.
+- Export → Import схемы с полями gate (criteria, checkers, pass, onFail/onPass с goto, feedback, invalidate), route (rule с источником, условия, maxLoops, otherwise, conflict) и owner (task, output) и вход/выход раунда: схема возвращается без изменений; новая запись проходит валидацию.
+- Docs: `basic-windows.md` (предпросмотр в окне модели).
+- Tests: `tests/results-debate-favorites.test.js` (два новых теста: Export → Import, предпросмотр).
+- Не проверено в живом браузере: только jsdom.
+
+### 2026-10-11 — Basic: окно владельца (owner) на холсте, version 2.81.751
+
+- `results/stage-card.js`: окно владельца (`ownerWindowModel`, `ownerAfterEdit`, `renderOwnerWindow`): задание (`task`) и выход шага (имя, форма, разделы, строгая длина; для json разделы не редактируются). Вход владельца и прочие поля сохраняются.
+- `results.js`: владелец добавляется кнопкой «+ шаг»; окно открывается по карточке; карточка показывает задание.
+- Docs: `basic-windows.md` («Карточка владельца (owner)»), `basic-schema-guide.md` (5.9), `basic-start-here.md` (имена кода).
+- Tests: `tests/stage-card-basic.test.js` (окно владельца: модель, правки, отрисовка); `tests/results-debate-favorites.test.js` (владелец с холста: задание и выход, Save → загрузка → Save).
+- Не сделано: предпросмотр и Export/Import новых полей (следующий коммит). Не проверено в живом браузере: только jsdom.
+
+### 2026-10-11 — Basic: окно маршрута (route) на холсте, version 2.81.750
+
+- `results/stage-card.js`: окно маршрута (`routeWindowModel`, `routeAfterEdit`, `renderRouteWindow`): вид выбора (`rule`/`model`/`owner`); для правила — источники (ответы участников раньше шага, номер = место в `input`), варианты с ID, названием, условием `source`/`pointer`/`op`/`value` и действием (goto с `maxLoops`, stop, return), `otherwise`, `conflict`; для модели — модель и задание. Составные условия, `feedback`, `invalidate`, `resumeAt` и строки/артефакты во `input` сохраняются. Смена вида убирает то, что новому виду не нужно.
+- `results.js`: маршрут добавляется кнопкой «+ шаг» (как проверка); окно открывается по карточке; источники правила берутся из участников раундов и синтезов раньше шага (`participantsBefore`).
+- Docs: `basic-windows.md` («Карточка маршрута (route)»), `basic-schema-guide.md` (5.9), `basic-start-here.md` (имена кода).
+- Tests: `tests/stage-card-basic.test.js` (окно маршрута: модель, источники, условия по типам значений, составное условие, действия, смена вида, отрисовка); `tests/results-debate-favorites.test.js` (маршрут с холста: создание пустым, правило с источником, Save → загрузка → Save).
+- Не сделано: окно владельца, предпросмотр и Export/Import новых полей. Не проверено в живом браузере: только jsdom.
+
+### 2026-10-11 — Basic: окно проверки (gate) и карточки шагов управления на холсте, version 2.81.749
+
+- `results/stage-card.js`: окно проверки (`gateWindowModel`, `gateAfterEdit`, `renderGateWindow`): критерии по строкам, проверяющие (модели из общего списка; снятая галочка оставляет модель с `enabled: false`), `pass` (`all`/`any`), `onFail` (stop/ask/переход), `onPass` (следующий шаг/переход); переход `goto` с `maxLoops` 1–5, поля `feedback`, `invalidate`, `resumeAt` и переходы другой формы сохраняются. Значения по умолчанию в схему не пишутся.
+- `results.js`: control-шаги Basic хранятся списком `customControls` (`{ after, step }`, `after` — ref шага перед ним), `basicSchemaFromPage` вставляет их после этого шага по цепочке (`withControls` заменяет `keepSourceFields`); при загрузке список берётся из схемы (`controlsOf`). Кнопка «+ шаг» в заголовке раунда и карточки добавляет проверку; карточка на холсте (`syncControlColumns`) открывает окно; «×» удаляет и переносит следующий шаг на предыдущий. Удаление последнего раунда переносит шаги после него на предыдущий раунд.
+- `results.js`: проверка или маршрут между раундом и его промежуточным синтезом не ставятся (синтез нельзя вставить и наоборот); ошибка валидации «промежуточный синтез стоит сразу после раунда / между двумя раундами» получает пояснение (`describeSchemaErrors`).
+- Docs: `basic-windows.md` («Карточка проверки (gate)»), `basic-schema-guide.md` (5.9: холст показывает проверку), `basic-start-here.md` (термин и имена кода).
+- Tests: `tests/stage-card-basic.test.js` (окно проверки: модель, правки, сохранение нередактируемых полей, отрисовка); `tests/results-debate-favorites.test.js` (добавление проверки с холста и Save → загрузка → Save; цепочка двух шагов и удаление; отказ синтеза между раундом и проверкой с пояснением).
+- Не сделано: окна маршрута и владельца (следующие коммиты), предпросмотр и Export/Import новых полей. Не проверено в живом браузере: только jsdom.
+
+### 2026-10-11 — Basic: окна раунда и синтеза получают поля шага (вход, порог, владелец, выход), version 2.81.748
+
+- `results/stage-card.js`: вход «выбранные этапы» (список ранних шагов с галочками, порядок выбора = порядок массива `input`, выключенные помечены), «Сколько ответов нужно» (any / all / число от 1 до включённых моделей), «Спросить владельца после этапа» (`owner: "approve"`, отметка на карточке раунда), выход этапа (`output.name`, `form`, `sections`, `strictLength`; при `format: json` разделы недоступны). Чистые функции `stepsAfterToggle`, `outputAfterEdit`, `stepFieldsModel`, `renderStepFields`.
+- `results.js`: поля раунда и синтеза хранятся по `ref` (`customRoundSettings`, в том числе `customStepSettings` из загрузки); `basicSchemaFromPage` пишет их в шаг, `keepSourceFields` больше не возвращает очищенные поля из исходной схемы; удаление раунда удаляет его поля и черновики; окно синтеза (промежуточного и финального) показывает поля шага сверху.
+- `results.js`: черновики «выбранные этапы» без этапа и «число» без числа не пишутся в схему, пока владелец не выбрал значение.
+- Docs: `basic-windows.md` («Поля шага»), `basic-schema-guide.md` (`require`, `owner` — окно есть), `basic-start-here.md` (окно настроек).
+- Tests: `tests/stage-card-basic.test.js` (поля шага в модели и отрисовке, вывод выхода), `tests/results-debate-favorites.test.js` (новый тест: поля раунда и синтеза переживают Save → загрузка → Save, очистка остаётся очисткой; список входов включает «выбранные этапы»; удалённый раунд не передаёт поля).
+- Не сделано: предпросмотр запроса для входа «выбранные этапы» и блок «Формат ответа» (следующее задание); окна gate/route/owner.
+
+### 2026-10-11 — Basic: лента прогона показывает события движка, version 2.81.747
+
+- `results.js` (`runCustomFromPage`): подпись карточки ответа содержит участника (если его id не совпадает с моделью) и заход со второго захода; второй заход шага — отдельная карточка (`pipelineRoundId` `s<n>v<заход>`), ответ предыдущего захода остаётся в ленте.
+- `results.js`: события `custom_gate`, `custom_route`, `custom_transition` идут в ленту короткими строками (`appendBasicRunLine`), не карточками ответов.
+- `results.js` (`markStaleBasicCards`): в конце прогона карточки шагов с `valid: false` получают метку «устарело»; ответ не удаляется.
+- `results.js` (`openBasicArtifacts`): в конце прогона строка «Артефакты прогона: N» открывает реестр через `ChoiceDialog`: список (название, участник или владелец, заход, устарело) и текст выбранного артефакта (`getText`, указатель `pointer`).
+- `results/stage-card.js`: `StageCard.feed` — тексты подписи, строк и артефактов (чистые функции).
+- `styles/modals-responsive.css`: строки прогона, метка «устарело».
+- Docs: `basic-windows.md` («Лента прогона»), `basic-start-here.md` (строки таблицы).
+- Tests: `tests/basic-run-feed.test.js` (new): тексты подписи, строк, артефактов и указателя; проводка в `results.js` и стили. Не проверено в живом браузере: только jsdom и проверка синтаксиса.
+
+### 2026-10-11 — Basic: chat bindings of the participants are kept in the snapshot, version 2.81.746
+
+- `CustomEngine.run` (`disput/custom-engine.js`): the chat of each participant (`chatBindings`: participantId → `{ modelName, stepRef, visit, transportRequestId }`) is set by its accepted or failed reply with a transport request ID; it is in every checkpoint and in the result (`state.chatBindings`), and a resume takes it back. An old list in the snapshot is read as no bindings.
+- `CustomRunRecord` (`disput/custom-run-record.js`): `setSnapshot` keeps the bindings as a copy in `snapshot.chatBindings` (an object; a list or no value is `{}`). `setSnapshot` takes the current position from `state.current` when no `current` is given (before, a snapshot made from the state alone lost the step in progress).
+- Docs: `basic-start-here.md` (the record).
+- Tests: `tests/custom-run-chat-bindings.test.js` (new): a checkpoint keeps the bindings, a reload gives them back, a resume keeps them; an old list reads and resumes. `tests/custom-run-record.test.js`: an empty snapshot has `chatBindings: {}`.
+
+### 2026-10-11 — Basic: chat new (a new chat on the first request of each visit), version 2.81.745
+
+- `CustomEngine.run` (`disput/custom-engine.js`): `chat: "new"` is executed by the transport by participants (`sendParticipants`): the first request of a visit goes to a new chat (`chat: "new"`), a correction or a retry inside the visit goes to the same chat (`continue`), and a new visit starts a new chat again. A chat other than `continue` or `new` is refused before the first request (`unsupported_field`, with the address of the step). With the legacy `send` a `chat: "new"` step is refused (`unsupported_field`): the chat cannot be kept apart there.
+- Docs: `basic-schema-guide.md` (the `chat` field), `basic-start-here.md` (refusals).
+- Tests: `tests/custom-engine-chat.test.js` (new); `tests/custom-engine.test.js` (the refusal cases now name a chat other than continue or new; the preview of a step with `chat: "new"` gives a prompt).
+
+### 2026-10-11 — Basic: attachments follow the participant (second participant of one model gets them), version 2.81.744
+
+- Fix (`results.js`, `runCustomFromPage` → `sendWave`): the set of attached participants is keyed by `participantId`, not by the model name; a participant that has not had the attachments yet gets them with its first message. Runs without explicit ids (id = name) behave as before.
+- Docs: `basic-developer.md` (transport paragraph).
+- Test: `tests/basic-participant-transport.test.js` (attachments keyed by participant).
+
+### 2026-10-11 — Basic: participants keep their own chats in the transport (mock contract), version 2.81.743
+
+- Feat (`results.js`, `runCustomFromPage`): the engine gets `sendParticipants`; the requests of a step go in waves (the k-th request of a model in wave k), a wave holds one request per model; `chat: "new"` opens a chat at the first attempt of a visit, corrections go on in it; the chat bindings are kept by participant (`chatBindings`, passed to the checkpoint state).
+- Feat (`background/job-orchestrator.js`, `runParticipantThroughTabs`; `background/tab-manager.js`, `bindParticipantTab`, `participantTabOf`, `tabsOfOtherParticipants`, `findReusableTabsForLlm` options `preferTabId`, `excludeTabIds`): the tab of a participant is keyed by `participantId` (`llmParticipantTabMap` in storage); a participant never takes a tab of another participant of the same model. Other pipelines and the provider name in `START_FULLPAGE_PROCESS` are unchanged.
+- Not yet: the engine still refuses `chat: "new"` (`unsupported_field`) and the snapshot still writes `chatBindings: []` (`custom-run-record.js`); manual check in real provider tabs not done.
+- Docs: `basic-developer.md` (transport, OI TRANSPORT-1), `basic-start-here.md`, `basic-schema-guide.md`.
+- Test: `tests/basic-participant-transport.test.js`; `tests/tab-manager-session-scope.test.js` (block «participants»).
+
+### 2026-10-11 — Basic: the end notice names the detail of the stop (the address of a missing input), version 2.81.742
+
+- Feat (`results.js`, `basicRunNotice`): the detail of the stop (`stopDetail`) follows the reason in brackets, e.g. `Basic: обязательный вход не получен (шаг …). Принятых ответов нет.`
+- Docs: `basic-start-here.md` (the end notice).
+- Test: `tests/custom-run-resume-wiring.test.js`.
 
 ### 2026-10-11 — Basic: «Продолжить прогон» is a button of the panel, version 2.81.741
 

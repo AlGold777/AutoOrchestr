@@ -1,0 +1,25 @@
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+const { JSDOM } = require('jsdom');
+const jest = { fn(impl = () => {}) { const f = (...args) => { f.mock.calls.push(args); return impl(...args); }; f.mock = { calls: [] }; return f; } };
+const repo = path.resolve(__dirname, '../../..');
+const testFile = fs.readFileSync(path.join(repo, 'tests/tab-manager-session-scope.test.js'), 'utf8');
+const tabSource = fs.readFileSync(path.join(repo, 'background/tab-manager.js'), 'utf8');
+const jobSource = fs.readFileSync(path.join(repo, 'background/job-orchestrator.js'), 'utf8');
+const helper = testFile.slice(testFile.indexOf('function createTabManagerSandbox('), testFile.indexOf("\ndescribe('tab-manager session scoping'"));
+const extractorSource = jobSource.slice(jobSource.indexOf('function extractLatestAssistantSnapshotInPage('), jobSource.indexOf('\nconst normalizeSnapshotKeyPart', jobSource.indexOf('function extractLatestAssistantSnapshotInPage(')));
+const page = new JSDOM('<!doctype html><main><div data-message-author-role="assistant"><div class="markdown">OLD ANSWER: this is only the previous request response and is intentionally long enough to extract.</div></div></main>', { url: 'https://chatgpt.com/c/participant', runScripts: 'outside-only' });
+page.window.eval(`${extractorSource}; window.extractForRepro = extractLatestAssistantSnapshotInPage;`);
+const env = { fs, path, vm, jest, __dirname: path.join(repo, 'tests'), TAB_MANAGER_PATH: '', TAB_MANAGER_SOURCE: tabSource, console, Promise, Map, Set, Date, Math, Array, Object, Number, String, Boolean, RegExp, JSON, URL, setTimeout, clearTimeout, setInterval, clearInterval };
+vm.createContext(env);
+vm.runInContext(helper, env);
+(async () => {
+  const { context } = env.createTabManagerSandbox({ queryTabs: [{ id: 2001, url: 'https://chatgpt.com/c/participant', windowId: 7, index: 0, status: 'complete' }] });
+  context.extractLatestAssistantSnapshotInPage = page.window.extractForRepro;
+  context.chrome.scripting.executeScript = jest.fn(async ({ target, func, args }) => [{ result: func(...args) }]);
+  await context.bindParticipantChat('run-1', 'author-A', 'GPT', 2001, { requestId: 'new-request', stageAttemptId: 'attempt-2' });
+  const result = await context.checkParticipantAnswer({ llmName: 'GPT', runId: 'run-1', participantId: 'author-A', transportRequestId: 'new-request', tabId: 2001, excludeText: '' });
+  process.stdout.write(JSON.stringify({ boundRequestId: context.participantChatBindingsOf('run-1')['author-A'].requestId, result, reads: context.chrome.scripting.executeScript.mock.calls.length }) + '\n');
+  page.window.close();
+})().catch((e) => { process.stderr.write(String(e.stack || e) + '\n'); process.exitCode = 1; });

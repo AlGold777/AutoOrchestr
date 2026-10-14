@@ -323,7 +323,7 @@ describe('Custom engine refuses what it does not execute yet', () => {
     ['an empty list of artifacts', [{ ref: 'r1', kind: 'round', output: { format: 'json', requiredFields: ['/m'], artifacts: [] }, models: ['A'] }], 'invalid_field', 'output.artifacts'],
     ['require other than any, all or a number', [{ ref: 'r1', kind: 'round', require: 'some', models: ['A', 'B'] }], 'invalid_field', 'require'],
     ['an owner value other than approve', [{ ref: 'r1', kind: 'round', owner: 'sign', models: ['A'] }], 'invalid_field', 'owner'],
-    ['chat new', [{ ref: 'r1', kind: 'round', chat: 'new', models: ['A'] }], 'unsupported_field', 'chat'],
+    ['a chat that is neither continue nor new', [{ ref: 'r1', kind: 'round', chat: 'shared', models: ['A'] }], 'unsupported_field', 'chat'],
     ['an artifact source without its version', [{ ref: 'r1', kind: 'round', models: ['A'] }, { ref: 'r2', kind: 'round', input: [{ artifact: { step: 'r1', participant: 'A', id: 'map' } }], models: ['B'] }], 'invalid_input', 'r2'],
     ['a string input that is not a value', [{ ref: 'r1', kind: 'round', input: 'some', models: ['A'] }], 'invalid_input', 'r1'],
     ['a synthesis with input all', [{ ref: 'r1', kind: 'round', models: ['A'] }, { ref: 'synth:s', kind: 'synthesis', input: 'all', models: ['B'] }], 'invalid_input', 'synth:s'],
@@ -340,7 +340,7 @@ describe('Custom engine refuses what it does not execute yet', () => {
 
   test('a later unsupported step is refused before the first step is sent', async () => {
     const { send, calls } = ask();
-    await expect(Engine.run({ task: 'T', send, steps: [{ ref: 'r1', kind: 'round', models: ['A'] }, { ref: 'r2', kind: 'round', chat: 'new', models: ['B'] }] }))
+    await expect(Engine.run({ task: 'T', send, steps: [{ ref: 'r1', kind: 'round', models: ['A'] }, { ref: 'r2', kind: 'round', chat: 'shared', models: ['B'] }] }))
       .rejects.toMatchObject({ code: 'unsupported_field' });
     expect(calls).toHaveLength(0);
   });
@@ -356,7 +356,7 @@ describe('Custom engine refuses what it does not execute yet', () => {
   });
 
   test('the preview of an unsupported step gives no prompt; a supported step still has one', () => {
-    const steps = [{ ref: 'r1', kind: 'round', models: ['A'] }, { ref: 'r2', kind: 'round', chat: 'new', models: ['A'] }];
+    const steps = [{ ref: 'r1', kind: 'round', models: ['A'] }, { ref: 'r2', kind: 'round', output: { format: 'xml' }, models: ['A'] }];
     expect(Engine.previewPrompt({ task: 'T', steps, stepIndex: 1, modelName: 'A' })).toBeNull();
     expect(Engine.previewPrompt({ task: 'T', steps, stepIndex: 0, modelName: 'A' }).label).toBe('Раунд 1');
   });
@@ -449,7 +449,7 @@ describe('Custom engine addressed inputs', () => {
     const { send, calls } = transport({ A: ['a1'], B: ['b1'] });
     const base = { ref: 'r1', kind: 'round', input: 'none', models: ['A'] };
     const cases = [
-      [[{ step: 'r1' }], 'invalid_input'],
+      // { step } without a participant is the whole result of the step now (ТЗ 3.1): see custom-engine-sources.test.js.
       [[42], 'invalid_input'],
       [[{ step: 'r1', participant: 'Z' }], 'invalid_input'],
       [['r2'], 'invalid_input']

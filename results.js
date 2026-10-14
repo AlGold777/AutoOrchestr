@@ -4184,7 +4184,7 @@ document.addEventListener('click', (event) => {
                     .map((column) => ({ column, stack: column.querySelector('.model-stack') }))
             ];
             const modelStacks = stacks.filter((stack) => (
-                stack.classList.contains('model-stack') && stack !== synthesisStack && !stack.closest('.pipeline-intermediate-synth')
+                stack.classList.contains('model-stack') && stack !== synthesisStack && !stack.closest('.pipeline-intermediate-synth') && !stack.closest('.pipeline-control-step')
             ));
             const referenceStack = modelStacks[modelStacks.length - 1] || null;
             if (!referenceStack) return { aligned: false, reason: 'no-reference-stack' };
@@ -4339,8 +4339,11 @@ document.addEventListener('click', (event) => {
             const name = draftPlanStorageKey();
             const all = JSON.parse(JSON.stringify(getCustomRoundSettings()));
             const own = { ...(all[ref] || {}) };
-            if (value === '' || (field === 'task' && !String(value).trim())) delete own[field];
-            else own[field] = value;
+            const empty = value === '' || value == null || (Array.isArray(value) && !value.length)
+                || (value && typeof value === 'object' && !Array.isArray(value) && !Object.keys(value).length)
+                || (field === 'task' && !String(value).trim());
+            if (empty) delete own[field];
+            else own[field] = JSON.parse(JSON.stringify(value));
             if (Object.keys(own).length) all[ref] = own;
             else delete all[ref];
             customRoundSettings.set(name, all);
@@ -4348,6 +4351,126 @@ document.addEventListener('click', (event) => {
                 persistBasicSettings(name);
                 await persistPipelineStore();
             }
+        };
+        // The control steps (gate, route, owner) of a Basic pipeline: [{ after, step }], where `after` is the ref of the step
+        // before it on the canvas (a round, an intermediate synthesis or another control). The step is kept whole, as the
+        // schema has it; a window edits some of its fields (StageCard). Placed after `after` by placeControls.
+        const customControls = new Map();
+        const getCustomControls = () => customControls.get(draftPlanStorageKey()) || [];
+        const CONTROL_KINDS_CANVAS = ['gate', 'route', 'owner'];
+        const CONTROL_TITLE = { gate: 'Проверка', route: 'Маршрут', owner: 'Владелец' };
+        const controlStackId = (ref) => `ctl-${String(ref).replace(/[^A-Za-z0-9_-]+/g, '-')}-stack`;
+        const controlLinkId = (ref) => `svg-in-${String(ref).replace(/[^A-Za-z0-9_-]+/g, '-')}`;
+        // Saves the list for the pipeline; a saved pipeline keeps it at once (as the round card does), a draft only in memory.
+        const setCustomControls = async (list, { persist = true } = {}) => {
+            const name = draftPlanStorageKey();
+            customControls.set(name, JSON.parse(JSON.stringify(list)));
+            if (persist && !isDefaultPipelineName(name) && pipelineStore.pipelines[name]) {
+                persistBasicSettings(name);
+                await persistPipelineStore();
+            }
+        };
+        // The refs a window may name as a target: the steps of the schema in their order, the final synthesis included.
+        const schemaRefsForWindows = () => (basicSchemaFromPage(draftPlanForCanvas(getActiveDraftPlan()), null, { forSave: true }).steps || []).map((step) => step.ref);
+        // The next free ref of a kind: kind:1, kind:2, … (ids are digits, so the schema accepts them).
+        const freshControlRef = (kind) => {
+            const taken = new Set([...getCustomControls().map((item) => item.step.ref), ...schemaRefsForWindows()]);
+            let n = 1;
+            while (taken.has(`${kind}:${n}`)) n += 1;
+            return `${kind}:${n}`;
+        };
+        const controlAfterEdit = (step, edit) => {
+            if (step.kind === 'gate') return window.StageCard.gateAfterEdit(step, edit);
+            if (step.kind === 'route') return window.StageCard.routeAfterEdit(step, edit);
+            if (step.kind === 'owner') return window.StageCard.ownerAfterEdit(step, edit);
+            return step;
+        };
+        // The control with the ref gets the edit; the list is saved (a saved pipeline at once).
+        const commitControl = async (ref, edit) => {
+            const list = getCustomControls().map((item) => (item.step.ref === ref ? { ...item, step: controlAfterEdit(item.step, edit) } : item));
+            await setCustomControls(list);
+            updatePipelineAll();
+        };
+        // Inserts a control after `anchor` (a round or another control): the control that stood after the anchor now stands
+        // after the new one, so the chain stays a line. A new control is a draft (not persisted) until its window is filled.
+        const insertControlAfter = async (anchor, kind) => {
+            if (pipelineRunActive || !CONTROL_KINDS_CANVAS.includes(kind)) return false;
+            if (intermediateAfterRound(anchor)) {
+                showNotification(INTERMEDIATE_CONTROL_NOTE, 'warn');
+                return false;
+            }
+            const ref = freshControlRef(kind);
+            const list = getCustomControls().map((item) => (item.after === anchor ? { ...item, after: ref } : item));
+            // A new control is empty: what the owner has not set is not written (a missing kind or a missing condition is an error).
+            const kindDefault = kind === 'gate' ? { models: [] } : kind === 'route' ? { models: [], select: {} } : { models: [] };
+            list.push({ after: anchor, step: { ref, kind, ...kindDefault } });
+            await setCustomControls(list, { persist: false });
+            updatePipelineAll();
+            return true;
+        };
+        // A control is removed; the step after it stands after its anchor.
+        const deleteControl = async (ref) => {
+            const list = getCustomControls();
+            const gone = list.find((item) => item.step.ref === ref);
+            if (!gone) return;
+            const next = list.filter((item) => item !== gone).map((item) => (item.after === ref ? { ...item, after: gone.after } : item));
+            await setCustomControls(next);
+            updatePipelineAll();
+        };
+        // The canvas has an intermediate synthesis right after this round: a control there is refused (the schema
+        // needs the synthesis to stand directly after the round and before the next one).
+        const intermediateAfterRound = (anchor) => (draftPlanForCanvas(getActiveDraftPlan()).plannedStages || []).some((stage) => stage.outputIntent === 'working_synthesis' && stage.upstream?.includes(`canvas-${anchor}`));
+        const INTERMEDIATE_CONTROL_NOTE = 'Между раундом и его промежуточным синтезом проверку или маршрут не ставят: синтез стоит сразу после раунда и перед следующим раундом. Уберите синтез или шаг управления.';
+        // The card of a round or a synthesis keeps the choices the schema does not hold yet as drafts, by pipeline and ref:
+        // «выбранные этапы» before a step is picked, «число» before a number is typed. A draft shows until the owner makes the value.
+        const stepDrafts = new Map();
+        const stepDraftsOf = (ref) => stepDrafts.get(`${draftPlanStorageKey()}\n${ref}`) || {};
+        const stepLabel = (ref) => {
+            const round = /^r(\d+)$/.exec(ref);
+            if (round) return `Раунд ${round[1]}`;
+            const after = /^synth:planned-working-synthesis-after-canvas-r(\d+)$/.exec(ref);
+            if (after) return `Синтез после раунда ${after[1]}`;
+            return ref.startsWith('synth:') ? `Синтез (${ref.slice('synth:'.length)})` : ref;
+        };
+        // The rounds and syntheses before a step, in the schema's order; a switched-off one is marked by enabled.
+        // A planned intermediate synthesis that is not on the canvas stands after its round.
+        const stepsBefore = (ref) => {
+            const steps = (basicSchemaFromPage(draftPlanForCanvas(getActiveDraftPlan()), null, { forSave: true }).steps || [])
+                .filter((step) => step.kind === 'round' || step.kind === 'synthesis');
+            const planned = /^synth:planned-working-synthesis-after-canvas-r(\d+)$/.exec(ref);
+            let end = steps.findIndex((step) => step.ref === ref);
+            if (end < 0) end = planned ? steps.findIndex((step) => step.ref === `r${planned[1]}`) + 1 : steps.length;
+            return steps.slice(0, Math.max(0, end)).filter((step) => step.ref !== 'final').map((step) => ({
+                ref: step.ref,
+                label: stepLabel(step.ref),
+                enabled: (step.models || []).some((model) => model.enabled !== false)
+            }));
+        };
+        // A change of a field in the card of a step (the round card, the synthesis window). The value goes to the schema's field
+        // (saved at once, like the round card); a choice without a value yet is a draft. max: the number of enabled models.
+        const commitStepField = async (ref, field, value, max = 0) => {
+            const current = getCustomRoundSettings()[ref] || {};
+            const drafts = { ...stepDraftsOf(ref) };
+            let key = field;
+            let stored = value;
+            if (field === 'steps') {
+                key = 'input';
+                stored = window.StageCard.stepsAfterToggle(Array.isArray(current.input) ? current.input : [], value.ref, value.checked);
+            }
+            delete drafts[key];
+            if (key === 'input' && (stored === 'steps' || (Array.isArray(stored) && !stored.length))) { drafts.input = 'steps'; stored = ''; }
+            if (key === 'require') {
+                if (stored === 'count') {
+                    stored = typeof current.require === 'number' ? current.require : '';
+                    if (stored === '') drafts.require = 'count';
+                } else if (typeof stored === 'number' && (!Number.isSafeInteger(stored) || stored < 1 || stored > max)) {
+                    showNotification(`Число ответов: от 1 до ${max}.`, 'warn');
+                    return;
+                }
+            }
+            if (key === 'output') stored = window.StageCard.outputAfterEdit(current.output, value);
+            stepDrafts.set(`${draftPlanStorageKey()}\n${ref}`, drafts);
+            await setCustomRoundSetting(ref, key, stored);
         };
         const capturePipelineConfig = ({ basedOn = '' } = {}) => {
             const modelStacks = {
@@ -4990,6 +5113,123 @@ document.addEventListener('click', (event) => {
             }
         };
 
+        // The control steps on the canvas (customControls): a card column placed right after its anchor (a round or the control
+        // before it), with the link that leads into it. Rebuilt from the list on each update, so the canvas shows the list.
+        // The outgoing link of a chain (the group that followed the anchor) now leads from the last control to the next step.
+        const CONTROL_ADD_LABEL = '+ шаг';
+        const controlledAfter = (ref) => getCustomControls().some((item) => item.after === ref);
+        // The bridge for the synthesis toggle (outside this block): a control after the round refuses an intermediate synthesis.
+        window.__controlledAfter = controlledAfter;
+        const addControlSelect = (anchor, editable) => {
+            const select = document.createElement('select');
+            select.className = 'pipeline-control-add';
+            select.dataset.anchor = anchor;
+            select.setAttribute('aria-label', `Добавить шаг управления после ${anchor}`);
+            select.title = 'Добавить шаг управления: проверка (gate)';
+            [['', CONTROL_ADD_LABEL], ['gate', 'Проверка (gate)'], ['route', 'Маршрут (route)'], ['owner', 'Владелец (owner)']].forEach(([value, label]) => {
+                const option = document.createElement('option');
+                option.value = value;
+                option.textContent = label;
+                select.append(option);
+            });
+            select.disabled = !editable;
+            return select;
+        };
+        const buildControlColumn = (step, editable) => {
+            const column = document.createElement('div');
+            column.className = 'stage-column pipeline-control-step';
+            column.dataset.controlRef = step.ref;
+            column.dataset.controlKind = step.kind;
+            const header = document.createElement('div');
+            header.className = 'stage-header-row';
+            const label = document.createElement('div');
+            label.className = 'stage-label';
+            const title = document.createElement('span');
+            title.className = 'pipeline-control-title';
+            title.textContent = `${CONTROL_TITLE[step.kind] || step.kind} ${step.ref}`;
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'pipeline-control-delete-btn';
+            remove.dataset.controlDelete = step.ref;
+            remove.textContent = '×';
+            remove.title = 'Удалить шаг управления';
+            remove.setAttribute('aria-label', `Удалить: ${step.ref}`);
+            remove.disabled = !editable;
+            label.append(title, ' ', remove);
+            header.append(label, addControlSelect(step.ref, editable));
+            const stack = document.createElement('div');
+            stack.className = 'model-stack';
+            stack.id = controlStackId(step.ref);
+            const card = document.createElement('button');
+            card.type = 'button';
+            card.className = 'pipeline-control-card';
+            card.dataset.controlCard = step.ref;
+            const summary = window.StageCard?.controlSummary?.(step) || '';
+            card.textContent = summary || 'настройте в окне';
+            stack.append(card);
+            column.append(header, stack);
+            return column;
+        };
+        const syncControlColumns = () => {
+            if (!pipelinePanel) return;
+            pipelinePanel.querySelectorAll('.pipeline-control-step, .pipeline-control-link').forEach((node) => node.remove());
+            const lifecycle = String(window.DebateApplication?.getState?.()?.lifecycle || 'IDLE').toUpperCase();
+            const editable = !['PLANNING', 'RUNNING', 'PAUSED', 'CANCELLING'].includes(lifecycle) && !pipelineRunActive;
+            // The add select of each round: a control after a round with an intermediate synthesis is refused, so it is disabled.
+            pipelinePanel.querySelectorAll('.stage-column[data-round]:not(.pipeline-intermediate-synth):not(.pipeline-control-step) > .stage-header-row').forEach((row) => {
+                const anchor = `r${row.parentElement.dataset.round}`;
+                let select = row.querySelector(`.pipeline-control-add[data-anchor="${anchor}"]`);
+                if (!select) { select = addControlSelect(anchor, editable); row.append(select); }
+                select.disabled = !editable || intermediateAfterRound(anchor);
+                select.title = intermediateAfterRound(anchor) ? INTERMEDIATE_CONTROL_NOTE : 'Добавить шаг управления: проверка (gate)';
+            });
+            const entries = getCustomControls();
+            const byAfter = new Map(entries.map((item) => [item.after, item]));
+            const placed = new Set();
+            const drawn = [];
+            for (let round = 1; round <= roundCounter; round += 1) {
+                let anchor = `r${round}`;
+                let column = pipelinePanel.querySelector(`.stage-column[data-round="${round}"]:not(.pipeline-intermediate-synth):not(.pipeline-control-step)`);
+                let item = byAfter.get(anchor);
+                let last = null;
+                while (item && column && !placed.has(item.step.ref)) {
+                    placed.add(item.step.ref);
+                    const group = document.createElement('div');
+                    group.className = 'connector-group pipeline-control-link';
+                    group.innerHTML = `<svg class="connector-svg" id="${controlLinkId(item.step.ref)}"></svg>`;
+                    const card = buildControlColumn(item.step, editable);
+                    column.after(group, card);
+                    drawn.push({ ref: item.step.ref, from: anchor });
+                    anchor = item.step.ref;
+                    column = card;
+                    last = { column: card, round };
+                    item = byAfter.get(item.step.ref);
+                }
+                if (last) last.round = round;
+                if (last) drawn.push({ outgoing: true, column: last.column, round });
+            }
+            // Links: into each control from its anchor; out of the last control of a chain to the next round or the synthesis.
+            const hasSynthesisFlow = !!synthesisStack && synthesisColumn?.hidden !== true;
+            drawn.forEach((link) => {
+                if (!link.outgoing) {
+                    const source = /^r\d+$/.test(link.from) ? `${link.from}-models` : controlStackId(link.from);
+                    drawMergeSplitConnector(controlLinkId(link.ref), source, controlStackId(link.ref), 'brain-flow', {
+                        sourceMode: /^r\d+$/.test(link.from) ? 'send' : 'all',
+                        targetMode: 'all'
+                    });
+                    return;
+                }
+                const outgoing = link.column.nextElementSibling?.querySelector?.('svg.connector-svg');
+                if (!outgoing) return;
+                const source = controlStackId(link.column.dataset.controlRef);
+                if (link.round < roundCounter) {
+                    drawMergeSplitConnector(outgoing.id, source, `r${link.round + 1}-models`, 'brain-flow', { sourceMode: 'all', targetMode: 'input' });
+                } else if (hasSynthesisFlow) {
+                    drawMergeSplitConnector(outgoing.id, source, 'synthesis-stack', 'brain-flow', { sourceMode: 'all', targetMode: 'synthesis' });
+                }
+            });
+        };
+
         // Intermediate synthesis (working_synthesis stage upstream of canvas-rK)
         // is a single card column between round K and round K+1. The original
         // K->K+1 connector keeps its id (svg-rK-rK+1) and now ends at the card;
@@ -5065,6 +5305,7 @@ document.addEventListener('click', (event) => {
 
         let deferredPipelineLayoutFrame = 0;
         const updatePipelineAll = ({ deferFinalLayout = true } = {}) => {
+            syncControlColumns();
             const synthRounds = syncIntermediateSynthColumns();
             updatePipelineLayout();
             syncCustomRoleOption();
@@ -5106,7 +5347,7 @@ document.addEventListener('click', (event) => {
             const hasSynthesisFlow = !!synthesisStack && synthesisColumn?.hidden !== true;
 
             if (roundCounter === 1) {
-                if (hasSynthesisFlow) {
+                if (hasSynthesisFlow && !controlledAfter('r1')) {
                     drawMergeSplitConnector('svg-r-last-synthesis', 'r1-models', 'synthesis-stack', 'brain-flow', {
                         sourceMode: 'send',
                         targetMode: 'synthesis'
@@ -5114,6 +5355,7 @@ document.addEventListener('click', (event) => {
                 }
             } else {
                 for (let r = 1; r < roundCounter; r++) {
+                    if (controlledAfter(`r${r}`)) continue;
                     if (synthRounds.has(r)) {
                         drawMergeSplitConnector(`svg-r${r}-r${r + 1}`, `r${r}-models`, `synth-r${r}-stack`, 'brain-flow', {
                             sourceMode: 'send',
@@ -5130,7 +5372,7 @@ document.addEventListener('click', (event) => {
                         });
                     }
                 }
-                if (hasSynthesisFlow) {
+                if (hasSynthesisFlow && !controlledAfter(`r${roundCounter}`)) {
                     drawMergeSplitConnector('svg-r-last-synthesis', `r${roundCounter}-models`, 'synthesis-stack', 'brain-flow', {
                         sourceMode: 'send',
                         targetMode: 'synthesis'
@@ -6746,36 +6988,28 @@ document.addEventListener('click', (event) => {
         // `forSave` builds the stored form: origin, basedOn, switched-off models and steps with their settings,
         // and a `run` that holds only explicit values (see basicRunExplicit). The run path builds the same
         // schema with the run taken from the header as it stands and the legacy fallback of the final request applied.
-        // Fields of the schema the canvas does not edit come from basicSourceSchema, by ref: a round or a synthesis keeps its
-        // output, require, owner and chat (a synthesis also its input and task); a control step (gate, route, owner) keeps its
-        // place after the nearest earlier step of the source that is still on the canvas. A control step is copied as it is.
-        const CONTROL_STEP_KINDS = ['gate', 'route', 'owner'];
-        const keepSourceFields = (list) => {
-            const sourceSteps = (basicSourceSchema.get(draftPlanStorageKey())?.steps || []).filter((step) => step && typeof step === 'object');
-            if (!sourceSteps.length) return list;
-            const copy = (value) => JSON.parse(JSON.stringify(value));
-            const onCanvas = new Set(list.map((step) => step.ref));
-            const kept = list.map((step) => {
-                const from = sourceSteps.find((item) => item.ref === step.ref && item.kind === step.kind);
-                const keys = step.kind === 'round' ? ['output', 'require', 'owner', 'chat'] : ['input', 'task', 'output', 'require', 'owner', 'chat'];
-                const added = {};
-                keys.forEach((key) => { if (from && key in from && !(key in step)) added[key] = copy(from[key]); });
-                return { ...step, ...added };
-            });
-            const controlsAfter = new Map();
-            sourceSteps.forEach((step, at) => {
-                if (!CONTROL_STEP_KINDS.includes(step.kind)) return;
-                let anchor = '';
-                for (let back = at - 1; back >= 0; back -= 1) {
-                    const item = sourceSteps[back];
-                    if (!CONTROL_STEP_KINDS.includes(item.kind) && onCanvas.has(item.ref)) { anchor = item.ref; break; }
+        // The fields of a round or a synthesis are the page's own, by ref (customRoundSettings, see stepFieldsOf): nothing is
+        // copied for them from basicSourceSchema, so a field the owner cleared stays cleared. The control steps (gate, route,
+        // owner) are the page's list (customControls): each stands right after its `after` step, and a chain of controls
+        // keeps its order. A control whose anchor is not on the canvas goes first (after '') or last.
+        const withControls = (list) => {
+            const entries = getCustomControls();
+            if (!entries.length) return list;
+            const byAfter = new Map(entries.map((item) => [item.after, item]));
+            const out = [];
+            const seen = new Set();
+            const chain = (ref) => {
+                let item = byAfter.get(ref);
+                while (item && !seen.has(item.step.ref)) {
+                    seen.add(item.step.ref);
+                    out.push(JSON.parse(JSON.stringify(item.step)));
+                    item = byAfter.get(item.step.ref);
                 }
-                controlsAfter.set(anchor, [...(controlsAfter.get(anchor) || []), copy(step)]);
-            });
-            if (!controlsAfter.size) return kept;
-            const result = [...(controlsAfter.get('') || [])];
-            kept.forEach((step) => result.push(step, ...(controlsAfter.get(step.ref) || [])));
-            return result;
+            };
+            entries.filter((item) => item.after === '').forEach((item) => { if (!seen.has(item.step.ref)) { seen.add(item.step.ref); out.push(JSON.parse(JSON.stringify(item.step))); chain(item.step.ref); } });
+            list.forEach((step) => { out.push(step); chain(step.ref); });
+            entries.forEach((item) => { if (!seen.has(item.step.ref)) { seen.add(item.step.ref); out.push(JSON.parse(JSON.stringify(item.step))); } });
+            return out;
         };
         // A model entry with a field beyond name, id and enabled holds settings; only such a switched-off model is kept.
         const hasOwnFields = (model) => Object.keys(model).some((key) => !['name', 'id', 'enabled'].includes(key));
@@ -6784,10 +7018,17 @@ document.addEventListener('click', (event) => {
             const cards = getCustomCardSettings();
             const roundSettings = getCustomRoundSettings();
             const put = (target, key, value) => { if (value !== undefined) target[key] = value; };
-            // The round card: the order, the input and the task the owner set, as the schema's step fields.
-            const roundFields = (ref) => {
+            // The fields the owner set in the card of a round or a synthesis (by ref, customRoundSettings), as the schema's step
+            // fields. An empty value (nothing, an empty list, an empty object) is not written.
+            const ROUND_STEP_KEYS = ['order', 'input', 'task', 'require', 'owner', 'chat', 'output'];
+            const SYNTHESIS_STEP_KEYS = ['input', 'task', 'require', 'owner', 'chat', 'output'];
+            const stepFieldsOf = (ref, kind) => {
                 const own = {};
-                ['order', 'input', 'task'].forEach((key) => put(own, key, legacyValue(roundSettings[ref]?.[key])));
+                (kind === 'round' ? ROUND_STEP_KEYS : SYNTHESIS_STEP_KEYS).forEach((key) => {
+                    const value = legacyValue(roundSettings[ref]?.[key]);
+                    if (value === undefined || (Array.isArray(value) && !value.length) || (value && typeof value === 'object' && !Array.isArray(value) && !Object.keys(value).length)) return;
+                    own[key] = JSON.parse(JSON.stringify(value));
+                });
                 return own;
             };
             const defaults = {};
@@ -6842,7 +7083,7 @@ document.addEventListener('click', (event) => {
                         if (hasOwnFields(model)) entries.push(model);
                     });
                 }
-                return { ref, kind, ...(kind === 'round' ? roundFields(ref) : {}), models: entries };
+                return { ref, kind, ...stepFieldsOf(ref, kind), models: entries };
             }).filter(Boolean);
             if (forSave) {
                 // The canvas keeps every round, also one nobody sends in; the schema holds them all in order (r1…rN), or
@@ -6855,7 +7096,7 @@ document.addEventListener('click', (event) => {
                     for (; nextRound <= upTo; nextRound += 1) {
                         const ref = `r${nextRound}`;
                         if (have.has(ref)) continue;
-                        complete.push({ ref, kind: 'round', ...roundFields(ref),
+                        complete.push({ ref, kind: 'round', ...stepFieldsOf(ref, 'round'),
                             models: Object.keys(cards[ref] || {}).map((name) => modelEntry(ref, name, { enabled: false })).filter((model) => hasOwnFields(model)) });
                         have.add(ref);
                     }
@@ -6884,7 +7125,7 @@ document.addEventListener('click', (event) => {
                     // Between two rounds only: not after the last round, not next to another synthesis.
                     if (!match || after >= Math.max(1, Number(roundCounter) || 1) || at < 0 || steps[at + 1]?.kind === 'synthesis') return;
                     const models = Object.keys(cards[ref] || {}).map((name) => modelEntry(ref, name, { enabled: false })).filter((model) => hasOwnFields(model));
-                    if (models.length) steps.splice(at + 1, 0, { ref, kind: 'synthesis', models });
+                    if (models.length) steps.splice(at + 1, 0, { ref, kind: 'synthesis', ...stepFieldsOf(ref, 'synthesis'), models });
                 });
             }
             if (forSave) {
@@ -6892,13 +7133,13 @@ document.addEventListener('click', (event) => {
                 // removed round or of an intermediate synthesis with no place between two rounds are dropped.
                 if (!steps.some((step) => step.ref === 'final')) {
                     const models = Object.keys(cards.final || {}).map((name) => modelEntry('final', name, { enabled: false })).filter((model) => hasOwnFields(model));
-                    if (models.length) steps.push({ ref: 'final', kind: 'synthesis', models });
+                    if (models.length) steps.push({ ref: 'final', kind: 'synthesis', ...stepFieldsOf('final', 'synthesis'), models });
                 }
             }
             const runValue = forSave ? (run || basicRunForSave()) : { policy: getDebateRunPolicy(), maxWords: getDebateMaxWords() };
             return { schemaVersion: window.BasicSchema.SCHEMA_VERSION, origin: 'user', ...(forSave && basedOn ? { basedOn } : {}),
                 ...(Object.keys(runValue).length ? { run: runValue } : {}),
-                ...(Object.keys(defaults).length ? { defaults } : {}), steps: keepSourceFields(steps) };
+                ...(Object.keys(defaults).length ? { defaults } : {}), steps: withControls(steps) };
         };
         // The run values a saved schema holds: only those the owner set before (loaded as explicit) or that differ
         // from Basic. Opening a schema and saving it does not make the shown Basic values explicit.
@@ -6911,8 +7152,8 @@ document.addEventListener('click', (event) => {
             basicRunExplicit.set(key, { ...(basicRunExplicit.get(key) || {}), [field]: true });
         };
         const basicSchemaLoadErrors = new Map();
-        // The schema the working copies were read from. The fields the canvas does not edit (control steps, output, require,
-        // owner, chat, a participant's input) are kept from it on Save and on Run (keepSourceFields).
+        // The schema the working copies were read from. The fields the canvas does not edit (output, require, owner, chat,
+        // a participant's input) are kept from it on Save and on Run; the control steps come from customControls.
         const basicSourceSchema = new Map();
         const basicRunForSave = () => {
             const explicit = basicRunExplicit.get(draftPlanStorageKey()) || {};
@@ -6924,6 +7165,16 @@ document.addEventListener('click', (event) => {
         // The working copies the cards edit, read from a stored record: a record with a schema gives them
         // from the schema (a schema that cannot be read gives an error and nothing); an earlier record gives
         // its customModelSettings / customDefaults as before.
+        // The control steps of a schema with the ref of the step before each (see customControls).
+        const controlsOf = (schema) => {
+            let after = '';
+            const out = [];
+            (schema.steps || []).forEach((step) => {
+                if (CONTROL_KINDS_CANVAS.includes(step.kind)) out.push({ after, step: JSON.parse(JSON.stringify(step)) });
+                after = step.ref;
+            });
+            return out;
+        };
         const basicWorkingFromConfig = (config) => {
             const copy = (value) => JSON.parse(JSON.stringify(value || {}));
             if (!config?.schema) {
@@ -6932,19 +7183,21 @@ document.addEventListener('click', (event) => {
                 const own = (map) => { if (map?.discipline?.limit === window.BasicSchema.DEFAULTS.discipline.limit) delete map.discipline.limit; return map; };
                 const cards = copy(config?.customModelSettings);
                 Object.values(cards).forEach((step) => Object.values(step || {}).forEach(own));
-                return { cards, rounds: {}, defaults: own(copy(config?.customDefaults)), runExplicit: {}, schema: null, error: '' };
+                return { cards, rounds: {}, defaults: own(copy(config?.customDefaults)), runExplicit: {}, schema: null, error: '', controls: [] };
             }
             const errors = window.BasicSchema.validate(config.schema);
-            if (errors.length) return { cards: {}, rounds: {}, defaults: {}, runExplicit: {}, schema: null, error: window.BasicSchema.describeErrors(errors) };
+            if (errors.length) return { cards: {}, rounds: {}, defaults: {}, runExplicit: {}, schema: null, error: describeSchemaErrors(errors), controls: [] };
             const settings = window.BasicSchema.toSettings(config.schema);
-            return { cards: settings.customModelSettings, rounds: settings.customRoundSettings, defaults: settings.customDefaults, schema: config.schema, error: '',
-                runExplicit: { policy: 'policy' in (config.schema.run || {}), maxWords: 'maxWords' in (config.schema.run || {}) } };
+            // The fields of rounds and syntheses are one store by ref (see stepFieldsOf).
+            return { cards: settings.customModelSettings, rounds: { ...settings.customRoundSettings, ...settings.customStepSettings }, defaults: settings.customDefaults, schema: config.schema, error: '',
+                runExplicit: { policy: 'policy' in (config.schema.run || {}), maxWords: 'maxWords' in (config.schema.run || {}) }, controls: controlsOf(config.schema) };
         };
         const adoptBasicWorking = (key, working) => {
             basicSourceSchema.set(key, working.schema || null);
             customPipelineDefaults.set(key, working.defaults);
             customCardSettings.set(key, working.cards);
             customRoundSettings.set(key, working.rounds || {});
+            customControls.set(key, working.controls || []);
             basicRunExplicit.set(key, working.runExplicit);
             if (working.error) basicSchemaLoadErrors.set(key, working.error); else basicSchemaLoadErrors.delete(key);
         };
@@ -7082,7 +7335,8 @@ document.addEventListener('click', (event) => {
             : null;
         const customPipelineName = () => String(pipelineStore.active || getPipelineHeaderName() || 'Basic').trim();
         // The text of the notification at the end of a Basic run.
-        const basicRunNotice = (stopText, acceptedCount) => `Basic: ${stopText}.${acceptedCount ? '' : ' Принятых ответов нет.'}`;
+        // The detail of the stop (the address of a missing input, the counter of a loop) goes in brackets after the reason.
+        const basicRunNotice = (stopText, acceptedCount, stopDetail = '') => `Basic: ${stopText}${stopDetail ? ` (${stopDetail})` : ''}.${acceptedCount ? '' : ' Принятых ответов нет.'}`;
         // A saved run goes on with the schema it was started with (8.3), never with the current canvas.
         const builtFromRecord = (record) => {
             const schema = record.snapshot?.schema;
@@ -7104,12 +7358,86 @@ document.addEventListener('click', (event) => {
             }
             return runCustomFromPage({ task: window.CustomRunRecord.textOf(latest, latest.taskRef), resumeRecord: latest });
         };
+        // A line of the run feed (a gate, a route, a transition, the artifacts): not an answer, so no model and no approval.
+        const appendBasicRunLine = (text, { buttonLabel = '', onButton = null } = {}) => {
+            if (!debateModelCards || !String(text || '').trim()) return null;
+            const session = ensureDebateSession(debateTabsState.activeSessionId);
+            const card = document.createElement('div');
+            const now = new Date();
+            const hh = String(now.getHours()).padStart(2, '0');
+            const mm = String(now.getMinutes()).padStart(2, '0');
+            card.className = 'debate-model-card debate-moderator-card basic-run-line';
+            card.dataset.sessionId = session.id;
+            card.dataset.llmName = 'Basic';
+            card.dataset.entryKind = 'response';
+            card.dataset.kind = 'moderator';
+            card.dataset.starred = 'false';
+            card.dataset.entryId = String(debateFeedState.nextId++);
+            card.dataset.approved = 'moderator';
+            card.innerHTML = `
+                <div class="debate-model-card-header">
+                    <span class="debate-model-card-title"><span class="debate-model-card-title-main"><span class="debate-model-card-name">Basic</span></span></span>
+                </div>
+                <div class="debate-model-card-output"></div>
+            `;
+            const body = card.querySelector('.debate-model-card-output');
+            body.textContent = String(text || '');
+            if (buttonLabel && onButton) {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'basic-run-line-button';
+                button.textContent = buttonLabel;
+                button.addEventListener('click', onButton);
+                body.append(button);
+            }
+            ensureDebateCardMessage(card, { kind: 'moderator', status: 'approved', model: 'Basic', text: String(text || ''), html: '', timeLabel: `${hh}:${mm}`, starred: false });
+            normalizeDebateCardState(card);
+            insertModeratorCard(card);
+            applyDebateSessionFilter();
+            return card;
+        };
+        // A version that a later decision made stale stays in the feed, marked «устарело»: its answer is kept, not an input.
+        const markStaleBasicCards = (steps) => {
+            const requests = new Set(steps.filter((item) => item.valid === false)
+                .flatMap((item) => Object.values(item.outcome || {}).map((verdict) => verdict?.transportRequestId).filter(Boolean)));
+            if (!requests.size || !debateModelCards) return;
+            debateModelCards.querySelectorAll('.debate-model-card').forEach((card) => {
+                if (!requests.has(card.dataset.requestId) || card.querySelector('.basic-run-stale')) return;
+                const mark = document.createElement('span');
+                mark.className = 'basic-run-stale';
+                mark.textContent = 'устарело';
+                card.querySelector('.debate-model-card-title-main')?.append(mark);
+            });
+        };
+        // The registry of the artifacts: a list, then the text of the chosen one (its answer, at its pointer).
+        const openBasicArtifacts = async (artifacts, textOf) => {
+            for (;;) {
+                const index = await askChoiceDialog({
+                    title: 'Артефакты прогона',
+                    choices: artifacts.map((item, at) => ({ value: at, label: window.StageCard.feed.artifactTitle(item) })),
+                    cancelText: 'Закрыть'
+                });
+                if (index === null || index === undefined) return;
+                const item = artifacts[index];
+                await askChoiceDialog({
+                    title: item.name,
+                    message: window.StageCard.feed.artifactText(textOf(item.content.answerRef), item.content.pointer, window.BasicOutput.readPointer),
+                    cancelText: 'Закрыть'
+                });
+            }
+        };
+        // The text of a participant request refused before the send, by its code (shared/run-error.js).
+        const PARTICIPANT_REFUSAL_TEXT = {
+            participant_chat_lost: 'чат участника недоступен (вкладка закрыта или не чат провайдера). Запрос не отправлен, чужой чат не выбран.',
+            participant_binding_failed: 'не удалось сохранить привязку чата участника. Запрос не отправлен.',
+            participant_api_unsupported: 'для чата участника API-режим не поддержан: выключите API-режим и запустите снова. Запрос не отправлен.'
+        };
         const runCustomFromPage = async ({ task, resumeRecord = null }) => {
             const engine = window.CustomEngine;
             const built = resumeRecord ? builtFromRecord(resumeRecord) : buildBasicRun(draftPlanForCanvas(getActiveDraftPlan()));
             // A schema that cannot be run stops here with the place of the error; nothing is sent.
             if (built.errors.length) {
-                showNotification(`Basic: схема не запущена. ${window.BasicSchema.describeErrors(built.errors)}`, 'error');
+                showNotification(`Basic: схема не запущена. ${describeSchemaErrors(built.errors)}`, 'error');
                 return false;
             }
             const steps = built.steps;
@@ -7150,9 +7478,13 @@ document.addEventListener('click', (event) => {
             };
             // A checkpoint (8.2) takes the state of the engine into the record and waits for its write: a failed write is
             // not swallowed here, the engine stops on it (checkpoint_failed).
+            // The chats of the participants of this run (T07): participantId → { modelName, stepRef, visit, transportRequestId,
+            // tabId, requestId, stageAttemptId }. The background keeps the tab of each participant; this record is what a resume
+            // reads. A resumed run starts from the saved chats (R01): the background takes them back only for its own run ID.
+            const chatBindings = resumeRecord ? { ...(resumeRecord.snapshot?.chatBindings || {}) } : {};
             const checkpointRecord = (state) => {
                 window.CustomRunRecord.setArtifacts(record, state.artifacts);
-                window.CustomRunRecord.setSnapshot(record, { schema: built.schema, runSettings: { semiAuto, maxAttempts: engine.DEFAULT_ATTEMPTS, runMaxWords: built.run.maxWords ?? null }, state, current: state.current, routes: state.routes, ownerAnswers: state.ownerAnswers, pendingOwner: state.pendingOwner });
+                window.CustomRunRecord.setSnapshot(record, { schema: built.schema, runSettings: { semiAuto, maxAttempts: engine.DEFAULT_ATTEMPTS, runMaxWords: built.run.maxWords ?? null }, state: { ...state, chatBindings: { ...chatBindings } }, current: state.current, routes: state.routes, ownerAnswers: state.ownerAnswers, pendingOwner: state.pendingOwner });
                 return writeRecord();
             };
             const recordAttempt = (entry) => {
@@ -7185,9 +7517,141 @@ document.addEventListener('click', (event) => {
             setPipelineRunUi(true);
             updateDebateButtonsUi();
             try {
-                const attachments = await buildAttachmentPayload();
-                // Attachments go with the first message to each model only: later steps continue in that chat.
-                const attached = new Set();
+                // A resumed run takes its files from the record of the run, never from the composer of the page (R05).
+                const attachments = resumeRecord
+                    ? (Array.isArray(resumeRecord.attachments) ? resumeRecord.attachments : [])
+                    : await buildAttachmentPayload();
+                const isNewChat = (request) => request.attempt === 1 && (request.chat === 'new'
+                    || (!resumeRecord && runContext.forceNewTabs && !chatBindings[request.participantId]));
+                // The files go with the first message of each chat only (R05). A chat is confirmed to hold them when its answer
+                // came back: the visit that opened the chat (chatVisit) and the visit whose chat got the files (attachedChatVisit).
+                // A new chat always needs them; a retry or a later visit in a chat with confirmed files does not repeat them.
+                const filesNeeded = (request) => {
+                    if (!attachments.length) return false;
+                    if (isNewChat(request)) return true;
+                    const saved = chatBindings[request.participantId];
+                    return !saved || saved.attachedChatVisit !== saved.chatVisit;
+                };
+                const sendWave = async (wave, meta, waveNo) => {
+                    const { step, label, attempt } = meta;
+                    const stepModels = steps[step]?.models || [];
+                    const models = wave.map((request) => request.modelName);
+                    const promptsByModel = Object.fromEntries(wave.map((request) => [request.modelName, request.prompt]));
+                    const maxWordsByModel = Object.fromEntries(wave.map((request) => [request.modelName, meta.maxWordsByParticipant?.[request.participantId] || null]));
+                    const correctionByModel = Object.fromEntries(wave.map((request) => [request.modelName, Boolean(meta.correctionByParticipant?.[request.participantId])]));
+                    const discipline = Object.fromEntries(wave.map((request) => [request.modelName,
+                        stepModels.find((model) => model.id === request.participantId)?.discipline || {}
+                    ]));
+                    const participants = Object.fromEntries(wave.map((request) => {
+                        const saved = chatBindings[request.participantId];
+                        // The saved chat of a continue goes with the request; the background uses it only without a binding of its own.
+                        const binding = !isNewChat(request) && saved?.modelName === request.modelName && saved.tabId != null
+                            ? { tabId: saved.tabId, requestId: saved.requestId || null, stageAttemptId: saved.stageAttemptId || null }
+                            : null;
+                        return [request.modelName, {
+                            participantId: request.participantId, newChat: isNewChat(request), ...(binding ? { binding } : {})
+                        }];
+                    }));
+                    // Reuse the existing limit contract, on first attempts and corrections alike.
+                    const composed = composeCustomPrompts(models, promptsByModel, maxWordsByModel, discipline,
+                        built.schema.defaults?.modelNotes || {}, correctionByModel, built.run.maxWords);
+                    const filesSent = wave.some(filesNeeded);
+                    const batch = await runModelBatch({
+                        prompt: composed[models[0]],
+                        promptsByModel: composed,
+                        deliveryInstructionsByModel: Object.fromEntries(models.map((name) => [name, discipline[name].delivery])),
+                        models,
+                        attachments: filesSent ? attachments : [],
+                        // The transport opens or continues the tab of each participant (participants); the run's new-pages flag is not used here.
+                        forceNewTabs: false,
+                        useApiFallback,
+                        signal,
+                        context: {
+                            ...runContext,
+                            participants,
+                            // Its own stage id: without it the batch would take the current Debate stage.
+                            stageId: window.ReportDigest?.customStageId?.(runContext.pipelineRunId, step) || `custom:${runContext.pipelineRunId}:s${step + 1}`,
+                            stageAttemptId: `custom:${runContext.pipelineRunId}:s${step + 1}:a${attempt}${waveNo ? `:w${waveNo}` : ''}`,
+                            pipelineRoundId: `s${step + 1}`,
+                            pipelineBatchId: makePipelineBatchId({ runId: runContext.pipelineRunId, roundIndex: step + 1, groupIndex: waveNo ? `${attempt - 1}w${waveNo}` : attempt - 1 }),
+                            anonymizeParticipants: false,
+                            custom: true
+                        },
+                        generationProfile: 'long'
+                    });
+                    // The chats as the background bound them (R01), written into the state before the next send.
+                    await refreshParticipantChats(runContext.pipelineRunId, wave);
+                    const byModel = Object.fromEntries(models.map((model) => {
+                        const modelResult = batch?.results?.[model] || {};
+                        const text = String(batch?.responses?.[model] || '');
+                        if (!text.trim() && String(modelResult.status || '').toUpperCase() === 'USER_ACTION_REQUIRED') {
+                            // A participant request refused before the send (R01, R06): the reason is said, nothing is sent.
+                            const code = Object.values(window.RunError?.CODES || {}).find((item) => String(modelResult.reason || '').includes(item)) || '';
+                            showNotification(`${label}: ${PARTICIPANT_REFUSAL_TEXT[code] || 'запрос участника не отправлен.'}`, 'warn');
+                        }
+                        if (text.trim()) {
+                            const request = wave.find((item) => item.modelName === model);
+                            // A later visit of the step is its own card: the answer of an earlier visit stays in the feed.
+                            updateDebateModelCardOutput(model, text, '', {
+                                status: modelResult.status || 'SUCCESS', source: 'custom',
+                                role: window.StageCard?.feed?.role({ label, modelName: model, participantId: request?.participantId, visit: request?.visit }) || `Basic · ${label}`,
+                                pipelineRunId: runContext.pipelineRunId,
+                                pipelineRoundId: `s${step + 1}${request?.visit > 1 ? `v${request.visit}` : ''}`,
+                                transportRequestId: modelResult.transportRequestId || '', requestId: modelResult.transportRequestId || ''
+                            });
+                        }
+                        return [model, {
+                            text, status: modelResult.status || '', completion: modelResult.completion || '',
+                            // The prompt exactly as the transport dispatched it (token and limit included).
+                            sentPrompt: window.TransportPolicy?.resolvePromptForModel?.(batch?.sentPrompts, model, null) ?? null,
+                            attribution: modelResult.attribution || '',
+                            answered: String(modelResult.status || '').toUpperCase() === 'SUCCESS' && modelResult.attribution === 'verified',
+                            transportRequestId: modelResult.transportRequestId || ''
+                        }];
+                    }));
+                    const byParticipant = {};
+                    wave.forEach((request) => {
+                        const reply = byModel[request.modelName];
+                        byParticipant[request.participantId] = reply;
+                        const saved = chatBindings[request.participantId];
+                        // The chat of a new visit is opened by this request; a continue stays in the chat that opened earlier.
+                        const chatVisit = isNewChat(request) ? request.visit : (saved?.chatVisit ?? request.visit);
+                        const confirmed = filesSent && String(reply.status || '').toUpperCase() === 'SUCCESS';
+                        chatBindings[request.participantId] = {
+                            ...saved,
+                            modelName: request.modelName, stepRef: request.stepRef, visit: request.visit,
+                            transportRequestId: reply.transportRequestId,
+                            chatVisit,
+                            attachedChatVisit: confirmed ? chatVisit : (isNewChat(request) ? null : (saved?.attachedChatVisit ?? null))
+                        };
+                    });
+                    return { byParticipant, closedByOwner: batch?.closeReason === 'moderator_closed' };
+                };
+                // The chats of the wave as the background bound them (R01). A failed read keeps the chats the page has.
+                const refreshParticipantChats = async (pipelineRunId, wave) => {
+                    const response = await sendToBackground({ type: 'PARTICIPANT_CHAT_BINDINGS', pipelineRunId }).catch(() => null);
+                    const live = response?.bindings || {};
+                    wave.forEach((request) => {
+                        const bound = live[request.participantId];
+                        if (!bound || bound.modelName !== request.modelName) return;
+                        chatBindings[request.participantId] = {
+                            ...chatBindings[request.participantId],
+                            tabId: bound.tabId, requestId: bound.requestId || null, stageAttemptId: bound.stageAttemptId || null
+                        };
+                    });
+                };
+                // N04 (read-only): the answer of a request whose sending is not confirmed, read in its own chat. It never sends.
+                // Statuses: found (text as it is), no_answer, ambiguous, chat_unavailable; only found carries a text.
+                const checkUnknown = async ({ participantId, modelName, transportRequestId = null, excludeText = '' }) => {
+                    const saved = chatBindings[participantId];
+                    const response = await sendToBackground({
+                        type: 'CHECK_PARTICIPANT_ANSWER', pipelineRunId: runContext.pipelineRunId, participantId, modelName,
+                        transportRequestId, excludeText,
+                        tabId: saved?.modelName === modelName ? (saved.tabId ?? null) : null
+                    }).catch(() => null);
+                    if (!response?.success) return { ok: false, status: 'chat_unavailable', reason: 'check_failed', text: '', tabId: null };
+                    return { ok: response.ok === true, status: response.status, text: response.text || '', reason: response.reason || null, tabId: response.tabId ?? null };
+                };
                 const budgetLimits = window.DebateContextBudget?.DEFAULT_LIMITS;
                 const result = await engine.run({
                     task,
@@ -7212,6 +7676,7 @@ document.addEventListener('click', (event) => {
                         });
                     },
                     // The owner's answer of an owner step: a text (a file is not supported on this page yet).
+                    checkUnknown,
                     provideOwnerResult: ({ stepRef, task, reason, detail }) => askChoiceDialog({
                         title: `Ответ владельца: ${stepRef}`,
                         message: [task, reason ? `Прошлый ответ не принят: ${window.CustomEngine?.REASON_TEXT?.[reason] || reason}${detail ? ` (${detail})` : ''}.` : '']
@@ -7235,61 +7700,47 @@ document.addEventListener('click', (event) => {
                     ...(resumeRecord ? { resume: { ...resumeRecord.snapshot, artifacts: resumeRecord.artifacts } } : {}),
                     onRequest: recordAttempt,
                     onResponse: recordAttempt,
-                    send: async (models, promptsByModel, { step, label, attempt, maxWordsByModel, correctionByModel }) => {
-                        setCustomStepStatus(step, 'running');
-                        // Reuse the existing limit contract, on first attempts and corrections alike.
-                        const discipline = Object.fromEntries(models.map((name) => [name,
-                            steps[step].models.find((model) => model.name === name)?.discipline || {}
-                        ]));
-                        promptsByModel = composeCustomPrompts(models, promptsByModel, maxWordsByModel, discipline,
-                            built.schema.defaults?.modelNotes || {}, correctionByModel || {}, built.run.maxWords);
-                        const batch = await runModelBatch({
-                            prompt: promptsByModel[models[0]],
-                            promptsByModel,
-                            deliveryInstructionsByModel: Object.fromEntries(models.map((name) => [name, discipline[name].delivery])),
-                            models,
-                            attachments: models.some((model) => !attached.has(model)) ? attachments : [],
-                            forceNewTabs: runContext.forceNewTabs,
-                            useApiFallback,
-                            signal,
-                            context: {
-                                ...runContext,
-                                // Its own stage id: without it the batch would take the current Debate stage.
-                                stageId: window.ReportDigest?.customStageId?.(runContext.pipelineRunId, step) || `custom:${runContext.pipelineRunId}:s${step + 1}`,
-                                stageAttemptId: `custom:${runContext.pipelineRunId}:s${step + 1}:a${attempt}`,
-                                pipelineRoundId: `s${step + 1}`,
-                                pipelineBatchId: makePipelineBatchId({ runId: runContext.pipelineRunId, roundIndex: step + 1, groupIndex: attempt - 1 }),
-                                anonymizeParticipants: false,
-                                custom: true
-                            },
-                            generationProfile: 'long'
+                    sendParticipants: async (requests, meta) => {
+                        setCustomStepStatus(meta.step, 'running');
+                        // Waves: the k-th request of a model goes in wave k, the waves go one after another. Two participants
+                        // of one model are two tabs used in turn, never one tab at the same time.
+                        const countByModel = {};
+                        const waves = [];
+                        requests.forEach((request) => {
+                            const k = countByModel[request.modelName] || 0;
+                            countByModel[request.modelName] = k + 1;
+                            (waves[k] ||= []).push(request);
                         });
-                        models.forEach((model) => attached.add(model));
-                        const byModel = Object.fromEntries(models.map((model) => {
-                            const modelResult = batch?.results?.[model] || {};
-                            const text = String(batch?.responses?.[model] || '');
-                            if (text.trim()) {
-                                updateDebateModelCardOutput(model, text, '', {
-                                    status: modelResult.status || 'SUCCESS', source: 'custom', role: `Basic · ${label}`,
-                                    pipelineRunId: runContext.pipelineRunId, pipelineRoundId: `s${step + 1}`,
-                                    transportRequestId: modelResult.transportRequestId || '', requestId: modelResult.transportRequestId || ''
-                                });
+                        const byParticipant = {};
+                        let closedByOwner = false;
+                        for (const [waveNo, wave] of waves.entries()) {
+                            // A wave with a participant that takes the files and one that does not is split (R05): the files go to
+                            // the new chat only, nobody gets files again because of a neighbour.
+                            const withFiles = wave.filter(filesNeeded);
+                            const without = wave.filter((request) => !filesNeeded(request));
+                            const groups = withFiles.length && without.length
+                                ? [[`${waveNo}f`, withFiles], [`${waveNo}p`, without]]
+                                : [[waveNo, wave]];
+                            for (const [key, group] of groups) {
+                                // eslint-disable-next-line no-await-in-loop
+                                const reply = await sendWave(group, meta, key);
+                                Object.assign(byParticipant, reply.byParticipant);
+                                closedByOwner = closedByOwner || reply.closedByOwner;
                             }
-                            return [model, {
-                                text, status: modelResult.status || '', completion: modelResult.completion || '',
-                                // The prompt exactly as the transport dispatched it (token and limit included).
-                                sentPrompt: window.TransportPolicy?.resolvePromptForModel?.(batch?.sentPrompts, model, null) ?? null,
-                                attribution: modelResult.attribution || '',
-                                answered: String(modelResult.status || '').toUpperCase() === 'SUCCESS' && modelResult.attribution === 'verified',
-                                transportRequestId: modelResult.transportRequestId || ''
-                            }];
-                        }));
-                        return { byModel, closedByOwner: batch?.closeReason === 'moderator_closed' };
+                        }
+                        return { byParticipant, closedByOwner };
                     },
                     onEvent: (kind, fields) => {
                         // A step with accepted answers, or one the owner skipped, is done; otherwise it stays running until a decision.
                         if (kind === 'custom_step' && fields.accepted > 0) setCustomStepStatus(fields.step, 'completed');
                         if (kind === 'custom_decision' && fields.action === 'skip') setCustomStepStatus(fields.step, 'completed');
+                        // The control events of the run go to the feed as short lines (not as answers of models).
+                        if (kind === 'custom_gate') appendBasicRunLine(window.StageCard?.feed?.gate(fields));
+                        if (kind === 'custom_route') {
+                            const cases = steps.find((item) => item.ref === fields.ref)?.select?.cases || [];
+                            appendBasicRunLine(window.StageCard?.feed?.route({ ref: fields.ref, caseLabel: String(cases.find((item) => item.id === fields.case)?.label ?? fields.case), reason: fields.reason }));
+                        }
+                        if (kind === 'custom_transition') appendBasicRunLine(window.StageCard?.feed?.transition(fields, (reason) => engine.STOP_TEXT[reason] || reason));
                         window.MessageDelivery?.batchEvent?.(kind, { pipelineRunId: runContext.pipelineRunId, ...fields });
                     }
                 });
@@ -7307,9 +7758,15 @@ document.addEventListener('click', (event) => {
                     CustomRecord.finishRun(record, { stopReason: result.stopReason });
                     await saveRecord(true);
                 }
+                markStaleBasicCards(result.steps);
+                const artifacts = result.artifacts || [];
+                if (artifacts.length) {
+                    const textOf = (ref) => (record ? window.CustomRunRecord.textOf(record, ref) : String(result.texts?.[ref] ?? ''));
+                    appendBasicRunLine(`Артефакты прогона: ${artifacts.length}`, { buttonLabel: 'Открыть', onButton: () => openBasicArtifacts(artifacts, textOf) });
+                }
                 // The answers of the last step are already in the feed as the cards of that step: no second card repeats
                 // them. The reason of the end is the notification; with no accepted answer at all it says so.
-                showNotification(basicRunNotice(stopText, result.answers.length), result.stopReason === 'steps_done' ? 'info' : 'warn');
+                showNotification(basicRunNotice(stopText, result.answers.length, result.stopDetail), result.stopReason === 'steps_done' ? 'info' : 'warn');
                 return result.stopReason !== 'cancelled';
             } catch (err) {
                 console.error('[RESULTS] Custom run failed', err);
@@ -7892,6 +8349,7 @@ document.addEventListener('click', (event) => {
                 installBasicSchema: (...args) => installBasicSchema(...args),
                 basicRunNotice: (...args) => basicRunNotice(...args),
                 recordFromSchema: (...args) => recordFromSchema(...args),
+                describeSchemaErrors: (...args) => describeSchemaErrors(...args),
                 basicSchemaFromPage: (...args) => basicSchemaFromPage(...args),
                 applyPipelineConfig: (...args) => applyPipelineConfig(...args),
                 runCustomFromPage,
@@ -7993,6 +8451,14 @@ document.addEventListener('click', (event) => {
             // The fields kept from the source belong to the removed round: a round added later starts without them.
             const source = basicSourceSchema.get(draftPlanStorageKey());
             if (source && Array.isArray(source.steps)) basicSourceSchema.set(draftPlanStorageKey(), { ...source, steps: source.steps.filter((step) => step?.ref !== `r${roundCounter}`) });
+            // The card fields of the removed round (customRoundSettings, its drafts) go with it.
+            const removedRef = `r${roundCounter}`;
+            const remaining = JSON.parse(JSON.stringify(getCustomRoundSettings()));
+            delete remaining[removedRef];
+            customRoundSettings.set(draftPlanStorageKey(), remaining);
+            stepDrafts.delete(`${draftPlanStorageKey()}\n${removedRef}`);
+            // The controls after the removed round stand after the round before it.
+            customControls.set(draftPlanStorageKey(), getCustomControls().map((item) => (item.after === removedRef ? { ...item, after: `r${roundCounter - 1}` } : item)));
             roundCounter--;
             if (roundCounter <= 1 && pipelineRemoveRoundBtn) {
                 pipelineRemoveRoundBtn.style.display = 'none';
@@ -8763,7 +9229,11 @@ document.addEventListener('click', (event) => {
         };
 
         // The errors of a schema in one line: the place and the reason of each, at most five.
-        const describeSchemaErrors = (errors) => errors.slice(0, 5).map((error) => (error.path ? `${error.path}: ${error.message}` : error.message)).join('; ');
+        // The places of a validation error, with a note for the one a control between a round and its synthesis gives.
+        const describeSchemaErrors = (errors) => errors.slice(0, 5).map((error) => {
+            const text = error.path ? `${error.path}: ${error.message}` : error.message;
+            return /промежуточный синтез стоит (сразу после раунда|между двумя раундами)/.test(error.message) ? `${text}. ${INTERMEDIATE_CONTROL_NOTE}` : text;
+        }).join('; ');
         // The record of a Basic pipeline built from its schema, and nowhere else: the schema is the content, the canvas
         // members (rounds, models, roles, synthesizer, intermediate syntheses) are derived from it here. Nothing is written
         // to the store. Returns { ok, errors, record }; a schema the canvas cannot show gives errors with the place.
@@ -9052,6 +9522,7 @@ document.addEventListener('click', (event) => {
                     <button type="button" class="modal-button accent" id="custom-card-save">Save</button>
                 </header>
                 <div class="custom-card-body">
+                    ${!pipelineDefaults && step?.kind === 'synthesis' ? '<div class="custom-card-steps" id="custom-card-step-fields"></div>' : ''}
                     ${pipelineDefaults ? '<p class="custom-card-note">Общие значения для всех шагов. Своё значение модели имеет приоритет; пустое поле наследует значение из кода.</p>' : `<div class="custom-card-field">
                         <div class="custom-card-head"><label for="custom-card-request">Запрос</label><span><code>{задача}</code> и <code>{вход}</code> подставляются при запуске. Изменённый текст используется только для этой модели в этом шаге.</span><span class="custom-card-actions">${copyButton('custom-card-request', 'Запрос')}</span></div>
                         <textarea id="custom-card-request" spellcheck="false"></textarea>
@@ -9084,6 +9555,21 @@ document.addEventListener('click', (event) => {
                     </div>` : ''}
                     ${pipelineDefaults ? '' : `<span id="custom-card-length-note" class="custom-card-sr-only">Пусто — общий предел pipeline (${general}).</span>`}
                 </div>`;
+            // The input, the number of answers, the owner and the output of a synthesis: saved at once, as the round card does.
+            const stepFieldsBox = content.querySelector('#custom-card-step-fields');
+            if (stepFieldsBox) {
+                const drawStepFields = () => {
+                    const fields = window.StageCard.stepFieldsModel({ kind: 'synthesis', settings: getCustomRoundSettings()[ref] || {}, earlier: stepsBefore(ref),
+                        enabledCount: step.models.length, drafts: stepDraftsOf(ref), disabled: pipelineRunActive });
+                    stepFieldsBox.replaceChildren();
+                    window.StageCard.renderStepFields(stepFieldsBox, fields, async (field, value) => {
+                        if (pipelineRunActive) return;
+                        await commitStepField(ref, field, value, step.models.length);
+                        drawStepFields();
+                    });
+                };
+                drawStepFields();
+            }
             const request = content.querySelector('#custom-card-request');
             const length = content.querySelector('#custom-card-length');
             const reset = content.querySelector('#custom-card-reset');
@@ -9423,6 +9909,37 @@ document.addEventListener('click', (event) => {
 
         // Stage card: the round badge opens the stage's card (template stage text,
         // who works, run status). Plain rounds show their participants.
+        // The answers a rule may read: the participants (enabled models) of the rounds and syntheses before the step.
+        const participantsBefore = (ref) => {
+            const steps = basicSchemaFromPage(draftPlanForCanvas(getActiveDraftPlan()), null, { forSave: true }).steps || [];
+            const at = steps.findIndex((step) => step.ref === ref);
+            return steps.slice(0, Math.max(0, at)).filter((step) => step.kind === 'round' || step.kind === 'synthesis').map((step) => ({
+                ref: step.ref,
+                label: stepLabel(step.ref),
+                participants: (step.models || []).filter((model) => model.enabled !== false).map((model) => ({ id: model.id ?? model.name, name: model.name }))
+            })).filter((item) => item.participants.length);
+        };
+        // The window of a control step: a gate, a route and an owner have their windows.
+        const openControlCard = (ref) => {
+            const dialog = document.getElementById('pipeline-stage-dialog');
+            const title = document.getElementById('pipeline-stage-dialog-title');
+            const body = document.getElementById('pipeline-stage-card');
+            const entry = getCustomControls().find((item) => item.step.ref === ref);
+            if (!dialog || !title || !body || !entry || !window.StageCard) return;
+            const { step } = entry;
+            title.textContent = `${CONTROL_TITLE[step.kind] || step.kind} ${step.ref}`;
+            body.replaceChildren();
+            const options = { names: getAllPipelineModelNames(), refs: schemaRefsForWindows(), earlier: participantsBefore(ref), disabled: pipelineRunActive };
+            const onEdit = async (edit) => {
+                if (pipelineRunActive) return;
+                await commitControl(ref, edit);
+                openControlCard(ref);
+            };
+            if (step.kind === 'gate') window.StageCard.renderGateWindow(body, window.StageCard.gateWindowModel(step, options), onEdit);
+            if (step.kind === 'route') window.StageCard.renderRouteWindow(body, window.StageCard.routeWindowModel(step, options), onEdit);
+            if (step.kind === 'owner') window.StageCard.renderOwnerWindow(body, window.StageCard.ownerWindowModel(step, { disabled: pipelineRunActive }), onEdit);
+            if (!dialog.open) dialog.showModal();
+        };
         const openStageCard = (roundBadge) => {
             const dialog = document.getElementById('pipeline-stage-dialog');
             const title = document.getElementById('pipeline-stage-dialog-title');
@@ -9444,8 +9961,8 @@ document.addEventListener('click', (event) => {
                 const roleChoice = !templateStage && isCustomEnginePipeline() && document.querySelector(`#r${round}-models .role-selector`)
                     ? { prompts: getRoleOptionPrompts(), roles: (stack?.items || []).map((item) => item.role || ''), disabled: pipelineRunActive,
                         roundPrompt: getCustomRoundPrompt(`r${round}`),
-                        // The round card of Basic: the order, the input and the task of the round.
-                        settings: { order: getCustomRoundSettings()[`r${round}`]?.order || '', input: getCustomRoundSettings()[`r${round}`]?.input || '', task: getCustomRoundSettings()[`r${round}`]?.task || '' },
+                        // The round card of Basic: the order, the input, the task, the number of answers, the owner and the output.
+                        settings: getCustomRoundSettings()[`r${round}`] || {}, drafts: stepDraftsOf(`r${round}`), earlier: stepsBefore(`r${round}`),
                         first: round === 1, inheritedTask: resolveCustomFields({}, 'round').task.value }
                     : null;
                 const model = window.StageCard.buildModel({
@@ -9464,7 +9981,7 @@ document.addEventListener('click', (event) => {
                     onRoundPrompt: (text) => setCustomRoundPrompt(`r${round}`, text),
                     onSetting: async (field, value) => {
                         if (pipelineRunActive) return;
-                        await setCustomRoundSetting(`r${round}`, field, value);
+                        await commitStepField(`r${round}`, field, value, (stack?.items || []).filter((item) => item.send).length);
                         openStageCard(roundBadge);
                     }
                 });
@@ -9481,6 +9998,17 @@ document.addEventListener('click', (event) => {
         // Function declarations are hoisted within this block; the bridge keeps the call explicit for tests and other scopes.
         window.__toggleIntermediateSynthesis = toggleIntermediateSynthesis;
         pipelinePanel.addEventListener('click', (event) => {
+            const controlCard = event.target?.closest?.('.pipeline-control-card');
+            if (controlCard && pipelinePanel.contains(controlCard)) {
+                openControlCard(controlCard.dataset.controlCard);
+                return;
+            }
+            const controlDelete = event.target?.closest?.('.pipeline-control-delete-btn');
+            if (controlDelete && pipelinePanel.contains(controlDelete)) {
+                event.preventDefault();
+                void deleteControl(controlDelete.dataset.controlDelete);
+                return;
+            }
             const insert = event.target?.closest?.('.pipeline-stage-insert');
             if (insert) {
                 clearTimeout(intermediateTimer);
@@ -9516,6 +10044,16 @@ document.addEventListener('click', (event) => {
                 }
                 return;
             }
+        });
+
+        // The add select of a round or a control: the chosen kind goes after its anchor, and the select goes back to «+ шаг».
+        pipelinePanel.addEventListener('change', (event) => {
+            const select = event.target;
+            if (!select?.classList?.contains('pipeline-control-add') || !select.value) return;
+            const kind = select.value;
+            const anchor = select.dataset.anchor || '';
+            select.value = '';
+            void insertControlAfter(anchor, kind);
         });
 
         const stageDialog = document.getElementById('pipeline-stage-dialog');
@@ -22071,6 +22609,10 @@ function checkCompareButtonState() {
         const existing = (plan.plannedStages || []).find((stage) =>
             stage.outputIntent === 'working_synthesis' && stage.upstream?.includes(afterPlannedStageId));
         if (existing) return removeIntermediateSynthesis(plan, existing);
+        if (window.__controlledAfter?.(afterPlannedStageId.replace(/^canvas-/, ''))) {
+            showNotification(INTERMEDIATE_CONTROL_NOTE, 'warn');
+            return false;
+        }
         // Independent of the final synthesis: an intermediate one falls back to the default synthesizer.
         const synthesizer = window.__getDraftPlanSynthesizer?.(plan) || window.__getDefaultSynthesizerName?.();
         const result = window.DebateDraftPlan.insertSynthesis(plan, {

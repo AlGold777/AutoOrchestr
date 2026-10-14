@@ -1,0 +1,1641 @@
+{
+  "schemaVersion": 1,
+  "origin": "user",
+  "run": {
+    "policy": "auto",
+    "maxWords": 700
+  },
+  "steps": [
+    {
+      "ref": "r1",
+      "kind": "round",
+      "models": [
+        {
+          "name": "Claude",
+          "id": "S01-producer"
+        }
+      ],
+      "input": "none",
+      "task": "S01, Producer: зафиксировать пользователя, проблему и ожидаемый результат; предложить классы решений и пороги риска; явно записать known unknowns."
+    },
+    {
+      "ref": "owner:s01",
+      "kind": "owner",
+      "models": [],
+      "task": "S01, Owner: утвердить Decision Policy (текст) — классы A0–A4 и пороги риска.",
+      "output": {
+        "name": "Decision Policy",
+        "form": "Текст политики полномочий: классы A0–A4, пороги риска."
+      }
+    },
+    {
+      "ref": "r2",
+      "kind": "round",
+      "order": "parallel",
+      "require": 2,
+      "chat": "new",
+      "input": [
+        {
+          "step": "r1",
+          "participant": "S01-producer",
+          "required": true
+        },
+        "owner:s01"
+      ],
+      "models": [
+        {
+          "name": "GPT",
+          "id": "S02-a"
+        },
+        {
+          "name": "Gemini",
+          "id": "S02-b"
+        }
+      ],
+      "task": "S02, независимо: расширить сценарии, capabilities и продуктовые вопросы. Чужие ответы не видны."
+    },
+    {
+      "ref": "synth:s03",
+      "kind": "synthesis",
+      "input": [
+        "owner:s01",
+        "r2"
+      ],
+      "models": [
+        {
+          "name": "Claude",
+          "id": "S03-synth"
+        }
+      ],
+      "task": "S03, Synthesizer: дедуплицировать предложения, разделить составные, сохранить provenance."
+    },
+    {
+      "ref": "r3",
+      "kind": "round",
+      "input": [
+        {
+          "step": "synth:s03",
+          "participant": "S03-synth",
+          "required": true
+        }
+      ],
+      "models": [
+        {
+          "name": "GPT",
+          "id": "S03-closer"
+        }
+      ],
+      "task": "S03, Decision Closer: закрыть решения в пределах Decision Policy; остальные маршрутизировать. Выход — Decision Register."
+    },
+    {
+      "ref": "synth:s04",
+      "kind": "synthesis",
+      "input": [
+        {
+          "step": "r3",
+          "participant": "S03-closer",
+          "required": true
+        }
+      ],
+      "models": [
+        {
+          "name": "Claude",
+          "id": "S04-synth"
+        }
+      ],
+      "task": "S04: собрать Product Concept из принятых решений; новых решений не принимать."
+    },
+    {
+      "ref": "r4",
+      "kind": "round",
+      "order": "parallel",
+      "require": 2,
+      "owner": "approve",
+      "input": [
+        {
+          "step": "r3",
+          "participant": "S03-closer",
+          "required": true
+        },
+        {
+          "step": "synth:s04",
+          "participant": "S04-synth",
+          "required": true
+        }
+      ],
+      "models": [
+        {
+          "name": "GPT",
+          "id": "S05-a"
+        },
+        {
+          "name": "Gemini",
+          "id": "S05-b"
+        }
+      ],
+      "task": "S05, Reviewer независимо: contradictions, missing scenarios, hidden assumptions, undefined behavior. Концепцию не исправлять."
+    },
+    {
+      "ref": "r5",
+      "kind": "round",
+      "input": [
+        "r4",
+        "owner:s01"
+      ],
+      "models": [
+        {
+          "name": "Claude",
+          "id": "S06-closer"
+        }
+      ],
+      "task": "S06, Decision Closer: закрыть только новые решения из review; обновить концепцию."
+    },
+    {
+      "ref": "r6",
+      "kind": "round",
+      "input": [
+        {
+          "step": "r5",
+          "participant": "S06-closer",
+          "required": true
+        }
+      ],
+      "models": [
+        {
+          "name": "Gemini",
+          "id": "S07-producer"
+        }
+      ],
+      "output": {
+        "name": "Functional Map Draft",
+        "form": "Карта функций: capabilities и функции, неопределённость видна.",
+        "artifacts": [
+          {
+            "id": "map",
+            "name": "Functional Map Draft",
+            "pointer": ""
+          }
+        ]
+      },
+      "task": "S07, Producer: декомпозировать концепцию в capabilities и функции; неопределённость не заполнять догадкой."
+    },
+    {
+      "ref": "r7",
+      "kind": "round",
+      "input": [
+        {
+          "artifact": {
+            "step": "r6",
+            "participant": "S07-producer",
+            "id": "map"
+          },
+          "version": "latest",
+          "required": true
+        }
+      ],
+      "models": [
+        {
+          "name": "Grok",
+          "id": "S08-reviewer"
+        }
+      ],
+      "output": {
+        "name": "Audit Findings",
+        "form": "Замечания аудита: coverage, дубли, missing states, architecture leakage.",
+        "artifacts": [
+          {
+            "id": "findings",
+            "name": "Audit Findings",
+            "pointer": ""
+          }
+        ]
+      },
+      "task": "S08, Reviewer: проверить карту и выдать замечания; не исправлять."
+    },
+    {
+      "ref": "r8",
+      "kind": "round",
+      "input": [
+        {
+          "artifact": {
+            "step": "r6",
+            "participant": "S07-producer",
+            "id": "map"
+          },
+          "version": "latest",
+          "required": true
+        },
+        {
+          "artifact": {
+            "step": "r7",
+            "participant": "S08-reviewer",
+            "id": "findings"
+          },
+          "version": "latest",
+          "required": true
+        }
+      ],
+      "models": [
+        {
+          "name": "Gemini",
+          "id": "S08-producer"
+        }
+      ],
+      "output": {
+        "name": "Corrected Functional Map",
+        "form": "Исправленная карта; только трассируемые правки.",
+        "artifacts": [
+          {
+            "id": "map",
+            "name": "Corrected Map",
+            "pointer": "",
+            "revisionOf": {
+              "artifact": {
+                "step": "r6",
+                "participant": "S07-producer",
+                "id": "map"
+              },
+              "version": "latest",
+              "required": true
+            }
+          }
+        ]
+      },
+      "task": "S08, Producer: применить только явные замечания к карте; новые продуктовые решения не принимать."
+    },
+    {
+      "ref": "r9",
+      "kind": "round",
+      "input": [
+        {
+          "artifact": {
+            "step": "r6",
+            "participant": "S07-producer",
+            "id": "map"
+          },
+          "version": "latest",
+          "required": true
+        },
+        {
+          "step": "synth:s04",
+          "participant": "S04-synth",
+          "required": true
+        }
+      ],
+      "models": [
+        {
+          "name": "Qwen",
+          "id": "S09-reviewer"
+        }
+      ],
+      "task": "S09, Reviewer: проверить достижимость целей, flows, состояния по сценариям и прототипу."
+    },
+    {
+      "ref": "r10",
+      "kind": "round",
+      "input": [
+        {
+          "step": "r9",
+          "participant": "S09-reviewer",
+          "required": true
+        }
+      ],
+      "models": [
+        {
+          "name": "DeepSeek",
+          "id": "S09-verifier"
+        }
+      ],
+      "task": "S09, Verifier: присвоить статусы по evidence; проектных решений не принимать."
+    },
+    {
+      "ref": "r11",
+      "kind": "round",
+      "input": [
+        {
+          "artifact": {
+            "step": "r7",
+            "participant": "S08-reviewer",
+            "id": "findings"
+          },
+          "version": "latest",
+          "required": true
+        },
+        {
+          "step": "r10",
+          "participant": "S09-verifier",
+          "required": true
+        },
+        "owner:s01"
+      ],
+      "models": [
+        {
+          "name": "Claude",
+          "id": "S10-closer"
+        }
+      ],
+      "task": "S10, Decision Closer: закрыть только выявленную delta; обновить функциональную карту по решениям."
+    },
+    {
+      "ref": "r12",
+      "kind": "round",
+      "input": [
+        {
+          "step": "r11",
+          "participant": "S10-closer",
+          "required": true
+        }
+      ],
+      "models": [
+        {
+          "name": "GPT",
+          "id": "S11-producer"
+        }
+      ],
+      "output": {
+        "name": "Functional Specification",
+        "form": "Спецификация: scenarios, states, transitions, pre/postconditions, failure behavior.",
+        "artifacts": [
+          {
+            "id": "spec",
+            "name": "Functional Specification",
+            "pointer": ""
+          }
+        ]
+      },
+      "task": "S11, Producer: описать наблюдаемое поведение без реализации."
+    },
+    {
+      "ref": "r13",
+      "kind": "round",
+      "input": [
+        {
+          "artifact": {
+            "step": "r12",
+            "participant": "S11-producer",
+            "id": "spec"
+          },
+          "version": "latest",
+          "required": true
+        }
+      ],
+      "models": [
+        {
+          "name": "Gemini",
+          "id": "S12-reviewer"
+        }
+      ],
+      "output": {
+        "format": "json",
+        "requiredFields": [
+          "/decisionImpact",
+          "/findings"
+        ],
+        "form": "JSON: decisionImpact «yes» или «no»; findings — замечания и remaining unknowns. [СИНТЕТИЧЕСКОЕ УСЛОВИЕ, Q10]"
+      },
+      "task": "S12, Reviewer: проверить completeness, consistency, testability, failure paths; поле decisionImpact — влияет ли находка на решения."
+    },
+    {
+      "ref": "r14",
+      "kind": "round",
+      "input": [
+        {
+          "artifact": {
+            "step": "r12",
+            "participant": "S11-producer",
+            "id": "spec"
+          },
+          "version": "latest",
+          "required": true
+        },
+        {
+          "step": "r13",
+          "participant": "S12-reviewer",
+          "required": true
+        }
+      ],
+      "models": [
+        {
+          "name": "GPT",
+          "id": "S12-producer"
+        }
+      ],
+      "output": {
+        "name": "Corrected Functional Specification",
+        "form": "Исправленная спецификация; только по явным findings.",
+        "artifacts": [
+          {
+            "id": "spec",
+            "name": "Corrected Specification",
+            "pointer": "",
+            "revisionOf": {
+              "artifact": {
+                "step": "r12",
+                "participant": "S11-producer",
+                "id": "spec"
+              },
+              "version": "latest",
+              "required": true
+            }
+          }
+        ]
+      },
+      "task": "S12, Producer: применить только явные findings к спецификации."
+    },
+    {
+      "ref": "route:s12",
+      "kind": "route",
+      "models": [],
+      "input": [
+        {
+          "step": "r13",
+          "participant": "S12-reviewer",
+          "required": true
+        }
+      ],
+      "select": {
+        "by": "rule",
+        "cases": [
+          {
+            "id": "back_s10_synthetic",
+            "when": {
+              "source": 0,
+              "pointer": "/decisionImpact",
+              "op": "eq",
+              "value": "yes"
+            },
+            "action": {
+              "goto": "r11",
+              "maxLoops": 2,
+              "feedback": [
+                {
+                  "step": "r13",
+                  "participant": "S12-reviewer",
+                  "required": true
+                }
+              ]
+            }
+          }
+        ],
+        "otherwise": {
+          "goto": "r15"
+        }
+      }
+    },
+    {
+      "ref": "r15",
+      "kind": "round",
+      "owner": "approve",
+      "input": [
+        {
+          "artifact": {
+            "step": "r12",
+            "participant": "S11-producer",
+            "id": "spec"
+          },
+          "version": "latest",
+          "required": true
+        },
+        {
+          "step": "r11",
+          "participant": "S10-closer",
+          "required": true
+        },
+        {
+          "step": "synth:s04",
+          "participant": "S04-synth",
+          "required": true
+        },
+        "owner:s01",
+        {
+          "artifact": {
+            "step": "r6",
+            "participant": "S07-producer",
+            "id": "map"
+          },
+          "version": "latest",
+          "required": true
+        }
+      ],
+      "models": [
+        {
+          "name": "Claude",
+          "id": "S13-closer"
+        }
+      ],
+      "output": {
+        "name": "Product Functional Baseline",
+        "form": "Продуктовый baseline: концепция, карта, спецификация, закрытые решения, known unknowns, deferred scope.",
+        "artifacts": [
+          {
+            "id": "pfb",
+            "name": "Product Functional Baseline",
+            "pointer": ""
+          }
+        ]
+      },
+      "task": "S13, Decision Closer: зафиксировать продуктовый baseline; владелец утверждает."
+    },
+    {
+      "ref": "gate:g1",
+      "kind": "gate",
+      "input": [
+        {
+          "step": "r15",
+          "participant": "S13-closer",
+          "required": true
+        }
+      ],
+      "require": "all",
+      "pass": "all",
+      "onFail": "ask",
+      "criteria": [
+        "Все blocking product decisions закрыты или явно отложены",
+        "OPEN помечены non-blocking и видны в Known Unknowns",
+        "Deferred scope перечислен явно",
+        "Трасса «решение → возможность → требование» полная"
+      ],
+      "models": [
+        {
+          "name": "GPT",
+          "id": "G1-a"
+        },
+        {
+          "name": "Gemini",
+          "id": "G1-b"
+        }
+      ],
+      "task": "Gate G1: проверить критерии PFB."
+    },
+    {
+      "ref": "route:chg13",
+      "kind": "route",
+      "models": [],
+      "select": {
+        "by": "owner",
+        "cases": [
+          {
+            "id": "next",
+            "label": "Продолжить к S14",
+            "action": {
+              "goto": "r16"
+            }
+          },
+          {
+            "id": "return",
+            "label": "Вернуться к точке изменения (S19)",
+            "action": {
+              "return": true,
+              "maxLoops": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "ref": "r16",
+      "kind": "round",
+      "order": "parallel",
+      "require": 2,
+      "chat": "new",
+      "input": [
+        {
+          "step": "r15",
+          "participant": "S13-closer",
+          "required": true
+        }
+      ],
+      "models": [
+        {
+          "name": "Gemini",
+          "id": "S14-a"
+        },
+        {
+          "name": "GPT",
+          "id": "S14-b"
+        }
+      ],
+      "task": "S14, независимо: найти ограничения платформы, ОС, сети, безопасности, приватности, жизненного цикла. Не объявлять кандидатов фактами."
+    },
+    {
+      "ref": "synth:s15",
+      "kind": "synthesis",
+      "input": [
+        "r16"
+      ],
+      "models": [
+        {
+          "name": "Claude",
+          "id": "S15-synth"
+        }
+      ],
+      "task": "S15, Synthesizer: единый реестр ограничений с provenance; не сливать ограничения с разными условиями."
+    },
+    {
+      "ref": "r17",
+      "kind": "round",
+      "input": [
+        {
+          "step": "synth:s15",
+          "participant": "S15-synth",
+          "required": true
+        }
+      ],
+      "models": [
+        {
+          "name": "DeepSeek",
+          "id": "S16-verifier"
+        }
+      ],
+      "task": "S16, Verifier: присвоить VERIFIED, FALSIFIED, UNCERTAIN, NEEDS_RESEARCH, NEEDS_EXPERIMENT по evidence; решения не принимать."
+    },
+    {
+      "ref": "synth:s17",
+      "kind": "synthesis",
+      "input": [
+        {
+          "step": "r15",
+          "participant": "S13-closer",
+          "required": true
+        },
+        {
+          "step": "r17",
+          "participant": "S16-verifier",
+          "required": true
+        }
+      ],
+      "models": [
+        {
+          "name": "Claude",
+          "id": "S17-synth"
+        }
+      ],
+      "task": "S17, Synthesizer: собрать Architecture Input Package одной версии."
+    },
+    {
+      "ref": "r18",
+      "kind": "round",
+      "input": [
+        {
+          "step": "synth:s17",
+          "participant": "S17-synth",
+          "required": true
+        }
+      ],
+      "models": [
+        {
+          "name": "GPT",
+          "id": "S17-closer"
+        }
+      ],
+      "output": {
+        "name": "Architecture Input Package",
+        "form": "Пакет: PFB, verified constraints, validation registry, quality attributes, invariants, decision boundaries.",
+        "artifacts": [
+          {
+            "id": "aip",
+            "name": "Architecture Input Package",
+            "pointer": ""
+          }
+        ]
+      },
+      "task": "S17, Decision Closer: зафиксировать decision boundaries и invariants."
+    },
+    {
+      "ref": "gate:g2",
+      "kind": "gate",
+      "input": [
+        {
+          "step": "r18",
+          "participant": "S17-closer",
+          "required": true
+        }
+      ],
+      "require": "all",
+      "pass": "all",
+      "onFail": "ask",
+      "criteria": [
+        "У каждого ограничения есть verification status",
+        "Фактами названы только VERIFIED",
+        "Все модели получают идентичный пакет одной версии",
+        "Decision boundaries и invariants зафиксированы"
+      ],
+      "models": [
+        {
+          "name": "Gemini",
+          "id": "G2-a"
+        },
+        {
+          "name": "Grok",
+          "id": "G2-b"
+        }
+      ],
+      "task": "Gate G2: проверить критерии AIP."
+    },
+    {
+      "ref": "route:chg17",
+      "kind": "route",
+      "models": [],
+      "select": {
+        "by": "owner",
+        "cases": [
+          {
+            "id": "next",
+            "label": "Продолжить к S18",
+            "action": {
+              "goto": "r19"
+            }
+          },
+          {
+            "id": "return",
+            "label": "Вернуться к точке изменения (S25)",
+            "action": {
+              "return": true,
+              "maxLoops": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "ref": "r19",
+      "kind": "round",
+      "order": "parallel",
+      "require": 2,
+      "chat": "new",
+      "input": [
+        {
+          "artifact": {
+            "step": "r18",
+            "participant": "S17-closer",
+            "id": "aip"
+          },
+          "version": "latest",
+          "required": true
+        }
+      ],
+      "models": [
+        {
+          "name": "Claude",
+          "id": "S18-a"
+        },
+        {
+          "name": "GPT",
+          "id": "S18-b"
+        }
+      ],
+      "output": {
+        "name": "Architecture Candidate",
+        "form": "Кандидат: компоненты, assumptions, trade-offs.",
+        "artifacts": [
+          {
+            "id": "candidate",
+            "name": "Architecture Candidate",
+            "pointer": ""
+          }
+        ]
+      },
+      "task": "S18, независимо: сформировать architecture candidate с assumptions и trade-offs; продукт не переопределять."
+    },
+    {
+      "ref": "route:chg18",
+      "kind": "route",
+      "models": [],
+      "input": [
+        {
+          "step": "r15",
+          "participant": "S13-closer",
+          "required": true
+        },
+        {
+          "step": "r18",
+          "participant": "S17-closer",
+          "required": true
+        },
+        {
+          "step": "r19",
+          "participant": "S18-a",
+          "required": true
+        },
+        {
+          "step": "r19",
+          "participant": "S18-b",
+          "required": true
+        }
+      ],
+      "select": {
+        "by": "owner",
+        "cases": [
+          {
+            "id": "next",
+            "label": "Продолжить к S19",
+            "action": {
+              "goto": "r20"
+            }
+          },
+          {
+            "id": "return",
+            "label": "Вернуться к точке изменения (S19)",
+            "action": {
+              "return": true,
+              "maxLoops": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "ref": "r20",
+      "kind": "round",
+      "order": "parallel",
+      "require": 2,
+      "chat": "new",
+      "input": [
+        {
+          "artifact": {
+            "step": "r18",
+            "participant": "S17-closer",
+            "id": "aip"
+          },
+          "version": "latest",
+          "required": true
+        }
+      ],
+      "models": [
+        {
+          "name": "Grok",
+          "id": "S19-a",
+          "input": [
+            {
+              "step": "r19",
+              "participant": "S18-b",
+              "required": true
+            },
+            {
+              "artifact": {
+                "step": "r18",
+                "participant": "S17-closer",
+                "id": "aip"
+              },
+              "version": "latest",
+              "required": true
+            }
+          ]
+        },
+        {
+          "name": "Qwen",
+          "id": "S19-b",
+          "input": [
+            {
+              "step": "r19",
+              "participant": "S18-a",
+              "required": true
+            },
+            {
+              "artifact": {
+                "step": "r18",
+                "participant": "S17-closer",
+                "id": "aip"
+              },
+              "version": "latest",
+              "required": true
+            }
+          ]
+        }
+      ],
+      "output": {
+        "format": "json",
+        "requiredFields": [
+          "/chgProposal",
+          "/review"
+        ],
+        "form": "JSON: chgProposal «yes» или «no» (предложение изменения PFB, synthetic Q10); review — замечания по кандидату."
+      },
+      "task": "S19, Reviewer: проверить coverage, feasibility, consistency, failure modes, security чужого кандидата."
+    },
+    {
+      "ref": "route:chg19",
+      "kind": "route",
+      "models": [],
+      "input": [
+        {
+          "step": "r20",
+          "participant": "S19-a",
+          "required": true
+        }
+      ],
+      "select": {
+        "by": "rule",
+        "cases": [
+          {
+            "id": "chg_pfb_synthetic",
+            "when": {
+              "source": 0,
+              "pointer": "/chgProposal",
+              "op": "eq",
+              "value": "yes"
+            },
+            "action": {
+              "goto": "r11",
+              "maxLoops": 1,
+              "resumeAt": "r20"
+            }
+          }
+        ],
+        "otherwise": {
+          "goto": "r21"
+        }
+      }
+    },
+    {
+      "ref": "r21",
+      "kind": "round",
+      "order": "parallel",
+      "require": 2,
+      "input": [
+        "r19",
+        "r20"
+      ],
+      "models": [
+        {
+          "name": "GPT",
+          "id": "S20-a"
+        },
+        {
+          "name": "Gemini",
+          "id": "S20-b"
+        }
+      ],
+      "task": "S20, Reviewer: критиковать любой кандидат; trade-offs и несовместимые assumptions явно."
+    },
+    {
+      "ref": "r22",
+      "kind": "round",
+      "input": [
+        {
+          "artifact": {
+            "step": "r19",
+            "participant": "S18-a",
+            "id": "candidate"
+          },
+          "version": "latest",
+          "required": true
+        },
+        "r21"
+      ],
+      "models": [
+        {
+          "name": "Claude",
+          "id": "S18-a"
+        }
+      ],
+      "output": {
+        "name": "Revised Candidate A",
+        "form": "Ревизия своего кандидата; слабые стороны не удалять без следа.",
+        "artifacts": [
+          {
+            "id": "candidate",
+            "name": "Revised Candidate",
+            "pointer": "",
+            "revisionOf": {
+              "artifact": {
+                "step": "r19",
+                "participant": "S18-a",
+                "id": "candidate"
+              },
+              "version": "latest",
+              "required": true
+            }
+          }
+        ]
+      },
+      "task": "S20, Producer (автор A): ревизовать свой кандидат с учётом критики."
+    },
+    {
+      "ref": "r23",
+      "kind": "round",
+      "input": [
+        {
+          "artifact": {
+            "step": "r19",
+            "participant": "S18-b",
+            "id": "candidate"
+          },
+          "version": "latest",
+          "required": true
+        },
+        "r21"
+      ],
+      "models": [
+        {
+          "name": "GPT",
+          "id": "S18-b"
+        }
+      ],
+      "output": {
+        "name": "Revised Candidate B",
+        "form": "Ревизия своего кандидата; слабые стороны не удалять без следа.",
+        "artifacts": [
+          {
+            "id": "candidate",
+            "name": "Revised Candidate",
+            "pointer": "",
+            "revisionOf": {
+              "artifact": {
+                "step": "r19",
+                "participant": "S18-b",
+                "id": "candidate"
+              },
+              "version": "latest",
+              "required": true
+            }
+          }
+        ]
+      },
+      "task": "S20, Producer (автор B): ревизовать свой кандидат с учётом критики."
+    },
+    {
+      "ref": "synth:s21",
+      "kind": "synthesis",
+      "input": [
+        {
+          "artifact": {
+            "step": "r19",
+            "participant": "S18-a",
+            "id": "candidate"
+          },
+          "version": "latest",
+          "required": true
+        },
+        {
+          "artifact": {
+            "step": "r19",
+            "participant": "S18-b",
+            "id": "candidate"
+          },
+          "version": "latest",
+          "required": true
+        },
+        {
+          "step": "r18",
+          "participant": "S17-closer",
+          "required": true
+        },
+        "r21"
+      ],
+      "models": [
+        {
+          "name": "Claude",
+          "id": "S21-synth"
+        }
+      ],
+      "task": "S21, Synthesizer: сравнить кандидатов по requirements, constraints, quality attributes и рискам."
+    },
+    {
+      "ref": "r24",
+      "kind": "round",
+      "input": [
+        {
+          "step": "synth:s21",
+          "participant": "S21-synth",
+          "required": true
+        }
+      ],
+      "models": [
+        {
+          "name": "Grok",
+          "id": "S21-reviewer"
+        }
+      ],
+      "task": "S21, Reviewer: проверить сравнение; trade-offs и evidence-зависимые решения выделить."
+    },
+    {
+      "ref": "r25",
+      "kind": "round",
+      "owner": "approve",
+      "input": [
+        {
+          "step": "r24",
+          "participant": "S21-reviewer",
+          "required": true
+        },
+        {
+          "step": "synth:s21",
+          "participant": "S21-synth",
+          "required": true
+        },
+        "owner:s01"
+      ],
+      "models": [
+        {
+          "name": "Claude",
+          "id": "S22-closer"
+        }
+      ],
+      "output": {
+        "name": "Architecture Direction",
+        "form": "Направление с rationale и unresolved blockers.",
+        "artifacts": [
+          {
+            "id": "direction",
+            "name": "Architecture Direction",
+            "pointer": ""
+          }
+        ]
+      },
+      "task": "S22, Decision Closer: выбрать направление в пределах authority; владелец утверждает A2+."
+    },
+    {
+      "ref": "gate:g3",
+      "kind": "gate",
+      "input": [
+        {
+          "step": "r25",
+          "participant": "S22-closer",
+          "required": true
+        }
+      ],
+      "require": "all",
+      "pass": "all",
+      "onFail": "ask",
+      "criteria": [
+        "У направления есть явный rationale",
+        "Класс полномочий соответствует Decision Policy",
+        "Evidence-зависимое вынесено как blockers"
+      ],
+      "models": [
+        {
+          "name": "DeepSeek",
+          "id": "G3-a"
+        },
+        {
+          "name": "Kimi",
+          "id": "G3-b"
+        }
+      ],
+      "task": "Gate G3: проверить критерии направления."
+    },
+    {
+      "ref": "r26",
+      "kind": "round",
+      "input": [
+        {
+          "step": "r25",
+          "participant": "S22-closer",
+          "required": true
+        }
+      ],
+      "models": [
+        {
+          "name": "Claude",
+          "id": "S23-synth"
+        }
+      ],
+      "output": {
+        "name": "Preliminary Conceptual Architecture",
+        "form": "Концептуальная архитектура: части, responsibilities, boundaries, interactions, flows, invariants.",
+        "artifacts": [
+          {
+            "id": "pca",
+            "name": "Preliminary Conceptual Architecture",
+            "pointer": ""
+          }
+        ]
+      },
+      "task": "S23, Synthesizer: оформить выбранное направление; open decisions не закрывать скрыто."
+    },
+    {
+      "ref": "r27",
+      "kind": "round",
+      "input": [
+        {
+          "step": "r17",
+          "participant": "S16-verifier",
+          "required": true
+        },
+        {
+          "step": "synth:s21",
+          "participant": "S21-synth",
+          "required": true
+        },
+        {
+          "step": "r25",
+          "participant": "S22-closer",
+          "required": true
+        },
+        {
+          "step": "r26",
+          "participant": "S23-synth",
+          "required": true
+        }
+      ],
+      "models": [
+        {
+          "name": "Claude",
+          "id": "S24-synth"
+        }
+      ],
+      "task": "S24, Synthesizer: каждое architecturally significant unknown — в backlog с impact, evidence и blocking status."
+    },
+    {
+      "ref": "owner:s25",
+      "kind": "owner",
+      "models": [],
+      "task": "S25, Owner: внести результат исследования и измерений по backlog S24 (текст).",
+      "output": {
+        "name": "Evidence and Measurements",
+        "form": "Текст результатов исследования: метод, результат, измерения."
+      }
+    },
+    {
+      "ref": "route:chg25",
+      "kind": "route",
+      "models": [],
+      "select": {
+        "by": "owner",
+        "cases": [
+          {
+            "id": "next",
+            "label": "Продолжить к S26",
+            "action": {
+              "goto": "r28"
+            }
+          },
+          {
+            "id": "chg_aip",
+            "label": "CHG: вернуться к AIP (S16) с повторной проверкой",
+            "action": {
+              "goto": "r17",
+              "maxLoops": 1,
+              "resumeAt": "owner:s25"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "ref": "r28",
+      "kind": "round",
+      "input": [
+        "owner:s25",
+        "owner:s01",
+        {
+          "step": "r27",
+          "participant": "S24-synth",
+          "required": true
+        }
+      ],
+      "models": [
+        {
+          "name": "Claude",
+          "id": "S26-closer"
+        }
+      ],
+      "output": {
+        "format": "json",
+        "requiredFields": [
+          "/closedDecisions",
+          "/directionBroken"
+        ],
+        "form": "JSON: closedDecisions — текст закрытых решений; directionBroken — true, если направление сломано (synthetic Q10)."
+      },
+      "task": "S26, Decision Closer: закрыть blocking decisions по evidence; required changes явно."
+    },
+    {
+      "ref": "route:s26",
+      "kind": "route",
+      "models": [],
+      "input": [
+        {
+          "step": "r28",
+          "participant": "S26-closer",
+          "required": true
+        }
+      ],
+      "select": {
+        "by": "rule",
+        "cases": [
+          {
+            "id": "direction_broken_synthetic",
+            "when": {
+              "source": 0,
+              "pointer": "/directionBroken",
+              "op": "eq",
+              "value": true
+            },
+            "action": {
+              "goto": "r25",
+              "maxLoops": 1
+            }
+          }
+        ],
+        "otherwise": {
+          "goto": "r29"
+        }
+      }
+    },
+    {
+      "ref": "r29",
+      "kind": "round",
+      "order": "parallel",
+      "require": 2,
+      "chat": "new",
+      "input": [
+        {
+          "step": "r26",
+          "participant": "S23-synth",
+          "required": true
+        },
+        {
+          "step": "r28",
+          "participant": "S26-closer",
+          "required": true
+        }
+      ],
+      "models": [
+        {
+          "name": "Grok",
+          "id": "S27-a"
+        },
+        {
+          "name": "Qwen",
+          "id": "S27-b"
+        }
+      ],
+      "output": {
+        "format": "json",
+        "requiredFields": [
+          "/requiresVerification",
+          "/failures"
+        ],
+        "form": "JSON: requiresVerification — true, если находка требует проверки (synthetic Q10)."
+      },
+      "task": "S27, Reviewer: независимо искать failure classes, blind spots и новые риски; не исправлять."
+    },
+    {
+      "ref": "route:s27",
+      "kind": "route",
+      "models": [],
+      "input": [
+        {
+          "step": "r29",
+          "participant": "S27-a",
+          "required": true
+        }
+      ],
+      "select": {
+        "by": "rule",
+        "cases": [
+          {
+            "id": "verify_s24_synthetic",
+            "when": {
+              "source": 0,
+              "pointer": "/requiresVerification",
+              "op": "eq",
+              "value": true
+            },
+            "action": {
+              "goto": "r27",
+              "maxLoops": 1,
+              "feedback": [
+                {
+                  "step": "r29",
+                  "participant": "S27-a",
+                  "required": true
+                }
+              ]
+            }
+          }
+        ],
+        "otherwise": {
+          "goto": "r30"
+        }
+      }
+    },
+    {
+      "ref": "r30",
+      "kind": "round",
+      "input": [
+        {
+          "artifact": {
+            "step": "r26",
+            "participant": "S23-synth",
+            "id": "pca"
+          },
+          "version": "latest",
+          "required": true
+        },
+        {
+          "step": "r28",
+          "participant": "S26-closer",
+          "required": true
+        },
+        "r29"
+      ],
+      "models": [
+        {
+          "name": "GPT",
+          "id": "S28-producer"
+        }
+      ],
+      "output": {
+        "name": "Revised Conceptual Architecture",
+        "form": "Ревизия архитектуры: только трассируемые изменения.",
+        "artifacts": [
+          {
+            "id": "pca",
+            "name": "Revised Conceptual Architecture",
+            "pointer": "",
+            "revisionOf": {
+              "artifact": {
+                "step": "r26",
+                "participant": "S23-synth",
+                "id": "pca"
+              },
+              "version": "latest",
+              "required": true
+            }
+          }
+        ]
+      },
+      "task": "S28, Producer: внести только трассируемые изменения по closed decisions и failure findings."
+    },
+    {
+      "ref": "r31",
+      "kind": "round",
+      "input": [
+        {
+          "step": "r30",
+          "participant": "S28-producer",
+          "required": true
+        }
+      ],
+      "models": [
+        {
+          "name": "Gemini",
+          "id": "S29-reviewer"
+        }
+      ],
+      "output": {
+        "format": "json",
+        "requiredFields": [
+          "/outcome"
+        ],
+        "form": "JSON: outcome — «close» (вернуть на S26), «revise» (вернуть на S28) или «baseline» (к S30); synthetic Q10."
+      },
+      "task": "S29, Reviewer: проверить ADR, consistency и traceability; выбрать исход."
+    },
+    {
+      "ref": "r32",
+      "kind": "round",
+      "input": [
+        {
+          "step": "r30",
+          "participant": "S28-producer",
+          "required": true
+        },
+        {
+          "step": "r31",
+          "participant": "S29-reviewer",
+          "required": true
+        }
+      ],
+      "models": [
+        {
+          "name": "DeepSeek",
+          "id": "S29-verifier"
+        }
+      ],
+      "task": "S29, Verifier: ADR Set, Consistency Report, Traceability Report."
+    },
+    {
+      "ref": "route:s29",
+      "kind": "route",
+      "models": [],
+      "input": [
+        {
+          "step": "r31",
+          "participant": "S29-reviewer",
+          "required": true
+        }
+      ],
+      "select": {
+        "by": "rule",
+        "cases": [
+          {
+            "id": "close_s26_synthetic",
+            "when": {
+              "source": 0,
+              "pointer": "/outcome",
+              "op": "eq",
+              "value": "close"
+            },
+            "action": {
+              "goto": "r28",
+              "maxLoops": 1
+            }
+          },
+          {
+            "id": "revise_s28_synthetic",
+            "when": {
+              "source": 0,
+              "pointer": "/outcome",
+              "op": "eq",
+              "value": "revise"
+            },
+            "action": {
+              "goto": "r30",
+              "maxLoops": 2
+            }
+          },
+          {
+            "id": "baseline_s30",
+            "when": {
+              "source": 0,
+              "pointer": "/outcome",
+              "op": "eq",
+              "value": "baseline"
+            },
+            "action": {
+              "goto": "r33"
+            }
+          }
+        ],
+        "otherwise": {
+          "stop": "исход S29 не определён"
+        }
+      }
+    },
+    {
+      "ref": "r33",
+      "kind": "round",
+      "owner": "approve",
+      "input": [
+        {
+          "artifact": {
+            "step": "r26",
+            "participant": "S23-synth",
+            "id": "pca"
+          },
+          "version": "latest",
+          "required": true
+        },
+        {
+          "step": "r32",
+          "participant": "S29-verifier",
+          "required": true
+        },
+        "owner:s01"
+      ],
+      "models": [
+        {
+          "name": "Claude",
+          "id": "S30-closer"
+        }
+      ],
+      "output": {
+        "name": "Conceptual Architecture Baseline",
+        "form": "CAB: Revised Conceptual Architecture, ADR Set, Traceability Report, Non-blocking Unknowns, история изменений.",
+        "artifacts": [
+          {
+            "id": "cab_baseline",
+            "name": "Conceptual Architecture Baseline",
+            "pointer": ""
+          }
+        ]
+      },
+      "task": "S30, Decision Closer: зафиксировать CAB после G4; владелец утверждает."
+    },
+    {
+      "ref": "gate:g4",
+      "kind": "gate",
+      "input": [
+        {
+          "step": "r33",
+          "participant": "S30-closer",
+          "required": true
+        }
+      ],
+      "require": "all",
+      "pass": "all",
+      "onFail": "ask",
+      "criteria": [
+        "Нет blocking issues",
+        "ADR записаны",
+        "Трасса «требование → архитектурное решение → evidence» без разрывов",
+        "Опровергнутые assumptions отражены через change events"
+      ],
+      "models": [
+        {
+          "name": "Kimi",
+          "id": "G4-a"
+        },
+        {
+          "name": "Grok",
+          "id": "G4-b"
+        }
+      ],
+      "task": "Gate G4: проверить критерии CAB."
+    }
+  ]
+}

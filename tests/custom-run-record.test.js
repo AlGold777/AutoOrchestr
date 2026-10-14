@@ -212,7 +212,7 @@ describe('Custom run record, version 2 (8.2)', () => {
     const snapshot = record.snapshot;
     // The registry is record.artifacts (5.3), not a second copy in the snapshot.
     expect(Object.keys(snapshot).sort()).toEqual(['chatBindings', 'continuationStack', 'current', 'decisions', 'dependencies', 'feedback', 'loopCounters', 'ownerAnswers', 'pc', 'pendingOwner', 'results', 'routes', 'runSettings', 'schema', 'taskRef', 'visits']);
-    expect(snapshot.chatBindings).toEqual([]);
+    expect(snapshot.chatBindings).toEqual({});
     expect(snapshot.current).toMatchObject({ stepRef: null, phase: 'done' });
     expect(Record.canResume(record)).toBe(true);
     expect(JSON.parse(JSON.stringify(snapshot))).toEqual(snapshot);
@@ -227,5 +227,196 @@ describe('Custom run record, version 2 (8.2)', () => {
     const back = Record.revive(stored);
     expect(Record.textOf(back, back.snapshot.feedback['owner:evidence'][0].textRef)).toBe(feedbackText);
     expect(Record.exportRun(back).snapshot.feedback['owner:evidence'][0]).toMatchObject({ text: feedbackText, source: { step: 0, visit: 1 }, label: 'Владелец' });
+  });
+});
+
+// The real adapter (chromeStorage) over a fake chrome.storage.local: its callbacks report a failure through chrome.runtime.lastError.
+function chromeArea({ failGet = '', failSet = '', failRemove = '', throwOn = '', quotaBytes = Infinity, setFailFrom = Infinity } = {}) {
+  const data = {};
+  let setCalls = 0;
+  const reply = (callback, error, value) => {
+    globalThis.chrome = { runtime: { lastError: error ? { message: error } : undefined } };
+    try { callback(value); } finally { globalThis.chrome = { runtime: {} }; }
+  };
+  return {
+    data,
+    setCalls: () => setCalls,
+    get(key, callback) {
+      if (throwOn === 'get') throw new Error('get threw');
+      if (failGet) return reply(callback, failGet, {});
+      return reply(callback, '', { [key]: data[key] });
+    },
+    set(items, callback) {
+      if (throwOn === 'set') throw new Error('set threw');
+      setCalls += 1;
+      if (setCalls >= setFailFrom) return reply(callback, failSet || 'set failed', undefined);
+      if (JSON.stringify(items).length > quotaBytes) return reply(callback, 'QUOTA_BYTES quota exceeded', undefined);
+      Object.assign(data, JSON.parse(JSON.stringify(items)));
+      return reply(callback, '', undefined);
+    },
+    remove(key, callback) {
+      if (throwOn === 'remove') throw new Error('remove threw');
+      if (failRemove) return reply(callback, failRemove, undefined);
+      delete data[key];
+      return reply(callback, '', undefined);
+    }
+  };
+}
+
+// The page path of a run (results.js): the checkpoint takes the state into the record and waits for the store.
+function pageCheckpoint(record, store, steps) {
+  return (state) => {
+    Record.setArtifacts(record, state.artifacts);
+    Record.setSnapshot(record, { schema: steps, runSettings: {}, state, current: state.current, routes: state.routes, ownerAnswers: state.ownerAnswers, pendingOwner: state.pendingOwner });
+    return store.save(record);
+  };
+}
+
+describe('Custom run record storage: the chrome.storage adapter rejects every failure (R03)', () => {
+  const steps = [{ ref: 'S1', kind: 'round', input: 'none', models: ['A'] }, { ref: 'S2', kind: 'round', input: 'previous', models: ['B'] }];
+  const oneRun = (runId, answer = 'a1') => recordedRun({ runId, steps: [{ task: 'x', input: 'none', models: ['A'] }], answers: { A: [answer] } });
+
+  test('a successful write and read go through the adapter', async () => {
+    const store = Record.createStore({ storage: Record.chromeStorage(chromeArea()) });
+    const { record } = await oneRun('run-ok');
+    await store.save(record);
+    const back = await store.load('run-ok');
+    expect(Record.textOf(back, back.attempts[0].answerRef)).toBe('a1');
+  });
+
+  test('a read the area refuses rejects; it is not an empty record', async () => {
+    const store = Record.createStore({ storage: Record.chromeStorage(chromeArea({ failGet: 'get failed' })) });
+    await expect(store.load('run-x')).rejects.toThrow('get failed');
+    await expect(store.list()).rejects.toThrow('get failed');
+  });
+
+  test('a quota error on write rejects the save', async () => {
+    const store = Record.createStore({ storage: Record.chromeStorage(chromeArea({ quotaBytes: 50 })) });
+    const { record } = await oneRun('run-q');
+    await expect(store.save(record)).rejects.toThrow('QUOTA_BYTES');
+  });
+
+  test('a refused remove rejects the save that removes an old run', async () => {
+    const store = Record.createStore({ storage: Record.chromeStorage(chromeArea({ failRemove: 'remove failed' })), maxBytes: 6000 });
+    const first = await recordedRun({ runId: 'run-1', steps: [{ task: 'x', input: 'none', models: ['A'] }], answers: { A: ['1'.repeat(2000)] } });
+    await store.save(first.record);
+    const big = await recordedRun({ runId: 'run-2', steps: [{ task: 'x', input: 'none', models: ['A'] }], answers: { A: ['2'.repeat(9000)] } });
+    await expect(store.save(big.record)).rejects.toThrow('remove failed');
+  });
+
+  test('a synchronous throw of the area rejects the promise too', async () => {
+    const { record } = await oneRun('run-t');
+    await expect(Record.createStore({ storage: Record.chromeStorage(chromeArea({ throwOn: 'get' })) }).list()).rejects.toThrow('get threw');
+    await expect(Record.createStore({ storage: Record.chromeStorage(chromeArea({ throwOn: 'set' })) }).save(record)).rejects.toThrow('set threw');
+  });
+
+  test('engine → page → adapter: a failed checkpoint before the first send sends nothing', async () => {
+    const store = Record.createStore({ storage: Record.chromeStorage(chromeArea({ setFailFrom: 1 })) });
+    const record = Record.createRun({ runId: 'run-cp', pipelineName: 'Mine', task: 'T', steps });
+    const sent = [];
+    const send = async (models) => { sent.push(models.slice()); return { byModel: Object.fromEntries(models.map((model) => [model, { text: 'a', status: 'SUCCESS' }])) }; };
+    await expect(Engine.run({ task: 'T', steps, send, checkpoint: pageCheckpoint(record, store, steps) })).rejects.toThrow('checkpoint_failed');
+    expect(sent).toEqual([]);
+  });
+
+  test('engine → page → adapter: a refused save of an answer already received sends no next request and makes no transition', async () => {
+    // The checkpoint before the send of A writes two sets (the run, the index); the one after the answer of A is the third.
+    const store = Record.createStore({ storage: Record.chromeStorage(chromeArea({ setFailFrom: 3 })) });
+    const record = Record.createRun({ runId: 'run-ans', pipelineName: 'Mine', task: 'T', steps });
+    const sent = [];
+    const send = async (models) => { sent.push(models.slice()); return { byModel: Object.fromEntries(models.map((model) => [model, { text: 'a1', status: 'SUCCESS' }])) }; };
+    await expect(Engine.run({ task: 'T', steps, send, checkpoint: pageCheckpoint(record, store, steps) })).rejects.toThrow('checkpoint_failed');
+    expect(sent).toEqual([['A']]);
+  });
+
+  test('a refused save of the final checkpoint is not a success: the run rejects with checkpoint_failed', async () => {
+    const counting = chromeArea();
+    const store = Record.createStore({ storage: Record.chromeStorage(counting) });
+    const probe = Record.createRun({ runId: 'run-probe', pipelineName: 'Mine', task: 'T', steps });
+    const ok = async (models) => ({ byModel: Object.fromEntries(models.map((model) => [model, { text: 'a', status: 'SUCCESS' }])) });
+    await Engine.run({ task: 'T', steps, send: ok, checkpoint: pageCheckpoint(probe, store, steps) });
+    const total = counting.setCalls();
+    // The last checkpoint writes the run and then the index: the failure starts with its run write.
+    const failing = chromeArea({ setFailFrom: total - 1 });
+    const failStore = Record.createStore({ storage: Record.chromeStorage(failing) });
+    const record = Record.createRun({ runId: 'run-done', pipelineName: 'Mine', task: 'T', steps });
+    await expect(Engine.run({ task: 'T', steps, send: ok, checkpoint: pageCheckpoint(record, failStore, steps) })).rejects.toThrow('checkpoint_failed');
+  });
+});
+
+describe('Custom run record export is self-contained (R04)', () => {
+  // A run with a binary owner file, an owner answer that declares an artifact, the feedback of a gate that waits for the next
+  // round (the transport refuses its request, so the run stops there), and an attempt that was sent and never answered.
+  async function fullRun() {
+    const storage = memoryStorage();
+    const store = Record.createStore({ storage });
+    const record = Record.createRun({ runId: 'run-full', pipelineName: 'Mine', task: 'Задача T', steps: [] });
+    const fileContent = 'PDF-содержимое\u0000\u00ff';
+    const fileRef = record.put(fileContent);
+    const steps = [
+      { ref: 'O0', kind: 'owner', task: 'Приложи файл' },
+      { ref: 'O1', kind: 'owner', task: 'Дай тезис', output: { format: 'json', requiredFields: ['/thesis'], artifacts: [{ id: 'thesis', name: 'Тезис', pointer: '/thesis' }] } },
+      { ref: 'S1', kind: 'round', task: 'Тезис', input: 'none', models: ['A'] },
+      { ref: 'G1', kind: 'gate', criteria: ['c'], models: ['B'], onFail: { goto: 'S2', maxLoops: 1, feedback: [{ step: 'G1', participant: 'B' }] } },
+      { ref: 'S2', kind: 'round', task: 'Доработай', input: 'previous', models: ['C'] }
+    ];
+    const FAIL = 'Разбор.\nНЕ ВЫПОЛНЕНО: x\nВЕРДИКТ: НЕ ПРОШЁЛ';
+    const send = async (models, prompts) => { if (models.includes('C')) throw Object.assign(new Error('too long'), { code: 'context_full' }); return { byModel: Object.fromEntries(models.map((model) => [model, { text: model === 'A' ? 'a1' : FAIL, status: 'SUCCESS', attribution: 'verified', transportRequestId: model + '-1', sentPrompt: prompts[model] }])) }; };
+    const provideOwnerResult = async ({ stepRef }) => (stepRef === 'O0' ? { file: { name: 'brief.pdf', mime: 'application/pdf', size: fileContent.length, ref: fileRef } } : JSON.stringify({ thesis: 'Тезис владельца' }));
+    const result = await Engine.run({
+      task: 'Задача T', steps, send, runId: 'run-full', provideOwnerResult,
+      putText: (value) => record.put(value), getText: (ref) => (ref && record.texts[ref] !== undefined ? record.texts[ref] : undefined),
+      checkpoint: pageCheckpoint(record, store, steps),
+      onRequest: (entry) => Record.recordAttempt(record, entry), onResponse: (entry) => Record.recordAttempt(record, entry)
+    });
+    // An attempt sent and never answered (the page was closed): it stays unfinished in the record.
+    Record.recordAttempt(record, { step: 4, ref: 'S9', participant: 'C', model: 'C', visit: 1, attempt: 1, phase: 'answer', label: 'Незавершённый', prompt: 'Незавершённый запрос', parts: { instructions: { task: 'Задача T' } }, state: 'sent' });
+    Record.finishRun(record, { stopReason: result.stopReason });
+    await store.save(record);
+    return { record, result, fileContent, fileRef, back: await store.load('run-full') };
+  }
+
+  // Every text reference in the exported JSON: a field named *Ref (stepRef is an address) and the reference of a file.
+  function refsOf(value, out = new Set()) {
+    if (Array.isArray(value)) { value.forEach((item) => refsOf(item, out)); return out; }
+    if (!value || typeof value !== 'object') return out;
+    Object.entries(value).forEach(([key, item]) => {
+      if (/Ref$/.test(key) && key !== 'stepRef' && typeof item === 'string' && item) out.add(item);
+      if (key === 'file' && item && typeof item.ref === 'string') out.add(item.ref);
+      refsOf(item, out);
+    });
+    return out;
+  }
+
+  test('the export keeps every text reference of the record, and each one resolves to the same text after JSON', async () => {
+    const { record, back } = await fullRun();
+    const exported = JSON.parse(JSON.stringify(Record.exportRun(back)));
+    const refs = refsOf(exported);
+    expect(refs.size).toBeGreaterThan(5);
+    for (const ref of refs) {
+      expect(exported.texts).toHaveProperty([ref]);
+      expect(Record.fingerprint(exported.texts[ref])).toBe(ref);
+      expect(exported.texts[ref]).toBe(Record.textOf(record, ref));
+    }
+  });
+
+  test('the export has the owner answer, the feedback still waiting for an owner step, the registry, the owner file and the unfinished attempt', async () => {
+    const { fileContent, fileRef, back } = await fullRun();
+    const exported = JSON.parse(JSON.stringify(Record.exportRun(back)));
+    expect(exported).toMatchObject({ version: 2, resumable: true, task: 'Задача T', stopReason: 'context_full' });
+    expect(exported.artifacts).toEqual([expect.objectContaining({ id: 'thesis', text: JSON.stringify({ thesis: 'Тезис владельца' }), source: expect.objectContaining({ step: 'O1', participant: 'owner' }) })]);
+    const owner = exported.snapshot.results.find((item) => item.stepRef === 'O0');
+    expect(owner.owner.file).toEqual({ name: 'brief.pdf', mime: 'application/pdf', size: fileContent.length, ref: fileRef });
+    expect(exported.texts[fileRef]).toBe(fileContent);
+    const feedbackRef = exported.snapshot.current.feedback[0].textRef;
+    expect(exported.texts[feedbackRef]).toBe('Разбор.\nНЕ ВЫПОЛНЕНО: x\nВЕРДИКТ: НЕ ПРОШЁЛ');
+    const unfinished = exported.attempts.find((item) => item.label === 'Незавершённый');
+    expect(unfinished).toMatchObject({ state: 'unknown', ref: 'S9', participant: 'C', visit: 1, attempt: 1, phase: 'answer', prompt: 'Незавершённый запрос' });
+    expect(exported.snapshot).toEqual(expect.objectContaining({ chatBindings: expect.any(Object), dependencies: expect.any(Object) }));
+  });
+
+  test('a version 1 record is still exported, and it is not resumable', () => {
+    const v1 = { version: 1, runId: 'old', pipelineName: 'Mine', startedAt: 1, finishedAt: 2, stopReason: 'steps_done', taskRef: 't1', steps: [], texts: { t1: 'Задача' }, attempts: [] };
+    expect(Record.exportRun(Record.revive(JSON.parse(JSON.stringify(v1))))).toMatchObject({ version: 1, resumable: false, task: 'Задача' });
   });
 });

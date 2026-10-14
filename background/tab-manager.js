@@ -243,6 +243,15 @@ const loadTabMapFromStorage = async () => {
   if (data.llmTabMap) {
     Object.assign(llmTabMap, data.llmTabMap);
   }
+  const participants = await chrome.storage.local.get(PARTICIPANT_TAB_MAP_KEY);
+  Object.keys(participantTabMap).forEach((key) => delete participantTabMap[key]);
+  Object.entries(participants[PARTICIPANT_TAB_MAP_KEY] || {}).forEach(([runKey, byParticipant]) => {
+    Object.entries(byParticipant && typeof byParticipant === 'object' ? byParticipant : {}).forEach(([participantId, entry]) => {
+      if (typeof entry?.modelName === 'string' && isValidTabId(entry.tabId)) {
+        (participantTabMap[runKey] ||= {})[participantId] = { ...entry };
+      }
+    });
+  });
   let changed = false;
   await Promise.all(Object.entries(llmTabMap).map(async ([llmName, tabId]) => {
     if (!isValidTabId(tabId) || await isAppUiTabId(tabId)) {
@@ -258,6 +267,87 @@ const loadTabMapFromStorage = async () => {
 };
 
 const fallbackRecoveryUsed = new Set();
+
+// Basic participants (T07, R01): the chat of a participant belongs to one run. Keyed by run ID, then participant ID:
+// { [runId]: { [participantId]: { modelName, tabId, requestId, stageAttemptId } } }. Stored apart from llmTabMap, so it
+// survives a reload of the worker. The binding is written before the send; a run's entries are removed on cancel and
+// when the next run starts.
+const participantTabMap = {};
+const PARTICIPANT_TAB_MAP_KEY = 'llmParticipantTabMap';
+
+const participantRunKey = (runId) => String(runId || '');
+
+function participantChatOf(runId, participantId) {
+  const entry = participantTabMap[participantRunKey(runId)]?.[String(participantId || '')];
+  return entry && isValidTabId(entry.tabId) ? { ...entry } : null;
+}
+
+// The bindings of one run as the page keeps them in its snapshot (R01): participantId → { modelName, tabId, requestId, stageAttemptId }.
+function participantChatBindingsOf(runId) {
+  const byParticipant = participantTabMap[participantRunKey(runId)] || {};
+  return Object.fromEntries(Object.entries(byParticipant)
+    .filter(([, entry]) => isValidTabId(entry?.tabId))
+    .map(([id, entry]) => [id, { ...entry }]));
+}
+
+// Tabs of the model that belong to other participants (of this run or of another one): a participant never takes one of them.
+function tabsOfOtherParticipants(modelName, runId, participantId) {
+  const runKey = participantRunKey(runId);
+  const pid = String(participantId || '');
+  const tabIds = [];
+  Object.entries(participantTabMap).forEach(([rKey, byParticipant]) => {
+    Object.entries(byParticipant || {}).forEach(([id, entry]) => {
+      if (rKey === runKey && id === pid) return;
+      if (entry?.modelName === modelName && isValidTabId(entry.tabId)) tabIds.push(entry.tabId);
+    });
+  });
+  return tabIds;
+}
+
+const persistParticipantTabMap = () => chrome.storage.local.set({
+  [PARTICIPANT_TAB_MAP_KEY]: JSON.parse(JSON.stringify(participantTabMap))
+});
+
+// Writes the binding of a participant chat. Throws when it cannot be stored: the caller must not send then.
+async function bindParticipantChat(runId, participantId, modelName, tabId, meta = {}) {
+  const runKey = participantRunKey(runId);
+  const pid = String(participantId || '');
+  if (!runKey || !pid || !modelName || !isValidTabId(tabId)) {
+    throw new Error('participant_binding_invalid');
+  }
+  const byParticipant = participantTabMap[runKey] || (participantTabMap[runKey] = {});
+  const previous = byParticipant[pid];
+  byParticipant[pid] = {
+    modelName,
+    tabId,
+    requestId: meta.requestId || null,
+    stageAttemptId: meta.stageAttemptId || null
+  };
+  try {
+    await persistParticipantTabMap();
+  } catch (err) {
+    if (previous) byParticipant[pid] = previous;
+    else delete byParticipant[pid];
+    throw err;
+  }
+}
+
+// Removes the bindings of a run (cancelled or finished). Other runs are not touched.
+async function clearParticipantRun(runId) {
+  const runKey = participantRunKey(runId);
+  if (!runKey || !(runKey in participantTabMap)) return;
+  delete participantTabMap[runKey];
+  await persistParticipantTabMap().catch(() => {});
+}
+
+// Keeps the bindings of one run only: the bindings of finished runs do not stay in storage.
+async function pruneParticipantRuns(keepRunId = null) {
+  const keepKey = participantRunKey(keepRunId);
+  const stale = Object.keys(participantTabMap).filter((runKey) => runKey !== keepKey);
+  if (!stale.length) return;
+  stale.forEach((runKey) => delete participantTabMap[runKey]);
+  await persistParticipantTabMap().catch(() => {});
+}
 
 const TabMapManager = (() => {
   let mutex = Promise.resolve();
@@ -500,12 +590,14 @@ async function validateReusableTab(llmName, tabId, options = {}) {
   return ensureTabReadyForDispatch(tabId, llmName, { reason });
 }
 
-async function findReusableTabsForLlm(llmName) {
+async function findReusableTabsForLlm(llmName, options = {}) {
   const tabs = await getAllOpenTabs();
   if (!tabs.length) return [];
-  const boundTabId = jobState?.llms?.[llmName]?.tabId || TabMapManager.get(llmName);
+  const boundTabId = options.preferTabId || jobState?.llms?.[llmName]?.tabId || TabMapManager.get(llmName);
+  const excluded = new Set(options.excludeTabIds || []);
   return tabs
     .filter((tab) => tab && typeof tab.url === 'string' && /^https?:\/\//i.test(tab.url))
+    .filter((tab) => !excluded.has(tab.id))
     .filter((tab) => isEligibleTabForLlm(llmName, tab) && (tab.id === boundTabId || matchesQueryPatternUrl(tab.url, llmName)))
     .sort((a, b) => Number(b.id === boundTabId) - Number(a.id === boundTabId) || compareTabsByOpenRecency(a, b));
 }
@@ -704,6 +796,17 @@ function createNewLlmTab(llmName, prompt, attachments = [], options = {}) {
     }
     await setTabBinding(llmName, tab.id);
     trackSessionTab(tab.id);
+    if (typeof options.onBound === 'function') {
+      try {
+        await options.onBound(tab.id);
+      } catch (err) {
+        // A chat that cannot be bound is not used: it is closed and nothing is sent into it.
+        await setTabBinding(llmName, null).catch(() => {});
+        try { chrome.tabs.remove(tab.id); } catch (_) {}
+        resolve(false);
+        return;
+      }
+    }
     globalThis.LLMLog?.debug?.(`[BACKGROUND] Created and saved tab for ${llmName}: ${tab.id}`);
     broadcastGlobalState();
     emitTelemetry(llmName, 'TAB_CREATED', {
@@ -817,7 +920,7 @@ function tryAttachExistingTab(llmName, prompt, attachments = [], options = {}) {
       resolve(false);
       return;
     }
-    findReusableTabsForLlm(llmName).then(async (tabs) => {
+    findReusableTabsForLlm(llmName, options).then(async (tabs) => {
       if (!tabs || !tabs.length) {
         resolve(false);
         return;
@@ -858,7 +961,7 @@ function tryAttachExistingTab(llmName, prompt, attachments = [], options = {}) {
       let firstSoftBlocked = null;
       for (const tabOption of eligibleTabs) {
         const isRunBound = !!(runBoundSet && runBoundSet.has(tabOption.id));
-        const isMapped = tabOption.id === (jobState?.llms?.[llmName]?.tabId || TabMapManager.get(llmName));
+        const isMapped = tabOption.id === (options.preferTabId || jobState?.llms?.[llmName]?.tabId || TabMapManager.get(llmName));
         // Keep a known conversation even if its composer is busy or has a draft.
         // Readiness belongs to dispatch; choosing another conversation is not recovery.
         if (options.deferDispatch || !allowGlobalReuse || isRunBound || isMapped) {
@@ -952,6 +1055,9 @@ function tryAttachExistingTab(llmName, prompt, attachments = [], options = {}) {
           await prepareTabForUse(candidate.id, llmName);
         }
         await setTabBinding(llmName, candidate.id);
+        if (typeof options.onBound === 'function') {
+          await options.onBound(candidate.id);
+        }
         initRequestMetadata(llmName, candidate.id, readiness.tab?.url || candidate?.url || (LLM_TARGETS[llmName]?.url) || '');
         emitTelemetry(llmName, 'TAB_ATTACHED', {
           details: readiness.tab?.url || candidate?.url || '',
@@ -979,6 +1085,163 @@ function tryAttachExistingTab(llmName, prompt, attachments = [], options = {}) {
       }
     }).catch(() => resolve(false));
   });
+}
+
+// Error object of the Basic participant transport. The codes are read by the page: nothing is sent when one is returned.
+//   participant_chat_lost     - the chat bound to the participant of this run is gone or not usable (tab closed, other site)
+//   participant_binding_failed - the binding of the chat could not be stored, so the request is not sent
+function participantRunError(code, message, meta = {}) {
+  return { ok: false, type: code, errorCode: code, message, recoverable: false, meta };
+}
+
+// One participant request (T07, R01). The chat of a participant is bound per run ID and participant ID:
+//  - a new visit (newChat, another stageAttemptId) opens a chat once; a repeat of the same visit goes to that chat;
+//  - a continue goes only to the chat bound to the participant of this run; when that chat is lost the request stops
+//    before the send: no other tab of the provider and no new chat is taken;
+//  - a first request without a binding may take a chat of the provider that no participant is bound to, or open one.
+// The binding is written before the prompt is sent. Resolves { ok: true, tabId } or { ok: false, error }.
+async function openParticipantChat(llmName, participant = {}, prompt = '', attachments = [], options = {}) {
+  const runId = participantRunKey(participant.runId);
+  const participantId = String(participant.participantId || '');
+  const visit = {
+    runId,
+    participantId,
+    requestId: participant.requestId || null,
+    stageAttemptId: participant.stageAttemptId || null
+  };
+  const bindingOf = (meta = {}) => ({ participantId, runId, modelName: llmName, ...meta });
+  // The chat saved by the page (snapshot of a resumed run) is used only when the background has no binding of this run
+  // and participant, and only for a continue. It is checked like any binding: a lost tab stops the request.
+  const savedChat = participant.binding && typeof participant.binding === 'object' && participant.binding.tabId != null
+    ? { ...participant.binding, modelName: llmName }
+    : null;
+  const bound = participantChatOf(runId, participantId)
+    || (!participant.newChat && savedChat ? savedChat : null);
+  const sameVisit = !!bound && !!visit.stageAttemptId && bound.stageAttemptId === visit.stageAttemptId;
+
+  if (bound && (!participant.newChat || sameVisit)) {
+    return continueParticipantChat(llmName, visit, bound, prompt, attachments, options);
+  }
+  if (!participant.newChat) {
+    const attached = await attachUnboundParticipantChat(llmName, visit, prompt, attachments, options);
+    if (attached) return attached;
+  }
+  let bindError = null;
+  const created = await createNewLlmTab(llmName, prompt, attachments, {
+    ...options,
+    forceCreate: true,
+    onBound: async (tabId) => {
+      try {
+        await bindParticipantChat(runId, participantId, llmName, tabId, visit);
+      } catch (err) {
+        bindError = err;
+        throw err;
+      }
+    }
+  });
+  if (bindError) {
+    return { ok: false, error: participantRunError('participant_binding_failed', 'Не удалось сохранить привязку чата участника; запрос не отправлен.', bindingOf({ reason: bindError?.message || 'binding_failed' })) };
+  }
+  if (!created) {
+    // createNewLlmTab has already reported the failure (or the run was replaced); nothing is sent.
+    return { ok: false, error: null };
+  }
+  return { ok: true, tabId: TabMapManager.get(llmName) };
+}
+
+async function continueParticipantChat(llmName, visit, bound, prompt, attachments, options) {
+  const meta = { participantId: visit.participantId, runId: visit.runId, tabId: bound.tabId, modelName: llmName };
+  const lost = (reason) => ({
+    ok: false,
+    error: participantRunError('participant_chat_lost', `Чат участника ${visit.participantId} больше недоступен (${reason}). Запрос не отправлен, чужой чат не выбран.`, { ...meta, reason })
+  });
+  if (bound.modelName !== llmName) return lost('model_mismatch');
+  const tab = await getTabSafe(bound.tabId);
+  if (!tab || isAppUiTab(tab) || !isEligibleTabForLlm(llmName, tab)) return lost('tab_unavailable');
+  if (!options.deferDispatch) {
+    const readiness = await ensureTabReadyForDispatch(bound.tabId, llmName, { reason: 'participant_continue' });
+    if (!readiness?.ok) return lost(readiness?.reason || 'tab_not_ready');
+    await prepareTabForUse(bound.tabId, llmName);
+  }
+  return sendToParticipantChat(llmName, bound.tabId, visit, prompt, attachments, options, 'participant_continue');
+}
+
+// N04: the answer of a request that was sent but whose sending is not confirmed. A read only: it never sends, never binds
+// and never takes another chat. It reads the chat bound to the participant of this run, or the chat the page saved for it.
+// A chat that cannot be read is never a success. Statuses: found (text), no_answer, ambiguous, chat_unavailable.
+async function checkParticipantAnswer({ llmName, runId, participantId, transportRequestId = null, tabId = null, excludeText = '' } = {}) {
+  const pid = String(participantId || '');
+  if (!llmName || !participantRunKey(runId) || !pid) return { ok: false, status: 'chat_unavailable', reason: 'missing_identity' };
+  const live = participantChatOf(runId, pid);
+  const savedTabId = isValidTabId(tabId) ? tabId : null;
+  if (live && live.modelName !== llmName) return { ok: false, status: 'chat_unavailable', reason: 'model_mismatch' };
+  // The chat the page saved and the chat the background bound must be the same one; otherwise the answer is not attributable.
+  if (live && savedTabId && live.tabId !== savedTabId) return { ok: false, status: 'ambiguous', reason: 'binding_mismatch', tabId: live.tabId };
+  const chat = live || (savedTabId ? { tabId: savedTabId, requestId: null } : null);
+  if (!chat) return { ok: false, status: 'chat_unavailable', reason: 'no_binding' };
+  if (live?.requestId && transportRequestId && live.requestId !== String(transportRequestId)) {
+    return { ok: false, status: 'ambiguous', reason: 'chat_bound_to_other_request', tabId: chat.tabId };
+  }
+  const tab = await getTabSafe(chat.tabId);
+  if (!tab || isAppUiTab(tab) || !isEligibleTabForLlm(llmName, tab)) {
+    return { ok: false, status: 'chat_unavailable', reason: 'tab_unavailable', tabId: chat.tabId };
+  }
+  let snapshot = null;
+  try {
+    const result = await chrome.scripting.executeScript({
+      target: { tabId: chat.tabId },
+      func: self.extractLatestAssistantSnapshotInPage,
+      args: [llmName, 1, { excludeTextSignatures: excludeText ? [String(excludeText)] : [] }]
+    });
+    snapshot = Array.isArray(result) ? result.find((item) => item?.result)?.result || null : null;
+  } catch (err) {
+    return { ok: false, status: 'chat_unavailable', reason: 'read_failed', tabId: chat.tabId };
+  }
+  if (!snapshot) return { ok: false, status: 'chat_unavailable', reason: 'no_result', tabId: chat.tabId };
+  if (snapshot.ok && String(snapshot.text || '').trim()) {
+    return { ok: true, status: 'found', text: String(snapshot.text), html: String(snapshot.html || ''), tabId: chat.tabId };
+  }
+  return { ok: false, status: 'no_answer', reason: 'no_answer_in_chat', tabId: chat.tabId };
+}
+
+// Binds the tab to the participant, then sends. A failed binding stops the request.
+async function sendToParticipantChat(llmName, tabId, visit, prompt, attachments, options, source) {
+  await setTabBinding(llmName, tabId);
+  try {
+    await bindParticipantChat(visit.runId, visit.participantId, llmName, tabId, visit);
+  } catch (err) {
+    return { ok: false, error: participantRunError('participant_binding_failed', 'Не удалось сохранить привязку чата участника; запрос не отправлен.', { participantId: visit.participantId, runId: visit.runId, tabId, reason: err?.message || 'binding_failed' }) };
+  }
+  initRequestMetadata(llmName, tabId, (await getTabSafe(tabId))?.url || LLM_TARGETS[llmName]?.url || '');
+  if (!options.deferDispatch) {
+    dispatchPromptToTab(llmName, tabId, prompt, attachments, source);
+  }
+  return { ok: true, tabId };
+}
+
+// First request of a participant without a binding: a chat of the provider that no participant is bound to.
+// Resolves null when no such chat was taken (the caller opens a new one).
+async function attachUnboundParticipantChat(llmName, visit, prompt, attachments, options) {
+  let bindError = null;
+  const attached = await tryAttachExistingTab(llmName, prompt, attachments, {
+    ...options,
+    allowGlobalReuse: true,
+    mandatoryReuse: true,
+    excludeTabIds: tabsOfOtherParticipants(llmName, visit.runId, visit.participantId),
+    onBound: async (tabId) => {
+      try {
+        await bindParticipantChat(visit.runId, visit.participantId, llmName, tabId, visit);
+      } catch (err) {
+        bindError = err;
+        throw err;
+      }
+    }
+  }).catch(() => false);
+  if (bindError) {
+    return { ok: false, error: participantRunError('participant_binding_failed', 'Не удалось сохранить привязку чата участника; запрос не отправлен.', { participantId: visit.participantId, runId: visit.runId, reason: bindError?.message || 'binding_failed' }) };
+  }
+  if (!attached) return null;
+  return { ok: true, tabId: TabMapManager.get(llmName) };
 }
 
 function activateTabForDispatch(tabId, source = 'activate_tab_for_dispatch', options = {}) {
@@ -1560,6 +1823,14 @@ self.matchesUrlPrefix = matchesUrlPrefix;
 self.resolveTabForLlmName = resolveTabForLlmName;
 self.resolveTabForLlmNameAsync = resolveTabForLlmNameAsync;
 self.findReusableTabsForLlm = findReusableTabsForLlm;
+self.participantChatOf = participantChatOf;
+self.participantChatBindingsOf = participantChatBindingsOf;
+self.checkParticipantAnswer = checkParticipantAnswer;
+self.tabsOfOtherParticipants = tabsOfOtherParticipants;
+self.bindParticipantChat = bindParticipantChat;
+self.clearParticipantRun = clearParticipantRun;
+self.pruneParticipantRuns = pruneParticipantRuns;
+self.openParticipantChat = openParticipantChat;
 self.validateReusableTab = validateReusableTab;
 self.getAttachAllowPrefixes = getAttachAllowPrefixes;
 self.getAttachDenyPrefixes = getAttachDenyPrefixes;

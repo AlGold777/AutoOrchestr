@@ -196,14 +196,14 @@ describe('Basic schema: values are kept as given until the end', () => {
   });
 
   test('the run policy and the shared limit are part of the schema', () => {
-    expect(Schema.resolveRun(base([]))).toEqual({ policy: 'manual', maxWords: 300 });
-    expect(Schema.resolveRun(base([], { run: { policy: 'auto' } }))).toEqual({ policy: 'auto', maxWords: 300 });
-    expect(Schema.resolveRun(base([], { run: { policy: 'manual', maxWords: 700 } }))).toEqual({ policy: 'manual', maxWords: 700 });
-    expect(Schema.validate(base([], { run: { policy: 'auto', maxWords: 700 } }))).toEqual([]);
-    expect(errorPaths(base([], { run: { policy: 'sometimes' } }))).toEqual(['run.policy']);
-    expect(errorPaths(base([], { run: { maxWords: 0 } }))).toEqual(['run.maxWords']);
-    expect(errorPaths(base([], { run: { speed: 1 } }))).toEqual(['run.speed']);
-    expect(errorPaths(base([], { run: 5 }))).toEqual(['run']);
+    expect(Schema.resolveRun(base([round('r1', ['A'])]))).toEqual({ policy: 'manual', maxWords: 300 });
+    expect(Schema.resolveRun(base([round('r1', ['A'])], { run: { policy: 'auto' } }))).toEqual({ policy: 'auto', maxWords: 300 });
+    expect(Schema.resolveRun(base([round('r1', ['A'])], { run: { policy: 'manual', maxWords: 700 } }))).toEqual({ policy: 'manual', maxWords: 700 });
+    expect(Schema.validate(base([round('r1', ['A'])], { run: { policy: 'auto', maxWords: 700 } }))).toEqual([]);
+    expect(errorPaths(base([round('r1', ['A'])], { run: { policy: 'sometimes' } }))).toEqual(['run.policy']);
+    expect(errorPaths(base([round('r1', ['A'])], { run: { maxWords: 0 } }))).toEqual(['run.maxWords']);
+    expect(errorPaths(base([round('r1', ['A'])], { run: { speed: 1 } }))).toEqual(['run.speed']);
+    expect(errorPaths(base([round('r1', ['A'])], { run: 5 }))).toEqual(['run']);
   });
 });
 
@@ -258,12 +258,12 @@ describe('Basic schema: check before the first request', () => {
 
   test('every wrong place is named, nothing is corrected silently', () => {
     expect(errorPaths(null)).toEqual(['']);
-    expect(errorPaths({ steps: [] })).toEqual(['schemaVersion', 'origin']);
-    expect(errorPaths(base([{ ref: 'r1', kind: 'loop', models: [] }]))).toEqual(['steps[0].kind']);
+    expect(errorPaths({ steps: [] })).toEqual(['schemaVersion', 'origin', 'steps']);
+    expect(errorPaths(base([{ ref: 'r1', kind: 'loop', models: [] }]))).toEqual(['steps[0].kind', 'steps']);
     expect(errorPaths(base([round('r1', ['A'], { order: 'random' })]))).toEqual(['steps[0].order']);
     expect(errorPaths(base([round('r1', ['A'], { input: 'everything' })]))).toEqual(['steps[0].input']);
-    expect(errorPaths(base([synthesis('final', ['A'], { order: 'sequential' })]))).toEqual(['steps[0].order']);
-    expect(errorPaths(base([synthesis('final', ['A'], { input: 'all' })]))).toEqual(['steps[0].input']);
+    expect(errorPaths(base([synthesis('final', ['A'], { order: 'sequential' })]))).toEqual(['steps[0].order', 'steps']);
+    expect(errorPaths(base([synthesis('final', ['A'], { input: 'all' })]))).toEqual(['steps[0].input', 'steps']);
     expect(errorPaths(base([round('r1', ['A']), round('r1', ['B'])]))).toEqual(['steps[1].ref']);
     expect(errorPaths(base([round('r1', ['A', 'A'])]))).toEqual(['steps[0].models[1].name']);
     expect(errorPaths(base([round('r1', [{ name: 'A', maxWords: 0 }])]))).toEqual(['steps[0].models[0].maxWords']);
@@ -287,11 +287,11 @@ describe('Basic schema: check before the first request', () => {
       steps: [
         round('r1', [{ name: 'A', role: 'x', request: 'q', maxWords: 10, task: 't', discipline: { limit: '', lines: [] } }]),
         round('r2', ['A'], { order: 'sequential', input: 'previous', task: '' }),
-        synthesis('synth:z', ['B'], { task: 'T' }), synthesis('final', ['B'])
+        synthesis('synth:z', ['B'], { task: 'T' }), round('r3', ['B']), synthesis('final', ['B'])
       ]
     };
     expect(Schema.validate(full)).toEqual([]);
-    expect(Schema.assemble(full)).toHaveLength(4);
+    expect(Schema.assemble(full)).toHaveLength(5);
   });
 });
 
@@ -388,7 +388,8 @@ describe('Basic schema: the order of participants on the canvas', () => {
     expect(first.stacks).toEqual(second.stacks);
     expect(first.rounds).toEqual(second.rounds);
     expect(JSON.stringify(schema)).toBe(before);
-    expect(Schema.toSettings(schema).customModelSettings.r1.Claude).toEqual({ task: 'KEPT_TASK' });
+    // The switched-off declaration (name, enabled) stays with the task (R12).
+    expect(Schema.toSettings(schema).customModelSettings.r1.Claude).toEqual({ name: 'Claude', enabled: false, task: 'KEPT_TASK' });
   });
 });
 
@@ -623,7 +624,7 @@ describe('Basic schema: how many answers a step needs, owner approval and chat (
   });
 
   test('a switched-off step keeps its number of answers, and the number is checked again when the step is switched on', () => {
-    expect(Schema.validate(base([round('r1', [{ name: 'A', enabled: false }], { require: 2 }), synthesis('final', ['B'])]))).toEqual([]);
+    expect(Schema.validate(base([round('r1', [{ name: 'A', enabled: false }], { require: 2 }), round('r2', ['B']), synthesis('final', ['B'])]))).toEqual([]);
     expect(errorPaths(base([round('r1', ['A'], { require: 2 }), synthesis('final', ['B'])]))).toEqual(['steps[0].require']);
   });
 
@@ -786,7 +787,9 @@ describe('Basic schema: control steps on the canvas (9)', () => {
     const many = Array.from({ length: 50 }, (_, index) => round(`r${index + 1}`, ['GPT']));
     expect(Schema.toCanvas(base([...many, gateStep, gateStep, synthesis('final', ['GPT'])]), { models: ['GPT'] }).errors).toEqual([]);
     expect(Schema.toCanvas(base([...many, round('r51', ['GPT']), synthesis('final', ['GPT'])]), { models: ['GPT'] }).errors.map((error) => error.path)).toEqual(['steps']);
-    expect(Schema.toCanvas(base([round('r1', ['GPT']), gateStep, synthesis('synth:x', ['GPT']), round('r2', ['GPT'])]), { models: ['GPT'] }).errors.map((error) => error.path)).toEqual(['steps[2]']);
+    // A control step may stand between a round and its intermediate synthesis (R11); the synthesis still needs a round after it.
+    expect(Schema.toCanvas(base([round('r1', ['GPT']), gateStep, synthesis('synth:x', ['GPT']), round('r2', ['GPT'])]), { models: ['GPT'] }).errors).toEqual([]);
+    expect(Schema.toCanvas(base([round('r1', ['GPT']), gateStep, synthesis('synth:x', ['GPT']), synthesis('final', ['GPT'])]), { models: ['GPT'] }).errors.map((error) => error.path)).toEqual(['steps[2]']);
   });
 
   test('the settings keep every new field per kind and per participant, keyed by the participant id', () => {
@@ -932,5 +935,312 @@ describe('Basic schema: transitions never point at a switched-off step (A04 requ
     const [, gate, route] = Schema.assemble(schema);
     expect(gate).toMatchObject({ criteria: ['Есть источники'], pass: 'any', onFail: { stop: 'Нет' }, onPass: { goto: 'final' } });
     expect(route.select).toEqual({ by: 'owner', cases: [{ id: 'c', label: 'Вариант', action: { goto: 'final' } }] });
+  });
+});
+
+describe('Basic schema: a whole step as a required source (3.1, D3)', () => {
+  // r1 has A and B; r2 is the step under test (index 1).
+  const withInput = (input) => base([round('r1', ['A', 'B']), round('r2', ['A'], { input }), synthesis('final', ['C'])]);
+
+  test('{ step, required } is the whole accepted result of a step: valid, kept by assemble', () => {
+    const input = [{ step: 'r1', required: true }];
+    expect(Schema.validate(withInput(input))).toEqual([]);
+    expect(Schema.assemble(withInput(input))[1].input).toEqual(input);
+  });
+
+  test('a whole step and a participant of the same step are two different sources; a plain ref alone stays valid', () => {
+    expect(Schema.validate(withInput([{ step: 'r1', required: true }, { step: 'r1', participant: 'A', required: false }]))).toEqual([]);
+    expect(Schema.validate(withInput(['r1']))).toEqual([]);
+  });
+
+  test('a plain step ref and an object on the same whole step are a duplicate, named at the object', () => {
+    expect(errorPaths(withInput(['r1', { step: 'r1', required: true }]))).toEqual(['steps[1].input[1]']);
+    expect(errorPaths(withInput([{ step: 'r1' }, { step: 'r1', required: true }]))).toEqual(['steps[1].input[1]']);
+  });
+
+  test('wrong whole-step sources are named with their exact path', () => {
+    const cases = [
+      [[{ required: true }], ['steps[1].input[0]']],
+      [[{ step: 'r1', required: 'yes' }], ['steps[1].input[0].required']],
+      [[{ step: 'r1', colour: 'x' }], ['steps[1].input[0].colour']],
+      [[{ step: 'r9', required: true }], ['steps[1].input[0].step']],
+      [[{ step: 'r2', required: true }], ['steps[1].input[0].step']]
+    ];
+    cases.forEach(([input, paths]) => expect({ input, paths: errorPaths(withInput(input)) }).toEqual({ input, paths }));
+  });
+});
+
+describe('Basic schema: an own output of a participant (3.2, D4)', () => {
+  const proposalRef = (participant) => ({ artifact: { step: 'r1', participant, id: 'proposal' }, version: 'latest', required: true });
+  const shared = { artifacts: [{ id: 'proposal', name: 'Предложение', pointer: '' }] };
+  // Two authors of one parallel step r1 share the output; each author of r2 continues its own line.
+  const author = (participant, name, extra = {}) => ({ name, id: participant, input: [proposalRef(participant)], output: { artifacts: [{ id: 'proposal', name: `Доработанное ${name}`, pointer: '', revisionOf: proposalRef(participant) }] }, ...extra });
+  const valid = () => base([
+    round('r1', [{ name: 'claude', id: 'author-A' }, { name: 'gpt', id: 'author-B' }], { output: shared }),
+    round('r2', [author('author-A', 'claude'), author('author-B', 'gpt')]),
+    synthesis('final', ['claude'])
+  ]);
+  const pathsOf = (schema) => errorPaths(schema);
+
+  test('each author of one step has its own line; its declaration reaches assemble as the model output', () => {
+    const schema = valid();
+    expect(Schema.validate(schema)).toEqual([]);
+    const r2 = Schema.assemble(schema)[1];
+    expect(r2.models[0].output).toEqual(schema.steps[1].models[0].output);
+    expect(r2.models[1].output).toEqual(schema.steps[1].models[1].output);
+    expect(Schema.toSettings(schema).customModelSettings.r2['author-A'].output).toEqual(schema.steps[1].models[0].output);
+    expect(Schema.toCanvas(schema, { models: ['claude', 'gpt'] }).errors).toEqual([]);
+  });
+
+  test('an own declaration replaces the shared output as a whole; a participant without one inherits it', () => {
+    const schema = base([
+      round('r1', [{ name: 'claude', id: 'author-A' }, { name: 'gpt', id: 'author-B', output: { artifacts: [{ id: 'notes', name: 'Заметки', pointer: '' }] } }], { output: shared }),
+      round('r2', [{ name: 'claude', id: 'author-A', input: [proposalRef('author-A')], output: { artifacts: [{ id: 'proposal', name: 'Доработано', pointer: '', revisionOf: proposalRef('author-A') }] } }]),
+      synthesis('final', ['claude'])
+    ]);
+    expect(Schema.validate(schema)).toEqual([]);
+    const sourceOf = (participant, id) => ({ artifact: { step: 'r1', participant, id }, version: 'latest' });
+    // author-B no longer declares proposal: the shared one is not merged into its own output.
+    const reader = (source) => base([round('r1', [{ name: 'claude', id: 'author-A' }, { name: 'gpt', id: 'author-B', output: { artifacts: [{ id: 'notes', name: 'Заметки', pointer: '' }] } }], { output: shared }), round('r2', [{ name: 'claude', id: 'reader', input: [source] }]), synthesis('final', ['claude'])]);
+    expect(pathsOf(reader(sourceOf('author-A', 'proposal')))).toEqual([]);
+    expect(pathsOf(reader(sourceOf('author-B', 'proposal')))).toEqual(['steps[1].models[0].input[0].artifact.id']);
+    expect(pathsOf(reader(sourceOf('author-B', 'notes')))).toEqual([]);
+  });
+
+  test('a wrong own output is named with its full path', () => {
+    const cases = [
+      [{ artifacts: [{ id: 'x', name: 'X', pointer: '/x' }] }, ['steps[1].models[0].output.artifacts[0].pointer']],
+      [{ extra: 1 }, ['steps[1].models[0].output.extra']],
+      [{ format: 'json', artifacts: [{ id: 'x', name: 'X', pointer: '/x' }, { id: 'x', name: 'Y', pointer: '/y' }] }, ['steps[1].models[0].output.artifacts[1].id']]
+    ];
+    cases.forEach(([output, paths]) => {
+      const schema = valid();
+      schema.steps[1].models[0] = { ...schema.steps[1].models[0], output };
+      expect({ output, paths: pathsOf(schema) }).toEqual({ output, paths: expect.arrayContaining(paths) });
+      expect(pathsOf(schema).every((path) => path.startsWith('steps[1].models[0].output'))).toBe(true);
+    });
+  });
+
+  test('a revision must be in the input of this author with the same address; a route has no output', () => {
+    // author-A's input holds the line of author-B only: the revision of author-A is not in its own input.
+    const otherLine = valid();
+    otherLine.steps[1].models[0] = { ...otherLine.steps[1].models[0], input: [proposalRef('author-B')] };
+    expect(pathsOf(otherLine)).toEqual(['steps[1].models[0].output.artifacts[0].revisionOf']);
+    const otherAddress = valid();
+    otherAddress.steps[1].models[0].output.artifacts[0].revisionOf = { ...proposalRef('author-A'), version: { step: 'r1', participant: 'author-A', visit: 1 } };
+    expect(pathsOf(otherAddress)).toEqual(['steps[1].models[0].output.artifacts[0].revisionOf']);
+    const route = base([round('r1', ['A']), { ref: 'route:r', kind: 'route', models: [{ name: 'GPT', output: { artifacts: [] } }], task: 'Выбери', select: { by: 'model', cases: [{ id: 'a', label: 'А', action: { stop: 'А' } }] } }, synthesis('final', ['B'])]);
+    expect(pathsOf(route)).toEqual(['steps[1].models[0].output']);
+  });
+
+  test('a shared output of a step still checks its revisions against the authors that inherit it', () => {
+    const schema = base([
+      round('r1', [{ name: 'claude', id: 'author-A' }], { output: shared }),
+      round('r2', [{ name: 'claude', id: 'author-A', input: [proposalRef('author-A')] }], { output: { artifacts: [{ id: 'proposal', name: 'Доработано', pointer: '', revisionOf: proposalRef('author-A') }] } }),
+      synthesis('final', ['B'])
+    ]);
+    expect(Schema.validate(schema)).toEqual([]);
+    expect(pathsOf(base([round('r1', [{ name: 'claude', id: 'author-A' }], { output: shared }), round('r2', [{ name: 'claude', id: 'author-A' }], { output: { artifacts: [{ id: 'proposal', name: 'Доработано', pointer: '', revisionOf: proposalRef('author-A') }] } }), synthesis('final', ['B'])]))).toEqual(['steps[1].output.artifacts[0].revisionOf']);
+  });
+});
+
+describe('Basic schema: the participant of an owner step is owner (3.3, R08)', () => {
+  const ownerStep = (ref, extra = {}) => ({ ref, kind: 'owner', task: 'Ответьте на вопрос', models: [], ...extra });
+  const mapRef = (participant = 'A', step = 'r1') => ({ artifact: { step, participant, id: 'map' }, version: 'latest' });
+  const mapOutput = { artifacts: [{ id: 'map', name: 'Карта', pointer: '' }] };
+  const ownerSource = { step: 'owner:o', participant: 'owner' };
+
+  test('the owner step takes owner as its one participant: step, artifact, exact version and feedback are valid', () => {
+    const schema = base([
+      round('r1', ['A'], { output: mapOutput }),
+      ownerStep('owner:o', { output: { artifacts: [{ id: 'approved', name: 'Утверждённая карта', pointer: '' }] } }),
+      round('r2', [{ name: 'A', input: [ownerSource, { artifact: { step: 'owner:o', participant: 'owner', id: 'approved' }, version: { step: 'owner:o', participant: 'owner', visit: 1 } }] }]),
+      { ref: 'gate:g1', kind: 'gate', criteria: ['Есть ответ'], models: [{ name: 'B' }], onFail: { goto: 'r2', maxLoops: 1, feedback: [ownerSource] } },
+      synthesis('final', ['B'])
+    ]);
+    expect(Schema.validate(schema)).toEqual([]);
+    expect(Schema.assemble(schema)[1]).toMatchObject({ kind: 'owner', ref: 'owner:o' });
+    expect(Schema.assemble(schema)[2].models[0].input).toEqual([ownerSource, { artifact: { step: 'owner:o', participant: 'owner', id: 'approved' }, version: { step: 'owner:o', participant: 'owner', visit: 1 } }]);
+  });
+
+  test('a revision of an owner artifact is valid when the author has it in its input', () => {
+    const revision = { artifact: { step: 'owner:o', participant: 'owner', id: 'map' }, version: 'latest' };
+    const schema = base([
+      ownerStep('owner:o', { output: mapOutput }),
+      round('r2', [{ name: 'A', input: [revision], output: { artifacts: [{ id: 'map', name: 'Карта v2', pointer: '', revisionOf: revision }] } }]),
+      synthesis('final', ['B'])
+    ]);
+    expect(Schema.validate(schema)).toEqual([]);
+    const missing = base([ownerStep('owner:o', { output: mapOutput }), round('r2', [{ name: 'A', output: { artifacts: [{ id: 'map', name: 'Карта v2', pointer: '', revisionOf: revision }] } }]), synthesis('final', ['B'])]);
+    expect(errorPaths(missing)).toEqual(['steps[1].models[0].output.artifacts[0].revisionOf']);
+  });
+
+  test('another participant of an owner step is named; the owner artifact of another participant is named too', () => {
+    const cases = [
+      [[{ step: 'owner:o', participant: 'A' }], ['steps[1].models[0].input[0].participant']],
+      [[{ artifact: { step: 'owner:o', participant: 'A', id: 'map' }, version: 'latest' }], ['steps[1].models[0].input[0].artifact.participant']],
+      [[{ artifact: { step: 'owner:o', participant: 'owner', id: 'nope' }, version: 'latest' }], ['steps[1].models[0].input[0].artifact.id']]
+    ];
+    cases.forEach(([input, paths]) => {
+      const schema = base([ownerStep('owner:o', { output: mapOutput }), round('r2', [{ name: 'A', input }]), synthesis('final', ['B'])]);
+      expect({ input, paths: errorPaths(schema) }).toEqual({ input, paths });
+    });
+  });
+
+  test('a model with the id owner in an ordinary step is an ordinary participant', () => {
+    const schema = base([round('r1', [{ name: 'Claude', id: 'owner' }], { output: mapOutput }), round('r2', [{ name: 'B', input: [{ step: 'r1', participant: 'owner' }, mapRef('owner')] }]), synthesis('final', ['B'])]);
+    expect(Schema.validate(schema)).toEqual([]);
+    expect(Schema.assemble(schema)[0].models[0]).toMatchObject({ name: 'Claude', id: 'owner' });
+  });
+
+  test('the owner keeps no models; its own sources are checked like a model step (a self or a later step is named)', () => {
+    const input = [mapRef('A'), 'r1', ownerSource, { step: 'r2', required: true }];
+    const schema = base([round('r1', ['A'], { output: mapOutput }), ownerStep('owner:o', { input, output: mapOutput }), round('r2', ['A']), synthesis('final', ['B'])]);
+    expect(errorPaths(schema)).toEqual(['steps[1].input[2].step', 'steps[1].input[3].step']);
+    const valid = base([round('r1', ['A'], { output: mapOutput }), ownerStep('owner:o', { input: [mapRef('A'), 'r1'], output: mapOutput }), synthesis('final', ['B'])]);
+    expect(Schema.validate(valid)).toEqual([]);
+    expect(Schema.assemble(valid)[1]).toMatchObject({ kind: 'owner', input: [mapRef('A'), 'r1'], models: [] });
+  });
+});
+
+describe('Basic schema: the input of an owner step (N07)', () => {
+  const ownerStep = (ref, extra = {}) => ({ ref, kind: 'owner', task: 'Ответьте', models: [], ...extra });
+  const source = { step: 'r1', participant: 'A', required: true };
+
+  test('an owner step without input keeps the empty input of before: no input field is assembled', () => {
+    const steps = Schema.assemble(base([round('r1', ['A']), ownerStep('owner:o'), synthesis('final', ['B'])]));
+    expect(steps[1]).not.toHaveProperty('input');
+  });
+
+  test('the owner input is kept by assemble and by the settings; the same sources as a model step', () => {
+    const schema = base([round('r1', ['A']), ownerStep('owner:o', { input: [source, 'r1'] }), synthesis('final', ['B'])]);
+    expect(Schema.validate(schema)).toEqual([]);
+    expect(Schema.assemble(schema)[1].input).toEqual([source, 'r1']);
+    expect(Schema.toSettings(schema).customStepSettings['owner:o']).toMatchObject({ input: [source, 'r1'] });
+  });
+
+  test('a wrong owner input is named with its exact path, as for a model step', () => {
+    const schema = base([round('r1', ['A']), ownerStep('owner:o', { input: [{ step: 'r1', participant: 'Z' }, 'owner:o'] }), synthesis('final', ['B'])]);
+    expect(errorPaths(schema)).toEqual(['steps[1].input[0].participant', 'steps[1].input[1]']);
+  });
+});
+
+describe('Basic schema: a pipeline without a round is checked the same way everywhere (R09)', () => {
+  const owner = (ref) => ({ ref, kind: 'owner', task: 'Предоставьте исследование', models: [] });
+  const gate = (ref, models) => ({ ref, kind: 'gate', criteria: ['Есть источники'], models: models.map((name) => ({ name })) });
+  const route = (ref) => ({ ref, kind: 'route', models: [], select: { by: 'owner', cases: [{ id: 'go', label: 'Дальше', action: { stop: 'Готово' } }] } });
+
+  test('an owner-only pipeline is valid: no round is added, the canvas shows the owner and no round', () => {
+    const schema = base([owner('owner:o')]);
+    expect(Schema.validate(schema)).toEqual([]);
+    expect(Schema.assemble(schema)).toEqual([expect.objectContaining({ kind: 'owner', ref: 'owner:o' })]);
+    const canvas = Schema.toCanvas(schema, { models: [] });
+    expect(canvas.errors).toEqual([]);
+    expect(canvas.rounds).toEqual([]);
+    expect(canvas.controls).toEqual([{ ref: 'owner:o', kind: 'owner', index: 0, afterRound: 0 }]);
+  });
+
+  test('a standalone owner route and a gate with a checker are valid pipelines too', () => {
+    expect(Schema.validate(base([route('route:next')]))).toEqual([]);
+    expect(Schema.validate(base([gate('gate:g1', ['Claude'])]))).toEqual([]);
+    expect(Schema.toCanvas(base([gate('gate:g1', ['Claude'])]), { models: ['Claude'] }).errors).toEqual([]);
+  });
+
+  test('an empty pipeline and a pipeline with no executable step are named at steps, validate and canvas alike', () => {
+    expect(errorPaths(base([]))).toEqual(['steps']);
+    expect(Schema.toCanvas(base([]), { models: [] }).errors.map((error) => error.path)).toEqual(['steps']);
+    const allOff = base([round('r1', [{ name: 'A', enabled: false }]), synthesis('final', [{ name: 'B', enabled: false }])]);
+    expect(errorPaths(allOff)).toEqual(['steps']);
+    expect(Schema.toCanvas(allOff, { models: ['A', 'B'] }).errors.map((error) => error.path)).toEqual(['steps']);
+  });
+
+  test('the limit of 50 counts rounds only: an owner between rounds does not count', () => {
+    const many = Array.from({ length: 50 }, (_, index) => round(`r${index + 1}`, ['A']));
+    expect(Schema.toCanvas(base([...many, owner('owner:o')]), { models: ['A'] }).errors).toEqual([]);
+    expect(Schema.toCanvas(base([...many, round('r51', ['A'])]), { models: ['A'] }).errors.map((error) => error.path)).toEqual(['steps']);
+  });
+});
+
+describe('Basic schema: the order of a synthesis and control steps (R11)', () => {
+  const gate = (ref, models) => ({ ref, kind: 'gate', criteria: ['Есть источники'], models: models.map((name) => ({ name })) });
+  const route = (ref) => ({ ref, kind: 'route', models: [], select: { by: 'owner', cases: [{ id: 'go', label: 'Дальше', action: { stop: 'Готово' } }] } });
+  const owner = (ref) => ({ ref, kind: 'owner', task: 'Предоставьте исследование', models: [] });
+  const refsOf = (steps) => steps.map((step) => step.ref);
+  const models = ['A', 'B', 'C', 'S'];
+
+  test('both orders are valid and the canvas keeps them: r1 → synth → gate → r2 and r1 → gate → synth → r2', () => {
+    const synthFirst = base([round('r1', ['A']), synthesis('synth:x', ['S']), gate('gate:g', ['C']), round('r2', ['A']), synthesis('final', ['B'])]);
+    const gateFirst = base([round('r1', ['A']), gate('gate:g', ['C']), synthesis('synth:x', ['S']), round('r2', ['A']), synthesis('final', ['B'])]);
+    [synthFirst, gateFirst].forEach((schema) => {
+      expect(Schema.validate(schema)).toEqual([]);
+      expect(refsOf(Schema.assemble(schema))).toEqual(refsOf(schema.steps));
+      const canvas = Schema.toCanvas(schema, { models });
+      expect(canvas.errors).toEqual([]);
+      expect(canvas.controls).toEqual([{ ref: 'gate:g', kind: 'gate', index: schema.steps.findIndex((step) => step.ref === 'gate:g'), afterRound: 1 }]);
+      expect(canvas.inserts).toEqual([expect.objectContaining({ afterRound: 1, plannedStageId: 'x' })]);
+    });
+  });
+
+  test('consecutive control steps keep their order next to a synthesis, and no round is needed beside them', () => {
+    const schema = base([round('r1', ['A']), gate('gate:g', ['C']), route('route:r'), synthesis('synth:x', ['S']), owner('owner:o'), round('r2', ['A']), synthesis('final', ['B'])]);
+    expect(Schema.validate(schema)).toEqual([]);
+    expect(refsOf(Schema.assemble(schema))).toEqual(['r1', 'gate:g', 'route:r', 'synth:x', 'owner:o', 'r2', 'final']);
+    expect(Schema.toCanvas(schema, { models }).errors).toEqual([]);
+  });
+
+  test('a synthesis after a synthesis stays refused, also with a control step between them', () => {
+    const adjacent = base([round('r1', ['A']), synthesis('synth:x', ['S']), synthesis('synth:y', ['S']), round('r2', ['A']), synthesis('final', ['B'])]);
+    expect(Schema.validate(adjacent).map((error) => [error.path, error.message])).toEqual([
+      ['steps[1]', 'промежуточный синтез стоит между двумя раундами'],
+      ['steps[2]', 'промежуточный синтез стоит сразу после раунда']
+    ]);
+    const withGate = base([round('r1', ['A']), synthesis('synth:x', ['S']), gate('gate:g', ['C']), synthesis('synth:y', ['S']), round('r2', ['A']), synthesis('final', ['B'])]);
+    expect(errorPaths(withGate)).toEqual(['steps[1]', 'steps[3]']);
+    expect(Schema.toCanvas(withGate, { models }).errors.map((error) => error.path)).toEqual(['steps[1]', 'steps[3]']);
+  });
+
+  test('an intermediate synthesis without a round on one side is named by validate and the canvas alike', () => {
+    const noRoundAfter = base([round('r1', ['A']), gate('gate:g', ['C']), synthesis('synth:x', ['S']), synthesis('final', ['B'])]);
+    expect(errorPaths(noRoundAfter)).toEqual(['steps[2]']);
+    expect(Schema.toCanvas(noRoundAfter, { models }).errors.map((error) => error.path)).toEqual(['steps[2]']);
+    const first = base([synthesis('synth:x', ['S']), round('r1', ['A']), synthesis('final', ['B'])]);
+    expect(errorPaths(first)).toEqual(['steps[0]']);
+    expect(Schema.toCanvas(first, { models }).errors.map((error) => error.path)).toEqual(['steps[0]']);
+  });
+});
+
+describe('Basic schema: a switched-off declared participant keeps its declaration (R12)', () => {
+  const schemaWith = (r2Input) => base([
+    round('r1', ['A', { name: 'GPT', id: 'gpt-1' }, { name: 'C', id: 'c-1', enabled: false }], { require: 'all' }),
+    round('r2', [{ name: 'A', input: r2Input }]),
+    synthesis('final', ['B'])
+  ]);
+
+  test('the declaration of a switched-off participant reaches the settings even without other settings', () => {
+    const settings = Schema.toSettings(schemaWith(['r1']));
+    expect(settings.customModelSettings.r1['c-1']).toEqual({ name: 'C', enabled: false });
+    expect(settings.customModelSettings.r1.A).toBeUndefined();
+    expect(settings.customModelSettings.r1['gpt-1']).toBeUndefined();
+  });
+
+  test('an optional source to a switched-off participant is valid and keeps its id in the settings and assembly', () => {
+    const schema = schemaWith(['r1', { step: 'r1', participant: 'c-1' }]);
+    expect(Schema.validate(schema)).toEqual([]);
+    expect(Schema.toSettings(schema).customModelSettings.r2.A.input).toEqual(['r1', { step: 'r1', participant: 'c-1' }]);
+    expect(Schema.assemble(schema)[1].models[0].input).toEqual(['r1', { step: 'r1', participant: 'c-1' }]);
+  });
+
+  test('a required source to a switched-off participant is not a validator error: the run decides it; require all leaves it out', () => {
+    const schema = schemaWith([{ step: 'r1', participant: 'c-1', required: true }]);
+    expect(Schema.validate(schema)).toEqual([]);
+    const first = Schema.assemble(schema)[0];
+    expect(first.models.map((model) => model.id)).toEqual(['A', 'gpt-1']);
+    expect(first.require).toBe('all');
+  });
+
+  test('switching the participant on again keeps its id and its place in the step', () => {
+    const on = base([round('r1', ['A', { name: 'GPT', id: 'gpt-1' }, { name: 'C', id: 'c-1' }]), synthesis('final', ['B'])]);
+    expect(Schema.validate(on)).toEqual([]);
+    expect(Schema.assemble(on)[0].models.map((model) => model.id)).toEqual(['A', 'gpt-1', 'c-1']);
   });
 });

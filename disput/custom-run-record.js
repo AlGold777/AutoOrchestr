@@ -96,14 +96,16 @@
     return record;
   }
 
-  // Every reference to a text is a field whose name ends with "Ref" (taskRef, answerRef, textRef, promptRef, ...). They are
-  // all marked, so that the cleanup of texts never removes what the registry, the snapshot or the attempts still name.
+  // Every reference to a text is a field whose name ends with "Ref" (taskRef, answerRef, textRef, promptRef, ...), and the
+  // reference of an owner file (file.ref). stepRef is an address of a step, not a text. They are all marked, so that the
+  // cleanup of texts never removes what the registry, the snapshot or the attempts still name.
   function collectRefs(value, used) {
     if (Array.isArray(value)) { value.forEach((item) => collectRefs(item, used)); return used; }
     if (!value || typeof value !== 'object') return used;
     Object.entries(value).forEach(([key, item]) => {
-      if (/Ref$/.test(key) && typeof item === 'string' && item) used.add(item);
-      else collectRefs(item, used);
+      if (/Ref$/.test(key) && key !== 'stepRef' && typeof item === 'string' && item) used.add(item);
+      if (key === 'file' && item && typeof item.ref === 'string' && item.ref) used.add(item.ref);
+      collectRefs(item, used);
     });
     return used;
   }
@@ -137,14 +139,16 @@
   // the position of the current step, the finished results (their accepted answers by text reference), the decisions taken,
   // the routes, the counters, the stack, the feedback (text references), the dependencies and the owner's answers. The registry is record.artifacts (5.3), not a second copy here. chatBindings stays empty until chats are supported.
   const copyOf = (value) => (value === undefined ? null : JSON.parse(JSON.stringify(value)));
+  // The chats of the participants are an object by participantId; a list (an old snapshot) and no value are an empty object.
+  const plainOf = (value) => (value && typeof value === 'object' && !Array.isArray(value) ? copyOf(value) : {});
   function setSnapshot(record, { schema = [], runSettings = {}, state = {}, current = null, routes = [], ownerAnswers = [], pendingOwner = null } = {}) {
     const visits = state.visits || {};
     record.snapshot = copyOf({
       schema, taskRef: record.taskRef, runSettings, pc: state.pc ?? null, visits,
-      current: current || { stepRef: state.pc ?? null, visit: visits[state.pc] || 0, phase: 'done', accepted: [], pending: [] },
+      current: current || state.current || { stepRef: state.pc ?? null, visit: visits[state.pc] || 0, phase: 'done', accepted: [], pending: [] },
       results: state.results || [], decisions: state.decisions || {},
       routes, loopCounters: state.loopCounters || {}, continuationStack: state.continuationStack || [], feedback: state.feedback || {},
-      dependencies: state.dependencies || {}, ownerAnswers, pendingOwner, chatBindings: []
+      dependencies: state.dependencies || {}, ownerAnswers, pendingOwner, chatBindings: plainOf(state.chatBindings)
     });
     return record.snapshot;
   }
@@ -153,27 +157,35 @@
     record.artifacts = copyOf(entries) || [];
     return record.artifacts;
   }
-  // A run can be resumed only from its own snapshot: version 1 records and runs without a checkpoint cannot.
-  const canResume = (record) => (record.version || 1) >= 2 && Boolean(record.snapshot);
+  // A run can be resumed only from its complete state (8.2): version 2, a snapshot with the schema and the position, and every
+  // text that the record refers to. A version 1 record, a run without a checkpoint and a record with a missing text cannot.
+  function isComplete(record) {
+    if ((record.version || 1) < 2 || !record.snapshot) return false;
+    const { schema, current } = record.snapshot;
+    if (!Array.isArray(schema) || !schema.length || !current || typeof current !== 'object') return false;
+    const used = collectRefs({ taskRef: record.taskRef, snapshot: record.snapshot, artifacts: record.artifacts, attempts: record.attempts }, new Set());
+    return [...used].every((ref) => record.texts?.[ref] !== undefined);
+  }
+  const canResume = isComplete;
 
-  // A self-contained JSON with all texts resolved, for export.
+  // A self-contained JSON for export: the stored form (every reference kept, with its address and dependencies), the texts
+  // that the references name (texts), and the texts next to the fields that show them. JSON.stringify → JSON.parse keeps every
+  // reference resolvable through texts. Records are read back in history form; the export says whether it can be resumed.
   function exportRun(record) {
     const resolve = (item) => ({ label: item.label, source: item.source, text: textOf(record, item.textRef) });
     const snapshot = record.snapshot ? { ...record.snapshot, feedback: Object.fromEntries(Object.entries(record.snapshot.feedback || {})
-      .map(([key, items]) => [key, items.map((item) => ({ label: item.label, source: item.source, pointer: item.pointer ?? '', text: textOf(record, item.textRef) }))])) } : null;
+      .map(([key, items]) => [key, items.map((item) => ({ ...item, pointer: item.pointer ?? '', text: textOf(record, item.textRef) }))])) } : null;
     return {
       version: record.version || 1, resumable: canResume(record),
       runId: record.runId, pipelineName: record.pipelineName, startedAt: record.startedAt, finishedAt: record.finishedAt,
       stopReason: record.stopReason, task: textOf(record, record.taskRef), steps: record.steps,
-      artifacts: (record.artifacts || []).map((entry) => ({ id: entry.id, name: entry.name, lineage: entry.lineage, source: entry.source, valid: entry.valid,
-        inputs: entry.inputs, pointer: entry.content?.pointer ?? '', text: textOf(record, entry.content?.answerRef) })),
+      texts: serialize(record).texts,
+      artifacts: (record.artifacts || []).map((entry) => ({ ...entry, pointer: entry.content?.pointer ?? '', text: textOf(record, entry.content?.answerRef) })),
       snapshot,
       attempts: record.attempts.map((attempt) => {
         const parts = attempt.parts || {};
         return {
-          step: attempt.step, label: attempt.label, model: attempt.model, attempt: attempt.attempt, retryOf: attempt.retryOf,
-          state: attempt.state, accepted: attempt.accepted, reason: attempt.reason, status: attempt.status,
-          attribution: attempt.attribution, transportRequestId: attempt.transportRequestId, sentAt: attempt.sentAt, finishedAt: attempt.finishedAt,
+          ...attempt,
           instructions: parts.correction ? { correction: textOf(record, parts.correction.textRef) } : {
             task: textOf(record, parts.instructions?.taskRef), stepTask: textOf(record, parts.instructions?.stepTaskRef),
             extra: textOf(record, parts.instructions?.extraRef), askInstruction: textOf(record, parts.instructions?.askInstructionRef),
@@ -229,12 +241,21 @@
     return { save, load, latest, list: readIndex };
   }
 
-  // chrome.storage.local as the storage interface of createStore.
+  // chrome.storage.local as the storage interface of createStore. A callback reports a failure through
+  // chrome.runtime.lastError: the promise is rejected with it (a synchronous throw of the area rejects too), so a failed
+  // write never looks saved.
   function chromeStorage(area) {
+    const call = (method, args) => new Promise((resolve, reject) => {
+      area[method](...args, (result) => {
+        const error = root.chrome?.runtime?.lastError;
+        if (error) reject(new Error(error.message || String(error)));
+        else resolve(result);
+      });
+    });
     return {
-      get: (key) => new Promise((resolve) => area.get(key, (result) => resolve(result?.[key]))),
-      set: (key, value) => new Promise((resolve) => area.set({ [key]: value }, () => resolve())),
-      remove: (key) => new Promise((resolve) => area.remove(key, () => resolve()))
+      get: (key) => call('get', [key]).then((result) => result?.[key]),
+      set: (key, value) => call('set', [{ [key]: value }]).then(() => undefined),
+      remove: (key) => call('remove', [key]).then(() => undefined)
     };
   }
 

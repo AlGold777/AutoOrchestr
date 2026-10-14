@@ -16,6 +16,10 @@
     FALLBACK_FAILED: 'fallback_failed',
     RUN_CANCELLED: 'run_cancelled',
     DUPLICATE_DISPATCH: 'duplicate_dispatch',
+    // Basic participant chat (R01, R06): the request is refused before the send, nothing is sent.
+    PARTICIPANT_CHAT_LOST: 'participant_chat_lost',
+    PARTICIPANT_BINDING_FAILED: 'participant_binding_failed',
+    PARTICIPANT_API_UNSUPPORTED: 'participant_api_unsupported',
     UNKNOWN: 'unknown'
   });
 

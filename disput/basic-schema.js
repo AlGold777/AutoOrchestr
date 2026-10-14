@@ -54,6 +54,7 @@
   const OWNER_STEPS = Object.freeze(['approve']);
   const CHAT_MODES = Object.freeze(['continue', 'new']);
   const POINTER_FORBIDDEN = Object.freeze(['__proto__', 'prototype', 'constructor']);
+  const OWNER_PARTICIPANT = 'owner';
 
   // The problem of a JSON Pointer (RFC 6901, ~0 and ~1 only) or null. Forbidden segments are refused, nothing is read.
   function pointerError(pointer) {
@@ -128,7 +129,8 @@
       name: model.name,
       id: idOf(model),
       task: typeof model.task === 'string' ? model.task : (typeof step.task === 'string' ? step.task : ''),
-      extra: roleText(model.role || '', step.ref) || ''
+      extra: roleText(model.role || '', step.ref) || '',
+      ...('output' in model ? { output: clone(model.output) } : {})
     }));
     return out;
   }
@@ -164,6 +166,7 @@
           name: model.name,
           id: idOf(model),
           ...('input' in model ? { input: Array.isArray(model.input) ? JSON.parse(JSON.stringify(model.input)) : model.input } : {}),
+          ...('output' in model ? { output: clone(model.output) } : {}),
           // An own request, an empty one included, is a value; only a missing one takes the final synthesizer's.
           promptTemplate: typeof model.request === 'string' ? model.request : (typeof finalRequest === 'string' ? finalRequest : null),
           maxWords: 'maxWords' in model ? model.maxWords : null,
@@ -182,6 +185,12 @@
   // A participant's id: the explicit one, or its name.
   const idOf = (model) => model.id ?? model.name;
 
+  // The output a participant answers with (3.2): its own declaration replaces the step's one as a whole, nothing is merged.
+  function outputOf(step, participant) {
+    const model = (Array.isArray(step.models) ? step.models : []).find((item) => isObject(item) && idOf(item) === participant);
+    return model && 'output' in model ? model.output : step.output;
+  }
+
   // The address of a well-formed source: the duplicate check and the revision check compare these.
   function addressOf(source) {
     if (typeof source === 'string') return JSON.stringify(['step', source]);
@@ -191,6 +200,8 @@
       const version = isObject(source.version) ? [source.version.step, source.version.participant, source.version.visit] : 'latest';
       return JSON.stringify(['artifact', address.step, address.participant, address.id, version]);
     }
+    // A whole step (no participant) has the address of the step itself: it is a duplicate of the plain ref.
+    if (!('participant' in source)) return JSON.stringify(['step', source.step]);
     return JSON.stringify(['participant', source.step, source.participant]);
   }
 
@@ -214,6 +225,12 @@
       return -1;
     };
     const participantAt = (position, participant, at) => {
+      // The owner step has one participant, the synthetic id `owner`, and no model (3.3); a model with that id elsewhere is a model.
+      if (steps[position].kind === 'owner') {
+        if (participant === OWNER_PARTICIPANT) return true;
+        fail(at, 'у владельца один участник «owner»');
+        return false;
+      }
       const models = Array.isArray(steps[position].models) ? steps[position].models.filter(isObject) : [];
       if (models.some((model) => idOf(model) === participant)) return true;
       fail(at, `участник «${participant}» не объявлен в шаге «${steps[position].ref}»`);
@@ -235,7 +252,7 @@
       if (position >= 0 && !('participant' in address)) fail(`${path}.artifact.participant`, 'участник не указан');
       else if (position >= 0) participantAt(position, address.participant, `${path}.artifact.participant`);
       if (position >= 0 && !('id' in address)) fail(`${path}.artifact.id`, 'ID артефакта не указан');
-      const output = position >= 0 ? steps[position].output : null;
+      const output = position >= 0 ? outputOf(steps[position], address.participant) : null;
       const declared = isObject(output) && Array.isArray(output.artifacts) && output.artifacts.some((item) => isObject(item) && item.id === address.id);
       if (position >= 0 && 'id' in address && !declared) fail(`${path}.artifact.id`, `артефакт «${address.id}» не объявлен в шаге «${steps[position].ref}»`);
       if (!('version' in source)) fail(`${path}.version`, 'версия не указана: latest или объект версии');
@@ -256,10 +273,38 @@
     unknown(source, ['step', 'participant', 'required'], path);
     checkRequired(source, path);
     const position = stepAt(source.step, `${path}.step`);
-    if (position >= 0 && !('participant' in source)) fail(`${path}.participant`, 'участник не указан');
-    else if (position >= 0) participantAt(position, source.participant, `${path}.participant`);
+    // Without a participant the source is the whole accepted result of the step (3.1).
+    if (position >= 0 && 'participant' in source) participantAt(position, source.participant, `${path}.participant`);
     if (failed()) return null;
     return addressOf(source);
+  }
+
+  // The place of an intermediate synthesis (R11), one rule for validate and toCanvas: the nearest steps around it that are
+  // not control steps (gate, route, owner) must be rounds. So `r1 → synth → gate → r2` and `r1 → gate → synth → r2` are
+  // both valid, and control steps never need a round next to them. Two syntheses never meet.
+  function synthesisPlaceErrors(steps) {
+    const errors = [];
+    const nearest = (index, step) => {
+      for (let at = index + step; at >= 0 && at < steps.length; at += step) if (!CONTROL_KINDS.includes(steps[at]?.kind)) return steps[at];
+      return null;
+    };
+    steps.forEach((step, index) => {
+      if (!isObject(step) || step.kind !== 'synthesis' || step.ref === 'final') return;
+      if (nearest(index, -1)?.kind !== 'round') errors.push({ path: `steps[${index}]`, message: 'промежуточный синтез стоит сразу после раунда' });
+      if (nearest(index, 1)?.kind !== 'round') errors.push({ path: `steps[${index}]`, message: 'промежуточный синтез стоит между двумя раундами' });
+    });
+    return errors;
+  }
+
+  // The one check of executability (R09) for validate and toCanvas: a control step (gate, route, owner) runs by itself
+  // (a gate's checkers are checked by their own rule); a round runs with an enabled model. A synthesis only works on
+  // the answers of an earlier step, so it alone is not runnable. A pipeline without a round is valid; an empty one or
+  // one with no runnable step is named at `steps`.
+  function executabilityErrors(steps) {
+    const runnable = steps.some((step) => isObject(step) && (CONTROL_KINDS.includes(step.kind)
+      || (step.kind === 'round' && Array.isArray(step.models) && step.models.some((model) => isObject(model) && model.enabled !== false))));
+    if (runnable) return [];
+    return [{ path: 'steps', message: 'нет исполнимого шага: нужен раунд с включённой моделью или шаг проверки, маршрута или владельца' }];
   }
 
   // Errors before the first request: [{ path, message }]. A schema is never corrected silently.
@@ -341,7 +386,8 @@
       if (kind === 'synthesis' && value !== 'previous') fail(path, 'синтез всегда получает ответы предыдущего шага');
     };
     // The output of a step (5.1, 5.2): the text form, or json with fields; artifacts are declared in it.
-    const checkOutput = (output, path, step, index) => {
+    // `authors` are the participants whose revisions the output declares: { id, input? } (the owner is its own author).
+    const checkOutput = (output, path, step, index, authors) => {
       if (!isObject(output)) { fail(path, 'ожидается объект'); return; }
       unknownKeys(output, ['name', 'form', 'sections', 'strictLength', 'format', 'requiredFields', 'artifacts'], path);
       ['name', 'form'].forEach((key) => { if (key in output) text(output[key], `${path}.${key}`); });
@@ -394,7 +440,6 @@
         checkSource(revision, `${at2}.revisionOf`, contextAt(index));
         if (errors.length > before) return;
         const key = addressOf(revision);
-        const authors = (Array.isArray(step.models) ? step.models : []).filter((model) => isObject(model) && model.enabled !== false);
         authors.forEach((model) => {
           const own = 'input' in model ? model.input : step.input;
           if (!(Array.isArray(own) && own.some((item) => addressOf(item) === key))) fail(`${at2}.revisionOf`, `ссылка на версию должна быть во входе участника «${idOf(model)}»`);
@@ -529,7 +574,11 @@
       const path = `steps[${index}]`;
       if (!isObject(step)) { fail(path, 'ожидается объект'); return; }
       unknownKeys(step, STEP_KEYS[step.kind] || STEP_KEYS.round, path);
-      if ('output' in step) checkOutput(step.output, `${path}.output`, step, index);
+      if ('output' in step) {
+        // A step's shared output is the answer of every author without its own; the owner is the author of its own.
+        const inheriting = step.kind === 'owner' ? [{ id: 'owner' }] : (Array.isArray(step.models) ? step.models : []).filter((model) => isObject(model) && model.enabled !== false && !('output' in model));
+        checkOutput(step.output, `${path}.output`, step, index, inheriting);
+      }
       // A number of answers is checked against the enabled participants; a switched-off step keeps its number.
       if ('require' in step && !REQUIRE_WORDS.includes(step.require)) {
         const enabledCount = (Array.isArray(step.models) ? step.models : []).filter((model) => isObject(model) && model.enabled !== false).length;
@@ -554,7 +603,10 @@
       step.models.forEach((model, at) => {
         const modelPath = `${path}.models[${at}]`;
         if (!isObject(model)) { fail(modelPath, 'ожидается объект'); return; }
-        unknownKeys(model, ['name', 'id', 'enabled', 'role', 'request', 'maxWords', 'task', 'discipline', 'input'], modelPath);
+        unknownKeys(model, ['name', 'id', 'enabled', 'role', 'request', 'maxWords', 'task', 'discipline', 'input', 'output'], modelPath);
+        // A participant of a route chooses; it has no answer of its own (its route output has its own contract).
+        if (step.kind === 'route' && 'output' in model) fail(`${modelPath}.output`, 'у участника маршрута выход не задаётся');
+        else if ('output' in model) checkOutput(model.output, `${modelPath}.output`, step, index, [model]);
         if ('enabled' in model && typeof model.enabled !== 'boolean') fail(`${modelPath}.enabled`, 'ожидается true или false');
         if (typeof model.name !== 'string' || !model.name.trim()) fail(`${modelPath}.name`, 'имя модели не указано');
         // One participant is one id in a step; a repeated name is fine when the ids differ. One id keeps one name in all steps.
@@ -581,6 +633,7 @@
     // The cycle comes from an unlimited transition, which is already named at its path: no second error there.
     const { cycle } = graph(schema.steps);
     if (cycle && !errors.some((error) => error.path === cycle)) fail(cycle, 'цикл без ограниченного перехода: укажите maxLoops');
+    errors.push(...synthesisPlaceErrors(schema.steps), ...executabilityErrors(schema.steps));
     return errors;
   }
 
@@ -606,6 +659,9 @@
         if (typeof model.task === 'string') participant.task = model.task;
         if (isObject(model.discipline)) participant.discipline = JSON.parse(JSON.stringify(model.discipline));
         if ('input' in model) participant.input = JSON.parse(JSON.stringify(model.input));
+        if ('output' in model) participant.output = JSON.parse(JSON.stringify(model.output));
+        // A switched-off participant is a declaration of its own (R12): its name and off state stay, with or without other settings.
+        if (model.enabled === false) Object.assign(participant, { name: model.name, enabled: false });
         if (!Object.keys(participant).length) return;
         (customModelSettings[step.ref] || (customModelSettings[step.ref] = {}))[idOf(model)] = participant;
       });
@@ -650,12 +706,11 @@
       const id = step.ref.startsWith('synth:') ? step.ref.slice('synth:'.length) : '';
       // The canvas keeps only A-Z a-z 0-9 _ - of an id; another character would make the settings follow another ref.
       if (!/^[A-Za-z0-9_-]+$/.test(id)) fail(`${path}.ref`, 'ref промежуточного синтеза: «synth:<id>», id — латинские буквы, цифры, «_» и «-»');
-      if (steps[index - 1]?.kind !== 'round') fail(path, 'промежуточный синтез стоит сразу после раунда');
-      if (steps[index + 1]?.kind !== 'round') fail(path, 'промежуточный синтез стоит между двумя раундами');
       if (enabled.length) inserts.push({ afterRound: rounds.length, plannedStageId: id, participantIds: enabled.map(idOf) });
     });
     if (Array.isArray(runWords) && schema.run && 'maxWords' in schema.run && !runWords.includes(schema.run.maxWords)) fail('run.maxWords', `предел длины pipeline: допустимо ${runWords.join(', ')}`);
-    if (!rounds.length) fail('steps', 'нужен хотя бы один раунд');
+    synthesisPlaceErrors(steps).forEach((error) => fail(error.path, error.message));
+    executabilityErrors(steps).forEach((error) => fail(error.path, error.message));
     if (rounds.length > 50) fail('steps', 'раундов не больше 50');
     if (errors.length) return { errors };
     const selectedModels = models.filter((name) => rounds.some((step) => enabledOf(step).some((model) => model.name === name)));

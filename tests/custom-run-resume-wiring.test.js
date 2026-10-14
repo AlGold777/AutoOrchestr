@@ -30,6 +30,11 @@ describe('Basic page binds the engine to the run record (8.2, 8.3)', () => {
     expect(results).toContain('resumeCustomFromPage,');
   });
 
+  test('the end notice of a run names the detail of the stop (the address of a missing input) after the reason', () => {
+    expect(results).toContain('showNotification(basicRunNotice(stopText, result.answers.length, result.stopDetail), result.stopReason');
+    expect(results).toMatch(/const basicRunNotice = \(stopText, acceptedCount, stopDetail = ''\) => `Basic: \$\{stopText\}\$\{stopDetail \? ` \(\$\{stopDetail\}\)` : ''\}\./);
+  });
+
   test('«Продолжить прогон» is a button of the panel and goes on from the latest record through resumeCustomFromPage', () => {
     const panel = fs.readFileSync(path.join(__dirname, '..', 'pipeline_panel.html'), 'utf8');
     expect(panel).toContain('id="pipeline-resume-btn"');
