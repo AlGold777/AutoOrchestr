@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-14 — Запуск pipeline идёт только на движке Basic; Debate больше не достижим из интерфейса, версия 2.81.772
+
+- Первый шаг удаления Debate по реестру `docs/Architecture/debate-removal-registry.md`. `window.runPipeline` вызывает запуск напрямую, без `debateApplication.startFromPage`.
+- `disput/pipeline-presets.js`: пресет по умолчанию и запасной вариант для неизвестного id — `CUSTOM` (движок Basic); пресеты «Universal» и «Red Team» удалены. Сохранённый pipeline с прежним `presetId` (`UNIVERSAL_STANDARD`, `UNIVERSAL_RED_TEAM`, удалённые шаблоны) больше не уходит в Debate: он запускается как Basic и не удаляется. Раньше неизвестный id давал `UNIVERSAL_STANDARD` без `runner`, то есть запуск Debate.
+- Тесты: `tests/pipeline-presets.test.js` переписан под один пресет и запасной вариант; удалён устаревший тест «Custom is not offered on a pipeline that does not run on the Custom engine» в `tests/results-debate-favorites.test.js`. Код самого Debate ещё в репозитории: его удаляют следующими шагами.
+
 ### 2026-10-14 — Документ: реестр того, что остаётся от Debate (без смены версии)
 
 - Новый `docs/Architecture/debate-removal-registry.md` (исправлен после повторной проверки: модули трассы, сессии ленты, управление запуском и экспорт перенесены в общие): классы SHARED / DEBATE / ORPHAN для модулей `disput/debate-*`, `shared/`, `background/` и блоков `results.js`, сообщения и ключи хранилища, связность и порядок удаления. Удаление не выполнялось. Добавлен в `documentation-map.md`.

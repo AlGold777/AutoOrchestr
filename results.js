@@ -5541,7 +5541,7 @@ document.addEventListener('click', (event) => {
         };
         function getSelectedPipelinePresetId() {
             const api = window.PipelinePresets;
-            const fallback = api?.DEFAULT_PRESET_ID || 'UNIVERSAL_STANDARD';
+            const fallback = api?.DEFAULT_PRESET_ID || 'CUSTOM';
             const activeName = String(pipelineStore?.active || getPipelineHeaderName()).trim();
             const activeConfig = activeName ? getPipelineConfigByName(activeName) : null;
             const configured = String(activeConfig?.protocol?.presetId || '').trim();
@@ -8012,7 +8012,8 @@ document.addEventListener('click', (event) => {
             }
         }) || null;
         window.__debateApplication = debateApplication;
-        window.runPipeline = (...args) => debateApplication?.startFromPage?.(...args) ?? startDebateFromPage(...args);
+        // A pipeline starts directly: the runner of every preset is the Basic engine, not the Debate application.
+        window.runPipeline = (...args) => startDebateFromPage(...args);
         window.cancelPipelineRun = cancelPipelineRun;
         if (
             (typeof process !== 'undefined' && process?.env?.NODE_ENV === 'test')

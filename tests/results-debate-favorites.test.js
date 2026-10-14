@@ -2761,17 +2761,6 @@ describe('Pipeline debate favorites view', () => {
     } finally { h.cleanup(); }
   }, 30000);
 
-  test('Custom is not offered on a pipeline that does not run on the Custom engine', () => {
-    const h = setupCustomInheritance('Universal roles');
-    try {
-      const config = { ...h.config, protocol: { ...h.config.protocol, presetId: 'UNIVERSAL_STANDARD' } };
-      h.debug.setPipelineStoreForTest({ active: 'Universal roles', pipelines: { 'Universal roles': config }, order: ['Universal roles'] });
-      h.debug.applyPipelineConfig(config);
-      expect(document.querySelectorAll('#r2-models .role-selector')).not.toHaveLength(0);
-      expect(document.querySelectorAll('#r2-models .role-selector option[value="custom"]')).toHaveLength(0);
-    } finally { h.cleanup(); }
-  });
-
   test('a personal request in a Custom block notes that its role is not applied and sends no role text', async () => {
     const h = setupCustomInheritance('Role note');
     try {

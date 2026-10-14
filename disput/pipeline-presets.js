@@ -2,7 +2,8 @@
 (function initPipelinePresets(root) {
   'use strict';
 
-  const DEFAULT_PRESET_ID = 'UNIVERSAL_STANDARD';
+  // The one runner is the Basic engine: an unknown or retired preset id falls back to it (it used to fall back to the Debate engine).
+  const DEFAULT_PRESET_ID = 'CUSTOM';
   const STANDARD_BUDGET = Object.freeze({ class: 'standard', maxTotalStages: 12, critiqueDepth: 1, synthesisPasses: 1 });
   const RESEARCH_BUDGET = Object.freeze({ class: 'research', maxTotalStages: 30, critiqueDepth: 2, synthesisPasses: 1 });
   const RED_TEAM_BUDGET = Object.freeze({ class: 'red_team', maxTotalStages: 24, critiqueDepth: 3, synthesisPasses: 1 });
@@ -25,11 +26,8 @@
   });
 
   const PIPELINE_PRESETS = Object.freeze([
-    makePreset('UNIVERSAL_STANDARD', 'Universal', 'UNIVERSAL_STANDARD', REASONING_BUDGETS.STANDARD),
     // The Default template runs the Basic engine (disput/custom-engine.js), not the Debate engine.
     makePreset('CUSTOM', 'Default', 'UNIVERSAL_STANDARD', REASONING_BUDGETS.STANDARD, { runner: 'custom' }),
-    makePreset('UNIVERSAL_RED_TEAM', 'Red Team', 'UNIVERSAL_RED_TEAM', REASONING_BUDGETS.RED_TEAM,
-      { finalizationPolicy: 'after_audited_synthesis', status: 'disabled' }),
   ]);
 
   const BUILTIN_PIPELINE_DEFINITIONS = Object.freeze([
