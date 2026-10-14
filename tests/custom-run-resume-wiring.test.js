@@ -44,6 +44,15 @@ describe('Basic page binds the engine to the run record (8.2, 8.3)', () => {
     expect(results).toContain('void resumeCustomFromPage(); }');
   });
 
+  test('V01: the page writes the chats into the record while the batch is in flight, and marks a lost chat of a resumed participant strict', () => {
+    expect(results).toContain('const bindingsWatch = record ? setInterval(() => { void syncParticipantChats(runContext.pipelineRunId, wave); }, 1000) : null;');
+    expect(results).toContain('} finally { if (bindingsWatch) clearInterval(bindingsWatch); }');
+    expect(results).toContain('window.CustomRunRecord.setChatBindings(record, chatBindings)');
+    expect(results).toMatch(/const strict = Boolean\(resumeRecord\) && !isNewChat\(request\) && !binding\s*&& \(record\.attempts \|\| \[\]\)\.some\(\(item\) => item\.participant === request\.participantId\);/);
+    const orchestrator = fs.readFileSync(path.join(__dirname, '..', 'background', 'job-orchestrator.js'), 'utf8');
+    expect(orchestrator).toContain('strict: participant.strict === true,');
+  });
+
   test('the run takes the limit of the schema, and the decision window offers «Продолжить» only where the engine allows it', () => {
     expect(results).toContain('runMaxWords: built.run.maxWords,');
     expect(results).toMatch(/const canContinue = choices\.includes\('continue'\);[\s\S]*?confirmText: canContinue \? 'Продолжить' : 'Пропустить шаг'/);

@@ -1118,6 +1118,14 @@ async function openParticipantChat(llmName, participant = {}, prompt = '', attac
   const bound = participantChatOf(runId, participantId)
     || (!participant.newChat && savedChat ? savedChat : null);
   const sameVisit = !!bound && !!visit.stageAttemptId && bound.stageAttemptId === visit.stageAttemptId;
+  // A resumed participant that already sent in this run but has no chat on record (V01): its chat is lost, not "not yet opened".
+  // It never takes another tab of the provider and never opens a new chat: the request stops before the send.
+  if (!bound && participant.strict === true && !participant.newChat) {
+    return {
+      ok: false,
+      error: participantRunError('participant_chat_lost', `Чат участника ${participantId} не найден в записи прогона (запрос уже отправлялся). Запрос не отправлен, чужой чат не выбран.`, { participantId, runId, reason: 'binding_missing' })
+    };
+  }
 
   if (bound && (!participant.newChat || sameVisit)) {
     return continueParticipantChat(llmName, visit, bound, prompt, attachments, options);

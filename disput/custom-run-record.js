@@ -152,6 +152,13 @@
     });
     return record.snapshot;
   }
+  // The chats of the participants go into the snapshot as soon as the background binds them, not at the next checkpoint (V01):
+  // a stop or a reload before the first answer must not lose them. Without a snapshot there is nothing to update.
+  function setChatBindings(record, bindings) {
+    if (!record.snapshot) return false;
+    record.snapshot.chatBindings = plainOf(bindings);
+    return true;
+  }
   // The registry of the run: the entries of the engine's result, each with its answer reference (plain data).
   function setArtifacts(record, entries = []) {
     record.artifacts = copyOf(entries) || [];
@@ -259,7 +266,7 @@
     };
   }
 
-  const api = Object.freeze({ DEFAULT_MAX_BYTES, INDEX_KEY, RUN_KEY_PREFIX, fingerprint, createRun, recordAttempt, attemptKey, finishRun, serialize, revive, textOf, setSnapshot, setArtifacts, canResume, exportRun, createStore, chromeStorage });
+  const api = Object.freeze({ DEFAULT_MAX_BYTES, INDEX_KEY, RUN_KEY_PREFIX, fingerprint, createRun, recordAttempt, attemptKey, finishRun, serialize, revive, textOf, setSnapshot, setChatBindings, setArtifacts, canResume, exportRun, createStore, chromeStorage });
   root.CustomRunRecord = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -7533,15 +7533,23 @@ document.addEventListener('click', (event) => {
                         const binding = !isNewChat(request) && saved?.modelName === request.modelName && saved.tabId != null
                             ? { tabId: saved.tabId, requestId: saved.requestId || null, stageAttemptId: saved.stageAttemptId || null }
                             : null;
+                        // A resumed participant that already sent in this run and has no chat on record has lost it (V01): strict.
+                        const strict = Boolean(resumeRecord) && !isNewChat(request) && !binding
+                            && (record.attempts || []).some((item) => item.participant === request.participantId);
                         return [request.modelName, {
-                            participantId: request.participantId, newChat: isNewChat(request), ...(binding ? { binding } : {})
+                            participantId: request.participantId, newChat: isNewChat(request), ...(binding ? { binding } : {}), ...(strict ? { strict: true } : {})
                         }];
                     }));
                     // Reuse the existing limit contract, on first attempts and corrections alike.
                     const composed = composeCustomPrompts(models, promptsByModel, maxWordsByModel, discipline,
                         built.schema.defaults?.modelNotes || {}, correctionByModel, built.run.maxWords);
                     const filesSent = wave.some(filesNeeded);
-                    const batch = await runModelBatch({
+                    // The chats are written into the record while the batch is in flight: a stop or a reload before the first answer
+                    // keeps them (V01). The background binds a chat before the send; the page reads it once a second.
+                    const bindingsWatch = record ? setInterval(() => { void syncParticipantChats(runContext.pipelineRunId, wave); }, 1000) : null;
+                    let batch;
+                    try {
+                    batch = await runModelBatch({
                         prompt: composed[models[0]],
                         promptsByModel: composed,
                         deliveryInstructionsByModel: Object.fromEntries(models.map((name) => [name, discipline[name].delivery])),
@@ -7564,6 +7572,7 @@ document.addEventListener('click', (event) => {
                         },
                         generationProfile: 'long'
                     });
+                    } finally { if (bindingsWatch) clearInterval(bindingsWatch); }
                     // The chats as the background bound them (R01), written into the state before the next send.
                     await refreshParticipantChats(runContext.pipelineRunId, wave);
                     const byModel = Object.fromEntries(models.map((model) => {
@@ -7624,6 +7633,13 @@ document.addEventListener('click', (event) => {
                             tabId: bound.tabId, requestId: bound.requestId || null, stageAttemptId: bound.stageAttemptId || null
                         };
                     });
+                };
+                // Reads the chats of the wave and, when one is new or changed, writes the chats into the snapshot of the record (V01).
+                const syncParticipantChats = async (pipelineRunId, wave) => {
+                    const before = JSON.stringify(chatBindings);
+                    await refreshParticipantChats(pipelineRunId, wave);
+                    if (JSON.stringify(chatBindings) === before) return;
+                    if (window.CustomRunRecord.setChatBindings(record, chatBindings)) void saveRecord(true);
                 };
                 // N04 (read-only): the answer of a request whose sending is not confirmed, read in its own chat. It never sends.
                 // Statuses: found (text as it is), no_answer, ambiguous, chat_unavailable; only found carries a text.

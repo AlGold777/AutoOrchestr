@@ -420,3 +420,16 @@ describe('Custom run record export is self-contained (R04)', () => {
     expect(Record.exportRun(Record.revive(JSON.parse(JSON.stringify(v1))))).toMatchObject({ version: 1, resumable: false, task: 'Задача' });
   });
 });
+
+describe('V01: the chats of the participants go into the snapshot at once', () => {
+  test('setChatBindings updates an existing snapshot only, as plain data', () => {
+    const record = Record.createRun({ runId: 'run-cb', pipelineName: 'Mine', task: 'T', steps: [{ task: 'x', input: 'none', models: ['A'] }] });
+    expect(Record.setChatBindings(record, { P1: { modelName: 'GPT', tabId: 5 } })).toBe(false);
+    Record.setSnapshot(record, { schema: [{ ref: 'r1' }], state: { pc: 'r1', visits: { r1: 1 } } });
+    expect(record.snapshot.chatBindings).toEqual({});
+    expect(Record.setChatBindings(record, { P1: { modelName: 'GPT', tabId: 5, requestId: 'req' } })).toBe(true);
+    expect(record.snapshot.chatBindings).toEqual({ P1: { modelName: 'GPT', tabId: 5, requestId: 'req' } });
+    expect(Record.setChatBindings(record, null)).toBe(true);
+    expect(record.snapshot.chatBindings).toEqual({});
+  });
+});

@@ -19,7 +19,7 @@ vm.runInContext(helper, env);
   await context.pruneParticipantRuns('run-2');
   await context.bindParticipantChat('run-2', 'author-B', 'GPT', 2002, { requestId: 'req-new', stageAttemptId: 'attempt-new' });
   await context.setTabBinding('GPT', 2002);
-  // Resume run-1 from its real pre-response checkpoint: chatBindings is empty, so binding is omitted.
-  const result = await context.openParticipantChat('GPT', { runId: 'run-1', participantId: 'author-A', newChat: false, requestId: 'req-retry', stageAttemptId: 'attempt-retry', binding: null }, 'resume', []);
+  // Resume run-1 from its real pre-response checkpoint: chatBindings is empty, so binding is omitted. Since 2.81.761 the page marks such a participant strict (it already sent): the request is refused, not attached to tab 2003.
+  const result = await context.openParticipantChat('GPT', { runId: 'run-1', participantId: 'author-A', newChat: false, requestId: 'req-retry', stageAttemptId: 'attempt-retry', binding: null, strict: true }, 'resume', []);
   process.stdout.write(JSON.stringify({ result, sent: context.dispatchPromptToTab.mock.calls, remainingBindings: context.participantChatBindingsOf('run-1') }) + '\n');
 })().catch((e) => { process.stderr.write(String(e.stack || e) + '\n'); process.exitCode = 1; });

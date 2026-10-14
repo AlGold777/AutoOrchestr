@@ -5708,6 +5708,8 @@ async function runParticipantThroughTabs(llmName, prompt, attachments = [], opti
     runId: participant.runId,
     participantId: String(participant.participantId || ''),
     newChat: participant.newChat === true,
+    // A resumed participant that already sent in this run and has no chat on record (V01): refused, not attached elsewhere.
+    strict: participant.strict === true,
     requestId: participant.requestId,
     stageAttemptId: participant.stageAttemptId,
     // The chat the page saved for this participant (R01): used only when the run has no binding of its own.

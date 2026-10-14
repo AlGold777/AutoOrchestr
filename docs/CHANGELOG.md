@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-14 — Basic: продолжение не теряет чат участника до первого ответа (V01), версия 2.81.761
+
+- Страница (`results.js`, `syncParticipantChats`) пока батч в полёте раз в секунду читает привязки чатов у фона и, если они изменились, пишет их в снимок записи прогона (`CustomRunRecord.setChatBindings`). Остановка или перезагрузка до первого ответа больше не оставляют запись без привязки.
+- Продолжение: участник, который уже отправлял в этом прогоне (`record.attempts`) и не имеет ни привязки, ни нового чата, получает флаг `strict`. Фон (`openParticipantChat`, `runParticipantThroughTabs`) отвечает `participant_chat_lost` (`binding_missing`): не ищет чужую вкладку провайдера и не открывает новый чат. Первый запрос участника ведёт себя как прежде.
+- Тесты: `tests/tab-manager-session-scope.test.js` (V01, два), `tests/custom-run-record.test.js`, `tests/custom-run-resume-wiring.test.js`. Документы: `basic-developer.md` (REVIEW-1), `basic-start-here.md`, `basic_fixes_review_oct12.md`; скрипт воспроизведения `lost-pending-chat.js`. Шаг 5 плана `basic_review_s01_s05_oct14.md`.
+
 ### 2026-10-14 — Тест привязки окна владельца следует новой сигнатуре, версия 2.81.760
 
 - `tests/custom-run-resume-wiring.test.js`: проверка `provideOwnerResult` ждёт `input` и `output` и вызов `ownerAskMessage` (после 2.81.758 прежний текст не находился).

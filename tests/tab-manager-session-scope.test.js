@@ -673,6 +673,24 @@ describe('Basic participant chat restored from the saved snapshot (R01, resume)'
     expect(context.participantChatOf('run-1', 'author-A')).toBeNull();
   });
 
+  test('V01: a resumed participant that already sent has no chat on record: nothing is sent, no foreign tab, no new chat', async () => {
+    // The chat of run-1 was dropped (another run replaced it); a foreign tab of the provider is open and would be taken by a global attach.
+    const { context } = resumeSandbox([liveTab(2003, 1)]);
+    const result = await context.openParticipantChat('GPT', { ...visit('run-1', 'author-A'), binding: null, strict: true }, 'resume', []);
+    expect(result.ok).toBe(false);
+    expect(result.error.errorCode).toBe('participant_chat_lost');
+    expect(result.error.meta).toEqual(expect.objectContaining({ participantId: 'author-A', runId: 'run-1', reason: 'binding_missing' }));
+    expect(context.dispatchPromptToTab).not.toHaveBeenCalled();
+    expect(context.chrome.tabs.create).not.toHaveBeenCalled();
+    expect(context.participantChatOf('run-1', 'author-A')).toBeNull();
+  });
+
+  test('V01: the first request of a participant (not strict) still may take a chat that no participant is bound to', async () => {
+    const { context } = resumeSandbox([liveTab(2003, 1)]);
+    const result = await context.openParticipantChat('GPT', { ...visit('run-1', 'author-A'), binding: null }, 'first', []);
+    expect(result.ok).toBe(true);
+  });
+
   test('a binding of the background wins over the saved one', async () => {
     const { context } = resumeSandbox([liveTab(2001), liveTab(2002, 1)]);
     await context.bindParticipantChat('run-1', 'author-A', 'GPT', 2002, { stageAttemptId: 'a1' });
