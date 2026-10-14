@@ -168,6 +168,11 @@
   // text that the record refers to. A version 1 record, a run without a checkpoint and a record with a missing text cannot.
   function isComplete(record) {
     if ((record.version || 1) < 2 || !record.snapshot) return false;
+    // Every field of the state must be there (V07): a snapshot with no `pc` would resume as a finished run.
+    const shape = record.snapshot;
+    const objects = ['visits', 'decisions', 'loopCounters', 'feedback', 'dependencies'];
+    const lists = ['results', 'continuationStack'];
+    if (!('pc' in shape) || !objects.every((key) => shape[key] && typeof shape[key] === 'object' && !Array.isArray(shape[key])) || !lists.every((key) => Array.isArray(shape[key]))) return false;
     const { schema, current } = record.snapshot;
     if (!Array.isArray(schema) || !schema.length || !current || typeof current !== 'object') return false;
     const used = collectRefs({ taskRef: record.taskRef, snapshot: record.snapshot, artifacts: record.artifacts, attempts: record.attempts }, new Set());

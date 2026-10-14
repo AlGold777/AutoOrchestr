@@ -7299,7 +7299,8 @@ document.addEventListener('click', (event) => {
         // The windows of a pause of a Basic run (results/choice-dialog.js): a null answer is the owner's cancel.
         const askChoiceDialog = (options) => {
             if (!window.ChoiceDialog) throw new Error('окно выбора не загружено (results/choice-dialog.js)');
-            return window.ChoiceDialog.ask(options);
+            // The windows of a run close on its Stop (R07): the signal of the run goes with them.
+            return window.ChoiceDialog.ask({ signal: customAbortController?.signal, ...options });
         };
         const askCustomOwner = (asks, { label }) => new Promise((resolve) => {
             if (!ownerAskDialog || !window.OwnerAsk) { resolve([]); return; }

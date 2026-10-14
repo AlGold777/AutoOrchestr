@@ -433,3 +433,18 @@ describe('V01: the chats of the participants go into the snapshot at once', () =
     expect(record.snapshot.chatBindings).toEqual({});
   });
 });
+
+describe('V07: a record is resumable only with the whole state of the checkpoint', () => {
+  test('canResume and the export say no for a snapshot without pc or without a state field', () => {
+    const record = Record.createRun({ runId: 'run-v07', pipelineName: 'Mine', task: 'T', steps: [{ task: 'x', input: 'none', models: ['A'] }] });
+    Record.setSnapshot(record, { schema: [{ ref: 'r1' }], state: { pc: 'r1', visits: { r1: 1 } } });
+    expect(Record.canResume(record)).toBe(true);
+    expect(Record.exportRun(record).resumable).toBe(true);
+    delete record.snapshot.pc;
+    expect(Record.canResume(record)).toBe(false);
+    expect(Record.exportRun(record).resumable).toBe(false);
+    record.snapshot.pc = 'r1';
+    delete record.snapshot.loopCounters;
+    expect(Record.canResume(record)).toBe(false);
+  });
+});

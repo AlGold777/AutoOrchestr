@@ -1176,6 +1176,14 @@
     }));
     function restoreRun(saved) {
       if (!isPlain(saved)) throw new EngineError('resume_invalid', 'resume', 'состояние для продолжения: объект снимка');
+      // A complete checkpoint holds every field of the state (V07). A missing `pc` would read as "the run is over" and end the
+      // run with no work done, so a partial snapshot is refused, not guessed.
+      const lacking = [
+        ...['visits', 'decisions', 'loopCounters', 'feedback', 'dependencies'].filter((field) => !isPlain(saved[field])),
+        ...['results', 'continuationStack'].filter((field) => !Array.isArray(saved[field])),
+        ...('pc' in saved ? [] : ['pc'])
+      ];
+      if (lacking.length) throw new EngineError('resume_invalid', 'resume', `в снимке состояния нет полей: ${lacking.join(', ')}`);
       ['visits', 'loopCounters', 'feedback', 'dependencies', 'decisions'].forEach((field) => { state[field] = isPlain(saved[field]) ? JSON.parse(JSON.stringify(saved[field])) : {}; });
       state.continuationStack = Array.isArray(saved.continuationStack) ? JSON.parse(JSON.stringify(saved.continuationStack)) : [];
       ownerAnswers.push(...(Array.isArray(saved.ownerAnswers) ? saved.ownerAnswers : []));

@@ -53,6 +53,10 @@ describe('Basic page binds the engine to the run record (8.2, 8.3)', () => {
     expect(orchestrator).toContain('strict: participant.strict === true,');
   });
 
+  test('R07: the windows of a run get the signal of the run, so a Stop closes them', () => {
+    expect(results).toContain('return window.ChoiceDialog.ask({ signal: customAbortController?.signal, ...options });');
+  });
+
   test('the run takes the limit of the schema, and the decision window offers «Продолжить» only where the engine allows it', () => {
     expect(results).toContain('runMaxWords: built.run.maxWords,');
     expect(results).toMatch(/const canContinue = choices\.includes\('continue'\);[\s\S]*?confirmText: canContinue \? 'Продолжить' : 'Пропустить шаг'/);

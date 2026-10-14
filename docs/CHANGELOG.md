@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-14 — Basic: неполный снимок не возобновляется (V07), Stop закрывает окна прогона (R07), версия 2.81.762
+
+- V07: `CustomRunRecord.canResume` и экспорт (`resumable`) требуют `pc` и все поля состояния (`visits`, `decisions`, `loopCounters`, `feedback`, `dependencies`, `results`, `continuationStack`); `CustomEngine` при продолжении с неполным снимком отказывает `resume_invalid` с перечнем недостающих полей и ничего не отправляет. Прежде отсутствие `pc` читалось как «прогон закончен».
+- R07: `ChoiceDialog.ask` принимает `signal`; окна прогона (ответ владельца, выбор маршрута, неизвестный запрос) получают сигнал прогона и закрываются при Stop, ответ — отмена.
+- Тесты: `tests/custom-engine-resume.test.js`, `tests/custom-run-record.test.js`, `tests/choice-dialog.test.js`, `tests/custom-run-resume-wiring.test.js`. Скрипты воспроизведения обновлены. Шаг 6 плана `basic_review_s01_s05_oct14.md`.
+
 ### 2026-10-14 — Basic: продолжение не теряет чат участника до первого ответа (V01), версия 2.81.761
 
 - Страница (`results.js`, `syncParticipantChats`) пока батч в полёте раз в секунду читает привязки чатов у фона и, если они изменились, пишет их в снимок записи прогона (`CustomRunRecord.setChatBindings`). Остановка или перезагрузка до первого ответа больше не оставляют запись без привязки.

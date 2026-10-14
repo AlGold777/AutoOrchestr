@@ -12,7 +12,7 @@
     return node;
   };
 
-  function ask({ title = '', message = '', choices = [], textInput = null, cancelText = 'Отмена', documentRef = root.document } = {}) {
+  function ask({ title = '', message = '', choices = [], textInput = null, cancelText = 'Отмена', signal = null, documentRef = root.document } = {}) {
     const doc = documentRef;
     return new Promise((resolve) => {
       const dialog = el(doc, 'dialog', 'choice-dialog');
@@ -46,6 +46,11 @@
       cancel.addEventListener('click', () => finish(null));
       actions.append(cancel);
       dialog.append(actions);
+      // A Stop of the run closes the window at once: the answer is a cancel (R07).
+      if (signal) {
+        if (signal.aborted) { finish(null); return; }
+        signal.addEventListener('abort', () => finish(null), { once: true });
+      }
       // Escape closes the native dialog: the answer is a cancel.
       dialog.addEventListener('cancel', (event) => { event.preventDefault(); finish(null); });
       doc.body.append(dialog);

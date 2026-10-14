@@ -261,3 +261,28 @@ describe('Custom engine resume: an unknown request stays unknown until the owner
     expect(log3.map((call) => [call.models[0], call.attempt])).toEqual([['B', 2]]);
   });
 });
+
+describe('V07: a partial snapshot is refused, it does not read as a finished run', () => {
+  test('a snapshot with no pc or no state fields stops the resume with resume_invalid and sends nothing', async () => {
+    const log = [];
+    const partial = { schema: [{ ref: 'r1', kind: 'round', models: ['A'] }], current: { active: false, stepRef: 'r1' } };
+    await expect(Engine.run({ task: 'T', steps: TWO_ROUNDS, resume: partial, send: transport({ A: ['a1'], B: ['b1'] }, log) }))
+      .rejects.toMatchObject({ code: 'resume_invalid' });
+    expect(log).toEqual([]);
+  });
+
+  test('a snapshot that lacks only pc is refused too (null pc is written explicitly by a complete checkpoint)', async () => {
+    const texts = textStore();
+    const first = keeper();
+    await Engine.run({ task: 'T', steps: TWO_ROUNDS, checkpoint: first.checkpoint, putText: texts.putText, getText: texts.getText, send: transport({ A: ['a1'], B: ['b1'] }, []) });
+    const full = JSON.parse(JSON.stringify(first.last()));
+    const lacking = { ...full };
+    delete lacking.pc;
+    await expect(Engine.run({ task: 'T', steps: TWO_ROUNDS, getText: texts.getText, resume: lacking, send: transport({}, []) }))
+      .rejects.toMatchObject({ code: 'resume_invalid' });
+    const log = [];
+    const ok = await Engine.run({ task: 'T', steps: TWO_ROUNDS, putText: texts.putText, getText: texts.getText, resume: full, send: transport({}, log) });
+    expect(ok.stopReason).toBe('steps_done');
+    expect(log).toEqual([]);
+  });
+});
