@@ -21,6 +21,8 @@ describe('response viewer content retention', () => {
     const router = fs.readFileSync(path.join(__dirname, '..', 'background', 'message-router.js'), 'utf8');
     expect(router).toMatch(/chrome\.storage\.session\.set\(\{ \[key\]: message\.payload \}, \(\) => \{\s*if \(!chrome\.runtime\.lastError\) \{\s*void pruneResponseViewerContent\(\);/);
     expect(router).toContain('await pruneResponseViewerContent({ legacyLocal: true });');
+    // It also runs on its own at the start of the service worker, once per browser session, not only in the late maintenance.
+    expect(router).toContain("const { responseViewerLegacyCleaned } = await chrome.storage.session.get('responseViewerLegacyCleaned');");
     // The cleanup comes before the other maintenance: those steps fail on a full storage and would skip it.
     expect(router.indexOf('await pruneResponseViewerContent({ legacyLocal: true });')).toBeLessThan(router.indexOf("await CompressedStorage.migrate(['results', 'notes', 'logs']);"));
     const index = fs.readFileSync(path.join(__dirname, '..', 'background', 'index.js'), 'utf8');

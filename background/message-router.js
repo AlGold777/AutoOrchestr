@@ -1823,6 +1823,19 @@ async function pruneResponseViewerContent({ legacyLocal = false } = {}) {
     }
 }
 
+// The old viewer copies are removed at the start of the service worker itself, once per browser session (a flag in the session
+// storage): the general maintenance below starts only at the end of the initial state, which does not finish when the storage is full.
+(async () => {
+    try {
+        const { responseViewerLegacyCleaned } = await chrome.storage.session.get('responseViewerLegacyCleaned');
+        if (responseViewerLegacyCleaned) return;
+        await pruneResponseViewerContent({ legacyLocal: true });
+        await chrome.storage.session.set({ responseViewerLegacyCleaned: true });
+    } catch (err) {
+        console.warn('[BACKGROUND] Response viewer start cleanup failed:', err);
+    }
+})();
+
 let initialStorageMaintenancePromise = null;
 
 function scheduleInitialStorageMaintenance() {

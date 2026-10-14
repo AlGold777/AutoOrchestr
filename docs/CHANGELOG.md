@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-10-14 — Очистка копий окна просмотра запускается при старте фона, версия 2.81.771
+
+- После перезагрузки в `chrome.storage.local` остались 23 копии `llmResponseViewer.*`: очистка стояла в общем обслуживании, которое запускается в конце начальной загрузки состояния и при полном хранилище до этого не доходит. Теперь `pruneResponseViewerContent({ legacyLocal: true })` запускается отдельно при старте service worker, один раз за сессию браузера (флаг `responseViewerLegacyCleaned` в `chrome.storage.session`); прежний вызов в обслуживании оставлен.
+
 ### 2026-10-14 — Очистка копий окна просмотра идёт первой и не зависит от остального обслуживания, версия 2.81.770
 
 - В замере после перезагрузки в `chrome.storage.local` остался ключ `llmResponseViewer.*`: очистка стояла после `CompressedStorage.migrate` и `pruneIfNeeded`, которые при заполненном хранилище могут упасть по квоте и пропустить её. Теперь `pruneResponseViewerContent({ legacyLocal: true })` выполняется первой (`scheduleInitialStorageMaintenance`, `background/message-router.js`), своими ошибками не прерывая остальное. Тест порядка в `tests/response-viewer-retention.test.js`.
