@@ -7695,10 +7695,10 @@ document.addEventListener('click', (event) => {
                         choices: [{ value: 'send', label: 'Отправить' }]
                     }),
                     // The request whose sending is not confirmed: send it again, or skip it for this attempt only.
-                    resolveUnknown: ({ stepRef, items }) => askChoiceDialog({
+                    resolveUnknown: ({ stepRef, items, choices = ['resend', 'skip'] }) => askChoiceDialog({
                         title: 'Неизвестный запрос',
-                        message: `${stepRef}: отправка не подтверждена (${items.map((item) => item.participantId).join(', ')}). Отправить заново или пропустить?`,
-                        choices: [{ value: 'resend', label: 'Отправить заново' }, { value: 'skip', label: 'Пропустить' }]
+                        message: `${stepRef}: отправка не подтверждена (${items.map((item) => item.participantId).join(', ')}). ${choices.includes('check') ? 'Проверить, пришёл ли ответ в чате (ничего не отправляется), отправить заново или пропустить?' : 'Отправить заново или пропустить?'}`,
+                        choices: choices.map((id) => ({ value: id, label: { check: 'Проверить ответ', resend: 'Отправить заново', skip: 'Пропустить' }[id] || id }))
                     }),
                     // The texts of the answers go to the record (the registry and the snapshot keep references to them).
                     ...(record ? {

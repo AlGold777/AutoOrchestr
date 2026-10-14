@@ -286,3 +286,67 @@ describe('V07: a partial snapshot is refused, it does not read as a finished run
     expect(log).toEqual([]);
   });
 });
+
+describe('N04: the owner can check the chat of an unknown request instead of sending it again', () => {
+  test('the check offers «check» only when the page can read; a found answer is judged and used, nothing is sent', async () => {
+    const { saved, texts } = await stopInFlight(TWO_ROUNDS);
+    const log2 = [];
+    const offered = [];
+    const reads = [];
+    const run2 = await Engine.run({
+      task: 'T', steps: TWO_ROUNDS, checkpoint: keeper().checkpoint, putText: texts.putText, getText: texts.getText, resume: clone(saved),
+      send: transport({ B: ['b-sent-again'] }, log2),
+      resolveUnknown: async ({ choices }) => { offered.push(choices); return 'check'; },
+      checkUnknown: async (arg) => { reads.push(arg); return { ok: true, status: 'found', text: 'b-from-chat' }; }
+    });
+    expect(offered).toEqual([['check', 'resend', 'skip']]);
+    expect(reads).toEqual([expect.objectContaining({ participantId: 'B', modelName: 'B', excludeText: '' })]);
+    expect(log2).toEqual([]);
+    expect(run2.stopReason).toBe('steps_done');
+    expect(run2.steps.find((step) => step.ref === 'S2').outcome.B).toMatchObject({ ok: true, text: 'b-from-chat' });
+  });
+
+  test('without checkUnknown the choices are the old two', async () => {
+    const { saved, texts } = await stopInFlight(TWO_ROUNDS);
+    const offered = [];
+    await Engine.run({
+      task: 'T', steps: TWO_ROUNDS, checkpoint: keeper().checkpoint, putText: texts.putText, getText: texts.getText, resume: clone(saved),
+      send: transport({}, []), resolveUnknown: async ({ choices }) => { offered.push(choices); return 'skip'; }
+    });
+    expect(offered).toEqual([['resend', 'skip']]);
+  });
+
+  test('no answer found: the owner is asked again; skipping then ends the attempt, and nothing is sent', async () => {
+    const { saved, texts } = await stopInFlight(TWO_ROUNDS);
+    const log2 = [];
+    const choices = ['check', 'skip'];
+    const run2 = await Engine.run({
+      task: 'T', steps: TWO_ROUNDS, checkpoint: keeper().checkpoint, putText: texts.putText, getText: texts.getText, resume: clone(saved),
+      send: transport({ B: ['b-sent-again'] }, log2),
+      resolveUnknown: async () => choices.shift(),
+      checkUnknown: async () => ({ ok: false, status: 'no_answer', reason: 'no_delivery_proof', text: '' })
+    });
+    expect(choices).toEqual([]);
+    expect(log2).toEqual([]);
+    // A skipped attempt is no answer: the step is short of its answer and waits for the owner (as without the check).
+    expect(run2.stopReason).toBe('no_decision');
+  });
+
+  test('the answer of the participant before is passed as the text to exclude from the read', async () => {
+    const steps = [{ ref: 'S1', kind: 'round', input: 'none', models: ['A'] }, { ref: 'S2', kind: 'round', input: 'previous', models: ['A'] }];
+    const controller = new AbortController();
+    const texts = textStore();
+    const first = keeper();
+    await Engine.run({
+      task: 'T', steps, signal: controller.signal, checkpoint: first.checkpoint, putText: texts.putText, getText: texts.getText,
+      send: transport({ A: ['a-first'] }, [], { abortWhen: (models, meta) => meta.stepRef === 'S2', controller })
+    });
+    const reads = [];
+    await Engine.run({
+      task: 'T', steps, checkpoint: keeper().checkpoint, putText: texts.putText, getText: texts.getText, resume: clone(first.last()),
+      send: transport({}, []), resolveUnknown: async () => 'check',
+      checkUnknown: async (arg) => { reads.push(arg); return { ok: true, status: 'found', text: 'a-second' }; }
+    });
+    expect(reads.map((read) => read.excludeText)).toEqual(['a-first']);
+  });
+});

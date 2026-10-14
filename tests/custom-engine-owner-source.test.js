@@ -208,3 +208,29 @@ describe('Custom engine: the input of the owner step (N07, ТЗ 3.3)', () => {
     expect(asked.map((request) => request.input[0].text)).toEqual(['a1', 'a2']);
   });
 });
+
+describe('V05: an owner step that revises its own line starts again from the last valid version', () => {
+  test('the gate returns to the owner revision: the owner gets the valid base, the run finishes, the newer version is current', async () => {
+    const src = { artifact: { step: 'r1', participant: 'A', id: 'map' }, version: 'latest', required: true };
+    const out = { artifacts: [{ id: 'map', name: 'Map', pointer: '' }] };
+    const rev = { artifacts: [{ id: 'map', name: 'Revised', pointer: '', revisionOf: src }] };
+    let verdicts = 0;
+    const ownerInputs = [];
+    const run = await Engine.run({
+      task: 'T', maxAttempts: 1,
+      steps: [
+        { ref: 'r1', kind: 'round', input: 'none', models: ['A'], output: out },
+        { ref: 'owner:revise', kind: 'owner', task: 'Revise', input: [src], output: rev, models: [] },
+        { ref: 'gate:g', kind: 'gate', input: 'previous', criteria: ['check'], models: ['C'], onFail: { goto: 'owner:revise', maxLoops: 1 } },
+        { ref: 'r2', kind: 'round', models: ['D'], input: [src] }
+      ],
+      send: async (models) => ({ byModel: Object.fromEntries(models.map((model) => [model, {
+        text: model === 'C' ? (++verdicts === 1 ? 'НЕ ВЫПОЛНЕНО: check\nВЕРДИКТ: НЕ ПРОШЁЛ' : 'ВЕРДИКТ: ПРОШЁЛ') : 'v1', status: 'SUCCESS' }])) }),
+      provideOwnerResult: async (arg) => { ownerInputs.push(arg.input); return `owner-v${ownerInputs.length}`; },
+      decide: async () => 'skip'
+    });
+    expect(run.stopReason).toBe('steps_done');
+    expect(ownerInputs).toHaveLength(2);
+    expect(ownerInputs[1].map((item) => item.text)).toEqual(['v1']);
+  });
+});

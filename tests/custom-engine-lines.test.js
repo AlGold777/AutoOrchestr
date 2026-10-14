@@ -143,3 +143,36 @@ describe('Custom engine: a line that waits for its recomputation (R02, ТЗ 3.4)
     expect(sentTo(replay.calls, 'B')).toHaveLength(1);
   });
 });
+
+describe('V02: the sources of the feedback of a visit are its dependencies', () => {
+  const PASS = 'Review.\nВЕРДИКТ: ПРОШЁЛ';
+  const FAIL = 'Review.\nНЕ ВЫПОЛНЕНО: x\nВЕРДИКТ: НЕ ПРОШЁЛ';
+  test('a result built on feedback becomes stale when the source of that feedback is invalidated; its consumer is not sent', async () => {
+    const answers = { A: ['A-v1', 'A-based-on-B-v1'], B: ['B-v1', 'B-v2', 'B-v3'], G1: [FAIL, PASS, PASS], G2: [FAIL, PASS], C: ['consumer'] };
+    const used = {};
+    const calls = [];
+    const send = async (models, prompts) => {
+      calls.push({ models: [...models], prompts: { ...prompts } });
+      const byModel = {};
+      models.forEach((model) => {
+        const at = used[model] || 0;
+        used[model] = at + 1;
+        const text = (answers[model] || [])[at] || '';
+        byModel[model] = { text, status: text ? 'SUCCESS' : 'TIMEOUT' };
+      });
+      return { byModel, closedByOwner: false };
+    };
+    const steps = [
+      { ref: 'r1', kind: 'round', input: 'none', models: ['A'] },
+      { ref: 'r2', kind: 'round', input: 'none', models: ['B'] },
+      { ref: 'g1', kind: 'gate', criteria: ['c'], input: 'none', models: ['G1'], onFail: { goto: 'r1', maxLoops: 1, feedback: [{ step: 'r2', participant: 'B' }] } },
+      { ref: 'g2', kind: 'gate', criteria: ['c'], input: 'none', models: ['G2'], onFail: { goto: 'r2', maxLoops: 1 } },
+      { ref: 'r3', kind: 'round', input: [{ step: 'r1', participant: 'A', required: true }], models: ['C'] }
+    ];
+    const result = await Engine.run({ task: 'T', steps, send });
+    // The second visit of r1 took the answer of r2 (visit 1) as feedback; g2 sends the run back to r2, which makes visit 1 of r2 stale.
+    expect(result.steps.filter((step) => step.ref === 'r1').map((step) => step.valid)).toEqual([false, false]);
+    expect(result.stopReason).toBe('missing_input');
+    expect(calls.some((call) => call.models.includes('C'))).toBe(false);
+  });
+});

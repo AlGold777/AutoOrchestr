@@ -731,8 +731,10 @@ describe('Read-only check of an unconfirmed participant request (N04)', () => {
   const liveTab = (id, index = 0) => ({ id, url: chatUrl(id), windowId: 7, index, status: 'complete', lastAccessed: Date.now() });
 
   // The page-side extractor is a pure read of the chat; the scripting mock answers with what the chat holds.
-  function checkSandbox(queryTabs, answer) {
+  // `proof`: whether the answer ends with the delivery token of the request that was sent (V03).
+  function checkSandbox(queryTabs, answer, { proof = true } = {}) {
     const { context } = createTabManagerSandbox({ queryTabs });
+    context.answerHasDeliveryToken = jest.fn(() => proof);
     context.extractLatestAssistantSnapshotInPage = () => ({});
     context.chrome.scripting.executeScript = jest.fn(async () => [{ result: answer }]);
     context.ensureTabReadyForDispatch = jest.fn(async (tabId) => ({ ok: true, tab: { id: tabId, url: chatUrl(tabId) } }));
@@ -746,6 +748,17 @@ describe('Read-only check of an unconfirmed participant request (N04)', () => {
   };
   const check = (context, extra = {}) => context.checkParticipantAnswer({
     llmName: 'GPT', runId: 'run-1', participantId: 'author-A', transportRequestId: 'req-1', ...extra
+  });
+
+  test('V03: the last message of the chat with no delivery token of this request is not found: an old answer is never attributed to a new request', async () => {
+    const { context } = checkSandbox([liveTab(2001)], { ok: true, text: 'OLD ANSWER of the previous request' }, { proof: false });
+    await context.bindParticipantChat('run-1', 'author-A', 'GPT', 2001, { requestId: 'req-1', stageAttemptId: 'a1' });
+    const result = await check(context);
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe('no_answer');
+    expect(result.reason).toBe('no_delivery_proof');
+    expect(result.text).toBeUndefined();
+    expectNothingSent(context);
   });
 
   test('a found answer in the bound chat is returned as text, with its status of a read', async () => {

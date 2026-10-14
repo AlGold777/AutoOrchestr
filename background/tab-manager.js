@@ -1207,6 +1207,10 @@ async function checkParticipantAnswer({ llmName, runId, participantId, transport
   }
   if (!snapshot) return { ok: false, status: 'chat_unavailable', reason: 'no_result', tabId: chat.tabId };
   if (snapshot.ok && String(snapshot.text || '').trim()) {
+    // The last message of the chat may be an older answer (V03): an answer is found only when it ends with the delivery token of
+    // the request that was sent. Without that proof it is not attributed to this request, and nothing is resent on its account.
+    const proved = typeof answerHasDeliveryToken === 'function' && answerHasDeliveryToken(llmName, String(snapshot.text));
+    if (!proved) return { ok: false, status: 'no_answer', reason: 'no_delivery_proof', tabId: chat.tabId };
     return { ok: true, status: 'found', text: String(snapshot.text), html: String(snapshot.html || ''), tabId: chat.tabId };
   }
   return { ok: false, status: 'no_answer', reason: 'no_answer_in_chat', tabId: chat.tabId };

@@ -557,7 +557,7 @@
     task, steps = [], maxAttempts = DEFAULT_ATTEMPTS, semiAuto = false, maxPromptChars = Infinity,
     accept = defaultAccept, parseAsks = null, askOwner = null, askInstruction = '', decide = null,
     send = null, sendParticipants = null, runMaxWords = null, putText: putCallback = null, getText: getCallback = null, chooseRoute = null, provideOwnerResult = null,
-    checkpoint = null, resolveUnknown = null, resume = null,
+    checkpoint = null, resolveUnknown = null, checkUnknown = null, resume = null,
     signal = null, onEvent = null, onRequest = null, onResponse = null
   }) {
     // The texts of the answers: the record gives the callbacks (putText → ref, getText(ref) → text); without them the run keeps
@@ -614,6 +614,9 @@
     let activeVisit = 1;
     let activeFeedback = [];
     let activeFeedbackRefs = []; // the feedback of the visit in progress, as references (for a checkpoint)
+    // Answers found by the read-only check of an unconfirmed request (N04): participant id → a reply. The next attempt of that
+    // participant takes the reply instead of sending, and it goes through the same acceptance as any reply.
+    let prefetched = null;
     let inFlight = []; // the participants whose request is being sent now: unknown after a reload until their answer is judged
     let chatBindings = {}; // participantId → { modelName, stepRef, visit, transportRequestId }: the chat of each participant (kept on resume)
     let openOwner = null; // the owner interaction that is open now (a decision, a route, an owner step, an ASK): kept on a stop
@@ -720,7 +723,8 @@
       const address = source.artifact;
       const lineage = { step: address.step, participant: address.participant, id: address.id };
       // An author that revises this line starts from the last valid version of it (its declared input, 3.4).
-      const base = Boolean(model) && revisesLine(step, model, Artifacts.lineKey(lineage));
+      // The author is a model, or the owner of an owner step (V05): both may start from the last valid version of the line they revise.
+      const base = (Boolean(model) || step.kind === 'owner') && revisesLine(step, model, Artifacts.lineKey(lineage));
       const found = source.version === 'latest' ? Artifacts.latest(registry, lineage, { base }) : Artifacts.version(registry, lineage, source.version);
       if (!found || !found.valid) {
         if (!required) return [];
@@ -801,7 +805,7 @@
     function feedbackOf(spec, target) {
       return sourceItems(spec, target).map((item) => {
         if (item.binary) throw new StopRun('unsupported_input', `файл «${item.file.name}» (${item.file.mime}) — двоичный; замечанием текстом не передаётся`);
-        return { label: item.label, source: item.source, textRef: item.textRef, pointer: item.pointer ?? '' };
+        return { label: item.label, source: item.source, ...(item.artifact ? { artifact: item.artifact } : {}), textRef: item.textRef, pointer: item.pointer ?? '' };
       });
     }
     // The feedback stored for a step goes to its next visit only: it is taken here, when that visit starts.
@@ -856,7 +860,13 @@
         let reply;
         let byId; // participant id → the reply of the transport
         try {
-          if (participants) {
+          const found = prefetched ? Object.fromEntries(pending.filter((model) => prefetched[model.id]).map((model) => [model.id, prefetched[model.id]])) : {};
+          if (pending.length && pending.every((model) => found[model.id])) {
+            byId = found;
+            reply = {};
+            pending.forEach((model) => { delete prefetched[model.id]; });
+            if (!Object.keys(prefetched).length) prefetched = null;
+          } else if (participants) {
             reply = await sendParticipants(pending.map((model) => ({ participantId: model.id, modelName: model.name, prompt: current[model.id].prompt,
               // A new chat starts on the first request of the visit only; a correction or a retry inside the visit goes to it.
               chat: step.chat === 'new' && tryNo === 1 ? 'new' : 'continue', stepRef: step.ref, visit: activeVisit, attempt: tryNo })),
@@ -1211,24 +1221,63 @@
     // A request that may have been sent before the reload has no known answer: the owner decides, and the request is never
     // sent again on its own. The accepted answers of the visit stay. Resend is a new attempt; skip is recorded for it only.
     async function settleUnknown(step, entry, pending = []) {
-      const items = pending.filter((item) => !entry.outcome[item.participantId]?.ok);
+      let items = pending.filter((item) => !entry.outcome[item.participantId]?.ok);
       if (!items.length) return;
       // Until the owner decides, the requests stay in flight: a Stop keeps them unknown in the saved state.
-      inFlight = items.map((item) => ({ participantId: item.participantId, attempt: item.attempt, phase: 'answer', stepRef: step.ref, visit: entry.visit }));
+      const markInFlight = () => {
+        inFlight = items.map((item) => ({ participantId: item.participantId, attempt: item.attempt, phase: 'answer', stepRef: step.ref, visit: entry.visit }));
+      };
+      markInFlight();
       await checkpointNow('decision', { pendingOwner: { kind: 'unknown', stepRef: step.ref, visit: entry.visit } });
-      const choice = typeof resolveUnknown === 'function'
-        ? await ownerWait(() => resolveUnknown({ stepRef: step.ref, visit: entry.visit, items: items.map((item) => ({ participantId: item.participantId, attempt: item.attempt })), choices: ['resend', 'skip'] }))
-        : undefined;
-      if (choice === null) throw new StopRun('stopped');
-      if (!['resend', 'skip'].includes(choice)) throw new StopRun('no_decision', `шаг «${step.ref}»: нет решения о неизвестном ответе (отправить заново или пропустить)`);
-      inFlight = [];
-      await checkpointNow('decision', { pendingOwner: null });
-      const models = step.models.filter((model) => items.some((item) => item.participantId === model.id));
-      models.forEach((model) => {
-        const item = items.find((candidate) => candidate.participantId === model.id);
-        entry.outcome[model.id] = { ok: false, reason: choice === 'skip' ? 'skipped' : 'unknown', text: '', model: model.name, participant: model.id, attempt: item.attempt || 0, status: '', transportRequestId: '' };
-      });
-      if (choice === 'resend') await execute(step, models, entry.outcome, Math.max(...items.map((item) => item.attempt || 0)) + 1);
+      // The answer a participant gave before: a read of its chat must not take it for the answer of the unknown request (V03).
+      const previousAnswerOf = (participantId) => {
+        for (let at = results.length - 1; at >= 0; at -= 1) {
+          const outcome = results[at].outcome?.[participantId];
+          if (outcome?.ok && outcome.text) return outcome.text;
+        }
+        return '';
+      };
+      for (;;) {
+        const canCheck = typeof checkUnknown === 'function';
+        const choices = canCheck ? ['check', 'resend', 'skip'] : ['resend', 'skip'];
+        const choice = typeof resolveUnknown === 'function'
+          ? await ownerWait(() => resolveUnknown({ stepRef: step.ref, visit: entry.visit, items: items.map((item) => ({ participantId: item.participantId, attempt: item.attempt })), choices }))
+          : undefined;
+        if (choice === null) throw new StopRun('stopped');
+        if (!choices.includes(choice)) throw new StopRun('no_decision', `шаг «${step.ref}»: нет решения о неизвестном ответе (${canCheck ? 'проверить, ' : ''}отправить заново или пропустить)`);
+        if (choice === 'check') {
+          // A read only: nothing is sent. A found answer is judged like any reply; the others stay unknown and the owner decides again.
+          const foundNow = {};
+          for (const item of items) {
+            const model = step.models.find((candidate) => candidate.id === item.participantId);
+            if (!model) continue;
+            const read = await ownerWait(() => checkUnknown({ participantId: model.id, modelName: model.name, transportRequestId: null, excludeText: previousAnswerOf(model.id) }));
+            emit('custom_unknown_check', { step: step.index, label: stepLabel(step), participant: model.id, attempt: item.attempt, status: read?.status || 'chat_unavailable', reason: read?.reason || null });
+            if (read?.ok && read.status === 'found' && text(read.text)) {
+              foundNow[model.id] = { text: read.text, status: 'SUCCESS', attribution: 'checked', transportRequestId: '' };
+            }
+          }
+          const foundModels = step.models.filter((model) => foundNow[model.id]);
+          if (!foundModels.length) continue;
+          inFlight = [];
+          prefetched = { ...(prefetched || {}), ...foundNow };
+          await execute(step, foundModels, entry.outcome, Math.max(...items.filter((item) => foundNow[item.participantId]).map((item) => item.attempt || 1)));
+          prefetched = null;
+          items = items.filter((item) => !entry.outcome[item.participantId]?.ok);
+          if (!items.length) { await checkpointNow('decision', { pendingOwner: null }); return; }
+          markInFlight();
+          continue;
+        }
+        inFlight = [];
+        await checkpointNow('decision', { pendingOwner: null });
+        const models = step.models.filter((model) => items.some((item) => item.participantId === model.id));
+        models.forEach((model) => {
+          const item = items.find((candidate) => candidate.participantId === model.id);
+          entry.outcome[model.id] = { ok: false, reason: choice === 'skip' ? 'skipped' : 'unknown', text: '', model: model.name, participant: model.id, attempt: item.attempt || 0, status: '', transportRequestId: '' };
+        });
+        if (choice === 'resend') await execute(step, models, entry.outcome, Math.max(...items.map((item) => item.attempt || 0)) + 1);
+        return;
+      }
     }
 
     try {
@@ -1257,11 +1306,14 @@
           // A new execution of the step is a new visit; a technical retry is not. The feedback of a return is given to this visit.
           state.visits[key] = (state.visits[key] || 0) + 1;
           activeVisit = state.visits[key];
+          // The sources of the feedback are used by this visit too (V02): a later stale source makes the visit stale.
+          const feedbackTaken = state.feedback[key] || [];
           activeFeedback = takeFeedback(key);
           // What this visit uses (the results and artifacts it took) is recorded: a later stale key makes the visit stale (6.3).
           // The owner's answer is built on its input too: a change of that input makes the answer stale (N07, 6.3).
-          state.dependencies[`${step.index}@${activeVisit}`] = usedKeysOf(step.kind === 'owner' ? answersFor(step, step.input ?? 'none')
-            : (step.models.length ? step.models.flatMap((model) => inputFor(step, specOf(step, model), { model })) : inputFor(step, step.input ?? 'none')));
+          state.dependencies[`${step.index}@${activeVisit}`] = [...new Set([...usedKeysOf(step.kind === 'owner' ? answersFor(step, step.input ?? 'none')
+            : (step.models.length ? step.models.flatMap((model) => inputFor(step, specOf(step, model), { model })) : inputFor(step, step.input ?? 'none'))),
+            ...usedKeysOf(feedbackTaken)])];
         }
         const decidedKey = `${key}@${activeVisit}`;
         const outcome = resumed ? resumed.outcome : {};

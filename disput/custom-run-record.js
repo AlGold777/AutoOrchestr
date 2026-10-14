@@ -66,7 +66,8 @@
   function recordAttempt(record, entry) {
     const key = attemptKey(entry);
     let attempt = record.attempts.find((item) => item.key === key);
-    if (attempt && attempt.state !== 'sent') return attempt;
+    // An attempt left unknown by a reload is settled by its answer too (N04: the read of its chat).
+    if (attempt && attempt.state !== 'sent' && attempt.state !== 'unknown') return attempt;
     if (!attempt) {
       attempt = {
         key, step: entry.step, ref: entry.ref ?? null, participant: entry.participant ?? entry.model, visit: entry.visit ?? 1, phase: entry.phase ?? 'answer',

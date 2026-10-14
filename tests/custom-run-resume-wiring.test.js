@@ -71,7 +71,7 @@ describe('Basic page binds the engine to the run record (8.2, 8.3)', () => {
     expect(results).toContain('provideOwnerResult: ({ stepRef, task, input, output, reason, detail }) => askChoiceDialog({');
     expect(results).toContain('window.StageCard.ownerAskMessage({ task, input, output, reason, detail,');
     expect(results).toContain("chooseRoute: ({ stepRef, choices, reason }) => {");
-    expect(results).toContain("resolveUnknown: ({ stepRef, items }) => askChoiceDialog({");
+    expect(results).toContain("resolveUnknown: ({ stepRef, items, choices = ['resend', 'skip'] }) => askChoiceDialog({");
     expect(results).toContain("const askChoiceDialog = (options) => {");
   });
 });
