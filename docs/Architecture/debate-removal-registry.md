@@ -1,6 +1,6 @@
 # Реестр: что остаётся от Debate при переходе на Basic
 
-Версия кода: 2.81.771 (коммит `65eb3da`), составлен 14.10.2026. Цель: решить, что можно убрать вместе со старым движком Debate. Удаление этим документом не выполняется.
+Версия кода: 2.81.771 (коммит `65eb3da`), составлен 14.10.2026, исправлен после повторной проверки того же дня (раздел 8). Цель: решить, что можно убрать вместе со старым движком Debate. Удаление этим документом не выполняется.
 
 **Метод.** Граф ссылок между модулями (скрипт по `manifest.json`, `importScripts`, `<script src>` и глобальным именам), затем разбор четырьмя областями (`disput/debate-*`, `shared`/`background`/`pipeline`, `results.js` и страницы) по чтению кода; ключевые утверждения (запуск через `debateApplication`, условие подписчика, запасной вариант пресета, места создания оркестратора) перепроверены вручную. Разбор — статический, в браузере не запускался.
 
@@ -14,7 +14,8 @@
 2. **Debate всё ещё достижим.** `getPipelinePreset` возвращает `UNIVERSAL_STANDARD` для любого неизвестного id (`disput/pipeline-presets.js:41`), пресет включён, а у него нет `runner`. Сохранённый pipeline с чужим `presetId` запустится как Debate.
 3. **Транспорт прогона общий.** `runModelBatch` (`results.js:6218`) обслуживает и Basic, и Debate; внутри него события пишутся в `DebateRunStore`, и `results/debate-transport.js` сохраняет их в `chrome.storage.local` под `llmCodexDebateRun.v1` при каждом прогоне Basic.
 4. **Подписчик на события (`results.js:2863`) при Basic не срабатывает**: он требует `aggregate.runId`, который ставит только `START_REQUESTED`, а Basic его не шлёт. Трасса, карта состояния, история правил и дела при Basic не наполняются.
-5. **Размеры.** `disput/debate-*.js` — 8 229 строк (из них движок: оркестратор, планировщик, ревизии плана, исполнитель, политики — 3 166). В `results.js` блоки DEBATE — около 3 230 строк (≈12% из 27 064), ещё около 500 строк смешанных.
+5. **Диагностика Basic построена на модулях трассы Debate.** Отчёт Disput Flow для прогона Basic (`debateRunId`, `stageExecutions` с этапами `custom:…:s1`) собирает `DebateTraceProjections.buildReport` из событий, которые `appendDebateDiagnosticTrace` складывает в `DebateTraceStore` (`results.js:2932`, `22841`, обработчики экспорта `17650–17740`). Эти модули нельзя удалять вместе с Debate: на них держится основной инструмент отладки Basic.
+6. **Размеры.** `disput/debate-*.js` — 8 229 строк (из них движок: оркестратор, планировщик, ревизии плана, исполнитель, политики — 3 166). В `results.js` блоки DEBATE — около 3 230 строк (≈12% из 27 064), ещё около 500 строк смешанных.
 
 ## 2. Нужно Basic: удалять нельзя, пока нет замены
 
@@ -36,6 +37,10 @@
 | Карточки и лента | `results.js` 23766–23890 (`renderDebateModelCards`, `appendModeratorFeedEntry`), 24340–24468, 24524–24586 | вывод ответов Basic |
 | `getDebateRunControls`, `getDebateRunPolicy`, `isDebateAutoPolicy`, `openOwnerAsk` | `results.js` 5713–5979 | кнопки Пуск/Стоп и политика Basic |
 | Ключи Basic | `customRunRecord.*`, `customRunRecords.index` | записи прогонов |
+| **Трасса и отчёт диагностики** | `disput/debate-trace-store.js`, `debate-trace-schema.js`, `debate-trace-projections.js`; `results/debate-telemetry-view.js`; `shared/report-digest.js`; `results.js` 2810–3082 (`appendDebateTraceEvent`, `appendDebateDiagnosticTrace`), 17650–17740 (кнопки Disput Flow JSON/MD, Extract), 22841–22934 (`buildDisputExportPayload`, строки таймлайна) | отчёт Disput Flow и Extract для любого прогона, в том числе Basic |
+| **Сессии и лента** | `results/debate-sessions-store.js` (`debateTabsState`), `debateFeedState`, `ensureDebateSession` (`results.js:7197` в `appendBasicRunLine`), `results.js` 22171–22669 (вкладки сессий, транскрипт) | карточки и вкладки ленты Basic |
+| **Управление запуском** | `results/debate-controller.js` (`deriveRunControls`), `results/debate-renderer.js` (`renderRunControls`) | вид кнопки Пуск/Пауза/Стоп (`results.js:5954, 5970`) |
+| **Экспорт ленты** | `results/debate-export.js` (`buildFeedDocument`, `buildFeedText`, `fileStamp`) | выгрузка ленты в HTML и Markdown (`results.js:26953–27003`) |
 
 Имена «Debate» в этих файлах — история именования, а не принадлежность: после удаления остального их стоит переименовать в нейтральные.
 
@@ -51,9 +56,9 @@
 ## 4. Нужно только Debate (удаляется вместе с Debate)
 
 **Файлы `disput/`** (используют только `DebateApplication` и его запуск):
-`debate-orchestrator`, `debate-orchestrator-persistence`, `debate-planner`, `debate-plan-revision`, `debate-stage-executor`, `debate-participant-registry`, `debate-policies`, `debate-problem-spec`, `debate-prompt-compiler`, `debate-prompt-pack`, `debate-artifact-pipeline`, `debate-capability-registry`, `debate-context-broker`, `debate-contracts`, `debate-case-schema`, `debate-case-store`, `debate-execution-context`, `debate-rule-history`, `debate-state-map`, `debate-trace-projections`, `debate-trace-schema`, `debate-trace-store`, `debate-projections`, `pipeline-profile-store`, `debate-application`. Для `debate-application.js` сначала переключить запуск Basic напрямую (см. раздел 6).
+`debate-orchestrator`, `debate-orchestrator-persistence`, `debate-planner`, `debate-plan-revision`, `debate-stage-executor`, `debate-participant-registry`, `debate-policies`, `debate-problem-spec`, `debate-prompt-compiler`, `debate-prompt-pack`, `debate-artifact-pipeline`, `debate-capability-registry`, `debate-context-broker`, `debate-contracts`, `debate-case-schema`, `debate-case-store`, `debate-execution-context`, `debate-rule-history`, `debate-state-map`, `debate-projections`, `pipeline-profile-store`, `debate-application`. (Модули трассы `debate-trace-*` сюда НЕ входят: см. раздел 2.) Для `debate-application.js` сначала переключить запуск Basic напрямую (см. раздел 6).
 
-**`results.js`** (диапазоны ±3 строки): 2738–2931 (дела, трасса), 3755–3877 (порядок промптов судьи), 5468–5712 (контекст и шаги Debate), 5796–5871 и 5906–5927 (пауза/продолжение Debate), 5980–6199 (approve и состояние раундов), 6578–6796 (судья, тема диспута), 7655–7881 (`startDebateFromPage`, кроме ветки `custom`), 7905–8014 (`createApplication`), 22171–22934 (схема, транскрипт и сессии дебатов, timeline, Markdown потока), 23157–23192, 23716–23765, 23891–23950, 24053–24339, 24469–24523, 24587–24761, 25349–25590 (судья, Send судьи, Comparative Analysis), 26934–26991.
+**`results.js`** (диапазоны ±3 строки): 2738–2809 (дела, `debateCaseStore`), 3755–3877 (порядок промптов судьи), 5468–5712 (контекст и шаги Debate), 5796–5871 и 5906–5927 (пауза/продолжение Debate), 5980–6199 (approve и состояние раундов), 6578–6796 (судья, тема диспута), 7655–7881 (`startDebateFromPage`, кроме ветки `custom`), 7905–8014 (`createApplication`), 22171–22479 только в части схемы и синтезатора Debate (`getDebateSchemeModelLimit`, `renderSynthesisStage`; вкладки сессий, состояние ленты и холст в этом диапазоне общие — разбирать по функциям), 23157–23192, 23716–23765, 23891–23950, 24053–24339, 24469–24523, 24587–24761, 25349–25590 (судья, Send судьи, Comparative Analysis).
 
 **Сообщения `chrome.runtime`:** `PIPELINE_FSM_EVENT`, `CANCEL_PIPELINE_RUN` (проверить, не используется ли из Stop Basic), `START_EVALUATION_WITH_PROMPT`, `EVALUATOR_RESPONSE`. Файлы: `shared/judge-prompt-builder.js`, `background/evaluation-manager.js`.
 
@@ -61,7 +66,7 @@
 
 ## 5. Не нужно никому (удаляется сразу)
 
-`disput/debate-artifact-definitions.js`, `debate-convergence.js`, `debate-correlation-guard.js`, `debate-decision-request.js`, `debate-epistemic-outcome.js`, `debate-model-signal.js`, `debate-process-audit.js`, `debate-protocol-transition-service.js`, `debate-protocols.js`, `debate-rule-engine.js`, `debate-service-roles.js`, `debate-stage-types.js`, `debate-stagnation-warning.js`, `debate-state-delta.js`, `debate-storage-migrations.js`; `shared/debate-schema.js`; обработчик `COLLECT_RESPONSES`; ключ `llmCortexDebateBackgroundExecutor.v1` (только удаляется); ключ `llmCodexDebateScheme.v1` (только читается); функции без вызовов в `results.js`: `getDebateParticipantRoleText`, `getActiveProtocolMission`, `pushSerialDebateTimeline`, `syncAggregateProtocolState`. Вне Debate: `shared/log-replay-harness.js` (только тесты), `shared/proof-telemetry-semantic-comparator.js` (только `package.json`).
+`disput/debate-artifact-definitions.js`, `debate-convergence.js`, `debate-correlation-guard.js`, `debate-decision-request.js`, `debate-epistemic-outcome.js`, `debate-model-signal.js`, `debate-process-audit.js`, `debate-protocol-transition-service.js`, `debate-protocols.js`, `debate-rule-engine.js`, `debate-service-roles.js`, `debate-stage-types.js`, `debate-stagnation-warning.js`, `debate-state-delta.js`, `debate-storage-migrations.js`; `shared/debate-schema.js`; `results/debate-plan-view-model.js` и `results/debate-ui.js` (ссылок на них не найдено); обработчик `COLLECT_RESPONSES`; ключ `llmCortexDebateBackgroundExecutor.v1` (только удаляется); ключ `llmCodexDebateScheme.v1` (только читается); функции без вызовов в `results.js`: `getDebateParticipantRoleText`, `getActiveProtocolMission`, `pushSerialDebateTimeline`, `syncAggregateProtocolState`. Вне Debate: `shared/log-replay-harness.js` (только тесты), `shared/proof-telemetry-semantic-comparator.js` (только `package.json`).
 Все 15 файлов `disput/` из этого раздела подключены тегами `<script>` в `pipeline_panel.html` и `result_new.html`; в `manifest.json` (`web_accessible_resources`) перечислены 13 из 15 (нет `debate-state-delta.js` и `debate-storage-migrations.js`); `shared/debate-schema.js` подключён только в страницах. Эти подключения удаляются вместе с файлами. Модули, читаемые `debate-version-manifest.js` (только `VERSION`), после удаления дают в записях версию по умолчанию.
 
 ## 6. Связность, мешающая удалению, и порядок
@@ -75,8 +80,18 @@
 
 ## 7. Не проверено
 
-- Каталог `results/` (кроме `debate-transport.js`): файлы `debate-controller.js`, `debate-export.js`, `debate-plan-view-model.js`, `debate-renderer.js`, `debate-sessions-store.js`, `debate-telemetry-view.js`, `debate-ui.js` не разбирались; по именам это интерфейс Debate, но подтверждения нет.
-- `shared/budgets.js`, `shared/problem-context-filter.js`, блок `results.js` 14794–16420 (≈1 600 строк), смешанные блоки (≈500 строк).
-- Использует ли Stop у Basic `cancelPipelineRun` и сообщение `CANCEL_PIPELINE_RUN`.
-- Запись трассы и дел при восстановленном из хранилища прогоне Debate.
-- Ничего не запускалось в браузере; тесты, которые придётся удалить или изменить вместе с модулями, не перечислены.
+- **CSS.** `styles/results-debate.css` (1 719 строк) и около 220 правил `debate-*` в `styles/modals-responsive.css` не разбирались; карточки ленты Basic носят классы `debate-model-card…`, поэтому большая часть общая.
+- **Тесты.** Тестов, упоминающих модули Debate, около 52 файлов; поимённо не перечислены, их придётся удалить или изменить вместе с модулями.
+- **Смешанные блоки `results.js`.** Диапазоны 2932–3082, 4540–4700, 6797–6842, 9922–10100, 22010–22136, 26323–26933 и блок 14794–16420 (≈1 600 строк) не разбирались по функциям. Диапазоны в разделе 4 — кандидаты, а не готовый список вырезания: перед каждым удалением нужен поиск вызовов по именам функций.
+- Снаружи `disput/` и `results.js` глобалы Debate упоминаются только в `results/debate-*.js`, `results/disput-state-map-view.js`, `results/pipeline-profile-view.js` и `shared/debate-schema.js`; `package.json`, `scripts/`, фон и контент-скрипты (кроме режима оценщика) на Debate не ссылаются.
+- `shared/budgets.js`, `shared/problem-context-filter.js`; использует ли Stop у Basic `cancelPipelineRun`; запись трассы и дел при восстановленном из хранилища прогоне Debate.
+- Ничего не запускалось в браузере.
+
+## 8. Исправления после повторной проверки
+
+Первая версия реестра ошибочно относила к «только Debate» части, на которых держится Basic. Исправлено после независимой проверки (отчёт Disput Flow, ссылки на `window.Debate*` по результатам повторного поиска):
+1. Модули трассы и отчёта (`debate-trace-*`, `debate-telemetry-view`, обработчики экспорта) — общие, не Debate: отчёт Basic строится из них.
+2. Сессии и состояние ленты, управление запуском и экспорт ленты — общие.
+3. Добавлены два файла без ссылок: `results/debate-plan-view-model.js`, `results/debate-ui.js`.
+4. Блок `results.js` 22171–22934 раньше был целиком «Debate»; теперь смешанный.
+Урок для плана удаления: классификацию по файлам и по названию проверять поиском вызовов функций и сверкой с реальным отчётом диагностики Basic, а не только по именам.
