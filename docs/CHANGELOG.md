@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-10-14 — Документ: реестр того, что остаётся от Debate (без смены версии)
+
+- Новый `docs/Architecture/debate-removal-registry.md`: классы SHARED / DEBATE / ORPHAN для модулей `disput/debate-*`, `shared/`, `background/` и блоков `results.js`, сообщения и ключи хранилища, связность и порядок удаления. Удаление не выполнялось. Добавлен в `documentation-map.md`.
+
 ### 2026-10-14 — Очистка копий окна просмотра запускается при старте фона, версия 2.81.771
 
 - После перезагрузки в `chrome.storage.local` остались 23 копии `llmResponseViewer.*`: очистка стояла в общем обслуживании, которое запускается в конце начальной загрузки состояния и при полном хранилище до этого не доходит. Теперь `pruneResponseViewerContent({ legacyLocal: true })` запускается отдельно при старте service worker, один раз за сессию браузера (флаг `responseViewerLegacyCleaned` в `chrome.storage.session`); прежний вызов в обслуживании оставлен.
