@@ -2290,6 +2290,25 @@ describe('Pipeline debate favorites view', () => {
   });
 
   const settleCustomCard = () => new Promise((resolve) => setTimeout(resolve, 0));
+  // «Шаг после этапа» is chosen in the card of the stage it follows (a round by its badge, a control by its card).
+  const addControlViaCard = async (anchor, kind) => {
+    require('../results/stage-card');
+    if (!document.getElementById('pipeline-stage-dialog')) {
+      document.body.insertAdjacentHTML('beforeend', '<dialog id="pipeline-stage-dialog"><h2 id="pipeline-stage-dialog-title"></h2><div id="pipeline-stage-card"></div></dialog>');
+    }
+    const dialog = document.getElementById('pipeline-stage-dialog');
+    if (typeof dialog.showModal !== 'function') dialog.showModal = () => dialog.setAttribute('open', '');
+    if (typeof dialog.close !== 'function') dialog.close = () => dialog.removeAttribute('open');
+    const trigger = /^r\d+$/.test(anchor)
+      ? document.querySelector(`#round${anchor.slice(1)} .round-badge`)
+      : document.querySelector(`.pipeline-control-step[data-control-ref="${anchor}"] .pipeline-control-card`);
+    trigger.click();
+    await settleCustomCard();
+    const select = document.querySelector('#pipeline-stage-card .stage-card-add-control');
+    select.value = kind;
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    await settleCustomCard();
+  };
   // Imports a file through the Import button: `text` is the content, `fileName` the name, `answer` the name typed in the prompt.
   const importFile = async (text, fileName, answer) => {
     const oldPrompt = window.prompt;
@@ -3532,10 +3551,7 @@ describe('Pipeline debate favorites view', () => {
           // The fixture's round has no header row; the page has one (pipeline_panel.html), where the add select sits.
           document.querySelector('#round1').insertAdjacentHTML('afterbegin', '<div class="stage-header-row"><div class="stage-label"><span class="round-badge">R1</span></div></div>');
           window.__updatePipelineAll();
-          const add = document.querySelector('#round1 .pipeline-control-add');
-          add.value = 'gate';
-          add.dispatchEvent(new Event('change', { bubbles: true }));
-          await settleCustomCard();
+          await addControlViaCard('r1', 'gate');
           const card = document.querySelector('.pipeline-control-step[data-control-ref="gate:1"]');
           expect(card).not.toBeNull();
           // The card stands between R1 and R2 with its own link on each side; it is not a synthesis column.
@@ -3598,10 +3614,7 @@ describe('Pipeline debate favorites view', () => {
           await settleCustomCard();
           document.querySelector('#round1').insertAdjacentHTML('afterbegin', '<div class="stage-header-row"><div class="stage-label"><span class="round-badge">R1</span></div></div>');
           window.__updatePipelineAll();
-          const add = document.querySelector('#round1 .pipeline-control-add');
-          add.value = 'route';
-          add.dispatchEvent(new Event('change', { bubbles: true }));
-          await settleCustomCard();
+          await addControlViaCard('r1', 'route');
           expect(document.querySelector('.pipeline-control-step[data-control-ref="route:1"]')).not.toBeNull();
           // A new route is empty: nothing is written until the owner sets it.
           expect(h.debug.basicSchemaFromPage(planOf(), null, { forSave: true }).steps[1]).toEqual({ ref: 'route:1', kind: 'route', models: [], select: {} });
@@ -3657,10 +3670,7 @@ describe('Pipeline debate favorites view', () => {
           await settleCustomCard();
           document.querySelector('#round1').insertAdjacentHTML('afterbegin', '<div class="stage-header-row"><div class="stage-label"><span class="round-badge">R1</span></div></div>');
           window.__updatePipelineAll();
-          const add = document.querySelector('#round1 .pipeline-control-add');
-          add.value = 'owner';
-          add.dispatchEvent(new Event('change', { bubbles: true }));
-          await settleCustomCard();
+          await addControlViaCard('r1', 'owner');
           expect(document.querySelector('.pipeline-control-step[data-control-ref="owner:1"]')).not.toBeNull();
           expect(h.debug.basicSchemaFromPage(planOf(), null, { forSave: true }).steps[1]).toEqual({ ref: 'owner:1', kind: 'owner', models: [] });
 
@@ -3705,15 +3715,8 @@ describe('Pipeline debate favorites view', () => {
           await settleCustomCard();
           document.querySelector('#round1').insertAdjacentHTML('afterbegin', '<div class="stage-header-row"><div class="stage-label"><span class="round-badge">R1</span></div></div>');
           window.__updatePipelineAll();
-          const addAfter = (anchor) => {
-            const select = document.querySelector(`.pipeline-control-add[data-anchor="${anchor}"]`);
-            select.value = 'gate';
-            select.dispatchEvent(new Event('change', { bubbles: true }));
-          };
-          addAfter('r1');
-          await settleCustomCard();
-          addAfter('gate:1');
-          await settleCustomCard();
+          await addControlViaCard('r1', 'gate');
+          await addControlViaCard('gate:1', 'gate');
           expect(h.debug.basicSchemaFromPage(planOf(), null, { forSave: true }).steps.map((step) => step.ref)).toEqual(['r1', 'gate:1', 'gate:2', 'r2']);
           expect(document.querySelector('.pipeline-control-step[data-control-ref="gate:2"]').previousElementSibling.previousElementSibling.classList.contains('pipeline-control-step')).toBe(true);
           expect(document.querySelector('.pipeline-control-step[data-control-ref="gate:2"]').nextElementSibling.nextElementSibling.id).toBe('round2');

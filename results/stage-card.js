@@ -324,7 +324,7 @@
     return node;
   };
 
-  function render(container, model, { onCopy = null, onRole = null, onRoundPrompt = null, onSetting = null } = {}) {
+  function render(container, model, { onCopy = null, onRole = null, onRoundPrompt = null, onSetting = null, addControl = null } = {}) {
     const doc = container.ownerDocument;
     container.replaceChildren();
     if (model.subtitle) container.append(el(doc, 'p', 'stage-card-subtitle', model.subtitle));
@@ -380,6 +380,7 @@
           container.append(wrap);
         }
         renderRest(container, settings, emit);
+        if (addControl) renderAddControl(container, addControl);
       }
     } else {
       const people = el(doc, 'div', 'stage-card-people');
@@ -923,6 +924,30 @@
   }
 
   // The text of a control on its canvas card (the owner's words; a switched-off checker is not named).
+  // «Шаг после этапа»: the way to add a gate, a route or an owner step lives in the card of the stage it follows.
+  const ADD_CONTROL_OPTIONS = [['', '— нет —'], ['gate', 'Проверка (gate)'], ['route', 'Маршрут (route)'], ['owner', 'Владелец (owner)']];
+  function renderAddControl(container, { disabled = false, note = '', onAdd = null } = {}) {
+    const doc = container.ownerDocument;
+    const select = el(doc, 'select', 'stage-card-add-control');
+    ADD_CONTROL_OPTIONS.forEach(([value, label]) => {
+      const option = el(doc, 'option', '', label);
+      option.value = value;
+      select.append(option);
+    });
+    select.disabled = Boolean(disabled);
+    select.setAttribute('aria-label', 'Добавить шаг после этапа');
+    select.addEventListener('change', () => {
+      const kind = select.value;
+      select.value = '';
+      if (kind && typeof onAdd === 'function') onAdd(kind);
+    });
+    const row = el(doc, 'label', 'stage-card-setting stage-card-add-control-row');
+    row.append(doc.createTextNode('Шаг после этого этапа '), select);
+    container.append(row);
+    if (disabled && note) container.append(el(doc, 'p', 'stage-card-muted', note));
+    return select;
+  }
+
   function controlSummary(step = {}) {
     if (step.kind === 'gate') {
       const checkers = (Array.isArray(step.models) ? step.models : []).filter((model) => isPlain(model) && model.enabled !== false).map((model) => model.name);
@@ -940,7 +965,7 @@
 
   const api = Object.freeze({ buildModel, render, renderStepFields, stepFieldsModel, stepsAfterToggle, outputAfterEdit, STATUS, feed,
     gateWindowModel, gateAfterEdit, renderGateWindow, controlSummary, transitionView, transitionAfterEdit,
-    routeWindowModel, routeAfterEdit, renderRouteWindow, ownerWindowModel, ownerAfterEdit, renderOwnerWindow });
+    routeWindowModel, routeAfterEdit, renderRouteWindow, ownerWindowModel, ownerAfterEdit, renderOwnerWindow, renderAddControl });
   root.StageCard = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

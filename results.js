@@ -5116,25 +5116,9 @@ document.addEventListener('click', (event) => {
         // The control steps on the canvas (customControls): a card column placed right after its anchor (a round or the control
         // before it), with the link that leads into it. Rebuilt from the list on each update, so the canvas shows the list.
         // The outgoing link of a chain (the group that followed the anchor) now leads from the last control to the next step.
-        const CONTROL_ADD_LABEL = '+ шаг';
         const controlledAfter = (ref) => getCustomControls().some((item) => item.after === ref);
         // The bridge for the synthesis toggle (outside this block): a control after the round refuses an intermediate synthesis.
         window.__controlledAfter = controlledAfter;
-        const addControlSelect = (anchor, editable) => {
-            const select = document.createElement('select');
-            select.className = 'pipeline-control-add';
-            select.dataset.anchor = anchor;
-            select.setAttribute('aria-label', `Добавить шаг управления после ${anchor}`);
-            select.title = 'Добавить шаг управления: проверка (gate)';
-            [['', CONTROL_ADD_LABEL], ['gate', 'Проверка (gate)'], ['route', 'Маршрут (route)'], ['owner', 'Владелец (owner)']].forEach(([value, label]) => {
-                const option = document.createElement('option');
-                option.value = value;
-                option.textContent = label;
-                select.append(option);
-            });
-            select.disabled = !editable;
-            return select;
-        };
         const buildControlColumn = (step, editable) => {
             const column = document.createElement('div');
             column.className = 'stage-column pipeline-control-step';
@@ -5156,7 +5140,7 @@ document.addEventListener('click', (event) => {
             remove.setAttribute('aria-label', `Удалить: ${step.ref}`);
             remove.disabled = !editable;
             label.append(title, ' ', remove);
-            header.append(label, addControlSelect(step.ref, editable));
+            header.append(label);
             const stack = document.createElement('div');
             stack.className = 'model-stack';
             stack.id = controlStackId(step.ref);
@@ -5175,14 +5159,6 @@ document.addEventListener('click', (event) => {
             pipelinePanel.querySelectorAll('.pipeline-control-step, .pipeline-control-link').forEach((node) => node.remove());
             const lifecycle = String(window.DebateApplication?.getState?.()?.lifecycle || 'IDLE').toUpperCase();
             const editable = !['PLANNING', 'RUNNING', 'PAUSED', 'CANCELLING'].includes(lifecycle) && !pipelineRunActive;
-            // The add select of each round: a control after a round with an intermediate synthesis is refused, so it is disabled.
-            pipelinePanel.querySelectorAll('.stage-column[data-round]:not(.pipeline-intermediate-synth):not(.pipeline-control-step) > .stage-header-row').forEach((row) => {
-                const anchor = `r${row.parentElement.dataset.round}`;
-                let select = row.querySelector(`.pipeline-control-add[data-anchor="${anchor}"]`);
-                if (!select) { select = addControlSelect(anchor, editable); row.append(select); }
-                select.disabled = !editable || intermediateAfterRound(anchor);
-                select.title = intermediateAfterRound(anchor) ? INTERMEDIATE_CONTROL_NOTE : 'Добавить шаг управления: проверка (gate)';
-            });
             const entries = getCustomControls();
             const byAfter = new Map(entries.map((item) => [item.after, item]));
             const placed = new Set();
@@ -9920,6 +9896,15 @@ document.addEventListener('click', (event) => {
             })).filter((item) => item.participants.length);
         };
         // The window of a control step: a gate, a route and an owner have their windows.
+        // «Шаг после этапа» in the card of a round or a control: the new step stands after it, and the card closes to show it.
+        const addControlOptionsFor = (anchor, dialog) => {
+            const refused = intermediateAfterRound(anchor);
+            return {
+                disabled: pipelineRunActive || refused,
+                note: refused ? INTERMEDIATE_CONTROL_NOTE : '',
+                onAdd: async (kind) => { if (await insertControlAfter(anchor, kind)) dialog.close(); }
+            };
+        };
         const openControlCard = (ref) => {
             const dialog = document.getElementById('pipeline-stage-dialog');
             const title = document.getElementById('pipeline-stage-dialog-title');
@@ -9938,6 +9923,7 @@ document.addEventListener('click', (event) => {
             if (step.kind === 'gate') window.StageCard.renderGateWindow(body, window.StageCard.gateWindowModel(step, options), onEdit);
             if (step.kind === 'route') window.StageCard.renderRouteWindow(body, window.StageCard.routeWindowModel(step, options), onEdit);
             if (step.kind === 'owner') window.StageCard.renderOwnerWindow(body, window.StageCard.ownerWindowModel(step, { disabled: pipelineRunActive }), onEdit);
+            window.StageCard.renderAddControl(body, addControlOptionsFor(ref, dialog));
             if (!dialog.open) dialog.showModal();
         };
         const openStageCard = (roundBadge) => {
@@ -9983,7 +9969,8 @@ document.addEventListener('click', (event) => {
                         if (pipelineRunActive) return;
                         await commitStepField(`r${round}`, field, value, (stack?.items || []).filter((item) => item.send).length);
                         openStageCard(roundBadge);
-                    }
+                    },
+                    addControl: roleChoice ? addControlOptionsFor(`r${round}`, dialog) : null
                 });
             }
             if (!dialog.open) dialog.showModal();
@@ -10044,16 +10031,6 @@ document.addEventListener('click', (event) => {
                 }
                 return;
             }
-        });
-
-        // The add select of a round or a control: the chosen kind goes after its anchor, and the select goes back to «+ шаг».
-        pipelinePanel.addEventListener('change', (event) => {
-            const select = event.target;
-            if (!select?.classList?.contains('pipeline-control-add') || !select.value) return;
-            const kind = select.value;
-            const anchor = select.dataset.anchor || '';
-            select.value = '';
-            void insertControlAfter(anchor, kind);
         });
 
         const stageDialog = document.getElementById('pipeline-stage-dialog');
