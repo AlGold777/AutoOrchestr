@@ -33,7 +33,6 @@ const baseAdapter = window.BaseLLMAdapter ? new window.BaseLLMAdapter({
     }
   }
 }) : null;
-const attachmentHandler = window.AttachmentHandler || null;
   const FALLBACK_LAST_MESSAGE_SELECTORS = [
     '[data-markdown-text-style="assistant-message"]',
     '[data-testid="conversation-turn"][data-message-author-role="assistant"]',
@@ -388,183 +387,6 @@ async function humanRead(duration = 480) {
         console.warn('[content-chatgpt] Humanoid.readPage failed', err);
       }
   }
-}
-
-const parseDataUrlToBytes = (dataUrl = '') => {
-  try {
-    const match = dataUrl.match(/^data:([^;]+);base64,(.*)$/);
-    const base64Part = match ? match[2] : dataUrl;
-    const binary = atob(base64Part || '');
-    const len = binary.length;
-    const bytes = new Uint8Array(len);
-    for (let i = 0; i < len; i++) {
-      bytes[i] = binary.charCodeAt(i);
-    }
-    return bytes;
-  } catch (err) {
-    console.warn('[content-chatgpt] Failed to parse data URL', err);
-    return null;
-  }
-};
-
-const hydrateAttachments = (raw = []) => {
-  return raw
-    .map((item) => {
-      if (!item || !item.name || !item.base64) return null;
-      try {
-        const bytes = parseDataUrlToBytes(item.base64);
-        if (!bytes) return null;
-        return new File([bytes], item.name, { type: item.type || 'application/octet-stream' });
-      } catch (err) {
-        console.warn('[content-chatgpt] Failed to hydrate attachment', item?.name, err);
-        return null;
-      }
-    })
-    .filter(Boolean);
-};
-
-async function attachFilesToComposer(target, attachments = []) {
-  if (!attachments || !attachments.length) return false;
-  const files = hydrateAttachments(attachments);
-  if (!files.length) return false;
-
-  const makeDataTransfer = () => {
-    const dt = new DataTransfer();
-    files.forEach((f) => {
-      try { dt.items.add(f); } catch (_) {}
-    });
-    dt.effectAllowed = 'copy';
-    return dt;
-  };
-
-  const dispatchPasteSequence = async (el) => {
-    if (!el) return false;
-    const dt = makeDataTransfer();
-    const factory = () => {
-      const ev = new ClipboardEvent('paste', { bubbles: true, cancelable: true });
-      if (!ev.clipboardData) {
-        try { Object.defineProperty(ev, 'clipboardData', { value: dt }); } catch (_) {}
-      } else if (dt.items?.length) {
-        dt.items.forEach((item) => { try { ev.clipboardData.items.add(item.getAsFile()); } catch (_) {} });
-      }
-      return ev;
-    };
-    try {
-      el.dispatchEvent(factory());
-      await sleep(100);
-      el.dispatchEvent(factory());
-      await sleep(1400);
-      return true;
-    } catch (err) {
-      console.warn('[content-chatgpt] paste dispatch failed', err);
-      return false;
-    }
-  };
-
-  const dispatchDropSequence = async (el) => {
-    if (!el) return false;
-    const dt = makeDataTransfer();
-    try {
-      const events = ['dragenter', 'dragover', 'drop'];
-      for (const type of events) {
-        const ev = new DragEvent(type, {
-          bubbles: true,
-          cancelable: true,
-          dataTransfer: dt
-        });
-        el.dispatchEvent(ev);
-        await sleep(40);
-      }
-      await sleep(40);
-      for (const type of ['dragleave', 'dragend']) {
-        el.dispatchEvent(new DragEvent(type, {
-          bubbles: true,
-          cancelable: true,
-          dataTransfer: dt
-        }));
-      }
-      await sleep(1400);
-      return true;
-    } catch (err) {
-      console.warn('[content-chatgpt] drop dispatch failed', err);
-      return false;
-    }
-  };
-
-  const primaryTarget = target || document.querySelector('textarea, [contenteditable="true"]');
-  if (await dispatchPasteSequence(primaryTarget)) {
-    return true;
-  }
-  if (await dispatchDropSequence(primaryTarget)) {
-    return true;
-  }
-  if (await dispatchDropSequence(primaryTarget?.parentElement)) {
-    return true;
-  }
-
-  const attachButtonSelectors = [
-    'button[aria-label*="Attach"]',
-    'button[data-testid*="attach"]',
-    'button[data-testid*="upload"]',
-    'button[aria-label*="Upload"]'
-  ];
-  const inputSelectors = [
-    'input[type="file"][accept*="image"]',
-    'input[type="file"][accept*="pdf"]',
-    'input[type="file"]'
-  ];
-
-  const waitForElement = async (selectors, timeoutMs = 3000, intervalMs = 150) => {
-    const deadline = Date.now() + timeoutMs;
-    while (Date.now() < deadline) {
-      for (const sel of selectors) {
-        const el = document.querySelector(sel);
-        if (el) return el;
-      }
-      await sleep(intervalMs);
-    }
-    return null;
-  };
-
-  const attachButton = await waitForElement(attachButtonSelectors, 1200, 120);
-  if (attachButton) {
-    try {
-      attachButton.click();
-      await sleep(300);
-    } catch (_) {}
-  }
-
-  let fileInput = await waitForElement(inputSelectors, 3000, 120);
-  if (!fileInput) {
-    fileInput = document.querySelector('input[type="file"]');
-  }
-  if (!fileInput) {
-    console.warn('[content-chatgpt] File input not found, skipping attachments');
-    return false;
-  }
-
-  const dt = makeDataTransfer();
-  try {
-    fileInput.files = dt.files;
-  } catch (err) {
-    console.warn('[content-chatgpt] Failed to set files on input', err);
-  }
-
-  try {
-    fileInput.dispatchEvent(new Event('input', { bubbles: true }));
-    fileInput.dispatchEvent(new Event('change', { bubbles: true }));
-  } catch (err) {
-    console.warn('[content-chatgpt] dispatch input/change failed', err);
-  }
-
-  try {
-    fileInput.focus?.({ preventScroll: true });
-  } catch (_) {
-    try { fileInput.focus?.(); } catch (_) {}
-  }
-
-  await sleep(1800);
-  return true;
 }
 
 const startDriftFallback = (intensity = 'soft') => {
@@ -1192,15 +1014,14 @@ const chatgptScrollCoordinator = window.ScrollCoordinator
           });
         }
         if (Array.isArray(attachments) && attachments.length) {
+          const attachmentHandler = window.AttachmentHandler || null;
           let attachmentsOk = false;
           if (attachmentHandler?.attach) {
             const result = await attachmentHandler.attach(MODEL, attachments);
-            attachmentsOk = result.success;
+            attachmentsOk = result.success === true && result.uploadedCount === attachments.length;
             if (!attachmentsOk) {
               attachmentHandler.notifyManualAttachmentRequired?.(MODEL, attachments, result.reason);
             }
-          } else {
-            attachmentsOk = await attachFilesToComposer(inputField, attachments);
           }
           if (attachmentsOk) {
             console.log('[CONTENT-GPT] Files attached via attachment handler');

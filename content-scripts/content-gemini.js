@@ -30,7 +30,7 @@ const baseAdapter = window.BaseLLMAdapter ? new window.BaseLLMAdapter({
     }
   }
 }) : null;
-const attachmentHandler = window.AttachmentHandler || null;
+const getAttachmentHandler = () => window.AttachmentHandler || null;
 //- 3.1. Расширенные селекторы для Gemini (Shadow DOM пробив) -//
 const GEMINI_FALLBACK_LAST_MESSAGE_SELECTORS = [
   'model-response', 
@@ -1253,6 +1253,7 @@ async function injectAndGetResponse(prompt, attachments = [], meta = null) {
 
         if (Array.isArray(attachments) && attachments.length) {
           let attachmentsOk = false;
+          const attachmentHandler = getAttachmentHandler();
           if (attachmentHandler?.attach) {
             const result = await attachmentHandler.attach(MODEL, attachments);
             attachmentsOk = result.success;

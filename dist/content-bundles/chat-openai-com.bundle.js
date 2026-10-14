@@ -7425,6 +7425,7 @@
         modelName: llmName,
         dispatchId: meta?.dispatchId || null,
         runSessionId: meta?.runSessionId || meta?.sessionId || null,
+        generationEpoch: meta?.generationEpoch ?? null,
         promptSubmittedAt: Date.now(),
         traceId: meta?.traceId || meta?.dispatchId || null,
         baselineText: String(baselineText || ''),
@@ -8787,6 +8788,9 @@
       // still misses, the safe failure mode is "works, with a duplicate warning",
       // never "no file". A true fix needs the live ChatGPT attached-file selector.
       preferPaste: false,
+      settleMs: 1200,
+      persistentEvidenceRequired: true,
+      confirmGoneSelectors: ['[role="progressbar"]', '[aria-busy="true"]'],
       // Never paste a File into ChatGPT: text-like files are interpreted as
       // composer text, which can replace the actual prompt with file contents.
       strategies: ['drop', 'input'],
@@ -9495,7 +9499,11 @@
         ? Object.keys(requiredNames).length > 0 && Object.entries(requiredNames).every(([name, count]) =>
           (filenameCounts[name] || 0) >= (baselineState.filenameEvidenceByName[name] || 0) + count)
         : filenameEvidenceCount >= baselineFilenameEvidence + expectedCount;
-      const evidenceNow = selectorEvidence || inputEvidence || filenameEvidence;
+      // One file can render several matching wrappers/buttons. For a batch,
+      // generic selector counts cannot prove that every distinct file arrived.
+      const evidenceNow = files.length > 1
+        ? filenameEvidence || inputEvidence
+        : selectorEvidence || inputEvidence || filenameEvidence;
       if (selectorEvidence || filenameEvidence) providerEvidenceSeen = true;
       if (evidenceNow && !evidenceAt) evidenceAt = Date.now();
       const hasEvidence = evidenceNow
@@ -9578,6 +9586,26 @@
     return null;
   };
 
+  const acceptsAttachmentFiles = (input, files) => {
+    if (!input || input.disabled || (files.length > 1 && !input.multiple)) return false;
+    const accepted = String(input.getAttribute('accept') || '').toLowerCase().split(',').map(value => value.trim()).filter(Boolean);
+    return files.every(file => !accepted.length || accepted.some(rule =>
+      rule === '*/*' || rule === '*' || (rule.startsWith('.')
+        ? String(file.name || '').toLowerCase().endsWith(rule)
+        : rule.endsWith('/*') ? String(file.type || '').toLowerCase().startsWith(rule.slice(0, -1))
+          : String(file.type || '').toLowerCase() === rule)));
+  };
+
+  const findAttachmentInput = (files, selectors = []) => {
+    for (const root of collectOpenRoots()) {
+      for (const selector of [...selectors, 'input[type="file"]']) {
+        const input = Array.from(root.querySelectorAll(selector)).find(candidate => acceptsAttachmentFiles(candidate, files));
+        if (input) return input;
+      }
+    }
+    return null;
+  };
+
   const attachViaInput = async (files, config) => {
     const attachButton = await findFirst(config.attachSelectors, 1200, 120);
     if (attachButton) {
@@ -9586,7 +9614,12 @@
         await sleep(300);
       } catch (_) {}
     }
-    const input = await findFirst(config.inputSelectors, 3000, 120) || document.querySelector('input[type="file"]');
+    const deadline = Date.now() + 3000;
+    let input = findAttachmentInput(files, config.inputSelectors);
+    while (!input && Date.now() < deadline) {
+      await sleep(120);
+      input = findAttachmentInput(files, config.inputSelectors);
+    }
     if (!input) return false;
     const dt = new DataTransfer();
     files.forEach((file) => {
@@ -9788,9 +9821,9 @@
     }
     const config = resolveConfig(model, overrides);
     const files = hydrateAttachments(attachments).slice(0, config.maxFiles);
-    if (!files.length) {
-      reportFailure('NO_FILES');
-      return { success: false, delivered: false, uploadSettled: false, ready: false, evidence: null, uploadedCount: 0, failedFiles: attachments, reason: 'NO_FILES' };
+    if (files.length !== attachments.length) {
+      reportFailure('INCOMPLETE_FILE_BATCH');
+      return { success: false, delivered: false, uploadSettled: false, ready: false, evidence: null, uploadedCount: 0, failedFiles: attachments, reason: 'INCOMPLETE_FILE_BATCH' };
     }
     if (config.sequentialFiles === true && files.length > 1) {
       const limitedAttachments = attachments.slice(0, files.length);
@@ -10073,6 +10106,9 @@
         reason: attempted ? 'TIMEOUT' : 'MANUAL_REQUIRED'
       };
     }
+    global.ContentUtils?.reportDispatchStage?.(model, {}, 'attachment_upload_completed', {
+      outcome: 'confirmed', attachmentCount: attachments.length, uploadedCount: files.length
+    });
     try {
       chrome?.runtime?.sendMessage?.({
         type: 'SMART_ATTACHMENT_CONFIRMED',
@@ -10278,6 +10314,13 @@
     handleMessage(message, sender, sendResponse) {
       if (!message || typeof message !== 'object') return false;
       if (message.type === 'STOP_AND_CLEANUP') {
+        if (typeof window.ContentUtils?.isStopCommandCurrent === 'function'
+            && !window.ContentUtils.isStopCommandCurrent(message)) {
+          if (typeof sendResponse === 'function') {
+            sendResponse({ status: 'stale_stop_ignored', model: this.MODEL });
+          }
+          return true;
+        }
         this._cleanup(message.reason || 'stop_request');
         if (typeof sendResponse === 'function') {
           sendResponse({ status: 'stopped', model: this.MODEL });
@@ -17935,28 +17978,6 @@ const scrollIntoViewSmoothly = async (element) => {
         if (Date.now() - (cmd.timestamp || 0) > 5000) return;
         if (cmd.action === 'STOP_ALL') {
           if (Array.isArray(cmd.platforms) && this.platform && !cmd.platforms.includes(this.platform)) {
-            return;
-          }
-          const cmdMeta = cmd.meta && typeof cmd.meta === 'object' ? cmd.meta : {};
-          const commandRunSessionId = cmd.runSessionId || cmdMeta.runSessionId || cmd.sessionId || cmdMeta.sessionId || null;
-          const commandDispatchIds = Array.isArray(cmd.activeDispatchIds)
-            ? cmd.activeDispatchIds
-            : (cmd.dispatchId || cmdMeta.dispatchId ? [cmd.dispatchId || cmdMeta.dispatchId] : []);
-          let currentMeta = null;
-          try {
-            currentMeta = window.ContentUtils?.ensureDispatchMeta?.({}) || null;
-          } catch (_) {}
-          const currentRunSessionId = currentMeta?.runSessionId
-            || currentMeta?.sessionId
-            || window.__CURRENT_SESSION_ID__
-            || null;
-          if (commandRunSessionId && currentRunSessionId
-              && String(commandRunSessionId) !== String(currentRunSessionId)) {
-            return;
-          }
-          const currentDispatchId = currentMeta?.dispatchId || null;
-          if (commandDispatchIds.length && currentDispatchId
-              && !commandDispatchIds.some((id) => String(id) === String(currentDispatchId))) {
             return;
           }
           if (typeof window.ContentUtils?.isStopCommandCurrent === 'function'
@@ -27429,7 +27450,6 @@ const baseAdapter = window.BaseLLMAdapter ? new window.BaseLLMAdapter({
     }
   }
 }) : null;
-const attachmentHandler = window.AttachmentHandler || null;
   const FALLBACK_LAST_MESSAGE_SELECTORS = [
     '[data-markdown-text-style="assistant-message"]',
     '[data-testid="conversation-turn"][data-message-author-role="assistant"]',
@@ -27784,183 +27804,6 @@ async function humanRead(duration = 480) {
         console.warn('[content-chatgpt] Humanoid.readPage failed', err);
       }
   }
-}
-
-const parseDataUrlToBytes = (dataUrl = '') => {
-  try {
-    const match = dataUrl.match(/^data:([^;]+);base64,(.*)$/);
-    const base64Part = match ? match[2] : dataUrl;
-    const binary = atob(base64Part || '');
-    const len = binary.length;
-    const bytes = new Uint8Array(len);
-    for (let i = 0; i < len; i++) {
-      bytes[i] = binary.charCodeAt(i);
-    }
-    return bytes;
-  } catch (err) {
-    console.warn('[content-chatgpt] Failed to parse data URL', err);
-    return null;
-  }
-};
-
-const hydrateAttachments = (raw = []) => {
-  return raw
-    .map((item) => {
-      if (!item || !item.name || !item.base64) return null;
-      try {
-        const bytes = parseDataUrlToBytes(item.base64);
-        if (!bytes) return null;
-        return new File([bytes], item.name, { type: item.type || 'application/octet-stream' });
-      } catch (err) {
-        console.warn('[content-chatgpt] Failed to hydrate attachment', item?.name, err);
-        return null;
-      }
-    })
-    .filter(Boolean);
-};
-
-async function attachFilesToComposer(target, attachments = []) {
-  if (!attachments || !attachments.length) return false;
-  const files = hydrateAttachments(attachments);
-  if (!files.length) return false;
-
-  const makeDataTransfer = () => {
-    const dt = new DataTransfer();
-    files.forEach((f) => {
-      try { dt.items.add(f); } catch (_) {}
-    });
-    dt.effectAllowed = 'copy';
-    return dt;
-  };
-
-  const dispatchPasteSequence = async (el) => {
-    if (!el) return false;
-    const dt = makeDataTransfer();
-    const factory = () => {
-      const ev = new ClipboardEvent('paste', { bubbles: true, cancelable: true });
-      if (!ev.clipboardData) {
-        try { Object.defineProperty(ev, 'clipboardData', { value: dt }); } catch (_) {}
-      } else if (dt.items?.length) {
-        dt.items.forEach((item) => { try { ev.clipboardData.items.add(item.getAsFile()); } catch (_) {} });
-      }
-      return ev;
-    };
-    try {
-      el.dispatchEvent(factory());
-      await sleep(100);
-      el.dispatchEvent(factory());
-      await sleep(1400);
-      return true;
-    } catch (err) {
-      console.warn('[content-chatgpt] paste dispatch failed', err);
-      return false;
-    }
-  };
-
-  const dispatchDropSequence = async (el) => {
-    if (!el) return false;
-    const dt = makeDataTransfer();
-    try {
-      const events = ['dragenter', 'dragover', 'drop'];
-      for (const type of events) {
-        const ev = new DragEvent(type, {
-          bubbles: true,
-          cancelable: true,
-          dataTransfer: dt
-        });
-        el.dispatchEvent(ev);
-        await sleep(40);
-      }
-      await sleep(40);
-      for (const type of ['dragleave', 'dragend']) {
-        el.dispatchEvent(new DragEvent(type, {
-          bubbles: true,
-          cancelable: true,
-          dataTransfer: dt
-        }));
-      }
-      await sleep(1400);
-      return true;
-    } catch (err) {
-      console.warn('[content-chatgpt] drop dispatch failed', err);
-      return false;
-    }
-  };
-
-  const primaryTarget = target || document.querySelector('textarea, [contenteditable="true"]');
-  if (await dispatchPasteSequence(primaryTarget)) {
-    return true;
-  }
-  if (await dispatchDropSequence(primaryTarget)) {
-    return true;
-  }
-  if (await dispatchDropSequence(primaryTarget?.parentElement)) {
-    return true;
-  }
-
-  const attachButtonSelectors = [
-    'button[aria-label*="Attach"]',
-    'button[data-testid*="attach"]',
-    'button[data-testid*="upload"]',
-    'button[aria-label*="Upload"]'
-  ];
-  const inputSelectors = [
-    'input[type="file"][accept*="image"]',
-    'input[type="file"][accept*="pdf"]',
-    'input[type="file"]'
-  ];
-
-  const waitForElement = async (selectors, timeoutMs = 3000, intervalMs = 150) => {
-    const deadline = Date.now() + timeoutMs;
-    while (Date.now() < deadline) {
-      for (const sel of selectors) {
-        const el = document.querySelector(sel);
-        if (el) return el;
-      }
-      await sleep(intervalMs);
-    }
-    return null;
-  };
-
-  const attachButton = await waitForElement(attachButtonSelectors, 1200, 120);
-  if (attachButton) {
-    try {
-      attachButton.click();
-      await sleep(300);
-    } catch (_) {}
-  }
-
-  let fileInput = await waitForElement(inputSelectors, 3000, 120);
-  if (!fileInput) {
-    fileInput = document.querySelector('input[type="file"]');
-  }
-  if (!fileInput) {
-    console.warn('[content-chatgpt] File input not found, skipping attachments');
-    return false;
-  }
-
-  const dt = makeDataTransfer();
-  try {
-    fileInput.files = dt.files;
-  } catch (err) {
-    console.warn('[content-chatgpt] Failed to set files on input', err);
-  }
-
-  try {
-    fileInput.dispatchEvent(new Event('input', { bubbles: true }));
-    fileInput.dispatchEvent(new Event('change', { bubbles: true }));
-  } catch (err) {
-    console.warn('[content-chatgpt] dispatch input/change failed', err);
-  }
-
-  try {
-    fileInput.focus?.({ preventScroll: true });
-  } catch (_) {
-    try { fileInput.focus?.(); } catch (_) {}
-  }
-
-  await sleep(1800);
-  return true;
 }
 
 const startDriftFallback = (intensity = 'soft') => {
@@ -28407,9 +28250,6 @@ const chatgptScrollCoordinator = window.ScrollCoordinator
   // ОРИГИНАЛЬНАЯ ФУНКЦИЯ ОБРАБОТКИ (с улучшенной очисткой)
   let gptSharedInjection = null;
   let gptSharedFingerprint = null;
-  let gptLastPreparedFingerprint = null;
-  let gptLastPreparedAt = 0;
-  const GPT_PREPARED_DEDUPE_WINDOW_MS = 30000;
   const fingerprintPrompt = (prompt = '') => {
     const s = String(prompt || '');
     return `${s.length}:${quickHash(s.slice(0, 600))}`;
@@ -28438,7 +28278,7 @@ const chatgptScrollCoordinator = window.ScrollCoordinator
     try {
       if (!el) return '';
       if ('value' in el) return String(el.value || '');
-      return String(el.textContent || '');
+      return String(el.innerText || el.textContent || '');
     } catch (_) {
       return '';
     }
@@ -28591,15 +28431,14 @@ const chatgptScrollCoordinator = window.ScrollCoordinator
           });
         }
         if (Array.isArray(attachments) && attachments.length) {
+          const attachmentHandler = window.AttachmentHandler || null;
           let attachmentsOk = false;
           if (attachmentHandler?.attach) {
             const result = await attachmentHandler.attach(MODEL, attachments);
-            attachmentsOk = result.success;
+            attachmentsOk = result.success === true && result.uploadedCount === attachments.length;
             if (!attachmentsOk) {
               attachmentHandler.notifyManualAttachmentRequired?.(MODEL, attachments, result.reason);
             }
-          } else {
-            attachmentsOk = await attachFilesToComposer(inputField, attachments);
           }
           if (attachmentsOk) {
             console.log('[CONTENT-GPT] Files attached via attachment handler');
@@ -28615,31 +28454,22 @@ const chatgptScrollCoordinator = window.ScrollCoordinator
             throw { type: 'attachment_failed', message: 'ChatGPT attachment upload was not confirmed. Paste the file manually with Ctrl/Cmd+V.' };
           }
         }
-        const composerNow = normalizeForComparison(readComposerValue(inputField));
+        const resolveLiveComposer = () => {
+          const candidates = inputSelectors.flatMap(selector => Array.from(document.querySelectorAll(selector)));
+          return candidates.find(el => el.isConnected && isElementInteractable(el)) || null;
+        };
         const expectedComposerText = normalizeForComparison(prompt);
-        const hasPreparedPrompt = Boolean(expectedComposerText && composerNow === expectedComposerText);
-        const preparedRecently = gptLastPreparedFingerprint === fp && (Date.now() - gptLastPreparedAt) < GPT_PREPARED_DEDUPE_WINDOW_MS;
-        if (!(preparedRecently && hasPreparedPrompt)) {
-          const forced = await fastSetPrompt(inputField, prompt);
-          const forcedOk = expectedComposerText && normalizeForComparison(forced) === expectedComposerText;
-          if (!forcedOk) {
-            await humanTypeInput(inputField, prompt, { wpm: 125 });
-          }
-          gptLastPreparedFingerprint = fp;
-          gptLastPreparedAt = Date.now();
-          console.log('[CONTENT-GPT] Prompt prepared in composer');
-        } else {
-          console.warn('[CONTENT-GPT] Duplicate dispatch detected, reusing existing composer text');
-        }
-        // The composer was never checked after typing here, so a silently empty
-        // ChatGPT composer produced no evidence at all — neither a failure nor a
-        // confirmation. State the observed outcome before Send is attempted.
+        const prepared = await window.ContentUtils.ensurePromptPrepared(inputField, prompt, {
+          resolveComposer: resolveLiveComposer,
+          fallback: fastSetPrompt
+        });
+        inputField = prepared.composer || resolveLiveComposer() || inputField;
         const composerAfterPrepare = readComposerValue(inputField);
-        const composerHoldsPrompt = Boolean(inputField.isConnected && expectedComposerText
+        const composerHoldsPrompt = Boolean(prepared.ok && inputField.isConnected && expectedComposerText
           && normalizeForComparison(composerAfterPrepare) === expectedComposerText);
         window.ContentUtils?.reportPromptInsertion?.(MODEL, dispatchMeta, {
           state: composerHoldsPrompt ? 'inserted' : 'failed',
-          method: preparedRecently && hasPreparedPrompt ? 'reused_prepared_composer' : 'composer_prepared',
+          method: prepared.method || 'composer_prepared',
           reason: composerHoldsPrompt ? null : 'composer_prompt_mismatch',
           promptLength: String(prompt || '').length,
           composerLength: String(composerAfterPrepare || '').length
