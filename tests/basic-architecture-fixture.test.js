@@ -58,6 +58,13 @@ const run = (extra, options = {}) => Engine.run({ task: 'T', steps: Schema.assem
 // S01–S05 are the five stages checked in practice (docs/Pipeline scenarios/basic_review_s01_s05_oct14.md): the schema must keep what
 // the Design System says about them.
 describe('S01–S05 follow the Design System', () => {
+  test('the file for a live run of S01–S05 is the first seven steps of the whole schema (import it in the Pipeline panel)', () => {
+    const five = fixture('basic-architecture-s01-s05.json');
+    expect(Schema.validate(five)).toEqual([]);
+    expect(five.steps.map((step) => step.ref)).toEqual(['r1', 'owner:s01', 'r2', 'synth:s03', 'r3', 'synth:s04', 'r4']);
+    expect(five.steps).toEqual(schema.steps.slice(0, 7));
+  });
+
   const first = { ...schema, steps: schema.steps.slice(0, 7) };
   test('the Decision Closer receives the Decision Policy, and S05 asks for no owner approval', async () => {
     expect(byRef['r4'].owner).toBeUndefined();
