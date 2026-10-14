@@ -1152,17 +1152,14 @@
     'letter-spacing',
     'text-align',
     'white-space',
-    'margin',
     'margin-top',
     'margin-right',
     'margin-bottom',
     'margin-left',
-    'padding',
     'padding-top',
     'padding-right',
     'padding-bottom',
     'padding-left',
-    'border',
     'border-top',
     'border-right',
     'border-bottom',
@@ -1172,20 +1169,45 @@
     'list-style-position'
   ];
 
-  const buildInlineStyle = (element) => {
+  // The inline styles of a captured answer (V10). A page element has dozens of computed values; writing all of them on every
+  // element made the html of an answer ~20 times the size of its text (800 bytes per element) and filled the extension storage.
+  // Now an inherited value equal to the one of the parent is not written (the parent carries it), the shorthands that repeat the
+  // longhands are not written, and the neutral values (0px, transparent, no decoration) are not written. The root of a capture
+  // carries all inherited values, so the answer looks the same where it is shown.
+  const INLINE_INHERITED = new Set(['color', 'font-family', 'font-size', 'font-weight', 'font-style', 'text-transform', 'line-height',
+    'letter-spacing', 'text-align', 'white-space', 'list-style-type', 'list-style-position']);
+  const isNeutralInlineValue = (prop, value) => {
+    if (!value) return true;
+    if (prop === 'background-color') return /^(transparent|rgba\(0, 0, 0, 0\))$/.test(value);
+    if (prop === 'text-decoration') return /^none\b/.test(value);
+    if (/^border-(top|right|bottom|left)$/.test(prop)) return /^(0px|none)\b/.test(value);
+    return /^(margin|padding)-/.test(prop) || prop === 'border-radius' ? value === '0px' : false;
+  };
+
+  const buildInlineStyle = (element, parent = null) => {
     if (!element || element.nodeType !== 1) return '';
     const computed = window.getComputedStyle?.(element);
     if (!computed) return '';
+    const parentComputed = parent ? window.getComputedStyle?.(parent) : null;
     return INLINE_STYLE_PROPERTIES.map((prop) => {
-      const value = computed.getPropertyValue(prop);
-      return value ? `${prop}:${value.trim()};` : '';
+      const value = String(computed.getPropertyValue(prop) || '').trim();
+      if (!value) return '';
+      if (INLINE_INHERITED.has(prop)) {
+        if (parentComputed && String(parentComputed.getPropertyValue(prop) || '').trim() === value) return '';
+      } else if (isNeutralInlineValue(prop, value)) {
+        return '';
+      }
+      return `${prop}:${value};`;
     }).join('');
   };
 
-  const applyInlineStyles = (source, target) => {
-    const style = buildInlineStyle(source);
+  const applyInlineStyles = (source, target, parent = null) => {
+    const style = buildInlineStyle(source, parent);
+    // The computed form replaces the style the page itself wrote on the element (as before); nothing left to say removes it.
     if (style) {
       target.setAttribute('style', style);
+    } else {
+      target.removeAttribute('style');
     }
   };
 
@@ -1197,7 +1219,9 @@
     let sourceNode = element;
     let cloneNode = clone;
     while (sourceNode && cloneNode) {
-      applyInlineStyles(sourceNode, cloneNode);
+      // The root and its children carry every inherited value: the html of a capture without its root (innerHTML) stays whole.
+      const parent = sourceNode === element || sourceNode.parentElement === element ? null : sourceNode.parentElement;
+      applyInlineStyles(sourceNode, cloneNode, parent);
       sourceNode = sourceWalker.nextNode();
       cloneNode = cloneWalker.nextNode();
     }

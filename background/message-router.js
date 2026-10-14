@@ -1799,6 +1799,30 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 
 let initialStatePromise = null;
 let initialStateReady = false;
+
+// The viewer content that earlier versions left in chrome.storage.local goes (once, at start), and the session storage keeps
+// the newest few (shared/response-viewer-retention.js).
+async function pruneResponseViewerContent({ legacyLocal = false } = {}) {
+    const retention = self.ResponseViewerRetention;
+    if (!retention) return;
+    try {
+        if (legacyLocal) {
+            const keys = typeof chrome.storage.local.getKeys === 'function'
+                ? await chrome.storage.local.getKeys()
+                : Object.keys(await chrome.storage.local.get(null));
+            const stale = keys.filter((key) => String(key).startsWith(retention.PREFIX));
+            if (stale.length) await chrome.storage.local.remove(stale);
+        }
+        const sessionKeys = typeof chrome.storage.session.getKeys === 'function'
+            ? await chrome.storage.session.getKeys()
+            : Object.keys(await chrome.storage.session.get(null));
+        const drop = retention.keysToRemove(sessionKeys, retention.KEEP);
+        if (drop.length) await chrome.storage.session.remove(drop);
+    } catch (err) {
+        console.warn('[BACKGROUND] Response viewer cleanup failed:', err);
+    }
+}
+
 let initialStorageMaintenancePromise = null;
 
 function scheduleInitialStorageMaintenance() {
@@ -1809,6 +1833,7 @@ function scheduleInitialStorageMaintenance() {
         .then(async () => {
             await CompressedStorage.migrate(['results', 'notes', 'logs']);
             await CompressedStorage.pruneIfNeeded();
+            await pruneResponseViewerContent({ legacyLocal: true });
         })
         .catch((err) => {
             initialStorageMaintenancePromise = null;
@@ -2037,12 +2062,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             sendResponse({ ok: false, error: 'invalid_response_viewer_payload' });
             return false;
         }
-        chrome.storage.local.set({ [key]: message.payload }, () => {
-            if (chrome.runtime.lastError) {
-                sendResponse({ ok: false, error: chrome.runtime.lastError.message });
+        // The content is a copy read by one window: it goes to the session storage, and to the local one only when the session
+        // write fails (it used to be written to both and never removed, which filled the quota). Only the newest few are kept.
+        chrome.storage.session.set({ [key]: message.payload }, () => {
+            if (!chrome.runtime.lastError) {
+                void pruneResponseViewerContent();
+                sendResponse({ ok: true });
                 return;
             }
-            chrome.storage.session.set({ [key]: message.payload }, () => sendResponse({ ok: !chrome.runtime.lastError }));
+            chrome.storage.local.set({ [key]: message.payload }, () => sendResponse(chrome.runtime.lastError
+                ? { ok: false, error: chrome.runtime.lastError.message } : { ok: true }));
         });
         return true;
     }

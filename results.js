@@ -23331,12 +23331,17 @@ function checkCompareButtonState() {
         const bounds = responseViewerBounds(card);
         const payload = responseViewerPayload(card);
         responseViewerId = responseViewerId || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        // One copy, in the session storage; the local one only when that fails (a copy there was never removed).
+        let viewerStored = false;
         try {
             await chrome.storage.session.set({ [responseViewerStorageKey()]: payload });
+            viewerStored = true;
         } catch (_) {}
-        try {
-            await chrome.storage.local.set({ [responseViewerStorageKey()]: payload });
-        } catch (_) {}
+        if (!viewerStored) {
+            try {
+                await chrome.storage.local.set({ [responseViewerStorageKey()]: payload });
+            } catch (_) {}
+        }
         try {
             await chrome.runtime.sendMessage({
                 type: 'RESPONSE_VIEWER_STORE_CONTENT',
