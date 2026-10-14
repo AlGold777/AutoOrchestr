@@ -4,7 +4,6 @@ const Pack = require('../disput/debate-prompt-pack');
 const Compiler = require('../disput/debate-prompt-compiler');
 const Acceptance = require('../disput/debate-response-acceptance');
 const CaseSchema = require('../disput/debate-case-schema');
-const StateDelta = require('../disput/debate-state-delta');
 const Capabilities = require('../disput/debate-capability-registry');
 const Profiles = require('../disput/debate-profile-schema');
 
@@ -69,22 +68,6 @@ describe('Disput prompt runtime v3', () => {
     });
     expect(compiled.prompt).toContain('[RESPONSE_LIMIT] Ответ — не более 300 слов.');
     expect(compiled.prompt).toContain('ясной концепции и ключевых идеях');
-  });
-
-  test('applies only an anchored StateDelta and rejects a stale repeat', () => {
-    let state = CaseSchema.createCase({ caseId: 'case-delta', createdAt: 1 });
-    state = CaseSchema.applyChange(state, {
-      kind: 'APPEND_SOURCE_EVENT', correlationId: 'source:t1', at: 2,
-      event: { eventId: 't1', turnId: 't1', text: 'Option A costs less in year one.' }
-    }).state;
-    const delta = {
-      deltaId: 'd1', expectedSequence: state.changes.length,
-      changes: [{ operation: 'create', confidence: 0.9, artifact: { id: 'c1', type: 'claim', status: 'asserted', title: 'A is initially cheaper' }, anchor: { turnId: 't1', quote: 'costs less in year one' } }]
-    };
-    const applied = StateDelta.apply(state, delta, CaseSchema);
-    expect(applied.ok).toBe(true);
-    expect(applied.state.artifacts.c1.provenance.turnId).toBe('t1');
-    expect(StateDelta.validate(applied.state, delta).errors).toContain('delta_artifact_exists:c1');
   });
 
   test('routes an independent family when available and marks a one-model self-check degraded', () => {

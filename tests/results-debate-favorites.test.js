@@ -368,17 +368,13 @@ async function loadResultsScript(seededPipelineStore = null) {
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'shared', 'transport-policy.js'), 'utf8'));
   const debateEngine = fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-engine.js'), 'utf8');
   window.eval(debateEngine);
-  window.eval(fs.readFileSync(path.join(__dirname, '..', 'shared', 'debate-schema.js'), 'utf8'));
   // DebateFSM is the explicit serial-debate state machine results.js init depends on.
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-runtime.js'), 'utf8'));
-  window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-protocols.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-run-store.js'), 'utf8'));
-  window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-protocol-transition-service.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-trace-schema.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-trace-store.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-trace-projections.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-execution-context.js'), 'utf8'));
-  window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-stage-types.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-policies.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-draft-plan.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-plan-revision.js'), 'utf8'));
@@ -394,7 +390,7 @@ async function loadResultsScript(seededPipelineStore = null) {
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'pipeline-presets.js'), 'utf8'));
   // The same order as pipeline_panel.html: the modules the engine uses come before it.
   ['stage-markers', 'basic-output', 'basic-artifacts', 'basic-control', 'custom-engine', 'basic-schema', 'custom-run-record'].forEach((mod) => { window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', `${mod}.js`), 'utf8')); });
-  ['boot-utils', 'dom-utils', 'attachments', 'pasted-text', 'tooltips', 'debate-ui', 'debate-transport', 'debate-controller', 'debate-renderer', 'debate-sessions-store', 'debate-export', 'debate-plan-view-model', 'debate-telemetry-view'].forEach((mod) => { window.eval(fs.readFileSync(path.join(__dirname, '..', 'results', `${mod}.js`), 'utf8')); });
+  ['boot-utils', 'dom-utils', 'attachments', 'pasted-text', 'tooltips', 'debate-ui', 'debate-transport', 'debate-controller', 'debate-renderer', 'debate-sessions-store', 'debate-export', 'debate-telemetry-view'].forEach((mod) => { window.eval(fs.readFileSync(path.join(__dirname, '..', 'results', `${mod}.js`), 'utf8')); });
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'utils', 'selection-block-format.js'), 'utf8'));
   const script = fs.readFileSync(path.join(__dirname, '..', 'results.js'), 'utf8');
   window.eval(script);

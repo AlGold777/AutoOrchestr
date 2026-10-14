@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-14 — Удалены 17 файлов Debate, на которые никто не ссылается, версия 2.81.773
+
+- Шаг 2 удаления Debate по реестру `docs/Architecture/debate-removal-registry.md`. Удалены `disput/debate-artifact-definitions`, `-convergence`, `-correlation-guard`, `-decision-request`, `-epistemic-outcome`, `-model-signal`, `-process-audit`, `-protocol-transition-service`, `-protocols`, `-rule-engine`, `-service-roles`, `-stage-types`, `-stagnation-warning`, `-state-delta`, `-storage-migrations`, `shared/debate-schema.js`, `results/debate-plan-view-model.js`; их теги `<script>` в `pipeline_panel.html` и `result_new.html` и записи в `manifest.json`.
+- Тесты: удалены тесты модулей `debate-plan-view-model`, `debate-process-audit`, `debate-protocol-transition-service`, `debate-protocols`, `debate-schema`, `debate-storage-migrations`; из `debate-decision-rules`, `debate-prompt-runtime-v3`, `dispatch-correlation-contract`, `sections-two-three-contracts` убраны проверки удалённых модулей, остальное сохранено; из загрузчика `results-debate-favorites` убраны удалённые файлы. Число падающих тестов прежнее (38, старые).
+- `results/debate-ui.js` оставлен: его глобал `ResultsDebateUi` вызывается из `results.js`; реестр исправлен.
+
 ### 2026-10-14 — Запуск pipeline идёт только на движке Basic; Debate больше не достижим из интерфейса, версия 2.81.772
 
 - Первый шаг удаления Debate по реестру `docs/Architecture/debate-removal-registry.md`. `window.runPipeline` вызывает запуск напрямую, без `debateApplication.startFromPage`.

@@ -66,7 +66,7 @@
 
 ## 5. Не нужно никому (удаляется сразу)
 
-`disput/debate-artifact-definitions.js`, `debate-convergence.js`, `debate-correlation-guard.js`, `debate-decision-request.js`, `debate-epistemic-outcome.js`, `debate-model-signal.js`, `debate-process-audit.js`, `debate-protocol-transition-service.js`, `debate-protocols.js`, `debate-rule-engine.js`, `debate-service-roles.js`, `debate-stage-types.js`, `debate-stagnation-warning.js`, `debate-state-delta.js`, `debate-storage-migrations.js`; `shared/debate-schema.js`; `results/debate-plan-view-model.js` и `results/debate-ui.js` (ссылок на них не найдено); обработчик `COLLECT_RESPONSES`; ключ `llmCortexDebateBackgroundExecutor.v1` (только удаляется); ключ `llmCodexDebateScheme.v1` (только читается); функции без вызовов в `results.js`: `getDebateParticipantRoleText`, `getActiveProtocolMission`, `pushSerialDebateTimeline`, `syncAggregateProtocolState`. Вне Debate: `shared/log-replay-harness.js` (только тесты), `shared/proof-telemetry-semantic-comparator.js` (только `package.json`).
+`disput/debate-artifact-definitions.js`, `debate-convergence.js`, `debate-correlation-guard.js`, `debate-decision-request.js`, `debate-epistemic-outcome.js`, `debate-model-signal.js`, `debate-process-audit.js`, `debate-protocol-transition-service.js`, `debate-protocols.js`, `debate-rule-engine.js`, `debate-service-roles.js`, `debate-stage-types.js`, `debate-stagnation-warning.js`, `debate-state-delta.js`, `debate-storage-migrations.js`; `shared/debate-schema.js`; `results/debate-plan-view-model.js` (ссылок не найдено; `results/debate-ui.js` сюда НЕ входит: его глобал `ResultsDebateUi` вызывается из `results.js:3978, 22414`); обработчик `COLLECT_RESPONSES`; ключ `llmCortexDebateBackgroundExecutor.v1` (только удаляется); ключ `llmCodexDebateScheme.v1` (только читается); функции без вызовов в `results.js`: `getDebateParticipantRoleText`, `getActiveProtocolMission`, `pushSerialDebateTimeline`, `syncAggregateProtocolState`. Вне Debate: `shared/log-replay-harness.js` (только тесты), `shared/proof-telemetry-semantic-comparator.js` (только `package.json`).
 Все 15 файлов `disput/` из этого раздела подключены тегами `<script>` в `pipeline_panel.html` и `result_new.html`; в `manifest.json` (`web_accessible_resources`) перечислены 13 из 15 (нет `debate-state-delta.js` и `debate-storage-migrations.js`); `shared/debate-schema.js` подключён только в страницах. Эти подключения удаляются вместе с файлами. Модули, читаемые `debate-version-manifest.js` (только `VERSION`), после удаления дают в записях версию по умолчанию.
 
 ## 6. Связность, мешающая удалению, и порядок
@@ -92,6 +92,13 @@
 Первая версия реестра ошибочно относила к «только Debate» части, на которых держится Basic. Исправлено после независимой проверки (отчёт Disput Flow, ссылки на `window.Debate*` по результатам повторного поиска):
 1. Модули трассы и отчёта (`debate-trace-*`, `debate-telemetry-view`, обработчики экспорта) — общие, не Debate: отчёт Basic строится из них.
 2. Сессии и состояние ленты, управление запуском и экспорт ленты — общие.
-3. Добавлены два файла без ссылок: `results/debate-plan-view-model.js`, `results/debate-ui.js`.
+3. Добавлен файл без ссылок `results/debate-plan-view-model.js`. Файл `results/debate-ui.js` сначала тоже попал в этот список, но при удалении выяснилось, что его глобал называется `ResultsDebateUi` и вызывается из `results.js:3978, 22414` (мой поиск искал имя `DebateUI`): он остаётся до разбора этих мест.
 4. Блок `results.js` 22171–22934 раньше был целиком «Debate»; теперь смешанный.
 Урок для плана удаления: классификацию по файлам и по названию проверять поиском вызовов функций и сверкой с реальным отчётом диагностики Basic, а не только по именам.
+
+## 9. Выполнение
+
+| Шаг | Что | Версия |
+| --- | --- | --- |
+| 1 | `window.runPipeline` запускает pipeline напрямую; пресет по умолчанию и запасной вариант — `CUSTOM`; пресеты «Universal» и «Red Team» удалены; Debate недостижим из интерфейса | 2.81.772 |
+| 2 | Удалены 17 файлов раздела 5 (15 в `disput/`, `shared/debate-schema.js`, `results/debate-plan-view-model.js`) вместе с тегами `<script>`, записями манифеста и шестью тестами их модулей; в четырёх тестах, где они были частью, убраны только их проверки | 2.81.773 |

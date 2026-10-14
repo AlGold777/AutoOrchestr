@@ -2,7 +2,6 @@ const fs = require('fs');
 const path = require('path');
 
 const read = (...parts) => fs.readFileSync(path.join(__dirname, '..', ...parts), 'utf8');
-const Correlation = require('../disput/debate-correlation-guard');
 
 describe('dispatch correlation contract', () => {
   test('submit waiters are keyed by model and exact dispatch id', () => {
@@ -34,12 +33,5 @@ describe('dispatch correlation contract', () => {
     const src = read('background', 'dispatch-coordinator.js');
     expect(src).toContain("'STALE_TAB_COMMAND_QUARANTINED'");
     expect(src).not.toContain('sendMessageSafely(mappedTabId, llmName, message, attempt)');
-  });
-
-  test('rejects missing and mismatched stage attempt identity', () => {
-    const expected = { pipelineRunId: 'r', pipelineStageId: 'r2:wave', stageAttemptId: 'r2:wave:a2' };
-    expect(Correlation.validate(expected, { pipelineRunId: 'r', pipelineStageId: 'r2:wave' })).toMatchObject({ ok: false, field: 'stageAttemptId', missing: true });
-    expect(Correlation.validate(expected, { ...expected, stageAttemptId: 'r2:wave:a1' })).toMatchObject({ ok: false, field: 'stageAttemptId' });
-    expect(Correlation.validate(expected, expected)).toEqual({ ok: true, reason: '' });
   });
 });
