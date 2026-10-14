@@ -138,7 +138,7 @@
 
   // A snapshot of the state of the run (8.2) as plain data: the schema as the run was started with, the pointer, the visits,
   // the position of the current step, the finished results (their accepted answers by text reference), the decisions taken,
-  // the routes, the counters, the stack, the feedback (text references), the dependencies and the owner's answers. The registry is record.artifacts (5.3), not a second copy here. chatBindings stays empty until chats are supported.
+  // the routes, the counters, the stack, the feedback (text references), the dependencies and the owner's answers. The registry is record.artifacts (5.3), not a second copy here. chatBindings holds the chats of the participants (participantId → tab and request), written while a request is in flight (V01).
   const copyOf = (value) => (value === undefined ? null : JSON.parse(JSON.stringify(value)));
   // The chats of the participants are an object by participantId; a list (an old snapshot) and no value are an empty object.
   const plainOf = (value) => (value && typeof value === 'object' && !Array.isArray(value) ? copyOf(value) : {});
