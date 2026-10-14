@@ -53,3 +53,27 @@ test('ten-model restart preserves the entire dispatch plan, prompt, answer and s
   expect(restored.prompt).toBe(prompt);
   for (const key of Object.keys(state.llms.Gemini)) expect(restored.llms.Gemini[key]).toEqual(state.llms.Gemini[key]);
 });
+
+test.each(['GPT', 'Z.ai'])('%s repair registers fresh authority before page preflight and rejects late old attempts', model => {
+  const old = { runSessionId: 1, dispatchId: `${model}:1:1`, generationEpoch: 1 };
+  const entry = { generationEpoch: 1, lastDispatchMeta: old };
+  const state = { session: { startTime: 1 }, llms: { [model]: entry } };
+  const registry = worker(state);
+  registry.recordAttempt(model, { ...old, terminalResult: { status: 'FAILED_TERMINAL' } });
+  const coordinator = fs.readFileSync(require.resolve('../background/dispatch-coordinator'), 'utf8');
+  const begin = coordinator.indexOf('  entry.generationEpoch = Number(entry.generationEpoch || 0) + 1;');
+  const end = coordinator.indexOf('  entry.dispatchCheckpoint =', begin);
+  const context = { entry, dispatchId: `${model}:1:2`, sessionId: 1, reason: 'round2_repair',
+    llmName: model, self: { CompletionAuthorityRegistry: registry }, Date };
+  vm.runInNewContext(coordinator.slice(begin, end), context);
+  const current = entry.lastDispatchMeta;
+  expect(registry.get(model)).toMatchObject({ dispatchId: current.dispatchId, generationEpoch: 2, terminalResult: null });
+  expect(registry.validateDelivery(model, { answer: 'new answer', meta: current }).ok).toBe(true);
+  registry.recordAttempt(model, { ...old, terminalResult: { status: 'FAILED_TERMINAL' } });
+  expect(registry.get(model).dispatchId).toBe(current.dispatchId);
+  expect(registry.validateDelivery(model, { answer: 'old answer', meta: old }).ok).toBe(false);
+  expect(registry.validateDelivery(model, { answer: 'mixed generation', meta: { ...current, generationEpoch: 1 } }))
+    .toMatchObject({ ok: false, reason: 'completion_authority_generation_mismatch' });
+  const restarted = worker(JSON.parse(JSON.stringify(PipelineFSM.compactJobStateForStorage(state))));
+  expect(restarted.validateDelivery(model, { answer: 'new answer', meta: current }).ok).toBe(true);
+});

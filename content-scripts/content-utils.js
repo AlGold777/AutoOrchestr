@@ -662,6 +662,7 @@
         modelName: llmName,
         dispatchId: meta?.dispatchId || null,
         runSessionId: meta?.runSessionId || meta?.sessionId || null,
+        generationEpoch: meta?.generationEpoch ?? null,
         promptSubmittedAt: Date.now(),
         traceId: meta?.traceId || meta?.dispatchId || null,
         baselineText: String(baselineText || ''),

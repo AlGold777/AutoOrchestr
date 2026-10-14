@@ -1011,9 +1011,6 @@ const chatgptScrollCoordinator = window.ScrollCoordinator
   // ОРИГИНАЛЬНАЯ ФУНКЦИЯ ОБРАБОТКИ (с улучшенной очисткой)
   let gptSharedInjection = null;
   let gptSharedFingerprint = null;
-  let gptLastPreparedFingerprint = null;
-  let gptLastPreparedAt = 0;
-  const GPT_PREPARED_DEDUPE_WINDOW_MS = 30000;
   const fingerprintPrompt = (prompt = '') => {
     const s = String(prompt || '');
     return `${s.length}:${quickHash(s.slice(0, 600))}`;
@@ -1042,7 +1039,7 @@ const chatgptScrollCoordinator = window.ScrollCoordinator
     try {
       if (!el) return '';
       if ('value' in el) return String(el.value || '');
-      return String(el.textContent || '');
+      return String(el.innerText || el.textContent || '');
     } catch (_) {
       return '';
     }
@@ -1219,31 +1216,22 @@ const chatgptScrollCoordinator = window.ScrollCoordinator
             throw { type: 'attachment_failed', message: 'ChatGPT attachment upload was not confirmed. Paste the file manually with Ctrl/Cmd+V.' };
           }
         }
-        const composerNow = normalizeForComparison(readComposerValue(inputField));
+        const resolveLiveComposer = () => {
+          const candidates = inputSelectors.flatMap(selector => Array.from(document.querySelectorAll(selector)));
+          return candidates.find(el => el.isConnected && isElementInteractable(el)) || null;
+        };
         const expectedComposerText = normalizeForComparison(prompt);
-        const hasPreparedPrompt = Boolean(expectedComposerText && composerNow === expectedComposerText);
-        const preparedRecently = gptLastPreparedFingerprint === fp && (Date.now() - gptLastPreparedAt) < GPT_PREPARED_DEDUPE_WINDOW_MS;
-        if (!(preparedRecently && hasPreparedPrompt)) {
-          const forced = await fastSetPrompt(inputField, prompt);
-          const forcedOk = expectedComposerText && normalizeForComparison(forced) === expectedComposerText;
-          if (!forcedOk) {
-            await humanTypeInput(inputField, prompt, { wpm: 125 });
-          }
-          gptLastPreparedFingerprint = fp;
-          gptLastPreparedAt = Date.now();
-          console.log('[CONTENT-GPT] Prompt prepared in composer');
-        } else {
-          console.warn('[CONTENT-GPT] Duplicate dispatch detected, reusing existing composer text');
-        }
-        // The composer was never checked after typing here, so a silently empty
-        // ChatGPT composer produced no evidence at all — neither a failure nor a
-        // confirmation. State the observed outcome before Send is attempted.
+        const prepared = await window.ContentUtils.ensurePromptPrepared(inputField, prompt, {
+          resolveComposer: resolveLiveComposer,
+          fallback: fastSetPrompt
+        });
+        inputField = prepared.composer || resolveLiveComposer() || inputField;
         const composerAfterPrepare = readComposerValue(inputField);
-        const composerHoldsPrompt = Boolean(inputField.isConnected && expectedComposerText
+        const composerHoldsPrompt = Boolean(prepared.ok && inputField.isConnected && expectedComposerText
           && normalizeForComparison(composerAfterPrepare) === expectedComposerText);
         window.ContentUtils?.reportPromptInsertion?.(MODEL, dispatchMeta, {
           state: composerHoldsPrompt ? 'inserted' : 'failed',
-          method: preparedRecently && hasPreparedPrompt ? 'reused_prepared_composer' : 'composer_prepared',
+          method: prepared.method || 'composer_prepared',
           reason: composerHoldsPrompt ? null : 'composer_prompt_mismatch',
           promptLength: String(prompt || '').length,
           composerLength: String(composerAfterPrepare || '').length

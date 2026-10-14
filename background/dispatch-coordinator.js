@@ -1620,6 +1620,9 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
   };
   entry.lastDispatchAt = Date.now();
   entry.lastDispatchMeta = { dispatchReason: reason, sessionId, ...dispatchIdentityMeta };
+  // The dispatch owns delivery correlation before the page starts its observer.
+  // A failed preflight must not leave authority pointing at the previous attempt.
+  self.CompletionAuthorityRegistry?.recordAttempt?.(llmName, dispatchIdentityMeta);
   entry.dispatchCheckpoint = { dispatchId, phase: 'preparing' };
   entry.answerVerification = null;
   if (self.AnswerVerification?.appendTimeline) {

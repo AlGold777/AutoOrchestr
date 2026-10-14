@@ -1216,6 +1216,11 @@ const recordCompletionAuthorityAttempt = (llmName, meta = {}) => {
     const key = completionAuthorityKey(llmName);
     if (!key) return null;
     const previous = getCompletionAuthorityAttempt(key) || {};
+    const liveIdentity = jobState?.llms?.[key]?.lastDispatchMeta;
+    if (meta.dispatchId && liveIdentity?.dispatchId
+        && String(meta.dispatchId) !== String(liveIdentity.dispatchId)) return getCompletionAuthorityAttempt(key);
+    if (meta.generationEpoch != null && liveIdentity?.generationEpoch != null
+        && Number(meta.generationEpoch) !== Number(liveIdentity.generationEpoch)) return getCompletionAuthorityAttempt(key);
     const nextDispatchId = meta.dispatchId || previous.dispatchId || null;
     const sameAttempt = Boolean(previous.dispatchId && nextDispatchId
         && String(previous.dispatchId) === String(nextDispatchId));
@@ -1223,7 +1228,7 @@ const recordCompletionAuthorityAttempt = (llmName, meta = {}) => {
         ...(sameAttempt ? previous : {}),
         runSessionId: meta.runSessionId || meta.sessionId || previous.runSessionId || null,
         dispatchId: nextDispatchId,
-        generationEpoch: meta.generationEpoch ?? previous.generationEpoch ?? null,
+        generationEpoch: meta.generationEpoch ?? (sameAttempt ? previous.generationEpoch : null) ?? null,
         rolloutMode: ['legacy', 'shadow', 'enforced'].includes(meta.rolloutMode) ? meta.rolloutMode : (previous.rolloutMode || 'enforced'),
         legacyDeliveryAuthorized: meta.legacyDeliveryAuthorized === true,
         protocolVersion: meta.protocolVersion || previous.protocolVersion || null,
@@ -1378,6 +1383,10 @@ const validateCompletionAuthorityDelivery = (llmName, message = {}) => {
     }
     if (authority.dispatchId && String(authority.dispatchId) !== String(incomingDispatchId)) {
         return { ok: false, reason: 'completion_authority_dispatch_mismatch' };
+    }
+    if (meta.generationEpoch != null && authority.generationEpoch != null
+        && Number(meta.generationEpoch) !== Number(authority.generationEpoch)) {
+        return { ok: false, reason: 'completion_authority_generation_mismatch' };
     }
     const rolloutMode = meta.completionRolloutMode || authority.rolloutMode || 'enforced';
     if ((rolloutMode === 'legacy' || rolloutMode === 'shadow') && authority.legacyDeliveryAuthorized === true) {
