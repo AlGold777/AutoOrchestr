@@ -419,13 +419,13 @@
 
 ### 2026-10-10 — Remove Gemini's service response label from collected answers, version 2.81.695
 
-- At the user's request, complete Gemini answers no longer include the page's hidden «Ответ Gemini» label in text or HTML. This supersedes the label-retention preference for 2.81.694.
+- At the user's request, complete Gemini answers no longer include the page's hidden «Ответ Gemini» label in text or HTML.
 - Keep the raw-turn body check before removing the label, so the thinking/label-only gap is still rejected. Clean structured, legacy, SelectorFinder, snapshot and inline recovery paths; strip the service element when rendering lifecycle HTML as well. The actual provider page and quoted occurrences inside answer content remain unchanged.
 - Updated `tests/gemini-answer-gap.test.js`: the 13.5-second gap remains covered, with additional checks for label removal, quote preservation and helper-unavailable recovery.
 
 ### 2026-10-10 — Gemini: wait for the answer body and fill the primary card, version 2.81.694
 
-- Check Gemini's raw turn before accessibility filtering: a thinking heading plus the screen-reader label cannot become answer text after the label is discarded. Keep «Ответ Gemini» in complete answers.
+- Check Gemini's raw turn before accessibility filtering: a thinking heading plus the screen-reader label cannot become answer text after the label is discarded.
 - Resolve one whole Gemini turn instead of nested fragments. Legacy and snapshot recovery read the latest `model-response`, wait through the label-only gap, and cannot substitute an older turn. Background recovery/delivery also reject thinking-only candidates before publishing them.
 - A real answer replaces a closed Gemini label/thinking placeholder in the primary card. Stale label-only HTML cannot conceal committed text, including short answers. Feed layout and moderator input width are unchanged.
 - Regression: `tests/gemini-answer-gap.test.js` (13.5 s gap, eventual delivery token, legacy/snapshot paths, primary card and stale HTML). Investigation and validation: `docs/gemini-answer-gap-2.81.694.md`.
@@ -443,7 +443,6 @@
 ### 2026-10-10 — A quiet text that holds only Gemini's thinking is not committed as the answer, version 2.81.691
 
 - The static answer watchdog (added after 2.81.604) committed a text that did not change for 30 s as an incomplete answer. While Gemini was still thinking, the page showed only the heading of the thinking and the hidden label "Ответ Gemini" — that became the card (R1/R2 without an answer). A text that ends with the label is now never committed (`answerHasNoBodyYet`, in the watchdog and in `commitIncompleteAnswer`, which also covers the commit after visits); the watchdog waits for the body of the answer.
-- The removal of the page label from cards and from the collected html (2.81.687–689) is reverted: the label stays as in 2.81.604.
 
 ### 2026-10-10 — Basic documentation for a model that knows nothing about the project (documents and a test only, no version change)
 
@@ -455,18 +454,9 @@
 
 - A card whose captured html is a short projection (the heading of Gemini's thinking and the page label, under 120 characters) with nothing of the beginning of a text of 200+ characters shows the text, not the html. Before, such html was shown as the answer and the card looked cut.
 
-### 2026-10-10 — The Gemini screen-reader label is dropped when the answer is collected, version 2.81.689
-
-- Gemini puts a hidden label ("Ответ Gemini" / "Gemini said", `<h6 class="cdk-visually-hidden screen-reader-model-response-label">` in `model-response-label-announcer`) before each answer. `buildInlineHtml` now removes it, so it no longer reaches the card, the stored answer or the prompts of other models. The cut at display time (2.81.688) stays as the fallback.
-
-### 2026-10-10 — The Gemini page label is cut at any depth, version 2.81.688
-
-- The label "Ответ Gemini" / "Gemini said" is removed when it is the very first text of the answer, also inside wrapper elements (2.81.687 looked only at the first child element). The answer text is not touched; a card whose whole text is the label keeps it.
-
-### 2026-10-10 — Round badge on Custom/Basic steps; no repeated page label in the answer, version 2.81.687
+### 2026-10-10 — Round badge on Custom/Basic steps, version 2.81.687
 
 - Cards of a Custom/Basic run (round ids `s1`, `s2`…, a step is a round) show the round badge R1, R2… like Debate rounds.
-- The hidden label of the Gemini page ("Ответ Gemini" / "Gemini said") that came into the answer text as a first heading is removed from the card; the name is already in the card header.
 
 ### 2026-10-10 — The Pipeline composer keeps one width with the feed open, version 2.81.686
 
