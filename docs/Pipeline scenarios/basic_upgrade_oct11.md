@@ -1,5 +1,7 @@
 # Доработка Basic · 11 октября 2026
 
+Статус (14.10.2026, версия 2.81.755): план исполнен (волны 0–4 реализованы 11–12.10). Дефекты волны 0 закрыты: Д1 — `assemble` отправляет явное задание при `input: none`, Д2 — порядок участников сохраняется на холсте (`tests/basic-p00-acceptance.test.js`). Что осталось после независимой проверки — в [basic_fixes_review_oct12.md](basic_fixes_review_oct12.md). Текст ниже — исходный план и история.
+
 План развития движка Basic, составленный по практическому прогону: архитектура из 30 этапов переписана в формат Design System создания pipeline ([design-system-architecture.md](design-system-architecture.md), раздел 5.2 «Несоответствия с Basic»). Документ самодостаточен: по нему можно ставить задания исполнителям без чтения переписки. Устройство Basic — в [basic-start-here.md](basic-start-here.md), формат схемы — в [basic-schema-guide.md](basic-schema-guide.md), код и правила — в [basic-developer.md](basic-developer.md).
 
 ## 1. Принципы доработки
