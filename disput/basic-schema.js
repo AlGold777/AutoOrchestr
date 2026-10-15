@@ -9,8 +9,9 @@
 //   run: { policy?: 'auto' | 'manual', maxWords? } — the run policy and the shared answer limit
 //   defaults (the ▶ card): { roundTask?, synthesisTask?, discipline?, modelNotes?, roundPrompts? }
 //   step: { ref, kind: 'round' | 'synthesis', order?, input?, task?, models }
-//   model: { name, enabled?, role?, request?, maxWords?, task?, discipline? }   (request: '' = no own request)
+//   model: { name, enabled?, onCanvas?, role?, request?, maxWords?, task?, discipline? }   (request: '' = no own request)
 //   enabled: false keeps a switched-off model with its settings; assemble() gives the engine no call for it.
+//   onCanvas: true keeps a model on the canvas although its Send is off in every round (toCanvas); assemble() ignores it.
 //   discipline: { limit?, content?, delivery?, correction?, lines? }
 // A missing field is inherited; a given value applies, an empty string included (an empty text is
 // a value, not inheritance). Lists are replaced as a whole. A step with no models is switched off:
@@ -604,11 +605,12 @@
       step.models.forEach((model, at) => {
         const modelPath = `${path}.models[${at}]`;
         if (!isObject(model)) { fail(modelPath, 'ожидается объект'); return; }
-        unknownKeys(model, ['name', 'id', 'enabled', 'role', 'request', 'maxWords', 'task', 'discipline', 'input', 'output'], modelPath);
+        unknownKeys(model, ['name', 'id', 'enabled', 'onCanvas', 'role', 'request', 'maxWords', 'task', 'discipline', 'input', 'output'], modelPath);
         // A participant of a route chooses; it has no answer of its own (its route output has its own contract).
         if (step.kind === 'route' && 'output' in model) fail(`${modelPath}.output`, 'у участника маршрута выход не задаётся');
         else if ('output' in model) checkOutput(model.output, `${modelPath}.output`, step, index, [model]);
         if ('enabled' in model && typeof model.enabled !== 'boolean') fail(`${modelPath}.enabled`, 'ожидается true или false');
+        if ('onCanvas' in model && typeof model.onCanvas !== 'boolean') fail(`${modelPath}.onCanvas`, 'ожидается true или false');
         if (typeof model.name !== 'string' || !model.name.trim()) fail(`${modelPath}.name`, 'имя модели не указано');
         // One participant is one id in a step; a repeated name is fine when the ids differ. One id keeps one name in all steps.
         const id = idOf(model);
@@ -675,7 +677,7 @@
   // the canvas knows, in its order; `isRole(id)` tells a known role. A schema the canvas cannot show gives errors (with the
   // place), never a changed schema. A round is one block per participant (two participants of one model are two blocks,
   // told apart by id); the rounds limit counts rounds only. An intermediate synthesis is right after a round and before
-  // the next one; a control step may stand anywhere; a switched-off model or synthesis is not on the canvas.
+  // the next one; a control step may stand anywhere; a switched-off model is on the canvas only with onCanvas, a switched-off synthesis is not.
   function toCanvas(schema, { models = [], isRole = () => true, runWords = null } = {}) {
     const errors = [];
     const fail = (path, message) => errors.push({ path, message });
@@ -714,7 +716,9 @@
     executabilityErrors(steps).forEach((error) => fail(error.path, error.message));
     if (rounds.length > 50) fail('steps', 'раундов не больше 50');
     if (errors.length) return { errors };
-    const selectedModels = models.filter((name) => rounds.some((step) => enabledOf(step).some((model) => model.name === name)));
+    // A model is on the canvas when a round sends it or when its onCanvas mark stands (a switched-off model on the canvas).
+    const selectedModels = models.filter((name) => rounds.some((step) => enabledOf(step).some((model) => model.name === name)
+      || (step.models || []).some((model) => model.name === name && model.onCanvas === true)));
     // Each round's stack: its enabled participants in the order of the schema, then the other selected models of the canvas.
     const stacks = Object.fromEntries(rounds.map((step, index) => {
       const own = enabledOf(step);

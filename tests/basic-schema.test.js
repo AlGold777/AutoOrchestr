@@ -151,6 +151,36 @@ describe('Basic schema: the canvas a schema stands for', () => {
     expect(canvas.stacks['r2-models'].items.every((item) => item.send === false)).toBe(true);
   });
 
+  test('onCanvas keeps a model on the canvas with Send off in every round; without it the model is not on the canvas', () => {
+    const schema = base([
+      round('r1', ['GPT', { name: 'Grok', enabled: false, onCanvas: true, request: 'KEPT' }]),
+      round('r2', ['GPT', { name: 'Grok', enabled: false, onCanvas: true }]),
+      synthesis('final', ['Claude'])
+    ]);
+    expect(Schema.validate(schema)).toEqual([]);
+    const canvas = toCanvas(schema);
+    expect(canvas.errors).toEqual([]);
+    expect(canvas.selectedModels).toEqual(['GPT', 'Grok']);
+    // The switched-off model stands in the stack of every round with Send off, and keeps its settings.
+    ['r1-models', 'r2-models'].forEach((id) => {
+      expect(canvas.stacks[id].items.find((item) => item.name === 'Grok')).toEqual({ name: 'Grok', id: 'Grok', input: false, send: false, role: null });
+    });
+    expect(canvas.rounds.map((item) => item.participantIds)).toEqual([['GPT'], ['GPT']]);
+    expect(Schema.toSettings(schema).customModelSettings.r1.Grok).toEqual({ promptTemplate: 'KEPT', name: 'Grok', enabled: false });
+    // A switched-off model with onCanvas is not called, and the schema without the mark gives the same engine steps.
+    expect(Schema.assemble(schema).flatMap((step) => step.models.map((model) => model.name))).not.toContain('Grok');
+    const unmarked = base([round('r1', ['GPT', { name: 'Grok', enabled: false, request: 'KEPT' }]), round('r2', ['GPT', { name: 'Grok', enabled: false }]), synthesis('final', ['Claude'])]);
+    expect(toCanvas(unmarked).selectedModels).toEqual(['GPT']);
+    expect(Schema.assemble(unmarked)).toEqual(Schema.assemble(schema));
+  });
+
+  test('onCanvas is a boolean and a known field; a schema without it is valid as before', () => {
+    expect(errorPaths(base([round('r1', ['GPT', { name: 'Grok', enabled: false, onCanvas: 'yes' }])]))).toEqual(['steps[0].models[1].onCanvas']);
+    expect(errorPaths(base([round('r1', ['GPT', { name: 'Grok', enabled: false, onCanvas: true, extra: 1 }])]))).toEqual(['steps[0].models[1].extra']);
+    expect(errorPaths(base([round('r1', [{ name: 'GPT', onCanvas: false }])]))).toEqual([]);
+    expect(errorPaths(base([round('r1', [{ name: 'GPT' }, { name: 'Grok', enabled: false }]), synthesis('final', ['GPT'])]))).toEqual([]);
+  });
+
   test('a schema the canvas cannot show is named, not changed', () => {
     const places = (schema, extra) => toCanvas(schema, extra).errors.map((error) => error.path);
     expect(places(base([round('r1', ['Nobody'])]))).toEqual(['steps[0].models[0].name']);

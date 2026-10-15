@@ -6622,6 +6622,20 @@ document.addEventListener('click', (event) => {
                 steps.splice(0, steps.length, ...complete);
             }
             if (forSave) {
+                // A model on the canvas whose Send is off in every round is marked onCanvas in each round: the canvas takes it
+                // from the schema alone (BasicSchema.toCanvas). A model sent in some round needs no mark: it stays on the canvas.
+                const headerNames = getSelectedLLMs();
+                const roundsOf = steps.filter((step) => step.kind === 'round');
+                const sentSomewhere = new Set(roundsOf.flatMap((step) => step.models.filter((model) => model.enabled !== false).map((model) => model.name)));
+                roundsOf.forEach((step) => {
+                    headerNames.filter((name) => !sentSomewhere.has(name)).forEach((name) => {
+                        const at = step.models.findIndex((model) => model.name === name);
+                        if (at >= 0) step.models[at] = { ...step.models[at], onCanvas: true };
+                        else step.models.push(modelEntry(step.ref, name, { enabled: false, onCanvas: true }));
+                    });
+                });
+            }
+            if (forSave) {
                 // The card of an intermediate synthesis can be set before the synthesis is on the canvas; the id of such a
                 // synthesis says the round it stands after, so its settings are kept there as a step without active models.
                 const present = new Set(steps.map((step) => step.ref));

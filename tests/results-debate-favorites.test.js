@@ -3283,6 +3283,47 @@ describe('Pipeline debate favorites view', () => {
         }
       });
 
+      test('a model on the canvas with Send off in every round stays on the canvas: install, save, load again, save (onCanvas)', async () => {
+        const h = setupCustomInheritance('Canvas off host', { synthesis: '' });
+        try {
+          const planOf = () => window.__pipelineDraftPlanForCanvas(window.__getActivePipelineDraftPlan());
+          const schema = {
+            schemaVersion: 1, origin: 'user', run: { policy: 'auto' },
+            steps: [
+              { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }, { name: 'Claude' }, { name: 'Grok', enabled: false, onCanvas: true, request: 'OFF REQUEST' }] },
+              { ref: 'r2', kind: 'round', models: [{ name: 'GPT' }, { name: 'Claude' }, { name: 'Grok', enabled: false, onCanvas: true }] },
+              { ref: 'final', kind: 'synthesis', models: [{ name: 'Claude' }] }
+            ]
+          };
+          expect(await h.debug.installBasicSchema('Off on canvas', schema)).toEqual({ ok: true, errors: [] });
+          select('Off on canvas');
+          await settleCustomCard();
+          // Grok is on the canvas (in the header and in every round) with Send off, and its settings came along.
+          expect(h.debug.getPipelineStoreSnapshot().pipelines['Off on canvas'].protocol.selectedModels.slice().sort()).toEqual(['Claude', 'GPT', 'Grok']);
+          expect(stackFlags('r1-models')).toEqual([['GPT', true, ''], ['Claude', true, ''], ['Grok', false, '']]);
+          expect(stackFlags('r2-models')).toEqual([['GPT', true, ''], ['Claude', true, ''], ['Grok', false, '']]);
+          const saved = h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' });
+          expect(saved.steps.slice(0, 2).map((step) => step.models.find((model) => model.name === 'Grok'))).toEqual([
+            { name: 'Grok', enabled: false, onCanvas: true, request: 'OFF REQUEST' }, { name: 'Grok', enabled: false, onCanvas: true }
+          ]);
+          // A model sent in some round needs no mark.
+          expect(saved.steps.slice(0, 2).flatMap((step) => step.models.filter((model) => model.name !== 'Grok')).some((model) => 'onCanvas' in model)).toBe(false);
+          // Load the saved schema again: the canvas is the same, and saving once more gives the same schema.
+          expect(await h.debug.installBasicSchema('Off on canvas again', JSON.parse(JSON.stringify(saved)))).toEqual({ ok: true, errors: [] });
+          select('Off on canvas again');
+          await settleCustomCard();
+          expect(stackFlags('r1-models')).toEqual([['GPT', true, ''], ['Claude', true, ''], ['Grok', false, '']]);
+          expect(stackFlags('r2-models')).toEqual([['GPT', true, ''], ['Claude', true, ''], ['Grok', false, '']]);
+          expect(h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' }).steps).toEqual(saved.steps);
+          // The switched-off model is not called.
+          await h.run();
+          expect(h.starts.length).toBeGreaterThan(0);
+          expect(h.starts.every((start) => !start.selectedLLMs.includes('Grok'))).toBe(true);
+        } finally {
+          h.cleanup();
+        }
+      });
+
       test('the canvas shows the rounds, the models, the roles and the syntheses of the schema, and the run takes the schema\'s steps', async () => {
         const h = setupCustomInheritance('Install host', { synthesis: '' });
         try {
