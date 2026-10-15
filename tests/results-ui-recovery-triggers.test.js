@@ -21,16 +21,11 @@ describe('main-page UI recovery triggers', () => {
     expect(block).toContain("recoverUiIfHidden('visibilitychange')");
   });
 
-  test('run completion triggers recovery', () => {
-    expect(RESULTS_SRC).toContain("recoverUiIfHidden('run_complete')");
-  });
-
   test('recovery defers via requestAnimationFrame so layout reports real sizes', () => {
     // Both triggers should double-rAF before measuring (avoid false collapse trigger).
     const visibilityAt = RESULTS_SRC.indexOf("recoverUiIfHidden('visibilitychange')");
     const visibilityBlock = RESULTS_SRC.slice(Math.max(0, visibilityAt - 180), visibilityAt + 220);
     expect(visibilityBlock).toContain('requestAnimationFrame(() => requestAnimationFrame(() => {');
-    expect(RESULTS_SRC).toMatch(/requestAnimationFrame\(\(\) => requestAnimationFrame\(\(\) => recoverUiIfHidden\('run_complete'\)\)\)/);
   });
 
   test('background telemetry is cached without rebuilding hidden results DOM', () => {

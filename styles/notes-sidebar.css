@@ -193,27 +193,6 @@ body.right-sidebar-reset .app-sidebar-right {
     background: rgba(255, 255, 255, 0.98);
 }
 
-.notes-search-wrap {
-    display: flex;
-    justify-content: flex-end;
-    justify-self: end;
-    width: min(240px, 100%);
-    flex: 0 1 auto;
-    min-width: 0;
-    position: relative;
-    align-items: center;
-}
-
-.sidebar-close-btn {
-    border: none;
-    background: transparent;
-    color: #9ca3af;
-    font-size: 18px;
-    line-height: 1;
-    cursor: pointer;
-    padding: 0;
-}
-
 .notes-tabs-bar {
     display: flex;
     align-items: flex-end;
@@ -385,10 +364,6 @@ body.right-sidebar-reset .app-sidebar-right {
     background: rgba(17, 24, 39, 0.03);
 }
 
-.notes-top-block .notes-tabs {
-    padding: 0;
-}
-
 .sessions-action-btn {
     border: none;
     background: none;
@@ -489,12 +464,6 @@ body.right-sidebar-reset .app-sidebar-right {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-}
-
-.sessions-item-meta {
-    font-size: 11px;
-    color: var(--notes-muted);
-    flex: 0 0 auto;
 }
 
  .sessions-item-run {
@@ -1004,16 +973,6 @@ body.right-sidebar-reset .app-sidebar-right {
     font-weight: 600;
     letter-spacing: 0.02em;
     text-transform: lowercase;
-}
-
-.sidebar-placeholder {
-    border: 1px dashed #e5e7eb;
-    border-radius: 12px;
-    padding: 16px;
-    font-size: 13px;
-    color: #9ca3af;
-    text-align: center;
-    background: #f8fafc;
 }
 
 .sidebar-resizer {

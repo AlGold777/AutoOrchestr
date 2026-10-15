@@ -1,10 +1,29 @@
 # CHANGELOG — Project
 
-### 2026-10-15 — Basic: следующий этап не ждёт «хвост» раундов, когда все модели уже ответили, версия 2.81.775
+### 2026-10-15 — Basic: следующий этап не ждёт «хвост» раундов, когда все модели уже ответили, версия 2.81.783 (слита с линией 2.81.775–2.81.782)
 
 - Находка из прогона 5 этапов: перед каждым этапом фон отказывал в старте с `RUN_ALREADY_ACTIVE`, пока старая многораундовая процедура (раунды 0–4: сбор, «Get it», ожидание ворот, фокус вкладки результатов) не снимала `session.roundsInProgress`. По меткам времени это 3–18 секунд на этап, около 41 секунды из 186 в прогоне. Страница к этому моменту уже получила все ответы.
 - `RunGuard.canStartNewRun` (`shared/run-guard.js`) пропускает старт пакета Basic (`pipelineContext.custom`), если у всех моделей предыдущего пакета есть финальный ответ (`cardAnswerComplete`, `finalStatusRecorded`) или они остановлены (`RunGuard.allModelsFinal`). Старые раунды при старте новой сессии сами выходят (`isSessionActive`). Охранник «модель ещё генерирует» не изменён. Пакет, не относящийся к Basic, и пакет с неотвеченной моделью по-прежнему получают отказ.
 - Тесты: `tests/run-ownership-guard.test.js`. Не проверено вживую: нужно сравнить паузы между этапами в новом отчёте (разделы 9 и 15 Extract).
+
+### 2026-10-15 — Basic: текст из поля возвращается, если прогон ничего не дал, версия 2.81.782
+
+- Сообщение владельца: при сбое запуска текст в поле ввода пропадал (Basic очищает поле при старте, а возврата не было; у убранной ветки Debate он был).
+- Теперь `runCustomFromPage` запоминает текст поля перед очисткой и возвращает его в пустое поле (`restoreModeratorComposer`, поверх нового текста не пишет), если прогон оборвался ошибкой (не отменой) или закончился без принятых ответов по причине, кроме остановки владельцем (`cancelled`, `stopped`) и успеха. Возобновление (`resumeRecord`) поле не трогает.
+- Тесты: `tests/pipeline-semi-auto.test.js`, `tests/pasted-text-dispatch.test.js` (две проверки восстановления возвращены).
+
+### 2026-10-15 — Debate: шаг 3, удалены оркестратор и всё, что от него зависело, версии 2.81.779–781
+
+- Продолжение `docs/Architecture/debate-removal-registry.md`. В `results.js` убрана ветка Debate из `startDebateFromPage` (остался запуск Basic через `runCustomFromPage`), создание `DebateApplication` и все обращения к `debateApplication`, панель state map, хранилища дел и истории правил (~−0,8 тыс. строк `results.js`).
+- Удалены 19 модулей `disput/` и `results/disput-state-map-view.js`, их `<script>` из `pipeline_panel.html` и `result_new.html`, записи манифеста, панель state map в `result_new.html`, ~140 мёртвых CSS-правил, 30 тестов и фикстур, проверявших удалённое. Ветки тестов, привязанные к тексту `results.js`, поправлены на `runCustomFromPage`.
+- Проверка: набор падающих тестов не вырос относительно базового (12 наборов, 37 тестов — не из-за этой правки). В браузере не запускалось.
+- Также: восстановлен заголовок правила `.selectors0-workbench .selectors-btn-record.is-active` (потерян в 2.81.777), убраны отладочные `window.__*` без потребителей и smoke-харнесс статуса.
+
+### 2026-10-15 — Чистка страницы pipeline panel: мёртвые функции, разметка и CSS, версии 2.81.775–778
+
+- Ревью страницы (8 проверок по зонам) и удаление того, у чего 0 ссылок: ~830 строк `results.js` (блок заметок merge/export/select-all, `appendVerdictFeedEntry`, serial-debate Markdown/timeline, `pruneEmptyTabs`, заглушки `storeNewPagesState`/`syncAggregateArtifactsToCase`, `window.PipelineNotes`, неиспользуемые обёртки над `PipelineRuntime` и др.), дубль `stripBackgroundColorStyles`; в `pipeline_panel.html` — пустой `#comparative-analysis`, скрытая `#prompt-export-html-btn`, `meta keywords`, `?v=` синхронизирован; ~800 строк CSS (122 мёртвых правила, 3 дубля, 6 неиспользуемых переменных `base.css`).
+- Тест: якорь в `tests/pipeline-semi-auto.test.js` перенесён на `applyDisputeTopicDisplay`. Набор падающих тестов совпадает с базовым (12 наборов, 38 тестов — не из-за этой правки).
+- Не тронуто осознанно: миграции хранилища (`migrateBasicTemplateName`, `buildSendOverridesFromLegacy`) — живые и защищают данные; общие с `result_new.html` CSS-классы; `--ca`/`--br`/`--bg2`/`--cm`/`--ct` (необъявленные переменные: удаление может изменить вид). План и причины: `docs/pipeline-panel-cleanup-plan.md`.
 
 ### 2026-10-15 — Basic: поле можно оставить пустым, а не только унаследовать, версия 2.81.774
 
