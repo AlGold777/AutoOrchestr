@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-15 — OI-3: `run.strictLength` включает строгую длину для всего pipeline, версия 2.81.792
+
+- Схема: необязательное поле `run.strictLength` (булево, по умолчанию `false`). `BasicSchema.validate` проверяет его (путь `run.strictLength`), `resolveRun` возвращает значение, `DEFAULTS.run.strictLength = false`.
+- Движок (`custom-engine.js`, `run({ runStrictLength })`): шаг, у которого нет своего `output.strictLength`, проверяется на длину, если флаг включён; явное `output.strictLength` шага или участника (в том числе `false`) сильнее флага. Ответ маршрута проверяется только на длину. Причина отказа и повтор прежние (`too_long`).
+- Страница: поле сохраняется из загруженной схемы при Save, Export, Import и идёт в прогон; отдельного флажка в окне ▶ нет, включается в схеме (`"run": { "strictLength": true }`).
+- Документы Basic: поле описано в `basic-schema-guide.md`, OI-3 убран из открытых вопросов `basic-developer.md`.
+
 ### 2026-10-15 — OI-1: модель на холсте с выключенным Send сохраняется, версия 2.81.791
 
 - Схема: необязательное поле модели `onCanvas: true` («модель стоит на холсте, хотя Send выключен во всех раундах»). `BasicSchema.validate` проверяет его (путь вида `steps[0].models[1].onCanvas`), `toCanvas` оставляет такую модель в шапке и в блоках всех раундов, `assemble` поле игнорирует.
