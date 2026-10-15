@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-15 — Debate: шаг 3, удалены оркестратор и всё, что от него зависело, версии 2.81.779–781
+
+- Продолжение `docs/Architecture/debate-removal-registry.md`. В `results.js` убрана ветка Debate из `startDebateFromPage` (остался запуск Basic через `runCustomFromPage`), создание `DebateApplication` и все обращения к `debateApplication`, панель state map, хранилища дел и истории правил (~−0,8 тыс. строк `results.js`).
+- Удалены 19 модулей `disput/` и `results/disput-state-map-view.js`, их `<script>` из `pipeline_panel.html` и `result_new.html`, записи манифеста, панель state map в `result_new.html`, ~140 мёртвых CSS-правил, 30 тестов и фикстур, проверявших удалённое. Ветки тестов, привязанные к тексту `results.js`, поправлены на `runCustomFromPage`.
+- Проверка: набор падающих тестов не вырос относительно базового (12 наборов, 37 тестов — не из-за этой правки). В браузере не запускалось.
+- Также: восстановлен заголовок правила `.selectors0-workbench .selectors-btn-record.is-active` (потерян в 2.81.777), убраны отладочные `window.__*` без потребителей и smoke-харнесс статуса.
+
 ### 2026-10-15 — Чистка страницы pipeline panel: мёртвые функции, разметка и CSS, версии 2.81.775–778
 
 - Ревью страницы (8 проверок по зонам) и удаление того, у чего 0 ссылок: ~830 строк `results.js` (блок заметок merge/export/select-all, `appendVerdictFeedEntry`, serial-debate Markdown/timeline, `pruneEmptyTabs`, заглушки `storeNewPagesState`/`syncAggregateArtifactsToCase`, `window.PipelineNotes`, неиспользуемые обёртки над `PipelineRuntime` и др.), дубль `stripBackgroundColorStyles`; в `pipeline_panel.html` — пустой `#comparative-analysis`, скрытая `#prompt-export-html-btn`, `meta keywords`, `?v=` синхронизирован; ~800 строк CSS (122 мёртвых правила, 3 дубля, 6 неиспользуемых переменных `base.css`).

@@ -2712,52 +2712,7 @@ document.addEventListener('click', (event) => {
     let customAbortController = null;
     let activePipelineRunContext = null;
     const debateAggregateStore = window.DebateRunStore?.createStore?.() || null;
-    const debateCaseStore = window.DebateCaseStore?.createStore?.({ storage: chrome?.storage?.local }) || null;
-    const debateRuleHistoryStore = window.DebateRuleHistory?.createStore?.({ storage: chrome?.storage?.local }) || null;
-    void debateRuleHistoryStore?.restore?.();
     const pipelineProfileView = window.PipelineProfileView?.init?.({ storage: chrome?.storage?.local }) || null;
-    const disputStateMapView = window.DisputStateMapView?.init?.({
-        getAggregate: () => ({ ...(debateAggregateStore?.getState?.() || {}), ruleHistory: debateRuleHistoryStore?.summary?.() || null }),
-        getRuleHistory: () => debateRuleHistoryStore?.summary?.() || null,
-        caseStore: debateCaseStore,
-        onDecisionResolved: async ({ requestId, optionId }) => {
-            const result = await debateApplication?.resolveHumanDecision?.({
-                requestId, optionId,
-                expectedCaseVersion: debateApplication?.getOrchestrator?.()?.getState?.()?.caseVersion,
-                expectedPlanRevisionId: debateApplication?.getOrchestrator?.()?.getState?.()?.activePlanRevisionId
-            });
-            showNotification(result?.ok ? 'Решение применено.' : `Решение не применено: ${result?.code || 'unknown'}`, result?.ok ? 'success' : 'error');
-        },
-        onHumanAction: async ({ action, itemId }) => {
-            if (action === 'stop') { await window.cancelPipelineRun?.(); return; }
-            if (action === 'pause') { setDebatePausedState(!debatePaused, debatePaused ? 'state_map_resume' : 'state_map_pause'); return; }
-            if (action === 'synthesize') {
-                const result = await debateApplication?.requestSynthesis?.({}, { createdBy: 'human', deferExecution: false });
-                showNotification(result?.ok ? 'Этап синтеза добавлен в универсальный план.' : 'Не удалось добавить этап синтеза.', result?.ok ? 'success' : 'warn');
-                return;
-            }
-            if (!debateApplication?.submitIntervention) return;
-            const interventionId = `human:${action}:${itemId}:${Date.now()}`;
-            const decisionResult = await debateApplication.submitIntervention({
-                interventionId,
-                type: action === 'request_evidence' ? 'REQUEST_VERIFICATION' : 'HUMAN_DECISION',
-                payload: { action, artifactIds: itemId ? [itemId] : [] }, deferExecution: true
-            });
-            if (decisionResult.ok) dispatchDebateRunEvent?.(window.DebateRunStore?.EVENTS?.HUMAN_DECISION_RECORDED || 'HUMAN_DECISION_RECORDED', { decisionId: interventionId, targetId: itemId, value: action });
-            showNotification(decisionResult.ok ? `Решение сохранено: ${action}` : `Решение не сохранено: ${(decisionResult.errors || []).join(', ')}`, decisionResult.ok ? 'success' : 'error');
-        },
-        onLinkRemove: async ({ linkId }) => {
-            if (!debateApplication?.submitIntervention) return;
-            const result = await debateApplication.submitIntervention({
-                interventionId: `human-delete-link:${linkId}:${Date.now()}`,
-                type: 'DELETE_ARTIFACT', payload: { artifactId: linkId }, deferExecution: true
-            });
-            showNotification(result.ok ? 'Связь удалена.' : `Связь не удалена: ${(result.errors || []).join(', ')}`, result.ok ? 'success' : 'error');
-        }
-    }) || null;
-    debateCaseStore?.subscribe?.((caseState) => {
-        if (caseState) disputStateMapView?.render?.(caseState);
-    });
     const debateTraceStore = window.DebateTraceStore?.createStore?.({
         storage: chrome?.storage?.local // Only used to delete legacy persisted run history.
     }) || null;
@@ -2819,10 +2774,6 @@ document.addEventListener('click', (event) => {
     }[String(type || '')] || (window.DebateTraceSchema?.EVENT_TYPES?.includes?.(String(type || '')) ? String(type) : ''));
     debateAggregateStore?.subscribe?.((aggregate, aggregateEvent) => {
         if (!aggregateEvent || !aggregate?.runId) return;
-        disputStateMapView?.render?.({ ...aggregate, ruleHistory: debateRuleHistoryStore?.summary?.() || null });
-        if (window.DebateRunStore?.isTerminal?.(aggregate)) {
-            void debateRuleHistoryStore?.record?.(aggregate).then(() => disputStateMapView?.render?.({ ...aggregate, ruleHistory: debateRuleHistoryStore.summary() }));
-        }
         if (aggregateEvent.type === window.DebateRunStore?.EVENTS?.START_REQUESTED) {
             debateTraceStore?.beginRun?.({
                 debateRunId: aggregate.runId,
@@ -5062,8 +5013,7 @@ document.addEventListener('click', (event) => {
         const syncControlColumns = () => {
             if (!pipelinePanel) return;
             pipelinePanel.querySelectorAll('.pipeline-control-step, .pipeline-control-link').forEach((node) => node.remove());
-            const lifecycle = String(window.DebateApplication?.getState?.()?.lifecycle || 'IDLE').toUpperCase();
-            const editable = !['PLANNING', 'RUNNING', 'PAUSED', 'CANCELLING'].includes(lifecycle) && !pipelineRunActive;
+            const editable = !pipelineRunActive;
             const entries = getCustomControls();
             const byAfter = new Map(entries.map((item) => [item.after, item]));
             const placed = new Set();
@@ -5141,8 +5091,7 @@ document.addEventListener('click', (event) => {
                 moveInsertButton(round, roundHostFor(round));
                 el.remove();
             });
-            const lifecycle = String(window.DebateApplication?.getState?.()?.lifecycle || 'IDLE').toUpperCase();
-            const editable = !['PLANNING', 'RUNNING', 'PAUSED', 'CANCELLING'].includes(lifecycle);
+            const editable = true;
             wanted.forEach((stage, round) => {
                 let column = pipelinePanel.querySelector(`.stage-column.pipeline-intermediate-synth[data-synth-after-round="${round}"]`);
                 if (!column) {
@@ -5294,8 +5243,7 @@ document.addEventListener('click', (event) => {
 
         const syncPipelineFlowVisualState = () => {
             if (!pipelinePanel) return;
-            const runtime = debateApplication?.getOrchestrator?.()?.getState?.() || null;
-            const activeStage = runtime?.stages?.find?.((stage) => stage.status === 'running' || stage.status === 'awaiting_participant') || null;
+            const activeStage = null;
             pipelinePanel.dataset.pipelineActiveStage = activeStage?.stageInstanceId || '';
             pipelinePanel.dataset.pipelineActiveRoundId = activeStage?.stageInstanceId || '';
             let status = pipelinePanel.querySelector('.debate-plan-stage-status');
@@ -5325,7 +5273,7 @@ document.addEventListener('click', (event) => {
         let customRunProgress = null;
         const readPipelineEngineState = () => {
             if (customRunProgress) return customRunProgress;
-            try { return debateApplication?.getOrchestrator?.()?.getState?.() || null; } catch (_) { return null; }
+            return null;
         };
         const pipelinePlannedStageIdFor = (column) => {
             if (column.classList.contains('pipeline-intermediate-synth')) return `planned-working-synthesis-after-canvas-r${column.dataset.synthAfterRound}`;
@@ -5708,8 +5656,6 @@ document.addEventListener('click', (event) => {
             } else {
                 updateDebateButtonsUi();
             }
-            if (debatePaused) void debateApplication?.pause?.(reason);
-            else void debateApplication?.resume?.();
         };
         // "The answers I see in the feed": for every model of the open round that the wait holds nothing
         // for, take the text of its LIVE feed card (the one of the current request: not closed, not
@@ -5737,15 +5683,6 @@ document.addEventListener('click', (event) => {
         // ---- Engine pauses: a stage ended, a gate, a failed stage, a question for the owner ----
         const ownerAskDialog = document.getElementById('owner-ask-dialog');
         let pendingOwnerAsks = null;
-        const withOwnerAnswers = (task) => {
-            const notes = [
-                ...(activePipelineRunContext?.runNotes || []),
-                window.OwnerAsk?.toInstruction?.(activePipelineRunContext?.ownerAnswers || []) || ''
-            ].filter(Boolean).join('\n');
-            if (!notes) return task;
-            // A contract is immutable: rebuild it with the owner's answers as the current instruction.
-            return { ...task, contractKind: 'raw', currentInstruction: [task.currentInstruction, notes].filter(Boolean).join('\n') };
-        };
         const openOwnerAsk = (info) => {
             if (!ownerAskDialog || !window.OwnerAsk) return;
             pendingOwnerAsks = info;
@@ -5780,27 +5717,6 @@ document.addEventListener('click', (event) => {
             if (typeof info.resolve === 'function') { info.resolve([]); return; }
             if (action !== 'later') setDebatePausedState(false, action === 'answer' ? 'owner_answer' : 'owner_skip');
         });
-        const handleEnginePause = (info = {}) => {
-            globalThis.MessageDelivery?.batchEvent?.('run_paused', {
-                reason: info.reason || null, stage: info.plannedStageId || null, gate: info.gate || null,
-                asks: (info.asks || []).length, verdict: info.verdict || null
-            });
-            const where = info.label ? `«${info.label}»` : (info.plannedStageId || 'этап');
-            const verdict = info.verdict === 'issues_found' ? ' Проверка нашла блокирующие замечания.' : (info.verdict === 'pass' ? ' Проверка: замечаний нет.' : '');
-            if (info.reason === 'ask') {
-                showNotification(`${where}: нужен ответ владельца.`, 'info');
-                openOwnerAsk(info);
-            } else if (info.reason === 'gate') {
-                showNotification(`Ворота ${info.gate || ''} после ${where}: проверьте результат и нажмите «Продолжить».${verdict}`, 'info');
-            } else if (info.reason === 'participants_unavailable') {
-                showNotification(`Следующий этап (${info.plannedStageId || '?'}): не осталось доступных моделей (${info.participantId || 'участник'} выбыл из запуска). Верните модель (вкладка, Get it) и нажмите «Продолжить», либо остановите запуск.`, 'warn');
-            } else if (info.reason === 'stage_failed') {
-                showNotification(`${where}: ни одна модель не дала принятого ответа. Проверьте вкладки (Get it); «Продолжить» повторит этап.`, 'warn');
-            } else {
-                showNotification(`${where} выполнен. Нажмите «Продолжить».${verdict}`, 'info');
-            }
-        };
-        let debateApplication = null;
         let phantomRunStateReported = false;
         const getDebateRunControls = () => {
             if (customAbortController) {
@@ -5812,9 +5728,7 @@ document.addEventListener('click', (event) => {
             // pause / resume / approve. Seen as "Run is on pause right after opening the page".
             // An engine that is RUNNING but has nothing left to do (all rounds done, waiting for
             // finalization) is not a live run for the button: it shows Run (a new run replaces it).
-            const engineState = debateApplication?.getOrchestrator?.()?.getState?.() || null;
-            const engineIdle = Boolean(engineState?.idle) && !pipelineRunActive;
-            const hasLiveRun = pipelineRunActive || (Boolean(engineState) && !engineIdle);
+            const hasLiveRun = pipelineRunActive;
             const phantom = !hasLiveRun && aggregate && String(aggregate.status || 'idle') !== 'idle';
             if (phantom) {
                 if (!phantomRunStateReported) {
@@ -5825,9 +5739,7 @@ document.addEventListener('click', (event) => {
                 aggregate = null;
             }
             const status = String(aggregate?.status || 'idle');
-            const lifecycle = String(debateApplication?.getOrchestrator?.()?.getState?.()?.lifecycle || '');
-            const startPending = ['STARTING', 'RECONCILING', 'FINALIZING'].includes(lifecycle)
-                || (pipelineRunActive && !['running', 'awaiting_approval', 'paused', 'technical_pause', 'finalization_pending'].includes(status));
+            const startPending = pipelineRunActive && !['running', 'awaiting_approval', 'paused', 'technical_pause', 'finalization_pending'].includes(status);
             return window.DebateController?.deriveRunControls?.({
                 aggregate,
                 approvalWaiting: hasLiveRun && debateExecutionContext?.hasApprovalWaiter?.() === true,
@@ -6204,7 +6116,7 @@ document.addEventListener('click', (event) => {
             }
             const sourceView = getCurrentViewKey();
             const stageId = String(context?.stageId || context?.pipelineStageId || aggregate?.currentStageId || '').trim();
-            const stages = debateApplication?.getOrchestrator?.()?.getState?.()?.stages || [];
+            const stages = [];
             const stageIndex = context?.pipelineRunId
                 ? stages.findIndex((stage) => stage.stageInstanceId === stageId && stage.runId === context.pipelineRunId)
                 : -1;
@@ -7529,212 +7441,9 @@ document.addEventListener('click', (event) => {
             if (selectedPreset?.runner === 'custom') {
                 return runCustomFromPage({ task: moderatorEntryText || pipelineNameText });
             }
-            const presetConfig = buildPipelinePresetRuntimeConfig(presetId);
-            const draftPlan = draftPlanForCanvas(getActiveDraftPlan());
-            const selectedSynthesizer = getDraftPlanSynthesizer(draftPlan);
-            const selectedModelsForValidation = getSelectedLLMs();
-            const capabilityVerdict = window.DebateCapabilityRegistry?.validateRequirements?.({
-                models: selectedModelsForValidation,
-                tools: presetConfig.extensionContract?.tools || []
-            });
-            // A tool no selected model is known to have does not stop the run: the models are told
-            // (run notes join the current instruction) and the moderator is warned.
-            const runNotes = capabilityVerdict && !capabilityVerdict.ok
-                ? (window.DebateCapabilityRegistry?.degradedNotes?.(capabilityVerdict.missingTools) || [])
-                : [];
-            if (runNotes.length) {
-                showNotification(`Ни у одной выбранной модели нет подтверждённого инструмента: ${capabilityVerdict.missingTools.join(', ')}. Прогон идёт без него: модели получат об этом указание, отчёт начнётся с предупреждения.`, 'warn');
-            }
-            window.__activePipelinePresetConfig = presetConfig;
-            const previousEngine = debateApplication?.getOrchestrator?.() || null;
-            if (!pipelineRunActive && previousEngine?.getState?.()?.idle) {
-                // The previous run finished all its rounds and only waits for finalization: close it, a new run starts.
-                await previousEngine.requestCancel({ reason: 'new_run' });
-            }
-            const activeLifecycle = debateApplication?.getOrchestrator?.()?.getState?.()?.lifecycle;
-            if (pipelineRunActive || ['STARTING', 'RUNNING', 'PAUSE_REQUESTED', 'QUIESCING', 'PAUSED', 'RECONCILING', 'FINALIZING'].includes(activeLifecycle)) {
-                showNotification('Pipeline уже выполняется. Остановите текущий запуск перед новым.', 'warn');
-                return false;
-            }
-
-            pipelineRunActive = true;
-            customRunProgress = null;
-            debatePaused = false;
-            debateRunState.status = 'running';
-            debateRunState.turnCount = 0;
-            debateRunState.maxTurns = presetConfig.turnLimit ?? presetConfig.waveLimit ?? 0;
-            debateRunState.pauseReason = '';
-            activePipelineAbortController = new AbortController();
-            activePipelineRunContext = {
-                pipelineRunId: makePipelineRunId(),
-                sessionId: debateTabsState?.activeSessionId
-                    || document.querySelector('.debate-session-tab.active')?.dataset?.sessionId
-                    || '1',
-                startedAt: Date.now(),
-                forceNewTabs: newPagesCheckbox ? newPagesCheckbox.checked : true,
-                newPagesDispatched: false,
-                // Lines for every prompt of the run: a tool the selected models are not known to have.
-                runNotes,
-                // Owner's answers to [[ASK:]] markers: they reach the prompts of the next stages.
-                ownerAnswers: []
-            };
-            // The rounds have started: "New pages" is switched off at once (the first dispatch has
-            // its value in the run context; later stages continue in the pages that were opened).
-            if (activePipelineRunContext.forceNewTabs) resetNewPagesCheckboxAfterOpen();
-            // The moderator's message is sent (it is the run's task and appears in the feed): the
-            // input is emptied. If the run fails to start the text is put back below.
-            clearModeratorComposer();
-            await notifyPipelineControlState('STARTING', {
-                stage: 'dispatch',
-                payload: { pipelineName: pipelineNameText }
-            });
-            syncModeratorSelectors();
-            setPipelineRunUi(true);
-            updateDebateButtonsUi();
-
-            try {
-                setR1ModelsFromSelectedLLMs();
-                setPipelineEditingEnabled(false);
-                const attachmentsPayload = await buildAttachmentPayload();
-                const forceNewTabs = newPagesCheckbox ? newPagesCheckbox.checked : true;
-                const useApiFallback = apiModeCheckbox ? apiModeCheckbox.checked : true;
-                const signal = activePipelineAbortController.signal;
-                const selectedModels = getSelectedLLMs();
-                const problemSpec = window.DebateProblemSpec?.extract?.({ topic: pipelineNameText, moderatorMessage: moderatorEntryText, preset: presetConfig }) || null;
-                const problemSpecText = window.DebateProblemSpec?.renderProblemSpec?.(problemSpec) || '';
-                const taskContract = window.DebateContracts?.createTaskContract?.({
-                    rawRequest: pipelineNameText,
-                    objective: problemSpec?.objective || pipelineNameText,
-                    problemSpec,
-                    maxWords: getDebateMaxWords(),
-                    attachmentRefs: (attachmentsPayload || []).map((attachment) => attachment.id || attachment.name || attachment.filename).filter(Boolean),
-                    runId: activePipelineRunContext.pipelineRunId,
-                    profileId: presetConfig.profileId || presetConfig.presetId
-                }) || null;
-                const synthesizer = selectedSynthesizer;
-                const compiledRunPolicy = String(
-                    debateRunPolicySelect?.dataset.explicitOverride
-                    || presetConfig.runPolicy
-                    || getDebateRunPolicy()
-                ) === 'auto' ? 'auto' : 'manual';
-                const makeBatchContext = (roundIndex = 1, groupIndex = 0) => ({
-                    ...activePipelineRunContext,
-                    pipelineRoundId: `r${roundIndex}`,
-                    pipelineBatchId: makePipelineBatchId({
-                        runId: activePipelineRunContext.pipelineRunId,
-                        roundIndex,
-                        groupIndex
-                    })
-                });
-                const started = await debateApplication.start({
-                    runId: activePipelineRunContext.pipelineRunId,
-                    sessionId: activePipelineRunContext.sessionId,
-                    runContext: activePipelineRunContext,
-                    execution: { abortController: activePipelineAbortController },
-                    signal,
-                    preset: presetConfig,
-                    presetConfig,
-                    runPolicy: compiledRunPolicy,
-                    persistedConfig: {
-                        runPolicy: compiledRunPolicy,
-                        sourceView: getCurrentViewKey(),
-                        topic: pipelineNameText,
-                        problemSpec,
-                        taskContract,
-                        selectedModels: selectedModels.slice(),
-                        synthesizer,
-                        draftPlan
-                    },
-                    moderatorEntryText,
-                    pipelineNameText,
-                    problemSpec,
-                    problemSpecText,
-                    taskContract,
-                    policies: window.DebatePolicies?.resolve?.({
-                        // Semi-automatic stops after every stage; Auto only at template gates,
-                        // on a question for the owner and on a failed stage.
-                        stagePause: { mode: compiledRunPolicy === 'auto' ? 'gates' : 'every_stage' },
-                        finalization: {
-                            ...(presetConfig.finalization || {}),
-                            mode: compiledRunPolicy === 'auto'
-                                ? (presetConfig.finalization?.mode || 'after_required_goals')
-                                : 'manual',
-                            synthesis: presetConfig.finalization?.synthesis === 'required'
-                                ? 'required'
-                                : (synthesizer ? (presetConfig.finalization?.synthesis || 'optional') : 'none'),
-                            audit: presetConfig.finalization?.audit || 'optional'
-                        },
-                        budgets: {
-                            maxTotalStages: Number(presetConfig.resourceBudget?.limit || presetConfig.turnLimit || presetConfig.waveLimit || 50)
-                        }
-                    }),
-                    attachmentsPayload,
-                    forceNewTabs,
-                    useApiFallback,
-                    selectedModels,
-                    synthesizer,
-                    draftPlan,
-                    maxWords: getDebateMaxWords(),
-                    auto: compiledRunPolicy === 'auto',
-                    isPaused: () => debatePaused,
-                    makeBatchContext
-                });
-                if (started === false && !window.DebateRunStore.isTerminal(getDebateAggregateState())) {
-                    restoreModeratorComposer(moderatorEntryText);
-                    dispatchDebateRunEvent(window.DebateRunStore.EVENTS.RUN_FAILED, {
-                        reason: 'universal_start_rejected'
-                    });
-                    await notifyPipelineControlState('FAILED', {
-                        stage: 'failed',
-                        reason: 'universal_start_rejected'
-                    });
-                }
-                return started;
-            } catch (err) {
-                const aborted = err?.name === 'AbortError';
-                if (!aborted) restoreModeratorComposer(moderatorEntryText);
-                await notifyPipelineControlState(aborted ? 'CANCELLED' : 'FAILED', {
-                    stage: aborted ? 'cancelled' : 'failed',
-                    reason: aborted ? 'abort_error' : (err?.message || String(err))
-                });
-                if (aborted) {
-                    showNotification('Pipeline: cancelled', 'warn');
-                } else {
-                    console.error('[RESULTS] Debate run failed', err);
-                    showNotification(`Pipeline: error (${err?.message || String(err)})`, 'error');
-                }
-                return false;
-            } finally {
-                if (debateFeedState.pendingApproval) setDebateApprovalCandidate(null);
-                clearPromptAttachments();
-                pipelineRunActive = false;
-                pipelineWaiter.reset();
-                const lifecycle = debateApplication?.getOrchestrator?.()?.getState?.()?.lifecycle;
-                if (['RUNNING', 'PAUSED', 'QUIESCING'].includes(lifecycle)) {
-                    debateRunState.status = debatePaused ? 'paused' : 'awaiting_approval';
-                    syncPipelineFlowVisualState();
-                    setPipelineEditingEnabled(true);
-                    setPipelineRunUi(false);
-                    updateDebateButtonsUi();
-                } else {
-                    debateRunState.status = window.DebateRunStore.isTerminal(getDebateAggregateState())
-                        ? getDebateAggregateState().status
-                        : 'idle';
-                    debateRunState.pauseReason = '';
-                    debatePaused = false;
-                    activePipelineAbortController = null;
-                    activePipelineRunContext = null;
-                    syncPipelineFlowVisualState();
-                    setPipelineEditingEnabled(true);
-                    setPipelineRunUi(false);
-                    updateDebateButtonsUi();
-                }
-                syncPipelineRunStateVisuals();
-                if (typeof recoverUiIfHidden === 'function') {
-                    requestAnimationFrame(() => requestAnimationFrame(() => recoverUiIfHidden('run_complete')));
-                }
-                writeLongGenerationMode(longModeCheckbox ? longModeCheckbox.checked : true);
-            }
+            // The Basic engine is the only runner; any other preset is unavailable.
+            showNotification('Этот профиль пока недоступен.', 'warn');
+            return false;
         };
         const cancelPipelineRun = async () => {
             if (customAbortController) {
@@ -7743,13 +7452,11 @@ document.addEventListener('click', (event) => {
                 try { await debateTransportPort?.cancelRun?.(runId); } catch (_) {}
                 return true;
             }
-            const lifecycle = debateApplication?.getOrchestrator?.()?.getState?.()?.lifecycle;
-            if (!pipelineRunActive && !['STARTING', 'RUNNING', 'PAUSE_REQUESTED', 'QUIESCING', 'PAUSED', 'RECONCILING', 'FINALIZING'].includes(lifecycle)) return false;
+            if (!pipelineRunActive) return false;
             await notifyPipelineControlState('CANCELLED', {
                 stage: 'cancelled',
                 reason: 'user_cancel'
             });
-            await debateApplication.cancel('user_cancel');
             pipelineRunActive = false;
             debatePaused = false;
             activePipelineAbortController = null;
@@ -7759,116 +7466,6 @@ document.addEventListener('click', (event) => {
             updateDebateButtonsUi();
             return true;
         };
-        debateApplication = window.DebateApplication?.createApplication?.({
-            store: debateAggregateStore,
-            semanticStore: debateCaseStore,
-            enableDurablePersistence: true,
-            persistRunData: false,
-            deps: {
-                onPersistenceError: () => showNotification('Хранилище переполнено. Прогон продолжается в памяти. Сохраните отчёт до перезагрузки страницы.'),
-                startFromPage: startDebateFromPage,
-                createId: makePipelineRunId,
-                runModelBatch,
-                onEnginePause: (info) => handleEnginePause(info),
-                onTraceEvent: (info) => {
-                    const run = debateTraceStore?.getActiveRun?.();
-                    const revision = debateApplication?.getActiveRevision?.();
-                    if (run && revision?.runId === run.debateRunId) {
-                        run.planRevisions ||= [];
-                        if (!run.planRevisions.some(item => item.revisionId === revision.revisionId)) {
-                            run.planRevisions.push(window.DebateTraceSchema.sanitize(revision));
-                        }
-                    }
-                    if (!['PARTICIPANT_RESPONSE_ACCEPTED', 'PARTICIPANT_RESPONSE_REJECTED'].includes(info.type)) return;
-                    appendDebateTraceEvent({ eventType: 'ANSWER_ACCEPTANCE_DECIDED', source: 'runner', sourceTimestamp: Date.now(),
-                        correlation: { stageId: info.stageInstanceId, stageAttemptId: info.stageAttemptId,
-                            transportRequestId: info.transportRequestId, dispatchId: info.dispatchId },
-                        reasonCode: info.reason || (info.accepted ? 'ENGINE_ACCEPTED' : 'ENGINE_REJECTED'),
-                        payload: { ...info, model: info.model || info.participantId, decisionSource: 'StageExecutor.acceptResponse' }
-                    });
-                },
-                // Why an answer was not accepted (the delivery report never said): journaled per attempt.
-                onResponseRejected: (info) => globalThis.MessageDelivery?.batchEvent?.('response_rejected', {
-                    model: info.participantId || null, stage: info.stageInstanceId || null, attempt: info.attempt || null,
-                    reason: info.reason || null, chars: info.chars ?? null, kind: info.type === 'PARTICIPANT_DISPATCH_FAILED' ? 'dispatch_failed' : 'rejected'
-                }),
-                acceptResponse: (text, meta) => window.DebateResponseAcceptance?.evaluate?.({
-                    text, meta: {
-                        ...(meta || {}), isErrorOutput,
-                        maxWords: Number(meta?.stage?.outputContract?.maxWords || meta?.stage?.maxWords || getDebateMaxWords()),
-                        ...(meta?.stage?.purpose === 'audit' ? { kind: 'synthesis_audit', outputKind: 'json' } : {})
-                    }
-                }) || { ok: Boolean(String(text || '').trim()), reason: '' },
-                compilePrompt: ({ stage, participant, attempt, context }) => {
-                    const compiled = window.DebatePromptCompiler?.compile?.({
-                    task: withOwnerAnswers(context?.debateCase?.taskContract || {
-                        objective: context?.debateCase?.topic?.title || 'Discussion',
-                        maxWords: getDebateMaxWords()
-                    }),
-                    // A template stage carries its own brief (stage card): it becomes the
-                    // action instruction of the prompt for every participant of the stage.
-                    action: stage.instruction ? {
-                        id: stage.stageInstanceId,
-                        operation: window.DebateArtifactPipeline.operationForPurpose(stage.purpose),
-                        role: stage.purpose === 'synthesis' ? 'synthesizer' : 'participant',
-                        // The stage brief plus the control markers this stage may raise.
-                        instruction: window.DebateStageMarkers
-                            ? `${stage.instruction}\n\n${window.DebateStageMarkers.instructions({ purpose: stage.purpose })}`
-                            : stage.instruction
-                    } : undefined,
-                    stage: {
-                        stageId: stage.stageInstanceId,
-                        operation: window.DebateArtifactPipeline.operationForPurpose(stage.purpose),
-                        role: stage.purpose === 'synthesis' ? 'synthesizer' : stage.purpose === 'audit' ? 'auditor' : 'participant',
-                        targetId: stage.inputArtifactIds?.[0] || '',
-                        inputArtifactIds: stage.inputArtifactIds || [],
-                        expectedArtifactTypes: stage.expectedOutputs || [],
-                        outputContract: { maxWords: getDebateMaxWords() }
-                    },
-                    model: participant.model || participant.participantId,
-                    map: context?.stateMap || {}
-                    });
-                    if (!compiled) return '';
-                    const evidence = {
-                        compilerVersion: compiled.compilerVersion, fingerprint: compiled.fingerprint,
-                        promptArtifact: window.AnswerProofNormalization?.evidence?.(compiled.prompt) || null,
-                        declaredInputIds: stage.inputArtifactIds || [],
-                        selectedInputs: (compiled.context?.parts || []).map(part => ({ id: part.id, type: part.type,
-                            provenance: part.provenance || null, representation: 'selected_context_part',
-                            proof: window.AnswerProofNormalization?.evidence?.(part.text || '') || null })),
-                        transformations: ['ContextBroker.select', 'ContextBroker.render', 'PromptPack.render']
-                    };
-                    const event = appendDebateTraceEvent({ eventType: 'PROMPT_COMPILED', source: 'runner',
-                        correlation: { debateRunId: stage.runId, stageId: stage.stageInstanceId, stageAttemptId: `${stage.stageInstanceId}:a${attempt}` },
-                        payload: { model: participant.model || participant.participantId, ...evidence }
-                    });
-                    compiledPromptEvidence.set(`${stage.stageInstanceId}:a${attempt}:${participant.model || participant.participantId}`, { ...evidence, eventId: event?.eventId || null });
-                    while (compiledPromptEvidence.size > 200) compiledPromptEvidence.delete(compiledPromptEvidence.keys().next().value);
-                    return compiled.prompt;
-                },
-                repairPrompt: ({ prompt, reason }) => `${ensureDisputResponseLimit(prompt)}\n\nИсправь нарушение контракта: ${reason || 'invalid_response'}. Верни самостоятельный исправленный ответ не более ${getDebateMaxWords()} слов.`,
-                extractArtifacts: (input) => window.DebateArtifactPipeline.extractArtifacts(input),
-                proposeStateDelta: (input) => window.DebateArtifactPipeline.proposeStateDelta(input),
-                commitStateDelta: (input) => window.DebateArtifactPipeline.commitStateDelta(input),
-                projectStateMap: (input) => window.DebateArtifactPipeline.projectStateMap(input),
-                cancelTransport: async (runId) => {
-                    try {
-                        if (typeof debateTransportPort?.cancelRun === 'function') {
-                            await debateTransportPort.cancelRun(runId);
-                        } else {
-                            await sendToBackground({ type: 'CANCEL_PIPELINE_RUN', pipelineRunId: runId });
-                        }
-                    } catch (error) {
-                        try {
-                            await sendToBackground({ type: 'STOP_ALL' });
-                        } catch (fallbackError) {
-                            console.warn('[RESULTS] Pipeline cancel background cleanup failed', fallbackError || error);
-                        }
-                    }
-                }
-            }
-        }) || null;
-        window.__debateApplication = debateApplication;
         // A pipeline starts directly: the runner of every preset is the Basic engine, not the Debate application.
         window.runPipeline = (...args) => startDebateFromPage(...args);
         window.cancelPipelineRun = cancelPipelineRun;
@@ -9449,8 +9046,6 @@ document.addEventListener('click', (event) => {
         let lastFinalSynthesizer = '';
         let finalSynthesisTimer = null;
         const toggleFinalSynthesis = () => {
-            const lifecycle = String(window.DebateApplication?.getState?.()?.lifecycle || 'IDLE').toUpperCase();
-            if (['PLANNING', 'RUNNING', 'CANCELLING'].includes(lifecycle)) return;
             const current = normalizeExplicitSynthesizer(window.__getDraftPlanSynthesizer?.(
                 window.__pipelineDraftPlanForCanvas?.(window.__getActivePipelineDraftPlan?.())
             ));
@@ -9561,7 +9156,7 @@ document.addEventListener('click', (event) => {
             } else {
                 const round = Number(match[1]);
                 const stack = captureModelStackState(`r${round}-models`);
-                const stages = debateApplication?.getOrchestrator?.()?.getState?.()?.stages || [];
+                const stages = [];
                 const stageRun = stages.filter((item) => item.plannedStageId === `canvas-r${round}`).pop() || null;
                 // Custom rounds (R1 included) with mini-request selectors: one role for the round's models
                 // instead of the participant list.
@@ -21557,8 +21152,7 @@ function checkCompareButtonState() {
     // The flow select is disabled while the final synthesis is off (no synthesizer) or a run is active.
     function syncFlowSelectLock(flowSelect, current) {
         if (!flowSelect) return;
-        const lifecycle = String(window.DebateApplication?.getState?.()?.lifecycle || 'IDLE').toUpperCase();
-        const locked = !!pipelineRunActive || ['PLANNING', 'RUNNING', 'PAUSED', 'CANCELLING'].includes(lifecycle);
+        const locked = !!pipelineRunActive;
         flowSelect.disabled = locked || !current;
     }
     function renderSynthesisStage() {
@@ -21606,8 +21200,7 @@ function checkCompareButtonState() {
         return window.__pipelineDraftPlanForCanvas?.(window.__getActivePipelineDraftPlan?.()) || { plannedStages: [] };
     }
     function syncStageInsertControls(plan = activeDraftPlanForCanvas()) {
-        const lifecycle = String(window.DebateApplication?.getState?.()?.lifecycle || 'IDLE').toUpperCase();
-        const editable = !['PLANNING', 'RUNNING', 'CANCELLING'].includes(lifecycle);
+        const editable = true;
         const roundStageIds = (plan.plannedStages || [])
             .filter((stage) => /^canvas-r\d+$/.test(stage.plannedStageId || ''))
             .map((stage) => stage.plannedStageId);
@@ -21647,13 +21240,6 @@ function checkCompareButtonState() {
             }
         });
         next.plannedStages = next.plannedStages.filter((stage) => stage.plannedStageId !== target.plannedStageId);
-        if (String(window.DebateApplication?.getState?.()?.lifecycle || '').toUpperCase() === 'PAUSED') {
-            const revision = await window.DebateApplication.removePlannedStage(target.plannedStageId);
-            if (!revision?.ok) {
-                showNotification(revision?.reasonCode || revision?.code || 'Stage revision rejected.', 'warn');
-                return false;
-            }
-        }
         window.__persistActivePipelineDraftPlan?.(next);
         renderDraftPlanCanvas();
         window.__updatePipelineAll?.();
@@ -21680,14 +21266,6 @@ function checkCompareButtonState() {
         if (!result.ok) {
             showNotification(result.reasonCode || 'Cannot insert synthesis stage.', 'warn');
             return false;
-        }
-        if (String(window.DebateApplication?.getState?.()?.lifecycle || '').toUpperCase() === 'PAUSED') {
-            const stage = result.plan.plannedStages.find((item) => item.plannedStageId === `planned-working-synthesis-after-${afterPlannedStageId}`);
-            const revision = await window.DebateApplication.insertStage(stage, { afterPlannedStageId });
-            if (!revision?.ok) {
-                showNotification(revision?.reasonCode || revision?.code || 'Stage revision rejected.', 'warn');
-                return false;
-            }
         }
         window.__persistActivePipelineDraftPlan?.(result.plan);
         renderDraftPlanCanvas();
@@ -21746,7 +21324,7 @@ function checkCompareButtonState() {
             window.__pipelineDraftPlanForCanvas?.(window.__getActivePipelineDraftPlan?.())
         ));
         const shouldRenderSynthesisStage = usesSynthesisStage || hasExplicitSynthesizer;
-        const runActive = !!pipelineRunActive || ['planning', 'running', 'paused', 'cancelling'].includes(String(window.DebateApplication?.getState?.()?.lifecycle || ''));
+        const runActive = !!pipelineRunActive;
         const roundLimitControl = debateRoundLimitSelect?.closest?.('.debate-select-wrap') || debateRoundLimitSelect || null;
         const showRoundLimitControl = shouldShowDebateRoundLimitControl();
         if (roundLimitControl) {
@@ -22160,14 +21738,11 @@ function checkCompareButtonState() {
         });
         const trace = debateTraceStore?.getActiveRun?.();
         if (trace && window.DebateTraceProjections) {
-            const application = window.__debateApplication;
             return window.DebateTraceProjections.buildReport(trace, {
                 extensionVersion: chrome?.runtime?.getManifest?.()?.version || 'unknown',
                 duplicateEventIds: debateTraceStore.getDuplicateIds?.(trace.debateRunId) || [],
-                planning: { revisions: trace.planRevisions || [], revision: window.DebateTraceSchema?.sanitize?.(application?.getActiveRevision?.() || null),
-                    instances: (application?.getOrchestrator?.()?.getState?.()?.stages || []).map(stage => ({
-                        stageId: stage.stageInstanceId, plannedStageId: stage.plannedStageId, planRevisionId: stage.planRevisionId
-                    })) }
+                planning: { revisions: trace.planRevisions || [], revision: null,
+                    instances: [] }
             });
         }
         const timelineRows = buildDisputTimelineRows();
@@ -23714,14 +23289,6 @@ function checkCompareButtonState() {
             || ''
         ).trim();
         return moderatorInputText || moderatorBodyText;
-    }
-    // A message that could not be sent goes back into an empty input (never over new text).
-    function restoreModeratorComposer(text) {
-        const value = String(text || '');
-        if (!value || !promptInput || !isModeratorTextarea || pastedTextComposer.getText().trim()) return;
-        pastedTextComposer.setText(value);
-        promptInput.dispatchEvent(new Event('input', { bubbles: true }));
-        autoGrowDebateTextarea(promptInput);
     }
     function clearModeratorComposer() {
         if (promptInput && isModeratorTextarea) {

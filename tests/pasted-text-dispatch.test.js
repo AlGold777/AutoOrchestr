@@ -93,32 +93,6 @@ test('send preserves multiple fragments and the typed text between them', async 
   expect(sendToBackground.mock.calls[0][0].prompt).toBe(`<Prompt>\nintro ${first}between ${second}tail\n</Prompt>`);
 });
 
-function moderatorRecovery(input, composer) {
-  const begin = source.indexOf('    function restoreModeratorComposer(text) {');
-  const finish = source.indexOf('    function clearModeratorComposer()', begin);
-  if (begin < 0 || finish < 0) throw new Error('Moderator recovery function not found');
-  return new Function('promptInput', 'isModeratorTextarea', 'pastedTextComposer', 'autoGrowDebateTextarea',
-    `${source.slice(begin, finish)}\nreturn restoreModeratorComposer;`
-  )(input, true, composer, jest.fn());
-}
-
-test('failed moderator recovery never replaces a newer chip-only draft', () => {
-  const { composer, input } = setupSend();
-  const draft = 'new draft'.repeat(400);
-  composer.tryPaste(draft);
-  moderatorRecovery(input, composer)('older failed message');
-  expect(input.value).toBe('');
-  expect(composer.getText()).toBe(draft);
-});
-
-test('failed moderator recovery restores the entire message to an empty composer', () => {
-  const { composer, input } = setupSend();
-  const original = 'original text\n'.repeat(250);
-  moderatorRecovery(input, composer)(original);
-  expect(input.value).toBe(original);
-  expect(composer.getText()).toBe(original);
-});
-
 test('large text pasted while editing a rich Note keeps the native note paste behavior', () => {
   const { composer, input } = setupSend();
   const noteView = document.createElement('div');
