@@ -2716,7 +2716,6 @@ document.addEventListener('click', (event) => {
     const debateRuleHistoryStore = window.DebateRuleHistory?.createStore?.({ storage: chrome?.storage?.local }) || null;
     void debateRuleHistoryStore?.restore?.();
     const pipelineProfileView = window.PipelineProfileView?.init?.({ storage: chrome?.storage?.local }) || null;
-    window.__debateCaseStore = debateCaseStore;
     const disputStateMapView = window.DisputStateMapView?.init?.({
         getAggregate: () => ({ ...(debateAggregateStore?.getState?.() || {}), ruleHistory: debateRuleHistoryStore?.summary?.() || null }),
         getRuleHistory: () => debateRuleHistoryStore?.summary?.() || null,
@@ -2762,7 +2761,6 @@ document.addEventListener('click', (event) => {
     const debateTraceStore = window.DebateTraceStore?.createStore?.({
         storage: chrome?.storage?.local // Only used to delete legacy persisted run history.
     }) || null;
-    window.__debateTraceStore = debateTraceStore;
     const compiledPromptEvidence = new Map();
     void debateTraceStore?.purgeStoredRuns?.();
 
@@ -5399,17 +5397,11 @@ document.addEventListener('click', (event) => {
             debateRunState.status = String(aggregate?.status || 'idle');
             debateRunState.pauseReason = ['paused', 'technical_pause'].includes(debateRunState.status)
                 ? String(aggregate?.pauseReason || '') : '';
-            window.__debateRunAggregate = aggregate;
             // The engine can pause or continue without a page call (stage gate): keep the controls true.
             try { updateDebateButtonsUi(); } catch (_) { /* not initialised yet */ }
             // Stage events commit to the aggregate; the canvas follows the same change (engine state, no polling).
             try { syncPipelineRunStateVisuals(); } catch (_) { /* canvas not initialised yet */ }
         });
-        window.__getDebateRunAggregate = getDebateAggregateState;
-        window.__exportDebateDomainEvents = () => (getDebateAggregateState()?.events || []).slice();
-        window.__projectDebateTurns = (sessionId = null) => window.DebateProjections?.projectTurns?.(
-            getDebateAggregateState(), sessionId == null ? {} : { sessionId }
-        ) || [];
         // A run that was left unfinished when the page closed is NOT adopted as a "technical pause":
         // that took the Run button (it showed "pause" right after a reload, before any model was
         // chosen, and kept it) and its "Continue" only restarted the run anyway. It is dropped; a new
@@ -5422,7 +5414,6 @@ document.addEventListener('click', (event) => {
         const makeInitialRuntimeState = () => window.DebateFSM.createState();
         const getSerialDebateState = () => getDebateAggregateState()?.protocolState || makeInitialRuntimeState();
         window.__getSerialDebateState = getSerialDebateState;
-        Object.defineProperty(window, '__serialDebateState', { configurable: true, get: getSerialDebateState });
         window.__setSerialDebateStateForTest = (nextState = {}) => {
             if (!(typeof process !== 'undefined' && process?.env?.NODE_ENV === 'test') && window.__RESULTS_TEST_DEBUG__ !== true) return getSerialDebateState();
             return replaceAggregateProtocolState({ ...getSerialDebateState(), ...nextState });
@@ -18707,72 +18698,6 @@ document.addEventListener('click', (event) => {
     }
     // --- END STATUS INDICATOR LOGIC ---
 
-    // --- TEST / SMOKE HARNESS ---
-    // Non-intrusive helper to validate STATUS_UPDATE rendering.
-    // Usage:
-    //  - From console: runStatusIndicatorSmokeTest();
-    //  - Or set window.__LLM_RESULTS_DEBUG__ = true before loading to auto-run once.
-    function runStatusIndicatorSmokeTest() {
-        try {
-            const testName = `__llm_test_${Date.now()}`;
-            // create a temp indicator in the DOM (mirrors markup in result_new.html)
-            const container = document.createElement('div');
-            container.style.position = 'fixed';
-            container.style.bottom = '6px';
-            container.style.right = '6px';
-            container.style.zIndex = '99999';
-            container.id = testName;
-            const indicator = document.createElement('span');
-            indicator.className = 'status-indicator';
-            indicator.dataset.llmName = testName;
-            const label = document.createElement('span');
-            label.style.marginLeft = '8px';
-            label.style.fontSize = '12px';
-            label.textContent = 'Smoke test';
-            container.appendChild(indicator);
-            container.appendChild(label);
-            document.body.appendChild(container);
-
-            const statusesToTest = [
-                'IDLE', 'INITIALIZING', 'SENDING', 'RECEIVING', 'SUCCESS',
-                'PARTIAL', 'STREAM_TIMEOUT_HIDDEN', 'RECOVERABLE_ERROR', 'CRITICAL_ERROR', 'GENERATING', 'ERROR', 'no-answer'
-            ];
-
-            const results = [];
-            statusesToTest.forEach((s) => {
-                updateModelStatusUI(testName, s, { message: `msg for ${s}` });
-                const el = document.querySelector(`.status-indicator[data-llm-name="${testName}"]`);
-                const cls = el ? el.className : '(missing)';
-                const title = el ? el.title : '(missing)';
-                const pass = el && title && title.length > 0;
-                results.push({ status: s, class: cls, title, pass });
-            });
-
-            console.group('[RESULTS] STATUS_INDICATOR SMOKE TEST');
-            results.forEach(r => console.log(r));
-            console.groupEnd();
-
-            // cleanup after short delay to allow manual inspection
-            setTimeout(() => {
-                try { document.getElementById(testName)?.remove(); } catch (_) {}
-            }, 3000);
-
-            return results;
-        } catch (err) {
-            console.error('[RESULTS] Smoke test failed:', err);
-            return null;
-        }
-    }
-
-    // Auto-run once if explicitly opted-in (debug only)
-    try {
-        if (window.__LLM_RESULTS_DEBUG__ === true) {
-            console.log('[RESULTS] Auto-running status indicator smoke test (debug flag set)');
-            setTimeout(runStatusIndicatorSmokeTest, 600);
-        }
-    } catch (_) {}
-    // --- END TEST / SMOKE HARNESS ---
-
     promptInput.addEventListener('input', () => {
         if (templateSelect.value !== 'manual') {
             promptManuallyEdited = true;
@@ -21604,7 +21529,7 @@ function checkCompareButtonState() {
         // This replaces a hand-written literal that had drifted from the factory
         // above (it was missing newPagesOpenedModels); ensureSerialDebateState()
         // re-hydrates the Sets either way.
-        const getPageSerialDebateState = () => window.__getSerialDebateState?.() || window.__serialDebateState || {};
+        const getPageSerialDebateState = () => window.__getSerialDebateState?.() || {};
         safeStorageLocalGet(DEBATE_SCHEME_STORAGE_KEY).then((data) => {
             setDebateSchemeValue(data?.[DEBATE_SCHEME_STORAGE_KEY] || '2');
         });
