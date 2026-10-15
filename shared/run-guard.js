@@ -30,9 +30,25 @@
     }) || null;
   }
 
+  // Every model of the previous batch has its final answer (or was stopped): what the rounds still do is housekeeping
+  // (collect passes that skip finalized models, results-tab focus). No models: not "all done".
+  function allModelsFinal(llms) {
+    if (!llms || typeof llms !== 'object') return false;
+    const names = Object.keys(llms);
+    if (!names.length) return false;
+    return names.every((name) => {
+      const entry = llms[name];
+      if (!entry) return true;
+      return Boolean(entry.cardAnswerComplete || entry.finalStatusRecorded) || STOPPED_STATUSES.has(String(entry.status || '').toUpperCase());
+    });
+  }
+
   function canStartNewRun(session, options = {}, llms = null) {
     if (options.force === true) return { ok: true };
-    if (session?.roundsInProgress) {
+    // The next batch of a Basic run (pipelineContext.custom) does not wait for the tail of the rounds of the batch before it
+    // when all its models have answered: the old rounds stop on their own when the new session starts (isSessionActive).
+    const tailOnly = options.pipelineContext?.custom === true && allModelsFinal(llms);
+    if (session?.roundsInProgress && !tailOnly) {
       return {
         ok: false,
         errorCode: 'RUN_ALREADY_ACTIVE',
@@ -55,7 +71,8 @@
 
   const api = Object.freeze({
     canStartNewRun,
-    findGeneratingModel
+    findGeneratingModel,
+    allModelsFinal
   });
 
   root.RunGuard = api;
