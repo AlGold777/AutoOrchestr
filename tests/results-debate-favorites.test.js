@@ -3602,6 +3602,59 @@ describe('Pipeline debate favorites view', () => {
         } finally { h.cleanup(); }
       }, 30000);
 
+      // OI-4: a correction of the same visit (attempt 2) replaces the card of the rejected attempt; the feed never keeps both.
+      const oi4CorrectionRun = async (name, beforeCorrection = null) => {
+        const h = setupCustomInheritance(name, { synthesis: '' });
+        const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
+          { ref: 'r1', kind: 'round', output: { name: 'Итог', sections: ['Итог'] }, models: [{ name: 'GPT' }] }
+        ] };
+        expect((await h.debug.installBasicSchema(name, schema)).ok).toBe(true);
+        document.querySelector(`.pipeline-item[data-name="${name}"]`).click();
+        await settleCustomCard();
+        const answers = ['Просто текст без разделов.', 'Итог: исправленный ответ GPT.'];
+        const cardsOf = () => [...document.querySelectorAll('.debate-model-card[data-llm-name="GPT"]')];
+        chrome.runtime.sendMessage.mockImplementation((message, callback) => {
+          if (message.type !== 'START_FULLPAGE_PROCESS') { callback?.({ status: 'ok', active: false }); return; }
+          h.starts.push(message);
+          const attempt = h.starts.length;
+          callback?.({ status: 'process_started' });
+          setTimeout(() => {
+            if (attempt === 2) beforeCorrection?.(cardsOf()[0]);
+            message.selectedLLMs.forEach((model) => h.debug.pipelineWaiter.handleFinal({ type: 'LLM_RESPONSE', llmName: model,
+              transportRequestId: message.pipelineContext.transportRequestIds[model],
+              answer: answers[attempt - 1] || '',
+              metadata: { ...message.pipelineContext, status: 'SUCCESS', attribution: 'verified', completion: 'complete' }
+            }));
+          }, 0);
+        });
+        await h.debug.runCustomFromPage({ task: 'T' });
+        await settleCustomCard();
+        return { h, answers, cardsOf };
+      };
+
+      test('OI-4: the correction of a rejected answer replaces its card; the feed shows the accepted answer once, without a revision', async () => {
+        const { h, answers, cardsOf } = await oi4CorrectionRun('OI-4 correction');
+        try {
+          expect(h.starts).toHaveLength(2);
+          expect(cardsOf()).toHaveLength(1);
+          const card = cardsOf()[0];
+          expect(card.querySelector('.debate-model-card-output').textContent.trim()).toBe(answers[1]);
+          expect(card.textContent).not.toContain(answers[0]);
+          expect(card.querySelector('.post-terminal-badge')).toBeNull();
+          expect(card.dataset.turnClosed).toBe('true');
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      test('OI-4: a starred card of the same round keeps its star when the correction replaces its answer', async () => {
+        const { h, answers, cardsOf } = await oi4CorrectionRun('OI-4 starred', (card) => { card.dataset.starred = 'true'; });
+        try {
+          expect(cardsOf()).toHaveLength(1);
+          expect(cardsOf()[0].dataset.starred).toBe('true');
+          expect(cardsOf()[0].querySelector('.debate-model-card-output').textContent.trim()).toBe(answers[1]);
+          expect(cardsOf()[0].querySelector('.post-terminal-badge')).toBeNull();
+        } finally { h.cleanup(); }
+      }, 30000);
+
       test('N07: the owner window shows what the owner was given (the answers of the input) and the form of the expected answer', async () => {
         require('../results/choice-dialog');
         require('../results/stage-card');

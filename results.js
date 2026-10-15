@@ -7156,7 +7156,9 @@ document.addEventListener('click', (event) => {
                         if (text.trim()) {
                             const request = wave.find((item) => item.modelName === model);
                             // A later visit of the step is its own card: the answer of an earlier visit stays in the feed.
+                            // A correction of the same visit replaces the card's answer: the feed shows the answer the run goes on with.
                             updateDebateModelCardOutput(model, text, '', {
+                                answerRevision: request?.attempt > 1,
                                 status: modelResult.status || 'SUCCESS', source: 'custom',
                                 role: window.StageCard?.feed?.role({ label, modelName: model, participantId: request?.participantId, visit: request?.visit }) || `Basic · ${label}`,
                                 pipelineRunId: runContext.pipelineRunId,
