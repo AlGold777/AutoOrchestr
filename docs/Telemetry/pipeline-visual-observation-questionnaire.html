@@ -7,16 +7,17 @@
 <style>
 :root{color-scheme:light;--line:#dbe2ea;--ink:#1e293b;--blue:#356fe0;--bg:#f4f6fa}
 *{box-sizing:border-box}body{margin:0;padding:20px;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
-main{max-width:1100px;margin:auto}h1{max-width:1100px;margin:0 auto 12px;font-size:18px;line-height:1.25;font-weight:700}.attachments{display:flex;align-items:center;gap:9px;margin:0 0 10px;cursor:pointer;width:max-content;padding:0 95px 8px}.attachments input,.mark input{position:absolute;opacity:0;width:1px;height:1px}
-.round{width:19px;height:19px;border:2px solid #94a3b8;border-radius:50%;display:inline-grid;place-items:center;flex:none}.round:after{content:"";width:9px;height:9px;border-radius:50%;background:transparent}.attachments input:checked+.round,.mark input:checked+.round{border-color:var(--blue)}.attachments input:checked+.round:after,.mark input:checked+.round:after{background:var(--blue)}
+main{max-width:1100px;margin:auto}.title-row{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:12px}h1{margin:0;font-size:18px;line-height:1.25;font-weight:700}.attachments{display:flex;align-items:center;gap:9px;margin:0 0 0 auto;cursor:pointer;width:max-content;padding:0 197px 0 0;white-space:nowrap}.attachments input,.mark input,.model-choice input{position:absolute;opacity:0;width:1px;height:1px}.model-picker{display:flex;align-items:center;gap:16px;overflow-x:auto;margin:0 0 10px;padding:0 10px 4px;white-space:nowrap}.model-picker strong{flex:none}.model-choices{display:flex;align-items:center;gap:13px}.model-choice{display:inline-flex;align-items:center;gap:6px;cursor:pointer}.model-choice:focus-within{outline:2px solid var(--blue);outline-offset:3px}
+.round{width:19px;height:19px;border:2px solid #94a3b8;border-radius:50%;display:inline-grid;place-items:center;flex:none}.round:after{content:"";width:9px;height:9px;border-radius:50%;background:transparent}.attachments input:checked+.round,.mark input:checked+.round,.model-choice input:checked+.round{border-color:var(--blue)}.attachments input:checked+.round:after,.mark input:checked+.round:after,.model-choice input:checked+.round:after{background:var(--blue)}
 .pipeline-wrap{max-width:1100px;margin-inline:auto;overflow-x:auto;background:white;border:1px solid var(--line);border-radius:12px}.pipeline-wrap table{width:100%;min-width:1780px;table-layout:fixed;border-collapse:collapse}.pipeline-wrap th,.pipeline-wrap td{padding:7.5px 4px;border-bottom:1px solid var(--line);text-align:center}.pipeline-wrap th{font-size:12px;line-height:1.2;color:#475569;vertical-align:bottom;overflow-wrap:anywhere}.pipeline-wrap th:first-child,.pipeline-wrap td:first-child{position:sticky;left:0;z-index:2;background:#fff;width:180px;padding:7px 10px;font-weight:700;box-shadow:2px 0 4px rgba(15,23,42,.08)}.pipeline-wrap th:first-child{z-index:3}.pipeline-wrap .round-row td{background:#edf4ff;font-weight:700;text-align:left}.pipeline-wrap .round-row td:first-child{background:#edf4ff}.round-toggle{width:24px;height:24px;margin-left:8px;border:0;border-radius:4px;background:transparent;color:var(--ink);font:700 18px/1 system-ui;cursor:pointer}.round-toggle:hover{background:#dce9ff}.pipeline-wrap .model-row td:first-child{padding-left:28px;font-size:13px}.mark{display:inline-flex;align-items:center;justify-content:center;min-width:25px;min-height:25px;cursor:pointer}.cell-select{width:100%;max-width:100%;min-height:25px;padding:1px 2px;border:0;border-radius:4px;background:transparent;color:var(--ink);font:11px system-ui;text-align:center}.cell-select:focus{outline:2px solid var(--blue)}
+@media(max-width:800px){.title-row{align-items:flex-start;flex-wrap:wrap}.attachments{padding-right:0}}
 .footer{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;margin:8px auto 0;max-width:1100px}.actions{display:flex;justify-content:center;align-items:center;gap:8px}.actions button{min-height:32px;padding:5px 15px;border:1px solid #cbd5e1;border-radius:7px;background:#fff;color:var(--ink);font:700 14px system-ui;cursor:pointer}.actions .save{background:var(--blue);border-color:var(--blue);color:#fff}.actions .copy{padding:0 6px;border:0;border-radius:0;background:transparent;color:#475569;font:400 25px/1 system-ui;min-width:30px}.actions .copy:hover{color:var(--blue)}.actions .save:hover{filter:brightness(.96)}.actions button:focus-visible,.mark:focus-within,.attachments:focus-within{outline:2px solid var(--blue);outline-offset:2px}
 </style>
 </head>
 <body>
 <main>
-  <h1>Зафиксированные визуально проблемы Pipeline</h1>
-  <label class="attachments"><input id="attachments" type="checkbox"><span class="round"></span><span>Вложенные файлы</span></label>
+  <div class="title-row"><h1>Зафиксированные визуально проблемы Pipeline</h1><label class="attachments"><input id="attachments" type="checkbox"><span class="round"></span><span>Вложенные файлы</span></label></div>
+  <div class="model-picker" aria-label="Участвуют в pipeline"><strong>Участвуют в pipeline:</strong><div class="model-choices" id="model-choices"></div></div>
   <div class="pipeline-wrap"><table id="pipeline-observations"><thead><tr><th>Round / Model</th><th title="Запрос шага не ушёл">Не отправлен</th><th title="В запросе виден необработанный плейсхолдер или запрос пустой">Неверный запрос</th><th title="Модель получила не результат предыдущего шага">Неверный вход</th><th title="Ответ не попал в карточку шага">Ответ не в карточке</th><th title="Ответ обрезан на странице модели">Обрезан: страница</th><th title="Ответ обрезан в карточке шага">Обрезан: карточка</th><th title="В карточке старый ответ или ответ предыдущего шага">Чужой/старый ответ</th><th title="Статус на холсте не соответствует реальности">Статус шага</th><th title="Подсвечен не тот шаг">Подсветка</th><th title="Маршрут пошёл не туда">Переход</th><th title="Вопрос владельцу не появился или ответ не дошёл до следующего шага">Вопрос владельцу</th><th title="Не сработала кнопка Пауза, Продолжить или Стоп; выбранная кнопка указана в ячейке">Управление</th><th title="Вложения не дошли">Вложения не вставились</th><th title="До шага дошли не все вложения">Вставились не все вложения</th><th title="Артефакт не открылся или пустой">Артефакт</th><th title="Пользователь вмешался вручную">Вмешательство вручную</th><th title="Пользователь кликал или переключал вкладку модели во время ответа">Клик/вкладка во время ответа</th></tr></thead><tbody></tbody></table></div>
   <div class="footer"><span aria-hidden="true"></span><div class="actions"><button class="save" id="save" type="button">Save</button><button class="copy" id="copy" type="button" aria-label="Копировать Markdown" title="Копировать Markdown">⧉</button></div><span aria-hidden="true"></span></div>
 </main>
@@ -43,12 +44,18 @@ main{max-width:1100px;margin:auto}h1{max-width:1100px;margin:0 auto 12px;font-si
     {label:'Клик/вкладка во время ответа',type:'checkbox',detail:'Пользователь кликал или переключал вкладку модели во время ответа'}
   ];
   const tbody=document.querySelector('#pipeline-observations tbody');
+  const modelChoices=document.getElementById('model-choices');
   const escapeHtml=value=>String(value).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
   const buildIssueCells=()=>issues.map(issue=>{
     const aria=escapeHtml(issue.detail);
     if(issue.type==='select')return `<td><select class="cell-select" aria-label="${aria}"><option value="">-</option>${issue.options.map(option=>`<option>${escapeHtml(option)}</option>`).join('')}</select></td>`;
     return `<td><label class="mark" aria-label="${aria}"><input type="checkbox"><span class="round"></span></label></td>`;
   }).join('');
+  models.forEach((model,index)=>{
+    const choice=document.createElement('label');choice.className='model-choice';
+    choice.innerHTML=`<input type="checkbox" data-model-choice="${escapeHtml(model)}" aria-label="Участвует в pipeline: ${escapeHtml(model)}"><span class="round"></span><span>${escapeHtml(model)}</span>`;
+    modelChoices.appendChild(choice);
+  });
   for(let round=1;round<=10;round++){
     const group=document.createElement('tr');group.className='round-row';group.dataset.round=String(round);
     group.innerHTML=`<td>Round${round}<button class="round-toggle" type="button" aria-expanded="false" aria-label="Развернуть Round${round}">+</button></td><td colspan="${issues.length}"></td>`;
@@ -59,20 +66,27 @@ main{max-width:1100px;margin:auto}h1{max-width:1100px;margin:0 auto 12px;font-si
       tbody.appendChild(row);
     });
   }
+  const isExpanded=round=>tbody.querySelector(`.round-row[data-round="${round}"] .round-toggle`).getAttribute('aria-expanded')==='true';
+  const updateModelRows=()=>{
+    const selected=new Set([...modelChoices.querySelectorAll('[data-model-choice]:checked')].map(input=>input.dataset.modelChoice));
+    tbody.querySelectorAll('.model-row').forEach(row=>{row.hidden=!selected.has(row.dataset.model)||!isExpanded(row.dataset.round);});
+  };
+  modelChoices.addEventListener('change',updateModelRows);
   tbody.addEventListener('click',event=>{
     const toggle=event.target.closest('.round-toggle');
     if(!toggle)return;
     const group=toggle.closest('.round-row');
     const expanded=toggle.getAttribute('aria-expanded')!=='true';
-    tbody.querySelectorAll(`.model-row[data-round="${group.dataset.round}"]`).forEach(row=>row.hidden=!expanded);
     toggle.textContent=expanded?'−':'+';
     toggle.setAttribute('aria-expanded',String(expanded));
     toggle.setAttribute('aria-label',`${expanded?'Свернуть':'Развернуть'} Round${group.dataset.round}`);
+    updateModelRows();
   });
   const markdown=()=>{
     const lines=[];
     if(document.getElementById('attachments').checked)lines.push('Вложенные файлы: Да','');
-    const rows=[...tbody.querySelectorAll('.model-row')].map(row=>({row,values:issues.map((issue,ii)=>{
+    const selected=new Set([...modelChoices.querySelectorAll('[data-model-choice]:checked')].map(input=>input.dataset.modelChoice));
+    const rows=[...tbody.querySelectorAll('.model-row')].filter(row=>selected.has(row.dataset.model)).map(row=>({row,values:issues.map((issue,ii)=>{
       const control=row.cells[ii+1].querySelector('input,select');
       return issue.type==='select'?control.value:(control.checked?'Да':'');
     })}));
