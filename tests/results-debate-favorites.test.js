@@ -374,7 +374,6 @@ async function loadResultsScript(seededPipelineStore = null) {
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-trace-schema.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-trace-store.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-trace-projections.js'), 'utf8'));
-  window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-execution-context.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-draft-plan.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-projections.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-prompt-catalog.js'), 'utf8'));
@@ -1814,18 +1813,6 @@ describe('Pipeline debate favorites view', () => {
       ...meta, requestId: 'next-run-request', pipelineRunId: 'next-run'
     });
     expect(document.querySelectorAll('.debate-model-card[data-llm-name="GPT"]')).toHaveLength(2);
-  });
-
-  test('debate approval waiter rejects and cleans up on abort', async () => {
-    const debug = window.__pipelineLifecycleDebug;
-    const controller = new AbortController();
-    const approvalPromise = debug.waitForDebateApproval({ signal: controller.signal });
-    expect(debug.getApprovalWaiting()).toBe(true);
-
-    controller.abort();
-
-    await expect(approvalPromise).rejects.toMatchObject({ name: 'AbortError' });
-    expect(debug.getApprovalWaiting()).toBe(false);
   });
 
   test('debate feed mirrors cards into structured DebateEngine transcript artifact', async () => {

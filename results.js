@@ -5327,15 +5327,6 @@ document.addEventListener('click', (event) => {
             debateRunToggleBtn?.setAttribute('aria-busy', String(Boolean(isRunning)));
         };
 
-        const debateExecutionContext = window.DebateExecutionContext?.createExecutionContext?.() || null;
-        const ensureDebateExecutionContext = () => {
-            if (!debateExecutionContext?.get?.()) {
-                debateExecutionContext?.begin?.(activePipelineRunContext?.pipelineRunId || 'debate-page', {
-                    abortController: activePipelineAbortController || undefined
-                });
-            }
-            return debateExecutionContext;
-        };
         const dispatchDebateRunEvent = (type, payload = {}) => recordDebateDomainEvent(type, payload);
         const replaceAggregateProtocolState = (protocolState) => {
             if (!debateAggregateStore) return protocolState;
@@ -5650,9 +5641,7 @@ document.addEventListener('click', (event) => {
                 debateRunState.status = debatePaused ? 'paused' : (pipelineRunActive ? 'running' : 'idle');
                 debateRunState.pauseReason = debatePaused ? reason : '';
             }
-            if (!debatePaused && debateExecutionContext?.hasApprovalWaiter?.()) {
-                resolveDebateApproval();
-            } else if (!debatePaused && typeof debateApprovalBridge.resolve === 'function') {
+            if (!debatePaused && typeof debateApprovalBridge.resolve === 'function') {
                 debateApprovalBridge.resolve();
             } else {
                 updateDebateButtonsUi();
@@ -5743,7 +5732,7 @@ document.addEventListener('click', (event) => {
             const startPending = pipelineRunActive && !['running', 'awaiting_approval', 'paused', 'technical_pause', 'finalization_pending'].includes(status);
             return window.DebateController?.deriveRunControls?.({
                 aggregate,
-                approvalWaiting: hasLiveRun && debateExecutionContext?.hasApprovalWaiter?.() === true,
+                approvalWaiting: false,
                 startPending,
                 autoMode: isDebateAutoPolicy()
             }) || {
@@ -5769,18 +5758,9 @@ document.addEventListener('click', (event) => {
         };
         const resolveDebateApproval = () => {
             dispatchDebateRunEvent(window.DebateRunStore?.EVENTS?.APPROVAL_GRANTED, {});
-            debateExecutionContext?.resolveApproval?.(true);
             updateDebateButtonsUi();
         };
         debateApprovalBridge.resolve = resolveDebateApproval;
-        const rejectDebateApproval = (error) => {
-            debateExecutionContext?.rejectApproval?.(error);
-            updateDebateButtonsUi();
-        };
-        const cleanupDebateApprovalWaiter = () => {
-            debateExecutionContext?.clearApproval?.();
-            updateDebateButtonsUi();
-        };
         const buildDebateActionPromptSuffix = () => {
         const lenValue = (debateLengthSelect?.value || '500').trim();
         const senderValue = (debateSenderSelect?.value || '').trim();
@@ -5798,48 +5778,6 @@ document.addEventListener('click', (event) => {
         }
         return extra.length ? `\n\n${extra.join('\n')}` : '';
     };
-        const waitForDebateApproval = async ({ signal, timeoutMs = 0 } = {}) => {
-            const isAuto = isDebateAutoPolicy();
-            if (isAuto && !debatePaused) {
-                debateRunState.turnCount = Number(debateRunState.turnCount || 0) + 1;
-                debateRunState.maxTurns = getDebateMaxTurns();
-                if (debateRunState.turnCount <= debateRunState.maxTurns) {
-                    updateDebateButtonsUi();
-                    return true;
-                }
-                setDebatePausedState(true, 'max_turns_reached');
-                showNotification(`Debate paused after ${debateRunState.maxTurns} auto turns.`, 'warn');
-            }
-            if (debateExecutionContext?.hasApprovalWaiter?.()) return true;
-            dispatchDebateRunEvent(window.DebateRunStore?.EVENTS?.APPROVAL_REQUESTED, { model: '' });
-            await new Promise((resolve, reject) => {
-                let timeoutId = null;
-                const abort = () => {
-                    if (timeoutId) clearTimeout(timeoutId);
-                    rejectDebateApproval(new DOMException('Pipeline approval cancelled', 'AbortError'));
-                };
-                if (signal?.aborted) {
-                    reject(new DOMException('Pipeline approval cancelled', 'AbortError'));
-                    return;
-                }
-                ensureDebateExecutionContext()?.setApprovalWaiter?.({
-                    resolve,
-                    reject,
-                    cleanup: () => {
-                        if (timeoutId) clearTimeout(timeoutId);
-                        signal?.removeEventListener?.('abort', abort);
-                    }
-                });
-                signal?.addEventListener?.('abort', abort, { once: true });
-                if (timeoutMs > 0) {
-                    timeoutId = setTimeout(() => {
-                        rejectDebateApproval(new Error('Pipeline approval timeout'));
-                    }, timeoutMs);
-                }
-                updateDebateButtonsUi();
-            });
-            return true;
-        };
         updateDebateButtonsUi();
 
         const getRoundModelsState = (roundIndex) => {
@@ -7463,11 +7401,8 @@ document.addEventListener('click', (event) => {
                 isTerminalPipelineMessage,
                 resolvePipelineWaitTimeoutMs,
                 makePipelineBatchId,
-                waitForDebateApproval,
                 harvestFeedAnswersForOpenRound,
                 resolveDebateApproval,
-                rejectDebateApproval,
-                cleanupDebateApprovalWaiter,
                 cancelPipelineRun,
                 getModeratorDispatchText,
                 syncModeratorMiniPrompts,
@@ -7509,7 +7444,6 @@ document.addEventListener('click', (event) => {
                     if (!pipelineStore.overrides.profiles) pipelineStore.overrides.profiles = {};
                 },
                 getDebateTranscriptStore: () => debateTranscriptStore,
-                getApprovalWaiting: () => debateExecutionContext?.hasApprovalWaiter?.() === true,
                 customStepsFromPlan,
                 prepareCustomPrompts,
                 composeCustomPrompts,

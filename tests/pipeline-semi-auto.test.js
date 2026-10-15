@@ -163,7 +163,6 @@ describe('Run button ignores a phantom run state', () => {
   test('with no run on the page (none started, no engine) the aggregate status cannot turn Run into pause/resume/approve', () => {
     expect(source).toContain('const hasLiveRun = pipelineRunActive;');
     expect(source).toContain("const phantom = !hasLiveRun && aggregate && String(aggregate.status || 'idle') !== 'idle';");
-    expect(source).toContain('approvalWaiting: hasLiveRun && debateExecutionContext?.hasApprovalWaiter?.() === true');
     expect(source).toContain("'ui_phantom_state'");
   });
 });

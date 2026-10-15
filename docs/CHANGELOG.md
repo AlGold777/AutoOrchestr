@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-10-15 — Удалён контекст исполнения Debate и ожидание одобрения, версия 2.81.787
+
+- Удалены `disput/debate-execution-context.js`, его тест, `waitForDebateApproval`, `rejectDebateApproval`, `cleanupDebateApprovalWaiter` и отладочный `getApprovalWaiting`: ожидание одобрения нигде не запускалось (у `waitForDebateApproval` не было вызовов), поэтому кнопка «approve» и так не включалась (`approvalWaiting` теперь константа `false`).
+
 ### 2026-10-15 — Удалена анонимизация участников, версия 2.81.786
 
 - Из `runModelBatch` убраны подмена имён моделей в промптах и обратная подстановка в ответах (Basic всегда передавал `anonymizeParticipants: false`). Удалены `disput/debate-anonymization.js`, его тест и подключения в `manifest.json`/HTML, поле `anonymizeParticipants` из пресета.
