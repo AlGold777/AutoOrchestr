@@ -383,18 +383,16 @@ GPT подготавливает запрос через `ContentUtils.ensurePro
 
 #### TEST-1. Постоянно падающие тесты, не относящиеся к Basic
 
-Состояние на версию 2.81.752 (полный прогон при приёмке архитектуры): в полном `npm test` падают **20 тестов в 6 файлах**, имена те же, что ниже; на 2.81.695 было то же число. Они проверяют вёрстку и контракты других частей страницы; изменения Basic их не вызывали и не должны их чинить. Если при вашей работе число падающих тестов стало больше или набор имён изменился — это ваша регрессия.
+Состояние на версию 2.81.788 (прогон файлов из таблицы): падают **9 тестов в 4 файлах**. Ещё 11 тестов (`tests/results-debate-favorites.test.js` и `tests/pipeline-feed-layout.test.js`) падали из-за хелпера чтения CSS, который не понимал `?v=` в `@import` файла `styles.css`; хелперы исправлены, тесты проходят. Они проверяют вёрстку и контракты других частей страницы; изменения Basic их не вызывали и не должны их чинить. Если при вашей работе число падающих тестов стало больше или набор имён изменился — это ваша регрессия.
 
 | Файл | Тесты |
 | --- | --- |
-| `tests/results-debate-favorites.test.js` (4) | `selection toolbar is absolutely positioned near the selected fragment and has visible icons`; `model cards use 14px text, keep empty one-line cards, and cap long responses at five lines`; `wide card overlay uses the viewport and finalization removes printing marker`; `double-clicking empty session-bar space opens and closes the entire debate feed widely` |
-| `tests/pipeline-feed-layout.test.js` (7) | `collapsed top bar hides logo and model labels and is scoped to the pipeline page`; `collapsed top bar: 14px between icons, 7px tighter to the edge and to the input section`; `compact input trims 4px from the msg-header padding`; `compact moderator input is one line unless focused`; `live printing signal is a one-line chip in the card header`; `the composer keeps one width with the feed open or closed; the top bar column keeps the main page width`; `technical updates live in one badge popover with tabs` |
 | `tests/release-log-regressions.test.js` (5) | `Disput stage insertion, tab reuse, manual mode and reload cleanup share one contract`; `closed Disput composer keeps the run button inside the right edge of moderator input`; `pipeline control buttons are placed directly below the prompt group with vertical input layout`; `pro controls use one msg-header run button and list add action without an Output canvas stage`; `state map actions use icon buttons and keep Case before Export` |
 | `tests/pipeline-semi-auto.test.js` (2) | `pressing a composer button keeps the focus in the input, so a shrinking input cannot move the button away`; `restore never overwrites text the moderator has typed since` |
 | `tests/telemetry-export-actions.test.js` (1) | `Disput export whitelists diagnostic evidence and deep-redacts JSON` |
 | `tests/results-ui-recovery-triggers.test.js` (1) | `rendering falls back to committed text when rich HTML loses its tail` |
 
-Как проверить: `npx jest 2>&1 | grep -E "^Tests:|^Test Suites:"` — сейчас `20 failed`; список имён — `npx jest 2>&1 | grep "●"`. Тесты Basic (`tests/basic-*.test.js`, `tests/custom-*.test.js`, `tests/stage-card-basic.test.js`) должны проходить все.
+Как проверить: `npx jest 2>&1 | grep -E "^Tests:|^Test Suites:"` — сейчас ожидается не больше `9 failed` по таблице выше (полный прогон на 2.81.788 не запускался); список имён — `npx jest 2>&1 | grep "●"`. Тесты Basic (`tests/basic-*.test.js`, `tests/custom-*.test.js`, `tests/stage-card-basic.test.js`) должны проходить все.
 
 #### TEST-2. Нестабильный тест
 
