@@ -36,17 +36,16 @@ main{max-width:1100px;margin:auto}.attachments{display:flex;align-items:center;g
   document.getElementById('save').addEventListener('click',()=>{
     const headers=['LLM / этап',...stages];
     const lines=['| '+headers.join(' | ')+' |','| '+headers.map(()=> '---').join(' | ')+' |'];
-    const attachment=document.getElementById('attachments').checked?'Да':'Нет';
-    lines.push('| Вложенные файлы: '+attachment+' | '+stages.map(()=> '—').join(' | ')+' |');
+    if(document.getElementById('attachments').checked) lines.push('| Вложенные файлы: Да | '+stages.map(()=> '').join(' | ')+' |');
     [...body.rows].forEach(row=>{
       const vals=[row.cells[0].textContent.trim()];
       stages.forEach((stage,si)=>{
         const input=row.cells[si+1].querySelector('input');
-        vals.push(si===2?(input.checked?'проблема платформы':'-'):(input.checked?'Да':'Нет'));
+        vals.push(input.checked?(si===2?'проблема платформы':'Да'):'');
       });
-      lines.push('| '+vals.join(' | ')+' |');
+      if(vals.some((value,index)=>index>0&&value)) lines.push('| '+vals.join(' | ')+' |');
     });
-    const blob=new Blob(['\ufeff'+lines.join('\n')+'\n'],{type:'text/markdown;charset=utf-8'});
+    const blob=new Blob([lines.join('\n')+'\n'],{type:'text/markdown;charset=utf-8'});
     const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='visual-observation-questionnaire.md';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
   });
 })();
