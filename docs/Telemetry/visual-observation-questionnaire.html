@@ -14,8 +14,9 @@ main{max-width:1100px;margin:auto}.attachments{display:flex;align-items:center;g
 </head>
 <body>
 <main>
+  <label class="attachments"><input id="attachments" type="checkbox"><span class="round"></span><span>Вложенные файлы</span></label>
   <div class="table-wrap"><table id="observations"><thead><tr><th>LLM</th><th>Запрос вставился</th><th>Запрос отправился</th><th>Модель не сгенерировала ответ</th><th>Ответ не вставился в карточку</th><th>Ответ обрезан</th></tr></thead><tbody></tbody></table></div>
-  <div class="footer"><label class="attachments"><input id="attachments" type="checkbox"><span class="round"></span><span>Вложенные файлы</span></label><div class="actions"><button class="save" id="save" type="button">Save</button><button class="copy" id="copy" type="button" aria-label="Копировать Markdown" title="Копировать Markdown">⧉</button></div><span aria-hidden="true"></span></div>
+  <div class="footer"><span aria-hidden="true"></span><div class="actions"><button class="save" id="save" type="button">Save</button><button class="copy" id="copy" type="button" aria-label="Копировать Markdown" title="Копировать Markdown">⧉</button></div><span aria-hidden="true"></span></div>
 </main>
 <script>
 (() => {
