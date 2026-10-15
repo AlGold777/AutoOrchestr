@@ -125,7 +125,7 @@
 | `debate-projections` | только `collectDebateArtifact` (отладка, `window.__pipelineLifecycleDebug`) | DEBATE | удалить с функцией и тестами |
 | `pipeline-profile-store`, `results/pipeline-profile-view`, диалог «Pipeline profiles» | редактор JSON профилей | УДАЛЕНО (2.81.784) | кнопка `#pipeline-profile-btn` оставлена неактивной заглушкой по решению владельца |
 
-**Решения владельца:** (1) кнопка «Pipeline profiles» остаётся визуальной заглушкой, весь связанный код удалён (сделано в 2.81.784); (2) хранилища `llmCodex`/`llmCortex` (`llmCodexDebateRun.v1` и др.): переименовать с миграцией (в работе).
+**Решения владельца:** (1) кнопка «Pipeline profiles» остаётся визуальной заглушкой, весь связанный код удалён (сделано в 2.81.784); (2) хранилища `llmCodex`/`llmCortex` (`llmCodexDebateRun.v1` и др.): переименованы с миграцией (сделано в 2.81.785, `shared/storage-key-migration.js`).
 
 **Что ещё сделать (порядок):**
 1. Убрать из `runModelBatch` анонимизацию и вызовы, нужные только Debate; убрать `debate-anonymization`, `debate-execution-context`, `debate-projections` вместе с approve-карточками, `waitForDebateApproval`, `collectDebateArtifact`, судьёй/оценщиком и их тестами.

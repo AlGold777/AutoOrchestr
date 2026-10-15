@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-15 — Ключи хранилища `llmCodex…` переименованы с миграцией, версия 2.81.785
+
+- Новые имена: `aoRunTransport.v1`, `aoSchemeMode.v1`, `aoAutoMode.v1`, `aoFullAnswers.v1`, `aoSelectors.v1`, `aoEngineState.v1`, `aoTrace.v1`, `aoDevtoolsActiveTab.v1`.
+- `shared/storage-key-migration.js` при открытии страницы копирует настройки и запись прогона из старых ключей в новые (если новый ещё не задан) и удаляет старые; `safeStorageLocalGet` ждёт окончания миграции. Временные ключи просто удаляются. Тест: `tests/storage-key-migration.test.js`.
+
 ### 2026-10-15 — Удалён редактор профилей «Pipeline profiles», версия 2.81.784
 
 - Удалены `results/pipeline-profile-view.js`, `disput/pipeline-profile-store.js`, их тест, диалог `#pipeline-profile-dialog`, CSS и вызовы `pipelineProfileView` в `results.js`. Кнопка `#pipeline-profile-btn` оставлена неактивной заглушкой (решение владельца).

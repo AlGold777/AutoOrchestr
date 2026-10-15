@@ -449,8 +449,8 @@ describe('Pipeline debate favorites view', () => {
     expect(first.classList.contains('is-expanded')).toBe(true);
     button.click();
     expect(first.classList.contains('is-expanded')).toBe(false);
-    const saved = await chrome.storage.local.get('llmCodexDebateFullAnswers.v1');
-    expect(saved['llmCodexDebateFullAnswers.v1']).toBe(false);
+    const saved = await chrome.storage.local.get('aoFullAnswers.v1');
+    expect(saved['aoFullAnswers.v1']).toBe(false);
     const second = addDebateCard({ id: 'full-mode-second', text: 'Next\n'.repeat(10), model: 'Gemini' });
     window.__pipelineLifecycleDebug.syncDebateCardOutputLayout(second);
     expect(second.classList.contains('is-expanded')).toBe(false);

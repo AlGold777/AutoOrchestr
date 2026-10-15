@@ -1666,13 +1666,15 @@ document.addEventListener('click', (event) => {
     const crossViewNavigationIntentTtlMs = 15000;
     const sidebarSessionViewIntentKey = 'llmSidebarPendingSessionView';
     const sidebarSessionViewIntentTtlMs = 15000;
-    const DEBATE_SCHEME_STORAGE_KEY = 'llmCodexDebateScheme.v1';
+    const DEBATE_SCHEME_STORAGE_KEY = 'aoSchemeMode.v1';
     let preserveCrossViewStateOnLoad = false;
     let suppressCrossViewPersistenceOnLoad = false;
     function getCurrentViewKey() {
         return document.body.classList.contains('pipeline-page') ? 'pipeline' : 'main';
     }
     const safeStorageLocalGet = (keys) => new Promise((resolve) => {
+        const migrated = window.StorageKeyMigration?.ready || Promise.resolve();
+        migrated.catch(() => {}).then(() => {
         try {
             if (!chrome?.storage?.local) {
                 resolve({});
@@ -1685,6 +1687,7 @@ document.addEventListener('click', (event) => {
         } catch (_) {
             resolve({});
         }
+        });
     });
     const safeStorageLocalSet = (payload) => new Promise((resolve) => {
         try {
@@ -1995,7 +1998,7 @@ document.addEventListener('click', (event) => {
         const debateRoundPlusBtn = document.getElementById('pipeline-add-round-btn');
     const debateRunPolicySelect = document.getElementById('debate-run-policy-select');
     const debateAutoToggleBtn = document.getElementById('debate-auto-toggle-btn');
-    const DEBATE_AUTO_MODE_STORAGE_KEY = 'llmDisputAutoMode.v1';
+    const DEBATE_AUTO_MODE_STORAGE_KEY = 'aoAutoMode.v1';
     let autoMode = false;
     const persistDebateAutoMode = (enabled) => safeStorageLocalSet({
         [DEBATE_AUTO_MODE_STORAGE_KEY]: !!enabled
@@ -18368,8 +18371,8 @@ document.addEventListener('click', (event) => {
                 `llmComparatorSelectedModelsByView.main`,
                 `llmComparatorSelectedModelsByView.pipeline`,
                 crossViewUiStateKey,
-                'llmCodexDebateSelectors.v1',
-                window.DebateEngine?.STORAGE_KEY || 'llmCortexDebateEngineState.v1',
+                'aoSelectors.v1',
+                window.DebateEngine?.STORAGE_KEY || 'aoEngineState.v1',
                 'llm_saved_sessions_v1'
             ]);
             try { chrome?.storage?.sync?.remove?.('llm_saved_sessions_v1'); } catch (_) {}
@@ -21057,7 +21060,7 @@ function checkCompareButtonState() {
     const debateSessionDeleteBtn = document.getElementById('debate-session-delete-btn');
     const debateSessionFullscreenBtn = document.getElementById('debate-session-fullscreen-btn');
     const debateFullAnswersBtn = document.getElementById('debate-full-answers-btn');
-    const DEBATE_FULL_ANSWERS_KEY = 'llmCodexDebateFullAnswers.v1';
+    const DEBATE_FULL_ANSWERS_KEY = 'aoFullAnswers.v1';
     var debateFullAnswers = true;
     var pipelineCardCover = document.body.classList.contains('pipeline-page')
         ? window.PipelineCardCover?.create(debateModelCards) : null;
@@ -21112,7 +21115,7 @@ function checkCompareButtonState() {
     }
     const debateLengthSelect = document.getElementById('debate-length-select');
     const debateSelToolbar = document.getElementById('debateSelTb');
-    const DEBATE_SELECTORS_STORAGE_KEY = 'llmCodexDebateSelectors.v1';
+    const DEBATE_SELECTORS_STORAGE_KEY = 'aoSelectors.v1';
     let persistedDebateSelectorState = {};
     const debateSessionsStore = window.DebateSessionsStore.create({ activeSessionId: '1' });
     const debateTabsState = debateSessionsStore.state;
@@ -25047,7 +25050,7 @@ function exportSingleTemplate(templateName, sourceData = null) {
     const devtoolsTabs = Array.from(document.querySelectorAll('.devtools-tab'));
     const devtoolsPanels = Array.from(document.querySelectorAll('.devtools-tabpanel'));
     const DEFAULT_DEVTOOLS_TAB_ID = 'disput-tabpanel';
-    const DEVTOOLS_TAB_STORAGE_KEY = 'llmCodexDevtoolsActiveTab.v1';
+    const DEVTOOLS_TAB_STORAGE_KEY = 'aoDevtoolsActiveTab.v1';
     let activeDevtoolsTabId = devtoolsTabs.find(tab => tab.classList.contains('is-active'))?.dataset.tabTarget ||
         devtoolsPanels[0]?.id || DEFAULT_DEVTOOLS_TAB_ID;
 

@@ -487,7 +487,7 @@ describe('release log regression guards', () => {
     expect(source).toContain("pipelineCanvas?.classList.remove('pipeline-canvas-empty');");
     expect(source).not.toContain('getPipelineOutputSelection');
     expect(source).not.toContain('handleDebateTerminalOutputs');
-    expect(source).toContain("const DEBATE_AUTO_MODE_STORAGE_KEY = 'llmDisputAutoMode.v1';");
+    expect(source).toContain("const DEBATE_AUTO_MODE_STORAGE_KEY = 'aoAutoMode.v1';");
     expect(source).toContain('const restoreDebateAutoMode = async () => {');
     expect(source).toContain('persistDebateAutoMode(autoMode);');
     expect(source).not.toContain('autoCheckbox.checked = false;');
@@ -499,7 +499,7 @@ describe('release log regression guards', () => {
     // Boot/reload helpers were extracted to results/boot-utils.js (self-refactor).
     const bootUtils = fs.readFileSync(path.join(__dirname, '..', 'results', 'boot-utils.js'), 'utf8');
 
-    expect(bootUtils).toContain("const DEBATE_TRANSCRIPT_STORAGE_KEY = 'llmCortexDebateEngineState.v1';");
+    expect(bootUtils).toContain("const DEBATE_TRANSCRIPT_STORAGE_KEY = 'aoEngineState.v1';");
     expect(bootUtils).toContain('const clearDebateTranscriptOnReload = () => new Promise((resolve) => {');
     expect(bootUtils).toContain('if (!isPageReloadNavigation()) {');
     expect(bootUtils).toContain('storage.remove(DEBATE_TRANSCRIPT_STORAGE_KEY');
