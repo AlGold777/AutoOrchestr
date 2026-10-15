@@ -36,19 +36,19 @@ h1{max-width:940px;margin:0 auto 12px;font-size:18px;line-height:1.25;font-weigh
     body.appendChild(tr);
   });
   const markdown=()=>{
-    const headers=['LLM',...stages];
     const lines=[];
     if(document.getElementById('attachments').checked) lines.push('Вложенные файлы: Да','');
-    lines.push('| '+headers.join(' | ')+' |','| '+headers.map(()=> '---').join(' | ')+' |');
-    [...body.rows].forEach(row=>{
-      const vals=[row.cells[0].textContent.trim()];
-      stages.forEach((stage,si)=>{
-        const input=row.cells[si+1].querySelector('input');
-        vals.push(input.checked?(si===2?'проблема платформы':'Да'):'');
+    const rows=[...body.rows].map(row=>({row,inputs:stages.map((_,si)=>row.cells[si+1].querySelector('input'))}));
+    const activeIndexes=stages.map((_,si)=>si).filter(si=>rows.some(item=>item.inputs[si].checked));
+    if(activeIndexes.length){
+      const headers=['LLM',...activeIndexes.map(si=>stages[si])];
+      lines.push('| '+headers.join(' | ')+' |','| '+headers.map(()=> '---').join(' | ')+' |');
+      rows.filter(item=>activeIndexes.some(si=>item.inputs[si].checked)).forEach(({row,inputs})=>{
+        const vals=[row.cells[0].textContent.trim(),...activeIndexes.map(si=>inputs[si].checked?(si===2?'проблема платформы':'Да'):'')];
+        lines.push('| '+vals.join(' | ')+' |');
       });
-      if(vals.some((value,index)=>index>0&&value)) lines.push('| '+vals.join(' | ')+' |');
-    });
-    return lines.join('\n')+'\n';
+    }
+    return lines.length?lines.join('\n')+'\n':'';
   };
   document.getElementById('save').addEventListener('click',()=>{
     const blob=new Blob([markdown()],{type:'text/markdown;charset=utf-8'});
