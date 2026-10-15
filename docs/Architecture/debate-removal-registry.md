@@ -1,6 +1,6 @@
 # Реестр: что остаётся от Debate при переходе на Basic
 
-Версия кода: 2.81.771 (коммит `65eb3da`), составлен 14.10.2026, исправлен после повторной проверки того же дня (раздел 8). Цель: решить, что можно убрать вместе со старым движком Debate. Удаление этим документом не выполняется.
+Версия кода: 2.81.771 (коммит `65eb3da`), составлен 14.10.2026, исправлен после повторной проверки того же дня (раздел 8). **Разделы 2–7 описывают состояние на 2.81.771; актуальное состояние на 2.81.783 — раздел 10.** Цель: решить, что можно убрать вместе со старым движком Debate. Удаление этим документом не выполняется.
 
 **Метод.** Граф ссылок между модулями (скрипт по `manifest.json`, `importScripts`, `<script src>` и глобальным именам), затем разбор четырьмя областями (`disput/debate-*`, `shared`/`background`/`pipeline`, `results.js` и страницы) по чтению кода; ключевые утверждения (запуск через `debateApplication`, условие подписчика, запасной вариант пресета, места создания оркестратора) перепроверены вручную. Разбор — статический, в браузере не запускался.
 
@@ -103,3 +103,34 @@
 | 1 | `window.runPipeline` запускает pipeline напрямую; пресет по умолчанию и запасной вариант — `CUSTOM`; пресеты «Universal» и «Red Team» удалены; Debate недостижим из интерфейса | 2.81.772 |
 | 2 | Удалены 17 файлов раздела 5 (15 в `disput/`, `shared/debate-schema.js`, `results/debate-plan-view-model.js`) вместе с тегами `<script>`, записями манифеста и шестью тестами их модулей; в четырёх тестах, где они были частью, убраны только их проверки | 2.81.773 |
 | 3 | Из `startDebateFromPage` убрана ветка Debate (остался запуск Basic); удалён `createApplication` и все обращения к `debateApplication`, `DebateApplication`, state-map view, `debateCaseStore`, `debateRuleHistoryStore`; удалены 19 модулей (`debate-application`, `-orchestrator`, `-orchestrator-persistence`, `-planner`, `-plan-revision`, `-stage-executor`, `-policies`, `-participant-registry`, `-problem-spec`, `-artifact-pipeline`, `-case-store`, `-case-schema`, `-state-map`, `-rule-history`, `-context-broker`, `-contracts`, `-prompt-compiler`, `-capability-registry`, `results/disput-state-map-view`), панель state-map в `result_new.html`, CSS панели, тесты этих модулей; из `debate-version-manifest.js` убраны штампы удалённых модулей | 2.81.781 |
+
+## 10. Состояние на 2.81.783
+
+Сверено 15.10.2026 по коду (граф ссылок пересобран, ссылки в `results.js` проверены по функциям). В `disput/` осталось 16 файлов `debate-*` (из 49 в начале), в `results/` — 8 файлов `debate-*`. Запуск идёт только на Basic.
+
+| Что осталось | Кто использует | Класс | Что дальше |
+| --- | --- | --- | --- |
+| `debate-context-budget`, `debate-response-acceptance`, `stage-markers` | запуск Basic (`runCustomFromPage`) | BASIC | оставить; переименовать в нейтральные имена (шаг 3 плана, ниже) |
+| `debate-draft-plan` | холст Basic (`draftPlanForCanvas`, `recordFromSchema`) | BASIC | оставить; переименовать |
+| `debate-run-store`, `debate-version-manifest`, `results/debate-transport` | события транспорта и запись `llmCodexDebateRun.v1` при каждом прогоне | SHARED | оставить; переименовать, ключ хранилища сменить с миграцией |
+| `debate-runtime` (`DebateFSM`), `debate-engine` | карточки и транскрипт ленты Basic (`ensureDebateCardMessage`, `upsertDebateTranscriptTurn`) | SHARED | оставить; переименовать |
+| `debate-trace-store`, `debate-trace-schema`, `debate-trace-projections`, `results/debate-telemetry-view` | отчёт Disput Flow и Extract (в том числе для Basic) | SHARED | оставить; переименовать позже, диагностика на них держится |
+| `results/debate-sessions-store`, `-controller`, `-renderer`, `-export` | вкладки сессий ленты, кнопка Пуск/Стоп, выгрузка ленты | SHARED | оставить; переименовать |
+| `results/debate-ui` (`ResultsDebateUi`) | `results.js`: `formatPipelineProtocolSummary`, `syncDebateSchemeUi` | MIXED | убрать вызовы с запасными ветками, затем файл |
+| `debate-prompt-catalog` | `getDebateMaxWords` (нужно), `buildPipelineInfoRoundsHtml` | SHARED | перенести `normalizeMaxWords` в нейтральный модуль |
+| `debate-prompt-pack` | только `debate-engine`, `debate-prompt-catalog`, манифест версий | SHARED (косвенно) | убрать вместе с зависимостью каталога |
+| `debate-profile-schema`, `pipeline-presets` | профили для пресета `CUSTOM`, `buildDefaultPipelinePresets` | SHARED | оставить; решить судьбу профилей (ниже) |
+| `debate-anonymization` | только `runModelBatch` (для Basic выключена) | DEBATE | убрать вместе с ветками в `runModelBatch` |
+| `debate-execution-context` | `ensureDebateExecutionContext`, ожидание подтверждений (approve) | DEBATE | убрать вместе с approve-карточками и `waitForDebateApproval` |
+| `debate-projections` | только `collectDebateArtifact` (отладка, `window.__pipelineLifecycleDebug`) | DEBATE | удалить с функцией и тестами |
+| `pipeline-profile-store`, `results/pipeline-profile-view`, кнопка и диалог «Pipeline profiles» | редактор JSON профилей (интерфейс), `PipelineProfileStore` не вызывается | UI Debate | решение владельца: оставить ли кнопку «Pipeline profiles» |
+
+**Решения для владельца:** (1) кнопка и диалог «Pipeline profiles» (редактор профилей Debate): оставить или убрать вместе с `pipeline-profile-store`, `pipeline-profile-view`; (2) хранилища с префиксом `llmCodex`/`llmCortex` (`llmCodexDebateRun.v1` и др.): переименовать с миграцией или оставить как есть.
+
+**Что ещё сделать (порядок):**
+1. Убрать из `runModelBatch` анонимизацию и вызовы, нужные только Debate; убрать `debate-anonymization`, `debate-execution-context`, `debate-projections` вместе с approve-карточками, `waitForDebateApproval`, `collectDebateArtifact`, судьёй/оценщиком и их тестами.
+2. Убрать вызовы `ResultsDebateUi` и сам файл.
+3. Переименовать общее из `Debate*` в нейтральные имена (`RunStore`, `Transcript`, `Trace`, …) и сменить ключи хранилища с миграцией (одним коммитом на модуль, с тестами).
+4. Проверить CSS (`styles/results-debate.css`, классы `debate-*` нужны карточкам ленты) и тесты, привязанные к удалённому.
+
+Не проверено в браузере; блоки `results.js` по функциям (раздел 7) остаются кандидатами.
