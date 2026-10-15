@@ -6046,21 +6046,6 @@ document.addEventListener('click', (event) => {
                 }
             }
             const aggregate = getDebateAggregateState();
-            const activePreset = window.__activePipelinePresetConfig || getSelectedPipelinePresetMeta?.() || {};
-            if ((context?.anonymizeParticipants ?? activePreset.anonymizeParticipants) && window.DebateAnonymization) {
-                const aliasHolder = activePipelineRunContext || (window.__debateAliasContext ||= {});
-                const aggregateParticipants = aggregate?.executionPlan?.participants || [];
-                const serviceModels = [aggregate?.executionPlan?.synthesizer, ...models].filter(Boolean);
-                const aliasModels = Array.from(new Set([...aggregateParticipants, ...serviceModels]));
-                if (!aliasHolder.anonymizationMap || aliasModels.some((model) => !aliasHolder.anonymizationMap[model])) {
-                    aliasHolder.anonymizationMap = window.DebateAnonymization.createAliasMap(aliasModels);
-                }
-                const map = aliasHolder.anonymizationMap;
-                prompt = window.DebateAnonymization.anonymizeText(prompt, map);
-                if (promptsByModel && typeof promptsByModel === 'object') {
-                    promptsByModel = Object.fromEntries(Object.entries(promptsByModel).map(([model, value]) => [model, window.DebateAnonymization.anonymizeText(value, map)]));
-                }
-            }
             // Legacy scenarios keep the default budget defense. Custom has already
             // applied the model instruction, including an explicitly cleared instruction.
             if (context?.pipelineRunId && !context.custom) {
@@ -6314,11 +6299,6 @@ document.addEventListener('click', (event) => {
             // Read-only: the prompts exactly as dispatched (delivery token and limits included), so a
             // caller can show the fact instead of rebuilding it. Sending and receiving do not use it.
             batchResult.sentPrompts = sanitizedPromptMap || null;
-            if (activePipelineRunContext?.anonymizationMap && window.DebateAnonymization) {
-                Object.keys(batchResult.responses || {}).forEach((model) => {
-                    batchResult.responses[model] = window.DebateAnonymization.deanonymizeText(batchResult.responses[model], activePipelineRunContext.anonymizationMap);
-                });
-            }
             Object.entries(batchResult.responses || {}).forEach(([model, answer]) => {
                 dispatchDebateRunEvent(window.DebateRunStore?.EVENTS?.MODEL_RESPONSE_RECEIVED, {
                     model,
@@ -7201,7 +7181,6 @@ document.addEventListener('click', (event) => {
                             stageAttemptId: `custom:${runContext.pipelineRunId}:s${step + 1}:a${attempt}${waveNo ? `:w${waveNo}` : ''}`,
                             pipelineRoundId: `s${step + 1}`,
                             pipelineBatchId: makePipelineBatchId({ runId: runContext.pipelineRunId, roundIndex: step + 1, groupIndex: waveNo ? `${attempt - 1}w${waveNo}` : attempt - 1 }),
-                            anonymizeParticipants: false,
                             custom: true
                         },
                         generationProfile: 'long'

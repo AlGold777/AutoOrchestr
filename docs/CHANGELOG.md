@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-10-15 — Удалена анонимизация участников, версия 2.81.786
+
+- Из `runModelBatch` убраны подмена имён моделей в промптах и обратная подстановка в ответах (Basic всегда передавал `anonymizeParticipants: false`). Удалены `disput/debate-anonymization.js`, его тест и подключения в `manifest.json`/HTML, поле `anonymizeParticipants` из пресета.
+
 ### 2026-10-15 — Ключи хранилища `llmCodex…` переименованы с миграцией, версия 2.81.785
 
 - Новые имена: `aoRunTransport.v1`, `aoSchemeMode.v1`, `aoAutoMode.v1`, `aoFullAnswers.v1`, `aoSelectors.v1`, `aoEngineState.v1`, `aoTrace.v1`, `aoDevtoolsActiveTab.v1`.

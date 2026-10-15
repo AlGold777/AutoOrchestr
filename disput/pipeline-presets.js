@@ -20,7 +20,7 @@
   const makePreset = (id, label, profileId, reasoningBudget, overrides = {}) => Object.freeze({
     id, label, profileId, duration: 'goal_driven', terminationOwner: 'planner_and_moderator',
     finalizationPolicy: 'after_required_goals', contextPolicy: 'relevance_budgeted',
-    anonymizeParticipants: false, checkpointPolicy: Object.freeze({ enabled: false }),
+    checkpointPolicy: Object.freeze({ enabled: false }),
     reasoningBudget, resourceBudget: Object.freeze({ limit: reasoningBudget.maxTotalStages }),
     safetyPolicy: SAFETY_POLICY, status: 'enabled', ...overrides
   });
@@ -80,7 +80,7 @@
       presetId: preset.id, profileId: preset.profileId, duration: preset.duration,
       terminationOwner: preset.terminationOwner, finalizationPolicy: preset.finalizationPolicy,
       finalization: resolveFinalizationPolicy(preset.finalizationPolicy),
-      contextPolicy: preset.contextPolicy, anonymizeParticipants: preset.anonymizeParticipants,
+      contextPolicy: preset.contextPolicy,
       checkpointPolicy: preset.checkpointPolicy, reasoningBudget: Object.freeze({ ...preset.reasoningBudget }),
       resourceBudget: Object.freeze({ limit: limits.maxTotalStages }), safetyPolicy: preset.safetyPolicy,
       maxTotalStages: limits.maxTotalStages
