@@ -7071,6 +7071,8 @@ document.addEventListener('click', (event) => {
             };
             const runContext = activePipelineRunContext;
             const signal = customAbortController.signal;
+            // The text of the composer before the run took it: it comes back if the run produces nothing.
+            let composerBackup = '';
             const record = resumeRecord || window.CustomRunRecord?.createRun?.({ runId: runContext.pipelineRunId, pipelineName: customPipelineName(), task, steps }) || null;
             let saveTimer = null;
             // The writes of the record go one after another: an older write never lands after a newer one.
@@ -7105,6 +7107,7 @@ document.addEventListener('click', (event) => {
             };
             if (runContext.forceNewTabs) resetNewPagesCheckboxAfterOpen();
             if (!resumeRecord) {
+                composerBackup = getModeratorDispatchText();
                 clearModeratorComposer();
                 appendModeratorFeedEntry(task);
             }
@@ -7396,12 +7399,14 @@ document.addEventListener('click', (event) => {
                 }
                 // The answers of the last step are already in the feed as the cards of that step: no second card repeats
                 // them. The reason of the end is the notification; with no accepted answer at all it says so.
+                if (!['steps_done', 'cancelled', 'stopped'].includes(result.stopReason) && !result.answers.length) restoreModeratorComposer(composerBackup);
                 showNotification(basicRunNotice(stopText, result.answers.length, result.stopDetail), result.stopReason === 'steps_done' ? 'info' : 'warn');
                 if (result.stopReason !== 'steps_done') offerResumeLine(record);
                 return result.stopReason !== 'cancelled';
             } catch (err) {
                 console.error('[RESULTS] Custom run failed', err);
                 finishCustomRunProgress('FAILED');
+                if (err?.name !== 'AbortError') restoreModeratorComposer(composerBackup);
                 // The engine reports its own end; a thrown error ends the run without it.
                 window.MessageDelivery?.batchEvent?.('custom_end', { pipelineRunId: runContext.pipelineRunId, stopReason: 'error', error: String(err?.message || err) });
                 showNotification(`Pipeline: error (${err?.message || String(err)})`, 'error');
@@ -23289,6 +23294,14 @@ function checkCompareButtonState() {
             || ''
         ).trim();
         return moderatorInputText || moderatorBodyText;
+    }
+    // A message that could not be sent goes back into an empty input (never over new text).
+    function restoreModeratorComposer(text) {
+        const value = String(text || '');
+        if (!value || !promptInput || !isModeratorTextarea || pastedTextComposer.getText().trim()) return;
+        pastedTextComposer.setText(value);
+        promptInput.dispatchEvent(new Event('input', { bubbles: true }));
+        autoGrowDebateTextarea(promptInput);
     }
     function clearModeratorComposer() {
         if (promptInput && isModeratorTextarea) {

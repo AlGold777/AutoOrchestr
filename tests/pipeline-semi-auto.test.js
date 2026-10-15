@@ -181,10 +181,16 @@ describe('no model is pre-selected', () => {
 });
 
 describe('the moderator input is emptied once the message is sent', () => {
-  test('the Run path clears it when the run starts', () => {
+  test('the Run path clears it when the run starts and puts the text back if the run produced nothing', () => {
     const start = source.indexOf('const runCustomFromPage = async');
     const block = source.slice(start, start + 12000);
     expect(block).toContain('clearModeratorComposer();');
+    expect(block).toContain('composerBackup = getModeratorDispatchText();');
+    // The text comes back when the run throws (not on abort) or ends with no answer for a reason other than the owner's stop.
+    expect(block).toContain("if (err?.name !== 'AbortError') restoreModeratorComposer(composerBackup);");
+    expect(block).toContain("if (!['steps_done', 'cancelled', 'stopped'].includes(result.stopReason) && !result.answers.length) restoreModeratorComposer(composerBackup);");
+    expect(source).toContain('function restoreModeratorComposer(text) {');
+    expect(source).toContain("pastedTextComposer.getText().trim()) return;");
     // The manual moderator dispatch already clears its input.
     expect(source.slice(source.indexOf('const startManualModeratorDispatch'), source.indexOf('const applyDisputeTopicDisplay'))).toContain('clearModeratorComposer();');
   });
