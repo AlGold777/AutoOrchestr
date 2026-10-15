@@ -146,19 +146,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             console.warn('[RESULTS] Failed to persist favorites', err);
         }
     };
-    const loadFavoriteEntriesFromStorage = () => {
-        try {
-            chrome?.storage?.local?.get?.([favoriteStorageKey], (data) => {
-                const stored = Array.isArray(data?.[favoriteStorageKey]) ? data[favoriteStorageKey] : [];
-                const nextEntries = stored.map((entry) => favoriteEntrySnapshot(entry));
-                if (favoriteEntriesSignature(nextEntries) === favoriteEntriesSignature(favoriteState.entries)) return;
-                if (nextEntries.length) ensureFavoritePanelUI();
-                syncFavoriteStateFromEntries(nextEntries, { render: true });
-            });
-        } catch (err) {
-            console.warn('[RESULTS] Failed to load favorites', err);
-        }
-    };
     const clearFavoriteEntriesOnLoad = () => {
         try {
             favoriteState.entries = [];
@@ -1598,13 +1585,6 @@ document.addEventListener('click', (event) => {
         'zai': 'Z.ai',
         'kimi': 'Kimi'
     };
-    const getHeaderModelButtonLimitEarly = () => {
-        if (!isPipelinePage) return llmButtons.length || 999;
-        // The pipeline page is Universal-only.  Do not derive a participant
-        // limit from the legacy numeric scheme value that may still exist in
-        // persisted UI state during startup.
-        return llmButtons.length || 999;
-    };
     const syncHeaderModelPanelsEarly = () => {
         llmButtons.forEach((button) => {
             const llmId = button.id.replace('llm-', '');
@@ -1613,7 +1593,9 @@ document.addEventListener('click', (event) => {
         });
     };
     const normalizeHeaderModelButtonsEarly = (preferredButton = null) => {
-        const limit = getHeaderModelButtonLimitEarly();
+        // Participant limit is never derived from the legacy numeric scheme value
+        // that may still exist in persisted UI state during startup.
+        const limit = llmButtons.length || 999;
         const activeButtons = Array.from(llmButtons).filter((button) => button.classList.contains('active'));
         if (activeButtons.length <= limit) {
             syncHeaderModelPanelsEarly();
@@ -1670,7 +1652,6 @@ document.addEventListener('click', (event) => {
         };
         const modelSelectionStorageKey = `llmComparatorSelectedModelsByView.${getCurrentViewKey()}`;
         const llmPanels = document.querySelectorAll('.llm-panel');
-    const comparisonPanel = document.getElementById('comparison-panel');
     const comparisonOutput = document.getElementById('comparison-output');
     const comparisonSpinner = document.getElementById('comparison-spinner');
     const getItButton = document.getElementById('get-it-button');
@@ -1740,8 +1721,6 @@ document.addEventListener('click', (event) => {
         const savedAt = Number(intent.savedAt || 0);
         return savedAt > 0 && Date.now() - savedAt <= crossViewNavigationIntentTtlMs;
     };
-    const bodyIncludesPipelinePage = () => String(document.body.className || '')
-        .split(/\s+/).filter(Boolean).includes('pipeline-page');
     const getPromptDraftText = () => {
         if (promptInput) return pastedTextComposer.getText();
         return String(document.getElementById('prompt-input')?.value || document.getElementById('modTa')?.value || '');
@@ -2043,7 +2022,6 @@ document.addEventListener('click', (event) => {
     };
     const prefixToggleLabel = document.querySelector('.modifiers-toggle-label[data-mod-type="prefix"]');
     const suffixToggleLabel = document.querySelector('.modifiers-toggle-label[data-mod-type="suffix"]');
-    const proSection = document.getElementById('pro-section');
     const newPagesCheckbox = document.getElementById('new-pages-checkbox');
     const apiModeCheckbox = document.getElementById('api-mode-checkbox');
     // Long generation mode (main page): a shared flag read by each model tab's
@@ -2143,7 +2121,6 @@ document.addEventListener('click', (event) => {
     const notesHintBackupImportBtn = document.getElementById('notes-hint-backup-import');
     const sessionsSaveBtn = document.getElementById('sessions-save-btn');
     const sessionsDeleteBtn = document.getElementById('sessions-delete-btn');
-    const sessionsPanel = document.getElementById('sessions-panel');
     const sessionsList = document.getElementById('sessions-list');
     const sessionsEmpty = document.getElementById('sessions-empty');
     const promptAttachInput = document.getElementById('prompt-attach-input');
@@ -2218,7 +2195,6 @@ document.addEventListener('click', (event) => {
     // Floating tooltip controller extracted to results/tooltips.js.
     const tooltipController = window.ResultsTooltips.create({ document });
     const { registerTooltipTarget } = tooltipController;
-    const devToolsPanel = document.getElementById('dev-tools-panel');
     const refreshOverridesBtn = document.getElementById('refresh-selector-overrides-btn');
     const clearOverridesBtn = document.getElementById('clear-selector-overrides-btn');
     const clearSelectorCacheBtn = document.getElementById('clear-selector-cache-btn');
@@ -2263,10 +2239,8 @@ document.addEventListener('click', (event) => {
     const toggleModifiersBtn = document.getElementById('toggle-modifiers-btn');
     const modifiersHeader = document.getElementById('modifiers-header');
     const modifiersContainer = document.getElementById('modifiers-container');
-    const expandCollapseIcon = document.querySelector('.toggle-icon-console');
     const pipelineModifiersSection = document.getElementById('pipeline-modifiers-section');
     const pipelineToggleModifiersBtn = document.getElementById('pipeline-toggle-modifiers-btn');
-    const pipelineModifiersHeader = document.getElementById('pipeline-modifiers-header');
     const pipelineModifiersContainer = document.getElementById('pipeline-modifiers-container');
     const pipelineModifiersSummary = document.getElementById('pipeline-modifiers-summary');
     const statusPingButtons = document.querySelectorAll('.status-ping-btn');
@@ -2294,7 +2268,6 @@ document.addEventListener('click', (event) => {
     const diagEntryHeightCache = new WeakMap();
     const apiIndicatorRegistry = new Map();
     const apiIndicatorState = {};
-    let latestTelemetrySnapshot = null;
     const SELECTOR_ELEMENT_TYPES = ['composer', 'sendButton', 'response'];
     const SELECTOR_WORKBENCH_FIELDS = [
         { key: 'composer', label: 'composer' },
@@ -2786,20 +2759,6 @@ document.addEventListener('click', (event) => {
     debateCaseStore?.subscribe?.((caseState) => {
         if (caseState) disputStateMapView?.render?.(caseState);
     });
-    let debateCaseWriteQueue = Promise.resolve();
-    const queueDebateCaseWrite = (operation) => {
-        debateCaseWriteQueue = debateCaseWriteQueue.then(operation, operation).catch((error) => {
-            console.warn('[RESULTS] Debate case persistence failed', error);
-        });
-        return debateCaseWriteQueue;
-    };
-    const syncAggregateArtifactsToCase = async (aggregate, aggregateEvent) => {
-        // Canonical semantic writes are owned by DebateOrchestrator. Legacy aggregate
-        // events remain diagnostic only; applying them here would create a second
-        // unfenced writer and could overwrite a newer case version.
-        void aggregate; void aggregateEvent;
-        return null;
-    };
     const debateTraceStore = window.DebateTraceStore?.createStore?.({
         storage: chrome?.storage?.local // Only used to delete legacy persisted run history.
     }) || null;
@@ -2863,7 +2822,6 @@ document.addEventListener('click', (event) => {
     debateAggregateStore?.subscribe?.((aggregate, aggregateEvent) => {
         if (!aggregateEvent || !aggregate?.runId) return;
         disputStateMapView?.render?.({ ...aggregate, ruleHistory: debateRuleHistoryStore?.summary?.() || null });
-        queueDebateCaseWrite(() => syncAggregateArtifactsToCase(aggregate, aggregateEvent));
         if (window.DebateRunStore?.isTerminal?.(aggregate)) {
             void debateRuleHistoryStore?.record?.(aggregate).then(() => disputStateMapView?.render?.({ ...aggregate, ruleHistory: debateRuleHistoryStore.summary() }));
         }
@@ -3748,9 +3706,6 @@ document.addEventListener('click', (event) => {
             'meta-синтез': 'interaction_meta_synthesis',
             'критический аудит': 'interaction_critical_audit'
         };
-        const DEFAULT_MODEL_INDICES = PipelineRuntime?.DEFAULT_MODEL_INDICES || [];
-        const DEFAULT_JUDGE_INDICES = PipelineRuntime?.DEFAULT_JUDGE_INDICES || [];
-        const DEFAULT_LATE_JUDGE_INDICES = PipelineRuntime?.DEFAULT_LATE_JUDGE_INDICES || [0];
 
         const getOrderedJudgePrompts = () => {
             const list = Array.isArray(judgeSystemPrompts) ? judgeSystemPrompts : [];
@@ -3803,17 +3758,6 @@ document.addEventListener('click', (event) => {
             return (match || ordered[0]).id;
         };
 
-        const getDebateParticipantRoleText = (index = 0) => {
-            const catalog = window.DebatePromptCatalog;
-            if (!catalog?.resolveParticipantRoleText) return '';
-            const stack = captureModelStackState('r2-models');
-            const storedRole = stack?.items?.[index]?.role || '';
-            const prompt = storedRole
-                ? (getJudgePromptById(storedRole) || getJudgePromptById(LEGACY_ROLE_LABEL_IDS[String(storedRole).toLowerCase()]))
-                : null;
-            return catalog.resolveParticipantRoleText(prompt?.label || storedRole, index);
-        };
-
         const resolveJudgePromptId = (value, index = 0) => {
             if (!value) return null;
             if (value === CUSTOM_ROLE_ID) return CUSTOM_ROLE_ID;
@@ -3829,14 +3773,6 @@ document.addEventListener('click', (event) => {
             if (roleIndex !== -1 && ordered[roleIndex]) return ordered[roleIndex].id;
             if (ordered[index % Math.max(1, ordered.length)]) return ordered[index % ordered.length].id;
             return null;
-        };
-
-        const buildJudgePromptOptionsHtml = (index) => {
-            return PipelineRuntime?.buildJudgePromptOptionsHtml?.({
-                index,
-                orderedPrompts: getRoleOptionPrompts(),
-                escapeHtml
-            }) || '';
         };
 
         const buildModelBlocksHtml = (activeIndices = [], withRole = false, options = {}) => {
@@ -4962,27 +4898,6 @@ document.addEventListener('click', (event) => {
             setSvgContent(svg, html);
         };
 
-        const drawHorizontalConnectors = (svgId, stackId, colorClass) => {
-            const svg = document.getElementById(svgId);
-            if (!svg) return;
-
-            const indices = getModelSendIndices(stackId);
-            if (indices.length === 0) {
-                clearNode(svg);
-                return;
-            }
-
-            const stack = document.getElementById(stackId);
-            const W = 50;
-            let html = '';
-            indices.forEach((i) => {
-                const y = getBlockCenterYRelativeTo(stack, i, svg);
-                html += `<line x1="0" y1="${y}" x2="${W - 6}" y2="${y}" class="connector-line ${colorClass} flow-anim"/>`;
-                html += `<polygon points="${W - 6},${y - 4} ${W},${y} ${W - 6},${y + 4}" class="arrow-head ${colorClass}"/>`;
-            });
-            setSvgContent(svg, html);
-        };
-
         const drawMergeSplitConnector = (svgId, sourceStackId, targetStackId, colorClass, options = {}) => {
             const svg = document.getElementById(svgId);
             if (!svg) return;
@@ -5479,13 +5394,6 @@ document.addEventListener('click', (event) => {
             dispatchDebateRunEvent(window.DebateRunStore.EVENTS.PROTOCOL_STATE_REPLACED, { protocolState });
             return debateAggregateStore.getState().protocolState;
         };
-        const syncAggregateProtocolState = (protocolState, reason = 'runtime_projection') => {
-            if (!debateAggregateStore || !protocolState) return protocolState;
-            dispatchDebateRunEvent(window.DebateRunStore.EVENTS.PROTOCOL_STATE_SYNCED, {
-                protocolState, reason, protocolStatus: String(protocolState.status || '')
-            });
-            return debateAggregateStore.getState().protocolState;
-        };
         const getDebateAggregateState = () => debateAggregateStore?.getState?.() || null;
         debateAggregateStore?.subscribe?.((aggregate) => {
             debateRunState.status = String(aggregate?.status || 'idle');
@@ -5518,12 +5426,6 @@ document.addEventListener('click', (event) => {
         window.__setSerialDebateStateForTest = (nextState = {}) => {
             if (!(typeof process !== 'undefined' && process?.env?.NODE_ENV === 'test') && window.__RESULTS_TEST_DEBUG__ !== true) return getSerialDebateState();
             return replaceAggregateProtocolState({ ...getSerialDebateState(), ...nextState });
-        };
-        const markNewPageModelOpened = (state, targetModel, forceNewTabs) => {
-            if (!forceNewTabs || !newPagesCheckbox || !targetModel) return;
-            const opened = new Set(state?.newPagesOpenedModels || []);
-            opened.add(targetModel);
-            if (getSelectedLLMs().every((name) => opened.has(name))) resetNewPagesCheckboxAfterOpen();
         };
 
         const getDebateRoundLimit = () => {
@@ -5576,7 +5478,6 @@ document.addEventListener('click', (event) => {
                     uiRoundLimit: getDebateRoundLimit()
                 })
                 : null;
-            const effectiveRoundLimit = runtimeLimits ? runtimeLimits.roundLimit : getDebateRoundLimit();
             const maxTotalStages = runtimeLimits?.maxTotalStages || getSelectedPipelinePresetMeta()?.reasoningBudget?.maxTotalStages || 50;
             const selectedProfileId = String(protocol.profileId || getSelectedPipelinePresetMeta()?.profileId || presetId || '');
             const selectedProfile = pipelineProfileView?.store?.get?.(selectedProfileId)
@@ -5757,21 +5658,6 @@ document.addEventListener('click', (event) => {
             select.title = `Debate length: ${label}`;
             select.setAttribute('aria-label', `Debate length: ${label}`);
             select.dataset.currentLabel = label;
-        };
-        const setDebateLengthByDelta = (delta) => {
-            const select = document.getElementById('debate-length-select');
-            if (!select) return;
-            const options = getDebateLengthOptions();
-            if (!options.length) return;
-            const currentIndex = Math.max(0, options.findIndex((option) => option.value === select.value));
-            const nextIndex = Math.max(0, Math.min(options.length - 1, currentIndex + delta));
-            if (nextIndex === currentIndex) {
-                syncDebateLengthStepperUi();
-                return;
-            }
-            select.value = options[nextIndex].value;
-            select.dispatchEvent(new Event('change', { bubbles: true }));
-            syncDebateLengthStepperUi();
         };
         const syncDebateAutoToggleButton = () => {
             if (!debateAutoToggleBtn) return;
@@ -6052,14 +5938,9 @@ document.addEventListener('click', (event) => {
         };
         updateDebateButtonsUi();
 
-        const DEBATE_AUTO_TURN_RETRY_LIMIT = 1;
-        const DEBATE_AUTO_TURN_RETRY_DELAY_MS = 1200;
-        const sleepDebateMs = (ms) => new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
         const getRoundModelsState = (roundIndex) => {
             return PipelineRuntime?.getRoundModelsState?.(document, roundIndex) || null;
         };
-
-        const getRoundStage = (roundIndex) => PipelineRuntime?.getRoundStage?.(roundIndex) || (roundIndex === 1 ? 'models' : 'judge');
 
         const buildPipelineRuntimeSnapshot = (config) => {
             const domRoundCount = Array.from(pipelinePanel?.querySelectorAll?.('.model-stack[id^="r"][id$="-models"]') || [])
@@ -6171,24 +6052,6 @@ document.addEventListener('click', (event) => {
             const selectedIndices = getSelectedLLMIndicesForPipeline();
             const emptySlots = Math.max(0, getDebateModelSlotCount() - selectedIndices.length);
             return buildModelBlocksHtml(selectedIndices, withRole) + buildPipelineEmptySlotBlocksHtml(emptySlots);
-        };
-
-        const buildResponsesList = (responsesMap, orderedNames = []) => {
-            if (window.JudgePromptBuilder?.buildResponsesList) {
-                return window.JudgePromptBuilder.buildResponsesList(responsesMap, {
-                    orderedNames,
-                    isErrorOutput
-                });
-            }
-            let list = '';
-            let count = 0;
-            orderedNames.forEach((name) => {
-                const output = responsesMap?.[name];
-                if (isErrorOutput(output)) return;
-                list += `<<<RESPONSE legacy ${name} START>>>\n${output}\n<<<RESPONSE legacy ${name} END>>>\n\n`;
-                count += 1;
-            });
-            return { list: list.trim(), count, nonce: 'legacy', truncatedTotal: false };
         };
 
         const DEFAULT_PIPELINE_WAIT_TIMEOUT_MS = 240000;
@@ -6653,10 +6516,6 @@ document.addEventListener('click', (event) => {
             }
         };
 
-        const getDisputeTemplateApi = () => DebateEngineRuntime || window.DisputMessageTemplates || null;
-        const getDisputeDefaultFormat = () => DebateEngineRuntime?.DEFAULT_SERIAL_FORMAT
-            || window.DisputMessageTemplates?.DEFAULT_SERIAL_FORMAT
-            || 'Ясный, структурированный ответ.';
         const applyDisputeTopicDisplay = (topic = '') => {
             const fullTopic = String(topic || '').trim();
             if (!fullTopic) return;
@@ -6775,13 +6634,6 @@ document.addEventListener('click', (event) => {
             if (!topic) return '';
             applyDisputeTopicDisplay(topic);
             return topic;
-        };
-        const getActiveProtocolMission = () => {
-            try {
-                return window.DebatePromptCatalog?.resolveProtocolMission?.(buildPipelinePresetRuntimeConfig()) || '';
-            } catch (_) {
-                return '';
-            }
         };
         // Custom (disput/custom-engine.js): the shared pipeline engine. The canvas gives the steps
         // in plan order: round cards (their models) and synthesis stages (an intermediate insert
@@ -9149,9 +9001,6 @@ document.addEventListener('click', (event) => {
                     }
                 });
             }
-            const domActive = findPipelineItemByName(pipelineStore.active)?.dataset.name
-                || pipelineItems?.querySelector('.pipeline-item.active')?.dataset.name
-                || '';
             const activeName = pipelineStore.active || '';
             renderPipelineList(pipelineStore.order, activeName, pipelineStore.lastSaved);
             const activeItem = activeName ? findPipelineItemByName(activeName) : null;
@@ -10515,11 +10364,6 @@ document.addEventListener('click', (event) => {
                 return map;
             };
 
-            const getAllNoteIds = async () => {
-                const map = await buildAllNotesMap();
-                return Array.from(map.keys());
-            };
-
             const syncSelectAllIndicator = async () => {
                 // Select-all UI was removed from the sidebar toolbar.
             };
@@ -10666,40 +10510,6 @@ document.addEventListener('click', (event) => {
                     renderTabs(state.tabs);
                     return state.tabs;
                 }
-            };
-
-            const pruneEmptyTabs = async () => {
-                if (!notesClient?.deleteTab) return false;
-                if (state.tabs.length <= 1) return false;
-                const keepTabId = state.defaultTabId || state.tabs[0]?.tabId;
-                const emptyTabIds = [];
-
-                for (const tab of state.tabs) {
-                    if (!tab?.tabId || tab.tabId === keepTabId) continue;
-                    try {
-                        const result = await notesClient.listChildren({
-                            tabId: tab.tabId,
-                            parentId: null
-                        });
-                        const notes = result?.notes || [];
-                        if (!notes.length) {
-                            emptyTabIds.push(tab.tabId);
-                        }
-                    } catch (error) {
-                        console.warn('[results] failed to inspect tab', error);
-                    }
-                }
-
-                if (!emptyTabIds.length) return false;
-                for (const tabId of emptyTabIds) {
-                    try {
-                        await notesClient.deleteTab({ tabId });
-                    } catch (error) {
-                        console.warn('[results] failed to delete empty tab', error);
-                    }
-                }
-                await refreshTabs();
-                return true;
             };
 
             const startRenameTab = (button) => {
@@ -13028,9 +12838,6 @@ document.addEventListener('click', (event) => {
                 }
             });
 
-            const getSelectedSession = () =>
-                sessionsState.sessions.find((session) => session.id === sessionsState.selectedId) || null;
-
             const startRenameSession = (item) => {
                 if (!item) return;
                 const sessionId = item.dataset.sessionId;
@@ -13199,15 +13006,6 @@ document.addEventListener('click', (event) => {
                     console.warn('[results] failed to open session', error);
                     setStatus('Open failed');
                 }
-            };
-
-            const runSelectedSession = async () => {
-                const session = getSelectedSession();
-                if (!session) {
-                    setStatus('Select a session');
-                    return;
-                }
-                await runSessionById(session.id);
             };
 
             const deleteSessionById = async (sessionId) => {
@@ -13653,267 +13451,6 @@ document.addEventListener('click', (event) => {
                 return selected.filter((noteId) => !isDescendantSelected(noteId));
             };
 
-            const buildChildrenLookup = (map) => {
-                const lookup = new Map();
-                map.forEach((note) => {
-                    const parentId = note.parentId || null;
-                    if (!lookup.has(parentId)) lookup.set(parentId, []);
-                    lookup.get(parentId).push(note);
-                });
-                lookup.forEach((list) => {
-                    list.sort((a, b) => String(a.orderKey || '').localeCompare(String(b.orderKey || '')));
-                });
-                return lookup;
-            };
-
-            const buildSourceMetaLines = (note) => {
-                const source = note?.source || {};
-                const lines = [];
-                const pageUrl = typeof source.pageUrl === 'string' ? source.pageUrl.trim() : '';
-                const ts = typeof source.ts === 'number' ? source.ts : null;
-                if (pageUrl) lines.push(`Source: ${pageUrl}`);
-                if (ts) lines.push(`Saved: ${formatTimestamp(ts)}`);
-                return lines;
-            };
-
-            const normalizeNoteTextForMerge = (text, html) => {
-                const rawText = typeof text === 'string' ? text : '';
-                if (rawText.trim()) return rawText;
-                if (!html) return '';
-                return String(stripHtmlToPlainText(html) || '').trim();
-            };
-
-            const getSelectedNoteIds = () => {
-                if (state.selectedNoteIds.size) return Array.from(state.selectedNoteIds);
-                if (state.activeNoteId) return [state.activeNoteId];
-                return [];
-            };
-
-            const getSelectedNoteIdsByVisualOrder = () => {
-                const selected = getSelectedNoteIds();
-                if (!selected.length) return [];
-                const order = new Map();
-                getVisibleTreeItems().forEach((item, index) => {
-                    if (item?.dataset?.noteId) {
-                        order.set(item.dataset.noteId, index);
-                    }
-                });
-                const fallbackOrder = new Map(selected.map((noteId, index) => [noteId, index]));
-                return selected
-                    .slice()
-                    .sort((a, b) => {
-                        const aIndex = order.has(a) ? order.get(a) : 100000 + fallbackOrder.get(a);
-                        const bIndex = order.has(b) ? order.get(b) : 100000 + fallbackOrder.get(b);
-                        return aIndex - bIndex;
-                    });
-            };
-
-            const sanitizeNoteHtml = (value) => {
-                const html = sanitizeInlineHtml(String(value || '')).trim();
-                return html || '';
-            };
-
-            const exportSelectedNotes = async () => {
-                if (!await ensureNotesReady()) {
-                    setStatus('Notes offline');
-                    return;
-                }
-                const topMost = await getTopMostSelection();
-                if (!topMost.length) {
-                    setStatus('Select notes');
-                    return;
-                }
-                const map = await buildAllNotesMap();
-                const lookup = buildChildrenLookup(map);
-                const idsToFetch = new Set();
-                const collectIds = (noteId) => {
-                    if (!noteId || idsToFetch.has(noteId)) return;
-                    idsToFetch.add(noteId);
-                    const children = lookup.get(noteId) || [];
-                    children.forEach((child) => collectIds(child.id));
-                };
-                topMost.forEach(collectIds);
-                const textMap = new Map();
-                const htmlMap = new Map();
-                for (const noteId of idsToFetch) {
-                    try {
-                        const result = await notesClient.getNote({ noteId });
-                        textMap.set(noteId, result?.text || '');
-                        htmlMap.set(noteId, sanitizeNoteHtml(result?.html || ''));
-                    } catch (error) {
-                        console.warn('[results] failed to fetch note for export', error);
-                        textMap.set(noteId, '');
-                        htmlMap.set(noteId, '');
-                    }
-                }
-                const renderNode = (noteId) => {
-                    const note = map.get(noteId);
-                    if (!note) return '';
-                    const children = lookup.get(noteId) || [];
-                    const html = htmlMap.get(noteId) || '';
-                    const text = textMap.get(noteId) || '';
-                    const bodyHtml = html
-                        ? `<div class="note-body">${html}</div>`
-                        : (text ? `<pre>${escapeHtml(text)}</pre>` : '');
-                    const childrenHtml = children.map((child) => renderNode(child.id)).join('');
-                    return `<li><div class="note-title">${escapeHtml(note.title || 'Untitled')}</div>${bodyHtml}${childrenHtml ? `<ul>${childrenHtml}</ul>` : ''}</li>`;
-                };
-                const exportHtml = `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Notes Export</title>
-  <style>
-    body { font-family: sans-serif; line-height: 1.5; padding: 24px; color: #111827; }
-    ul { list-style: none; padding-left: 18px; }
-    .note-title { font-weight: 600; margin-bottom: 4px; }
-    pre { background: #f8fafc; padding: 10px 12px; border-radius: 8px; white-space: pre-wrap; }
-    .note-body { margin-bottom: 10px; word-break: break-word; }
-    .note-body img { max-width: 100%; height: auto; }
-  </style>
-</head>
-<body>
-  <h1>Notes Export</h1>
-  <ul>
-    ${topMost.map((noteId) => renderNode(noteId)).join('')}
-  </ul>
-</body>
-</html>`;
-                const blob = new Blob([exportHtml], { type: 'text/html' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `notes_export_${formatTimestamp().replace(/[: ]/g, '-')}.html`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-                setStatus('Export ready');
-            };
-
-            const mergeSelectedNotes = async () => {
-                if (!await ensureNotesReady()) {
-                    setStatus('Notes offline');
-                    return;
-                }
-                const orderedIds = getSelectedNoteIdsByVisualOrder();
-                if (orderedIds.length < 2) {
-                    setStatus('Select at least 2');
-                    return;
-                }
-                await flushSave();
-                const selectedSet = new Set(orderedIds);
-                const mainNoteId = orderedIds[0];
-                const mergeIds = orderedIds.slice(1);
-                const noteDataMap = new Map();
-
-                try {
-                    for (const noteId of orderedIds) {
-                        const result = await notesClient.getNote({ noteId });
-                        if (result?.note) {
-                            noteDataMap.set(noteId, result);
-                        }
-                    }
-                } catch (error) {
-                    console.warn('[results] failed to load notes for merge', error);
-                    setStatus('Merge failed');
-                    return;
-                }
-
-                const mainData = noteDataMap.get(mainNoteId);
-                if (!mainData?.note) {
-                    setStatus('Main note missing');
-                    return;
-                }
-
-                const baseHtml = sanitizeNoteHtml(mainData.html || '');
-                const baseText = normalizeNoteTextForMerge(mainData.text, baseHtml);
-                const baseHtmlBlock = baseHtml || (baseText ? buildHtmlFromText(baseText) : '');
-                const combinedTextParts = [];
-                const combinedHtmlParts = [];
-                if (baseText) combinedTextParts.push(baseText);
-                if (baseHtmlBlock) combinedHtmlParts.push(baseHtmlBlock);
-
-                const buildMergedTextBlock = (data) => {
-                    const html = sanitizeNoteHtml(data?.html || '');
-                    const text = normalizeNoteTextForMerge(data?.text, html);
-                    if (!text && !html) return '';
-                    const metaLines = buildSourceMetaLines(data?.note);
-                    const parts = [];
-                    if (metaLines.length) parts.push(metaLines.join('\n'));
-                    if (text) parts.push(text);
-                    return parts.join('\n');
-                };
-
-                const buildMergedHtmlBlock = (data) => {
-                    const html = sanitizeNoteHtml(data?.html || '');
-                    const text = normalizeNoteTextForMerge(data?.text, html);
-                    if (!text && !html) return '';
-                    const metaLines = buildSourceMetaLines(data?.note);
-                    const metaHtml = metaLines.length
-                        ? `<div class="note-merge-meta">${metaLines.map((line) => escapeHtml(line)).join('<br>')}</div>`
-                        : '';
-                    const bodyHtml = html || (text ? buildHtmlFromText(text) : '');
-                    if (!metaHtml) return bodyHtml;
-                    return bodyHtml ? `${metaHtml}<br>${bodyHtml}` : metaHtml;
-                };
-
-                for (const noteId of mergeIds) {
-                    const data = noteDataMap.get(noteId);
-                    if (!data?.note) continue;
-                    const textBlock = buildMergedTextBlock(data);
-                    const htmlBlock = buildMergedHtmlBlock(data);
-                    if (textBlock) combinedTextParts.push(textBlock);
-                    if (htmlBlock) combinedHtmlParts.push(htmlBlock);
-                }
-
-                const combinedText = combinedTextParts.filter(Boolean).join('\n\n');
-                const combinedHtml = combinedHtmlParts.filter(Boolean).join('<br><br>');
-
-                try {
-                    let movedChildren = false;
-                    for (const noteId of mergeIds) {
-                        const data = noteDataMap.get(noteId);
-                        const tabId = data?.note?.tabId || state.tabId;
-                        if (!tabId) continue;
-                        const result = await notesClient.listChildren({ tabId, parentId: noteId });
-                        const children = result?.notes || [];
-                        for (const child of children) {
-                            if (!child?.id || selectedSet.has(child.id)) continue;
-                            await notesClient.moveNote({
-                                noteId: child.id,
-                                targetParentId: mainNoteId
-                            });
-                            movedChildren = true;
-                        }
-                    }
-
-                    await notesClient.updateNoteText({
-                        noteId: mainNoteId,
-                        text: combinedText,
-                        html: combinedHtml
-                    });
-
-                    for (const noteId of mergeIds) {
-                        await notesClient.deleteNote({ noteId });
-                    }
-
-                    state.activeNoteId = mainNoteId;
-                    state.selectedNoteIds.clear();
-                    state.selectedNoteIds.add(mainNoteId);
-                    state.anchorNoteId = mainNoteId;
-                    if (movedChildren) {
-                        setExpanded(mainNoteId, true);
-                    }
-                    await refreshNotesList();
-                    await selectNote(mainNoteId, { skipSave: true, force: true, focus: true, preserveSelection: true });
-                    setStatus(`Merged ${orderedIds.length} notes`);
-                } catch (error) {
-                    console.warn('[results] failed to merge notes', error);
-                    setStatus('Merge failed');
-                }
-            };
-
             const flushPendingNoteClick = async () => {
                 if (!notesClickTimer || !notesClickTargetId) return;
                 const targetId = notesClickTargetId;
@@ -13969,24 +13506,6 @@ document.addEventListener('click', (event) => {
                     console.warn('[results] failed to delete notes', error);
                     setStatus('Delete failed');
                 }
-            };
-
-            const toggleSelectAll = async () => {
-                const allIds = await getAllNoteIds();
-                if (!allIds.length) return;
-                const selectedCount = state.selectedNoteIds.size;
-                if (selectedCount === allIds.length) {
-                    state.selectedNoteIds.clear();
-                    state.anchorNoteId = null;
-                } else {
-                    state.selectedNoteIds.clear();
-                    allIds.forEach((id) => state.selectedNoteIds.add(id));
-                    state.anchorNoteId = allIds[0];
-                    if (!state.activeNoteId && allIds[0]) {
-                        await selectNote(allIds[0], { preserveSelection: true });
-                    }
-                }
-                syncSelectionStyles();
             };
 
             const initNotes = async () => {
@@ -14710,59 +14229,6 @@ document.addEventListener('click', (event) => {
                     });
                 });
             });
-
-            const savePipelineRun = async ({ title, text, json } = {}) => {
-                if (!text) {
-                    setStatus('Pipeline output empty');
-                    return false;
-                }
-                if (!await ensureNotesReady()) {
-                    setStatus('Notes offline');
-                    return false;
-                }
-                const timestamp = formatTimestamp();
-                const noteTitle = title ? `${title} - ${timestamp}` : `Pipeline Run - ${timestamp}`;
-                const body = [
-                    text,
-                    '',
-                    '---',
-                    `Source: ${location.href}`,
-                    `Saved: ${timestamp}`
-                ].join('\n');
-                try {
-                    const created = await createNoteWithFallback({
-                        tabId: state.tabId,
-                        parentId: null,
-                        kind: 'pipeline',
-                        title: noteTitle,
-                        text: body,
-                        source: {
-                            origin: 'comparator',
-                            type: 'pipeline',
-                            pageUrl: location.href,
-                            ts: Date.now(),
-                            payload: json || null
-                        }
-                    });
-                    if (created?.noteId) {
-                        state.activeNoteId = created.noteId;
-                        lastActiveByTab.set(state.tabId, created.noteId);
-                        setSingleSelection(created.noteId);
-                    }
-                    await syncAfterNoteCreate(created);
-                    setStatus('Pipeline saved');
-                    return true;
-                } catch (error) {
-                    console.warn('[results] failed to save pipeline', error);
-                    setStatus(formatStatusError('Save failed', error), 3200);
-                    return false;
-                }
-            };
-
-            window.PipelineNotes = {
-                ...(window.PipelineNotes || {}),
-                savePipelineRun
-            };
 
             notesClient.onEvent((event) => {
                 if (event?.event !== notesClient.EVENTS?.REVISION_BUMP) return;
@@ -17221,25 +16687,6 @@ document.addEventListener('click', (event) => {
         return result;
     };
 
-    const buildAllLogsComparisonMarkdown = (beforeSnapshot, afterSnapshot, meta = {}) => {
-        const title = 'All Logs (Before/After)';
-        const version = chrome?.runtime?.getManifest?.()?.version || 'unknown';
-        const exportedAt = new Date().toLocaleString();
-        const beforeAt = beforeSnapshot?.capturedAt || '-';
-        const afterAt = afterSnapshot?.capturedAt || '-';
-        const trigger = meta?.trigger || 'unknown';
-        const beforeSection = buildAllLogsMarkdown(
-            beforeSnapshot?.telemetryEvents || [],
-            beforeSnapshot?.sources || [],
-            beforeSnapshot?.logs || {}
-        );
-        const afterSection = buildAllLogsMarkdown(
-            afterSnapshot?.telemetryEvents || [],
-            afterSnapshot?.sources || [],
-            afterSnapshot?.logs || {}
-        );
-        return `# ${title}\nVersion: ${version}\nExported: ${exportedAt}\nBefore captured: ${beforeAt}\nAfter captured: ${afterAt}\nTrigger: ${trigger}\n\n## Before\n\n${beforeSection}\n\n## After\n\n${afterSection}`;
-    };
     const getTelemetryBridge = () => {
         if (typeof window === 'undefined') return null;
         return window[TELEMETRY_BRIDGE_GLOBAL_KEY] || null;
@@ -17344,52 +16791,6 @@ document.addEventListener('click', (event) => {
             }
         } catch (err) {
             console.warn('[Diagnostics] active platform names failed', err);
-        }
-        return null;
-    };
-
-    const snapshotAllLogs = async () => {
-        const sources = Object.keys(llmLogs || {}).filter((name) => (llmLogs[name] || []).length);
-        let telemetryEvents = [];
-        try {
-            telemetryEvents = await getTelemetryEventsForExport();
-        } catch (err) {
-            console.warn('[Diagnostics] telemetry export snapshot failed', err);
-        }
-        return {
-            sources,
-            telemetryEvents: telemetryEvents.slice(),
-            logs: cloneLogsByModel(llmLogs),
-            capturedAt: new Date().toLocaleString()
-        };
-    };
-
-    const detectManualIntervention = (events = [], logs = {}, sinceTs) => {
-        const normalizedSince = Number(sinceTs || 0);
-        const telemetryHit = (events || []).find((event) => {
-            if (!event?.ts || event.ts < normalizedSince) return false;
-            const labelRaw = event?.label || event?.meta?.event || '';
-            const label = String(labelRaw).toUpperCase();
-            if (label === 'USER_FOCUS_CHANGE') return true;
-            if (label === 'HUMAN_VISIT_START') {
-                const source = String(event?.meta?.source || '').toLowerCase();
-                return source === 'user_focus';
-            }
-            return false;
-        });
-        if (telemetryHit) {
-            return { trigger: 'user_focus', event: telemetryHit };
-        }
-        const manualPingMatch = Object.values(logs || {}).some((entries) => (
-            (entries || []).some((entry) => {
-                if (!entry?.ts || entry.ts < normalizedSince) return false;
-                const label = String(entry?.label || '').toLowerCase();
-                const details = String(entry?.details || '').toLowerCase();
-                return label.includes('manual ping') || details.includes('manual ping');
-            })
-        ));
-        if (manualPingMatch) {
-            return { trigger: 'manual_ping' };
         }
         return null;
     };
@@ -18025,24 +17426,15 @@ document.addEventListener('click', (event) => {
             .catch((err) => console.warn('[RESULTS] telemetry reload clear failed', err));
     }
 
-    const newPagesStorageKey = 'llmComparatorNewPages';
-    const storeNewPagesState = (checked) => {
-        void checked;
-        void newPagesStorageKey;
-    };
     const resetNewPagesCheckboxAfterOpen = () => {
         if (!newPagesCheckbox) return;
         if (typeof window.__stopNewPagesDefaultBootstrap === 'function') {
             window.__stopNewPagesDefaultBootstrap();
         }
         newPagesCheckbox.checked = false;
-        storeNewPagesState(false);
     };
     if (newPagesCheckbox) {
         newPagesCheckbox.checked = true;
-        newPagesCheckbox.addEventListener('change', () => {
-            storeNewPagesState(newPagesCheckbox.checked);
-        });
     }
 
     const apiModeStorageKey = 'llmComparatorApiModeEnabled';
@@ -21472,10 +20864,6 @@ function formatNamedExportStamp(date = new Date()) {
     return `${months[date.getMonth()]}${String(date.getFullYear()).slice(-2)} ${pad(date.getHours())}-${pad(date.getMinutes())}`;
 }
 
-function formatModelCardExportStamp(date = new Date()) {
-    return formatNamedExportStamp(date).replace(':', '-');
-}
-
 function getExportPromptSource() {
     const promptValues = [
         pastedTextComposer.getText(),
@@ -22184,7 +21572,6 @@ function checkCompareButtonState() {
     }
 
     const debateSessionCopyBtn = document.getElementById('debate-session-copy-btn');
-    const debateSessionExportBtn = document.getElementById('debate-session-export-btn');
     const debateSessionClearBtn = document.getElementById('debate-session-clear-btn');
     const debateSenderSelect = document.getElementById('mod-sender-select');
     const debateReceiverSelect = document.getElementById('mod-receiver-select');
@@ -22198,9 +21585,6 @@ function checkCompareButtonState() {
     var synthesisColumn = document.getElementById('synthesisColumn');
     var connectorToSynthesis = document.getElementById('connectorToSynthesis');
     var synthesisStack = document.getElementById('synthesis-stack');
-    function getDebateScheme() {
-        return 'universal';
-    }
     function getSynthesizerFlowSelect() {
         return synthesisStack?.querySelector('#synthesis-flow-select') || null;
     }
@@ -22224,9 +21608,6 @@ function checkCompareButtonState() {
         safeStorageLocalGet(DEBATE_SCHEME_STORAGE_KEY).then((data) => {
             setDebateSchemeValue(data?.[DEBATE_SCHEME_STORAGE_KEY] || '2');
         });
-        const moderatorRouteState = {
-            manualOverride: false
-        };
     const serialDebateTimeline = [];
     const debateSelectionState = { range: null, target: null };
     let suppressDebateFavoriteClickUntil = 0;
@@ -22243,10 +21624,6 @@ function checkCompareButtonState() {
     const debateMessageStore = new Map();
     const debateDomIndex = new Map();
     const DebateEngineRuntime = window.DebateEngine || null;
-    const getHeaderModelNames = () => Array.from(llmButtons).map((button) => {
-        const idName = String(button.id || '').replace('llm-', '');
-        return LLM_BUTTON_NAME_MAP[idName] || button.textContent?.trim() || '';
-    }).filter(Boolean);
     function getAllModelNames() {
         return (Array.isArray(PipelineRuntime?.MODELS) ? PipelineRuntime.MODELS : [])
             .map((model) => model?.name)
@@ -22645,9 +22022,6 @@ function checkCompareButtonState() {
     function toModelKey(name = '') {
         return String(name).toLowerCase().replace(/\s+/g, '');
     }
-    function getActiveDebateSession() {
-        return debateTabsState.sessions.get(debateTabsState.activeSessionId) || null;
-    }
     function ensureDebateSession(sessionId) {
         return debateSessionsStore.ensure(sessionId);
     }
@@ -22677,18 +22051,6 @@ function checkCompareButtonState() {
         // Пересчитываем высоту поля модератора под новое состояние ленты
         // (закрытая лента → рост до 12 строк + расширение контейнера; открытая → кап 120px).
         if (promptInput && isModeratorTextarea) autoGrowDebateTextarea(promptInput);
-    }
-    function pushSerialDebateTimeline(type, payload = {}) {
-        const timelineEvent = {
-            at: new Date().toISOString(),
-            type,
-            pipelineRunId: getPageSerialDebateState().runId || activePipelineRunContext?.pipelineRunId || null,
-            sessionId: getPageSerialDebateState().sessionId || debateTabsState.activeSessionId || '1',
-            ...payload
-        };
-        serialDebateTimeline.push(timelineEvent);
-        recordDebateDomainEvent(window.DebateRunStore?.EVENTS?.TIMELINE_EVENT_RECORDED, timelineEvent);
-        if (serialDebateTimeline.length > 300) serialDebateTimeline.splice(0, serialDebateTimeline.length - 300);
     }
     function normalizeDisputAction(type = '') {
         const raw = String(type || '').trim().toLowerCase();
@@ -22938,22 +22300,6 @@ function checkCompareButtonState() {
             ].map(escapeDisputTableCell).join(' | '));
         });
         return lines.join('\n');
-    }
-    function buildSerialDebateFlowMarkdown() {
-        return buildDisputTelemetryMarkdown([]);
-    }
-    function downloadSerialDebateFlowMarkdown(button = null) {
-        const markdown = buildSerialDebateFlowMarkdown();
-        const blob = new Blob([markdown], { type: 'text/markdown' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `disput_flow_${new Date().toISOString().replace(/[:.]/g, '-')}.md`;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 0);
-        if (button) flashButtonFeedback(button, 'success');
     }
     function readDebateCardMessageSnapshot(card) {
         const outputEl = card?.querySelector?.('.debate-model-card-output');
@@ -23911,66 +23257,6 @@ function checkCompareButtonState() {
         });
         applyDebateSessionFilter();
     }
-    function appendVerdictFeedEntry(text, { title = 'Verdict', source = 'Moderator' } = {}) {
-        if (!debateModelCards) return;
-        const normalizedText = cleanFeedText(text);
-        if (!normalizedText) return;
-        const session = ensureDebateSession(debateTabsState.activeSessionId);
-        const card = document.createElement('div');
-        const now = new Date();
-        const hh = String(now.getHours()).padStart(2, '0');
-        const mm = String(now.getMinutes()).padStart(2, '0');
-        card.className = 'debate-model-card debate-moderator-card debate-verdict-card';
-        card.dataset.sessionId = session.id;
-        card.dataset.llmName = title;
-        card.dataset.entryKind = 'response';
-        card.dataset.kind = 'moderator';
-        card.dataset.verdict = 'true';
-        card.dataset.verdictSource = source;
-        card.dataset.starred = 'false';
-        card.dataset.entryId = String(debateFeedState.nextId++);
-        card.dataset.approved = 'moderator';
-        card.innerHTML = `
-            <div class="debate-model-card-header">
-                <span class="debate-model-card-title">
-                    <span class="debate-model-card-title-main">
-                        <span class="debate-model-card-name">${escapeHtml(title)}</span>
-                    </span>
-                </span>
-                <span class="debate-model-card-meta">
-                    <span class="debate-model-card-time">${hh}:${mm}</span>
-                    <button type="button" class="ib debate-card-copy" title="Copy" aria-label="Copy"><i class="ti ti-copy" aria-hidden="true"></i></button>
-                    <button type="button" class="ib debate-card-export" title="Export HTML" aria-label="Export HTML"><i class="ti ti-download" aria-hidden="true"></i></button>
-                    <button type="button" class="ib debate-card-delete" title="Delete" aria-label="Delete"><i class="ti ti-trash" aria-hidden="true"></i></button>
-                    <button type="button" class="ib debate-fav" title="Favorite" aria-label="Favorite"><i class="ti ti-star" aria-hidden="true"></i></button>
-                </span>
-            </div>
-            <div class="debate-model-card-output"></div>
-        `;
-        const body = card.querySelector('.debate-model-card-output');
-        const formattedHtml = renderDebateResponseBody(body, normalizedText);
-        ensureDebateCardMessage(card, {
-            kind: 'moderator',
-            status: 'approved',
-            model: title,
-            text: normalizedText,
-            html: formattedHtml,
-            timeLabel: `${hh}:${mm}`,
-            starred: false
-        });
-        normalizeDebateCardState(card);
-        insertModeratorCard(card);
-        recordDebateDomainEvent(window.DebateRunStore?.EVENTS?.VERDICT_RECORDED, {
-            turnId: card.dataset.turnId || card.dataset.messageId || card.dataset.entryId,
-            sessionId: session.id,
-            model: title,
-            source,
-            text: normalizedText,
-            html: formattedHtml,
-            status: 'approved'
-        });
-        applyDebateSessionFilter();
-    }
     function updateCardRole(card, roleValue) {
         if (!card) return;
         if (roleValue) card.dataset.role = String(roleValue).trim();
@@ -24492,49 +23778,6 @@ function checkCompareButtonState() {
     function setDebateApprovalCandidate(candidate) {
         debateFeedState.pendingApproval = candidate || null;
     }
-    function collectCheckedDebateApprovals({ commit = false } = {}) {
-        if (!debateModelCards) return [];
-        const activeSessionId = debateTabsState.activeSessionId;
-        return Array.from(debateModelCards.querySelectorAll('.debate-approval-check:checked'))
-            .map((checkbox) => {
-                const card = checkbox.closest('.debate-model-card');
-                if (!card || card.dataset.sessionId !== activeSessionId) return null;
-                const outputEl = card.querySelector('.debate-model-card-output');
-                const text = String(outputEl?.innerText || outputEl?.textContent || '').trim();
-                if (!text || card.dataset.kind === 'placeholder') return null;
-                const item = {
-                    card,
-                    llmName: card.dataset.llmName || 'Model',
-                    text
-                };
-                if (commit) {
-                    approveDebateCard(card);
-                }
-                return item;
-            })
-            .filter(Boolean);
-    }
-    function collectApprovedDebateAnswers() {
-        if (!debateModelCards) return [];
-        const activeSessionId = debateTabsState.activeSessionId;
-        return Array.from(debateModelCards.querySelectorAll('.debate-model-card[data-approved="true"]'))
-            .filter((card) => (
-                card.dataset.sessionId === activeSessionId
-                && card.dataset.kind !== 'moderator'
-                && card.dataset.kind !== 'fragment'
-            ))
-            .map((card) => {
-                const outputEl = card.querySelector('.debate-model-card-output');
-                const text = String(outputEl?.innerText || outputEl?.textContent || '').trim();
-                if (!text) return null;
-                return {
-                    card,
-                    llmName: card.dataset.llmName || 'Model',
-                    text
-                };
-            })
-            .filter(Boolean);
-    }
     function getModeratorDispatchText() {
         const moderatorInputText = pastedTextComposer.getText().trim();
         // On the Debate page #mod-message-body is a presentation surface, not
@@ -24564,25 +23807,6 @@ function checkCompareButtonState() {
         if (debateModMessageBody) {
             debateModMessageBody.innerHTML = '';
         }
-    }
-    function buildDebateModeratorDispatchText() {
-        const approval = debateFeedState.pendingApproval;
-        const legacyApprovalText = approval ? String(approval.text || '').trim() : '';
-        const checkedApprovals = collectCheckedDebateApprovals();
-        const approvedAnswers = checkedApprovals.length ? checkedApprovals : collectApprovedDebateAnswers();
-        const moderatorText = getModeratorDispatchText();
-        const parts = [];
-        approvedAnswers.forEach((item) => {
-            parts.push(`${item.llmName}\n${item.text}`);
-        });
-        if (!approvedAnswers.length && legacyApprovalText) {
-            const approvalLabel = approval?.llmName || 'Model';
-            parts.push(`${approvalLabel}\n${legacyApprovalText}`);
-        }
-        if (moderatorText) {
-            parts.push(`User\n${moderatorText}`);
-        }
-        return parts.join('\n\n').trim();
     }
     function updateDebateModelCardOutput(llmName, text, html = '', meta = {}) {
         const normalizedText = String(text || '').trim();
@@ -24660,44 +23884,6 @@ function checkCompareButtonState() {
             .map((card) => card.dataset.llmName || '')
             .filter(Boolean)
             .filter((name, index, list) => list.indexOf(name) === index);
-    }
-    function setSelectValueIfPresent(select, value, fallback = '') {
-        if (!select) return false;
-        const desired = String(value || '');
-        const hasDesired = Array.from(select.options).some((opt) => opt.value === desired && !opt.disabled);
-        if (hasDesired) {
-            select.value = desired;
-            return true;
-        }
-        const hasFallback = Array.from(select.options).some((opt) => opt.value === fallback && !opt.disabled);
-        if (hasFallback) {
-            select.value = fallback;
-            return true;
-        }
-        return false;
-        }
-        function getSerialOpponentModel(modelName = '') {
-            const state = getPageSerialDebateState();
-            const name = String(modelName || '').trim();
-            if (!name) return '';
-            if (name === state.modelA) return state.modelB || '';
-            if (name === state.modelB) return state.modelA || '';
-            const selected = getSelectedLLMs();
-            return selected.find((item) => item !== name) || '';
-        }
-    function setModeratorRoute(sender = 'Moderator', receiver = '__none__', options = {}) {
-        syncModeratorSelectors({ preserveRoute: false });
-        setSelectValueIfPresent(debateSenderSelect, sender, 'Moderator');
-        setSelectValueIfPresent(debateReceiverSelect, receiver, '__none__');
-        if (options.manual) moderatorRouteState.manualOverride = true;
-        syncDirectionIcon();
-    }
-    function syncModeratorRouteAfterModelResponse(modelName = '') {
-        const speaker = String(modelName || '').trim();
-        const opponent = getSerialOpponentModel(speaker);
-        if (!speaker || !opponent) return false;
-        setModeratorRoute(speaker, opponent);
-        return true;
     }
     function saveDebateSelectorState() {
         const state = {

@@ -239,7 +239,7 @@ describe('the moderator input is emptied once the message is sent', () => {
     expect(source).toContain('function restoreModeratorComposer(text) {');
     expect((source.match(/restoreModeratorComposer\(moderatorEntryText\)/g) || []).length).toBe(2);
     // The manual moderator dispatch already clears its input.
-    expect(source.slice(source.indexOf('const startManualModeratorDispatch'), source.indexOf('const getDisputeTemplateApi'))).toContain('clearModeratorComposer();');
+    expect(source.slice(source.indexOf('const startManualModeratorDispatch'), source.indexOf('const applyDisputeTopicDisplay'))).toContain('clearModeratorComposer();');
   });
 
   test('restore never overwrites text the moderator has typed since', () => {
