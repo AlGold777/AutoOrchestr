@@ -24028,20 +24028,6 @@ function checkCompareButtonState() {
         });
         syncDebateCardOutputLayout(sourceCard);
     }
-    function stripBackgroundColorStyles(node) {
-        if (!node || node.nodeType !== Node.ELEMENT_NODE) return;
-        const el = node;
-        if (el.style && typeof el.style.backgroundColor === 'string') {
-            el.style.backgroundColor = '';
-            if (typeof el.style.removeProperty === 'function') {
-                el.style.removeProperty('background-color');
-            }
-            if (el.getAttribute?.('style') === '') {
-                el.removeAttribute('style');
-            }
-        }
-        Array.from(el.children || []).forEach(stripBackgroundColorStyles);
-    }
     function wrapDebateSelectionRange(tagName, stylePatch = {}) {
         const range = debateSelectionState.range;
         if (!range || range.collapsed) return false;

@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-15 — Чистка страницы pipeline panel: мёртвые функции, разметка и CSS, версии 2.81.775–778
+
+- Ревью страницы (8 проверок по зонам) и удаление того, у чего 0 ссылок: ~830 строк `results.js` (блок заметок merge/export/select-all, `appendVerdictFeedEntry`, serial-debate Markdown/timeline, `pruneEmptyTabs`, заглушки `storeNewPagesState`/`syncAggregateArtifactsToCase`, `window.PipelineNotes`, неиспользуемые обёртки над `PipelineRuntime` и др.), дубль `stripBackgroundColorStyles`; в `pipeline_panel.html` — пустой `#comparative-analysis`, скрытая `#prompt-export-html-btn`, `meta keywords`, `?v=` синхронизирован; ~800 строк CSS (122 мёртвых правила, 3 дубля, 6 неиспользуемых переменных `base.css`).
+- Тест: якорь в `tests/pipeline-semi-auto.test.js` перенесён на `applyDisputeTopicDisplay`. Набор падающих тестов совпадает с базовым (12 наборов, 38 тестов — не из-за этой правки).
+- Не тронуто осознанно: миграции хранилища (`migrateBasicTemplateName`, `buildSendOverridesFromLegacy`) — живые и защищают данные; общие с `result_new.html` CSS-классы; `--ca`/`--br`/`--bg2`/`--cm`/`--ct` (необъявленные переменные: удаление может изменить вид). План и причины: `docs/pipeline-panel-cleanup-plan.md`.
+
 ### 2026-10-15 — Basic: поле можно оставить пустым, а не только унаследовать, версия 2.81.774
 
 - Сообщение владельца: очищенное в карточке синтезатора поле возвращалось, потому что «пусто» означало «унаследовать» (из ▶ или кода); в самом ▶ очистить поле тоже было нельзя. Схема уже различает: «побеждает первый слой со строкой, в том числе пустой» (`BasicSchema.pick`), страница же теряла пустую строку.

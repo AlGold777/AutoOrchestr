@@ -21,14 +21,15 @@
 - Необъявленные переменные --ca, --br, --bg2, --cm, --ct заменить на существующие токены; неиспользуемые переменные base.css удалить.
 - Кандидаты «через общий префикс» — удалять только после ручной проверки по динамическим сборкам.
 
-## Волна 4. Дубли и устаревшее в results.js
-- stripBackgroundColorStyles (две копии) — одна.
-- Миграции: buildSendOverridesFromLegacy (config.version < 2), migrateBasicTemplateName (version < 8), легаси-очистка в ensureDefaultPipelinePresets, ветка legacyView в normalizeCrossViewUiState — удалить, если не нужны Basic-схемам (старые пайплайны не мигрируются).
-- exportSingleTemplate (содержит стартовый код страницы) — переименовать по смыслу, если ссылок немного.
-- Изнутри window.__* хуки без внешних ссылок — оставить (могут вызываться из DevTools).
+## Волна 4. Дубли и устаревшее в results.js (выполнено)
+- stripBackgroundColorStyles: вложенная копия удалена, осталась верхнеуровневая.
+- Миграции (buildSendOverridesFromLegacy, migrateBasicTemplateName, очистка пресетов, legacyView) оставлены: они живые (версия хранилища 9 — переименование Basic → Default) и защищают данные пользователя.
+- exportSingleTemplate — обычная функция на 37 строк, переименование не требуется (оценка ревью «813 строк» была ошибочной).
+- window.__* хуки без внешних ссылок — оставлены (могут вызываться из DevTools).
 
 ## Не делаем (причина)
 - Слияние двух наборов выделения текста (ответы/дебаты) и унификация экспорта — рефакторинг с риском для поведения, не чистка.
+- Необъявленные --ca, --br, --bg2, --cm, --ct (modals-responsive.css): `var()` без значения даёт inherit/initial, удаление деклараций может изменить вид — решать отдельно.
 - Дубли хелперов в shared/ (hashText, normalizeStatus…) — то же.
 - Телеметрия панели (proof-telemetry*, ~2800 строк) и legacy-адаптер — нужна проверка в рантайме.
 - shared/log-replay-harness, utils/safe-mutex — подключает background/index.js.
