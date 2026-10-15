@@ -1119,6 +1119,8 @@ body.is-resizing {
 .custom-card-head span { line-height: 1.4; color: var(--pipeline-muted); font-size: 11px; font-weight: 400; }
 .custom-card-field textarea { display: block; width: 100%; flex: 1; min-height: 180px; height: 0; resize: none; padding: 13px 15px; border: 1px solid #c4d6cc; border-radius: 10px; background: #fff; color: #202936; font: inherit; font-size: 14px; line-height: 1.65; box-sizing: border-box; }
 .custom-card-field textarea:focus-visible, .custom-card-length input:focus-visible { outline: 2px solid #86b9aa; outline-offset: 2px; }
+/* The inherited value shown in an emptied field is a hint, not text: lighter than typed text (#202936) so a deleted value is visible at once. */
+.custom-card-field textarea::placeholder, .custom-card-discipline textarea::placeholder, .custom-card-length input::placeholder { color: #a7b3ad; opacity: 1; }
 .custom-card-note { margin-top: 7px; color: var(--pipeline-muted); font-size: 12px; line-height: 1.5; }
 .custom-card-note button { padding: 0; border: 0; background: none; color: #237565; font: inherit; cursor: pointer; }
 .custom-card-marks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 18px; flex-shrink: 0; padding-top: 12px;  color: var(--pipeline-muted); font-size: 12px; line-height: 1.55; }
