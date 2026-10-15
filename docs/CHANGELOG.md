@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-10-15 — Удалён редактор профилей «Pipeline profiles», версия 2.81.784
+
+- Удалены `results/pipeline-profile-view.js`, `disput/pipeline-profile-store.js`, их тест, диалог `#pipeline-profile-dialog`, CSS и вызовы `pipelineProfileView` в `results.js`. Кнопка `#pipeline-profile-btn` оставлена неактивной заглушкой (решение владельца).
+
 ### 2026-10-15 — Реестр Debate сверён с кодом 2.81.783 (только документ, версия не меняется)
 
 - В `docs/Architecture/debate-removal-registry.md` добавлен раздел 10: что осталось после шагов 1–3 (в `disput/` 16 файлов `debate-*`, в `results/` 8), кто их использует, класс и следующий шаг; два решения для владельца (кнопка «Pipeline profiles», переименование ключей хранилища).

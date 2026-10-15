@@ -123,9 +123,9 @@
 | `debate-anonymization` | только `runModelBatch` (для Basic выключена) | DEBATE | убрать вместе с ветками в `runModelBatch` |
 | `debate-execution-context` | `ensureDebateExecutionContext`, ожидание подтверждений (approve) | DEBATE | убрать вместе с approve-карточками и `waitForDebateApproval` |
 | `debate-projections` | только `collectDebateArtifact` (отладка, `window.__pipelineLifecycleDebug`) | DEBATE | удалить с функцией и тестами |
-| `pipeline-profile-store`, `results/pipeline-profile-view`, кнопка и диалог «Pipeline profiles» | редактор JSON профилей (интерфейс), `PipelineProfileStore` не вызывается | UI Debate | решение владельца: оставить ли кнопку «Pipeline profiles» |
+| `pipeline-profile-store`, `results/pipeline-profile-view`, диалог «Pipeline profiles» | редактор JSON профилей | УДАЛЕНО (2.81.784) | кнопка `#pipeline-profile-btn` оставлена неактивной заглушкой по решению владельца |
 
-**Решения для владельца:** (1) кнопка и диалог «Pipeline profiles» (редактор профилей Debate): оставить или убрать вместе с `pipeline-profile-store`, `pipeline-profile-view`; (2) хранилища с префиксом `llmCodex`/`llmCortex` (`llmCodexDebateRun.v1` и др.): переименовать с миграцией или оставить как есть.
+**Решения владельца:** (1) кнопка «Pipeline profiles» остаётся визуальной заглушкой, весь связанный код удалён (сделано в 2.81.784); (2) хранилища `llmCodex`/`llmCortex` (`llmCodexDebateRun.v1` и др.): переименовать с миграцией (в работе).
 
 **Что ещё сделать (порядок):**
 1. Убрать из `runModelBatch` анонимизацию и вызовы, нужные только Debate; убрать `debate-anonymization`, `debate-execution-context`, `debate-projections` вместе с approve-карточками, `waitForDebateApproval`, `collectDebateArtifact`, судьёй/оценщиком и их тестами.

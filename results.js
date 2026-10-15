@@ -2712,7 +2712,6 @@ document.addEventListener('click', (event) => {
     let customAbortController = null;
     let activePipelineRunContext = null;
     const debateAggregateStore = window.DebateRunStore?.createStore?.() || null;
-    const pipelineProfileView = window.PipelineProfileView?.init?.({ storage: chrome?.storage?.local }) || null;
     const debateTraceStore = window.DebateTraceStore?.createStore?.({
         storage: chrome?.storage?.local // Only used to delete legacy persisted run history.
     }) || null;
@@ -4560,7 +4559,7 @@ document.addEventListener('click', (event) => {
             config.protocol.synthesizer = synthesizer;
             const profileId = getProfileOverride(key);
             if (profileId) {
-                const profile = pipelineProfileView?.store?.get?.(profileId) || window.DebateProfileSchema?.BUILTIN_PROFILES?.[profileId];
+                const profile = window.DebateProfileSchema?.BUILTIN_PROFILES?.[profileId];
                 config.protocol.profileId = profileId;
                 config.protocol.profileVersion = profile?.version || config.protocol.profileVersion || '';
             }
@@ -5419,8 +5418,7 @@ document.addEventListener('click', (event) => {
                 : null;
             const maxTotalStages = runtimeLimits?.maxTotalStages || getSelectedPipelinePresetMeta()?.reasoningBudget?.maxTotalStages || 50;
             const selectedProfileId = String(protocol.profileId || getSelectedPipelinePresetMeta()?.profileId || presetId || '');
-            const selectedProfile = pipelineProfileView?.store?.get?.(selectedProfileId)
-                || window.DebateProfileSchema?.BUILTIN_PROFILES?.[selectedProfileId]
+            const selectedProfile = window.DebateProfileSchema?.BUILTIN_PROFILES?.[selectedProfileId]
                 || null;
             if (!api?.normalizePipelinePreset) {
                 return Object.freeze({
@@ -9576,7 +9574,6 @@ document.addEventListener('click', (event) => {
             const item = event.target.closest('.pipeline-item');
             if (!item || !pipelineItems.contains(item)) return;
             selectPipeline(item, { clearDebateFeed: true });
-            if (item.dataset.name === 'Specialized profile') pipelineProfileView?.open?.();
         });
         await initPipelineList();
         setTimeout(() => syncPipelineRoundsToDebateLimit(), 0);
