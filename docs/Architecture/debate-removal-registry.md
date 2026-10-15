@@ -136,4 +136,4 @@
 Не проверено в браузере; блоки `results.js` по функциям (раздел 7) остаются кандидатами.
 
 **2.81.786:** `debate-anonymization` и анонимизация в `runModelBatch` удалены.
-**2.81.787:** `debate-execution-context` и `waitForDebateApproval` удалены (ожидание одобрения не запускалось).
+**2.81.788:** `debate-execution-context` и `waitForDebateApproval` удалены (ожидание одобрения не запускалось).

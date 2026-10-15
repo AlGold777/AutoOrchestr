@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Опросник визуальных проблем Pipeline</title>
+<style>
+:root{color-scheme:light;--line:#dbe2ea;--ink:#1e293b;--blue:#356fe0;--bg:#f4f6fa}
+*{box-sizing:border-box}body{margin:0;padding:20px;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:1100px;margin:auto}h1{max-width:1100px;margin:0 auto 12px;font-size:18px;line-height:1.25;font-weight:700}.attachments{display:flex;align-items:center;gap:9px;margin:0 0 10px;cursor:pointer;width:max-content;padding:0 95px 8px}.attachments input,.mark input{position:absolute;opacity:0;width:1px;height:1px}
+.round{width:19px;height:19px;border:2px solid #94a3b8;border-radius:50%;display:inline-grid;place-items:center;flex:none}.round:after{content:"";width:9px;height:9px;border-radius:50%;background:transparent}.attachments input:checked+.round,.mark input:checked+.round{border-color:var(--blue)}.attachments input:checked+.round:after,.mark input:checked+.round:after{background:var(--blue)}
+.pipeline-wrap{max-width:1100px;margin-inline:auto;overflow-x:auto;background:white;border:1px solid var(--line);border-radius:12px}.pipeline-wrap table{width:100%;min-width:1780px;table-layout:fixed;border-collapse:collapse}.pipeline-wrap th,.pipeline-wrap td{padding:7.5px 4px;border-bottom:1px solid var(--line);text-align:center}.pipeline-wrap th{font-size:12px;line-height:1.2;color:#475569;vertical-align:bottom;overflow-wrap:anywhere}.pipeline-wrap th:first-child,.pipeline-wrap td:first-child{position:sticky;left:0;z-index:2;background:#fff;width:70px;padding-left:10px;font-weight:700;box-shadow:2px 0 4px rgba(15,23,42,.08)}.pipeline-wrap th:first-child{z-index:3}.pipeline-wrap th:nth-child(2),.pipeline-wrap td:nth-child(2){width:140px}.pipeline-wrap th:nth-child(3),.pipeline-wrap td:nth-child(3){width:120px}.pipeline-wrap input[type=text]{width:100%;min-width:70px;border:0;background:transparent;padding:4px;font:12px system-ui;text-align:center}.mark{display:inline-flex;align-items:center;justify-content:center;min-width:25px;min-height:25px;cursor:pointer}.cell-select{width:100%;max-width:100%;min-height:25px;padding:1px 2px;border:0;border-radius:4px;background:transparent;color:var(--ink);font:11px system-ui;text-align:center}.cell-select:focus{outline:2px solid var(--blue)}
+.add-row{display:block;margin:8px auto 0;min-width:32px;height:30px;border:0;background:transparent;color:#475569;font:24px/1 system-ui;cursor:pointer}.add-row:hover{color:var(--blue)}.footer{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;margin:8px auto 0;max-width:1100px}.actions{display:flex;justify-content:center;align-items:center;gap:8px}.actions button{min-height:32px;padding:5px 15px;border:1px solid #cbd5e1;border-radius:7px;background:#fff;color:var(--ink);font:700 14px system-ui;cursor:pointer}.actions .save{background:var(--blue);border-color:var(--blue);color:#fff}.actions .copy{padding:0 6px;border:0;border-radius:0;background:transparent;color:#475569;font:400 25px/1 system-ui;min-width:30px}.actions .copy:hover{color:var(--blue)}.actions .save:hover{filter:brightness(.96)}.actions button:focus-visible,.mark:focus-within,.attachments:focus-within{outline:2px solid var(--blue);outline-offset:2px}
+</style>
+</head>
+<body>
+<main>
+  <h1>Зафиксированные визуально проблемы Pipeline</h1>
+  <label class="attachments"><input id="attachments" type="checkbox"><span class="round"></span><span>Вложенные файлы</span></label>
+  <div class="pipeline-wrap"><table id="pipeline-observations"><thead><tr><th>№ / раунд</th><th>Шаг</th><th>Модель</th><th title="Запрос шага не ушёл">Не отправлен</th><th title="В запросе виден необработанный плейсхолдер или запрос пустой">Неверный запрос</th><th title="Модель получила не результат предыдущего шага">Неверный вход</th><th title="Ответ не попал в карточку шага">Ответ не в карточке</th><th title="Ответ обрезан на странице модели">Обрезан: страница</th><th title="Ответ обрезан в карточке шага">Обрезан: карточка</th><th title="В карточке старый ответ или ответ предыдущего шага">Чужой/старый ответ</th><th title="Статус на холсте не соответствует реальности">Статус шага</th><th title="Подсвечен не тот шаг">Подсветка</th><th title="Маршрут пошёл не туда">Переход</th><th title="Вопрос владельцу не появился или ответ не дошёл до следующего шага">Вопрос владельцу</th><th title="Не сработала кнопка Пауза, Продолжить или Стоп; выбранная кнопка указана в ячейке">Управление</th><th title="Вложения не дошли">Вложения не вставились</th><th title="До шага дошли не все вложения">Вставились не все вложения</th><th title="Артефакт не открылся или пустой">Артефакт</th><th title="Пользователь вмешался вручную">Вмешательство вручную</th><th title="Пользователь кликал или переключал вкладку модели во время ответа">Клик/вкладка во время ответа</th></tr></thead><tbody></tbody></table></div>
+  <button class="add-row" id="add-row" type="button" aria-label="Добавить строку Pipeline" title="Добавить строку Pipeline">＋</button>
+  <div class="footer"><span aria-hidden="true"></span><div class="actions"><button class="save" id="save" type="button">Save</button><button class="copy" id="copy" type="button" aria-label="Копировать Markdown" title="Копировать Markdown">⧉</button></div><span aria-hidden="true"></span></div>
+</main>
+<script>
+(() => {
+  const models=['GPT','Claude','Qwen','Z.ai','Kimi','Gemini','Grok','DeepSeek','Le Chat','Perplexity'];
+  const issues=[
+    {label:'Не отправлен',type:'checkbox',detail:'Запрос шага не ушёл'},
+    {label:'Неверный запрос',type:'checkbox',detail:'В запросе виден необработанный плейсхолдер или запрос пустой'},
+    {label:'Неверный вход',type:'checkbox',detail:'Модель получила не результат предыдущего шага'},
+    {label:'Ответ не в карточке',type:'checkbox',detail:'Ответ не попал в карточку шага'},
+    {label:'Обрезан: страница',type:'checkbox',detail:'Ответ обрезан на странице модели'},
+    {label:'Обрезан: карточка',type:'checkbox',detail:'Ответ обрезан в карточке шага'},
+    {label:'Чужой/старый ответ',type:'checkbox',detail:'В карточке старый ответ или ответ предыдущего шага'},
+    {label:'Статус шага',type:'checkbox',detail:'Статус на холсте не соответствует реальности'},
+    {label:'Подсветка',type:'checkbox',detail:'Подсвечен не тот шаг'},
+    {label:'Переход',type:'checkbox',detail:'Маршрут пошёл не туда'},
+    {label:'Вопрос владельцу',type:'checkbox',detail:'Вопрос владельцу не появился или ответ не дошёл до следующего шага'},
+    {label:'Управление',type:'select',options:['Пауза','Продолжить','Стоп'],detail:'Не сработала выбранная кнопка управления'},
+    {label:'Вложения не вставились',type:'checkbox',detail:'Вложения не дошли'},
+    {label:'Вставились не все вложения',type:'checkbox',detail:'До шага дошли не все вложения'},
+    {label:'Артефакт',type:'checkbox',detail:'Артефакт не открылся или пустой'},
+    {label:'Вмешательство вручную',type:'checkbox',detail:'Пользователь вмешался вручную'},
+    {label:'Клик/вкладка во время ответа',type:'checkbox',detail:'Пользователь кликал или переключал вкладку модели во время ответа'}
+  ];
+  const tbody=document.querySelector('#pipeline-observations tbody');
+  const escapeHtml=value=>String(value).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  const addRow=()=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML='<td><input type="text" aria-label="Номер шага или раунда"></td><td><input type="text" aria-label="Название шага" placeholder="Шаг"></td><td><select class="cell-select" aria-label="Модель"><option value="">-</option>'+models.map(model=>`<option>${escapeHtml(model)}</option>`).join('')+'</select></td>'+issues.map(issue=>{
+      const aria=escapeHtml(issue.detail);
+      if(issue.type==='select')return `<td><select class="cell-select" aria-label="${aria}"><option value="">-</option>${issue.options.map(option=>`<option>${escapeHtml(option)}</option>`).join('')}</select></td>`;
+      return `<td><label class="mark" aria-label="${aria}"><input type="checkbox"><span class="round"></span></label></td>`;
+    }).join('');
+    tbody.appendChild(tr);
+  };
+  addRow();
+  document.getElementById('add-row').addEventListener('click',addRow);
+  const markdown=()=>{
+    const lines=[];
+    if(document.getElementById('attachments').checked)lines.push('Вложенные файлы: Да','');
+    const rows=[...tbody.rows].map(row=>({row,values:issues.map((issue,ii)=>{
+      const control=row.cells[ii+3].querySelector('input,select');
+      return issue.type==='select'?control.value:(control.checked?'Да':'');
+    })}));
+    const active=issues.map((_,ii)=>ii).filter(ii=>rows.some(item=>item.values[ii]));
+    if(active.length){
+      if(lines.length&&lines[lines.length-1]!=='')lines.push('');
+      lines.push('## Pipeline','');
+      const headers=['№ / раунд','Шаг','Модель',...active.map(ii=>issues[ii].label)];
+      lines.push('| '+headers.join(' | ')+' |','| '+headers.map(()=> '---').join(' | ')+' |');
+      rows.filter(item=>active.some(ii=>item.values[ii])).forEach(({row,values})=>{
+        const identity=[row.cells[0].querySelector('input').value.trim(),row.cells[1].querySelector('input').value.trim(),row.cells[2].querySelector('select').value];
+        lines.push('| '+[...identity,...active.map(ii=>values[ii])].join(' | ')+' |');
+      });
+    }
+    return lines.length?lines.join('\n')+'\n':'';
+  };
+  document.getElementById('save').addEventListener('click',()=>{
+    const blob=new Blob([markdown()],{type:'text/markdown;charset=utf-8'});
+    const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='pipeline-visual-observation-questionnaire.md';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  });
+  document.getElementById('copy').addEventListener('click',async()=>{
+    const text=markdown();
+    try{if(navigator.clipboard?.writeText){await navigator.clipboard.writeText(text);return;}}catch(_){ }
+    const temp=document.createElement('textarea');temp.value=text;temp.setAttribute('readonly','');temp.style.position='fixed';temp.style.opacity='0';document.body.appendChild(temp);temp.select();
+    try{document.execCommand('copy');}finally{temp.remove();}
+  });
+})();
+</script>
+</body>
+</html>
