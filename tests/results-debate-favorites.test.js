@@ -6,7 +6,7 @@ const path = require('path');
 const readResolvedCss = () => {
   const dir = path.join(__dirname, '..');
   const loader = fs.readFileSync(path.join(dir, 'styles.css'), 'utf8');
-  const modules = [...loader.matchAll(/@import url\("(styles\/[^"]+\.css)"\)/g)]
+  const modules = [...loader.matchAll(/@import url\("(styles\/[^"]+\.css)(?:\?[^"]+)?"\)/g)]
     .map((m) => fs.readFileSync(path.join(dir, m[1]), 'utf8'));
   return [loader, ...modules].join('\n');
 };
