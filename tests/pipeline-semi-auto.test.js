@@ -147,7 +147,7 @@ describe('an unfinished run does not take the Run button after a reload', () => 
 
 describe('Run button and New pages (field report)', () => {
   test('pressing a composer button keeps the focus in the input, so a shrinking input cannot move the button away', () => {
-    expect(source).toContain("debateRunToggleBtn?.closest('.msg-header')?.addEventListener('mousedown', (event) => {");
+    expect(source).toContain("debateRunToggleBtn?.closest('.moderator-input')?.addEventListener('mousedown', (event) => {");
     expect(source).toContain("if (event.target.closest?.('button')) event.preventDefault();");
     const css = fs.readFileSync(path.join(__dirname, '..', 'styles', 'modals-responsive.css'), 'utf8');
     // The cause: the compact input shrinks on blur.
@@ -182,7 +182,7 @@ describe('no model is pre-selected', () => {
 describe('the moderator input is emptied once the message is sent', () => {
   test('the Run path clears it when the run starts and puts the text back if the run produced nothing', () => {
     const start = source.indexOf('const runCustomFromPage = async');
-    const block = source.slice(start, start + 12000);
+    const block = source.slice(start, start + 32000);
     expect(block).toContain('clearModeratorComposer();');
     expect(block).toContain('composerBackup = getModeratorDispatchText();');
     // The text comes back when the run throws (not on abort) or ends with no answer for a reason other than the owner's stop.

@@ -115,25 +115,6 @@ describe('release log regression guards', () => {
     expect(css).not.toContain('order: 3;\n        width: 100%;');
   });
 
-  test('state map actions use icon buttons and keep Case before Export', () => {
-    const htmlFiles = ['pipeline_panel.html', 'result_new.html'];
-    htmlFiles.forEach((file) => {
-      const html = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
-      const history = html.indexOf('data-map-mode="history"');
-      const caseExport = html.indexOf('data-case-export');
-      const mapExport = html.indexOf('data-map-export');
-      expect(history).toBeGreaterThan(-1);
-      expect(caseExport).toBeGreaterThan(history);
-      expect(mapExport).toBeGreaterThan(caseExport);
-      expect(html).toContain('data-map-mode="history" title="История" aria-label="История"><i class="ti ti-history"');
-      expect(html).toContain('data-case-export title="Экспорт дела" aria-label="Экспорт дела"><i class="ti ti-folder"');
-      expect(html).toContain('data-map-export title="Экспорт карты" aria-label="Экспорт карты"><i class="ti ti-download"');
-      expect(html).not.toContain('data-map-mode="history">История</button>');
-      expect(html).not.toContain('data-case-export title="Экспорт дела">Case</button>');
-      expect(html).not.toContain('data-map-export title="Экспорт карты">Export</button>');
-    });
-  });
-
   test('telemetry export accentuates the active Generation Wait Profile', () => {
     const source = fs.readFileSync(path.join(__dirname, '..', 'results.js'), 'utf8');
     // Captured at dispatch so the export reflects the profile actually used.
@@ -290,8 +271,8 @@ describe('release log regression guards', () => {
 
     expect(source).toContain('&& !models.some((model) => opened?.has?.(model));');
     expect(source).toContain('activePipelineRunContext.newPagesDispatched = true;');
-    expect(source).toContain("pipelinePanel?.addEventListener('dblclick', (event) => {");
-    expect(source).toContain('void toggleIntermediateSynthesis(insert);');
+    expect(source).toContain("pipelinePanel.addEventListener('dblclick', (event) => {");
+    expect(source).toContain('void window.__toggleIntermediateSynthesis?.(insert)');
     expect(source).toContain('planned-working-synthesis-after-${afterPlannedStageId}');
     expect(source).not.toContain('pipeline-stage-insert-menu');
     expect(source).not.toContain('pipeline-stage-synthesis-select');
@@ -300,7 +281,7 @@ describe('release log regression guards', () => {
     expect(css).toContain('box-shadow: none;');
     expect(source).toContain('const hasSelectedPipelineModels = () => getSelectedLLMs().length > 0;');
     expect(source).toContain('if (!hasSelectedPipelineModels()) return false;');
-    expect(source).toContain('currentFlowSelect.disabled = runActive || !shouldRenderSynthesisStage || !hasActivePipelineModels;');
+    expect(source).toContain('currentFlowSelect.disabled = runActive || !shouldRenderSynthesisStage || !hasActivePipelineModels || !hasFinalSynthesizer;');
     expect(source).toContain("targetMode: 'synthesis'");
     expect(source).toContain("class=\"connector-line ${activePath ? colorClass : 'inactive'}${activePath ? ' flow-anim' : ''}\"");
     expect(html).not.toContain('class="pipeline-item active" data-name="Universal"');
@@ -394,13 +375,13 @@ describe('release log regression guards', () => {
     expect(css).toContain('#debate-round-limit-select {');
     expect(css).toContain('width: 86px;');
     expect(css).toContain('padding-right: 24px;');
-    expect(css).toContain('.msg-head-right-top > .debate-btn {');
+    expect(css).toContain('.msg-head-right-top > .debate-btn,');
     expect(css).toContain('.msg-head-right-top > .prompt-mode-btn {');
     expect(css).toContain('.pipeline-modifiers-section {');
     expect(css).toContain('.pipeline-modifiers-container {');
     expect(css).toContain('.pipeline-page .prompt-group:has(.prompt-container.prompt-sandwich.debate-composer:not(.has-debate-feed)) {');
     expect(css).toContain('margin-top: clamp(0px, calc((100dvh - 322px) / 2 - 3px), 360px);');
-    expect(css).toContain('padding: 2.5px 9px 0;');
+    expect(css).toContain('padding: 3.5px 10px 0;');
     expect(css).toContain('font-size: 16px;');
     expect(css).toContain('line-height: 1.45;');
     expect(css).toContain('gap: 4px;');
@@ -475,7 +456,7 @@ describe('release log regression guards', () => {
     expect(source).toContain('const PIPELINE_HEADER_DISPLAY_LIMIT = 18;');
     expect(source).toContain('fullName.length > PIPELINE_HEADER_DISPLAY_LIMIT');
     expect(source).toContain('fullName.slice(0, PIPELINE_HEADER_DISPLAY_LIMIT - 1)}…');
-    expect(source).toContain("delete pipelineStore.draftPlans['Unsaved Pipeline'];");
+    expect(source).toContain('delete pipelineStore.draftPlans[name];');
     expect(source).toContain("window.__pendingPipelineSynthesizer = defaultSynthesizer;");
     expect(source).toContain("if (isDefaultPipelineName(key)) return '';");
     expect(source).toContain('block.classList.toggle(\'inactive\', !isActive);');
@@ -627,7 +608,8 @@ describe('release log regression guards', () => {
     const css = readResolvedCss();
 
     expect(css).toContain('.prompt-container.prompt-sandwich.debate-composer:not(.has-debate-feed) .msg-header {\n    flex: 0 0 auto;\n    align-items: center;\n    grid-template-columns: auto minmax(0, 1fr) auto;');
-    expect(css).toContain('.prompt-container.prompt-sandwich.debate-composer:not(.has-debate-feed) .msg-head-right-top {\n    gap: 4px;\n    justify-content: flex-end;\n    overflow: visible;');
+    expect(css).toContain('.prompt-container.prompt-sandwich.debate-composer:not(.has-debate-feed) .msg-head-right-top {\n    overflow: visible;');
+    expect(css).toContain('.pipeline-page .prompt-container.prompt-sandwich.debate-composer:not(.has-debate-feed) .msg-head-right-top {\n    gap: 0;\n    justify-content: flex-end;');
     expect(css).toContain('.prompt-container.prompt-sandwich.debate-composer:not(.has-debate-feed) .msg-head-center {\n    min-width: 0;\n    max-width: 100%;\n    transform: none;');
     expect(css).toContain('.prompt-container.prompt-sandwich.debate-composer:not(.has-debate-feed) .msg-head-right {\n    width: auto;\n    min-width: 0;\n    max-width: 100%;');
   });

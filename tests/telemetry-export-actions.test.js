@@ -214,7 +214,7 @@ describe('Telemetry export actions', () => {
 
   test('Disput export whitelists diagnostic evidence and deep-redacts JSON', () => {
     expect(resultsSource).toContain('const buildSafeDebateDiagnosticEvidence = (meta = {}) =>');
-    expect(resultsSource).toContain('evidence: buildSafeDebateDiagnosticEvidence(meta)');
+    expect(resultsSource).toContain('evidence: { ...buildSafeDebateDiagnosticEvidence(meta), registeredRunId:');
     expect(resultsSource).not.toContain('evidence: meta');
     expect(resultsSource).toContain('window.SecretRedaction.redactDeep(payload)');
     // Exports are complete: "Only problems" filters the tab view, never the JSON/MD export.
