@@ -8,14 +8,7 @@
 }
 
 @media (max-width: 640px) {
-    .selectors0-action-row {
-        flex-direction: column;
-    }
 
-    .selectors0-cta,
-    .selectors0-secondary {
-        width: 100%;
-    }
 }
 
 .sr-only {
@@ -169,12 +162,6 @@
     overflow-x: clip;
 }
 
-/* тонкая выравнивающая обёртка для кнопки Go */
-.go-wrapper,
-#go-it-button {
-    display: none;
-}
-
 /* если нужно — гарантируем, что ряд модификаторов растягивается */
 .modifiers-row {
     width: 100%;
@@ -230,14 +217,6 @@
 }
 
 
-
-.evaluator-select-group {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 15px;
-    margin: -5px; /* Добавим немного вертикального отступа для воздуха */
-}
 
 .control-button {
     padding: 6px 15px;
@@ -325,12 +304,6 @@
     
 }
 
-.section-title {
-    font-size: 18px;
-    color: #374151;
-    text-align: left;
-}
-
 .view-toggle-group {
     display: inline-flex;
     align-items: center;
@@ -392,13 +365,6 @@
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
-}
-.llm-header-bar.get-answers-row {
-  justify-content: center;
-  margin-top: -4px;
-}
-.llm-header-bar.get-answers-row #get-it-button {
-  min-width: 140px;
 }
 
 .llm-header-left {
@@ -841,17 +807,6 @@ body.llm-stream-preview-open .llm-results .llm-panel.llm-panel-session-restored:
   gap: 10px;
 }
 
-.favorite-item-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-bottom: 0;
-  font-size: 12px;
-  color: #475569;
-  flex: 0 0 auto;
-}
-
 .favorite-item-body {
   color: #111827;
   line-height: 1.55;
@@ -1219,11 +1174,6 @@ body.llm-stream-preview-open .llm-results .llm-panel.llm-panel-session-restored:
   background-color: #94a3b8;
 }
 
-.status-indicator.recoverable-error,
-.status-indicator.critical-error {
-    background-color: #f87171; /* alias for error */
-}
-
 .status-indicator.api-mode {
   background-color: #60a5fa;
 }
@@ -1421,11 +1371,6 @@ body.llm-stream-preview-open .llm-results .llm-panel.llm-panel-session-restored:
 }
 
 
-.copy-btn:hover {
-  background: #e9f3ff;
-  transform: scale(1.05);
-}
-
 .diag-modal-block.is-expanded .diag-modal-body {
     max-height: 500px; /* Расширенная высота лога. На ней скролл будет работать, если лог > 500px */
 }
@@ -1526,12 +1471,6 @@ body.llm-stream-preview-open .llm-results .llm-panel.llm-panel-session-restored:
     margin-top: 20px;
 }
 
-.comparison-panel {
-    border-radius: 20px;
-    padding: 5px;
-    text-align: left;
-}
-
 .comparison-panel h3 {
     margin-top: 0;
     font-size: 18px;
@@ -1620,8 +1559,6 @@ body.llm-stream-preview-open .llm-results .llm-panel.llm-panel-session-restored:
 .disput-health-warning, .disput-severity-warning td { color: #9a6700; }
 .disput-health-high, .disput-severity-high td { color: #b54708; }
 .disput-health-critical, .disput-severity-critical td { color: #c62828; }
-.disput-stage-failed td { color: #c62828; }
-.disput-stage-running td { color: #9a6700; }
 .disput-trace-table { min-width: 720px; }
 /* Post-completion updates (technical messages): one badge right of the message time,
    one popover with a tab per update. */

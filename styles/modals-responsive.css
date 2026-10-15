@@ -75,10 +75,6 @@
     line-height: 1.4;
 }
 
-#human-loop-alert-modal {
-    display: none;
-}
-
 .modal-button {
     padding: 10px 25px;
     border-radius: 8px;
@@ -122,10 +118,6 @@
 #delete-confirm:hover,
 #notification-ok-btn:hover {
     background-color: #0056b3;
-}
-
-#human-loop-alert-modal .modal-button {
-    min-width: 110px;
 }
 
 .modal-button.accent {
@@ -289,12 +281,6 @@
     margin-right: 20px;
 }
 
-.dev-tools-section h1 {
-    font-size: 22px;
-    margin: 0;
-    color: var(--text-color);
-}
-
 .form-panel h3, .sidebar-panel h4 {
     font-size: 16px;
     margin: 0 0 10px 0;
@@ -401,13 +387,6 @@
     margin-top: 32px;
 }
 
-.btn-ai-create {
-    background-color: #f59f01;
-    color: #ffffff;
-    width: 100%;
-    max-width: 200px;
-}
-
 .add-variable-btn {
     background-color: #e9ecef;
     color: var(--text-color);
@@ -463,15 +442,6 @@
 
 .remove-variable:hover {
     color: var(--text-color);
-}
-
-.ai-actions {
-    border-top: 1px solid #f0f0f0;
-    padding-top: 1px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 15px;
 }
 
 .model-selector {
@@ -1424,12 +1394,6 @@ body.pro-features-hidden .comparison-section {
 .msg-head-right-top .top-new-pages-checkbox:checked + .top-toggle-track {
     background: #1f3b4c;
 }
-.msg-head-right-top .mod-controls {
-    flex: 0 0 auto;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-}
 .mod-select {
     border: 1px solid #d1d5db;
     border-radius: 8px;
@@ -1484,11 +1448,6 @@ body.pro-features-hidden .comparison-section {
 .mod-select-compact {
     width: 76px;
     min-width: 56px;
-}
-.mod-select-wide {
-    width: 136px;
-    min-width: 136px;
-    max-width: 136px;
 }
 .mod-select-policy {
     width: 66px;
@@ -2942,33 +2901,6 @@ hr.section-divider {
 .toggle-icon-console
  {
     font-size: 22px;
-}
-.dropdown-judge {
-    border: none;
-    border-bottom: 1px solid #d1d5db;
-    background: transparent;
-    border-radius: 0;
-    width: 120px;
-    min-width: 120px;
-    max-width: 120px;
-    padding: 2px 0;
-    font-size: 14px;
-    font-weight: 600;
-    color: #1f2933;
-    margin-left: 8px;
-    flex: 0 0 auto;
-}
-
-.dropdown-judge-prompt {
-    width: 126px;
-    min-width: 126px;
-    max-width: 140px;
-    margin-left: 0;
-}
-
-.dropdown-judge:focus {
-    outline: none;
-    border-color: var(--accent-color);
 }
 
 .llm-header-right .use-as-input-btn {

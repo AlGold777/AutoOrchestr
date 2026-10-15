@@ -840,74 +840,12 @@ body.is-resizing {
     }
 }
 
-.collector-row {
-    width: 105px;
-    height: var(--pipeline-block-height);
-    margin-bottom: var(--pipeline-block-gap);
-    padding: 0 10px;
-    background: var(--pipeline-purple-soft);
-    border: 2px solid var(--pipeline-purple);
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    transition: all 0.3s;
-    box-sizing: border-box;
-}
-
-.collector-row:last-child {
-    margin-bottom: 0;
-}
-
-.collector-row.inactive {
-    border-color: var(--pipeline-purple);
-    background: var(--pipeline-purple-soft);
-    opacity: 1;
-}
-
-.results-column .collector-row {
-    background: var(--pipeline-green-soft);
-    border-color: var(--pipeline-green);
-}
-
-.results-column .collector-row.inactive {
-    border-color: var(--pipeline-green);
-    background: var(--pipeline-green-soft);
-}
-
-.results-column .collector-model-name {
-    color: #15803d;
-}
-
-.results-column .collector-checkbox {
-    accent-color: var(--pipeline-green);
-}
-
 .status-indicator {
     width: 10px;
     height: 10px;
     border-radius: 50%;
     background: #cbd5e1;
     flex-shrink: 0;
-}
-
-.collector-model-name {
-    font-size: 11px;
-    color: #6d28d9;
-    flex: 1;
-    font-weight: 500;
-}
-
-.collector-checkbox {
-    width: 14px;
-    height: 14px;
-    accent-color: var(--pipeline-purple);
-    cursor: pointer;
-}
-
-.collector-checkbox:disabled {
-    opacity: 0.35;
-    cursor: not-allowed;
 }
 
 .pipeline-synthesis-block.inactive:not(.selected-synthesizer) {
@@ -946,17 +884,6 @@ body.is-resizing {
     border-style: solid;
     color: var(--pipeline-blue);
     background: var(--pipeline-blue-soft);
-}
-
-.remove-round-btn {
-    display: none;
-}
-
-.remove-round-btn:hover {
-    border-color: #ef4444;
-    border-style: solid;
-    color: #ef4444;
-    background: #fee2e2;
 }
 
 .pipeline-list {
@@ -1040,27 +967,6 @@ body.is-resizing {
     justify-content: flex-end;
     gap: 8px;
     margin-left: auto;
-}
-
-.add-pipeline-btn {
-    width: 18px;
-    height: 18px;
-    border: none;
-    background: transparent;
-    color: var(--pipeline-muted);
-    font-size: 16px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s ease;
-}
-
-.add-pipeline-btn:hover {
-    border-color: var(--pipeline-blue);
-    border-style: solid;
-    color: var(--pipeline-blue);
-    background: var(--pipeline-blue-soft);
 }
 
 .pipeline-items {
