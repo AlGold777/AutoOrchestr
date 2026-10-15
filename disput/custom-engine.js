@@ -25,7 +25,8 @@
 //   answer) is never accepted. A rejected answer gets a correction retry in the same chat, up to maxAttempts,
 //   unless the owner closed the step. Only the participants that were not accepted are sent again.
 // Output (basic-output.js): an answer is checked after the technical acceptance by the step's output (length, sections,
-//   JSON fields, artifacts); a rejected participant is corrected with the reason and its detail.
+//   JSON fields, artifacts); a rejected participant is corrected with the reason and its detail. runStrictLength (run.strictLength)
+//   gives the length check to every step whose output does not set output.strictLength itself.
 // Require: a step ends when the accepted answers reach its threshold (any, all or N). Owner approval (owner: approve)
 //   asks the owner after the step in every mode. Artifacts (basic-artifacts.js): an accepted answer is stored once
 //   (putText) and its declared artifacts are registered; a source { artifact, version } gives only that content.
@@ -556,7 +557,7 @@
   async function run({
     task, steps = [], maxAttempts = DEFAULT_ATTEMPTS, semiAuto = false, maxPromptChars = Infinity,
     accept = defaultAccept, parseAsks = null, askOwner = null, askInstruction = '', decide = null,
-    send = null, sendParticipants = null, runMaxWords = null, putText: putCallback = null, getText: getCallback = null, chooseRoute = null, provideOwnerResult = null,
+    send = null, sendParticipants = null, runMaxWords = null, runStrictLength = false, putText: putCallback = null, getText: getCallback = null, chooseRoute = null, provideOwnerResult = null,
     checkpoint = null, resolveUnknown = null, checkUnknown = null, resume = null,
     signal = null, onEvent = null, onRequest = null, onResponse = null
   }) {
@@ -570,12 +571,27 @@
     const registry = Artifacts.createRegistry();
     // The run's word limit: the page gives it; without it the default of Basic (BasicSchema.DEFAULTS.run) applies.
     const runLimit = Number.isSafeInteger(runMaxWords) ? runMaxWords : (root.BasicSchema || (typeof require === 'function' ? require('./basic-schema') : null))?.DEFAULTS?.run?.maxWords;
-    // The check of an answer of one participant by the output of its step, or null when the step has no output.
-    // A gate's checker is also checked for its verdict (6.1), after the output.
+    // The length check (run.strictLength, 5.8): the output.strictLength of the step or participant wins, true or false;
+    // without it the run's flag applies. checkedOutput gives the output to check with that length (null when nothing is checked).
+    const strictLengthOf = (output) => output?.strictLength ?? (runStrictLength === true);
+    const checkedOutput = (output) => {
+      const strictLength = strictLengthOf(output);
+      if (!output) return strictLength ? { strictLength } : null;
+      return output.strictLength === strictLength ? output : { ...output, strictLength };
+    };
+    // The check of an answer of one participant by the output of its step, or null when there is nothing to check.
+    // A gate's checker is also checked for its verdict (6.1), after the output. A route's answer has no output: only its length is checked.
     const checkFor = (step, model) => {
-      if (step.kind === 'route') return (value) => Control.routeOf(value, step.select.cases.map((item) => item.id));
-      const output = outputOf(step, model);
-      const shape = output ? (value) => Output.checkAnswer(value, output, { limit: model.maxWords ?? runLimit }) : null;
+      const limit = model.maxWords ?? runLimit;
+      if (step.kind === 'route') {
+        const lengthOnly = { strictLength: strictLengthOf(outputOf(step, model)) };
+        return (value) => {
+          const base = Output.checkAnswer(value, lengthOnly, { limit });
+          return base.ok ? Control.routeOf(value, step.select.cases.map((item) => item.id)) : base;
+        };
+      }
+      const output = checkedOutput(outputOf(step, model));
+      const shape = output ? (value) => Output.checkAnswer(value, output, { limit }) : null;
       if (step.kind !== 'gate') return shape;
       return (value) => {
         const base = shape ? shape(value) : { ok: true };
@@ -1034,7 +1050,8 @@
       }
       const value = text(file ? file.text : reply);
       if (!value) return { ok: false, reason: 'empty' };
-      const shape = step.output ? Output.checkAnswer(value, step.output, { limit: runLimit }) : null;
+      const output = checkedOutput(step.output);
+      const shape = output ? Output.checkAnswer(value, output, { limit: runLimit }) : null;
       if (shape && !shape.ok) return { ok: false, reason: shape.reason, detail: shape.detail || '' };
       return { ok: true, text: value, ...(file ? { file: fileOf(file) } : {}) };
     }

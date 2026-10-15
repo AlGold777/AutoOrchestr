@@ -2472,7 +2472,7 @@ describe('Pipeline debate favorites view', () => {
       const built = h.debug.buildBasicRun(window.__pipelineDraftPlanForCanvas(window.__getActivePipelineDraftPlan()));
       expect(built.errors).toEqual([]);
       expect(built.schema.run).toEqual({ policy: 'auto', maxWords: 300 });
-      expect(built.run).toEqual({ policy: 'auto', maxWords: 300 });
+      expect(built.run).toEqual({ policy: 'auto', maxWords: 300, strictLength: false });
     } finally { h.cleanup(); }
   });
 
@@ -3200,7 +3200,7 @@ describe('Pipeline debate favorites view', () => {
         h.debug.applyPipelineConfig(record);
         expect(document.getElementById('debate-run-policy-select').value).toBe('auto');
         expect(document.getElementById('debate-length-select').value).toBe('700');
-        expect(h.debug.buildBasicRun(planOf()).run).toEqual({ policy: 'auto', maxWords: 700 });
+        expect(h.debug.buildBasicRun(planOf()).run).toEqual({ policy: 'auto', maxWords: 700, strictLength: false });
       } finally { h.cleanup(); }
     }, 30000);
 
@@ -3281,6 +3281,30 @@ describe('Pipeline debate favorites view', () => {
         } finally {
           h.cleanup();
         }
+      });
+
+      test('run.strictLength of the schema survives Save, Export, the run and a second install; the run takes it for every step', async () => {
+        const h = setupCustomInheritance('Strict run host', { synthesis: '' });
+        try {
+          const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto', strictLength: true }, steps: [
+            { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }, { name: 'Claude' }] }
+          ] };
+          expect(await h.debug.installBasicSchema('Strict run', schema)).toEqual({ ok: true, errors: [] });
+          select('Strict run');
+          await settleCustomCard();
+          const saved = h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' });
+          expect(saved.run).toEqual({ policy: 'auto', strictLength: true });
+          const built = h.debug.buildBasicRun(planOf());
+          expect(built.errors).toEqual([]);
+          expect(built.run).toEqual({ policy: 'auto', maxWords: 300, strictLength: true });
+          const exported = h.debug.buildBasicExport();
+          expect(exported.ok).toBe(true);
+          expect(JSON.parse(exported.text).run).toEqual({ policy: 'auto', strictLength: true });
+          expect(await h.debug.installBasicSchema('Strict run again', JSON.parse(JSON.stringify(saved)))).toEqual({ ok: true, errors: [] });
+          select('Strict run again');
+          await settleCustomCard();
+          expect(h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' }).run).toEqual(saved.run);
+        } finally { h.cleanup(); }
       });
 
       test('a model on the canvas with Send off in every round stays on the canvas: install, save, load again, save (onCanvas)', async () => {

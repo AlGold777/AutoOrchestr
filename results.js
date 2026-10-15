@@ -6657,7 +6657,7 @@ document.addEventListener('click', (event) => {
                     if (models.length) steps.push({ ref: 'final', kind: 'synthesis', ...stepFieldsOf('final', 'synthesis'), models });
                 }
             }
-            const runValue = forSave ? (run || basicRunForSave()) : { policy: getDebateRunPolicy(), maxWords: getDebateMaxWords() };
+            const runValue = forSave ? (run || basicRunForSave()) : { policy: getDebateRunPolicy(), maxWords: getDebateMaxWords(), ...basicStrictLengthRun() };
             return { schemaVersion: window.BasicSchema.SCHEMA_VERSION, origin: 'user', ...(forSave && basedOn ? { basedOn } : {}),
                 ...(Object.keys(runValue).length ? { run: runValue } : {}),
                 ...(Object.keys(defaults).length ? { defaults } : {}), steps: withControls(steps) };
@@ -6676,12 +6676,17 @@ document.addEventListener('click', (event) => {
         // The schema the working copies were read from. The fields the canvas does not edit (output, require, owner, chat,
         // a participant's input) are kept from it on Save and on Run; the control steps come from customControls.
         const basicSourceSchema = new Map();
+        // run.strictLength has no control in the ▶ window: the value the loaded schema holds goes on with Save and with the run.
+        const basicStrictLengthRun = () => {
+            const source = basicSourceSchema.get(draftPlanStorageKey())?.run || {};
+            return 'strictLength' in source ? { strictLength: source.strictLength } : {};
+        };
         const basicRunForSave = () => {
             const explicit = basicRunExplicit.get(draftPlanStorageKey()) || {};
             const defaults = window.BasicSchema.DEFAULTS.run;
             const policy = getDebateRunPolicy();
             const maxWords = getDebateMaxWords();
-            return { ...(explicit.policy || policy !== defaults.policy ? { policy } : {}), ...(explicit.maxWords || maxWords !== defaults.maxWords ? { maxWords } : {}) };
+            return { ...(explicit.policy || policy !== defaults.policy ? { policy } : {}), ...(explicit.maxWords || maxWords !== defaults.maxWords ? { maxWords } : {}), ...basicStrictLengthRun() };
         };
         // The working copies the cards edit, read from a stored record: a record with a schema gives them
         // from the schema (a schema that cannot be read gives an error and nothing); an earlier record gives
@@ -7227,6 +7232,8 @@ document.addEventListener('click', (event) => {
                     maxPromptChars: budgetLimits ? window.DebateContextBudget.effectivePromptLimit(budgetLimits) : Infinity,
                     // The shared limit of the run: the one the schema sets (the check of strictLength uses it).
                     runMaxWords: built.run.maxWords,
+                    // The strict check of the length for the steps without their own output.strictLength (run.strictLength).
+                    runStrictLength: built.run.strictLength,
                     accept: ({ text, completion }) => window.DebateResponseAcceptance?.evaluate?.({ text, meta: { completion } }) || { ok: true },
                     parseAsks: (text) => window.DebateStageMarkers?.parse?.(text)?.askItems || [],
                     askOwner: askCustomOwner,

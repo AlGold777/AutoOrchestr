@@ -624,6 +624,28 @@ describe('Custom engine output check', () => {
     expect(explicit.steps[0].outcome.A).toMatchObject({ ok: true, attempt: 2 });
   });
 
+  test('run.strictLength checks every step without its own strictLength; an explicit output.strictLength false wins', async () => {
+    const five = 'один два три четыре пять';
+    const long = `${five} шесть`;
+    // The flag gives a step with no output the length check: the 6-word answer is refused, the 5-word one is taken.
+    const flagged = transport({ A: [long, five] });
+    const strict = await Engine.run({ task: 'T', send: flagged.send, runMaxWords: 5, runStrictLength: true, steps: [{ ref: 'r1', kind: 'round', input: 'none', models: ['A'] }] });
+    expect(strict.history[0]).toMatchObject({ accepted: false, reason: 'too_long', detail: '(6 из 5 слов)' });
+    expect(strict.steps[0].outcome.A).toMatchObject({ ok: true, attempt: 2 });
+    // Without the flag the same answer is accepted: the limit is only a request to the model.
+    const plain = await Engine.run({ task: 'T', send: transport({ A: [long] }).send, runMaxWords: 5, steps: [{ ref: 'r1', kind: 'round', input: 'none', models: ['A'] }] });
+    expect(plain.steps[0].outcome.A).toMatchObject({ ok: true, attempt: 1 });
+    // An explicit output.strictLength: false of the step is not checked, even with the flag.
+    const stepOff = await Engine.run({ task: 'T', send: transport({ A: [long] }).send, runMaxWords: 5, runStrictLength: true, steps: [{ ref: 'r1', kind: 'round', input: 'none', output: { strictLength: false }, models: ['A'] }] });
+    expect(stepOff.steps[0].outcome.A).toMatchObject({ ok: true, attempt: 1 });
+    // The same for a participant with its own output (it replaces the step's output as a whole).
+    const modelOff = await Engine.run({ task: 'T', send: transport({ A: [long] }).send, runMaxWords: 5, runStrictLength: true, steps: [{ ref: 'r1', kind: 'round', input: 'none', models: [{ name: 'A', output: { strictLength: false } }] }] });
+    expect(modelOff.steps[0].outcome.A).toMatchObject({ ok: true, attempt: 1 });
+    // A step's explicit true stays strict when the flag is off.
+    const stepOn = await Engine.run({ task: 'T', send: transport({ A: [long, five] }).send, runMaxWords: 5, steps: [{ ref: 'r1', kind: 'round', input: 'none', output: { strictLength: true }, models: ['A'] }] });
+    expect(stepOn.history[0]).toMatchObject({ accepted: false, reason: 'too_long' });
+  });
+
   test('a json answer: the missing field is named in the correction; the fenced answer is accepted', async () => {
     const { send, calls } = transport({ A: ['{"correctedMap": {}}', '```json\n{"correctedMap": null, "auditFindings": []}\n```'] });
     const result = await Engine.run({ task: 'T', send, steps: [

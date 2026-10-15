@@ -6,7 +6,7 @@
 // field reference and how to write a schema: docs/Pipeline scenarios/basic-schema-guide.md.
 //
 // Schema: { schemaVersion, origin: 'builtin' | 'user', basedOn?, defaults?, steps }
-//   run: { policy?: 'auto' | 'manual', maxWords? } — the run policy and the shared answer limit
+//   run: { policy?: 'auto' | 'manual', maxWords?, strictLength? } — the run policy, the shared answer limit and the strict length check
 //   defaults (the ▶ card): { roundTask?, synthesisTask?, discipline?, modelNotes?, roundPrompts? }
 //   step: { ref, kind: 'round' | 'synthesis', order?, input?, task?, models }
 //   model: { name, enabled?, onCanvas?, role?, request?, maxWords?, task?, discipline? }   (request: '' = no own request)
@@ -69,7 +69,7 @@
   }
 
   const DEFAULTS = Object.freeze({
-    run: Object.freeze({ policy: 'manual', maxWords: 300 }),
+    run: Object.freeze({ policy: 'manual', maxWords: 300, strictLength: false }),
     gate: Object.freeze({ pass: 'all', onFail: 'stop' }),
     route: Object.freeze({ conflict: 'stop' }),
     roundTask: 'Учти ответы предыдущего шага и дай свой улучшенный ответ на задачу.',
@@ -326,9 +326,10 @@
     if (schema.run != null) {
       if (!isObject(schema.run)) fail('run', 'ожидается объект');
       else {
-        unknownKeys(schema.run, ['policy', 'maxWords'], 'run');
+        unknownKeys(schema.run, ['policy', 'maxWords', 'strictLength'], 'run');
         if ('policy' in schema.run) oneOf(schema.run.policy, POLICIES, 'run.policy', 'политика запуска');
         if ('maxWords' in schema.run && !(Number.isSafeInteger(schema.run.maxWords) && schema.run.maxWords > 0)) fail('run.maxWords', 'ожидается положительное целое число слов');
+        if ('strictLength' in schema.run && typeof schema.run.strictLength !== 'boolean') fail('run.strictLength', 'ожидается true или false');
       }
     }
 
@@ -734,10 +735,11 @@
       synthesizer: finalStep ? (enabledOf(finalStep)[0]?.name || '') : '', inserts };
   }
 
-  // The run settings as the run takes them: the policy and the shared answer limit.
+  // The run settings as the run takes them: the policy, the shared answer limit and the strict length check of the steps without their own.
   const resolveRun = (schema) => ({
     policy: typeof schema.run?.policy === 'string' ? schema.run.policy : DEFAULTS.run.policy,
-    maxWords: Number.isSafeInteger(schema.run?.maxWords) ? schema.run.maxWords : DEFAULTS.run.maxWords
+    maxWords: Number.isSafeInteger(schema.run?.maxWords) ? schema.run.maxWords : DEFAULTS.run.maxWords,
+    strictLength: typeof schema.run?.strictLength === 'boolean' ? schema.run.strictLength : DEFAULTS.run.strictLength
   });
 
   const describeErrors = (errors) => errors.map((error) => (error.path ? `${error.path}: ${error.message}` : error.message)).join('; ');

@@ -148,7 +148,7 @@
 ### Прогон по шагам
 
 1. **Задача введена.** Пользователь пишет задачу в поле модератора и запускает прогон. `window.runPipeline` вызывает `startDebateFromPage`; для шаблона с `runner: 'custom'` вызывается `runCustomFromPage({ task })`. Если поле пусто, задачей становится название записи (`moderatorEntryText || pipelineNameText`).
-2. **Запуск.** `runCustomFromPage` строит схему со страницы (`buildBasicRun`: `basicSchemaFromPage`, затем `BasicSchema.validate` и `BasicSchema.assemble`). Политика запуска (`run.policy`) и общий предел длины (`run.maxWords`) берутся один раз на весь прогон.
+2. **Запуск.** `runCustomFromPage` строит схему со страницы (`buildBasicRun`: `basicSchemaFromPage`, затем `BasicSchema.validate` и `BasicSchema.assemble`). Политика запуска (`run.policy`), общий предел длины (`run.maxWords`) и строгая длина (`run.strictLength`) берутся один раз на весь прогон.
 3. **Сборка и проверка схемы.** Два случая, в которых запроса нет:
    - схема с ошибкой: уведомление `Basic: схема не запущена. <место: причина>` (ошибка);
    - нет ни одного раунда с моделью: `Basic: выберите модели хотя бы в одном раунде.` (предупреждение).
@@ -197,7 +197,7 @@
 | `truncation_marker` | оборван | в тексте `[...truncated]`, незакрытый блок кода или многоточие без завершения (`evaluate`) |
 | `incomplete_ending` | оборван на середине | последняя строка длиннее трёх слов, без знака конца, не список и не заголовок, и `completion` не `complete` (`evaluate`) |
 | `closed_by_owner` | раунд закрыт владельцем | транспорт закрыт владельцем (`closeReason: moderator_closed`) и текста нет (движок) |
-| `too_long` | длиннее допустимого (с числом слов) | `output.strictLength: true`: слов больше предела модели, а без него — общего `run.maxWords` (`BasicOutput.checkAnswer`) |
+| `too_long` | длиннее допустимого (с числом слов) | `output.strictLength: true` или `run.strictLength: true` (для шага без своего `strictLength`): слов больше предела модели, а без него — общего `run.maxWords` (`BasicOutput.checkAnswer`) |
 | `missing_section` | не содержит раздел (с названием раздела) | заголовок из `output.sections` не найден ни в одной строке ответа; регистр не важен |
 | `invalid_output` | не в формате ответа | `output.format: json`: ответ не один JSON-объект и не один блок ```json без текста вокруг |
 | `missing_field` | без обязательного поля (с указателем) | поле из `output.requiredFields` отсутствует; `null` считается присутствующим |
