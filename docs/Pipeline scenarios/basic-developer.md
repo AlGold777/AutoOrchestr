@@ -295,7 +295,7 @@ GPT подготавливает запрос через `ContentUtils.ensurePro
 | OI-5 | Записи прежнего формата без схемы не импортируются из старого общего экспорта | принято как граница, зафиксировано |
 | REVIEW-1 | Дефекты независимой проверки 12.10 (V01–V08, N04, R07) | исправлены в 2.81.757–764; остаётся файл владельца на странице (N03) |
 | TRANSPORT-1 | Участники: `chat: "new"`, привязки чатов в снимке и восстановление после отмены исполняются (тесты на моках); в реальных вкладках не проверено; два участника одной модели в шаге страница не устанавливает | открыт: см. «Что не проверено вживую» |
-| TEST-1 | Постоянно падающие тесты, не относящиеся к Basic | известно |
+| TEST-1 | Тесты, падавшие не из-за Basic (9 в 4 файлах) | исправлено: устаревшие ожидания приведены к коду, код не менялся |
 | TEST-2 | Нестабильный тест `false success: watcher completion guards` | известно |
 
 ### Открытые вопросы
@@ -381,18 +381,16 @@ GPT подготавливает запрос через `ContentUtils.ensurePro
 
 ### Тесты
 
-#### TEST-1. Постоянно падающие тесты, не относящиеся к Basic
+#### TEST-1. Тесты, падавшие не из-за Basic
 
-Состояние на версию 2.81.788 (прогон файлов из таблицы): падают **9 тестов в 4 файлах**. Ещё 11 тестов (`tests/results-debate-favorites.test.js` и `tests/pipeline-feed-layout.test.js`) падали из-за хелпера чтения CSS, который не понимал `?v=` в `@import` файла `styles.css`; хелперы исправлены, тесты проходят. Они проверяют вёрстку и контракты других частей страницы; изменения Basic их не вызывали и не должны их чинить. Если при вашей работе число падающих тестов стало больше или набор имён изменился — это ваша регрессия.
+Состояние на 2.81.788: падали 9 тестов в 4 файлах. Причина была не в коде страницы, а в ожиданиях тестов, которые отстали от намеренных изменений:
 
-| Файл | Тесты |
-| --- | --- |
-| `tests/release-log-regressions.test.js` (5) | `Disput stage insertion, tab reuse, manual mode and reload cleanup share one contract`; `closed Disput composer keeps the run button inside the right edge of moderator input`; `pipeline control buttons are placed directly below the prompt group with vertical input layout`; `pro controls use one msg-header run button and list add action without an Output canvas stage`; `state map actions use icon buttons and keep Case before Export` |
-| `tests/pipeline-semi-auto.test.js` (2) | `pressing a composer button keeps the focus in the input, so a shrinking input cannot move the button away`; `restore never overwrites text the moderator has typed since` |
-| `tests/telemetry-export-actions.test.js` (1) | `Disput export whitelists diagnostic evidence and deep-redacts JSON` |
-| `tests/results-ui-recovery-triggers.test.js` (1) | `rendering falls back to committed text when rich HTML loses its tail` |
+- `tests/release-log-regressions.test.js` (4 ожидания): строки и CSS, изменённые в 101fe3f3, 7cfab03d, b606e1ef, d7204309; тест «state map actions» проверял state map, удалённый в 63e4dad и 1c330316, и удалён.
+- `tests/pipeline-semi-auto.test.js` (2): защита фокуса переехала с `.msg-header` на `.moderator-input` (101fe3f3, кнопка внутри обоих); окно поиска в `runCustomFromPage` стало меньше тела функции.
+- `tests/telemetry-export-actions.test.js` (1): у evidence добавлен `registeredRunId` (9b6de79b).
+- `tests/results-ui-recovery-triggers.test.js` (1): условие fallback расширено для Gemini (d7204309).
 
-Как проверить: `npx jest 2>&1 | grep -E "^Tests:|^Test Suites:"` — сейчас ожидается не больше `9 failed` по таблице выше (полный прогон на 2.81.788 не запускался); список имён — `npx jest 2>&1 | grep "●"`. Тесты Basic (`tests/basic-*.test.js`, `tests/custom-*.test.js`, `tests/stage-card-basic.test.js`) должны проходить все.
+Все четыре файла проходят полностью. Если в них снова падает тест — это регрессия, а не старый долг.
 
 #### TEST-2. Нестабильный тест
 
