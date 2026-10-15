@@ -47,7 +47,7 @@ main{max-width:1100px;margin:auto}h1{max-width:1100px;margin:0 auto 12px;font-si
   const escapeHtml=value=>String(value).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
   const addRow=()=>{
     const tr=document.createElement('tr');
-    tr.innerHTML='<td><input type="text" aria-label="Номер шага или раунда"></td><td><input type="text" aria-label="Название шага" placeholder="Шаг"></td><td><select class="cell-select" aria-label="Модель"><option value="">-</option>'+models.map(model=>`<option>${escapeHtml(model)}</option>`).join('')+'</select></td>'+issues.map(issue=>{
+    tr.innerHTML='<td><select class="cell-select" aria-label="Номер раунда"><option value="">-</option>'+Array.from({length:10},(_,i)=>`<option value="${i+1}">${i+1}</option>`).join('')+'</select></td><td><input type="text" aria-label="Название шага" placeholder="Шаг"></td><td><select class="cell-select" aria-label="Модель"><option value="">-</option>'+models.map(model=>`<option>${escapeHtml(model)}</option>`).join('')+'</select></td>'+issues.map(issue=>{
       const aria=escapeHtml(issue.detail);
       if(issue.type==='select')return `<td><select class="cell-select" aria-label="${aria}"><option value="">-</option>${issue.options.map(option=>`<option>${escapeHtml(option)}</option>`).join('')}</select></td>`;
       return `<td><label class="mark" aria-label="${aria}"><input type="checkbox"><span class="round"></span></label></td>`;
@@ -70,7 +70,7 @@ main{max-width:1100px;margin:auto}h1{max-width:1100px;margin:0 auto 12px;font-si
       const headers=['№ / раунд','Шаг','Модель',...active.map(ii=>issues[ii].label)];
       lines.push('| '+headers.join(' | ')+' |','| '+headers.map(()=> '---').join(' | ')+' |');
       rows.filter(item=>active.some(ii=>item.values[ii])).forEach(({row,values})=>{
-        const identity=[row.cells[0].querySelector('input').value.trim(),row.cells[1].querySelector('input').value.trim(),row.cells[2].querySelector('select').value];
+        const identity=[row.cells[0].querySelector('select').value,row.cells[1].querySelector('input').value.trim(),row.cells[2].querySelector('select').value];
         lines.push('| '+[...identity,...active.map(ii=>values[ii])].join(' | ')+' |');
       });
     }
