@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-15 — OI-2: пропуск вопроса владельцу называет шаг; тесты вёрстки приведены к коду, версия 2.81.790
+
+- `results.js`: событие журнала `owner_answer` при пропуске вопроса (`skipped: true`) пишет `stage` с названием шага (`info.label`), как и при ответе. Раньше было `null`. Тест на оба события добавлен в `tests/results-debate-favorites.test.js`.
+- Тесты: хелперы чтения CSS понимают `?v=` в `@import` файла `styles.css` (`results-debate-favorites`, `pipeline-feed-layout`); устаревшие ожидания в `release-log-regressions`, `pipeline-semi-auto`, `telemetry-export-actions`, `results-ui-recovery-triggers` приведены к коду (код страницы не менялся); тест удалённого «state map» убран. Постоянно падающих тестов, кроме нестабильного TEST-2, нет: 8 файлов, 309 тестов проходят.
+- Документы Basic: OI-2 убран из открытых вопросов, TEST-1 отмечен исправленным. Номер 2.81.789 занят невлитой веткой с правками CSS-замечаний.
+
 ### 2026-10-15 — Удалён контекст исполнения Debate и ожидание одобрения, версия 2.81.788
 
 - Удалены `disput/debate-execution-context.js`, его тест, `waitForDebateApproval`, `rejectDebateApproval`, `cleanupDebateApprovalWaiter` и отладочный `getApprovalWaiting`: ожидание одобрения нигде не запускалось (у `waitForDebateApproval` не было вызовов), поэтому кнопка «approve» и так не включалась (`approvalWaiting` теперь константа `false`).
