@@ -3,8 +3,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LLM Comparison</title>
-    <link rel="stylesheet" href="styles.css?v=2.81.778">
-    <link rel="stylesheet" href="styles/pipeline-card-cover.css?v=2.81.778">
+    <link rel="stylesheet" href="styles.css?v=2.81.779">
+    <link rel="stylesheet" href="styles/pipeline-card-cover.css?v=2.81.779">
 </head>
 <body class="pipeline-page">
     <div class="app-shell">
@@ -61,7 +61,7 @@
                         </button>
                         <div class="logo-badge">
                             <span class="logo-icon">⚡</span>
-                            <span class="logo-name">Cortex</span>
+                            <span>Cortex</span>
                             <span class="logo-version">v8.0</span>
                         </div>
                         <div class="top-selects">
@@ -161,10 +161,10 @@
         <button class="stb col" style="background:#FFEB3B;border-color:#fbc02d" data-color="#FFEB3B" title="Yellow highlight" aria-label="Yellow highlight"><span class="stb-label">Yellow</span></button>
         <button class="stb col" style="background:#05e56d;border-color:#00c853" data-color="#05e56d" title="Green highlight" aria-label="Green highlight"><span class="stb-label">Green</span></button>
         <button class="stb col" style="background:#2196f3;border-color:#1976d2" data-color="#2196f3" title="Blue highlight" aria-label="Blue highlight"><span class="stb-label">Blue</span></button>
-        <div style="width:1px;background:rgba(255,255,255,.2);margin:2px 3px;height:14px;flex-shrink:0"></div>
+        <div class="stb-sep"></div>
         <button class="stb" data-cmd="bold" title="Bold" aria-label="Bold"><span class="stb-label">Bold</span></button>
         <button class="stb" data-cmd="italic" title="Italic" aria-label="Italic"><span class="stb-label">Italic</span></button>
-        <div style="width:1px;background:rgba(255,255,255,.2);margin:2px 3px;height:14px;flex-shrink:0"></div>
+        <div class="stb-sep"></div>
         <button class="stb" data-fav="1" title="Add selected fragment to favorites" aria-label="Add selected fragment to favorites" aria-pressed="false"><span class="stb-label">Favorite</span></button>
       </div>
       <div class="selection-toolbar-row selection-toolbar-extra" id="debateSelTb-extra" hidden>
@@ -206,7 +206,7 @@
         </div>
     <div class="msg-header">
             <div class="msg-head-left">
-                <button type="button" id="pipeline-toggle-modifiers-btn" class="prompt-mode-btn prompt-console-toggle-btn" title="Tuning Control" aria-label="Tuning Control" aria-pressed="false">
+                <button type="button" id="pipeline-toggle-modifiers-btn" class="prompt-mode-btn" title="Tuning Control" aria-label="Tuning Control" aria-pressed="false">
                     <span class="toggle-icon toggle-icon-console toggle-icon-slider" aria-hidden="true">
                         <svg viewBox="0 0 24 24" role="presentation">
                             <line x1="5" y1="7" x2="19" y2="7"></line>
@@ -312,7 +312,7 @@
                             <option value="1000">1000</option>
                         </select>
                     </label>
-                    <input type="checkbox" id="auto-checkbox" class="top-new-pages-checkbox debate-auto-compat" hidden="" aria-hidden="true">
+                    <input type="checkbox" id="auto-checkbox" class="top-new-pages-checkbox" hidden="" aria-hidden="true">
                     <div class="mod-mini-prompts" id="mod-mini-prompts"></div>
                 </div>
                 <div class="pipeline-list-header-actions" aria-label="Pipeline actions">
@@ -546,13 +546,13 @@
                                             <option value="full-forensic">Full forensic</option>
                                         </select>
                                         <button type="button" class="diag-icon-btn" id="telemetry-export-json-btn" title="Export telemetry as JSON" aria-label="Export telemetry as JSON"><i class="ti ti-download" aria-hidden="true"></i></button>
-                                        <button type="button" class="diag-icon-btn diag-export-all-logs-btn" id="export-all-logs-md-telemetry" aria-label="Export diagnostics and telemetry as Markdown" title="Export All Logs">MD</button>
+                                        <button type="button" class="diag-icon-btn" id="export-all-logs-md-telemetry" aria-label="Export diagnostics and telemetry as Markdown" title="Export All Logs">MD</button>
                                         <button type="button" class="diag-icon-btn" id="capture-b1-skeletons-btn" title="Capture privacy-safe answer DOM skeletons from the nine open model tabs" aria-label="Capture sanitized answer DOM skeletons">B1</button>
                                     </div>
                                 </div>
                             </div>
                             <div class="devtools-card-grid">
-                                <article class="devtools-card telemetry-rounds-card" data-collapsible="telemetry-rounds">
+                                <article class="devtools-card" data-collapsible="telemetry-rounds">
                                     <div class="devtools-card-header">
                                         <h2>Telemetry Rounds</h2>
                                     </div>
@@ -570,8 +570,8 @@
                                         <div class="diagnostics-panel">
                                             <div class="diagnostics-header">
                                                 <div class="diagnostics-actions">
-                                                    <button type="button" class="diag-icon-btn diag-export-all-btn" id="export-diagnostics-html" aria-label="Export all diagnostics logs as HTML" title="Export all logs as HTML"><i class="ti ti-download" aria-hidden="true"></i></button>
-                                                    <button type="button" class="diag-icon-btn diag-copy-all-btn" id="copy-diagnostics-logs" aria-label="Copy all diagnostics logs" title="Copy all logs"><i class="ti ti-copy" aria-hidden="true"></i></button>
+                                                    <button type="button" class="diag-icon-btn" id="export-diagnostics-html" aria-label="Export all diagnostics logs as HTML" title="Export all logs as HTML"><i class="ti ti-download" aria-hidden="true"></i></button>
+                                                    <button type="button" class="diag-icon-btn" id="copy-diagnostics-logs" aria-label="Copy all diagnostics logs" title="Copy all logs"><i class="ti ti-copy" aria-hidden="true"></i></button>
                                                     <button type="button" class="diag-icon-btn diag-clear-btn" id="clear-diagnostics-logs" aria-label="Clear diagnostics logs" title="Clear logs"><i class="ti ti-trash" aria-hidden="true"></i></button>
                                                 </div>
                                             </div>
@@ -587,10 +587,10 @@
                                         <span class="devtools-meta" id="telemetry-status"></span>
                                     </div>
                                     <div class="devtools-card-body">
-                                        <div class="devtools-scrollbox telemetry-timeline" id="telemetry-timeline"></div>
+                                        <div class="telemetry-timeline" id="telemetry-timeline"></div>
                                     </div>
                                 </article>
-                                <article class="devtools-card telemetry-summary-card is-collapsed" data-collapsible="telemetry-summary">
+                                <article class="devtools-card is-collapsed" data-collapsible="telemetry-summary">
                                     <div class="devtools-card-header">
                                         <h2>Telemetry Summary</h2>
                                         <span class="devtools-meta" id="telemetry-summary-status"></span>
@@ -599,7 +599,7 @@
                                         <div class="telemetry-summary" id="telemetry-summary"></div>
                                     </div>
                                 </article>
-                                <article class="devtools-card telemetry-smart-card is-collapsed" data-collapsible="telemetry-smart">
+                                <article class="devtools-card is-collapsed" data-collapsible="telemetry-smart">
                                     <div class="devtools-card-header">
                                         <h2>SMART &amp; Acceptance</h2>
                                     </div>
@@ -642,12 +642,12 @@
                                     <div class="telemetry-actions">
                                         <button type="button" class="diag-icon-btn" id="disput-clear-trace" title="Clear Disput trace" aria-label="Clear Disput trace"><i class="ti ti-trash" aria-hidden="true"></i></button>
                                         <button type="button" class="diag-icon-btn" id="disput-export-json" title="Export Disput telemetry as JSON" aria-label="Export Disput telemetry as JSON"><i class="ti ti-download" aria-hidden="true"></i></button>
-                                        <button type="button" class="diag-icon-btn diag-export-all-logs-btn" id="disput-export-md" aria-label="Export Disput telemetry as Markdown" title="Export Disput telemetry as Markdown">MD</button>
+                                        <button type="button" class="diag-icon-btn" id="disput-export-md" aria-label="Export Disput telemetry as Markdown" title="Export Disput telemetry as Markdown">MD</button>
                                     </div>
                                 </div>
                             </div>
                             <div class="devtools-card-grid">
-                                <article class="devtools-card telemetry-rounds-card" data-collapsible="disput-health">
+                                <article class="devtools-card" data-collapsible="disput-health">
                                     <div class="devtools-card-header">
                                         <h2>Run Health Summary</h2>
                                         <span class="devtools-meta" id="disput-trace-status"></span>
@@ -658,14 +658,14 @@
                                     <div class="devtools-card-header"><h2>Problems &amp; Recovery</h2></div>
                                     <div class="devtools-card-body"><div class="telemetry-rounds-table-wrapper" id="disput-problems"><p class="diag-empty">No diagnoses yet.</p></div></div>
                                 </article>
-                                <article class="devtools-card telemetry-rounds-card" data-collapsible="delivery-health">
+                                <article class="devtools-card" data-collapsible="delivery-health">
                                     <div class="devtools-card-header">
                                         <h2>Delivery Health</h2>
                                         <span class="devtools-meta" id="delivery-status"></span>
                                     </div>
                                     <div class="devtools-card-body"><div class="telemetry-rounds-table-wrapper" id="delivery-health"><p class="diag-empty">No messages yet.</p></div></div>
                                 </article>
-                                <article class="devtools-card telemetry-rounds-card" data-collapsible="delivery-batches">
+                                <article class="devtools-card" data-collapsible="delivery-batches">
                                     <div class="devtools-card-header"><h2>Delivery Batches</h2></div>
                                     <div class="devtools-card-body"><div class="telemetry-rounds-table-wrapper" id="delivery-batches"><p class="diag-empty">No batches yet.</p></div></div>
                                 </article>
@@ -673,7 +673,7 @@
                                     <div class="devtools-card-header"><h2>Delivery Problems</h2></div>
                                     <div class="devtools-card-body"><div class="telemetry-rounds-table-wrapper" id="delivery-problems"><p class="diag-empty">No diagnoses yet.</p></div></div>
                                 </article>
-                                <article class="devtools-card telemetry-rounds-card is-collapsed" data-collapsible="delivery-messages">
+                                <article class="devtools-card is-collapsed" data-collapsible="delivery-messages">
                                     <div class="devtools-card-header"><h2>Message Timeline</h2></div>
                                     <div class="devtools-card-body"><div class="telemetry-rounds-table-wrapper" id="delivery-messages"><p class="diag-empty">No messages yet.</p></div></div>
                                 </article>
@@ -719,7 +719,7 @@
                                     <div class="selectors0-main">
                                         <article class="selectors0-card selectors0-workbench">
 
-                                            <div class="selectors-header selectors0-workbench-header">
+                                            <div class="selectors-header">
                                                 <label class="selectors-platform">
                                                     Platform:
                                                     <select class="selectors-platform-select" id="selectors0-model">
@@ -730,7 +730,7 @@
                                                     <button class="selectors-btn selectors-btn-export" type="button" data-selectors-action="export" aria-label="Export selectors">
                                                         <i class="ti ti-download" aria-hidden="true"></i>
                                                     </button>
-                                                    <button class="selectors-btn selectors-btn-import" type="button" data-selectors-action="import" aria-label="Import selectors">
+                                                    <button class="selectors-btn" type="button" data-selectors-action="import" aria-label="Import selectors">
                                                         ↓
                                                     </button>
                                                     <button class="selectors-btn selectors-btn-save-all" type="button" data-selectors-action="save-all" aria-label="Save all selectors">
@@ -740,7 +740,7 @@
                                             </div>
 
                                             <div class="selectors-list selectors0-workbench-list"></div>
-                                            <div class="selectors-footer selectors0-workbench-footer">
+                                            <div class="selectors-footer">
                                                 <span class="selectors-status-text" id="selectors-workbench-status" aria-live="polite"></span>
                                             </div>
                                             <input class="selectors-file-input selectors0-file-input" type="file" accept="application/json">

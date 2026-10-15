@@ -214,15 +214,6 @@ body.is-resizing {
     margin-top: 0;
 }
 
-.pipeline-panel .header-actions {
-    display: flex;
-    margin-right: 15px;
-    gap: 8px;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    flex: 1 1 0;
-}
-
 .pipeline-panel .pipeline-run-slot {
     display: flex;
     align-items: center;
@@ -246,16 +237,6 @@ body.is-resizing {
     background: var(--pipeline-bg);
 }
 
-.pipeline-panel .btn-primary {
-    background: var(--pipeline-blue);
-    border-color: var(--pipeline-blue);
-    color: #ffffff;
-}
-
-.pipeline-panel .btn-primary:hover {
-    background: #1d4ed8;
-}
-
 .pipeline-panel .btn-icon {
     width: 32px;
     height: 32px;
@@ -264,15 +245,6 @@ body.is-resizing {
     align-items: center;
     justify-content: center;
     font-size: 14px;
-}
-
-.pipeline-panel .btn-clear {
-    border-color: #fca5a5;
-    color: #ef4444;
-}
-
-.pipeline-panel .btn-clear:hover {
-    background: #fee2e2;
 }
 
 .pipeline-canvas {
@@ -391,10 +363,6 @@ body.is-resizing {
 
 .pipeline-synthesis-block .model-header {
     gap: 6px;
-}
-
-.pipeline-synth-select {
-    width: 100%;
 }
 
 .synthesis-flow-select {
@@ -863,29 +831,6 @@ body.is-resizing {
     gap: 6px;
 }
 
-.add-round-btn,
-.remove-round-btn {
-    width: 32px;
-    height: 32px;
-    border-radius: 8px;
-    border: 2px dashed #cbd5e1;
-    background: #f8fafc;
-    color: var(--pipeline-muted);
-    font-size: 18px;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.add-round-btn:hover {
-    border-color: var(--pipeline-blue);
-    border-style: solid;
-    color: var(--pipeline-blue);
-    background: var(--pipeline-blue-soft);
-}
-
 .pipeline-list {
     border-top: 1px solid var(--pipeline-border);
     padding: 1px 1px 12px;
@@ -953,12 +898,6 @@ body.is-resizing {
     color: var(--pipeline-muted);
     margin-right: 4px;
     margin-left: 10px;
-}
-
-.pipeline-list-round-actions {
-    display: flex;
-    align-items: center;
-    gap: 6px;
 }
 
 .pipeline-list-header-actions {
@@ -1510,14 +1449,6 @@ body.pipeline-page #disput-state-map-panel .disput-state-map-actions > button:no
     border-bottom: 1px solid var(--pipeline-border);
     padding-bottom: 12px;
     margin-bottom: 14px;
-}
-
-.pipeline-info-kicker {
-    margin: 0 0 4px;
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0;
-    color: var(--pipeline-muted);
 }
 
 .pipeline-info-header h3 {

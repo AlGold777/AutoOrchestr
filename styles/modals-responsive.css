@@ -688,14 +688,6 @@
 }
 
 
-.file-attachment-group {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 15px;
-    margin-top: 10px;
-}
-
 #file-name-display {
     font-size: 14px;
     color: var(--text-secondary-color);
@@ -897,13 +889,6 @@ body.pro-features-hidden .comparison-section {
 .prompt-container.prompt-sandwich.debate-composer.has-debate-feed .moderator-input {
     margin-top: auto;
 }
-.debate-controls {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    flex-wrap: wrap;
-    padding: 8px 8px 2px;
-}
 .debate-select {
     border: 1px solid #d4d8de;
     border-radius: 6px;
@@ -912,12 +897,6 @@ body.pro-features-hidden .comparison-section {
     font-size: 11px;
     padding: 4px 8px;
     min-height: 26px;
-}
-.debate-select-small {
-    width: 66px;
-}
-.debate-select-wide {
-    min-width: 170px;
 }
 .debate-btn {
     border: 1px solid #d4d8de;
@@ -1047,6 +1026,13 @@ body.pro-features-hidden .comparison-section {
     line-height: 1;
     padding: 0;
     cursor: pointer;
+}
+.debate-sel-toolbar .stb-sep {
+    width: 1px;
+    height: 14px;
+    margin: 2px 3px;
+    flex-shrink: 0;
+    background: rgba(255,255,255,.2);
 }
 .debate-sel-toolbar .stb.col {
     background: var(--swatch-color, #f8fafc) !important;
@@ -1244,13 +1230,6 @@ body.pro-features-hidden .comparison-section {
 .msg-head-right-top::-webkit-scrollbar {
     display: none;
 }
-.debate-run-controls {
-    flex: 0 0 auto;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    min-width: 0;
-}
 .msg-head-right-top > .debate-btn,
 .msg-head-right-top .pipeline-main-page-actions > .debate-btn {
     flex: 0 0 32px;
@@ -1272,18 +1251,6 @@ body.pro-features-hidden .comparison-section {
 .msg-head-right-top > .debate-btn.is-active {
     background: #111827;
     color: #fff;
-}
-.msg-head-right-top > .debate-btn.debate-get-it-btn {
-    background: #ffffff;
-    color: #111827;
-    box-shadow: inset 0 0 0 1px #d4d8de;
-}
-.msg-head-right-top > .debate-btn.debate-get-it-btn:hover:not(:disabled) {
-    box-shadow: inset 0 0 0 1px #9ca3af;
-}
-.msg-head-right-top > .debate-btn.debate-get-it-btn[data-collecting="true"] {
-    opacity: 0.55;
-    cursor: progress;
 }
 .msg-head-left > .prompt-mode-btn,
 .msg-head-right-top > .prompt-mode-btn {
@@ -1352,16 +1319,6 @@ body.pro-features-hidden .comparison-section {
     width: 86px;
     min-width: 86px;
     padding-right: 24px;
-}
-#debate-scheme-select {
-    width: 78px;
-    min-width: 78px;
-    padding-right: 22px;
-}
-.debate-length-stepper,
-.debate-turn-limit-stepper,
-.pipeline-round-stepper-value {
-    display: none;
 }
 .debate-turn-limit {
     display: none;
@@ -1823,14 +1780,6 @@ body.pro-features-hidden .comparison-section {
 .debate-moderator-card .debate-model-card-output {
     font-size: 14px !important;
 }
-.debate-verdict-card {
-    border-color: #2563eb;
-    background: #eff6ff;
-}
-.debate-verdict-card .debate-model-card-name {
-    color: #1d4ed8;
-    font-weight: 700;
-}
 /* Basic run feed: a gate, route, transition or artifacts line is one compact row, not an answer. */
 .basic-run-line {
     padding: 4px 10px;
@@ -1858,10 +1807,6 @@ body.pro-features-hidden .comparison-section {
 .debate-model-card.is-approved {
     border-color: #cbd5e1;
     background: none;
-}
-.debate-model-card.debate-verdict-card.is-approved {
-    border-color: #2563eb;
-    background: #eff6ff;
 }
 .debate-model-card-meta .ib {
     width: 22px;
@@ -1921,32 +1866,6 @@ body.pro-features-hidden .comparison-section {
 }
 .debate-fav.active i.ti-star::before {
     content: "\f6a6";
-}
-.debate-approval {
-    border: none;
-    background: transparent;
-    border-radius: 0;
-    margin: 2px 0 0;
-    padding: 2px 10px 0;
-    display: block;
-}
-.debate-approval-body {
-    font-size: 11px;
-    line-height: 1.5;
-    color: #334155;
-    max-height: 90px;
-    overflow-y: auto;
-    white-space: pre-wrap;
-    word-break: break-word;
-    border: none;
-    border-radius: 0;
-    background: transparent;
-    padding: 4px 0 2px;
-}
-.debate-approval-actions {
-    display: flex;
-    justify-content: flex-end;
-    margin-top: 6px;
 }
 .debate-model-card-output {
     display: block;
@@ -2074,11 +1993,6 @@ body.pro-features-hidden .comparison-section {
 .moderator-input textarea#modTa:focus {
     border: none;
     box-shadow: none;
-}
-.debate-approval-body {
-    min-height: 20px;
-    max-height: 120px;
-    overflow-y: auto;
 }
 .prompt-sandwich textarea#prompt-input {
     min-height: 120px; padding: 5px 15px; border-radius: 8px; background-color: rgba(255, 255, 255, 0.5);
@@ -2908,16 +2822,6 @@ hr.section-divider {
     font-size: 13px;
 }
     
-.new-pages-inline {
-    margin-left: auto;
-}
-.telemetry-round-platform {
-    color: #0f172a;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    font-size: 11px;
-}
-
 /* Pipeline feed layout. Session tabs are hidden (state holder only); the bar keeps
    the session actions. */
 .debate-session-left[hidden] {
