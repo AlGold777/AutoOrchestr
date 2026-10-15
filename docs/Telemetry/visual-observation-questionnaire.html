@@ -1,92 +1,54 @@
 <!doctype html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Опросник визуального наблюдения за прогоном</title>
-  <style>
-    :root{color-scheme:light;--bg:#f4f6fa;--card:#fff;--ink:#1e293b;--muted:#64748b;--line:#dbe2ea;--accent:#356fe0;--soft:#edf4ff}
-    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
-    main{max-width:1100px;margin:auto;padding:28px 18px 64px}h1{font-size:1.5rem;line-height:1.25;margin:0 0 8px}.intro{margin:0 0 22px;color:var(--muted);max-width:850px}
-    section,.notice{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;margin:14px 0}.notice{border-left:4px solid var(--accent);font-size:.92rem}
-    h2{font-size:1.05rem;margin:0 0 12px}.fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.field label,.detail label{display:block;font-size:.82rem;font-weight:600;color:var(--muted);margin-bottom:5px}
-    input[type=text],input[type=datetime-local],textarea,select{font:inherit;color:var(--ink);border:1px solid var(--line);border-radius:8px;background:#fff;padding:9px 10px;width:100%}textarea{resize:vertical;min-height:66px}
-    .table-wrap{overflow-x:auto}table{width:100%;border-collapse:collapse;min-width:820px}th,td{padding:9px 8px;border-bottom:1px solid var(--line);text-align:center}th{font-size:.78rem;color:var(--muted);vertical-align:bottom}td:first-child,th:first-child{text-align:left;min-width:180px}td select{min-width:75px;padding:7px}
-    .details{display:grid;gap:12px}.detail{display:grid;grid-template-columns:150px 1fr 130px 1.2fr;gap:10px;align-items:end;padding:12px 0;border-bottom:1px solid var(--line)}.detail:last-child{border:0}.detail input,.detail textarea{min-width:0}.detail select{min-width:0}.detail button{padding:8px 10px;background:#e7edf5;color:var(--ink)}
-    .actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:18px}button{border:0;border-radius:9px;background:var(--accent);color:#fff;font:600 .95rem system-ui;padding:12px 17px;cursor:pointer}button.secondary{background:#e7edf5;color:var(--ink)}#status{color:var(--muted);font-size:.9rem}
-    @media(max-width:700px){main{padding:20px 12px 40px}.fields{grid-template-columns:1fr}.detail{grid-template-columns:1fr 1fr}.detail .wide{grid-column:1/-1}}
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Опросник</title>
+<style>
+:root{color-scheme:light;--line:#dbe2ea;--ink:#1e293b;--blue:#356fe0;--bg:#f4f6fa}
+*{box-sizing:border-box}body{margin:0;padding:20px;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:1100px;margin:auto}.attachments{display:flex;align-items:center;gap:9px;margin:0 0 10px;cursor:pointer;width:max-content}.attachments input,.mark input{position:absolute;opacity:0;width:1px;height:1px}
+.round{width:19px;height:19px;border:2px solid #94a3b8;border-radius:50%;display:inline-grid;place-items:center;flex:none}.round:after{content:"";width:9px;height:9px;border-radius:50%;background:transparent}.attachments input:checked+.round,.mark input:checked+.round{border-color:var(--blue)}.attachments input:checked+.round:after,.mark input:checked+.round:after{background:var(--blue)}
+.table-wrap{overflow-x:auto;background:white;border:1px solid var(--line);border-radius:12px}table{width:100%;min-width:850px;border-collapse:collapse}th,td{padding:10px 8px;border-bottom:1px solid var(--line);text-align:center}th{font-size:12px;color:#475569;vertical-align:bottom}th:first-child,td:first-child{text-align:left;min-width:175px}tr:last-child td{border-bottom:0}.mark{display:inline-flex;align-items:center;justify-content:center;min-width:28px;min-height:28px;cursor:pointer}.mark.issue{gap:7px;white-space:nowrap;font-size:12px}.mark .issue-label{display:none}.mark.issue input:checked~.issue-label{display:inline}.mark.issue input:checked~.dash{display:none}.dash{font-size:18px;color:#64748b}.download{display:block;margin:12px 0 0 auto;border:0;background:transparent;color:#475569;padding:8px;cursor:pointer;border-radius:7px}.download:hover{background:#e8edf5}.download svg{width:20px;height:20px;display:block}.download:focus-visible,.mark:focus-within,.attachments:focus-within{outline:2px solid var(--blue);outline-offset:2px}
+</style>
 </head>
 <body>
 <main>
-  <h1>Опросник визуального наблюдения за прогоном</h1>
-  <p class="intro">Заполните после прогона и передайте этот файл вместе с отчётами телеметрии. Фиксируйте только то, что было видно пользователю в интерфейсе; причины событий устанавливаются по телеметрии.</p>
-  <div class="notice"><strong>Как отмечать:</strong> «Да» — сбой явно наблюдался; «Нет» — действие дошло до наблюдаемого этапа и сбоя не было; «?» — проверить не удалось или результат неясен. Если запрос не отправился, дальнейшие этапы обычно остаются «?», а не «Нет».</div>
-
-  <section>
-    <h2>Контекст прогона</h2>
-    <div class="fields">
-      <div class="field"><label for="run-date">Дата и время прогона (с часовым поясом)</label><input id="run-date" type="text" placeholder="2026-10-15 14:30 UTC+02:00"></div>
-      <div class="field"><label for="run-id">Идентификатор прогона / ссылка на отчёт телеметрии</label><input id="run-id" type="text"></div>
-      <div class="field"><label for="scenario">Сценарий или краткое описание запроса</label><input id="scenario" type="text"></div>
-      <div class="field"><label for="version">Версия расширения</label><input id="version" type="text"></div>
-      <div class="field"><label for="environment">Браузер и ОС</label><input id="environment" type="text"></div>
-      <div class="field"><label for="observer">Наблюдатель (необязательно)</label><input id="observer" type="text"></div>
-    </div>
-  </section>
-
-  <section>
-    <h2>Наблюдения по моделям</h2>
-    <div class="table-wrap"><table id="observations"><thead><tr><th>LLM / этап</th><th>Запрос вставился</th><th>Запрос отправился</th><th>Модель не сгенерировала ответ</th><th>Ответ не вставился в карточку</th><th>Ответ обрезан</th></tr></thead><tbody></tbody></table></div>
-  </section>
-
-  <section>
-    <h2>Детали наблюдений</h2>
-    <p class="intro">Добавьте пояснение для каждой отметки «Да» и для неясных случаев, если это поможет связать наблюдение с телеметрией.</p>
-    <div class="details" id="details"></div>
-    <button class="secondary" id="add-detail" type="button">Добавить пояснение</button>
-  </section>
-
-  <section><h2>Общий комментарий</h2><textarea id="comment" placeholder="Необязательно"></textarea></section>
-  <div class="actions"><button id="save">Скачать результаты в Markdown</button><button class="secondary" id="reset" type="button">Очистить форму</button><span id="status" role="status" aria-live="polite"></span></div>
+  <label class="attachments"><input id="attachments" type="checkbox"><span class="round"></span><span>Вложенные файлы</span></label>
+  <div class="table-wrap"><table id="observations"><thead><tr><th>LLM / этап</th><th>Запрос вставился</th><th>Запрос отправился</th><th>Модель не сгенерировала ответ</th><th>Ответ не вставился в карточку</th><th>Ответ обрезан</th></tr></thead><tbody></tbody></table></div>
+  <button class="download" id="save" aria-label="Скачать Markdown" title="Скачать Markdown"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5M12 15V3"/></svg></button>
 </main>
 <script>
 (() => {
-  const models = ['GPT','Claude','Qwen','Z.ai','Kimi','Gemini','Grok','DeepSeek','Le Chat','Perplexity','Pipeline'];
-  const stages = ['Запрос вставился','Запрос отправился','Модель не сгенерировала ответ','Ответ не вставился в карточку','Ответ обрезан'];
-  const tbody = document.querySelector('#observations tbody');
-  const details = document.getElementById('details');
-  const esc = value => String(value ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
-  const cellSelect = (model, stage) => `<select aria-label="${esc(model)}: ${esc(stage)}"><option>?</option><option>Да</option><option>Нет</option></select>`;
-  models.forEach(model => {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${esc(model === 'Pipeline' ? 'Pipeline (общий результат)' : model)}</td>${stages.map(stage => `<td>${cellSelect(model,stage)}</td>`).join('')}`;
-    tbody.appendChild(tr);
+  const models=['GPT','Claude','Qwen','Z.ai','Kimi','Gemini','Grok','DeepSeek','Le Chat','Perplexity','Pipeline'];
+  const stages=['Запрос вставился','Запрос отправился','Модель не сгенерировала ответ','Ответ не вставился в карточку','Ответ обрезан'];
+  const body=document.querySelector('#observations tbody');
+  const escapeHtml=value=>String(value).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  models.forEach((model,mi)=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${model==='Pipeline'?'Pipeline':escapeHtml(model)}</td>`+stages.map((stage,si)=>{
+      const aria=escapeHtml(`${model}: ${stage}`);
+      if(si===2)return `<td><label class="mark issue" aria-label="${aria}"><input type="checkbox" data-model="${escapeHtml(model)}" data-stage="${escapeHtml(stage)}"><span class="round"></span><span class="dash">-</span><span class="issue-label">проблема платформы</span></label></td>`;
+      return `<td><label class="mark" aria-label="${aria}"><input type="checkbox" data-model="${escapeHtml(model)}" data-stage="${escapeHtml(stage)}"><span class="round"></span></label></td>`;
+    }).join('');
+    body.appendChild(tr);
   });
-  const addDetail = () => {
-    const row = document.createElement('div'); row.className = 'detail';
-    row.innerHTML = `<div><label>Модель / Pipeline</label><select data-key="model">${models.map(model=>`<option>${esc(model)}</option>`).join('')}</select></div><div><label>Этап</label><select data-key="stage">${stages.map(stage=>`<option>${esc(stage)}</option>`).join('')}</select></div><div class="wide"><label>Что увидел пользователь</label><textarea data-key="what"></textarea></div><div><label>Время / кадр</label><input type="text" data-key="time"></div><div class="wide"><label>Связь с телеметрией (событие, ID или файл)</label><input type="text" data-key="telemetry"></div><button type="button" aria-label="Удалить пояснение">Удалить</button>`;
-    row.querySelector('button').addEventListener('click',()=>row.remove());
-    details.appendChild(row);
-  };
-  document.getElementById('add-detail').addEventListener('click', addDetail);
-  addDetail();
-  const fields = [['Дата и время прогона (с часовым поясом)','run-date'],['Идентификатор прогона / ссылка на отчёт телеметрии','run-id'],['Сценарий или краткое описание запроса','scenario'],['Версия расширения','version'],['Браузер и ОС','environment'],['Наблюдатель','observer']];
-  const val = id => document.getElementById(id).value.trim();
-  const mdCell = value => String(value ?? '').trim().replace(/\|/g,'\\|').replace(/\r?\n/g,'<br>');
-  document.getElementById('save').addEventListener('click', () => {
-    const lines = ['# Опросник визуального наблюдения за прогоном','',...fields.map(([label,id]) => `- **${label}:** ${mdCell(val(id)) || '—'}`),'','## Наблюдения по моделям','','| LLM / этап | '+stages.map(mdCell).join(' | ')+' |','| --- | '+stages.map(()=>'---').join(' | ')+' |'];
-    [...tbody.rows].forEach(row => lines.push('| '+[...row.cells].map((cell,i) => mdCell(i===0 ? cell.textContent : cell.querySelector('select').value)).join(' | ')+' |'));
-    lines.push('','## Детали наблюдений','','| LLM / этап | Что увидел пользователь | Время / кадр | Связь с телеметрией (событие, ID или файл) |','| --- | --- | --- | --- |');
-    const noted = [...details.children].filter(row => [...row.querySelectorAll('input,textarea')].some(input => input.value.trim()));
-    noted.forEach(row => lines.push('| '+['model','stage','what','time','telemetry'].map(key => mdCell(row.querySelector(`[data-key="${key}"]`).value)).join(' | ')+' |'));
-    if (!noted.length) lines.push('| — | — | — | — |');
-    lines.push('','## Общий комментарий','',mdCell(val('comment')) || '—','');
-    const blob = new Blob(['\ufeff'+lines.join('\n')],{type:'text/markdown;charset=utf-8'});
-    const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = 'visual-observation-questionnaire.md'; link.click(); URL.revokeObjectURL(link.href);
-    document.getElementById('status').textContent = 'Markdown-файл сформирован и скачан.';
+  document.getElementById('save').addEventListener('click',()=>{
+    const headers=['LLM / этап',...stages];
+    const lines=['| '+headers.join(' | ')+' |','| '+headers.map(()=> '---').join(' | ')+' |'];
+    const attachment=document.getElementById('attachments').checked?'Да':'Нет';
+    lines.push('| Вложенные файлы: '+attachment+' | '+stages.map(()=> '—').join(' | ')+' |');
+    [...body.rows].forEach(row=>{
+      const vals=[row.cells[0].textContent.trim()];
+      stages.forEach((stage,si)=>{
+        const input=row.cells[si+1].querySelector('input');
+        vals.push(si===2?(input.checked?'проблема платформы':'-'):(input.checked?'Да':'Нет'));
+      });
+      lines.push('| '+vals.join(' | ')+' |');
+    });
+    const blob=new Blob(['\ufeff'+lines.join('\n')+'\n'],{type:'text/markdown;charset=utf-8'});
+    const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='visual-observation-questionnaire.md';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
   });
-  document.getElementById('reset').addEventListener('click', () => { if (!confirm('Очистить все заполненные поля?')) return; document.querySelectorAll('input,textarea').forEach(input => input.value=''); document.querySelectorAll('#observations select').forEach(select => select.value='?'); details.replaceChildren(); addDetail(); document.getElementById('status').textContent='Форма очищена.'; });
 })();
 </script>
 </body>
