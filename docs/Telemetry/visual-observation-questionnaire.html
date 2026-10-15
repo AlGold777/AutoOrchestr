@@ -10,41 +10,61 @@
 main{max-width:1100px;margin:auto}.attachments{display:flex;align-items:center;gap:9px;margin:0 0 10px;cursor:pointer;width:max-content;padding:0 95px 8px}.attachments input,.mark input{position:absolute;opacity:0;width:1px;height:1px}
 h1{max-width:940px;margin:0 auto 12px;font-size:18px;line-height:1.25;font-weight:700;color:var(--ink)}
 .round{width:19px;height:19px;border:2px solid #94a3b8;border-radius:50%;display:inline-grid;place-items:center;flex:none}.round:after{content:"";width:9px;height:9px;border-radius:50%;background:transparent}.attachments input:checked+.round,.mark input:checked+.round{border-color:var(--blue)}.attachments input:checked+.round:after,.mark input:checked+.round:after{background:var(--blue)}
-.table-wrap{max-width:940px;margin-inline:auto;overflow-x:auto;background:white;border:1px solid var(--line);border-radius:12px}table{width:100%;min-width:860px;table-layout:fixed;border-collapse:collapse}th,td{padding:7.5px 5px;border-bottom:1px solid var(--line);text-align:center}th{font-size:12px;line-height:1.2;color:#475569;vertical-align:bottom;overflow-wrap:anywhere}th:first-child,td:first-child{text-align:left;width:13%;padding-left:42px;overflow-wrap:anywhere}th:not(:first-child){width:12.4%}tr:last-child td{border-bottom:0}.mark{display:inline-flex;align-items:center;justify-content:center;min-width:25px;min-height:25px;cursor:pointer}.mark.issue{gap:5px;white-space:normal;font-size:11px}.mark .issue-label{display:none}.mark.issue input:checked~.issue-label{display:inline}.mark.issue input:checked~.dash{display:none}.dash{font-size:18px;color:#64748b}.footer{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;margin:8px auto 0;max-width:1100px}.actions{display:flex;justify-content:center;align-items:center;gap:8px}.actions button{min-height:32px;padding:5px 15px;border:1px solid #cbd5e1;border-radius:7px;background:#fff;color:var(--ink);font:700 14px system-ui;cursor:pointer}.actions .save{background:var(--blue);border-color:var(--blue);color:#fff}.actions .copy{padding:0 6px;border:0;border-radius:0;background:transparent;color:#475569;font:400 25px/1 system-ui;min-width:30px}.actions .copy:hover{color:var(--blue)}.actions .save:hover{filter:brightness(.96)}.actions button:focus-visible,.mark:focus-within,.attachments:focus-within{outline:2px solid var(--blue);outline-offset:2px}
+.table-wrap{max-width:1100px;margin-inline:auto;overflow-x:auto;background:white;border:1px solid var(--line);border-radius:12px}table{width:100%;min-width:1120px;table-layout:fixed;border-collapse:collapse}th,td{padding:7.5px 4px;border-bottom:1px solid var(--line);text-align:center}th{font-size:12px;line-height:1.2;color:#475569;vertical-align:bottom;overflow-wrap:anywhere}th:first-child,td:first-child{text-align:left;width:10%;padding-left:24px;overflow-wrap:anywhere}th:not(:first-child){width:6.92%}tr:last-child td{border-bottom:0}.mark{display:inline-flex;align-items:center;justify-content:center;min-width:25px;min-height:25px;cursor:pointer}.mark.issue{gap:5px;white-space:normal;font-size:11px}.mark .issue-label{display:none}.mark.issue input:checked~.issue-label{display:inline}.mark.issue input:checked~.dash{display:none}.dash{font-size:18px;color:#64748b}.cell-select{width:100%;max-width:100%;min-height:25px;padding:1px 2px;border:0;border-radius:4px;background:transparent;color:var(--ink);font:11px system-ui;text-align:center}.cell-select:focus{outline:2px solid var(--blue)}.footer{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;margin:8px auto 0;max-width:1100px}.actions{display:flex;justify-content:center;align-items:center;gap:8px}.actions button{min-height:32px;padding:5px 15px;border:1px solid #cbd5e1;border-radius:7px;background:#fff;color:var(--ink);font:700 14px system-ui;cursor:pointer}.actions .save{background:var(--blue);border-color:var(--blue);color:#fff}.actions .copy{padding:0 6px;border:0;border-radius:0;background:transparent;color:#475569;font:400 25px/1 system-ui;min-width:30px}.actions .copy:hover{color:var(--blue)}.actions .save:hover{filter:brightness(.96)}.actions button:focus-visible,.mark:focus-within,.attachments:focus-within{outline:2px solid var(--blue);outline-offset:2px}
 </style>
 </head>
 <body>
 <main>
   <h1>Зафиксированные визуально проблемы</h1>
   <label class="attachments"><input id="attachments" type="checkbox"><span class="round"></span><span>Вложенные файлы</span></label>
-  <div class="table-wrap"><table id="observations"><thead><tr><th>LLM</th><th>Запрос не вставился</th><th>Запрос не отправился</th><th>Модель не сгенерировала ответ</th><th>Ответ не вставился в карточку</th><th>Ответ обрезан</th><th>Вложения не вставились</th><th>Вставились не все вложения</th></tr></thead><tbody></tbody></table></div>
+  <div class="table-wrap"><table id="observations"><thead><tr><th>LLM</th><th>Запрос не вставился</th><th>Запрос не отправился</th><th>Модель не сгенерировала ответ</th><th>Ответ не вставился в карточку</th><th>Ответ обрезан</th><th>Вложения не вставились</th><th>Вставились не все вложения</th><th>В карточке не тот ответ</th><th>Потерялось форматирование</th><th>Запрос ушёл в старую вкладку</th><th>Действия юзера вручную</th><th>Помехи user-а</th><th>Индикатор no correct</th></tr></thead><tbody></tbody></table></div>
   <div class="footer"><span aria-hidden="true"></span><div class="actions"><button class="save" id="save" type="button">Save</button><button class="copy" id="copy" type="button" aria-label="Копировать Markdown" title="Копировать Markdown">⧉</button></div><span aria-hidden="true"></span></div>
 </main>
 <script>
 (() => {
   const models=['GPT','Claude','Qwen','Z.ai','Kimi','Gemini','Grok','DeepSeek','Le Chat','Perplexity'];
-  const stages=['Запрос не вставился','Запрос не отправился','Модель не сгенерировала ответ','Ответ не вставился в карточку','Ответ обрезан','Вложения не вставились','Вставились не все вложения'];
+  const stages=[
+    {label:'Запрос не вставился',type:'checkbox'},
+    {label:'Запрос не отправился',type:'checkbox'},
+    {label:'Модель не сгенерировала ответ',type:'platform'},
+    {label:'Ответ не вставился в карточку',type:'checkbox'},
+    {label:'Ответ обрезан',type:'checkbox'},
+    {label:'Вложения не вставились',type:'checkbox'},
+    {label:'Вставились не все вложения',type:'checkbox'},
+    {label:'В карточке не тот ответ',type:'select',options:['старый','чужой','Запрос']},
+    {label:'Потерялось форматирование',type:'select',options:['код','таблица','список','ссылки']},
+    {label:'Запрос ушёл в старую вкладку',type:'checkbox'},
+    {label:'Действия юзера вручную',type:'select',options:['вставил','отправил','нажал повтор']},
+    {label:'Помехи user-а',type:'select',options:['кликал','переключал вкладку']},
+    {label:'Индикатор no correct',type:'checkbox'}
+  ];
   const body=document.querySelector('#observations tbody');
   const escapeHtml=value=>String(value).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
   models.forEach(model=>{
     const tr=document.createElement('tr');
-    tr.innerHTML=`<td>${escapeHtml(model)}</td>`+stages.map((stage,si)=>{
-      const aria=escapeHtml(`${model}: ${stage}`);
-      if(si===2)return `<td><label class="mark issue" aria-label="${aria}"><input type="checkbox" data-model="${escapeHtml(model)}" data-stage="${escapeHtml(stage)}"><span class="round"></span><span class="dash">-</span><span class="issue-label">проблема платформы</span></label></td>`;
-      return `<td><label class="mark" aria-label="${aria}"><input type="checkbox" data-model="${escapeHtml(model)}" data-stage="${escapeHtml(stage)}"><span class="round"></span></label></td>`;
+    tr.innerHTML=`<td>${escapeHtml(model)}</td>`+stages.map(stage=>{
+      const aria=escapeHtml(`${model}: ${stage.label}`);
+      if(stage.type==='select')return `<td><select class="cell-select" aria-label="${aria}"><option value="">-</option>${stage.options.map(option=>`<option value="${escapeHtml(option)}">${escapeHtml(option)}</option>`).join('')}</select></td>`;
+      if(stage.type==='platform')return `<td><label class="mark issue" aria-label="${aria}"><input type="checkbox" data-model="${escapeHtml(model)}" data-stage="${escapeHtml(stage.label)}"><span class="round"></span><span class="dash">-</span><span class="issue-label">проблема платформы</span></label></td>`;
+      return `<td><label class="mark" aria-label="${aria}"><input type="checkbox" data-model="${escapeHtml(model)}" data-stage="${escapeHtml(stage.label)}"><span class="round"></span></label></td>`;
     }).join('');
     body.appendChild(tr);
   });
   const markdown=()=>{
     const lines=[];
     if(document.getElementById('attachments').checked) lines.push('Вложенные файлы: Да','');
-    const rows=[...body.rows].map(row=>({row,inputs:stages.map((_,si)=>row.cells[si+1].querySelector('input'))}));
-    const activeIndexes=stages.map((_,si)=>si).filter(si=>rows.some(item=>item.inputs[si].checked));
+    const rows=[...body.rows].map(row=>({row,values:stages.map((stage,si)=>{
+      const control=row.cells[si+1].querySelector('input,select');
+      if(stage.type==='select')return control.value;
+      if(!control.checked)return '';
+      return stage.type==='platform'?'проблема платформы':'Да';
+    })}));
+    const activeIndexes=stages.map((_,si)=>si).filter(si=>rows.some(item=>item.values[si]));
     if(activeIndexes.length){
-      const headers=['LLM',...activeIndexes.map(si=>stages[si])];
+      const headers=['LLM',...activeIndexes.map(si=>stages[si].label)];
       lines.push('| '+headers.join(' | ')+' |','| '+headers.map(()=> '---').join(' | ')+' |');
-      rows.filter(item=>activeIndexes.some(si=>item.inputs[si].checked)).forEach(({row,inputs})=>{
-        const vals=[row.cells[0].textContent.trim(),...activeIndexes.map(si=>inputs[si].checked?(si===2?'проблема платформы':'Да'):'')];
+      rows.filter(item=>activeIndexes.some(si=>item.values[si])).forEach(({row,values})=>{
+        const vals=[row.cells[0].textContent.trim(),...activeIndexes.map(si=>values[si])];
         lines.push('| '+vals.join(' | ')+' |');
       });
     }
