@@ -104,7 +104,7 @@ describe('Basic docs stay true to the code', () => {
   test('the open-issues document: every item of the summary has a section, every code place exists, the listed test files exist', () => {
     const issues = read('docs/Pipeline scenarios/basic-developer.md');
     const codes = [...issues.matchAll(/^\| ((?:OI|LIM|TEST)-\d+) \|/gm)].map((match) => match[1]);
-    expect(codes.length).toBeGreaterThanOrEqual(7);
+    expect(codes.length).toBeGreaterThanOrEqual(6);
     codes.forEach((code) => expect({ code, section: new RegExp(`^#{3,4} ${code}\\.`, 'm').test(issues) }).toEqual({ code, section: true }));
     const everything = ['results.js', ...fs.readdirSync(path.join(root, 'disput')).map((file) => `disput/${file}`), 'pipeline/pipeline-runtime.js']
       .map((file) => read(file)).join('\n');

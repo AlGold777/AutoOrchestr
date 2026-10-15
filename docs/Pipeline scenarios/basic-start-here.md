@@ -336,7 +336,7 @@
 | `custom_unknown_check` | движок, при проверке ответа неизвестного запроса (кнопка «Проверить ответ») | `step`, `label`, `participant`, `attempt`, `status` (`found`, `no_answer`, `ambiguous`, `chat_unavailable`), `reason` |
 | `custom_gate` | движок, после шага-проверки (`gate:<id>`) | `step`, `ref`, `pass` (итог вердиктов), `unmet` (невыполненные критерии), `rule` (`all` или `any`) |
 | `custom_end` | движок, в конце; страница — при ошибке | `stopReason`, `steps` (число шагов с результатом); при ошибке — `stopReason: 'error'` и `error` |
-| `owner_answer` | страница, на ответ или пропуск в окне вопросов | `stage` (подпись шага при ответе; при пропуске поле пустое), `answered`, `asked`; при пропуске `skipped: true` |
+| `owner_answer` | страница, на ответ или пропуск в окне вопросов | `stage` (подпись шага — при ответе и при пропуске), `answered`, `asked`; при пропуске `skipped: true` |
 
 Идентификатор этапа транспорта — `custom:<runId>:s<n>` (`n` — номер шага, с единицы), на попытку — `custom:<runId>:s<n>:a<attempt>`.
 

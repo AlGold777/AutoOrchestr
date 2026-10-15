@@ -5699,7 +5699,7 @@ document.addEventListener('click', (event) => {
                 if (activePipelineRunContext) (activePipelineRunContext.ownerAnswers ||= []).push(...answers.map((item) => ({ ...item, stage: info.plannedStageId || '' })));
                 globalThis.MessageDelivery?.batchEvent?.('owner_answer', { stage: info.plannedStageId || null, answered: answers.length, asked: (info.asks || []).length });
             } else if (action === 'skip') {
-                globalThis.MessageDelivery?.batchEvent?.('owner_answer', { stage: info.plannedStageId || null, answered: 0, asked: (info.asks || []).length, skipped: true });
+                globalThis.MessageDelivery?.batchEvent?.('owner_answer', { stage: info.label || info.plannedStageId || null, answered: 0, asked: (info.asks || []).length, skipped: true });
             }
             pendingOwnerAsks = null;
             ownerAskDialog.close();

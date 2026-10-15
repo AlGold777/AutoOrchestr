@@ -288,6 +288,16 @@ function renderDebateDom() {
       <button id="notification-ok-btn" type="button"></button>
       <input id="file-input" type="file">
       <div id="file-name-display"></div>
+      <dialog class="pipeline-stage-dialog owner-ask-dialog" id="owner-ask-dialog" aria-labelledby="owner-ask-title">
+        <header class="pipeline-stage-dialog-header"><h2 id="owner-ask-title">Вопрос владельцу</h2></header>
+        <p class="owner-ask-hint" id="owner-ask-hint"></p>
+        <div class="pipeline-stage-card" id="owner-ask-list"></div>
+        <div class="owner-ask-actions">
+          <button type="button" data-owner-ask="answer">Ответить и продолжить</button>
+          <button type="button" data-owner-ask="skip">Продолжить без ответа</button>
+          <button type="button" data-owner-ask="later">Позже</button>
+        </div>
+      </dialog>
     </div>
   `;
 }
@@ -382,6 +392,7 @@ async function loadResultsScript(seededPipelineStore = null) {
   ['stage-markers', 'basic-output', 'basic-artifacts', 'basic-control', 'custom-engine', 'basic-schema', 'custom-run-record'].forEach((mod) => { window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', `${mod}.js`), 'utf8')); });
   ['boot-utils', 'dom-utils', 'attachments', 'pasted-text', 'tooltips', 'debate-ui', 'debate-transport', 'debate-controller', 'debate-renderer', 'debate-sessions-store', 'debate-export', 'debate-telemetry-view'].forEach((mod) => { window.eval(fs.readFileSync(path.join(__dirname, '..', 'results', `${mod}.js`), 'utf8')); });
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'utils', 'selection-block-format.js'), 'utf8'));
+  window.eval(fs.readFileSync(path.join(__dirname, '..', 'results', 'owner-ask.js'), 'utf8'));
   const script = fs.readFileSync(path.join(__dirname, '..', 'results.js'), 'utf8');
   window.eval(script);
   document.dispatchEvent(new Event('DOMContentLoaded', { bubbles: true }));
@@ -3483,6 +3494,46 @@ describe('Pipeline debate favorites view', () => {
           await answered;
           expect(document.querySelector('.choice-dialog')).toBeNull();
           expect(h.starts.length).toBe(2);
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      test('OI-2: owner_answer names the step both when the owner answers and when the owner skips', async () => {
+        const h = setupCustomInheritance('Owner ask journal', { synthesis: '' });
+        const dialog = document.getElementById('owner-ask-dialog');
+        if (typeof dialog.showModal !== 'function') dialog.showModal = () => dialog.setAttribute('open', '');
+        if (typeof dialog.close !== 'function') dialog.close = () => dialog.removeAttribute('open');
+        const waitForDialog = async () => { for (let i = 0; i < 200 && !dialog.hasAttribute('open'); i += 1) await delay(10); };
+        const lastOwnerAnswer = () => window.MessageDelivery.journal().filter((event) => event.kind === 'owner_answer').at(-1);
+        try {
+          const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
+            { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }] }
+          ] };
+          expect((await h.debug.installBasicSchema('Owner ask journal', schema)).ok).toBe(true);
+          document.querySelector('.pipeline-item[data-name="Owner ask journal"]').click();
+          await settleCustomCard();
+          // The accepted answer carries a question for the owner: the window opens after the step.
+          chrome.runtime.sendMessage.mockImplementation((message, callback) => {
+            if (message.type !== 'START_FULLPAGE_PROCESS') { callback?.({ status: 'ok', active: false }); return; }
+            h.starts.push(message);
+            callback?.({ status: 'process_started' });
+            setTimeout(() => message.selectedLLMs.forEach((model) => h.debug.pipelineWaiter.handleFinal({ type: 'LLM_RESPONSE', llmName: model,
+              transportRequestId: message.pipelineContext.transportRequestIds[model],
+              answer: 'Нужен срок.\n[[ASK: Срок? || неделя || месяц]]',
+              metadata: { ...message.pipelineContext, status: 'SUCCESS', attribution: 'verified', completion: 'complete' }
+            })), 0);
+          });
+          const answered = h.debug.runCustomFromPage({ task: 'T' });
+          await waitForDialog();
+          dialog.querySelector('input[type="radio"]').checked = true;
+          dialog.querySelector('[data-owner-ask="answer"]').click();
+          await answered;
+          expect(lastOwnerAnswer()).toMatchObject({ stage: 'Раунд 1', answered: 1, asked: 1 });
+
+          const skipped = h.debug.runCustomFromPage({ task: 'T' });
+          await waitForDialog();
+          dialog.querySelector('[data-owner-ask="skip"]').click();
+          await skipped;
+          expect(lastOwnerAnswer()).toMatchObject({ stage: 'Раунд 1', answered: 0, asked: 1, skipped: true });
         } finally { h.cleanup(); }
       }, 30000);
 
