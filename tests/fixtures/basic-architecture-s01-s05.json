@@ -1,0 +1,142 @@
+{
+  "schemaVersion": 1,
+  "origin": "user",
+  "run": {
+    "policy": "auto",
+    "maxWords": 700
+  },
+  "steps": [
+    {
+      "ref": "r1",
+      "kind": "round",
+      "models": [
+        {
+          "name": "Claude",
+          "id": "S01-producer"
+        }
+      ],
+      "input": "none",
+      "task": "S01, Producer: зафиксировать пользователя, проблему и ожидаемый результат; предложить классы решений и пороги риска; явно записать known unknowns."
+    },
+    {
+      "ref": "owner:s01",
+      "kind": "owner",
+      "models": [],
+      "input": [
+        "r1"
+      ],
+      "output": {
+        "name": "Decision Policy",
+        "form": "Текст политики полномочий: классы A0–A4, пороги риска."
+      },
+      "task": "S01, Owner: утвердить Decision Policy (текст) — классы A0–A4 и пороги риска."
+    },
+    {
+      "ref": "r2",
+      "kind": "round",
+      "order": "parallel",
+      "require": 2,
+      "chat": "new",
+      "input": [
+        {
+          "step": "r1",
+          "participant": "S01-producer",
+          "required": true
+        },
+        "owner:s01"
+      ],
+      "models": [
+        {
+          "name": "GPT",
+          "id": "S02-a"
+        },
+        {
+          "name": "Gemini",
+          "id": "S02-b"
+        }
+      ],
+      "task": "S02, независимо: расширить сценарии, capabilities и продуктовые вопросы. Чужие ответы не видны."
+    },
+    {
+      "ref": "synth:s03",
+      "kind": "synthesis",
+      "input": [
+        "owner:s01",
+        "r2"
+      ],
+      "models": [
+        {
+          "name": "Claude",
+          "id": "S03-synth"
+        }
+      ],
+      "task": "S03, Synthesizer: дедуплицировать предложения, разделить составные, сохранить provenance."
+    },
+    {
+      "ref": "r3",
+      "kind": "round",
+      "input": [
+        {
+          "step": "synth:s03",
+          "participant": "S03-synth",
+          "required": true
+        },
+        "owner:s01"
+      ],
+      "models": [
+        {
+          "name": "GPT",
+          "id": "S03-closer"
+        }
+      ],
+      "task": "S03, Decision Closer: закрыть решения в пределах Decision Policy; остальные маршрутизировать. Выход — Decision Register."
+    },
+    {
+      "ref": "synth:s04",
+      "kind": "synthesis",
+      "input": [
+        {
+          "step": "r3",
+          "participant": "S03-closer",
+          "required": true
+        }
+      ],
+      "models": [
+        {
+          "name": "Claude",
+          "id": "S04-synth"
+        }
+      ],
+      "task": "S04: собрать Product Concept из принятых решений; новых решений не принимать."
+    },
+    {
+      "ref": "r4",
+      "kind": "round",
+      "order": "parallel",
+      "require": 2,
+      "input": [
+        {
+          "step": "r3",
+          "participant": "S03-closer",
+          "required": true
+        },
+        {
+          "step": "synth:s04",
+          "participant": "S04-synth",
+          "required": true
+        }
+      ],
+      "models": [
+        {
+          "name": "GPT",
+          "id": "S05-a"
+        },
+        {
+          "name": "Gemini",
+          "id": "S05-b"
+        }
+      ],
+      "task": "S05, Reviewer независимо: contradictions, missing scenarios, hidden assumptions, undefined behavior. Концепцию не исправлять."
+    }
+  ]
+}

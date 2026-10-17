@@ -146,19 +146,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             console.warn('[RESULTS] Failed to persist favorites', err);
         }
     };
-    const loadFavoriteEntriesFromStorage = () => {
-        try {
-            chrome?.storage?.local?.get?.([favoriteStorageKey], (data) => {
-                const stored = Array.isArray(data?.[favoriteStorageKey]) ? data[favoriteStorageKey] : [];
-                const nextEntries = stored.map((entry) => favoriteEntrySnapshot(entry));
-                if (favoriteEntriesSignature(nextEntries) === favoriteEntriesSignature(favoriteState.entries)) return;
-                if (nextEntries.length) ensureFavoritePanelUI();
-                syncFavoriteStateFromEntries(nextEntries, { render: true });
-            });
-        } catch (err) {
-            console.warn('[RESULTS] Failed to load favorites', err);
-        }
-    };
     const clearFavoriteEntriesOnLoad = () => {
         try {
             favoriteState.entries = [];
@@ -1537,6 +1524,17 @@ document.addEventListener('click', (event) => {
 
     // --- MAIN PAGE ELEMENTS ---
     const startButton = document.getElementById('start-button');
+    let mainRunActive = false;
+    let mainRunAction = 0;
+    const setMainRunActive = (active) => {
+        mainRunActive = Boolean(active);
+        if (!startButton) return;
+        startButton.title = mainRunActive ? 'Стоп: остановить запрос' : 'Send prompt';
+        startButton.setAttribute('aria-label', mainRunActive ? 'Стоп' : 'Пуск');
+        startButton.setAttribute('aria-busy', String(mainRunActive));
+        const icon = startButton.querySelector('i');
+        if (icon) icon.className = mainRunActive ? 'ti ti-player-stop' : 'ti ti-send';
+    };
     const promptInput = document.getElementById('modTa') || document.getElementById('prompt-input');
     const promptNoteView = document.getElementById('prompt-note-view');
     const promptContainer = document.querySelector('.prompt-container.prompt-sandwich.debate-composer')
@@ -1587,13 +1585,6 @@ document.addEventListener('click', (event) => {
         'zai': 'Z.ai',
         'kimi': 'Kimi'
     };
-    const getHeaderModelButtonLimitEarly = () => {
-        if (!isPipelinePage) return llmButtons.length || 999;
-        // The pipeline page is Universal-only.  Do not derive a participant
-        // limit from the legacy numeric scheme value that may still exist in
-        // persisted UI state during startup.
-        return llmButtons.length || 999;
-    };
     const syncHeaderModelPanelsEarly = () => {
         llmButtons.forEach((button) => {
             const llmId = button.id.replace('llm-', '');
@@ -1602,7 +1593,9 @@ document.addEventListener('click', (event) => {
         });
     };
     const normalizeHeaderModelButtonsEarly = (preferredButton = null) => {
-        const limit = getHeaderModelButtonLimitEarly();
+        // Participant limit is never derived from the legacy numeric scheme value
+        // that may still exist in persisted UI state during startup.
+        const limit = llmButtons.length || 999;
         const activeButtons = Array.from(llmButtons).filter((button) => button.classList.contains('active'));
         if (activeButtons.length <= limit) {
             syncHeaderModelPanelsEarly();
@@ -1659,7 +1652,6 @@ document.addEventListener('click', (event) => {
         };
         const modelSelectionStorageKey = `llmComparatorSelectedModelsByView.${getCurrentViewKey()}`;
         const llmPanels = document.querySelectorAll('.llm-panel');
-    const comparisonPanel = document.getElementById('comparison-panel');
     const comparisonOutput = document.getElementById('comparison-output');
     const comparisonSpinner = document.getElementById('comparison-spinner');
     const getItButton = document.getElementById('get-it-button');
@@ -1674,13 +1666,15 @@ document.addEventListener('click', (event) => {
     const crossViewNavigationIntentTtlMs = 15000;
     const sidebarSessionViewIntentKey = 'llmSidebarPendingSessionView';
     const sidebarSessionViewIntentTtlMs = 15000;
-    const DEBATE_SCHEME_STORAGE_KEY = 'llmCodexDebateScheme.v1';
+    const DEBATE_SCHEME_STORAGE_KEY = 'aoSchemeMode.v1';
     let preserveCrossViewStateOnLoad = false;
     let suppressCrossViewPersistenceOnLoad = false;
     function getCurrentViewKey() {
         return document.body.classList.contains('pipeline-page') ? 'pipeline' : 'main';
     }
     const safeStorageLocalGet = (keys) => new Promise((resolve) => {
+        const migrated = window.StorageKeyMigration?.ready || Promise.resolve();
+        migrated.catch(() => {}).then(() => {
         try {
             if (!chrome?.storage?.local) {
                 resolve({});
@@ -1693,6 +1687,7 @@ document.addEventListener('click', (event) => {
         } catch (_) {
             resolve({});
         }
+        });
     });
     const safeStorageLocalSet = (payload) => new Promise((resolve) => {
         try {
@@ -1729,8 +1724,6 @@ document.addEventListener('click', (event) => {
         const savedAt = Number(intent.savedAt || 0);
         return savedAt > 0 && Date.now() - savedAt <= crossViewNavigationIntentTtlMs;
     };
-    const bodyIncludesPipelinePage = () => String(document.body.className || '')
-        .split(/\s+/).filter(Boolean).includes('pipeline-page');
     const getPromptDraftText = () => {
         if (promptInput) return pastedTextComposer.getText();
         return String(document.getElementById('prompt-input')?.value || document.getElementById('modTa')?.value || '');
@@ -2005,7 +1998,7 @@ document.addEventListener('click', (event) => {
         const debateRoundPlusBtn = document.getElementById('pipeline-add-round-btn');
     const debateRunPolicySelect = document.getElementById('debate-run-policy-select');
     const debateAutoToggleBtn = document.getElementById('debate-auto-toggle-btn');
-    const DEBATE_AUTO_MODE_STORAGE_KEY = 'llmDisputAutoMode.v1';
+    const DEBATE_AUTO_MODE_STORAGE_KEY = 'aoAutoMode.v1';
     let autoMode = false;
     const persistDebateAutoMode = (enabled) => safeStorageLocalSet({
         [DEBATE_AUTO_MODE_STORAGE_KEY]: !!enabled
@@ -2032,7 +2025,6 @@ document.addEventListener('click', (event) => {
     };
     const prefixToggleLabel = document.querySelector('.modifiers-toggle-label[data-mod-type="prefix"]');
     const suffixToggleLabel = document.querySelector('.modifiers-toggle-label[data-mod-type="suffix"]');
-    const proSection = document.getElementById('pro-section');
     const newPagesCheckbox = document.getElementById('new-pages-checkbox');
     const apiModeCheckbox = document.getElementById('api-mode-checkbox');
     // Long generation mode (main page): a shared flag read by each model tab's
@@ -2132,7 +2124,6 @@ document.addEventListener('click', (event) => {
     const notesHintBackupImportBtn = document.getElementById('notes-hint-backup-import');
     const sessionsSaveBtn = document.getElementById('sessions-save-btn');
     const sessionsDeleteBtn = document.getElementById('sessions-delete-btn');
-    const sessionsPanel = document.getElementById('sessions-panel');
     const sessionsList = document.getElementById('sessions-list');
     const sessionsEmpty = document.getElementById('sessions-empty');
     const promptAttachInput = document.getElementById('prompt-attach-input');
@@ -2183,12 +2174,22 @@ document.addEventListener('click', (event) => {
         const runState = await getActiveRunState();
         if (!runState?.active) return true;
         const currentView = getCurrentViewKey();
-        if (runState.sourceView && runState.sourceView === currentView) return true;
+        const sourceView = runState.sourceView
+            || (runState.pipelineContext?.pipelineRunId ? 'pipeline' : 'main');
+        if (currentView === 'main' && sourceView === 'main') {
+            // A lost start reply or reload can leave Start visible while the
+            // worker owns an active request. Restore Stop instead of sending
+            // another Start that RunGuard will reject and hiding Stop again.
+            setMainRunActive(true);
+            showNotification('Запрос ещё выполняется. Нажмите «Стоп», чтобы остановить его и отправить новый.', 'warn');
+            return false;
+        }
+        if (sourceView === currentView) return true;
         if (runState.staleActiveRun) {
             showNotification('Предыдущий зависший запрос больше не блокирует запуск.', 'warn');
             return true;
         }
-        const sourceLabel = runState.sourceView === 'pipeline' ? 'Pipeline' : 'главной странице';
+        const sourceLabel = sourceView === 'pipeline' ? 'Pipeline' : 'главной странице';
         showNotification(`Дождитесь завершения запроса на ${sourceLabel}.`, 'warn');
         return false;
     };
@@ -2197,7 +2198,6 @@ document.addEventListener('click', (event) => {
     // Floating tooltip controller extracted to results/tooltips.js.
     const tooltipController = window.ResultsTooltips.create({ document });
     const { registerTooltipTarget } = tooltipController;
-    const devToolsPanel = document.getElementById('dev-tools-panel');
     const refreshOverridesBtn = document.getElementById('refresh-selector-overrides-btn');
     const clearOverridesBtn = document.getElementById('clear-selector-overrides-btn');
     const clearSelectorCacheBtn = document.getElementById('clear-selector-cache-btn');
@@ -2242,10 +2242,8 @@ document.addEventListener('click', (event) => {
     const toggleModifiersBtn = document.getElementById('toggle-modifiers-btn');
     const modifiersHeader = document.getElementById('modifiers-header');
     const modifiersContainer = document.getElementById('modifiers-container');
-    const expandCollapseIcon = document.querySelector('.toggle-icon-console');
     const pipelineModifiersSection = document.getElementById('pipeline-modifiers-section');
     const pipelineToggleModifiersBtn = document.getElementById('pipeline-toggle-modifiers-btn');
-    const pipelineModifiersHeader = document.getElementById('pipeline-modifiers-header');
     const pipelineModifiersContainer = document.getElementById('pipeline-modifiers-container');
     const pipelineModifiersSummary = document.getElementById('pipeline-modifiers-summary');
     const statusPingButtons = document.querySelectorAll('.status-ping-btn');
@@ -2273,7 +2271,6 @@ document.addEventListener('click', (event) => {
     const diagEntryHeightCache = new WeakMap();
     const apiIndicatorRegistry = new Map();
     const apiIndicatorState = {};
-    let latestTelemetrySnapshot = null;
     const SELECTOR_ELEMENT_TYPES = ['composer', 'sendButton', 'response'];
     const SELECTOR_WORKBENCH_FIELDS = [
         { key: 'composer', label: 'composer' },
@@ -2714,79 +2711,13 @@ document.addEventListener('click', (event) => {
         resolve: null
     };
     let activePipelineAbortController = null;
-    // Set while a Polishing run (runPolishingFromPage) is going: the Run button becomes Stop.
-    let polishingAbortController = null;
-    // Same for a Delta run (runDeltaFromPage).
-    let deltaAbortController = null;
     // Same for a Custom run (runCustomFromPage).
     let customAbortController = null;
     let activePipelineRunContext = null;
     const debateAggregateStore = window.DebateRunStore?.createStore?.() || null;
-    const debateCaseStore = window.DebateCaseStore?.createStore?.({ storage: chrome?.storage?.local }) || null;
-    const debateRuleHistoryStore = window.DebateRuleHistory?.createStore?.({ storage: chrome?.storage?.local }) || null;
-    void debateRuleHistoryStore?.restore?.();
-    const pipelineProfileView = window.PipelineProfileView?.init?.({ storage: chrome?.storage?.local }) || null;
-    window.__debateCaseStore = debateCaseStore;
-    const disputStateMapView = window.DisputStateMapView?.init?.({
-        getAggregate: () => ({ ...(debateAggregateStore?.getState?.() || {}), ruleHistory: debateRuleHistoryStore?.summary?.() || null }),
-        getRuleHistory: () => debateRuleHistoryStore?.summary?.() || null,
-        caseStore: debateCaseStore,
-        onDecisionResolved: async ({ requestId, optionId }) => {
-            const result = await debateApplication?.resolveHumanDecision?.({
-                requestId, optionId,
-                expectedCaseVersion: debateApplication?.getOrchestrator?.()?.getState?.()?.caseVersion,
-                expectedPlanRevisionId: debateApplication?.getOrchestrator?.()?.getState?.()?.activePlanRevisionId
-            });
-            showNotification(result?.ok ? 'Решение применено.' : `Решение не применено: ${result?.code || 'unknown'}`, result?.ok ? 'success' : 'error');
-        },
-        onHumanAction: async ({ action, itemId }) => {
-            if (action === 'stop') { await window.cancelPipelineRun?.(); return; }
-            if (action === 'pause') { setDebatePausedState(!debatePaused, debatePaused ? 'state_map_resume' : 'state_map_pause'); return; }
-            if (action === 'synthesize') {
-                const result = await debateApplication?.requestSynthesis?.({}, { createdBy: 'human', deferExecution: false });
-                showNotification(result?.ok ? 'Этап синтеза добавлен в универсальный план.' : 'Не удалось добавить этап синтеза.', result?.ok ? 'success' : 'warn');
-                return;
-            }
-            if (!debateApplication?.submitIntervention) return;
-            const interventionId = `human:${action}:${itemId}:${Date.now()}`;
-            const decisionResult = await debateApplication.submitIntervention({
-                interventionId,
-                type: action === 'request_evidence' ? 'REQUEST_VERIFICATION' : 'HUMAN_DECISION',
-                payload: { action, artifactIds: itemId ? [itemId] : [] }, deferExecution: true
-            });
-            if (decisionResult.ok) dispatchDebateRunEvent?.(window.DebateRunStore?.EVENTS?.HUMAN_DECISION_RECORDED || 'HUMAN_DECISION_RECORDED', { decisionId: interventionId, targetId: itemId, value: action });
-            showNotification(decisionResult.ok ? `Решение сохранено: ${action}` : `Решение не сохранено: ${(decisionResult.errors || []).join(', ')}`, decisionResult.ok ? 'success' : 'error');
-        },
-        onLinkRemove: async ({ linkId }) => {
-            if (!debateApplication?.submitIntervention) return;
-            const result = await debateApplication.submitIntervention({
-                interventionId: `human-delete-link:${linkId}:${Date.now()}`,
-                type: 'DELETE_ARTIFACT', payload: { artifactId: linkId }, deferExecution: true
-            });
-            showNotification(result.ok ? 'Связь удалена.' : `Связь не удалена: ${(result.errors || []).join(', ')}`, result.ok ? 'success' : 'error');
-        }
-    }) || null;
-    debateCaseStore?.subscribe?.((caseState) => {
-        if (caseState) disputStateMapView?.render?.(caseState);
-    });
-    let debateCaseWriteQueue = Promise.resolve();
-    const queueDebateCaseWrite = (operation) => {
-        debateCaseWriteQueue = debateCaseWriteQueue.then(operation, operation).catch((error) => {
-            console.warn('[RESULTS] Debate case persistence failed', error);
-        });
-        return debateCaseWriteQueue;
-    };
-    const syncAggregateArtifactsToCase = async (aggregate, aggregateEvent) => {
-        // Canonical semantic writes are owned by DebateOrchestrator. Legacy aggregate
-        // events remain diagnostic only; applying them here would create a second
-        // unfenced writer and could overwrite a newer case version.
-        void aggregate; void aggregateEvent;
-        return null;
-    };
     const debateTraceStore = window.DebateTraceStore?.createStore?.({
         storage: chrome?.storage?.local // Only used to delete legacy persisted run history.
     }) || null;
-    window.__debateTraceStore = debateTraceStore;
     const compiledPromptEvidence = new Map();
     void debateTraceStore?.purgeStoredRuns?.();
 
@@ -2845,11 +2776,6 @@ document.addEventListener('click', (event) => {
     }[String(type || '')] || (window.DebateTraceSchema?.EVENT_TYPES?.includes?.(String(type || '')) ? String(type) : ''));
     debateAggregateStore?.subscribe?.((aggregate, aggregateEvent) => {
         if (!aggregateEvent || !aggregate?.runId) return;
-        disputStateMapView?.render?.({ ...aggregate, ruleHistory: debateRuleHistoryStore?.summary?.() || null });
-        queueDebateCaseWrite(() => syncAggregateArtifactsToCase(aggregate, aggregateEvent));
-        if (window.DebateRunStore?.isTerminal?.(aggregate)) {
-            void debateRuleHistoryStore?.record?.(aggregate).then(() => disputStateMapView?.render?.({ ...aggregate, ruleHistory: debateRuleHistoryStore.summary() }));
-        }
         if (aggregateEvent.type === window.DebateRunStore?.EVENTS?.START_REQUESTED) {
             debateTraceStore?.beginRun?.({
                 debateRunId: aggregate.runId,
@@ -3125,9 +3051,28 @@ document.addEventListener('click', (event) => {
             transportRequestId: envelope.transportRequestId,
             pipelineRunId: envelope.pipelineRunId,
             pipelineRoundId: envelope.pipelineRoundId,
+            answerEndMarkerSeen: envelope.metadata.answerEndMarkerSeen === true
+                || message?.answerEndMarkerSeen === true,
             requestId: envelope.transportRequestId || message.requestId || envelope.metadata.requestId || '',
             status: envelope.status
         };
+    };
+    const receiveResultsAnswerMessage = (message, { final = false } = {}) => {
+        if (!message || !window.MessageDelivery?.receive) return message;
+        const metadata = message.metadata || message.meta || {};
+        const alreadyVerified = metadata.answerEndMarkerSeen === true || message.answerEndMarkerSeen === true;
+        const normalized = window.MessageDelivery.receive({
+            ...message,
+            metadata: { ...metadata }
+        }, { final });
+        if (!normalized) return null;
+        if (alreadyVerified) {
+            normalized.metadata = {
+                ...(normalized.metadata || {}),
+                answerEndMarkerSeen: true
+            };
+        }
+        return normalized;
     };
     const hasOwnKey = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
     // A wait holds something to close with: a final answer or shown, unfinished text.
@@ -3524,7 +3469,7 @@ document.addEventListener('click', (event) => {
         const pipelineList = pipelinePanel.querySelector('.pipeline-list');
         const pipelineListHeader = pipelineList ? pipelineList.querySelector('.pipeline-list-header') : null;
         const PIPELINE_STORAGE_KEY = 'llmComparatorPipelines';
-        const PIPELINE_STORE_VERSION = 8;
+        const PIPELINE_STORE_VERSION = 9;
         const pipelineStore = {
             version: PIPELINE_STORE_VERSION,
             pipelines: {},
@@ -3542,7 +3487,6 @@ document.addEventListener('click', (event) => {
         let pipelineR1ManualDirty = false;
         let pipelineApplyingConfig = false;
         // Stage template of the applied pipeline ('' = a plain round pipeline).
-        let activeStageTemplate = '';
 
         const togglePipelineListCollapsed = () => {
             if (!pipelineList) return;
@@ -3566,28 +3510,39 @@ document.addEventListener('click', (event) => {
             });
         }
 
-        // Store version 8: the template «Custom» is now «Basic». The old template entry is dropped (the
-        // template is rebuilt from code), its active/last-saved mark moves to «Basic», and a pipeline the
-        // user saved as «Basic» keeps its data under the first free «Basic N».
+        // The name of the built-in template changed twice. Store version 8: «Custom» became «Basic». Store version 9: «Basic» became
+        // «Default» (the name Basic belongs to the engine and the schemas). The old template entry is dropped (the template is
+        // rebuilt from code), its active/last-saved mark moves to «Default», and a pipeline the user saved as «Default» keeps its
+        // data under the first free «Default N» (and one saved as «Basic» before version 8 under «Basic N»).
         const migrateBasicTemplateName = (value) => {
-            if ((Number(value.version) || 0) >= 8) return value;
+            const from = Number(value.version) || 0;
+            if (from >= 9) return value;
             const next = JSON.parse(JSON.stringify(value));
             const nameMaps = () => [next.pipelines, next.draftPlans, next.overrides?.longRoundLimits, next.overrides?.synthesizers, next.overrides?.profiles]
                 .filter((map) => map && typeof map === 'object');
             const taken = (name) => nameMaps().some((map) => name in map) || (Array.isArray(next.order) && next.order.includes(name));
-            const renameEverywhere = (from, to) => {
-                nameMaps().forEach((map) => { if (from in map) { map[to] = map[from]; delete map[from]; } });
-                if (Array.isArray(next.order)) next.order = next.order.map((name) => (name === from ? to : name));
-                ['active', 'lastSaved'].forEach((key) => { if (next[key] === from) next[key] = to; });
+            const renameEverywhere = (fromName, toName) => {
+                nameMaps().forEach((map) => { if (fromName in map) { map[toName] = map[fromName]; delete map[fromName]; } });
+                if (Array.isArray(next.order)) next.order = next.order.map((name) => (name === fromName ? toName : name));
+                ['active', 'lastSaved'].forEach((key) => { if (next[key] === fromName) next[key] = toName; });
             };
-            if (taken('Basic')) {
+            const freeName = (base) => {
                 let index = 2;
-                while (taken(`Basic ${index}`)) index += 1;
-                renameEverywhere('Basic', `Basic ${index}`);
+                while (taken(`${base} ${index}`)) index += 1;
+                return `${base} ${index}`;
+            };
+            const dropTemplate = (name, to) => {
+                nameMaps().forEach((map) => { delete map[name]; });
+                if (Array.isArray(next.order)) next.order = next.order.filter((item) => item !== name);
+                ['active', 'lastSaved'].forEach((key) => { if (next[key] === name) next[key] = to; });
+            };
+            if (from < 8) {
+                if (taken('Basic')) renameEverywhere('Basic', freeName('Basic'));
+                dropTemplate('Custom', 'Basic');
             }
-            nameMaps().forEach((map) => { delete map.Custom; });
-            if (Array.isArray(next.order)) next.order = next.order.filter((name) => name !== 'Custom');
-            ['active', 'lastSaved'].forEach((key) => { if (next[key] === 'Custom') next[key] = 'Basic'; });
+            // A pipeline of the user named «Default» makes way; the template «Basic» (of version 8) goes to «Default».
+            if (taken('Default')) renameEverywhere('Default', freeName('Default'));
+            dropTemplate('Basic', 'Default');
             return next;
         };
         const normalizePipelineStore = (input) => {
@@ -3702,9 +3657,6 @@ document.addEventListener('click', (event) => {
             'meta-синтез': 'interaction_meta_synthesis',
             'критический аудит': 'interaction_critical_audit'
         };
-        const DEFAULT_MODEL_INDICES = PipelineRuntime?.DEFAULT_MODEL_INDICES || [];
-        const DEFAULT_JUDGE_INDICES = PipelineRuntime?.DEFAULT_JUDGE_INDICES || [];
-        const DEFAULT_LATE_JUDGE_INDICES = PipelineRuntime?.DEFAULT_LATE_JUDGE_INDICES || [0];
 
         const getOrderedJudgePrompts = () => {
             const list = Array.isArray(judgeSystemPrompts) ? judgeSystemPrompts : [];
@@ -3757,17 +3709,6 @@ document.addEventListener('click', (event) => {
             return (match || ordered[0]).id;
         };
 
-        const getDebateParticipantRoleText = (index = 0) => {
-            const catalog = window.DebatePromptCatalog;
-            if (!catalog?.resolveParticipantRoleText) return '';
-            const stack = captureModelStackState('r2-models');
-            const storedRole = stack?.items?.[index]?.role || '';
-            const prompt = storedRole
-                ? (getJudgePromptById(storedRole) || getJudgePromptById(LEGACY_ROLE_LABEL_IDS[String(storedRole).toLowerCase()]))
-                : null;
-            return catalog.resolveParticipantRoleText(prompt?.label || storedRole, index);
-        };
-
         const resolveJudgePromptId = (value, index = 0) => {
             if (!value) return null;
             if (value === CUSTOM_ROLE_ID) return CUSTOM_ROLE_ID;
@@ -3783,14 +3724,6 @@ document.addEventListener('click', (event) => {
             if (roleIndex !== -1 && ordered[roleIndex]) return ordered[roleIndex].id;
             if (ordered[index % Math.max(1, ordered.length)]) return ordered[index % ordered.length].id;
             return null;
-        };
-
-        const buildJudgePromptOptionsHtml = (index) => {
-            return PipelineRuntime?.buildJudgePromptOptionsHtml?.({
-                index,
-                orderedPrompts: getRoleOptionPrompts(),
-                escapeHtml
-            }) || '';
         };
 
         const buildModelBlocksHtml = (activeIndices = [], withRole = false, options = {}) => {
@@ -4144,7 +4077,7 @@ document.addEventListener('click', (event) => {
                     .map((column) => ({ column, stack: column.querySelector('.model-stack') }))
             ];
             const modelStacks = stacks.filter((stack) => (
-                stack.classList.contains('model-stack') && stack !== synthesisStack && !stack.closest('.pipeline-intermediate-synth')
+                stack.classList.contains('model-stack') && stack !== synthesisStack && !stack.closest('.pipeline-intermediate-synth') && !stack.closest('.pipeline-control-step')
             ));
             const referenceStack = modelStacks[modelStacks.length - 1] || null;
             if (!referenceStack) return { aligned: false, reason: 'no-reference-stack' };
@@ -4182,12 +4115,10 @@ document.addEventListener('click', (event) => {
                 const stack = captureModelStackState(`r${round}-models`);
                 const participantIds = (stack?.items || []).filter((item) => item.send).map((item) => item.name).filter(Boolean);
                 if (!participantIds.length) continue;
-                const templateStage = activeStageTemplate ? window.StageTemplates?.get?.(activeStageTemplate)?.byNumber?.(round) : null;
                 rounds.push({
                     plannedStageId: `canvas-r${round}`,
-                    label: templateStage ? `${round}. ${templateStage.titleRu}` : (round === 1 ? 'R1 Models' : `R${round}`),
-                    purpose: templateStage?.purpose || (round === 1 ? 'position' : 'response'),
-                    ...(templateStage ? { instruction: templateStage.instruction, meta: { stageTemplate: activeStageTemplate, stageNumber: templateStage.n, phase: templateStage.phase, ...(templateStage.gateAfter ? { gateAfter: templateStage.gateAfter } : {}) } } : {}),
+                    label: round === 1 ? 'R1 Models' : `R${round}`,
+                    purpose: round === 1 ? 'position' : 'response',
                     participantIds,
                     participantBindings: (stack?.items || []).filter((item) => item.send).map((item) => ({ participantId: item.name, promptId: item.role || null }))
                 });
@@ -4299,8 +4230,11 @@ document.addEventListener('click', (event) => {
             const name = draftPlanStorageKey();
             const all = JSON.parse(JSON.stringify(getCustomRoundSettings()));
             const own = { ...(all[ref] || {}) };
-            if (value === '' || (field === 'task' && !String(value).trim())) delete own[field];
-            else own[field] = value;
+            const empty = value === '' || value == null || (Array.isArray(value) && !value.length)
+                || (value && typeof value === 'object' && !Array.isArray(value) && !Object.keys(value).length)
+                || (field === 'task' && !String(value).trim());
+            if (empty) delete own[field];
+            else own[field] = JSON.parse(JSON.stringify(value));
             if (Object.keys(own).length) all[ref] = own;
             else delete all[ref];
             customRoundSettings.set(name, all);
@@ -4308,6 +4242,126 @@ document.addEventListener('click', (event) => {
                 persistBasicSettings(name);
                 await persistPipelineStore();
             }
+        };
+        // The control steps (gate, route, owner) of a Basic pipeline: [{ after, step }], where `after` is the ref of the step
+        // before it on the canvas (a round, an intermediate synthesis or another control). The step is kept whole, as the
+        // schema has it; a window edits some of its fields (StageCard). Placed after `after` by placeControls.
+        const customControls = new Map();
+        const getCustomControls = () => customControls.get(draftPlanStorageKey()) || [];
+        const CONTROL_KINDS_CANVAS = ['gate', 'route', 'owner'];
+        const CONTROL_TITLE = { gate: 'Проверка', route: 'Маршрут', owner: 'Владелец' };
+        const controlStackId = (ref) => `ctl-${String(ref).replace(/[^A-Za-z0-9_-]+/g, '-')}-stack`;
+        const controlLinkId = (ref) => `svg-in-${String(ref).replace(/[^A-Za-z0-9_-]+/g, '-')}`;
+        // Saves the list for the pipeline; a saved pipeline keeps it at once (as the round card does), a draft only in memory.
+        const setCustomControls = async (list, { persist = true } = {}) => {
+            const name = draftPlanStorageKey();
+            customControls.set(name, JSON.parse(JSON.stringify(list)));
+            if (persist && !isDefaultPipelineName(name) && pipelineStore.pipelines[name]) {
+                persistBasicSettings(name);
+                await persistPipelineStore();
+            }
+        };
+        // The refs a window may name as a target: the steps of the schema in their order, the final synthesis included.
+        const schemaRefsForWindows = () => (basicSchemaFromPage(draftPlanForCanvas(getActiveDraftPlan()), null, { forSave: true }).steps || []).map((step) => step.ref);
+        // The next free ref of a kind: kind:1, kind:2, … (ids are digits, so the schema accepts them).
+        const freshControlRef = (kind) => {
+            const taken = new Set([...getCustomControls().map((item) => item.step.ref), ...schemaRefsForWindows()]);
+            let n = 1;
+            while (taken.has(`${kind}:${n}`)) n += 1;
+            return `${kind}:${n}`;
+        };
+        const controlAfterEdit = (step, edit) => {
+            if (step.kind === 'gate') return window.StageCard.gateAfterEdit(step, edit);
+            if (step.kind === 'route') return window.StageCard.routeAfterEdit(step, edit);
+            if (step.kind === 'owner') return window.StageCard.ownerAfterEdit(step, edit);
+            return step;
+        };
+        // The control with the ref gets the edit; the list is saved (a saved pipeline at once).
+        const commitControl = async (ref, edit) => {
+            const list = getCustomControls().map((item) => (item.step.ref === ref ? { ...item, step: controlAfterEdit(item.step, edit) } : item));
+            await setCustomControls(list);
+            updatePipelineAll();
+        };
+        // Inserts a control after `anchor` (a round or another control): the control that stood after the anchor now stands
+        // after the new one, so the chain stays a line. A new control is a draft (not persisted) until its window is filled.
+        const insertControlAfter = async (anchor, kind) => {
+            if (pipelineRunActive || !CONTROL_KINDS_CANVAS.includes(kind)) return false;
+            if (intermediateAfterRound(anchor)) {
+                showNotification(INTERMEDIATE_CONTROL_NOTE, 'warn');
+                return false;
+            }
+            const ref = freshControlRef(kind);
+            const list = getCustomControls().map((item) => (item.after === anchor ? { ...item, after: ref } : item));
+            // A new control is empty: what the owner has not set is not written (a missing kind or a missing condition is an error).
+            const kindDefault = kind === 'gate' ? { models: [] } : kind === 'route' ? { models: [], select: {} } : { models: [] };
+            list.push({ after: anchor, step: { ref, kind, ...kindDefault } });
+            await setCustomControls(list, { persist: false });
+            updatePipelineAll();
+            return true;
+        };
+        // A control is removed; the step after it stands after its anchor.
+        const deleteControl = async (ref) => {
+            const list = getCustomControls();
+            const gone = list.find((item) => item.step.ref === ref);
+            if (!gone) return;
+            const next = list.filter((item) => item !== gone).map((item) => (item.after === ref ? { ...item, after: gone.after } : item));
+            await setCustomControls(next);
+            updatePipelineAll();
+        };
+        // The canvas has an intermediate synthesis right after this round: a control there is refused (the schema
+        // needs the synthesis to stand directly after the round and before the next one).
+        const intermediateAfterRound = (anchor) => (draftPlanForCanvas(getActiveDraftPlan()).plannedStages || []).some((stage) => stage.outputIntent === 'working_synthesis' && stage.upstream?.includes(`canvas-${anchor}`));
+        const INTERMEDIATE_CONTROL_NOTE = 'Между раундом и его промежуточным синтезом проверку или маршрут не ставят: синтез стоит сразу после раунда и перед следующим раундом. Уберите синтез или шаг управления.';
+        // The card of a round or a synthesis keeps the choices the schema does not hold yet as drafts, by pipeline and ref:
+        // «выбранные этапы» before a step is picked, «число» before a number is typed. A draft shows until the owner makes the value.
+        const stepDrafts = new Map();
+        const stepDraftsOf = (ref) => stepDrafts.get(`${draftPlanStorageKey()}\n${ref}`) || {};
+        const stepLabel = (ref) => {
+            const round = /^r(\d+)$/.exec(ref);
+            if (round) return `Раунд ${round[1]}`;
+            const after = /^synth:planned-working-synthesis-after-canvas-r(\d+)$/.exec(ref);
+            if (after) return `Синтез после раунда ${after[1]}`;
+            return ref.startsWith('synth:') ? `Синтез (${ref.slice('synth:'.length)})` : ref;
+        };
+        // The rounds and syntheses before a step, in the schema's order; a switched-off one is marked by enabled.
+        // A planned intermediate synthesis that is not on the canvas stands after its round.
+        const stepsBefore = (ref) => {
+            const steps = (basicSchemaFromPage(draftPlanForCanvas(getActiveDraftPlan()), null, { forSave: true }).steps || [])
+                .filter((step) => step.kind === 'round' || step.kind === 'synthesis');
+            const planned = /^synth:planned-working-synthesis-after-canvas-r(\d+)$/.exec(ref);
+            let end = steps.findIndex((step) => step.ref === ref);
+            if (end < 0) end = planned ? steps.findIndex((step) => step.ref === `r${planned[1]}`) + 1 : steps.length;
+            return steps.slice(0, Math.max(0, end)).filter((step) => step.ref !== 'final').map((step) => ({
+                ref: step.ref,
+                label: stepLabel(step.ref),
+                enabled: (step.models || []).some((model) => model.enabled !== false)
+            }));
+        };
+        // A change of a field in the card of a step (the round card, the synthesis window). The value goes to the schema's field
+        // (saved at once, like the round card); a choice without a value yet is a draft. max: the number of enabled models.
+        const commitStepField = async (ref, field, value, max = 0) => {
+            const current = getCustomRoundSettings()[ref] || {};
+            const drafts = { ...stepDraftsOf(ref) };
+            let key = field;
+            let stored = value;
+            if (field === 'steps') {
+                key = 'input';
+                stored = window.StageCard.stepsAfterToggle(Array.isArray(current.input) ? current.input : [], value.ref, value.checked);
+            }
+            delete drafts[key];
+            if (key === 'input' && (stored === 'steps' || (Array.isArray(stored) && !stored.length))) { drafts.input = 'steps'; stored = ''; }
+            if (key === 'require') {
+                if (stored === 'count') {
+                    stored = typeof current.require === 'number' ? current.require : '';
+                    if (stored === '') drafts.require = 'count';
+                } else if (typeof stored === 'number' && (!Number.isSafeInteger(stored) || stored < 1 || stored > max)) {
+                    showNotification(`Число ответов: от 1 до ${max}.`, 'warn');
+                    return;
+                }
+            }
+            if (key === 'output') stored = window.StageCard.outputAfterEdit(current.output, value);
+            stepDrafts.set(`${draftPlanStorageKey()}\n${ref}`, drafts);
+            await setCustomRoundSetting(ref, key, stored);
         };
         const capturePipelineConfig = ({ basedOn = '' } = {}) => {
             const modelStacks = {
@@ -4340,7 +4394,8 @@ document.addEventListener('click', (event) => {
         };
 
         const LEGACY_EXAMPLE_PIPELINE_NAMES = ['Research & Analysis', 'Content Gen', 'Idea Validation'];
-        const RETIRED_PIPELINE_PRESET_IDS = ['DELTA'];
+        // The templates Polishing, Delta, Test, Research and Architecture are removed: a saved pipeline of theirs is dropped on load.
+        const RETIRED_PIPELINE_PRESET_IDS = ['DELTA', 'POLISHING', 'TEST', 'UNIVERSAL_RESEARCH', 'ARCHITECTURE'];
         const getAllPipelineModelNames = () => (Array.isArray(PIPELINE_MODELS) ? PIPELINE_MODELS : [])
             .map((model) => model?.name)
             .filter(Boolean);
@@ -4386,7 +4441,6 @@ document.addEventListener('click', (event) => {
             profileId = '',
             profileVersion = '',
             resourceBudget = null,
-            stageTemplate = '',
             noMiniPrompts = false
         } = {}) => {
             const targetRounds = Math.max(1, Math.min(50, Number(roundLimit) || 1));
@@ -4394,18 +4448,8 @@ document.addEventListener('click', (event) => {
                 'r1-models': buildPresetModelStack(selectedModels, { withRoles: false })
             };
             for (let round = 2; round <= targetRounds; round++) {
-                // Universal and Test attach no mini prompt by default (None); other presets keep theirs.
-                modelStacks[`r${round}-models`] = buildPresetModelStack(selectedModels, { withRoles: !stageTemplate && !noMiniPrompts, roles });
-            }
-            // A stage template decides per stage who works (the rest stay visible, unsent).
-            if (stageTemplate) {
-                const ordered = orderModelNamesForPipeline(selectedModels);
-                Object.entries(modelStacks).forEach(([stackId, stack]) => {
-                    const framework = window.StageTemplates?.get?.(stageTemplate);
-                    const stage = framework?.byNumber?.(Number(stackId.replace(/\D+/g, '')));
-                    const wanted = new Set(framework?.participantsFor?.(stage, ordered) || []);
-                    stack.items.forEach((item) => { item.send = wanted.has(item.name); });
-                });
+                // The template attaches no mini prompt by default (None).
+                modelStacks[`r${round}-models`] = buildPresetModelStack(selectedModels, { withRoles: !noMiniPrompts, roles });
             }
             return {
                 version: 3,
@@ -4425,7 +4469,6 @@ document.addEventListener('click', (event) => {
                     profileId,
                     profileVersion,
                     resourceBudget: resourceBudget ? { ...resourceBudget } : null,
-                    ...(stageTemplate ? { stageTemplate } : {}),
                     roles: roles.slice(),
                     // A fixed preset's round plan is deliberately explicit: each
                     // wave emits these artifacts and hands them to the next wave.
@@ -4466,7 +4509,6 @@ document.addEventListener('click', (event) => {
                     profileId: definition.profileId || 'UNIVERSAL_STANDARD',
                     profileVersion: window.DebateProfileSchema?.BUILTIN_PROFILES?.[definition.profileId || 'UNIVERSAL_STANDARD']?.version || '',
                     resourceBudget: definition.resourceBudget || null,
-                    stageTemplate: definition.stageTemplate || '',
                     noMiniPrompts: definition.noMiniPrompts === true
                 });
                 return [definition.name, definition.disabled ? { ...config, disabled: true, disabledReason: definition.disabledReason || '' } : config];
@@ -4520,7 +4562,7 @@ document.addEventListener('click', (event) => {
             config.protocol.synthesizer = synthesizer;
             const profileId = getProfileOverride(key);
             if (profileId) {
-                const profile = pipelineProfileView?.store?.get?.(profileId) || window.DebateProfileSchema?.BUILTIN_PROFILES?.[profileId];
+                const profile = window.DebateProfileSchema?.BUILTIN_PROFILES?.[profileId];
                 config.protocol.profileId = profileId;
                 config.protocol.profileVersion = profile?.version || config.protocol.profileVersion || '';
             }
@@ -4657,14 +4699,36 @@ document.addEventListener('click', (event) => {
             return changed;
         };
 
+        const modelBlockName = (block) => block.querySelector('.model-name')?.textContent?.trim() || '';
+
+        // Puts the blocks of a stack in the saved order (the order of the schema); a block without a saved item stays after them.
+        const orderModelStackBlocks = (stackId, state) => {
+            if (!state || !Array.isArray(state.items)) return;
+            const stack = document.getElementById(stackId);
+            const blocks = Array.from(stack?.querySelectorAll('.model-block') || []);
+            if (!blocks.length) return;
+            const ordered = [];
+            state.items.forEach((item) => {
+                const block = blocks.find((candidate) => !ordered.includes(candidate) && modelBlockName(candidate) === item.name);
+                if (block) ordered.push(block);
+            });
+            const sequence = [...ordered, ...blocks.filter((block) => !ordered.includes(block))];
+            if (sequence.every((block, index) => block === blocks[index])) return;
+            const anchor = blocks[blocks.length - 1].nextSibling;
+            sequence.forEach((block) => stack.insertBefore(block, anchor));
+        };
+
+        // Flags and roles go to the block of the same model name, never by position: the canvas may list the models in another order.
         const applyModelStackState = (stackId, state, sendOverrides = null) => {
             if (!state || !Array.isArray(state.items)) return;
             const stack = document.getElementById(stackId);
             if (!stack) return;
             const blocks = Array.from(stack.querySelectorAll('.model-block'));
-            blocks.forEach((block, index) => {
-                const item = state.items[index];
-                if (!item) return;
+            state.items.forEach((item, index) => {
+                const block = blocks.find((candidate) => modelBlockName(candidate) === item.name);
+                if (!block) return;
+                // A legacy send mark was saved by the position of the block on the canvas.
+                const position = blocks.indexOf(block);
                 const inputCb = block.querySelector('.model-input-checkbox');
                 const sendCb = block.querySelector('.model-send-checkbox');
                 const inputValue = typeof item.input === 'boolean'
@@ -4673,7 +4737,7 @@ document.addEventListener('click', (event) => {
                 if (inputCb && typeof inputValue === 'boolean') {
                     inputCb.checked = inputValue;
                 }
-                const sendFallback = Array.isArray(sendOverrides?.[stackId]) ? sendOverrides[stackId][index] : undefined;
+                const sendFallback = Array.isArray(sendOverrides?.[stackId]) ? sendOverrides[stackId][position] : undefined;
                 const sendValue = typeof item.send === 'boolean' ? item.send : sendFallback;
                 if (sendCb && typeof sendValue === 'boolean') {
                     sendCb.checked = sendValue;
@@ -4782,27 +4846,6 @@ document.addEventListener('click', (event) => {
                 html += `<polygon points="${W - 6},${y - 4} ${W},${y} ${W - 6},${y + 4}" class="arrow-head inactive"/>`;
             });
 
-            setSvgContent(svg, html);
-        };
-
-        const drawHorizontalConnectors = (svgId, stackId, colorClass) => {
-            const svg = document.getElementById(svgId);
-            if (!svg) return;
-
-            const indices = getModelSendIndices(stackId);
-            if (indices.length === 0) {
-                clearNode(svg);
-                return;
-            }
-
-            const stack = document.getElementById(stackId);
-            const W = 50;
-            let html = '';
-            indices.forEach((i) => {
-                const y = getBlockCenterYRelativeTo(stack, i, svg);
-                html += `<line x1="0" y1="${y}" x2="${W - 6}" y2="${y}" class="connector-line ${colorClass} flow-anim"/>`;
-                html += `<polygon points="${W - 6},${y - 4} ${W},${y} ${W - 6},${y + 4}" class="arrow-head ${colorClass}"/>`;
-            });
             setSvgContent(svg, html);
         };
 
@@ -4928,6 +4971,98 @@ document.addEventListener('click', (event) => {
             }
         };
 
+        // The control steps on the canvas (customControls): a card column placed right after its anchor (a round or the control
+        // before it), with the link that leads into it. Rebuilt from the list on each update, so the canvas shows the list.
+        // The outgoing link of a chain (the group that followed the anchor) now leads from the last control to the next step.
+        const controlledAfter = (ref) => getCustomControls().some((item) => item.after === ref);
+        // The bridge for the synthesis toggle (outside this block): a control after the round refuses an intermediate synthesis.
+        window.__controlledAfter = controlledAfter;
+        const buildControlColumn = (step, editable) => {
+            const column = document.createElement('div');
+            column.className = 'stage-column pipeline-control-step';
+            column.dataset.controlRef = step.ref;
+            column.dataset.controlKind = step.kind;
+            const header = document.createElement('div');
+            header.className = 'stage-header-row';
+            const label = document.createElement('div');
+            label.className = 'stage-label';
+            const title = document.createElement('span');
+            title.className = 'pipeline-control-title';
+            title.textContent = `${CONTROL_TITLE[step.kind] || step.kind} ${step.ref}`;
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'pipeline-control-delete-btn';
+            remove.dataset.controlDelete = step.ref;
+            remove.textContent = '×';
+            remove.title = 'Удалить шаг управления';
+            remove.setAttribute('aria-label', `Удалить: ${step.ref}`);
+            remove.disabled = !editable;
+            label.append(title, ' ', remove);
+            header.append(label);
+            const stack = document.createElement('div');
+            stack.className = 'model-stack';
+            stack.id = controlStackId(step.ref);
+            const card = document.createElement('button');
+            card.type = 'button';
+            card.className = 'pipeline-control-card';
+            card.dataset.controlCard = step.ref;
+            const summary = window.StageCard?.controlSummary?.(step) || '';
+            card.textContent = summary || 'настройте в окне';
+            stack.append(card);
+            column.append(header, stack);
+            return column;
+        };
+        const syncControlColumns = () => {
+            if (!pipelinePanel) return;
+            pipelinePanel.querySelectorAll('.pipeline-control-step, .pipeline-control-link').forEach((node) => node.remove());
+            const editable = !pipelineRunActive;
+            const entries = getCustomControls();
+            const byAfter = new Map(entries.map((item) => [item.after, item]));
+            const placed = new Set();
+            const drawn = [];
+            for (let round = 1; round <= roundCounter; round += 1) {
+                let anchor = `r${round}`;
+                let column = pipelinePanel.querySelector(`.stage-column[data-round="${round}"]:not(.pipeline-intermediate-synth):not(.pipeline-control-step)`);
+                let item = byAfter.get(anchor);
+                let last = null;
+                while (item && column && !placed.has(item.step.ref)) {
+                    placed.add(item.step.ref);
+                    const group = document.createElement('div');
+                    group.className = 'connector-group pipeline-control-link';
+                    group.innerHTML = `<svg class="connector-svg" id="${controlLinkId(item.step.ref)}"></svg>`;
+                    const card = buildControlColumn(item.step, editable);
+                    column.after(group, card);
+                    drawn.push({ ref: item.step.ref, from: anchor });
+                    anchor = item.step.ref;
+                    column = card;
+                    last = { column: card, round };
+                    item = byAfter.get(item.step.ref);
+                }
+                if (last) last.round = round;
+                if (last) drawn.push({ outgoing: true, column: last.column, round });
+            }
+            // Links: into each control from its anchor; out of the last control of a chain to the next round or the synthesis.
+            const hasSynthesisFlow = !!synthesisStack && synthesisColumn?.hidden !== true;
+            drawn.forEach((link) => {
+                if (!link.outgoing) {
+                    const source = /^r\d+$/.test(link.from) ? `${link.from}-models` : controlStackId(link.from);
+                    drawMergeSplitConnector(controlLinkId(link.ref), source, controlStackId(link.ref), 'brain-flow', {
+                        sourceMode: /^r\d+$/.test(link.from) ? 'send' : 'all',
+                        targetMode: 'all'
+                    });
+                    return;
+                }
+                const outgoing = link.column.nextElementSibling?.querySelector?.('svg.connector-svg');
+                if (!outgoing) return;
+                const source = controlStackId(link.column.dataset.controlRef);
+                if (link.round < roundCounter) {
+                    drawMergeSplitConnector(outgoing.id, source, `r${link.round + 1}-models`, 'brain-flow', { sourceMode: 'all', targetMode: 'input' });
+                } else if (hasSynthesisFlow) {
+                    drawMergeSplitConnector(outgoing.id, source, 'synthesis-stack', 'brain-flow', { sourceMode: 'all', targetMode: 'synthesis' });
+                }
+            });
+        };
+
         // Intermediate synthesis (working_synthesis stage upstream of canvas-rK)
         // is a single card column between round K and round K+1. The original
         // K->K+1 connector keeps its id (svg-rK-rK+1) and now ends at the card;
@@ -4958,8 +5093,7 @@ document.addEventListener('click', (event) => {
                 moveInsertButton(round, roundHostFor(round));
                 el.remove();
             });
-            const lifecycle = String(window.DebateApplication?.getState?.()?.lifecycle || 'IDLE').toUpperCase();
-            const editable = !['PLANNING', 'RUNNING', 'PAUSED', 'CANCELLING'].includes(lifecycle);
+            const editable = true;
             wanted.forEach((stage, round) => {
                 let column = pipelinePanel.querySelector(`.stage-column.pipeline-intermediate-synth[data-synth-after-round="${round}"]`);
                 if (!column) {
@@ -5003,6 +5137,7 @@ document.addEventListener('click', (event) => {
 
         let deferredPipelineLayoutFrame = 0;
         const updatePipelineAll = ({ deferFinalLayout = true } = {}) => {
+            syncControlColumns();
             const synthRounds = syncIntermediateSynthColumns();
             updatePipelineLayout();
             syncCustomRoleOption();
@@ -5044,7 +5179,7 @@ document.addEventListener('click', (event) => {
             const hasSynthesisFlow = !!synthesisStack && synthesisColumn?.hidden !== true;
 
             if (roundCounter === 1) {
-                if (hasSynthesisFlow) {
+                if (hasSynthesisFlow && !controlledAfter('r1')) {
                     drawMergeSplitConnector('svg-r-last-synthesis', 'r1-models', 'synthesis-stack', 'brain-flow', {
                         sourceMode: 'send',
                         targetMode: 'synthesis'
@@ -5052,6 +5187,7 @@ document.addEventListener('click', (event) => {
                 }
             } else {
                 for (let r = 1; r < roundCounter; r++) {
+                    if (controlledAfter(`r${r}`)) continue;
                     if (synthRounds.has(r)) {
                         drawMergeSplitConnector(`svg-r${r}-r${r + 1}`, `r${r}-models`, `synth-r${r}-stack`, 'brain-flow', {
                             sourceMode: 'send',
@@ -5068,7 +5204,7 @@ document.addEventListener('click', (event) => {
                         });
                     }
                 }
-                if (hasSynthesisFlow) {
+                if (hasSynthesisFlow && !controlledAfter(`r${roundCounter}`)) {
                     drawMergeSplitConnector('svg-r-last-synthesis', `r${roundCounter}-models`, 'synthesis-stack', 'brain-flow', {
                         sourceMode: 'send',
                         targetMode: 'synthesis'
@@ -5109,8 +5245,7 @@ document.addEventListener('click', (event) => {
 
         const syncPipelineFlowVisualState = () => {
             if (!pipelinePanel) return;
-            const runtime = debateApplication?.getOrchestrator?.()?.getState?.() || null;
-            const activeStage = runtime?.stages?.find?.((stage) => stage.status === 'running' || stage.status === 'awaiting_participant') || null;
+            const activeStage = null;
             pipelinePanel.dataset.pipelineActiveStage = activeStage?.stageInstanceId || '';
             pipelinePanel.dataset.pipelineActiveRoundId = activeStage?.stageInstanceId || '';
             let status = pipelinePanel.querySelector('.debate-plan-stage-status');
@@ -5140,7 +5275,7 @@ document.addEventListener('click', (event) => {
         let customRunProgress = null;
         const readPipelineEngineState = () => {
             if (customRunProgress) return customRunProgress;
-            try { return debateApplication?.getOrchestrator?.()?.getState?.() || null; } catch (_) { return null; }
+            return null;
         };
         const pipelinePlannedStageIdFor = (column) => {
             if (column.classList.contains('pipeline-intermediate-synth')) return `planned-working-synthesis-after-canvas-r${column.dataset.synthAfterRound}`;
@@ -5192,26 +5327,10 @@ document.addEventListener('click', (event) => {
             debateRunToggleBtn?.setAttribute('aria-busy', String(Boolean(isRunning)));
         };
 
-        const debateExecutionContext = window.DebateExecutionContext?.createExecutionContext?.() || null;
-        const ensureDebateExecutionContext = () => {
-            if (!debateExecutionContext?.get?.()) {
-                debateExecutionContext?.begin?.(activePipelineRunContext?.pipelineRunId || 'debate-page', {
-                    abortController: activePipelineAbortController || undefined
-                });
-            }
-            return debateExecutionContext;
-        };
         const dispatchDebateRunEvent = (type, payload = {}) => recordDebateDomainEvent(type, payload);
         const replaceAggregateProtocolState = (protocolState) => {
             if (!debateAggregateStore) return protocolState;
             dispatchDebateRunEvent(window.DebateRunStore.EVENTS.PROTOCOL_STATE_REPLACED, { protocolState });
-            return debateAggregateStore.getState().protocolState;
-        };
-        const syncAggregateProtocolState = (protocolState, reason = 'runtime_projection') => {
-            if (!debateAggregateStore || !protocolState) return protocolState;
-            dispatchDebateRunEvent(window.DebateRunStore.EVENTS.PROTOCOL_STATE_SYNCED, {
-                protocolState, reason, protocolStatus: String(protocolState.status || '')
-            });
             return debateAggregateStore.getState().protocolState;
         };
         const getDebateAggregateState = () => debateAggregateStore?.getState?.() || null;
@@ -5219,17 +5338,11 @@ document.addEventListener('click', (event) => {
             debateRunState.status = String(aggregate?.status || 'idle');
             debateRunState.pauseReason = ['paused', 'technical_pause'].includes(debateRunState.status)
                 ? String(aggregate?.pauseReason || '') : '';
-            window.__debateRunAggregate = aggregate;
             // The engine can pause or continue without a page call (stage gate): keep the controls true.
             try { updateDebateButtonsUi(); } catch (_) { /* not initialised yet */ }
             // Stage events commit to the aggregate; the canvas follows the same change (engine state, no polling).
             try { syncPipelineRunStateVisuals(); } catch (_) { /* canvas not initialised yet */ }
         });
-        window.__getDebateRunAggregate = getDebateAggregateState;
-        window.__exportDebateDomainEvents = () => (getDebateAggregateState()?.events || []).slice();
-        window.__projectDebateTurns = (sessionId = null) => window.DebateProjections?.projectTurns?.(
-            getDebateAggregateState(), sessionId == null ? {} : { sessionId }
-        ) || [];
         // A run that was left unfinished when the page closed is NOT adopted as a "technical pause":
         // that took the Run button (it showed "pause" right after a reload, before any model was
         // chosen, and kept it) and its "Continue" only restarted the run anyway. It is dropped; a new
@@ -5242,16 +5355,9 @@ document.addEventListener('click', (event) => {
         const makeInitialRuntimeState = () => window.DebateFSM.createState();
         const getSerialDebateState = () => getDebateAggregateState()?.protocolState || makeInitialRuntimeState();
         window.__getSerialDebateState = getSerialDebateState;
-        Object.defineProperty(window, '__serialDebateState', { configurable: true, get: getSerialDebateState });
         window.__setSerialDebateStateForTest = (nextState = {}) => {
             if (!(typeof process !== 'undefined' && process?.env?.NODE_ENV === 'test') && window.__RESULTS_TEST_DEBUG__ !== true) return getSerialDebateState();
             return replaceAggregateProtocolState({ ...getSerialDebateState(), ...nextState });
-        };
-        const markNewPageModelOpened = (state, targetModel, forceNewTabs) => {
-            if (!forceNewTabs || !newPagesCheckbox || !targetModel) return;
-            const opened = new Set(state?.newPagesOpenedModels || []);
-            opened.add(targetModel);
-            if (getSelectedLLMs().every((name) => opened.has(name))) resetNewPagesCheckboxAfterOpen();
         };
 
         const getDebateRoundLimit = () => {
@@ -5269,7 +5375,7 @@ document.addEventListener('click', (event) => {
         };
         function getSelectedPipelinePresetId() {
             const api = window.PipelinePresets;
-            const fallback = api?.DEFAULT_PRESET_ID || 'UNIVERSAL_STANDARD';
+            const fallback = api?.DEFAULT_PRESET_ID || 'CUSTOM';
             const activeName = String(pipelineStore?.active || getPipelineHeaderName()).trim();
             const activeConfig = activeName ? getPipelineConfigByName(activeName) : null;
             const configured = String(activeConfig?.protocol?.presetId || '').trim();
@@ -5304,11 +5410,9 @@ document.addEventListener('click', (event) => {
                     uiRoundLimit: getDebateRoundLimit()
                 })
                 : null;
-            const effectiveRoundLimit = runtimeLimits ? runtimeLimits.roundLimit : getDebateRoundLimit();
             const maxTotalStages = runtimeLimits?.maxTotalStages || getSelectedPipelinePresetMeta()?.reasoningBudget?.maxTotalStages || 50;
             const selectedProfileId = String(protocol.profileId || getSelectedPipelinePresetMeta()?.profileId || presetId || '');
-            const selectedProfile = pipelineProfileView?.store?.get?.(selectedProfileId)
-                || window.DebateProfileSchema?.BUILTIN_PROFILES?.[selectedProfileId]
+            const selectedProfile = window.DebateProfileSchema?.BUILTIN_PROFILES?.[selectedProfileId]
                 || null;
             if (!api?.normalizePipelinePreset) {
                 return Object.freeze({
@@ -5403,10 +5507,6 @@ document.addEventListener('click', (event) => {
         };
         const setDebateRoundLimitValue = (value) => {
             if (!debateRoundLimitSelect) return;
-            if (activeStageTemplate && !pipelineApplyingConfig) {
-                showNotification('Число этапов задаёт шаблон: его нельзя менять кнопками раундов.', 'info');
-                return;
-            }
             if (String(value) === 'infinite') {
                 debateRoundLimitSelect.value = 'infinite';
                 debateRoundLimitSelect.dispatchEvent(new Event('change', { bubbles: true }));
@@ -5490,21 +5590,6 @@ document.addEventListener('click', (event) => {
             select.setAttribute('aria-label', `Debate length: ${label}`);
             select.dataset.currentLabel = label;
         };
-        const setDebateLengthByDelta = (delta) => {
-            const select = document.getElementById('debate-length-select');
-            if (!select) return;
-            const options = getDebateLengthOptions();
-            if (!options.length) return;
-            const currentIndex = Math.max(0, options.findIndex((option) => option.value === select.value));
-            const nextIndex = Math.max(0, Math.min(options.length - 1, currentIndex + delta));
-            if (nextIndex === currentIndex) {
-                syncDebateLengthStepperUi();
-                return;
-            }
-            select.value = options[nextIndex].value;
-            select.dispatchEvent(new Event('change', { bubbles: true }));
-            syncDebateLengthStepperUi();
-        };
         const syncDebateAutoToggleButton = () => {
             if (!debateAutoToggleBtn) return;
             const isAuto = isDebateAutoPolicy();
@@ -5556,15 +5641,11 @@ document.addEventListener('click', (event) => {
                 debateRunState.status = debatePaused ? 'paused' : (pipelineRunActive ? 'running' : 'idle');
                 debateRunState.pauseReason = debatePaused ? reason : '';
             }
-            if (!debatePaused && debateExecutionContext?.hasApprovalWaiter?.()) {
-                resolveDebateApproval();
-            } else if (!debatePaused && typeof debateApprovalBridge.resolve === 'function') {
+            if (!debatePaused && typeof debateApprovalBridge.resolve === 'function') {
                 debateApprovalBridge.resolve();
             } else {
                 updateDebateButtonsUi();
             }
-            if (debatePaused) void debateApplication?.pause?.(reason);
-            else void debateApplication?.resume?.();
         };
         // "The answers I see in the feed": for every model of the open round that the wait holds nothing
         // for, take the text of its LIVE feed card (the one of the current request: not closed, not
@@ -5592,15 +5673,6 @@ document.addEventListener('click', (event) => {
         // ---- Engine pauses: a stage ended, a gate, a failed stage, a question for the owner ----
         const ownerAskDialog = document.getElementById('owner-ask-dialog');
         let pendingOwnerAsks = null;
-        const withOwnerAnswers = (task) => {
-            const notes = [
-                ...(activePipelineRunContext?.runNotes || []),
-                window.OwnerAsk?.toInstruction?.(activePipelineRunContext?.ownerAnswers || []) || ''
-            ].filter(Boolean).join('\n');
-            if (!notes) return task;
-            // A contract is immutable: rebuild it with the owner's answers as the current instruction.
-            return { ...task, contractKind: 'raw', currentInstruction: [task.currentInstruction, notes].filter(Boolean).join('\n') };
-        };
         const openOwnerAsk = (info) => {
             if (!ownerAskDialog || !window.OwnerAsk) return;
             pendingOwnerAsks = info;
@@ -5627,7 +5699,7 @@ document.addEventListener('click', (event) => {
                 if (activePipelineRunContext) (activePipelineRunContext.ownerAnswers ||= []).push(...answers.map((item) => ({ ...item, stage: info.plannedStageId || '' })));
                 globalThis.MessageDelivery?.batchEvent?.('owner_answer', { stage: info.plannedStageId || null, answered: answers.length, asked: (info.asks || []).length });
             } else if (action === 'skip') {
-                globalThis.MessageDelivery?.batchEvent?.('owner_answer', { stage: info.plannedStageId || null, answered: 0, asked: (info.asks || []).length, skipped: true });
+                globalThis.MessageDelivery?.batchEvent?.('owner_answer', { stage: info.label || info.plannedStageId || null, answered: 0, asked: (info.asks || []).length, skipped: true });
             }
             pendingOwnerAsks = null;
             ownerAskDialog.close();
@@ -5635,34 +5707,10 @@ document.addEventListener('click', (event) => {
             if (typeof info.resolve === 'function') { info.resolve([]); return; }
             if (action !== 'later') setDebatePausedState(false, action === 'answer' ? 'owner_answer' : 'owner_skip');
         });
-        const handleEnginePause = (info = {}) => {
-            globalThis.MessageDelivery?.batchEvent?.('run_paused', {
-                reason: info.reason || null, stage: info.plannedStageId || null, gate: info.gate || null,
-                asks: (info.asks || []).length, verdict: info.verdict || null
-            });
-            const where = info.label ? `«${info.label}»` : (info.plannedStageId || 'этап');
-            const verdict = info.verdict === 'issues_found' ? ' Проверка нашла блокирующие замечания.' : (info.verdict === 'pass' ? ' Проверка: замечаний нет.' : '');
-            if (info.reason === 'ask') {
-                showNotification(`${where}: нужен ответ владельца.`, 'info');
-                openOwnerAsk(info);
-            } else if (info.reason === 'gate') {
-                showNotification(`Ворота ${info.gate || ''} после ${where}: проверьте результат и нажмите «Продолжить».${verdict}`, 'info');
-            } else if (info.reason === 'participants_unavailable') {
-                showNotification(`Следующий этап (${info.plannedStageId || '?'}): не осталось доступных моделей (${info.participantId || 'участник'} выбыл из запуска). Верните модель (вкладка, Get it) и нажмите «Продолжить», либо остановите запуск.`, 'warn');
-            } else if (info.reason === 'stage_failed') {
-                showNotification(`${where}: ни одна модель не дала принятого ответа. Проверьте вкладки (Get it); «Продолжить» повторит этап.`, 'warn');
-            } else {
-                showNotification(`${where} выполнен. Нажмите «Продолжить».${verdict}`, 'info');
-            }
-        };
-        let debateApplication = null;
         let phantomRunStateReported = false;
         const getDebateRunControls = () => {
             if (customAbortController) {
                 return { action: 'stop', icon: 'ti ti-player-stop', title: 'Остановить Basic', active: true, enabled: true, stepEnabled: false };
-            }
-            if (polishingAbortController || deltaAbortController) {
-                return { action: 'stop', icon: 'ti ti-player-stop', title: polishingAbortController ? 'Остановить Polishing' : 'Остановить Delta', active: true, enabled: true, stepEnabled: false };
             }
             let aggregate = debateAggregateStore?.getState?.() || null;
             // No run exists on this page (none started here, no engine): whatever state the aggregate
@@ -5670,9 +5718,7 @@ document.addEventListener('click', (event) => {
             // pause / resume / approve. Seen as "Run is on pause right after opening the page".
             // An engine that is RUNNING but has nothing left to do (all rounds done, waiting for
             // finalization) is not a live run for the button: it shows Run (a new run replaces it).
-            const engineState = debateApplication?.getOrchestrator?.()?.getState?.() || null;
-            const engineIdle = Boolean(engineState?.idle) && !pipelineRunActive;
-            const hasLiveRun = pipelineRunActive || (Boolean(engineState) && !engineIdle);
+            const hasLiveRun = pipelineRunActive;
             const phantom = !hasLiveRun && aggregate && String(aggregate.status || 'idle') !== 'idle';
             if (phantom) {
                 if (!phantomRunStateReported) {
@@ -5683,12 +5729,10 @@ document.addEventListener('click', (event) => {
                 aggregate = null;
             }
             const status = String(aggregate?.status || 'idle');
-            const lifecycle = String(debateApplication?.getOrchestrator?.()?.getState?.()?.lifecycle || '');
-            const startPending = ['STARTING', 'RECONCILING', 'FINALIZING'].includes(lifecycle)
-                || (pipelineRunActive && !['running', 'awaiting_approval', 'paused', 'technical_pause', 'finalization_pending'].includes(status));
+            const startPending = pipelineRunActive && !['running', 'awaiting_approval', 'paused', 'technical_pause', 'finalization_pending'].includes(status);
             return window.DebateController?.deriveRunControls?.({
                 aggregate,
-                approvalWaiting: hasLiveRun && debateExecutionContext?.hasApprovalWaiter?.() === true,
+                approvalWaiting: false,
                 startPending,
                 autoMode: isDebateAutoPolicy()
             }) || {
@@ -5714,18 +5758,9 @@ document.addEventListener('click', (event) => {
         };
         const resolveDebateApproval = () => {
             dispatchDebateRunEvent(window.DebateRunStore?.EVENTS?.APPROVAL_GRANTED, {});
-            debateExecutionContext?.resolveApproval?.(true);
             updateDebateButtonsUi();
         };
         debateApprovalBridge.resolve = resolveDebateApproval;
-        const rejectDebateApproval = (error) => {
-            debateExecutionContext?.rejectApproval?.(error);
-            updateDebateButtonsUi();
-        };
-        const cleanupDebateApprovalWaiter = () => {
-            debateExecutionContext?.clearApproval?.();
-            updateDebateButtonsUi();
-        };
         const buildDebateActionPromptSuffix = () => {
         const lenValue = (debateLengthSelect?.value || '500').trim();
         const senderValue = (debateSenderSelect?.value || '').trim();
@@ -5743,58 +5778,11 @@ document.addEventListener('click', (event) => {
         }
         return extra.length ? `\n\n${extra.join('\n')}` : '';
     };
-        const waitForDebateApproval = async ({ signal, timeoutMs = 0 } = {}) => {
-            const isAuto = isDebateAutoPolicy();
-            if (isAuto && !debatePaused) {
-                debateRunState.turnCount = Number(debateRunState.turnCount || 0) + 1;
-                debateRunState.maxTurns = getDebateMaxTurns();
-                if (debateRunState.turnCount <= debateRunState.maxTurns) {
-                    updateDebateButtonsUi();
-                    return true;
-                }
-                setDebatePausedState(true, 'max_turns_reached');
-                showNotification(`Debate paused after ${debateRunState.maxTurns} auto turns.`, 'warn');
-            }
-            if (debateExecutionContext?.hasApprovalWaiter?.()) return true;
-            dispatchDebateRunEvent(window.DebateRunStore?.EVENTS?.APPROVAL_REQUESTED, { model: '' });
-            await new Promise((resolve, reject) => {
-                let timeoutId = null;
-                const abort = () => {
-                    if (timeoutId) clearTimeout(timeoutId);
-                    rejectDebateApproval(new DOMException('Pipeline approval cancelled', 'AbortError'));
-                };
-                if (signal?.aborted) {
-                    reject(new DOMException('Pipeline approval cancelled', 'AbortError'));
-                    return;
-                }
-                ensureDebateExecutionContext()?.setApprovalWaiter?.({
-                    resolve,
-                    reject,
-                    cleanup: () => {
-                        if (timeoutId) clearTimeout(timeoutId);
-                        signal?.removeEventListener?.('abort', abort);
-                    }
-                });
-                signal?.addEventListener?.('abort', abort, { once: true });
-                if (timeoutMs > 0) {
-                    timeoutId = setTimeout(() => {
-                        rejectDebateApproval(new Error('Pipeline approval timeout'));
-                    }, timeoutMs);
-                }
-                updateDebateButtonsUi();
-            });
-            return true;
-        };
         updateDebateButtonsUi();
 
-        const DEBATE_AUTO_TURN_RETRY_LIMIT = 1;
-        const DEBATE_AUTO_TURN_RETRY_DELAY_MS = 1200;
-        const sleepDebateMs = (ms) => new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
         const getRoundModelsState = (roundIndex) => {
             return PipelineRuntime?.getRoundModelsState?.(document, roundIndex) || null;
         };
-
-        const getRoundStage = (roundIndex) => PipelineRuntime?.getRoundStage?.(roundIndex) || (roundIndex === 1 ? 'models' : 'judge');
 
         const buildPipelineRuntimeSnapshot = (config) => {
             const domRoundCount = Array.from(pipelinePanel?.querySelectorAll?.('.model-stack[id^="r"][id$="-models"]') || [])
@@ -5844,28 +5832,6 @@ document.addEventListener('click', (event) => {
                 && modelNameSetsEqual(state.sendModels, defaults);
         };
 
-        // Stage template: who works at each stage follows the framework (all / lead /
-        // reviewer / nobody at a gate), computed from the currently selected models.
-        const applyStageTemplateAssignments = () => {
-            const framework = activeStageTemplate ? window.StageTemplates?.get?.(activeStageTemplate) : null;
-            if (!activeStageTemplate || !framework?.participantsFor) return false;
-            const models = orderModelNamesForPipeline(getSelectedLLMs());
-            let changed = false;
-            for (let round = 1; round <= roundCounter; round++) {
-                const wanted = new Set(framework.participantsFor(framework.byNumber(round), models));
-                document.querySelectorAll(`#r${round}-models .model-block`).forEach((block) => {
-                    const name = block.querySelector('.model-name')?.textContent?.trim();
-                    const send = block.querySelector('.model-send-checkbox');
-                    if (!name || !send || send.disabled) return;
-                    const on = wanted.has(name);
-                    if (send.checked !== on) { send.checked = on; changed = true; }
-                    // A template stage carries its own brief: no extra mini prompt on top of it.
-                    const roleSelect = block.querySelector('.role-selector');
-                    if (roleSelect && roleSelect.value !== '') { roleSelect.value = ''; changed = true; }
-                });
-            }
-            return changed;
-        };
         const syncPipelineRoundModelsFromSelectedLLMs = ({ force = false } = {}) => {
             if (!force && pipelineR1ManualDirty && !isR1DefaultSelection()) return false;
             const selectedIndices = getSelectedLLMIndicesForPipeline();
@@ -5908,7 +5874,6 @@ document.addEventListener('click', (event) => {
                     }
                 });
             }
-            if (applyStageTemplateAssignments()) changed = true;
             if (changed) updatePipelineAll();
             return changed;
         };
@@ -5929,24 +5894,6 @@ document.addEventListener('click', (event) => {
             const selectedIndices = getSelectedLLMIndicesForPipeline();
             const emptySlots = Math.max(0, getDebateModelSlotCount() - selectedIndices.length);
             return buildModelBlocksHtml(selectedIndices, withRole) + buildPipelineEmptySlotBlocksHtml(emptySlots);
-        };
-
-        const buildResponsesList = (responsesMap, orderedNames = []) => {
-            if (window.JudgePromptBuilder?.buildResponsesList) {
-                return window.JudgePromptBuilder.buildResponsesList(responsesMap, {
-                    orderedNames,
-                    isErrorOutput
-                });
-            }
-            let list = '';
-            let count = 0;
-            orderedNames.forEach((name) => {
-                const output = responsesMap?.[name];
-                if (isErrorOutput(output)) return;
-                list += `<<<RESPONSE legacy ${name} START>>>\n${output}\n<<<RESPONSE legacy ${name} END>>>\n\n`;
-                count += 1;
-            });
-            return { list: list.trim(), count, nonce: 'legacy', truncatedTotal: false };
         };
 
         const DEFAULT_PIPELINE_WAIT_TIMEOUT_MS = 240000;
@@ -6037,21 +5984,6 @@ document.addEventListener('click', (event) => {
                 }
             }
             const aggregate = getDebateAggregateState();
-            const activePreset = window.__activePipelinePresetConfig || getSelectedPipelinePresetMeta?.() || {};
-            if ((context?.anonymizeParticipants ?? activePreset.anonymizeParticipants) && window.DebateAnonymization) {
-                const aliasHolder = activePipelineRunContext || (window.__debateAliasContext ||= {});
-                const aggregateParticipants = aggregate?.executionPlan?.participants || [];
-                const serviceModels = [aggregate?.executionPlan?.synthesizer, ...models].filter(Boolean);
-                const aliasModels = Array.from(new Set([...aggregateParticipants, ...serviceModels]));
-                if (!aliasHolder.anonymizationMap || aliasModels.some((model) => !aliasHolder.anonymizationMap[model])) {
-                    aliasHolder.anonymizationMap = window.DebateAnonymization.createAliasMap(aliasModels);
-                }
-                const map = aliasHolder.anonymizationMap;
-                prompt = window.DebateAnonymization.anonymizeText(prompt, map);
-                if (promptsByModel && typeof promptsByModel === 'object') {
-                    promptsByModel = Object.fromEntries(Object.entries(promptsByModel).map(([model, value]) => [model, window.DebateAnonymization.anonymizeText(value, map)]));
-                }
-            }
             // Legacy scenarios keep the default budget defense. Custom has already
             // applied the model instruction, including an explicitly cleared instruction.
             if (context?.pipelineRunId && !context.custom) {
@@ -6108,7 +6040,7 @@ document.addEventListener('click', (event) => {
             }
             const sourceView = getCurrentViewKey();
             const stageId = String(context?.stageId || context?.pipelineStageId || aggregate?.currentStageId || '').trim();
-            const stages = debateApplication?.getOrchestrator?.()?.getState?.()?.stages || [];
+            const stages = [];
             const stageIndex = context?.pipelineRunId
                 ? stages.findIndex((stage) => stage.stageInstanceId === stageId && stage.runId === context.pipelineRunId)
                 : -1;
@@ -6305,11 +6237,6 @@ document.addEventListener('click', (event) => {
             // Read-only: the prompts exactly as dispatched (delivery token and limits included), so a
             // caller can show the fact instead of rebuilding it. Sending and receiving do not use it.
             batchResult.sentPrompts = sanitizedPromptMap || null;
-            if (activePipelineRunContext?.anonymizationMap && window.DebateAnonymization) {
-                Object.keys(batchResult.responses || {}).forEach((model) => {
-                    batchResult.responses[model] = window.DebateAnonymization.deanonymizeText(batchResult.responses[model], activePipelineRunContext.anonymizationMap);
-                });
-            }
             Object.entries(batchResult.responses || {}).forEach(([model, answer]) => {
                 dispatchDebateRunEvent(window.DebateRunStore?.EVENTS?.MODEL_RESPONSE_RECEIVED, {
                     model,
@@ -6411,10 +6338,6 @@ document.addEventListener('click', (event) => {
             }
         };
 
-        const getDisputeTemplateApi = () => DebateEngineRuntime || window.DisputMessageTemplates || null;
-        const getDisputeDefaultFormat = () => DebateEngineRuntime?.DEFAULT_SERIAL_FORMAT
-            || window.DisputMessageTemplates?.DEFAULT_SERIAL_FORMAT
-            || 'Ясный, структурированный ответ.';
         const applyDisputeTopicDisplay = (topic = '') => {
             const fullTopic = String(topic || '').trim();
             if (!fullTopic) return;
@@ -6534,124 +6457,6 @@ document.addEventListener('click', (event) => {
             applyDisputeTopicDisplay(topic);
             return topic;
         };
-        const getActiveProtocolMission = () => {
-            try {
-                return window.DebatePromptCatalog?.resolveProtocolMission?.(buildPipelinePresetRuntimeConfig()) || '';
-            } catch (_) {
-                return '';
-            }
-        };
-        // Delta (disput/delta-pipeline.js): models take turns adding one word to the phrase; a model
-        // gets the whole phrase on its first turn and only the words added since on later turns.
-        // Its own loop over runModelBatch like Polishing — no plan, StateMap or ContextBroker.
-        const runDeltaFromPage = async ({ phrase }) => {
-            const delta = window.DeltaPipeline;
-            const draftPlan = draftPlanForCanvas(getActiveDraftPlan());
-            const rounds = (draftPlan?.plannedStages || [])
-                .filter((stage) => /^canvas-r\d+$/.test(String(stage.plannedStageId || '')))
-                .map((stage) => (stage.participantIds || []).filter(Boolean))
-                .filter((models) => models.length);
-            if (!delta || !rounds.length) {
-                showNotification('Delta: выберите модели хотя бы в одном круге.', 'warn');
-                return false;
-            }
-            const useApiFallback = apiModeCheckbox ? apiModeCheckbox.checked : true;
-            pipelineRunActive = true;
-            customRunProgress = null;
-            deltaAbortController = new AbortController();
-            activePipelineRunContext = {
-                pipelineRunId: makePipelineRunId(),
-                sessionId: debateTabsState?.activeSessionId
-                    || document.querySelector('.debate-session-tab.active')?.dataset?.sessionId
-                    || '1',
-                startedAt: Date.now(),
-                forceNewTabs: newPagesCheckbox ? newPagesCheckbox.checked : true,
-                newPagesDispatched: false
-            };
-            const runContext = activePipelineRunContext;
-            if (runContext.forceNewTabs) resetNewPagesCheckboxAfterOpen();
-            clearModeratorComposer();
-            appendModeratorFeedEntry(phrase);
-            setPipelineEditingEnabled(false);
-            setPipelineRunUi(true);
-            updateDebateButtonsUi();
-            try {
-                const attachments = await buildAttachmentPayload();
-                // Attachments go with the first message to each model only: later turns continue in that chat.
-                const attached = new Set();
-                const result = await delta.run({
-                    start: phrase,
-                    rounds,
-                    signal: deltaAbortController.signal,
-                    send: async (model, prompt, { round }) => {
-                        const pipelineRoundId = `r${round}`;
-                        const batch = await runModelBatch({
-                            // The prompt asks for one word itself: no generic length limit is added.
-                            prompt,
-                            models: [model],
-                            attachments: attached.has(model) ? [] : attachments,
-                            forceNewTabs: runContext.forceNewTabs,
-                            useApiFallback,
-                            signal: deltaAbortController.signal,
-                            context: {
-                                ...runContext,
-                                pipelineRoundId,
-                                pipelineBatchId: makePipelineBatchId({ runId: runContext.pipelineRunId, roundIndex: round, groupIndex: 0 }),
-                                // The phrase carries no participant names; a preset left over from an
-                                // earlier run must not rewrite its words with aliases.
-                                anonymizeParticipants: false,
-                                delta: true
-                            },
-                            generationProfile: 'long'
-                        });
-                        attached.add(model);
-                        const text = String(batch?.responses?.[model] || '');
-                        const modelResult = batch?.results?.[model] || {};
-                        // The live feed already shows the answer; this only covers a path that did not
-                        // reach it. Same run/round/request as the live card, so it is not a second card.
-                        if (text.trim()) {
-                            updateDebateModelCardOutput(model, text, '', {
-                                status: modelResult.status || 'SUCCESS', source: 'delta', role: `Delta · круг ${round}`,
-                                pipelineRunId: runContext.pipelineRunId, pipelineRoundId,
-                                transportRequestId: modelResult.transportRequestId || '', requestId: modelResult.transportRequestId || ''
-                            });
-                        }
-                        return { text, status: modelResult.status || '' };
-                    },
-                    onAnswer: (entry, words) => {
-                        window.MessageDelivery?.batchEvent?.('delta_answer', {
-                            pipelineRunId: runContext.pipelineRunId, round: entry.round, model: entry.model,
-                            status: entry.status, full: entry.full, extra: entry.extra || 0,
-                            reason: entry.reason || null, total: words.length
-                        });
-                    }
-                });
-                const stopText = delta.STOP_TEXT[result.stopReason] || result.stopReason;
-                window.MessageDelivery?.batchEvent?.('delta_end', {
-                    pipelineRunId: runContext.pipelineRunId, stopReason: result.stopReason,
-                    words: result.words.length, answers: result.log.length
-                });
-                // Always shown, also after Stop: the phrase built so far is the run's result.
-                updateDebateModelCardOutput('Delta', delta.formatResult(result), '', {
-                    status: 'SUCCESS', source: 'delta', role: 'Delta · итог',
-                    pipelineRunId: runContext.pipelineRunId, pipelineRoundId: 'delta-result'
-                });
-                showNotification(`Delta: добавлено слов ${result.words.length} (${stopText}).`, result.words.length ? 'info' : 'warn');
-                return result.stopReason !== 'cancelled';
-            } catch (err) {
-                console.error('[RESULTS] Delta run failed', err);
-                showNotification(`Pipeline: error (${err?.message || String(err)})`, 'error');
-                return false;
-            } finally {
-                clearPromptAttachments();
-                pipelineRunActive = false;
-                deltaAbortController = null;
-                activePipelineRunContext = null;
-                setPipelineEditingEnabled(true);
-                setPipelineRunUi(false);
-                updateDebateButtonsUi();
-            }
-        };
         // Custom (disput/custom-engine.js): the shared pipeline engine. The canvas gives the steps
         // in plan order: round cards (their models) and synthesis stages (an intermediate insert
         // keeps its own model; the final synthesis follows the last round). Rounds are parallel and
@@ -6664,14 +6469,20 @@ document.addEventListener('click', (event) => {
         // value (the cards did not store one) and is dropped; the retired `ask` is ignored. Anything else,
         // a wrong value included, goes on to the check unchanged.
         const legacyValue = (value) => (value === undefined || value === null || (typeof value === 'string' && !value.trim()) ? undefined : value);
+        // An empty text the owner chose on purpose (the task, the length instruction, the content requirements) is a value:
+        // «send nothing here», not «inherit». The delivery mark and the correction request are never empty (the transport needs them).
+        const EMPTYABLE_KEYS = new Set(['task', 'roundTask', 'synthesisTask', 'limit', 'content']);
+        const keepEmpty = (value, key) => (value === '' && EMPTYABLE_KEYS.has(key) ? '' : legacyValue(value));
         const RETIRED_DISCIPLINE_KEYS = ['ask'];
-        const legacyDiscipline = (saved) => {
+        // `keepEmptyValues`: a record with a schema (and its working copy) holds an empty text as a value; the earlier settings
+        // (prepareCustomPrompts) read an empty text as not set.
+        const legacyDiscipline = (saved, { keepEmptyValues = false } = {}) => {
             if (saved === undefined || saved === null) return undefined;
             if (typeof saved !== 'object' || Array.isArray(saved)) return saved;
             const discipline = {};
             Object.entries(customDiscipline(saved)).forEach(([key, value]) => {
                 if (RETIRED_DISCIPLINE_KEYS.includes(key)) return;
-                const kept = key === 'lines' && Array.isArray(value) ? value.filter((line) => legacyValue(line) !== undefined) : legacyValue(value);
+                const kept = key === 'lines' && Array.isArray(value) ? value.filter((line) => legacyValue(line) !== undefined) : (keepEmptyValues ? keepEmpty(value, key) : legacyValue(value));
                 if (kept !== undefined && !(Array.isArray(kept) && !kept.length)) discipline[key] = kept;
             });
             return Object.keys(discipline).length ? discipline : undefined;
@@ -6684,28 +6495,70 @@ document.addEventListener('click', (event) => {
         // `forSave` builds the stored form: origin, basedOn, switched-off models and steps with their settings,
         // and a `run` that holds only explicit values (see basicRunExplicit). The run path builds the same
         // schema with the run taken from the header as it stands and the legacy fallback of the final request applied.
+        // The fields of a round or a synthesis are the page's own, by ref (customRoundSettings, see stepFieldsOf): nothing is
+        // copied for them from basicSourceSchema, so a field the owner cleared stays cleared. The control steps (gate, route,
+        // owner) are the page's list (customControls): each stands right after its `after` step, and a chain of controls
+        // keeps its order. A control whose anchor is not on the canvas goes first (after '') or last.
+        const withControls = (list) => {
+            const entries = getCustomControls();
+            if (!entries.length) return list;
+            const byAfter = new Map(entries.map((item) => [item.after, item]));
+            const out = [];
+            const seen = new Set();
+            const chain = (ref) => {
+                let item = byAfter.get(ref);
+                while (item && !seen.has(item.step.ref)) {
+                    seen.add(item.step.ref);
+                    out.push(JSON.parse(JSON.stringify(item.step)));
+                    item = byAfter.get(item.step.ref);
+                }
+            };
+            entries.filter((item) => item.after === '').forEach((item) => { if (!seen.has(item.step.ref)) { seen.add(item.step.ref); out.push(JSON.parse(JSON.stringify(item.step))); chain(item.step.ref); } });
+            list.forEach((step) => { out.push(step); chain(step.ref); });
+            entries.forEach((item) => { if (!seen.has(item.step.ref)) { seen.add(item.step.ref); out.push(JSON.parse(JSON.stringify(item.step))); } });
+            return out;
+        };
+        // A model entry with a field beyond name, id and enabled holds settings; only such a switched-off model is kept.
+        const hasOwnFields = (model) => Object.keys(model).some((key) => !['name', 'id', 'enabled'].includes(key));
         const basicSchemaFromPage = (plan, previewModel = null, { forSave = false, basedOn = '', run = null } = {}) => {
             const general = getCustomPipelineDefaults();
             const cards = getCustomCardSettings();
             const roundSettings = getCustomRoundSettings();
             const put = (target, key, value) => { if (value !== undefined) target[key] = value; };
-            // The round card: the order, the input and the task the owner set, as the schema's step fields.
-            const roundFields = (ref) => {
+            // The fields the owner set in the card of a round or a synthesis (by ref, customRoundSettings), as the schema's step
+            // fields. An empty value (nothing, an empty list, an empty object) is not written.
+            const ROUND_STEP_KEYS = ['order', 'input', 'task', 'require', 'owner', 'chat', 'output'];
+            const SYNTHESIS_STEP_KEYS = ['input', 'task', 'require', 'owner', 'chat', 'output'];
+            const stepFieldsOf = (ref, kind) => {
                 const own = {};
-                ['order', 'input', 'task'].forEach((key) => put(own, key, legacyValue(roundSettings[ref]?.[key])));
+                (kind === 'round' ? ROUND_STEP_KEYS : SYNTHESIS_STEP_KEYS).forEach((key) => {
+                    const value = keepEmpty(roundSettings[ref]?.[key], key);
+                    if (value === undefined || (Array.isArray(value) && !value.length) || (value && typeof value === 'object' && !Array.isArray(value) && !Object.keys(value).length)) return;
+                    own[key] = JSON.parse(JSON.stringify(value));
+                });
                 return own;
             };
             const defaults = {};
-            ['roundTask', 'synthesisTask'].forEach((key) => put(defaults, key, legacyValue(general[key])));
+            ['roundTask', 'synthesisTask'].forEach((key) => put(defaults, key, keepEmpty(general[key], key)));
             ['modelNotes', 'roundPrompts'].forEach((key) => put(defaults, key, legacyMap(general[key])));
-            put(defaults, 'discipline', legacyDiscipline(general.discipline));
-            const modelEntry = (ref, name, extra = {}) => {
-                const settings = cards[ref]?.[name];
-                const model = { name, ...extra };
+            put(defaults, 'discipline', legacyDiscipline(general.discipline, { keepEmptyValues: true }));
+            // The canvas names a participant by its name (its id is not on the canvas): the id, the model name and the input
+            // of the participant come from the source, and its settings are keyed by that id (toSettings).
+            const sourceModelOf = (ref, id) => {
+                const models = (basicSourceSchema.get(draftPlanStorageKey())?.steps || []).find((step) => step?.ref === ref)?.models || [];
+                return models.find((item) => item && (item.id ?? item.name) === id) || models.find((item) => item && item.name === id) || null;
+            };
+            const modelEntry = (ref, id, extra = {}) => {
+                const source = sourceModelOf(ref, id);
+                const name = source?.name || id;
+                const participantId = source ? (source.id ?? source.name) : id;
+                const settings = cards[ref]?.[participantId] ?? cards[ref]?.[id];
+                const model = { name, ...(participantId !== name ? { id: participantId } : {}), ...extra };
+                if (source && 'input' in source) model.input = JSON.parse(JSON.stringify(source.input));
                 put(model, 'request', legacyValue(settings?.promptTemplate));
                 put(model, 'maxWords', legacyValue(settings?.maxWords));
-                put(model, 'task', legacyValue(settings?.task));
-                put(model, 'discipline', legacyDiscipline(settings?.discipline));
+                put(model, 'task', keepEmpty(settings?.task, 'task'));
+                put(model, 'discipline', legacyDiscipline(settings?.discipline, { keepEmptyValues: true }));
                 return model;
             };
             let round = 0;
@@ -6730,12 +6583,14 @@ document.addEventListener('click', (event) => {
                 });
                 // A switched-off model keeps its settings in the saved schema.
                 if (forSave) {
-                    Object.keys(cards[ref] || {}).filter((name) => !models.includes(name)).forEach((name) => {
+                    // A card of a participant on the canvas is not a switched-off model, whatever key it has (its id or its name).
+                    const shown = new Set(models.flatMap((id) => [id, sourceModelOf(ref, id)?.id].filter((key) => key !== undefined)));
+                    Object.keys(cards[ref] || {}).filter((name) => !shown.has(name)).forEach((name) => {
                         const model = modelEntry(ref, name, { enabled: false });
-                        if (Object.keys(model).length > 2) entries.push(model);
+                        if (hasOwnFields(model)) entries.push(model);
                     });
                 }
-                return { ref, kind, ...(kind === 'round' ? roundFields(ref) : {}), models: entries };
+                return { ref, kind, ...stepFieldsOf(ref, kind), models: entries };
             }).filter(Boolean);
             if (forSave) {
                 // The canvas keeps every round, also one nobody sends in; the schema holds them all in order (r1…rN), or
@@ -6748,8 +6603,8 @@ document.addEventListener('click', (event) => {
                     for (; nextRound <= upTo; nextRound += 1) {
                         const ref = `r${nextRound}`;
                         if (have.has(ref)) continue;
-                        complete.push({ ref, kind: 'round', ...roundFields(ref),
-                            models: Object.keys(cards[ref] || {}).map((name) => modelEntry(ref, name, { enabled: false })).filter((model) => Object.keys(model).length > 2) });
+                        complete.push({ ref, kind: 'round', ...stepFieldsOf(ref, 'round'),
+                            models: Object.keys(cards[ref] || {}).map((name) => modelEntry(ref, name, { enabled: false })).filter((model) => hasOwnFields(model)) });
                         have.add(ref);
                     }
                 };
@@ -6767,6 +6622,20 @@ document.addEventListener('click', (event) => {
                 steps.splice(0, steps.length, ...complete);
             }
             if (forSave) {
+                // A model on the canvas whose Send is off in every round is marked onCanvas in each round: the canvas takes it
+                // from the schema alone (BasicSchema.toCanvas). A model sent in some round needs no mark: it stays on the canvas.
+                const headerNames = getSelectedLLMs();
+                const roundsOf = steps.filter((step) => step.kind === 'round');
+                const sentSomewhere = new Set(roundsOf.flatMap((step) => step.models.filter((model) => model.enabled !== false).map((model) => model.name)));
+                roundsOf.forEach((step) => {
+                    headerNames.filter((name) => !sentSomewhere.has(name)).forEach((name) => {
+                        const at = step.models.findIndex((model) => model.name === name);
+                        if (at >= 0) step.models[at] = { ...step.models[at], onCanvas: true };
+                        else step.models.push(modelEntry(step.ref, name, { enabled: false, onCanvas: true }));
+                    });
+                });
+            }
+            if (forSave) {
                 // The card of an intermediate synthesis can be set before the synthesis is on the canvas; the id of such a
                 // synthesis says the round it stands after, so its settings are kept there as a step without active models.
                 const present = new Set(steps.map((step) => step.ref));
@@ -6776,22 +6645,22 @@ document.addEventListener('click', (event) => {
                     const at = steps.findIndex((step) => step.ref === `r${after}`);
                     // Between two rounds only: not after the last round, not next to another synthesis.
                     if (!match || after >= Math.max(1, Number(roundCounter) || 1) || at < 0 || steps[at + 1]?.kind === 'synthesis') return;
-                    const models = Object.keys(cards[ref] || {}).map((name) => modelEntry(ref, name, { enabled: false })).filter((model) => Object.keys(model).length > 2);
-                    if (models.length) steps.splice(at + 1, 0, { ref, kind: 'synthesis', models });
+                    const models = Object.keys(cards[ref] || {}).map((name) => modelEntry(ref, name, { enabled: false })).filter((model) => hasOwnFields(model));
+                    if (models.length) steps.splice(at + 1, 0, { ref, kind: 'synthesis', ...stepFieldsOf(ref, 'synthesis'), models });
                 });
             }
             if (forSave) {
                 // A final synthesis that is switched off keeps its settings as a step without active models. Settings of a
                 // removed round or of an intermediate synthesis with no place between two rounds are dropped.
                 if (!steps.some((step) => step.ref === 'final')) {
-                    const models = Object.keys(cards.final || {}).map((name) => modelEntry('final', name, { enabled: false })).filter((model) => Object.keys(model).length > 2);
-                    if (models.length) steps.push({ ref: 'final', kind: 'synthesis', models });
+                    const models = Object.keys(cards.final || {}).map((name) => modelEntry('final', name, { enabled: false })).filter((model) => hasOwnFields(model));
+                    if (models.length) steps.push({ ref: 'final', kind: 'synthesis', ...stepFieldsOf('final', 'synthesis'), models });
                 }
             }
-            const runValue = forSave ? (run || basicRunForSave()) : { policy: getDebateRunPolicy(), maxWords: getDebateMaxWords() };
+            const runValue = forSave ? (run || basicRunForSave()) : { policy: getDebateRunPolicy(), maxWords: getDebateMaxWords(), ...basicStrictLengthRun() };
             return { schemaVersion: window.BasicSchema.SCHEMA_VERSION, origin: 'user', ...(forSave && basedOn ? { basedOn } : {}),
                 ...(Object.keys(runValue).length ? { run: runValue } : {}),
-                ...(Object.keys(defaults).length ? { defaults } : {}), steps };
+                ...(Object.keys(defaults).length ? { defaults } : {}), steps: withControls(steps) };
         };
         // The run values a saved schema holds: only those the owner set before (loaded as explicit) or that differ
         // from Basic. Opening a schema and saving it does not make the shown Basic values explicit.
@@ -6804,36 +6673,65 @@ document.addEventListener('click', (event) => {
             basicRunExplicit.set(key, { ...(basicRunExplicit.get(key) || {}), [field]: true });
         };
         const basicSchemaLoadErrors = new Map();
+        // The schema the working copies were read from. The fields the canvas does not edit (output, require, owner, chat,
+        // a participant's input) are kept from it on Save and on Run; the control steps come from customControls.
+        const basicSourceSchema = new Map();
+        // run.strictLength has no control in the ▶ window: the value the loaded schema holds goes on with Save and with the run.
+        const basicStrictLengthRun = () => {
+            const source = basicSourceSchema.get(draftPlanStorageKey())?.run || {};
+            return 'strictLength' in source ? { strictLength: source.strictLength } : {};
+        };
         const basicRunForSave = () => {
             const explicit = basicRunExplicit.get(draftPlanStorageKey()) || {};
             const defaults = window.BasicSchema.DEFAULTS.run;
             const policy = getDebateRunPolicy();
             const maxWords = getDebateMaxWords();
-            return { ...(explicit.policy || policy !== defaults.policy ? { policy } : {}), ...(explicit.maxWords || maxWords !== defaults.maxWords ? { maxWords } : {}) };
+            return { ...(explicit.policy || policy !== defaults.policy ? { policy } : {}), ...(explicit.maxWords || maxWords !== defaults.maxWords ? { maxWords } : {}), ...basicStrictLengthRun() };
         };
         // The working copies the cards edit, read from a stored record: a record with a schema gives them
         // from the schema (a schema that cannot be read gives an error and nothing); an earlier record gives
         // its customModelSettings / customDefaults as before.
+        // The control steps of a schema with the ref of the step before each (see customControls).
+        const controlsOf = (schema) => {
+            let after = '';
+            const out = [];
+            (schema.steps || []).forEach((step) => {
+                if (CONTROL_KINDS_CANVAS.includes(step.kind)) out.push({ after, step: JSON.parse(JSON.stringify(step)) });
+                after = step.ref;
+            });
+            return out;
+        };
         const basicWorkingFromConfig = (config) => {
             const copy = (value) => JSON.parse(JSON.stringify(value || {}));
             if (!config?.schema) {
                 // Before the schema a saved copy of the current default length instruction was not a personal value:
                 // it kept following the shared one. That is settled here, once, for earlier records only.
                 const own = (map) => { if (map?.discipline?.limit === window.BasicSchema.DEFAULTS.discipline.limit) delete map.discipline.limit; return map; };
+                // An empty text of an earlier record meant «not set»; from here on an empty text is a value, so it goes now.
+                const dropEmpty = (map) => {
+                    if (!map || typeof map !== 'object') return map;
+                    ['task', 'roundTask', 'synthesisTask'].forEach((key) => { if (map[key] === '') delete map[key]; });
+                    if (map.discipline && typeof map.discipline === 'object') Object.keys(map.discipline).forEach((key) => { if (map.discipline[key] === '') delete map.discipline[key]; });
+                    return map;
+                };
                 const cards = copy(config?.customModelSettings);
+                Object.values(cards).forEach((step) => Object.values(step || {}).forEach(dropEmpty));
                 Object.values(cards).forEach((step) => Object.values(step || {}).forEach(own));
-                return { cards, rounds: {}, defaults: own(copy(config?.customDefaults)), runExplicit: {}, schema: null, error: '' };
+                return { cards, rounds: {}, defaults: dropEmpty(own(copy(config?.customDefaults))), runExplicit: {}, schema: null, error: '', controls: [] };
             }
             const errors = window.BasicSchema.validate(config.schema);
-            if (errors.length) return { cards: {}, rounds: {}, defaults: {}, runExplicit: {}, schema: null, error: window.BasicSchema.describeErrors(errors) };
+            if (errors.length) return { cards: {}, rounds: {}, defaults: {}, runExplicit: {}, schema: null, error: describeSchemaErrors(errors), controls: [] };
             const settings = window.BasicSchema.toSettings(config.schema);
-            return { cards: settings.customModelSettings, rounds: settings.customRoundSettings, defaults: settings.customDefaults, schema: config.schema, error: '',
-                runExplicit: { policy: 'policy' in (config.schema.run || {}), maxWords: 'maxWords' in (config.schema.run || {}) } };
+            // The fields of rounds and syntheses are one store by ref (see stepFieldsOf).
+            return { cards: settings.customModelSettings, rounds: { ...settings.customRoundSettings, ...settings.customStepSettings }, defaults: settings.customDefaults, schema: config.schema, error: '',
+                runExplicit: { policy: 'policy' in (config.schema.run || {}), maxWords: 'maxWords' in (config.schema.run || {}) }, controls: controlsOf(config.schema) };
         };
         const adoptBasicWorking = (key, working) => {
+            basicSourceSchema.set(key, working.schema || null);
             customPipelineDefaults.set(key, working.defaults);
             customCardSettings.set(key, working.cards);
             customRoundSettings.set(key, working.rounds || {});
+            customControls.set(key, working.controls || []);
             basicRunExplicit.set(key, working.runExplicit);
             if (working.error) basicSchemaLoadErrors.set(key, working.error); else basicSchemaLoadErrors.delete(key);
         };
@@ -6863,6 +6761,7 @@ document.addEventListener('click', (event) => {
                 return false;
             }
             pipelineStore.pipelines[name] = built.record;
+            basicSourceSchema.set(name, built.record.schema);
             // The record is the one source of the plan now.
             delete pipelineStore.draftPlans?.[name];
             delete pipelineSessionDraftPlans[name];
@@ -6911,9 +6810,9 @@ document.addEventListener('click', (event) => {
         const resolveCustomFields = (settings = {}, kind = 'round', round = {}) => {
             const general = getCustomPipelineDefaults();
             return window.BasicSchema.resolveFields(
-                { task: legacyValue(settings?.task), discipline: legacyDiscipline(settings?.discipline) }, kind,
-                { task: legacyValue(round.task), discipline: legacyDiscipline(round.discipline) },
-                { roundTask: legacyValue(general.roundTask), synthesisTask: legacyValue(general.synthesisTask), discipline: legacyDiscipline(general.discipline) });
+                { task: keepEmpty(settings?.task, 'task'), discipline: legacyDiscipline(settings?.discipline, { keepEmptyValues: true }) }, kind,
+                { task: keepEmpty(round.task, 'task'), discipline: legacyDiscipline(round.discipline, { keepEmptyValues: true }) },
+                { roundTask: keepEmpty(general.roundTask, 'roundTask'), synthesisTask: keepEmpty(general.synthesisTask, 'synthesisTask'), discipline: legacyDiscipline(general.discipline, { keepEmptyValues: true }) });
         };
         const customLengthInstruction = (template, words) => template.replace(/\{от\}|\{слов\}/g,
             (key) => String(key === '{от}' ? Math.max(1, words - 50) : words));
@@ -6936,19 +6835,30 @@ document.addEventListener('click', (event) => {
             Object.fromEntries(Object.entries(discipline).map(([name, saved]) => [name, legacyDiscipline(saved) || {}])), ...rest);
         // The owner's choice on a pause, through the shared confirm dialog (three buttons).
         let customDecisionOpen = false;
-        const askCustomDecision = async ({ label, accepted, failed, choices, reasons }) => {
+        // The buttons are the choices the engine allows: «Продолжить» only at the threshold (the engine refuses it below),
+        // below it «Пропустить шаг» and «Повторить».
+        const askCustomDecision = async ({ label, accepted, failed, choices, reasons, required = 0 }) => {
             const failedText = failed.map((name) => `${name}${reasons[name] ? ` (${window.CustomEngine?.REASON_TEXT?.[reasons[name]] || reasons[name]})` : ''}`).join(', ');
+            const canContinue = choices.includes('continue');
             const message = accepted.length
-                ? `${label}: принято ${accepted.length}${failed.length ? `, без ответа: ${failedText}` : ''}. Что дальше?`
+                ? `${label}: принято ${accepted.length}${required ? ` из ${required}` : ''}${failed.length ? `, без ответа: ${failedText}` : ''}. Что дальше?`
                 : `${label}: нет принятых ответов (${failedText}). Что дальше?`;
             customDecisionOpen = true;
-            const answer = await showConfirm(message, accepted.length
-                ? { confirmText: 'Продолжить', cancelText: 'Stop', retryText: choices.includes('retry') ? 'Повторить без ответа' : '' }
-                : { confirmText: 'Пропустить шаг', cancelText: 'Stop', retryText: 'Повторить' });
+            const answer = await showConfirm(message, {
+                confirmText: canContinue ? 'Продолжить' : 'Пропустить шаг',
+                cancelText: 'Stop',
+                retryText: choices.includes('retry') ? (canContinue ? 'Повторить без ответа' : 'Повторить') : ''
+            });
             customDecisionOpen = false;
             if (answer === 'retry') return 'retry';
-            if (answer === true) return accepted.length ? 'continue' : 'skip';
+            if (answer === true) return canContinue ? 'continue' : 'skip';
             return 'stop';
+        };
+        // The windows of a pause of a Basic run (results/choice-dialog.js): a null answer is the owner's cancel.
+        const askChoiceDialog = (options) => {
+            if (!window.ChoiceDialog) throw new Error('окно выбора не загружено (results/choice-dialog.js)');
+            // The windows of a run close on its Stop (R07): the signal of the run goes with them.
+            return window.ChoiceDialog.ask({ signal: customAbortController?.signal, ...options });
         };
         const askCustomOwner = (asks, { label }) => new Promise((resolve) => {
             if (!ownerAskDialog || !window.OwnerAsk) { resolve([]); return; }
@@ -6958,15 +6868,125 @@ document.addEventListener('click', (event) => {
         const customRunStore = window.CustomRunRecord && chrome?.storage?.local
             ? window.CustomRunRecord.createStore({ storage: window.CustomRunRecord.chromeStorage(chrome.storage.local) })
             : null;
-        const customPipelineName = () => String(pipelineStore.active || getPipelineHeaderName() || 'Basic').trim();
+        const customPipelineName = () => String(pipelineStore.active || getPipelineHeaderName() || 'Default').trim();
         // The text of the notification at the end of a Basic run.
-        const basicRunNotice = (stopText, acceptedCount) => `Basic: ${stopText}.${acceptedCount ? '' : ' Принятых ответов нет.'}`;
-        const runCustomFromPage = async ({ task }) => {
+        // The detail of the stop (the address of a missing input, the counter of a loop) goes in brackets after the reason.
+        const basicRunNotice = (stopText, acceptedCount, stopDetail = '') => `Basic: ${stopText}${stopDetail ? ` (${stopDetail})` : ''}.${acceptedCount ? '' : ' Принятых ответов нет.'}`;
+        // A saved run goes on with the schema it was started with (8.3), never with the current canvas.
+        const builtFromRecord = (record) => {
+            const schema = record.snapshot?.schema;
+            try {
+                return { schema, errors: [], run: window.BasicSchema.resolveRun(schema), steps: window.BasicSchema.assemble(schema, { roleText: customRoleText }) };
+            } catch (error) {
+                return { schema, errors: [{ path: 'снимок прогона', message: String(error?.message || error) }], run: null, steps: [] };
+            }
+        };
+        // «Продолжить прогон»: the latest run of this pipeline goes on from its saved state. A run without one is only history.
+        const resumeCustomFromPage = async () => {
+            if (!customRunStore || !window.CustomRunRecord) { showNotification('Basic: записи прогонов недоступны.', 'warn'); return false; }
+            if (pipelineRunActive) { showNotification('Basic: прогон уже идёт.', 'warn'); return false; }
+            const latest = await customRunStore.latest(customPipelineName());
+            if (!latest) { showNotification('Basic: сохранённого прогона нет.', 'info'); return false; }
+            // Files that were not kept in the record are not replaced by the composer or by nothing (V08).
+            if (latest.attachmentsStored === false) {
+                showNotification(`Basic: прогон нельзя продолжить: его файлы (${(latest.attachments || []).map((file) => file.name).join(', ')}) не сохранены в записи. Запустите прогон заново.`, 'warn');
+                return false;
+            }
+            if (!window.CustomRunRecord.canResume(latest)) {
+                showNotification('Basic: прогон нельзя продолжить: в записи нет сохранённого состояния (запись прежней версии или прогон без снимка). Запись доступна для просмотра.', 'warn');
+                return false;
+            }
+            return runCustomFromPage({ task: window.CustomRunRecord.textOf(latest, latest.taskRef), resumeRecord: latest });
+        };
+        // A line of the run feed (a gate, a route, a transition, the artifacts): not an answer, so no model and no approval.
+        const appendBasicRunLine = (text, { buttonLabel = '', onButton = null } = {}) => {
+            if (!debateModelCards || !String(text || '').trim()) return null;
+            const session = ensureDebateSession(debateTabsState.activeSessionId);
+            const card = document.createElement('div');
+            const now = new Date();
+            const hh = String(now.getHours()).padStart(2, '0');
+            const mm = String(now.getMinutes()).padStart(2, '0');
+            card.className = 'debate-model-card debate-moderator-card basic-run-line';
+            card.dataset.sessionId = session.id;
+            card.dataset.llmName = 'Basic';
+            card.dataset.entryKind = 'response';
+            card.dataset.kind = 'moderator';
+            card.dataset.starred = 'false';
+            card.dataset.entryId = String(debateFeedState.nextId++);
+            card.dataset.approved = 'moderator';
+            card.innerHTML = `
+                <div class="debate-model-card-header">
+                    <span class="debate-model-card-title"><span class="debate-model-card-title-main"><span class="debate-model-card-name">Basic</span></span></span>
+                </div>
+                <div class="debate-model-card-output"></div>
+            `;
+            const body = card.querySelector('.debate-model-card-output');
+            body.textContent = String(text || '');
+            if (buttonLabel && onButton) {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'basic-run-line-button';
+                button.textContent = buttonLabel;
+                button.addEventListener('click', onButton);
+                body.append(button);
+            }
+            ensureDebateCardMessage(card, { kind: 'moderator', status: 'approved', model: 'Basic', text: String(text || ''), html: '', timeLabel: `${hh}:${mm}`, starred: false });
+            normalizeDebateCardState(card);
+            insertModeratorCard(card);
+            applyDebateSessionFilter();
+            return card;
+        };
+        // A run that ended before its steps were done offers its own continuation as a line of the feed, where it is needed: the
+        // state is in the record, so a stop, an error or a lost page goes on from there (the button goes away once it is used).
+        const offerResumeLine = (record) => {
+            if (!record || !window.CustomRunRecord?.canResume?.(record)) return;
+            const line = appendBasicRunLine('Прогон остановлен. Его можно продолжить с сохранённого места.', {
+                buttonLabel: 'Продолжить',
+                onButton: () => { line?.querySelector('.basic-run-line-button')?.remove(); void resumeCustomFromPage(); }
+            });
+        };
+        // A version that a later decision made stale stays in the feed, marked «устарело»: its answer is kept, not an input.
+        const markStaleBasicCards = (steps) => {
+            const requests = new Set(steps.filter((item) => item.valid === false)
+                .flatMap((item) => Object.values(item.outcome || {}).map((verdict) => verdict?.transportRequestId).filter(Boolean)));
+            if (!requests.size || !debateModelCards) return;
+            debateModelCards.querySelectorAll('.debate-model-card').forEach((card) => {
+                if (!requests.has(card.dataset.requestId) || card.querySelector('.basic-run-stale')) return;
+                const mark = document.createElement('span');
+                mark.className = 'basic-run-stale';
+                mark.textContent = 'устарело';
+                card.querySelector('.debate-model-card-title-main')?.append(mark);
+            });
+        };
+        // The registry of the artifacts: a list, then the text of the chosen one (its answer, at its pointer).
+        const openBasicArtifacts = async (artifacts, textOf) => {
+            for (;;) {
+                const index = await askChoiceDialog({
+                    title: 'Артефакты прогона',
+                    choices: artifacts.map((item, at) => ({ value: at, label: window.StageCard.feed.artifactTitle(item) })),
+                    cancelText: 'Закрыть'
+                });
+                if (index === null || index === undefined) return;
+                const item = artifacts[index];
+                await askChoiceDialog({
+                    title: item.name,
+                    message: window.StageCard.feed.artifactText(textOf(item.content.answerRef), item.content.pointer, window.BasicOutput.readPointer),
+                    cancelText: 'Закрыть'
+                });
+            }
+        };
+        // The text of a participant request refused before the send, by its code (shared/run-error.js).
+        const PARTICIPANT_REFUSAL_TEXT = {
+            participant_chat_lost: 'чат участника недоступен (вкладка закрыта или не чат провайдера). Запрос не отправлен, чужой чат не выбран.',
+            participant_binding_failed: 'не удалось сохранить привязку чата участника. Запрос не отправлен.',
+            participant_api_unsupported: 'для чата участника API-режим не поддержан: выключите API-режим и запустите снова. Запрос не отправлен.'
+        };
+        const runCustomFromPage = async ({ task, resumeRecord = null }) => {
             const engine = window.CustomEngine;
-            const built = buildBasicRun(draftPlanForCanvas(getActiveDraftPlan()));
+            const built = resumeRecord ? builtFromRecord(resumeRecord) : buildBasicRun(draftPlanForCanvas(getActiveDraftPlan()));
             // A schema that cannot be run stops here with the place of the error; nothing is sent.
             if (built.errors.length) {
-                showNotification(`Basic: схема не запущена. ${window.BasicSchema.describeErrors(built.errors)}`, 'error');
+                showNotification(`Basic: схема не запущена. ${describeSchemaErrors(built.errors)}`, 'error');
                 return false;
             }
             const steps = built.steps;
@@ -6979,7 +6999,7 @@ document.addEventListener('click', (event) => {
             pipelineRunActive = true;
             customAbortController = new AbortController();
             activePipelineRunContext = {
-                pipelineRunId: makePipelineRunId(),
+                pipelineRunId: resumeRecord ? resumeRecord.runId : makePipelineRunId(),
                 sessionId: debateTabsState?.activeSessionId
                     || document.querySelector('.debate-session-tab.active')?.dataset?.sessionId
                     || '1',
@@ -6989,14 +7009,34 @@ document.addEventListener('click', (event) => {
             };
             const runContext = activePipelineRunContext;
             const signal = customAbortController.signal;
-            const record = window.CustomRunRecord?.createRun?.({ runId: runContext.pipelineRunId, pipelineName: customPipelineName(), task, steps }) || null;
+            // The text of the composer before the run took it: it comes back if the run produces nothing.
+            let composerBackup = '';
+            const record = resumeRecord || window.CustomRunRecord?.createRun?.({ runId: runContext.pipelineRunId, pipelineName: customPipelineName(), task, steps }) || null;
             let saveTimer = null;
+            // The writes of the record go one after another: an older write never lands after a newer one.
+            let recordWrites = Promise.resolve();
+            const writeRecord = () => {
+                const next = recordWrites.then(() => customRunStore.save(record));
+                recordWrites = next.catch(() => {});
+                return next;
+            };
             const saveRecord = async (now = false) => {
                 if (!record || !customRunStore) return;
                 clearTimeout(saveTimer);
-                const write = () => customRunStore.save(record).catch((error) => console.warn('[RESULTS] Custom run record not saved', error));
+                const write = () => writeRecord().catch((error) => console.warn('[RESULTS] Custom run record not saved', error));
                 if (now) { await write(); return; }
                 saveTimer = setTimeout(write, 600);
+            };
+            // A checkpoint (8.2) takes the state of the engine into the record and waits for its write: a failed write is
+            // not swallowed here, the engine stops on it (checkpoint_failed).
+            // The chats of the participants of this run (T07): participantId → { modelName, stepRef, visit, transportRequestId,
+            // tabId, requestId, stageAttemptId }. The background keeps the tab of each participant; this record is what a resume
+            // reads. A resumed run starts from the saved chats (R01): the background takes them back only for its own run ID.
+            const chatBindings = resumeRecord ? { ...(resumeRecord.snapshot?.chatBindings || {}) } : {};
+            const checkpointRecord = (state) => {
+                window.CustomRunRecord.setArtifacts(record, state.artifacts);
+                window.CustomRunRecord.setSnapshot(record, { schema: built.schema, runSettings: { semiAuto, maxAttempts: engine.DEFAULT_ATTEMPTS, runMaxWords: built.run.maxWords ?? null }, state: { ...state, chatBindings: { ...chatBindings } }, current: state.current, routes: state.routes, ownerAnswers: state.ownerAnswers, pendingOwner: state.pendingOwner });
+                return writeRecord();
             };
             const recordAttempt = (entry) => {
                 if (!record) return;
@@ -7004,8 +7044,11 @@ document.addEventListener('click', (event) => {
                 void saveRecord();
             };
             if (runContext.forceNewTabs) resetNewPagesCheckboxAfterOpen();
-            clearModeratorComposer();
-            appendModeratorFeedEntry(task);
+            if (!resumeRecord) {
+                composerBackup = getModeratorDispatchText();
+                clearModeratorComposer();
+                appendModeratorFeedEntry(task);
+            }
             // Canvas progress from the engine's own events: a round is canvas-rN, a synthesis its planned stage id,
             // the final one planned-final-synthesis. The step index is the position in `steps`.
             const plannedIdOfRef = (ref) => (/^r\d+$/.test(ref) ? `canvas-${ref}` : ref === 'final' ? 'planned-final-synthesis' : ref.replace(/^synth:/, ''));
@@ -7026,9 +7069,162 @@ document.addEventListener('click', (event) => {
             setPipelineRunUi(true);
             updateDebateButtonsUi();
             try {
-                const attachments = await buildAttachmentPayload();
-                // Attachments go with the first message to each model only: later steps continue in that chat.
-                const attached = new Set();
+                // A resumed run takes its files from the record of the run, never from the composer of the page (R05).
+                const attachments = resumeRecord
+                    ? (Array.isArray(resumeRecord.attachments) ? resumeRecord.attachments : [])
+                    : await buildAttachmentPayload();
+                // The files of a new run go into its record, so a resume sends the same bytes (V08).
+                if (record && !resumeRecord && window.CustomRunRecord.setAttachments(record, attachments) === false) {
+                    showNotification(`Basic: файлы прогона (${attachments.length}) слишком велики для записи и в ней не сохранены; продолжить этот прогон с файлами будет нельзя.`, 'warn');
+                }
+                const isNewChat = (request) => request.attempt === 1 && (request.chat === 'new'
+                    || (!resumeRecord && runContext.forceNewTabs && !chatBindings[request.participantId]));
+                // The files go with the first message of each chat only (R05). A chat is confirmed to hold them when its answer
+                // came back: the visit that opened the chat (chatVisit) and the visit whose chat got the files (attachedChatVisit).
+                // A new chat always needs them; a retry or a later visit in a chat with confirmed files does not repeat them.
+                const filesNeeded = (request) => {
+                    if (!attachments.length) return false;
+                    if (isNewChat(request)) return true;
+                    const saved = chatBindings[request.participantId];
+                    return !saved || saved.attachedChatVisit !== saved.chatVisit;
+                };
+                const sendWave = async (wave, meta, waveNo) => {
+                    const { step, label, attempt } = meta;
+                    const stepModels = steps[step]?.models || [];
+                    const models = wave.map((request) => request.modelName);
+                    const promptsByModel = Object.fromEntries(wave.map((request) => [request.modelName, request.prompt]));
+                    const maxWordsByModel = Object.fromEntries(wave.map((request) => [request.modelName, meta.maxWordsByParticipant?.[request.participantId] || null]));
+                    const correctionByModel = Object.fromEntries(wave.map((request) => [request.modelName, Boolean(meta.correctionByParticipant?.[request.participantId])]));
+                    const discipline = Object.fromEntries(wave.map((request) => [request.modelName,
+                        stepModels.find((model) => model.id === request.participantId)?.discipline || {}
+                    ]));
+                    const participants = Object.fromEntries(wave.map((request) => {
+                        const saved = chatBindings[request.participantId];
+                        // The saved chat of a continue goes with the request; the background uses it only without a binding of its own.
+                        const binding = !isNewChat(request) && saved?.modelName === request.modelName && saved.tabId != null
+                            ? { tabId: saved.tabId, requestId: saved.requestId || null, stageAttemptId: saved.stageAttemptId || null }
+                            : null;
+                        // A resumed participant that already sent in this run and has no chat on record has lost it (V01): strict.
+                        const strict = Boolean(resumeRecord) && !isNewChat(request) && !binding
+                            && (record.attempts || []).some((item) => item.participant === request.participantId);
+                        return [request.modelName, {
+                            participantId: request.participantId, newChat: isNewChat(request), ...(binding ? { binding } : {}), ...(strict ? { strict: true } : {})
+                        }];
+                    }));
+                    // Reuse the existing limit contract, on first attempts and corrections alike.
+                    const composed = composeCustomPrompts(models, promptsByModel, maxWordsByModel, discipline,
+                        built.schema.defaults?.modelNotes || {}, correctionByModel, built.run.maxWords);
+                    const filesSent = wave.some(filesNeeded);
+                    // The chats are written into the record while the batch is in flight: a stop or a reload before the first answer
+                    // keeps them (V01). The background binds a chat before the send; the page reads it once a second.
+                    const bindingsWatch = record ? setInterval(() => { void syncParticipantChats(runContext.pipelineRunId, wave); }, 1000) : null;
+                    let batch;
+                    try {
+                    batch = await runModelBatch({
+                        prompt: composed[models[0]],
+                        promptsByModel: composed,
+                        deliveryInstructionsByModel: Object.fromEntries(models.map((name) => [name, discipline[name].delivery])),
+                        models,
+                        attachments: filesSent ? attachments : [],
+                        // The transport opens or continues the tab of each participant (participants); the run's new-pages flag is not used here.
+                        forceNewTabs: false,
+                        useApiFallback,
+                        signal,
+                        context: {
+                            ...runContext,
+                            participants,
+                            // Its own stage id: without it the batch would take the current Debate stage.
+                            stageId: window.ReportDigest?.customStageId?.(runContext.pipelineRunId, step) || `custom:${runContext.pipelineRunId}:s${step + 1}`,
+                            stageAttemptId: `custom:${runContext.pipelineRunId}:s${step + 1}:a${attempt}${waveNo ? `:w${waveNo}` : ''}`,
+                            pipelineRoundId: `s${step + 1}`,
+                            pipelineBatchId: makePipelineBatchId({ runId: runContext.pipelineRunId, roundIndex: step + 1, groupIndex: waveNo ? `${attempt - 1}w${waveNo}` : attempt - 1 }),
+                            custom: true
+                        },
+                        generationProfile: 'long'
+                    });
+                    } finally { if (bindingsWatch) clearInterval(bindingsWatch); }
+                    // The chats as the background bound them (R01), written into the state before the next send.
+                    await refreshParticipantChats(runContext.pipelineRunId, wave);
+                    const byModel = Object.fromEntries(models.map((model) => {
+                        const modelResult = batch?.results?.[model] || {};
+                        const text = String(batch?.responses?.[model] || '');
+                        if (!text.trim() && String(modelResult.status || '').toUpperCase() === 'USER_ACTION_REQUIRED') {
+                            // A participant request refused before the send (R01, R06): the reason is said, nothing is sent.
+                            const code = Object.values(window.RunError?.CODES || {}).find((item) => String(modelResult.reason || '').includes(item)) || '';
+                            showNotification(`${label}: ${PARTICIPANT_REFUSAL_TEXT[code] || 'запрос участника не отправлен.'}`, 'warn');
+                        }
+                        if (text.trim()) {
+                            const request = wave.find((item) => item.modelName === model);
+                            // A later visit of the step is its own card: the answer of an earlier visit stays in the feed.
+                            // A correction of the same visit replaces the card's answer: the feed shows the answer the run goes on with.
+                            updateDebateModelCardOutput(model, text, '', {
+                                answerRevision: request?.attempt > 1,
+                                status: modelResult.status || 'SUCCESS', source: 'custom',
+                                role: window.StageCard?.feed?.role({ label, modelName: model, participantId: request?.participantId, visit: request?.visit }) || `Basic · ${label}`,
+                                pipelineRunId: runContext.pipelineRunId,
+                                pipelineRoundId: `s${step + 1}${request?.visit > 1 ? `v${request.visit}` : ''}`,
+                                transportRequestId: modelResult.transportRequestId || '', requestId: modelResult.transportRequestId || ''
+                            });
+                        }
+                        return [model, {
+                            text, status: modelResult.status || '', completion: modelResult.completion || '',
+                            // The prompt exactly as the transport dispatched it (token and limit included).
+                            sentPrompt: window.TransportPolicy?.resolvePromptForModel?.(batch?.sentPrompts, model, null) ?? null,
+                            attribution: modelResult.attribution || '',
+                            answered: String(modelResult.status || '').toUpperCase() === 'SUCCESS' && modelResult.attribution === 'verified',
+                            transportRequestId: modelResult.transportRequestId || ''
+                        }];
+                    }));
+                    const byParticipant = {};
+                    wave.forEach((request) => {
+                        const reply = byModel[request.modelName];
+                        byParticipant[request.participantId] = reply;
+                        const saved = chatBindings[request.participantId];
+                        // The chat of a new visit is opened by this request; a continue stays in the chat that opened earlier.
+                        const chatVisit = isNewChat(request) ? request.visit : (saved?.chatVisit ?? request.visit);
+                        const confirmed = filesSent && String(reply.status || '').toUpperCase() === 'SUCCESS';
+                        chatBindings[request.participantId] = {
+                            ...saved,
+                            modelName: request.modelName, stepRef: request.stepRef, visit: request.visit,
+                            transportRequestId: reply.transportRequestId,
+                            chatVisit,
+                            attachedChatVisit: confirmed ? chatVisit : (isNewChat(request) ? null : (saved?.attachedChatVisit ?? null))
+                        };
+                    });
+                    return { byParticipant, closedByOwner: batch?.closeReason === 'moderator_closed' };
+                };
+                // The chats of the wave as the background bound them (R01). A failed read keeps the chats the page has.
+                const refreshParticipantChats = async (pipelineRunId, wave) => {
+                    const response = await sendToBackground({ type: 'PARTICIPANT_CHAT_BINDINGS', pipelineRunId }).catch(() => null);
+                    const live = response?.bindings || {};
+                    wave.forEach((request) => {
+                        const bound = live[request.participantId];
+                        if (!bound || bound.modelName !== request.modelName) return;
+                        chatBindings[request.participantId] = {
+                            ...chatBindings[request.participantId],
+                            tabId: bound.tabId, requestId: bound.requestId || null, stageAttemptId: bound.stageAttemptId || null
+                        };
+                    });
+                };
+                // Reads the chats of the wave and, when one is new or changed, writes the chats into the snapshot of the record (V01).
+                const syncParticipantChats = async (pipelineRunId, wave) => {
+                    const before = JSON.stringify(chatBindings);
+                    await refreshParticipantChats(pipelineRunId, wave);
+                    if (JSON.stringify(chatBindings) === before) return;
+                    if (window.CustomRunRecord.setChatBindings(record, chatBindings)) void saveRecord(true);
+                };
+                // N04 (read-only): the answer of a request whose sending is not confirmed, read in its own chat. It never sends.
+                // Statuses: found (text as it is), no_answer, ambiguous, chat_unavailable; only found carries a text.
+                const checkUnknown = async ({ participantId, modelName, transportRequestId = null, excludeText = '' }) => {
+                    const saved = chatBindings[participantId];
+                    const response = await sendToBackground({
+                        type: 'CHECK_PARTICIPANT_ANSWER', pipelineRunId: runContext.pipelineRunId, participantId, modelName,
+                        transportRequestId, excludeText,
+                        tabId: saved?.modelName === modelName ? (saved.tabId ?? null) : null
+                    }).catch(() => null);
+                    if (!response?.success) return { ok: false, status: 'chat_unavailable', reason: 'check_failed', text: '', tabId: null };
+                    return { ok: response.ok === true, status: response.status, text: response.text || '', reason: response.reason || null, tabId: response.tabId ?? null };
+                };
                 const budgetLimits = window.DebateContextBudget?.DEFAULT_LIMITS;
                 const result = await engine.run({
                     task,
@@ -7036,84 +7232,127 @@ document.addEventListener('click', (event) => {
                     semiAuto,
                     signal,
                     maxPromptChars: budgetLimits ? window.DebateContextBudget.effectivePromptLimit(budgetLimits) : Infinity,
+                    // The shared limit of the run: the one the schema sets (the check of strictLength uses it).
+                    runMaxWords: built.run.maxWords,
+                    // The strict check of the length for the steps without their own output.strictLength (run.strictLength).
+                    runStrictLength: built.run.strictLength,
                     accept: ({ text, completion }) => window.DebateResponseAcceptance?.evaluate?.({ text, meta: { completion } }) || { ok: true },
                     parseAsks: (text) => window.DebateStageMarkers?.parse?.(text)?.askItems || [],
                     askOwner: askCustomOwner,
                     decide: askCustomDecision,
+                    // The route choice: the owner picks a case by its label from the schema (a cancel is null, the run stops).
+                    chooseRoute: ({ stepRef, choices, reason }) => {
+                        const cases = steps.find((item) => item.ref === stepRef)?.select?.cases || [];
+                        const label = (id) => String(cases.find((item) => item.id === id)?.label || id);
+                        return askChoiceDialog({
+                            title: 'Выбор маршрута',
+                            message: `${stepRef}: ${reason === 'conflict_owner' ? 'подошло несколько вариантов, выберите один' : 'выберите вариант'}.`,
+                            choices: choices.map((id) => ({ value: id, label: label(id) }))
+                        });
+                    },
+                    // The owner's answer of an owner step: a text (a file is not supported on this page yet).
+                    checkUnknown,
+                    provideOwnerResult: ({ stepRef, task, input, output, reason, detail }) => askChoiceDialog({
+                        title: `Ответ владельца: ${stepRef}`,
+                        message: window.StageCard.ownerAskMessage({ task, input, output, reason, detail, reasonText: reason ? (window.CustomEngine?.REASON_TEXT?.[reason] || reason) : '' }),
+                        textInput: { label: 'Ответ владельца' },
+                        choices: [{ value: 'send', label: 'Отправить' }]
+                    }),
+                    // The request whose sending is not confirmed: send it again, or skip it for this attempt only.
+                    resolveUnknown: ({ stepRef, items, choices = ['resend', 'skip'] }) => askChoiceDialog({
+                        title: 'Неизвестный запрос',
+                        message: `${stepRef}: отправка не подтверждена (${items.map((item) => item.participantId).join(', ')}). ${choices.includes('check') ? 'Проверить, пришёл ли ответ в чате (ничего не отправляется), отправить заново или пропустить?' : 'Отправить заново или пропустить?'}`,
+                        choices: choices.map((id) => ({ value: id, label: { check: 'Проверить ответ', resend: 'Отправить заново', skip: 'Пропустить' }[id] || id }))
+                    }),
+                    // The texts of the answers go to the record (the registry and the snapshot keep references to them).
+                    ...(record ? {
+                        putText: (value) => record.put(value),
+                        getText: (ref) => (ref && record.texts[ref] !== undefined ? record.texts[ref] : undefined)
+                    } : {}),
+                    ...(record && customRunStore ? { checkpoint: checkpointRecord } : {}),
+                    // The saved state of the run: the engine goes on from its pointer with the schema it was started with (8.3).
+                    ...(resumeRecord ? { resume: { ...resumeRecord.snapshot, artifacts: resumeRecord.artifacts } } : {}),
                     onRequest: recordAttempt,
                     onResponse: recordAttempt,
-                    send: async (models, promptsByModel, { step, label, attempt, maxWordsByModel, correctionByModel }) => {
-                        setCustomStepStatus(step, 'running');
-                        // Reuse the existing limit contract, on first attempts and corrections alike.
-                        const discipline = Object.fromEntries(models.map((name) => [name,
-                            steps[step].models.find((model) => model.name === name)?.discipline || {}
-                        ]));
-                        promptsByModel = composeCustomPrompts(models, promptsByModel, maxWordsByModel, discipline,
-                            built.schema.defaults?.modelNotes || {}, correctionByModel || {}, built.run.maxWords);
-                        const batch = await runModelBatch({
-                            prompt: promptsByModel[models[0]],
-                            promptsByModel,
-                            deliveryInstructionsByModel: Object.fromEntries(models.map((name) => [name, discipline[name].delivery])),
-                            models,
-                            attachments: models.some((model) => !attached.has(model)) ? attachments : [],
-                            forceNewTabs: runContext.forceNewTabs,
-                            useApiFallback,
-                            signal,
-                            context: {
-                                ...runContext,
-                                // Its own stage id: without it the batch would take the current Debate stage.
-                                stageId: window.ReportDigest?.customStageId?.(runContext.pipelineRunId, step) || `custom:${runContext.pipelineRunId}:s${step + 1}`,
-                                stageAttemptId: `custom:${runContext.pipelineRunId}:s${step + 1}:a${attempt}`,
-                                pipelineRoundId: `s${step + 1}`,
-                                pipelineBatchId: makePipelineBatchId({ runId: runContext.pipelineRunId, roundIndex: step + 1, groupIndex: attempt - 1 }),
-                                anonymizeParticipants: false,
-                                custom: true
-                            },
-                            generationProfile: 'long'
+                    sendParticipants: async (requests, meta) => {
+                        setCustomStepStatus(meta.step, 'running');
+                        // Waves: the k-th request of a model goes in wave k, the waves go one after another. Two participants
+                        // of one model are two tabs used in turn, never one tab at the same time.
+                        const countByModel = {};
+                        const waves = [];
+                        requests.forEach((request) => {
+                            const k = countByModel[request.modelName] || 0;
+                            countByModel[request.modelName] = k + 1;
+                            (waves[k] ||= []).push(request);
                         });
-                        models.forEach((model) => attached.add(model));
-                        const byModel = Object.fromEntries(models.map((model) => {
-                            const modelResult = batch?.results?.[model] || {};
-                            const text = String(batch?.responses?.[model] || '');
-                            if (text.trim()) {
-                                updateDebateModelCardOutput(model, text, '', {
-                                    status: modelResult.status || 'SUCCESS', source: 'custom', role: `Basic · ${label}`,
-                                    pipelineRunId: runContext.pipelineRunId, pipelineRoundId: `s${step + 1}`,
-                                    transportRequestId: modelResult.transportRequestId || '', requestId: modelResult.transportRequestId || ''
-                                });
+                        const byParticipant = {};
+                        let closedByOwner = false;
+                        for (const [waveNo, wave] of waves.entries()) {
+                            // A wave with a participant that takes the files and one that does not is split (R05): the files go to
+                            // the new chat only, nobody gets files again because of a neighbour.
+                            const withFiles = wave.filter(filesNeeded);
+                            const without = wave.filter((request) => !filesNeeded(request));
+                            const groups = withFiles.length && without.length
+                                ? [[`${waveNo}f`, withFiles], [`${waveNo}p`, without]]
+                                : [[waveNo, wave]];
+                            for (const [key, group] of groups) {
+                                // eslint-disable-next-line no-await-in-loop
+                                const reply = await sendWave(group, meta, key);
+                                Object.assign(byParticipant, reply.byParticipant);
+                                closedByOwner = closedByOwner || reply.closedByOwner;
                             }
-                            return [model, {
-                                text, status: modelResult.status || '', completion: modelResult.completion || '',
-                                // The prompt exactly as the transport dispatched it (token and limit included).
-                                sentPrompt: window.TransportPolicy?.resolvePromptForModel?.(batch?.sentPrompts, model, null) ?? null,
-                                attribution: modelResult.attribution || '',
-                                answered: String(modelResult.status || '').toUpperCase() === 'SUCCESS' && modelResult.attribution === 'verified',
-                                transportRequestId: modelResult.transportRequestId || ''
-                            }];
-                        }));
-                        return { byModel, closedByOwner: batch?.closeReason === 'moderator_closed' };
+                        }
+                        return { byParticipant, closedByOwner };
                     },
                     onEvent: (kind, fields) => {
                         // A step with accepted answers, or one the owner skipped, is done; otherwise it stays running until a decision.
                         if (kind === 'custom_step' && fields.accepted > 0) setCustomStepStatus(fields.step, 'completed');
                         if (kind === 'custom_decision' && fields.action === 'skip') setCustomStepStatus(fields.step, 'completed');
+                        // The control events of the run go to the feed as short lines (not as answers of models).
+                        if (kind === 'custom_gate') appendBasicRunLine(window.StageCard?.feed?.gate(fields));
+                        if (kind === 'custom_route') {
+                            const cases = steps.find((item) => item.ref === fields.ref)?.select?.cases || [];
+                            appendBasicRunLine(window.StageCard?.feed?.route({ ref: fields.ref, caseLabel: String(cases.find((item) => item.id === fields.case)?.label ?? fields.case), reason: fields.reason }));
+                        }
+                        if (kind === 'custom_transition') appendBasicRunLine(window.StageCard?.feed?.transition(fields, (reason) => engine.STOP_TEXT[reason] || reason));
                         window.MessageDelivery?.batchEvent?.(kind, { pipelineRunId: runContext.pipelineRunId, ...fields });
                     }
                 });
                 const stopText = engine.STOP_TEXT[result.stopReason] || result.stopReason;
                 finishCustomRunProgress(result.stopReason === 'steps_done' ? 'COMPLETED' : 'CANCELLED');
-                if (record) { window.CustomRunRecord.finishRun(record, { stopReason: result.stopReason }); await saveRecord(true); }
+                if (record) {
+                    // The registry and the state of the run at its end: what a later resume needs (8.2).
+                    const CustomRecord = window.CustomRunRecord;
+                    CustomRecord.setArtifacts(record, result.artifacts);
+                    CustomRecord.setSnapshot(record, {
+                        schema: built.schema, runSettings: { semiAuto, maxAttempts: engine.DEFAULT_ATTEMPTS, runMaxWords: built.run.maxWords ?? null },
+                        state: result.state, ownerAnswers: result.ownerAnswers,
+                        routes: result.steps.filter((item) => item.route).map((item) => ({ stepRef: item.ref, visit: item.visit, ...item.route }))
+                    });
+                    CustomRecord.finishRun(record, { stopReason: result.stopReason });
+                    await saveRecord(true);
+                }
+                markStaleBasicCards(result.steps);
+                const artifacts = result.artifacts || [];
+                if (artifacts.length) {
+                    const textOf = (ref) => (record ? window.CustomRunRecord.textOf(record, ref) : String(result.texts?.[ref] ?? ''));
+                    appendBasicRunLine(`Артефакты прогона: ${artifacts.length}`, { buttonLabel: 'Открыть', onButton: () => openBasicArtifacts(artifacts, textOf) });
+                }
                 // The answers of the last step are already in the feed as the cards of that step: no second card repeats
                 // them. The reason of the end is the notification; with no accepted answer at all it says so.
-                showNotification(basicRunNotice(stopText, result.answers.length), result.stopReason === 'steps_done' ? 'info' : 'warn');
+                if (!['steps_done', 'cancelled', 'stopped'].includes(result.stopReason) && !result.answers.length) restoreModeratorComposer(composerBackup);
+                showNotification(basicRunNotice(stopText, result.answers.length, result.stopDetail), result.stopReason === 'steps_done' ? 'info' : 'warn');
+                if (result.stopReason !== 'steps_done') offerResumeLine(record);
                 return result.stopReason !== 'cancelled';
             } catch (err) {
                 console.error('[RESULTS] Custom run failed', err);
                 finishCustomRunProgress('FAILED');
+                if (err?.name !== 'AbortError') restoreModeratorComposer(composerBackup);
                 // The engine reports its own end; a thrown error ends the run without it.
                 window.MessageDelivery?.batchEvent?.('custom_end', { pipelineRunId: runContext.pipelineRunId, stopReason: 'error', error: String(err?.message || err) });
                 showNotification(`Pipeline: error (${err?.message || String(err)})`, 'error');
                 if (record && !record.finishedAt) { window.CustomRunRecord.finishRun(record, { stopReason: 'error' }); await saveRecord(true); }
+                offerResumeLine(record);
                 return false;
             } finally {
                 // Stop while a pause dialog was open: close it, the run is over.
@@ -7122,127 +7361,6 @@ document.addEventListener('click', (event) => {
                 clearPromptAttachments();
                 pipelineRunActive = false;
                 customAbortController = null;
-                activePipelineRunContext = null;
-                setPipelineEditingEnabled(true);
-                setPipelineRunUi(false);
-                updateDebateButtonsUi();
-            }
-        };
-        // Polishing (disput/polishing-pipeline.js): its own loop over runModelBatch, like the judge and the
-        // moderator dispatch — no plan, StateMap or ContextBroker. Every model sees the whole list.
-        const runPolishingFromPage = async ({ idea, presetId }) => {
-            const polishing = window.PolishingPipeline;
-            const definition = (window.PipelinePresets?.BUILTIN_PIPELINE_DEFINITIONS || []).find((item) => item.presetId === presetId) || {};
-            const draftPlan = draftPlanForCanvas(getActiveDraftPlan());
-            const rounds = (draftPlan?.plannedStages || [])
-                .filter((stage) => /^canvas-r\d+$/.test(String(stage.plannedStageId || '')))
-                .map((stage) => (stage.participantIds || []).filter(Boolean))
-                .filter((models) => models.length);
-            if (!polishing || !rounds.length) {
-                showNotification('Polishing: выберите модели хотя бы в одном круге.', 'warn');
-                return false;
-            }
-            const maxIdeas = Number(definition.polishingMaxIdeas) || polishing.DEFAULT_MAX_IDEAS;
-            const maxWords = getDebateMaxWords();
-            const useApiFallback = apiModeCheckbox ? apiModeCheckbox.checked : true;
-            pipelineRunActive = true;
-            customRunProgress = null;
-            polishingAbortController = new AbortController();
-            activePipelineRunContext = {
-                pipelineRunId: makePipelineRunId(),
-                sessionId: debateTabsState?.activeSessionId
-                    || document.querySelector('.debate-session-tab.active')?.dataset?.sessionId
-                    || '1',
-                startedAt: Date.now(),
-                forceNewTabs: newPagesCheckbox ? newPagesCheckbox.checked : true,
-                newPagesDispatched: false
-            };
-            const runContext = activePipelineRunContext;
-            if (runContext.forceNewTabs) resetNewPagesCheckboxAfterOpen();
-            clearModeratorComposer();
-            appendModeratorFeedEntry(idea);
-            setPipelineEditingEnabled(false);
-            setPipelineRunUi(true);
-            updateDebateButtonsUi();
-            try {
-                const attachments = await buildAttachmentPayload();
-                // Attachments go with the first message to each model only: later rounds continue in that chat.
-                const attached = new Set();
-                // The prompt carries the whole list: stop before it outgrows the transport's
-                // context budget, which would cut the prompt's tail with the instruction.
-                const budgetLimits = window.DebateContextBudget?.DEFAULT_LIMITS;
-                const maxPromptChars = budgetLimits ? budgetLimits.promptChars - budgetLimits.reservedOutputChars - 500 : Infinity;
-                const result = await polishing.run({
-                    idea,
-                    rounds,
-                    maxIdeas,
-                    maxPromptChars,
-                    signal: polishingAbortController.signal,
-                    send: async (model, prompt, { round }) => {
-                        const pipelineRoundId = `r${round}`;
-                        const batch = await runModelBatch({
-                            prompt: `${prompt}\n\n${DISPUT_RESPONSE_LIMIT_MARKER} Ответ — не более ${maxWords} слов.`,
-                            models: [model],
-                            attachments: attached.has(model) ? [] : attachments,
-                            forceNewTabs: runContext.forceNewTabs,
-                            useApiFallback,
-                            signal: polishingAbortController.signal,
-                            context: {
-                                ...runContext,
-                                pipelineRoundId,
-                                pipelineBatchId: makePipelineBatchId({ runId: runContext.pipelineRunId, roundIndex: round, groupIndex: 0 }),
-                                // The list carries no participant names; a preset left over from an
-                                // earlier run must not rewrite the idea's text with aliases.
-                                anonymizeParticipants: false,
-                                polishing: true
-                            },
-                            generationProfile: 'long'
-                        });
-                        attached.add(model);
-                        const text = String(batch?.responses?.[model] || '');
-                        const modelResult = batch?.results?.[model] || {};
-                        // The live feed already shows the answer; this only covers a path that did not
-                        // reach it. Same run/round/request as the live card, so it is not a second card.
-                        if (text.trim()) {
-                            updateDebateModelCardOutput(model, text, '', {
-                                status: modelResult.status || 'SUCCESS', source: 'polishing', role: `Polishing · круг ${round}`,
-                                pipelineRunId: runContext.pipelineRunId, pipelineRoundId,
-                                transportRequestId: modelResult.transportRequestId || '', requestId: modelResult.transportRequestId || ''
-                            });
-                        }
-                        // Only the delivery token, nothing else: the model finished and said "nothing new".
-                        const answered = String(modelResult.status || '').toUpperCase() === 'SUCCESS'
-                            && modelResult.attribution === 'verified';
-                        return { text, status: modelResult.status || '', answered };
-                    },
-                    onAnswer: (entry, ideas) => {
-                        window.MessageDelivery?.batchEvent?.('polishing_answer', {
-                            pipelineRunId: runContext.pipelineRunId, round: entry.round, model: entry.model,
-                            status: entry.status, added: entry.added, dropped: entry.dropped || 0,
-                            reason: entry.reason || null, total: ideas.length
-                        });
-                    }
-                });
-                const stopText = polishing.STOP_TEXT[result.stopReason] || result.stopReason;
-                window.MessageDelivery?.batchEvent?.('polishing_end', {
-                    pipelineRunId: runContext.pipelineRunId, stopReason: result.stopReason,
-                    ideas: result.ideas.length, answers: result.log.length
-                });
-                // Always shown, also after Stop: what was collected is the run's result.
-                updateDebateModelCardOutput('Polishing', polishing.formatResult(result), '', {
-                    status: 'SUCCESS', source: 'polishing', role: 'Polishing · итог',
-                    pipelineRunId: runContext.pipelineRunId, pipelineRoundId: 'polishing-result'
-                });
-                showNotification(`Polishing: собрано улучшений ${result.ideas.length} (${stopText}).`, result.ideas.length ? 'info' : 'warn');
-                return result.stopReason !== 'cancelled';
-            } catch (err) {
-                console.error('[RESULTS] Polishing run failed', err);
-                showNotification(`Pipeline: error (${err?.message || String(err)})`, 'error');
-                return false;
-            } finally {
-                clearPromptAttachments();
-                pipelineRunActive = false;
-                polishingAbortController = null;
                 activePipelineRunContext = null;
                 setPipelineEditingEnabled(true);
                 setPipelineRunUi(false);
@@ -7269,233 +7387,22 @@ document.addEventListener('click', (event) => {
             if (selectedPreset?.runner === 'custom') {
                 return runCustomFromPage({ task: moderatorEntryText || pipelineNameText });
             }
-            if (selectedPreset?.runner === 'polishing') {
-                return runPolishingFromPage({ idea: moderatorEntryText || pipelineNameText, presetId });
-            }
-            if (selectedPreset?.runner === 'delta') {
-                return runDeltaFromPage({ phrase: moderatorEntryText || pipelineNameText });
-            }
-            const presetConfig = buildPipelinePresetRuntimeConfig(presetId);
-            const draftPlan = draftPlanForCanvas(getActiveDraftPlan());
-            const selectedSynthesizer = getDraftPlanSynthesizer(draftPlan);
-            const selectedModelsForValidation = getSelectedLLMs();
-            const capabilityVerdict = window.DebateCapabilityRegistry?.validateRequirements?.({
-                models: selectedModelsForValidation,
-                tools: presetConfig.extensionContract?.tools || []
-            });
-            // A tool no selected model is known to have does not stop the run: the models are told
-            // (run notes join the current instruction) and the moderator is warned.
-            const runNotes = capabilityVerdict && !capabilityVerdict.ok
-                ? (window.DebateCapabilityRegistry?.degradedNotes?.(capabilityVerdict.missingTools) || [])
-                : [];
-            if (runNotes.length) {
-                showNotification(`Ни у одной выбранной модели нет подтверждённого инструмента: ${capabilityVerdict.missingTools.join(', ')}. Прогон идёт без него: модели получат об этом указание, отчёт начнётся с предупреждения.`, 'warn');
-            }
-            window.__activePipelinePresetConfig = presetConfig;
-            const previousEngine = debateApplication?.getOrchestrator?.() || null;
-            if (!pipelineRunActive && previousEngine?.getState?.()?.idle) {
-                // The previous run finished all its rounds and only waits for finalization: close it, a new run starts.
-                await previousEngine.requestCancel({ reason: 'new_run' });
-            }
-            const activeLifecycle = debateApplication?.getOrchestrator?.()?.getState?.()?.lifecycle;
-            if (pipelineRunActive || ['STARTING', 'RUNNING', 'PAUSE_REQUESTED', 'QUIESCING', 'PAUSED', 'RECONCILING', 'FINALIZING'].includes(activeLifecycle)) {
-                showNotification('Pipeline уже выполняется. Остановите текущий запуск перед новым.', 'warn');
-                return false;
-            }
-
-            pipelineRunActive = true;
-            customRunProgress = null;
-            debatePaused = false;
-            debateRunState.status = 'running';
-            debateRunState.turnCount = 0;
-            debateRunState.maxTurns = presetConfig.turnLimit ?? presetConfig.waveLimit ?? 0;
-            debateRunState.pauseReason = '';
-            activePipelineAbortController = new AbortController();
-            activePipelineRunContext = {
-                pipelineRunId: makePipelineRunId(),
-                sessionId: debateTabsState?.activeSessionId
-                    || document.querySelector('.debate-session-tab.active')?.dataset?.sessionId
-                    || '1',
-                startedAt: Date.now(),
-                forceNewTabs: newPagesCheckbox ? newPagesCheckbox.checked : true,
-                newPagesDispatched: false,
-                // Lines for every prompt of the run: a tool the selected models are not known to have.
-                runNotes,
-                // Owner's answers to [[ASK:]] markers: they reach the prompts of the next stages.
-                ownerAnswers: []
-            };
-            // The rounds have started: "New pages" is switched off at once (the first dispatch has
-            // its value in the run context; later stages continue in the pages that were opened).
-            if (activePipelineRunContext.forceNewTabs) resetNewPagesCheckboxAfterOpen();
-            // The moderator's message is sent (it is the run's task and appears in the feed): the
-            // input is emptied. If the run fails to start the text is put back below.
-            clearModeratorComposer();
-            await notifyPipelineControlState('STARTING', {
-                stage: 'dispatch',
-                payload: { pipelineName: pipelineNameText }
-            });
-            syncModeratorSelectors();
-            setPipelineRunUi(true);
-            updateDebateButtonsUi();
-
-            try {
-                setR1ModelsFromSelectedLLMs();
-                setPipelineEditingEnabled(false);
-                const attachmentsPayload = await buildAttachmentPayload();
-                const forceNewTabs = newPagesCheckbox ? newPagesCheckbox.checked : true;
-                const useApiFallback = apiModeCheckbox ? apiModeCheckbox.checked : true;
-                const signal = activePipelineAbortController.signal;
-                const selectedModels = getSelectedLLMs();
-                const problemSpec = window.DebateProblemSpec?.extract?.({ topic: pipelineNameText, moderatorMessage: moderatorEntryText, preset: presetConfig }) || null;
-                const problemSpecText = window.DebateProblemSpec?.renderProblemSpec?.(problemSpec) || '';
-                const taskContract = window.DebateContracts?.createTaskContract?.({
-                    rawRequest: pipelineNameText,
-                    objective: problemSpec?.objective || pipelineNameText,
-                    problemSpec,
-                    maxWords: getDebateMaxWords(),
-                    attachmentRefs: (attachmentsPayload || []).map((attachment) => attachment.id || attachment.name || attachment.filename).filter(Boolean),
-                    runId: activePipelineRunContext.pipelineRunId,
-                    profileId: presetConfig.profileId || presetConfig.presetId
-                }) || null;
-                const synthesizer = selectedSynthesizer;
-                const compiledRunPolicy = String(
-                    debateRunPolicySelect?.dataset.explicitOverride
-                    || presetConfig.runPolicy
-                    || getDebateRunPolicy()
-                ) === 'auto' ? 'auto' : 'manual';
-                const makeBatchContext = (roundIndex = 1, groupIndex = 0) => ({
-                    ...activePipelineRunContext,
-                    pipelineRoundId: `r${roundIndex}`,
-                    pipelineBatchId: makePipelineBatchId({
-                        runId: activePipelineRunContext.pipelineRunId,
-                        roundIndex,
-                        groupIndex
-                    })
-                });
-                const started = await debateApplication.start({
-                    runId: activePipelineRunContext.pipelineRunId,
-                    sessionId: activePipelineRunContext.sessionId,
-                    runContext: activePipelineRunContext,
-                    execution: { abortController: activePipelineAbortController },
-                    signal,
-                    preset: presetConfig,
-                    presetConfig,
-                    runPolicy: compiledRunPolicy,
-                    persistedConfig: {
-                        runPolicy: compiledRunPolicy,
-                        sourceView: getCurrentViewKey(),
-                        topic: pipelineNameText,
-                        problemSpec,
-                        taskContract,
-                        selectedModels: selectedModels.slice(),
-                        synthesizer,
-                        draftPlan
-                    },
-                    moderatorEntryText,
-                    pipelineNameText,
-                    problemSpec,
-                    problemSpecText,
-                    taskContract,
-                    policies: window.DebatePolicies?.resolve?.({
-                        // Semi-automatic stops after every stage; Auto only at template gates,
-                        // on a question for the owner and on a failed stage.
-                        stagePause: { mode: compiledRunPolicy === 'auto' ? 'gates' : 'every_stage' },
-                        finalization: {
-                            ...(presetConfig.finalization || {}),
-                            mode: compiledRunPolicy === 'auto'
-                                ? (presetConfig.finalization?.mode || 'after_required_goals')
-                                : 'manual',
-                            synthesis: presetConfig.finalization?.synthesis === 'required'
-                                ? 'required'
-                                : (synthesizer ? (presetConfig.finalization?.synthesis || 'optional') : 'none'),
-                            audit: presetConfig.finalization?.audit || 'optional'
-                        },
-                        budgets: {
-                            maxTotalStages: Number(presetConfig.resourceBudget?.limit || presetConfig.turnLimit || presetConfig.waveLimit || 50)
-                        }
-                    }),
-                    attachmentsPayload,
-                    forceNewTabs,
-                    useApiFallback,
-                    selectedModels,
-                    synthesizer,
-                    draftPlan,
-                    maxWords: getDebateMaxWords(),
-                    auto: compiledRunPolicy === 'auto',
-                    isPaused: () => debatePaused,
-                    makeBatchContext
-                });
-                if (started === false && !window.DebateRunStore.isTerminal(getDebateAggregateState())) {
-                    restoreModeratorComposer(moderatorEntryText);
-                    dispatchDebateRunEvent(window.DebateRunStore.EVENTS.RUN_FAILED, {
-                        reason: 'universal_start_rejected'
-                    });
-                    await notifyPipelineControlState('FAILED', {
-                        stage: 'failed',
-                        reason: 'universal_start_rejected'
-                    });
-                }
-                return started;
-            } catch (err) {
-                const aborted = err?.name === 'AbortError';
-                if (!aborted) restoreModeratorComposer(moderatorEntryText);
-                await notifyPipelineControlState(aborted ? 'CANCELLED' : 'FAILED', {
-                    stage: aborted ? 'cancelled' : 'failed',
-                    reason: aborted ? 'abort_error' : (err?.message || String(err))
-                });
-                if (aborted) {
-                    showNotification('Pipeline: cancelled', 'warn');
-                } else {
-                    console.error('[RESULTS] Debate run failed', err);
-                    showNotification(`Pipeline: error (${err?.message || String(err)})`, 'error');
-                }
-                return false;
-            } finally {
-                if (debateFeedState.pendingApproval) setDebateApprovalCandidate(null);
-                clearPromptAttachments();
-                pipelineRunActive = false;
-                pipelineWaiter.reset();
-                const lifecycle = debateApplication?.getOrchestrator?.()?.getState?.()?.lifecycle;
-                if (['RUNNING', 'PAUSED', 'QUIESCING'].includes(lifecycle)) {
-                    debateRunState.status = debatePaused ? 'paused' : 'awaiting_approval';
-                    syncPipelineFlowVisualState();
-                    setPipelineEditingEnabled(true);
-                    setPipelineRunUi(false);
-                    updateDebateButtonsUi();
-                } else {
-                    debateRunState.status = window.DebateRunStore.isTerminal(getDebateAggregateState())
-                        ? getDebateAggregateState().status
-                        : 'idle';
-                    debateRunState.pauseReason = '';
-                    debatePaused = false;
-                    activePipelineAbortController = null;
-                    activePipelineRunContext = null;
-                    syncPipelineFlowVisualState();
-                    setPipelineEditingEnabled(true);
-                    setPipelineRunUi(false);
-                    updateDebateButtonsUi();
-                }
-                syncPipelineRunStateVisuals();
-                if (typeof recoverUiIfHidden === 'function') {
-                    requestAnimationFrame(() => requestAnimationFrame(() => recoverUiIfHidden('run_complete')));
-                }
-                writeLongGenerationMode(longModeCheckbox ? longModeCheckbox.checked : true);
-            }
+            // The Basic engine is the only runner; any other preset is unavailable.
+            showNotification('Этот профиль пока недоступен.', 'warn');
+            return false;
         };
         const cancelPipelineRun = async () => {
-            if (customAbortController || polishingAbortController || deltaAbortController) {
+            if (customAbortController) {
                 const runId = activePipelineRunContext?.pipelineRunId;
-                (customAbortController || polishingAbortController || deltaAbortController).abort();
+                customAbortController.abort();
                 try { await debateTransportPort?.cancelRun?.(runId); } catch (_) {}
                 return true;
             }
-            const lifecycle = debateApplication?.getOrchestrator?.()?.getState?.()?.lifecycle;
-            if (!pipelineRunActive && !['STARTING', 'RUNNING', 'PAUSE_REQUESTED', 'QUIESCING', 'PAUSED', 'RECONCILING', 'FINALIZING'].includes(lifecycle)) return false;
+            if (!pipelineRunActive) return false;
             await notifyPipelineControlState('CANCELLED', {
                 stage: 'cancelled',
                 reason: 'user_cancel'
             });
-            await debateApplication.cancel('user_cancel');
             pipelineRunActive = false;
             debatePaused = false;
             activePipelineAbortController = null;
@@ -7505,117 +7412,8 @@ document.addEventListener('click', (event) => {
             updateDebateButtonsUi();
             return true;
         };
-        debateApplication = window.DebateApplication?.createApplication?.({
-            store: debateAggregateStore,
-            semanticStore: debateCaseStore,
-            enableDurablePersistence: true,
-            persistRunData: false,
-            deps: {
-                onPersistenceError: () => showNotification('Хранилище переполнено. Прогон продолжается в памяти. Сохраните отчёт до перезагрузки страницы.'),
-                startFromPage: startDebateFromPage,
-                createId: makePipelineRunId,
-                runModelBatch,
-                onEnginePause: (info) => handleEnginePause(info),
-                onTraceEvent: (info) => {
-                    const run = debateTraceStore?.getActiveRun?.();
-                    const revision = debateApplication?.getActiveRevision?.();
-                    if (run && revision?.runId === run.debateRunId) {
-                        run.planRevisions ||= [];
-                        if (!run.planRevisions.some(item => item.revisionId === revision.revisionId)) {
-                            run.planRevisions.push(window.DebateTraceSchema.sanitize(revision));
-                        }
-                    }
-                    if (!['PARTICIPANT_RESPONSE_ACCEPTED', 'PARTICIPANT_RESPONSE_REJECTED'].includes(info.type)) return;
-                    appendDebateTraceEvent({ eventType: 'ANSWER_ACCEPTANCE_DECIDED', source: 'runner', sourceTimestamp: Date.now(),
-                        correlation: { stageId: info.stageInstanceId, stageAttemptId: info.stageAttemptId,
-                            transportRequestId: info.transportRequestId, dispatchId: info.dispatchId },
-                        reasonCode: info.reason || (info.accepted ? 'ENGINE_ACCEPTED' : 'ENGINE_REJECTED'),
-                        payload: { ...info, model: info.model || info.participantId, decisionSource: 'StageExecutor.acceptResponse' }
-                    });
-                },
-                // Why an answer was not accepted (the delivery report never said): journaled per attempt.
-                onResponseRejected: (info) => globalThis.MessageDelivery?.batchEvent?.('response_rejected', {
-                    model: info.participantId || null, stage: info.stageInstanceId || null, attempt: info.attempt || null,
-                    reason: info.reason || null, chars: info.chars ?? null, kind: info.type === 'PARTICIPANT_DISPATCH_FAILED' ? 'dispatch_failed' : 'rejected'
-                }),
-                acceptResponse: (text, meta) => window.DebateResponseAcceptance?.evaluate?.({
-                    text, meta: {
-                        ...(meta || {}), isErrorOutput,
-                        maxWords: Number(meta?.stage?.outputContract?.maxWords || meta?.stage?.maxWords || getDebateMaxWords()),
-                        ...(meta?.stage?.purpose === 'audit' ? { kind: 'synthesis_audit', outputKind: 'json' } : {})
-                    }
-                }) || { ok: Boolean(String(text || '').trim()), reason: '' },
-                compilePrompt: ({ stage, participant, attempt, context }) => {
-                    const compiled = window.DebatePromptCompiler?.compile?.({
-                    task: withOwnerAnswers(context?.debateCase?.taskContract || {
-                        objective: context?.debateCase?.topic?.title || 'Discussion',
-                        maxWords: getDebateMaxWords()
-                    }),
-                    // A template stage carries its own brief (stage card): it becomes the
-                    // action instruction of the prompt for every participant of the stage.
-                    action: stage.instruction ? {
-                        id: stage.stageInstanceId,
-                        operation: window.DebateArtifactPipeline.operationForPurpose(stage.purpose),
-                        role: stage.purpose === 'synthesis' ? 'synthesizer' : 'participant',
-                        // The stage brief plus the control markers this stage may raise.
-                        instruction: window.DebateStageMarkers
-                            ? `${stage.instruction}\n\n${window.DebateStageMarkers.instructions({ purpose: stage.purpose })}`
-                            : stage.instruction
-                    } : undefined,
-                    stage: {
-                        stageId: stage.stageInstanceId,
-                        operation: window.DebateArtifactPipeline.operationForPurpose(stage.purpose),
-                        role: stage.purpose === 'synthesis' ? 'synthesizer' : stage.purpose === 'audit' ? 'auditor' : 'participant',
-                        targetId: stage.inputArtifactIds?.[0] || '',
-                        inputArtifactIds: stage.inputArtifactIds || [],
-                        expectedArtifactTypes: stage.expectedOutputs || [],
-                        outputContract: { maxWords: getDebateMaxWords() }
-                    },
-                    model: participant.model || participant.participantId,
-                    map: context?.stateMap || {}
-                    });
-                    if (!compiled) return '';
-                    const evidence = {
-                        compilerVersion: compiled.compilerVersion, fingerprint: compiled.fingerprint,
-                        promptArtifact: window.AnswerProofNormalization?.evidence?.(compiled.prompt) || null,
-                        declaredInputIds: stage.inputArtifactIds || [],
-                        selectedInputs: (compiled.context?.parts || []).map(part => ({ id: part.id, type: part.type,
-                            provenance: part.provenance || null, representation: 'selected_context_part',
-                            proof: window.AnswerProofNormalization?.evidence?.(part.text || '') || null })),
-                        transformations: ['ContextBroker.select', 'ContextBroker.render', 'PromptPack.render']
-                    };
-                    const event = appendDebateTraceEvent({ eventType: 'PROMPT_COMPILED', source: 'runner',
-                        correlation: { debateRunId: stage.runId, stageId: stage.stageInstanceId, stageAttemptId: `${stage.stageInstanceId}:a${attempt}` },
-                        payload: { model: participant.model || participant.participantId, ...evidence }
-                    });
-                    compiledPromptEvidence.set(`${stage.stageInstanceId}:a${attempt}:${participant.model || participant.participantId}`, { ...evidence, eventId: event?.eventId || null });
-                    while (compiledPromptEvidence.size > 200) compiledPromptEvidence.delete(compiledPromptEvidence.keys().next().value);
-                    return compiled.prompt;
-                },
-                repairPrompt: ({ prompt, reason }) => `${ensureDisputResponseLimit(prompt)}\n\nИсправь нарушение контракта: ${reason || 'invalid_response'}. Верни самостоятельный исправленный ответ не более ${getDebateMaxWords()} слов.`,
-                extractArtifacts: (input) => window.DebateArtifactPipeline.extractArtifacts(input),
-                proposeStateDelta: (input) => window.DebateArtifactPipeline.proposeStateDelta(input),
-                commitStateDelta: (input) => window.DebateArtifactPipeline.commitStateDelta(input),
-                projectStateMap: (input) => window.DebateArtifactPipeline.projectStateMap(input),
-                cancelTransport: async (runId) => {
-                    try {
-                        if (typeof debateTransportPort?.cancelRun === 'function') {
-                            await debateTransportPort.cancelRun(runId);
-                        } else {
-                            await sendToBackground({ type: 'CANCEL_PIPELINE_RUN', pipelineRunId: runId });
-                        }
-                    } catch (error) {
-                        try {
-                            await sendToBackground({ type: 'STOP_ALL' });
-                        } catch (fallbackError) {
-                            console.warn('[RESULTS] Pipeline cancel background cleanup failed', fallbackError || error);
-                        }
-                    }
-                }
-            }
-        }) || null;
-        window.__debateApplication = debateApplication;
-        window.runPipeline = (...args) => debateApplication?.startFromPage?.(...args) ?? startDebateFromPage(...args);
+        // A pipeline starts directly: the runner of every preset is the Basic engine, not the Debate application.
+        window.runPipeline = (...args) => startDebateFromPage(...args);
         window.cancelPipelineRun = cancelPipelineRun;
         if (
             (typeof process !== 'undefined' && process?.env?.NODE_ENV === 'test')
@@ -7626,11 +7424,8 @@ document.addEventListener('click', (event) => {
                 isTerminalPipelineMessage,
                 resolvePipelineWaitTimeoutMs,
                 makePipelineBatchId,
-                waitForDebateApproval,
                 harvestFeedAnswersForOpenRound,
                 resolveDebateApproval,
-                rejectDebateApproval,
-                cleanupDebateApprovalWaiter,
                 cancelPipelineRun,
                 getModeratorDispatchText,
                 syncModeratorMiniPrompts,
@@ -7672,7 +7467,6 @@ document.addEventListener('click', (event) => {
                     if (!pipelineStore.overrides.profiles) pipelineStore.overrides.profiles = {};
                 },
                 getDebateTranscriptStore: () => debateTranscriptStore,
-                getApprovalWaiting: () => debateExecutionContext?.hasApprovalWaiter?.() === true,
                 customStepsFromPlan,
                 prepareCustomPrompts,
                 composeCustomPrompts,
@@ -7688,9 +7482,11 @@ document.addEventListener('click', (event) => {
                 installBasicSchema: (...args) => installBasicSchema(...args),
                 basicRunNotice: (...args) => basicRunNotice(...args),
                 recordFromSchema: (...args) => recordFromSchema(...args),
+                describeSchemaErrors: (...args) => describeSchemaErrors(...args),
                 basicSchemaFromPage: (...args) => basicSchemaFromPage(...args),
                 applyPipelineConfig: (...args) => applyPipelineConfig(...args),
                 runCustomFromPage,
+                resumeCustomFromPage,
                 renderCustomBlockInspector: (...args) => renderCustomBlockInspector(...args),
                 // Lazy: declared further down.
                 customBlockRefForTest: (block) => customBlockRef(block),
@@ -7785,6 +7581,17 @@ document.addEventListener('click', (event) => {
             if (roundCounter <= 1) return;
 
             pipelinePanel.querySelectorAll(`[data-round="${roundCounter}"]`).forEach((el) => el.remove());
+            // The fields kept from the source belong to the removed round: a round added later starts without them.
+            const source = basicSourceSchema.get(draftPlanStorageKey());
+            if (source && Array.isArray(source.steps)) basicSourceSchema.set(draftPlanStorageKey(), { ...source, steps: source.steps.filter((step) => step?.ref !== `r${roundCounter}`) });
+            // The card fields of the removed round (customRoundSettings, its drafts) go with it.
+            const removedRef = `r${roundCounter}`;
+            const remaining = JSON.parse(JSON.stringify(getCustomRoundSettings()));
+            delete remaining[removedRef];
+            customRoundSettings.set(draftPlanStorageKey(), remaining);
+            stepDrafts.delete(`${draftPlanStorageKey()}\n${removedRef}`);
+            // The controls after the removed round stand after the round before it.
+            customControls.set(draftPlanStorageKey(), getCustomControls().map((item) => (item.after === removedRef ? { ...item, after: `r${roundCounter - 1}` } : item)));
             roundCounter--;
             if (roundCounter <= 1 && pipelineRemoveRoundBtn) {
                 pipelineRemoveRoundBtn.style.display = 'none';
@@ -7822,7 +7629,6 @@ document.addEventListener('click', (event) => {
                 adoptBasicWorking(draftPlanStorageKey(), isDefaultPipelineName(draftPlanStorageKey()) ? { cards: {}, rounds: {}, defaults: {}, runExplicit: {}, error: '' } : working);
             }
             const protocol = config.protocol && typeof config.protocol === 'object' ? config.protocol : null;
-            activeStageTemplate = String(protocol?.stageTemplate || '');
             if (protocol) {
                 if (typeof window.setDebateSchemeValue === 'function') window.setDebateSchemeValue('universal');
                 const lengthSelect = document.getElementById('debate-length-select');
@@ -7888,7 +7694,9 @@ document.addEventListener('click', (event) => {
             pipelineR1ManualDirty = !!modelStacks['r1-models'];
             debateRunState.maxTurns = getDebateMaxTurns();
             if (debateMaxTurnsInput) debateMaxTurnsInput.value = String(debateRunState.maxTurns);
+            // The sync rebuilds each stack in the canvas order (marks and roles are kept by name): the saved order is put back after it.
             syncPipelineRoundModelsFromSelectedLLMs({ force: true });
+            Object.entries(modelStacks).forEach(([stackId, state]) => orderModelStackBlocks(stackId, state));
             syncPipelineRoundsToDebateLimit();
             if (window.__pendingPipelineSynthesizer !== undefined) {
                 const restoredPlan = draftPlanForCanvas(getActiveDraftPlan());
@@ -8238,7 +8046,7 @@ document.addEventListener('click', (event) => {
             if (pipelineStore.active === trimmedOld) pipelineStore.active = trimmedNew;
             if (customPipelineDefaults.has(trimmedOld)) { customPipelineDefaults.set(trimmedNew, customPipelineDefaults.get(trimmedOld)); customPipelineDefaults.delete(trimmedOld); }
             if (customCardSettings.has(trimmedOld)) { customCardSettings.set(trimmedNew, customCardSettings.get(trimmedOld)); customCardSettings.delete(trimmedOld); }
-            [customRoundSettings, basicRunExplicit, basicSchemaLoadErrors].forEach((map) => { if (map.has(trimmedOld)) { map.set(trimmedNew, map.get(trimmedOld)); map.delete(trimmedOld); } });
+            [customRoundSettings, basicRunExplicit, basicSchemaLoadErrors, basicSourceSchema].forEach((map) => { if (map.has(trimmedOld)) { map.set(trimmedNew, map.get(trimmedOld)); map.delete(trimmedOld); } });
 
             renderPipelineList(pipelineStore.order, pipelineStore.active, pipelineStore.lastSaved);
             persistPipelineStore();
@@ -8553,13 +8361,27 @@ document.addEventListener('click', (event) => {
         };
 
         // The errors of a schema in one line: the place and the reason of each, at most five.
-        const describeSchemaErrors = (errors) => errors.slice(0, 5).map((error) => (error.path ? `${error.path}: ${error.message}` : error.message)).join('; ');
+        // The places of a validation error, with a note for the one a control between a round and its synthesis gives.
+        const describeSchemaErrors = (errors) => errors.slice(0, 5).map((error) => {
+            const text = error.path ? `${error.path}: ${error.message}` : error.message;
+            return /промежуточный синтез стоит (сразу после раунда|между двумя раундами)/.test(error.message) ? `${text}. ${INTERMEDIATE_CONTROL_NOTE}` : text;
+        }).join('; ');
         // The record of a Basic pipeline built from its schema, and nowhere else: the schema is the content, the canvas
         // members (rounds, models, roles, synthesizer, intermediate syntheses) are derived from it here. Nothing is written
         // to the store. Returns { ok, errors, record }; a schema the canvas cannot show gives errors with the place.
         const recordFromSchema = (name, schema) => {
             const errors = window.BasicSchema.validate(schema);
             if (errors.length) return { ok: false, errors };
+            // The canvas shows one block per model name: two participants of one model in a step are refused with their place
+            // (not saved without them) until the canvas shows them.
+            const twice = [];
+            (schema.steps || []).forEach((step, at) => {
+                const names = (step.models || []).filter((model) => model.enabled !== false).map((model) => model.name);
+                names.forEach((name, index) => {
+                    if (names.indexOf(name) !== index) twice.push({ path: `steps[${at}].models`, message: `два участника модели «${name}» в одном шаге пока не показываются на холсте` });
+                });
+            });
+            if (twice.length) return { ok: false, errors: twice };
             const canvas = window.BasicSchema.toCanvas(schema, {
                 models: getAllPipelineModelNames(),
                 isRole: (id) => id === CUSTOM_ROLE_ID || Boolean(getJudgePromptById(id)),
@@ -8567,7 +8389,7 @@ document.addEventListener('click', (event) => {
             });
             if (canvas.errors.length) return { ok: false, errors: canvas.errors };
             const run = window.BasicSchema.resolveRun(schema);
-            const base = clonePipelineConfig(buildDefaultPipelinePresets().Basic);
+            const base = clonePipelineConfig(buildDefaultPipelinePresets().Default);
             delete base.disabled;
             delete base.disabledReason;
             const lengthSelect = document.getElementById('debate-length-select');
@@ -8709,9 +8531,6 @@ document.addEventListener('click', (event) => {
                     }
                 });
             }
-            const domActive = findPipelineItemByName(pipelineStore.active)?.dataset.name
-                || pipelineItems?.querySelector('.pipeline-item.active')?.dataset.name
-                || '';
             const activeName = pipelineStore.active || '';
             renderPipelineList(pipelineStore.order, activeName, pipelineStore.lastSaved);
             const activeItem = activeName ? findPipelineItemByName(activeName) : null;
@@ -8811,7 +8630,7 @@ document.addEventListener('click', (event) => {
             const inheritedValue = (key) => pipelineDefaults ? fallbackFor(key) : key === 'task' ? inherited.task.value : inherited.discipline[key].value;
             const rawValue = (key) => isTask(key) ? saved[key] : customDiscipline(saved.discipline)[key];
             const effectiveValue = (key) => pipelineDefaults
-                ? window.BasicSchema.pick([['pipeline', legacyValue(rawValue(key))]], fallbackFor(key)).value
+                ? window.BasicSchema.pick([['pipeline', keepEmpty(rawValue(key), key)]], fallbackFor(key)).value
                 : key === 'task' ? resolved.task.value : resolved.discipline[key].value;
             const copyButton = (id, label) => `<button type="button" data-action="copy" data-copy-field="${id}" title="Копировать" aria-label="Копировать: ${label}"><i class="ti ti-copy" aria-hidden="true"></i></button>`;
             // ▶ «Особенности моделей»: one field per model on the canvas; the model card shows its own note read-only.
@@ -8832,6 +8651,7 @@ document.addEventListener('click', (event) => {
                     <button type="button" class="modal-button accent" id="custom-card-save">Save</button>
                 </header>
                 <div class="custom-card-body">
+                    ${!pipelineDefaults && step?.kind === 'synthesis' ? '<div class="custom-card-steps" id="custom-card-step-fields"></div>' : ''}
                     ${pipelineDefaults ? '<p class="custom-card-note">Общие значения для всех шагов. Своё значение модели имеет приоритет; пустое поле наследует значение из кода.</p>' : `<div class="custom-card-field">
                         <div class="custom-card-head"><label for="custom-card-request">Запрос</label><span><code>{задача}</code> и <code>{вход}</code> подставляются при запуске. Изменённый текст используется только для этой модели в этом шаге.</span><span class="custom-card-actions">${copyButton('custom-card-request', 'Запрос')}</span></div>
                         <textarea id="custom-card-request" spellcheck="false"></textarea>
@@ -8845,7 +8665,7 @@ document.addEventListener('click', (event) => {
                                 <div class="custom-card-actions">
                                     ${copyButton(`custom-discipline-${key}`, label)}
                                     <button type="button" data-action="inherit" title="${pipelineDefaults ? 'Вернуть к коду' : 'Вернуть к общему'}" aria-label="Вернуть к общему: ${label}" hidden>↶</button>
-                                    <button type="button" data-action="clear" title="Очистить — наследовать" aria-label="Очистить: ${label}" class="custom-card-clear">×</button>
+                                    <button type="button" data-action="clear" title="${EMPTYABLE_KEYS.has(key) ? 'Оставить пустым (не наследовать)' : 'Очистить — наследовать'}" aria-label="Очистить: ${label}" class="custom-card-clear">×</button>
                                     <button type="button" data-action="save" title="Сохранить" aria-label="Сохранить: ${label}" class="custom-card-commit">✓</button>
                                 </div>
                             </div>
@@ -8864,6 +8684,21 @@ document.addEventListener('click', (event) => {
                     </div>` : ''}
                     ${pipelineDefaults ? '' : `<span id="custom-card-length-note" class="custom-card-sr-only">Пусто — общий предел pipeline (${general}).</span>`}
                 </div>`;
+            // The input, the number of answers, the owner and the output of a synthesis: saved at once, as the round card does.
+            const stepFieldsBox = content.querySelector('#custom-card-step-fields');
+            if (stepFieldsBox) {
+                const drawStepFields = () => {
+                    const fields = window.StageCard.stepFieldsModel({ kind: 'synthesis', settings: getCustomRoundSettings()[ref] || {}, earlier: stepsBefore(ref),
+                        enabledCount: step.models.length, drafts: stepDraftsOf(ref), disabled: pipelineRunActive });
+                    stepFieldsBox.replaceChildren();
+                    window.StageCard.renderStepFields(stepFieldsBox, fields, async (field, value) => {
+                        if (pipelineRunActive) return;
+                        await commitStepField(ref, field, value, step.models.length);
+                        drawStepFields();
+                    });
+                };
+                drawStepFields();
+            }
             const request = content.querySelector('#custom-card-request');
             const length = content.querySelector('#custom-card-length');
             const reset = content.querySelector('#custom-card-reset');
@@ -8879,6 +8714,10 @@ document.addEventListener('click', (event) => {
             const display = (key, value) => key === 'limit' ? customLengthInstruction(value, Number(length?.value || general)) : value;
             // A text the owner typed is theirs even when it equals the inherited one; ↶ and × give it back.
             const typed = (value) => typeof value === 'string' && Boolean(value.trim());
+            // A field that may be left empty on purpose (EMPTYABLE_KEYS): an empty text the owner left is a value too.
+            const isSet = (key, value) => typed(value) || (EMPTYABLE_KEYS.has(key) && value === '');
+            // Fields the owner sent back to the inherited value with ↶ (they are not written, whatever the field shows).
+            const inheritNow = new Set();
             let lengthDirty = false;
             const refresh = () => {
                 if (request) {
@@ -8890,7 +8729,7 @@ document.addEventListener('click', (event) => {
                     if (!dirtyFields.has(key)) fields[key].value = display(key, effectiveValue(key));
                     fields[key].placeholder = display(key, inheritedValue(key));
                     const raw = rawValue(key);
-                    const own = dirtyFields.has(key) ? typed(fields[key].value) : typed(raw);
+                    const own = dirtyFields.has(key) ? (typed(fields[key].value) || EMPTYABLE_KEYS.has(key)) : isSet(key, raw);
                     content.querySelector(`[data-discipline="${key}"] [data-action="inherit"]`).hidden = !own;
                 });
             };
@@ -8899,7 +8738,7 @@ document.addEventListener('click', (event) => {
                 const field = row.querySelector('textarea');
                 fields[key] = field;
                 field.readOnly = pipelineRunActive;
-                field.addEventListener('input', () => { dirtyFields.add(key); refresh(); });
+                field.addEventListener('input', () => { dirtyFields.add(key); inheritNow.delete(key); refresh(); });
                 row.querySelectorAll('button:not([data-action="copy"])').forEach((button) => {
                     button.disabled = pipelineRunActive;
                     button.addEventListener('click', async () => {
@@ -8908,8 +8747,9 @@ document.addEventListener('click', (event) => {
                         else {
                             field.value = '';
                             dirtyFields.add(key);
+                            if (button.dataset.action === 'inherit') inheritNow.add(key); else inheritNow.delete(key);
                             refresh();
-                            if (button.dataset.action === 'inherit') await saveSettings(false);
+                            if (button.dataset.action === 'inherit') { await saveSettings(false); inheritNow.delete(key); }
                             else field.focus();
                         }
                     });
@@ -8931,7 +8771,10 @@ document.addEventListener('click', (event) => {
                     let value = dirtyFields.has(key) ? fields[key].value : rawValue(key);
                     // The shown length instruction has the numbers filled in; typed unchanged it stands for its template.
                     if (dirtyFields.has(key) && key === 'limit' && value === display(key, inheritedValue(key))) value = inheritedValue(key);
-                    if (typed(value)) { if (isTask(key)) next[key] = value; else discipline[key] = value; }
+                    // A text the owner emptied on purpose stays empty (the field is written as ''); ↶ gives the inherited value back.
+                    if (inheritNow.has(key)) value = undefined;
+                    else if (dirtyFields.has(key) && EMPTYABLE_KEYS.has(key) && !typed(value)) value = '';
+                    if (isSet(key, value)) { if (isTask(key)) next[key] = value; else discipline[key] = value; }
                 });
                 // Empty lines are not saved.
                 const lines = lineValues.map((line) => line.trim()).filter(Boolean);
@@ -9145,8 +8988,6 @@ document.addEventListener('click', (event) => {
         let lastFinalSynthesizer = '';
         let finalSynthesisTimer = null;
         const toggleFinalSynthesis = () => {
-            const lifecycle = String(window.DebateApplication?.getState?.()?.lifecycle || 'IDLE').toUpperCase();
-            if (['PLANNING', 'RUNNING', 'CANCELLING'].includes(lifecycle)) return;
             const current = normalizeExplicitSynthesizer(window.__getDraftPlanSynthesizer?.(
                 window.__pipelineDraftPlanForCanvas?.(window.__getActivePipelineDraftPlan?.())
             ));
@@ -9203,6 +9044,47 @@ document.addEventListener('click', (event) => {
 
         // Stage card: the round badge opens the stage's card (template stage text,
         // who works, run status). Plain rounds show their participants.
+        // The answers a rule may read: the participants (enabled models) of the rounds and syntheses before the step.
+        const participantsBefore = (ref) => {
+            const steps = basicSchemaFromPage(draftPlanForCanvas(getActiveDraftPlan()), null, { forSave: true }).steps || [];
+            const at = steps.findIndex((step) => step.ref === ref);
+            return steps.slice(0, Math.max(0, at)).filter((step) => step.kind === 'round' || step.kind === 'synthesis').map((step) => ({
+                ref: step.ref,
+                label: stepLabel(step.ref),
+                participants: (step.models || []).filter((model) => model.enabled !== false).map((model) => ({ id: model.id ?? model.name, name: model.name }))
+            })).filter((item) => item.participants.length);
+        };
+        // The window of a control step: a gate, a route and an owner have their windows.
+        // «Шаг после этапа» in the card of a round or a control: the new step stands after it, and the card closes to show it.
+        const addControlOptionsFor = (anchor, dialog) => {
+            const refused = intermediateAfterRound(anchor);
+            return {
+                disabled: pipelineRunActive || refused,
+                note: refused ? INTERMEDIATE_CONTROL_NOTE : '',
+                onAdd: async (kind) => { if (await insertControlAfter(anchor, kind)) dialog.close(); }
+            };
+        };
+        const openControlCard = (ref) => {
+            const dialog = document.getElementById('pipeline-stage-dialog');
+            const title = document.getElementById('pipeline-stage-dialog-title');
+            const body = document.getElementById('pipeline-stage-card');
+            const entry = getCustomControls().find((item) => item.step.ref === ref);
+            if (!dialog || !title || !body || !entry || !window.StageCard) return;
+            const { step } = entry;
+            title.textContent = `${CONTROL_TITLE[step.kind] || step.kind} ${step.ref}`;
+            body.replaceChildren();
+            const options = { names: getAllPipelineModelNames(), refs: schemaRefsForWindows(), earlier: participantsBefore(ref), disabled: pipelineRunActive };
+            const onEdit = async (edit) => {
+                if (pipelineRunActive) return;
+                await commitControl(ref, edit);
+                openControlCard(ref);
+            };
+            if (step.kind === 'gate') window.StageCard.renderGateWindow(body, window.StageCard.gateWindowModel(step, options), onEdit);
+            if (step.kind === 'route') window.StageCard.renderRouteWindow(body, window.StageCard.routeWindowModel(step, options), onEdit);
+            if (step.kind === 'owner') window.StageCard.renderOwnerWindow(body, window.StageCard.ownerWindowModel(step, { disabled: pipelineRunActive }), onEdit);
+            window.StageCard.renderAddControl(body, addControlOptionsFor(ref, dialog));
+            if (!dialog.open) dialog.showModal();
+        };
         const openStageCard = (roundBadge) => {
             const dialog = document.getElementById('pipeline-stage-dialog');
             const title = document.getElementById('pipeline-stage-dialog-title');
@@ -9215,22 +9097,20 @@ document.addEventListener('click', (event) => {
                 body.replaceChildren();
             } else {
                 const round = Number(match[1]);
-                const templateStage = activeStageTemplate ? window.StageTemplates?.get?.(activeStageTemplate)?.byNumber?.(round) || null : null;
                 const stack = captureModelStackState(`r${round}-models`);
-                const stages = debateApplication?.getOrchestrator?.()?.getState?.()?.stages || [];
+                const stages = [];
                 const stageRun = stages.filter((item) => item.plannedStageId === `canvas-r${round}`).pop() || null;
                 // Custom rounds (R1 included) with mini-request selectors: one role for the round's models
                 // instead of the participant list.
-                const roleChoice = !templateStage && isCustomEnginePipeline() && document.querySelector(`#r${round}-models .role-selector`)
+                const roleChoice = isCustomEnginePipeline() && document.querySelector(`#r${round}-models .role-selector`)
                     ? { prompts: getRoleOptionPrompts(), roles: (stack?.items || []).map((item) => item.role || ''), disabled: pipelineRunActive,
                         roundPrompt: getCustomRoundPrompt(`r${round}`),
-                        // The round card of Basic: the order, the input and the task of the round.
-                        settings: { order: getCustomRoundSettings()[`r${round}`]?.order || '', input: getCustomRoundSettings()[`r${round}`]?.input || '', task: getCustomRoundSettings()[`r${round}`]?.task || '' },
+                        // The round card of Basic: the order, the input, the task, the number of answers, the owner and the output.
+                        settings: getCustomRoundSettings()[`r${round}`] || {}, drafts: stepDraftsOf(`r${round}`), earlier: stepsBefore(`r${round}`),
                         first: round === 1, inheritedTask: resolveCustomFields({}, 'round').task.value }
                     : null;
                 const model = window.StageCard.buildModel({
                     round,
-                    templateStage,
                     participants: (stack?.items || []).filter((item) => item.input || item.send),
                     stageRun,
                     roleChoice
@@ -9244,9 +9124,10 @@ document.addEventListener('click', (event) => {
                     onRoundPrompt: (text) => setCustomRoundPrompt(`r${round}`, text),
                     onSetting: async (field, value) => {
                         if (pipelineRunActive) return;
-                        await setCustomRoundSetting(`r${round}`, field, value);
+                        await commitStepField(`r${round}`, field, value, (stack?.items || []).filter((item) => item.send).length);
                         openStageCard(roundBadge);
-                    }
+                    },
+                    addControl: roleChoice ? addControlOptionsFor(`r${round}`, dialog) : null
                 });
             }
             if (!dialog.open) dialog.showModal();
@@ -9261,6 +9142,17 @@ document.addEventListener('click', (event) => {
         // Function declarations are hoisted within this block; the bridge keeps the call explicit for tests and other scopes.
         window.__toggleIntermediateSynthesis = toggleIntermediateSynthesis;
         pipelinePanel.addEventListener('click', (event) => {
+            const controlCard = event.target?.closest?.('.pipeline-control-card');
+            if (controlCard && pipelinePanel.contains(controlCard)) {
+                openControlCard(controlCard.dataset.controlCard);
+                return;
+            }
+            const controlDelete = event.target?.closest?.('.pipeline-control-delete-btn');
+            if (controlDelete && pipelinePanel.contains(controlDelete)) {
+                event.preventDefault();
+                void deleteControl(controlDelete.dataset.controlDelete);
+                return;
+            }
             const insert = event.target?.closest?.('.pipeline-stage-insert');
             if (insert) {
                 clearTimeout(intermediateTimer);
@@ -9621,7 +9513,6 @@ document.addEventListener('click', (event) => {
             const item = event.target.closest('.pipeline-item');
             if (!item || !pipelineItems.contains(item)) return;
             selectPipeline(item, { clearDebateFeed: true });
-            if (item.dataset.name === 'Specialized profile') pipelineProfileView?.open?.();
         });
         await initPipelineList();
         setTimeout(() => syncPipelineRoundsToDebateLimit(), 0);
@@ -10000,11 +9891,6 @@ document.addEventListener('click', (event) => {
                 return map;
             };
 
-            const getAllNoteIds = async () => {
-                const map = await buildAllNotesMap();
-                return Array.from(map.keys());
-            };
-
             const syncSelectAllIndicator = async () => {
                 // Select-all UI was removed from the sidebar toolbar.
             };
@@ -10151,40 +10037,6 @@ document.addEventListener('click', (event) => {
                     renderTabs(state.tabs);
                     return state.tabs;
                 }
-            };
-
-            const pruneEmptyTabs = async () => {
-                if (!notesClient?.deleteTab) return false;
-                if (state.tabs.length <= 1) return false;
-                const keepTabId = state.defaultTabId || state.tabs[0]?.tabId;
-                const emptyTabIds = [];
-
-                for (const tab of state.tabs) {
-                    if (!tab?.tabId || tab.tabId === keepTabId) continue;
-                    try {
-                        const result = await notesClient.listChildren({
-                            tabId: tab.tabId,
-                            parentId: null
-                        });
-                        const notes = result?.notes || [];
-                        if (!notes.length) {
-                            emptyTabIds.push(tab.tabId);
-                        }
-                    } catch (error) {
-                        console.warn('[results] failed to inspect tab', error);
-                    }
-                }
-
-                if (!emptyTabIds.length) return false;
-                for (const tabId of emptyTabIds) {
-                    try {
-                        await notesClient.deleteTab({ tabId });
-                    } catch (error) {
-                        console.warn('[results] failed to delete empty tab', error);
-                    }
-                }
-                await refreshTabs();
-                return true;
             };
 
             const startRenameTab = (button) => {
@@ -12513,9 +12365,6 @@ document.addEventListener('click', (event) => {
                 }
             });
 
-            const getSelectedSession = () =>
-                sessionsState.sessions.find((session) => session.id === sessionsState.selectedId) || null;
-
             const startRenameSession = (item) => {
                 if (!item) return;
                 const sessionId = item.dataset.sessionId;
@@ -12684,15 +12533,6 @@ document.addEventListener('click', (event) => {
                     console.warn('[results] failed to open session', error);
                     setStatus('Open failed');
                 }
-            };
-
-            const runSelectedSession = async () => {
-                const session = getSelectedSession();
-                if (!session) {
-                    setStatus('Select a session');
-                    return;
-                }
-                await runSessionById(session.id);
             };
 
             const deleteSessionById = async (sessionId) => {
@@ -13138,267 +12978,6 @@ document.addEventListener('click', (event) => {
                 return selected.filter((noteId) => !isDescendantSelected(noteId));
             };
 
-            const buildChildrenLookup = (map) => {
-                const lookup = new Map();
-                map.forEach((note) => {
-                    const parentId = note.parentId || null;
-                    if (!lookup.has(parentId)) lookup.set(parentId, []);
-                    lookup.get(parentId).push(note);
-                });
-                lookup.forEach((list) => {
-                    list.sort((a, b) => String(a.orderKey || '').localeCompare(String(b.orderKey || '')));
-                });
-                return lookup;
-            };
-
-            const buildSourceMetaLines = (note) => {
-                const source = note?.source || {};
-                const lines = [];
-                const pageUrl = typeof source.pageUrl === 'string' ? source.pageUrl.trim() : '';
-                const ts = typeof source.ts === 'number' ? source.ts : null;
-                if (pageUrl) lines.push(`Source: ${pageUrl}`);
-                if (ts) lines.push(`Saved: ${formatTimestamp(ts)}`);
-                return lines;
-            };
-
-            const normalizeNoteTextForMerge = (text, html) => {
-                const rawText = typeof text === 'string' ? text : '';
-                if (rawText.trim()) return rawText;
-                if (!html) return '';
-                return String(stripHtmlToPlainText(html) || '').trim();
-            };
-
-            const getSelectedNoteIds = () => {
-                if (state.selectedNoteIds.size) return Array.from(state.selectedNoteIds);
-                if (state.activeNoteId) return [state.activeNoteId];
-                return [];
-            };
-
-            const getSelectedNoteIdsByVisualOrder = () => {
-                const selected = getSelectedNoteIds();
-                if (!selected.length) return [];
-                const order = new Map();
-                getVisibleTreeItems().forEach((item, index) => {
-                    if (item?.dataset?.noteId) {
-                        order.set(item.dataset.noteId, index);
-                    }
-                });
-                const fallbackOrder = new Map(selected.map((noteId, index) => [noteId, index]));
-                return selected
-                    .slice()
-                    .sort((a, b) => {
-                        const aIndex = order.has(a) ? order.get(a) : 100000 + fallbackOrder.get(a);
-                        const bIndex = order.has(b) ? order.get(b) : 100000 + fallbackOrder.get(b);
-                        return aIndex - bIndex;
-                    });
-            };
-
-            const sanitizeNoteHtml = (value) => {
-                const html = sanitizeInlineHtml(String(value || '')).trim();
-                return html || '';
-            };
-
-            const exportSelectedNotes = async () => {
-                if (!await ensureNotesReady()) {
-                    setStatus('Notes offline');
-                    return;
-                }
-                const topMost = await getTopMostSelection();
-                if (!topMost.length) {
-                    setStatus('Select notes');
-                    return;
-                }
-                const map = await buildAllNotesMap();
-                const lookup = buildChildrenLookup(map);
-                const idsToFetch = new Set();
-                const collectIds = (noteId) => {
-                    if (!noteId || idsToFetch.has(noteId)) return;
-                    idsToFetch.add(noteId);
-                    const children = lookup.get(noteId) || [];
-                    children.forEach((child) => collectIds(child.id));
-                };
-                topMost.forEach(collectIds);
-                const textMap = new Map();
-                const htmlMap = new Map();
-                for (const noteId of idsToFetch) {
-                    try {
-                        const result = await notesClient.getNote({ noteId });
-                        textMap.set(noteId, result?.text || '');
-                        htmlMap.set(noteId, sanitizeNoteHtml(result?.html || ''));
-                    } catch (error) {
-                        console.warn('[results] failed to fetch note for export', error);
-                        textMap.set(noteId, '');
-                        htmlMap.set(noteId, '');
-                    }
-                }
-                const renderNode = (noteId) => {
-                    const note = map.get(noteId);
-                    if (!note) return '';
-                    const children = lookup.get(noteId) || [];
-                    const html = htmlMap.get(noteId) || '';
-                    const text = textMap.get(noteId) || '';
-                    const bodyHtml = html
-                        ? `<div class="note-body">${html}</div>`
-                        : (text ? `<pre>${escapeHtml(text)}</pre>` : '');
-                    const childrenHtml = children.map((child) => renderNode(child.id)).join('');
-                    return `<li><div class="note-title">${escapeHtml(note.title || 'Untitled')}</div>${bodyHtml}${childrenHtml ? `<ul>${childrenHtml}</ul>` : ''}</li>`;
-                };
-                const exportHtml = `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Notes Export</title>
-  <style>
-    body { font-family: sans-serif; line-height: 1.5; padding: 24px; color: #111827; }
-    ul { list-style: none; padding-left: 18px; }
-    .note-title { font-weight: 600; margin-bottom: 4px; }
-    pre { background: #f8fafc; padding: 10px 12px; border-radius: 8px; white-space: pre-wrap; }
-    .note-body { margin-bottom: 10px; word-break: break-word; }
-    .note-body img { max-width: 100%; height: auto; }
-  </style>
-</head>
-<body>
-  <h1>Notes Export</h1>
-  <ul>
-    ${topMost.map((noteId) => renderNode(noteId)).join('')}
-  </ul>
-</body>
-</html>`;
-                const blob = new Blob([exportHtml], { type: 'text/html' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `notes_export_${formatTimestamp().replace(/[: ]/g, '-')}.html`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-                setStatus('Export ready');
-            };
-
-            const mergeSelectedNotes = async () => {
-                if (!await ensureNotesReady()) {
-                    setStatus('Notes offline');
-                    return;
-                }
-                const orderedIds = getSelectedNoteIdsByVisualOrder();
-                if (orderedIds.length < 2) {
-                    setStatus('Select at least 2');
-                    return;
-                }
-                await flushSave();
-                const selectedSet = new Set(orderedIds);
-                const mainNoteId = orderedIds[0];
-                const mergeIds = orderedIds.slice(1);
-                const noteDataMap = new Map();
-
-                try {
-                    for (const noteId of orderedIds) {
-                        const result = await notesClient.getNote({ noteId });
-                        if (result?.note) {
-                            noteDataMap.set(noteId, result);
-                        }
-                    }
-                } catch (error) {
-                    console.warn('[results] failed to load notes for merge', error);
-                    setStatus('Merge failed');
-                    return;
-                }
-
-                const mainData = noteDataMap.get(mainNoteId);
-                if (!mainData?.note) {
-                    setStatus('Main note missing');
-                    return;
-                }
-
-                const baseHtml = sanitizeNoteHtml(mainData.html || '');
-                const baseText = normalizeNoteTextForMerge(mainData.text, baseHtml);
-                const baseHtmlBlock = baseHtml || (baseText ? buildHtmlFromText(baseText) : '');
-                const combinedTextParts = [];
-                const combinedHtmlParts = [];
-                if (baseText) combinedTextParts.push(baseText);
-                if (baseHtmlBlock) combinedHtmlParts.push(baseHtmlBlock);
-
-                const buildMergedTextBlock = (data) => {
-                    const html = sanitizeNoteHtml(data?.html || '');
-                    const text = normalizeNoteTextForMerge(data?.text, html);
-                    if (!text && !html) return '';
-                    const metaLines = buildSourceMetaLines(data?.note);
-                    const parts = [];
-                    if (metaLines.length) parts.push(metaLines.join('\n'));
-                    if (text) parts.push(text);
-                    return parts.join('\n');
-                };
-
-                const buildMergedHtmlBlock = (data) => {
-                    const html = sanitizeNoteHtml(data?.html || '');
-                    const text = normalizeNoteTextForMerge(data?.text, html);
-                    if (!text && !html) return '';
-                    const metaLines = buildSourceMetaLines(data?.note);
-                    const metaHtml = metaLines.length
-                        ? `<div class="note-merge-meta">${metaLines.map((line) => escapeHtml(line)).join('<br>')}</div>`
-                        : '';
-                    const bodyHtml = html || (text ? buildHtmlFromText(text) : '');
-                    if (!metaHtml) return bodyHtml;
-                    return bodyHtml ? `${metaHtml}<br>${bodyHtml}` : metaHtml;
-                };
-
-                for (const noteId of mergeIds) {
-                    const data = noteDataMap.get(noteId);
-                    if (!data?.note) continue;
-                    const textBlock = buildMergedTextBlock(data);
-                    const htmlBlock = buildMergedHtmlBlock(data);
-                    if (textBlock) combinedTextParts.push(textBlock);
-                    if (htmlBlock) combinedHtmlParts.push(htmlBlock);
-                }
-
-                const combinedText = combinedTextParts.filter(Boolean).join('\n\n');
-                const combinedHtml = combinedHtmlParts.filter(Boolean).join('<br><br>');
-
-                try {
-                    let movedChildren = false;
-                    for (const noteId of mergeIds) {
-                        const data = noteDataMap.get(noteId);
-                        const tabId = data?.note?.tabId || state.tabId;
-                        if (!tabId) continue;
-                        const result = await notesClient.listChildren({ tabId, parentId: noteId });
-                        const children = result?.notes || [];
-                        for (const child of children) {
-                            if (!child?.id || selectedSet.has(child.id)) continue;
-                            await notesClient.moveNote({
-                                noteId: child.id,
-                                targetParentId: mainNoteId
-                            });
-                            movedChildren = true;
-                        }
-                    }
-
-                    await notesClient.updateNoteText({
-                        noteId: mainNoteId,
-                        text: combinedText,
-                        html: combinedHtml
-                    });
-
-                    for (const noteId of mergeIds) {
-                        await notesClient.deleteNote({ noteId });
-                    }
-
-                    state.activeNoteId = mainNoteId;
-                    state.selectedNoteIds.clear();
-                    state.selectedNoteIds.add(mainNoteId);
-                    state.anchorNoteId = mainNoteId;
-                    if (movedChildren) {
-                        setExpanded(mainNoteId, true);
-                    }
-                    await refreshNotesList();
-                    await selectNote(mainNoteId, { skipSave: true, force: true, focus: true, preserveSelection: true });
-                    setStatus(`Merged ${orderedIds.length} notes`);
-                } catch (error) {
-                    console.warn('[results] failed to merge notes', error);
-                    setStatus('Merge failed');
-                }
-            };
-
             const flushPendingNoteClick = async () => {
                 if (!notesClickTimer || !notesClickTargetId) return;
                 const targetId = notesClickTargetId;
@@ -13454,24 +13033,6 @@ document.addEventListener('click', (event) => {
                     console.warn('[results] failed to delete notes', error);
                     setStatus('Delete failed');
                 }
-            };
-
-            const toggleSelectAll = async () => {
-                const allIds = await getAllNoteIds();
-                if (!allIds.length) return;
-                const selectedCount = state.selectedNoteIds.size;
-                if (selectedCount === allIds.length) {
-                    state.selectedNoteIds.clear();
-                    state.anchorNoteId = null;
-                } else {
-                    state.selectedNoteIds.clear();
-                    allIds.forEach((id) => state.selectedNoteIds.add(id));
-                    state.anchorNoteId = allIds[0];
-                    if (!state.activeNoteId && allIds[0]) {
-                        await selectNote(allIds[0], { preserveSelection: true });
-                    }
-                }
-                syncSelectionStyles();
             };
 
             const initNotes = async () => {
@@ -14195,59 +13756,6 @@ document.addEventListener('click', (event) => {
                     });
                 });
             });
-
-            const savePipelineRun = async ({ title, text, json } = {}) => {
-                if (!text) {
-                    setStatus('Pipeline output empty');
-                    return false;
-                }
-                if (!await ensureNotesReady()) {
-                    setStatus('Notes offline');
-                    return false;
-                }
-                const timestamp = formatTimestamp();
-                const noteTitle = title ? `${title} - ${timestamp}` : `Pipeline Run - ${timestamp}`;
-                const body = [
-                    text,
-                    '',
-                    '---',
-                    `Source: ${location.href}`,
-                    `Saved: ${timestamp}`
-                ].join('\n');
-                try {
-                    const created = await createNoteWithFallback({
-                        tabId: state.tabId,
-                        parentId: null,
-                        kind: 'pipeline',
-                        title: noteTitle,
-                        text: body,
-                        source: {
-                            origin: 'comparator',
-                            type: 'pipeline',
-                            pageUrl: location.href,
-                            ts: Date.now(),
-                            payload: json || null
-                        }
-                    });
-                    if (created?.noteId) {
-                        state.activeNoteId = created.noteId;
-                        lastActiveByTab.set(state.tabId, created.noteId);
-                        setSingleSelection(created.noteId);
-                    }
-                    await syncAfterNoteCreate(created);
-                    setStatus('Pipeline saved');
-                    return true;
-                } catch (error) {
-                    console.warn('[results] failed to save pipeline', error);
-                    setStatus(formatStatusError('Save failed', error), 3200);
-                    return false;
-                }
-            };
-
-            window.PipelineNotes = {
-                ...(window.PipelineNotes || {}),
-                savePipelineRun
-            };
 
             notesClient.onEvent((event) => {
                 if (event?.event !== notesClient.EVENTS?.REVISION_BUMP) return;
@@ -16706,25 +16214,6 @@ document.addEventListener('click', (event) => {
         return result;
     };
 
-    const buildAllLogsComparisonMarkdown = (beforeSnapshot, afterSnapshot, meta = {}) => {
-        const title = 'All Logs (Before/After)';
-        const version = chrome?.runtime?.getManifest?.()?.version || 'unknown';
-        const exportedAt = new Date().toLocaleString();
-        const beforeAt = beforeSnapshot?.capturedAt || '-';
-        const afterAt = afterSnapshot?.capturedAt || '-';
-        const trigger = meta?.trigger || 'unknown';
-        const beforeSection = buildAllLogsMarkdown(
-            beforeSnapshot?.telemetryEvents || [],
-            beforeSnapshot?.sources || [],
-            beforeSnapshot?.logs || {}
-        );
-        const afterSection = buildAllLogsMarkdown(
-            afterSnapshot?.telemetryEvents || [],
-            afterSnapshot?.sources || [],
-            afterSnapshot?.logs || {}
-        );
-        return `# ${title}\nVersion: ${version}\nExported: ${exportedAt}\nBefore captured: ${beforeAt}\nAfter captured: ${afterAt}\nTrigger: ${trigger}\n\n## Before\n\n${beforeSection}\n\n## After\n\n${afterSection}`;
-    };
     const getTelemetryBridge = () => {
         if (typeof window === 'undefined') return null;
         return window[TELEMETRY_BRIDGE_GLOBAL_KEY] || null;
@@ -16829,52 +16318,6 @@ document.addEventListener('click', (event) => {
             }
         } catch (err) {
             console.warn('[Diagnostics] active platform names failed', err);
-        }
-        return null;
-    };
-
-    const snapshotAllLogs = async () => {
-        const sources = Object.keys(llmLogs || {}).filter((name) => (llmLogs[name] || []).length);
-        let telemetryEvents = [];
-        try {
-            telemetryEvents = await getTelemetryEventsForExport();
-        } catch (err) {
-            console.warn('[Diagnostics] telemetry export snapshot failed', err);
-        }
-        return {
-            sources,
-            telemetryEvents: telemetryEvents.slice(),
-            logs: cloneLogsByModel(llmLogs),
-            capturedAt: new Date().toLocaleString()
-        };
-    };
-
-    const detectManualIntervention = (events = [], logs = {}, sinceTs) => {
-        const normalizedSince = Number(sinceTs || 0);
-        const telemetryHit = (events || []).find((event) => {
-            if (!event?.ts || event.ts < normalizedSince) return false;
-            const labelRaw = event?.label || event?.meta?.event || '';
-            const label = String(labelRaw).toUpperCase();
-            if (label === 'USER_FOCUS_CHANGE') return true;
-            if (label === 'HUMAN_VISIT_START') {
-                const source = String(event?.meta?.source || '').toLowerCase();
-                return source === 'user_focus';
-            }
-            return false;
-        });
-        if (telemetryHit) {
-            return { trigger: 'user_focus', event: telemetryHit };
-        }
-        const manualPingMatch = Object.values(logs || {}).some((entries) => (
-            (entries || []).some((entry) => {
-                if (!entry?.ts || entry.ts < normalizedSince) return false;
-                const label = String(entry?.label || '').toLowerCase();
-                const details = String(entry?.details || '').toLowerCase();
-                return label.includes('manual ping') || details.includes('manual ping');
-            })
-        ));
-        if (manualPingMatch) {
-            return { trigger: 'manual_ping' };
         }
         return null;
     };
@@ -17510,24 +16953,15 @@ document.addEventListener('click', (event) => {
             .catch((err) => console.warn('[RESULTS] telemetry reload clear failed', err));
     }
 
-    const newPagesStorageKey = 'llmComparatorNewPages';
-    const storeNewPagesState = (checked) => {
-        void checked;
-        void newPagesStorageKey;
-    };
     const resetNewPagesCheckboxAfterOpen = () => {
         if (!newPagesCheckbox) return;
         if (typeof window.__stopNewPagesDefaultBootstrap === 'function') {
             window.__stopNewPagesDefaultBootstrap();
         }
         newPagesCheckbox.checked = false;
-        storeNewPagesState(false);
     };
     if (newPagesCheckbox) {
         newPagesCheckbox.checked = true;
-        newPagesCheckbox.addEventListener('change', () => {
-            storeNewPagesState(newPagesCheckbox.checked);
-        });
     }
 
     const apiModeStorageKey = 'llmComparatorApiModeEnabled';
@@ -18087,6 +17521,126 @@ document.addEventListener('click', (event) => {
         'API_PENDING': 'api-mode',
         'API_FAILED': 'error'
     };
+    const currentMainRequestIdsByModel = Object.create(null);
+    const cancelledMainRequestIdsByModel = Object.create(null);
+
+    function clearCancelledMainRequestIds() {
+        Object.keys(cancelledMainRequestIdsByModel).forEach((llmName) => {
+            delete cancelledMainRequestIdsByModel[llmName];
+        });
+    }
+
+    function replaceCurrentMainRequestIds(requestIds = {}) {
+        Object.keys(currentMainRequestIdsByModel).forEach((llmName) => {
+            delete currentMainRequestIdsByModel[llmName];
+        });
+        clearCancelledMainRequestIds();
+        Object.entries(requestIds || {}).forEach(([llmName, requestId]) => {
+            const id = String(requestId || '').trim();
+            if (llmName && id) currentMainRequestIdsByModel[llmName] = id;
+        });
+    }
+
+    function clearCurrentMainRequestIds() {
+        Object.keys(currentMainRequestIdsByModel).forEach((llmName) => {
+            delete currentMainRequestIdsByModel[llmName];
+        });
+        clearCancelledMainRequestIds();
+    }
+
+    function markCurrentMainRequestsCancelled() {
+        Object.entries(currentMainRequestIdsByModel).forEach(([llmName, requestId]) => {
+            cancelledMainRequestIdsByModel[llmName] = requestId;
+        });
+    }
+
+    function isCancelledMainRequest(llmName, meta = {}) {
+        if (getCurrentViewKey() !== 'main' || isPipelineRequestMeta(meta)) return false;
+        const cancelledRequestId = String(cancelledMainRequestIdsByModel[llmName] || '').trim();
+        if (!cancelledRequestId) return false;
+        const currentRequestId = String(currentMainRequestIdsByModel[llmName] || '').trim();
+        const responseRequestId = getMessageTransportRequestId(meta);
+        return currentRequestId === cancelledRequestId
+            && (!responseRequestId || responseRequestId === cancelledRequestId);
+    }
+
+    function getMessageTransportRequestId(message = {}) {
+        return String(message.transportRequestId || message.metadata?.transportRequestId || '').trim();
+    }
+
+    function isPipelineRequestMeta(meta = {}) {
+        return Boolean(meta.pipelineRunId || meta.pipelineRoundId || meta.stageAttemptId || meta.pipelineBatchId);
+    }
+
+    function isCurrentMainRequestResponse(llmName, meta = {}) {
+        if (getCurrentViewKey() !== 'main' || isPipelineRequestMeta(meta)) return true;
+        if (isCancelledMainRequest(llmName, meta)) return false;
+        const currentRequestId = String(currentMainRequestIdsByModel[llmName] || '').trim();
+        const responseRequestId = getMessageTransportRequestId(meta);
+        return !currentRequestId || !responseRequestId || currentRequestId === responseRequestId;
+    }
+
+    function isCurrentMainRequestSnapshot(llmName, entry = {}, state = {}) {
+        const session = state?.session || {};
+        if (getCurrentViewKey() !== 'main'
+            || session.pipelineRunId
+            || (session.sourceView && session.sourceView !== 'main')) return false;
+        const requestId = String(entry?.transportRequestId || '').trim();
+        if (isCancelledMainRequest(llmName, { transportRequestId: requestId })) return false;
+        if (!requestId) return !currentMainRequestIdsByModel[llmName];
+        const currentRequestId = String(currentMainRequestIdsByModel[llmName] || '').trim();
+        if (currentRequestId) return currentRequestId === requestId;
+        currentMainRequestIdsByModel[llmName] = requestId;
+        return true;
+    }
+
+    function isCurrentMainStateSnapshot(state = {}) {
+        const requests = Object.entries(currentMainRequestIdsByModel);
+        if (!requests.length) return true;
+        const llms = state?.llms && typeof state.llms === 'object' ? state.llms : {};
+        // A STOP_ALL snapshot is empty because the background clears jobState.
+        // It can arrive after a new Start has already installed its request IDs,
+        // so an empty snapshot cannot authoritatively change that run's button.
+        // Registration/reload reconciliation clears the IDs first and can still
+        // accept an empty snapshot.
+        if (!Object.keys(llms).length) return false;
+        return requests.some(([llmName, requestId]) => (
+            !isCancelledMainRequest(llmName, { transportRequestId: requestId })
+            && String(llms[llmName]?.transportRequestId || '').trim() === requestId
+        ));
+    }
+
+    function handleLLMJobCreated(message = {}) {
+        const llmName = String(message.llmName || '').trim();
+        if (!llmName) return false;
+        const sourceView = String(message.sourceView || getCurrentViewKey() || '').trim();
+        if (sourceView && sourceView !== getCurrentViewKey()) return false;
+        const transportRequestId = String(message.transportRequestId || '').trim();
+        if (isCancelledMainRequest(llmName, { transportRequestId })) return false;
+        if (sourceView === 'main' && message.pipelineRunId && mainRunActive) return false;
+        if (sourceView === 'main' && !message.pipelineRunId && transportRequestId) {
+            const currentRequestId = String(currentMainRequestIdsByModel[llmName] || '').trim();
+            if (currentRequestId && currentRequestId !== transportRequestId) return false;
+            // A repeated creation broadcast for the already completed request
+            // must not clear the card's end-marker lock. A new main Start clears
+            // this state before dispatch and installs a different transport id.
+            if (currentRequestId === transportRequestId
+                && statusStateByModel[llmName]?.cardAnswerComplete === true
+                && statusStateByModel[llmName]?.transportRequestId === transportRequestId) return false;
+            if (!currentRequestId && getCurrentViewKey() === 'main') {
+                currentMainRequestIdsByModel[llmName] = transportRequestId;
+            }
+        }
+        clearModelStatusMemory(llmName);
+        updateModelStatusUI(llmName, 'INITIALIZING', { reset: true, force: true });
+        mergeLLMMetadata(llmName, {
+            requestId: message.requestId || null,
+            url: message.metadata?.url || '',
+            createdAt: message.metadata?.createdAt || message.metadata?.timestamp || Date.now(),
+            completedAt: message.metadata?.completedAt || null
+        }, { reset: true });
+        return true;
+    }
     function normalizeStatusValue(status) {
         if (window.LLMStatusContract && typeof window.LLMStatusContract.normalizeStatus === 'function') {
             return window.LLMStatusContract.normalizeStatus(status);
@@ -18233,48 +17787,69 @@ document.addEventListener('click', (event) => {
 
     function updateModelStatusUI(llmName, status, data = {}) {
         const normalizedName = (llmName || '').trim();
+        const indicatorOnly = data?.indicatorOnly || null;
+        const cardAnswerComplete = data.cardAnswerComplete === true;
+        // A card's end marker settles this request even if later diagnostics
+        // report receiving/errors or force a status reset. A new job clears it.
+        if (statusStateByModel[normalizedName]?.cardAnswerComplete && !indicatorOnly) return;
+        if (cardAnswerComplete) {
+            status = 'SUCCESS';
+            data = { ...data, force: true, modelRunState: null, finalStatus: 'SUCCESS',
+                finalStatusRecorded: true, verificationState: 'verified', answerState: 'complete',
+                cardAnswerComplete: !indicatorOnly };
+        }
+        const statusData = { ...(data || {}) };
+        delete statusData.indicatorOnly;
         const requestedStatus = normalizeStatusValue(status);
         const successMustWaitForAnswer = ['SUCCESS', 'COPY_SUCCESS', 'DONE', 'COMPLETE'].includes(requestedStatus)
+            && !cardAnswerComplete
             && !livePanelHasAnswer(normalizedName);
         if (successMustWaitForAnswer) {
             deferredSuccessStatusByModel[normalizedName] = {
                 status: requestedStatus,
-                data: { ...(data || {}) }
+                data: statusData
             };
         } else if (['SUCCESS', 'COPY_SUCCESS', 'DONE', 'COMPLETE'].includes(requestedStatus)) {
             delete deferredSuccessStatusByModel[normalizedName];
         }
         const normalizedStatus = requestedStatus;
         if (!normalizedName || !normalizedStatus) return;
-        const indicators = document.querySelectorAll(`.status-indicator[data-llm-name="${normalizedName}"]`);
+        const indicators = indicatorOnly
+            ? [indicatorOnly]
+            : document.querySelectorAll(`.status-indicator[data-llm-name="${normalizedName}"]`);
         if (!indicators.length) return;
         const incomingRank = getStatusRank(normalizedStatus);
-        const previous = statusStateByModel[normalizedName] || {};
+        const previous = indicatorOnly ? {} : (statusStateByModel[normalizedName] || {});
         const previousRank = Number(previous.rank || 0);
         const force = data?.force === true || data?.reset === true;
         if (window.LLMStatusContract && typeof window.LLMStatusContract.shouldApplyStatusUpdate === 'function') {
-            const decision = window.LLMStatusContract.shouldApplyStatusUpdate(previous.status, normalizedStatus, data || {});
+            const decision = window.LLMStatusContract.shouldApplyStatusUpdate(previous.status, normalizedStatus, statusData);
             if (!decision.apply) return;
         } else if (!force && previousRank > 0) {
             if (incomingRank <= 0) return;
             if (incomingRank < previousRank) return;
         }
-        statusStateByModel[normalizedName] = {
-            status: normalizedStatus,
-            rank: incomingRank,
-            modelRunState: data?.modelRunState || null,
-            resultMeta: window.LLMStatusContract?.deriveResultMeta
-                ? window.LLMStatusContract.deriveResultMeta({
-                    ...(data || {}),
-                    status: normalizedStatus,
-                    finalStatus: data?.finalStatus || null,
-                    finalStatusRecorded: data?.finalStatusRecorded,
-                    modelRunState: data?.modelRunState || null,
-                    answer: data?.answer || data?.text || ''
-                })
-                : null,
-            updatedAt: Date.now()
-        };
+        const derivedResultMeta = window.LLMStatusContract?.deriveResultMeta
+            ? window.LLMStatusContract.deriveResultMeta({
+                ...statusData,
+                status: normalizedStatus,
+                finalStatus: data?.finalStatus || null,
+                finalStatusRecorded: data?.finalStatusRecorded,
+                modelRunState: data?.modelRunState || null,
+                answer: data?.answer || data?.text || ''
+            })
+            : null;
+        if (!indicatorOnly) {
+            statusStateByModel[normalizedName] = {
+                status: normalizedStatus,
+                cardAnswerComplete: data.cardAnswerComplete === true,
+                transportRequestId: data?.transportRequestId || null,
+                rank: incomingRank,
+                modelRunState: data?.modelRunState || null,
+                resultMeta: derivedResultMeta,
+                updatedAt: Date.now()
+            };
+        }
 
         indicators.forEach((indicator) => {
             // A settled debate-feed card must not be repainted by a later turn's
@@ -18302,7 +17877,7 @@ document.addEventListener('click', (event) => {
             indicator.tabIndex = 0;
             indicator.dataset.currentStatus = renderedStatus;
             indicator.dataset.statusRank = String(getStatusRank(renderedStatus));
-            const storedResultMeta = statusStateByModel[normalizedName]?.resultMeta || null;
+            const storedResultMeta = indicatorOnly ? derivedResultMeta : (statusStateByModel[normalizedName]?.resultMeta || null);
             const resultMeta = deferOnThisIndicator
                 ? { ...(storedResultMeta || {}), phase: 'verifying', label: 'Verifying answer' }
                 : storedResultMeta;
@@ -18320,7 +17895,7 @@ document.addEventListener('click', (event) => {
             }
             const statusTitle = deferOnThisIndicator
                 ? 'Verified answer waiting to be applied'
-                : resolveIndicatorTooltip(renderedStatus, data);
+                : resolveIndicatorTooltip(renderedStatus, statusData);
             const resultLabel = resultMeta?.label ? `Result: ${resultMeta.label}` : null;
             const titleParts = [statusTitle, resultLabel].filter(Boolean);
             const fullTitle = `${titleParts.join(' • ')} • Double-click to fetch this model answer`;
@@ -18335,14 +17910,15 @@ document.addEventListener('click', (event) => {
             }
         });
 
-        if (Object.prototype.hasOwnProperty.call(data, 'apiStatus')) {
-            setApiIndicatorState(normalizedName, data.apiStatus, data);
+        if (Object.prototype.hasOwnProperty.call(statusData, 'apiStatus')) {
+            setApiIndicatorState(normalizedName, statusData.apiStatus, statusData);
         }
     }
 
     function syncStatusFromResponseMessage(message = {}) {
         const status = message?.metadata?.status || message?.status || null;
         if (!message?.llmName || !status) return;
+        if (!isCurrentMainRequestResponse(message.llmName, { ...message, ...(message.metadata || {}) })) return;
         updateModelStatusUI(message.llmName, status, {
             ...(message.metadata || {}),
             source: 'LLM_PARTIAL_RESPONSE'
@@ -18375,19 +17951,25 @@ document.addEventListener('click', (event) => {
     // answer, and the empty card is hydrated from it instead of restoring only
     // a green status indicator over an empty output.
     // `lastRendered`: the last call wrote text into the card (telemetry: `displayed`).
-    function hydrateAnswerFromGlobalState(llmName, entry) {
+    function hydrateAnswerFromGlobalState(llmName, entry, { updateMainPanel = true, updatePipelineCard = true } = {}) {
         hydrateAnswerFromGlobalState.lastRendered = false;
         const panelId = String(llmName || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
         const outputElement = document.getElementById(`panel-${panelId}`)?.querySelector('.output');
-        const panelHasAnswer = Boolean(String(outputElement?.textContent || '').trim());
+        const panelHasAnswer = updateMainPanel && Boolean(String(outputElement?.textContent || '').trim());
         const unverifiedArtifact = entry?.unverifiedArtifact && typeof entry.unverifiedArtifact === 'object'
             ? entry.unverifiedArtifact
             : null;
-        if (!String(entry?.answer || '').trim() && String(unverifiedArtifact?.text || '').trim()) {
+        const unverifiedText = window.MessageDelivery?.clean
+            ? window.MessageDelivery.clean(String(unverifiedArtifact?.text || ''))
+            : String(unverifiedArtifact?.text || '').trim();
+        const unverifiedHtml = window.MessageDelivery?.cleanHtml
+            ? window.MessageDelivery.cleanHtml(String(unverifiedArtifact?.html || ''))
+            : String(unverifiedArtifact?.html || '');
+        if (!String(entry?.answer || '').trim() && unverifiedText) {
             // Restore an empty card without overwriting a manual recovery
             // with the older unverified artifact retained in global state.
             if (panelHasAnswer) return true;
-            updateLLMPanelOutput(llmName, unverifiedArtifact.text, unverifiedArtifact.html || '', {
+            const artifactMeta = {
                 status: 'RECEIVING',
                 terminal: false,
                 answerState: 'candidate',
@@ -18398,16 +17980,71 @@ document.addEventListener('click', (event) => {
                 reason: unverifiedArtifact.reason || 'materialize_recovery_freshness_unproven',
                 source: 'GLOBAL_STATE_UNVERIFIED_ARTIFACT',
                 transportRequestId: entry?.transportRequestId || '',
+                requestId: entry?.transportRequestId || '',
                 pipelineRunId: entry?.pipelineRunId || '',
                 pipelineRoundId: entry?.pipelineRoundId || ''
-            });
+            };
+            if (updateMainPanel) {
+                updateLLMPanelOutput(llmName, unverifiedText, unverifiedHtml, artifactMeta);
+            } else if (updatePipelineCard) {
+                updateDebateModelCardOutput(llmName, unverifiedText, unverifiedHtml, artifactMeta);
+                hydrateAnswerFromGlobalState.lastRendered = true;
+            }
             return true;
         }
-        const answerText = String(entry?.answer || '').trim();
-        const answerHtml = sanitizeInlineHtml(String(entry?.answerHtml || '').trim());
+        const recoveredAnswer = receiveResultsAnswerMessage({
+            type: 'LLM_FINAL_RESPONSE',
+            llmName,
+            transportRequestId: entry?.transportRequestId || '',
+            answer: entry?.answer || '',
+            answerHtml: entry?.answerHtml || '',
+            metadata: {
+                ...(entry || {}),
+                answerEndMarkerSeen: entry?.cardAnswerComplete === true
+            }
+        }, { final: entry?.finalStatusRecorded === true });
+        if (!recoveredAnswer) return false;
+        const answerValue = recoveredAnswer.answer;
+        const answerText = String(typeof answerValue === 'object'
+            ? answerValue?.text || answerValue?.answer || ''
+            : answerValue || '').trim();
+        const answerHtml = sanitizeInlineHtml(String(
+            recoveredAnswer.answerHtml
+                || (typeof answerValue === 'object' ? answerValue?.html || answerValue?.answerHtml : '')
+                || ''
+        ).trim());
         if (!answerText) return false;
-        if (panelHasAnswer) return true;
-        if (outputElement) {
+        const recoveryMeta = {
+            source: 'GLOBAL_STATE_ANSWER_RECOVERY',
+            transportRequestId: entry?.transportRequestId || '',
+            requestId: entry?.transportRequestId || '',
+            pipelineRunId: entry?.pipelineRunId || '',
+            pipelineRoundId: entry?.pipelineRoundId || '',
+            status: entry?.finalStatus || entry?.status || '',
+            answerEndMarkerSeen: recoveredAnswer.metadata?.answerEndMarkerSeen === true
+        };
+        if (panelHasAnswer) {
+            const existingText = normalizeRenderedAnswerText(outputElement.textContent || '');
+            const currentCardComplete = statusStateByModel[llmName]?.cardAnswerComplete === true;
+            if (existingText === normalizeRenderedAnswerText(answerText)) {
+                // The live partial may already show the same visible text as the
+                // final snapshot. Reuse its render as proof once the recovered
+                // message supplies a verified end marker.
+                if (recoveryMeta.answerEndMarkerSeen && !currentCardComplete) {
+                    emitAnswerCardRenderEvidence(
+                        llmName,
+                        document.getElementById(`panel-${panelId}`),
+                        outputElement,
+                        recoveryMeta
+                    );
+                }
+                return true;
+            }
+            if (currentCardComplete || !recoveryMeta.answerEndMarkerSeen) return true;
+            // A terminal snapshot can contain more text than the partial already
+            // on screen. Only a verified current completion can replace that text.
+        }
+        if (updateMainPanel && outputElement) {
             hydrateAnswerFromGlobalState.lastRendered = true;
             const finalHtml = resolveCompleteAnswerHtml(answerText, answerHtml);
             replaceChildrenFromSanitizedHtml(outputElement, finalHtml);
@@ -18415,14 +18052,14 @@ document.addEventListener('click', (event) => {
             outputElement.dataset.hash = String(finalHtml || '').length
                 ? String(finalHtml).length + ':' + String(finalHtml).slice(0, 64)
                 : '';
+            emitAnswerCardRenderEvidence(llmName, document.getElementById(`panel-${panelId}`), outputElement, recoveryMeta);
         }
-        updateDebateModelCardOutput(llmName, answerText, answerHtml, {
-            source: 'GLOBAL_STATE_ANSWER_RECOVERY',
-            transportRequestId: entry?.transportRequestId || '',
-            pipelineRunId: entry?.pipelineRunId || '',
-            pipelineRoundId: entry?.pipelineRoundId || '',
-            status: entry?.finalStatus || entry?.status || ''
-        });
+        if (updateMainPanel) {
+            updateDebateModelCardOutput(llmName, answerText, answerHtml, recoveryMeta);
+        } else if (updatePipelineCard) {
+            updateDebateModelCardOutput(llmName, answerText, answerHtml, recoveryMeta);
+            hydrateAnswerFromGlobalState.lastRendered = true;
+        }
         return true;
     }
 
@@ -18468,17 +18105,45 @@ document.addEventListener('click', (event) => {
     }
 
     function syncStatusFromGlobalState(state = {}, options = {}) {
-        if (options?.replace === true) {
+        // Registration is the authoritative reload reconciliation point; use its
+        // snapshot to seed identities that could not be carried across a reload.
+        if (options?.replace === true) clearCurrentMainRequestIds();
+        const llms = state?.llms && typeof state.llms === 'object' ? state.llms : {};
+        const currentMainSnapshot = isCurrentMainStateSnapshot(state);
+        const mainSourceSnapshot = !state.session?.pipelineRunId
+            && (!state.session?.sourceView || state.session.sourceView === 'main');
+        const pipelineSourceSnapshot = Boolean(state.session?.pipelineRunId || state.session?.sourceView === 'pipeline');
+        if (mainSourceSnapshot && currentMainSnapshot && getCurrentViewKey() === 'main') {
+            setMainRunActive(Boolean(state.session?.startTime)
+                && (state.session?.roundsInProgress || Object.values(state.llms || {}).some(entry =>
+                    !entry.cardAnswerComplete && !entry.finalStatusRecorded && !entry.finalStatus)));
+        }
+        if (options?.replace === true && (
+            (mainSourceSnapshot && getCurrentViewKey() === 'main')
+            || (pipelineSourceSnapshot && getCurrentViewKey() === 'pipeline')
+        )) {
             resetLiveStatusIndicators();
         }
-        const llms = state?.llms && typeof state.llms === 'object' ? state.llms : {};
         Object.entries(llms).forEach(([llmName, entry]) => {
             const modelRunState = entry?.modelRunState && typeof entry.modelRunState === 'object'
                 ? entry.modelRunState
                 : null;
             const rawStatus = modelRunState?.uiStatus || modelRunState?.terminalStatus || entry?.finalStatus || entry?.status || null;
             if (!rawStatus) return;
-            const answerVisible = hydrateAnswerFromGlobalState(llmName, entry);
+            const mainRequestCurrent = isCurrentMainRequestSnapshot(llmName, entry, state);
+            const pipelineSnapshot = Boolean(state.session?.pipelineRunId
+                || state.session?.sourceView === 'pipeline'
+                || entry?.pipelineRunId
+                || entry?.pipelineRoundId);
+            const applyMainSnapshot = mainRequestCurrent && mainSourceSnapshot && getCurrentViewKey() === 'main';
+            const applyPipelineSnapshot = pipelineSnapshot && getCurrentViewKey() === 'pipeline';
+            const answerVisible = (applyMainSnapshot || applyPipelineSnapshot)
+                ? hydrateAnswerFromGlobalState(llmName, entry, {
+                    updateMainPanel: applyMainSnapshot,
+                    updatePipelineCard: applyPipelineSnapshot
+                })
+                : false;
+            if (!applyMainSnapshot && !applyPipelineSnapshot) hydrateAnswerFromGlobalState.lastRendered = false;
             const hydrateRendered = hydrateAnswerFromGlobalState.lastRendered === true;
             let acceptedByWait = null;
             let rejectReason = null;
@@ -18546,90 +18211,28 @@ document.addEventListener('click', (event) => {
                 && !answerVisible
                 && !entry?.hasAnswer;
             const status = successWithoutAnswer ? 'UNCERTAIN' : rawStatus;
-            updateModelStatusUI(llmName, status, {
-                ...(entry?.statusData || {}),
-                modelRunState,
-                finalStatus: entry?.finalStatus || null,
-                finalStatusRecorded: !!entry?.finalStatusRecorded,
-                terminalState: entry?.terminalState || modelRunState?.terminalState || null,
-                executionState: entry?.executionState || modelRunState?.executionState || null,
-                extractionState: entry?.extractionState || modelRunState?.extractionState || null,
-                verificationState: entry?.verificationState || modelRunState?.verificationState || entry?.answerVerification?.state || null,
-                answerState: entry?.answerState || modelRunState?.answerState || null,
-                attributionState: entry?.attributionState || entry?.unverifiedArtifact?.attributionState || null,
-                hasAnswer: !!entry?.hasAnswer,
-                statusDowngradedFromSuccess: successWithoutAnswer || undefined,
-                source: 'GLOBAL_STATE_BROADCAST'
-            });
+            if (applyMainSnapshot || applyPipelineSnapshot) {
+                updateModelStatusUI(llmName, status, {
+                    ...(entry?.statusData || {}),
+                    cardAnswerComplete: entry?.cardAnswerComplete === true,
+                    transportRequestId: entry?.transportRequestId || null,
+                    modelRunState,
+                    finalStatus: entry?.finalStatus || null,
+                    finalStatusRecorded: !!entry?.finalStatusRecorded,
+                    terminalState: entry?.terminalState || modelRunState?.terminalState || null,
+                    executionState: entry?.executionState || modelRunState?.executionState || null,
+                    extractionState: entry?.extractionState || modelRunState?.extractionState || null,
+                    verificationState: entry?.verificationState || modelRunState?.verificationState || entry?.answerVerification?.state || null,
+                    answerState: entry?.answerState || modelRunState?.answerState || null,
+                    attributionState: entry?.attributionState || entry?.unverifiedArtifact?.attributionState || null,
+                    hasAnswer: !!entry?.hasAnswer,
+                    statusDowngradedFromSuccess: successWithoutAnswer || undefined,
+                    source: 'GLOBAL_STATE_BROADCAST'
+                });
+            }
         });
     }
     // --- END STATUS INDICATOR LOGIC ---
-
-    // --- TEST / SMOKE HARNESS ---
-    // Non-intrusive helper to validate STATUS_UPDATE rendering.
-    // Usage:
-    //  - From console: runStatusIndicatorSmokeTest();
-    //  - Or set window.__LLM_RESULTS_DEBUG__ = true before loading to auto-run once.
-    function runStatusIndicatorSmokeTest() {
-        try {
-            const testName = `__llm_test_${Date.now()}`;
-            // create a temp indicator in the DOM (mirrors markup in result_new.html)
-            const container = document.createElement('div');
-            container.style.position = 'fixed';
-            container.style.bottom = '6px';
-            container.style.right = '6px';
-            container.style.zIndex = '99999';
-            container.id = testName;
-            const indicator = document.createElement('span');
-            indicator.className = 'status-indicator';
-            indicator.dataset.llmName = testName;
-            const label = document.createElement('span');
-            label.style.marginLeft = '8px';
-            label.style.fontSize = '12px';
-            label.textContent = 'Smoke test';
-            container.appendChild(indicator);
-            container.appendChild(label);
-            document.body.appendChild(container);
-
-            const statusesToTest = [
-                'IDLE', 'INITIALIZING', 'SENDING', 'RECEIVING', 'SUCCESS',
-                'PARTIAL', 'STREAM_TIMEOUT_HIDDEN', 'RECOVERABLE_ERROR', 'CRITICAL_ERROR', 'GENERATING', 'ERROR', 'no-answer'
-            ];
-
-            const results = [];
-            statusesToTest.forEach((s) => {
-                updateModelStatusUI(testName, s, { message: `msg for ${s}` });
-                const el = document.querySelector(`.status-indicator[data-llm-name="${testName}"]`);
-                const cls = el ? el.className : '(missing)';
-                const title = el ? el.title : '(missing)';
-                const pass = el && title && title.length > 0;
-                results.push({ status: s, class: cls, title, pass });
-            });
-
-            console.group('[RESULTS] STATUS_INDICATOR SMOKE TEST');
-            results.forEach(r => console.log(r));
-            console.groupEnd();
-
-            // cleanup after short delay to allow manual inspection
-            setTimeout(() => {
-                try { document.getElementById(testName)?.remove(); } catch (_) {}
-            }, 3000);
-
-            return results;
-        } catch (err) {
-            console.error('[RESULTS] Smoke test failed:', err);
-            return null;
-        }
-    }
-
-    // Auto-run once if explicitly opted-in (debug only)
-    try {
-        if (window.__LLM_RESULTS_DEBUG__ === true) {
-            console.log('[RESULTS] Auto-running status indicator smoke test (debug flag set)');
-            setTimeout(runStatusIndicatorSmokeTest, 600);
-        }
-    } catch (_) {}
-    // --- END TEST / SMOKE HARNESS ---
 
     promptInput.addEventListener('input', () => {
         if (templateSelect.value !== 'manual') {
@@ -18704,8 +18307,8 @@ document.addEventListener('click', (event) => {
                 `llmComparatorSelectedModelsByView.main`,
                 `llmComparatorSelectedModelsByView.pipeline`,
                 crossViewUiStateKey,
-                'llmCodexDebateSelectors.v1',
-                window.DebateEngine?.STORAGE_KEY || 'llmCortexDebateEngineState.v1',
+                'aoSelectors.v1',
+                window.DebateEngine?.STORAGE_KEY || 'aoEngineState.v1',
                 'llm_saved_sessions_v1'
             ]);
             try { chrome?.storage?.sync?.remove?.('llm_saved_sessions_v1'); } catch (_) {}
@@ -18948,21 +18551,14 @@ document.addEventListener('click', (event) => {
             window.MessageDelivery.observeRuntime(message);
         }
         if (JOURNAL_ONLY_TYPES.includes(message.type)) return false;
-        if (window.MessageDelivery && ['LLM_PARTIAL_RESPONSE', 'LLM_FINAL_RESPONSE', 'FINAL_LLM_RESPONSE'].includes(message.type)) {
-            message = window.MessageDelivery.receive(message, { final: isTerminalPipelineMessage(message) });
+        if (window.MessageDelivery && ['LLM_PARTIAL_RESPONSE', 'LLM_FINAL_RESPONSE', 'FINAL_LLM_RESPONSE', 'UPDATE_LLM_PANEL_OUTPUT'].includes(message.type)) {
+            message = receiveResultsAnswerMessage(message, { final: isTerminalPipelineMessage(message) });
             if (!message) return false; // stale answer of an earlier request
         }
         try {
             switch (message.type) {
                 case 'LLM_JOB_CREATED':
-                    clearModelStatusMemory(message.llmName);
-                    updateModelStatusUI(message.llmName, 'INITIALIZING', { reset: true, force: true });
-                    mergeLLMMetadata(message.llmName, {
-                        requestId: message.requestId || null,
-                        url: message.metadata?.url || '',
-                        createdAt: message.metadata?.createdAt || message.metadata?.timestamp || Date.now(),
-                        completedAt: message.metadata?.completedAt || null
-                    }, { reset: true });
+                    handleLLMJobCreated(message);
                     break;
                 case 'LLM_PARTIAL_RESPONSE': {
                     syncStatusFromResponseMessage(message);
@@ -18978,7 +18574,10 @@ document.addEventListener('click', (event) => {
                             html: String(message.answerHtml || message.html || '')
                         };
                     })();
-                    updateDebateModelCardOutput(message.llmName, previewPayload.text, previewPayload.html, debateFeedMessageMeta(message));
+                    const responseMeta = debateFeedMessageMeta(message);
+                    if (isCurrentMainRequestResponse(message.llmName, responseMeta)) {
+                        updateDebateModelCardOutput(message.llmName, previewPayload.text, previewPayload.html, responseMeta);
+                    }
                     const revealManualPing = manualPingReveal.has(message.llmName);
                     if (revealManualPing) {
                         const answerText = (() => {
@@ -19265,6 +18864,27 @@ document.addEventListener('click', (event) => {
             : (!outputElement || !renderedText
                 ? 'empty'
                 : comparison.status);
+        const cardAnswerComplete = meta.answerEndMarkerSeen === true && Boolean(renderedText)
+            && !isErrorOutput(renderedText);
+        const isPipelineCard = panel?.classList?.contains('debate-model-card');
+        const mainView = getCurrentViewKey() === 'main';
+        const currentMainRequest = isCurrentMainRequestResponse(llmName, meta);
+        const pipelineEvidenceOnMainView = mainView && (isPipelineCard || isPipelineRequestMeta(meta));
+        if (cardAnswerComplete && currentMainRequest && !pipelineEvidenceOnMainView) {
+            updateModelStatusUI(llmName, 'SUCCESS', {
+                cardAnswerComplete: true,
+                transportRequestId: getMessageTransportRequestId(meta) || null
+            });
+        } else if (cardAnswerComplete && currentMainRequest && pipelineEvidenceOnMainView && isPipelineCard) {
+            const cardIndicator = panel.querySelector(`.status-indicator[data-llm-name="${llmName}"]`)
+                || panel.querySelector('.status-indicator');
+            if (cardIndicator) {
+                updateModelStatusUI(llmName, 'SUCCESS', {
+                    cardAnswerComplete: true,
+                    indicatorOnly: cardIndicator
+                });
+            }
+        }
         const terminalStatus = /^(?:SUCCESS|PARTIAL|ERROR|NO_SEND|EXTRACT_FAILED|STREAM_TIMEOUT|UNCERTAIN)$/.test(String(meta.status || '').toUpperCase());
         const evaluationBoundaryType = meta.evaluationBoundaryType
             || (terminalStatus ? 'automatic_terminal' : 'delivery_deadline');
@@ -19272,7 +18892,7 @@ document.addEventListener('click', (event) => {
             || `boundary:${String(meta.dispatchId || 'unknown')}:${String(meta.attemptId || 'unknown')}:${evaluationBoundaryType}`;
         const resolutionState = meta.resolutionState
             || (outcome === 'matched' ? 'delivered' : 'unresolved');
-        const renderKey = [meta.transportRequestId || meta.requestId, meta.dispatchId, meta.attemptId, meta.payloadEvidenceId, observedCardId, observed?.normalizedHash, outcome].join('|');
+        const renderKey = [meta.transportRequestId || meta.requestId, meta.dispatchId, meta.attemptId, meta.payloadEvidenceId, observedCardId, observed?.normalizedHash, outcome, meta.answerEndMarkerSeen === true].join('|');
         if (outputElement?.dataset?.proofRenderKey === renderKey) return;
         if (outputElement?.dataset) outputElement.dataset.proofRenderKey = renderKey;
         window.MessageDelivery?.batchEvent?.('displayed', {
@@ -19288,6 +18908,7 @@ document.addEventListener('click', (event) => {
                 type: 'ANSWER_CARD_RENDER_EVALUATED',
                 llmName,
                 meta: {
+                    answerEndMarkerSeen: cardAnswerComplete,
                     dispatchId: meta.dispatchId || null,
                     attemptId: meta.attemptId || null,
                     payloadEvidenceId: meta.payloadEvidenceId || null,
@@ -19378,8 +18999,14 @@ document.addEventListener('click', (event) => {
         const sanitizedHtml = sanitizeInlineHtml(rawHtml);
         const richHtml = sanitizedHtml || (looksLikeHtml(normalizedText) ? sanitizeInlineHtml(normalizedText) : '');
         const resolvedHtml = resolveCompleteAnswerHtml(normalizedText, richHtml);
+        const mainView = getCurrentViewKey() === 'main';
+        const isPipelineRequest = isPipelineRequestMeta(meta);
+        if (mainView && !isPipelineRequest && !isCurrentMainRequestResponse(llmName, meta)) {
+            return { updated: false, postTerminalRevision: false, staleMainRequest: true };
+        }
         const debateUpdate = updateDebateModelCardOutput(llmName, normalizedText, resolvedHtml, meta);
         if (debateUpdate?.postTerminalRevision) return debateUpdate;
+        if (mainView && isPipelineRequest) return debateUpdate;
         if (panel) {
             applyAttributionMarker(panel, meta);
             const outputElement = panel.querySelector('.output');
@@ -20698,10 +20325,6 @@ function formatNamedExportStamp(date = new Date()) {
     return `${months[date.getMonth()]}${String(date.getFullYear()).slice(-2)} ${pad(date.getHours())}-${pad(date.getMinutes())}`;
 }
 
-function formatModelCardExportStamp(date = new Date()) {
-    return formatNamedExportStamp(date).replace(':', '-');
-}
-
 function getExportPromptSource() {
     const promptValues = [
         pastedTextComposer.getText(),
@@ -21373,7 +20996,7 @@ function checkCompareButtonState() {
     const debateSessionDeleteBtn = document.getElementById('debate-session-delete-btn');
     const debateSessionFullscreenBtn = document.getElementById('debate-session-fullscreen-btn');
     const debateFullAnswersBtn = document.getElementById('debate-full-answers-btn');
-    const DEBATE_FULL_ANSWERS_KEY = 'llmCodexDebateFullAnswers.v1';
+    const DEBATE_FULL_ANSWERS_KEY = 'aoFullAnswers.v1';
     var debateFullAnswers = true;
     var pipelineCardCover = document.body.classList.contains('pipeline-page')
         ? window.PipelineCardCover?.create(debateModelCards) : null;
@@ -21410,7 +21033,6 @@ function checkCompareButtonState() {
     }
 
     const debateSessionCopyBtn = document.getElementById('debate-session-copy-btn');
-    const debateSessionExportBtn = document.getElementById('debate-session-export-btn');
     const debateSessionClearBtn = document.getElementById('debate-session-clear-btn');
     const debateSenderSelect = document.getElementById('mod-sender-select');
     const debateReceiverSelect = document.getElementById('mod-receiver-select');
@@ -21424,15 +21046,12 @@ function checkCompareButtonState() {
     var synthesisColumn = document.getElementById('synthesisColumn');
     var connectorToSynthesis = document.getElementById('connectorToSynthesis');
     var synthesisStack = document.getElementById('synthesis-stack');
-    function getDebateScheme() {
-        return 'universal';
-    }
     function getSynthesizerFlowSelect() {
         return synthesisStack?.querySelector('#synthesis-flow-select') || null;
     }
     const debateLengthSelect = document.getElementById('debate-length-select');
     const debateSelToolbar = document.getElementById('debateSelTb');
-    const DEBATE_SELECTORS_STORAGE_KEY = 'llmCodexDebateSelectors.v1';
+    const DEBATE_SELECTORS_STORAGE_KEY = 'aoSelectors.v1';
     let persistedDebateSelectorState = {};
     const debateSessionsStore = window.DebateSessionsStore.create({ activeSessionId: '1' });
     const debateTabsState = debateSessionsStore.state;
@@ -21446,13 +21065,10 @@ function checkCompareButtonState() {
         // This replaces a hand-written literal that had drifted from the factory
         // above (it was missing newPagesOpenedModels); ensureSerialDebateState()
         // re-hydrates the Sets either way.
-        const getPageSerialDebateState = () => window.__getSerialDebateState?.() || window.__serialDebateState || {};
+        const getPageSerialDebateState = () => window.__getSerialDebateState?.() || {};
         safeStorageLocalGet(DEBATE_SCHEME_STORAGE_KEY).then((data) => {
             setDebateSchemeValue(data?.[DEBATE_SCHEME_STORAGE_KEY] || '2');
         });
-        const moderatorRouteState = {
-            manualOverride: false
-        };
     const serialDebateTimeline = [];
     const debateSelectionState = { range: null, target: null };
     let suppressDebateFavoriteClickUntil = 0;
@@ -21469,10 +21085,6 @@ function checkCompareButtonState() {
     const debateMessageStore = new Map();
     const debateDomIndex = new Map();
     const DebateEngineRuntime = window.DebateEngine || null;
-    const getHeaderModelNames = () => Array.from(llmButtons).map((button) => {
-        const idName = String(button.id || '').replace('llm-', '');
-        return LLM_BUTTON_NAME_MAP[idName] || button.textContent?.trim() || '';
-    }).filter(Boolean);
     function getAllModelNames() {
         return (Array.isArray(PipelineRuntime?.MODELS) ? PipelineRuntime.MODELS : [])
             .map((model) => model?.name)
@@ -21481,8 +21093,7 @@ function checkCompareButtonState() {
     // The flow select is disabled while the final synthesis is off (no synthesizer) or a run is active.
     function syncFlowSelectLock(flowSelect, current) {
         if (!flowSelect) return;
-        const lifecycle = String(window.DebateApplication?.getState?.()?.lifecycle || 'IDLE').toUpperCase();
-        const locked = !!pipelineRunActive || ['PLANNING', 'RUNNING', 'PAUSED', 'CANCELLING'].includes(lifecycle);
+        const locked = !!pipelineRunActive;
         flowSelect.disabled = locked || !current;
     }
     function renderSynthesisStage() {
@@ -21530,8 +21141,7 @@ function checkCompareButtonState() {
         return window.__pipelineDraftPlanForCanvas?.(window.__getActivePipelineDraftPlan?.()) || { plannedStages: [] };
     }
     function syncStageInsertControls(plan = activeDraftPlanForCanvas()) {
-        const lifecycle = String(window.DebateApplication?.getState?.()?.lifecycle || 'IDLE').toUpperCase();
-        const editable = !['PLANNING', 'RUNNING', 'CANCELLING'].includes(lifecycle);
+        const editable = true;
         const roundStageIds = (plan.plannedStages || [])
             .filter((stage) => /^canvas-r\d+$/.test(stage.plannedStageId || ''))
             .map((stage) => stage.plannedStageId);
@@ -21571,13 +21181,6 @@ function checkCompareButtonState() {
             }
         });
         next.plannedStages = next.plannedStages.filter((stage) => stage.plannedStageId !== target.plannedStageId);
-        if (String(window.DebateApplication?.getState?.()?.lifecycle || '').toUpperCase() === 'PAUSED') {
-            const revision = await window.DebateApplication.removePlannedStage(target.plannedStageId);
-            if (!revision?.ok) {
-                showNotification(revision?.reasonCode || revision?.code || 'Stage revision rejected.', 'warn');
-                return false;
-            }
-        }
         window.__persistActivePipelineDraftPlan?.(next);
         renderDraftPlanCanvas();
         window.__updatePipelineAll?.();
@@ -21590,6 +21193,10 @@ function checkCompareButtonState() {
         const existing = (plan.plannedStages || []).find((stage) =>
             stage.outputIntent === 'working_synthesis' && stage.upstream?.includes(afterPlannedStageId));
         if (existing) return removeIntermediateSynthesis(plan, existing);
+        if (window.__controlledAfter?.(afterPlannedStageId.replace(/^canvas-/, ''))) {
+            showNotification(INTERMEDIATE_CONTROL_NOTE, 'warn');
+            return false;
+        }
         // Independent of the final synthesis: an intermediate one falls back to the default synthesizer.
         const synthesizer = window.__getDraftPlanSynthesizer?.(plan) || window.__getDefaultSynthesizerName?.();
         const result = window.DebateDraftPlan.insertSynthesis(plan, {
@@ -21600,14 +21207,6 @@ function checkCompareButtonState() {
         if (!result.ok) {
             showNotification(result.reasonCode || 'Cannot insert synthesis stage.', 'warn');
             return false;
-        }
-        if (String(window.DebateApplication?.getState?.()?.lifecycle || '').toUpperCase() === 'PAUSED') {
-            const stage = result.plan.plannedStages.find((item) => item.plannedStageId === `planned-working-synthesis-after-${afterPlannedStageId}`);
-            const revision = await window.DebateApplication.insertStage(stage, { afterPlannedStageId });
-            if (!revision?.ok) {
-                showNotification(revision?.reasonCode || revision?.code || 'Stage revision rejected.', 'warn');
-                return false;
-            }
         }
         window.__persistActivePipelineDraftPlan?.(result.plan);
         renderDraftPlanCanvas();
@@ -21666,7 +21265,7 @@ function checkCompareButtonState() {
             window.__pipelineDraftPlanForCanvas?.(window.__getActivePipelineDraftPlan?.())
         ));
         const shouldRenderSynthesisStage = usesSynthesisStage || hasExplicitSynthesizer;
-        const runActive = !!pipelineRunActive || ['planning', 'running', 'paused', 'cancelling'].includes(String(window.DebateApplication?.getState?.()?.lifecycle || ''));
+        const runActive = !!pipelineRunActive;
         const roundLimitControl = debateRoundLimitSelect?.closest?.('.debate-select-wrap') || debateRoundLimitSelect || null;
         const showRoundLimitControl = shouldShowDebateRoundLimitControl();
         if (roundLimitControl) {
@@ -21867,9 +21466,6 @@ function checkCompareButtonState() {
     function toModelKey(name = '') {
         return String(name).toLowerCase().replace(/\s+/g, '');
     }
-    function getActiveDebateSession() {
-        return debateTabsState.sessions.get(debateTabsState.activeSessionId) || null;
-    }
     function ensureDebateSession(sessionId) {
         return debateSessionsStore.ensure(sessionId);
     }
@@ -21899,18 +21495,6 @@ function checkCompareButtonState() {
         // Пересчитываем высоту поля модератора под новое состояние ленты
         // (закрытая лента → рост до 12 строк + расширение контейнера; открытая → кап 120px).
         if (promptInput && isModeratorTextarea) autoGrowDebateTextarea(promptInput);
-    }
-    function pushSerialDebateTimeline(type, payload = {}) {
-        const timelineEvent = {
-            at: new Date().toISOString(),
-            type,
-            pipelineRunId: getPageSerialDebateState().runId || activePipelineRunContext?.pipelineRunId || null,
-            sessionId: getPageSerialDebateState().sessionId || debateTabsState.activeSessionId || '1',
-            ...payload
-        };
-        serialDebateTimeline.push(timelineEvent);
-        recordDebateDomainEvent(window.DebateRunStore?.EVENTS?.TIMELINE_EVENT_RECORDED, timelineEvent);
-        if (serialDebateTimeline.length > 300) serialDebateTimeline.splice(0, serialDebateTimeline.length - 300);
     }
     function normalizeDisputAction(type = '') {
         const raw = String(type || '').trim().toLowerCase();
@@ -22095,14 +21679,11 @@ function checkCompareButtonState() {
         });
         const trace = debateTraceStore?.getActiveRun?.();
         if (trace && window.DebateTraceProjections) {
-            const application = window.__debateApplication;
             return window.DebateTraceProjections.buildReport(trace, {
                 extensionVersion: chrome?.runtime?.getManifest?.()?.version || 'unknown',
                 duplicateEventIds: debateTraceStore.getDuplicateIds?.(trace.debateRunId) || [],
-                planning: { revisions: trace.planRevisions || [], revision: window.DebateTraceSchema?.sanitize?.(application?.getActiveRevision?.() || null),
-                    instances: (application?.getOrchestrator?.()?.getState?.()?.stages || []).map(stage => ({
-                        stageId: stage.stageInstanceId, plannedStageId: stage.plannedStageId, planRevisionId: stage.planRevisionId
-                    })) }
+                planning: { revisions: trace.planRevisions || [], revision: null,
+                    instances: [] }
             });
         }
         const timelineRows = buildDisputTimelineRows();
@@ -22160,22 +21741,6 @@ function checkCompareButtonState() {
             ].map(escapeDisputTableCell).join(' | '));
         });
         return lines.join('\n');
-    }
-    function buildSerialDebateFlowMarkdown() {
-        return buildDisputTelemetryMarkdown([]);
-    }
-    function downloadSerialDebateFlowMarkdown(button = null) {
-        const markdown = buildSerialDebateFlowMarkdown();
-        const blob = new Blob([markdown], { type: 'text/markdown' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `disput_flow_${new Date().toISOString().replace(/[:.]/g, '-')}.md`;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 0);
-        if (button) flashButtonFeedback(button, 'success');
     }
     function readDebateCardMessageSnapshot(card) {
         const outputEl = card?.querySelector?.('.debate-model-card-output');
@@ -22576,12 +22141,17 @@ function checkCompareButtonState() {
         const bounds = responseViewerBounds(card);
         const payload = responseViewerPayload(card);
         responseViewerId = responseViewerId || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        // One copy, in the session storage; the local one only when that fails (a copy there was never removed).
+        let viewerStored = false;
         try {
             await chrome.storage.session.set({ [responseViewerStorageKey()]: payload });
+            viewerStored = true;
         } catch (_) {}
-        try {
-            await chrome.storage.local.set({ [responseViewerStorageKey()]: payload });
-        } catch (_) {}
+        if (!viewerStored) {
+            try {
+                await chrome.storage.local.set({ [responseViewerStorageKey()]: payload });
+            } catch (_) {}
+        }
         try {
             await chrome.runtime.sendMessage({
                 type: 'RESPONSE_VIEWER_STORE_CONTENT',
@@ -23128,66 +22698,6 @@ function checkCompareButtonState() {
         });
         applyDebateSessionFilter();
     }
-    function appendVerdictFeedEntry(text, { title = 'Verdict', source = 'Moderator' } = {}) {
-        if (!debateModelCards) return;
-        const normalizedText = cleanFeedText(text);
-        if (!normalizedText) return;
-        const session = ensureDebateSession(debateTabsState.activeSessionId);
-        const card = document.createElement('div');
-        const now = new Date();
-        const hh = String(now.getHours()).padStart(2, '0');
-        const mm = String(now.getMinutes()).padStart(2, '0');
-        card.className = 'debate-model-card debate-moderator-card debate-verdict-card';
-        card.dataset.sessionId = session.id;
-        card.dataset.llmName = title;
-        card.dataset.entryKind = 'response';
-        card.dataset.kind = 'moderator';
-        card.dataset.verdict = 'true';
-        card.dataset.verdictSource = source;
-        card.dataset.starred = 'false';
-        card.dataset.entryId = String(debateFeedState.nextId++);
-        card.dataset.approved = 'moderator';
-        card.innerHTML = `
-            <div class="debate-model-card-header">
-                <span class="debate-model-card-title">
-                    <span class="debate-model-card-title-main">
-                        <span class="debate-model-card-name">${escapeHtml(title)}</span>
-                    </span>
-                </span>
-                <span class="debate-model-card-meta">
-                    <span class="debate-model-card-time">${hh}:${mm}</span>
-                    <button type="button" class="ib debate-card-copy" title="Copy" aria-label="Copy"><i class="ti ti-copy" aria-hidden="true"></i></button>
-                    <button type="button" class="ib debate-card-export" title="Export HTML" aria-label="Export HTML"><i class="ti ti-download" aria-hidden="true"></i></button>
-                    <button type="button" class="ib debate-card-delete" title="Delete" aria-label="Delete"><i class="ti ti-trash" aria-hidden="true"></i></button>
-                    <button type="button" class="ib debate-fav" title="Favorite" aria-label="Favorite"><i class="ti ti-star" aria-hidden="true"></i></button>
-                </span>
-            </div>
-            <div class="debate-model-card-output"></div>
-        `;
-        const body = card.querySelector('.debate-model-card-output');
-        const formattedHtml = renderDebateResponseBody(body, normalizedText);
-        ensureDebateCardMessage(card, {
-            kind: 'moderator',
-            status: 'approved',
-            model: title,
-            text: normalizedText,
-            html: formattedHtml,
-            timeLabel: `${hh}:${mm}`,
-            starred: false
-        });
-        normalizeDebateCardState(card);
-        insertModeratorCard(card);
-        recordDebateDomainEvent(window.DebateRunStore?.EVENTS?.VERDICT_RECORDED, {
-            turnId: card.dataset.turnId || card.dataset.messageId || card.dataset.entryId,
-            sessionId: session.id,
-            model: title,
-            source,
-            text: normalizedText,
-            html: formattedHtml,
-            status: 'approved'
-        });
-        applyDebateSessionFilter();
-    }
     function updateCardRole(card, roleValue) {
         if (!card) return;
         if (roleValue) card.dataset.role = String(roleValue).trim();
@@ -23196,7 +22706,7 @@ function checkCompareButtonState() {
             roleEl.textContent = roleValue ? String(roleValue).trim() : '';
         }
     }
-    // Gray "incomplete" mark to the right of the model name: the generation did not
+    // Inline "uncompleted" mark: the generation did not
     // finish cleanly (timeout, cut stream). It informs only; approving such an
     // answer stays the user's call (semi-automatic flow).
     function applyPartialMarker(container, meta = {}) {
@@ -23243,20 +22753,7 @@ function checkCompareButtonState() {
             approvalCheck.title = label;
             approvalCheck.setAttribute('aria-label', label);
         }
-        let marker = container.querySelector(':scope > .attribution-unproven-banner, .debate-model-card-title-main > .attribution-unproven-banner');
-        if (!unproven) {
-            marker?.remove();
-            return;
-        }
-        if (!marker) {
-            marker = document.createElement('span');
-            marker.className = 'attribution-unproven-banner';
-            const title = container.querySelector('.debate-model-card-title-main');
-            if (title) title.appendChild(marker);
-            else container.insertBefore(marker, container.firstChild);
-        }
-        marker.textContent = meta.attributionLabel || 'Attribution unverified';
-        marker.title = 'The content is complete, but its ownership by the current request is not proven.';
+        container.querySelectorAll('.attribution-unproven-banner').forEach(marker => marker.remove());
     }
     function resolveDebateFeedMeta(meta = {}) {
         const requestId = String(meta.transportRequestId || meta.requestId || '').trim();
@@ -23722,49 +23219,6 @@ function checkCompareButtonState() {
     function setDebateApprovalCandidate(candidate) {
         debateFeedState.pendingApproval = candidate || null;
     }
-    function collectCheckedDebateApprovals({ commit = false } = {}) {
-        if (!debateModelCards) return [];
-        const activeSessionId = debateTabsState.activeSessionId;
-        return Array.from(debateModelCards.querySelectorAll('.debate-approval-check:checked'))
-            .map((checkbox) => {
-                const card = checkbox.closest('.debate-model-card');
-                if (!card || card.dataset.sessionId !== activeSessionId) return null;
-                const outputEl = card.querySelector('.debate-model-card-output');
-                const text = String(outputEl?.innerText || outputEl?.textContent || '').trim();
-                if (!text || card.dataset.kind === 'placeholder') return null;
-                const item = {
-                    card,
-                    llmName: card.dataset.llmName || 'Model',
-                    text
-                };
-                if (commit) {
-                    approveDebateCard(card);
-                }
-                return item;
-            })
-            .filter(Boolean);
-    }
-    function collectApprovedDebateAnswers() {
-        if (!debateModelCards) return [];
-        const activeSessionId = debateTabsState.activeSessionId;
-        return Array.from(debateModelCards.querySelectorAll('.debate-model-card[data-approved="true"]'))
-            .filter((card) => (
-                card.dataset.sessionId === activeSessionId
-                && card.dataset.kind !== 'moderator'
-                && card.dataset.kind !== 'fragment'
-            ))
-            .map((card) => {
-                const outputEl = card.querySelector('.debate-model-card-output');
-                const text = String(outputEl?.innerText || outputEl?.textContent || '').trim();
-                if (!text) return null;
-                return {
-                    card,
-                    llmName: card.dataset.llmName || 'Model',
-                    text
-                };
-            })
-            .filter(Boolean);
-    }
     function getModeratorDispatchText() {
         const moderatorInputText = pastedTextComposer.getText().trim();
         // On the Debate page #mod-message-body is a presentation surface, not
@@ -23794,25 +23248,6 @@ function checkCompareButtonState() {
         if (debateModMessageBody) {
             debateModMessageBody.innerHTML = '';
         }
-    }
-    function buildDebateModeratorDispatchText() {
-        const approval = debateFeedState.pendingApproval;
-        const legacyApprovalText = approval ? String(approval.text || '').trim() : '';
-        const checkedApprovals = collectCheckedDebateApprovals();
-        const approvedAnswers = checkedApprovals.length ? checkedApprovals : collectApprovedDebateAnswers();
-        const moderatorText = getModeratorDispatchText();
-        const parts = [];
-        approvedAnswers.forEach((item) => {
-            parts.push(`${item.llmName}\n${item.text}`);
-        });
-        if (!approvedAnswers.length && legacyApprovalText) {
-            const approvalLabel = approval?.llmName || 'Model';
-            parts.push(`${approvalLabel}\n${legacyApprovalText}`);
-        }
-        if (moderatorText) {
-            parts.push(`User\n${moderatorText}`);
-        }
-        return parts.join('\n\n').trim();
     }
     function updateDebateModelCardOutput(llmName, text, html = '', meta = {}) {
         const normalizedText = String(text || '').trim();
@@ -23890,44 +23325,6 @@ function checkCompareButtonState() {
             .map((card) => card.dataset.llmName || '')
             .filter(Boolean)
             .filter((name, index, list) => list.indexOf(name) === index);
-    }
-    function setSelectValueIfPresent(select, value, fallback = '') {
-        if (!select) return false;
-        const desired = String(value || '');
-        const hasDesired = Array.from(select.options).some((opt) => opt.value === desired && !opt.disabled);
-        if (hasDesired) {
-            select.value = desired;
-            return true;
-        }
-        const hasFallback = Array.from(select.options).some((opt) => opt.value === fallback && !opt.disabled);
-        if (hasFallback) {
-            select.value = fallback;
-            return true;
-        }
-        return false;
-        }
-        function getSerialOpponentModel(modelName = '') {
-            const state = getPageSerialDebateState();
-            const name = String(modelName || '').trim();
-            if (!name) return '';
-            if (name === state.modelA) return state.modelB || '';
-            if (name === state.modelB) return state.modelA || '';
-            const selected = getSelectedLLMs();
-            return selected.find((item) => item !== name) || '';
-        }
-    function setModeratorRoute(sender = 'Moderator', receiver = '__none__', options = {}) {
-        syncModeratorSelectors({ preserveRoute: false });
-        setSelectValueIfPresent(debateSenderSelect, sender, 'Moderator');
-        setSelectValueIfPresent(debateReceiverSelect, receiver, '__none__');
-        if (options.manual) moderatorRouteState.manualOverride = true;
-        syncDirectionIcon();
-    }
-    function syncModeratorRouteAfterModelResponse(modelName = '') {
-        const speaker = String(modelName || '').trim();
-        const opponent = getSerialOpponentModel(speaker);
-        if (!speaker || !opponent) return false;
-        setModeratorRoute(speaker, opponent);
-        return true;
     }
     function saveDebateSelectorState() {
         const state = {
@@ -24071,20 +23468,6 @@ function checkCompareButtonState() {
             html: String(outputEl?.innerHTML || '').trim()
         });
         syncDebateCardOutputLayout(sourceCard);
-    }
-    function stripBackgroundColorStyles(node) {
-        if (!node || node.nodeType !== Node.ELEMENT_NODE) return;
-        const el = node;
-        if (el.style && typeof el.style.backgroundColor === 'string') {
-            el.style.backgroundColor = '';
-            if (typeof el.style.removeProperty === 'function') {
-                el.style.removeProperty('background-color');
-            }
-            if (el.getAttribute?.('style') === '') {
-                el.removeAttribute('style');
-            }
-        }
-        Array.from(el.children || []).forEach(stripBackgroundColorStyles);
     }
     function wrapDebateSelectionRange(tagName, stylePatch = {}) {
         const range = debateSelectionState.range;
@@ -24376,7 +23759,51 @@ function checkCompareButtonState() {
     }
 
     startButton?.addEventListener('click', async () => {
-
+        if (mainRunActive) {
+            const stopAction = ++mainRunAction;
+            startButton.disabled = true;
+            // Stop must not strand the button on a lost MV3 reply. Keep this
+            // deadline local to control messages; prompt delivery retains its
+            // existing wait and acknowledgement contract.
+            const sendStopControl = async (payload) => {
+                let timeout;
+                try {
+                    return await Promise.race([
+                        sendToBackground(payload),
+                        new Promise((_, reject) => {
+                            timeout = setTimeout(() => reject(new Error('Не получено подтверждение остановки')), 2500);
+                        })
+                    ]);
+                } finally {
+                    clearTimeout(timeout);
+                }
+            };
+            try {
+                const stopped = await sendStopControl({ type: 'STOP_ALL' });
+                if (!stopped?.success) {
+                    throw new Error(stopped?.error?.message || stopped?.error || 'Не удалось остановить запрос');
+                }
+                if (stopAction !== mainRunAction) return;
+                markCurrentMainRequestsCancelled();
+                setMainRunActive(false);
+            } catch (err) {
+                // A closed response port does not prove Stop failed. Reconcile
+                // with the worker before unlocking the next prompt.
+                let state = null;
+                try { state = await sendStopControl({ type: 'GET_ACTIVE_RUN_STATE' }); } catch (_) {}
+                if (stopAction !== mainRunAction) return;
+                if (state?.status === 'ok' && state.active === false && !state.sessionId) {
+                    markCurrentMainRequestsCancelled();
+                    setMainRunActive(false);
+                } else {
+                    showNotification(err?.message || 'Не удалось остановить запрос', 'error');
+                }
+            } finally {
+                if (stopAction === mainRunAction) startButton.disabled = false;
+            }
+            return;
+        }
+        const action = ++mainRunAction;
         try {
             let finalPrompt = pastedTextComposer.getText();
             if (!finalPrompt) {
@@ -24405,6 +23832,7 @@ function checkCompareButtonState() {
             // Record which Generation Wait Profile this run uses (for the telemetry export).
             lastGenerationWaitProfile = (longModeCheckbox && longModeCheckbox.checked) ? 'long' : 'standard';
             const attachmentsPayload = await buildAttachmentPayload();
+            if (action !== mainRunAction) return;
             if (attachmentsPayload.length) {
                 const unsupported = selectedLLMs.filter((name) => ATTACH_CAPABILITY[name] === false);
                 if (unsupported.length) {
@@ -24418,11 +23846,19 @@ function checkCompareButtonState() {
                 name,
                 window.TransportContract.makeTransportRequestId()
             ]));
+            // Claim the new main request before dispatch so a late answer from the
+            // previous transport cannot repaint or complete this model's card.
+            replaceCurrentMainRequestIds(transportRequestIds);
+            selectedLLMs.forEach((name) => {
+                clearModelStatusMemory(name);
+                updateModelStatusUI(name, 'INITIALIZING', { reset: true, force: true });
+            });
             const promptsByModel = window.MessageDelivery?.prepare({
                 prompt: finalPrompt, models: selectedLLMs, requestIds: transportRequestIds
             }) || null;
 
             let response = null;
+            setMainRunActive(true);
             try {
                 response = await sendToBackground({
                     type: 'START_FULLPAGE_PROCESS',
@@ -24443,6 +23879,7 @@ function checkCompareButtonState() {
                 throw err;
             }
 
+            if (action !== mainRunAction || response?.errorCode === 'RUN_CANCELLED') return;
             if (response?.errorCode === 'RUN_ALREADY_ACTIVE') {
                 showNotification('Another run is already in progress. Stop it before starting a new one.', 'warn');
                 throw new Error('run_already_active');
@@ -24467,6 +23904,8 @@ function checkCompareButtonState() {
                 resetNewPagesCheckboxAfterOpen();
             }
         } catch (err) {
+            if (action !== mainRunAction) return;
+            setMainRunActive(false);
             console.error('[RESULTS] Failed to start process', err);
             showNotification(`Failed to send request: ${err?.message || String(err)}`, 'error');
         } finally {
@@ -25547,7 +24986,7 @@ function exportSingleTemplate(templateName, sourceData = null) {
     const devtoolsTabs = Array.from(document.querySelectorAll('.devtools-tab'));
     const devtoolsPanels = Array.from(document.querySelectorAll('.devtools-tabpanel'));
     const DEFAULT_DEVTOOLS_TAB_ID = 'disput-tabpanel';
-    const DEVTOOLS_TAB_STORAGE_KEY = 'llmCodexDevtoolsActiveTab.v1';
+    const DEVTOOLS_TAB_STORAGE_KEY = 'aoDevtoolsActiveTab.v1';
     let activeDevtoolsTabId = devtoolsTabs.find(tab => tab.classList.contains('is-active'))?.dataset.tabTarget ||
         devtoolsPanels[0]?.id || DEFAULT_DEVTOOLS_TAB_ID;
 

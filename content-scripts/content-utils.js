@@ -61,6 +61,7 @@
     ? window.__LLMMainBridgeToken
     : null;
   let storedPipelineRunId = null;
+  let stoppedDispatchMeta = null;
   const getMainBridgeToken = () => mainBridgeToken || null;
   const setMainBridgeToken = (token) => {
     mainBridgeToken = typeof token === 'string' && token.trim() ? token.trim() : null;
@@ -242,6 +243,49 @@
       base.llmName = llmName;
     }
     return Object.keys(base).length ? base : null;
+  };
+
+  // A delayed, correlated Stop must not affect a newer known dispatch. The
+  // storage listener can require identity initialization; direct Stop messages
+  // remain able to cancel page startup before the first request is recorded.
+  const isStopCommandCurrent = (message, { requireKnownIdentity = false } = {}) => {
+    if (!message || typeof message !== 'object') return true;
+    const meta = message.meta && typeof message.meta === 'object' ? message.meta : {};
+    const readIdentity = (key, aliases = []) => {
+      for (const source of [meta, message]) {
+        for (const name of [key, ...aliases]) {
+          const value = source?.[name];
+          if (value !== undefined && value !== null && value !== '') return value;
+        }
+      }
+      return null;
+    };
+    const commandRunSessionId = readIdentity('runSessionId', ['sessionId']);
+    const commandDispatchId = readIdentity('dispatchId');
+    const commandPipelineRunId = readIdentity('pipelineRunId');
+    const commandDispatchIds = Array.isArray(message.activeDispatchIds)
+      ? message.activeDispatchIds
+      : (Array.isArray(meta.activeDispatchIds) ? meta.activeDispatchIds : null);
+    const hasIdentity = Boolean(commandRunSessionId || commandDispatchId || commandPipelineRunId || commandDispatchIds);
+    if (!hasIdentity) return true;
+
+    const currentMeta = ensureDispatchMeta({}) || {};
+    const currentRunSessionId = currentMeta.runSessionId || currentMeta.sessionId || getSessionId();
+    const currentDispatchId = currentMeta.dispatchId || null;
+    const currentPipelineRunId = currentMeta.pipelineRunId || storedPipelineRunId || null;
+    if (commandRunSessionId && (!currentRunSessionId
+        ? requireKnownIdentity
+        : String(commandRunSessionId) !== String(currentRunSessionId))) return false;
+    if (commandDispatchId && (!currentDispatchId
+        ? requireKnownIdentity
+        : String(commandDispatchId) !== String(currentDispatchId))) return false;
+    if (commandPipelineRunId && (!currentPipelineRunId
+        ? requireKnownIdentity
+        : String(commandPipelineRunId) !== String(currentPipelineRunId))) return false;
+    if (commandDispatchIds && (!currentDispatchId
+        ? requireKnownIdentity
+        : !commandDispatchIds.some((id) => String(id) === String(currentDispatchId)))) return false;
+    return true;
   };
 
   const FOCUS_REQUEST_THROTTLE_MS = 3000;
@@ -618,6 +662,7 @@
         modelName: llmName,
         dispatchId: meta?.dispatchId || null,
         runSessionId: meta?.runSessionId || meta?.sessionId || null,
+        generationEpoch: meta?.generationEpoch ?? null,
         promptSubmittedAt: Date.now(),
         traceId: meta?.traceId || meta?.dispatchId || null,
         baselineText: String(baselineText || ''),
@@ -877,9 +922,61 @@
     }
     return { stopped: false, reason: 'stop_unconfirmed' };
   };
+  // Mark the page synchronously when Stop arrives, even if the Pragmatist
+  // runner has not finished its asynchronous boot yet. The runner has its own
+  // listener for stopping provider observers and command polling.
+  try {
+    chrome.runtime.onMessage.addListener((message) => {
+      if (message?.type !== 'STOP_AND_CLEANUP') return false;
+      if (!isStopCommandCurrent(message)) return false;
+      const explicitMeta = message.meta && typeof message.meta === 'object' ? message.meta : {};
+      const currentMeta = ensureDispatchMeta({}) || {};
+      stoppedDispatchMeta = {
+        runSessionId: explicitMeta.runSessionId || explicitMeta.sessionId
+          || message.runSessionId || message.sessionId
+          || currentMeta.runSessionId || currentMeta.sessionId || null,
+        dispatchId: explicitMeta.dispatchId || message.dispatchId || currentMeta.dispatchId || null
+      };
+      try {
+        window.__LLMScrollHardStop = true;
+        window.__LLMScrollStopEpoch = Number(window.__LLMScrollStopEpoch || 0) + 1;
+      } catch (_) {}
+      try {
+        window.humanSessionController?.forceHardStop?.('background-stop');
+      } catch (_) {}
+      return false;
+    });
+  } catch (_) {}
+
+  // A new prompt is the explicit boundary between a stopped request and the
+  // next one. Clear only the hard-stop bit; the incremented stop epoch remains
+  // so work that was already awaiting when Stop arrived cannot resume.
+  try {
+    chrome.runtime.onMessage.addListener((message) => {
+      if (message?.type !== 'GET_ANSWER') return false;
+      if (!String(message.prompt || '').trim()) return false;
+      if (!stoppedDispatchMeta) return false;
+
+      const incomingMeta = message.meta && typeof message.meta === 'object' ? message.meta : {};
+      const incomingRunSessionId = incomingMeta.runSessionId || incomingMeta.sessionId
+        || message.runSessionId || message.sessionId || null;
+      const incomingDispatchId = incomingMeta.dispatchId || message.dispatchId || null;
+      const hasNewRun = Boolean(incomingRunSessionId && stoppedDispatchMeta.runSessionId
+        && String(incomingRunSessionId) !== String(stoppedDispatchMeta.runSessionId));
+      const hasNewDispatch = Boolean(incomingDispatchId && stoppedDispatchMeta.dispatchId
+        && String(incomingDispatchId) !== String(stoppedDispatchMeta.dispatchId));
+      if (!hasNewRun && !hasNewDispatch) return false;
+
+      try { window.__LLMScrollHardStop = false; } catch (_) {}
+      stoppedDispatchMeta = null;
+      return false;
+    });
+  } catch (_) {}
+
   try {
     chrome.runtime.onMessage.addListener((message) => {
       if (message?.type !== 'STOP_AND_CLEANUP' || !hasActiveRequest()) return false;
+      if (!isStopCommandCurrent(message)) return false;
       stopProviderGeneration()
         .catch((err) => ({ stopped: false, reason: `stop_failed:${err?.message || err}` }))
         .then((result) => {
@@ -1055,17 +1152,14 @@
     'letter-spacing',
     'text-align',
     'white-space',
-    'margin',
     'margin-top',
     'margin-right',
     'margin-bottom',
     'margin-left',
-    'padding',
     'padding-top',
     'padding-right',
     'padding-bottom',
     'padding-left',
-    'border',
     'border-top',
     'border-right',
     'border-bottom',
@@ -1075,20 +1169,45 @@
     'list-style-position'
   ];
 
-  const buildInlineStyle = (element) => {
+  // The inline styles of a captured answer (V10). A page element has dozens of computed values; writing all of them on every
+  // element made the html of an answer ~20 times the size of its text (800 bytes per element) and filled the extension storage.
+  // Now an inherited value equal to the one of the parent is not written (the parent carries it), the shorthands that repeat the
+  // longhands are not written, and the neutral values (0px, transparent, no decoration) are not written. The root of a capture
+  // carries all inherited values, so the answer looks the same where it is shown.
+  const INLINE_INHERITED = new Set(['color', 'font-family', 'font-size', 'font-weight', 'font-style', 'text-transform', 'line-height',
+    'letter-spacing', 'text-align', 'white-space', 'list-style-type', 'list-style-position']);
+  const isNeutralInlineValue = (prop, value) => {
+    if (!value) return true;
+    if (prop === 'background-color') return /^(transparent|rgba\(0, 0, 0, 0\))$/.test(value);
+    if (prop === 'text-decoration') return /^none\b/.test(value);
+    if (/^border-(top|right|bottom|left)$/.test(prop)) return /^(0px|none)\b/.test(value);
+    return /^(margin|padding)-/.test(prop) || prop === 'border-radius' ? value === '0px' : false;
+  };
+
+  const buildInlineStyle = (element, parent = null) => {
     if (!element || element.nodeType !== 1) return '';
     const computed = window.getComputedStyle?.(element);
     if (!computed) return '';
+    const parentComputed = parent ? window.getComputedStyle?.(parent) : null;
     return INLINE_STYLE_PROPERTIES.map((prop) => {
-      const value = computed.getPropertyValue(prop);
-      return value ? `${prop}:${value.trim()};` : '';
+      const value = String(computed.getPropertyValue(prop) || '').trim();
+      if (!value) return '';
+      if (INLINE_INHERITED.has(prop)) {
+        if (parentComputed && String(parentComputed.getPropertyValue(prop) || '').trim() === value) return '';
+      } else if (isNeutralInlineValue(prop, value)) {
+        return '';
+      }
+      return `${prop}:${value};`;
     }).join('');
   };
 
-  const applyInlineStyles = (source, target) => {
-    const style = buildInlineStyle(source);
+  const applyInlineStyles = (source, target, parent = null) => {
+    const style = buildInlineStyle(source, parent);
+    // The computed form replaces the style the page itself wrote on the element (as before); nothing left to say removes it.
     if (style) {
       target.setAttribute('style', style);
+    } else {
+      target.removeAttribute('style');
     }
   };
 
@@ -1100,7 +1219,9 @@
     let sourceNode = element;
     let cloneNode = clone;
     while (sourceNode && cloneNode) {
-      applyInlineStyles(sourceNode, cloneNode);
+      // The root and its children carry every inherited value: the html of a capture without its root (innerHTML) stays whole.
+      const parent = sourceNode === element || sourceNode.parentElement === element ? null : sourceNode.parentElement;
+      applyInlineStyles(sourceNode, cloneNode, parent);
       sourceNode = sourceWalker.nextNode();
       cloneNode = cloneWalker.nextNode();
     }
@@ -1423,6 +1544,7 @@
     storeDispatchMeta,
     getSessionId,
     ensureDispatchMeta,
+    isStopCommandCurrent,
     pasteTextFirst,
     promptMatchesComposer: pasteMatchesPrompt,
     countPromptOccurrences,

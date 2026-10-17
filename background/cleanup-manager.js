@@ -42,17 +42,14 @@ function cleanupTabResources(tabId, reason = 'unknown') {
     return;
   }
   promptSubmitWaiters.delete(llmName);
-  rateLimitState.delete(llmName);
+  void Promise.resolve(self.cancelRateLimitRetry(llmName)).catch((err) => {
+    console.warn(`[BACKGROUND] Failed to clear rate-limit retry for ${llmName}:`, err?.message || err);
+  });
   dispatchMutexManager.clear(llmName);
   clearDeferredAnswerTimer(llmName);
   clearPostSuccessScrollAudit(llmName);
   if (llmStartChains[llmName]) {
     delete llmStartChains[llmName];
-  }
-  const pendingTimer = rateLimitTimers.get(llmName);
-  if (pendingTimer) {
-    clearTimeout(pendingTimer);
-    rateLimitTimers.delete(llmName);
   }
   if (jobState?.llms?.[llmName]) {
     const preserveEntry = shouldPreserveRunModelEntry(llmName);
@@ -123,7 +120,7 @@ function buildCleanupSnapshot(tabId, llmName, phase) {
     rateLimitState: !!(llmName && rateLimitState.has(llmName)),
     promptSubmitWaiters: !!(llmName && promptSubmitWaiters.has(llmName)),
     llmStartChain: !!(llmName && llmStartChains[llmName]),
-    rateLimitTimer: !!(llmName && rateLimitTimers.has(llmName)),
+    rateLimitRetry: !!(llmName && self.hasRateLimitRetry(llmName)),
     deferredAnswerTimer: !!(llmName && deferredAnswerTimers[llmName]),
     postSuccessScrollTimers: !!(llmName && postSuccessScrollTimers.has(llmName)),
     pingWindow: !!pingWindowByTabId[tabId],

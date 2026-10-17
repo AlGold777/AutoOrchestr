@@ -35,7 +35,7 @@ describe('GPT attachment isolation', () => {
 
   test('synthetic drop always closes the drag lifecycle', () => {
     expect(HANDLER_SRC).toContain("['dragleave', 'dragend']");
-    expect(GPT_SRC).toContain("['dragleave', 'dragend']");
+    expect(GPT_SRC).not.toContain('async function attachFilesToComposer');
     expect(BRIDGE_SRC).toContain("['dragleave', 'dragend']");
     expect(HANDLER_SRC.slice(HANDLER_SRC.indexOf('GPT: {'), HANDLER_SRC.indexOf('Grok: {')))
       .toContain('finishDragLifecycle: true');

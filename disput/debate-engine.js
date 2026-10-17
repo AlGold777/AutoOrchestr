@@ -4,7 +4,7 @@
   // Transcript persistence/export utility. Executable prompts are owned by
   // DebatePromptCompiler and DebatePromptPack, never by this UI store.
   const VERSION = 1;
-  const STORAGE_KEY = 'llmCortexDebateEngineState.v1';
+  const STORAGE_KEY = 'aoEngineState.v1';
   const DEFAULT_SETTINGS = Object.freeze({
     runPolicy: 'manual',
     maxTurns: 5,

@@ -47,6 +47,9 @@
       // still misses, the safe failure mode is "works, with a duplicate warning",
       // never "no file". A true fix needs the live ChatGPT attached-file selector.
       preferPaste: false,
+      settleMs: 1200,
+      persistentEvidenceRequired: true,
+      confirmGoneSelectors: ['[role="progressbar"]', '[aria-busy="true"]'],
       // Never paste a File into ChatGPT: text-like files are interpreted as
       // composer text, which can replace the actual prompt with file contents.
       strategies: ['drop', 'input'],
@@ -755,7 +758,11 @@
         ? Object.keys(requiredNames).length > 0 && Object.entries(requiredNames).every(([name, count]) =>
           (filenameCounts[name] || 0) >= (baselineState.filenameEvidenceByName[name] || 0) + count)
         : filenameEvidenceCount >= baselineFilenameEvidence + expectedCount;
-      const evidenceNow = selectorEvidence || inputEvidence || filenameEvidence;
+      // One file can render several matching wrappers/buttons. For a batch,
+      // generic selector counts cannot prove that every distinct file arrived.
+      const evidenceNow = files.length > 1
+        ? filenameEvidence || inputEvidence
+        : selectorEvidence || inputEvidence || filenameEvidence;
       if (selectorEvidence || filenameEvidence) providerEvidenceSeen = true;
       if (evidenceNow && !evidenceAt) evidenceAt = Date.now();
       const hasEvidence = evidenceNow
@@ -838,6 +845,26 @@
     return null;
   };
 
+  const acceptsAttachmentFiles = (input, files) => {
+    if (!input || input.disabled || (files.length > 1 && !input.multiple)) return false;
+    const accepted = String(input.getAttribute('accept') || '').toLowerCase().split(',').map(value => value.trim()).filter(Boolean);
+    return files.every(file => !accepted.length || accepted.some(rule =>
+      rule === '*/*' || rule === '*' || (rule.startsWith('.')
+        ? String(file.name || '').toLowerCase().endsWith(rule)
+        : rule.endsWith('/*') ? String(file.type || '').toLowerCase().startsWith(rule.slice(0, -1))
+          : String(file.type || '').toLowerCase() === rule)));
+  };
+
+  const findAttachmentInput = (files, selectors = []) => {
+    for (const root of collectOpenRoots()) {
+      for (const selector of [...selectors, 'input[type="file"]']) {
+        const input = Array.from(root.querySelectorAll(selector)).find(candidate => acceptsAttachmentFiles(candidate, files));
+        if (input) return input;
+      }
+    }
+    return null;
+  };
+
   const attachViaInput = async (files, config) => {
     const attachButton = await findFirst(config.attachSelectors, 1200, 120);
     if (attachButton) {
@@ -846,7 +873,12 @@
         await sleep(300);
       } catch (_) {}
     }
-    const input = await findFirst(config.inputSelectors, 3000, 120) || document.querySelector('input[type="file"]');
+    const deadline = Date.now() + 3000;
+    let input = findAttachmentInput(files, config.inputSelectors);
+    while (!input && Date.now() < deadline) {
+      await sleep(120);
+      input = findAttachmentInput(files, config.inputSelectors);
+    }
     if (!input) return false;
     const dt = new DataTransfer();
     files.forEach((file) => {
@@ -1048,9 +1080,9 @@
     }
     const config = resolveConfig(model, overrides);
     const files = hydrateAttachments(attachments).slice(0, config.maxFiles);
-    if (!files.length) {
-      reportFailure('NO_FILES');
-      return { success: false, delivered: false, uploadSettled: false, ready: false, evidence: null, uploadedCount: 0, failedFiles: attachments, reason: 'NO_FILES' };
+    if (files.length !== attachments.length) {
+      reportFailure('INCOMPLETE_FILE_BATCH');
+      return { success: false, delivered: false, uploadSettled: false, ready: false, evidence: null, uploadedCount: 0, failedFiles: attachments, reason: 'INCOMPLETE_FILE_BATCH' };
     }
     if (config.sequentialFiles === true && files.length > 1) {
       const limitedAttachments = attachments.slice(0, files.length);
@@ -1333,6 +1365,9 @@
         reason: attempted ? 'TIMEOUT' : 'MANUAL_REQUIRED'
       };
     }
+    global.ContentUtils?.reportDispatchStage?.(model, {}, 'attachment_upload_completed', {
+      outcome: 'confirmed', attachmentCount: attachments.length, uploadedCount: files.length
+    });
     try {
       chrome?.runtime?.sendMessage?.({
         type: 'SMART_ATTACHMENT_CONFIRMED',

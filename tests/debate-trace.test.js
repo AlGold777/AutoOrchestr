@@ -123,7 +123,7 @@ describe('Debate trace store', () => {
     const store = TraceStore.createStore({ storage });
     store.beginRun({ debateRunId: 'run-1', plan });
     await store.purgeStoredRuns();
-    expect(storage.remove).toHaveBeenCalledWith(['llmCodexDebateTrace.v1', 'llmCodexDebateTrace'], expect.any(Function));
+    expect(storage.remove).toHaveBeenCalledWith(['aoTrace.v1', 'llmCodexDebateTrace.v1', 'llmCodexDebateTrace'], expect.any(Function));
     expect(storage.get).not.toHaveBeenCalled();
     expect(storage.set).not.toHaveBeenCalled();
     expect(store.getActiveRun().debateRunId).toBe('run-1');

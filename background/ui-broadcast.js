@@ -6,6 +6,7 @@
 function buildGlobalStateSnapshot(options = {}) {
   const includeAnswers = options?.includeAnswers === true;
   const llms = {};
+  const session = jobState?.session || {};
   Object.entries(jobState?.llms || {}).forEach(([name, entry]) => {
     const mappedTabId = TabMapManager.get(name);
     const modelRunState = entry?.modelRunState || (self.ModelRunState?.deriveModelRunState
@@ -37,6 +38,7 @@ function buildGlobalStateSnapshot(options = {}) {
       stageTimeline: Array.isArray(entry?.stageTimeline) ? entry.stageTimeline.slice(-30) : [],
       answerRevisions: Array.isArray(entry?.answerRevisions) ? entry.answerRevisions.slice(-12) : [],
       hasAnswer: !!entry?.answer,
+      cardAnswerComplete: entry?.cardAnswerComplete === true,
       // Recovery must pass the same identity check as a live answer message.
       transportRequestId: entry?.transportRequestId || null,
       pipelineRunId: entry?.pipelineRunId || null,
@@ -69,6 +71,12 @@ function buildGlobalStateSnapshot(options = {}) {
   TabMapManager.entries().forEach(([name, tabId]) => { tabsMap[name] = tabId; });
   return {
     llms,
+    session: {
+      startTime: session.startTime ?? null,
+      sourceView: session.sourceView || null,
+      roundsInProgress: session.roundsInProgress === true,
+      pipelineRunId: session.pipelineRunId || null
+    },
     runMetrics: self.ModelRunState?.buildRunMetrics ? self.ModelRunState.buildRunMetrics(jobState || {}) : null,
     tabs: { map: tabsMap },
     ui: { resultsTabId },

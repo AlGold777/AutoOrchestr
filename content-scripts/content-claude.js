@@ -275,7 +275,7 @@ if (typeof window.SelectorFinder === 'undefined') {
       }
     }
   }) : null;
-  const attachmentHandler = window.AttachmentHandler || null;
+  const getAttachmentHandler = () => window.AttachmentHandler || null;
   const getLifecycleMode = () => {
     if (typeof window !== 'undefined') {
       if (window.__humanoidActivityMode) return window.__humanoidActivityMode;
@@ -1909,6 +1909,7 @@ function isLikelyClaudeModelLabel(text = '') {
         
         if (Array.isArray(attachments) && attachments.length) {
           let attachmentsOk = false;
+          const attachmentHandler = getAttachmentHandler();
           if (attachmentHandler?.attach) {
             const result = await attachmentHandler.attach(MODEL, attachments);
             attachmentsOk = result.success;
@@ -2366,6 +2367,8 @@ function isLikelyClaudeModelLabel(text = '') {
       if (!message) return false;
       if (baseAdapter?.handleMessage(message, sender, sendResponse)) return true;
       if (message?.type === 'STOP_AND_CLEANUP') {
+        if (typeof window.ContentUtils?.isStopCommandCurrent === 'function'
+            && !window.ContentUtils.isStopCommandCurrent(message)) return false;
         handleForceStopMessage(message.payload?.traceId);
         stopContentScript('manual-toggle');
         if (typeof sendResponse === 'function') {
@@ -2374,6 +2377,8 @@ function isLikelyClaudeModelLabel(text = '') {
         return false;
       }
       if (message?.type === 'HUMANOID_FORCE_STOP') {
+        if (typeof window.ContentUtils?.isStopCommandCurrent === 'function'
+            && !window.ContentUtils.isStopCommandCurrent(message)) return false;
         handleForceStopMessage(message.payload?.traceId);
         if (typeof sendResponse === 'function') {
           sendResponse({ status: 'force_stop_ack' });

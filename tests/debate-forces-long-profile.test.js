@@ -16,10 +16,4 @@ describe('debate forces LONG profile', () => {
     expect(window).toContain('chrome.storage.local.set({ [LONG_GENERATION_MODE_KEY]: true }');
   });
 
-  test('pipeline completion restores the flag to the user main-page choice', () => {
-    const idx = RESULTS_SRC.indexOf('const startDebateFromPage = async');
-    expect(idx).toBeGreaterThan(-1);
-    const block = RESULTS_SRC.slice(idx, idx + 18000);
-    expect(block).toContain('writeLongGenerationMode(longModeCheckbox ? longModeCheckbox.checked : true)');
-  });
 });

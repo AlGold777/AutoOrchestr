@@ -1094,6 +1094,7 @@ async function dispatchKimiTrustedSend(tabId) {
 
 const isTerminalRouterEntry = (entry = null) => {
     if (!entry) return false;
+    if (entry.cardAnswerComplete === true) return true;
     if (self.ModelRunState?.isTerminalRunState?.(entry)) return true;
     const entryStatus = String(entry?.status || entry?.finalStatus || '').toUpperCase();
     return Boolean(entry.finalStatusRecorded || entry.finalStatus || TERMINAL_STATUSES.includes(entryStatus));
@@ -1215,6 +1216,11 @@ const recordCompletionAuthorityAttempt = (llmName, meta = {}) => {
     const key = completionAuthorityKey(llmName);
     if (!key) return null;
     const previous = getCompletionAuthorityAttempt(key) || {};
+    const liveIdentity = jobState?.llms?.[key]?.lastDispatchMeta;
+    if (meta.dispatchId && liveIdentity?.dispatchId
+        && String(meta.dispatchId) !== String(liveIdentity.dispatchId)) return getCompletionAuthorityAttempt(key);
+    if (meta.generationEpoch != null && liveIdentity?.generationEpoch != null
+        && Number(meta.generationEpoch) !== Number(liveIdentity.generationEpoch)) return getCompletionAuthorityAttempt(key);
     const nextDispatchId = meta.dispatchId || previous.dispatchId || null;
     const sameAttempt = Boolean(previous.dispatchId && nextDispatchId
         && String(previous.dispatchId) === String(nextDispatchId));
@@ -1222,7 +1228,7 @@ const recordCompletionAuthorityAttempt = (llmName, meta = {}) => {
         ...(sameAttempt ? previous : {}),
         runSessionId: meta.runSessionId || meta.sessionId || previous.runSessionId || null,
         dispatchId: nextDispatchId,
-        generationEpoch: meta.generationEpoch ?? previous.generationEpoch ?? null,
+        generationEpoch: meta.generationEpoch ?? (sameAttempt ? previous.generationEpoch : null) ?? null,
         rolloutMode: ['legacy', 'shadow', 'enforced'].includes(meta.rolloutMode) ? meta.rolloutMode : (previous.rolloutMode || 'enforced'),
         legacyDeliveryAuthorized: meta.legacyDeliveryAuthorized === true,
         protocolVersion: meta.protocolVersion || previous.protocolVersion || null,
@@ -1377,6 +1383,10 @@ const validateCompletionAuthorityDelivery = (llmName, message = {}) => {
     }
     if (authority.dispatchId && String(authority.dispatchId) !== String(incomingDispatchId)) {
         return { ok: false, reason: 'completion_authority_dispatch_mismatch' };
+    }
+    if (meta.generationEpoch != null && authority.generationEpoch != null
+        && Number(meta.generationEpoch) !== Number(authority.generationEpoch)) {
+        return { ok: false, reason: 'completion_authority_generation_mismatch' };
     }
     const rolloutMode = meta.completionRolloutMode || authority.rolloutMode || 'enforced';
     if ((rolloutMode === 'legacy' || rolloutMode === 'shadow') && authority.legacyDeliveryAuthorized === true) {
@@ -1789,6 +1799,43 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 
 let initialStatePromise = null;
 let initialStateReady = false;
+
+// The viewer content that earlier versions left in chrome.storage.local goes (once, at start), and the session storage keeps
+// the newest few (shared/response-viewer-retention.js).
+async function pruneResponseViewerContent({ legacyLocal = false } = {}) {
+    const retention = self.ResponseViewerRetention;
+    if (!retention) return;
+    try {
+        if (legacyLocal) {
+            const keys = typeof chrome.storage.local.getKeys === 'function'
+                ? await chrome.storage.local.getKeys()
+                : Object.keys(await chrome.storage.local.get(null));
+            const stale = keys.filter((key) => String(key).startsWith(retention.PREFIX));
+            if (stale.length) await chrome.storage.local.remove(stale);
+        }
+        const sessionKeys = typeof chrome.storage.session.getKeys === 'function'
+            ? await chrome.storage.session.getKeys()
+            : Object.keys(await chrome.storage.session.get(null));
+        const drop = retention.keysToRemove(sessionKeys, retention.KEEP);
+        if (drop.length) await chrome.storage.session.remove(drop);
+    } catch (err) {
+        console.warn('[BACKGROUND] Response viewer cleanup failed:', err);
+    }
+}
+
+// The old viewer copies are removed at the start of the service worker itself, once per browser session (a flag in the session
+// storage): the general maintenance below starts only at the end of the initial state, which does not finish when the storage is full.
+(async () => {
+    try {
+        const { responseViewerLegacyCleaned } = await chrome.storage.session.get('responseViewerLegacyCleaned');
+        if (responseViewerLegacyCleaned) return;
+        await pruneResponseViewerContent({ legacyLocal: true });
+        await chrome.storage.session.set({ responseViewerLegacyCleaned: true });
+    } catch (err) {
+        console.warn('[BACKGROUND] Response viewer start cleanup failed:', err);
+    }
+})();
+
 let initialStorageMaintenancePromise = null;
 
 function scheduleInitialStorageMaintenance() {
@@ -1797,6 +1844,9 @@ function scheduleInitialStorageMaintenance() {
         setTimeout(resolve, 1000);
     })
         .then(async () => {
+            // First, and on its own: with the storage full, the maintenance below may fail on the quota, and the viewer copies
+            // are what frees the room (pruneResponseViewerContent catches its own errors).
+            await pruneResponseViewerContent({ legacyLocal: true });
             await CompressedStorage.migrate(['results', 'notes', 'logs']);
             await CompressedStorage.pruneIfNeeded();
         })
@@ -1940,7 +1990,7 @@ chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
     if (cleanupReason) {
         // Никогда не закрываем LLM-вкладки автоматически при закрытии results,
         // оставляем только очистку состояния.
-        stopAllProcesses(cleanupReason, { closeTabs: false });
+        self.stopAllProcesses(cleanupReason, { closeTabs: false });
     }
 });
 
@@ -2027,12 +2077,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             sendResponse({ ok: false, error: 'invalid_response_viewer_payload' });
             return false;
         }
-        chrome.storage.local.set({ [key]: message.payload }, () => {
-            if (chrome.runtime.lastError) {
-                sendResponse({ ok: false, error: chrome.runtime.lastError.message });
+        // The content is a copy read by one window: it goes to the session storage, and to the local one only when the session
+        // write fails (it used to be written to both and never removed, which filled the quota). Only the newest few are kept.
+        chrome.storage.session.set({ [key]: message.payload }, () => {
+            if (!chrome.runtime.lastError) {
+                void pruneResponseViewerContent();
+                sendResponse({ ok: true });
                 return;
             }
-            chrome.storage.session.set({ [key]: message.payload }, () => sendResponse({ ok: !chrome.runtime.lastError }));
+            chrome.storage.local.set({ [key]: message.payload }, () => sendResponse(chrome.runtime.lastError
+                ? { ok: false, error: chrome.runtime.lastError.message } : { ok: true }));
         });
         return true;
     }
@@ -2071,7 +2125,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (self.PipelineMessageHandlers?.handle?.(message, {
             jobState,
             sendResponse,
-            stopAllProcesses,
+            stopAllProcesses: self.stopAllProcesses,
             saveJobState,
             chromeApi: chrome,
             fsm: self.PipelineFSM
@@ -2124,6 +2178,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     // to one batch: later stages of the same run keep the evidence of
                     // earlier stages.
                     const incomingPipelineRunId = message.pipelineContext?.pipelineRunId || null;
+                    const startGeneration = self.getOrchestratorStopGeneration();
                     const continuesPipelineRun = Boolean(incomingPipelineRunId)
                         && incomingPipelineRunId === (jobState?.session?.pipelineRunId || null);
                     if (!continuesPipelineRun) {
@@ -2134,6 +2189,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         } catch (err) {
                             console.warn('[DIAGNOSTICS] new run clear failed', err);
                         }
+                    }
+                    if (startGeneration !== self.getOrchestratorStopGeneration()) {
+                        sendResponse({ success: false, errorCode: 'RUN_CANCELLED' });
+                        return;
                     }
                     const startResult = await startProcess(message.prompt, message.selectedLLMs, sender.tab.id, {
                         forceNewTabs,
@@ -2185,7 +2244,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     active,
                     staleActiveRun,
                     sessionAgeMs,
-                    sourceView: session?.sourceView || session?.pipelineContext?.sourceView || null,
+                    sourceView: session?.sourceView || session?.pipelineContext?.sourceView
+                        || (session?.startTime ? (session.pipelineRunId ? 'pipeline' : 'main') : null),
                     sessionId: session?.startTime || null,
                     roundsInProgress: !!session?.roundsInProgress,
                     totalModels,
@@ -3920,6 +3980,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 }
 
                 const lifecycleEntry = jobState?.llms?.[llmName] || null;
+                if (isTerminalRouterEntry(lifecycleEntry)) {
+                    sendResponse({ status: 'humanoid_event_ignored', reason: 'terminal_entry' });
+                    break;
+                }
                 const lifecycleBlocker = lifecycleEntry?.transientBlocker || null;
                 if (llmName === 'Perplexity'
                     && event === 'activity:error'
@@ -4067,6 +4131,38 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 if (!entry || (resultsTabId && senderTabId !== resultsTabId)) {
                     sendResponse({ ok: false, reason: !entry ? 'missing_model_entry' : 'not_results_tab' });
                     break;
+                }
+                const markerRequestId = message?.meta?.transportRequestId || message?.meta?.requestId;
+                if (message?.meta?.answerEndMarkerSeen === true && message?.meta?.usableResult === true
+                    && markerRequestId && markerRequestId === entry.transportRequestId
+                    && (!expectedDispatchId || incomingDispatchId === expectedDispatchId)) {
+                    entry.cardAnswerComplete = true;
+                    if (!entry.answer && entry.pendingFinalAnswer) {
+                        entry.answer = entry.pendingFinalAnswer;
+                        entry.answerHtml = entry.pendingFinalAnswerHtml || '';
+                    }
+                    completeHumanPresenceForModel(llmName, 'answer_card_end_marker');
+                    clearDeferredAnswerTimer(llmName);
+                    const completedTabId = self.getBoundTabId?.(llmName, entry) || entry.tabId;
+                    if (isValidTabId(completedTabId)) {
+                        try {
+                            chrome.tabs.sendMessage(completedTabId, {
+                                type: 'STOP_AND_CLEANUP',
+                                reason: 'answer_card_end_marker',
+                                meta: {
+                                    runSessionId: jobState?.session?.startTime || null,
+                                    sessionId: jobState?.session?.startTime || null,
+                                    dispatchId: expectedDispatchId
+                                }
+                            }).catch(() => {});
+                        } catch (_) {}
+                    }
+                    saveJobState(jobState);
+                    const models = jobState?.session?.selectedModels || [];
+                    if (!jobState?.session?.pipelineRunId && models.length
+                        && models.every(name => jobState.llms?.[name]?.cardAnswerComplete)) {
+                        self.stopAllProcesses('answer_cards_complete', { closeTabs: false, preserveResults: true });
+                    }
                 }
                 emitTelemetry(llmName, 'ANSWER_CARD_RENDER_EVALUATED', {
                     level: message?.meta?.outcome === 'matched' ? 'success' : 'warning',
@@ -4460,13 +4556,36 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             }
 
             case 'STOP_ALL': {
-                (async () => {
-                    const cmd = { action: 'STOP_ALL', timestamp: Date.now(), platforms: message.platforms };
-                    await chrome.storage.local.set({ global_command: cmd });
-                    stopAllProcesses('stop_all_command', { closeTabs: false });
-                    sendResponse({ success: true });
-                })();
-                return true;
+                const cmd = {
+                    action: 'STOP_ALL',
+                    timestamp: Date.now(),
+                    platforms: message.platforms,
+                    runSessionId: jobState?.session?.startTime || null,
+                    activeDispatchIds: Array.from(new Set(Object.values(jobState?.llms || {})
+                        .map((entry) => entry?.lastDispatchMeta?.dispatchId || entry?.runIdentity?.dispatchId || null)
+                        .filter(Boolean)))
+                };
+                try {
+                    self.stopAllProcesses('stop_all_command', { closeTabs: false });
+                } catch (err) {
+                    sendResponse({ success: false, error: err?.message || String(err) });
+                    break;
+                }
+                // Stopping is an in-memory lifecycle action; acknowledge it
+                // before legacy persistence so storage cannot hold up the UI.
+                sendResponse({ success: true });
+                // Scope the delayed command to the session/dispatches being
+                // stopped. A late storage change must not stop a replacement.
+                if (cmd.runSessionId || cmd.activeDispatchIds.length) {
+                    try {
+                        Promise.resolve()
+                            .then(() => chrome.storage.local.set({ global_command: cmd }))
+                            .catch((err) => console.warn('[BACKGROUND] Failed to persist STOP_ALL command:', err));
+                    } catch (err) {
+                        console.warn('[BACKGROUND] Failed to persist STOP_ALL command:', err);
+                    }
+                }
+                break;
             }
 
             case 'COMMAND_ACK': {

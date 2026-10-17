@@ -1,22 +1,3 @@
-    gap: 8px;
-}
-
-@media (max-width: 980px) {
-    .selectors0-layout {
-        grid-template-columns: 1fr;
-    }
-}
-
-@media (max-width: 640px) {
-    .selectors0-action-row {
-        flex-direction: column;
-    }
-
-    .selectors0-cta,
-    .selectors0-secondary {
-        width: 100%;
-    }
-}
 
 .sr-only {
     position: absolute;
@@ -169,12 +150,6 @@
     overflow-x: clip;
 }
 
-/* тонкая выравнивающая обёртка для кнопки Go */
-.go-wrapper,
-#go-it-button {
-    display: none;
-}
-
 /* если нужно — гарантируем, что ряд модификаторов растягивается */
 .modifiers-row {
     width: 100%;
@@ -231,14 +206,6 @@
 
 
 
-.evaluator-select-group {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 15px;
-    margin: -5px; /* Добавим немного вертикального отступа для воздуха */
-}
-
 .control-button {
     padding: 6px 15px;
     border: 1px solid #ccc;
@@ -278,57 +245,6 @@
 .control-button:not(:disabled):active {
     transform: translateY(1px) scale(0.98);
     box-shadow: 0 6px 12px rgba(17, 24, 39, 0.18);
-}
-
-.checkbox-label {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    font-size: 14px;
-}
-
-.checkbox-label input[type="checkbox"] {
-    appearance: none;
-    -webkit-appearance: none;
-    -moz-appearance: none;
-    width: 20px;
-    height: 20px;
-    border: 2px solid #d1d5db;
-    border-radius: 6px;
-    background-color: #fffafafb;
-    position: relative;
-    cursor: pointer;
-    outline: none;
-    transition: background-color 0.2s ease-in-out, border-color 0.2s ease-in-out;
-    display: inline-block;
-    vertical-align: middle;
-}
-
-.checkbox-label input[type="checkbox"]:checked {
-    background-color: #1875c2eb;
-    border-color: transparent;
-    background-image: url("data:image/svg+xml,%3csvg viewBox='0 0 16 16' fill='white' xmlns='http://www.w3.org/2000/svg'%3e%3cpath d='M12.207 4.793a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0l-2-2a1 1 0 011.414-1.414L6.5 9.086l4.293-4.293a1 1 0 011.414 0z'/%3e%3c/svg%3e");
-    background-size: 100% 100%;
-    background-position: center;
-    background-repeat: no-repeat;
-}
-
-.checkbox-label {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 14px;
-    cursor: pointer;
-    -webkit-user-select: none;
-    -moz-user-select: none;
-    user-select: none;
-    
-}
-
-.section-title {
-    font-size: 18px;
-    color: #374151;
-    text-align: left;
 }
 
 .view-toggle-group {
@@ -392,29 +308,6 @@
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
-}
-.llm-header-bar.get-answers-row {
-  justify-content: center;
-  margin-top: -4px;
-}
-.llm-header-bar.get-answers-row #get-it-button {
-  min-width: 140px;
-}
-
-.llm-header-left {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex: 1 1 0;
-  margin-top: 2px;
-  justify-content: flex-start;
-}
-
-.llm-header-center {
-  flex: 0 0 auto;
-  display: flex;
-  justify-content: center;
-  min-width: 160px;
 }
 
 .llm-header-right {
@@ -497,15 +390,6 @@
   transition: background 0.2s ease, transform 0.1s ease;
 }
 
-.export-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  white-space: nowrap;
-  font-size: 13px;
-}
-
 .hidden {
     display: none;
 }
@@ -545,18 +429,7 @@
 }
 
 .attribution-unproven-banner {
-    display: inline-flex;
-    align-items: center;
-    width: max-content;
-    margin: 2px 8px 4px 0;
-    padding: 2px 7px;
-    border: 1px solid #f59e0b;
-    border-radius: 999px;
-    background: #fff7ed;
-    color: #9a3412;
-    font-size: 11px;
-    font-weight: 700;
-    line-height: 1.4;
+    display: none;
 }
 
 .answer-partial-mark {
@@ -565,6 +438,7 @@
     margin: 0 0 0 8px;
     padding: 0 6px;
     border-radius: 999px;
+    box-shadow: inset 0 0 0 1px #f59e0b;
     background: transparent;
     color: #969ca5;
     font-size: 11px;
@@ -851,17 +725,6 @@ body.llm-stream-preview-open .llm-results .llm-panel.llm-panel-session-restored:
   gap: 10px;
 }
 
-.favorite-item-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-bottom: 0;
-  font-size: 12px;
-  color: #475569;
-  flex: 0 0 auto;
-}
-
 .favorite-item-body {
   color: #111827;
   line-height: 1.55;
@@ -1115,14 +978,6 @@ body.llm-stream-preview-open .llm-results .llm-panel.llm-panel-session-restored:
         transform: translateY(0);
     }
 
-.use-input-btn {
-
-    border: 1px;
-    border-radius: 6px;
-    background: transparent;
-
-}
-
 .btn-flash-success {
     background-color: rgba(26, 115, 232, 0.14) !important;
 }
@@ -1227,11 +1082,6 @@ body.llm-stream-preview-open .llm-results .llm-panel.llm-panel-session-restored:
 
 .status-indicator.uncertain {
   background-color: #94a3b8;
-}
-
-.status-indicator.recoverable-error,
-.status-indicator.critical-error {
-    background-color: #f87171; /* alias for error */
 }
 
 .status-indicator.api-mode {
@@ -1393,48 +1243,9 @@ body.llm-stream-preview-open .llm-results .llm-panel.llm-panel-session-restored:
   color: #94a3b8;
 }
 
-.diag-status-entry {
-  flex-direction: column;
-  align-items: stretch;
-  gap: 4px;
-}
-
-.diag-status-grid {
-  display: grid;
-  grid-template-columns: minmax(150px, 220px) 1fr;
-  gap: 6px 12px;
-  width: 100%;
-  align-items: center;
-}
-
-.diag-status-cell {
-  font-size: 12px;
-  color: #0f172a;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.diag-status-indicator {
-  font-weight: 700;
-}
-
-.diag-status-text {
-  color: #0f172a;
-}
-
 @media (max-width: 960px) {
-  .indicator-legend-row,
-  .diag-status-grid {
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  }
 }
 
-
-.copy-btn:hover {
-  background: #e9f3ff;
-  transform: scale(1.05);
-}
 
 .diag-modal-block.is-expanded .diag-modal-body {
     max-height: 500px; /* Расширенная высота лога. На ней скролл будет работать, если лог > 500px */
@@ -1536,12 +1347,6 @@ body.llm-stream-preview-open .llm-results .llm-panel.llm-panel-session-restored:
     margin-top: 20px;
 }
 
-.comparison-panel {
-    border-radius: 20px;
-    padding: 5px;
-    text-align: left;
-}
-
 .comparison-panel h3 {
     margin-top: 0;
     font-size: 18px;
@@ -1630,8 +1435,6 @@ body.llm-stream-preview-open .llm-results .llm-panel.llm-panel-session-restored:
 .disput-health-warning, .disput-severity-warning td { color: #9a6700; }
 .disput-health-high, .disput-severity-high td { color: #b54708; }
 .disput-health-critical, .disput-severity-critical td { color: #c62828; }
-.disput-stage-failed td { color: #c62828; }
-.disput-stage-running td { color: #9a6700; }
 .disput-trace-table { min-width: 720px; }
 /* Post-completion updates (technical messages): one badge right of the message time,
    one popover with a tab per update. */

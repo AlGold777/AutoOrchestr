@@ -40,6 +40,7 @@ const COMMON_FILES = [
   'content-utils/response-lifecycle-detector.js',
   'content-scripts/content-bootstrap.js',
   'content-scripts/content-utils.js',
+  'content-scripts/attachment-handler.js',
   // answer-pipeline-selectors.js is the selector contract the unified pipeline
   // actually consumes (manifest order). The old platform-selectors.js claimed the
   // same window.AnswerPipelineSelectors namespace with an incompatible contract

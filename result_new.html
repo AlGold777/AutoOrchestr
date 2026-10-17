@@ -988,71 +988,13 @@
                         </label>
                     </div>
                     <div class="pipeline-items" id="pipelineItems">
-                        <div class="pipeline-item" data-name="Basic">
+                        <div class="pipeline-item" data-name="Default">
                             <input type="radio" name="pipeline" class="pipeline-radio">
-                            <span class="pipeline-item-name" title="Basic">Basic</span>
-                        </div>
-                        <div class="pipeline-item" data-name="Polishing">
-                            <input type="radio" name="pipeline" class="pipeline-radio">
-                            <span class="pipeline-item-name" title="Polishing">Polishing</span>
-                        </div>
-                        <div class="pipeline-item" data-name="Delta">
-                            <input type="radio" name="pipeline" class="pipeline-radio">
-                            <span class="pipeline-item-name" title="Delta">Delta</span>
-                        </div>
-                        <div class="pipeline-item" data-name="Test">
-                            <input type="radio" name="pipeline" class="pipeline-radio">
-                            <span class="pipeline-item-name" title="Test">Test</span>
-                        </div>
-                        <div class="pipeline-item" data-name="Research">
-                            <input type="radio" name="pipeline" class="pipeline-radio">
-                            <span class="pipeline-item-name" title="Research">Research</span>
-                        </div>
-                        <div class="pipeline-item" data-name="Architecture">
-                            <input type="radio" name="pipeline" class="pipeline-radio">
-                            <span class="pipeline-item-name" title="Architecture">Architecture</span>
+                            <span class="pipeline-item-name" title="Default">Default</span>
                         </div>
                     </div>
                     <div class="pipeline-items-divider" aria-hidden="true"></div>
                     <div class="customer-pipeline-items" id="customerPipelineItems"></div>
-                    <section class="disput-state-map-panel" id="disput-state-map-panel" data-status="not_ready">
-                        <button type="button" class="disput-state-map-toggle" data-map-collapse aria-expanded="false">
-                            <span><strong data-map-title>Карта состояния</strong><small data-map-summary>Нет активного дела</small></span><span aria-hidden="true">▼</span>
-                        </button>
-                        <div class="disput-state-map-workspace" hidden>
-                        <header class="disput-state-map-header">
-                                <div><strong>Карта состояния</strong><span data-map-summary></span></div><select data-map-run aria-label="Сохранённое дело"><option value="">Текущее дело</option></select>
-                                <div class="disput-state-map-actions">
-                                    <button type="button" data-map-mode="structure" class="is-active">Структура</button>
-                                    <button type="button" data-map-mode="graf">Graf</button>
-                                    <button type="button" class="disput-map-icon-action" data-map-mode="history" title="История" aria-label="История"><i class="ti ti-history" aria-hidden="true"></i></button>
-                                    <button type="button" class="disput-map-icon-action" data-case-export title="Экспорт дела" aria-label="Экспорт дела"><i class="ti ti-folder" aria-hidden="true"></i></button>
-                                    <button type="button" class="disput-map-icon-action" data-map-export title="Экспорт карты" aria-label="Экспорт карты"><i class="ti ti-download" aria-hidden="true"></i></button>
-                                    <button type="button" data-case-import-action title="Импорт дела" aria-label="Импорт дела"><i class="ti ti-upload" aria-hidden="true"></i></button><button type="button" data-case-delete title="Удалить выбранное дело" aria-label="Удалить выбранное дело"><i class="ti ti-trash" aria-hidden="true"></i></button><input type="file" accept="application/json" data-case-import hidden>
-                                    <button type="button" data-map-close aria-label="Закрыть карту">×</button>
-                                </div>
-                            </header>
-                            <div class="disput-state-map-toolbar">
-                                <div class="disput-map-segments" aria-label="Фильтр карты">
-                                    <button type="button" data-map-filter="all" class="is-active">Все</button><button type="button" data-map-filter="open">Открытые</button><button type="button" data-map-filter="blocking">Blocking</button><button type="button" data-map-filter="dissent">Dissent</button>
-                                </div>
-                                <input type="search" data-map-search placeholder="Поиск по карте…" aria-label="Поиск по карте состояния">
-                                <div class="disput-map-compare" aria-label="Сравнение снимков">
-                                    <select data-map-compare-a aria-label="Исходный снимок"></select><span>→</span><select data-map-compare-b aria-label="Сравниваемый снимок"></select><button type="button" data-map-compare>Сравнить</button>
-                                </div>
-                                <div class="disput-map-zoom" aria-label="Масштаб Graf"><button type="button" data-map-zoom="out" aria-label="Уменьшить">−</button><button type="button" data-map-zoom="reset">100%</button><button type="button" data-map-zoom="in" aria-label="Увеличить">+</button></div>
-                            </div>
-                            <div class="disput-state-map-content" data-map-content></div>
-                            <aside class="disput-map-drawer" data-map-drawer hidden aria-label="Подробности элемента карты"></aside>
-                        </div>
-                    </section>
-                    <dialog class="pipeline-profile-dialog" id="pipeline-profile-dialog">
-                        <header><strong>Pipeline profiles</strong><button type="button" data-profile-close aria-label="Закрыть">×</button></header>
-                        <select data-profile-select aria-label="Профиль pipeline"></select>
-                        <textarea data-profile-editor spellcheck="false" aria-label="JSON профиля"></textarea>
-                        <div class="pipeline-profile-actions"><button type="button" data-profile-action="apply">Применить</button><button type="button" data-profile-action="validate">Проверить</button><button type="button" data-profile-action="copy">Создать копию</button><button type="button" data-profile-action="save">Сохранить</button><button type="button" data-profile-action="import">Импорт</button><button type="button" data-profile-action="export">Экспорт</button></div>
-                        <input type="file" accept="application/json" data-profile-import hidden><p data-profile-status aria-live="polite"></p>
-                    </dialog>
                 </div>
             </div>
         </aside>
@@ -1076,64 +1018,27 @@
     <script src="shared/telemetry-export-runtime.js"></script>
     <script src="shared/transport-policy.js"></script>
     <script src="shared/transport-contract.js"></script>
-    <script src="shared/debate-schema.js"></script>
-    <script src="disput/debate-artifact-definitions.js"></script>
-    <script src="disput/debate-contracts.js"></script>
-    <script src="disput/debate-context-broker.js"></script>
-    <script src="disput/debate-capability-registry.js"></script>
     <script src="disput/debate-prompt-pack.js"></script>
-    <script src="disput/debate-prompt-compiler.js"></script>
     <script src="disput/debate-response-acceptance.js"></script>
-    <script src="disput/debate-problem-spec.js"></script>
-    <script src="disput/debate-epistemic-outcome.js"></script>
-    <script src="disput/debate-service-roles.js"></script>
-    <script src="disput/debate-stagnation-warning.js"></script>
-    <script src="disput/debate-anonymization.js"></script>
-    <script src="disput/debate-process-audit.js"></script>
-    <script src="disput/debate-correlation-guard.js"></script>
-    <script src="disput/debate-convergence.js"></script>
     <script src="disput/debate-prompt-catalog.js"></script>
     <script src="disput/debate-engine.js"></script>
     <script src="disput/debate-runtime.js"></script>
-    <script src="disput/debate-rule-engine.js"></script>
-    <script src="disput/debate-decision-request.js"></script>
-    <script src="disput/debate-model-signal.js"></script>
-    <script src="disput/debate-protocols.js"></script>
     <script src="disput/debate-version-manifest.js"></script>
     <script src="disput/debate-context-budget.js"></script>
     <script src="disput/debate-run-store.js"></script>
-    <script src="disput/debate-protocol-transition-service.js"></script>
-    <script src="disput/debate-rule-history.js"></script>
-    <script src="disput/debate-case-schema.js"></script>
-    <script src="disput/debate-storage-migrations.js"></script>
-    <script src="disput/debate-state-delta.js"></script>
-    <script src="disput/debate-case-store.js"></script>
     <script src="disput/debate-trace-schema.js"></script>
     <script src="disput/debate-trace-store.js"></script>
     <script src="disput/debate-trace-projections.js"></script>
-    <script src="disput/debate-execution-context.js"></script>
-    <script src="disput/debate-stage-types.js"></script>
-    <script src="disput/debate-policies.js"></script>
     <script src="disput/debate-draft-plan.js"></script>
-    <script src="disput/debate-plan-revision.js"></script>
-    <script src="disput/debate-planner.js"></script>
-    <script src="disput/debate-participant-registry.js"></script>
-    <script src="disput/debate-stage-executor.js"></script>
-    <script src="disput/debate-orchestrator.js"></script>
-    <script src="disput/debate-orchestrator-persistence.js"></script>
-    <script src="disput/debate-state-map.js"></script>
-    <script src="disput/debate-artifact-pipeline.js"></script>
-    <script src="disput/debate-application.js"></script>
     <script src="disput/debate-projections.js"></script>
     <script src="disput/debate-profile-schema.js"></script>
-    <script src="disput/pipeline-profile-store.js"></script>
     <script src="disput/pipeline-presets.js"></script>
+    <script src="disput/basic-artifacts.js"></script>
+    <script src="disput/basic-output.js"></script>
+    <script src="disput/basic-control.js"></script>
     <script src="disput/custom-engine.js"></script>
     <script src="disput/basic-schema.js"></script>
     <script src="disput/custom-run-record.js"></script>
-    <script src="disput/polishing-pipeline.js"></script>
-    <script src="disput/delta-pipeline.js"></script>
-    <script src="results/debate-plan-view-model.js"></script>
     <script src="shared/run-error.js"></script>
     <script src="shared/judge-prompt-builder.js"></script>
     <script src="shared/message-delivery.js"></script>
@@ -1144,6 +1049,7 @@
     <script src="pipeline/pipeline-runtime.js"></script>
     <script src="tos-consent.js"></script>
     <script src="new-pages-default.js?v=2.80.38"></script>
+    <script src="shared/storage-key-migration.js"></script>
     <script src="results/boot-utils.js"></script>
     <script src="results/dom-utils.js"></script>
     <script src="results/attachments.js"></script>
@@ -1157,8 +1063,6 @@
     <script src="results/debate-export.js"></script>
     <script src="results/response-find-replace.js"></script>
     <script src="results/debate-telemetry-view.js"></script>
-    <script src="results/disput-state-map-view.js"></script>
-    <script src="results/pipeline-profile-view.js"></script>
     <script src="results-telemetry-export-bootstrap.js"></script>
     <script src="shared/report-digest.js"></script>
     <script src="utils/selection-block-format.js"></script>

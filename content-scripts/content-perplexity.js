@@ -467,7 +467,7 @@ const baseAdapter = window.BaseLLMAdapter ? new window.BaseLLMAdapter({
     }
   }
 }) : null;
-const attachmentHandler = window.AttachmentHandler || null;
+const getAttachmentHandler = () => window.AttachmentHandler || null;
 const PERPLEXITY_FALLBACK_LAST_MESSAGE_SELECTORS = [
   '[data-testid="answer-card"]',
   '[data-testid="answer-card"] .prose',
@@ -1487,6 +1487,7 @@ async function injectAndGetResponse(prompt, attachments = [], meta = null) {
     }
 
     if (Array.isArray(attachments) && attachments.length) {
+      const attachmentHandler = getAttachmentHandler();
       if (!attachmentHandler?.attach) {
         throw { type: 'attachment_failed', message: 'Perplexity confirmed attachment handler unavailable' };
       }
@@ -1931,6 +1932,8 @@ const onRuntimeMessage = (message, sender, sendResponse) => {
   console.log('[content-perplexity] Received:', message.type);
 
   if (message?.type === 'STOP_AND_CLEANUP') {
+    if (typeof window.ContentUtils?.isStopCommandCurrent === 'function'
+        && !window.ContentUtils.isStopCommandCurrent(message)) return false;
     handleForceStopMessage(message.payload?.traceId);
     stopContentScript('manual-toggle');
     if (typeof sendResponse === 'function') {
@@ -1940,6 +1943,8 @@ const onRuntimeMessage = (message, sender, sendResponse) => {
   }
 
   if (message?.type === 'HUMANOID_FORCE_STOP') {
+    if (typeof window.ContentUtils?.isStopCommandCurrent === 'function'
+        && !window.ContentUtils.isStopCommandCurrent(message)) return false;
     handleForceStopMessage(message.payload?.traceId);
     if (typeof sendResponse === 'function') {
       sendResponse({ status: 'force_stop_ack' });

@@ -42,7 +42,7 @@
   // Run 1782940321214: dispatch crashed with "attachmentHandler is not defined"
   // (terminal UNCERTAIN before the prompt was ever inserted) because this
   // declaration was missing while the attachments block references it.
-  const attachmentHandler = window.AttachmentHandler || null;
+  const getAttachmentHandler = () => window.AttachmentHandler || null;
   const baseAdapter = window.BaseLLMAdapter ? new window.BaseLLMAdapter({
     model: MODEL,
     isValidUrl: (url) => {
@@ -1412,6 +1412,7 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
           }
 
           if (Array.isArray(options.attachments) && options.attachments.length) {
+            const attachmentHandler = getAttachmentHandler();
             if (!attachmentHandler?.attach) {
               throw { type: 'attachment_failed', message: 'DeepSeek confirmed attachment handler unavailable' };
             }
@@ -1576,6 +1577,8 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
       if (baseAdapter?.handleMessage(msg, _sender, sendResponse)) return true;
       
       if (msg?.type === 'STOP_AND_CLEANUP') {
+        if (typeof window.ContentUtils?.isStopCommandCurrent === 'function'
+            && !window.ContentUtils.isStopCommandCurrent(msg)) return false;
         handleForceStopMessage(msg.payload?.traceId);
         stopContentScript('manual-toggle');
         if (typeof sendResponse === 'function') {
@@ -1585,6 +1588,8 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
       }
 
       if (msg?.type === 'HUMANOID_FORCE_STOP') {
+        if (typeof window.ContentUtils?.isStopCommandCurrent === 'function'
+            && !window.ContentUtils.isStopCommandCurrent(msg)) return false;
         handleForceStopMessage(msg.payload?.traceId);
         if (typeof sendResponse === 'function') {
           sendResponse({ status: 'force_stop_ack' });

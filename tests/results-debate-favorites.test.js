@@ -6,7 +6,7 @@ const path = require('path');
 const readResolvedCss = () => {
   const dir = path.join(__dirname, '..');
   const loader = fs.readFileSync(path.join(dir, 'styles.css'), 'utf8');
-  const modules = [...loader.matchAll(/@import url\("(styles\/[^"]+\.css)"\)/g)]
+  const modules = [...loader.matchAll(/@import url\("(styles\/[^"]+\.css)(?:\?[^"]+)?"\)/g)]
     .map((m) => fs.readFileSync(path.join(dir, m[1]), 'utf8'));
   return [loader, ...modules].join('\n');
 };
@@ -206,6 +206,7 @@ function renderDebateDom() {
       <div id="pipeline-panel">
         <span id="currentPipelineName" class="pipeline-name">Universal</span><div class="entry-point" id="entryPoint">▶</div>
         <button type="button" id="pipeline-add-round-btn">+</button>
+        <button type="button" id="removeRoundBtn">−</button>
         <button type="button" id="pipeline-add-btn">+</button><button type="button" id="pipeline-save-btn">Save</button><button type="button" id="pipeline-import-btn">Import</button>
         <div class="stage-column" id="round1" data-round="1">
           <div class="model-stack" id="r1-models">
@@ -287,6 +288,16 @@ function renderDebateDom() {
       <button id="notification-ok-btn" type="button"></button>
       <input id="file-input" type="file">
       <div id="file-name-display"></div>
+      <dialog class="pipeline-stage-dialog owner-ask-dialog" id="owner-ask-dialog" aria-labelledby="owner-ask-title">
+        <header class="pipeline-stage-dialog-header"><h2 id="owner-ask-title">Вопрос владельцу</h2></header>
+        <p class="owner-ask-hint" id="owner-ask-hint"></p>
+        <div class="pipeline-stage-card" id="owner-ask-list"></div>
+        <div class="owner-ask-actions">
+          <button type="button" data-owner-ask="answer">Ответить и продолжить</button>
+          <button type="button" data-owner-ask="skip">Продолжить без ответа</button>
+          <button type="button" data-owner-ask="later">Позже</button>
+        </div>
+      </dialog>
     </div>
   `;
 }
@@ -367,33 +378,21 @@ async function loadResultsScript(seededPipelineStore = null) {
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'shared', 'transport-policy.js'), 'utf8'));
   const debateEngine = fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-engine.js'), 'utf8');
   window.eval(debateEngine);
-  window.eval(fs.readFileSync(path.join(__dirname, '..', 'shared', 'debate-schema.js'), 'utf8'));
   // DebateFSM is the explicit serial-debate state machine results.js init depends on.
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-runtime.js'), 'utf8'));
-  window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-protocols.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-run-store.js'), 'utf8'));
-  window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-protocol-transition-service.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-trace-schema.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-trace-store.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-trace-projections.js'), 'utf8'));
-  window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-execution-context.js'), 'utf8'));
-  window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-stage-types.js'), 'utf8'));
-  window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-policies.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-draft-plan.js'), 'utf8'));
-  window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-plan-revision.js'), 'utf8'));
-  window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-planner.js'), 'utf8'));
-  window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-participant-registry.js'), 'utf8'));
-  window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-stage-executor.js'), 'utf8'));
-  window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-orchestrator.js'), 'utf8'));
-  window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-application.js'), 'utf8'));
-  window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-state-map.js'), 'utf8'));
-  window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-artifact-pipeline.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-projections.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-prompt-catalog.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'pipeline-presets.js'), 'utf8'));
-  ['stage-markers', 'custom-engine', 'basic-schema', 'custom-run-record'].forEach((mod) => { window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', `${mod}.js`), 'utf8')); });
-  ['boot-utils', 'dom-utils', 'attachments', 'pasted-text', 'tooltips', 'debate-ui', 'debate-transport', 'debate-controller', 'debate-renderer', 'debate-sessions-store', 'debate-export', 'debate-plan-view-model', 'debate-telemetry-view'].forEach((mod) => { window.eval(fs.readFileSync(path.join(__dirname, '..', 'results', `${mod}.js`), 'utf8')); });
+  // The same order as pipeline_panel.html: the modules the engine uses come before it.
+  ['stage-markers', 'basic-output', 'basic-artifacts', 'basic-control', 'custom-engine', 'basic-schema', 'custom-run-record'].forEach((mod) => { window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', `${mod}.js`), 'utf8')); });
+  ['boot-utils', 'dom-utils', 'attachments', 'pasted-text', 'tooltips', 'debate-ui', 'debate-transport', 'debate-controller', 'debate-renderer', 'debate-sessions-store', 'debate-export', 'debate-telemetry-view'].forEach((mod) => { window.eval(fs.readFileSync(path.join(__dirname, '..', 'results', `${mod}.js`), 'utf8')); });
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'utils', 'selection-block-format.js'), 'utf8'));
+  window.eval(fs.readFileSync(path.join(__dirname, '..', 'results', 'owner-ask.js'), 'utf8'));
   const script = fs.readFileSync(path.join(__dirname, '..', 'results.js'), 'utf8');
   window.eval(script);
   document.dispatchEvent(new Event('DOMContentLoaded', { bubbles: true }));
@@ -460,8 +459,8 @@ describe('Pipeline debate favorites view', () => {
     expect(first.classList.contains('is-expanded')).toBe(true);
     button.click();
     expect(first.classList.contains('is-expanded')).toBe(false);
-    const saved = await chrome.storage.local.get('llmCodexDebateFullAnswers.v1');
-    expect(saved['llmCodexDebateFullAnswers.v1']).toBe(false);
+    const saved = await chrome.storage.local.get('aoFullAnswers.v1');
+    expect(saved['aoFullAnswers.v1']).toBe(false);
     const second = addDebateCard({ id: 'full-mode-second', text: 'Next\n'.repeat(10), model: 'Gemini' });
     window.__pipelineLifecycleDebug.syncDebateCardOutputLayout(second);
     expect(second.classList.contains('is-expanded')).toBe(false);
@@ -807,10 +806,10 @@ describe('Pipeline debate favorites view', () => {
     const panel = document.getElementById('panel-gpt');
     const card = document.querySelector('.debate-model-card[data-llm-name="GPT"]');
     expect(panel.classList.contains('has-unproven-attribution')).toBe(true);
-    expect(panel.querySelector(':scope > .attribution-unproven-banner')?.textContent).toBe('Attribution unverified');
+    expect(panel.querySelector('.attribution-unproven-banner')).toBeNull();
     expect(card.classList.contains('has-unproven-attribution')).toBe(true);
     expect(card.dataset.turnClosed).toBe('false');
-    expect(card.querySelector('.attribution-unproven-banner')?.textContent).toBe('Attribution unverified');
+    expect(card.querySelector('.attribution-unproven-banner')).toBeNull();
 
     debug.updateLLMPanelOutput('GPT', 'Verified replacement answer', '', { status: 'SUCCESS' });
     expect(panel.classList.contains('has-unproven-attribution')).toBe(false);
@@ -1827,18 +1826,6 @@ describe('Pipeline debate favorites view', () => {
     expect(document.querySelectorAll('.debate-model-card[data-llm-name="GPT"]')).toHaveLength(2);
   });
 
-  test('debate approval waiter rejects and cleans up on abort', async () => {
-    const debug = window.__pipelineLifecycleDebug;
-    const controller = new AbortController();
-    const approvalPromise = debug.waitForDebateApproval({ signal: controller.signal });
-    expect(debug.getApprovalWaiting()).toBe(true);
-
-    controller.abort();
-
-    await expect(approvalPromise).rejects.toMatchObject({ name: 'AbortError' });
-    expect(debug.getApprovalWaiting()).toBe(false);
-  });
-
   test('debate feed mirrors cards into structured DebateEngine transcript artifact', async () => {
     const debug = window.__pipelineLifecycleDebug;
     const card = addPendingApprovalCard({
@@ -1986,9 +1973,9 @@ describe('Pipeline debate favorites view', () => {
   test('default pipeline list exposes only universal purpose profiles', () => {
     const names = Array.from(document.querySelectorAll('#pipelineItems .pipeline-item'))
       .map((item) => item.dataset.name);
-    expect(names).toEqual(['Basic', 'Polishing', 'Delta', 'Test', 'Research', 'Architecture']);
+    expect(names).toEqual(['Default']);
     expect(document.querySelectorAll('#pipelineItems .pipeline-item-delete')).toHaveLength(0);
-    // Every template, Custom included, is selectable the same way.
+    // The template is selectable like any pipeline.
     document.querySelectorAll('#pipelineItems .pipeline-radio').forEach((radio) => expect(radio.disabled).toBe(false));
   });
 
@@ -2120,8 +2107,9 @@ describe('Pipeline debate favorites view', () => {
       expect(sent).toContain('Accepted Claude answer from batch 1.');
       expect(sent).not.toContain('{вход}');
       if (kind === 'cleared') {
-        expect(sent).toContain('[RESPONSE_LIMIT] Объём ответа: 1-37 слов');
-        expect(sent).toContain('Сосредоточься на ясной концепции');
+        // × leaves the length instruction and the content requirements empty on purpose; the delivery mark is never empty.
+        expect(sent).not.toContain('[RESPONSE_LIMIT]');
+        expect(sent).not.toContain('Сосредоточься на ясной концепции');
         expect(sent).toContain('Последней строкой ответа');
       } else {
         expect(sent).toContain('не более 37 слов. PERSONAL_LIMIT');
@@ -2139,7 +2127,7 @@ describe('Pipeline debate favorites view', () => {
       expect(starts[1].promptsByModel.CLAUDE).not.toContain('PERSONAL_');
       expect(starts[0].promptsByModel.GPT).not.toContain('PERSONAL_');
       expect(starts[2].selectedLLMs).toEqual(['GPT']);
-      if (kind === 'cleared') expect(starts[2].promptsByModel.GPT).toContain('[RESPONSE_LIMIT] Объём ответа: 1-37 слов');
+      if (kind === 'cleared') expect(starts[2].promptsByModel.GPT).not.toContain('[RESPONSE_LIMIT]');
       else {
         expect(starts[2].promptsByModel.GPT).toContain('PERSONAL_CORRECTION:');
         expect(starts[2].promptsByModel.GPT).not.toContain('Твой предыдущий ответ');
@@ -2288,6 +2276,25 @@ describe('Pipeline debate favorites view', () => {
   });
 
   const settleCustomCard = () => new Promise((resolve) => setTimeout(resolve, 0));
+  // «Шаг после этапа» is chosen in the card of the stage it follows (a round by its badge, a control by its card).
+  const addControlViaCard = async (anchor, kind) => {
+    require('../results/stage-card');
+    if (!document.getElementById('pipeline-stage-dialog')) {
+      document.body.insertAdjacentHTML('beforeend', '<dialog id="pipeline-stage-dialog"><h2 id="pipeline-stage-dialog-title"></h2><div id="pipeline-stage-card"></div></dialog>');
+    }
+    const dialog = document.getElementById('pipeline-stage-dialog');
+    if (typeof dialog.showModal !== 'function') dialog.showModal = () => dialog.setAttribute('open', '');
+    if (typeof dialog.close !== 'function') dialog.close = () => dialog.removeAttribute('open');
+    const trigger = /^r\d+$/.test(anchor)
+      ? document.querySelector(`#round${anchor.slice(1)} .round-badge`)
+      : document.querySelector(`.pipeline-control-step[data-control-ref="${anchor}"] .pipeline-control-card`);
+    trigger.click();
+    await settleCustomCard();
+    const select = document.querySelector('#pipeline-stage-card .stage-card-add-control');
+    select.value = kind;
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    await settleCustomCard();
+  };
   // Imports a file through the Import button: `text` is the content, `fileName` the name, `answer` the name typed in the prompt.
   const importFile = async (text, fileName, answer) => {
     const oldPrompt = window.prompt;
@@ -2396,6 +2403,34 @@ describe('Pipeline debate favorites view', () => {
     } finally { h.cleanup(); }
   }, 30000);
 
+  test('a task, a length instruction or content requirements the owner emptied stay empty (not inherited); ↶ gives the inherited value back; delivery and correction are never empty', async () => {
+    const h = setupCustomInheritance('Explicit empty', { synthesis: 'Gemini' });
+    try {
+      const planOf = () => window.__pipelineDraftPlanForCanvas(window.__getActivePipelineDraftPlan());
+      const saved = () => h.debug.basicSchemaFromPage(planOf(), null, { forSave: true });
+      // ▶: the round task, the length instruction and the content requirements are emptied on purpose.
+      await h.general({ roundTask: '', limit: '', content: '', delivery: '' });
+      const defaults = saved().defaults || {};
+      expect(defaults.roundTask).toBe('');
+      expect(defaults.discipline.limit).toBe('');
+      expect(defaults.discipline.content).toBe('');
+      // The delivery mark cannot be left empty: an empty field is the inherited value.
+      expect(defaults.discipline.delivery).toBeUndefined();
+      const starts = await h.run();
+      const second = starts[1].promptsByModel.GPT;
+      expect(second).not.toContain('Учти ответы предыдущего шага');
+      expect(second).not.toContain('Сосредоточься на ясной концепции');
+      // The card keeps the field empty when it is opened again.
+      const reopened = h.openGeneral();
+      expect(reopened.querySelector('#custom-discipline-roundTask').value).toBe('');
+      // ↶ on the field gives the inherited value back: the key is not written any more.
+      reopened.querySelector('[data-discipline="roundTask"] [data-action="inherit"]').click();
+      await settleCustomCard();
+      expect((saved().defaults || {}).roundTask).toBeUndefined();
+      expect((saved().defaults || {}).discipline.limit).toBe('');
+    } finally { h.cleanup(); }
+  }, 60000);
+
   test('explicit empty discipline texts of the assembled run stay empty; the saved-settings path keeps the Basic text', () => {
     const debug = window.__pipelineLifecycleDebug;
     const full = debug.composeCustomPrompts(['GPT'], { GPT: 'T' }, { GPT: 300 }, { GPT: { limit: '', content: '' } }).GPT;
@@ -2437,7 +2472,7 @@ describe('Pipeline debate favorites view', () => {
       const built = h.debug.buildBasicRun(window.__pipelineDraftPlanForCanvas(window.__getActivePipelineDraftPlan()));
       expect(built.errors).toEqual([]);
       expect(built.schema.run).toEqual({ policy: 'auto', maxWords: 300 });
-      expect(built.run).toEqual({ policy: 'auto', maxWords: 300 });
+      expect(built.run).toEqual({ policy: 'auto', maxWords: 300, strictLength: false });
     } finally { h.cleanup(); }
   });
 
@@ -2740,17 +2775,6 @@ describe('Pipeline debate favorites view', () => {
     } finally { h.cleanup(); }
   }, 30000);
 
-  test('Custom is not offered on a pipeline that does not run on the Custom engine', () => {
-    const h = setupCustomInheritance('Universal roles');
-    try {
-      const config = { ...h.config, protocol: { ...h.config.protocol, presetId: 'UNIVERSAL_STANDARD' } };
-      h.debug.setPipelineStoreForTest({ active: 'Universal roles', pipelines: { 'Universal roles': config }, order: ['Universal roles'] });
-      h.debug.applyPipelineConfig(config);
-      expect(document.querySelectorAll('#r2-models .role-selector')).not.toHaveLength(0);
-      expect(document.querySelectorAll('#r2-models .role-selector option[value="custom"]')).toHaveLength(0);
-    } finally { h.cleanup(); }
-  });
-
   test('a personal request in a Custom block notes that its role is not applied and sends no role text', async () => {
     const h = setupCustomInheritance('Role note');
     try {
@@ -2783,7 +2807,7 @@ describe('Pipeline debate favorites view', () => {
       modal.querySelector('#custom-card-save').click();
       await delay(0);
       expect(settingsOf(h.debug.capturePipelineConfig()).customModelSettings['synth:planned-working-synthesis-after-canvas-r1'].Gemini)
-        .toEqual({ promptTemplate: 'SYNTH_PERSONAL {вход}' });
+        .toEqual({ promptTemplate: 'SYNTH_PERSONAL {вход}', name: 'Gemini', enabled: false });
       // The saved text applies once a single click adds the stage.
       insert.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await delay(300);
@@ -3048,12 +3072,12 @@ describe('Pipeline debate favorites view', () => {
       expect(h.starts[1].promptsByModel.GPT).toContain('PERSISTED_CONTENT');
       const template = { ...h.config, customDefaults: { roundTask: 'MUST_NOT_LOAD_IN_TEMPLATE' } };
       h.debug.clearCustomSessionForTest();
-      h.debug.setPipelineStoreForTest({ active: 'Basic', order: ['Basic'], pipelines: { Basic: template } });
+      h.debug.setPipelineStoreForTest({ active: 'Default', order: ['Default'], pipelines: { Default: template } });
       h.debug.applyPipelineConfig(template);
       expect(h.debug.getCustomPipelineDefaults()).toEqual({});
       await h.general({ roundTask: 'TEMPLATE_SESSION' });
       expect(h.debug.getCustomPipelineDefaults().roundTask).toBe('TEMPLATE_SESSION');
-      expect(h.debug.getPipelineStoreSnapshot().pipelines.Basic.customDefaults.roundTask).toBe('MUST_NOT_LOAD_IN_TEMPLATE');
+      expect(h.debug.getPipelineStoreSnapshot().pipelines.Default.customDefaults.roundTask).toBe('MUST_NOT_LOAD_IN_TEMPLATE');
       const oldPrompt = window.prompt;
       window.prompt = jest.fn(() => 'Copy from template');
       try { document.getElementById('pipeline-save-btn').click(); await settleCustomCard(); }
@@ -3062,7 +3086,7 @@ describe('Pipeline debate favorites view', () => {
       expect(h.debug.getCustomPipelineDefaults().roundTask).toBe('TEMPLATE_SESSION');
       await h.run();
       expect(h.starts[1].promptsByModel.GPT).toContain('TEMPLATE_SESSION');
-      h.debug.setPipelineStoreForTest({ active: 'Basic', order: ['Basic'], pipelines: { Basic: template } });
+      h.debug.setPipelineStoreForTest({ active: 'Default', order: ['Default'], pipelines: { Default: template } });
       h.debug.applyPipelineConfig(template);
       expect(h.debug.getCustomPipelineDefaults().roundTask).toBe('TEMPLATE_SESSION');
       h.debug.clearCustomSessionForTest();
@@ -3130,17 +3154,17 @@ describe('Pipeline debate favorites view', () => {
       const h = setupCustomInheritance('Based source', { synthesis: '' });
       try {
         h.debug.clearCustomSessionForTest();
-        document.querySelector('.pipeline-item[data-name="Basic"]').click();
+        document.querySelector('.pipeline-item[data-name="Default"]').click();
         await settleCustomCard();
         await saveAs('From template');
         const record = () => h.debug.getPipelineStoreSnapshot().pipelines['From template'];
-        expect(record().schema).toMatchObject({ origin: 'user', basedOn: 'Basic' });
+        expect(record().schema).toMatchObject({ origin: 'user', basedOn: 'Default' });
         expect(window.BasicSchema.validate(record().schema)).toEqual([]);
         // A card save and a ▶ save rewrite the schema and keep what it was based on.
         await h.model({ promptTemplate: 'AFTER SAVE {задача}' });
-        expect(record().schema.basedOn).toBe('Basic');
+        expect(record().schema.basedOn).toBe('Default');
         await h.general({ roundTask: 'AFTER GENERAL' });
-        expect(record().schema).toMatchObject({ basedOn: 'Basic', defaults: { roundTask: 'AFTER GENERAL' } });
+        expect(record().schema).toMatchObject({ basedOn: 'Default', defaults: { roundTask: 'AFTER GENERAL' } });
       } finally { h.cleanup(); }
     }, 30000);
 
@@ -3176,7 +3200,7 @@ describe('Pipeline debate favorites view', () => {
         h.debug.applyPipelineConfig(record);
         expect(document.getElementById('debate-run-policy-select').value).toBe('auto');
         expect(document.getElementById('debate-length-select').value).toBe('700');
-        expect(h.debug.buildBasicRun(planOf()).run).toEqual({ policy: 'auto', maxWords: 700 });
+        expect(h.debug.buildBasicRun(planOf()).run).toEqual({ policy: 'auto', maxWords: 700, strictLength: false });
       } finally { h.cleanup(); }
     }, 30000);
 
@@ -3194,7 +3218,7 @@ describe('Pipeline debate favorites view', () => {
         expect(entry('final', 'Gemini')).toEqual({ name: 'Gemini', enabled: false, task: 'FINAL OFF TASK' });
         // A switched-off model is not called, and its settings come back with the schema.
         expect(window.BasicSchema.assemble(schema).flatMap((step) => step.models.map((model) => model.name))).not.toContain('Grok');
-        expect(window.BasicSchema.toSettings(schema).customModelSettings.r2.Grok).toEqual({ promptTemplate: 'GROK REQUEST', maxWords: 80 });
+        expect(window.BasicSchema.toSettings(schema).customModelSettings.r2.Grok).toEqual({ promptTemplate: 'GROK REQUEST', maxWords: 80, name: 'Grok', enabled: false });
       } finally { h.cleanup(); }
     }, 30000);
 
@@ -3225,6 +3249,104 @@ describe('Pipeline debate favorites view', () => {
       const stackFlags = (stackId) => [...document.querySelectorAll(`#${stackId} .model-block:not(.pipeline-empty-slot)`)]
         .map((block) => [block.querySelector('.model-name').textContent, block.querySelector('.model-send-checkbox').checked, block.querySelector('.role-selector')?.value || '']);
       const select = (name) => document.querySelector(`.pipeline-item[data-name="${name}"]`).click();
+
+      test('the order of a round and the send marks of its models survive load and a second save', async () => {
+        const h = setupCustomInheritance('Order host', { synthesis: '' });
+        try {
+          // The schema order differs from the canvas order (Claude, GPT); the switched-off Claude of R2 comes first on the canvas.
+          const schema = {
+            schemaVersion: 1, origin: 'user', run: { policy: 'auto' },
+            steps: [
+              { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }, { name: 'Claude' }] },
+              { ref: 'r2', kind: 'round', models: [{ name: 'GPT' }, { name: 'Claude', enabled: false, request: 'KEPT REQUEST' }] },
+              { ref: 'final', kind: 'synthesis', models: [{ name: 'Claude' }] }
+            ]
+          };
+          expect(await h.debug.installBasicSchema('Ordered', schema)).toEqual({ ok: true, errors: [] });
+          select('Ordered');
+          await settleCustomCard();
+          expect(stackFlags('r1-models').map(([name, send]) => [name, send])).toEqual([['GPT', true], ['Claude', true]]);
+          expect(stackFlags('r2-models').map(([name, send]) => [name, send])).toEqual([['GPT', true], ['Claude', false]]);
+          const saved = h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' });
+          expect(saved.steps.slice(0, 2).map((step) => step.models.map((model) => [model.name, model.enabled !== false]))).toEqual([
+            [['GPT', true], ['Claude', true]], [['GPT', true], ['Claude', false]]
+          ]);
+          expect(saved.steps[1].models[1].request).toBe('KEPT REQUEST');
+          // Load the saved schema again and save it once more: the same schema.
+          expect(await h.debug.installBasicSchema('Ordered again', JSON.parse(JSON.stringify(saved)))).toEqual({ ok: true, errors: [] });
+          select('Ordered again');
+          await settleCustomCard();
+          expect(stackFlags('r2-models').map(([name, send]) => [name, send])).toEqual([['GPT', true], ['Claude', false]]);
+          expect(h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' }).steps).toEqual(saved.steps);
+        } finally {
+          h.cleanup();
+        }
+      });
+
+      test('run.strictLength of the schema survives Save, Export, the run and a second install; the run takes it for every step', async () => {
+        const h = setupCustomInheritance('Strict run host', { synthesis: '' });
+        try {
+          const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto', strictLength: true }, steps: [
+            { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }, { name: 'Claude' }] }
+          ] };
+          expect(await h.debug.installBasicSchema('Strict run', schema)).toEqual({ ok: true, errors: [] });
+          select('Strict run');
+          await settleCustomCard();
+          const saved = h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' });
+          expect(saved.run).toEqual({ policy: 'auto', strictLength: true });
+          const built = h.debug.buildBasicRun(planOf());
+          expect(built.errors).toEqual([]);
+          expect(built.run).toEqual({ policy: 'auto', maxWords: 300, strictLength: true });
+          const exported = h.debug.buildBasicExport();
+          expect(exported.ok).toBe(true);
+          expect(JSON.parse(exported.text).run).toEqual({ policy: 'auto', strictLength: true });
+          expect(await h.debug.installBasicSchema('Strict run again', JSON.parse(JSON.stringify(saved)))).toEqual({ ok: true, errors: [] });
+          select('Strict run again');
+          await settleCustomCard();
+          expect(h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' }).run).toEqual(saved.run);
+        } finally { h.cleanup(); }
+      });
+
+      test('a model on the canvas with Send off in every round stays on the canvas: install, save, load again, save (onCanvas)', async () => {
+        const h = setupCustomInheritance('Canvas off host', { synthesis: '' });
+        try {
+          const planOf = () => window.__pipelineDraftPlanForCanvas(window.__getActivePipelineDraftPlan());
+          const schema = {
+            schemaVersion: 1, origin: 'user', run: { policy: 'auto' },
+            steps: [
+              { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }, { name: 'Claude' }, { name: 'Grok', enabled: false, onCanvas: true, request: 'OFF REQUEST' }] },
+              { ref: 'r2', kind: 'round', models: [{ name: 'GPT' }, { name: 'Claude' }, { name: 'Grok', enabled: false, onCanvas: true }] },
+              { ref: 'final', kind: 'synthesis', models: [{ name: 'Claude' }] }
+            ]
+          };
+          expect(await h.debug.installBasicSchema('Off on canvas', schema)).toEqual({ ok: true, errors: [] });
+          select('Off on canvas');
+          await settleCustomCard();
+          // Grok is on the canvas (in the header and in every round) with Send off, and its settings came along.
+          expect(h.debug.getPipelineStoreSnapshot().pipelines['Off on canvas'].protocol.selectedModels.slice().sort()).toEqual(['Claude', 'GPT', 'Grok']);
+          expect(stackFlags('r1-models')).toEqual([['GPT', true, ''], ['Claude', true, ''], ['Grok', false, '']]);
+          expect(stackFlags('r2-models')).toEqual([['GPT', true, ''], ['Claude', true, ''], ['Grok', false, '']]);
+          const saved = h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' });
+          expect(saved.steps.slice(0, 2).map((step) => step.models.find((model) => model.name === 'Grok'))).toEqual([
+            { name: 'Grok', enabled: false, onCanvas: true, request: 'OFF REQUEST' }, { name: 'Grok', enabled: false, onCanvas: true }
+          ]);
+          // A model sent in some round needs no mark.
+          expect(saved.steps.slice(0, 2).flatMap((step) => step.models.filter((model) => model.name !== 'Grok')).some((model) => 'onCanvas' in model)).toBe(false);
+          // Load the saved schema again: the canvas is the same, and saving once more gives the same schema.
+          expect(await h.debug.installBasicSchema('Off on canvas again', JSON.parse(JSON.stringify(saved)))).toEqual({ ok: true, errors: [] });
+          select('Off on canvas again');
+          await settleCustomCard();
+          expect(stackFlags('r1-models')).toEqual([['GPT', true, ''], ['Claude', true, ''], ['Grok', false, '']]);
+          expect(stackFlags('r2-models')).toEqual([['GPT', true, ''], ['Claude', true, ''], ['Grok', false, '']]);
+          expect(h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' }).steps).toEqual(saved.steps);
+          // The switched-off model is not called.
+          await h.run();
+          expect(h.starts.length).toBeGreaterThan(0);
+          expect(h.starts.every((start) => !start.selectedLLMs.includes('Grok'))).toBe(true);
+        } finally {
+          h.cleanup();
+        }
+      });
 
       test('the canvas shows the rounds, the models, the roles and the syntheses of the schema, and the run takes the schema\'s steps', async () => {
         const h = setupCustomInheritance('Install host', { synthesis: '' });
@@ -3259,7 +3381,7 @@ describe('Pipeline debate favorites view', () => {
           expect(built.steps.map((step) => step.ref)).toEqual(['r1', 'synth:mid', 'r2', 'final']);
           expect(built.steps[1].models.map((model) => model.name)).toEqual(['Gemini']);
           // The settings of a switched-off model came along.
-          expect(window.BasicSchema.toSettings(h.debug.getPipelineStoreSnapshot().pipelines.Installed.schema).customModelSettings.r1.Grok).toEqual({ promptTemplate: 'KEPT REQUEST' });
+          expect(window.BasicSchema.toSettings(h.debug.getPipelineStoreSnapshot().pipelines.Installed.schema).customModelSettings.r1.Grok).toEqual({ promptTemplate: 'KEPT REQUEST', name: 'Grok', enabled: false });
           await h.run();
           expect(h.starts.map((start) => start.selectedLLMs.slice().sort())).toEqual([['Claude', 'GPT'], ['Gemini'], ['GPT'], ['Claude']]);
           expect(h.starts[2].promptsByModel.GPT).toContain('INSTALLED_TASK');
@@ -3396,6 +3518,440 @@ describe('Pipeline debate favorites view', () => {
         } finally { h.cleanup(); }
       }, 30000);
 
+      test('A06: two participants of one model in a step are refused at install with their place, nothing is saved without them', async () => {
+        const h = setupCustomInheritance('Twice host', { synthesis: '' });
+        try {
+          const twice = { schemaVersion: 1, origin: 'user', steps: [
+            { ref: 'r1', kind: 'round', models: [{ name: 'Claude', id: 'claude-a' }, { name: 'Claude', id: 'claude-b' }] }
+          ] };
+          const refused = await h.debug.installBasicSchema('Twice', twice);
+          expect(refused.ok).toBe(false);
+          expect(refused.errors).toEqual([{ path: 'steps[0].models', message: 'два участника модели «Claude» в одном шаге пока не показываются на холсте' }]);
+          expect(h.debug.getPipelineStoreSnapshot().pipelines.Twice).toBeUndefined();
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      test('A06: an owner step asks the owner in a window; Cancel stops the run, a text answer goes on', async () => {
+        require('../results/choice-dialog');
+        require('../results/stage-card');
+        const h = setupCustomInheritance('Owner window host', { synthesis: '' });
+        const waitForDialog = async () => { for (let i = 0; i < 200 && !document.querySelector('.choice-dialog'); i += 1) await delay(10); };
+        try {
+          const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
+            { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }] },
+            { ref: 'owner:fix', kind: 'owner', models: [], task: 'Передайте текст' }
+          ] };
+          expect((await h.debug.installBasicSchema('Owner window', schema)).ok).toBe(true);
+          document.querySelector('.pipeline-item[data-name="Owner window"]').click();
+          await settleCustomCard();
+          const cancelled = h.debug.runCustomFromPage({ task: 'T' });
+          await waitForDialog();
+          expect(document.querySelector('.choice-dialog-title').textContent).toBe('Ответ владельца: owner:fix');
+          expect(document.querySelector('.choice-dialog-message').textContent).toContain('Передайте текст');
+          document.querySelector('.choice-dialog-cancel').click();
+          await cancelled;
+          expect(document.querySelector('.choice-dialog')).toBeNull();
+          expect(h.starts.length).toBe(1);
+          const answered = h.debug.runCustomFromPage({ task: 'T' });
+          await waitForDialog();
+          document.querySelector('.choice-dialog-text').value = 'OWNER TEXT';
+          document.querySelector('.choice-dialog-choice').click();
+          await answered;
+          expect(document.querySelector('.choice-dialog')).toBeNull();
+          expect(h.starts.length).toBe(2);
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      test('OI-2: owner_answer names the step both when the owner answers and when the owner skips', async () => {
+        const h = setupCustomInheritance('Owner ask journal', { synthesis: '' });
+        const dialog = document.getElementById('owner-ask-dialog');
+        if (typeof dialog.showModal !== 'function') dialog.showModal = () => dialog.setAttribute('open', '');
+        if (typeof dialog.close !== 'function') dialog.close = () => dialog.removeAttribute('open');
+        const waitForDialog = async () => { for (let i = 0; i < 200 && !dialog.hasAttribute('open'); i += 1) await delay(10); };
+        const lastOwnerAnswer = () => window.MessageDelivery.journal().filter((event) => event.kind === 'owner_answer').at(-1);
+        try {
+          const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
+            { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }] }
+          ] };
+          expect((await h.debug.installBasicSchema('Owner ask journal', schema)).ok).toBe(true);
+          document.querySelector('.pipeline-item[data-name="Owner ask journal"]').click();
+          await settleCustomCard();
+          // The accepted answer carries a question for the owner: the window opens after the step.
+          chrome.runtime.sendMessage.mockImplementation((message, callback) => {
+            if (message.type !== 'START_FULLPAGE_PROCESS') { callback?.({ status: 'ok', active: false }); return; }
+            h.starts.push(message);
+            callback?.({ status: 'process_started' });
+            setTimeout(() => message.selectedLLMs.forEach((model) => h.debug.pipelineWaiter.handleFinal({ type: 'LLM_RESPONSE', llmName: model,
+              transportRequestId: message.pipelineContext.transportRequestIds[model],
+              answer: 'Нужен срок.\n[[ASK: Срок? || неделя || месяц]]',
+              metadata: { ...message.pipelineContext, status: 'SUCCESS', attribution: 'verified', completion: 'complete' }
+            })), 0);
+          });
+          const answered = h.debug.runCustomFromPage({ task: 'T' });
+          await waitForDialog();
+          dialog.querySelector('input[type="radio"]').checked = true;
+          dialog.querySelector('[data-owner-ask="answer"]').click();
+          await answered;
+          expect(lastOwnerAnswer()).toMatchObject({ stage: 'Раунд 1', answered: 1, asked: 1 });
+
+          const skipped = h.debug.runCustomFromPage({ task: 'T' });
+          await waitForDialog();
+          dialog.querySelector('[data-owner-ask="skip"]').click();
+          await skipped;
+          expect(lastOwnerAnswer()).toMatchObject({ stage: 'Раунд 1', answered: 0, asked: 1, skipped: true });
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      // OI-4: a correction of the same visit (attempt 2) replaces the card of the rejected attempt; the feed never keeps both.
+      const oi4CorrectionRun = async (name, beforeCorrection = null) => {
+        const h = setupCustomInheritance(name, { synthesis: '' });
+        const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
+          { ref: 'r1', kind: 'round', output: { name: 'Итог', sections: ['Итог'] }, models: [{ name: 'GPT' }] }
+        ] };
+        expect((await h.debug.installBasicSchema(name, schema)).ok).toBe(true);
+        document.querySelector(`.pipeline-item[data-name="${name}"]`).click();
+        await settleCustomCard();
+        const answers = ['Просто текст без разделов.', 'Итог: исправленный ответ GPT.'];
+        const cardsOf = () => [...document.querySelectorAll('.debate-model-card[data-llm-name="GPT"]')];
+        chrome.runtime.sendMessage.mockImplementation((message, callback) => {
+          if (message.type !== 'START_FULLPAGE_PROCESS') { callback?.({ status: 'ok', active: false }); return; }
+          h.starts.push(message);
+          const attempt = h.starts.length;
+          callback?.({ status: 'process_started' });
+          setTimeout(() => {
+            if (attempt === 2) beforeCorrection?.(cardsOf()[0]);
+            message.selectedLLMs.forEach((model) => h.debug.pipelineWaiter.handleFinal({ type: 'LLM_RESPONSE', llmName: model,
+              transportRequestId: message.pipelineContext.transportRequestIds[model],
+              answer: answers[attempt - 1] || '',
+              metadata: { ...message.pipelineContext, status: 'SUCCESS', attribution: 'verified', completion: 'complete' }
+            }));
+          }, 0);
+        });
+        await h.debug.runCustomFromPage({ task: 'T' });
+        await settleCustomCard();
+        return { h, answers, cardsOf };
+      };
+
+      test('OI-4: the correction of a rejected answer replaces its card; the feed shows the accepted answer once, without a revision', async () => {
+        const { h, answers, cardsOf } = await oi4CorrectionRun('OI-4 correction');
+        try {
+          expect(h.starts).toHaveLength(2);
+          expect(cardsOf()).toHaveLength(1);
+          const card = cardsOf()[0];
+          expect(card.querySelector('.debate-model-card-output').textContent.trim()).toBe(answers[1]);
+          expect(card.textContent).not.toContain(answers[0]);
+          expect(card.querySelector('.post-terminal-badge')).toBeNull();
+          expect(card.dataset.turnClosed).toBe('true');
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      test('OI-4: a starred card of the same round keeps its star when the correction replaces its answer', async () => {
+        const { h, answers, cardsOf } = await oi4CorrectionRun('OI-4 starred', (card) => { card.dataset.starred = 'true'; });
+        try {
+          expect(cardsOf()).toHaveLength(1);
+          expect(cardsOf()[0].dataset.starred).toBe('true');
+          expect(cardsOf()[0].querySelector('.debate-model-card-output').textContent.trim()).toBe(answers[1]);
+          expect(cardsOf()[0].querySelector('.post-terminal-badge')).toBeNull();
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      test('N07: the owner window shows what the owner was given (the answers of the input) and the form of the expected answer', async () => {
+        require('../results/choice-dialog');
+        require('../results/stage-card');
+        const h = setupCustomInheritance('Owner input host', { synthesis: '' });
+        const waitForDialog = async () => { for (let i = 0; i < 200 && !document.querySelector('.choice-dialog'); i += 1) await delay(10); };
+        try {
+          const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
+            { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }] },
+            { ref: 'owner:fix', kind: 'owner', models: [], input: ['r1'], task: 'Утвердите', output: { name: 'Политика', form: 'Текст политики' } }
+          ] };
+          expect((await h.debug.installBasicSchema('Owner input', schema)).ok).toBe(true);
+          document.querySelector('.pipeline-item[data-name="Owner input"]').click();
+          await settleCustomCard();
+          const run = h.debug.runCustomFromPage({ task: 'T' });
+          await waitForDialog();
+          const message = document.querySelector('.choice-dialog-message').textContent;
+          expect(message).toContain('Утвердите');
+          expect(message).toContain('Вам передано:');
+          expect(message).toContain('Ожидается: Политика — Текст политики');
+          document.querySelector('.choice-dialog-cancel').click();
+          await run;
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      test('A06: the route window offers one button per case, labelled from the schema; a cancel is not a choice', async () => {
+        require('../results/choice-dialog');
+        const h = setupCustomInheritance('Route window host', { synthesis: '' });
+        const waitForDialog = async () => { for (let i = 0; i < 200 && !document.querySelector('.choice-dialog'); i += 1) await delay(10); };
+        try {
+          const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
+            { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }] },
+            { ref: 'route:pick', kind: 'route', models: [], select: { by: 'owner', cases: [
+              { id: 'ok', label: 'Принять', action: { stop: 'конец' } },
+              { id: 'no', label: 'Отклонить', action: { stop: 'конец' } },
+              { id: 'later', label: 'Отложить', action: { stop: 'конец' } }
+            ] } }
+          ] };
+          expect((await h.debug.installBasicSchema('Route window', schema)).ok).toBe(true);
+          document.querySelector('.pipeline-item[data-name="Route window"]').click();
+          await settleCustomCard();
+          const run = h.debug.runCustomFromPage({ task: 'T' });
+          await waitForDialog();
+          expect(document.querySelector('.choice-dialog-title').textContent).toBe('Выбор маршрута');
+          expect([...document.querySelectorAll('.choice-dialog-choice')].map((button) => button.textContent)).toEqual(['Принять', 'Отклонить', 'Отложить']);
+          document.querySelectorAll('.choice-dialog-choice')[1].click();
+          await run;
+          expect(document.querySelector('.choice-dialog')).toBeNull();
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      test('A06: a round removed on the canvas takes its kept fields with it; a round added later does not inherit them', async () => {
+        const h = setupCustomInheritance('Removed round host', { synthesis: '' });
+        try {
+          const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
+            { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }] },
+            { ref: 'r2', kind: 'round', require: 1, models: [{ name: 'Claude' }] }
+          ] };
+          expect((await h.debug.installBasicSchema('Removed round', schema)).ok).toBe(true);
+          document.querySelector('.pipeline-item[data-name="Removed round"]').click();
+          await settleCustomCard();
+          document.getElementById('removeRoundBtn').click();
+          await settleCustomCard();
+          document.getElementById('pipeline-add-round-btn').click();
+          await settleCustomCard();
+          const back = h.debug.basicSchemaFromPage(planOf(), null, { forSave: true });
+          expect(back.steps.find((step) => step.ref === 'r2')).not.toHaveProperty('require');
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      test('A06 gate: a check is added after a round as a card, its window fills the fields, and Save → load → Save keeps them', async () => {
+        const h = setupCustomInheritance('Gate window host', { synthesis: '' });
+        try {
+          const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
+            { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }] },
+            { ref: 'r2', kind: 'round', models: [{ name: 'Claude' }] }
+          ] };
+          expect((await h.debug.installBasicSchema('Gate window', schema)).ok).toBe(true);
+          document.querySelector('.pipeline-item[data-name="Gate window"]').click();
+          await settleCustomCard();
+          // The fixture's round has no header row; the page has one (pipeline_panel.html), where the add select sits.
+          document.querySelector('#round1').insertAdjacentHTML('afterbegin', '<div class="stage-header-row"><div class="stage-label"><span class="round-badge">R1</span></div></div>');
+          window.__updatePipelineAll();
+          await addControlViaCard('r1', 'gate');
+          const card = document.querySelector('.pipeline-control-step[data-control-ref="gate:1"]');
+          expect(card).not.toBeNull();
+          // The card stands between R1 and R2 with its own link on each side; it is not a synthesis column.
+          expect(card.previousElementSibling.classList.contains('pipeline-control-link')).toBe(true);
+          expect(card.nextElementSibling.classList.contains('connector-group')).toBe(true);
+          expect(card.nextElementSibling.nextElementSibling.id).toBe('round2');
+          expect(card.closest('.pipeline-intermediate-synth')).toBeNull();
+
+          require('../results/stage-card');
+          if (!document.getElementById('pipeline-stage-dialog')) {
+            document.body.insertAdjacentHTML('beforeend', '<dialog id="pipeline-stage-dialog"><h2 id="pipeline-stage-dialog-title"></h2><div id="pipeline-stage-card"></div></dialog>');
+          }
+          const stageDialog = document.getElementById('pipeline-stage-dialog');
+          if (typeof stageDialog.showModal !== 'function') stageDialog.showModal = () => stageDialog.setAttribute('open', '');
+          const dialogBody = () => document.getElementById('pipeline-stage-card');
+          card.querySelector('.pipeline-control-card').click();
+          await settleCustomCard();
+          const field = (selector) => dialogBody().querySelector(selector);
+          field('.stage-card-criteria').value = 'полнота\nясность';
+          field('.stage-card-criteria').dispatchEvent(new Event('change'));
+          await settleCustomCard();
+          const gptChecker = [...dialogBody().querySelectorAll('.stage-card-checker')].find((row) => row.textContent.trim() === 'GPT').querySelector('input');
+          gptChecker.checked = true;
+          gptChecker.dispatchEvent(new Event('change'));
+          await settleCustomCard();
+          field('.stage-card-pass-select').value = 'any';
+          field('.stage-card-pass-select').dispatchEvent(new Event('change'));
+          await settleCustomCard();
+          field('.stage-card-onFail-mode').value = 'goto';
+          field('.stage-card-onFail-mode').dispatchEvent(new Event('change'));
+          await settleCustomCard();
+          field('.stage-card-onFail-goto').value = 'r1';
+          field('.stage-card-onFail-goto').dispatchEvent(new Event('change'));
+          await settleCustomCard();
+          field('.stage-card-onFail-loops').value = '2';
+          field('.stage-card-onFail-loops').dispatchEvent(new Event('change'));
+          await settleCustomCard();
+
+          const built = h.debug.basicSchemaFromPage(planOf(), null, { forSave: true });
+          expect(built.steps.map((step) => step.ref)).toEqual(['r1', 'gate:1', 'r2']);
+          expect(built.steps[1]).toEqual({ ref: 'gate:1', kind: 'gate', models: [{ name: 'GPT' }], criteria: ['полнота', 'ясность'], pass: 'any', onFail: { goto: 'r1', maxLoops: 2 } });
+          expect(window.BasicSchema.validate(built)).toEqual([]);
+          const back = built;
+          expect((await h.debug.installBasicSchema('Gate again', back)).ok).toBe(true);
+          document.querySelector('.pipeline-item[data-name="Gate again"]').click();
+          await settleCustomCard();
+          expect(h.debug.basicSchemaFromPage(planOf(), null, { forSave: true }).steps).toEqual(back.steps);
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      test('A06 route: a route is added after a round, its rule reads a participant answer, and Save → load → Save keeps it', async () => {
+        const h = setupCustomInheritance('Route window host', { synthesis: '' });
+        try {
+          const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
+            { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }] },
+            { ref: 'r2', kind: 'round', models: [{ name: 'Claude' }] }
+          ] };
+          expect((await h.debug.installBasicSchema('Route window', schema)).ok).toBe(true);
+          document.querySelector('.pipeline-item[data-name="Route window"]').click();
+          await settleCustomCard();
+          document.querySelector('#round1').insertAdjacentHTML('afterbegin', '<div class="stage-header-row"><div class="stage-label"><span class="round-badge">R1</span></div></div>');
+          window.__updatePipelineAll();
+          await addControlViaCard('r1', 'route');
+          expect(document.querySelector('.pipeline-control-step[data-control-ref="route:1"]')).not.toBeNull();
+          // A new route is empty: nothing is written until the owner sets it.
+          expect(h.debug.basicSchemaFromPage(planOf(), null, { forSave: true }).steps[1]).toEqual({ ref: 'route:1', kind: 'route', models: [], select: {} });
+
+          require('../results/stage-card');
+          if (!document.getElementById('pipeline-stage-dialog')) {
+            document.body.insertAdjacentHTML('beforeend', '<dialog id="pipeline-stage-dialog"><h2 id="pipeline-stage-dialog-title"></h2><div id="pipeline-stage-card"></div></dialog>');
+          }
+          const stageDialog = document.getElementById('pipeline-stage-dialog');
+          if (typeof stageDialog.showModal !== 'function') stageDialog.showModal = () => stageDialog.setAttribute('open', '');
+          const q = (selector) => document.getElementById('pipeline-stage-card').querySelector(selector);
+          const change = async (selector, value) => {
+            const node = q(selector);
+            if (node.type === 'checkbox') node.checked = value; else node.value = value;
+            node.dispatchEvent(new Event('change'));
+            await settleCustomCard();
+          };
+          document.querySelector('.pipeline-control-card[data-control-card="route:1"]').click();
+          await settleCustomCard();
+          await change('.stage-card-route-by', 'rule');
+          await change('.stage-card-source-check', true);
+          document.getElementById('pipeline-stage-card').querySelector('.stage-card-case-add').click();
+          await settleCustomCard();
+          await change('.stage-card-case-id', 'close');
+          await change('.stage-card-case-label', 'Закрыть');
+          await change('.stage-card-case-source', '0');
+          await change('.stage-card-case-pointer', '/route');
+          await change('.stage-card-case-op', 'eq');
+          await change('.stage-card-case-value', '"close"');
+          await change('.stage-card-case0-mode', 'goto');
+          await change('.stage-card-case0-goto', 'r2');
+
+          const built = h.debug.basicSchemaFromPage(planOf(), null, { forSave: true });
+          expect(built.steps[1]).toEqual({ ref: 'route:1', kind: 'route', models: [], input: [{ step: 'r1', participant: 'GPT' }],
+            select: { by: 'rule', cases: [{ id: 'close', label: 'Закрыть', when: { source: 0, pointer: '/route', op: 'eq', value: 'close' }, action: { goto: 'r2' } }] } });
+          expect(window.BasicSchema.validate(built)).toEqual([]);
+          expect((await h.debug.installBasicSchema('Route again', built)).ok).toBe(true);
+          document.querySelector('.pipeline-item[data-name="Route again"]').click();
+          await settleCustomCard();
+          expect(h.debug.basicSchemaFromPage(planOf(), null, { forSave: true }).steps).toEqual(built.steps);
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      test('A06 owner: an owner step is added after a round, its window sets the task and the output, and Save → load → Save keeps them', async () => {
+        const h = setupCustomInheritance('Owner window host', { synthesis: '' });
+        try {
+          const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
+            { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }] },
+            { ref: 'r2', kind: 'round', models: [{ name: 'Claude' }] }
+          ] };
+          expect((await h.debug.installBasicSchema('Owner step', schema)).ok).toBe(true);
+          document.querySelector('.pipeline-item[data-name="Owner step"]').click();
+          await settleCustomCard();
+          document.querySelector('#round1').insertAdjacentHTML('afterbegin', '<div class="stage-header-row"><div class="stage-label"><span class="round-badge">R1</span></div></div>');
+          window.__updatePipelineAll();
+          await addControlViaCard('r1', 'owner');
+          expect(document.querySelector('.pipeline-control-step[data-control-ref="owner:1"]')).not.toBeNull();
+          expect(h.debug.basicSchemaFromPage(planOf(), null, { forSave: true }).steps[1]).toEqual({ ref: 'owner:1', kind: 'owner', models: [] });
+
+          require('../results/stage-card');
+          if (!document.getElementById('pipeline-stage-dialog')) {
+            document.body.insertAdjacentHTML('beforeend', '<dialog id="pipeline-stage-dialog"><h2 id="pipeline-stage-dialog-title"></h2><div id="pipeline-stage-card"></div></dialog>');
+          }
+          const stageDialog = document.getElementById('pipeline-stage-dialog');
+          if (typeof stageDialog.showModal !== 'function') stageDialog.showModal = () => stageDialog.setAttribute('open', '');
+          document.querySelector('.pipeline-control-card[data-control-card="owner:1"]').click();
+          await settleCustomCard();
+          const q = (selector) => document.getElementById('pipeline-stage-card').querySelector(selector);
+          q('.stage-card-owner-task').value = 'Передайте файл';
+          q('.stage-card-owner-task').dispatchEvent(new Event('change'));
+          await settleCustomCard();
+          q('.stage-card-output-name').value = 'Итог';
+          q('.stage-card-output-name').dispatchEvent(new Event('change'));
+          await settleCustomCard();
+          q('.stage-card-output-sections').value = 'Вывод\nДоводы';
+          q('.stage-card-output-sections').dispatchEvent(new Event('change'));
+          await settleCustomCard();
+
+          const built = h.debug.basicSchemaFromPage(planOf(), null, { forSave: true });
+          expect(built.steps[1]).toEqual({ ref: 'owner:1', kind: 'owner', models: [], task: 'Передайте файл', output: { name: 'Итог', sections: ['Вывод', 'Доводы'] } });
+          expect(window.BasicSchema.validate(built)).toEqual([]);
+          expect((await h.debug.installBasicSchema('Owner again', built)).ok).toBe(true);
+          document.querySelector('.pipeline-item[data-name="Owner again"]').click();
+          await settleCustomCard();
+          expect(h.debug.basicSchemaFromPage(planOf(), null, { forSave: true }).steps).toEqual(built.steps);
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      test('A06 control steps: a control can follow another one; the chain keeps its order in the canvas and in the schema, and a removed one leaves its successor in place', async () => {
+        const h = setupCustomInheritance('Gate chain host', { synthesis: '' });
+        try {
+          const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
+            { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }] },
+            { ref: 'r2', kind: 'round', models: [{ name: 'Claude' }] }
+          ] };
+          expect((await h.debug.installBasicSchema('Gate chain', schema)).ok).toBe(true);
+          document.querySelector('.pipeline-item[data-name="Gate chain"]').click();
+          await settleCustomCard();
+          document.querySelector('#round1').insertAdjacentHTML('afterbegin', '<div class="stage-header-row"><div class="stage-label"><span class="round-badge">R1</span></div></div>');
+          window.__updatePipelineAll();
+          await addControlViaCard('r1', 'gate');
+          await addControlViaCard('gate:1', 'gate');
+          expect(h.debug.basicSchemaFromPage(planOf(), null, { forSave: true }).steps.map((step) => step.ref)).toEqual(['r1', 'gate:1', 'gate:2', 'r2']);
+          expect(document.querySelector('.pipeline-control-step[data-control-ref="gate:2"]').previousElementSibling.previousElementSibling.classList.contains('pipeline-control-step')).toBe(true);
+          expect(document.querySelector('.pipeline-control-step[data-control-ref="gate:2"]').nextElementSibling.nextElementSibling.id).toBe('round2');
+          document.querySelector('.pipeline-control-delete-btn[data-control-delete="gate:1"]').click();
+          await settleCustomCard();
+          expect(h.debug.basicSchemaFromPage(planOf(), null, { forSave: true }).steps.map((step) => step.ref)).toEqual(['r1', 'gate:2', 'r2']);
+          expect(document.querySelector('.pipeline-control-step[data-control-ref="gate:1"]')).toBeNull();
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      test('A06 gate: a check between a round and its intermediate synthesis installs (R11 order r1 → gate → synth → r2)', async () => {
+        const h = setupCustomInheritance('Gate synth host', { synthesis: '' });
+        try {
+          const order = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
+            { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }] },
+            { ref: 'gate:1', kind: 'gate', models: [{ name: 'Claude' }], criteria: ['полнота'] },
+            { ref: 'synth:mid', kind: 'synthesis', models: [{ name: 'Gemini' }] },
+            { ref: 'r2', kind: 'round', models: [{ name: 'Claude' }] }
+          ] };
+          const installed = await h.debug.installBasicSchema('Gate synth', order);
+          expect(installed.ok).toBe(true);
+          expect(h.debug.getPipelineStoreSnapshot().pipelines['Gate synth']).toBeDefined();
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      test('A06: controls, the participant id and input, and the step fields survive Save → load → Save', async () => {
+        const h = setupCustomInheritance('Full round trip host', { synthesis: '' });
+        try {
+          const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
+            { ref: 'r1', kind: 'round', models: [{ name: 'Claude', id: 'claude-a' }, { name: 'GPT' }] },
+            { ref: 'gate:check', kind: 'gate', models: [{ name: 'Gemini' }], criteria: ['полнота'], pass: 'any', onFail: 'stop' },
+            { ref: 'r2', kind: 'round', input: 'previous', require: 2, owner: 'approve', chat: 'continue',
+              output: { name: 'Итог', form: 'кратко', sections: ['Вывод'], strictLength: true },
+              models: [{ name: 'GPT' }, { name: 'Claude', id: 'claude-a', input: 'none' }] },
+            { ref: 'owner:fix', kind: 'owner', models: [], task: 'Передайте файл' },
+            { ref: 'final', kind: 'synthesis', models: [{ name: 'Claude' }] }
+          ] };
+          expect(window.BasicSchema.validate(schema)).toEqual([]);
+          expect((await h.debug.installBasicSchema('Full round trip', schema)).ok).toBe(true);
+          document.querySelector('.pipeline-item[data-name="Full round trip"]').click();
+          await settleCustomCard();
+          const back = h.debug.basicSchemaFromPage(planOf(), null, { forSave: true });
+          expect(back.steps).toEqual(schema.steps);
+          expect(h.debug.recordFromSchema('Full again', back).ok).toBe(true);
+          // The run takes the same steps: the controls are not dropped by the assembly either.
+          expect(h.debug.buildBasicRun(planOf()).steps.map((step) => step.ref)).toEqual(['r1', 'gate:check', 'r2', 'owner:fix', 'final']);
+        } finally { h.cleanup(); }
+      }, 30000);
+
       test('a schema the canvas shows survives the round trip schema → record → canvas → schema', async () => {
         const h = setupCustomInheritance('Round trip host', { synthesis: '' });
         try {
@@ -3433,6 +3989,29 @@ describe('Pipeline debate favorites view', () => {
         } finally { window.prompt = oldPrompt; h.cleanup(); }
       }, 30000);
 
+    describe('the architecture fixture S01–S30 on the page (T17, T18)', () => {
+      test('installs without errors; Save → load from the list → Save gives the fixture steps back', async () => {
+        const h = setupCustomInheritance('Architecture page host', { synthesis: '' });
+        try {
+          const fixture = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'basic-architecture-s01-s30.json'), 'utf8'));
+          const installed = await h.debug.installBasicSchema('Architecture S01-S30', fixture);
+          expect(installed).toEqual({ ok: true, errors: [] });
+          h.debug.clearCustomSessionForTest();
+          document.querySelector('.pipeline-item[data-name="Architecture S01-S30"]').click();
+          await settleCustomCard();
+          await saveAs('Architecture saved once');
+          const first = JSON.parse(JSON.stringify((await storedRecord('Architecture saved once')).schema));
+          document.querySelector('.pipeline-item[data-name="Architecture saved once"]').click();
+          await settleCustomCard();
+          await saveAs('Architecture saved twice');
+          const second = JSON.parse(JSON.stringify((await storedRecord('Architecture saved twice')).schema));
+          expect(first.steps).toEqual(fixture.steps);
+          expect(second.steps).toEqual(fixture.steps);
+          expect(second.run).toEqual(fixture.run);
+        } finally { h.cleanup(); }
+      }, 240000);
+    });
+
     describe('Export and Import of one schema', () => {
       test('Export gives the bare schema of the canvas; its file name is the pipeline name', async () => {
         const h = setupCustomInheritance('Export host', { synthesis: 'Gemini' });
@@ -3469,11 +4048,60 @@ describe('Pipeline debate favorites view', () => {
         } finally { h.cleanup(); }
       }, 30000);
 
+      test('A06 export: every field of a gate, a route and an owner, and the input and output of a round, come back by Import unchanged', async () => {
+        const h = setupCustomInheritance('Control export host', { synthesis: '' });
+        try {
+          const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
+            { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }, { name: 'Claude' }] },
+            { ref: 'gate:1', kind: 'gate', models: [{ name: 'Gemini' }, { name: 'GPT', enabled: false }], criteria: ['полнота', 'ясность'], pass: 'any',
+              onFail: { goto: 'r1', maxLoops: 2, feedback: [{ step: 'r1', participant: 'GPT' }], invalidate: ['r1'] }, onPass: { goto: 'r2' } },
+            { ref: 'r2', kind: 'round', input: ['r1'], output: { name: 'Итог', form: 'кратко', sections: ['Вывод'] }, models: [{ name: 'GPT' }] },
+            { ref: 'route:1', kind: 'route', models: [], input: [{ step: 'r2', participant: 'GPT' }], select: { by: 'rule', conflict: 'first',
+              cases: [{ id: 'again', label: 'Ещё', when: { source: 0, pointer: '/route', op: 'in', value: ['close', 'end'] }, action: { goto: 'r2', maxLoops: 2 } },
+                { id: 'close', when: { source: 0, pointer: '/route', op: 'exists' }, action: { goto: 'owner:1' } }],
+              otherwise: { stop: 'конец' } } },
+            { ref: 'owner:1', kind: 'owner', models: [], task: 'Передайте файл', output: { name: 'Файл', sections: ['Описание'] } },
+            { ref: 'final', kind: 'synthesis', models: [{ name: 'Claude' }] }
+          ] };
+          expect(window.BasicSchema.validate(schema)).toEqual([]);
+          expect((await h.debug.installBasicSchema('Control export', schema)).ok).toBe(true);
+          document.querySelector('.pipeline-item[data-name="Control export"]').click();
+          await settleCustomCard();
+          const built = h.debug.buildBasicExport();
+          expect(built.ok).toBe(true);
+          expect(built.schema.steps).toEqual(schema.steps);
+          const prompts = await importFile(built.text, 'control-copy.json', 'Control copy');
+          expect(prompts).toEqual(['control-copy']);
+          const record = h.debug.getPipelineStoreSnapshot().pipelines['Control copy'];
+          expect(record.schema.steps).toEqual(schema.steps);
+          expect(h.debug.recordFromSchema('Control again', JSON.parse(built.text)).ok).toBe(true);
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      test('A06 preview: the request of a round model shows the input of the chosen steps and the answer format', async () => {
+        const h = setupCustomInheritance('Preview host', { synthesis: '' });
+        try {
+          const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
+            { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }] },
+            { ref: 'r2', kind: 'round', input: ['r1'], output: { form: 'кратко', sections: ['Вывод'] }, models: [{ name: 'Claude' }] }
+          ] };
+          expect((await h.debug.installBasicSchema('Preview request', schema)).ok).toBe(true);
+          document.querySelector('.pipeline-item[data-name="Preview request"]').click();
+          await settleCustomCard();
+          const card = h.openModel('Claude');
+          const request = card.querySelector('#custom-card-request').value;
+          // The field shows the template: the sources' heading and {вход}, and the answer format of the step.
+          expect(request).toContain('Ответы выбранных источников:');
+          expect(request).toContain('{вход}');
+          expect(request).toContain('Формат ответа:\nкратко\nРазделы ответа: «Вывод».');
+        } finally { h.cleanup(); }
+      }, 30000);
+
       test('an old whole-store export adds its records with a schema, skips the others and replaces nothing', async () => {
         const h = setupCustomInheritance('Bundle host', { synthesis: '' });
         try {
           const schema = { schemaVersion: 1, origin: 'user', steps: [{ ref: 'r1', kind: 'round', models: [{ name: 'GPT' }] }] };
-          const bundle = { version: 8, pipelines: { 'From bundle': { schema }, 'Old format': { protocol: { type: 'universal' } }, Basic: { schema } }, order: ['From bundle'] };
+          const bundle = { version: 8, pipelines: { 'From bundle': { schema }, 'Old format': { protocol: { type: 'universal' } }, Default: { schema } }, order: ['From bundle'] };
           await importFile(JSON.stringify(bundle), 'pipelines.json', 'ignored');
           let store = h.debug.getPipelineStoreSnapshot();
           expect(store.pipelines['From bundle'].schema.steps).toEqual(schema.steps);
@@ -3513,11 +4141,11 @@ describe('Pipeline debate favorites view', () => {
         const h = setupCustomInheritance('Derived save host', { synthesis: '' });
         try {
           h.debug.clearCustomSessionForTest();
-          document.querySelector('.pipeline-item[data-name="Basic"]').click();
+          document.querySelector('.pipeline-item[data-name="Default"]').click();
           await settleCustomCard();
           await saveAs('Derived save');
           const { record, again } = derived(h, 'Derived save');
-          expect(record.schema.basedOn).toBe('Basic');
+          expect(record.schema.basedOn).toBe('Default');
           expect(window.BasicSchema.validate(record.schema)).toEqual([]);
           expect(record.roundCounter).toBe(again.roundCounter);
           expect(record.modelStacks).toEqual(again.modelStacks);
@@ -3620,7 +4248,7 @@ describe('Pipeline debate favorites view', () => {
         const policy = document.getElementById('debate-run-policy-select');
         const run = () => h.debug.capturePipelineConfig().schema.run;
         h.debug.clearCustomSessionForTest();
-        document.querySelector('.pipeline-item[data-name="Basic"]').click();
+        document.querySelector('.pipeline-item[data-name="Default"]').click();
         await settleCustomCard();
         policy.value = 'manual'; lengthSelect.value = '300';
         expect(run()).toBeUndefined();
@@ -3692,9 +4320,9 @@ describe('Pipeline debate favorites view', () => {
         expect(first.order.value).toBe('');
         expect([...first.order.options].map((option) => option.textContent)).toEqual(['По умолчанию (параллельно)', 'Параллельно', 'По очереди']);
         expect(first.input).toBeNull();
-        expect(first.task).toBeNull();
+        expect(first.task.placeholder).toBe('');
         const second = rows(openRoundCard(2));
-        expect([...second.input.options].map((option) => option.value)).toEqual(['', 'none', 'previous', 'all']);
+        expect([...second.input.options].map((option) => option.value)).toEqual(['', 'none', 'previous', 'all', 'steps']);
         expect(second.input.options[0].textContent).toBe('По умолчанию (ответы предыдущего шага)');
         expect(second.task.value).toBe('');
         expect(second.task.placeholder).toBe(window.BasicSchema.DEFAULTS.roundTask);
@@ -3708,7 +4336,7 @@ describe('Pipeline debate favorites view', () => {
         await h.general({ roundTask: 'FROM_GENERAL' });
         expect(rows(openRoundCard(2)).task.placeholder).toBe('FROM_GENERAL');
         await choose(rows(openRoundCard(2)).input, 'none');
-        expect(rows(openRoundCard(2)).task).toBeNull();
+        expect(rows(openRoundCard(2)).task.placeholder).toBe('');
         expect(h.debug.getCustomRoundSettings().r2).toEqual({ input: 'none' });
         await choose(rows(openRoundCard(2)).input, '');
         expect(rows(openRoundCard(2)).task).not.toBeNull();
@@ -3794,7 +4422,7 @@ describe('Pipeline debate favorites view', () => {
         await settleCustomCard();
         const installed = rows(openRoundCard(2));
         expect([installed.order.value, installed.input.value]).toEqual(['sequential', 'none']);
-        expect(installed.task).toBeNull();
+        expect(installed.task.value).toBe('');
         expect(h.debug.buildBasicRun(window.__pipelineDraftPlanForCanvas(window.__getActivePipelineDraftPlan())).steps[1]).toMatchObject({ order: 'sequential', input: 'none', task: '' });
       } finally { h.cleanup(); }
     }, 30000);
@@ -3818,6 +4446,85 @@ describe('Pipeline debate favorites view', () => {
         expect(h.debug.getCustomRoundSettings().r2).toBeUndefined();
       } finally { release?.(); if (running) await running; h.cleanup(); }
     }, 30000);
+
+    describe('the input of steps, the number of answers, the owner and the output', () => {
+      const planOf = () => window.__pipelineDraftPlanForCanvas(window.__getActivePipelineDraftPlan());
+      const toggle = async (box, checked) => { box.checked = checked; box.dispatchEvent(new Event('change')); await settleCustomCard(); };
+      const withoutModels = (steps) => steps.map(({ models, ...rest }) => rest);
+
+      test('a round and a synthesis keep their steps input, count, owner and output through save, load and a second save; a cleared field stays cleared', async () => {
+        const h = setupCustomInheritance('Step fields', { synthesis: 'Claude' });
+        try {
+          const schema = {
+            schemaVersion: 1, origin: 'user', run: { policy: 'auto' },
+            steps: [
+              { ref: 'r1', kind: 'round', output: { name: 'Карта', format: 'json', requiredFields: ['/map'] }, models: [{ name: 'GPT' }, { name: 'Claude' }] },
+              { ref: 'r2', kind: 'round', input: ['r1', { step: 'r1', participant: 'GPT' }], require: 1, owner: 'approve',
+                output: { name: 'Замечания', sections: ['Карта', 'Замечания'], strictLength: true }, models: [{ name: 'GPT' }, { name: 'Claude' }] },
+              { ref: 'final', kind: 'synthesis', input: ['r2'], owner: 'approve', output: { name: 'Итог', form: 'Сводка' }, models: [{ name: 'Claude' }] }
+            ]
+          };
+          expect(await h.debug.installBasicSchema('Step fields', schema)).toEqual({ ok: true, errors: [] });
+          document.querySelector('.pipeline-item[data-name="Step fields"]').click();
+          await settleCustomCard();
+          expect(withoutModels(h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' }).steps)).toEqual(withoutModels(schema.steps));
+
+          // The card of R2 shows the schema's values.
+          const card = openRoundCard(2);
+          expect(card.querySelector('.stage-card-input-select').value).toBe('steps');
+          expect([...card.querySelectorAll('.stage-card-steps input')].map((box) => box.checked)).toEqual([true]);
+          expect(card.querySelector('.stage-card-require-select').value).toBe('count');
+          expect(card.querySelector('.stage-card-require-count').value).toBe('1');
+          expect(card.querySelector('.stage-card-owner-check').checked).toBe(true);
+          expect(card.querySelector('.stage-card-output-name').value).toBe('Замечания');
+          expect(card.querySelector('.stage-card-output-sections').value).toBe('Карта\nЗамечания');
+          expect(card.querySelector('.stage-card-output-strict').checked).toBe(true);
+
+          // The owner's changes: a step off the list, the count above the models, the owner off, the output name.
+          await toggle(card.querySelector('.stage-card-steps input'), false);
+          expect(withoutModels(h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' }).steps)[1].input).toEqual([{ step: 'r1', participant: 'GPT' }]);
+          const count = openRoundCard(2).querySelector('.stage-card-require-count');
+          count.value = '5';
+          count.dispatchEvent(new Event('change'));
+          await settleCustomCard();
+          expect(document.getElementById('notification-message').textContent).toContain('от 1 до 2');
+          await toggle(openRoundCard(2).querySelector('.stage-card-owner-check'), false);
+          await toggle(openRoundCard(2).querySelector('.stage-card-steps input'), true);
+          const name = openRoundCard(2).querySelector('.stage-card-output-name');
+          name.value = 'Замечания 2';
+          name.dispatchEvent(new Event('change'));
+          await settleCustomCard();
+          const edited = withoutModels(h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' }).steps)[1];
+          expect(edited).toMatchObject({ input: [{ step: 'r1', participant: 'GPT' }, 'r1'], require: 1, output: { name: 'Замечания 2', sections: ['Карта', 'Замечания'], strictLength: true } });
+          expect(edited).not.toHaveProperty('owner');
+
+          // The input goes back to the default: nothing is written, and the source of the load does not bring it back.
+          const choice = openRoundCard(2).querySelector('.stage-card-input-select');
+          choice.value = '';
+          choice.dispatchEvent(new Event('change'));
+          await settleCustomCard();
+          expect(withoutModels(h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' }).steps)[1]).not.toHaveProperty('input');
+
+          // Synthesis window: the final synthesis lists R1 and R2 and keeps its own fields.
+          document.querySelector('#synthesis-stack .pipeline-synthesis-block').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+          await settleCustomCard();
+          const stepCard = document.getElementById('custom-card-step-fields');
+          expect(stepCard.querySelector('.stage-card-input-select').value).toBe('steps');
+          expect([...stepCard.querySelectorAll('.stage-card-steps')[0].querySelectorAll('input')].map((box) => box.checked)).toEqual([false, true]);
+          expect(stepCard.querySelector('.stage-card-owner-check').checked).toBe(true);
+          await toggle(stepCard.querySelectorAll('.stage-card-steps input')[0], true);
+          const finalSaved = withoutModels(h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' }).steps).find((step) => step.ref === 'final');
+          expect(finalSaved).toMatchObject({ input: ['r2', 'r1'], owner: 'approve', output: { name: 'Итог', form: 'Сводка' } });
+
+          // Save, load and save again: the same steps.
+          const once = h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' });
+          expect(await h.debug.installBasicSchema('Step fields again', JSON.parse(JSON.stringify(once)))).toEqual({ ok: true, errors: [] });
+          document.querySelector('.pipeline-item[data-name="Step fields again"]').click();
+          await settleCustomCard();
+          expect(h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' }).steps).toEqual(once.steps);
+        } finally { h.cleanup(); }
+      }, 30000);
+    });
   });
 
   test('Custom ▶ is read-only during a run while its contents can still be copied', async () => {
@@ -3841,28 +4548,27 @@ describe('Pipeline debate favorites view', () => {
     } finally { release?.(); if (running) await running; h.cleanup(); }
   }, 30000);
 
-  test('templates keep their names: no renaming a template and no taking a template name', async () => {
+  test('the template keeps its name: no renaming it and no taking its name', async () => {
     const debug = window.__pipelineLifecycleDebug;
     const mine = { protocol: { type: 'universal', presetId: 'CUSTOM' }, modelStacks: {} };
     debug.setPipelineStoreForTest({ pipelines: { Mine: mine }, order: ['Mine'] });
     debug.ensureDefaultPipelinePresets();
-    await expect(debug.renamePipelineForTest('Test', 'My test')).resolves.toBe(false);
-    await expect(debug.renamePipelineForTest('Mine', 'Polishing')).resolves.toBe(false);
+    await expect(debug.renamePipelineForTest('Default', 'My default')).resolves.toBe(false);
+    await expect(debug.renamePipelineForTest('Mine', 'Default')).resolves.toBe(false);
     const store = debug.getPipelineStoreSnapshot();
     expect(store.pipelines.Mine).toEqual(mine);
-    expect(store.pipelines.Polishing.protocol.presetId).toBe('POLISHING');
-    expect(store.pipelines.Test.protocol.presetId).toBe('TEST');
+    expect(store.pipelines.Default.protocol.presetId).toBe('CUSTOM');
   });
 
-  test('store version 8: the template Custom becomes Basic; a user pipeline saved as Basic keeps its data', () => {
+  test('store versions 8 and 9: the template Custom, then Basic, becomes Default; a user pipeline with a template name keeps its data', () => {
     const debug = window.__pipelineLifecycleDebug;
     const config = (marker) => ({ protocol: { type: 'universal', presetId: 'CUSTOM' }, marker });
     const old = debug.normalizePipelineStore({
       version: 7, active: 'Custom', lastSaved: 'Custom', order: ['Custom', 'Mine'],
       pipelines: { Custom: config('template'), Mine: config('mine') }, draftPlans: {}, overrides: { synthesizers: { Custom: 'GPT' } }
     });
-    expect(old.active).toBe('Basic');
-    expect(old.lastSaved).toBe('Basic');
+    expect(old.active).toBe('Default');
+    expect(old.lastSaved).toBe('Default');
     expect(old.order).toEqual(['Mine']);
     expect(old.pipelines.Custom).toBeUndefined();
     expect(old.overrides.synthesizers).toEqual({});
@@ -3873,8 +4579,19 @@ describe('Pipeline debate favorites view', () => {
     expect(clash.order).toEqual(['Basic 3', 'Basic 2']);
     expect(clash.pipelines['Basic 3'].marker).toBe('users');
     expect(clash.pipelines.Basic).toBeUndefined();
-    const current = debug.normalizePipelineStore({ version: 8, active: 'Basic', order: ['Basic'], pipelines: { Basic: config('template') } });
-    expect(current.pipelines.Basic.marker).toBe('template');
+    // Version 8 had the template under the name Basic: it goes, and the mark moves to Default.
+    const v8 = debug.normalizePipelineStore({ version: 8, active: 'Basic', lastSaved: 'Basic', order: ['Basic', 'Mine'], pipelines: { Basic: config('template'), Mine: config('mine') } });
+    expect(v8.active).toBe('Default');
+    expect(v8.lastSaved).toBe('Default');
+    expect(v8.order).toEqual(['Mine']);
+    expect(v8.pipelines.Basic).toBeUndefined();
+    // A pipeline the user saved as Default makes way for the template name.
+    const named = debug.normalizePipelineStore({ version: 8, active: 'Basic', order: ['Basic', 'Default'], pipelines: { Basic: config('template'), Default: config('users') } });
+    expect(named.order).toEqual(['Default 2']);
+    expect(named.pipelines['Default 2'].marker).toBe('users');
+    expect(named.active).toBe('Default');
+    const current = debug.normalizePipelineStore({ version: 9, active: 'Default', order: ['Default'], pipelines: { Default: config('template') } });
+    expect(current.pipelines.Default.marker).toBe('template');
   });
 
   test('retiring Red Team removes the built-in and preserves user-named copies', () => {
@@ -3886,7 +4603,7 @@ describe('Pipeline debate favorites view', () => {
     });
     expect(debug.ensureDefaultPipelinePresets()).toBe(true);
     const store = debug.getPipelineStoreSnapshot();
-    expect(store.order).toEqual(['Basic', 'Polishing', 'Delta', 'Test', 'Research', 'Architecture', 'My review']);
+    expect(store.order).toEqual(['Default', 'My review']);
     expect(store.pipelines['Red Team']).toBeUndefined();
     expect(store.pipelines['My review'].modelStacks).toEqual(saved.modelStacks);
     expect(store.active).toBe('');
@@ -3919,14 +4636,13 @@ describe('Pipeline debate favorites view', () => {
   });
 
   test('built-in pipeline round changes are not remembered after switching away and back', () => {
-    const testPipeline = document.querySelector('.pipeline-item[data-name="Test"]');
-    const research = document.querySelector('.pipeline-item[data-name="Research"]');
-    testPipeline.click();
+    document.getElementById('pipeline-add-btn').click();
+    document.querySelector('.pipeline-item[data-name="Default"]').click();
     const roundLimit = document.getElementById('debate-round-limit-select');
     roundLimit.value = '5';
     roundLimit.dispatchEvent(new Event('change', { bubbles: true }));
-    research.click();
-    document.querySelector('.pipeline-item[data-name="Test"]').click();
+    document.getElementById('pipeline-add-btn').click();
+    document.querySelector('.pipeline-item[data-name="Default"]').click();
 
     expect(roundLimit.value).toBe('2');
   });

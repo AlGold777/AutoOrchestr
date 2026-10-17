@@ -1,0 +1,20 @@
+const {chromium}=require('playwright');
+(async()=>{
+ const browser=await chromium.launch({headless:true});
+ const page=await browser.newPage();
+ await page.setContent('<html><body></body></html>');
+ await page.addScriptTag({path:require('path').resolve(__dirname, '../../../results/choice-dialog.js')});
+ await page.evaluate(()=>{window.answer=window.ChoiceDialog.ask({title:'Выбор маршрута',choices:[{value:'close',label:'Закрыть решения'},{value:'revise',label:'Доработать'},{value:'finish',label:'Завершить'}]})});
+ await page.locator('dialog.choice-dialog').waitFor({state:'visible'});
+ await page.getByRole('button',{name:'Доработать',exact:true}).click();
+ const route=await page.evaluate(()=>window.answer);
+ await page.evaluate(()=>{window.answer=window.ChoiceDialog.ask({title:'Ответ владельца',textInput:{label:'Ответ владельца'},choices:[{value:'send',label:'Отправить'}]})});
+ await page.getByRole('textbox',{name:'Ответ владельца'}).fill('Проверенные измерения');
+ await page.getByRole('button',{name:'Отправить',exact:true}).click();
+ const owner=await page.evaluate(()=>window.answer);
+ await page.evaluate(()=>{window.answer=window.ChoiceDialog.ask({title:'Отмена',choices:[{value:'continue',label:'Продолжить'}]})});
+ await page.keyboard.press('Escape');
+ const cancelled=await page.evaluate(()=>window.answer);
+ console.log(JSON.stringify({route,owner,cancelled,remainingDialogs:await page.locator('dialog').count()}));
+ await browser.close();
+})().catch(e=>{console.error(e.message);process.exitCode=1});

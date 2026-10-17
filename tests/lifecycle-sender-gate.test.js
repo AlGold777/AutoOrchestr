@@ -12,12 +12,21 @@ const MESSAGE_ROUTER_SOURCE = fs.readFileSync(
   path.join(__dirname, '..', 'background', 'message-router.js'),
   'utf8'
 );
+const JOB_ORCHESTRATOR_SOURCE = fs.readFileSync(
+  path.join(__dirname, '..', 'background', 'job-orchestrator.js'),
+  'utf8'
+);
+const DISPATCH_COORDINATOR_SOURCE = fs.readFileSync(
+  path.join(__dirname, '..', 'background', 'dispatch-coordinator.js'),
+  'utf8'
+);
 
-function createRouterSandbox() {
+function createRouterSandbox({ realStop = false } = {}) {
   let onMessageListener = null;
   const telemetryEvents = [];
   const context = {
     console,
+    isValidTabId: tabId => Number.isInteger(tabId) && tabId > 0,
     Promise,
     Map,
     Set,
@@ -30,6 +39,7 @@ function createRouterSandbox() {
     Boolean,
     RegExp,
     JSON,
+    AbortController,
     setTimeout,
     clearTimeout,
     TERMINAL_STATUSES: ['SUCCESS', 'PARTIAL', 'ERROR', 'NO_SEND', 'EXTRACT_FAILED', 'EXTERNAL_LLM_FAILURE', 'USER_ACTION_REQUIRED', 'UNCERTAIN'],
@@ -79,7 +89,8 @@ function createRouterSandbox() {
       get: jest.fn((llmName) => (llmName === 'GPT' ? 101 : null)),
       getNameByTabId: jest.fn((tabId) => (tabId === 101 ? 'GPT' : null)),
       entries: jest.fn(() => []),
-      removeByName: jest.fn()
+      removeByName: jest.fn(),
+      clear: jest.fn(() => Promise.resolve())
     },
     activateTabForDispatch: jest.fn(),
     chrome: {
@@ -121,6 +132,32 @@ function createRouterSandbox() {
   };
   context.self = context;
   vm.createContext(context);
+  if (realStop) {
+    context.TimingConfig = { getTiming: (_name, fallback) => fallback };
+    context.MutexManager = class { clear() {} };
+    context.CompressedStorage.get.mockResolvedValue(null);
+    Object.assign(context, {
+      activeListeners: new Map(),
+      pendingPings: new Map(),
+      pendingPingByTabId: new Map(),
+      healthCheckFailuresByTabId: new Map(),
+      lastHealthCheckReportAtByTabId: new Map(),
+      llmActivityMap: {},
+      evaluatorTabId: null,
+      jobMetadata: new Map(),
+      llmRequestMap: {},
+      postSuccessScrollTimers: new Map(),
+      deferredAnswerTimers: {},
+      rateLimitState: new Map(),
+      stopHumanPresenceLoop: jest.fn(),
+      stopHeartbeatMonitor: jest.fn(),
+      clearPingState: jest.fn(),
+      closePingWindowForTab: jest.fn()
+    });
+    context.chrome.storage.local.remove = jest.fn(() => Promise.resolve());
+    vm.runInContext(JOB_ORCHESTRATOR_SOURCE, context, { filename: 'background/job-orchestrator.js' });
+    vm.runInContext(DISPATCH_COORDINATOR_SOURCE, context, { filename: 'background/dispatch-coordinator.js' });
+  }
   vm.runInContext(MESSAGE_ROUTER_SOURCE, context, { filename: 'background/message-router.js' });
   return {
     context,
@@ -239,6 +276,50 @@ function configurePerplexityHandshake(context, { deferProbe = false } = {}) {
 }
 
 describe('lifecycle sender gate', () => {
+  test('STOP_ALL uses the real orchestrator and ACKs without waiting for command persistence', async () => {
+    const { context, sendMessage } = createRouterSandbox({ realStop: true });
+    context.TabMapManager.entries.mockReturnValue([['GPT', 101]]);
+    context.chrome.storage.local.set.mockImplementation(() => new Promise(() => {}));
+    const submitWaiter = context.createPromptSubmittedWaiter('GPT', 'GPT:12345:1', 10000);
+    const insertionWaiter = context.waitForPromptInsertion('GPT', 'GPT:12345:1', 10000);
+
+    const response = await Promise.race([
+      sendMessage({ type: 'STOP_ALL' }, PAGE_SENDER),
+      new Promise((resolve) => setTimeout(() => resolve({ status: 'test_timeout' }), 100))
+    ]);
+
+    expect(response).toEqual({ success: true });
+    await expect(submitWaiter.promise).resolves.toEqual({
+      ok: false, cancelled: true, reason: 'stop_all_command'
+    });
+    await expect(insertionWaiter).resolves.toEqual({
+      insertionState: 'cancelled', cancelled: true, reason: 'stop_all_command'
+    });
+    expect(context.jobState).toEqual({});
+    expect(jest.isMockFunction(context.stopAllProcesses)).toBe(false);
+    await Promise.resolve();
+    expect(context.chrome.storage.local.set).toHaveBeenCalledWith(expect.objectContaining({
+      global_command: expect.objectContaining({
+        action: 'STOP_ALL', runSessionId: 12345, activeDispatchIds: ['GPT:12345:1']
+      })
+    }));
+    expect(context.chrome.tabs.sendMessage).toHaveBeenCalledWith(101, expect.objectContaining({
+      type: 'STOP_AND_CLEANUP',
+      reason: 'stop_all_command',
+      meta: { runSessionId: 12345, sessionId: 12345, dispatchId: 'GPT:12345:1' }
+    }));
+
+    await expect(sendMessage({ type: 'GET_ACTIVE_RUN_STATE' }, PAGE_SENDER))
+      .resolves.toMatchObject({ status: 'ok', active: false, sessionId: null });
+    const startProcess = jest.fn(() => Promise.resolve({ ok: true }));
+    context.startProcess = startProcess;
+    await expect(sendMessage({
+      type: 'START_FULLPAGE_PROCESS', prompt: 'Next request', selectedLLMs: ['GPT'],
+      sourceView: 'main', useApiFallback: false
+    }, RESULTS_SENDER)).resolves.toEqual({ status: 'process_started' });
+    expect(startProcess).toHaveBeenCalledWith('Next request', ['GPT'], 909, expect.objectContaining({ sourceView: 'main' }));
+  });
+
   test('Completion authority ACK is immediate even while job-state persistence is blocked', async () => {
     const { context, telemetryEvents, sendMessage } = createRouterSandbox();
     context.saveJobState.mockImplementation(() => new Promise(() => {}));
@@ -614,6 +695,61 @@ describe('lifecycle sender gate', () => {
     ]));
   });
 
+  test('HUMANOID_EVENT cannot regress a completed answer card status', async () => {
+    const { context, sendMessage } = createRouterSandbox();
+    context.jobState.llms.ChatGPT = { status: 'GENERATING', cardAnswerComplete: true };
+
+    const response = await sendMessage({
+      type: 'HUMANOID_EVENT',
+      event: 'activity:heartbeat',
+      detail: { source: 'chatgpt:inject', phase: 'waiting-response' }
+    }, BOUND_SENDER);
+
+    expect(response).toEqual({ status: 'humanoid_event_ignored', reason: 'terminal_entry' });
+    expect(context.updateModelState).not.toHaveBeenCalled();
+  });
+
+  test('only a current card marker ends visits, and all markers stop a main-page request', async () => {
+    const { context, sendMessage } = createRouterSandbox();
+    context.completeHumanPresenceForModel = jest.fn();
+    context.clearDeferredAnswerTimer = jest.fn();
+    context.jobState.session.selectedModels = ['GPT', 'Claude'];
+    context.jobState.llms.GPT.transportRequestId = 'request-gpt';
+    context.jobState.llms.Claude = { transportRequestId: 'request-claude' };
+    const card = (llmName, transportRequestId, dispatchId) => ({
+      type: 'ANSWER_CARD_RENDER_EVALUATED', llmName,
+      meta: { transportRequestId, dispatchId, answerEndMarkerSeen: true, usableResult: true }
+    });
+    await sendMessage(card('GPT', 'old-request', META.dispatchId), RESULTS_SENDER);
+    await sendMessage(card('GPT', 'request-gpt', META.dispatchId), FOREIGN_SENDER);
+    expect(context.jobState.llms.GPT.cardAnswerComplete).toBeUndefined();
+    await sendMessage(card('GPT', 'request-gpt', META.dispatchId), RESULTS_SENDER);
+    expect(context.jobState.llms.GPT.cardAnswerComplete).toBe(true);
+    expect(context.completeHumanPresenceForModel).toHaveBeenCalledWith('GPT', 'answer_card_end_marker');
+    expect(context.chrome.tabs.sendMessage).toHaveBeenCalledWith(101, expect.objectContaining({
+      type: 'STOP_AND_CLEANUP',
+      reason: 'answer_card_end_marker',
+      meta: { runSessionId: 12345, sessionId: 12345, dispatchId: META.dispatchId }
+    }));
+    expect(context.stopAllProcesses).not.toHaveBeenCalled();
+    await sendMessage(card('Claude', 'request-claude'), RESULTS_SENDER);
+    expect(context.stopAllProcesses).toHaveBeenCalledWith('answer_cards_complete', { closeTabs: false, preserveResults: true });
+  });
+
+  test('a pipeline card marker does not cancel the next stage', async () => {
+    const { context, sendMessage } = createRouterSandbox();
+    context.completeHumanPresenceForModel = jest.fn();
+    context.clearDeferredAnswerTimer = jest.fn();
+    context.jobState.session.selectedModels = ['GPT'];
+    context.jobState.session.pipelineRunId = 'pipeline-1';
+    context.jobState.llms.GPT.transportRequestId = 'request-gpt';
+    await sendMessage({ type: 'ANSWER_CARD_RENDER_EVALUATED', llmName: 'GPT', meta: {
+      transportRequestId: 'request-gpt', dispatchId: META.dispatchId, answerEndMarkerSeen: true, usableResult: true
+    } }, RESULTS_SENDER);
+    expect(context.jobState.llms.GPT.cardAnswerComplete).toBe(true);
+    expect(context.stopAllProcesses).not.toHaveBeenCalled();
+  });
+
   test('accepts card render evidence only from the registered results tab', async () => {
     const { telemetryEvents, sendMessage } = createRouterSandbox();
     const message = {
@@ -806,6 +942,42 @@ describe('Perplexity transient blocker router handshake', () => {
       reason: 'transient_blocker_not_active'
     }));
     expect(context.dispatchPromptToTab).not.toHaveBeenCalled();
+  });
+});
+
+describe('main-page request startup', () => {
+  test.each([true, false])('dispatches through the router with forceNewTabs=%s', async (forceNewTabs) => {
+    const { context, sendMessage } = createRouterSandbox();
+    context.getOrchestratorStopGeneration = jest.fn(() => 0);
+    const response = await sendMessage({
+      type: 'START_FULLPAGE_PROCESS', prompt: 'New request', selectedLLMs: ['GPT'],
+      forceNewTabs, sourceView: 'main', useApiFallback: false
+    }, RESULTS_SENDER);
+    expect(response).toEqual({ status: 'process_started' });
+    expect(context.getOrchestratorStopGeneration).toHaveBeenCalledTimes(2);
+    expect(context.startProcess).toHaveBeenCalledWith('New request', ['GPT'], 909,
+      expect.objectContaining({ forceNewTabs, sourceView: 'main' }));
+  });
+
+  test('Stop during startup still cancels the request before dispatch', async () => {
+    const { context, sendMessage } = createRouterSandbox();
+    await sendMessage({ type: 'ANSWER_CARD_RENDER_EVALUATED', llmName: 'GPT', meta: {} }, RESULTS_SENDER);
+    let generation = 0;
+    let releaseDiagnostics;
+    let preparationStarted;
+    const preparing = new Promise(resolve => { preparationStarted = resolve; });
+    context.getOrchestratorStopGeneration = () => generation;
+    context.ProofTelemetryLedger = { clear: () => new Promise(resolve => {
+      releaseDiagnostics = resolve;
+      preparationStarted();
+    }) };
+    const response = sendMessage({ type: 'START_FULLPAGE_PROCESS', prompt: 'Cancelled request',
+      selectedLLMs: ['GPT'], sourceView: 'main', useApiFallback: false }, RESULTS_SENDER);
+    await preparing;
+    generation += 1;
+    releaseDiagnostics();
+    expect(await response).toEqual({ success: false, errorCode: 'RUN_CANCELLED' });
+    expect(context.startProcess).not.toHaveBeenCalled();
   });
 });
 

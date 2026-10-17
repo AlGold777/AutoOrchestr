@@ -307,6 +307,7 @@ const runtimeBudgetTimerIds = new Set();
 
 const isTerminalEntry = (entry) => {
   if (!entry) return false;
+  if (entry.cardAnswerComplete) return true;
   if (self.ModelRunState?.isTerminalRunState && self.ModelRunState.isTerminalRunState(entry)) return true;
   const terminalStatuses = Array.isArray(TERMINAL_STATUSES) ? TERMINAL_STATUSES : ['COPY_SUCCESS'];
   if (terminalStatuses.includes(entry.status)) return true;
@@ -316,6 +317,7 @@ const isTerminalEntry = (entry) => {
 
 const isFinalizedEntry = (entry) => {
   if (!entry) return false;
+  if (entry.cardAnswerComplete) return true;
   if (self.ModelRunState?.isTerminalRunState && self.ModelRunState.isTerminalRunState(entry)) return true;
   return Boolean(entry.finalStatusRecorded || entry.finalStatus);
 };
@@ -3824,7 +3826,9 @@ const triggerResponseCollectionPing = (llmName, tabId, source = 'auto_collect', 
     transportRetryDelays,
     allowRecovery,
     onSuccess: (response) => {
+      if (response?.status === 'ignored_stale') return;
       const successEntry = jobState?.llms?.[llmName];
+      if (successEntry?.cardAnswerComplete === true) return;
       if (successEntry) {
         successEntry.pingTransportErrorCount = 0;
       }
@@ -4939,6 +4943,7 @@ let pendingJobStateSaveWaiters = [];
 // Incremented by stopAllProcesses. A snapshot belongs to the stop generation it
 // was queued in; a stop/cancel invalidates every snapshot queued before it.
 let jobStateStopGeneration = 0;
+const getOrchestratorStopGeneration = () => jobStateStopGeneration;
 let pendingJobStateSaveGeneration = 0;
 function saveJobState(state) {
   pendingJobStateSave = state;
@@ -5076,12 +5081,21 @@ function persistPipelineControlState(nextControl = null) {
   void self.PipelineFSM.persistControlState(control);
 }
 
-function stopAllProcesses(reason = 'unspecified', { closeTabs = false } = {}) {
+function stopAllProcesses(reason = 'unspecified', { closeTabs = false, preserveResults = false } = {}) {
+  const completedState = preserveResults ? {
+    ...jobState,
+    session: { ...jobState.session, startTime: null, roundsInProgress: false },
+    llms: Object.fromEntries(Object.entries(jobState.llms || {}).map(([name, entry]) => [name, { ...entry }]))
+  } : null;
   globalThis.LLMLog?.debug?.(`[BACKGROUND] stopAllProcesses: reason=${reason}, closeTabs=${closeTabs}`);
   jobStateStopGeneration += 1;
+  startProcessReserved = null;
   // Purpose: cancel orchestrator waits tied to the previous session immediately.
   abortOrchestratorOperations(reason);
   resetOrchestratorAbortController();
+  if (typeof self.cancelPendingDispatchCoordinatorWork === 'function') {
+    self.cancelPendingDispatchCoordinatorWork(reason);
+  }
   clearSessionTimers();
   if (typeof self.clearAllScriptRuntimeHardStops === 'function') {
     self.clearAllScriptRuntimeHardStops();
@@ -5100,11 +5114,13 @@ function stopAllProcesses(reason = 'unspecified', { closeTabs = false } = {}) {
   const tabsToClose = [];
   TabMapManager.entries().forEach(([llmName, tabId]) => {
     if (!isValidTabId(tabId)) return;
+    const entry = jobState?.llms?.[llmName];
+    const dispatchId = entry?.lastDispatchMeta?.dispatchId || entry?.runIdentity?.dispatchId || null;
     try {
       chrome.tabs.sendMessage(tabId, {
         type: 'STOP_AND_CLEANUP',
         reason,
-        meta: { sessionId }
+        meta: { runSessionId: sessionId, sessionId, dispatchId }
       }).catch(() => {});
     } catch (_) {}
     closePingWindowForTab(tabId);
@@ -5124,7 +5140,7 @@ function stopAllProcesses(reason = 'unspecified', { closeTabs = false } = {}) {
       chrome.tabs.sendMessage(evaluatorTabId, {
         type: 'STOP_AND_CLEANUP',
         reason,
-        meta: { sessionId }
+        meta: { runSessionId: sessionId, sessionId, dispatchId: null }
       }).catch(() => {});
     } catch (_) {}
     if (closeTabs) tabsToClose.push(evaluatorTabId);
@@ -5169,9 +5185,13 @@ function stopAllProcesses(reason = 'unspecified', { closeTabs = false } = {}) {
     Object.keys(jobState.llms).forEach((name) => clearBudgetPhases(name));
   }
 
-  rateLimitState.clear();
-  rateLimitTimers.forEach((id) => clearTimeout(id));
-  rateLimitTimers.clear();
+  if (typeof self.clearAllRateLimits === 'function') {
+    void Promise.resolve(self.clearAllRateLimits()).catch((err) => {
+      console.warn('[BACKGROUND] Failed to clear rate-limit retries on stop:', err?.message || err);
+    });
+  } else if (typeof rateLimitState !== 'undefined') {
+    rateLimitState.clear();
+  }
 
   if (jobState && Object.keys(jobState).length) {
     try {
@@ -5185,7 +5205,8 @@ function stopAllProcesses(reason = 'unspecified', { closeTabs = false } = {}) {
       : self.PipelineFSM.stopRun(control, { reason, pipelineRunId: control.pipelineRunId || null, stage: 'stopped' });
     persistPipelineControlState(nextControl);
   }
-  jobState = {};
+  jobState = completedState || {};
+  if (completedState) saveJobState(jobState);
   broadcastGlobalState();
 }
 
@@ -5193,7 +5214,10 @@ function stopAllProcesses(reason = 'unspecified', { closeTabs = false } = {}) {
 // commands used to both pass RunGuard (busy is only known after the awaited
 // ToS read) and then both replaced the shared jobState. Held until
 // runDispatchRounds has marked the rounds active.
-let startProcessReserved = false;
+let startProcessReserved = null;
+// Basic participants of the run (T07): modelName → { participantId, newChat }, given by the page in pipelineContext.participants.
+// The page sends one request per model in a batch, so the model name is unique here; a model without an entry is the legacy path.
+let activeParticipantRequests = {};
 async function startProcess(prompt, selectedLLMs, resultsTab, options = {}) {
   const runGuard = self.RunGuard?.canStartNewRun?.(jobState?.session, options, jobState?.llms);
   if (runGuard && runGuard.ok === false) {
@@ -5203,15 +5227,17 @@ async function startProcess(prompt, selectedLLMs, resultsTab, options = {}) {
   if (startProcessReserved && options.force !== true) {
     return { ok: false, errorCode: 'RUN_ALREADY_ACTIVE', activeSessionId: jobState?.session?.startTime || null };
   }
-  startProcessReserved = true;
+  const reservation = {};
+  startProcessReserved = reservation;
   try {
     return await startProcessReservedRun(prompt, selectedLLMs, resultsTab, options);
   } finally {
-    startProcessReserved = false;
+    if (startProcessReserved === reservation) startProcessReserved = null;
   }
 }
 
 async function startProcessReservedRun(prompt, selectedLLMs, resultsTab, options = {}) {
+  const startGeneration = jobStateStopGeneration;
   const runGuard = self.RunGuard?.canStartNewRun?.(jobState?.session, options, jobState?.llms);
   if (runGuard && runGuard.ok === false) {
     console.warn('[BACKGROUND] Refusing to start process while another run is active', runGuard);
@@ -5219,6 +5245,7 @@ async function startProcessReservedRun(prompt, selectedLLMs, resultsTab, options
   }
   const tosAck = await chrome.storage.local.get('tos_acknowledged_v1')
     .then((d) => d?.tos_acknowledged_v1 === true).catch(() => false);
+  if (startGeneration !== jobStateStopGeneration) return { ok: false, errorCode: 'RUN_CANCELLED' };
   if (!tosAck) {
     console.warn('[BACKGROUND] startProcess rejected: ToS consent missing');
     return { ok: false, errorCode: 'TOS_ACK_REQUIRED' };
@@ -5239,6 +5266,7 @@ async function startProcessReservedRun(prompt, selectedLLMs, resultsTab, options
   jobMetadata.clear();
   Object.keys(llmRequestMap).forEach((key) => delete llmRequestMap[key]);
   const snapshotCleanup = await clearLateAnswerSnapshotCache('start_process');
+  if (startGeneration !== jobStateStopGeneration) return { ok: false, errorCode: 'RUN_CANCELLED' };
   if (snapshotCleanup?.removed) {
     globalThis.LLMLog?.debug?.(`[LateAnswerCollector] Cleared ${snapshotCleanup.removed} stale snapshot keys before new run`);
   }
@@ -5262,6 +5290,7 @@ async function startProcessReservedRun(prompt, selectedLLMs, resultsTab, options
     startedAt: sessionStartTime,
     promptsByModel
   });
+  const reservedStartState = jobState;
   // A per-model start chain belongs to exactly one run. A promise left by an
   // interrupted MV3 worker/run must never hold the next run behind old work.
   selectedLLMs.forEach((llmName) => {
@@ -5276,11 +5305,26 @@ async function startProcessReservedRun(prompt, selectedLLMs, resultsTab, options
     wallTs: sessionStartTime,
     expectedModels: Array.isArray(selectedLLMs) ? selectedLLMs.slice() : []
   });
+  if (startGeneration !== jobStateStopGeneration
+    || jobState !== reservedStartState
+    || jobState?.session?.startTime !== sessionStartTime) {
+    return { ok: false, errorCode: 'RUN_CANCELLED' };
+  }
   humanPresencePaused = false;
   humanPresenceManuallyStopped = false;
   // Who drives the run (panel-issued): a moderator-driven run does not get the
   // system's own page visits; the moderator pulls answers with Get it.
   jobState.session.runMode = String(pipelineContext?.runMode || '') || null;
+  // The chats of the participants are bound per run (R01): each request carries its run and visit identity.
+  await self.pruneParticipantRuns?.(pipelineContext?.pipelineRunId || null);
+  activeParticipantRequests = pipelineContext?.participants && typeof pipelineContext.participants === 'object'
+    ? Object.fromEntries(Object.entries(pipelineContext.participants).map(([modelName, participant]) => [modelName, {
+      ...participant,
+      runId: String(pipelineContext?.pipelineRunId || '') || null,
+      stageAttemptId: String(pipelineContext?.stageAttemptId || '') || null,
+      requestId: String(pipelineContext?.transportRequestIds?.[modelName] || '') || null
+    }]))
+    : {};
   if (self.PipelineFSM?.startRun) {
     jobState.session.pipelineControl = self.PipelineFSM.startRun({
       pipelineRunId: pipelineContext?.pipelineRunId || null,
@@ -5381,9 +5425,25 @@ function startModelForLLM(llmName, prompt, forceNewTabs, attachments = [], optio
       return;
     }
 
-    const apiUsed = await tryApiDirect(llmName, prompt, attachments);
-    if (apiUsed) {
-      return;
+    // A participant chat (T07) is never sent by the stateless API path (R06). With the API mode on it is refused
+    // before the send; the mode the user selected is not changed.
+    if (activeParticipantRequests[llmName]) {
+      if (await isApiModeSelectedFor(llmName)) {
+        failParticipantRequest(llmName, {
+          ok: false,
+          type: 'participant_api_unsupported',
+          errorCode: 'participant_api_unsupported',
+          message: 'Для чата участника не поддержан API-режим: выключите API-режим для этого прогона. Запрос не отправлен.',
+          recoverable: false,
+          meta: { participantId: activeParticipantRequests[llmName].participantId || null, runId: activeParticipantRequests[llmName].runId || null }
+        });
+        return;
+      }
+    } else {
+      const apiUsed = await tryApiDirect(llmName, prompt, attachments);
+      if (apiUsed) {
+        return;
+      }
     }
 
     await runModelThroughTabs(llmName, prompt, forceNewTabs, attachments, { ...options, sessionId });
@@ -5391,6 +5451,12 @@ function startModelForLLM(llmName, prompt, forceNewTabs, attachments = [], optio
     console.error(`[BACKGROUND] Failed to start ${llmName}:`, err);
   });
   return llmStartChains[llmName];
+}
+
+// The API mode is selected for the model: the user has the API transport on and the model has an API endpoint.
+async function isApiModeSelectedFor(llmName) {
+  if (jobState?.useApiFallback === false || !apiFallbackConfig[llmName]) return false;
+  return isApiTransportFeatureEnabled();
 }
 
 async function tryApiDirect(llmName, prompt, attachments = []) {
@@ -5635,9 +5701,50 @@ async function reuseMappedDonorProviderTab(llmName, prompt, attachments = [], op
   return false;
 }
 
+// A Basic participant (T07) has its own chat, bound per run and participant (R01); the chat decision is in openParticipantChat.
+// A continue whose bound chat is lost is refused before the send, it never falls back to another chat.
+async function runParticipantThroughTabs(llmName, prompt, attachments = [], options = {}, participant) {
+  const result = await openParticipantChat(llmName, {
+    runId: participant.runId,
+    participantId: String(participant.participantId || ''),
+    newChat: participant.newChat === true,
+    // A resumed participant that already sent in this run and has no chat on record (V01): refused, not attached elsewhere.
+    strict: participant.strict === true,
+    requestId: participant.requestId,
+    stageAttemptId: participant.stageAttemptId,
+    // The chat the page saved for this participant (R01): used only when the run has no binding of its own.
+    binding: participant.binding || null
+  }, prompt, attachments, options).catch((err) => ({
+    ok: false,
+    error: {
+      ok: false,
+      type: 'participant_chat_lost',
+      errorCode: 'participant_chat_lost',
+      message: err?.message || 'Чат участника не открыт.',
+      recoverable: false,
+      meta: { participantId: participant.participantId || null, runId: participant.runId || null }
+    }
+  }));
+  if (!result.ok) {
+    if (result.error) failParticipantRequest(llmName, result.error);
+    return false;
+  }
+  return true;
+}
+
+// A participant request that is refused before the send ends the model with an explicit status (not a deferred retry).
+function failParticipantRequest(llmName, error) {
+  handleLLMResponse(llmName, '', error);
+  updateModelState(llmName, 'USER_ACTION_REQUIRED', { message: error.message, errorCode: error.errorCode });
+}
+
 async function runModelThroughTabs(llmName, prompt, forceNewTabs, attachments = [], options = {}) {
   if (options.sessionId && !isSessionActive(options.sessionId)) {
     return false;
+  }
+  const participant = activeParticipantRequests[llmName];
+  if (participant) {
+    return runParticipantThroughTabs(llmName, prompt, attachments, options, participant);
   }
   if (forceNewTabs) {
     detachExistingTab(llmName);
@@ -7279,7 +7386,7 @@ function deriveFailureFinalStatus(error = null, sendConfirmed = null, failure = 
   const failureClass = String(failure?.class || '').toLowerCase();
   const reason = String(error?.message || failure?.reason || '').toLowerCase();
   const haystack = [type, failureClass, reason].filter(Boolean).join(' ');
-  if (/auth_required|continue_required|login|required_login|captcha|wrong_page|conversation_limit|unsafe_prompt_modal|attachment_failed|attachment_unavailable/.test(haystack)) return 'USER_ACTION_REQUIRED';
+  if (/participant_chat_lost|participant_binding_failed|participant_api_unsupported|auth_required|continue_required|login|required_login|captcha|wrong_page|conversation_limit|unsafe_prompt_modal|attachment_failed|attachment_unavailable/.test(haystack)) return 'USER_ACTION_REQUIRED';
   if (/provider_error|provider_error_surface|model_unavailable|rate_limit|rate limited|external_llm|external llm|api_failed|overload|overloaded|high_demand|unable_to_respond/.test(haystack)) return 'EXTERNAL_LLM_FAILURE';
   if (sendConfirmed === false) return 'NO_SEND';
   if (['send_failed', 'send_payload_mismatch', 'send_payload_unverified', 'no_send'].includes(type)) return 'NO_SEND';
@@ -8154,7 +8261,7 @@ const PRE_INSERTION_DEFERRAL_TIMEOUT_MS = 120000;
 // Blockers a repeat dispatch cannot clear - only a human can. Everything else
 // (attachment upload not confirmed, unclassified adapter error, transport loss)
 // is worth exactly one more attempt before the model is written off.
-const USER_ACTION_BLOCKER_PATTERN = /auth_required|required_login|\blogin\b|captcha|conversation_limit|unsafe_prompt_modal|wrong_page|rate_limit|quota_exceeded/;
+const USER_ACTION_BLOCKER_PATTERN = /auth_required|required_login|\blogin\b|captcha|conversation_limit|unsafe_prompt_modal|wrong_page|rate_limit|quota_exceeded|participant_api_unsupported|participant_chat_lost|participant_binding_failed/;
 
 function evaluatePreInsertionFailureDeferral(llmName, entry, context = {}) {
   const decline = (reason) => ({ defer: false, reason });
@@ -9996,6 +10103,9 @@ function initRequestMetadata(llmName, tabId, initialUrl = '') {
     type: 'LLM_JOB_CREATED',
     requestId,
     llmName,
+    transportRequestId: jobState?.llms?.[llmName]?.transportRequestId || null,
+    sourceView: jobState?.session?.sourceView || null,
+    pipelineRunId: jobState?.session?.pipelineRunId || null,
     metadata: {
       url: snapshot.url,
       createdAt: snapshot.createdAt,
@@ -10452,6 +10562,7 @@ async function handleManualResponsePing(llmName, options = {}) {
       transportRetryDelays: HARD_STOP_PING_RETRY_DELAYS_MS,
       allowRecovery: true,
       onSuccess: (response) => {
+        if (response?.status === 'ignored_stale') return;
         const successEntry = jobState?.llms?.[llmName];
         if (successEntry) {
           successEntry.pingTransportErrorCount = 0;
@@ -10763,6 +10874,9 @@ function sendCleanupCommand(llmName) {
   self.registerSessionTimer = registerSessionTimer;
   self.deregisterSessionTimer = deregisterSessionTimer;
   self.clearSessionTimers = clearSessionTimers;
+  self.getOrchestratorStopGeneration = getOrchestratorStopGeneration;
+  self.startModelForLLM = startModelForLLM;
+  self.extractLatestAssistantSnapshotInPage = extractLatestAssistantSnapshotInPage;
 
     globalThis.LLMLog?.debug?.('[JobOrchestrator] Module loaded');
   })();

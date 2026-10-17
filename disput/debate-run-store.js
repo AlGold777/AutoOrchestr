@@ -3,7 +3,7 @@
   'use strict';
 
   const VERSION = 6;
-  const STORAGE_KEY = 'llmCodexDebateRun.v1';
+  const STORAGE_KEY = 'aoRunTransport.v1';
   const MAX_EVENTS = 500;
   const TERMINAL = new Set(['completed', 'error', 'cancelled', 'stopped_by_moderator']);
   const EVENTS = Object.freeze({

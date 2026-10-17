@@ -14,7 +14,7 @@ function setup(names, send) {
     prepareReusableTabReceiver: jest.fn(async tabId => ({ ok: true, tabId })),
     saveJobState: async () => {}, emitTelemetry: jest.fn(), reportDispatchPhase: jest.fn(),
     activateTabForDispatch: async id => {events.push(['focus',id,Date.now()]);return true;},
-    chrome: {runtime:{}, storage: {session: {
+    chrome: {runtime:{}, scripting: {executeScript: jest.fn(async () => [])}, storage: {session: {
       set: jest.fn(async values => Object.assign(sessionStorage, structuredClone(values))),
       get: jest.fn(async keys => Object.fromEntries(keys.map(key => [key, sessionStorage[key]])))
     }}, tabs:{sendMessage: (id,msg,cb) => {if(msg.type === 'HEALTH_CHECK_PING') {cb({type:'HEALTH_CHECK_PONG'});return;} events.push(['command',id,Date.now()]);send?.(c,id,msg,cb);}}},
@@ -27,7 +27,7 @@ function setup(names, send) {
     resolveRound1PostCommandFocusHoldMs: () => 0};
   c.self=c; vm.createContext(c);
   vm.runInContext(fs.readFileSync(require.resolve('../background/dispatch-intent-store'), 'utf8'), c);
-  vm.runInContext(source.slice(source.indexOf('async function dispatchSimpleFirstPass'),source.indexOf('async function dispatchPromptToTab')),c);
+  vm.runInContext(source.slice(source.indexOf('async function ensureAttachmentHandlerForDispatch'),source.indexOf('async function dispatchPromptToTab')),c);
   vm.runInContext('var promptDispatchFocusMutex = Promise.resolve();\n'+source.slice(
     source.indexOf('function withPromptDispatchFocusLock'),source.indexOf('function resolvePromptSubmitted')),c);
   const start = orch.indexOf('async function dispatchRound1Sequentially');
@@ -276,4 +276,46 @@ test('closing the visit preserves the state of a provider already generating', a
   await jest.advanceTimersByTimeAsync(7000);
   expect(await run).toBe(true);
   expect(c.getDispatchFlags('DeepSeek').state).toBe('STREAMING');
+});
+
+
+test('every model receives all nine files only after attachment runtime restoration', async () => {
+  const names = ['GPT','Claude','Gemini','Qwen','DeepSeek','Kimi','Grok','Perplexity','Le Chat','Z.ai'];
+  const batch = Array.from({ length: 9 }, (_, index) => ({ name: `document-${index}.txt`, base64: 'data:text/plain;base64,eA==' }));
+  const commands = [];
+  const { c, events } = setup(names, (c, id, msg, cb) => {
+    commands.push(msg);
+    c.jobState.llms[names[id - 1]].providerSendActionObservedDispatchId = msg.meta.dispatchId;
+    cb({ accepted: true, dispatchId: msg.meta.dispatchId });
+  });
+  c.chrome.scripting.executeScript.mockImplementation(async ({ target }) => {
+    events.push(['attachment-runtime', target.tabId, Date.now()]);
+    return [];
+  });
+  const run = c.dispatchRound1Sequentially(names, 'Read all files', batch, 1);
+  await jest.advanceTimersByTimeAsync(70000);
+  await run;
+  expect(commands).toHaveLength(10);
+  for (const command of commands) {
+    expect(command.attachments).toEqual(batch);
+    expect(command.meta.attachmentCount).toBe(9);
+  }
+  for (let id = 1; id <= names.length; id++) {
+    expect(events.findIndex(event => event[0] === 'attachment-runtime' && event[1] === id))
+      .toBeLessThan(events.findIndex(event => event[0] === 'command' && event[1] === id));
+  }
+});
+
+test('failure to restore attachment runtime sends no text-only command and the queue continues', async () => {
+  const { c, events } = setup(['GPT','Qwen'], (c, id, msg) => {
+    c.jobState.llms.Qwen.providerSendActionObservedDispatchId = msg.meta.dispatchId;
+  });
+  c.chrome.scripting.executeScript.mockImplementation(async ({ target }) => {
+    if (target.tabId === 1) throw new Error('injection_failed');
+    return [];
+  });
+  const run = c.dispatchRound1Sequentially(['GPT','Qwen'], 'Read all files', [{ name: 'a.txt' }], 1);
+  await jest.advanceTimersByTimeAsync(20000);
+  await run;
+  expect(events.filter(event => event[0] === 'command').map(event => event[1])).toEqual([2]);
 });

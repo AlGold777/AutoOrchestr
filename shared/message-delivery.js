@@ -166,6 +166,17 @@
       return null;
     }
     const metadata = { ...(message.metadata || {}) };
+    // Preserve proof after removing the transport token from the visible text.
+    const tokenAt = answer.toLowerCase().lastIndexOf(tag(entry.token).toLowerCase());
+    const endMarkerSeen = state === 'verified'
+      && tokenAt >= 0 && answer.length - tokenAt - tag(entry.token).length <= 40
+      && Boolean(clean(answer));
+    if (endMarkerSeen) entry.answerEndMarkerSeen = true;
+    metadata.answerEndMarkerSeen = entry.answerEndMarkerSeen === true;
+    if (metadata.answerEndMarkerSeen) {
+      metadata.terminal = true;
+      metadata.status = 'SUCCESS';
+    }
     if (!final && entry.final && entry.finalKind === 'empty_answer' && answer.trim() && !entry.lateTextLogged) {
       entry.lateTextLogged = true;
       record({ kind: 'late_text', model, token: entry.token, requestId: entry.requestId, chars: answer.length, ms: Date.now() - entry.sentAt });

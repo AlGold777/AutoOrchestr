@@ -827,6 +827,41 @@ function waitForPromptInsertion(llmName, dispatchId, timeoutMs) {
   });
 }
 
+function cancelPendingDispatchCoordinatorWork(reason = 'session_stopped') {
+  const cancelReason = String(reason || 'session_stopped');
+  const submitResult = { ok: false, cancelled: true, reason: cancelReason };
+  promptSubmitWaiters.forEach((modelWaiters) => {
+    modelWaiters.forEach((waiters) => {
+      Array.from(waiters || []).forEach((settle) => {
+        try { settle(submitResult); } catch (_) {}
+      });
+    });
+  });
+  promptSubmitWaiters.clear();
+  promptSubmitWaiterArms.clear();
+
+  const insertionResult = { insertionState: 'cancelled', cancelled: true, reason: cancelReason };
+  promptInsertionWaiters.forEach((modelWaiters) => {
+    modelWaiters.forEach((waiters) => {
+      Array.from(waiters || []).forEach((settle) => {
+        try { settle(insertionResult); } catch (_) {}
+      });
+    });
+  });
+  promptInsertionWaiters.clear();
+
+  if (promptDispatchSupervisorTimer) {
+    clearTimeout(promptDispatchSupervisorTimer);
+    dispatchDeregisterSessionTimer(promptDispatchSupervisorTimer);
+    promptDispatchSupervisorTimer = null;
+  }
+  providerSendOnlyRecoveryTimers.forEach((timer) => {
+    clearTimeout(timer);
+    dispatchDeregisterSessionTimer(timer);
+  });
+  providerSendOnlyRecoveryTimers.clear();
+}
+
 async function waitForPromptFocusBoundary(submitWaiter, insertionWaiter, holdMs) {
   const never = () => new Promise(() => {});
   return Promise.race([
@@ -972,6 +1007,7 @@ function isTypingGuardActive(entry) {
 
 function isTerminalLlmEntry(entry) {
   if (!entry) return false;
+  if (entry.cardAnswerComplete === true) return true;
   if (self.ModelRunState?.isTerminalRunState?.(entry)) return true;
   return TERMINAL_STATUSES.includes(entry.status)
     || Boolean(entry.finalStatusRecorded || entry.finalStatus);
@@ -1158,7 +1194,11 @@ async function prepareReusableTabReceiver(tabId, llmName, current) {
     try {
       chrome.tabs.sendMessage(tabId, {type:'HEALTH_CHECK_PING'}, response => {
         const error = chrome.runtime.lastError?.message || '';
-        done(error.includes('Receiving end does not exist') ? 'missing'
+        // Shared listeners survive provider cleanup. Chrome then closes the
+        // health request without a response even though the tab has listeners.
+        // A completed empty reply means the provider receiver needs restoring;
+        // silence still waits for a slow renderer until the overall deadline.
+        done(error.includes('Receiving end does not exist') || response == null ? 'missing'
           // Readiness of this model's receiver: an anonymous PONG proves nothing.
           : response?.type === 'HEALTH_CHECK_PONG' && response.llmName === llmName
             ? 'ready' : 'unavailable');
@@ -1217,8 +1257,26 @@ async function prepareReusableTabReceiver(tabId, llmName, current) {
   return finish(current() ? (lookupTimedOut ? 'tab_lookup_timeout' : 'receiver_timeout') : 'session_changed');
 }
 
+async function ensureAttachmentHandlerForDispatch(tabId, attachments = []) {
+  if (!attachments.length) return;
+  let timer;
+  try {
+    await Promise.race([
+      chrome.scripting.executeScript({
+        target: { tabId }, injectImmediately: true,
+        files: ['content-scripts/attachment-handler.js']
+      }),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('attachment_runtime_timeout')), 5000); })
+    ]);
+  } catch (error) {
+    throw { type: 'attachment_failed', message: `Attachment handler unavailable: ${error?.message || error}` };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function dispatchSimpleFirstPass(llmName, tabId, prompt, attachments, entry, options, machine) {
-  const meta = { ...entry.lastDispatchMeta, simpleFirstPass: true };
+  const meta = { ...entry.lastDispatchMeta, simpleFirstPass: true, attachmentCount: attachments?.length || 0 };
   const current = () => jobState?.session?.startTime === meta.runSessionId
     && jobState?.llms?.[llmName] === entry && entry.lastDispatchMeta?.dispatchId === meta.dispatchId;
   const pause = async ms => {
@@ -1257,6 +1315,8 @@ async function dispatchSimpleFirstPass(llmName, tabId, prompt, attachments, entr
     if (!current()) return {ok: false, reason: 'session_changed'};
     entry.receiverPreparation = preparation;
     if (!preparation.ok) return defer(preparation.reason || 'receiver_unavailable');
+    await ensureAttachmentHandlerForDispatch(tabId, attachments);
+    if (!current()) return {ok: false, reason: 'session_changed'};
     // Focus and editor settling overlap the write; ordinary storage latency
     // adds no extra pause. Still require ownership to be durable before Send.
     if (!await durable || !current()) return defer('checkpoint_not_ready');
@@ -1580,6 +1640,9 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
   };
   entry.lastDispatchAt = Date.now();
   entry.lastDispatchMeta = { dispatchReason: reason, sessionId, ...dispatchIdentityMeta };
+  // The dispatch owns delivery correlation before the page starts its observer.
+  // A failed preflight must not leave authority pointing at the previous attempt.
+  self.CompletionAuthorityRegistry?.recordAttempt?.(llmName, dispatchIdentityMeta);
   entry.dispatchCheckpoint = { dispatchId, phase: 'preparing' };
   entry.answerVerification = null;
   if (self.AnswerVerification?.appendTimeline) {
@@ -1650,7 +1713,7 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
     meta: { queueWaitMs, ...dispatchIdentityMeta, dispatchReason: reason, attempt: entry.dispatchAttempts, visibilityState, hasFocus }
   });
   emitTelemetry(llmName, 'DISPATCH_START', {
-    meta: { ...dispatchIdentityMeta, dispatchReason: reason, attempt: entry.dispatchAttempts, visibilityState, hasFocus }
+    meta: { ...dispatchIdentityMeta, dispatchReason: reason, attempt: entry.dispatchAttempts, visibilityState, hasFocus, attachmentCount: attachments.length }
   });
     try {
       if (machine) {
@@ -1819,6 +1882,8 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
         dispatchId, tabId, dispatchReason: reason, attempt: entry.dispatchAttempts || 0
       });
 
+      await ensureAttachmentHandlerForDispatch(tabId, attachments);
+      if (!isCurrentDispatchContext()) return;
       let needsFocus = false;
       let noFocusResponse = null;
       if (options.skipNoFocusProbe) {
@@ -2203,6 +2268,12 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
         }
       } catch (_) {}
       const submittedPayload = options.skipSubmitWait ? null : (waiter ? await waiter : false);
+      if (!isCurrentDispatchContext()) {
+        return { ok: false, stale: true, reason: 'session_mismatch' };
+      }
+      if (isTerminalLlmEntry(entry)) {
+        return { ok: false, terminal: true, dispatchId, reason: 'model_terminal' };
+      }
       if (!options.skipSubmitWait && commandDeliveryReported) {
         reportDispatchPhase(llmName, entry, submittedPayload?.ok === true || submittedPayload === true ? 'submitted' : 'submit_unconfirmed', {
           dispatchId, tabId, reason: submittedPayload?.reason || null,
@@ -2315,6 +2386,15 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
         }
       }
     } catch (err) {
+      if (!isCurrentDispatchContext() || isTerminalLlmEntry(entry)) {
+        const isCurrent = isCurrentDispatchContext();
+        return {
+          ok: false,
+          stale: !isCurrent,
+          terminal: isCurrent && isTerminalLlmEntry(entry),
+          reason: 'dispatch_context_invalidated'
+        };
+      }
       console.warn('[DISPATCH] dispatchPromptToTab failed', llmName, err);
       broadcastDiagnostic(llmName, { type: 'DISPATCH', label: 'Prompt dispatch error', details: err?.message || String(err), level: 'error' });
       scheduleDispatchRetry(entry, llmName, { type: err?.message || 'dispatch_error' });
@@ -2327,11 +2407,13 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
       }
       return { ok: false, accepted: false, reason: err?.message || String(err) };
     } finally {
-      try {
-        saveJobState(jobState);
-      } catch (_) {}
+      if (isCurrentDispatchContext()) {
+        try {
+          saveJobState(jobState);
+        } catch (_) {}
+      }
       promptDispatchInProgress = Math.max(0, promptDispatchInProgress - 1);
-      schedulePromptDispatchSupervisor();
+      if (isCurrentDispatchContext()) schedulePromptDispatchSupervisor();
     }
   });
 }
@@ -2351,6 +2433,20 @@ const matchesPerplexityTransientBlockerTransport = (entry, llmName, tabId, messa
     && blocker.dispatchId === messageDispatchId;
 };
 
+function queuedTabMessageContextFailure(llmName, initialEntry, sessionId, message) {
+  const liveEntry = jobState?.llms?.[llmName] || null;
+  const liveSessionId = Number(jobState?.session?.startTime || 0) || null;
+  const messageSessionId = Number(message?.meta?.runSessionId || message?.meta?.sessionId || 0) || null;
+  const messageDispatchId = message?.meta?.dispatchId || null;
+  const liveDispatchId = liveEntry?.lastDispatchMeta?.dispatchId || liveEntry?.runIdentity?.dispatchId || null;
+  if (!liveEntry) return 'entry_missing';
+  if (liveEntry !== initialEntry) return 'entry_changed';
+  if (sessionId !== liveSessionId || (messageSessionId && messageSessionId !== liveSessionId)) return 'session_changed';
+  if (messageDispatchId && messageDispatchId !== liveDispatchId) return 'dispatch_changed';
+  if (isTerminalLlmEntry(liveEntry)) return 'model_terminal';
+  return null;
+}
+
 function sendMessageSafely(tabId, llmName, message, attempt = 1, onSettled = null) {
   globalThis.LLMLog?.debug?.(`[BACKGROUND] Safely sending message to ${llmName} (tab ${tabId}), attempt ${attempt}`);
   const settle = (result) => {
@@ -2365,6 +2461,7 @@ function sendMessageSafely(tabId, llmName, message, attempt = 1, onSettled = nul
     return;
   }
   const initialEntry = jobState?.llms?.[llmName] || null;
+  const capturedSessionId = Number(currentSessionId || 0) || null;
   if (isTerminalLlmEntry(initialEntry)) {
     appendLogEntry(llmName, {
       type: 'COMMAND',
@@ -2431,6 +2528,12 @@ function sendMessageSafely(tabId, llmName, message, attempt = 1, onSettled = nul
   }
 
   chrome.tabs.get(tabId, (tab) => {
+    const contextFailure = queuedTabMessageContextFailure(llmName, initialEntry, capturedSessionId, message);
+    if (contextFailure) {
+      const terminal = contextFailure === 'model_terminal';
+      settle({ ok: false, stale: !terminal, terminal, reason: contextFailure });
+      return;
+    }
     if (chrome.runtime.lastError || !tab) {
       console.error(`[BACKGROUND] Tab ${tabId} for ${llmName} not found.`, chrome.runtime.lastError?.message);
       appendLogEntry(llmName, {
@@ -2448,6 +2551,21 @@ function sendMessageSafely(tabId, llmName, message, attempt = 1, onSettled = nul
     globalThis.LLMLog?.debug?.(`[BACKGROUND] Sending message to ${llmName}:`, message);
     chrome.tabs.sendMessage(tabId, message, (response) => {
       const liveEntry = jobState?.llms?.[llmName] || null;
+      const callbackContextFailure = queuedTabMessageContextFailure(
+        llmName,
+        initialEntry,
+        capturedSessionId,
+        message
+      );
+      if (callbackContextFailure) {
+        settle({
+          ok: false,
+          stale: callbackContextFailure !== 'model_terminal',
+          terminal: callbackContextFailure === 'model_terminal',
+          reason: callbackContextFailure
+        });
+        return;
+      }
       const callbackSessionId = Number(message?.meta?.runSessionId || message?.meta?.sessionId || 0) || null;
       const liveSessionId = Number(jobState?.session?.startTime || 0) || null;
       const callbackDispatchId = message?.meta?.dispatchId || null;
@@ -2579,7 +2697,8 @@ function sendMessageSafely(tabId, llmName, message, attempt = 1, onSettled = nul
             maxAttempts: 3,
             baseDelay: 1000,
             allowRecovery: llmName === 'Perplexity',
-            onSuccess: () => {
+            onSuccess: (result) => {
+              if (result?.status === 'ignored_stale') return;
               broadcastDiagnostic(llmName, {
                 type: 'PING',
                 label: 'post-send recovery probe sent',
@@ -2763,11 +2882,20 @@ function sendPassiveMessageWithRetries(tabId, llmName, message, {
   onError
 } = {}) {
   const initialEntry = jobState?.llms?.[llmName] || null;
+  const capturedSessionId = Number(jobState?.session?.startTime || 0) || null;
   if (isTerminalLlmEntry(initialEntry)) {
     onSuccess?.({ status: 'ignored_terminal' });
     return;
   }
   chrome.tabs.get(tabId, (tab) => {
+    const contextFailure = queuedTabMessageContextFailure(llmName, initialEntry, capturedSessionId, message);
+    if (contextFailure) {
+      onSuccess?.({
+        status: contextFailure === 'model_terminal' ? 'ignored_terminal' : 'ignored_stale',
+        reason: contextFailure
+      });
+      return;
+    }
     if (chrome.runtime.lastError || !tab) {
       const errMsg = chrome.runtime.lastError?.message || 'Tab not found';
       console.warn(`[BACKGROUND] Passive message: tab ${tabId} for ${llmName} unavailable: ${errMsg}`);
@@ -2776,9 +2904,17 @@ function sendPassiveMessageWithRetries(tabId, llmName, message, {
     }
 
     chrome.tabs.sendMessage(tabId, message, (response) => {
-      const liveEntry = jobState?.llms?.[llmName] || null;
-      if (isTerminalLlmEntry(liveEntry)) {
-        onSuccess?.({ status: 'ignored_terminal' });
+      const callbackContextFailure = queuedTabMessageContextFailure(
+        llmName,
+        initialEntry,
+        capturedSessionId,
+        message
+      );
+      if (callbackContextFailure) {
+        onSuccess?.({
+          status: callbackContextFailure === 'model_terminal' ? 'ignored_terminal' : 'ignored_stale',
+          reason: callbackContextFailure
+        });
         return;
       }
       if (chrome.runtime.lastError) {
@@ -2917,6 +3053,7 @@ self.runPromptDispatchSupervisor = runPromptDispatchSupervisor;
 self.dispatchPromptToTab = dispatchPromptToTab;
 self.sendMessageSafely = sendMessageSafely;
 self.sendPassiveMessageWithRetries = sendPassiveMessageWithRetries;
+self.cancelPendingDispatchCoordinatorWork = cancelPendingDispatchCoordinatorWork;
 self.DISPATCH_MAX_ATTEMPTS = DISPATCH_MAX_ATTEMPTS;
 self.clearScriptRuntimeHardStop = clearScriptRuntimeHardStop;
 self.clearAllScriptRuntimeHardStops = clearAllScriptRuntimeHardStops;

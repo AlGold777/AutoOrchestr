@@ -116,10 +116,10 @@ describe('start reservation', () => {
   test('the reservation is taken synchronously before the first await', () => {
     const fn = orchestrator.slice(orchestrator.indexOf('async function startProcess(prompt, selectedLLMs, resultsTab, options = {}) {'));
     const body = fn.slice(0, fn.indexOf('\n}\n'));
-    const reserveAt = body.indexOf('startProcessReserved = true;');
+    const reserveAt = body.indexOf('startProcessReserved = reservation;');
     expect(reserveAt).toBeGreaterThan(0);
     expect(body.slice(0, reserveAt)).not.toContain('await ');
-    expect(body).toContain('finally {\n    startProcessReserved = false;');
+    expect(body).toContain('finally {\n    if (startProcessReserved === reservation) startProcessReserved = null;');
   });
 
   test('later batches of the same pipeline run keep diagnostics and the proof ledger', () => {

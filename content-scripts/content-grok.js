@@ -59,7 +59,7 @@
       }
     }
   }) : null;
-  const attachmentHandler = window.AttachmentHandler || null;
+  const getAttachmentHandler = () => window.AttachmentHandler || null;
   const GROK_FALLBACK_LAST_MESSAGE_SELECTORS = [
     'div.message-bubble div.response-content-markdown',
     'div.relative.response-content-markdown',
@@ -2036,6 +2036,7 @@
 
         if (Array.isArray(attachments) && attachments.length) {
           let attachmentsOk = false;
+          const attachmentHandler = getAttachmentHandler();
           if (attachmentHandler?.attach) {
             const result = await attachmentHandler.attach(MODEL, attachments);
             attachmentsOk = result.success;
@@ -2591,6 +2592,8 @@
       if (!msg) return false;
       if (baseAdapter?.handleMessage(msg, _sender, sendResponse)) return true;
       if (msg?.type === 'STOP_AND_CLEANUP') {
+        if (typeof window.ContentUtils?.isStopCommandCurrent === 'function'
+            && !window.ContentUtils.isStopCommandCurrent(msg)) return false;
         handleForceStopMessage(msg.payload?.traceId);
         stopContentScript('manual-toggle');
         if (typeof sendResponse === 'function') {
@@ -2599,6 +2602,8 @@
         return false;
       }
       if (msg?.type === 'HUMANOID_FORCE_STOP') {
+        if (typeof window.ContentUtils?.isStopCommandCurrent === 'function'
+            && !window.ContentUtils.isStopCommandCurrent(msg)) return false;
         handleForceStopMessage(msg.payload?.traceId);
         if (typeof sendResponse === 'function') {
           sendResponse({ status: 'force_stop_ack' });

@@ -14,6 +14,7 @@ self.__codexFastActionOpenRegistered = false;
 const EXTENSION_RUNTIME_EPOCH_KEY = '__llm_extension_runtime_epoch_v1';
 const EXTENSION_VOLATILE_LOCAL_KEYS = [
   'llmTabMap',
+  'llmParticipantTabMap',
   'jobState',
   '__diagnostics_events__',
   'llmComparatorSelectedModelsByView.main',
@@ -256,6 +257,7 @@ importScripts(
   '../shared/proof-telemetry-policy.js',
   '../shared/proof-oriented-telemetry.js',
   '../shared/proof-telemetry-audit.js',
+  '../shared/response-viewer-retention.js',
   // disput/* модули загружаются только страницами UI (result_new.html,
   // pipeline_panel.html): фоновый слой не знает про Speaker/роли/очерёдность,
   // и это инвариант транспорта (см. docs/graph-mode/AUDIT_REPORT.md).
