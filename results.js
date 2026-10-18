@@ -6538,6 +6538,15 @@ document.addEventListener('click', (event) => {
                 });
                 return own;
             };
+            // The specification text (documents only, see BasicSchema SPEC_KEYS): the root spec and the title, goal, rules and
+            // quality of a step are not on the canvas, so they are kept from the source schema, as the fields above are.
+            const sourceSchema = basicSourceSchema.get(draftPlanStorageKey()) || null;
+            const withSpecText = (step) => {
+                const source = (sourceSchema?.steps || []).find((item) => item?.ref === step.ref);
+                const text = {};
+                ['title', 'goal', 'rules', 'quality'].forEach((key) => { if (source && key in source) text[key] = source[key]; });
+                return { ref: step.ref, kind: step.kind, ...text, ...step };
+            };
             const defaults = {};
             ['roundTask', 'synthesisTask'].forEach((key) => put(defaults, key, keepEmpty(general[key], key)));
             ['modelNotes', 'roundPrompts'].forEach((key) => put(defaults, key, legacyMap(general[key])));
@@ -6659,8 +6668,9 @@ document.addEventListener('click', (event) => {
             }
             const runValue = forSave ? (run || basicRunForSave()) : { policy: getDebateRunPolicy(), maxWords: getDebateMaxWords(), ...basicStrictLengthRun() };
             return { schemaVersion: window.BasicSchema.SCHEMA_VERSION, origin: 'user', ...(forSave && basedOn ? { basedOn } : {}),
+                ...(sourceSchema && 'spec' in sourceSchema ? { spec: JSON.parse(JSON.stringify(sourceSchema.spec)) } : {}),
                 ...(Object.keys(runValue).length ? { run: runValue } : {}),
-                ...(Object.keys(defaults).length ? { defaults } : {}), steps: withControls(steps) };
+                ...(Object.keys(defaults).length ? { defaults } : {}), steps: withControls(steps.map(withSpecText)) };
         };
         // The run values a saved schema holds: only those the owner set before (loaded as explicit) or that differ
         // from Basic. Opening a schema and saving it does not make the shown Basic values explicit.
@@ -6674,7 +6684,8 @@ document.addEventListener('click', (event) => {
         };
         const basicSchemaLoadErrors = new Map();
         // The schema the working copies were read from. The fields the canvas does not edit (output, require, owner, chat,
-        // a participant's input) are kept from it on Save and on Run; the control steps come from customControls.
+        // a participant's input, the specification text: spec and a step's title, goal, rules, quality) are kept from it on
+        // Save and on Run; the control steps come from customControls.
         const basicSourceSchema = new Map();
         // run.strictLength has no control in the ▶ window: the value the loaded schema holds goes on with Save and with the run.
         const basicStrictLengthRun = () => {

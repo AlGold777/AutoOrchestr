@@ -8,7 +8,10 @@
 // Schema: { schemaVersion, origin: 'builtin' | 'user', basedOn?, defaults?, steps }
 //   run: { policy?: 'auto' | 'manual', maxWords?, strictLength? } — the run policy, the shared answer limit and the strict length check
 //   defaults (the ▶ card): { roundTask?, synthesisTask?, discipline?, modelNotes?, roundPrompts? }
-//   step: { ref, kind: 'round' | 'synthesis', order?, input?, task?, models }
+//   spec: { purpose?, inputs?, result?, application?, readiness?, rules?, boundaries?, failure? } — the open pipeline's
+//     specification, text for the document only: the engine and the requests to models never read it (see SPEC_KEYS)
+//   step: { ref, kind: 'round' | 'synthesis', order?, input?, task?, models, title?, goal?, rules?, quality? }
+//   step text for the specification (title, goal, rules, quality): documents only, like spec
 //   model: { name, enabled?, onCanvas?, role?, request?, maxWords?, task?, discipline? }   (request: '' = no own request)
 //   enabled: false keeps a switched-off model with its settings; assemble() gives the engine no call for it.
 //   onCanvas: true keeps a model on the canvas although its Send is off in every round (toCanvas); assemble() ignores it.
@@ -27,13 +30,16 @@
   const ORIGINS = Object.freeze(['builtin', 'user']);
   const KINDS = Object.freeze(['round', 'synthesis', 'gate', 'route', 'owner']);
   const CONTROL_KINDS = Object.freeze(['gate', 'route', 'owner']);
+  // The specification text (documents only): the root `spec` and the text fields of a step. Engine and requests never read them.
+  const SPEC_KEYS = Object.freeze(['purpose', 'inputs', 'result', 'application', 'readiness', 'rules', 'boundaries', 'failure']);
+  const STEP_TEXT_KEYS = Object.freeze(['title', 'goal', 'rules', 'quality']);
   // The fields a step of each kind may have (an unknown field is an error with its path).
   const STEP_KEYS = Object.freeze({
-    round: Object.freeze(['ref', 'kind', 'order', 'input', 'task', 'models', 'output', 'require', 'owner', 'chat']),
-    synthesis: Object.freeze(['ref', 'kind', 'order', 'input', 'task', 'models', 'output', 'require', 'owner', 'chat']),
-    gate: Object.freeze(['ref', 'kind', 'input', 'task', 'models', 'output', 'require', 'chat', 'criteria', 'pass', 'onFail', 'onPass']),
-    route: Object.freeze(['ref', 'kind', 'input', 'task', 'models', 'select']),
-    owner: Object.freeze(['ref', 'kind', 'task', 'input', 'output', 'models'])
+    round: Object.freeze(['ref', 'kind', 'order', 'input', 'task', 'models', 'output', 'require', 'owner', 'chat', ...STEP_TEXT_KEYS]),
+    synthesis: Object.freeze(['ref', 'kind', 'order', 'input', 'task', 'models', 'output', 'require', 'owner', 'chat', ...STEP_TEXT_KEYS]),
+    gate: Object.freeze(['ref', 'kind', 'input', 'task', 'models', 'output', 'require', 'chat', 'criteria', 'pass', 'onFail', 'onPass', ...STEP_TEXT_KEYS]),
+    route: Object.freeze(['ref', 'kind', 'input', 'task', 'models', 'select', ...STEP_TEXT_KEYS]),
+    owner: Object.freeze(['ref', 'kind', 'task', 'input', 'output', 'models', ...STEP_TEXT_KEYS])
   });
   const CONTROL_REF = Object.freeze({
     gate: 'ref проверки: «gate:<id>», id — латинские буквы, цифры, «_» и «-»',
@@ -322,7 +328,14 @@
     else if (!SUPPORTED_VERSIONS.includes(schema.schemaVersion)) fail('schemaVersion', `версия формата ${schema.schemaVersion} не поддерживается`);
     oneOf(schema.origin, ORIGINS, 'origin', 'происхождение');
     if (schema.basedOn != null) text(schema.basedOn, 'basedOn');
-    unknownKeys(schema, ['schemaVersion', 'origin', 'basedOn', 'run', 'defaults', 'steps'], '');
+    unknownKeys(schema, ['schemaVersion', 'origin', 'basedOn', 'run', 'defaults', 'spec', 'steps'], '');
+    if ('spec' in schema) {
+      if (!isObject(schema.spec)) fail('spec', 'ожидается объект');
+      else {
+        unknownKeys(schema.spec, SPEC_KEYS, 'spec');
+        SPEC_KEYS.forEach((key) => { if (key in schema.spec) text(schema.spec[key], `spec.${key}`); });
+      }
+    }
     if (schema.run != null) {
       if (!isObject(schema.run)) fail('run', 'ожидается объект');
       else {
@@ -601,6 +614,7 @@
       }
       if ('input' in step) checkInput(step.input, `${path}.input`, step.kind, index);
       if ('task' in step) text(step.task, `${path}.task`);
+      STEP_TEXT_KEYS.forEach((key) => { if (key in step) text(step[key], `${path}.${key}`); });
       if (!Array.isArray(step.models)) { fail(`${path}.models`, 'ожидается список моделей'); return; }
       const ids = new Set();
       step.models.forEach((model, at) => {

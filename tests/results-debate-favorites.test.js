@@ -3283,6 +3283,53 @@ describe('Pipeline debate favorites view', () => {
         }
       });
 
+      test('the specification text (spec, a step\'s title, goal, rules, quality) survives Install, Save, a reload and Export/Import; a schema without it gets none', async () => {
+        const h = setupCustomInheritance('Spec host', { synthesis: '' });
+        try {
+          const spec = { purpose: 'Назначение', inputs: '', result: 'Итог', application: 'Применение', readiness: 'Готово', rules: 'Правила', boundaries: 'Границы', failure: 'Сбой' };
+          const schema = { schemaVersion: 1, origin: 'user', spec, steps: [
+            { ref: 'r1', kind: 'round', title: 'Сбор позиций', goal: 'Цель', rules: '', quality: 'Проверка', models: [{ name: 'GPT' }, { name: 'Claude' }] },
+            { ref: 'final', kind: 'synthesis', title: 'Итог', models: [{ name: 'Claude' }] }
+          ] };
+          expect(await h.debug.installBasicSchema('Spec installed', schema)).toEqual({ ok: true, errors: [] });
+          select('Spec installed');
+          await settleCustomCard();
+          const saved = h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' });
+          expect(saved.spec).toEqual(spec);
+          expect(saved.steps[0]).toMatchObject({ ref: 'r1', title: 'Сбор позиций', goal: 'Цель', rules: '', quality: 'Проверка' });
+          expect(saved.steps[1]).toMatchObject({ ref: 'final', title: 'Итог' });
+          expect(saved.steps[1]).not.toHaveProperty('goal');
+          // Save writes the text to the record; a reload of the record and a second save keep it as it was.
+          await saveAs('Spec saved');
+          expect((await storedRecord('Spec saved')).schema).toMatchObject({ spec, steps: [expect.objectContaining({ title: 'Сбор позиций', rules: '' }), expect.objectContaining({ title: 'Итог' })] });
+          reload(h, 'Spec saved');
+          await settleCustomCard();
+          const reloaded = h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' });
+          expect(reloaded.spec).toEqual(spec);
+          expect(reloaded.steps).toEqual(saved.steps);
+          // Export, then Import of the file: the same text.
+          const exported = h.debug.buildBasicExport();
+          expect(exported.ok).toBe(true);
+          expect(exported.schema.spec).toEqual(spec);
+          expect(await h.debug.installBasicSchema('Spec imported', JSON.parse(exported.text))).toEqual({ ok: true, errors: [] });
+          select('Spec imported');
+          await settleCustomCard();
+          const imported = h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' });
+          expect(imported.spec).toEqual(spec);
+          expect(imported.steps).toEqual(saved.steps);
+          // A schema without the text gets none on Save: nothing is written by itself.
+          const plain = { schemaVersion: 1, origin: 'user', steps: [{ ref: 'r1', kind: 'round', models: [{ name: 'GPT' }] }] };
+          expect(await h.debug.installBasicSchema('Plain', plain)).toEqual({ ok: true, errors: [] });
+          select('Plain');
+          await settleCustomCard();
+          await saveAs('Plain saved');
+          const record = (await storedRecord('Plain saved')).schema;
+          expect(record).not.toHaveProperty('spec');
+          expect(record.steps[0]).not.toHaveProperty('title');
+          expect(JSON.stringify(record)).not.toMatch(/"(title|goal|rules|quality|spec)"/);
+        } finally { h.cleanup(); }
+      }, 30000);
+
       test('run.strictLength of the schema survives Save, Export, the run and a second install; the run takes it for every step', async () => {
         const h = setupCustomInheritance('Strict run host', { synthesis: '' });
         try {

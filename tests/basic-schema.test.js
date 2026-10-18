@@ -1291,3 +1291,50 @@ describe('Basic schema: a switched-off declared participant keeps its declaratio
     expect(Schema.assemble(on)[0].models.map((model) => model.id)).toEqual(['A', 'gpt-1', 'c-1']);
   });
 });
+
+describe('Basic schema: the specification text (spec, a step\'s title, goal, rules, quality) is for the document only', () => {
+  const spec = { purpose: 'Назначение', inputs: '', result: 'Итог', application: 'Применение', readiness: 'Готово', rules: 'Правила', boundaries: 'Границы', failure: 'Сбой' };
+  const withText = (schema) => ({
+    ...schema,
+    spec,
+    steps: schema.steps.map((step, at) => ({ ...step, title: `Этап ${at + 1}`, goal: 'Цель', rules: '', quality: 'Критерии' }))
+  });
+  const plain = base([round('r1', ['A', 'B']), synthesis('final', ['C'])]);
+
+  test('a schema with the specification text is valid; an empty text is a value and stays', () => {
+    const schema = withText(plain);
+    expect(Schema.validate(schema)).toEqual([]);
+    expect(schema.spec.inputs).toBe('');
+    expect(schema.steps[0].rules).toBe('');
+  });
+
+  test('an unknown field of spec is an error with its path', () => {
+    expect(Schema.validate({ ...plain, spec: { purpose: 'x', foo: 'y' } })).toEqual([{ path: 'spec.foo', message: 'неизвестное поле' }]);
+  });
+
+  test('spec must be an object and its values text', () => {
+    expect(Schema.validate({ ...plain, spec: 'текст' })).toEqual([{ path: 'spec', message: 'ожидается объект' }]);
+    expect(Schema.validate({ ...plain, spec: null })).toEqual([{ path: 'spec', message: 'ожидается объект' }]);
+    expect(errorPaths({ ...plain, spec: { result: 3 } })).toEqual(['spec.result']);
+  });
+
+  test('title, goal, rules and quality of a step are text, on every kind of step', () => {
+    expect(errorPaths({ ...plain, steps: [{ ...plain.steps[0], goal: 1 }, plain.steps[1]] })).toEqual(['steps[0].goal']);
+    expect(errorPaths(base([round('r1', ['A']), synthesis('final', ['B'], { title: ['x'] })]))).toEqual(['steps[1].title']);
+    const gate = base([round('r1', ['A']), { ref: 'gate:check', kind: 'gate', criteria: ['Есть источники'], models: [{ name: 'A' }], quality: 5 }, synthesis('final', ['B'])]);
+    expect(errorPaths(gate)).toEqual(['steps[1].quality']);
+    expect(errorPaths({ ...gate, steps: [gate.steps[0], { ...gate.steps[1], quality: 'Проверка источников' }, gate.steps[2]] })).toEqual([]);
+  });
+
+  test('the text fields are not checked as a field the step does not have', () => {
+    expect(Schema.validate(withText(plain)).filter((error) => /title|goal|rules|quality|spec/.test(error.path))).toEqual([]);
+  });
+
+  test('the engine and the canvas do not read the text: the requests and the canvas are the same with and without it', () => {
+    const schema = withText(plain);
+    expect(Schema.assemble(schema, { roleText: () => 'ROLE' })).toEqual(Schema.assemble(plain, { roleText: () => 'ROLE' }));
+    const models = ['A', 'B', 'C'];
+    expect(Schema.toCanvas(schema, { models })).toEqual(Schema.toCanvas(plain, { models }));
+    expect(Schema.toSettings(schema)).toEqual(Schema.toSettings(plain));
+  });
+});
