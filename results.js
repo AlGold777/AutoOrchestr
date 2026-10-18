@@ -20525,6 +20525,7 @@ function buildAllResponsesExportHtml() {
     </style>
 </head>
 <body id="export-top" class="export-loading">
+<div id="report">
     <nav class="model-navigation" aria-label="Model responses">
         <a class="model-home-button" href="#export-top" aria-label="Back to top" title="Back to top"><span class="model-home-icon" aria-hidden="true">⌂</span><span class="model-home-label">Home</span></a>
 ${responseNavigation}
@@ -20539,6 +20540,8 @@ ${promptBlock || exportTimestamp ? `
 ${favoriteSections}
 ` : ''}
 ${htmlSections}
+</div>
+${window.DebateExport?.annotationScript?.() || ''}
 <script>
     (() => {
         const navigation = document.querySelector('.model-navigation');

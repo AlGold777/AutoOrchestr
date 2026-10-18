@@ -932,6 +932,8 @@ describe('Pipeline debate favorites view', () => {
     expect(html).toContain('.response-separator');
     expect(html).toContain('<h2>Favourite</h2>');
     expect(html).toContain('Base model response.');
+    expect(html).toContain('<div id="report">');
+    expect(html).toContain('function initReportAnnotations');
     expect(text).toContain('=== Favourite ===');
     expect(text).toContain('--- GPT ---');
     expect(text).toContain('[12:00]');
