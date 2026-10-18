@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-18 — Спецификация pipeline: поля смысла в схеме и генератор описания, версия 2.81.796
+
+- Схема Basic: необязательный блок `spec` (`purpose`, `inputs`, `result`, `application`, `readiness`, `rules`, `boundaries`, `failure`) и у шага `title`, `goal`, `rules`, `quality`. Это текст для документа: движок и запросы моделям их не используют; Save, загрузка, Export и Import сохраняют их без потерь.
+- `disput/basic-spec.js`: чистый генератор `BasicSpec.build(schema)` и `BasicSpec.toMarkdown(model)` собирает по схеме описание в три слоя (pipeline в целом, схема процесса, этапы); у каждого поля указан источник (`schema`, `author`, `default`, `missing`), считается заполненность. Подключён в `result_new.html` и `pipeline_panel.html`; окна «I» пока нет.
+- Документы: поля описаны в `basic-schema-guide.md`, модуль добавлен в карту `basic-developer.md`.
+- Известно: тест `HTML feed export button downloads the document with shared model icons` в `tests/results-debate-favorites.test.js` падает с 2.81.794 (экспорт с избранным) и не связан с этой правкой.
+
 ### 2026-10-18 — Подтверждение изображений без повторного прикрепления, версия 2.81.795
 
 - Общий обработчик учитывает имена файлов из `img.alt` и текстового DOM, а не только видимый текст и `title`/`aria-label`. Два PNG, показанные только превью, подтверждают загрузку всего пакета; разные атрибуты одного превью не считаются разными файлами.
