@@ -27,6 +27,7 @@ GPT подготавливает запрос через `ContentUtils.ensurePro
 | `disput/basic-artifacts.js` | `BasicArtifacts`, `createRegistry`, `register`, `latest`, `version`, `lineKey`, `markInvalid` | Реестр артефактов прогона: одна запись на версию, ссылка на ответ и указатель, без копии текста (чистые функции) |
 | `disput/basic-output.js` | `BasicOutput`, `checkAnswer`, `readPointer`, `parseJsonAnswer`, `countWords` | Проверка ответа по выходу шага: длина, JSON и поля, разделы, артефакты (чистые функции; вызывает движок) |
 | `disput/basic-control.js` | `BasicControl`, `verdictOf`, `passed`, `verdictInstruction`, `jsonValueOf`, `sameJson`, `matches`, `routeOf` | Вердикт проверки (gate): текст и JSON, правило `pass` all/any; условия правила маршрута, точное сравнение JSON, ответ модели маршрута; чистые функции (вызывает движок) |
+| `disput/basic-spec.js` | `BasicSpec`, `build`, `toMarkdown` | Описание pipeline «для человека» по схеме: три слоя (pipeline в целом, схема процесса, этапы), поля автора и автоматические поля, `missing` для незаполненного; чистые функции, без DOM (окно спецификации подключит их отдельно) |
 | `disput/custom-run-record.js` | `CustomRunRecord`, `createRun`, `recordAttempt`, `attemptKey`, `finishRun`, `serialize`, `revive`, `textOf`, `setSnapshot`, `setArtifacts`, `canResume`, `exportRun`, `createStore` | Запись о прогоне (версия 2: реестр и снимок состояния) |
 | `results/stage-card.js` | `StageCard`, `buildModel`, `render` | Окно настроек раунда |
 | `disput/pipeline-presets.js` | `BUILTIN_PIPELINE_DEFINITIONS`, `PIPELINE_PRESETS`, `makePreset` | Шаблон Basic и пресет `CUSTOM` |
@@ -74,6 +75,7 @@ GPT подготавливает запрос через `ContentUtils.ensurePro
 | `tests/custom-engine-owner.test.js` | Шаг владельца: текст и его проверка, пустой ответ, отмена и Stop, файлы, `unsupported_input` |
 | `tests/basic-artifacts.test.js` | Реестр артефактов: идемпотентность, последняя версия линии, авторы |
 | `tests/basic-output.test.js` | Проверка выхода: слова, JSON Pointer, порядок причин отказа |
+| `tests/basic-spec.test.js` | Описание pipeline: три слоя, поля автора и `missing`, связи `previous`/`all`/список, участие владельца, переходы проверки и маршрута, фикстура S01–S30, пустые схемы, Markdown |
 | `tests/basic-schema.test.js` | Формат схемы: наследование, сборка, проверка, `toCanvas`, `toSettings` |
 | `tests/basic-architecture-fixture.test.js` | Архитектура S01–S30 (`tests/fixtures/basic-architecture-s01-s30.json`, таблица `…map.json`): проверка, холст, настройки, прогоны на fake transport, бюджет |
 | `tests/basic-schema-guide.test.js` | Инструкция автора схем совпадает с кодом |
