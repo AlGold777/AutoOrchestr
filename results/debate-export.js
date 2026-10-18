@@ -75,192 +75,341 @@
     const report = document.getElementById('report');
     if (!report) return;
     window.__hlInit = true;
-    const skip = '#hl-favs,[data-hl-ui],nav,button,script,style,textarea,input,select,[hidden]';
-    const colors = ['#fff176', '#a5d6a7', '#81d4fa', '#f48fb1', '#ffcc80'];
-    let color = colors[0], range = null, point = null, frame = 0, handle = null, saving = false;
+    const COLORS = ['#fff176', '#a5d6a7', '#81d4fa', '#f48fb1', '#ffcc80'];
+    const SKIP = '#hl-favs,[data-hl-ui],nav,button,script,style,textarea,input,select';
+    const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+    const el = (tag, className, text) => {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text !== undefined) node.textContent = text;
+      return node;
+    };
+    const normalize = (text) => text.replace(/[ \t ]+/g, ' ').replace(/ ?\n ?/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+    let lastColor = COLORS[0], range = null, point = null, handle = null, frame = 0;
+
     if (!document.getElementById('hl-style')) {
-      const style = document.createElement('style');
+      const style = el('style');
       style.id = 'hl-style';
-      style.textContent = `mark.hl{color:inherit!important;border-radius:2px}.hl-flash{outline:2px solid red!important}#hl-favs{background:#fff;color:#222;border:1px solid #ddd;border-radius:8px;padding:16px;margin:0 0 24px}#hl-favs[hidden]{display:none}#hl-favs h2{margin:0 0 12px}#hl-favs article{border-left:5px solid;padding:8px 12px;margin:12px 0}#hl-favs .hl-note{white-space:pre-wrap;overflow-wrap:anywhere;user-select:text}#hl-favs a{color:#195b9b}#hl-favs button{margin-left:12px;cursor:pointer}#hl-toolbar{position:fixed;z-index:2147483647;display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px;background:#fff;color:#222;border:1px solid #bbb;border-radius:8px;box-shadow:0 3px 16px #0003;max-width:calc(100vw - 16px);box-sizing:border-box;font:14px Arial,sans-serif;color-scheme:light}#hl-toolbar[hidden]{display:none}#hl-toolbar button{border:1px solid #aaa;border-radius:4px;min-height:30px;cursor:pointer;color:#222;font:inherit}#hl-toolbar .hl-color{width:28px}#hl-toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);padding:10px 18px;border-radius:8px;background:#222;color:#fff;z-index:2147483647;font:14px Arial,sans-serif}`;
+      style.textContent = `
+        mark.hl { color: inherit; border-radius: 3px; padding: 0 1px; }
+        mark.hl.hl-flash { outline: 2px solid #3b6fd8; outline-offset: 1px; }
+        .hl-bar { position: fixed; display: none; z-index: 2147483647; align-items: center; gap: 6px; padding: 6px 8px;
+                  background: #fff; color: #334155; border: 1px solid #dbe3ee; border-radius: 12px;
+                  font: 13px system-ui, -apple-system, 'Segoe UI', sans-serif;
+                  box-shadow: 0 8px 24px rgba(30,41,59,.16), 0 1px 3px rgba(30,41,59,.08); }
+        .hl-btn { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; padding: 0;
+                  border: 1px solid transparent; border-radius: 8px; background: transparent; color: #64748b;
+                  font: 15px/1 system-ui, sans-serif; cursor: pointer; transition: background .12s, color .12s, transform .12s; }
+        .hl-btn:hover { background: #eef2f7; color: #1e293b; }
+        .hl-btn.hl-sw { width: 20px; height: 20px; border: 1px solid rgba(30,41,59,.2); border-radius: 50%; }
+        .hl-btn.hl-sw:hover { transform: scale(1.18); }
+        .hl-btn.hl-star:hover { background: #fff6e0; color: #d98a00; }
+        .hl-sep { width: 1px; height: 18px; margin: 0 2px; background: #e2e8f0; }
+        #hl-favs { margin: 0 0 24px; padding: 14px 16px; border: 1px solid #dbe3ee; border-radius: 14px; background: #f6f8fc;
+                   box-shadow: 0 1px 2px rgba(30,41,59,.05); font: 14px/1.55 system-ui, -apple-system, 'Segoe UI', sans-serif; color: #334155; }
+        #hl-favs h3 { margin: 0 0 10px; font-size: 19px; font-weight: 600; color: #475569; }
+        #hl-favs .hl-fav { margin: 8px 0 0; padding: 10px 12px 8px; background: #fff; border: 1px solid #e2e8f0;
+                           border-left: 4px solid rgb(118 198 255); border-radius: 10px; }
+        #hl-favs .hl-fav-t { white-space: pre-wrap; user-select: text; color: #1e293b; }
+        #hl-favs .hl-fav-m { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; font-size: 12px; }
+        #hl-favs .hl-fav-m a { color: #2f62c8; font-weight: 500; text-decoration: none; }
+        #hl-favs .hl-fav-m a:hover { text-decoration: underline; }
+        #hl-favs .hl-fav-x { width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px; background: none;
+                             color: #94a3b8; font-size: 13px; cursor: pointer; transition: background .12s, color .12s; }
+        #hl-favs .hl-fav-x:hover { background: #fdecec; color: #d03a3a; }
+        .hl-modal { position: fixed; inset: 0; z-index: 2147483647; display: flex; align-items: center; justify-content: center;
+                    background: rgba(15,23,42,.45); font: 14px system-ui, -apple-system, 'Segoe UI', sans-serif; }
+        .hl-modal-box { display: flex; flex-direction: column; gap: 8px; width: min(640px, 92vw); max-height: 90vh; box-sizing: border-box;
+                        padding: 14px; background: #fff; color: #1e293b; border-radius: 12px; }
+        .hl-modal textarea { width: 100%; height: 40vh; box-sizing: border-box; font: 11px/1.4 monospace; }
+        .hl-modal-row { display: flex; gap: 8px; justify-content: flex-end; }
+        .hl-toast { position: fixed; right: 12px; bottom: 12px; z-index: 2147483647; padding: 8px 14px; border-radius: 10px;
+                    background: #1e293b; color: #f1f5f9; font: 13px system-ui, -apple-system, 'Segoe UI', sans-serif;
+                    box-shadow: 0 8px 24px rgba(30,41,59,.25); }
+      `;
       document.head.append(style);
     }
-    const favs = document.getElementById('hl-favs') || document.createElement('section');
+
+    // Карточка «Избранное» — первый элемент #report; строится из mark[data-fav] (источник истины — DOM).
+    const favs = document.getElementById('hl-favs') || el('section');
     favs.id = 'hl-favs';
     report.prepend(favs);
-    const toolbar = document.createElement('div');
-    toolbar.id = 'hl-toolbar'; toolbar.dataset.hlUi = ''; toolbar.hidden = true;
-    toolbar.setAttribute('role', 'toolbar'); toolbar.setAttribute('aria-label', 'Выделение текста');
-    function button(label, action, background) {
-      const el = document.createElement('button');
-      el.type = 'button'; el.textContent = label;
-      if (background) {
-        el.className = 'hl-color'; el.style.background = background;
-        el.setAttribute('aria-label', 'Подсветить: ' + background);
-      }
-      el.addEventListener('mousedown', (event) => event.preventDefault());
-      el.addEventListener('click', action); toolbar.append(el);
-    }
-    colors.forEach((value) => button(' ', () => apply('color', value), value));
-    button('★ В избранное', () => apply('favorite'));
-    button('✕ Снять подсветку', () => apply('remove'));
-    document.body.append(toolbar);
-    const marks = () => [...report.querySelectorAll('mark.hl[data-fav]')];
-    const allowed = (node) => {
-      const el = node.nodeType === 1 ? node : node.parentElement;
-      return el && report.contains(el) && !el.closest(skip);
+
+    // ---------- Плавающая панель ----------
+    const bar = el('div', 'hl-bar');
+    bar.setAttribute('data-hl-ui', '');
+    const addButton = (className, title, text, onClick) => {
+      const node = el('button', 'hl-btn ' + className, text);
+      node.type = 'button';
+      node.title = title;
+      node.setAttribute('aria-label', title);
+      node.addEventListener('mousedown', (event) => event.preventDefault());   // не сбрасывать выделение
+      node.addEventListener('click', onClick);
+      bar.append(node);
+      return node;
     };
-    function forget(id) {
-      marks().filter((mark) => mark.dataset.fav === id).forEach((mark) => {
-        delete mark.dataset.fav; delete mark.dataset.favText; mark.removeAttribute('id');
+    COLORS.forEach((color) => {
+      addButton('hl-sw', 'Подсветить: ' + color, '', () => colorize(color)).style.background = color;
+    });
+    bar.append(el('span', 'hl-sep'));
+    addButton('hl-star', 'В избранное', '★', favorite);
+    addButton('', 'Снять подсветку', '✕', unhighlight);
+    document.body.append(bar);
+
+    const inBar = (event) => Boolean(event.target.closest?.('[data-hl-ui]'));
+    const hide = () => { bar.style.display = 'none'; range = null; };
+    const allowed = (node) => {
+      const element = node.nodeType === 1 ? node : node.parentElement;
+      return Boolean(element) && report.contains(element) && !element.closest(SKIP);
+    };
+
+    function place() {
+      const rects = range.getClientRects?.() ?? [];
+      const end = rects[rects.length - 1] || range.getBoundingClientRect?.() || { left: 0, right: 0, top: 0, height: 0 };
+      const w = bar.offsetWidth, h = bar.offsetHeight;
+      let left, top;
+      if (point) {
+        // мышь и тач: справа от точки; если не помещается — слева
+        const x = point.x - scrollX, y = point.y - scrollY;
+        left = x + 20 + w <= innerWidth - 4 ? x + 20 : x - 20 - w;
+        top = y - h / 2;
+      } else {
+        // клавиатура: справа от конца выделения
+        left = end.right + 12 + w <= innerWidth - 4 ? end.right + 12 : end.left - 12 - w;
+        top = end.top + (end.height - h) / 2;
+      }
+      bar.style.left = clamp(left, 4, innerWidth - w - 4) + 'px';
+      bar.style.top = clamp(top, 4, innerHeight - h - 4) + 'px';
+    }
+    function show() {
+      const selection = getSelection();
+      if (!selection.rangeCount || selection.isCollapsed || !allowed(selection.getRangeAt(0).commonAncestorContainer)) return hide();
+      range = selection.getRangeAt(0).cloneRange();
+      bar.style.display = 'flex';
+      place();
+    }
+    // Панель показывается синхронно на mouseup; события самой панели игнорируются
+    document.addEventListener('mouseup', (event) => {
+      if (inBar(event)) return;
+      point = { x: event.clientX + scrollX, y: event.clientY + scrollY };
+      show();
+    });
+    document.addEventListener('touchend', (event) => {
+      if (inBar(event)) return;
+      const touch = event.changedTouches[0];
+      point = touch ? { x: touch.clientX + scrollX, y: touch.clientY + scrollY } : null;
+      setTimeout(show, 150);
+    });
+    document.addEventListener('keyup', (event) => {
+      if (!event.shiftKey && !event.key.startsWith('Arrow')) return;
+      point = null;
+      show();
+    });
+    document.addEventListener('selectionchange', () => { if (getSelection().isCollapsed) hide(); });
+    const reposition = () => {
+      if (!range || frame) return;
+      frame = requestAnimationFrame(() => { frame = 0; if (range) place(); });
+    };
+    window.addEventListener('scroll', reposition, true);
+    window.addEventListener('resize', reposition);
+
+    // ---------- Подсветка ----------
+    const marks = () => [...report.querySelectorAll('mark.hl')];
+    // Каждый текстовый узел выделения получает свой mark; смещения считаются до правок DOM
+    function collect() {
+      const walker = document.createTreeWalker(report, NodeFilter.SHOW_TEXT);
+      const items = [];
+      while (walker.nextNode()) {
+        const node = walker.currentNode;
+        if (!node.nodeValue.trim() || !range.intersectsNode(node) || !allowed(node)) continue;
+        const start = node === range.startContainer ? range.startOffset : 0;
+        const end = node === range.endContainer ? range.endOffset : node.length;
+        if (start < end) items.push({ node, start, end });
+      }
+      return items;
+    }
+    // keep=true: уже подсвеченный текст сохраняет свой цвет (для ★)
+    function paint(items, color, keep) {
+      return items.map(({ node, start, end }) => {
+        if (end < node.length) node.splitText(end);
+        const text = start > 0 ? node.splitText(start) : node;
+        const old = text.parentElement.closest('mark.hl');
+        if (!old) {
+          const mark = el('mark', 'hl');
+          mark.style.background = color;
+          text.parentNode.insertBefore(mark, text);
+          mark.append(text);
+          return mark;
+        }
+        // уже подсвеченный фрагмент: старый mark делится на части, меняется только выбранная
+        const pieces = [...old.childNodes].map((child) => {
+          const piece = old.cloneNode(false);
+          piece.removeAttribute('id');
+          piece.style.background = child === text && !keep ? color : old.style.background;
+          piece.append(child);
+          return piece;
+        });
+        old.replaceWith(...pieces);
+        return pieces.find((piece) => piece.contains(text));
       });
     }
+    function unwrap(mark) {
+      mark.replaceWith(...mark.childNodes);
+    }
+    function finish() {
+      getSelection().removeAllRanges();
+      hide();
+      rebuild();
+    }
+    function colorize(color) {
+      lastColor = color;
+      const items = collect();
+      if (items.length) paint(items, color, false);
+      finish();
+    }
+    function favorite() {
+      const items = collect();
+      if (!items.length) return finish();
+      const text = normalize(getSelection().toString());   // до правок DOM; переносы между блоками сохраняются
+      const id = 'f' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+      const painted = paint(items, lastColor, true);
+      painted.forEach((mark) => { mark.dataset.fav = id; mark.removeAttribute('data-fav-text'); });
+      painted[0].dataset.favText = text;
+      finish();
+    }
+    // ✕ снимает подсветку целиком с пересекающихся mark и со всей заметки, которой они принадлежат
+    function unhighlight() {
+      if (range) {
+        const hits = marks().filter((mark) => allowed(mark) && range.intersectsNode(mark));
+        const ids = new Set(hits.map((mark) => mark.dataset.fav).filter(Boolean));
+        marks().filter((mark) => hits.includes(mark) || ids.has(mark.dataset.fav)).forEach(unwrap);
+        report.normalize();
+      }
+      finish();
+    }
+
+    // ---------- Карточка ----------
     function rebuild() {
       const groups = new Map();
       marks().forEach((mark) => {
-        const id = mark.dataset.fav;
-        if (!groups.has(id)) groups.set(id, []);
-        groups.get(id).push(mark);
+        if (!mark.dataset.fav) return;
+        if (!groups.has(mark.dataset.fav)) groups.set(mark.dataset.fav, []);
+        groups.get(mark.dataset.fav).push(mark);
       });
-      favs.replaceChildren(); favs.hidden = !groups.size;
-      const title = document.createElement('h2'); title.textContent = '★ Избранное (' + groups.size + ')';
-      favs.append(title);
+      favs.replaceChildren();
+      favs.style.display = groups.size ? '' : 'none';
+      if (!groups.size) return;
+      favs.append(el('h3', '', 'Избранное'));
       groups.forEach((items, id) => {
-        const text = items.find((mark) => mark.hasAttribute('data-fav-text'))?.dataset.favText
-          || items.map((mark) => mark.textContent).join('');
-        items.forEach((mark) => { mark.removeAttribute('id'); delete mark.dataset.favText; });
-        items[0].id = 'hl-' + id; items[0].dataset.favText = text;
-        const item = document.createElement('article'); item.style.borderColor = items[0].style.background;
-        const note = document.createElement('div'); note.className = 'hl-note'; note.textContent = text;
-        const link = document.createElement('a'); link.href = '#hl-' + id; link.textContent = '↗ к месту в тексте';
+        const saved = items.find((mark) => mark.dataset.favText);
+        const text = saved ? saved.dataset.favText : normalize(items.map((mark) => mark.textContent).join(' '));
+        items.forEach((mark) => { mark.removeAttribute('id'); mark.removeAttribute('data-fav-text'); });
+        const first = items[0];
+        first.id = 'hl-' + id;   // якорь работает и без скрипта
+        first.dataset.favText = text;
+
+        const row = el('div', 'hl-fav');
+        const body = el('div', 'hl-fav-t', text);
+        const meta = el('div', 'hl-fav-m');
+        const link = el('a', '', '▽');
+        link.href = '#' + first.id;
+        link.title = 'К месту в тексте';
+        link.setAttribute('aria-label', 'К месту в тексте');
         link.addEventListener('click', (event) => {
           event.preventDefault();
-          const target = items[0];
-          const card = target.closest('.feed-response'); if (card) card.hidden = false;
-          const prompt = target.closest('.export-prompt'); if (prompt) prompt.classList.remove('is-collapsed');
-          target.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+          for (let node = first; node; node = node.parentElement) node.hidden = false;   // скрытая карточка ленты
+          first.scrollIntoView({ behavior: 'smooth', block: 'center' });
           items.forEach((mark) => mark.classList.add('hl-flash'));
           setTimeout(() => items.forEach((mark) => mark.classList.remove('hl-flash')), 1500);
         });
-        const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = '✕';
+        const remove = el('button', 'hl-fav-x', '✕');
+        remove.type = 'button';
+        remove.title = 'Убрать из избранного (подсветка останется)';
         remove.setAttribute('aria-label', 'Убрать из избранного');
-        remove.addEventListener('click', () => { forget(id); rebuild(); });
-        item.append(note, link, remove); favs.append(item);
+        remove.addEventListener('click', () => {
+          items.forEach((mark) => { mark.removeAttribute('data-fav'); mark.removeAttribute('data-fav-text'); mark.removeAttribute('id'); });
+          rebuild();
+        });
+        meta.append(link, remove);
+        row.append(body, meta);
+        favs.append(row);
       });
     }
-    function selectedNodes(active) {
-      const walker = document.createTreeWalker(report, NodeFilter.SHOW_TEXT);
-      const result = [];
-      while (walker.nextNode()) {
-        const node = walker.currentNode;
-        if (!allowed(node) || !active.intersectsNode(node)) continue;
-        const start = node === active.startContainer ? active.startOffset : 0;
-        const end = node === active.endContainer ? active.endOffset : node.length;
-        if (end > start) result.push({ node, start, end });
-      }
-      return result;
-    }
-    function apply(action, value) {
-      if (!range || !allowed(range.startContainer) || !allowed(range.endContainer)) return;
-      const text = window.getSelection().toString();
-      const nodes = selectedNodes(range);
-      if (!nodes.length) return;
-      const touched = [...new Set(nodes.map(({ node }) => node.parentElement.closest('mark.hl')).filter(Boolean))];
-      if (action === 'remove' || action === 'favorite') {
-        new Set(touched.map((mark) => mark.dataset.fav).filter(Boolean)).forEach(forget);
-      }
-      if (action === 'remove') {
-        touched.forEach((mark) => { const parent = mark.parentNode; mark.replaceWith(...mark.childNodes); parent.normalize(); });
-      } else {
-        if (value) color = value;
-        const id = action === 'favorite' ? 'f' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8) : null;
-        const favoriteText = new Map(marks().filter((mark) => mark.hasAttribute('data-fav-text')).map((mark) => [mark.dataset.fav, mark.dataset.favText]));
-        nodes.forEach(({ node, start, end }) => {
-          const old = node.parentElement.closest('mark.hl');
-          if (end < node.length) node.splitText(end);
-          const selected = start ? node.splitText(start) : node;
-          const mark = document.createElement('mark'); mark.className = 'hl';
-          mark.style.background = action === 'favorite' && old ? old.style.background : color;
-          const fav = id || old?.dataset.fav;
-          if (fav) mark.dataset.fav = fav;
-          if (old) {
-            const pieces = [...old.childNodes].map((child) => {
-              if (child === selected) { mark.append(child); return mark; }
-              const copy = old.cloneNode(false); copy.removeAttribute('id'); delete copy.dataset.favText;
-              copy.append(child); return copy;
-            });
-            old.replaceWith(...pieces);
-          } else { selected.replaceWith(mark); mark.append(selected); }
-        });
-        favoriteText.forEach((fullText, fav) => {
-          const first = marks().find((mark) => mark.dataset.fav === fav);
-          if (first) first.dataset.favText = fullText;
-        });
-        if (id) marks().find((mark) => mark.dataset.fav === id).dataset.favText = text;
-      }
-      window.getSelection().removeAllRanges(); range = null; toolbar.hidden = true; rebuild();
-    }
-    function position() {
-      if (!range || toolbar.hidden) return;
-      const rects = range.getClientRects?.();
-      const end = rects?.[rects.length - 1] || range.getBoundingClientRect?.();
-      const x = point ? point.x : end?.right || 0, y = point ? point.y : end?.bottom || 0;
-      const box = toolbar.getBoundingClientRect();
-      const left = x + 20 + box.width <= innerWidth - 8 ? x + 20 : x - 20 - box.width;
-      toolbar.style.left = Math.max(8, Math.min(left, innerWidth - box.width - 8)) + 'px';
-      toolbar.style.top = Math.max(8, Math.min(y - box.height / 2, innerHeight - box.height - 8)) + 'px';
-    }
-    function show(event) {
-      if (toolbar.contains(event?.target)) return;
-      const selection = window.getSelection();
-      if (!selection.rangeCount || selection.isCollapsed) { toolbar.hidden = true; range = null; return; }
-      const active = selection.getRangeAt(0);
-      if (!allowed(active.startContainer) || !allowed(active.endContainer)) { toolbar.hidden = true; range = null; return; }
-      range = active.cloneRange();
-      point = event?.type === 'mouseup' ? { x: event.clientX, y: event.clientY } : null;
-      toolbar.hidden = false; position();
-    }
-    document.addEventListener('mouseup', show);
-    document.addEventListener('touchend', show);
-    document.addEventListener('keyup', (event) => { if (event.key !== 'Control' && event.key !== 'Meta') show(event); });
-    document.addEventListener('selectionchange', () => {
-      const sel = window.getSelection();
-      if (!sel.rangeCount || sel.isCollapsed || !allowed(sel.anchorNode) || !allowed(sel.focusNode)) {
-        toolbar.hidden = true; range = null;
-      }
-    });
-    function schedule() {
-      point = null;
-      if (!frame) frame = requestAnimationFrame(() => { frame = 0; position(); });
-    }
-    window.addEventListener('scroll', schedule, true); window.addEventListener('resize', schedule);
+
+    // ---------- Сохранение ----------
     function toast(text) {
       document.getElementById('hl-toast')?.remove();
-      const el = document.createElement('div'); el.id = 'hl-toast'; el.dataset.hlUi = ''; el.setAttribute('role', 'status'); el.textContent = text;
-      document.body.append(el); setTimeout(() => el.remove(), 1800);
+      const node = el('div', 'hl-toast', text);
+      node.id = 'hl-toast';
+      node.setAttribute('data-hl-ui', '');
+      node.setAttribute('role', 'status');
+      document.body.append(node);
+      setTimeout(() => node.remove(), 1800);
+    }
+    // Запасной путь: HTML в textarea — скопировать и вставить в новый .html
+    function showCopy(html) {
+      document.querySelector('[data-hl-copy]')?.remove();
+      const modal = el('div', 'hl-modal');
+      modal.setAttribute('data-hl-ui', '');
+      modal.setAttribute('data-hl-copy', '');
+      const box = el('div', 'hl-modal-box');
+      const message = el('div', '', 'Здесь автосохранение недоступно (предпросмотр). Откройте файл двойным кликом в Chrome/Edge или скопируйте HTML и вставьте в новый файл с расширением .html.');
+      const area = el('textarea');
+      area.readOnly = true;
+      area.value = html;
+      const row = el('div', 'hl-modal-row');
+      const copy = el('button', '', 'Копировать');
+      copy.type = 'button';
+      copy.addEventListener('click', async () => {
+        area.select();
+        try {
+          await navigator.clipboard.writeText(html);
+          copy.textContent = 'Скопировано';
+        } catch (_) {
+          document.execCommand('copy');
+          copy.textContent = 'Скопировано (Ctrl+C)';
+        }
+      });
+      const close = el('button', '', 'Закрыть');
+      close.type = 'button';
+      close.addEventListener('click', () => modal.remove());
+      row.append(copy, close);
+      box.append(message, area, row);
+      modal.append(box);
+      document.body.append(modal);
+      area.select();
     }
     async function save() {
-      if (saving) return;
-      saving = true;
-      const filename = (decodeURIComponent(location.pathname.split('/').pop() || '') || document.title || 'Отчёт')
-        .replace(/(?:_annotated)?\.html?$/i, '').replace(/[\\/:*?"<>|]/g, '_') + '_annotated.html';
-      const serialize = () => {
-        const clone = document.documentElement.cloneNode(true);
-        clone.querySelectorAll('[data-hl-ui]').forEach((node) => node.remove());
-        clone.querySelectorAll('.hl-flash').forEach((node) => node.classList.remove('hl-flash'));
-        return '<!DOCTYPE html>\n' + clone.outerHTML;
-      };
-      try {
-        if (window.showSaveFilePicker) {
-          try {
-            handle = handle || await window.showSaveFilePicker({ suggestedName: filename, types: [{ description: 'HTML', accept: { 'text/html': ['.html'] } }] });
-            const stream = await handle.createWritable(); await stream.write(serialize()); await stream.close(); toast('Сохранено'); return;
-          } catch (error) { if (error.name === 'AbortError') return; handle = null; }
+      const clone = document.documentElement.cloneNode(true);
+      clone.querySelectorAll('[data-hl-ui]').forEach((node) => node.remove());
+      clone.querySelectorAll('.hl-flash').forEach((node) => node.classList.remove('hl-flash'));
+      const html = '<!DOCTYPE html>\n' + clone.outerHTML;
+      const name = (decodeURIComponent(location.pathname.split('/').pop() || '') || 'report.html').replace(/\.html?$/i, '') + '_annotated.html';
+      // iframe (предпросмотр в приложении или почте): File System API там нет, а скачивание блокируется молча
+      let boxed = false;
+      try { boxed = window !== window.top; } catch (_) { boxed = true; }
+      if (!boxed && window.showSaveFilePicker) {
+        try {
+          handle = handle || await window.showSaveFilePicker({ suggestedName: name, types: [{ description: 'HTML', accept: { 'text/html': ['.html'] } }] });
+          const stream = await handle.createWritable();
+          await stream.write(html);
+          await stream.close();
+          return toast('Сохранено');
+        } catch (error) {
+          if (error.name === 'AbortError') return;
+          handle = null;
         }
-        const url = URL.createObjectURL(new Blob([serialize()], { type: 'text/html;charset=utf-8' }));
-        const link = document.createElement('a'); link.href = url; link.download = filename; link.click();
-        setTimeout(() => URL.revokeObjectURL(url), 1000); toast('Скачано копией');
-      } catch (_) { toast('Не удалось сохранить файл'); }
-      finally { saving = false; }
+      }
+      try {
+        const url = URL.createObjectURL(new Blob([html], { type: 'text/html;charset=utf-8' }));
+        const link = el('a');
+        link.href = url;
+        link.download = name;
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        toast(boxed ? 'Предпросмотр может блокировать скачивание' : 'Скачано копией — папка «Загрузки»');
+      } catch (_) { boxed = true; }
+      if (boxed) showCopy(html);
     }
     document.addEventListener('keydown', (event) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') { event.preventDefault(); save(); }
