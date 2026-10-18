@@ -622,16 +622,20 @@
     const names = [...new Set(files.map((file) => normalizeFilename(file?.name)).filter(Boolean))];
     if (!names.length) return {};
     const haystacks = [];
+    const attributeCounts = Object.fromEntries(names.map(name => [name, 0]));
     collectOpenRoots().forEach((root) => {
       try { haystacks.push(normalizeFilename(root.body?.innerText || root.innerText || root.textContent || '')); } catch (_) {}
+      try { haystacks.push(normalizeFilename(root.body?.textContent || root.textContent || '')); } catch (_) {}
       try {
-        root.querySelectorAll?.('[aria-label],[title],[data-testid],[data-test-id]').forEach((el) => {
-          haystacks.push(normalizeFilename([
-            el.getAttribute?.('aria-label'),
-            el.getAttribute?.('title'),
-            el.getAttribute?.('data-testid'),
-            el.getAttribute?.('data-test-id')
-          ].filter(Boolean).join(' ')));
+        const nodes = Array.from(root.querySelectorAll?.('[alt],[aria-label],[title],[data-testid],[data-test-id]') || []);
+        // Image uploads expose their filename through alt, with no text node.
+        // Count separate previews, but do not count alt + title on one preview
+        // twice, or both an ancestor label and its labelled descendant.
+        names.forEach(name => {
+          const matches = nodes.filter(el => ['alt', 'aria-label', 'title', 'data-testid', 'data-test-id']
+            .some(attribute => normalizeFilename(el.getAttribute?.(attribute)).includes(name)));
+          const leaves = matches.filter(el => !matches.some(other => other !== el && el.contains?.(other)));
+          attributeCounts[name] += leaves.length;
         });
       } catch (_) {}
     });
@@ -639,7 +643,7 @@
     // the same filename must be distinguishable. Take the maximum across text
     // and attribute views so one chip is not counted twice merely for its title.
     return Object.fromEntries(names.map(name => [name,
-      haystacks.reduce((count, text) => Math.max(count, text.split(name).length - 1), 0)
+      Math.max(attributeCounts[name], haystacks.reduce((count, text) => Math.max(count, text.split(name).length - 1), 0))
     ]));
   };
   const countFilenameEvidence = (files = []) => Object.values(filenameEvidenceCounts(files)).reduce((sum, count) => sum + count, 0);
@@ -708,6 +712,22 @@
     filenameEvidenceCount: countFilenameEvidence(files)
   });
 
+  const uploadWasObserved = (config, baseline, files) => {
+    if (countSelectorMatches(config.confirmSelectors || []) > Number(baseline.confirmCount || 0)
+      || countSelectorMatches(config.confirmGoneSelectors || []) > Number(baseline.progressCount || 0)) return true;
+    const counts = filenameEvidenceCounts(files);
+    return Object.keys(counts).some(name => counts[name] > Number(baseline.filenameEvidenceByName?.[name] || 0));
+  };
+
+  // Keep an unconfirmed upload across automatic dispatch repairs in this page.
+  // Retrying observation must not add the same accepted files again.
+  const pendingUploads = new Map();
+  const attachmentBatchKey = (attachments) => JSON.stringify(attachments.map(item => {
+    let hash = 2166136261;
+    for (const char of String(item.base64 || '')) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619) >>> 0;
+    return [item.name, item.type, item.size, hash];
+  }));
+
   const waitForUploadConfirmation = async (config, expectedCount = 1, baselineState = null, files = [], confirmTimeoutMs = null, allowInputFileCountEvidence = true, onPoll = null) => {
     const confirmSelectors = config.confirmSelectors || [];
     const confirmGoneSelectors = config.confirmGoneSelectors || [];
@@ -735,6 +755,7 @@
     let sawProgress = false;
     let evidenceAt = 0;
     let providerEvidenceSeen = false;
+    let deliveryObserved = false;
     const baselineFilenameEvidence = Number(baselineState?.filenameEvidenceCount || 0);
     const requiredNames = {};
     files.forEach(file => {
@@ -748,6 +769,8 @@
       const inputFileCount = countAttachedInputFiles();
       const filenameCounts = filenameEvidenceCounts(files);
       const filenameEvidenceCount = Object.values(filenameCounts).reduce((sum, count) => sum + count, 0);
+      if (currentCount > baseline || Object.keys(filenameCounts).some(name =>
+        filenameCounts[name] > Number(baselineState?.filenameEvidenceByName?.[name] || 0))) deliveryObserved = true;
       const selectorEvidence = currentCount >= baseline + requiredDelta;
       // Only admissible when this vector did not assign input.files itself --
       // see the caller. Reading back our own write is not an observation.
@@ -784,7 +807,7 @@
         // timeout even while the file was visibly attached" -- the file was
         // attached; the gate simply never opened.
         const activeProgress = Math.max(0, progressCount - baselineProgress);
-        if (activeProgress > 0) sawProgress = true;
+        if (activeProgress > 0) { sawProgress = true; deliveryObserved = true; }
         const settled = activeProgress === 0
           && hasEvidence
           && Date.now() - evidenceAt >= requiredSettleMs;
@@ -828,6 +851,7 @@
       baselineProgress,
       progressCount: countSelectorMatches(confirmGoneSelectors),
       sawProgress,
+      deliveryObserved,
       elapsedMs: totalTimeoutMs
     };
   };
@@ -1118,12 +1142,27 @@
     let attached = false;
     let attempted = false;
     const expectedCount = files.length;
+    const meta = global.ContentUtils?.ensureDispatchMeta?.({}, model) || {};
+    const runSessionId = String(meta.runSessionId || meta.sessionId || '');
+    const batchKey = attachmentBatchKey(attachments);
+    const previousUpload = pendingUploads.get(model);
+    const pending = runSessionId && previousUpload?.runSessionId === runSessionId && previousUpload?.batchKey === batchKey
+      ? previousUpload : null;
+    if (!pending) pendingUploads.delete(model);
+    let observedDelivery = Boolean(pending);
+    let lastStrategy = pending?.strategy || null;
     // The entire delivery attempt shares a baseline. A slow first vector may
     // render its chip during a fallback; recapturing would absorb that upload
     // into the old state and require yet another copy to appear.
-    const baselineState = captureUploadBaseline(config);
-    baselineState.filenameEvidenceByName = filenameEvidenceCounts(files);
-    baselineState.filenameEvidenceCount = Object.values(baselineState.filenameEvidenceByName).reduce((sum, count) => sum + count, 0);
+    const baselineState = pending?.baselineState || captureUploadBaseline(config);
+    if (!pending) {
+      baselineState.filenameEvidenceByName = filenameEvidenceCounts(files);
+      baselineState.filenameEvidenceCount = Object.values(baselineState.filenameEvidenceByName).reduce((sum, count) => sum + count, 0);
+    }
+    const rememberObservedUpload = () => {
+      observedDelivery = true;
+      if (runSessionId) pendingUploads.set(model, { runSessionId, batchKey, baselineState, strategy: lastStrategy });
+    };
 
     // Per-model ordered strategy list. Each strategy first tries the main-world
     // bridge (authentic DataTransfer/events in page context), then a content-script
@@ -1180,6 +1219,13 @@
     // / "file already added" bug on ChatGPT). Returns 'delivered' to break the
     // loop, or false to fall through to the next vector.
     const tryVia = async (strategy, dispatchFn) => {
+      if (observedDelivery) return false;
+      // A preview can arrive just after the preceding poll expired. Observe
+      // before mutating again, not only after the next copy has been added.
+      if (attempted && uploadWasObserved(config, baselineState, files)) {
+        rememberObservedUpload();
+        return false;
+      }
       // Never mutate the composer when no observation budget remains. Otherwise
       // the final vector inserts a file and immediately declares it unconfirmed.
       if (confirmSpentMs >= cascadeBudgetMs) return false;
@@ -1223,6 +1269,7 @@
         return false;
       }
       attempted = true;
+      lastStrategy = strategy;
       emitAttachmentTelemetry(model, 'ATTACHMENT_DISPATCHED', strategy, 'info', {
         strategy,
         expectedCount,
@@ -1295,6 +1342,10 @@
         cascadeRemainingMs: Math.max(0, cascadeBudgetMs - confirmSpentMs),
         ...confirmation
       });
+      if (confirmation?.deliveryObserved || uploadWasObserved(config, baselineState, files)) {
+        rememberObservedUpload();
+        return false;
+      }
       // Observation found nothing. Accept the dispatch only where the provider is
       // configured to allow it, and never silently: this is the state in which a
       // prompt can still go out without its file, so it must be visible in the
@@ -1350,10 +1401,20 @@
 
     for (const strat of strategies) {
       attached = await runStrategy(strat);
-      if (attached || (attempted && config.singleDispatch)) break;
+      if (attached || observedDelivery || (attempted && config.singleDispatch)) break;
+    }
+    if (!attached && observedDelivery && confirmSpentMs < cascadeBudgetMs) {
+      const confirmation = await waitForUploadConfirmation(
+        config, expectedCount, baselineState, files, cascadeBudgetMs - confirmSpentMs, false,
+        () => reportAttachmentProgress(model)
+      );
+      attached = confirmation?.confirmed === true;
+      emitAttachmentTelemetry(model, attached ? 'ATTACHMENT_CONFIRMED' : 'ATTACHMENT_CONFIRM_TIMEOUT', lastStrategy || 'observation', attached ? 'success' : 'warning', {
+        strategy: lastStrategy, expectedCount, observationOnly: true, ...confirmation
+      });
     }
     if (!attached) {
-      reportFailure(attempted ? 'TIMEOUT' : 'MANUAL_REQUIRED');
+      reportFailure(attempted || observedDelivery ? 'TIMEOUT' : 'MANUAL_REQUIRED');
       return {
         success: false,
         delivered: false,
@@ -1362,9 +1423,10 @@
         evidence: null,
         uploadedCount: 0,
         failedFiles: attachments,
-        reason: attempted ? 'TIMEOUT' : 'MANUAL_REQUIRED'
+        reason: attempted || observedDelivery ? 'TIMEOUT' : 'MANUAL_REQUIRED'
       };
     }
+    pendingUploads.delete(model);
     global.ContentUtils?.reportDispatchStage?.(model, {}, 'attachment_upload_completed', {
       outcome: 'confirmed', attachmentCount: attachments.length, uploadedCount: files.length
     });

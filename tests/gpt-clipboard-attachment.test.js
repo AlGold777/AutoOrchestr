@@ -24,7 +24,10 @@ describe('GPT attachment isolation', () => {
     expect(gptConfig).toContain("strategies: ['drop', 'input']");
     expect(gptConfig).not.toContain("'paste'");
     expect(gptConfig).not.toContain("'clipboard'");
-    expect(HANDLER_SRC).toContain('const baselineState = captureUploadBaseline(config)');
+    // A pending request reuses the original baseline only for the same run and
+    // file batch; otherwise a fresh baseline keeps old chips from confirming.
+    expect(HANDLER_SRC).toMatch(/const baselineState = pending\?\.baselineState \|\| captureUploadBaseline\(config\)/);
+    expect(HANDLER_SRC).toContain('const pending = runSessionId && previousUpload?.runSessionId === runSessionId');
   });
 
   test('unconfirmed attachment blocks the prompt instead of sending without the file', () => {
