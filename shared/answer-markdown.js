@@ -16,6 +16,19 @@
     'image', 'link', 'artifact', 'source', 'file', 'output'];
   const DIAGRAM_LANGS = new Set(['mermaid', 'plantuml', 'puml', 'dot', 'graphviz', 'd2']);
 
+  // context.outsideBlocks[].type -> report type
+  const DIAGRAM_HINT_RE = /диаграм|diagram|chart|график|svg|mermaid|схем/i;
+  const OUTSIDE_TYPES = {
+    embed: (b) => (DIAGRAM_HINT_RE.test(String(b.hint || '')) ? 'diagram' : 'artifact'),
+    widget: (b) => (DIAGRAM_HINT_RE.test(String(b.hint || '')) ? 'diagram' : 'artifact'),
+    artifact: (b) => (DIAGRAM_HINT_RE.test(String(b.hint || '')) ? 'diagram' : 'artifact'),
+    svg: () => 'svg',
+    image: () => 'image',
+    canvas: () => 'diagram',
+    media: () => 'file',
+    code: () => 'code'
+  };
+
   const SKIP_TAGS = new Set(['script', 'style', 'noscript', 'template', 'head', 'link', 'meta', 'button',
     'select', 'option', 'textarea', 'iframe', 'object', 'embed']);
   const BLOCK_TAGS = new Set(['address', 'article', 'aside', 'blockquote', 'body', 'dd', 'details', 'dialog',
@@ -802,6 +815,30 @@
     let markdown = blocks.join('\n\n');
     if (st.footers.length) markdown += (markdown ? '\n\n' : '') + st.footers.join('\n');
 
+    // Blocks of the assistant turn that lie outside the converted element (WP3: context.outsideBlocks).
+    // Their content is unreachable here, so each one is a counted placeholder appended at the end.
+    const outside = Array.isArray(context.outsideBlocks) ? context.outsideBlocks.filter((b) => b && typeof b === 'object') : [];
+    if (outside.length) {
+      const lines = outside.map((b, i) => {
+        const type = OUTSIDE_TYPES[b.type] ? OUTSIDE_TYPES[b.type](b) : 'artifact';
+        st.found[type] = (st.found[type] || 0) + 1;
+        const hint = String(b.hint || b.tag || b.type || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+        const pos = Number.isFinite(Number(b.position)) && Number(b.position) > 0 ? Math.floor(Number(b.position)) : st.pos + 1 + i;
+        return addPlaceholder(st, type, `блок вне выбранного элемента ответа${b.beforeSelected ? ' (перед ним)' : ''}: ${hint || 'без описания'}`, pos, type);
+      });
+      markdown += (markdown ? '\n\n' : '') + lines.join('\n\n');
+      flags.outsideBlocks = outside.length;
+    }
+    if (context.outsideBlocksTruncated) {
+      const n = Number(context.outsideBlocksTruncated);
+      const what = Number.isFinite(n) && n > 0 ? `ещё ${n} блоков` : 'часть блоков';
+      markdown += (markdown ? '\n\n' : '') + addPlaceholder(st, 'блок', `${what} вне выбранного элемента не перечислены`, st.pos + 1 + outside.length, null);
+      flags.outsideBlocks = flags.outsideBlocks || 0;
+    }
+    if (Array.isArray(context.notes) && context.notes.some((n) => /контейнер хода не определён/i.test(String(n)))) {
+      flags.turnUnresolved = true;
+    }
+
     const max = Number(opts.maxChars);
     if (Number.isFinite(max) && max > 0 && markdown.length > max) {
       markdown = markdown.slice(0, max).replace(/\s+$/, '')
@@ -831,7 +868,7 @@
       flags,
       complete: false
     };
-    report.complete = !mismatches.length && !st.placeholders.length && !flags.generating
+    report.complete = !flags.turnUnresolved && !mismatches.length && !st.placeholders.length && !flags.generating
       && !flags.truncated && !(flags.collapsed > 0);
     return { markdown, report };
   }

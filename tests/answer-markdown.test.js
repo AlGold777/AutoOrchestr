@@ -475,3 +475,51 @@ describe('claimsUi и контекст артефактов', () => {
     expect(run('<p>x</p>', { context: { artifactRefs: 2, artifactPanels: 1 } }).report.complete).toBe(true);
   });
 });
+
+describe('context.outsideBlocks и turnUnresolved', () => {
+  const ctx = {
+    outsideBlocks: [
+      { type: 'embed', tag: 'iframe', hint: 'диаграмма Claude', position: 3, beforeSelected: true },
+      { type: 'canvas', tag: 'canvas', hint: 'chart', position: 4 },
+      { type: 'media', tag: 'video', hint: 'видео' }
+    ]
+  };
+
+  test('каждый блок вне элемента — заглушка в конце, в found и placeholders', () => {
+    const r = run('<p>текст</p>', { context: ctx });
+    const lines = r.markdown.split('\n\n');
+    expect(lines[0]).toBe('текст');
+    expect(lines[1]).toBe('[НЕ СКОПИРОВАНО: тип=diagram, причина=блок вне выбранного элемента ответа (перед ним): диаграмма Claude, позиция=3]');
+    expect(r.report.found).toEqual({ diagram: 2, file: 1 });
+    expect(r.report.placeholders.map((p) => p.type)).toEqual(['diagram', 'diagram', 'file']);
+    expect(r.report.mismatches).toEqual([]);
+    expect(r.report.flags.outsideBlocks).toBe(3);
+    expect(r.report.complete).toBe(false);
+  });
+
+  test('заглушки идут после футера сносок', () => {
+    const off = AM.registerBlock({ name: 't-fn', type: 'source', priority: 100, censusSelector: '.fn', match: (e) => e.classList && e.classList.contains('fn'), render: (e, c) => { c.addFooter('[^1]: u'); return { markdown: '[^1]' }; } });
+    const r = run('<p>a<span class="fn">1</span></p>', { context: { outsideBlocks: [{ type: 'svg', hint: 'x' }] } });
+    off();
+    expect(r.markdown.indexOf('[^1]: u')).toBeLessThan(r.markdown.indexOf('тип=svg'));
+  });
+
+  test('outsideBlocksTruncated — отдельная заглушка, не в found', () => {
+    const r = run('<p>a</p>', { context: { outsideBlocks: [{ type: 'image', hint: 'i' }], outsideBlocksTruncated: 7 } });
+    expect(r.markdown).toContain('тип=блок, причина=ещё 7 блоков вне выбранного элемента не перечислены');
+    expect(r.report.found).toEqual({ image: 1 });
+    expect(r.report.mismatches).toEqual([]);
+    expect(r.report.complete).toBe(false);
+  });
+
+  test('«контейнер хода не определён» -> flags.turnUnresolved и complete=false', () => {
+    const r = run('<p>a</p>', { context: { notes: ['контейнер хода не определён'] } });
+    expect(r.report.flags.turnUnresolved).toBe(true);
+    expect(r.report.complete).toBe(false);
+  });
+
+  test('пустой/отсутствующий outsideBlocks — без изменений', () => {
+    expect(run('<p>a</p>', { context: { outsideBlocks: [], notes: ['другое'] } })).toEqual(run('<p>a</p>'));
+    expect(run('<p>a</p>').report.flags).toEqual({});
+  });
+});

@@ -138,8 +138,8 @@ AnswerMarkdown.PLACEHOLDER_RE               // /\[НЕ СКОПИРОВАНО: �
   copied:  { [type]: number },        // что попало в markdown как содержимое
   placeholders: [ { type, reason, position } ],   // position — порядковый номер блока в документе, с 1
   mismatches: [ { type, found, copied, placeholders } ], // found !== copied + placeholders
-  flags: { generating?: bool, truncated?: bool, collapsed?: number, version?: string, regenerated?: bool },
-  complete: boolean   // false при любом mismatch, placeholder или неполноте из flags
+  flags: { generating?: bool, truncated?: bool, collapsed?: number, version?: string, regenerated?: bool, outsideBlocks?: number, turnUnresolved?: bool },
+  complete: boolean   // false при любом mismatch, placeholder или неполноте из flags (в т.ч. turnUnresolved)
 }
 ```
 Типы для счёта (`found/copied`): `heading, list, quote, hr, code, table, math, diagram, svg, image, link, artifact, source, file, output`. Для `math` допустимо различать `math_inline`/`math_block` в `found/copied`; число типов расширяется только добавлением.
@@ -197,3 +197,7 @@ AnswerMarkdown.PLACEHOLDER_RE               // /\[НЕ СКОПИРОВАНО: �
 - Минимальность: ничего сверх требований раздела 2; без новых настроек и интерфейсов.
 - Тесты с реальной разметкой — только из фикстур репозитория или минимальных вручную составленных образцов с пометкой «синтетика, по известной структуре».
 - Отчёт: что сделано по каждому пункту раздела 2 из своей зоны (сделано / частично / нет), список файлов, результаты тестов, открытые вопросы и запросы к другим пакетам.
+
+**Блоки вне выбранного элемента (4.1, дополнение).** `options.context.outsideBlocks: [{ type: 'embed'|'svg'|'image'|'canvas'|'media'|'widget'|'artifact'|'code', tag, hint, position, beforeSelected }]` (+ `outsideBlocksTruncated`, `notes`) — блоки хода ассистента вне конвертируемого элемента. Движок добавляет по заглушке на каждый в конец markdown (после футера сносок; `embed/widget/artifact`→`artifact` или `diagram` по `hint`, `svg`→`svg`, `image`→`image`, `canvas`→`diagram`, `media`→`file`, `code`→`code`; причина «блок вне выбранного элемента ответа: <hint>»), учитывает их в `found` и `placeholders`, ставит `flags.outsideBlocks=N`, `complete=false`. `outsideBlocksTruncated` даёт отдельную заглушку `тип=блок` (вне `found`). Нота «контейнер хода не определён» в `context.notes` → `flags.turnUnresolved=true`, `complete=false`.
+
+**Сбор контекста (WP3, `AnswerCopyContext.collect`).** `collect(messageEl, options)` определяет контейнер хода: `options.turn` → `options.turnSelector` (ближайший предок, напр. `messageRoot` провайдера из `answer-pipeline-selectors.js`) → ближайший общий предок, который не содержит пользовательского сообщения и композера и не содержит большего числа ассистентских сообщений. Не определён — `notes: ['контейнер хода не определён']`, `outsideBlocks=[]`. Внутри хода перечисляются нетекстовые блоки вне `messageEl`, в порядке документа, без побочных эффектов: `iframe/object/embed`→`embed`, `canvas`, `video/audio`→`media`, `svg` и `img` крупнее 48px (в т.ч. в обёртках button/aria-hidden)→`svg`/`image`, `pre`→`code`, элементы с shadowRoot и с признаками diagram/chart/visual/widget/mermaid/canvas в id, class, aria-label, data-* или с role=img/figure/dialog→`widget`, со словом artifact→`artifact`. Вложенное в найденный блок отдельно не считается; не более 50 записей, остальное — `outsideBlocksTruncated`. `hint` — тег, шаблон id (цифры→0), role, data-testid, без текста. Признаки общие, **не проверены вживую**. Также в контексте: `artifactRefs`, `artifactPanels` (панели вне сообщения, `artifactPanelEls`), `embeds`, `lazy`.

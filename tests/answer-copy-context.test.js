@@ -115,4 +115,48 @@ describe('синтетика, по известной структуре', () =>
     mount('<div id="m"><iframe></iframe><object></object></div>');
     expect(collect(document.getElementById('m')).embeds).toBe(2);
   });
+
+  describe('блоки хода вне выбранного элемента (синтетика, по общим признакам; не проверено вживую)', () => {
+    const SVG = '<svg viewBox="0 0 200 100"><rect width="50" height="20"/><rect x="60" width="50" height="20"/><path d="M1 1L2 2"/><path d="M1 1L5 5"/><text>A</text></svg>';
+    test('диаграмма-сестра после текстового сегмента', () => {
+      mount(`<main><div data-role="user">q</div><div id="turn"><div id="m" data-role="assistant">текст</div><div data-testid="diagram-block">${SVG}</div></div></main>`);
+      const c = collect(document.getElementById('m'));
+      expect(c.outsideBlocks).toEqual([{ type: 'widget', tag: 'div', hint: 'div data-testid=diagram-block', position: 1, beforeSelected: false }]);
+      expect(c.turnEl.id).toBe('turn');
+    });
+    test('виджет между сегментами: перед и после', () => {
+      mount('<div id="turn"><div id="a"><iframe></iframe></div><div id="m">т</div><canvas width="300" height="200"></canvas></div>');
+      const c = collect(document.getElementById('m'), { turn: document.getElementById('turn') });
+      expect(c.outsideBlocks.map((b) => [b.type, b.beforeSelected, b.position])).toEqual([['embed', true, 1], ['canvas', false, 2]]);
+    });
+    test('svg вне выбранного, в обёртке button; иконка и маленькое img — нет', () => {
+      mount(`<div id="turn"><div id="m">т</div><div role="button">${SVG}</div><button><svg viewBox="0 0 24 24"><path d="M1 1"/></svg></button><img width="16" height="16"></div>`);
+      const c = collect(document.getElementById('m'), { turn: document.getElementById('turn') });
+      expect(c.outsideBlocks.map((b) => b.type)).toEqual(['svg']);
+    });
+    test('артефакт, pre вне выбранного, кастомный элемент с shadowRoot', () => {
+      mount('<div id="turn"><div id="m">т</div><div data-artifact-card><div class="chart">x</div></div><pre>код</pre><my-w id="w1234567"></my-w></div>');
+      document.querySelector('my-w').attachShadow({ mode: 'open' });
+      const c = collect(document.getElementById('m'), { turn: document.getElementById('turn') });
+      expect(c.outsideBlocks.map((b) => b.type)).toEqual(['artifact', 'code', 'widget']);
+      expect(c.outsideBlocks[2].hint).toBe('my-w #w0');
+    });
+    test('ничего вне: пусто; хода нет: пометка', () => {
+      mount('<div id="turn"><div id="m"><svg viewBox="0 0 200 100"><text>внутри</text></svg>т</div></div>');
+      const c = collect(document.getElementById('m'), { turn: document.getElementById('turn') });
+      expect(c.outsideBlocks).toEqual([]);
+      mount('<div id="m">т</div>');
+      const d = collect(document.getElementById('m'));
+      expect(d.notes).toContain('контейнер хода не определён');
+      expect(d.outsideBlocks).toEqual([]);
+    });
+    test('автоопределение хода останавливается перед пользовательским сообщением и композером; лимит 50', () => {
+      mount('<main><div data-role="user">q</div><div id="m" data-role="assistant">т</div><textarea></textarea></main>');
+      expect(collect(document.getElementById('m')).notes).toContain('контейнер хода не определён');
+      mount(`<div id="turn"><div id="m">т</div>${'<canvas width="99" height="99"></canvas>'.repeat(53)}</div>`);
+      const c = collect(document.getElementById('m'), { turn: document.getElementById('turn') });
+      expect(c.outsideBlocks).toHaveLength(50);
+      expect(c.outsideBlocksTruncated).toBe(3);
+    });
+  });
 });

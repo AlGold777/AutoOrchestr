@@ -105,6 +105,100 @@
     return r.top < v.top - 1 || r.bottom > v.bottom + 1;
   }
 
+  // ---- блоки хода вне выбранного элемента (диаграмма/виджет рядом с текстовым сегментом) ----
+  // Только общие признаки, НЕ ПРОВЕРЕНО ВЖИВУЮ: разметки Claude с диаграммой в репозитории нет.
+  const OUTSIDE_LIMIT = 50;
+  const COMPOSER_SELECTOR = 'textarea, [contenteditable="true"], form, [data-testid*="composer" i]';
+  const ARTIFACT_WORD_RE = /artifact/i;
+  const WIDGET_WORD_RE = /diagram|chart|visual|widget|mermaid|canvas/i;
+  const MIN_SIDE = 48;
+
+  function resolveTurn(el, opts) {
+    if (opts.turn) return opts.turn;
+    if (opts.turnSelector) { const t = el.closest(opts.turnSelector); if (t) return t; }
+    const asst = opts.assistantSelector || DEFAULT_ASSISTANT;
+    const user = opts.userSelector || DEFAULT_USER;
+    const count = (n) => n.querySelectorAll(asst).length + (n.matches(asst) ? 1 : 0);
+    let cur = el;
+    const base = count(el);
+    for (let p = el.parentElement; p && p !== el.ownerDocument.body && p !== el.ownerDocument.documentElement; p = p.parentElement) {
+      if (p.querySelector(user) || p.matches(user) || p.querySelector(COMPOSER_SELECTOR)) break;
+      if (count(p) > Math.max(base, 1)) break;
+      cur = p;
+    }
+    return cur === el ? null : cur;
+  }
+
+  function sizeOf(n) {
+    let w = 0; let h = 0;
+    try { const r = n.getBoundingClientRect(); w = r.width; h = r.height; } catch (_) { /* нет раскладки */ }
+    if (!(w && h)) { w = parseFloat(n.getAttribute('width')) || 0; h = parseFloat(n.getAttribute('height')) || 0; }
+    if (!(w && h) && n.getAttribute) {
+      const vb = String(n.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number);
+      if (vb.length === 4 && vb[2] > 0 && vb[3] > 0) { w = vb[2]; h = vb[3]; }
+    }
+    return { w, h, known: Boolean(w && h) };
+  }
+  function bigEnough(n) {
+    const s = sizeOf(n);
+    if (s.known) return s.w > MIN_SIDE && s.h > MIN_SIDE;
+    return n.localName === 'svg' ? Boolean(n.querySelector('text')) || n.querySelectorAll('path, rect, circle, ellipse, line, polyline, polygon').length >= 4 : true;
+  }
+  function markerText(n) {
+    return ['id', 'class', 'aria-label', 'data-testid', 'data-test-id'].map((a) => n.getAttribute(a) || '').join(' ')
+      + Array.from(n.attributes).filter((a) => a.name.startsWith('data-')).map((a) => a.name).join(' ');
+  }
+  function classifyOutside(n) {
+    const tag = n.localName;
+    if (tag === 'iframe' || tag === 'object' || tag === 'embed') return 'embed';
+    if (tag === 'canvas') return 'canvas';
+    if (tag === 'video' || tag === 'audio') return 'media';
+    if (tag === 'svg') return bigEnough(n) ? 'svg' : null;
+    if (tag === 'img') return bigEnough(n) ? 'image' : null;
+    if (tag === 'pre') return 'code';
+    if (n.shadowRoot) return 'widget';
+    if (tag === 'button' || tag === 'a' || tag === 'input' || tag === 'textarea' || tag === 'nav' || tag === 'header' || tag === 'footer') return null;
+    const m = markerText(n);
+    if (ARTIFACT_WORD_RE.test(m)) return 'artifact';
+    if (WIDGET_WORD_RE.test(m)) return 'widget';
+    const role = n.getAttribute('role');
+    if (role === 'img' || role === 'figure' || role === 'dialog' || tag === 'figure') return 'widget';
+    return null;
+  }
+  function hintOf(n) {
+    const parts = [n.localName];
+    const id = n.getAttribute('id');
+    if (id) parts.push('#' + id.replace(/\d+/g, '0'));
+    ['role', 'data-testid', 'data-test-id'].forEach((a) => { if (n.getAttribute(a)) parts.push(`${a}=${n.getAttribute(a)}`); });
+    return parts.join(' ').slice(0, 120);
+  }
+
+  function findOutsideBlocks(el, turn) {
+    const blocks = [];
+    let truncated = 0;
+    const walk = (node) => {
+      for (const child of Array.from(node.children)) {
+        if (child === el) continue;
+        if (child.contains(el)) { walk(child); continue; }
+        const type = classifyOutside(child);
+        if (type) {
+          if (blocks.length < OUTSIDE_LIMIT) {
+            blocks.push({ type, tag: child.localName, hint: hintOf(child), position: blocks.length + 1,
+              beforeSelected: Boolean(el.compareDocumentPosition(child) & 2) });
+          } else truncated += 1;
+          continue; // вложенное внутри найденного блока отдельно не считаем
+        }
+        if (child.matches(COMPOSER_SELECTOR) || child.matches('button, nav, header, footer, [aria-hidden="true"]:not(:has(svg))')) {
+          // кнопки и обёртки: только svg-диаграммы внутри кнопок/aria-hidden
+          if (!child.querySelector('svg')) continue;
+        }
+        walk(child);
+      }
+    };
+    walk(turn);
+    return { blocks, truncated };
+  }
+
   // Артефакты и встроенные блоки. Селекторы по общим признакам, НЕ ПРОВЕРЕНО ВЖИВУЮ (реального образца Claude с артефактом/диаграммой нет).
   const ARTIFACT_REF_SELECTOR = '[data-testid*="artifact" i], [aria-label*="artifact" i], [class*="artifact" i]';
   const ARTIFACT_PANEL_SELECTOR = '[data-artifact], [data-canvas], [data-testid*="artifact" i], [role="dialog"][aria-label*="artifact" i], [role="complementary"][aria-label*="artifact" i], [role="dialog"][aria-label*="canvas" i]';
@@ -120,12 +214,14 @@
   /**
    * collect(messageEl, options) -> context для AnswerMarkdown.convert({ context }).
    * options: { turn?, isLatest?, document?, scroller?, assistantSelector?, userSelector?, expand? (по умолчанию false) }
-   * Результат: { version, regenerated, generating, truncated, collapsed, continuationParts, lazy, artifactRefs, artifactPanels, embeds, notes[] };
+   * Результат: { version, regenerated, generating, truncated, collapsed, continuationParts, lazy, artifactRefs, artifactPanels, embeds, outsideBlocks[], outsideBlocksTruncated, notes[] };
+   * outsideBlocks: [{type:'embed'|'svg'|'image'|'canvas'|'media'|'widget'|'artifact'|'code', tag, hint, position, beforeSelected}] — нетекстовые блоки хода вне messageEl.
+   * options.turn / options.turnSelector задают контейнер хода; иначе — ближайший предок без пользовательского сообщения и композера.
    * непубличные (не сериализуются): .parts — элементы продолжений, .artifactPanelEls — панели артефактов вне сообщения, .versionInfo.
    */
   function collect(messageEl, options) {
     const opts = options || {};
-    const ctx = { version: null, regenerated: false, generating: false, truncated: false, collapsed: 0, continuationParts: 0, lazy: false, artifactRefs: 0, artifactPanels: 0, embeds: 0, notes: [] };
+    const ctx = { version: null, regenerated: false, generating: false, truncated: false, collapsed: 0, continuationParts: 0, lazy: false, artifactRefs: 0, artifactPanels: 0, embeds: 0, outsideBlocks: [], outsideBlocksTruncated: 0, notes: [] };
     if (!messageEl || !messageEl.querySelector) {
       ctx.notes.push('элемент ответа не передан');
       return ctx;
@@ -150,6 +246,17 @@
     Object.defineProperty(ctx, 'parts', { value: parts, enumerable: false });
     Object.defineProperty(ctx, 'versionInfo', { value: v, enumerable: false });
 
+    const turn = resolveTurn(messageEl, opts);
+    ctx.outsideBlocks = [];
+    ctx.outsideBlocksTruncated = 0;
+    if (!turn) ctx.notes.push('контейнер хода не определён');
+    else {
+      const o = findOutsideBlocks(messageEl, turn);
+      ctx.outsideBlocks = o.blocks;
+      ctx.outsideBlocksTruncated = o.truncated;
+      if (o.blocks.length) ctx.notes.push(`вне выбранного элемента в ходе нетекстовых блоков: ${o.blocks.length + o.truncated}`);
+      Object.defineProperty(ctx, 'turnEl', { value: turn, enumerable: false });
+    }
     const art = detectArtifacts(messageEl, opts);
     ctx.artifactRefs = art.refs;
     ctx.artifactPanels = art.panels.length;
