@@ -9,6 +9,7 @@ const read = (file) => fs.readFileSync(path.join(ROOT, file), 'utf8');
 const CODE = 'def f(x):\n\n    if x:\n\treturn  1   \n    return 2\n';
 
 function load() {
+  if (window.ResultsCodeBlocks) window.ResultsCodeBlocks.dispose();
   ['ResultsCodeBlocks', 'ContentUtils', 'AnswerMarkdown', 'AnswerMarkdownBlocks', 'AnswerMarkdownExtras', 'AnswerMarkdownProviders', 'AnswerStructure', 'sanitizeHTML']
     .forEach((k) => { delete window[k]; });
   window.chrome = { runtime: { id: 'x', sendMessage: jest.fn() } };
@@ -23,6 +24,7 @@ const card = (html) => {
 const block = `<pre data-code-lang="python"><code class="language-python">${CODE.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</code></pre>`;
 
 beforeEach(load);
+afterEach(() => { if (window.ResultsCodeBlocks) window.ResultsCodeBlocks.dispose(); });
 
 describe('decorateCodeBlocks', () => {
   test('wraps a pre once: header with the language, one Copy button; a second call changes nothing', () => {

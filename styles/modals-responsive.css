@@ -2956,4 +2956,21 @@ hr.section-divider {
 .code-block-copy.is-failed::before{content:"Не удалось"}
 .code-block pre{margin:0;padding:12px;background:transparent;border-radius:0;white-space:pre;overflow-x:auto;word-wrap:normal;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 .code-block pre code{font:inherit;white-space:inherit;background:transparent;padding:0}
+.code-block.is-diagram .code-block-header::before{text-transform:capitalize}
+.code-block-views{display:inline-flex;gap:0;margin-left:auto;margin-right:8px}
+.code-block-view{appearance:none;border:1px solid #d0d7de;background:#fff;color:#24292f;padding:2px 10px;font:12px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;cursor:pointer}
+.code-block-view[data-view="diagram"]{border-radius:6px 0 0 6px}
+.code-block-view[data-view="code"]{border-radius:0 6px 6px 0;border-left:0}
+.code-block-view[data-view="diagram"]::before{content:"Диаграмма"}
+.code-block-view[data-view="code"]::before{content:"Код"}
+.code-block[data-mode="diagram"] .code-block-view[data-view="diagram"],.code-block[data-mode="code"] .code-block-view[data-view="code"]{background:#dbe9ff;border-color:#8bb4f0}
+.code-block.is-diagram:not([data-diagram="ready"]) .code-block-views{display:none}
+/* visually hidden, not display:none: the source stays in the card text (innerText), which is what is copied and handed over */
+.code-block.is-diagram{position:relative}
+.code-block.is-diagram[data-mode="diagram"] pre{position:absolute;width:1px;height:1px;margin:-1px;padding:0;border:0;overflow:hidden;clip:rect(0,0,0,0);white-space:pre}
+.code-block.is-diagram[data-mode="code"] .code-block-diagram:not([data-failed]){display:none}
+.code-block-diagram{padding:12px;background:#fff;text-align:center}
+.code-block-diagram img{max-width:100%;height:auto;display:inline-block}
+.code-block-diagram[data-failed]{padding:6px 12px;background:#fff4e5;color:#8a4b00;font:12px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;text-align:left;border-bottom:1px solid #f0c78a}
+.code-block-diagram[data-failed]::before{content:attr(data-note)}
 /* code-block:end */

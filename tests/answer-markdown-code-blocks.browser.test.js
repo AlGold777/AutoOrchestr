@@ -91,7 +91,8 @@ run('Chrome: Perplexity-like Mermaid (cross-origin iframe + hidden source) becom
     expect(html).not.toContain('iframe');
     expect(html).not.toContain('HIDDEN-NOTE');
     expect(html).not.toContain('не скопирован');
-    await page.evaluate((markup) => { document.getElementById('card').innerHTML = markup; window.ResultsCodeBlocks.install(document); }, html);
+    await page.evaluate((markup) => { document.getElementById('card').innerHTML = markup; window.ResultsCodeBlocks.setMermaidLoader(async () => { throw new Error('no library in this test'); }); window.ResultsCodeBlocks.install(document); }, html);
+    await page.waitForFunction(() => document.querySelector('#card .code-block')?.dataset.diagram === 'failed');
     const shown = await page.evaluate(() => {
       const wrapper = document.querySelector('#card .code-block');
       const r = wrapper.querySelector('pre').getBoundingClientRect();
