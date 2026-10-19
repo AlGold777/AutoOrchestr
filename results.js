@@ -3044,6 +3044,60 @@ document.addEventListener('click', (event) => {
             || PIPELINE_TERMINAL_STATUSES.has(PIPELINE_TRANSPORT.normalizeStatus(envelope.status))
         );
     };
+    // DOM->Markdown copy of an answer (answerMarkdown + copyReport from the content
+    // script). The message handler stashes it per model; the card that renders that
+    // answer takes it. Copy / TXT / hand-off use it when present, else the old text.
+    const answerCopyPending = {};
+    const stashAnswerCopy = (llmName, source, requestId = '') => {
+        const markdown = typeof source?.answerMarkdown === 'string' ? source.answerMarkdown : '';
+        const report = source?.copyReport && typeof source.copyReport === 'object' ? source.copyReport : null;
+        if (!llmName) return;
+        if (!markdown && !report) { delete answerCopyPending[llmName]; return; }
+        answerCopyPending[llmName] = { markdown, report, requestId: String(requestId || '') };
+    };
+    const describeCopyReport = (report) => {
+        if (!report || report.complete !== false) return '';
+        const parts = [];
+        const found = report.found || {};
+        const copied = report.copied || {};
+        const stubs = {};
+        (report.placeholders || []).forEach((item) => { stubs[item.type] = (stubs[item.type] || 0) + 1; });
+        new Set([...Object.keys(found), ...Object.keys(copied), ...Object.keys(stubs)]).forEach((type) => {
+            const f = found[type] || 0, c = copied[type] || 0, k = stubs[type] || 0;
+            if (f !== c + k || k) parts.push(`${type}: найдено ${f}, скопировано ${c}, заглушек ${k}`);
+        });
+        (report.placeholders || []).slice(0, 5).forEach((item) => parts.push(`заглушка ${item.type} #${item.position}: ${item.reason}`));
+        const flags = report.flags || {};
+        if (flags.generating) parts.push('ответ ещё генерировался');
+        if (flags.truncated) parts.push('ответ обрезан');
+        if (flags.collapsed) parts.push(`свёрнутых блоков: ${flags.collapsed}`);
+        return 'Копия неполная. ' + (parts.join('; ') || 'есть расхождения при проверке полноты');
+    };
+    // A whole-answer placeholder is not a copy of the answer: fall back to the text.
+    const usableAnswerMarkdown = (copy) => (copy && copy.markdown
+        && !(copy.report?.placeholders || []).some((item) => item.type === 'answer')) ? copy.markdown : '';
+    const cardAnswerCopyText = (card, fallback = '') => usableAnswerMarkdown(card?._answerCopy) || fallback;
+    const applyAnswerCopyToCard = (card, llmName, requestId = '') => {
+        if (!(card instanceof HTMLElement)) return;
+        const pending = answerCopyPending[llmName];
+        const matches = pending && !(pending.requestId && requestId && pending.requestId !== String(requestId));
+        if (matches) {
+            card._answerCopy = { markdown: pending.markdown, report: pending.report };
+            delete answerCopyPending[llmName];
+        } else if (!pending) {
+            delete card._answerCopy;
+        }
+        card.querySelector('.debate-copy-incomplete')?.remove();
+        const note = describeCopyReport(card._answerCopy?.report);
+        if (!note) return;
+        const marker = document.createElement('span');
+        marker.className = 'debate-copy-incomplete';
+        marker.textContent = '⚠ копия неполная';
+        marker.title = note;
+        marker.style.cssText = 'color:#b45309;font-size:12px;cursor:help;margin-right:6px;';
+        const meta = card.querySelector('.debate-model-card-meta');
+        meta?.insertBefore(marker, meta.firstChild);
+    };
     const debateFeedMessageMeta = (message) => {
         const envelope = normalizePipelineMessageEnvelope(message);
         return {
@@ -3051,6 +3105,7 @@ document.addEventListener('click', (event) => {
             transportRequestId: envelope.transportRequestId,
             pipelineRunId: envelope.pipelineRunId,
             pipelineRoundId: envelope.pipelineRoundId,
+            dispatchId: envelope.dispatchId,
             answerEndMarkerSeen: envelope.metadata.answerEndMarkerSeen === true
                 || message?.answerEndMarkerSeen === true,
             requestId: envelope.transportRequestId || message.requestId || envelope.metadata.requestId || '',
@@ -18015,6 +18070,7 @@ document.addEventListener('click', (event) => {
             }
         }, { final: entry?.finalStatusRecorded === true });
         if (!recoveredAnswer) return false;
+        stashAnswerCopy(llmName, entry, entry?.transportRequestId || '');
         const answerValue = recoveredAnswer.answer;
         const answerText = String(typeof answerValue === 'object'
             ? answerValue?.text || answerValue?.answer || ''
@@ -18026,7 +18082,9 @@ document.addEventListener('click', (event) => {
         ).trim());
         if (!answerText) return false;
         const recoveryMeta = {
+            ...(entry?.answerCommitEvidence || {}),
             source: 'GLOBAL_STATE_ANSWER_RECOVERY',
+            dispatchId: entry?.dispatchId || null,
             transportRequestId: entry?.transportRequestId || '',
             requestId: entry?.transportRequestId || '',
             pipelineRunId: entry?.pipelineRunId || '',
@@ -18046,7 +18104,7 @@ document.addEventListener('click', (event) => {
                         llmName,
                         document.getElementById(`panel-${panelId}`),
                         outputElement,
-                        recoveryMeta
+                        { ...recoveryMeta, renderSourceHtml: resolveCompleteAnswerHtml(answerText, answerHtml) }
                     );
                 }
                 return true;
@@ -18063,7 +18121,7 @@ document.addEventListener('click', (event) => {
             outputElement.dataset.hash = String(finalHtml || '').length
                 ? String(finalHtml).length + ':' + String(finalHtml).slice(0, 64)
                 : '';
-            emitAnswerCardRenderEvidence(llmName, document.getElementById(`panel-${panelId}`), outputElement, recoveryMeta);
+            emitAnswerCardRenderEvidence(llmName, document.getElementById(`panel-${panelId}`), outputElement, { ...recoveryMeta, renderSourceHtml: finalHtml });
         }
         if (updateMainPanel) {
             updateDebateModelCardOutput(llmName, answerText, answerHtml, recoveryMeta);
@@ -18562,7 +18620,8 @@ document.addEventListener('click', (event) => {
             window.MessageDelivery.observeRuntime(message);
         }
         if (JOURNAL_ONLY_TYPES.includes(message.type)) return false;
-        if (window.MessageDelivery && ['LLM_PARTIAL_RESPONSE', 'LLM_FINAL_RESPONSE', 'FINAL_LLM_RESPONSE', 'UPDATE_LLM_PANEL_OUTPUT'].includes(message.type)) {
+        if (window.MessageDelivery && (['LLM_PARTIAL_RESPONSE', 'LLM_FINAL_RESPONSE', 'FINAL_LLM_RESPONSE', 'UPDATE_LLM_PANEL_OUTPUT'].includes(message.type)
+            || (message.type === 'MANUAL_PING_RESULT' && message.status === 'success'))) {
             message = receiveResultsAnswerMessage(message, { final: isTerminalPipelineMessage(message) });
             if (!message) return false; // stale answer of an earlier request
         }
@@ -18572,6 +18631,7 @@ document.addEventListener('click', (event) => {
                     handleLLMJobCreated(message);
                     break;
                 case 'LLM_PARTIAL_RESPONSE': {
+                    stashAnswerCopy(message.llmName, message, message.transportRequestId || message.requestId);
                     syncStatusFromResponseMessage(message);
                     const previewPayload = (() => {
                         if (message.answer && typeof message.answer === 'object') {
@@ -18633,6 +18693,9 @@ document.addEventListener('click', (event) => {
                 }
                 case 'LLM_FINAL_RESPONSE':
                 case 'FINAL_LLM_RESPONSE': {
+                    if (message.answerMarkdown != null || message.copyReport != null) {
+                        stashAnswerCopy(message.llmName, message, message.transportRequestId || message.requestId);
+                    }
                     const finalMeta = {
                         ...debateFeedMessageMeta(message),
                         status: message.metadata?.status || message.status || message.finalStatus || 'SUCCESS'
@@ -18734,7 +18797,8 @@ document.addEventListener('click', (event) => {
                         const recoveredText = String(message.answer || '').trim();
                         if (llmName && recoveredText) {
                             const recoveryMeta = {
-                                status: message.finalStatus || 'PARTIAL',
+                                ...debateFeedMessageMeta(message),
+                                status: message.metadata?.answerEndMarkerSeen === true ? 'SUCCESS' : (message.finalStatus || 'PARTIAL'),
                                 source: 'MANUAL_PING_RESULT_RECOVERY',
                                 requestId: message.requestId || '',
                                 transportRequestId: message.transportRequestId || message.metadata?.transportRequestId || '',
@@ -18860,11 +18924,21 @@ document.addEventListener('click', (event) => {
         const renderedText = outputElement
             ? String(outputElement.innerText || outputElement.textContent || '').trim()
             : '';
-        const observed = window.AnswerProofNormalization?.evidence?.(renderedText, {
+        // Compare the intended HTML with the card using the same text projection.
+        // Raw source text can still contain Markdown and transport markers; its
+        // payload hash is not the identity of the rendered representation.
+        const projectHtml = (html) => {
+            const probe = document.createElement('template');
+            probe.innerHTML = sanitizeInlineHtml(String(html || ''));
+            return String(probe.content.textContent || '').replace(/\s+/g, ' ').trim();
+        };
+        const hasRenderSource = typeof meta.renderSourceHtml === 'string';
+        const observed = window.AnswerProofNormalization?.evidence?.(hasRenderSource
+            ? projectHtml(outputElement?.innerHTML || '') : renderedText, {
             dispatchId: meta.dispatchId || null,
             attemptId: meta.attemptId || null
         }) || null;
-        const expected = {
+        const expected = (hasRenderSource ? window.AnswerProofNormalization?.evidence?.(projectHtml(meta.renderSourceHtml)) : null) || {
             normalizationVersion: meta.normalizationVersion || null,
             normalizedHash: meta.normalizedHash || null
         };
@@ -18876,7 +18950,8 @@ document.addEventListener('click', (event) => {
                 ? 'empty'
                 : comparison.status);
         const cardAnswerComplete = meta.answerEndMarkerSeen === true && Boolean(renderedText)
-            && !isErrorOutput(renderedText);
+            && !isErrorOutput(renderedText) && outcome !== 'wrong_card'
+            && comparison.status !== 'mismatched';
         const isPipelineCard = panel?.classList?.contains('debate-model-card');
         const mainView = getCurrentViewKey() === 'main';
         const currentMainRequest = isCurrentMainRequestResponse(llmName, meta);
@@ -18934,8 +19009,8 @@ document.addEventListener('click', (event) => {
                     normalizationVersion: observed?.normalizationVersion || null,
                     normalizedLength: observed?.normalizedLength ?? renderedText.length,
                     normalizedHash: observed?.normalizedHash || null,
-                    expectedNormalizationVersion: meta.normalizationVersion || null,
-                    expectedNormalizedHash: meta.normalizedHash || null,
+                    expectedNormalizationVersion: expected.normalizationVersion || null,
+                    expectedNormalizedHash: expected.normalizedHash || null,
                     contentClass: !renderedText ? 'empty' : (isErrorOutput(renderedText) ? 'technical_message' : 'answer'),
                     usableResult: Boolean(renderedText && !isErrorOutput(renderedText)),
                     evaluationBoundaryId,
@@ -19054,7 +19129,7 @@ document.addEventListener('click', (event) => {
                         });
                     }
                 }
-                emitAnswerCardRenderEvidence(llmName, panel, outputElement, meta);
+                emitAnswerCardRenderEvidence(llmName, panel, outputElement, { ...meta, renderSourceHtml: finalHtml });
             }
         } else {
             ingestLogs(llmName, [makeLocalDiagEntry(
@@ -22541,7 +22616,7 @@ function checkCompareButtonState() {
         if (isDebateApprovalAutoMode()) return null;
         if (!card || card.dataset.approved === 'true') return null;
         const outputEl = card.querySelector('.debate-model-card-output');
-        const text = String(outputEl?.innerText || outputEl?.textContent || '').trim();
+        const text = cardAnswerCopyText(card, String(outputEl?.innerText || outputEl?.textContent || '').trim());
         if (!text || card.dataset.kind === 'placeholder') return null;
         const llmName = card.dataset.llmName || 'Model';
         // Check before mutating: during the serial-debate opening phase (A0/B0
@@ -23133,9 +23208,11 @@ function checkCompareButtonState() {
             const body = liveCard.querySelector('.debate-model-card-output');
             if (body) {
                 body.classList.remove('debate-model-card-empty');
+                const renderSourceHtml = resolveCompleteAnswerHtml(normalizedText, normalizedHtml);
                 renderDebateResponseBody(body, normalizedText, normalizedHtml);
-                emitAnswerCardRenderEvidence(llmName, liveCard, body, meta);
+                emitAnswerCardRenderEvidence(llmName, liveCard, body, { ...meta, renderSourceHtml });
             }
+            applyAnswerCopyToCard(liveCard, llmName, requestId);
             syncDebateCardOutputLayout(liveCard);
             setDebatePrintingState(liveCard, llmName, !isFinal);
             liveCard.dataset.live = isFinal ? 'false' : 'true';
@@ -23201,8 +23278,10 @@ function checkCompareButtonState() {
         applyAttributionMarker(card, meta);
         updateCardRole(card, meta.role || '');
         const body = card.querySelector('.debate-model-card-output');
+        const renderSourceHtml = resolveCompleteAnswerHtml(normalizedText, normalizedHtml);
         renderDebateResponseBody(body, normalizedText, normalizedHtml);
-        emitAnswerCardRenderEvidence(llmName, card, body, meta);
+        emitAnswerCardRenderEvidence(llmName, card, body, { ...meta, renderSourceHtml });
+        applyAnswerCopyToCard(card, llmName, requestId);
         syncDebateCardOutputLayout(card);
         setDebatePrintingState(card, llmName, !isFinal);
         bindApprovalCheckbox(card);
@@ -23611,7 +23690,7 @@ function checkCompareButtonState() {
         getVisibleDebateCards().forEach((card) => {
             const message = ensureDebateCardMessage(card);
             const outputEl = card.querySelector('.debate-model-card-output');
-            const text = String(outputEl?.innerText || outputEl?.textContent || '').trim();
+            const text = cardAnswerCopyText(card, String(outputEl?.innerText || outputEl?.textContent || '').trim());
             if (!text) return;
             if (message?.kind === 'fragment') {
                 const sourceLine = message.sourceMessageId ? `Fragment from: ${message.model || 'Source'}` : 'Fragment';
@@ -25133,7 +25212,8 @@ function exportSingleTemplate(templateName, sourceData = null) {
 
         if (event.target.closest('.debate-card-copy')) {
             if (!text && !html) return;
-            try { await writeRichContentToClipboard({ text, html }); } catch (err) { console.warn(err); }
+            const markdown = cardAnswerCopyText(card);
+            try { await writeRichContentToClipboard(markdown ? { text: markdown, html: '' } : { text, html }); } catch (err) { console.warn(err); }
             return;
         }
         if (event.target.closest('.debate-card-export')) {

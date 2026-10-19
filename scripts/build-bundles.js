@@ -48,6 +48,13 @@ const COMMON_FILES = [
   'content-scripts/answer-pipeline-selectors.js',
   'content-scripts/turn-resolver.js',
   'content-scripts/answer-structure.js',
+  // DOM->Markdown copy (WP1-WP3). Missing files are skipped by readFileSafe;
+  // order mirrors manifest.json: engine, blocks, extras, providers, copy context.
+  'shared/answer-markdown.js',
+  'shared/answer-markdown-blocks.js',
+  'shared/answer-markdown-extras.js',
+  'shared/answer-markdown-providers.js',
+  'content-scripts/answer-copy-context.js',
   'content-scripts/generation-signal.js',
   'shared/secret-redaction.js',
   'content-scripts/dom-skeleton-capture.js',

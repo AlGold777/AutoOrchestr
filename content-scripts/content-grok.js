@@ -202,7 +202,13 @@
       return 0;
     });
     const node = nodes[nodes.length - 1] || null;
-    const text = String(node?.innerText || node?.textContent || '').trim();
+    // The bubble includes an accessibility heading ("You" / "Ты"). Compare
+    // the actual message body, never that provider label or action controls.
+    const content = (node?.querySelector?.('.response-content-markdown') || node)?.cloneNode?.(true);
+    content?.querySelectorAll?.('[data-no-copy="true"], .sr-only, button').forEach((label) => label.remove());
+    content?.querySelectorAll?.('p, div, li, pre, blockquote, tr, h1, h2, h3, h4, h5, h6, br')
+      .forEach((block) => block.appendChild(document.createTextNode('\n')));
+    const text = String(content?.innerText || content?.textContent || '').trim();
     return {
       node,
       text,
@@ -215,6 +221,7 @@
     const expected = normalizeForComparison(prompt);
     const expectedRendered = normalizeGrokRenderedPrompt(prompt);
     const startedAt = Date.now();
+    let lastObserved = null;
     while (Date.now() - startedAt < timeoutMs) {
       const latest = grabLatestGrokUserMessage();
       const isNewTurn = latest.node && (
@@ -227,7 +234,7 @@
           expectedRendered
           && latest.renderedNormalized === expectedRendered
         );
-        return {
+        const observation = {
           observed: true,
           matches: strictMatch || renderedMatch,
           matchMode: strictMatch ? 'strict' : (renderedMatch ? 'rendered_markdown' : 'mismatch'),
@@ -237,9 +244,14 @@
           expectedRenderedLength: expectedRendered.length,
           actualRenderedLength: latest.renderedNormalized.length
         };
+        if (observation.matches) return observation;
+        // User turns can appear before their streamed/expanded text settles.
+        // Only classify a mismatch after the observation budget expires.
+        lastObserved = observation;
       }
       await sleep(pollMs);
     }
+    if (lastObserved) return { ...lastObserved, elapsedMs: Date.now() - startedAt };
     return {
       observed: false,
       matches: false,

@@ -1140,14 +1140,22 @@ const chatgptScrollCoordinator = window.ScrollCoordinator
           inputField.dispatchEvent(up);
         };
 
-        const preSendUserCount = document.querySelectorAll('[data-message-author-role="user"]').length;
+        const userTurnSelector = '[data-message-author-role="user"], [data-user-message-bubble="true"]';
+        const preSendUserCount = document.querySelectorAll(userTurnSelector).length;
+        const preSendAssistant = grabLatestAssistantMarkup();
         const confirmChatgptSend = async () => {
           const deadline = Date.now() + 3500;
           while (Date.now() < deadline) {
             const stopBtn = document.querySelector('button[data-testid="stop-button"], button[aria-label*="Stop" i]');
             if (stopBtn && isElementInteractable(stopBtn)) return true;
-            const after = document.querySelectorAll('[data-message-author-role="user"]').length;
+            const after = document.querySelectorAll(userTurnSelector).length;
             if (after > preSendUserCount) return true;
+            // The current ChatGPT UI exposes assistant-message markup without
+            // data-message-author-role. A new answer also proves submission.
+            const assistant = grabLatestAssistantMarkup();
+            if (assistant.node?.matches?.('[data-markdown-text-style="assistant-message"], [data-message-author-role="assistant"], [data-author-role="assistant"], [data-role="assistant"]')
+              && assistant.node !== preSendAssistant.node
+              && assistant.text && assistant.text !== preSendAssistant.text) return true;
             await sleep(120);
           }
           return false;
@@ -1190,8 +1198,8 @@ const chatgptScrollCoordinator = window.ScrollCoordinator
           confirmed = await confirmChatgptSend();
         }
         if (!confirmed) {
-          window.ContentUtils?.reportDispatchStage?.(MODEL, dispatchMeta, 'send_action_failed', {
-            outcome: 'failed', reason: 'send_not_confirmed'
+          window.ContentUtils?.reportDispatchStage?.(MODEL, dispatchMeta, 'send_confirmation_pending', {
+            outcome: 'unconfirmed', reason: 'trying_send_fallback'
           });
           // Wait a bit for Send to become enabled after React state updates
           console.log('[CONTENT-GPT] Looking for send button...');
@@ -1232,6 +1240,9 @@ const chatgptScrollCoordinator = window.ScrollCoordinator
           }
         }
         if (!confirmed) {
+          window.ContentUtils?.reportDispatchStage?.(MODEL, dispatchMeta, 'send_action_failed', {
+            outcome: 'failed', reason: 'send_not_confirmed'
+          });
           emitDiagnostic({
             type: 'DISPATCH',
             label: 'GPT send failed',

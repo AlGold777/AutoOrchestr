@@ -4,21 +4,25 @@ const vm = require('vm');
 const StatusContract = require('../shared/status-contract.js');
 const MessageDelivery = require('../shared/message-delivery.js');
 const TransportContract = require('../shared/transport-contract.js');
+const AnswerProofNormalization = require('../shared/answer-proof-normalization.js');
 const source = fs.readFileSync(path.join(__dirname, '..', 'results.js'), 'utf8');
 
 function createPage() {
   document.body.innerHTML = '<section id="panel-gpt" class="llm-panel"><span class="status-indicator" data-llm-name="GPT"></span><div class="output">Complete answer</div></section>';
   const context = {
     document, console, Date, Map, Object, Number, Boolean, String,
-    window: { LLMStatusContract: StatusContract },
+    window: { LLMStatusContract: StatusContract, AnswerProofNormalization },
     chrome: { runtime: { sendMessage: jest.fn() } }, location: { pathname: '/result_new.html' },
     statusStateByModel: {}, deferredSuccessStatusByModel: {},
     isErrorOutput: () => false, sanitizeInlineHtml: value => value, setApiIndicatorState: jest.fn(),
     setMainRunActive: jest.fn(), getCurrentViewKey: () => 'main',
     mainRunActive: false,
+    isCurrentMainRequestResponse: () => true, isPipelineRequestMeta: () => false,
+    getMessageTransportRequestId: meta => meta?.transportRequestId || meta?.requestId || null,
     mergeLLMMetadata: jest.fn(), updateDebateModelCardOutput: jest.fn(() => ({ updated: true })),
     receiveResultsAnswerMessage: message => message,
     looksLikeHtml: () => false, resolveCompleteAnswerHtml: text => text,
+    plainTextFromHtml: html => { const template = document.createElement('template'); template.innerHTML = html; return template.content.textContent || ''; },
     applyAttributionMarker: jest.fn(), replaceChildrenFromSanitizedHtml: (element, html) => { element.textContent = html; },
     decorateLinksForNewTab: jest.fn(), revealPanelForLargeContent: jest.fn(),
     ingestLogs: jest.fn(), makeLocalDiagEntry: () => ({}), autoCollapseDiagnostics: jest.fn(),
@@ -49,16 +53,36 @@ function createRuntimePage() {
   let runtimeListener;
   const context = {
     document, console, Date, Map, Object, Number, Boolean, String,
-    window: { LLMStatusContract: StatusContract, MessageDelivery, TransportContract },
+    window: { LLMStatusContract: StatusContract, MessageDelivery, TransportContract, AnswerProofNormalization },
     TransportContract,
     chrome: { runtime: { onMessage: { addListener: listener => { runtimeListener = listener; } }, sendMessage: jest.fn() } },
     location: { pathname: '/result_new.html' },
     statusStateByModel: {}, deferredSuccessStatusByModel: {},
     isErrorOutput: () => false, sanitizeInlineHtml: value => value, setApiIndicatorState: jest.fn(),
+    isCurrentMainRequestResponse: () => true, isPipelineRequestMeta: () => false,
+    getMessageTransportRequestId: meta => meta?.transportRequestId || meta?.requestId || null,
+    isTerminalPipelineMessage: message => /^(?:success|done|complete|partial|error|no_send)$/i.test(String(message?.status || message?.metadata?.status || '')),
+    receiveResultsAnswerMessage: (message, { final = false } = {}) => {
+      const metadata = message.metadata || message.meta || {};
+      const verified = metadata.answerEndMarkerSeen === true || message.answerEndMarkerSeen === true;
+      const received = MessageDelivery.receive({ ...message, metadata: { ...metadata } }, { final });
+      if (received && verified) received.metadata = { ...(received.metadata || {}), answerEndMarkerSeen: true };
+      return received;
+    },
+    debateFeedMessageMeta: message => ({
+      ...(message.metadata || message.meta || {}),
+      dispatchId: message.dispatchId || message.metadata?.dispatchId || null,
+      transportRequestId: message.transportRequestId || message.metadata?.transportRequestId || null,
+      requestId: message.requestId || message.transportRequestId || '',
+      status: message.metadata?.status || message.status || null,
+      answerEndMarkerSeen: message.metadata?.answerEndMarkerSeen === true || message.answerEndMarkerSeen === true
+    }),
+    setPingButtonState: jest.fn(),
     setMainRunActive: jest.fn(), getCurrentViewKey: () => 'main', mainRunActive: false,
     mergeLLMMetadata: jest.fn(), updateDebateModelCardOutput: jest.fn(() => ({ updated: true })),
     looksLikeHtml: () => false, resolveCompleteAnswerHtml: text => text,
-    applyAttributionMarker: jest.fn(), replaceChildrenFromSanitizedHtml: (element, html) => { element.textContent = html; },
+    plainTextFromHtml: html => { const template = document.createElement('template'); template.innerHTML = html; return template.content.textContent || ''; },
+    applyAttributionMarker: jest.fn(), replaceChildrenFromSanitizedHtml: (element, html) => { element.innerHTML = html; },
     decorateLinksForNewTab: jest.fn(), revealPanelForLargeContent: jest.fn(),
     ingestLogs: jest.fn(), makeLocalDiagEntry: () => ({}), autoCollapseDiagnostics: jest.fn(),
     checkCompareButtonState: jest.fn(), convertMarkdownToHTML: text => text,
@@ -111,6 +135,45 @@ test('a card end marker turns the indicator green and late forced statuses canno
   expect(indicator.dataset.currentStatus).toBe('INITIALIZING');
 });
 
+test('render proof compares rich source HTML to the rendered projection without incoming normalization metadata', () => {
+  const { context, panel, output, indicator } = createPage();
+  const richHtml = '<h2>Summary</h2><p><strong>Useful</strong> answer.</p>';
+  output.innerHTML = richHtml;
+
+  context.emitAnswerCardRenderEvidence('GPT', panel, output, {
+    answerEndMarkerSeen: true, status: 'NO_SEND', expectedCardId: 'panel-gpt',
+    dispatchId: 'current-dispatch', attemptId: 'current-attempt', renderSourceHtml: richHtml
+  });
+
+  expectGreen(indicator);
+  const event = context.chrome.runtime.sendMessage.mock.calls
+    .map(([message]) => message).find(message => message?.type === 'ANSWER_CARD_RENDER_EVALUATED');
+  expect(event.meta).toEqual(expect.objectContaining({
+    outcome: 'matched', dispatchId: 'current-dispatch', attemptId: 'current-attempt',
+    answerEndMarkerSeen: true
+  }));
+});
+
+test.each([
+  ['truncated output', 'A summary with incomplete text.'],
+  ['the wrong card', '<p>Complete source answer.</p>', 'panel-another-model']
+])('render proof does not turn green for %s', (_label, outputHtml = '<p>Complete source answer.</p>', expectedCardId = 'panel-gpt') => {
+  const { context, panel, output, indicator } = createPage();
+  const sourceHtml = '<p>Complete source answer with the missing tail.</p>';
+  output.innerHTML = outputHtml;
+
+  context.emitAnswerCardRenderEvidence('GPT', panel, output, {
+    answerEndMarkerSeen: true, status: 'NO_SEND', expectedCardId,
+    dispatchId: 'current-dispatch', attemptId: 'current-attempt', renderSourceHtml: sourceHtml
+  });
+
+  expect(indicator.dataset.currentStatus).not.toBe('SUCCESS');
+  expect(indicator.classList.contains('success')).toBe(false);
+  const event = context.chrome.runtime.sendMessage.mock.calls
+    .map(([message]) => message).find(message => message?.type === 'ANSWER_CARD_RENDER_EVALUATED');
+  expect(event.meta.outcome).toBe(_label === 'the wrong card' ? 'wrong_card' : 'mismatched');
+});
+
 test('the runtime UPDATE path cleans and proves a real delivery marker, then duplicate job/status messages keep it green', () => {
   const { context, panel, output, indicator, runtimeListener } = createRuntimePage();
   const requestId = 'runtime-request';
@@ -141,6 +204,64 @@ test('the runtime UPDATE path cleans and proves a real delivery marker, then dup
   expect(indicator.dataset.currentStatus).toBe('SUCCESS');
   expect(context.statusStateByModel.GPT.cardAnswerComplete).toBe(true);
   MessageDelivery.reset();
+});
+
+test('manual recovery after a page reload preserves commit and end-marker proof on the current request', () => {
+  const { context, panel, output, indicator, runtimeListener } = createRuntimePage();
+  const requestId = 'recovered-current-request';
+  context.replaceCurrentMainRequestIds({ GPT: requestId });
+  const response = {
+    type: 'MANUAL_PING_RESULT', llmName: 'GPT', status: 'success',
+    requestId, transportRequestId: requestId, dispatchId: 'recovery-dispatch',
+    answer: 'Recovered complete answer.', answerHtml: '<p>Recovered complete answer.</p>',
+    finalStatus: 'NO_SEND',
+    metadata: {
+      expectedCardId: 'panel-gpt', dispatchId: 'recovery-dispatch', attemptId: 'recovery-attempt',
+      payloadEvidenceId: 'recovery-payload', answerEndMarkerSeen: true,
+      status: 'NO_SEND', normalizedHash: 'legacy-hash', normalizationVersion: null
+    }
+  };
+
+  runtimeListener(response, {}, jest.fn());
+
+  expect(output.textContent).toBe('Recovered complete answer.');
+  expect(output.textContent).not.toContain('[[AO-');
+  expectGreen(indicator);
+  const renderEvent = context.chrome.runtime.sendMessage.mock.calls
+    .map(([message]) => message).find(message => message?.type === 'ANSWER_CARD_RENDER_EVALUATED');
+  expect(renderEvent.meta).toEqual(expect.objectContaining({
+    outcome: 'matched', dispatchId: 'recovery-dispatch', attemptId: 'recovery-attempt',
+    answerEndMarkerSeen: true
+  }));
+  expect(panel.id).toBe('panel-gpt');
+});
+
+test('a registered manual recovery end token is cleaned and proves the current card complete', () => {
+  const { context, output, indicator, runtimeListener } = createRuntimePage();
+  const requestId = 'manual-token-current-request';
+  const wrapped = MessageDelivery.prepare({ prompt: 'Question', models: ['GPT'], requestIds: { GPT: requestId } });
+  const marker = wrapped.GPT.match(/\[\[AO-[a-z0-9]{6}\]\]/i)?.[0];
+  expect(marker).toBeTruthy();
+  context.replaceCurrentMainRequestIds({ GPT: requestId });
+
+  runtimeListener({
+    type: 'MANUAL_PING_RESULT', llmName: 'GPT', status: 'success',
+    requestId, transportRequestId: requestId, dispatchId: 'manual-token-dispatch',
+    answer: `Recovered answer with its delivery proof.\n${marker}`,
+    answerHtml: `<p>Recovered answer with its delivery proof. ${marker}</p>`,
+    finalStatus: 'NO_SEND',
+    metadata: { dispatchId: 'manual-token-dispatch', attemptId: 'manual-token-attempt', expectedCardId: 'panel-gpt', status: 'NO_SEND' }
+  }, {}, jest.fn());
+
+  expect(output.textContent).toBe('Recovered answer with its delivery proof.');
+  expect(output.textContent).not.toContain(marker);
+  expectGreen(indicator);
+  const renderEvent = context.chrome.runtime.sendMessage.mock.calls
+    .map(([message]) => message).find(message => message?.type === 'ANSWER_CARD_RENDER_EVALUATED');
+  expect(renderEvent.meta).toEqual(expect.objectContaining({
+    outcome: 'matched', dispatchId: 'manual-token-dispatch', attemptId: 'manual-token-attempt',
+    answerEndMarkerSeen: true
+  }));
 });
 
 test.each(['STOP_ALL', 'START_FULLPAGE_PROCESS', 'ANSWER_CARD_RENDER_EVALUATED'])(

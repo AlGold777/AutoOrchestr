@@ -39,6 +39,7 @@ function buildGlobalStateSnapshot(options = {}) {
       answerRevisions: Array.isArray(entry?.answerRevisions) ? entry.answerRevisions.slice(-12) : [],
       hasAnswer: !!entry?.answer,
       cardAnswerComplete: entry?.cardAnswerComplete === true,
+      answerCommitEvidence: entry?.answerCommitEvidence || null,
       // Recovery must pass the same identity check as a live answer message.
       transportRequestId: entry?.transportRequestId || null,
       pipelineRunId: entry?.pipelineRunId || null,
@@ -51,6 +52,8 @@ function buildGlobalStateSnapshot(options = {}) {
       ...(includeAnswers ? {
         answer: String(entry?.answer || ''),
         answerHtml: String(entry?.answerHtml || ''),
+        answerMarkdown: String(entry?.answerMarkdown || ''),
+        copyReport: entry?.copyReport || null,
         unverifiedArtifact: entry?.unverifiedArtifact ? {
           text: String(entry.unverifiedArtifact.text || ''),
           html: String(entry.unverifiedArtifact.html || ''),

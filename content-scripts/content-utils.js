@@ -45,7 +45,17 @@
       runResult: options.runResult
         || finalization.runResult
         || pipelineMeta.runResult
-        || null
+        || null,
+      // DOM->Markdown copy rides in responseMeta (all providers share this path);
+      // the background lifts it into the entry and strips it from the meta.
+      answerMarkdown: typeof options.answerMarkdown === 'string'
+        ? options.answerMarkdown
+        : (typeof pipelineMeta.answerMarkdown === 'string' ? pipelineMeta.answerMarkdown : undefined),
+      copyReport: options.copyReport || pipelineMeta.copyReport || (fallback ? {
+        version: 1, provider: null, found: {}, copied: {},
+        placeholders: [{ type: 'answer', reason: 'резервный путь без DOM→Markdown', position: 1 }],
+        mismatches: [], flags: {}, complete: false
+      } : undefined)
     };
   };
 

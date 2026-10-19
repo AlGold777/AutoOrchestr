@@ -50,8 +50,13 @@
   function cardParts(card) {
     const outputEl = card?.querySelector?.('.debate-model-card-output');
     const rawHtml = outputEl ? sanitizeFragment(String(outputEl.innerHTML || '').trim()) : '';
-    const plain = outputEl ? String(outputEl.innerText || outputEl.textContent || '').trim() : '';
-    const body = rawHtml || (plain ? `<pre>${escape(plain)}</pre>` : '');
+    const domPlain = outputEl ? String(outputEl.innerText || outputEl.textContent || '').trim() : '';
+    // TXT takes the DOM->Markdown copy when the card has a usable one (results.js sets card._answerCopy).
+    const copy = card?._answerCopy;
+    const markdown = copy && copy.markdown && !(copy.report?.placeholders || []).some((item) => item.type === 'answer')
+      ? copy.markdown : '';
+    const plain = markdown || domPlain;
+    const body = rawHtml || (domPlain ? `<pre>${escape(domPlain)}</pre>` : '');
     if (!body) return null;
     return {
       model: String(card.dataset.llmName || card.querySelector('.debate-model-card-name')?.textContent || 'Model').trim() || 'Model',

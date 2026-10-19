@@ -1135,6 +1135,14 @@ function acceptLateCollectResult(llmName, result, meta = {}) {
     || meta?.manualLatestRecovery
     || sourceHint === 'manual_latest_recovery'
   );
+  // A response bearing this request's end token can arrive after a missed
+  // provider ACK. Establish submission before applying the unconfirmed-send gate.
+  inferPromptSubmittedFromAnswerEvidence(llmName, entry, {
+    trimmedAnswer: incomingText,
+    responseMeta: incomingResponseMeta,
+    responseSource: sourceHint,
+    metaObj: meta
+  });
   const currentDispatchConfirmed = Boolean(entry?.promptSubmittedAt || entry?.submitSource === 'content' || entry?.submitSource === 'inferred_answer_evidence');
   const lockedStatus = String(entry?.finalStatus || entry?.status || '').toUpperCase();
   const lockedNoSendWithoutConfirmation = Boolean(
@@ -7440,6 +7448,20 @@ function expectedAnswerCardId(llmName = '') {
   return `panel-${String(llmName || '').toLowerCase().replace(/[^a-z0-9]+/g, '')}`;
 }
 
+// DOM->Markdown copy travels inside responseMeta from the content script. Lift it
+// out so it is stored/broadcast as its own fields, not as telemetry-sized meta.
+// Never silently dropped: a non-string markdown with no report is reported as incomplete.
+function liftAnswerMarkdownCopy(responseMeta) {
+  const out = { answerMarkdown: '', copyReport: null };
+  if (!responseMeta || typeof responseMeta !== 'object') return out;
+  if (typeof responseMeta.answerMarkdown === 'string') out.answerMarkdown = responseMeta.answerMarkdown;
+  if (responseMeta.copyReport && typeof responseMeta.copyReport === 'object') out.copyReport = responseMeta.copyReport;
+  delete responseMeta.answerMarkdown;
+  delete responseMeta.copyReport;
+  return out;
+}
+self.liftAnswerMarkdownCopy = liftAnswerMarkdownCopy;
+
 function commitAcceptedAnswer(llmName, entry, answerText, answerHtml, context = {}) {
   if (!entry) return null;
   const dispatchId = context.dispatchId || entry?.lastDispatchMeta?.dispatchId || null;
@@ -8036,10 +8058,8 @@ function summarizeFinalizationEvidenceForTelemetry(evidence = null) {
 }
 
 function shouldInferSubmitFromAnswerEvidence(llmName, entry, context = {}) {
-  if (llmName !== 'Qwen') return false;
   if (!entry || entry.promptSubmittedAt) return false;
   const answerText = String(context.trimmedAnswer || '').trim();
-  if (answerText.length < DOM_SNAPSHOT_RECOVERY_MIN_CHARS) return false;
   // Heuristic guard for DOM-extracted text (page error banners); not a status channel.
   if (/^error\s*:/i.test(answerText)) return false;
   if (isPromptEchoAnswerCandidate(answerText, jobState?.prompt || '')) return false;
@@ -8050,6 +8070,24 @@ function shouldInferSubmitFromAnswerEvidence(llmName, entry, context = {}) {
   const dispatchId = metaObj.dispatchId || entry?.lastDispatchMeta?.dispatchId || entry?.confirmedDispatchId || null;
   if (isStaleBaselineCandidate(entry, answerText, dispatchId)) return false;
   const liveDispatchId = entry?.lastDispatchMeta?.dispatchId || entry?.awaitingSubmitConfirmationDispatchId || null;
+  const incomingDispatchId = metaObj.dispatchId || responseMeta.dispatchId || null;
+  const incomingSessionId = metaObj.runSessionId || metaObj.sessionId || responseMeta.runSessionId || null;
+  const incomingEpoch = metaObj.generationEpoch ?? responseMeta.generationEpoch;
+  const liveEpoch = entry?.lastDispatchMeta?.generationEpoch ?? entry?.generationEpoch;
+  const wrappedPrompt = String(self.TransportPolicy?.resolvePromptForModel
+    ? self.TransportPolicy.resolvePromptForModel(jobState?.session?.promptsByModel, llmName, '')
+    : (jobState?.session?.promptsByModel?.[llmName] || ''));
+  const ownEndToken = Boolean(
+    incomingDispatchId && incomingDispatchId === liveDispatchId
+    && (!incomingSessionId || String(incomingSessionId) === String(jobState?.session?.startTime))
+    && (incomingEpoch == null || liveEpoch == null || String(incomingEpoch) === String(liveEpoch))
+    && typeof answerHasDeliveryToken === 'function' && answerHasDeliveryToken(llmName, answerText)
+    && answerText.replace(/\[\[AO-[a-z0-9]{6}\]\]/gi, '').trim()
+    && normalizeEvidenceText(answerText) !== normalizeEvidenceText(wrappedPrompt)
+    && !isPromptEchoAnswerCandidate(answerText, wrappedPrompt)
+  );
+  if (ownEndToken) return true;
+  if (llmName !== 'Qwen' || answerText.length < DOM_SNAPSHOT_RECOVERY_MIN_CHARS) return false;
   const previousPendingAnswer = String(entry?.pendingFinalAnswer || '').trim();
   const observedGrowthAfterDispatch = Boolean(
     entry.awaitingSubmitConfirmation === true
@@ -8694,6 +8732,7 @@ function handleLLMResponse(llmName, answer, error = null, meta = null, answerHtm
     });
     return merged;
   })();
+  const answerMarkdownCopy = liftAnswerMarkdownCopy(responseMeta);
   const answerMeta = responseMeta?.answer && typeof responseMeta.answer === 'object' ? responseMeta.answer : null;
   const sanityWarnings = Array.isArray(responseMeta?.sanityWarnings) ? responseMeta.sanityWarnings : [];
   const sanityConfidence = typeof responseMeta?.sanityConfidence === 'number' ? responseMeta.sanityConfidence : null;
@@ -8912,6 +8951,11 @@ function handleLLMResponse(llmName, answer, error = null, meta = null, answerHtm
     || metaObj?.manualLatestRecovery
     || String(responseSource || metaObj?.source || '').toLowerCase() === 'manual_latest_recovery'
   );
+  if (isSuccess && entry) {
+    inferPromptSubmittedFromAnswerEvidence(llmName, entry, {
+      trimmedAnswer, responseMeta, responseSource, metaObj
+    });
+  }
   // Grok explicitly reports confirmed:false when every send strategy fails. A later
   // broad DOM/manual-ping scrape must not turn composer text or an old page fragment
   // into SUCCESS. Messages from the same content script are ordered, so a real Grok
@@ -8997,14 +9041,6 @@ function handleLLMResponse(llmName, answer, error = null, meta = null, answerHtm
     minChars: DOM_SNAPSHOT_RECOVERY_MIN_CHARS
   }) || { ok: false };
   const allowManualTerminalOverride = Boolean(manualTerminalOverrideRequested && isSuccess && trimmedAnswer.length >= DOM_SNAPSHOT_RECOVERY_MIN_CHARS);
-  if (isSuccess && entry) {
-    inferPromptSubmittedFromAnswerEvidence(llmName, entry, {
-      trimmedAnswer,
-      responseMeta,
-      responseSource,
-      metaObj
-    });
-  }
   if (isSuccess && maybeDeferStreamingFinalization(llmName, normalizedAnswer, metaObj, normalizedHtml, normalizedAnswer)) {
     return;
   }
@@ -9524,6 +9560,7 @@ function handleLLMResponse(llmName, answer, error = null, meta = null, answerHtm
         llmName,
         answer: normalizedAnswer,
         answerHtml: normalizedHtml,
+        ...answerMarkdownCopy,
         ...transportIdentityFor(entry),
         requestId: entry?.requestId || null,
         metadata: {
@@ -9792,6 +9829,7 @@ function handleLLMResponse(llmName, answer, error = null, meta = null, answerHtm
     llmName,
     answer: normalizedAnswer,
     answerHtml: normalizedHtml,
+    ...answerMarkdownCopy,
     ...transportIdentityFor(entry),
     requestId: entry?.requestId || jobState?.llms?.[llmName]?.requestId || null,
     metadata: {
@@ -9843,6 +9881,8 @@ function handleLLMResponse(llmName, answer, error = null, meta = null, answerHtm
     if (!alreadyFinalized || allowTerminalUpgrade || allowManualTerminalOverride) {
       finalProjection.answer = normalizedAnswer;
       finalProjection.answerHtml = normalizedHtml;
+      finalProjection.answerMarkdown = answerMarkdownCopy.answerMarkdown;
+      finalProjection.copyReport = answerMarkdownCopy.copyReport;
       finalProjection.status = finalStatus;
       finalProjection.statusReason = finalReason;
     } else {
@@ -10677,6 +10717,12 @@ async function handleManualResponsePing(llmName, options = {}) {
             answerHtml: String(updatedEntry?.answerHtml || result.html || ''),
             requestId: updatedEntry?.requestId || null,
             ...transportIdentityFor(updatedEntry),
+            metadata: {
+              ...(updatedEntry?.answerCommitEvidence || {}),
+              dispatchId: updatedEntry?.lastDispatchMeta?.dispatchId || null,
+              attemptId: updatedEntry?.lastDispatchMeta?.attemptId || null,
+              answerEndMarkerSeen: answerHasDeliveryToken(llmName, updatedEntry?.answer || result.text || '')
+            },
             finalStatus: updatedEntry?.finalStatus || updatedEntry?.status || null,
             strategyId: candidate?.strategyId || result.strategyId || strategy?.id || null,
             selectorUsed: candidate?.selectorDescriptor || result.selectorDescriptor || result.selectorUsed || null,
