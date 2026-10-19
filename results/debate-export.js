@@ -75,7 +75,7 @@
     const report = document.getElementById('report');
     if (!report) return;
     window.__hlInit = true;
-    const COLORS = ['#fff176', '#a5d6a7', '#81d4fa', '#f48fb1', '#ffcc80'];
+    const COLORS = ['#ffff00', '#a5d6a7', '#81d4fa', '#f48fb1', '#ffcc80'];
     const SKIP = '#hl-favs,[data-hl-ui],nav,button,script,style,textarea,input,select';
     const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
     const el = (tag, className, text) => {
@@ -91,41 +91,32 @@
       const style = el('style');
       style.id = 'hl-style';
       style.textContent = `
-        mark.hl { color: inherit; border-radius: 3px; padding: 0 1px; }
-        mark.hl.hl-flash { outline: 2px solid #3b6fd8; outline-offset: 1px; }
-        .hl-bar { position: fixed; display: none; z-index: 2147483647; align-items: center; gap: 6px; padding: 6px 8px;
-                  background: #fff; color: #334155; border: 1px solid #dbe3ee; border-radius: 12px;
-                  font: 13px system-ui, -apple-system, 'Segoe UI', sans-serif;
-                  box-shadow: 0 8px 24px rgba(30,41,59,.16), 0 1px 3px rgba(30,41,59,.08); }
-        .hl-btn { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; padding: 0;
-                  border: 1px solid transparent; border-radius: 8px; background: transparent; color: #64748b;
-                  font: 15px/1 system-ui, sans-serif; cursor: pointer; transition: background .12s, color .12s, transform .12s; }
-        .hl-btn:hover { background: #eef2f7; color: #1e293b; }
-        .hl-btn.hl-sw { width: 20px; height: 20px; border: 1px solid rgba(30,41,59,.2); border-radius: 50%; }
-        .hl-btn.hl-sw:hover { transform: scale(1.18); }
-        .hl-btn.hl-star:hover { background: #fff6e0; color: #d98a00; }
-        .hl-sep { width: 1px; height: 18px; margin: 0 2px; background: #e2e8f0; }
-        #hl-favs { margin: 0 0 24px; padding: 14px 16px; border: 1px solid #dbe3ee; border-radius: 14px; background: #f6f8fc;
-                   box-shadow: 0 1px 2px rgba(30,41,59,.05); font: 14px/1.55 system-ui, -apple-system, 'Segoe UI', sans-serif; color: #334155; }
-        #hl-favs h3 { margin: 0 0 10px; font-size: 19px; font-weight: 600; color: #475569; }
-        #hl-favs .hl-fav { margin: 8px 0 0; padding: 10px 12px 8px; background: #fff; border: 1px solid #e2e8f0;
-                           border-left: 4px solid rgb(118 198 255); border-radius: 10px; }
-        #hl-favs .hl-fav-t { white-space: pre-wrap; user-select: text; color: #1e293b; }
-        #hl-favs .hl-fav-m { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; font-size: 12px; }
-        #hl-favs .hl-fav-m a { color: #2f62c8; font-weight: 500; text-decoration: none; }
-        #hl-favs .hl-fav-m a:hover { text-decoration: underline; }
-        #hl-favs .hl-fav-x { width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px; background: none;
-                             color: #94a3b8; font-size: 13px; cursor: pointer; transition: background .12s, color .12s; }
-        #hl-favs .hl-fav-x:hover { background: #fdecec; color: #d03a3a; }
-        .hl-modal { position: fixed; inset: 0; z-index: 2147483647; display: flex; align-items: center; justify-content: center;
-                    background: rgba(15,23,42,.45); font: 14px system-ui, -apple-system, 'Segoe UI', sans-serif; }
-        .hl-modal-box { display: flex; flex-direction: column; gap: 8px; width: min(640px, 92vw); max-height: 90vh; box-sizing: border-box;
-                        padding: 14px; background: #fff; color: #1e293b; border-radius: 12px; }
-        .hl-modal textarea { width: 100%; height: 40vh; box-sizing: border-box; font: 11px/1.4 monospace; }
-        .hl-modal-row { display: flex; gap: 8px; justify-content: flex-end; }
-        .hl-toast { position: fixed; right: 12px; bottom: 12px; z-index: 2147483647; padding: 8px 14px; border-radius: 10px;
-                    background: #1e293b; color: #f1f5f9; font: 13px system-ui, -apple-system, 'Segoe UI', sans-serif;
-                    box-shadow: 0 8px 24px rgba(30,41,59,.25); }
+mark.hl { color: inherit; border-radius: 3px; padding: 0 1px; }
+mark.hl.hl-flash { outline: 2px solid #3b6fd8; outline-offset: 1px; }
+.hl-bar { position: fixed; display: none; z-index: 2147483647; align-items: center; gap: 6px; padding: 6px 8px; background: #fff; color: #334155; border: 1px solid #dbe3ee; border-radius: 12px; font: 13px system-ui, -apple-system, 'Segoe UI', sans-serif; box-shadow: 0 8px 24px rgba(30,41,59,.16), 0 1px 3px rgba(30,41,59,.08); }
+.hl-btn { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; padding: 0; border: 1px solid transparent; border-radius: 8px; background: transparent; color: #64748b; font: 15px/1 system-ui, sans-serif; cursor: pointer; transition: background .12s, color .12s, transform .12s; }
+.hl-btn:hover { background: #eef2f7; color: #1e293b; }
+.hl-btn.hl-sw { width: 20px; height: 20px; border: 1px solid rgba(30,41,59,.2); border-radius: 50%; }
+.hl-btn.hl-sw:hover { transform: scale(1.18); }
+.hl-btn.hl-star:hover { background: #fff6e0; color: #d98a00; }
+.hl-btn.hl-fmt { font: 700 14px/1 system-ui, sans-serif; }
+.hl-btn.hl-fmt-i { font: italic 600 15px/1 Georgia, serif; }
+.hl-btn.hl-clear { font: 600 12px/1 system-ui, sans-serif; }
+.hl-sep { width: 1px; height: 18px; margin: 0 2px; background: #e2e8f0; }
+#hl-favs { margin: 0 0 24px; padding: 14px 16px; border: 1px solid #dbe3ee; border-radius: 14px; background: #f6f8fc; box-shadow: 0 1px 2px rgba(30,41,59,.05); font: 14px/1.55 system-ui, -apple-system, 'Segoe UI', sans-serif; color: #334155; }
+#hl-favs h3 { margin: 0 0 10px; font-size: 19px; font-weight: 600; color: #475569; }
+#hl-favs .hl-fav { margin: 8px 0 0; padding: 10px 12px 8px; background: #fff; border: 1px solid #e2e8f0; border-left: 4px solid rgb(118 198 255); border-radius: 10px; }
+#hl-favs .hl-fav-t { white-space: pre-wrap; user-select: text; color: #1e293b; }
+#hl-favs .hl-fav-m { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; font-size: 12px; }
+#hl-favs .hl-fav-m a { color: #2f62c8; font-weight: 500; text-decoration: none; }
+#hl-favs .hl-fav-m a:hover { text-decoration: underline; }
+#hl-favs .hl-fav-x { width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px; background: none; color: #94a3b8; font-size: 13px; cursor: pointer; transition: background .12s, color .12s; }
+#hl-favs .hl-fav-x:hover { background: #fdecec; color: #d03a3a; }
+.hl-modal { position: fixed; inset: 0; z-index: 2147483647; display: flex; align-items: center; justify-content: center; background: rgba(15,23,42,.45); font: 14px system-ui, -apple-system, 'Segoe UI', sans-serif; }
+.hl-modal-box { display: flex; flex-direction: column; gap: 8px; width: min(640px, 92vw); max-height: 90vh; box-sizing: border-box; padding: 14px; background: #fff; color: #1e293b; border-radius: 12px; }
+.hl-modal textarea { width: 100%; height: 40vh; box-sizing: border-box; font: 11px/1.4 monospace; }
+.hl-modal-row { display: flex; gap: 8px; justify-content: flex-end; }
+.hl-toast { position: fixed; right: 12px; bottom: 12px; z-index: 2147483647; padding: 8px 14px; border-radius: 10px; background: #1e293b; color: #f1f5f9; font: 13px system-ui, -apple-system, 'Segoe UI', sans-serif; box-shadow: 0 8px 24px rgba(30,41,59,.25); }
       `;
       document.head.append(style);
     }
@@ -150,9 +141,14 @@
       bar.append(node);
       return node;
     };
+    addButton('hl-clear', 'Убрать форматирование', 'Tx', clearFormat);
+    bar.append(el('span', 'hl-sep'));
     COLORS.forEach((color) => {
       addButton('hl-sw', 'Подсветить: ' + color, '', () => colorize(color)).style.background = color;
     });
+    bar.append(el('span', 'hl-sep'));
+    addButton('hl-fmt', 'Жирный', 'B', () => format('b'));
+    addButton('hl-fmt hl-fmt-i', 'Курсив', 'I', () => format('i'));
     bar.append(el('span', 'hl-sep'));
     addButton('hl-star', 'В избранное', '★', favorite);
     addButton('', 'Снять подсветку', '✕', unhighlight);
@@ -233,8 +229,7 @@
     // keep=true: уже подсвеченный текст сохраняет свой цвет (для ★)
     function paint(items, color, keep) {
       return items.map(({ node, start, end }) => {
-        if (end < node.length) node.splitText(end);
-        const text = start > 0 ? node.splitText(start) : node;
+        const text = cut({ node, start, end });
         const old = text.parentElement.closest('mark.hl');
         if (!old) {
           const mark = el('mark', 'hl');
@@ -257,6 +252,66 @@
     }
     function unwrap(mark) {
       mark.replaceWith(...mark.childNodes);
+    }
+    // Форматирование — обёртки mark.hl, b и i [data-hl-f]; b/i всегда снаружи, mark всегда непосредственно над текстом
+    const FMT = 'mark.hl,b[data-hl-f],i[data-hl-f]';
+    function cut({ node, start, end }) {
+      if (end < node.length) node.splitText(end);
+      return start > 0 ? node.splitText(start) : node;
+    }
+    // Делает текст единственным содержимым всех обёрток над ним; возвращает внешнюю обёртку (или сам текст)
+    function isolate(text) {
+      let top = text;
+      while (top.parentElement && top.parentElement.matches(FMT)) {
+        const wrap = top.parentElement;
+        if (wrap.childNodes.length === 1) { top = wrap; continue; }
+        const pieces = [...wrap.childNodes].map((child) => {
+          const piece = wrap.cloneNode(false);
+          piece.removeAttribute('id');
+          piece.append(child);
+          return piece;
+        });
+        wrap.replaceWith(...pieces);
+        top = pieces.find((piece) => piece.contains(text));
+      }
+      return top;
+    }
+    function chainOf(top, text) {
+      const list = [];
+      for (let node = top; node !== text; node = node.firstChild) list.push(node);
+      return list;
+    }
+    // Жирный / курсив: если весь выделенный текст уже в нём — снять, иначе применить
+    function format(tag) {
+      const items = collect();
+      if (items.length) {
+        const selector = tag + '[data-hl-f]';
+        const entries = items.map((item) => { const text = cut(item); return { text, top: isolate(text) }; });
+        const find = ({ text, top }) => chainOf(top, text).find((node) => node.matches(selector));
+        const remove = entries.every((entry) => find(entry));
+        entries.forEach((entry) => {
+          const found = find(entry);
+          if (remove) found.replaceWith(...found.childNodes);
+          else if (!found) {
+            const wrap = el(tag);
+            wrap.setAttribute('data-hl-f', '');
+            entry.top.parentNode.insertBefore(wrap, entry.top);
+            wrap.append(entry.top);
+          }
+        });
+        report.normalize();
+      }
+      finish();
+    }
+    // Убирает подсветку, жирный и курсив только с выделенного фрагмента
+    function clearFormat() {
+      collect().forEach((item) => {
+        const text = cut(item);
+        const top = isolate(text);
+        if (top !== text) top.replaceWith(text);
+      });
+      report.normalize();
+      finish();
     }
     function finish() {
       getSelection().removeAllRanges();
