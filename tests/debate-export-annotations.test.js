@@ -292,6 +292,20 @@ test('favorite card has the plain heading and a glyph link with a title and no c
   dom.window.close();
 });
 
+test('favorites card sits above the first model answer, below the navigation, and navigation still filters', () => {
+  document.body.innerHTML = ['GPT', 'Claude'].map((name) => `<article class="debate-model-card" data-session-id="1" data-llm-name="${name}"><div class="debate-model-card-output"><p>${name} answer</p></div></article>`).join('');
+  const dom = openHtml(Exporter.buildFeedDocument(document.body, '1'));
+  const { window: w } = dom, d = w.document;
+  selectWhole(w, '.feed-response p'); clickToolbar(w, 'В избранное');
+  const card = d.querySelector('#hl-favs');
+  expect(card.nextElementSibling.classList.contains('feed-response')).toBe(true);
+  expect(card.previousElementSibling.tagName).toBe('SECTION');
+  d.querySelectorAll('.feed-nav-button')[2].click();
+  expect([...d.querySelectorAll('.feed-response')].map((x) => x.hidden)).toEqual([true, false]);
+  expect(card.style.display).toBe('');
+  dom.window.close();
+});
+
 test('inside a frame Ctrl+S opens the copy window with the full HTML and never writes a file', async () => {
   const dom = new JSDOM(Exporter.documentHtml('Frame', '<p>framed text</p>', new Date(), false), {
     runScripts: 'outside-only',

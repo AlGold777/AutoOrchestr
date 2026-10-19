@@ -130,10 +130,12 @@
       document.head.append(style);
     }
 
-    // Карточка «Избранное» — первый элемент #report; строится из mark[data-fav] (источник истины — DOM).
+    // Карточка «Избранное»; строится из mark[data-fav] (источник истины — DOM).
     const favs = document.getElementById('hl-favs') || el('section');
     favs.id = 'hl-favs';
-    report.prepend(favs);
+    // над ответом первой модели, под навигацией и промптом; без ответов моделей — в начале отчёта
+    const firstAnswer = report.querySelector('.feed-response') || report.querySelector('.model-title')?.closest('section');
+    if (firstAnswer) firstAnswer.parentNode.insertBefore(favs, firstAnswer); else report.prepend(favs);
 
     // ---------- Плавающая панель ----------
     const bar = el('div', 'hl-bar');
