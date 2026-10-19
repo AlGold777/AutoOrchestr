@@ -550,6 +550,7 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
         index,
         text,
         html,
+        mdNode: htmlNode,
         selector,
         descriptor,
         visible,
@@ -603,11 +604,51 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
     .map((candidate) => ({ ...candidate, strategyScore: scoreByStrategy(candidate) }))
     .sort((a, b) => b.strategyScore - a.strategyScore);
   const best = candidates[0] || null;
+  // DOM->Markdown copy of the chosen node. Self-contained: this function is serialized
+  // into the page. Never silent: any failure becomes a whole-answer placeholder and
+  // report.complete=false (spec: docs/Architecture/answer-markdown-spec.md, 4.2).
+  let answerMarkdown = '';
+  let copyReport = null;
+  if (best) {
+    const stub = (reason) => {
+      answerMarkdown = `[НЕ СКОПИРОВАНО: тип=answer, причина=${reason}, позиция=1]`;
+      copyReport = {
+        version: 1, provider: modelName || null, found: {}, copied: {},
+        placeholders: [{ type: 'answer', reason, position: 1 }], mismatches: [], flags: {}, complete: false
+      };
+    };
+    const engine = globalThis.AnswerMarkdown;
+    if (!engine || typeof engine.convert !== 'function') {
+      stub(String(manualOptions.markdownInjectError || 'движок недоступен').replace(/[\],\n\r]+/g, ' ').slice(0, 120));
+    } else {
+      try {
+        let context;
+        const ctxModule = globalThis.AnswerCopyContext;
+        if (ctxModule && typeof ctxModule.collect === 'function') {
+          try { context = ctxModule.collect(best.mdNode, { provider: modelName, isLatest: true }); } catch (_) { context = undefined; }
+        }
+        const converted = engine.convert(best.mdNode, { provider: modelName || null, context });
+        const markdown = String(converted?.markdown ?? '');
+        if (!converted?.report || typeof converted.report !== 'object') stub('движок не вернул отчёт');
+        else if (markdown.length > 1000000) {
+          stub('markdown длиннее 1000000 знаков');
+          copyReport = { ...converted.report, placeholders: [...(converted.report.placeholders || []), ...copyReport.placeholders], complete: false };
+        } else {
+          answerMarkdown = markdown;
+          copyReport = converted.report;
+        }
+      } catch (err) {
+        stub(`исключение: ${String(err?.message || err).replace(/[\],\n\r]+/g, ' ').slice(0, 100)}`);
+      }
+    }
+  }
   return best
     ? {
       ok: true,
       text: best.text,
       html: best.html,
+      answerMarkdown,
+      copyReport,
       length: best.text.length,
       visible: best.visible,
       candidates: candidates.length,
@@ -812,6 +853,55 @@ const sendTabMessageForLateCollect = (tabId, payload, timeoutMs) => withLateColl
   }
 }), timeoutMs, (err) => ({ ok: false, error: err?.message || 'timeout' }));
 
+// The DOM->Markdown modules, in manifest order. A tab opened before the extension was
+// reloaded has none of them, so a read-only pull injects the missing ones first.
+const ANSWER_MARKDOWN_MODULES = [
+  ['AnswerMarkdown', 'shared/answer-markdown.js'],
+  ['AnswerMarkdownBlocks', 'shared/answer-markdown-blocks.js'],
+  ['AnswerMarkdownExtras', 'shared/answer-markdown-extras.js'],
+  ['AnswerMarkdownProviders', 'shared/answer-markdown-providers.js'],
+  ['AnswerCopyContext', 'content-scripts/answer-copy-context.js']
+];
+// Returns null when the modules are present, else a short reason (carried into the report).
+async function ensureAnswerMarkdownModulesInTab(tabId) {
+  try {
+    const names = ANSWER_MARKDOWN_MODULES.map(([name]) => name);
+    const probe = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: (list) => list.map((name) => !!globalThis[name]),
+      args: [names]
+    });
+    const present = Array.isArray(probe?.[0]?.result) ? probe[0].result : [];
+    const missing = ANSWER_MARKDOWN_MODULES.filter((_, i) => !present[i]);
+    if (!missing.length) return null;
+    // Without the engine every later module would load without registering: inject all.
+    const files = present[0] ? missing.map(([, file]) => file) : ANSWER_MARKDOWN_MODULES.map(([, file]) => file);
+    await chrome.scripting.executeScript({ target: { tabId }, files });
+    return null;
+  } catch (err) {
+    return `внедрение модулей: ${String(err?.message || err).replace(/[\],\n\r]+/g, ' ').slice(0, 80)}`;
+  }
+}
+self.ensureAnswerMarkdownModulesInTab = ensureAnswerMarkdownModulesInTab;
+
+// Fields for a late-collect result: its own copy, or an explicit incomplete report
+// when the source (snapshot cache, preserved text...) never went through DOM->Markdown.
+function lateCollectCopyFields(result) {
+  if (result?.copyReport && typeof result.copyReport === 'object') {
+    return { answerMarkdown: typeof result.answerMarkdown === 'string' ? result.answerMarkdown : '', copyReport: result.copyReport };
+  }
+  const reason = `источник без DOM→Markdown: ${String(result?.source || 'unknown').replace(/[\],\n\r]+/g, ' ').slice(0, 60)}`;
+  return {
+    answerMarkdown: '',
+    copyReport: {
+      version: 1, provider: null, found: {}, copied: {},
+      placeholders: [{ type: 'answer', reason, position: 1 }], mismatches: [], flags: {}, complete: false
+    }
+  };
+}
+
+self.lateCollectCopyFields = lateCollectCopyFields;
+
 async function classifyLateCollectState(tabId, llmName, options = {}) {
   const tab = await getTabSafe(tabId);
   if (!tab) return { state: 'DEAD', reason: 'tab_missing' };
@@ -854,12 +944,13 @@ async function classifyLateCollectState(tabId, llmName, options = {}) {
 }
 
 async function runInlineLateExtract({ tabId, llmName, minChars = DOM_SNAPSHOT_RECOVERY_MIN_CHARS, manualRecovery = null } = {}) {
-  // Read-only fallback: execute a pure extractor only, without content-script reinjection,
-  // listeners, observers, reloads, prompt resend, or DOM mutation.
+  // Read-only fallback: execute a pure extractor only (no listeners, observers, reloads,
+  // prompt resend or DOM mutation). The only injection is the passive DOM->Markdown modules.
+  const markdownInjectError = await ensureAnswerMarkdownModulesInTab(tabId);
   const result = await withLateCollectExecutionLock(() => withLateCollectTimeout(chrome.scripting.executeScript({
     target: { tabId },
     func: extractLatestAssistantSnapshotInPage,
-    args: [llmName, minChars, manualRecovery || {}]
+    args: [llmName, minChars, { ...(manualRecovery || {}), markdownInjectError }]
   }), LATE_COLLECT_EXECUTE_TIMEOUT_MS, (err) => ({ ok: false, error: err?.message || 'execute_timeout' })));
   const snapshot = Array.isArray(result) ? result.find((item) => item?.result)?.result : null;
   if (snapshot?.ok && snapshot.text) {
@@ -1058,6 +1149,8 @@ async function lateCollectAnswer({ llmName, tabId, reason = 'late_collect', meta
         status: 'success',
         text: inline.text,
         html: inline.html || '',
+        answerMarkdown: inline.answerMarkdown || '',
+        copyReport: inline.copyReport || null,
         source: 'inline_executeScript',
         reason: state.reason,
         candidates: inline.candidates || 0,
@@ -1119,6 +1212,7 @@ function acceptLateCollectResult(llmName, result, meta = {}) {
   const entry = jobState?.llms?.[llmName] || null;
   const incomingText = String(result.text || '').trim();
   const incomingHtml = String(result.html || '');
+  const lateCopy = lateCollectCopyFields(result);
   const currentText = String(entry?.answer || entry?.pendingFinalAnswer || '').trim();
   const terminalEntry = Boolean(entry && isFinalizedEntry(entry));
   const incomingResponseMeta = meta?.responseMeta && typeof meta.responseMeta === 'object' ? meta.responseMeta : {};
@@ -1307,6 +1401,8 @@ function acceptLateCollectResult(llmName, result, meta = {}) {
   if (entry && (improvesTerminalAnswer || replacesTerminalAnswer)) {
     entry.answer = incomingText;
     entry.answerHtml = incomingHtml || (replacesTerminalAnswer ? '' : entry.answerHtml) || '';
+    entry.answerMarkdown = lateCopy.answerMarkdown;
+    entry.copyReport = lateCopy.copyReport;
     entry.pendingFinalAnswer = incomingText;
     entry.pendingFinalAnswerHtml = incomingHtml || (replacesTerminalAnswer ? '' : entry.pendingFinalAnswerHtml) || '';
     entry.responseMeta = {
@@ -1341,6 +1437,7 @@ function acceptLateCollectResult(llmName, result, meta = {}) {
       llmName,
       answer: incomingText,
       answerHtml: entry.answerHtml || '',
+      ...lateCopy,
       requestId: entry.requestId || null,
       ...transportIdentityFor(entry),
       metadata: {
@@ -1373,6 +1470,7 @@ function acceptLateCollectResult(llmName, result, meta = {}) {
       navigationSeq: meta?.navigationSeq || entry?.runIdentity?.navigationSeq || null,
       responseMeta: {
         ...(incomingResponseMeta || {}),
+        ...lateCopy,
         source: incomingResponseMeta.source || meta?.source || result.source || 'late_collect',
         answerSource: incomingResponseMeta.answerSource || result.source || null,
         extractionSource: incomingResponseMeta.extractionSource || result.source || null,
@@ -7462,6 +7560,24 @@ function liftAnswerMarkdownCopy(responseMeta) {
 }
 self.liftAnswerMarkdownCopy = liftAnswerMarkdownCopy;
 
+// Adapters' own paths send answerMarkdown/copyReport next to answerHtml; hand them to
+// handleLLMResponse inside meta.responseMeta, where the pipeline path already carries them.
+function withMessageAnswerCopy(message) {
+  const meta = message?.meta || null;
+  const hasMarkdown = typeof message?.answerMarkdown === 'string';
+  const hasReport = !!(message?.copyReport && typeof message.copyReport === 'object');
+  if (!hasMarkdown && !hasReport) return meta;
+  return {
+    ...(meta || {}),
+    responseMeta: {
+      ...(meta?.responseMeta || {}),
+      ...(hasMarkdown ? { answerMarkdown: message.answerMarkdown } : {}),
+      ...(hasReport ? { copyReport: message.copyReport } : {})
+    }
+  };
+}
+self.withMessageAnswerCopy = withMessageAnswerCopy;
+
 function commitAcceptedAnswer(llmName, entry, answerText, answerHtml, context = {}) {
   if (!entry) return null;
   const dispatchId = context.dispatchId || entry?.lastDispatchMeta?.dispatchId || null;
@@ -8733,6 +8849,13 @@ function handleLLMResponse(llmName, answer, error = null, meta = null, answerHtm
     return merged;
   })();
   const answerMarkdownCopy = liftAnswerMarkdownCopy(responseMeta);
+  if (!answerMarkdownCopy.copyReport && !error) {
+    // A path that never went through DOM->Markdown (snapshot cache, an adapter's manual
+    // pull...) must say so instead of passing as a normal copy.
+    answerMarkdownCopy.copyReport = lateCollectCopyFields({
+      source: responseMeta?.source || metaObj?.source || 'unknown'
+    }).copyReport;
+  }
   const answerMeta = responseMeta?.answer && typeof responseMeta.answer === 'object' ? responseMeta.answer : null;
   const sanityWarnings = Array.isArray(responseMeta?.sanityWarnings) ? responseMeta.sanityWarnings : [];
   const sanityConfidence = typeof responseMeta?.sanityConfidence === 'number' ? responseMeta.sanityConfidence : null;
@@ -10715,6 +10838,8 @@ async function handleManualResponsePing(llmName, options = {}) {
             source: result.source || 'late_collect',
             answer: String(updatedEntry?.answer || result.text || ''),
             answerHtml: String(updatedEntry?.answerHtml || result.html || ''),
+            answerMarkdown: String(updatedEntry?.answerMarkdown || result.answerMarkdown || ''),
+            copyReport: updatedEntry?.copyReport || result.copyReport || null,
             requestId: updatedEntry?.requestId || null,
             ...transportIdentityFor(updatedEntry),
             metadata: {

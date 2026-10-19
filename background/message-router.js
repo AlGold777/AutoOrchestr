@@ -2471,7 +2471,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     message.llmName,
                     message.answer,
                     message.error || null,
-                    message.meta || null,
+                    withMessageAnswerCopy(message),
                     message.answerHtml || message.html || ''
                 );
                 sendResponse({ status: 'response_handled' });
@@ -2521,7 +2521,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     message.llmName,
                     message.answer,
                     message.error || null,
-                    message.meta || null,
+                    withMessageAnswerCopy(message),
                     message.answerHtml || message.html || ''
                 );
                 sendResponse({ status: 'final_response_handled' });

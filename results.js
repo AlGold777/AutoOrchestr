@@ -18805,6 +18805,7 @@ document.addEventListener('click', (event) => {
                                 pipelineRunId: message.pipelineRunId || message.metadata?.pipelineRunId || '',
                                 pipelineRoundId: message.pipelineRoundId || message.metadata?.pipelineRoundId || ''
                             };
+                            stashAnswerCopy(llmName, message, message.transportRequestId || message.requestId);
                             updateLLMPanelOutput(llmName, recoveredText, message.answerHtml || '', recoveryMeta);
                             manualPingReveal.delete(llmName);
                         }

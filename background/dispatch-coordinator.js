@@ -485,6 +485,10 @@ function commitIncompleteAnswer(llmName, entry, { text, html = '', source, compl
     finalizationDeferredCheck: true,
     ...extraMeta,
     responseMeta: {
+      // Same text as the entry already holds: keep its markdown copy, or say there is none.
+      ...(typeof self.lateCollectCopyFields === 'function'
+        ? self.lateCollectCopyFields({ answerMarkdown: entry.answerMarkdown, copyReport: entry.copyReport, source })
+        : {}),
       source,
       completionReason: complete ? `${completionReason}:delivery_token` : completionReason,
       partial: !complete,

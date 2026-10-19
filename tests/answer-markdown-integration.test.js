@@ -132,7 +132,7 @@ describe('content-utils buildResponseMeta', () => {
     try { load('content-scripts/content-utils.js'); } catch (_) { /* partial load is enough below */ }
   });
 
-  test('pipeline path forwards fields; fallback path is marked incomplete', () => {
+  test('pipeline path forwards fields; fallback path carries none (background marks it)', () => {
     const build = window.ContentUtils?.buildResponseMeta;
     if (!build) return; // module did not load in this jsdom: covered by the source check below
     const ok = build({ answerMarkdown: 'm', copyReport: okReport }, { source: 'pipeline' });
@@ -140,7 +140,7 @@ describe('content-utils buildResponseMeta', () => {
     expect(ok.copyReport).toBe(okReport);
     const fb = build(null, { source: 'dom_fallback' });
     expect(fb.answerMarkdown).toBeUndefined();
-    expect(fb.copyReport.complete).toBe(false);
+    expect(fb.copyReport).toBeUndefined();
   });
 
   test('source forwards pipeline metadata', () => {

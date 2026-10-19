@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-19 — Markdown и отчёт полноты у ответов, подтянутых из открытых вкладок, версия 2.81.803
+
+- Ответы, подтянутые из вкладок («Get it», поздний и ручной сбор), раньше шли отдельным путём (`extractLatestAssistantSnapshotInPage` через `chrome.scripting.executeScript`) и приходили без `answerMarkdown` и `copyReport`. Теперь перед сбором в страницу внедряются модули копирования, экстрактор вызывает их и возвращает Markdown с отчётом рядом с текстом и HTML. Вкладки, открытые до перезагрузки расширения, получают модули при подтягивании.
+- Если внедрить или сконвертировать не удалось, ответ помечается неполным (`complete=false`, причина в отчёте), а не теряет блоки молча. Собственные ручные пути адаптеров (Claude, ChatGPT, Le Chat и др.) и восстановление из снимка проведены через тот же вызов.
+- Тесты: `tests/answer-markdown-manual-pull.test.js` и расширенный `tests/answer-markdown-integration.test.js`. Живой проверки в браузере не было.
+- Известно: `tests/early-terminal-guard.test.js` падает и на чистом HEAD.
+
 ### 2026-10-19 — Копирование ответов в Markdown (GFM) с отчётом полноты, версия 2.81.802
 
 - Новый слой DOM → Markdown (GFM): `shared/answer-markdown.js` (движок: структура, код, pipe-таблицы, нормализация, заглушки `[НЕ СКОПИРОВАНО: тип=…, причина=…, позиция=N]`, отчёт «найдено / скопировано / заглушки»), `shared/answer-markdown-blocks.js` (формулы LaTeX, диаграммы mermaid/PlantUML/DOT/ASCII/SVG, изображения и графики), `shared/answer-markdown-extras.js` (артефакты и Canvas, источники и сноски `[^n]`, файлы и вывод code interpreter), `shared/answer-markdown-providers.js` (правила 10 провайдеров), `content-scripts/answer-copy-context.js` (версия ответа, продолжения, свёрнутое, неполный ответ).

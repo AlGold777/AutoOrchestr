@@ -51,11 +51,8 @@
       answerMarkdown: typeof options.answerMarkdown === 'string'
         ? options.answerMarkdown
         : (typeof pipelineMeta.answerMarkdown === 'string' ? pipelineMeta.answerMarkdown : undefined),
-      copyReport: options.copyReport || pipelineMeta.copyReport || (fallback ? {
-        version: 1, provider: null, found: {}, copied: {},
-        placeholders: [{ type: 'answer', reason: 'резервный путь без DOM→Markdown', position: 1 }],
-        mismatches: [], flags: {}, complete: false
-      } : undefined)
+      // Fallback sources carry none: the background marks such answers incomplete.
+      copyReport: options.copyReport || pipelineMeta.copyReport || undefined
     };
   };
 
@@ -1409,7 +1406,7 @@
     }
   };
 
-  const collectLateSnapshotCandidate = (llmName = detectLlmNameFromLocation(), minChars = 80) => {
+  const collectLateSnapshotCandidate = (llmName = detectLlmNameFromLocation(), minChars = 80, options = {}) => {
     const selectors = lateSnapshotSelectorsByModel[llmName] || [];
     const seen = new Set();
     const nodes = [];
@@ -1460,8 +1457,37 @@
       .sort((a, b) => b.score - a.score);
     const best = candidates[0] || null;
     return best
-      ? { ok: true, llmName, text: best.text, html: buildInlineHtml(best.node), visible: best.visible, candidates: candidates.length }
+      ? {
+        ok: true, llmName, text: best.text, html: buildInlineHtml(best.node), visible: best.visible, candidates: candidates.length,
+        // Opt-in (manual pulls only; the streaming snapshot observer does not convert).
+        ...(options.withMarkdown ? buildAnswerMarkdownCopy(best.node, llmName) : {})
+      }
       : { ok: false, llmName, text: '', html: '', candidates: candidates.length };
+  };
+
+  // DOM->Markdown copy of a node, same fields and failure rules as the pipeline's
+  // finalization (UnifiedAnswerPipeline.buildAnswerMarkdownFields); never silent.
+  const buildAnswerMarkdownCopy = (node, llmName) => {
+    try {
+      const builder = window.UnifiedAnswerPipeline?.buildAnswerMarkdownFields;
+      if (typeof builder === 'function') return builder(node, llmName || null);
+    } catch (_) {}
+    const reason = 'конвейер копирования недоступен';
+    return {
+      answerMarkdown: `[НЕ СКОПИРОВАНО: тип=answer, причина=${reason}, позиция=1]`,
+      copyReport: {
+        version: 1, provider: llmName || null, found: {}, copied: {},
+        placeholders: [{ type: 'answer', reason, position: 1 }], mismatches: [], flags: {}, complete: false
+      }
+    };
+  };
+  // For the adapters' own manual paths (getResponses / MANUAL_PING): the markdown
+  // copy of the latest answer, spread next to answerHtml in the message.
+  const buildLatestAnswerCopy = (llmName = detectLlmNameFromLocation()) => {
+    const snapshot = collectLateSnapshotCandidate(llmName, 1, { withMarkdown: true });
+    return snapshot.ok
+      ? { answerMarkdown: snapshot.answerMarkdown, copyReport: snapshot.copyReport }
+      : { answerMarkdown: '', copyReport: buildAnswerMarkdownCopy(null, llmName).copyReport };
   };
 
   const simpleSnapshotHash = (value = '') => {
@@ -1580,6 +1606,7 @@
     buildInlineHtml,
     extractSafeVisibleText,
     collectLateSnapshotCandidate,
+    buildLatestAnswerCopy,
     initLateAnswerSnapshotObserver
   };
 })();
