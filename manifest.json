@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "_Opus",
-  "version": "2.81.801",
+  "version": "2.81.802",
   "description": "Compares LLMs with stable Debate pipelines, structured state maps, and optional synthesis.",
   "permissions": [
     "storage",
@@ -131,6 +131,11 @@
         "content-scripts/answer-pipeline-selectors.js",
         "content-scripts/turn-resolver.js",
         "content-scripts/answer-structure.js",
+        "shared/answer-markdown.js",
+        "shared/answer-markdown-blocks.js",
+        "shared/answer-markdown-extras.js",
+        "shared/answer-markdown-providers.js",
+        "content-scripts/answer-copy-context.js",
         "content-scripts/generation-signal.js",
         "content-scripts/dom-skeleton-capture.js",
         "utils/selection-block-format.js",

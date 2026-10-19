@@ -1,0 +1,17 @@
+<!-- синтетика, по известной структуре: tests/fixtures/live-answer-skeletons/deepseek.json
+     (блок кода: div.md-code-block > div.md-code-block-banner-wrap > .md-code-block-banner > span (язык, хэш-класс) +
+      div[role=button].ds-button с .code-info-button-text (Copy/Download); затем <pre><span>текст</span></pre> и две <svg>;
+      таблица: div.ds-scroll-area > ... > table). Тексты придуманы. -->
+<section data-case="code-labelled">
+<div class="md-code-block md-code-block-light"><div class="md-code-block-banner-wrap"><div class="md-code-block-banner md-code-block-banner-lite"><div class="_121d384"><div class="d2a24f03"><span class="d813de27">json</span></div><div class="d2a24f03 _246a029"><div class="efa00000"><div role="button" class="ds-button ds-button--xs"><div class="ds-button__icon"><svg><path></path></svg></div><span class="ds-button__content"><span class="code-info-button-text">Copy</span></span></div><div role="button" class="ds-button ds-button--xs"><span class="ds-button__content"><span class="code-info-button-text">Download</span></span></div></div></div></div></div></div><pre><span>{
+  "a": 1,
+
+  "b": [1, 2]
+}</span></pre><svg class="_9bc997d"><path></path></svg><svg class="_9bc997d"><path></path></svg></div>
+</section>
+<section data-case="table">
+<div class="ds-scroll-area"><div class="x"><div class="y"><div class="z"></div></div></div><table><thead><tr><th><span>A</span></th><th><span>B</span></th></tr></thead><tbody><tr><td><span>x </span><code>y|z</code></td><td><span>1</span></td></tr></tbody></table></div>
+</section>
+<section data-case="answer-root">
+<div class="message-item"><div class="ds-markdown"><p>thinking trace</p></div><div class="ds-markdown"><p>answer</p></div></div>
+</section>

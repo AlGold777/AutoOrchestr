@@ -1,0 +1,10 @@
+<!-- синтетика, по известной структуре: tests/fixtures/live-answer-skeletons/lechat.json
+     ЛОВУШКА: data-testid="code-block" стоит на INLINE <code> (внутри <li>/<p>), а не на блоке кода.
+     Разметка блока кода в скелете отсутствует — не подтверждена. Корень ответа: [data-message-part-type="answer"]
+     (селектор репозитория answer-pipeline-selectors.js, lechat). -->
+<section data-case="inline-testid">
+<p>call <code class="bg-state-ghost-hover rounded-md px-1 py-0.5 text-sm font-mono" data-testid="code-block">chrome.storage.local</code> now</p>
+</section>
+<section data-case="answer-root">
+<div data-message-author-role="assistant"><div data-message-part-type="reasoning"><p>trace</p></div><div data-message-part-type="answer"><p>answer</p></div></div>
+</section>

@@ -1,0 +1,563 @@
+/**
+ * @jest-environment jsdom
+ */
+// Markup in these tests is "синтетика, по известной структуре" (KaTeX/MathJax/mermaid/...),
+// не проверено вживую на страницах провайдеров. Исключение — fixtures/live-answer-skeletons.
+const fs = require('fs');
+const path = require('path');
+const Blocks = require('../shared/answer-markdown-blocks');
+
+// Minimal engine double: walks the DOM, lets block handlers absorb elements, keeps text as is.
+function makeEngine() {
+  const handlers = [];
+  const placeholders = [];
+  const copied = {};
+  const engine = {
+    registerBlock: (h) => handlers.push(h)
+  };
+  engine.convert = (el) => {
+    placeholders.length = 0;
+    Object.keys(copied).forEach((k) => delete copied[k]);
+    const sorted = handlers.slice().sort((a, b) => b.priority - a.priority);
+    let pos = 0;
+    const ctx = {
+      provider: null,
+      options: {},
+      get position() { return pos; },
+      text: (e) => e.textContent,
+      fence(text, lang) {
+        const runs = String(text).match(/`{3,}/g) || [];
+        const n = Math.max(3, ...runs.map((r) => r.length + 1));
+        return `${'`'.repeat(n)}${lang || ''}\n${text}\n${'`'.repeat(n)}`;
+      },
+      placeholder(type, reason) {
+        pos += 1;
+        placeholders.push({ type, reason, position: pos });
+        return `[НЕ СКОПИРОВАНО: тип=${type}, причина=${reason}, позиция=${pos}]`;
+      },
+      convertChildren: (e) => walk(e)
+    };
+    function walk(node) {
+      let out = '';
+      node.childNodes.forEach((n) => {
+        if (n.nodeType === 3) { out += n.nodeValue; return; }
+        if (n.nodeType !== 1) return;
+        for (const h of sorted) {
+          if (!h.match(n, ctx)) continue;
+          const r = h.render(n, ctx);
+          if (r) {
+            copied[h.type] = (copied[h.type] || 0) + (r.copied === undefined ? 1 : r.copied);
+            out += r.markdown;
+            return;
+          }
+        }
+        out += walk(n);
+      });
+      return out;
+    }
+    return { markdown: walk(el), placeholders: placeholders.slice(), copied: { ...copied } };
+  };
+  Blocks.register(engine);
+  return engine;
+}
+
+function conv(html) {
+  const host = document.createElement('div');
+  host.innerHTML = html;
+  const engine = makeEngine();
+  const result = engine.convert(host);
+  result.markdown = result.markdown.replace(/\n{3,}/g, '\n\n').trim();
+  result.census = Blocks.census(host);
+  return result;
+}
+
+const katexInline = (tex) =>
+  `<span class="katex"><span class="katex-mathml"><math><semantics><mrow><mi>x</mi></mrow>` +
+  `<annotation encoding="application/x-tex">${tex}</annotation></semantics></math></span>` +
+  `<span class="katex-html" aria-hidden="true"><span class="base"><span class="mord">x</span></span></span></span>`;
+
+describe('formulas', () => {
+  test('KaTeX inline -> $tex$, visible aria-hidden layer is not output', () => {
+    const r = conv(`<p>Дано ${katexInline('\\frac{a}{b}')} здесь</p>`);
+    expect(r.markdown).toBe('Дано $\\frac{a}{b}$ здесь');
+    expect(r.copied.math).toBe(1);
+    expect(r.census.math).toBe(1);
+  });
+
+  test('KaTeX display (.katex-display) -> $$ block', () => {
+    const r = conv(`<p>до</p><span class="katex-display">${katexInline('\\int_0^1 x^2 dx')}</span><p>после</p>`);
+    expect(r.markdown).toBe('до\n\n$$\n\\int_0^1 x^2 dx\n$$\n\nпосле');
+    expect(r.census.math).toBe(1);
+  });
+
+  test('inline and display are distinguished in one answer', () => {
+    const r = conv(`<p>a ${katexInline('x^2')}</p><div class="katex-display">${katexInline('y^2')}</div>`);
+    expect(r.markdown).toContain('$x^2$');
+    expect(r.markdown).toContain('$$\ny^2\n$$');
+    expect(r.copied.math).toBe(2);
+  });
+
+  test('KaTeX without annotation -> placeholder, not scattered glyphs', () => {
+    const r = conv('<p>x <span class="katex"><span class="katex-html" aria-hidden="true"><span class="mord">a</span><span class="mord">b</span></span></span></p>');
+    expect(r.markdown).toMatch(/\[НЕ СКОПИРОВАНО: тип=math, причина=нет LaTeX-источника/);
+    expect(r.markdown).not.toMatch(/ab/);
+    expect(r.placeholders).toHaveLength(1);
+    expect(r.copied.math).toBe(0);
+  });
+
+  test('wrapper with data-math (Gemini-style, не проверено вживую): div -> block, span -> inline', () => {
+    const r = conv('<span class="math-inline" data-math="E=mc^2"><span class="katex"><span class="katex-html">E</span></span></span>' +
+      '<div class="math-block" data-math="a+b"><span class="katex-display"><span class="katex"><span class="katex-html">a</span></span></span></div>');
+    expect(r.markdown).toContain('$E=mc^2$');
+    expect(r.markdown).toContain('$$\na+b\n$$');
+    expect(r.census.math).toBe(2);
+  });
+
+  test('MathJax v2: rendered span + script[type=math/tex] -> one formula', () => {
+    const r = conv('<p>f <span class="MathJax_Preview">x</span><span class="MathJax" id="MathJax-Element-1-Frame"><span>x</span><span>2</span></span>' +
+      '<script type="math/tex" id="MathJax-Element-1">x^2</script> g</p>');
+    expect(r.markdown).toBe('f $x^2$ g');
+    expect(r.copied.math).toBe(1);
+    expect(r.census.math).toBe(1);
+  });
+
+  test('MathJax v2 display: script mode=display', () => {
+    const r = conv('<div class="MathJax_Display"><span class="MathJax" id="MathJax-Element-2-Frame">..</span></div>' +
+      '<script type="math/tex; mode=display" id="MathJax-Element-2">\\sum_i i</script>');
+    expect(r.markdown).toBe('$$\n\\sum_i i\n$$');
+    expect(r.copied.math).toBe(1);
+  });
+
+  test('MathJax v2: script without rendered sibling still yields the formula', () => {
+    const r = conv('<p>a <script type="math/tex">y</script> b</p>');
+    expect(r.markdown).toBe('a $y$ b');
+  });
+
+  test('MathJax v3 mjx-container: assistive MathML annotation, display attr', () => {
+    const inner = '<mjx-assistive-mml><math><semantics><mi>x</mi><annotation encoding="application/x-tex">\\alpha</annotation></semantics></math></mjx-assistive-mml>';
+    const r = conv(`<p>a <mjx-container class="MathJax" jax="CHTML"><mjx-math>α</mjx-math>${inner}</mjx-container></p>` +
+      `<mjx-container class="MathJax" display="true" jax="CHTML"><mjx-math>β</mjx-math>${inner.replace('\\alpha', '\\beta')}</mjx-container>`);
+    expect(r.markdown).toContain('a $\\alpha$');
+    expect(r.markdown).toContain('$$\n\\beta\n$$');
+  });
+
+  test('MathJax v3 without TeX source -> placeholder', () => {
+    const r = conv('<mjx-container class="MathJax"><mjx-math>α</mjx-math><mjx-assistive-mml><math><mi>α</mi></math></mjx-assistive-mml></mjx-container>');
+    expect(r.markdown).toMatch(/тип=math/);
+    expect(r.placeholders).toHaveLength(1);
+  });
+
+  test('data-latex on container (MathJax-style attribute)', () => {
+    const r = conv('<mjx-container data-latex="\\gamma"><mjx-math>γ</mjx-math></mjx-container>');
+    expect(r.markdown).toBe('$\\gamma$');
+  });
+
+  test('bare MathML with annotation; display="block"', () => {
+    const m = (d, t) => `<math ${d}><semantics><mi>z</mi><annotation encoding="application/x-tex">${t}</annotation></semantics></math>`;
+    const r = conv(`<p>a ${m('', 'z_1')}</p>${m('display="block"', 'z_2')}`);
+    expect(r.markdown).toContain('$z_1$');
+    expect(r.markdown).toContain('$$\nz_2\n$$');
+  });
+
+  test('bare MathML without annotation -> placeholder', () => {
+    const r = conv('<p><math><mi>q</mi></math></p>');
+    expect(r.placeholders).toHaveLength(1);
+  });
+
+  test('remark-math raw class output keeps TeX as text', () => {
+    const r = conv('<p><span class="math-inline">\\pi</span></p><div class="math-display">e^{i\\pi}</div>');
+    expect(r.markdown).toContain('$\\pi$');
+    expect(r.markdown).toContain('$$\ne^{i\\pi}\n$$');
+  });
+});
+
+describe('diagrams', () => {
+  test('pre.mermaid with source text -> ```mermaid', () => {
+    const r = conv('<pre class="mermaid">graph TD\n  A--&gt;B\n  B--&gt;C</pre>');
+    expect(r.markdown).toBe('```mermaid\ngraph TD\n  A-->B\n  B-->C\n```');
+    expect(r.copied.diagram).toBe(1);
+    expect(r.census.diagram).toBe(1);
+  });
+
+  test('pre > code.language-mermaid', () => {
+    const r = conv('<pre><code class="language-mermaid">flowchart LR\n  A --> B\n</code></pre>');
+    expect(r.markdown).toBe('```mermaid\nflowchart LR\n  A --> B\n```');
+  });
+
+  test('PlantUML / DOT / d2 by language class, aliases normalized', () => {
+    const r = conv('<pre><code class="language-puml">@startuml\nA -> B\n@enduml</code></pre>' +
+      '<pre><code class="language-graphviz">digraph { a -> b }</code></pre>' +
+      '<pre><code class="language-d2">a -> b</code></pre>');
+    expect(r.markdown).toContain('```plantuml\n@startuml');
+    expect(r.markdown).toContain('```dot\ndigraph');
+    expect(r.markdown).toContain('```d2\na -> b');
+    expect(r.copied.diagram).toBe(3);
+  });
+
+  test('ordinary code language is not a diagram', () => {
+    const r = conv('<pre><code class="language-python">print(1)</code></pre>');
+    expect(r.markdown).toBe('print(1)');
+    expect(r.census.diagram).toBe(0);
+  });
+
+  test('inline code with a mermaid class is not claimed', () => {
+    expect(conv('<p><code class="language-mermaid">A-->B</code></p>').census.diagram).toBe(0);
+  });
+
+  test('rendered mermaid: source in data attribute', () => {
+    const r = conv('<div class="mermaid" data-processed="true" data-mermaid="graph TD;A--&gt;B"><svg id="mermaid-1" viewBox="0 0 200 100"><g><text>A</text><text>B</text></g></svg></div>');
+    expect(r.markdown).toBe('```mermaid\ngraph TD;A-->B\n```');
+    expect(r.markdown).not.toMatch(/<svg/);
+  });
+
+  test('rendered mermaid: source in nested hidden pre', () => {
+    const r = conv('<div class="mermaid"><svg id="mermaid-2" viewBox="0 0 200 100"><text>A</text></svg><pre hidden>graph LR\nA-->B</pre></div>');
+    expect(r.markdown).toBe('```mermaid\ngraph LR\nA-->B\n```');
+  });
+
+  test('rendered mermaid: source in adjacent code block is emitted once', () => {
+    const r = conv('<div class="mermaid"><svg id="mermaid-3" viewBox="0 0 200 100"><text>A</text></svg></div>' +
+      '<pre><code class="language-mermaid">graph TD\nA-->B</code></pre>');
+    // the picture is accounted for by the source block next to it; only one fenced block is written
+    expect(r.markdown).toBe('```mermaid\ngraph TD\nA-->B\n```');
+    expect(r.copied.diagram).toBe(2);
+    expect(r.census.diagram).toBe(2);
+  });
+
+  test('rendered mermaid without source -> placeholder + SVG source, not node labels', () => {
+    const r = conv('<div class="mermaid" data-processed="true"><svg id="mermaid-4" viewBox="0 0 200 100"><g class="node"><text>Узел А</text></g></svg></div>');
+    expect(r.markdown).toMatch(/тип=diagram, причина=mermaid: рендерер оставил только SVG без исходника/);
+    expect(r.markdown).toContain('```svg\n<svg');
+    expect(r.copied.diagram).toBe(0);
+    expect(r.placeholders).toHaveLength(1);
+    expect(r.census.diagram).toBe(1);
+    expect(r.census.svg).toBe(0);
+  });
+
+  test('bare mermaid svg (no container class) -> svg-only diagram placeholder', () => {
+    const r = conv('<div><svg id="mermaid-9" aria-roledescription="flowchart-v2" viewBox="0 0 300 200"><text>x</text></svg></div>');
+    expect(r.placeholders).toHaveLength(1);
+    expect(r.placeholders[0].type).toBe('diagram');
+  });
+
+  test('bare graphviz svg (no container) is exported as a plain svg block', () => {
+    const r = conv('<svg viewBox="0 0 100 100"><g id="graph0" class="graph"><g class="node"><title>a</title></g><g class="edge"><title>a-&gt;b</title></g></g></svg>');
+    expect(r.placeholders).toHaveLength(0);
+    expect(r.markdown).toContain('```svg\n<svg');
+    expect(r.copied.svg).toBe(1);
+  });
+
+  test('container div.graphviz with svg only -> svg-only diagram placeholder', () => {
+    const r = conv('<div class="graphviz"><svg viewBox="0 0 100 100"><g class="graph"><text>a</text></g></svg></div>');
+    expect(r.placeholders[0].type).toBe('diagram');
+    expect(r.markdown).toMatch(/dot: рендерер оставил только SVG/);
+  });
+
+  test('empty diagram source -> placeholder', () => {
+    const r = conv('<pre class="mermaid">  \n </pre>');
+    expect(r.placeholders).toHaveLength(1);
+  });
+
+  test('fence is longer than backticks inside the source', () => {
+    const r = conv('<pre class="mermaid">A["```"]</pre>');
+    expect(r.markdown.startsWith('````mermaid')).toBe(true);
+  });
+
+  test('renderDiagramSource helper for provider-resolved code language', () => {
+    const engine = makeEngine();
+    let ctxRef;
+    engine.registerBlock({ name: 'spy', type: 'x', priority: 1000, match: () => false, render: () => null });
+    const host = document.createElement('div');
+    host.innerHTML = '<i></i>';
+    // reuse engine ctx by rendering through a throw-away handler
+    const spy = { name: 'grab', type: 'x', priority: 2000, match: (e) => e.tagName === 'I', render: (e, ctx) => { ctxRef = ctx; return { markdown: '' }; } };
+    engine.registerBlock(spy);
+    engine.convert(host);
+    const r = Blocks.renderDiagramSource('Mermaid', 'graph TD\nA-->B\n', ctxRef, host);
+    expect(r).toEqual({ markdown: '\n\n```mermaid\ngraph TD\nA-->B\n```\n\n', copied: 1 });
+    expect(Blocks.renderDiagramSource('python', 'x', ctxRef, host)).toBeNull();
+  });
+});
+
+describe('svg', () => {
+  test('content SVG -> ```svg source with xmlns', () => {
+    const r = conv('<p>до</p><svg width="200" height="100" viewBox="0 0 200 100"><rect x="1" y="1" width="50" height="50"/><circle cx="9" cy="9" r="5"/></svg><p>после</p>');
+    expect(r.markdown).toMatch(/до\n\n```svg\n<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" width="200"/);
+    expect(r.markdown).toMatch(/<\/svg>\n```\n\nпосле/);
+    expect(r.copied.svg).toBe(1);
+    expect(r.census.svg).toBe(1);
+  });
+
+  test('icons are not claimed (button, aria-hidden, small, use-only)', () => {
+    const r = conv('<button><svg width="100" height="100"><path d="M0"/><path d="M1"/></svg></button>' +
+      '<svg aria-hidden="true"><path d="M0"/><path d="M1"/></svg><svg width="16" height="16" viewBox="0 0 16 16"><path d="M0"/><path d="M2"/></svg>' +
+      '<svg><use href="#i"/></svg><svg class="icon-md"><path d="M0"/><path d="M5"/></svg>');
+    expect(r.census).toEqual({ math: 0, diagram: 0, svg: 0, image: 0 });
+  });
+
+  test('svg inside a math wrapper belongs to the formula, not to the svg handler', () => {
+    const r = conv('<mjx-container data-latex="a"><svg width="300" height="100"><path d="M0"/><path d="M1"/></svg></mjx-container>');
+    expect(r.markdown).toBe('$a$');
+    expect(r.census.svg).toBe(0);
+  });
+});
+
+describe('images, canvas, charts', () => {
+  test('img: src, alt, title; relative url is resolved', () => {
+    const r = conv('<p>до <img src="/a/b.png" alt="Кот" title="Подпись"> после</p>');
+    expect(r.markdown).toMatch(/^до !\[Кот\]\(https?:\/\/[^)]*\/a\/b\.png "Подпись"\) после$/);
+    expect(r.copied.image).toBe(1);
+  });
+
+  test('img without alt gets the word "изображение"; brackets in alt are escaped', () => {
+    expect(conv('<img src="https://x.test/a.png">').markdown).toBe('![изображение](https://x.test/a.png)');
+    expect(conv('<img src="https://x.test/a.png" alt="a [1] b">').markdown).toBe('![a \\[1\\] b](https://x.test/a.png)');
+  });
+
+  test('srcset -> best candidate (w and x descriptors)', () => {
+    expect(conv('<img src="https://x.test/s.png" srcset="https://x.test/s.png 320w, https://x.test/m.png 800w, https://x.test/l.png 1600w" alt="a">').markdown)
+      .toBe('![a](https://x.test/l.png)');
+    expect(conv('<img srcset="https://x.test/1.png 1x, https://x.test/2.png 2x" alt="a">').markdown).toBe('![a](https://x.test/2.png)');
+  });
+
+  test('data-URL image is kept; lazy data-src is used', () => {
+    expect(conv('<img src="data:image/png;base64,iVBORw0KGgo=" alt="p">').markdown).toBe('![p](data:image/png;base64,iVBORw0KGgo=)');
+    expect(conv('<img data-src="https://x.test/lazy.png" alt="l">').markdown).toBe('![l](https://x.test/lazy.png)');
+  });
+
+  test('url with spaces/parens is percent-encoded', () => {
+    expect(conv('<img src="https://x.test/a (1).png" alt="a">').markdown).toBe('![a](https://x.test/a%20%281%29.png)');
+  });
+
+  test('blob: url, missing src and oversized data-URL -> placeholder', () => {
+    expect(conv('<img src="blob:https://x.test/1" alt="a">').placeholders).toHaveLength(1);
+    expect(conv('<img alt="a">').placeholders).toHaveLength(1);
+    expect(conv(`<img src="data:image/png;base64,${'A'.repeat(2000001)}" alt="a">`).placeholders).toHaveLength(1);
+  });
+
+  test('UI images (favicon chips, avatars, button content) write nothing and are not counted as content', () => {
+    const r = conv('<p>a<span><img class="h-3 w-3 rounded-full"></span><button><img src="https://x.test/i.png" alt="i"></button><img class="avatar" src="https://x.test/u.png" alt="u">b</p>');
+    expect(r.markdown).toBe('ab');
+    expect(r.census.image).toBe(0);
+  });
+
+  test('small image with src and alt is content, not UI', () => {
+    expect(conv('<img src="https://x.test/t.png" alt="значок" width="16" height="16">').markdown).toBe('![значок](https://x.test/t.png)');
+  });
+
+  test('emoji image is returned as its alt character', () => {
+    expect(conv('<p>да <img class="emoji" src="https://x.test/e.png" alt="😀"></p>').markdown).toBe('да 😀');
+  });
+
+  test('picture/figure: inner img (srcset from <source> as fallback) keeps order next to the caption text', () => {
+    const r = conv('<p>до</p><figure><picture><source srcset="https://x.test/w.webp 800w"><img src="https://x.test/p.png" alt="фото"></picture><figcaption>Рис. 1</figcaption></figure><p>после</p>');
+    const order = ['до', '![фото](https://x.test/p.png)', 'Рис. 1', 'после'].map((x) => r.markdown.indexOf(x));
+    expect(order.every((v) => v >= 0)).toBe(true);
+    expect(order).toEqual(order.slice().sort((a, b) => a - b));
+    expect(conv('<picture><source srcset="https://x.test/w.webp 800w, https://x.test/h.webp 1600w"><img alt="a"></picture>').markdown)
+      .toBe('![a](https://x.test/h.webp)');
+  });
+
+  test('canvas -> data URL via toDataURL', () => {
+    const host = document.createElement('div');
+    host.innerHTML = '<canvas aria-label="Продажи"></canvas>';
+    host.firstChild.toDataURL = () => 'data:image/png;base64,' + 'A'.repeat(40);
+    const r = makeEngine().convert(host);
+    expect(r.markdown).toBe(`![Продажи](data:image/png;base64,${'A'.repeat(40)})`);
+  });
+
+  test('canvas: toDataURL throws (tainted) or unavailable -> placeholder', () => {
+    const host = document.createElement('div');
+    host.innerHTML = '<canvas></canvas>';
+    host.firstChild.toDataURL = () => { throw new Error('SecurityError'); };
+    expect(makeEngine().convert(host).placeholders).toHaveLength(1);
+    const host2 = document.createElement('div');
+    host2.innerHTML = '<canvas></canvas>';
+    host2.firstChild.toDataURL = () => null;
+    expect(makeEngine().convert(host2).placeholders).toHaveLength(1);
+  });
+
+  test('chart container with canvas (ECharts-style) -> image of the canvas, counted once', () => {
+    const host = document.createElement('div');
+    host.innerHTML = '<div _echarts_instance_="ec_1"><div><canvas></canvas></div></div>';
+    host.querySelector('canvas').toDataURL = () => 'data:image/png;base64,' + 'B'.repeat(40);
+    const r = makeEngine().convert(host);
+    expect(r.markdown).toMatch(/^!\[график ECharts\]\(data:image\/png/);
+    expect(r.copied.image).toBe(1);
+    expect(Blocks.census(host).image).toBe(1);
+  });
+
+  test('chart rendered as SVG (Plotly/Highcharts) without data -> placeholder, not axis labels', () => {
+    const r = conv('<div class="js-plotly-plot"><svg class="main-svg" width="600" height="400"><text>0</text><text>10</text></svg></div>');
+    expect(r.markdown).toMatch(/тип=image, причина=график Plotly: исходные данные недоступны/);
+    expect(r.markdown).not.toMatch(/\b10\b/);
+    expect(r.census.svg).toBe(0);
+    const h = conv('<div class="highcharts-container"><svg width="600" height="400"><text>Q1</text></svg></div>');
+    expect(h.placeholders[0].reason).toMatch(/Highcharts/);
+  });
+
+  test('chart with JSON config in a data attribute -> json block (не проверено вживую)', () => {
+    const r = conv('<div class="js-plotly-plot" data-chart-config=\'{"type":"bar","data":[1,2]}\'><svg width="600" height="400"><text>x</text></svg></div>');
+    expect(r.markdown).toBe('```json\n{"type":"bar","data":[1,2]}\n```');
+  });
+});
+
+describe('order and robustness', () => {
+  test('formula, image, diagram and svg keep their order between text', () => {
+    const r = conv(`<p>один</p><div class="katex-display">${katexInline('a')}</div><p>два</p><img src="https://x.test/i.png" alt="i">` +
+      '<p>три</p><pre class="mermaid">graph TD;A-->B</pre><p>четыре</p><svg width="90" height="90"><rect width="50" height="50"/><rect width="5" height="5"/></svg><p>пять</p>');
+    const text = r.markdown;
+    const order = ['один', '$$', 'два', '![i]', 'три', '```mermaid', 'четыре', '```svg', 'пять'].map((s) => text.indexOf(s));
+    expect(order.every((v) => v >= 0)).toBe(true);
+    expect(order).toEqual(order.slice().sort((a, b) => a - b));
+  });
+
+  test('census equals copied + placeholders for a mixed answer', () => {
+    const r = conv(`<p>${katexInline('a')}</p><span class="katex"><span class="katex-html">q</span></span><img src="https://x.test/i.png" alt="i"><pre class="mermaid">graph TD;A-->B</pre>`);
+    expect(r.census.math).toBe(r.copied.math + r.placeholders.filter((p) => p.type === 'math').length);
+    expect(r.census.image).toBe(r.copied.image);
+    expect(r.census.diagram).toBe(r.copied.diagram);
+  });
+
+  test('handler exception becomes a placeholder, not silence', () => {
+    const h = Blocks.HANDLERS.find((x) => x.name === 'image');
+    const img = document.createElement('img');
+    img.setAttribute('src', 'https://x.test/a.png');
+    const out = h.render(img, { placeholder: (t, why) => `[НЕ СКОПИРОВАНО: тип=${t}, причина=${why}, позиция=1]`, text: () => '' });
+    expect(out.copied).toBe(1); // control: works
+    const bad = h.render({ localName: 'img', closest: () => { throw new Error('boom'); }, getAttribute: () => null }, { placeholder: (t, why) => `[НЕ СКОПИРОВАНО: тип=${t}, причина=${why}, позиция=1]` });
+    expect(bad.markdown).toMatch(/причина=ошибка обработчика: boom/);
+    expect(bad.copied).toBe(0);
+  });
+
+  test('registers into an existing engine on load and exposes handler contract', () => {
+    for (const h of Blocks.HANDLERS) {
+      expect(typeof h.name).toBe('string');
+      expect(['math', 'diagram', 'svg', 'image']).toContain(h.type);
+      expect(typeof h.priority).toBe('number');
+      expect(typeof h.match).toBe('function');
+      expect(typeof h.render).toBe('function');
+    }
+    expect(Blocks.register({})).toBe(false);
+  });
+});
+
+describe('live skeleton fixtures (tests/fixtures/live-answer-skeletons)', () => {
+  const dir = path.join(__dirname, 'fixtures', 'live-answer-skeletons');
+  const files = fs.readdirSync(dir).filter((f) => f.endsWith('.json') && f !== 'index.json');
+
+  test.each(files)('%s: UI icons and favicons are not blocks; no formulas/diagrams in skeletons', (file) => {
+    const data = JSON.parse(fs.readFileSync(path.join(dir, file), 'utf8'));
+    const html = data.capture && data.capture.html;
+    if (!html) return;
+    const host = document.createElement('div');
+    host.innerHTML = html;
+    const c = Blocks.census(host);
+    expect(c.math).toBe(0);
+    expect(c.diagram).toBe(0);
+    expect(c.image).toBe(0);
+    expect(c.svg).toBe(0);
+  });
+});
+
+describe('GFM: pipe-table cells', () => {
+  test('display math in a cell is one line $$…$$; fenced blocks become placeholders', () => {
+    const r = conv(`<table><tr><td><span class="katex-display">${katexInline('a\\\\b')}</span></td><td><pre class="mermaid">graph TD;A-->B</pre></td><td><svg width="90" height="90"><rect width="5" height="5"/><rect width="9" height="9"/></svg></td><td><img src="https://x.test/i.png" alt="i"></td></tr></table>`);
+    expect(r.markdown).toContain('$$a\\\\b$$');
+    expect(r.markdown).not.toContain('\n$$');
+    expect(r.placeholders.map((p) => p.type)).toEqual(['diagram', 'svg']);
+    expect(r.markdown).toContain('![i](https://x.test/i.png)');
+  });
+});
+
+describe('block math format is fixed to $$ (not ```math)', () => {
+  test('display formula is $$ on its own lines', () => {
+    expect(conv(`<div class="katex-display">${katexInline('x')}</div>`).markdown).toBe('$$\nx\n$$');
+  });
+});
+
+const enginePath = path.join(__dirname, '..', 'shared', 'answer-markdown.js');
+(fs.existsSync(enginePath) ? describe : describe.skip)('integration with the real engine (shared/answer-markdown.js)', () => {
+  let Engine;
+  beforeAll(() => {
+    Engine = require(enginePath);
+    Blocks.register(Engine);
+  });
+  const run = (html) => {
+    const host = document.createElement('div');
+    host.innerHTML = html;
+    return Engine.convert(host, { provider: null });
+  };
+
+  test('test-prompt fragment: inline + block formula, mermaid, ASCII tree; report is complete', () => {
+    const r = run(`<p>Inline ${katexInline('\\int_0^1 x^2 dx')} text.</p>` +
+      `<span class="katex-display">${katexInline('\\int_0^1 x^2 dx')}</span>` +
+      '<pre><code class="language-mermaid">flowchart TD\n  A --> B\n  B --> C\n  C --> D</code></pre>' +
+      '<pre><code>root/\n├── src/\n│   └── a.js\n└── b.js</code></pre>');
+    expect(r.markdown).toContain('Inline $\\int_0^1 x^2 dx$ text.');
+    expect(r.markdown).toContain('$$\n\\int_0^1 x^2 dx\n$$');
+    expect(r.markdown).toContain('```mermaid\nflowchart TD\n  A --> B\n  B --> C\n  C --> D\n```');
+    expect(r.markdown).toContain('root/\n├── src/\n│   └── a.js\n└── b.js');
+    expect(r.report.found.math).toBe(2);
+    expect(r.report.copied.math).toBe(2);
+    expect(r.report.found.diagram).toBe(1);
+    expect(r.report.mismatches).toEqual([]);
+    expect(r.report.complete).toBe(true);
+  });
+
+  test('pipe table with a formula: single-line cell, no mismatch', () => {
+    const r = run(`<table><thead><tr><th>f</th></tr></thead><tbody><tr><td><span class="katex-display">${katexInline('a|b')}</span></td></tr></tbody></table>`);
+    expect(r.markdown).toContain('$$a\\|b$$');
+    expect(r.markdown.split('\n').filter((l) => l.startsWith('|'))).toHaveLength(3);
+    expect(r.report.mismatches).toEqual([]);
+  });
+
+  test('NBSP and Unicode frames inside an ASCII scheme are preserved (engine code path)', () => {
+    const r = run('<pre><code>┌──┐\n│ A│\n└──┘</code></pre>');
+    expect(r.markdown).toContain('│ A│');
+  });
+
+  test('KaTeX without source: placeholder in text and in the report, report incomplete', () => {
+    const r = run('<p>x <span class="katex"><span class="katex-html"><span class="mord">a</span></span></span></p>');
+    expect(r.markdown).toMatch(/\[НЕ СКОПИРОВАНО: тип=math, причина=нет LaTeX-источника в разметке, позиция=\d+\]/);
+    expect(r.report.placeholders).toHaveLength(1);
+    expect(r.report.mismatches).toEqual([]);
+    expect(r.report.complete).toBe(false);
+  });
+
+  test('rendered mermaid without source: placeholder + svg, accounted in the report', () => {
+    const r = run('<div class="mermaid"><svg id="mermaid-1" viewBox="0 0 10 10"><text>A</text></svg></div>');
+    expect(r.markdown).toMatch(/тип=diagram/);
+    expect(r.report.found.diagram).toBe(1);
+    expect(r.report.mismatches).toEqual([]);
+    expect(r.report.complete).toBe(false);
+  });
+
+  test('image and content svg are counted without mismatch; UI icon svg/img are not placeholders', () => {
+    const r = run('<p>a <img src="https://x.test/i.png" alt="i"></p>' +
+      '<svg width="120" height="80"><rect width="5" height="5"/><rect width="9" height="9"/></svg>' +
+      '<p><span><img class="h-3 w-3"></span><svg class="icon-md"><path d="M0"/></svg>b</p>');
+    expect(r.markdown).toContain('![i](https://x.test/i.png)');
+    expect(r.markdown).toContain('```svg');
+    expect(r.report.mismatches).toEqual([]);
+    expect(r.report.placeholders).toEqual([]);
+  });
+
+  test('MathJax v2 rendered span + script: one formula, preview text does not leak', () => {
+    const r = run('<p>f <span class="MathJax_Preview">PREVIEW</span><span class="MathJax" id="MathJax-Element-7-Frame">x2</span>' +
+      '<script type="math/tex" id="MathJax-Element-7">x^2</script> g</p>');
+    expect(r.markdown).toContain('f $x^2$ g');
+    expect(r.markdown).not.toContain('PREVIEW');
+    expect(r.report.mismatches).toEqual([]);
+  });
+
+  test('canvas chart and ECharts container are counted once', () => {
+    const host = document.createElement('div');
+    host.innerHTML = '<canvas id="a"></canvas><div _echarts_instance_="ec_1"><canvas id="b"></canvas></div>';
+    host.querySelectorAll('canvas').forEach((c) => { c.toDataURL = () => 'data:image/png;base64,' + 'A'.repeat(40); });
+    const r = Engine.convert(host, {});
+    expect(r.report.found.image).toBe(2);
+    expect(r.report.copied.image).toBe(2);
+    expect(r.report.mismatches).toEqual([]);
+  });
+});

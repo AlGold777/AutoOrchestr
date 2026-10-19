@@ -35,6 +35,52 @@
 
   const clone = (obj) => JSON.parse(JSON.stringify(obj || {}));
 
+  // DOM -> Markdown copy (AnswerMarkdown, see docs/Architecture/answer-markdown-spec.md).
+  // Never silent: a missing engine, a throw or an oversized result yields a
+  // whole-answer placeholder and report.complete=false, not an empty field.
+  const ANSWER_MARKDOWN_MAX_CHARS = 1000000;
+  const buildFailedCopyReport = (provider, reason) => ({
+    version: 1,
+    provider: provider || null,
+    found: {},
+    copied: {},
+    placeholders: [{ type: 'answer', reason, position: 1 }],
+    mismatches: [],
+    flags: {},
+    complete: false
+  });
+  const buildAnswerMarkdownFields = (element, provider) => {
+    const stub = (reason) => ({
+      answerMarkdown: `[НЕ СКОПИРОВАНО: тип=answer, причина=${reason}, позиция=1]`,
+      copyReport: buildFailedCopyReport(provider, reason)
+    });
+    const engine = (typeof window !== 'undefined' && window.AnswerMarkdown) || null;
+    if (!engine || typeof engine.convert !== 'function') return stub('движок недоступен');
+    if (!element) return stub('элемент ответа не найден');
+    try {
+      let context;
+      const ctxModule = window.AnswerCopyContext;
+      if (ctxModule) {
+        const fn = ['collect', 'capture', 'build'].find((name) => typeof ctxModule[name] === 'function');
+        if (fn) {
+          try { context = ctxModule[fn](element, { provider, isLatest: true }); } catch (_) { context = undefined; }
+        }
+      }
+      const result = engine.convert(element, { provider: provider || null, context });
+      const markdown = String(result?.markdown ?? '');
+      const report = result?.report && typeof result.report === 'object' ? result.report : null;
+      if (!report) return stub('движок не вернул отчёт');
+      if (markdown.length > ANSWER_MARKDOWN_MAX_CHARS) {
+        const out = stub(`markdown длиннее ${ANSWER_MARKDOWN_MAX_CHARS} знаков`);
+        out.copyReport = { ...report, placeholders: [...(report.placeholders || []), ...out.copyReport.placeholders], complete: false };
+        return out;
+      }
+      return { answerMarkdown: markdown, copyReport: report };
+    } catch (err) {
+      return stub(`исключение: ${String(err?.message || err).slice(0, 120)}`);
+    }
+  };
+
   const deepMerge = (target, source) => {
     if (!source) return target;
     Object.keys(source).forEach((key) => {
@@ -420,6 +466,8 @@
           success: true,
           answer: finalization.answer,
           answerHtml: finalization.answerHtml,
+          answerMarkdown: finalization.answerMarkdown,
+          copyReport: finalization.copyReport,
           metadata: {
             traceId: report.traceId,
             platform: this.platform,
@@ -434,6 +482,8 @@
             finalization: finalization,
             sanityCheck: finalization.sanityCheck,
             answerHtml: finalization.answerHtml,
+            answerMarkdown: finalization.answerMarkdown,
+            copyReport: finalization.copyReport,
             runResult: finalization.runResult || null
           }
         };
@@ -894,11 +944,13 @@ this.humanSession.on?.('session-stop', () => clearInterval(textStabilityMonitor)
       }
       let answer = authoritySnapshot?.text;
       let answerHtml = authoritySnapshot?.html || '';
+      let markdownFields = null;
       if (!authoritySnapshot) {
         try {
           const extracted = await this.extractAnswerWithHtml();
           answer = extracted.text;
           answerHtml = extracted.html;
+          markdownFields = { answerMarkdown: extracted.answerMarkdown, copyReport: extracted.copyReport };
         } catch (err) {
           const message = err?.message || String(err) || 'answer_extract_failed';
           this.telemetry.logPhase('finalization_extract_failed', { message });
@@ -906,6 +958,10 @@ this.humanSession.on?.('session-stop', () => clearInterval(textStabilityMonitor)
         }
       }
 
+      if (!markdownFields) {
+        // Frozen authority snapshot carries text/html only: convert from the live element.
+        markdownFields = this.extractAnswerMarkdown(this.getAnswerElement({ reportHealth: false }));
+      }
       if (!String(answer || '').trim()) {
         this.telemetry.logPhase('finalization_empty_answer', { platform: this.platform });
         return { success: false, error: 'empty_answer' };
@@ -956,7 +1012,9 @@ this.humanSession.on?.('session-stop', () => clearInterval(textStabilityMonitor)
       const selectorTier = this.lastAnswerSelectorTier || 'unknown';
       const runResult = this.buildFinalRunResult(answer);
       this.state.finalizationResult = {
-        success: true, duration, answer, answerHtml, sanityCheck, stable,
+        success: true, duration, answer, answerHtml,
+        answerMarkdown: markdownFields.answerMarkdown, copyReport: markdownFields.copyReport,
+        sanityCheck, stable,
         selectorTier, selectorUsed: this.lastAnswerSelector || null,
         answerVerification: this.lastAnswerVerification || null,
         terminalResult: this.state.answerResult?.terminalResult || null,
@@ -1351,7 +1409,12 @@ this.humanSession.on?.('session-stop', () => clearInterval(textStabilityMonitor)
         text = this.extractText(element);
       }
       const html = this.extractHtml(element);
-      return { text, html };
+      return { text, html, ...this.extractAnswerMarkdown(element) };
+    }
+
+    extractAnswerMarkdown(element) {
+      const provider = this.llmName || resolveLlmName(this.config?.llmName || this.platform || window.__PragmatistAdapter?.adapter?.name) || null;
+      return buildAnswerMarkdownFields(element, provider);
     }
 
     extractHtml(element) {
@@ -1466,5 +1529,6 @@ this.humanSession.on?.('session-stop', () => clearInterval(textStabilityMonitor)
     }
   }
 
+  UnifiedAnswerPipeline.buildAnswerMarkdownFields = buildAnswerMarkdownFields;
   window.UnifiedAnswerPipeline = UnifiedAnswerPipeline;
 })();

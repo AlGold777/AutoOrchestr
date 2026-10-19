@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-19 — Копирование ответов в Markdown (GFM) с отчётом полноты, версия 2.81.802
+
+- Новый слой DOM → Markdown (GFM): `shared/answer-markdown.js` (движок: структура, код, pipe-таблицы, нормализация, заглушки `[НЕ СКОПИРОВАНО: тип=…, причина=…, позиция=N]`, отчёт «найдено / скопировано / заглушки»), `shared/answer-markdown-blocks.js` (формулы LaTeX, диаграммы mermaid/PlantUML/DOT/ASCII/SVG, изображения и графики), `shared/answer-markdown-extras.js` (артефакты и Canvas, источники и сноски `[^n]`, файлы и вывод code interpreter), `shared/answer-markdown-providers.js` (правила 10 провайдеров), `content-scripts/answer-copy-context.js` (версия ответа, продолжения, свёрнутое, неполный ответ).
+- Конвейер добавляет к `answer`/`answerHtml` поля `answerMarkdown` и `copyReport`; карточка хранит их, Copy, TXT-экспорт и передача ответа другой модели берут Markdown, при `complete=false` карточка показывает маркер с расшифровкой. Прежние `answer` и `answerHtml` не менялись.
+- Статус по провайдерам: правила построены по скелетам DOM из `tests/fixtures/live-answer-skeletons` и известной структуре, живой проверки на коде, формулах, диаграммах пока нет; матрица — `docs/Architecture/answer-markdown-matrix.md`, задания на захват — `docs/Architecture/answer-markdown-live-capture-tasks.md`.
+- Тесты: `tests/answer-markdown*.test.js`, `tests/answer-copy-context.test.js` (219 проходят), сквозной приёмочный по тестовому промпту.
+
 ### 2026-10-19 — Аннотатор: чистый жёлтый, жирный и курсив, «Tx», версия 2.81.801
 
 - Жёлтая подсветка — `#ffff00` вместо мягкого `#fff176` (ранее сохранённые файлы остаются с прежним цветом).
