@@ -515,6 +515,8 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
     const tag = String(node?.tagName || '').toLowerCase();
     if (['input', 'textarea', 'button', 'nav', 'header', 'footer', 'form'].includes(tag)) return true;
     if (node?.closest?.('textarea,input,button,nav,header,footer,form,[contenteditable="true"],[data-message-part-type="reasoning"],[data-message-author-role="user"],[data-role="user"],[hidden],[inert],[aria-hidden="true"]')) return true;
+    // The user's own message, whatever the provider calls it (data-testid="user-message"...): see AnswerHtmlBuilder.isUserMessage.
+    if (globalThis.AnswerHtmlBuilder?.insideUserMessage?.(node)) return true;
     return false;
   };
   const getText = (node) => {
@@ -589,6 +591,7 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
       const assistants = target.querySelectorAll(ROLE_ASSISTANT).length + (target.matches(ROLE_ASSISTANT) ? 1 : 0);
       return assistants > 1
         || !!target.querySelector(ROLE_USER)
+        || !!globalThis.AnswerHtmlBuilder?.containsUserMessage?.(target)
         || !!target.querySelector('textarea,[contenteditable="true"],form,nav');
     } catch (_) {
       return false;
@@ -6299,6 +6302,31 @@ async function focusTabForVerification(llmName, tabId, durationMs, sessionId) {
 }
 
 
+// Get it: after the page was pulled down, walk the answer upward so that blocks the page draws only when they come into view
+// (Mermaid diagrams) exist before the pull. Own budget (never added to the LATE_COLLECT_* limits); the tab is already active
+// (the focus lock of the nudge); a tab that is not shown reports visible:false. The report goes to telemetry only.
+const MATERIALIZE_SWEEP_TAB_BUDGET_MS = 8000;
+async function runMaterializeSweepInTab(llmName, tabId) {
+  try {
+    const probe = await chrome.scripting.executeScript({ target: { tabId }, func: () => !!globalThis.AnswerMaterializeSweep });
+    if (!probe?.[0]?.result) {
+      await chrome.scripting.executeScript({ target: { tabId }, files: ['shared/answer-materialize-sweep.js'] });
+    }
+    const results = await withLateCollectTimeout(chrome.scripting.executeScript({
+      target: { tabId },
+      func: (provider, budgetMs) => globalThis.AnswerMaterializeSweep.run({ provider, config: { budgetMs } }),
+      args: [llmName, MATERIALIZE_SWEEP_TAB_BUDGET_MS]
+    }), MATERIALIZE_SWEEP_TAB_BUDGET_MS + 3000, () => null);
+    const report = results?.[0]?.result || null;
+    emitTelemetry(llmName, 'ANSWER_MATERIALIZE_SWEEP', { level: 'info', details: report?.reason || 'no_report', meta: { tabId, ...(report || { reason: 'timeout_or_no_report' }) } });
+    return report;
+  } catch (err) {
+    emitTelemetry(llmName, 'ANSWER_MATERIALIZE_SWEEP', { level: 'warning', details: err?.message || String(err), meta: { tabId, reason: 'sweep_failed' } });
+    return null;
+  }
+}
+self.runMaterializeSweepInTab = runMaterializeSweepInTab;
+
 async function runPreCollectScrollNudge(llmName, tabId, sessionId, reason = 'precollect_nudge', options = {}) {
   const requiredBottom = options.getIt === true;
   if (self.isInitialPromptPassActive?.()) return false;
@@ -6436,6 +6464,8 @@ async function runPreCollectScrollNudge(llmName, tabId, sessionId, reason = 'pre
       },
       args: [{ reason, llmName, requiredBottom }]
     });
+    // Get it (a manual, user-asked visit): the page is at the bottom now; walk the answer upward, then back, before the pull.
+    if (requiredBottom && typeof runMaterializeSweepInTab === 'function') await runMaterializeSweepInTab(llmName, tabId);
     // Manual visits already wait for rendering in the page script. Do not add
     // the automatic nudge's extra stabilization delay on top of their dwell.
     if (!requiredBottom) await orchestratorSleepMs(PRECOLLECT_NUDGE_STABILIZE_MS);

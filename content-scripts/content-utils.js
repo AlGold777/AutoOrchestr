@@ -1296,7 +1296,9 @@
     const tag = String(node?.tagName || '').toLowerCase();
     if (['input', 'textarea', 'button', 'nav', 'header', 'footer', 'form', 'aside'].includes(tag)) return true;
     try {
-      return !!node?.closest?.('textarea,input,button,nav,header,footer,form,aside,[contenteditable="true"],[role="combobox"],[data-message-part-type="reasoning"],[data-message-author-role="user"],[data-role="user"],[hidden],[inert],[aria-hidden="true"]');
+      return !!node?.closest?.('textarea,input,button,nav,header,footer,form,aside,[contenteditable="true"],[role="combobox"],[data-message-part-type="reasoning"],[data-message-author-role="user"],[data-role="user"],[hidden],[inert],[aria-hidden="true"]')
+        // the user's own message, whatever the provider calls it (AnswerHtmlBuilder.isUserMessage)
+        || !!window.AnswerHtmlBuilder?.insideUserMessage?.(node);
     } catch (_) {
       return false;
     }
@@ -1312,6 +1314,7 @@
       const assistants = node.querySelectorAll(ROLE_ASSISTANT_SELECTOR).length + (node.matches(ROLE_ASSISTANT_SELECTOR) ? 1 : 0);
       return assistants > 1
         || !!node.querySelector(ROLE_USER_SELECTOR)
+        || !!window.AnswerHtmlBuilder?.containsUserMessage?.(node)
         || !!node.querySelector('textarea,[contenteditable="true"],form,nav');
     } catch (_) {
       return false;

@@ -959,6 +959,8 @@
     if (!observeTarget) return false;
     const observingBody = observeTarget === document.body;
     const observer = new MutationObserver((mutations) => {
+      // The materialization sweep moves the page and the page redraws: that is our own doing, not the model's activity.
+      if (globalThis.__AO_SWEEP_ACTIVE === true) return;
       const now = Date.now();
       if (observingBody && now - bodyMutationScheduledAt < BODY_MUTATION_THROTTLE_MS) {
         // Throttle accounting, not liveness: a Stop/loading removal can be the
@@ -1644,6 +1646,17 @@
             } : null;
           },
           forceBottom: async () => { try { tracker.latestAnswerEl?.scrollIntoView?.({ block: 'end', behavior: 'auto' }); } catch (_) {} },
+          // Generation is confirmed finished and the page is at the bottom: walk up the answer so that blocks the page draws only in view
+          // (Mermaid diagrams...) are drawn, then come back. Not a sign of life: see shared/answer-materialize-sweep.js.
+          expandDeferred: async () => {
+            const sweep = globalThis.AnswerMaterializeSweep;
+            if (!sweep || typeof sweep.run !== 'function') return;
+            await sweep.run({
+              answerEl: tracker.latestAnswerEl,
+              provider: modelName,
+              emit: (report) => emitLifecycleTelemetry('ANSWER_MATERIALIZE_SWEEP', { modelName, state: 'STABLE', level: 'info', phaseEvidence: report })
+            });
+          },
           waitForSettle: async () => delayForTracker(tracker, Math.max(5, Math.min(pollIntervalMs || stableMs, 250)), 'poll')
         });
         const materializationAfter = materialization.after;

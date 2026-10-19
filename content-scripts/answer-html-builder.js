@@ -562,20 +562,56 @@
   // would hold them: the caller must fail instead of returning half an answer).
   const ROLE_ASSISTANT_SEL = '[data-message-author-role="assistant"],[data-role="assistant"],[data-author-role="assistant"]';
   const ROLE_USER_SEL = '[data-message-author-role="user"],[data-role="user"],[data-author-role="user"]';
+  // The user's own message is recognised by its NAME, whatever the provider calls it. A name is split into whole words
+  // (user-message -> user, message); it is a user message when a word says "user" (user, human, prompt, query, question)
+  // and no word says it is only part of the furniture around it (avatar, name, menu, select, related, suggested...).
+  // Looked at: data-testid, the role attributes, aria-label; class names only as "who + what" (user-message, human-turn).
+  const WHO_WORDS = new Set(['user', 'human', 'prompt', 'query', 'question']);
+  const FURNITURE_WORDS = new Set(['avatar', 'name', 'username', 'icon', 'menu', 'profile', 'settings', 'badge', 'picture', 'image', 'img', 'select',
+    'link', 'button', 'btn', 'action', 'actions', 'input', 'toolbar', 'toggle', 'related', 'suggested', 'suggestion', 'suggestions', 'follow', 'followup',
+    'sidebar', 'header', 'footer', 'label', 'tooltip', 'popover', 'dialog', 'modal', 'copy', 'edit', 'time', 'timestamp']);
+  const WHAT_WORDS = new Set(['message', 'msg', 'turn', 'bubble', 'text', 'content', 'query', 'prompt', 'question', 'row', 'item']);
+  const words = (value) => String(value || '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  const nameIsUser = (value, strict) => {
+    const list = words(value);
+    if (!list.length || list.some((word) => FURNITURE_WORDS.has(word))) return false;
+    if (!list.some((word) => WHO_WORDS.has(word))) return false;
+    // class names are common words everywhere: demand "who + what"; ids and roles may be the bare word
+    return strict ? list.some((word) => WHAT_WORDS.has(word) && !WHO_WORDS.has(word)) : true;
+  };
+  const isUserMessage = (el) => {
+    if (!el || el.nodeType !== 1) return false;
+    const roleAttr = [el.getAttribute('data-message-author-role'), el.getAttribute('data-role'), el.getAttribute('data-author-role')];
+    if (roleAttr.some((value) => value && /^(?:user|human)$/i.test(value.trim()))) return true;
+    if (nameIsUser(el.getAttribute('data-testid'), false) || nameIsUser(el.getAttribute('aria-label'), true)) return true;
+    return nameIsUser(typeof el.className === 'string' ? el.className.replace(/\s+/g, '-') : '', true);
+  };
+  const USER_CANDIDATES_SEL = '[data-testid],[data-message-author-role],[data-role],[data-author-role],[aria-label],[class*="user" i],[class*="human" i],[class*="prompt" i],[class*="query" i],[class*="question" i]';
+  const containsUserMessage = (el) => {
+    try { return Array.from(el.querySelectorAll(USER_CANDIDATES_SEL)).some(isUserMessage); } catch (_) { return false; }
+  };
+  const insideUserMessage = (el) => {
+    for (let node = el; node && node.nodeType === 1; node = node.parentElement) if (isUserMessage(node)) return true;
+    return false;
+  };
+  // A turn the page marks explicitly as one assistant answer: the answer never reaches beyond it.
+  const TURN_OWNER_SEL = `${ROLE_ASSISTANT_SEL},[role="article"],[data-testid="assistant-message"],[data-testid$="-assistant-message" i],[data-testid^="assistant-message" i]`;
   const TURN_BOUNDARY_SEL = `${ROLE_USER_SEL},textarea,[contenteditable="true"],form,nav,h1`;
   const PAGE_CHROME_SEL = 'textarea,[contenteditable="true"],form,nav';
   const TEXT_BLOCK_SEL = 'p,li,h1,h2,h3,h4,h5,h6,a,button,input,form,blockquote';
   const isPageLevel = (el) => {
     try {
       const assistants = el.querySelectorAll(ROLE_ASSISTANT_SEL).length + (el.matches(ROLE_ASSISTANT_SEL) ? 1 : 0);
-      return assistants > 1 || !!el.querySelector(ROLE_USER_SEL) || !!el.querySelector(PAGE_CHROME_SEL)
+      return assistants > 1 || containsUserMessage(el) || !!el.querySelector(PAGE_CHROME_SEL)
         || /^(?:body|html|main)$/i.test(el.localName) || el.getAttribute('role') === 'main';
     } catch (_) { return false; }
   };
   const commonAncestor = (a, b) => { for (let n = a; n; n = n.parentElement) if (n.contains(b)) return n; return null; };
   const boundaryBetween = (scope, first, second) => {
     const [early, late] = (first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING) ? [first, second] : [second, first];
-    return Array.from(scope.querySelectorAll(TURN_BOUNDARY_SEL)).some((mark) => {
+    const marks = Array.from(scope.querySelectorAll(TURN_BOUNDARY_SEL));
+    Array.from(scope.querySelectorAll(USER_CANDIDATES_SEL)).forEach((candidate) => { if (!marks.includes(candidate) && isUserMessage(candidate)) marks.push(candidate); });
+    return marks.some((mark) => {
       if (early.contains(mark) || late.contains(mark) || mark.contains(early) || mark.contains(late)) return false;
       return (early.compareDocumentPosition(mark) & Node.DOCUMENT_POSITION_FOLLOWING)
         && (mark.compareDocumentPosition(late) & Node.DOCUMENT_POSITION_FOLLOWING);
@@ -583,11 +619,15 @@
   };
   const expandToTurn = (node, peers = []) => {
     if (!node || node.nodeType !== 1) return { node, status: 'same', members: 1 };
+    // The page marks this answer's turn explicitly: nothing outside it belongs to the answer.
+    const owner = node.matches(TURN_OWNER_SEL) ? node : node.closest(TURN_OWNER_SEL);
+    if (owner === node) return { node, status: 'same', members: 1 };
     let turn = node;
     let members = 1;
     let ambiguous = false;
     peers.forEach((peer) => {
       if (!peer || peer === node || node.contains(peer) || peer.contains(node)) return;
+      if (owner && !owner.contains(peer)) return;
       const shared = commonAncestor(node, peer);
       if (!shared) return;
       if (boundaryBetween(shared, node, peer)) return;      // another turn: a question lies between
@@ -600,7 +640,7 @@
     let walker = turn;
     for (let level = 0; level < 4; level += 1) {
       const parent = walker.parentElement;
-      if (!parent || isPageLevel(parent) || parent.querySelector(TURN_BOUNDARY_SEL)) break;
+      if (!parent || (owner && !owner.contains(parent)) || isPageLevel(parent) || parent.querySelector(TURN_BOUNDARY_SEL) || containsUserMessage(parent)) break;
       const extra = Array.from(parent.children).filter((child) => child !== walker && !child.contains(walker) && !walker.contains(child));
       if (!extra.length) { walker = parent; continue; }
       const onlyMedia = extra.every((child) => !child.matches(TEXT_BLOCK_SEL) && !child.querySelector(TEXT_BLOCK_SEL)
@@ -620,6 +660,9 @@
     cloneWithStyles: (element) => cloneElementWithInlineStyles(element),
     // Diagrams / embeds the html could not keep (size, not copied): [{ type, reason, position }]
     getLastNotes: () => lastInlineHtmlNotes.slice(),
-    expandToTurn
+    expandToTurn,
+    isUserMessage,
+    insideUserMessage,
+    containsUserMessage
   });
 })(typeof window !== 'undefined' ? window : globalThis);
