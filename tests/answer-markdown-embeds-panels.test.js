@@ -31,7 +31,7 @@ function loadAll() {
   window.chrome = { runtime: { id: 'x', sendMessage: jest.fn() } };
   ['content-scripts/answer-structure.js', 'shared/answer-markdown.js', 'shared/answer-markdown-blocks.js',
     'shared/answer-markdown-extras.js', 'shared/answer-markdown-providers.js', 'content-scripts/answer-copy-context.js',
-    'content-scripts/content-utils.js'].forEach((file) => window.eval(read(file)));
+    'content-scripts/answer-html-builder.js', 'content-scripts/content-utils.js'].forEach((file) => window.eval(read(file)));
 }
 const page = (inner) => `<main><div data-message-author-role="assistant" id="msg"><p>${'Answer text long enough to be chosen. '.repeat(3)}</p>${inner}</div></main>`;
 const htmlOf = () => window.ContentUtils.buildInlineHtml(document.getElementById('msg'), { includeRoot: false });

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "_Opus",
-  "version": "2.81.810",
+  "version": "2.81.811",
   "description": "Compares LLMs with stable Debate pipelines, structured state maps, and optional synthesis.",
   "permissions": [
     "storage",
@@ -115,6 +115,7 @@
         "utils/cleanup-registry.js",
         "content-scripts/fetch-monitor.js",
         "content-scripts/transport-evidence.js",
+        "content-scripts/answer-html-builder.js",
         "content-scripts/content-utils.js",
         "content-scripts/perplexity-composer-transaction.js",
         "content-scripts/attachment-handler.js",

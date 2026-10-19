@@ -13,7 +13,7 @@ function load() {
   ['ContentUtils', 'AnswerMarkdown', 'AnswerMarkdownBlocks', 'AnswerMarkdownExtras', 'AnswerMarkdownProviders', 'AnswerStructure'].forEach((k) => { delete window[k]; });
   window.chrome = { runtime: { id: 'x', sendMessage: jest.fn() } };
   ['content-scripts/answer-structure.js', 'shared/answer-markdown.js', 'shared/answer-markdown-blocks.js', 'shared/answer-markdown-extras.js',
-    'shared/answer-markdown-providers.js', 'content-scripts/content-utils.js'].forEach((file) => window.eval(read(file)));
+    'shared/answer-markdown-providers.js', 'content-scripts/answer-html-builder.js', 'content-scripts/content-utils.js'].forEach((file) => window.eval(read(file)));
 }
 const page = (inner) => {
   document.body.innerHTML = `<div id="msg"><p>Intro paragraph of the answer.</p>${inner}<p>Closing paragraph.</p></div>`;

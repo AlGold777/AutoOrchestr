@@ -15,7 +15,7 @@ function load() {
   window.chrome = { runtime: { id: 'x', sendMessage: jest.fn() } };
   window.eval(read('results/code-blocks.js'));
   ['content-scripts/answer-structure.js', 'shared/answer-markdown.js', 'shared/answer-markdown-blocks.js', 'shared/answer-markdown-extras.js',
-    'shared/answer-markdown-providers.js', 'content-scripts/content-utils.js', 'lib/purify.min.js', 'utils/sanitize.js'].forEach((file) => window.eval(read(file)));
+    'shared/answer-markdown-providers.js', 'content-scripts/answer-html-builder.js', 'content-scripts/content-utils.js', 'lib/purify.min.js', 'utils/sanitize.js'].forEach((file) => window.eval(read(file)));
 }
 const card = (html) => {
   document.body.innerHTML = `<div class="debate-model-card-output" id="out">${html}</div>`;

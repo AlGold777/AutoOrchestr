@@ -43,6 +43,7 @@ describe('ContentUtils.buildInlineHtml with content SVG', () => {
   beforeEach(() => {
     delete window.ContentUtils;
     window.chrome = { runtime: { id: 'x', sendMessage: jest.fn() } };
+    window.eval(read('content-scripts/answer-html-builder.js'));
     window.eval(read('content-scripts/content-utils.js'));
     document.body.innerHTML = PAGE;
   });
@@ -111,6 +112,7 @@ describe('sanitizeHTML (DOMPurify) with diagram images', () => {
   test('end to end: buildInlineHtml output passes the sanitizer with the image intact', () => {
     delete window.ContentUtils;
     window.chrome = { runtime: { id: 'x', sendMessage: jest.fn() } };
+    window.eval(read('content-scripts/answer-html-builder.js'));
     window.eval(read('content-scripts/content-utils.js'));
     document.body.innerHTML = PAGE;
     setSizes();
@@ -129,6 +131,7 @@ describe('in-page extractor agrees with ContentUtils', () => {
   beforeEach(() => {
     delete window.ContentUtils;
     window.chrome = { runtime: { id: 'x', sendMessage: jest.fn() } };
+    window.eval(read('content-scripts/answer-html-builder.js'));
     window.eval(read('content-scripts/content-utils.js'));
     delete window.AnswerMarkdown;
     document.body.innerHTML = PAGE;

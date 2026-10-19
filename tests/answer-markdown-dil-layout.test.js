@@ -44,6 +44,7 @@ const host = (html) => { const h = document.createElement('div'); h.innerHTML = 
 beforeEach(() => {
   delete window.ContentUtils;
   window.chrome = { runtime: { id: 'x', sendMessage: jest.fn() } };
+  window.eval(read('content-scripts/answer-html-builder.js'));
   window.eval(read('content-scripts/content-utils.js'));
 });
 

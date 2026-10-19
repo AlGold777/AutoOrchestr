@@ -11,6 +11,7 @@ describe('inline html of a captured answer is compact', () => {
     document.body.innerHTML = '';
     delete window.ContentUtils;
     window.__LLMLateAnswerSnapshotObserverStarted = true;
+    window.eval(read('content-scripts/answer-html-builder.js'));
     window.eval(read('content-scripts/content-utils.js'));
   });
 

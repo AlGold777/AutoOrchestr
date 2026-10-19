@@ -37,6 +37,7 @@ run('Chrome: a DIL scheme keeps its columns, rows and arrows inside a 700px card
     const cardCss = read('styles/modals-responsive.css');
     await page.setContent(`<style>${PAGE_CSS}</style><style>${cardCss}</style><div class="msg" data-message-author-role="assistant"><div id="src"></div></div>
       <div id="card" class="debate-model-card-output" style="width:700px;max-height:none;overflow:visible"></div>`);
+    await page.addScriptTag({ content: read('content-scripts/answer-html-builder.js') });
     await page.addScriptTag({ content: read('content-scripts/content-utils.js') });
     await page.evaluate((html) => { document.getElementById('src').innerHTML = `<p>Intro of the answer.</p>${html}`; }, SCHEME);
     const html = await page.evaluate(() => window.ContentUtils.buildInlineHtml(document.getElementById('src'), { includeRoot: false }));

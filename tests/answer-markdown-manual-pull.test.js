@@ -27,7 +27,7 @@ const sliceConst = (src, name) => {
 const extractor = new Function(`${sliceFunction(ORCH, 'extractLatestAssistantSnapshotInPage')}; return extractLatestAssistantSnapshotInPage;`)();
 const loadModules = () => {
   ['shared/answer-markdown.js', 'shared/answer-markdown-blocks.js', 'shared/answer-markdown-extras.js',
-    'shared/answer-markdown-providers.js', 'content-scripts/answer-copy-context.js']
+    'shared/answer-markdown-providers.js', 'content-scripts/answer-copy-context.js', 'content-scripts/answer-html-builder.js']
     .forEach((file) => window.eval(read(file)));
 };
 const unloadModules = () => {
@@ -86,26 +86,26 @@ describe('ensureAnswerMarkdownModulesInTab', () => {
   );
 
   test('nothing is injected when all modules are present', async () => {
-    const exec = jest.fn(async () => [{ result: [true, true, true, true, true] }]);
+    const exec = jest.fn(async () => [{ result: [true, true, true, true, true, true] }]);
     expect(await build(exec)(7)).toBeNull();
     expect(exec).toHaveBeenCalledTimes(1);
   });
 
-  test('engine missing: all five files, in manifest order, one call', async () => {
+  test('engine missing: all six files, in order, one call', async () => {
     const exec = jest.fn()
-      .mockResolvedValueOnce([{ result: [false, false, false, false, false] }])
+      .mockResolvedValueOnce([{ result: [false, false, false, false, false, false] }])
       .mockResolvedValueOnce([{}]);
     expect(await build(exec)(7)).toBeNull();
     expect(exec.mock.calls[1][0]).toEqual({
       target: { tabId: 7 },
       files: ['shared/answer-markdown.js', 'shared/answer-markdown-blocks.js', 'shared/answer-markdown-extras.js',
-        'shared/answer-markdown-providers.js', 'content-scripts/answer-copy-context.js']
+        'shared/answer-markdown-providers.js', 'content-scripts/answer-copy-context.js', 'content-scripts/answer-html-builder.js']
     });
   });
 
   test('engine present, copy context missing: only the missing file', async () => {
     const exec = jest.fn()
-      .mockResolvedValueOnce([{ result: [true, true, true, true, false] }])
+      .mockResolvedValueOnce([{ result: [true, true, true, true, false, true] }])
       .mockResolvedValueOnce([{}]);
     await build(exec)(7);
     expect(exec.mock.calls[1][0].files).toEqual(['content-scripts/answer-copy-context.js']);
@@ -159,6 +159,7 @@ describe('ContentUtils.buildLatestAnswerCopy', () => {
   test('converts the latest answer; degrades with a report when the pipeline is missing', () => {
     delete window.ContentUtils;
     window.chrome = { runtime: { id: 'x', sendMessage: jest.fn() } };
+    try { window.eval(read('content-scripts/answer-html-builder.js')); } catch (_) { /* partial load tolerated */ }
     try { window.eval(read('content-scripts/content-utils.js')); } catch (_) { /* partial load tolerated */ }
     const build = window.ContentUtils?.buildLatestAnswerCopy;
     if (!build) return;

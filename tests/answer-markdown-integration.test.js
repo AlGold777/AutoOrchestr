@@ -129,6 +129,7 @@ describe('content-utils buildResponseMeta', () => {
   beforeEach(() => {
     delete window.ContentUtils;
     window.chrome = { runtime: { id: 'x', sendMessage: jest.fn() } };
+    try { load('content-scripts/answer-html-builder.js'); } catch (_) {}
     try { load('content-scripts/content-utils.js'); } catch (_) { /* partial load is enough below */ }
   });
 

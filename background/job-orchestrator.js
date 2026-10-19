@@ -538,194 +538,6 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
     }
     return (hash >>> 0).toString(16);
   };
-  // Content SVG -> <img data:image/svg+xml;base64>, same rules as ContentUtils.buildInlineHtml
-  // (content-scripts/content-utils.js). Duplicated on purpose: this function is serialized into
-  // the page and cannot import it; tests/answer-markdown-svg-html.test.js checks both agree.
-  const htmlWithSvgImages = (sourceRoot, cloneRoot, state) => {
-    const fitSvgToContent = (svg, copy, rect) => {
-      const parse = (value) => String(value || '').trim().split(/[\s,]+/).map(Number);
-      const declared = parse(svg.getAttribute('viewBox'));
-      const view = declared.length === 4 && declared.every(Number.isFinite) && declared[2] > 0 && declared[3] > 0
-        ? { x: declared[0], y: declared[1], w: declared[2], h: declared[3] } : null;
-      // Rendered scale, user units -> screen pixels (preserveAspectRatio "meet" uses the smaller ratio).
-      const scale = view ? Math.min(rect.width / view.w, rect.height / view.h) : 1;
-      let box = view || { x: 0, y: 0, w: rect.width, h: rect.height };
-      try {
-        const bbox = svg.getBBox();
-        if (bbox && bbox.width > 0 && bbox.height > 0) {
-          const pad = Math.min(8, Math.max(1, 0.02 * Math.max(bbox.width, bbox.height))); // up to 8 units for labels and strokes, less on a small drawing
-          const fit = { x: bbox.x - pad, y: bbox.y - pad, w: bbox.width + 2 * pad, h: bbox.height + 2 * pad };
-          // What was visible on the page: the content box cut by the declared view box.
-          const x0 = view ? Math.max(fit.x, view.x) : fit.x;
-          const y0 = view ? Math.max(fit.y, view.y) : fit.y;
-          const x1 = view ? Math.min(fit.x + fit.w, view.x + view.w) : fit.x + fit.w;
-          const y1 = view ? Math.min(fit.y + fit.h, view.y + view.h) : fit.y + fit.h;
-          if (x1 - x0 > 0 && y1 - y0 > 0) box = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
-        }
-      } catch (_) {}
-      const pxPerUnit = scale > 0 && Number.isFinite(scale) ? scale : 1;
-      const width = Math.max(1, Math.round(box.w * pxPerUnit));
-      const height = Math.max(1, Math.round(box.h * pxPerUnit));
-      copy.setAttribute('viewBox', `${box.x} ${box.y} ${box.w} ${box.h}`);
-      copy.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-      copy.setAttribute('width', String(width));
-      copy.setAttribute('height', String(height));
-      // The page's own size limits (mermaid: max-width:1200px) would crop the standalone picture.
-      ['maxWidth', 'minWidth', 'width', 'height', 'maxHeight', 'minHeight'].forEach((name) => { copy.style[name] = ''; });
-      if (!copy.getAttribute('style')) copy.removeAttribute('style');
-      return { width, height };
-    };
-    const HARD_SKIP = '[inert], header, footer, nav, aside, form, [data-message-part-type="reasoning"]';
-    const SOFT_SKIP = 'button, [role="button"], [aria-hidden="true"]';
-    const looksLikeDiagram = (svg) => !!svg.querySelector('text, foreignObject')
-      || svg.querySelectorAll('path, rect, circle, ellipse, line, polyline, polygon').length >= 6;
-    const toBase64 = (text) => {
-      const bytes = new TextEncoder().encode(text);
-      let binary = '';
-      for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
-      return btoa(binary);
-    };
-    let working = cloneRoot;
-    // The picture (or, over the size limit, the note) for one svg whose layout is `rect`.
-    // The css of the shadow root an svg lives in (styles outside the svg, constructable sheets) goes into the picture.
-    const shadowCssOf = (svg) => {
-      const root = svg.getRootNode ? svg.getRootNode() : null;
-      if (!root || !root.host) return '';
-      const css = [];
-      try { root.querySelectorAll('style').forEach((style) => { if (!style.closest('svg')) css.push(style.textContent || ''); }); } catch (_) {}
-      try {
-        (root.adoptedStyleSheets || []).forEach((sheet) => css.push(Array.from(sheet.cssRules || []).map((rule) => rule.cssText).join('\n')));
-      } catch (_) {}
-      return css.join('\n').trim();
-    };
-    const collectShadowSvgs = (scope, out) => {
-      Array.from(scope.children).forEach((el) => {
-        if (el.localName === 'svg') { out.push(el); return; }
-        if (el.shadowRoot) collectShadowSvgs(el.shadowRoot, out);
-        collectShadowSvgs(el, out);
-      });
-      return out;
-    };
-    // Source svg <-> place in the copy, in document order, into open shadow roots (a host's copy is empty).
-    const pairSvgTargets = (source, copy, out = []) => {
-      const sourceChildren = Array.from(source.children);
-      const copyChildren = Array.from(copy.children);
-      if (sourceChildren.length !== copyChildren.length) return out;
-      sourceChildren.forEach((child, index) => {
-        const target = copyChildren[index];
-        if (child.localName === 'svg') { out.push({ svgs: [child], target, host: false }); return; }
-        if (child.shadowRoot) {
-          const inner = collectShadowSvgs(child.shadowRoot, []);
-          if (inner.length) out.push({ svgs: inner, target, host: child });
-        }
-        pairSvgTargets(child, target, out);
-      });
-      return out;
-    };
-    const makeImage = (svg, rect) => {
-      const doc = working.ownerDocument;
-      const copy = svg.cloneNode(true);
-      copy.querySelectorAll('script').forEach((el) => el.remove());
-      const outerCss = shadowCssOf(svg);
-      if (outerCss) {
-        const style = doc.createElementNS('http://www.w3.org/2000/svg', 'style');
-        style.textContent = outerCss;
-        copy.insertBefore(style, copy.firstChild);
-      }
-      copy.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-      copy.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
-      const { width, height } = fitSvgToContent(svg, copy, rect);
-      const base64 = toBase64(new XMLSerializer().serializeToString(copy));
-      state.position += 1;
-      if (base64.length > 400000 || state.total + base64.length > 1500000) {
-        state.notes.push({ type: 'svg', reason: 'диаграмма не сохранена в HTML: размер', position: state.position });
-        const note = doc.createElement('p');
-        note.textContent = '[диаграмма не сохранена: размер]';
-        return note;
-      }
-      state.total += base64.length;
-      const img = doc.createElement('img');
-      img.setAttribute('src', `data:image/svg+xml;base64,${base64}`);
-      img.setAttribute('alt', 'Диаграмма');
-      img.setAttribute('width', String(width));
-      img.setAttribute('height', String(height));
-      return img;
-    };
-    try {
-      // Edit a copy so the page DOM is never touched (this path is read-only).
-      working = cloneRoot.cloneNode(true);
-      pairSvgTargets(sourceRoot, working).forEach(({ svgs, target, host }) => {
-        try {
-          const images = [];
-          svgs.forEach((svg) => {
-            let inSoftWrapper = false;
-            const up = (node) => node.parentElement || (node.getRootNode && node.getRootNode().host) || null;
-            for (let n = up(svg); n && n !== sourceRoot.parentElement; n = up(n)) {
-              if (n.localName === 'svg' || n.matches?.(HARD_SKIP)) return;
-              if (n.matches?.(SOFT_SKIP)) inSoftWrapper = true;
-            }
-            const rect = svg.getBoundingClientRect();
-            if (!(rect.width > 48 && rect.height > 48)) return;
-            if (inSoftWrapper && !looksLikeDiagram(svg)) return;
-            images.push(makeImage(svg, rect));
-          });
-          if (!images.length) return;
-          if (!host) { target.replaceWith(images[0]); return; }
-          if (images.length === 1) {
-            if (images[0].localName === 'img') images[0].setAttribute('alt', host.getAttribute('aria-label') || 'Диаграмма');
-            target.replaceWith(images[0]);
-            return;
-          }
-          target.textContent = '';
-          images.forEach((image) => target.append(image));
-        } catch (_) {}
-      });
-      // iframe / object / embed: its content svg as a picture, anything else as a visible note.
-      const embeds = Array.from(sourceRoot.querySelectorAll('iframe, object, embed'));
-      const embedClones = Array.from(working.querySelectorAll('iframe, object, embed'));
-      if (embeds.length === embedClones.length) {
-        embeds.forEach((el, index) => {
-          try {
-            const kind = String(el.localName || 'iframe');
-            let inner = null;
-            let rect = null;
-            try { inner = el.contentDocument?.querySelector('svg') || null; } catch (_) { inner = null; }
-            if (!inner && el.getAttribute('srcdoc')) {
-              inner = new DOMParser().parseFromString(el.getAttribute('srcdoc'), 'text/html').querySelector('svg');
-              if (inner) {
-                const box = (inner.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number);
-                rect = {
-                  width: parseFloat(inner.getAttribute('width')) || box[2] || el.getBoundingClientRect().width,
-                  height: parseFloat(inner.getAttribute('height')) || box[3] || el.getBoundingClientRect().height
-                };
-              }
-            }
-            if (inner) {
-              rect = rect || inner.getBoundingClientRect();
-              if (rect.width > 48 && rect.height > 48) { embedClones[index].replaceWith(makeImage(inner, rect)); return; }
-            }
-            let host = '';
-            const address = el.getAttribute('src') || el.getAttribute('data') || '';
-            try { host = address ? new URL(address, el.ownerDocument.baseURI).hostname : ''; } catch (_) { host = ''; }
-            state.position += 1;
-            state.notes.push({ type: 'embed', reason: `встроенный блок (${kind}) не скопирован: ${host || 'без адреса'}`, position: state.position });
-            const note = working.ownerDocument.createElement('p');
-            note.textContent = `[встроенный блок не скопирован: ${kind} ${host || 'без адреса'}]`;
-            embedClones[index].replaceWith(note);
-          } catch (_) {}
-        });
-      }
-    } catch (_) {
-      working = cloneRoot;
-    }
-    // Code blocks as clean <pre data-code-lang><code>exact text</code></pre> (the engine's detection), when the engine
-    // is in the page; otherwise the html stays as it was.
-    try {
-      const engine = globalThis.AnswerMarkdown;
-      if (working !== cloneRoot && engine && typeof engine.normalizeCodeBlocks === 'function') engine.normalizeCodeBlocks(working, { provider: modelName }); // never the page's own node
-    } catch (_) {}
-    return String(working.innerHTML || '').trim();
-  };
   let baseCandidates = nodes
     .filter((node) => node && !isRejectedNode(node))
     .map((node, index) => {
@@ -743,17 +555,6 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
       const selector = nodeSelectors.get(node) || '';
       const descriptor = `${selector}#${index}`;
       const className = String(node.className || '');
-      const htmlNode = normalizedModel === 'gemini' ? node.cloneNode(true) : node;
-      if (normalizedModel === 'gemini') htmlNode.querySelectorAll('h6.screen-reader-model-response-label').forEach(label => label.remove());
-      const svgState = { total: 0, position: 0, notes: [] };
-      // The page's own content script (ContentUtils.buildInlineHtml) is the single source of an answer's html:
-      // computed layout and styles, diagrams, block icons. A tab whose script is older, and Gemini (its copy has
-      // no layout), take the read-only path below, which only knows diagrams and embeds.
-      const useContentUtils = typeof window.ContentUtils?.getLastInlineHtmlNotes === 'function' && normalizedModel !== 'gemini';
-      const html = useContentUtils
-        ? window.ContentUtils.buildInlineHtml(node, { includeRoot: false })
-        : htmlWithSvgImages(node, htmlNode, svgState);
-      const svgNotes = useContentUtils ? window.ContentUtils.getLastInlineHtmlNotes() : svgState.notes;
       const isMarkdown = /markdown|prose|qwen-markdown|markdown-body/i.test(`${selector} ${className}`);
       const assistantNode = node.closest?.('[data-markdown-text-style="assistant-message"],[data-message-author-role="assistant"],[data-role="assistant"],.assistant-message,.qwen-chat-message-assistant,[class*="assistant" i]');
       const isAssistantRole = !!assistantNode;
@@ -761,10 +562,7 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
       return {
         index,
         text,
-        html,
-        svgNotes,
         node,
-        mdNode: htmlNode,
         selector,
         descriptor,
         visible,
@@ -839,7 +637,42 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
   candidates = candidates
     .map((candidate) => ({ ...candidate, strategyScore: scoreByStrategy(candidate) }))
     .sort((a, b) => b.strategyScore - a.strategyScore);
-  const best = candidates[0] || null;
+  let best = candidates[0] || null;
+  let splitAcrossBlocks = false;
+  let turnExpanded = false;
+  if (best) {
+    const builder = globalThis.AnswerHtmlBuilder;
+    // The answer of one turn may be several blocks (prose, diagram, prose...): the node found may be only one of them.
+    // Widen to the node that holds the whole turn; when only a page-level container would, fail instead of half an answer.
+    if (builder && typeof builder.expandToTurn === 'function') {
+      const peers = baseCandidates.filter((candidate) => candidate !== best && candidate.selector === best.selector).map((candidate) => candidate.node);
+      const turn = builder.expandToTurn(best.node, peers);
+      if (turn.status === 'split') {
+        best = null;
+        splitAcrossBlocks = true;
+      } else if (turn.node !== best.node) {
+        best = { ...best, node: turn.node, text: getText(turn.node) };
+        turnExpanded = true;
+      }
+    }
+  }
+  if (best) {
+    // The ONE builder of an answer's html (content-scripts/answer-html-builder.js: computed styles with flex/grid layout,
+    // diagrams, icons, hidden content, clean code blocks). The background injects it into a tab that runs an older
+    // extension version. Without it (injection failed) the html is a plain copy and says so in the report.
+    const builder = globalThis.AnswerHtmlBuilder;
+    const usable = builder && typeof builder.build === 'function';
+    best.html = usable
+      ? builder.build(best.node, { includeRoot: false, provider: modelName })
+      : String(best.node.innerHTML || '').trim();
+    best.svgNotes = usable
+      ? builder.getLastNotes()
+      : [{ type: 'html', reason: 'html собран запасным путём (без раскладки и стилей)', position: 0 }];
+    // Gemini: the Markdown copy is made without its hidden page label.
+    best.mdNode = normalizedModel === 'gemini'
+      ? (() => { const copy = best.node.cloneNode(true); copy.querySelectorAll('h6.screen-reader-model-response-label').forEach((label) => label.remove()); return copy; })()
+      : best.node;
+  }
   // DOM->Markdown copy of the chosen node. Self-contained: this function is serialized
   // into the page. Never silent: any failure becomes a whole-answer placeholder and
   // report.complete=false (spec: docs/Architecture/answer-markdown-spec.md, 4.2).
@@ -956,13 +789,14 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
       selectorUsed: best.selector,
       selectorDescriptor: best.descriptor,
       textHash: hashText(best.text),
-      anchorApplied
+      anchorApplied,
+      turnExpanded
     }
     : {
       ok: false,
       length: 0,
       // Only page-level containers matched: say so instead of returning one as the answer.
-      reason: wideRejected > 0 ? 'wide_container_only' : 'no_candidate',
+      reason: splitAcrossBlocks ? 'answer_split_across_blocks' : (wideRejected > 0 ? 'wide_container_only' : 'no_candidate'),
       candidates: 0,
       candidateCount: baseCandidates.length,
       strategyId,
@@ -1160,7 +994,9 @@ const ANSWER_MARKDOWN_MODULES = [
   ['AnswerMarkdownBlocks', 'shared/answer-markdown-blocks.js'],
   ['AnswerMarkdownExtras', 'shared/answer-markdown-extras.js'],
   ['AnswerMarkdownProviders', 'shared/answer-markdown-providers.js'],
-  ['AnswerCopyContext', 'content-scripts/answer-copy-context.js']
+  ['AnswerCopyContext', 'content-scripts/answer-copy-context.js'],
+  // The one builder of an answer's html: an older tab does not have it (or has an older ContentUtils without it).
+  ['AnswerHtmlBuilder', 'content-scripts/answer-html-builder.js']
 ];
 // Returns null when the modules are present, else a short reason (carried into the report).
 async function ensureAnswerMarkdownModulesInTab(tabId) {

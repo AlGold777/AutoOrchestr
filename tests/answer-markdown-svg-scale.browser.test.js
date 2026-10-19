@@ -73,6 +73,7 @@ run('Chrome: diagrams keep their scale, fill their picture and stay inside a 700
     const page = await browser.newPage({ viewport: { width: 1500, height: 900 } });
     await page.addInitScript(() => { window.chrome = { runtime: { id: 'x', sendMessage() {} } }; });
     await page.setContent(`<style>${PAGE_CSS}</style><div class="msg" data-message-author-role="assistant"><div id="src"></div></div><div id="card"></div>`);
+    await page.addScriptTag({ content: read('content-scripts/answer-html-builder.js') });
     await page.addScriptTag({ content: read('content-scripts/content-utils.js') });
     const extractorSrc = sliceFunction(read('background/job-orchestrator.js'), 'extractLatestAssistantSnapshotInPage');
     await page.evaluate((source) => { window.__extract = new Function(`${source}; return extractLatestAssistantSnapshotInPage;`)(); }, extractorSrc);
@@ -156,6 +157,7 @@ run('Chrome: a diagram in an open shadow root (Claude/Mermaid) is saved as a vis
     const page = await browser.newPage({ viewport: { width: 1500, height: 900 } });
     await page.addInitScript(() => { window.chrome = { runtime: { id: 'x', sendMessage() {} } }; });
     await page.setContent(`<style>${PAGE_CSS}</style><div class="msg" data-message-author-role="assistant"><div id="src"></div></div><div id="card"></div>`);
+    await page.addScriptTag({ content: read('content-scripts/answer-html-builder.js') });
     await page.addScriptTag({ content: read('content-scripts/content-utils.js') });
     const extractorSrc = sliceFunction(read('background/job-orchestrator.js'), 'extractLatestAssistantSnapshotInPage');
     await page.evaluate((source) => { window.__extract = new Function(`${source}; return extractLatestAssistantSnapshotInPage;`)(); }, extractorSrc);

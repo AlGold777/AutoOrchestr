@@ -85,6 +85,7 @@ run('Chrome: Perplexity-like Mermaid (cross-origin iframe + hidden source) becom
       <style>${css}</style><div id="card" class="debate-model-card-output" style="width:600px;max-height:none;overflow:visible"></div>`);
     await page.evaluate(() => { window.chrome = { runtime: { id: 'x', sendMessage() {} } }; });
     await page.addScriptTag({ content: read('shared/answer-markdown.js') });
+    await page.addScriptTag({ content: read('content-scripts/answer-html-builder.js') });
     await page.addScriptTag({ content: read('content-scripts/content-utils.js') });
     await page.addScriptTag({ content: read('results/code-blocks.js') });
     const html = await page.evaluate(() => window.ContentUtils.buildInlineHtml(document.getElementById('msg'), { includeRoot: false }));
