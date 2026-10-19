@@ -65,6 +65,11 @@
       match: handler.match,
       render: handler.render,
       censusSelector: typeof handler.censusSelector === 'string' ? handler.censusSelector : '',
+      // passthrough: the handler renders its children through ctx.convertChildren, so they are counted by themselves
+      passthrough: handler.passthrough === true,
+      // censusSkip(el): the element is accounted for elsewhere (e.g. the hidden source of an iframe diagram): not counted
+      censusSkip: typeof handler.censusSkip === 'function' ? handler.censusSkip : null,
+      censusMatch: typeof handler.censusMatch === 'function' ? handler.censusMatch : null,
       claimsUi: handler.claimsUi === true,
       isDefault: Boolean(internal),
       order: registrationOrder++
@@ -214,6 +219,8 @@
   function censusType(el, rules) {
     for (const h of blockHandlers) {
       if (h.censusSelector && safe(() => el.matches(h.censusSelector), false)) return { type: h.type, absorbs: true };
+      if (h.censusSkip && safe(() => h.censusSkip(el), false)) return { type: null, absorbs: true };
+      if (h.censusMatch && safe(() => h.censusMatch(el), false)) return { type: h.type, absorbs: true };
     }
     const b = builtinType(el, rules);
     if (b) return { type: b, absorbs: b !== 'image' };
@@ -235,7 +242,7 @@
     if (includeSelf) {
       const t = censusType(node, rules);
       if (t) {
-        counts[t.type] = (counts[t.type] || 0) + 1;
+        if (t.type) counts[t.type] = (counts[t.type] || 0) + 1;
         absorbs = t.absorbs;
       }
     }
@@ -411,7 +418,7 @@
       if (!matched) continue;
       const ctx = makeCtx(st, position, h.type);
       let result;
-      const absorbBefore = (!h.isDefault) ? absorbedInner(el, st) : null;
+      const absorbBefore = (!h.isDefault && !h.passthrough) ? absorbedInner(el, st) : null;
       try {
         result = h.render(el, ctx);
         if (result && typeof result === 'string') result = { markdown: result };
@@ -424,6 +431,11 @@
       st.pos = position;
       const type = result.type || h.type;
       addCopied(st, type, result.copied === undefined ? 1 : result.copied);
+      if (result.reconstructed) {
+        // best-effort copy (e.g. a diagram rebuilt from svg / html components): counted as copied, but flagged
+        st.reconstructed = (st.reconstructed || 0) + 1;
+        if (result.note) (st.reconstructedNotes = st.reconstructedNotes || []).push(String(result.note));
+      }
       if (absorbBefore) {
         for (const k of Object.keys(absorbBefore)) st.found[k] = Math.max(0, (st.found[k] || 0) - absorbBefore[k]);
       }
@@ -771,6 +783,79 @@
     return ctx._st.rules;
   }
 
+  // ---------------------------------------------------------------- normalizeCodeBlocks (shared detector)
+
+  function isCodeBlockEl(el, rules) {
+    if (tagOf(el) === 'pre') return true;
+    if (rules && typeof rules.codeBlock === 'function') {
+      const cb = safe(() => rules.codeBlock(el), null);
+      return Boolean(cb && typeof cb.text === 'string');
+    }
+    return false;
+  }
+
+  // Climb from the matched block to the container whose other children are only interface
+  // (buttons, line numbers, a bare language label), so no header/wrapper debris is left behind.
+  function codeContainer(el, lang, stop, rules) {
+    let cur = el;
+    while (cur.parentNode && cur.parentNode !== stop && cur.parentNode.nodeType === 1) {
+      const parent = cur.parentNode;
+      const ptag = tagOf(parent);
+      if (BLOCK_TAGS.has(ptag) && (ptag === 'li' || ptag === 'td' || ptag === 'th' || ptag === 'ul' || ptag === 'ol'
+        || ptag === 'blockquote' || ptag === 'table' || ptag === 'tr' || ptag === 'body')) break;
+      const rest = Array.from(parent.childNodes).filter((n) => n !== cur);
+      const onlyUi = rest.every((n) => {
+        if (n.nodeType === 3) return !n.data.trim();
+        if (n.nodeType !== 1) return true;
+        if (isUiNode(n, rules) || isCodeUi(n, rules)) return true;
+        if (n.querySelector('pre') || isCodeBlockEl(n, rules)) return false;
+        const t = rawCodeText(n, rules).trim().toLowerCase();
+        return t === '' || (Boolean(lang) && t === lang);
+      });
+      if (!onlyUi) break;
+      cur = parent;
+    }
+    return cur;
+  }
+
+  // In-place: every code block under root becomes <pre data-code-lang><code class="language-x">EXACT TEXT</code></pre>.
+  // Uses the same detection and extraction as convert(); inline <code> outside blocks is left alone.
+  function normalizeCodeBlocks(rootEl, options) {
+    const out = { count: 0, blocks: [] };
+    if (!rootEl || rootEl.nodeType !== 1) return out;
+    const rules = rulesFor(options);
+    const doc = rootEl.ownerDocument;
+    const found = [];
+    const visit = (el) => {
+      if (isUiNode(el, rules)) return;
+      if (isCodeBlockEl(el, rules)) { found.push(el); return; }
+      for (const c of childrenOf(el)) if (c.nodeType === 1) visit(c);
+    };
+    visit(rootEl);
+    for (const el of found) {
+      const { lang, text } = extractCode(el, rules);
+      out.count++;
+      out.blocks.push({ lang, length: text.length });
+      const done = tagOf(el) === 'pre' && el.hasAttribute('data-code-lang') && el.children.length === 1
+        && tagOf(el.firstElementChild) === 'code' && el.firstElementChild.textContent === text;
+      if (done) continue;
+      const pre = doc.createElement('pre');
+      pre.setAttribute('data-code-lang', lang);
+      const code = doc.createElement('code');
+      if (lang) code.className = `language-${lang}`;
+      code.textContent = text;
+      pre.appendChild(code);
+      if (el === rootEl) {
+        while (rootEl.firstChild) rootEl.removeChild(rootEl.firstChild);
+        if (tagOf(rootEl) === 'pre') { rootEl.setAttribute('data-code-lang', lang); rootEl.appendChild(code); } else rootEl.appendChild(pre);
+        continue;
+      }
+      const target = codeContainer(el, lang, rootEl, rules);
+      target.parentNode.replaceChild(pre, target);
+    }
+    return out;
+  }
+
   // ---------------------------------------------------------------- convert
 
   function convert(element, options) {
@@ -846,6 +931,11 @@
       flags.truncated = true;
     }
 
+    if (st.reconstructed) {
+      flags.reconstructed = st.reconstructed;
+      flags.reconstructedNotes = Array.from(new Set(st.reconstructedNotes || []));
+    }
+
     const mismatches = [];
     const types = new Set([...Object.keys(st.found), ...Object.keys(st.copied)]);
     for (const p of st.placeholders) if (p.countType) types.add(p.countType);
@@ -876,7 +966,7 @@
   registerDefaults();
 
   const api = Object.freeze({
-    convert, census, registerBlock, registerProvider, PLACEHOLDER_RE, REPORT_VERSION
+    convert, census, normalizeCodeBlocks, registerBlock, registerProvider, PLACEHOLDER_RE, REPORT_VERSION
   });
   root.AnswerMarkdown = api;
   if (typeof module !== 'undefined' && module.exports) {

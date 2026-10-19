@@ -89,6 +89,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     let responseSelectionToolbarEl = null;
     let responseSelectionToolbarBound = false;
     let suppressResponseFavoriteClickUntil = 0;
+    // Code blocks of every shown answer: header with the language and a Copy button; one delegated handler.
+    if (window.ResultsCodeBlocks) window.ResultsCodeBlocks.install(document);
     const llmResultsContainer = document.querySelector('.llm-results');
     const responseCardCover = document.body.classList.contains('pipeline-page')
         ? null

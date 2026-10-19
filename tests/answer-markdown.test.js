@@ -523,3 +523,73 @@ describe('context.outsideBlocks и turnUnresolved', () => {
     expect(run('<p>a</p>').report.flags).toEqual({});
   });
 });
+
+describe('normalizeCodeBlocks', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const Providers = require('../shared/answer-markdown-providers');
+  const FIX = path.join(__dirname, 'fixtures', 'answer-markdown');
+  beforeAll(() => { Providers.register(AM); });
+  const fixture = (file, name) => {
+    const host = document.createElement('div');
+    host.innerHTML = fs.readFileSync(path.join(FIX, `${file}.html`), 'utf8');
+    return host.querySelector(`section[data-case="${name}"]`);
+  };
+  const codeOf = (md) => [...md.matchAll(/^(`{3,})([^\n]*)\n([\s\S]*?)\n\1$/gm)].map((m) => ({ lang: m[2], text: m[3] }));
+  const FIXTURES = [['GPT', 'gpt', 'code-labelled'], ['GPT', 'gpt', 'code-unlabelled'], ['Claude', 'claude', 'code-header-label-unverified'], ['Gemini', 'gemini', 'code-block-element-unverified']];
+
+  test.each(FIXTURES)('%s %s/%s: код и язык те же, что в Markdown; мусора вокруг нет', (provider, file, name) => {
+    const section = fixture(file, name);
+    const before = codeOf(AM.convert(section, { provider }).markdown);
+    expect(before.length).toBeGreaterThan(0);
+    const r = AM.normalizeCodeBlocks(section, { provider });
+    expect(r.count).toBe(before.length);
+    const pres = [...section.querySelectorAll('pre[data-code-lang]')];
+    expect(pres.map((p) => ({ lang: p.getAttribute('data-code-lang'), text: p.firstElementChild.textContent }))).toEqual(before);
+    expect(r.blocks.map((b) => b.length)).toEqual(before.map((b) => b.text.length));
+    expect(section.querySelector('button')).toBeNull();
+    // повторная конвертация нормализованного DOM даёт тот же код
+    expect(codeOf(AM.convert(section, { provider }).markdown)).toEqual(before);
+  });
+
+  const norm = (html) => { const h = el(html); const r = AM.normalizeCodeBlocks(h, {}); return { h, r }; };
+
+  test('замена: pre>code.language-*, текст точный, inline-код не трогается', () => {
+    const { h, r } = norm('<p>a <code>x</code></p><pre><code class="language-JS">  a\t\n\n b  \u00A0</code></pre>');
+    expect(r).toEqual({ count: 1, blocks: [{ lang: 'js', length: 11 }] });
+    expect(h.innerHTML).toBe('<p>a <code>x</code></p><pre data-code-lang="js"><code class="language-js">  a\t\n\n b  &nbsp;</code></pre>');
+    expect(h.querySelector('pre').textContent).toBe('  a\t\n\n b  \u00A0');
+  });
+
+  test('блок без языка, тройные бэктики внутри как есть, два блока подряд', () => {
+    const { h, r } = norm('<pre><code>```js\nx\n```</code></pre><pre><code class="language-py">y</code></pre>');
+    expect(r.count).toBe(2);
+    const pres = h.querySelectorAll('pre');
+    expect(pres[0].getAttribute('data-code-lang')).toBe('');
+    expect(pres[0].querySelector('code').className).toBe('');
+    expect(pres[0].textContent).toBe('```js\nx\n```');
+    expect(pres[1].getAttribute('data-code-lang')).toBe('py');
+  });
+
+  test('блок в списке и в ячейке таблицы; шапка с подписью и кнопкой уходит целиком', () => {
+    const { h, r } = norm('<ul><li>s<div class="w"><div><span>python</span><button>Copy</button></div><pre><code class="language-python">if a:\n    b</code></pre></div></li></ul>'
+      + '<table><tr><td><pre><code>c\n d</code></pre></td></tr></table>');
+    expect(r.count).toBe(2);
+    expect(h.querySelector('li').innerHTML).toBe('s<pre data-code-lang="python"><code class="language-python">if a:\n    b</code></pre>');
+    expect(h.querySelector('td').innerHTML).toBe('<pre data-code-lang=""><code>c\n d</code></pre>');
+  });
+
+  test('идемпотентность и работа на отсоединённом клоне', () => {
+    const { h } = norm('<div><pre><div><button>Copy</button></div><code class="language-sh">ls</code></pre></div>');
+    const html = h.innerHTML;
+    expect(AM.normalizeCodeBlocks(h, {}).count).toBe(1);
+    expect(h.innerHTML).toBe(html);
+    expect(h.isConnected).toBe(false);
+  });
+
+  test('корень — сам блок: меняется на месте', () => {
+    const pre = el('<pre><code class="language-go">x</code></pre>').firstChild;
+    expect(AM.normalizeCodeBlocks(pre, {}).count).toBe(1);
+    expect(pre.outerHTML).toBe('<pre data-code-lang="go"><code class="language-go">x</code></pre>');
+  });
+});

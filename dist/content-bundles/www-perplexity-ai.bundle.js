@@ -83,7 +83,7 @@
     'hr',
     'img'
   ];
-  const ALLOWED_ATTR = ['href', 'class', 'style', 'colspan', 'rowspan', 'scope', 'src', 'alt', 'width', 'height', 'start'];
+  const ALLOWED_ATTR = ['href', 'class', 'style', 'colspan', 'rowspan', 'scope', 'src', 'alt', 'width', 'height', 'start', 'data-code-lang'];
   const ALLOWED_URI_REGEXP = /^(https?:|mailto:|tel:|#)/i;
   // The only image form allowed: a diagram saved as an inline SVG data URL (it runs no
   // script as an <img>). Remote or any other image sources are dropped below.
@@ -7970,12 +7970,55 @@
     return /^(margin|padding)-/.test(prop) || prop === 'border-radius' ? value === '0px' : false;
   };
 
+  // Layout (flex / grid), written ONLY for flex and grid containers and their direct children, and only values
+  // that differ from the defaults: declarative UI blocks (ChatGPT "DIL": boxes, rows, columns, cards) are
+  // laid out by it; an ordinary answer has none of it and its html does not grow.
+  const LAYOUT_CONTAINER = /^(?:inline-)?(?:flex|grid)$/;
+  const layoutStyle = (computed, parentComputed) => {
+    const get = (prop) => String(computed.getPropertyValue(prop) || '').trim();
+    const out = [];
+    const display = get('display');
+    if (LAYOUT_CONTAINER.test(display)) {
+      out.push(`display:${display}`);
+      const put = (prop, skip) => { const value = get(prop); if (value && !skip.test(value)) out.push(`${prop}:${value}`); };
+      if (/flex/.test(display)) {
+        put('flex-direction', /^row$/);
+        put('flex-wrap', /^nowrap$/);
+      } else {
+        put('grid-template-columns', /^none$/);
+        put('grid-template-rows', /^none$/);
+        put('grid-auto-flow', /^row$/);
+      }
+      put('align-items', /^(?:normal|stretch)$/);
+      put('justify-content', /^(?:normal|flex-start|start)$/);
+      put('align-content', /^(?:normal|stretch)$/);
+      const rowGap = get('row-gap');
+      const columnGap = get('column-gap');
+      const zero = /^(?:normal|0px)$/;
+      if (!zero.test(rowGap) && rowGap === columnGap) out.push(`gap:${rowGap}`);
+      else {
+        if (!zero.test(rowGap)) out.push(`row-gap:${rowGap}`);
+        if (!zero.test(columnGap)) out.push(`column-gap:${columnGap}`);
+      }
+    }
+    if (parentComputed && LAYOUT_CONTAINER.test(String(parentComputed.getPropertyValue('display') || '').trim())) {
+      const flex = get('flex');
+      if (flex && !/^0 1 auto$/.test(flex)) out.push(`flex:${flex}`);
+      const alignSelf = get('align-self');
+      if (alignSelf && !/^(?:auto|normal)$/.test(alignSelf)) out.push(`align-self:${alignSelf}`);
+      const justifySelf = get('justify-self');
+      if (justifySelf && !/^(?:auto|normal)$/.test(justifySelf)) out.push(`justify-self:${justifySelf}`);
+    }
+    return out.length ? `${out.join(';')};` : '';
+  };
+
   const buildInlineStyle = (element, parent = null) => {
     if (!element || element.nodeType !== 1) return '';
     const computed = window.getComputedStyle?.(element);
     if (!computed) return '';
     const parentComputed = parent ? window.getComputedStyle?.(parent) : null;
-    return INLINE_STYLE_PROPERTIES.map((prop) => {
+    const layoutParent = element.parentElement ? window.getComputedStyle?.(element.parentElement) : null;
+    return layoutStyle(computed, layoutParent) + INLINE_STYLE_PROPERTIES.map((prop) => {
       const value = String(computed.getPropertyValue(prop) || '').trim();
       if (!value) return '';
       if (INLINE_INHERITED.has(prop)) {
@@ -8053,12 +8096,64 @@
   const looksLikeDiagram = (svg) => !!svg.querySelector('text, foreignObject')
     || svg.querySelectorAll('path, rect, circle, ellipse, line, polyline, polygon').length >= 6;
   const EMBED_SELECTOR = 'iframe, object, embed';
+  // Small icons that are part of a declarative UI block (ChatGPT: [data-d-component] boxes, rows, arrows between
+  // cards) are content: without them a scheme has no arrows and no markers. Anywhere else a small svg is
+  // decoration and is cut. An icon is saved as a picture with currentColor replaced by its computed color
+  // (an <img> cannot inherit the color). Over the limits, icons are dropped silently (decor); arrows between
+  // blocks (an icon among siblings in a flex/grid parent) are exempt from the count limit.
+  const ICON_MIN_SIDE = 6;
+  const ICON_MAX_BASE64 = 11000;
+  const ICON_MAX_COUNT = 60;
+  const ICON_TOTAL_MAX_BASE64 = 300000;
   let lastInlineHtmlNotes = [];
   const utf8ToBase64 = (text) => {
     const bytes = new TextEncoder().encode(text);
     let binary = '';
     for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
     return btoa(binary);
+  };
+  const isBlockIcon = (svg, root) => {
+    if (!svg.closest('[data-d-component]') || svg.getAttribute('aria-hidden') === 'true') return false;
+    const up = (node) => node.parentElement || (node.getRootNode && node.getRootNode().host) || null;
+    for (let node = up(svg); node && node !== root.parentElement; node = up(node)) {
+      if (node.localName === 'svg' || node.matches?.(SVG_HARD_SKIP_ANCESTORS) || node.matches?.(SVG_SOFT_SKIP_ANCESTORS)) return false;
+    }
+    const rect = svg.getBoundingClientRect();
+    return rect.width >= ICON_MIN_SIDE && rect.height >= ICON_MIN_SIDE && rect.width <= SVG_IMG_MIN_SIDE && rect.height <= SVG_IMG_MIN_SIDE;
+  };
+  const isConnectorIcon = (svg) => {
+    // Between two blocks of a flex/grid parent (an arrow from one card to the next), not a marker at the start of a row.
+    const parent = svg.parentElement;
+    if (!parent || !svg.previousElementSibling || !svg.nextElementSibling) return false;
+    return /flex|grid/.test(String(window.getComputedStyle(parent).display || ''));
+  };
+  const iconToImage = (svg, doc, state) => {
+    const rect = svg.getBoundingClientRect();
+    const connector = isConnectorIcon(svg);
+    const width = Math.round(rect.width);
+    const height = Math.round(rect.height);
+    const copy = svg.cloneNode(true);
+    copy.querySelectorAll('script').forEach((node) => node.remove());
+    copy.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    copy.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+    if (!copy.getAttribute('viewBox')) copy.setAttribute('viewBox', `0 0 ${width} ${height}`);
+    copy.setAttribute('width', String(width));
+    copy.setAttribute('height', String(height));
+    ['maxWidth', 'minWidth', 'width', 'height', 'maxHeight', 'minHeight'].forEach((name) => { copy.style[name] = ''; });
+    if (!copy.getAttribute('style')) copy.removeAttribute('style');
+    const color = String(window.getComputedStyle(svg).color || '').trim() || '#000';
+    const base64 = utf8ToBase64(new XMLSerializer().serializeToString(copy).replace(/currentColor/gi, color));
+    if (base64.length > ICON_MAX_BASE64 || state.iconBytes + base64.length > ICON_TOTAL_MAX_BASE64
+      || (!connector && state.iconCount >= ICON_MAX_COUNT)) return null;
+    state.iconBytes += base64.length;
+    if (!connector) state.iconCount += 1;
+    const img = doc.createElement('img');
+    img.setAttribute('src', `data:image/svg+xml;base64,${base64}`);
+    img.setAttribute('alt', '');
+    img.setAttribute('width', String(width));
+    img.setAttribute('height', String(height));
+    img.setAttribute('data-ao-keep', '1');
+    return img;
   };
   const isContentSvg = (svg, root) => {
     let inSoftWrapper = false;
@@ -8214,6 +8309,13 @@
     const doc = cloneRoot.ownerDocument;
     pairSvgTargets(sourceRoot, cloneRoot).forEach(({ svgs, target, host }) => {
       try {
+        if (!host && !isContentSvg(svgs[0], sourceRoot)) {
+          if (isBlockIcon(svgs[0], sourceRoot)) {
+            const icon = iconToImage(svgs[0], doc, state);
+            if (icon) target.replaceWith(icon);
+          }
+          return;
+        }
         const content = svgs.filter((svg) => isContentSvg(svg, sourceRoot));
         if (!content.length) return;
         const images = content.map((svg) => svgToImage(svg, doc, state));
@@ -8231,28 +8333,91 @@
     const embedClones = Array.from(cloneRoot.querySelectorAll(EMBED_SELECTOR));
     if (embeds.length !== embedClones.length) return;
     embeds.forEach((el, index) => {
-      try { embedClones[index].replaceWith(embedToNode(el, cloneRoot.ownerDocument, state)); } catch (_) {}
+      try {
+        // A Mermaid iframe next to its source is passed on as that source: no "not copied" note.
+        if (/mermaid/i.test(el.getAttribute('title') || '') && mermaidSourceNear(el)) { embedClones[index].remove(); return; }
+        embedClones[index].replaceWith(embedToNode(el, cloneRoot.ownerDocument, state));
+      } catch (_) {}
     });
   };
   // Pictures and notes made above must survive the cleanup that removes buttons and hidden wrappers.
-  const hoistKeptNodes = (clone) => {
+  const hoistKeptNodes = (clone, removing = null) => {
     clone.querySelectorAll('[data-ao-keep]').forEach((node) => {
       let top = null;
       for (let n = node.parentElement; n && n !== clone; n = n.parentElement) {
-        if (n.matches(RESPONSE_CLEANUP_SELECTORS)) top = n;
+        if (n.matches(RESPONSE_CLEANUP_SELECTORS) || (removing && removing.has(n))) top = n;
       }
       if (top && top.parentNode) top.parentNode.insertBefore(node, top);
       node.removeAttribute('data-ao-keep');
     });
   };
 
+  // Hidden content is found in the SOURCE page (computed display:none / visibility:hidden of the element or an
+  // ancestor), not in the copy: inline styles do not carry display, so the copy cannot tell. A hidden <pre> that
+  // holds Mermaid source is the diagram's source and is kept (as a mermaid code block) even though its panel is hidden.
+  const MERMAID_SOURCE_RE = /^\s*(?:%%\{[\s\S]*?\}%%\s*)?(?:flowchart|graph|sequenceDiagram|classDiagram|stateDiagram(?:-v2)?|erDiagram|gantt|pie|journey|mindmap|timeline|gitGraph|quadrantChart|requirementDiagram|C4Context)\b/;
+  const walkPairs = (source, copy, visit) => {
+    const sourceChildren = Array.from(source.children);
+    const copyChildren = Array.from(copy.children);
+    if (sourceChildren.length !== copyChildren.length) return;
+    sourceChildren.forEach((child, index) => {
+      visit(child, copyChildren[index]);
+      walkPairs(child, copyChildren[index], visit);
+    });
+  };
+  const planHiddenAndMermaid = (source, copy) => {
+    const hidden = new Set();
+    const mermaid = [];
+    walkPairs(source, copy, (s, c) => {
+      let style = null;
+      try { style = window.getComputedStyle(s); } catch (_) { style = null; }
+      if (style && (style.display === 'none' || style.visibility === 'hidden')) hidden.add(c);
+      if (s.localName === 'pre' && MERMAID_SOURCE_RE.test(s.textContent || '')) mermaid.push({ source: s, copy: c });
+    });
+    return { hidden, mermaid };
+  };
+  const mermaidSourceNear = (el) => {
+    let depth = 0;
+    for (let n = el.parentElement; n && depth < 3; n = n.parentElement, depth += 1) {
+      if (Array.from(n.querySelectorAll('pre')).some((pre) => MERMAID_SOURCE_RE.test(pre.textContent || ''))) return true;
+    }
+    return false;
+  };
+
   const buildInlineHtml = (element, options = {}) => {
     if (!element || element.nodeType !== 1) return '';
     const includeRoot = options.includeRoot !== false;
     const clone = cloneElementWithInlineStyles(element) || element.cloneNode(true);
-    const svgState = { total: 0, position: 0, notes: [] };
+    const svgState = { total: 0, position: 0, notes: [], iconCount: 0, iconBytes: 0 };
+    let plan = { hidden: new Set(), mermaid: [] };
+    try { plan = planHiddenAndMermaid(element, clone); } catch (_) {}
+    // Mermaid source: a clean code block marked as such, kept even when its panel is hidden.
+    plan.mermaid.forEach(({ source, copy }) => {
+      try {
+        const pre = clone.ownerDocument.createElement('pre');
+        pre.setAttribute('data-code-lang', 'mermaid');
+        const code = clone.ownerDocument.createElement('code');
+        code.className = 'language-mermaid';
+        code.textContent = source.textContent;
+        pre.appendChild(code);
+        pre.setAttribute('data-ao-keep', '1');
+        copy.replaceWith(pre);
+      } catch (_) {}
+    });
     try { replaceContentSvgs(element, clone, svgState); } catch (_) {}
     lastInlineHtmlNotes = svgState.notes;
+    // Hidden content leaves the copy (the kept nodes above are moved out of hidden panels first).
+    try {
+      hoistKeptNodes(clone, plan.hidden);
+      plan.hidden.forEach((node) => { if (node.parentNode) node.remove(); });
+    } catch (_) {}
+    // A provider's code block becomes a clean <pre data-code-lang><code class="language-x">exact text</code></pre>
+    // (the engine's own detection, so the card, the html and the Markdown copy agree). No syntax highlighting is kept:
+    // the code is plain text. Without the engine the old html is kept as it was.
+    try {
+      const engine = window.AnswerMarkdown;
+      if (engine && typeof engine.normalizeCodeBlocks === 'function') engine.normalizeCodeBlocks(clone, { provider: detectLlmNameFromLocation() });
+    } catch (_) {}
     try { hoistKeptNodes(clone); } catch (_) {}
     try { stripHiddenElements(clone); } catch (_) {}
     try {
@@ -16881,6 +17046,9 @@ const scrollIntoViewSmoothly = async (element) => {
       match: handler.match,
       render: handler.render,
       censusSelector: typeof handler.censusSelector === 'string' ? handler.censusSelector : '',
+      // passthrough: the handler renders its children through ctx.convertChildren, so they are counted by themselves
+      passthrough: handler.passthrough === true,
+      censusMatch: typeof handler.censusMatch === 'function' ? handler.censusMatch : null,
       claimsUi: handler.claimsUi === true,
       isDefault: Boolean(internal),
       order: registrationOrder++
@@ -17030,6 +17198,7 @@ const scrollIntoViewSmoothly = async (element) => {
   function censusType(el, rules) {
     for (const h of blockHandlers) {
       if (h.censusSelector && safe(() => el.matches(h.censusSelector), false)) return { type: h.type, absorbs: true };
+      if (h.censusMatch && safe(() => h.censusMatch(el), false)) return { type: h.type, absorbs: true };
     }
     const b = builtinType(el, rules);
     if (b) return { type: b, absorbs: b !== 'image' };
@@ -17227,7 +17396,7 @@ const scrollIntoViewSmoothly = async (element) => {
       if (!matched) continue;
       const ctx = makeCtx(st, position, h.type);
       let result;
-      const absorbBefore = (!h.isDefault) ? absorbedInner(el, st) : null;
+      const absorbBefore = (!h.isDefault && !h.passthrough) ? absorbedInner(el, st) : null;
       try {
         result = h.render(el, ctx);
         if (result && typeof result === 'string') result = { markdown: result };
@@ -17240,6 +17409,11 @@ const scrollIntoViewSmoothly = async (element) => {
       st.pos = position;
       const type = result.type || h.type;
       addCopied(st, type, result.copied === undefined ? 1 : result.copied);
+      if (result.reconstructed) {
+        // best-effort copy (e.g. a diagram rebuilt from svg / html components): counted as copied, but flagged
+        st.reconstructed = (st.reconstructed || 0) + 1;
+        if (result.note) (st.reconstructedNotes = st.reconstructedNotes || []).push(String(result.note));
+      }
       if (absorbBefore) {
         for (const k of Object.keys(absorbBefore)) st.found[k] = Math.max(0, (st.found[k] || 0) - absorbBefore[k]);
       }
@@ -17587,6 +17761,79 @@ const scrollIntoViewSmoothly = async (element) => {
     return ctx._st.rules;
   }
 
+  // ---------------------------------------------------------------- normalizeCodeBlocks (shared detector)
+
+  function isCodeBlockEl(el, rules) {
+    if (tagOf(el) === 'pre') return true;
+    if (rules && typeof rules.codeBlock === 'function') {
+      const cb = safe(() => rules.codeBlock(el), null);
+      return Boolean(cb && typeof cb.text === 'string');
+    }
+    return false;
+  }
+
+  // Climb from the matched block to the container whose other children are only interface
+  // (buttons, line numbers, a bare language label), so no header/wrapper debris is left behind.
+  function codeContainer(el, lang, stop, rules) {
+    let cur = el;
+    while (cur.parentNode && cur.parentNode !== stop && cur.parentNode.nodeType === 1) {
+      const parent = cur.parentNode;
+      const ptag = tagOf(parent);
+      if (BLOCK_TAGS.has(ptag) && (ptag === 'li' || ptag === 'td' || ptag === 'th' || ptag === 'ul' || ptag === 'ol'
+        || ptag === 'blockquote' || ptag === 'table' || ptag === 'tr' || ptag === 'body')) break;
+      const rest = Array.from(parent.childNodes).filter((n) => n !== cur);
+      const onlyUi = rest.every((n) => {
+        if (n.nodeType === 3) return !n.data.trim();
+        if (n.nodeType !== 1) return true;
+        if (isUiNode(n, rules) || isCodeUi(n, rules)) return true;
+        if (n.querySelector('pre') || isCodeBlockEl(n, rules)) return false;
+        const t = rawCodeText(n, rules).trim().toLowerCase();
+        return t === '' || (Boolean(lang) && t === lang);
+      });
+      if (!onlyUi) break;
+      cur = parent;
+    }
+    return cur;
+  }
+
+  // In-place: every code block under root becomes <pre data-code-lang><code class="language-x">EXACT TEXT</code></pre>.
+  // Uses the same detection and extraction as convert(); inline <code> outside blocks is left alone.
+  function normalizeCodeBlocks(rootEl, options) {
+    const out = { count: 0, blocks: [] };
+    if (!rootEl || rootEl.nodeType !== 1) return out;
+    const rules = rulesFor(options);
+    const doc = rootEl.ownerDocument;
+    const found = [];
+    const visit = (el) => {
+      if (isUiNode(el, rules)) return;
+      if (isCodeBlockEl(el, rules)) { found.push(el); return; }
+      for (const c of childrenOf(el)) if (c.nodeType === 1) visit(c);
+    };
+    visit(rootEl);
+    for (const el of found) {
+      const { lang, text } = extractCode(el, rules);
+      out.count++;
+      out.blocks.push({ lang, length: text.length });
+      const done = tagOf(el) === 'pre' && el.hasAttribute('data-code-lang') && el.children.length === 1
+        && tagOf(el.firstElementChild) === 'code' && el.firstElementChild.textContent === text;
+      if (done) continue;
+      const pre = doc.createElement('pre');
+      pre.setAttribute('data-code-lang', lang);
+      const code = doc.createElement('code');
+      if (lang) code.className = `language-${lang}`;
+      code.textContent = text;
+      pre.appendChild(code);
+      if (el === rootEl) {
+        while (rootEl.firstChild) rootEl.removeChild(rootEl.firstChild);
+        if (tagOf(rootEl) === 'pre') { rootEl.setAttribute('data-code-lang', lang); rootEl.appendChild(code); } else rootEl.appendChild(pre);
+        continue;
+      }
+      const target = codeContainer(el, lang, rootEl, rules);
+      target.parentNode.replaceChild(pre, target);
+    }
+    return out;
+  }
+
   // ---------------------------------------------------------------- convert
 
   function convert(element, options) {
@@ -17662,6 +17909,11 @@ const scrollIntoViewSmoothly = async (element) => {
       flags.truncated = true;
     }
 
+    if (st.reconstructed) {
+      flags.reconstructed = st.reconstructed;
+      flags.reconstructedNotes = Array.from(new Set(st.reconstructedNotes || []));
+    }
+
     const mismatches = [];
     const types = new Set([...Object.keys(st.found), ...Object.keys(st.copied)]);
     for (const p of st.placeholders) if (p.countType) types.add(p.countType);
@@ -17692,7 +17944,7 @@ const scrollIntoViewSmoothly = async (element) => {
   registerDefaults();
 
   const api = Object.freeze({
-    convert, census, registerBlock, registerProvider, PLACEHOLDER_RE, REPORT_VERSION
+    convert, census, normalizeCodeBlocks, registerBlock, registerProvider, PLACEHOLDER_RE, REPORT_VERSION
   });
   root.AnswerMarkdown = api;
   if (typeof module !== 'undefined' && module.exports) {
@@ -18423,14 +18675,182 @@ const scrollIntoViewSmoothly = async (element) => {
     return null;
   }
 
+  // ---------------------------------------------------------------- ChatGPT "DIL" components (HTML/CSS, not SVG)
+  // Declarative components marked data-d-component (title, text, box, row, icon, grid, grid-item, list, list-item,
+  // caption, divider, svg, table, table-row, table-cell) + data-d-direction (col|row). Structure confirmed on a live
+  // ChatGPT DOM 2026-10-19 for box/row/icon/text ("Сценарий А"); the other components are handled by name only.
+  const comp = (el) => (el && el.getAttribute ? el.getAttribute('data-d-component') : null);
+  const EDGE_WS = /^[ \t\r\n]+|[ \t\r\n]+$/g;
+  // Whitespace of HTML source (not NBSP / narrow spaces): inside the flow block nothing else is normalized.
+  const rawLine = (v) => String(v || '').replace(/[ \t\r\n]+/g, ' ').replace(EDGE_WS, '');
+  const width = (s) => Array.from(s).length;
+
+  function flowInfo(el) {
+    const c = comp(el);
+    if (c !== 'box' && c !== 'row') return null;
+    const kids = Array.from(el.children);
+    const kind = kids.map((k) => (comp(k) === 'box' ? 'c' : (tag(k) === 'svg' && comp(k) === 'icon' ? 'a' : 'o')));
+    const first = kind.indexOf('c');
+    const last = kind.lastIndexOf('c');
+    if (first < 0 || kind.filter((k) => k === 'c').length < 2) return null;
+    if (!kind.slice(first, last + 1).includes('a')) return null; // a connector must sit between two cards
+    const dir = attr(el, 'data-d-direction') || (c === 'row' ? 'row' : 'col');
+    return { kids, kind, dir: dir === 'row' ? 'row' : 'col' };
+  }
+
+  function cardLines(card, ctx) {
+    const lines = [];
+    (function walk(el) {
+      const kids = Array.from(el.children).filter((k) => tag(k) !== 'svg');
+      if (!el.children.length) { const t = rawLine(textOf(el, ctx)); if (t) lines.push(t); return; }
+      if (comp(el) === 'row') {
+        const parts = kids.map((k) => rawLine(textOf(k, ctx))).filter(Boolean);
+        if (parts.length) lines.push(parts.join(' '));
+        return;
+      }
+      el.childNodes.forEach((n) => {
+        if (n.nodeType === 3) { const t = rawLine(n.nodeValue); if (t) lines.push(t); } else if (n.nodeType === 1 && tag(n) !== 'svg' && !NON_TEXT_TAGS.has(tag(n))) walk(n);
+      });
+    })(card);
+    return lines;
+  }
+
+  function frame(lines) {
+    const w = Math.max(0, ...lines.map(width));
+    const pad = (s) => s + ' '.repeat(w - width(s));
+    return [`┌${'─'.repeat(w + 2)}┐`].concat((lines.length ? lines : ['']).map((l) => `│ ${pad(l)} │`), [`└${'─'.repeat(w + 2)}┘`]);
+  }
+
+  function renderFlow(el, info, ctx) {
+    const items = [];
+    info.kids.forEach((k, i) => {
+      if (info.kind[i] === 'c') items.push({ lines: frame(cardLines(k, ctx)) });
+      else if (info.kind[i] === 'a') items.push({ arrow: true });
+      else if (tag(k) !== 'svg') { const t = cardLines(k, ctx); if (t.length) items.push({ lines: t }); }
+    });
+    const out = [];
+    if (info.dir === 'col') {
+      let prevW = 0;
+      for (const it of items) {
+        if (it.arrow) out.push(' '.repeat(Math.floor(prevW / 2)) + '↓');
+        else { out.push(...it.lines); prevW = Math.max(0, ...it.lines.map(width)); }
+      }
+    } else {
+      const cols = items.map((it) => (it.arrow ? { arrow: true, lines: ['→'] } : { lines: it.lines, w: Math.max(0, ...it.lines.map(width)) }));
+      const h = Math.max(1, ...cols.map((c) => c.lines.length));
+      const mid = Math.floor((h - 1) / 2);
+      for (let r = 0; r < h; r += 1) {
+        out.push(cols.map((c) => {
+          if (c.arrow) return r === mid ? ' → ' : '   ';
+          return (c.lines[r] || '') + ' '.repeat(c.w - width(c.lines[r] || ''));
+        }).join('').replace(/\s+$/, ''));
+      }
+    }
+    return `\n\n${ctx.fence(out.join('\n'), 'text')}\n\n`;
+  }
+
+  function analyzeDilFlow(el) {
+    if (!el.hasAttribute || !el.hasAttribute('data-d-component')) return null;
+    const info = flowInfo(el);
+    if (!info) return null;
+    return {
+      type: 'diagram', count: 1, name: 'dil-flow',
+      render(ctx) {
+        if (inCell(el)) return { markdown: ctx.placeholder('diagram', 'блок-схема на HTML-компонентах: ' + CELL_REASON, el), copied: 0 };
+        return {
+          markdown: renderFlow(el, info, ctx), copied: 1, reconstructed: true, note: 'блок-схема на HTML-компонентах, не SVG'
+        };
+      }
+    };
+  }
+
+  const cellMd = (ctx, el) => ctx.convertChildren(el).replace(/\s*\n+\s*/g, '<br>').replace(/(?<!\\)\|/g, '\\|').trim();
+
+  function gfmTable(rows, headerFromFirst) {
+    const cols = Math.max(...rows.map((r) => r.length));
+    const norm = rows.map((r) => r.concat(Array(cols - r.length).fill('')));
+    const head = headerFromFirst ? norm[0] : Array(cols).fill('');
+    const body = headerFromFirst ? norm.slice(1) : norm;
+    const line = (cells) => `| ${cells.map((c) => c || ' ').join(' | ')} |`;
+    return `\n\n${[line(head), line(Array(cols).fill('---'))].concat(body.map(line)).join('\n')}\n\n`;
+  }
+
+  function gridCols(el) {
+    const m = /grid-template-columns\s*:\s*([^;]+)/i.exec(attr(el, 'style') || '');
+    if (!m) return 0;
+    const rep = /repeat\(\s*(\d+)\s*,/i.exec(m[1]);
+    if (rep) return parseInt(rep[1], 10);
+    return m[1].trim().split(/\s+(?![^(]*\))/).filter(Boolean).length;
+  }
+
+  function listMd(el, ctx, depth) {
+    const lines = [];
+    for (const item of Array.from(el.children).filter((k) => comp(k) === 'list-item')) {
+      const clone = item.cloneNode(true);
+      const nested = Array.from(clone.querySelectorAll('[data-d-component="list"]'));
+      nested.forEach((n) => n.remove());
+      const text = ctx.convertChildren(clone).replace(/\s*\n+\s*/g, ' ').trim();
+      lines.push(`${'  '.repeat(depth)}- ${text}`);
+      Array.from(item.querySelectorAll('[data-d-component="list"]'))
+        .filter((n) => n.parentElement.closest('[data-d-component="list"]') === el)
+        .forEach((n) => lines.push(listMd(n, ctx, depth + 1)));
+    }
+    return lines.join('\n');
+  }
+
+  function analyzeDil(el) {
+    const c = el.hasAttribute && el.getAttribute('data-d-component');
+    if (!c) return null;
+    const t = tag(el);
+    const done = (render) => ({ type: 'text', count: 0, name: 'dil', render });
+    // The engine renders real h1-6 / ul / ol / table itself; DIL markup on other tags is converted here.
+    // copied stays 0: these blocks are not counted by the engine census, so nothing may be added to `copied`.
+    if (c === 'title' && !/^h[1-6]$/.test(t)) return done((ctx) => ({ markdown: `\n\n## ${rawLine(ctx.convertChildren(el))}\n\n`, copied: 0 }));
+    if (c === 'divider' && t !== 'hr') return done(() => ({ markdown: '\n\n---\n\n', copied: 0 }));
+    if (c === 'caption') return done((ctx) => ({ markdown: `\n\n*${rawLine(ctx.convertChildren(el))}*\n\n`, copied: 0 }));
+    if (c === 'list' && t !== 'ul' && t !== 'ol') return done((ctx) => ({ markdown: `\n\n${listMd(el, ctx, 0)}\n\n`, copied: 0 }));
+    if (c === 'table' && t !== 'table') {
+      return done((ctx) => {
+        const rows = Array.from(el.querySelectorAll('[data-d-component="table-row"]'))
+          .map((r) => Array.from(r.querySelectorAll('[data-d-component="table-cell"]')).map((cell) => cellMd(ctx, cell)));
+        if (!rows.length || !rows.some((r) => r.length)) return { markdown: ctx.convertChildren(el), copied: 0 };
+        return { markdown: gfmTable(rows, true), copied: 0 };
+      });
+    }
+    if (c === 'grid') {
+      return done((ctx) => {
+        const items = Array.from(el.children).filter((k) => comp(k) === 'grid-item');
+        const cols = gridCols(el);
+        if (items.length < 2 || items.length !== Array.from(el.children).length) return { markdown: ctx.convertChildren(el), copied: 0 };
+        if (cols < 2) return { markdown: `\n\n${items.map((k) => `- ${cellMd(ctx, k)}`).join('\n')}\n\n`, copied: 0 };
+        const rows = [];
+        for (let i = 0; i < items.length; i += cols) rows.push(items.slice(i, i + cols).map((k) => cellMd(ctx, k)));
+        return { markdown: gfmTable(rows, false), copied: 0 };
+      });
+    }
+    if (c === 'row') {
+      return done((ctx) => {
+        // inline children of a row are separate items: keep a space between them
+        const clone = el.cloneNode(true);
+        Array.from(clone.children).forEach((k) => k.after(el.ownerDocument.createTextNode(' ')));
+        const parts = ctx.convertChildren(clone).split(/\n\n+/).map((p) => p.trim()).filter(Boolean);
+        if (parts.some((p) => p.includes('\n'))) return { markdown: parts.join('\n\n'), copied: 0 };
+        return { markdown: parts.length ? `\n\n${parts.join(' ')}\n\n` : '', copied: 0 };
+      });
+    }
+    return null;
+  }
+
   // ---------------------------------------------------------------- registry
 
   // Order = priority: the first analyzer that claims an element wins.
   const FAMILIES = [
+    { name: 'dil-flow', type: 'diagram', priority: 112, analyze: analyzeDilFlow, censusMatch: (el) => !!analyzeDilFlow(el) },
     { name: 'math', type: 'math', priority: 110, analyze: analyzeMath, censusSelector: MATH_CENSUS_SELECTOR },
     { name: 'diagram', type: 'diagram', priority: 105, analyze: analyzeDiagram, censusSelector: DIAGRAM_CENSUS_SELECTOR },
     { name: 'svg', type: 'svg', priority: 95, analyze: analyzeSvg },
-    { name: 'image', type: 'image', priority: 90, analyze: analyzeImage, censusSelector: CHART_SELECTOR }
+    { name: 'image', type: 'image', priority: 90, analyze: analyzeImage, censusSelector: CHART_SELECTOR },
+    { name: 'dil', type: 'text', priority: 100, analyze: analyzeDil, passthrough: true }
   ];
 
   function claim(el) {
@@ -18446,6 +18866,8 @@ const scrollIntoViewSmoothly = async (element) => {
     type: family.type,
     priority: family.priority,
     censusSelector: family.censusSelector || '',
+    censusMatch: family.censusMatch || null,
+    passthrough: family.passthrough === true,
     match(el) { try { return !!family.analyze(el); } catch (_) { return false; } },
     render(el, ctx) {
       try {
@@ -18471,7 +18893,7 @@ const scrollIntoViewSmoothly = async (element) => {
       for (const child of Array.from(node.children || [])) {
         let d = null;
         try { d = claim(child); } catch (_) { d = null; }
-        if (d) { if (!d.ui) counts[d.type] += d.count; continue; }
+        if (d) { if (!d.ui && d.count) counts[d.type] += d.count; continue; }
         walk(child);
       }
     })(rootEl);

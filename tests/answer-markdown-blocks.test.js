@@ -433,7 +433,7 @@ describe('order and robustness', () => {
   test('registers into an existing engine on load and exposes handler contract', () => {
     for (const h of Blocks.HANDLERS) {
       expect(typeof h.name).toBe('string');
-      expect(['math', 'diagram', 'svg', 'image']).toContain(h.type);
+      expect(['math', 'diagram', 'svg', 'image', 'text', 'code']).toContain(h.type);
       expect(typeof h.priority).toBe('number');
       expect(typeof h.match).toBe('function');
       expect(typeof h.render).toBe('function');
@@ -699,5 +699,172 @@ describe('Claude mermaid host with open shadowRoot (синтетика по жи
     w.innerHTML = '<div role="img" aria-label="Диаграмма Mermaid"></div>';
     w.firstChild.attachShadow({ mode: 'open' }).innerHTML = shadowSvg(IDEDGES);
     expect(Engine.convert(w, {}).markdown).toContain('flowchart TD');
+  });
+});
+
+// Синтетика по живому DOM ChatGPT, снятому 2026-10-19: декларативные компоненты (data-d-component / data-d-direction).
+// «Сценарий А»: box[col] -> карточки box[col] (внутри row = svg[icon] 16x16 + text), между карточками svg[icon] 18x18 (стрелка).
+describe('ChatGPT DIL components (синтетика по живому DOM ChatGPT, снятому 2026-10-19)', () => {
+  const Engine = require('../shared/answer-markdown');
+  beforeAll(() => Blocks.register(Engine));
+  const run = (html) => { const h = document.createElement('div'); h.innerHTML = html; return Engine.convert(h, {}); };
+  const ICON = '<svg data-d-component="icon" width="16" height="16" fill="currentColor"><path d="M0 0h8v8z"/></svg>';
+  const ARROW = '<svg data-d-component="icon" width="18" height="18" fill="currentColor"><path d="M9 0v18z"/></svg>';
+  const card = (text, cap = '') => `<div data-d-component="box" data-d-direction="col"><div data-d-component="row" data-d-direction="row">${ICON}<p data-d-component="text">${text}</p></div>${cap ? `<p data-d-component="text">${cap}</p>` : ''}</div>`;
+  const flow = (dir, cards) => `<div data-d-component="box" data-d-direction="${dir}">${cards.join(ARROW)}</div>`;
+
+  test('column flow: framed cards joined by ↓, no whitespace normalization inside, counted as diagram + reconstructed', () => {
+    const r = run(`<p>Сценарий А</p>${flow('col', [card('Запрос', 'пояснение'), card('Проверка'), card('Ответ'), card('Итог')])}<p>После.</p>`);
+    const block = r.markdown.match(/```text\n([\s\S]*?)\n```/)[1];
+    expect(block).toBe([
+      '┌───────────┐', '│ Запрос    │', '│ пояснение │', '└───────────┘', '      ↓',
+      '┌──────────┐', '│ Проверка │', '└──────────┘', '      ↓',
+      '┌───────┐', '│ Ответ │', '└───────┘', '    ↓',
+      '┌──────┐', '│ Итог │', '└──────┘'
+    ].join('\n'));
+    expect(r.markdown).toMatch(/```\n+После\./);
+    expect(r.markdown).not.toMatch(/Запрос\s*\n+\s*Проверка(?!\s*│)/);
+    expect(r.report.found.diagram).toBe(1);
+    expect(r.report.copied.diagram).toBe(1);
+    expect(r.report.mismatches).toEqual([]);
+    expect(r.report.placeholders).toEqual([]);
+    expect(r.report.flags.reconstructed).toBe(1);
+    expect(r.report.flags.reconstructedNotes).toEqual(['блок-схема на HTML-компонентах, не SVG']);
+    expect(r.report.found.svg || 0).toBe(0);
+  });
+
+  test('NBSP inside a card is kept', () => {
+    const r = run(flow('col', [card('а б'), card('в')]));
+    expect(r.markdown).toContain('│ а б │');
+  });
+
+  test('row flow: cards side by side with →', () => {
+    const r = run(flow('row', [card('Один'), card('Два'), card('Три')]));
+    const block = r.markdown.match(/```text\n([\s\S]*?)\n```/)[1].split('\n');
+    expect(block).toHaveLength(3);
+    expect(block[1]).toBe('│ Один │ → │ Два │ → │ Три │');
+    expect(r.report.mismatches).toEqual([]);
+  });
+
+  test('is idempotent: card text is written once', () => {
+    const r = run(flow('col', [card('Уникум'), card('Другой')]));
+    expect(r.markdown.match(/Уникум/g)).toHaveLength(1);
+  });
+
+  test('plain DIL box with a single card is not a flow; decorative icons are dropped without placeholders', () => {
+    const r = run(`<div data-d-component="box" data-d-direction="col">${card('Только карточка')}</div>`);
+    expect(r.markdown).not.toContain('```');
+    expect(r.markdown).toContain('Только карточка');
+    expect(r.report.placeholders).toEqual([]);
+    expect(r.report.mismatches).toEqual([]);
+  });
+
+  test('DIL row (outside a flow) is one line', () => {
+    const r = run(`<div data-d-component="row" data-d-direction="row">${ICON}<span data-d-component="text">Левое</span><span data-d-component="text">Правое</span></div>`);
+    expect(r.markdown.trim()).toBe('Левое Правое');
+  });
+
+  test('title, caption, divider', () => {
+    const r = run('<div data-d-component="title">Заголовок</div><div data-d-component="caption">подпись</div><div data-d-component="divider"></div><div data-d-component="title"><h3>Свой тег</h3></div>');
+    expect(r.markdown).toContain('## Заголовок');
+    expect(r.markdown).toContain('*подпись*');
+    expect(r.markdown).toContain('---');
+  });
+
+  test('list / list-item with nesting', () => {
+    const r = run('<div data-d-component="list"><div data-d-component="list-item">Один<div data-d-component="list"><div data-d-component="list-item">Вложенный</div></div></div><div data-d-component="list-item">Два</div></div>');
+    expect(r.markdown.trim()).toBe('- Один\n  - Вложенный\n- Два');
+  });
+
+  test('grid 2x2 -> GFM table (empty header); without columns -> list', () => {
+    const item = (t) => `<div data-d-component="grid-item">${t}</div>`;
+    const r = run(`<div data-d-component="grid" style="display:grid;grid-template-columns:repeat(2, 1fr)">${item('A')}${item('B')}${item('C')}${item('D')}</div>`);
+    expect(r.markdown.trim()).toBe('|   |   |\n| --- | --- |\n| A | B |\n| C | D |');
+    const l = run(`<div data-d-component="grid">${item('A')}${item('B')}</div>`);
+    expect(l.markdown.trim()).toBe('- A\n- B');
+  });
+
+  test('table / table-row / table-cell -> GFM table, pipes escaped', () => {
+    const cell = (t) => `<div data-d-component="table-cell">${t}</div>`;
+    const row = (...c) => `<div data-d-component="table-row">${c.map(cell).join('')}</div>`;
+    const r = run(`<div data-d-component="table">${row('H1', 'H2')}${row('a|b', 'c')}</div>`);
+    expect(r.markdown.trim()).toBe('| H1 | H2 |\n| --- | --- |\n| a\\|b | c |');
+  });
+
+  test('regression: markup without DIL is unchanged', () => {
+    const r = run('<p>Просто текст</p><ul><li>один</li></ul>');
+    expect(r.markdown).toContain('Просто текст');
+    expect(r.markdown).toContain('- один');
+    expect(r.report.flags.reconstructed).toBeUndefined();
+  });
+});
+
+// Синтетика по живому DOM Perplexity, снятому 2026-10-19: iframe[title="Mermaid diagram"][sandbox] на другом домене
+// (содержимое недоступно) + скрытый pre без code-класса с текстом исходника в ближайшем предке.
+describe('Perplexity mermaid: cross-origin iframe + hidden pre (синтетика по живому DOM Perplexity, снятому 2026-10-19)', () => {
+  const Engine = require('../shared/answer-markdown');
+  const Extras = require('../shared/answer-markdown-extras');
+  beforeAll(() => { Blocks.register(Engine); Extras.register(Engine); });
+  const run = (html) => { const h = document.createElement('div'); h.innerHTML = html; return Engine.convert(h, {}); };
+  const frame = '<div><div><iframe title="Mermaid diagram" sandbox="allow-scripts" src="https://render.pplxusercontent.com/m/1" width="720" height="240"></iframe></div></div>';
+  const hidden = (src) => `<div style="display:none"><pre>${src}</pre></div>`;
+  const pair = (src) => `<div class="d">${frame}${hidden(src)}</div>`;
+  const SRC1 = 'flowchart LR\n  subgraph A["Источники"]\n    X --> Y\n  end';
+  const SRC2 = 'flowchart TB\n  subgraph B\n    P --> Q\n  end';
+
+  test('two iframes + two hidden pres: exact sources in order, no iframe placeholders, no duplicates, one diagram per pair', () => {
+    const r = run(`<p>до</p>${pair(SRC1)}<p>между</p>${pair(SRC2)}<p>после</p>`);
+    const i1 = r.markdown.indexOf('```mermaid\n' + SRC1 + '\n```');
+    const i2 = r.markdown.indexOf('```mermaid\n' + SRC2 + '\n```');
+    expect(i1).toBeGreaterThan(r.markdown.indexOf('до'));
+    expect(i2).toBeGreaterThan(r.markdown.indexOf('между'));
+    expect(i1).toBeLessThan(r.markdown.indexOf('между'));
+    expect(r.markdown.match(/flowchart/g)).toHaveLength(2);
+    expect(r.markdown).not.toMatch(/iframe не прочитан|Встроенный блок/);
+    expect(r.report.found.diagram).toBe(2);
+    expect(r.report.copied.diagram).toBe(2);
+    expect(r.report.found.code || 0).toBe(0);
+    expect(r.report.found.artifact || 0).toBe(0);
+    expect(r.report.placeholders).toEqual([]);
+    expect(r.report.mismatches).toEqual([]);
+  });
+
+  test('pairs by proximity, not by position in the page: the pre of the second wrapper is not taken by the first iframe', () => {
+    const r = run(`<div>${frame}${hidden(SRC1)}</div><div>${frame}${hidden(SRC2)}</div>`);
+    expect(r.markdown.indexOf(SRC1)).toBeLessThan(r.markdown.indexOf(SRC2));
+    expect(r.report.mismatches).toEqual([]);
+  });
+
+  test('iframe without a source: placeholder as before (embed handler), report consistent', () => {
+    const r = run(`${pair(SRC1)}<div>${frame}</div>`);
+    expect(r.markdown).toContain('```mermaid\n' + SRC1);
+    expect(r.markdown).toMatch(/\[НЕ СКОПИРОВАНО: тип=artifact, причина=iframe не прочитан/);
+    expect(r.report.mismatches).toEqual([]);
+    expect(r.report.copied.diagram).toBe(1);
+  });
+
+  test('hidden (computed display:none, as live) mermaid pre without an iframe is written as mermaid source', () => {
+    const host = document.createElement('div');
+    host.innerHTML = `<style>.hid{display:none}</style><p>x</p><div class="hid"><pre>${SRC1}</pre></div>`;
+    document.body.appendChild(host);
+    const r = Engine.convert(host, {});
+    host.remove();
+    expect(r.markdown).toContain('```mermaid\n' + SRC1 + '\n```');
+    expect(r.report.found.diagram).toBe(1);
+    expect(r.report.copied.diagram).toBe(1);
+    expect(r.report.mismatches).toEqual([]);
+  });
+
+  test('visible python pre and a visible pre that merely starts with "graph" next to an iframe are not touched', () => {
+    const r = run(`<pre><code class="language-python">print(1)</code></pre><div class="d">${frame}<pre>graph of results is below</pre></div>`);
+    expect(r.markdown).toContain('print(1)');
+    expect(r.markdown).not.toContain('```mermaid');
+    expect(r.markdown).toContain('graph of results is below');
+  });
+
+  test('a hidden pre that does not look like mermaid is not taken as the source', () => {
+    const r = run(`<div class="d">${frame}${hidden('SELECT 1')}</div>`);
+    expect(r.markdown).not.toContain('```mermaid');
+    expect(r.markdown).toMatch(/iframe не прочитан/);
   });
 });

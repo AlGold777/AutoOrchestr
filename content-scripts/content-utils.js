@@ -1191,12 +1191,55 @@
     return /^(margin|padding)-/.test(prop) || prop === 'border-radius' ? value === '0px' : false;
   };
 
+  // Layout (flex / grid), written ONLY for flex and grid containers and their direct children, and only values
+  // that differ from the defaults: declarative UI blocks (ChatGPT "DIL": boxes, rows, columns, cards) are
+  // laid out by it; an ordinary answer has none of it and its html does not grow.
+  const LAYOUT_CONTAINER = /^(?:inline-)?(?:flex|grid)$/;
+  const layoutStyle = (computed, parentComputed) => {
+    const get = (prop) => String(computed.getPropertyValue(prop) || '').trim();
+    const out = [];
+    const display = get('display');
+    if (LAYOUT_CONTAINER.test(display)) {
+      out.push(`display:${display}`);
+      const put = (prop, skip) => { const value = get(prop); if (value && !skip.test(value)) out.push(`${prop}:${value}`); };
+      if (/flex/.test(display)) {
+        put('flex-direction', /^row$/);
+        put('flex-wrap', /^nowrap$/);
+      } else {
+        put('grid-template-columns', /^none$/);
+        put('grid-template-rows', /^none$/);
+        put('grid-auto-flow', /^row$/);
+      }
+      put('align-items', /^(?:normal|stretch)$/);
+      put('justify-content', /^(?:normal|flex-start|start)$/);
+      put('align-content', /^(?:normal|stretch)$/);
+      const rowGap = get('row-gap');
+      const columnGap = get('column-gap');
+      const zero = /^(?:normal|0px)$/;
+      if (!zero.test(rowGap) && rowGap === columnGap) out.push(`gap:${rowGap}`);
+      else {
+        if (!zero.test(rowGap)) out.push(`row-gap:${rowGap}`);
+        if (!zero.test(columnGap)) out.push(`column-gap:${columnGap}`);
+      }
+    }
+    if (parentComputed && LAYOUT_CONTAINER.test(String(parentComputed.getPropertyValue('display') || '').trim())) {
+      const flex = get('flex');
+      if (flex && !/^0 1 auto$/.test(flex)) out.push(`flex:${flex}`);
+      const alignSelf = get('align-self');
+      if (alignSelf && !/^(?:auto|normal)$/.test(alignSelf)) out.push(`align-self:${alignSelf}`);
+      const justifySelf = get('justify-self');
+      if (justifySelf && !/^(?:auto|normal)$/.test(justifySelf)) out.push(`justify-self:${justifySelf}`);
+    }
+    return out.length ? `${out.join(';')};` : '';
+  };
+
   const buildInlineStyle = (element, parent = null) => {
     if (!element || element.nodeType !== 1) return '';
     const computed = window.getComputedStyle?.(element);
     if (!computed) return '';
     const parentComputed = parent ? window.getComputedStyle?.(parent) : null;
-    return INLINE_STYLE_PROPERTIES.map((prop) => {
+    const layoutParent = element.parentElement ? window.getComputedStyle?.(element.parentElement) : null;
+    return layoutStyle(computed, layoutParent) + INLINE_STYLE_PROPERTIES.map((prop) => {
       const value = String(computed.getPropertyValue(prop) || '').trim();
       if (!value) return '';
       if (INLINE_INHERITED.has(prop)) {
@@ -1274,12 +1317,64 @@
   const looksLikeDiagram = (svg) => !!svg.querySelector('text, foreignObject')
     || svg.querySelectorAll('path, rect, circle, ellipse, line, polyline, polygon').length >= 6;
   const EMBED_SELECTOR = 'iframe, object, embed';
+  // Small icons that are part of a declarative UI block (ChatGPT: [data-d-component] boxes, rows, arrows between
+  // cards) are content: without them a scheme has no arrows and no markers. Anywhere else a small svg is
+  // decoration and is cut. An icon is saved as a picture with currentColor replaced by its computed color
+  // (an <img> cannot inherit the color). Over the limits, icons are dropped silently (decor); arrows between
+  // blocks (an icon among siblings in a flex/grid parent) are exempt from the count limit.
+  const ICON_MIN_SIDE = 6;
+  const ICON_MAX_BASE64 = 11000;
+  const ICON_MAX_COUNT = 60;
+  const ICON_TOTAL_MAX_BASE64 = 300000;
   let lastInlineHtmlNotes = [];
   const utf8ToBase64 = (text) => {
     const bytes = new TextEncoder().encode(text);
     let binary = '';
     for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
     return btoa(binary);
+  };
+  const isBlockIcon = (svg, root) => {
+    if (!svg.closest('[data-d-component]') || svg.getAttribute('aria-hidden') === 'true') return false;
+    const up = (node) => node.parentElement || (node.getRootNode && node.getRootNode().host) || null;
+    for (let node = up(svg); node && node !== root.parentElement; node = up(node)) {
+      if (node.localName === 'svg' || node.matches?.(SVG_HARD_SKIP_ANCESTORS) || node.matches?.(SVG_SOFT_SKIP_ANCESTORS)) return false;
+    }
+    const rect = svg.getBoundingClientRect();
+    return rect.width >= ICON_MIN_SIDE && rect.height >= ICON_MIN_SIDE && rect.width <= SVG_IMG_MIN_SIDE && rect.height <= SVG_IMG_MIN_SIDE;
+  };
+  const isConnectorIcon = (svg) => {
+    // Between two blocks of a flex/grid parent (an arrow from one card to the next), not a marker at the start of a row.
+    const parent = svg.parentElement;
+    if (!parent || !svg.previousElementSibling || !svg.nextElementSibling) return false;
+    return /flex|grid/.test(String(window.getComputedStyle(parent).display || ''));
+  };
+  const iconToImage = (svg, doc, state) => {
+    const rect = svg.getBoundingClientRect();
+    const connector = isConnectorIcon(svg);
+    const width = Math.round(rect.width);
+    const height = Math.round(rect.height);
+    const copy = svg.cloneNode(true);
+    copy.querySelectorAll('script').forEach((node) => node.remove());
+    copy.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    copy.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+    if (!copy.getAttribute('viewBox')) copy.setAttribute('viewBox', `0 0 ${width} ${height}`);
+    copy.setAttribute('width', String(width));
+    copy.setAttribute('height', String(height));
+    ['maxWidth', 'minWidth', 'width', 'height', 'maxHeight', 'minHeight'].forEach((name) => { copy.style[name] = ''; });
+    if (!copy.getAttribute('style')) copy.removeAttribute('style');
+    const color = String(window.getComputedStyle(svg).color || '').trim() || '#000';
+    const base64 = utf8ToBase64(new XMLSerializer().serializeToString(copy).replace(/currentColor/gi, color));
+    if (base64.length > ICON_MAX_BASE64 || state.iconBytes + base64.length > ICON_TOTAL_MAX_BASE64
+      || (!connector && state.iconCount >= ICON_MAX_COUNT)) return null;
+    state.iconBytes += base64.length;
+    if (!connector) state.iconCount += 1;
+    const img = doc.createElement('img');
+    img.setAttribute('src', `data:image/svg+xml;base64,${base64}`);
+    img.setAttribute('alt', '');
+    img.setAttribute('width', String(width));
+    img.setAttribute('height', String(height));
+    img.setAttribute('data-ao-keep', '1');
+    return img;
   };
   const isContentSvg = (svg, root) => {
     let inSoftWrapper = false;
@@ -1435,6 +1530,13 @@
     const doc = cloneRoot.ownerDocument;
     pairSvgTargets(sourceRoot, cloneRoot).forEach(({ svgs, target, host }) => {
       try {
+        if (!host && !isContentSvg(svgs[0], sourceRoot)) {
+          if (isBlockIcon(svgs[0], sourceRoot)) {
+            const icon = iconToImage(svgs[0], doc, state);
+            if (icon) target.replaceWith(icon);
+          }
+          return;
+        }
         const content = svgs.filter((svg) => isContentSvg(svg, sourceRoot));
         if (!content.length) return;
         const images = content.map((svg) => svgToImage(svg, doc, state));
@@ -1452,28 +1554,91 @@
     const embedClones = Array.from(cloneRoot.querySelectorAll(EMBED_SELECTOR));
     if (embeds.length !== embedClones.length) return;
     embeds.forEach((el, index) => {
-      try { embedClones[index].replaceWith(embedToNode(el, cloneRoot.ownerDocument, state)); } catch (_) {}
+      try {
+        // A Mermaid iframe next to its source is passed on as that source: no "not copied" note.
+        if (/mermaid/i.test(el.getAttribute('title') || '') && mermaidSourceNear(el)) { embedClones[index].remove(); return; }
+        embedClones[index].replaceWith(embedToNode(el, cloneRoot.ownerDocument, state));
+      } catch (_) {}
     });
   };
   // Pictures and notes made above must survive the cleanup that removes buttons and hidden wrappers.
-  const hoistKeptNodes = (clone) => {
+  const hoistKeptNodes = (clone, removing = null) => {
     clone.querySelectorAll('[data-ao-keep]').forEach((node) => {
       let top = null;
       for (let n = node.parentElement; n && n !== clone; n = n.parentElement) {
-        if (n.matches(RESPONSE_CLEANUP_SELECTORS)) top = n;
+        if (n.matches(RESPONSE_CLEANUP_SELECTORS) || (removing && removing.has(n))) top = n;
       }
       if (top && top.parentNode) top.parentNode.insertBefore(node, top);
       node.removeAttribute('data-ao-keep');
     });
   };
 
+  // Hidden content is found in the SOURCE page (computed display:none / visibility:hidden of the element or an
+  // ancestor), not in the copy: inline styles do not carry display, so the copy cannot tell. A hidden <pre> that
+  // holds Mermaid source is the diagram's source and is kept (as a mermaid code block) even though its panel is hidden.
+  const MERMAID_SOURCE_RE = /^\s*(?:%%\{[\s\S]*?\}%%\s*)?(?:flowchart|graph|sequenceDiagram|classDiagram|stateDiagram(?:-v2)?|erDiagram|gantt|pie|journey|mindmap|timeline|gitGraph|quadrantChart|requirementDiagram|C4Context)\b/;
+  const walkPairs = (source, copy, visit) => {
+    const sourceChildren = Array.from(source.children);
+    const copyChildren = Array.from(copy.children);
+    if (sourceChildren.length !== copyChildren.length) return;
+    sourceChildren.forEach((child, index) => {
+      visit(child, copyChildren[index]);
+      walkPairs(child, copyChildren[index], visit);
+    });
+  };
+  const planHiddenAndMermaid = (source, copy) => {
+    const hidden = new Set();
+    const mermaid = [];
+    walkPairs(source, copy, (s, c) => {
+      let style = null;
+      try { style = window.getComputedStyle(s); } catch (_) { style = null; }
+      if (style && (style.display === 'none' || style.visibility === 'hidden')) hidden.add(c);
+      if (s.localName === 'pre' && MERMAID_SOURCE_RE.test(s.textContent || '')) mermaid.push({ source: s, copy: c });
+    });
+    return { hidden, mermaid };
+  };
+  const mermaidSourceNear = (el) => {
+    let depth = 0;
+    for (let n = el.parentElement; n && depth < 3; n = n.parentElement, depth += 1) {
+      if (Array.from(n.querySelectorAll('pre')).some((pre) => MERMAID_SOURCE_RE.test(pre.textContent || ''))) return true;
+    }
+    return false;
+  };
+
   const buildInlineHtml = (element, options = {}) => {
     if (!element || element.nodeType !== 1) return '';
     const includeRoot = options.includeRoot !== false;
     const clone = cloneElementWithInlineStyles(element) || element.cloneNode(true);
-    const svgState = { total: 0, position: 0, notes: [] };
+    const svgState = { total: 0, position: 0, notes: [], iconCount: 0, iconBytes: 0 };
+    let plan = { hidden: new Set(), mermaid: [] };
+    try { plan = planHiddenAndMermaid(element, clone); } catch (_) {}
+    // Mermaid source: a clean code block marked as such, kept even when its panel is hidden.
+    plan.mermaid.forEach(({ source, copy }) => {
+      try {
+        const pre = clone.ownerDocument.createElement('pre');
+        pre.setAttribute('data-code-lang', 'mermaid');
+        const code = clone.ownerDocument.createElement('code');
+        code.className = 'language-mermaid';
+        code.textContent = source.textContent;
+        pre.appendChild(code);
+        pre.setAttribute('data-ao-keep', '1');
+        copy.replaceWith(pre);
+      } catch (_) {}
+    });
     try { replaceContentSvgs(element, clone, svgState); } catch (_) {}
     lastInlineHtmlNotes = svgState.notes;
+    // Hidden content leaves the copy (the kept nodes above are moved out of hidden panels first).
+    try {
+      hoistKeptNodes(clone, plan.hidden);
+      plan.hidden.forEach((node) => { if (node.parentNode) node.remove(); });
+    } catch (_) {}
+    // A provider's code block becomes a clean <pre data-code-lang><code class="language-x">exact text</code></pre>
+    // (the engine's own detection, so the card, the html and the Markdown copy agree). No syntax highlighting is kept:
+    // the code is plain text. Without the engine the old html is kept as it was.
+    try {
+      const engine = window.AnswerMarkdown;
+      if (engine && typeof engine.normalizeCodeBlocks === 'function') engine.normalizeCodeBlocks(clone, { provider: detectLlmNameFromLocation() });
+    } catch (_) {}
     try { hoistKeptNodes(clone); } catch (_) {}
     try { stripHiddenElements(clone); } catch (_) {}
     try {

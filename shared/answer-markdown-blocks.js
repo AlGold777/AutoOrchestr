@@ -719,14 +719,260 @@
     return null;
   }
 
+  // ---------------------------------------------------------------- ChatGPT "DIL" components (HTML/CSS, not SVG)
+  // Declarative components marked data-d-component (title, text, box, row, icon, grid, grid-item, list, list-item,
+  // caption, divider, svg, table, table-row, table-cell) + data-d-direction (col|row). Structure confirmed on a live
+  // ChatGPT DOM 2026-10-19 for box/row/icon/text ("Сценарий А"); the other components are handled by name only.
+  const comp = (el) => (el && el.getAttribute ? el.getAttribute('data-d-component') : null);
+  const EDGE_WS = /^[ \t\r\n]+|[ \t\r\n]+$/g;
+  // Whitespace of HTML source (not NBSP / narrow spaces): inside the flow block nothing else is normalized.
+  const rawLine = (v) => String(v || '').replace(/[ \t\r\n]+/g, ' ').replace(EDGE_WS, '');
+  const width = (s) => Array.from(s).length;
+
+  function flowInfo(el) {
+    const c = comp(el);
+    if (c !== 'box' && c !== 'row') return null;
+    const kids = Array.from(el.children);
+    const kind = kids.map((k) => (comp(k) === 'box' ? 'c' : (tag(k) === 'svg' && comp(k) === 'icon' ? 'a' : 'o')));
+    const first = kind.indexOf('c');
+    const last = kind.lastIndexOf('c');
+    if (first < 0 || kind.filter((k) => k === 'c').length < 2) return null;
+    if (!kind.slice(first, last + 1).includes('a')) return null; // a connector must sit between two cards
+    const dir = attr(el, 'data-d-direction') || (c === 'row' ? 'row' : 'col');
+    return { kids, kind, dir: dir === 'row' ? 'row' : 'col' };
+  }
+
+  function cardLines(card, ctx) {
+    const lines = [];
+    (function walk(el) {
+      const kids = Array.from(el.children).filter((k) => tag(k) !== 'svg');
+      if (!el.children.length) { const t = rawLine(textOf(el, ctx)); if (t) lines.push(t); return; }
+      if (comp(el) === 'row') {
+        const parts = kids.map((k) => rawLine(textOf(k, ctx))).filter(Boolean);
+        if (parts.length) lines.push(parts.join(' '));
+        return;
+      }
+      el.childNodes.forEach((n) => {
+        if (n.nodeType === 3) { const t = rawLine(n.nodeValue); if (t) lines.push(t); } else if (n.nodeType === 1 && tag(n) !== 'svg' && !NON_TEXT_TAGS.has(tag(n))) walk(n);
+      });
+    })(card);
+    return lines;
+  }
+
+  function frame(lines) {
+    const w = Math.max(0, ...lines.map(width));
+    const pad = (s) => s + ' '.repeat(w - width(s));
+    return [`┌${'─'.repeat(w + 2)}┐`].concat((lines.length ? lines : ['']).map((l) => `│ ${pad(l)} │`), [`└${'─'.repeat(w + 2)}┘`]);
+  }
+
+  function renderFlow(el, info, ctx) {
+    const items = [];
+    info.kids.forEach((k, i) => {
+      if (info.kind[i] === 'c') items.push({ lines: frame(cardLines(k, ctx)) });
+      else if (info.kind[i] === 'a') items.push({ arrow: true });
+      else if (tag(k) !== 'svg') { const t = cardLines(k, ctx); if (t.length) items.push({ lines: t }); }
+    });
+    const out = [];
+    if (info.dir === 'col') {
+      let prevW = 0;
+      for (const it of items) {
+        if (it.arrow) out.push(' '.repeat(Math.floor(prevW / 2)) + '↓');
+        else { out.push(...it.lines); prevW = Math.max(0, ...it.lines.map(width)); }
+      }
+    } else {
+      const cols = items.map((it) => (it.arrow ? { arrow: true, lines: ['→'] } : { lines: it.lines, w: Math.max(0, ...it.lines.map(width)) }));
+      const h = Math.max(1, ...cols.map((c) => c.lines.length));
+      const mid = Math.floor((h - 1) / 2);
+      for (let r = 0; r < h; r += 1) {
+        out.push(cols.map((c) => {
+          if (c.arrow) return r === mid ? ' → ' : '   ';
+          return (c.lines[r] || '') + ' '.repeat(c.w - width(c.lines[r] || ''));
+        }).join('').replace(/\s+$/, ''));
+      }
+    }
+    return `\n\n${ctx.fence(out.join('\n'), 'text')}\n\n`;
+  }
+
+  function analyzeDilFlow(el) {
+    if (!el.hasAttribute || !el.hasAttribute('data-d-component')) return null;
+    const info = flowInfo(el);
+    if (!info) return null;
+    return {
+      type: 'diagram', count: 1, name: 'dil-flow',
+      render(ctx) {
+        if (inCell(el)) return { markdown: ctx.placeholder('diagram', 'блок-схема на HTML-компонентах: ' + CELL_REASON, el), copied: 0 };
+        return {
+          markdown: renderFlow(el, info, ctx), copied: 1, reconstructed: true, note: 'блок-схема на HTML-компонентах, не SVG'
+        };
+      }
+    };
+  }
+
+  const cellMd = (ctx, el) => ctx.convertChildren(el).replace(/\s*\n+\s*/g, '<br>').replace(/(?<!\\)\|/g, '\\|').trim();
+
+  function gfmTable(rows, headerFromFirst) {
+    const cols = Math.max(...rows.map((r) => r.length));
+    const norm = rows.map((r) => r.concat(Array(cols - r.length).fill('')));
+    const head = headerFromFirst ? norm[0] : Array(cols).fill('');
+    const body = headerFromFirst ? norm.slice(1) : norm;
+    const line = (cells) => `| ${cells.map((c) => c || ' ').join(' | ')} |`;
+    return `\n\n${[line(head), line(Array(cols).fill('---'))].concat(body.map(line)).join('\n')}\n\n`;
+  }
+
+  function gridCols(el) {
+    const m = /grid-template-columns\s*:\s*([^;]+)/i.exec(attr(el, 'style') || '');
+    if (!m) return 0;
+    const rep = /repeat\(\s*(\d+)\s*,/i.exec(m[1]);
+    if (rep) return parseInt(rep[1], 10);
+    return m[1].trim().split(/\s+(?![^(]*\))/).filter(Boolean).length;
+  }
+
+  function listMd(el, ctx, depth) {
+    const lines = [];
+    for (const item of Array.from(el.children).filter((k) => comp(k) === 'list-item')) {
+      const clone = item.cloneNode(true);
+      const nested = Array.from(clone.querySelectorAll('[data-d-component="list"]'));
+      nested.forEach((n) => n.remove());
+      const text = ctx.convertChildren(clone).replace(/\s*\n+\s*/g, ' ').trim();
+      lines.push(`${'  '.repeat(depth)}- ${text}`);
+      Array.from(item.querySelectorAll('[data-d-component="list"]'))
+        .filter((n) => n.parentElement.closest('[data-d-component="list"]') === el)
+        .forEach((n) => lines.push(listMd(n, ctx, depth + 1)));
+    }
+    return lines.join('\n');
+  }
+
+  function analyzeDil(el) {
+    const c = el.hasAttribute && el.getAttribute('data-d-component');
+    if (!c) return null;
+    const t = tag(el);
+    const done = (render) => ({ type: 'text', count: 0, name: 'dil', render });
+    // The engine renders real h1-6 / ul / ol / table itself; DIL markup on other tags is converted here.
+    // copied stays 0: these blocks are not counted by the engine census, so nothing may be added to `copied`.
+    if (c === 'title' && !/^h[1-6]$/.test(t)) return done((ctx) => ({ markdown: `\n\n## ${rawLine(ctx.convertChildren(el))}\n\n`, copied: 0 }));
+    if (c === 'divider' && t !== 'hr') return done(() => ({ markdown: '\n\n---\n\n', copied: 0 }));
+    if (c === 'caption') return done((ctx) => ({ markdown: `\n\n*${rawLine(ctx.convertChildren(el))}*\n\n`, copied: 0 }));
+    if (c === 'list' && t !== 'ul' && t !== 'ol') return done((ctx) => ({ markdown: `\n\n${listMd(el, ctx, 0)}\n\n`, copied: 0 }));
+    if (c === 'table' && t !== 'table') {
+      return done((ctx) => {
+        const rows = Array.from(el.querySelectorAll('[data-d-component="table-row"]'))
+          .map((r) => Array.from(r.querySelectorAll('[data-d-component="table-cell"]')).map((cell) => cellMd(ctx, cell)));
+        if (!rows.length || !rows.some((r) => r.length)) return { markdown: ctx.convertChildren(el), copied: 0 };
+        return { markdown: gfmTable(rows, true), copied: 0 };
+      });
+    }
+    if (c === 'grid') {
+      return done((ctx) => {
+        const items = Array.from(el.children).filter((k) => comp(k) === 'grid-item');
+        const cols = gridCols(el);
+        if (items.length < 2 || items.length !== Array.from(el.children).length) return { markdown: ctx.convertChildren(el), copied: 0 };
+        if (cols < 2) return { markdown: `\n\n${items.map((k) => `- ${cellMd(ctx, k)}`).join('\n')}\n\n`, copied: 0 };
+        const rows = [];
+        for (let i = 0; i < items.length; i += cols) rows.push(items.slice(i, i + cols).map((k) => cellMd(ctx, k)));
+        return { markdown: gfmTable(rows, false), copied: 0 };
+      });
+    }
+    if (c === 'row') {
+      return done((ctx) => {
+        // inline children of a row are separate items: keep a space between them
+        const clone = el.cloneNode(true);
+        Array.from(clone.children).forEach((k) => k.after(el.ownerDocument.createTextNode(' ')));
+        const parts = ctx.convertChildren(clone).split(/\n\n+/).map((p) => p.trim()).filter(Boolean);
+        if (parts.some((p) => p.includes('\n'))) return { markdown: parts.join('\n\n'), copied: 0 };
+        return { markdown: parts.length ? `\n\n${parts.join(' ')}\n\n` : '', copied: 0 };
+      });
+    }
+    return null;
+  }
+
+  // ---------------------------------------------------------------- Perplexity mermaid: cross-origin iframe + hidden source
+  // Live DOM 2026-10-19: iframe[title="Mermaid diagram"][sandbox] (other origin, unreadable) with a hidden <pre>
+  // (no code class, text starts like mermaid) in a nearby ancestor. The hidden text is the real source: read on purpose.
+  const IFRAME_DIAGRAM_TITLE = /mermaid|diagram|диаграмм/i;
+
+  function isHiddenDeep(node) {
+    const win = node.ownerDocument && node.ownerDocument.defaultView;
+    for (let n = node; n && n.nodeType === 1; n = n.parentElement) {
+      if (n.hasAttribute('hidden') || attr(n, 'aria-hidden') === 'true') return true;
+      if (/display\s*:\s*none|visibility\s*:\s*hidden/i.test(attr(n, 'style') || '')) return true;
+      if (win) {
+        try {
+          const cs = win.getComputedStyle(n);
+          if (cs && (cs.display === 'none' || cs.visibility === 'hidden')) return true;
+        } catch (_) { /* no computed style */ }
+      }
+    }
+    return false;
+  }
+
+  const isMermaidIframe = (el) => tag(el) === 'iframe' && IFRAME_DIAGRAM_TITLE.test(attr(el, 'title') || attr(el, 'aria-label') || '');
+  const isHiddenMermaidPre = (el) => tag(el) === 'pre' && MERMAID_START.test(el.textContent || '') && isHiddenDeep(el);
+
+  // iframe -> pre pairs: closest common ancestor first (up to 4 levels), then document order; one pre per iframe.
+  function pairMermaid(el) {
+    const root = el.getRootNode ? el.getRootNode() : el.ownerDocument;
+    if (!root || !root.querySelectorAll) return { byIframe: new Map(), paired: new Set() };
+    const iframes = Array.from(root.querySelectorAll('iframe')).filter(isMermaidIframe);
+    const pres = Array.from(root.querySelectorAll('pre')).filter(isHiddenMermaidPre);
+    const cand = [];
+    iframes.forEach((f, i) => {
+      let a = f.parentElement;
+      for (let k = 1; a && k <= 4; k += 1, a = a.parentElement) {
+        pres.forEach((p, j) => { if (a.contains(p)) cand.push({ k, i, j }); });
+      }
+    });
+    // smallest level wins; a candidate keeps its smallest level only
+    cand.sort((x, y) => (x.k - y.k) || (x.i - y.i) || (x.j - y.j));
+    const usedI = new Set(); const usedJ = new Set();
+    const byIframe = new Map(); const paired = new Set();
+    for (const c of cand) {
+      if (usedI.has(c.i) || usedJ.has(c.j)) continue;
+      usedI.add(c.i); usedJ.add(c.j);
+      byIframe.set(iframes[c.i], pres[c.j]);
+      paired.add(pres[c.j]);
+    }
+    return { byIframe, paired };
+  }
+
+  function analyzeMermaidEmbed(el) {
+    const t = tag(el);
+    if (t === 'iframe') {
+      if (!isMermaidIframe(el)) return null;
+      const pre = pairMermaid(el).byIframe.get(el);
+      if (!pre) return null; // no source: the embed handler reports the unreadable iframe as before
+      return {
+        type: 'diagram', count: 1, name: 'mermaid-embed',
+        render: (ctx) => renderDiagramSource('mermaid', pre.textContent || '', ctx, el)
+      };
+    }
+    if (t === 'pre' && isHiddenMermaidPre(el)) {
+      if (pairMermaid(el).paired.has(el)) return null; // written at the iframe's place
+      return {
+        type: 'diagram', count: 1, name: 'mermaid-embed',
+        render: (ctx) => renderDiagramSource('mermaid', el.textContent || '', ctx, el)
+      };
+    }
+    return null;
+  }
+
+  // The hidden source of a pair: consumed by the iframe's block, must not be written (or counted) again.
+  function analyzeMermaidSource(el) {
+    if (tag(el) !== 'pre' || !isHiddenMermaidPre(el) || !pairMermaid(el).paired.has(el)) return null;
+    return { type: 'code', count: 0, name: 'mermaid-embed-source', render: () => ({ markdown: '', copied: 0 }) };
+  }
+
   // ---------------------------------------------------------------- registry
 
   // Order = priority: the first analyzer that claims an element wins.
   const FAMILIES = [
+    { name: 'mermaid-embed', type: 'diagram', priority: 210, claimsUi: true, analyze: analyzeMermaidEmbed, censusMatch: (el) => !!analyzeMermaidEmbed(el) },
+    { name: 'mermaid-embed-source', type: 'code', priority: 210, claimsUi: true, analyze: analyzeMermaidSource, censusSkip: (el) => !!analyzeMermaidSource(el) },
+    { name: 'dil-flow', type: 'diagram', priority: 112, analyze: analyzeDilFlow, censusMatch: (el) => !!analyzeDilFlow(el) },
     { name: 'math', type: 'math', priority: 110, analyze: analyzeMath, censusSelector: MATH_CENSUS_SELECTOR },
     { name: 'diagram', type: 'diagram', priority: 105, analyze: analyzeDiagram, censusSelector: DIAGRAM_CENSUS_SELECTOR },
     { name: 'svg', type: 'svg', priority: 95, analyze: analyzeSvg },
-    { name: 'image', type: 'image', priority: 90, analyze: analyzeImage, censusSelector: CHART_SELECTOR }
+    { name: 'image', type: 'image', priority: 90, analyze: analyzeImage, censusSelector: CHART_SELECTOR },
+    { name: 'dil', type: 'text', priority: 100, analyze: analyzeDil, passthrough: true }
   ];
 
   function claim(el) {
@@ -742,6 +988,10 @@
     type: family.type,
     priority: family.priority,
     censusSelector: family.censusSelector || '',
+    censusMatch: family.censusMatch || null,
+    passthrough: family.passthrough === true,
+    claimsUi: family.claimsUi === true,
+    censusSkip: family.censusSkip || null,
     match(el) { try { return !!family.analyze(el); } catch (_) { return false; } },
     render(el, ctx) {
       try {
@@ -767,7 +1017,7 @@
       for (const child of Array.from(node.children || [])) {
         let d = null;
         try { d = claim(child); } catch (_) { d = null; }
-        if (d) { if (!d.ui) counts[d.type] += d.count; continue; }
+        if (d) { if (!d.ui && d.count) counts[d.type] += d.count; continue; }
         walk(child);
       }
     })(rootEl);

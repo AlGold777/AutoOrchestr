@@ -124,6 +124,10 @@ AnswerMarkdown.convert(element, options) -> { markdown: string, report: Report }
 //   options: { provider: 'GPT'|'Gemini'|'Claude'|'Grok'|'Le Chat'|'Qwen'|'DeepSeek'|'Perplexity'|'Z.ai'|'Kimi'|null,
 //              maxChars?: number, context?: object /* из WP3: {version, generating, truncated, collapsed, ...} */ }
 AnswerMarkdown.census(element, options) -> { [type]: number }   // независимый подсчёт блоков в DOM по селекторам, до конвертации
+AnswerMarkdown.normalizeCodeBlocks(root, options) -> { count, blocks: [{ lang, length }] }
+//   in-place на (клоне) DOM: каждый блок кода — тем же детектором и извлечением, что в convert — заменяется на
+//   <pre data-code-lang="lang"><code class="language-lang">точный текст</code></pre> вместе с шапкой/обёрткой (кнопки, подпись языка).
+//   inline <code> не трогается; идемпотентно; convert/census не меняет.
 AnswerMarkdown.registerBlock(handler)       // см. ниже
 AnswerMarkdown.registerProvider(name, rules) // см. ниже
 AnswerMarkdown.PLACEHOLDER_RE               // /\[НЕ СКОПИРОВАНО: тип=([^,\]]+), причина=([^\]]*?), позиция=(\d+)\]/

@@ -115,6 +115,17 @@ describe.each(CASES)('%s: structure reaches the card', (model, fixture) => {
     expect(card.querySelector('.debate-copy-incomplete').title).toContain('html');
   });
 
+  test('code blocks of the answer have a header and one Copy button each, and a repeated update does not add more', () => {
+    const rq = request();
+    send(finalMessage(model, rq, { answer: answer.flat, answerHtml: answer.html }));
+    const card = cardOf(model);
+    const count = card.querySelectorAll('pre').length;
+    if (!count) return; // this skeleton has no code block
+    expect(card.querySelectorAll('.code-block-copy')).toHaveLength(count);
+    send(finalMessage(model, rq, { answer: answer.flat, answerHtml: answer.html }));
+    expect(card.querySelectorAll('.code-block-copy')).toHaveLength(count);
+  });
+
   test('exports contain what the card shows', () => {
     const rq = request();
     send(finalMessage(model, rq, { answer: answer.flat, answerHtml: '' }));

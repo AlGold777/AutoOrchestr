@@ -718,6 +718,12 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
     } catch (_) {
       working = cloneRoot;
     }
+    // Code blocks as clean <pre data-code-lang><code>exact text</code></pre> (the engine's detection), when the engine
+    // is in the page; otherwise the html stays as it was.
+    try {
+      const engine = globalThis.AnswerMarkdown;
+      if (working !== cloneRoot && engine && typeof engine.normalizeCodeBlocks === 'function') engine.normalizeCodeBlocks(working, { provider: modelName }); // never the page's own node
+    } catch (_) {}
     return String(working.innerHTML || '').trim();
   };
   let baseCandidates = nodes
@@ -740,12 +746,14 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
       const htmlNode = normalizedModel === 'gemini' ? node.cloneNode(true) : node;
       if (normalizedModel === 'gemini') htmlNode.querySelectorAll('h6.screen-reader-model-response-label').forEach(label => label.remove());
       const svgState = { total: 0, position: 0, notes: [] };
-      const html = normalizedModel === 'le chat' && typeof window.ContentUtils?.getLastInlineHtmlNotes === 'function'
+      // The page's own content script (ContentUtils.buildInlineHtml) is the single source of an answer's html:
+      // computed layout and styles, diagrams, block icons. A tab whose script is older, and Gemini (its copy has
+      // no layout), take the read-only path below, which only knows diagrams and embeds.
+      const useContentUtils = typeof window.ContentUtils?.getLastInlineHtmlNotes === 'function' && normalizedModel !== 'gemini';
+      const html = useContentUtils
         ? window.ContentUtils.buildInlineHtml(node, { includeRoot: false })
         : htmlWithSvgImages(node, htmlNode, svgState);
-      const svgNotes = normalizedModel === 'le chat' && typeof window.ContentUtils?.getLastInlineHtmlNotes === 'function'
-        ? window.ContentUtils.getLastInlineHtmlNotes()
-        : svgState.notes;
+      const svgNotes = useContentUtils ? window.ContentUtils.getLastInlineHtmlNotes() : svgState.notes;
       const isMarkdown = /markdown|prose|qwen-markdown|markdown-body/i.test(`${selector} ${className}`);
       const assistantNode = node.closest?.('[data-markdown-text-style="assistant-message"],[data-message-author-role="assistant"],[data-role="assistant"],.assistant-message,.qwen-chat-message-assistant,[class*="assistant" i]');
       const isAssistantRole = !!assistantNode;

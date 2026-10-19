@@ -49,7 +49,13 @@
 
   function cardParts(card) {
     const outputEl = card?.querySelector?.('.debate-model-card-output');
-    const rawHtml = outputEl ? sanitizeFragment(String(outputEl.innerHTML || '').trim()) : '';
+    // The page's code-block furniture (header, Copy button) is not part of the answer: the export adds its own.
+    let exportEl = outputEl;
+    if (outputEl && outputEl.querySelector('.code-block')) {
+      exportEl = outputEl.cloneNode(true);
+      (root.ResultsCodeBlocks || { unwrapCodeBlocks: (el) => { el.querySelectorAll('.code-block').forEach((w) => { const p = w.querySelector(':scope > pre'); if (p) w.replaceWith(p); else w.remove(); }); return el; } }).unwrapCodeBlocks(exportEl);
+    }
+    const rawHtml = exportEl ? sanitizeFragment(String(exportEl.innerHTML || '').trim()) : '';
     const domPlain = outputEl ? String(outputEl.innerText || outputEl.textContent || '').trim() : '';
     // TXT takes the DOM->Markdown copy when the card has a usable one (results.js sets card._answerCopy).
     const copy = card?._answerCopy;

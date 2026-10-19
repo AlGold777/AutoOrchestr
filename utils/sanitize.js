@@ -12,7 +12,7 @@
     'hr',
     'img'
   ];
-  const ALLOWED_ATTR = ['href', 'class', 'style', 'colspan', 'rowspan', 'scope', 'src', 'alt', 'width', 'height', 'start'];
+  const ALLOWED_ATTR = ['href', 'class', 'style', 'colspan', 'rowspan', 'scope', 'src', 'alt', 'width', 'height', 'start', 'data-code-lang'];
   const ALLOWED_URI_REGEXP = /^(https?:|mailto:|tel:|#)/i;
   // The only image form allowed: a diagram saved as an inline SVG data URL (it runs no
   // script as an <img>). Remote or any other image sources are dropped below.

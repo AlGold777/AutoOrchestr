@@ -99,8 +99,8 @@ describe('GPT skeleton: turn container vs answer', () => {
     expect(out.ok).toBe(true);
     expect(out.html).toContain('⟦TEXT:');
     expect(out.html).not.toContain('my question');
-    expect(out.html).toContain('<h1>');
-    expect(out.html).toContain('<ul>');
+    expect(out.html).toMatch(/<h1[ >]/);
+    expect(out.html).toMatch(/<ul[ >]/);
     expect(out.selectorUsed).not.toBe('article');
   });
 });
