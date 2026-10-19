@@ -542,7 +542,43 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
   // (content-scripts/content-utils.js). Duplicated on purpose: this function is serialized into
   // the page and cannot import it; tests/answer-markdown-svg-html.test.js checks both agree.
   const htmlWithSvgImages = (sourceRoot, cloneRoot, state) => {
-    const SKIP = 'button, [role="button"], [aria-hidden="true"], [inert], header, footer, nav, aside, form, [data-message-part-type="reasoning"]';
+    const fitSvgToContent = (svg, copy, rect) => {
+      const parse = (value) => String(value || '').trim().split(/[\s,]+/).map(Number);
+      const declared = parse(svg.getAttribute('viewBox'));
+      const view = declared.length === 4 && declared.every(Number.isFinite) && declared[2] > 0 && declared[3] > 0
+        ? { x: declared[0], y: declared[1], w: declared[2], h: declared[3] } : null;
+      // Rendered scale, user units -> screen pixels (preserveAspectRatio "meet" uses the smaller ratio).
+      const scale = view ? Math.min(rect.width / view.w, rect.height / view.h) : 1;
+      let box = view || { x: 0, y: 0, w: rect.width, h: rect.height };
+      try {
+        const bbox = svg.getBBox();
+        if (bbox && bbox.width > 0 && bbox.height > 0) {
+          const pad = Math.min(8, Math.max(1, 0.02 * Math.max(bbox.width, bbox.height))); // up to 8 units for labels and strokes, less on a small drawing
+          const fit = { x: bbox.x - pad, y: bbox.y - pad, w: bbox.width + 2 * pad, h: bbox.height + 2 * pad };
+          // What was visible on the page: the content box cut by the declared view box.
+          const x0 = view ? Math.max(fit.x, view.x) : fit.x;
+          const y0 = view ? Math.max(fit.y, view.y) : fit.y;
+          const x1 = view ? Math.min(fit.x + fit.w, view.x + view.w) : fit.x + fit.w;
+          const y1 = view ? Math.min(fit.y + fit.h, view.y + view.h) : fit.y + fit.h;
+          if (x1 - x0 > 0 && y1 - y0 > 0) box = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+        }
+      } catch (_) {}
+      const pxPerUnit = scale > 0 && Number.isFinite(scale) ? scale : 1;
+      const width = Math.max(1, Math.round(box.w * pxPerUnit));
+      const height = Math.max(1, Math.round(box.h * pxPerUnit));
+      copy.setAttribute('viewBox', `${box.x} ${box.y} ${box.w} ${box.h}`);
+      copy.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+      copy.setAttribute('width', String(width));
+      copy.setAttribute('height', String(height));
+      // The page's own size limits (mermaid: max-width:1200px) would crop the standalone picture.
+      ['maxWidth', 'minWidth', 'width', 'height', 'maxHeight', 'minHeight'].forEach((name) => { copy.style[name] = ''; });
+      if (!copy.getAttribute('style')) copy.removeAttribute('style');
+      return { width, height };
+    };
+    const HARD_SKIP = '[inert], header, footer, nav, aside, form, [data-message-part-type="reasoning"]';
+    const SOFT_SKIP = 'button, [role="button"], [aria-hidden="true"]';
+    const looksLikeDiagram = (svg) => !!svg.querySelector('text, foreignObject')
+      || svg.querySelectorAll('path, rect, circle, ellipse, line, polyline, polygon').length >= 6;
     const toBase64 = (text) => {
       const bytes = new TextEncoder().encode(text);
       let binary = '';
@@ -550,6 +586,30 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
       return btoa(binary);
     };
     let working = cloneRoot;
+    // The picture (or, over the size limit, the note) for one svg whose layout is `rect`.
+    const makeImage = (svg, rect) => {
+      const doc = working.ownerDocument;
+      const copy = svg.cloneNode(true);
+      copy.querySelectorAll('script').forEach((el) => el.remove());
+      copy.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+      copy.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+      const { width, height } = fitSvgToContent(svg, copy, rect);
+      const base64 = toBase64(new XMLSerializer().serializeToString(copy));
+      state.position += 1;
+      if (base64.length > 400000 || state.total + base64.length > 1500000) {
+        state.notes.push({ type: 'svg', reason: 'диаграмма не сохранена в HTML: размер', position: state.position });
+        const note = doc.createElement('p');
+        note.textContent = '[диаграмма не сохранена: размер]';
+        return note;
+      }
+      state.total += base64.length;
+      const img = doc.createElement('img');
+      img.setAttribute('src', `data:image/svg+xml;base64,${base64}`);
+      img.setAttribute('alt', 'Диаграмма');
+      img.setAttribute('width', String(width));
+      img.setAttribute('height', String(height));
+      return img;
+    };
     try {
       // Edit a copy so the page DOM is never touched (this path is read-only).
       working = cloneRoot.cloneNode(true);
@@ -558,37 +618,50 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
       if (sources.length === clones.length) {
         sources.forEach((svg, index) => {
           try {
+            let inSoftWrapper = false;
             for (let n = svg.parentElement; n && n !== sourceRoot.parentElement; n = n.parentElement) {
-              if (n.localName === 'svg' || n.matches?.(SKIP)) return;
+              if (n.localName === 'svg' || n.matches?.(HARD_SKIP)) return;
+              if (n.matches?.(SOFT_SKIP)) inSoftWrapper = true;
             }
             const rect = svg.getBoundingClientRect();
             if (!(rect.width > 48 && rect.height > 48)) return;
-            const width = Math.round(rect.width);
-            const height = Math.round(rect.height);
-            const copy = svg.cloneNode(true);
-            copy.querySelectorAll('script').forEach((el) => el.remove());
-            copy.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-            copy.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
-            if (!copy.getAttribute('viewBox')) copy.setAttribute('viewBox', `0 0 ${width} ${height}`);
-            copy.setAttribute('width', String(width));
-            copy.setAttribute('height', String(height));
-            const base64 = toBase64(new XMLSerializer().serializeToString(copy));
-            state.position += 1;
-            const doc = working.ownerDocument;
-            if (base64.length > 400000 || state.total + base64.length > 1500000) {
-              state.notes.push({ type: 'svg', reason: 'диаграмма не сохранена в HTML: размер', position: state.position });
-              const note = doc.createElement('p');
-              note.textContent = '[диаграмма не сохранена: размер]';
-              clones[index].replaceWith(note);
-              return;
+            if (inSoftWrapper && !looksLikeDiagram(svg)) return;
+            clones[index].replaceWith(makeImage(svg, rect));
+          } catch (_) {}
+        });
+      }
+      // iframe / object / embed: its content svg as a picture, anything else as a visible note.
+      const embeds = Array.from(sourceRoot.querySelectorAll('iframe, object, embed'));
+      const embedClones = Array.from(working.querySelectorAll('iframe, object, embed'));
+      if (embeds.length === embedClones.length) {
+        embeds.forEach((el, index) => {
+          try {
+            const kind = String(el.localName || 'iframe');
+            let inner = null;
+            let rect = null;
+            try { inner = el.contentDocument?.querySelector('svg') || null; } catch (_) { inner = null; }
+            if (!inner && el.getAttribute('srcdoc')) {
+              inner = new DOMParser().parseFromString(el.getAttribute('srcdoc'), 'text/html').querySelector('svg');
+              if (inner) {
+                const box = (inner.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number);
+                rect = {
+                  width: parseFloat(inner.getAttribute('width')) || box[2] || el.getBoundingClientRect().width,
+                  height: parseFloat(inner.getAttribute('height')) || box[3] || el.getBoundingClientRect().height
+                };
+              }
             }
-            state.total += base64.length;
-            const img = doc.createElement('img');
-            img.setAttribute('src', `data:image/svg+xml;base64,${base64}`);
-            img.setAttribute('alt', 'Диаграмма');
-            img.setAttribute('width', String(width));
-            img.setAttribute('height', String(height));
-            clones[index].replaceWith(img);
+            if (inner) {
+              rect = rect || inner.getBoundingClientRect();
+              if (rect.width > 48 && rect.height > 48) { embedClones[index].replaceWith(makeImage(inner, rect)); return; }
+            }
+            let host = '';
+            const address = el.getAttribute('src') || el.getAttribute('data') || '';
+            try { host = address ? new URL(address, el.ownerDocument.baseURI).hostname : ''; } catch (_) { host = ''; }
+            state.position += 1;
+            state.notes.push({ type: 'embed', reason: `встроенный блок (${kind}) не скопирован: ${host || 'без адреса'}`, position: state.position });
+            const note = working.ownerDocument.createElement('p');
+            note.textContent = `[встроенный блок не скопирован: ${kind} ${host || 'без адреса'}]`;
+            embedClones[index].replaceWith(note);
           } catch (_) {}
         });
       }
@@ -730,7 +803,7 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
         let context;
         const ctxModule = globalThis.AnswerCopyContext;
         if (ctxModule && typeof ctxModule.collect === 'function') {
-          try { context = ctxModule.collect(best.mdNode, { provider: modelName, isLatest: true }); } catch (_) { context = undefined; }
+          try { context = ctxModule.collect(best.mdNode, { provider: modelName, isLatest: true, document: best.node.ownerDocument }); } catch (_) { context = undefined; }
         }
         const converted = engine.convert(best.mdNode, { provider: modelName || null, context });
         const markdown = String(converted?.markdown ?? '');
@@ -739,8 +812,66 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
           stub('markdown длиннее 1000000 знаков');
           copyReport = { ...converted.report, placeholders: [...(converted.report.placeholders || []), ...copyReport.placeholders], complete: false };
         } else {
-          answerMarkdown = markdown;
-          copyReport = converted.report;
+          // Artifact / Canvas panels outside the message: converted and appended (same code as in
+          // content-scripts/unified-answer-pipeline.js; tests keep both equal).
+          const artifactPanelsMarkdown = (engine, context, provider) => {
+            const all = context && context.artifactPanelEls ? Array.from(context.artifactPanelEls) : [];
+            // Nested matches of the loose panel selector are one panel.
+            const panels = all.filter((panel) => !all.some((other) => other !== panel && other.contains(panel)));
+            const parts = [];
+            const sum = { found: {}, copied: {}, placeholders: [], mismatches: [], complete: true };
+            panels.forEach((panel, index) => {
+              const title = String(panel.getAttribute('aria-label') || panel.getAttribute('data-title')
+                || panel.querySelector('h1, h2, h3')?.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 120) || 'без названия';
+              const kind = String(panel.getAttribute('data-artifact-type') || panel.getAttribute('data-type') || '').trim().slice(0, 40);
+              const heading = `### Артефакт: ${title}${kind ? `, ${kind}` : ''}`;
+              try {
+                const converted = engine.convert(panel, { provider: provider || null });
+                const body = String(converted?.markdown ?? '').trim();
+                const rep = converted?.report && typeof converted.report === 'object' ? converted.report : null;
+                if (!rep || !body) throw new Error(!rep ? 'движок не вернул отчёт' : 'панель пуста');
+                parts.push(`${heading}\n\n${body}`);
+                Object.entries(rep.found || {}).forEach(([k, v]) => { sum.found[k] = (sum.found[k] || 0) + v; });
+                Object.entries(rep.copied || {}).forEach(([k, v]) => { sum.copied[k] = (sum.copied[k] || 0) + v; });
+                sum.placeholders.push(...(rep.placeholders || []));
+                sum.mismatches.push(...(rep.mismatches || []));
+                if (rep.complete === false) sum.complete = false;
+              } catch (err) {
+                const reason = `панель артефакта не прочитана: ${String(err?.message || err).replace(/[\],\n\r]+/g, ' ').slice(0, 80)}`;
+                parts.push(`${heading}\n\n[НЕ СКОПИРОВАНО: тип=artifact, причина=${reason}, позиция=${index + 1}]`);
+                sum.placeholders.push({ type: 'artifact', reason, position: index + 1 });
+                sum.complete = false;
+              }
+            });
+            return { markdown: parts.join('\n\n'), sum, panels: panels.length };
+          };
+          const mergeArtifactPanels = (markdown, report, panelsResult, context) => {
+            let outMarkdown = markdown;
+            let outReport = report;
+            if (panelsResult.panels) {
+              outMarkdown = `${markdown}\n\n${panelsResult.markdown}`;
+              const merge = (a, b) => { const out = { ...a }; Object.entries(b).forEach(([k, v]) => { out[k] = (out[k] || 0) + v; }); return out; };
+              outReport = {
+                ...report,
+                found: merge(report.found || {}, panelsResult.sum.found),
+                copied: merge(report.copied || {}, panelsResult.sum.copied),
+                placeholders: [...(report.placeholders || []), ...panelsResult.sum.placeholders],
+                mismatches: [...(report.mismatches || []), ...panelsResult.sum.mismatches],
+                complete: report.complete !== false && panelsResult.sum.complete
+              };
+            } else if (context && context.artifactRefs > 0 && !(report.placeholders || []).some((item) => item.type === 'artifact')) {
+              // The message points at an artifact whose panel is not on the page.
+              outReport = {
+                ...report,
+                placeholders: [...(report.placeholders || []), { type: 'artifact', reason: 'панель артефакта не найдена: содержимое не прочитано', position: 0 }],
+                complete: false
+              };
+            }
+            return { markdown: outMarkdown, report: outReport };
+          };
+          const merged = mergeArtifactPanels(markdown, converted.report, artifactPanelsMarkdown(engine, context, modelName), context);
+          answerMarkdown = merged.markdown;
+          copyReport = merged.report;
         }
       } catch (err) {
         stub(`исключение: ${String(err?.message || err).replace(/[\],\n\r]+/g, ' ').slice(0, 100)}`);

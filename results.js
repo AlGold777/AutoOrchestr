@@ -20649,6 +20649,7 @@ function buildAllResponsesExportHtml() {
         h1 { display: flex; align-items: baseline; gap: 20px; flex-wrap: wrap; }
         h2 { margin: 0 0 12px; font-size: 20px; }
         pre { background: #f6f8fa; padding: 12px; border-radius: 8px; white-space: pre-wrap; word-wrap: break-word; }
+        img { max-width: 100%; height: auto; display: block; }
         .export-prompt { box-sizing: border-box; }
         .export-prompt.is-collapsed { max-height: calc(4.5em + 24px); overflow: hidden; }
         .prompt-heading { position: sticky; top: var(--model-navigation-height, 0px); z-index: 9; display: flex; align-items: center; gap: 15px; margin: 0 0 12px; padding: 4px 0; background: #fff; }
@@ -20887,6 +20888,7 @@ document.addEventListener('click', (event) => {
         h1 { margin: 0 0 16px; font-size: 22px; }
         h2 { margin: 18px 0 10px; font-size: 18px; }
         pre { background: #f6f8fa; padding: 12px; border-radius: 8px; white-space: pre-wrap; word-wrap: break-word; }
+        img { max-width: 100%; height: auto; display: block; }
         .copied-response { margin-bottom: 20px; }
         .copied-meta { margin: 0 0 10px; color: #555; font-size: 13px; }
         .copied-body { background: #f8fafc; padding: 12px; border-radius: 8px; }
@@ -20968,6 +20970,7 @@ document.addEventListener('click', (event) => {
         h1 { font-size: 24px; margin-bottom: 8px; }
         h3 { font-size: 16px; margin-top: 0; margin-bottom: 20px; }
         pre { background: #f6f8fa; padding: 12px; border-radius: 8px; white-space: pre-wrap; word-wrap: break-word; }
+        img { max-width: 100%; height: auto; display: block; }
         .response-body table { width: 100%; border-collapse: collapse; margin: 8px 0; }
         .response-body th, .response-body td { border: 1px solid #ddd; padding: 6px 8px; vertical-align: top; }
         .response-body ul, .response-body ol { padding-left: 24px; }

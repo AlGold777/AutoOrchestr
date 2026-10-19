@@ -29,7 +29,7 @@ function el(html) { const d = document.createElement('div'); d.innerHTML = html.
 test('register регистрирует все обработчики с типами artifact/source/file/output', () => {
   const reg = [];
   Extras.register({ registerBlock: (h) => reg.push(h) });
-  expect(new Set(reg.map((h) => h.type))).toEqual(new Set(['artifact', 'source', 'file', 'output']));
+  expect(new Set(reg.map((h) => h.type))).toEqual(new Set(['artifact', 'source', 'file', 'output', 'svg']));
   reg.forEach((h) => expect(h.priority).toBeGreaterThan(0));
 });
 
@@ -90,7 +90,7 @@ test('список источников и карточка поиска: заг
   expect(e.run(el('<ol data-source-list><li><a href="https://a.com">A</a></li></ol>'))).toContain('1. [A](https://a.com)');
   expect(e.copied.source).toBe(1);
   expect(e.run(el('<div data-search-result><a href="https://c.com"><strong>Карточка</strong></a></div>'))).toBe('1. [Карточка](https://c.com)');
-  expect(Extras.handlers.every((h) => typeof h.censusSelector === 'string' && h.censusSelector)).toBe(true);
+  expect(Extras.handlers.filter((h) => h.name !== 'extras-wrapped-svg').every((h) => typeof h.censusSelector === 'string' && h.censusSelector)).toBe(true);
 });
 
 test('файл: имя, тип, URL; без URL — заглушка', () => {
@@ -133,6 +133,45 @@ test('CENSUS_SELECTORS соответствуют поглощаемым эле�
   expect(root.querySelectorAll(S.output)).toHaveLength(1);
 });
 
+// ---- встроенные блоки (синтетика, по известной структуре; реальный образец Claude не снят) ----
+const SVG = '<svg viewBox="0 0 200 100"><rect width="50" height="20"/><rect x="60" width="50" height="20"/><path d="M1 1L2 2"/><path d="M1 1L5 5"/><text>A</text></svg>';
+
+test('iframe srcdoc с svg → fenced svg, считается как artifact', () => {
+  const e = makeEngine();
+  const md = e.run(el(`<iframe title="Диаграмма" srcdoc='${SVG}'></iframe>`));
+  expect(md).toContain('Встроенный блок: iframe, Диаграмма');
+  expect(md).toMatch(/```svg\n<svg[^>]*xmlns="http:\/\/www.w3.org\/2000\/svg"/);
+  expect(e.copied.artifact).toBe(1);
+});
+
+test('iframe srcdoc с html-страницей → fenced html', () => {
+  const e = makeEngine();
+  expect(e.run(el('<iframe srcdoc="<html><body><h1>Привет</h1></body></html>"></iframe>'))).toMatch(/```html\n<html>.*Привет/s);
+});
+
+test('same-origin contentDocument читается', () => {
+  const e = makeEngine();
+  const f = el('<iframe></iframe>');
+  Object.defineProperty(f, 'contentDocument', { value: new DOMParser().parseFromString('<p>внутри</p>', 'text/html') });
+  expect(e.run(f)).toContain('внутри');
+});
+
+test('cross-origin iframe, object без доступа → видимая заглушка с хостом, copied=0', () => {
+  const e = makeEngine();
+  const md = e.run(el('<iframe src="https://claudeusercontent.com/x?y=1"></iframe>'));
+  expect(md).toMatch(/НЕ СКОПИРОВАНО: тип=artifact, причина=iframe не прочитан \(cross-origin или нет доступа, src=claudeusercontent.com\)/);
+  expect(e.copied.artifact || 0).toBe(0);
+  expect(e.run(el('<embed>'))).toMatch(/нет src\/srcdoc/);
+});
+
+test('svg-диаграмма в обёртке role=button / aria-hidden → svg-блок; иконка в кнопке — нет', () => {
+  const e = makeEngine();
+  expect(e.run(el(`<div role="button">${SVG}</div>`))).toMatch(/```svg\n<svg/);
+  expect(e.run(el(`<div aria-hidden="true">${SVG}</div>`))).toMatch(/```svg/);
+  expect(e.run(el('<button><svg viewBox="0 0 24 24"><path d="M1 1"/></svg></button>'))).toBeNull();
+  expect(Extras.handlers.filter((h) => h.claimsUi).map((h) => h.name)).toEqual(['extras-embed', 'extras-wrapped-svg']);
+});
+
 const fs = require('fs');
 const path = require('path');
 const realEnginePath = path.join(__dirname, '../shared/answer-markdown.js');
@@ -144,5 +183,21 @@ maybe('с настоящим движком shared/answer-markdown.js', () => {
     const r = AM.convert(el('<div><p>Факт <span data-testid="webpage-citation-pill"><a href="https://ex.com/a">ex.com</a></span></p></div>'), {});
     expect(r.markdown).toMatch(/\[\^1\]|\[ex\.com\]\(https:\/\/ex\.com\/a\)/);
     expect(r.report.copied.source).toBe(1);
+  });
+
+  // ЗАВИСИТ ОТ WP1: движок отбрасывает iframe/object/embed и обёртки button/aria-hidden в isUiNode до вызова обработчиков
+  // (claimsUi: true — запрос). Пока не исправлено — test.failing; после правки движка снять .failing.
+  test('iframe не пропадает молча: отчёт содержит заглушку или содержимое', () => {
+    const AM = require(realEnginePath);
+    Extras.register(AM);
+    const r = AM.convert(el('<div><p>x</p><iframe src="https://claudeusercontent.com/x"></iframe></div>'), {});
+    expect(r.markdown).toMatch(/Встроенный блок|НЕ СКОПИРОВАНО/);
+    expect(r.report.complete).toBe(false);
+  });
+  test('svg-диаграмма в role=button-обёртке доходит до markdown', () => {
+    const AM = require(realEnginePath);
+    Extras.register(AM);
+    const r = AM.convert(el(`<div><p>x</p><div role="button">${SVG}</div></div>`), {});
+    expect(r.markdown).toMatch(/```svg/);
   });
 });

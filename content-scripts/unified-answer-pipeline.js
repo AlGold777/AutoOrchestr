@@ -49,6 +49,64 @@
     flags: {},
     complete: false
   });
+  // Artifact / Canvas panels live outside the message element: they are converted with the same engine
+  // and appended ("Артефакт: название, тип" + content), counted in the report. The same code is in
+  // background/job-orchestrator.js (extractLatestAssistantSnapshotInPage); tests keep both equal.
+  const artifactPanelsMarkdown = (engine, context, provider) => {
+    const all = context && context.artifactPanelEls ? Array.from(context.artifactPanelEls) : [];
+    // Nested matches of the loose panel selector are one panel.
+    const panels = all.filter((panel) => !all.some((other) => other !== panel && other.contains(panel)));
+    const parts = [];
+    const sum = { found: {}, copied: {}, placeholders: [], mismatches: [], complete: true };
+    panels.forEach((panel, index) => {
+      const title = String(panel.getAttribute('aria-label') || panel.getAttribute('data-title')
+        || panel.querySelector('h1, h2, h3')?.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 120) || 'без названия';
+      const kind = String(panel.getAttribute('data-artifact-type') || panel.getAttribute('data-type') || '').trim().slice(0, 40);
+      const heading = `### Артефакт: ${title}${kind ? `, ${kind}` : ''}`;
+      try {
+        const converted = engine.convert(panel, { provider: provider || null });
+        const body = String(converted?.markdown ?? '').trim();
+        const rep = converted?.report && typeof converted.report === 'object' ? converted.report : null;
+        if (!rep || !body) throw new Error(!rep ? 'движок не вернул отчёт' : 'панель пуста');
+        parts.push(`${heading}\n\n${body}`);
+        Object.entries(rep.found || {}).forEach(([k, v]) => { sum.found[k] = (sum.found[k] || 0) + v; });
+        Object.entries(rep.copied || {}).forEach(([k, v]) => { sum.copied[k] = (sum.copied[k] || 0) + v; });
+        sum.placeholders.push(...(rep.placeholders || []));
+        sum.mismatches.push(...(rep.mismatches || []));
+        if (rep.complete === false) sum.complete = false;
+      } catch (err) {
+        const reason = `панель артефакта не прочитана: ${String(err?.message || err).replace(/[\],\n\r]+/g, ' ').slice(0, 80)}`;
+        parts.push(`${heading}\n\n[НЕ СКОПИРОВАНО: тип=artifact, причина=${reason}, позиция=${index + 1}]`);
+        sum.placeholders.push({ type: 'artifact', reason, position: index + 1 });
+        sum.complete = false;
+      }
+    });
+    return { markdown: parts.join('\n\n'), sum, panels: panels.length };
+  };
+  const mergeArtifactPanels = (markdown, report, panelsResult, context) => {
+    let outMarkdown = markdown;
+    let outReport = report;
+    if (panelsResult.panels) {
+      outMarkdown = `${markdown}\n\n${panelsResult.markdown}`;
+      const merge = (a, b) => { const out = { ...a }; Object.entries(b).forEach(([k, v]) => { out[k] = (out[k] || 0) + v; }); return out; };
+      outReport = {
+        ...report,
+        found: merge(report.found || {}, panelsResult.sum.found),
+        copied: merge(report.copied || {}, panelsResult.sum.copied),
+        placeholders: [...(report.placeholders || []), ...panelsResult.sum.placeholders],
+        mismatches: [...(report.mismatches || []), ...panelsResult.sum.mismatches],
+        complete: report.complete !== false && panelsResult.sum.complete
+      };
+    } else if (context && context.artifactRefs > 0 && !(report.placeholders || []).some((item) => item.type === 'artifact')) {
+      // The message points at an artifact whose panel is not on the page.
+      outReport = {
+        ...report,
+        placeholders: [...(report.placeholders || []), { type: 'artifact', reason: 'панель артефакта не найдена: содержимое не прочитано', position: 0 }],
+        complete: false
+      };
+    }
+    return { markdown: outMarkdown, report: outReport };
+  };
   const buildAnswerMarkdownFields = (element, provider) => {
     const stub = (reason) => ({
       answerMarkdown: `[НЕ СКОПИРОВАНО: тип=answer, причина=${reason}, позиция=1]`,
@@ -63,7 +121,7 @@
       if (ctxModule) {
         const fn = ['collect', 'capture', 'build'].find((name) => typeof ctxModule[name] === 'function');
         if (fn) {
-          try { context = ctxModule[fn](element, { provider, isLatest: true }); } catch (_) { context = undefined; }
+          try { context = ctxModule[fn](element, { provider, isLatest: true, document: element.ownerDocument }); } catch (_) { context = undefined; }
         }
       }
       const result = engine.convert(element, { provider: provider || null, context });
@@ -75,7 +133,13 @@
         out.copyReport = { ...report, placeholders: [...(report.placeholders || []), ...out.copyReport.placeholders], complete: false };
         return out;
       }
-      return { answerMarkdown: markdown, copyReport: report };
+      const merged = mergeArtifactPanels(markdown, report, artifactPanelsMarkdown(engine, context, provider), context);
+      if (merged.markdown.length > ANSWER_MARKDOWN_MAX_CHARS) {
+        const out = stub(`markdown длиннее ${ANSWER_MARKDOWN_MAX_CHARS} знаков`);
+        out.copyReport = { ...merged.report, placeholders: [...(merged.report.placeholders || []), ...out.copyReport.placeholders], complete: false };
+        return out;
+      }
+      return { answerMarkdown: merged.markdown, copyReport: merged.report };
     } catch (err) {
       return stub(`исключение: ${String(err?.message || err).slice(0, 120)}`);
     }

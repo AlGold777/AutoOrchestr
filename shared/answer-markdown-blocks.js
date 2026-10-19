@@ -39,7 +39,14 @@
   const MATH_CENSUS_SELECTOR = MATH_SELECTOR.split(',').filter((x) => x !== 'script[type^="math/tex"]' && x !== '.MathJax_Preview').join(',');
   const RENDERED_MJ = '.MathJax_Display, .MathJax_SVG_Display, .MathJax, .MathJax_SVG, .MathJax_CHTML, mjx-container';
   // Containers the engine census must count as one diagram (pre blocks are counted by the engine itself).
-  const DIAGRAM_CENSUS_SELECTOR = ['.mermaid', '[data-mermaid]', '.plantuml', '.graphviz', '.d2', 'svg[id^="mermaid"]', 'svg[aria-roledescription]']
+  // aria-roledescription values mermaid puts on its svg (known list; not verified live).
+  const MERMAID_ROLES = ['flowchart', 'flowchart-v2', 'sequence', 'classDiagram', 'stateDiagram', 'er', 'gantt', 'pie', 'journey',
+    'gitGraph', 'mindmap', 'timeline', 'quadrantChart', 'requirement', 'c4', 'sankey', 'xychart', 'block', 'packet', 'kanban', 'architecture', 'radar'];
+  // Provider-independent: ChatGPT-style ids look like "chatgpt-mermaid-<n>", plain mermaid ids "mermaid-<n>".
+  const MERMAID_SVG_SELECTOR = ['svg[id*="mermaid" i]', 'svg[class*="mermaid" i]', 'svg[data-processed]']
+    .concat(MERMAID_ROLES.map((r) => `svg[aria-roledescription="${r}"]`)).join(',');
+  const DIAGRAM_LABEL_RE = /^(?:(?:код|code)\s+)?(?:mermaid|plantuml|graphviz|dot|d2)$/i;
+  const DIAGRAM_CENSUS_SELECTOR = ['.mermaid', '[data-mermaid]', '.plantuml', '.graphviz', '.d2', MERMAID_SVG_SELECTOR]
     .concat(Object.keys(DIAGRAM_LANGS).map((k) => `div.language-${k}, div.lang-${k}, span.language-${k}, span.lang-${k}, figure.language-${k}, section.language-${k}`)).join(',');
   const SHAPES = 'path,rect,circle,line,polyline,polygon,ellipse,text,image,foreignObject';
 
@@ -53,7 +60,20 @@
   const inCell = (el) => !!(el && el.closest && el.closest('td, th'));
   const CELL_REASON = 'многострочный блок в ячейке таблицы';
 
+  const NON_TEXT_TAGS = new Set(['style', 'script', 'noscript', 'template']);
+
+  // Exact text, but never the text of <style>/<script>/<noscript>/<template> (CSS must not leak into Markdown).
   function textOf(el, ctx) {
+    if (el.querySelector && el.querySelector('style, script, noscript, template')) {
+      let out = '';
+      (function walk(node) {
+        node.childNodes.forEach((n) => {
+          if (n.nodeType === 3) out += n.nodeValue;
+          else if (n.nodeType === 1 && !NON_TEXT_TAGS.has(tag(n))) walk(n);
+        });
+      })(el);
+      return out;
+    }
     return ctx && typeof ctx.text === 'function' ? ctx.text(el) : String(el.textContent || '');
   }
 
@@ -173,15 +193,24 @@
     return svg.querySelectorAll(SHAPES).length <= 1;
   }
 
+  const MAX_STYLE = 4096;
+
+  // SVG source; <style> larger than 4 KB is cut out (an xml comment marks the cut) so the block stays readable.
   function serializeSvg(svg) {
     let out = svg.outerHTML;
+    let cut = 0;
+    out = out.replace(/<style\b[^>]*>([\s\S]*?)<\/style>/gi, (m, css) => {
+      if (css.length <= MAX_STYLE) return m;
+      cut += css.length;
+      return '';
+    });
     if (!/^<svg\b[^>]*\sxmlns=/i.test(out)) out = out.replace(/^<svg\b/i, '<svg xmlns="http://www.w3.org/2000/svg"');
-    return out;
+    if (cut) out = out.replace(/^<svg\b[^>]*>/i, (m) => `${m}<!-- CSS из <style> (${cut} симв.) вырезан -->`);
+    return { src: out, cut };
   }
 
-  // Bare mermaid svg (no container). Graphviz svg without a container is exported as a plain svg block.
   function svgDiagramLang(svg) {
-    return has(svg, 'svg[id^="mermaid"], svg[aria-roledescription]') ? 'mermaid' : null;
+    return has(svg, MERMAID_SVG_SELECTOR) ? 'mermaid' : null;
   }
 
   // ---------------------------------------------------------------- diagrams
@@ -278,16 +307,189 @@
     return { markdown: `\n\n${ctx.fence(body, name)}\n\n`, copied: 1 };
   }
 
+  // ---- best-effort flowchart reconstruction from a rendered mermaid svg (conventions of mermaid v10/v11 as
+  // remembered; NOT verified live). Returns null whenever anything is not understood: no partial guesses.
+  const collapse = (v) => String(v || '').replace(/\s+/g, ' ').trim();
+
+  function labelText(g) {
+    const nl = g.querySelector('.nodeLabel');
+    if (nl) return collapse(textOf(nl));
+    const texts = Array.from(g.querySelectorAll('text')).map((t) => collapse(textOf(t))).filter(Boolean);
+    return texts.join(' ');
+  }
+
+  function translateOf(g) {
+    const m = /translate\(\s*(-?[\d.]+)[ ,]+(-?[\d.]+)\s*\)/.exec(attr(g, 'transform') || '');
+    return m ? { x: parseFloat(m[1]), y: parseFloat(m[2]) } : null;
+  }
+
+  function flowNodeId(g) {
+    const d = attr(g, 'data-id');
+    if (d) return d;
+    const m = /(?:^|-)flowchart-(.+)-\d+$/.exec(attr(g, 'id') || '');
+    return m ? m[1] : null;
+  }
+
+  const mdLabel = (t) => `"${String(t).replace(/"/g, '#quot;')}"`;
+
+  function reconstructFlowchart(svg) {
+    const nodes = [];
+    const byId = new Map();
+    for (const g of Array.from(svg.querySelectorAll('g.node'))) {
+      const id = flowNodeId(g);
+      if (!id || byId.has(id)) continue;
+      const pos = translateOf(g);
+      const label = labelText(g);
+      const shape = g.querySelector('polygon') ? '{}' : (g.querySelector('circle, ellipse') ? '(())' : '[]');
+      const node = { id, label: label || id, shape, x: pos ? pos.x : null, y: pos ? pos.y : null, cluster: null };
+      nodes.push(node);
+      byId.set(id, node);
+    }
+    if (!nodes.length) return null;
+
+    const pathEls = Array.from(svg.querySelectorAll('path.flowchart-link'));
+    const paths = pathEls.length ? pathEls : Array.from(svg.querySelectorAll('.edgePaths path, g.edgePath path'));
+    const edgeLabels = Array.from(svg.querySelectorAll('.edgeLabels .edgeLabel, g.edgeLabel'));
+    const labelById = new Map();
+    edgeLabels.forEach((g) => {
+      const holder = g.querySelector('[data-id]');
+      const id = holder ? attr(holder, 'data-id') : attr(g, 'data-id');
+      if (id) labelById.set(id, labelText(g));
+    });
+    const edges = [];
+    for (let i = 0; i < paths.length; i += 1) {
+      const path = paths[i];
+      const eid = attr(path, 'data-id') || attr(path, 'id') || '';
+      let from = null; let to = null;
+      const cls = attr(path, 'class') || '';
+      const ls = /(?:^|\s)LS-(\S+)/.exec(cls); const le = /(?:^|\s)LE-(\S+)/.exec(cls);
+      if (ls && le && byId.has(ls[1]) && byId.has(le[1])) { from = ls[1]; to = le[1]; }
+      if (!from) {
+        const m = /(?:^|[-_])L_(.+)_(\d+)$/.exec(eid);
+        if (m) {
+          for (const a of byId.keys()) {
+            if (!m[1].startsWith(a + '_')) continue;
+            const rest = m[1].slice(a.length + 1);
+            if (byId.has(rest)) { from = a; to = rest; break; }
+          }
+        }
+      }
+      if (!from) return null;
+      let label = labelById.has(eid) ? labelById.get(eid) : '';
+      if (!labelById.size && edgeLabels.length === paths.length) label = labelText(edgeLabels[i]);
+      const style = /dotted/.test(cls) ? '-.->' : (/thick/.test(cls) ? '==>' : '-->');
+      edges.push({ from, to, label, style });
+    }
+
+    const clusters = [];
+    for (const g of Array.from(svg.querySelectorAll('g.cluster'))) {
+      const r = g.querySelector('rect');
+      const num = (n) => parseFloat(attr(r, n));
+      if (!r || ![num('x'), num('y'), num('width'), num('height')].every(Number.isFinite)) continue;
+      const rawId = attr(g, 'data-id') || attr(g, 'id') || `sg${clusters.length + 1}`;
+      clusters.push({
+        id: rawId.replace(/[^\w]/g, '_'), label: labelText(g), x: num('x'), y: num('y'), w: num('width'), h: num('height'), parent: null
+      });
+    }
+    const inside = (c, x, y) => x >= c.x && x <= c.x + c.w && y >= c.y && y <= c.y + c.h;
+    const area = (c) => c.w * c.h;
+    for (const c of clusters) {
+      const encl = clusters.filter((o) => o !== c && inside(o, c.x + c.w / 2, c.y + c.h / 2) && area(o) > area(c));
+      c.parent = encl.sort((a, b) => area(a) - area(b))[0] || null;
+    }
+    for (const n of nodes) {
+      if (n.x === null) continue;
+      const encl = clusters.filter((c) => inside(c, n.x, n.y));
+      n.cluster = encl.sort((a, b) => area(a) - area(b))[0] || null;
+    }
+
+    let dx = 0; let dy = 0;
+    for (const e of edges) {
+      const a = byId.get(e.from); const b = byId.get(e.to);
+      if (a.x !== null && b.x !== null) { dx += b.x - a.x; dy += b.y - a.y; }
+    }
+    const dir = Math.abs(dy) >= Math.abs(dx) ? (dy >= 0 ? 'TD' : 'BT') : (dx >= 0 ? 'LR' : 'RL');
+
+    const lines = ['%% реконструировано из SVG, возможны расхождения', `flowchart ${dir}`];
+    const nodeLine = (n, pad) => {
+      const [o, c] = n.shape === '(())' ? ['((', '))'] : (n.shape === '{}' ? ['{', '}'] : ['[', ']']);
+      return `${pad}${n.id}${o}${mdLabel(n.label)}${c}`;
+    };
+    const emit = (cluster, pad) => {
+      nodes.filter((n) => n.cluster === cluster).forEach((n) => lines.push(nodeLine(n, pad)));
+      clusters.filter((c) => c.parent === cluster).forEach((c) => {
+        lines.push(`${pad}subgraph ${c.id}${c.label ? ` [${mdLabel(c.label)}]` : ''}`);
+        emit(c, pad + '  ');
+        lines.push(`${pad}end`);
+      });
+    };
+    emit(null, '  ');
+    for (const e of edges) lines.push(`  ${e.from} ${e.style}${e.label ? `|${e.label}|` : ''} ${e.to}`);
+    return lines.join('\n');
+  }
+
+  // Source stored next to / around a rendered mermaid svg (hidden "Code" tab, textarea, script type=text/mermaid).
+  function hiddenish(node, stop) {
+    for (let n = node; n && n !== stop; n = n.parentElement) {
+      if (n.hasAttribute('hidden') || n.hasAttribute('inert') || attr(n, 'aria-hidden') === 'true') return true;
+      if (/display\s*:\s*none|visibility\s*:\s*hidden/i.test(attr(n, 'style') || '')) return true;
+    }
+    return false;
+  }
+
+  // -> { emit: text } | { sibling: true } | null
+  function wrapperSource(svg, lang, ctx) {
+    let wrap = svg.parentElement;
+    for (let depth = 0; wrap && depth < 4; depth += 1, wrap = wrap.parentElement) {
+      if (wrap.querySelectorAll(MERMAID_SVG_SELECTOR).length > 1) return null;
+      const cands = Array.from(wrap.querySelectorAll('textarea, script[type*="mermaid"], pre, code'))
+        .filter((c) => !c.closest('svg') && !c.querySelector('svg'));
+      for (const c of cands) {
+        const t = tag(c);
+        // the engine's ctx.text() deliberately returns '' for <script>: read the source container directly
+        const text = t === 'textarea' || t === 'script' ? String(c.textContent || '') : textOf(c, ctx);
+        if (!text.trim()) continue;
+        if (t === 'textarea' || t === 'script') return { emit: text };
+        const strong = detectLang(c.closest('pre') || c) === lang;
+        if (!strong) continue;
+        const pre = c.closest('pre') || c;
+        if (hiddenish(pre, wrap.parentElement)) return { emit: text };
+        return { sibling: true };
+      }
+    }
+    return null;
+  }
+
   function svgOnlyDiagram(el, svg, lang, ctx) {
-    const note = ctx.placeholder('diagram', `${lang}: рендерер оставил только SVG без исходника`, el);
+    if (lang === 'mermaid' && !inCell(el)) {
+      let rebuilt = null;
+      try { rebuilt = reconstructFlowchart(svg); } catch (_) { rebuilt = null; }
+      if (rebuilt) return { markdown: `\n\n${ctx.fence(rebuilt, 'mermaid')}\n\n`, copied: 1, reconstructed: true };
+    }
+    const { src, cut } = serializeSvg(svg);
+    const note = ctx.placeholder('diagram', `${lang}: рендерер оставил только SVG без исходника${cut ? `; CSS ${cut} симв. вырезан` : ''}`, el);
     if (inCell(el)) return { markdown: note, copied: 0 };
-    const src = serializeSvg(svg);
     if (src.length > MAX_SVG) return { markdown: note, copied: 0 };
     return { markdown: `\n\n${note}\n\n${ctx.fence(src, 'svg')}\n\n`, copied: 0 };
   }
 
+  // Header caption of a diagram block ("Код Mermaid"): its text must become the fence language, not text.
+  function isDiagramLabel(el) {
+    if (el.children.length && !Array.from(el.children).every((c) => has(c, 'button, [role="button"], svg'))) return false;
+    const own = Array.from(el.childNodes).filter((n) => n.nodeType === 3).map((n) => n.nodeValue).join('');
+    if (own.length > 40 || !DIAGRAM_LABEL_RE.test(collapse(own))) return false;
+    let a = el.parentElement;
+    for (let i = 0; a && i < 4; i += 1, a = a.parentElement) {
+      if (a.querySelector(MERMAID_SVG_SELECTOR) || a.querySelector('.mermaid')) return true;
+    }
+    return false;
+  }
+
   function analyzeDiagram(el) {
     const t = tag(el);
+    if (t !== 'svg' && el.children.length < 4 && el.textContent.length < 60 && isDiagramLabel(el)) {
+      return { type: 'diagram', count: 0, name: 'diagram', render: () => ({ markdown: '', copied: 0 }) };
+    }
     if (t === 'svg') {
       if (el.parentNode && el.parentNode.closest && el.parentNode.closest('svg')) return null;
       if (isIconSvg(el)) return null;
@@ -296,10 +498,13 @@
       return {
         type: 'diagram', count: 1, name: 'diagram',
         render(ctx) {
-          const kind = lang;
           const src = attrSource(el) || scopedSource(el, ctx);
-          if (src) return renderDiagramSource(kind, src, ctx, el);
-          return svgOnlyDiagram(el, el, kind, ctx);
+          if (src) return renderDiagramSource(lang, src, ctx, el);
+          const near = wrapperSource(el, lang, ctx);
+          // a visible source block next to the picture is written by its own handler: count this one as covered
+          if (near && near.sibling) return { markdown: '', copied: 1 };
+          if (near) return renderDiagramSource(lang, near.emit, ctx, el);
+          return svgOnlyDiagram(el, el, lang, ctx);
         }
       };
     }
@@ -337,7 +542,7 @@
         // A marker-less picture whose hidden "Code view" panel holds mermaid source: copy the source.
         const panel = inCell(el) ? null : scopedSource(el, ctx);
         if (panel && MERMAID_START.test(panel)) return { markdown: `\n\n${ctx.fence(stripEdgeNewlines(panel), 'mermaid')}\n\n`, copied: 1 };
-        const src = serializeSvg(el);
+        const { src } = serializeSvg(el);
         if (inCell(el)) return { markdown: ctx.placeholder('svg', CELL_REASON, el), copied: 0 };
         if (src.length > MAX_SVG) return { markdown: ctx.placeholder('svg', 'SVG слишком большой', el), copied: 0 };
         return { markdown: `\n\n${ctx.fence(src, 'svg')}\n\n`, copied: 1 };

@@ -152,6 +152,8 @@ AnswerMarkdown.PLACEHOLDER_RE               // /\[НЕ СКОПИРОВАНО: �
   name: 'katex',                // уникальное имя
   type: 'math',                 // тип для счёта
   priority: 100,                // больше — раньше; дефолтные обработчики движка имеют 0
+  claimsUi?: true,              // необязательно: если match истинен, элемент не считается интерфейсом (iframe, role=button, aria-hidden) — идёт в census и в обработчик
+  censusSelector?: string,      // необязательно: CSS-селектор элементов этого типа для census (иначе copied без found даёт mismatch)
   match(el, ctx) -> boolean,
   render(el, ctx) -> { markdown: string, copied?: number } | null   // null = отказаться, пойдёт следующий
 }

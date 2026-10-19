@@ -105,15 +105,27 @@
     return r.top < v.top - 1 || r.bottom > v.bottom + 1;
   }
 
+  // Артефакты и встроенные блоки. Селекторы по общим признакам, НЕ ПРОВЕРЕНО ВЖИВУЮ (реального образца Claude с артефактом/диаграммой нет).
+  const ARTIFACT_REF_SELECTOR = '[data-testid*="artifact" i], [aria-label*="artifact" i], [class*="artifact" i]';
+  const ARTIFACT_PANEL_SELECTOR = '[data-artifact], [data-canvas], [data-testid*="artifact" i], [role="dialog"][aria-label*="artifact" i], [role="complementary"][aria-label*="artifact" i], [role="dialog"][aria-label*="canvas" i]';
+  const EMBED_SELECTOR = 'iframe, object, embed';
+
+  function detectArtifacts(el, opts) {
+    const doc = opts.document || el.ownerDocument;
+    const refs = Array.from(el.querySelectorAll(ARTIFACT_REF_SELECTOR));
+    const panels = doc ? Array.from(doc.querySelectorAll(ARTIFACT_PANEL_SELECTOR)).filter((p) => !el.contains(p) && !p.contains(el)) : [];
+    return { refs: refs.length, panels };
+  }
+
   /**
    * collect(messageEl, options) -> context для AnswerMarkdown.convert({ context }).
    * options: { turn?, isLatest?, document?, scroller?, assistantSelector?, userSelector?, expand? (по умолчанию false) }
-   * Результат: { version, regenerated, generating, truncated, collapsed, continuationParts, lazy, notes[] };
-   * непубличные (не сериализуются): .parts — элементы продолжений, .versionInfo.
+   * Результат: { version, regenerated, generating, truncated, collapsed, continuationParts, lazy, artifactRefs, artifactPanels, embeds, notes[] };
+   * непубличные (не сериализуются): .parts — элементы продолжений, .artifactPanelEls — панели артефактов вне сообщения, .versionInfo.
    */
   function collect(messageEl, options) {
     const opts = options || {};
-    const ctx = { version: null, regenerated: false, generating: false, truncated: false, collapsed: 0, continuationParts: 0, lazy: false, notes: [] };
+    const ctx = { version: null, regenerated: false, generating: false, truncated: false, collapsed: 0, continuationParts: 0, lazy: false, artifactRefs: 0, artifactPanels: 0, embeds: 0, notes: [] };
     if (!messageEl || !messageEl.querySelector) {
       ctx.notes.push('элемент ответа не передан');
       return ctx;
@@ -137,6 +149,14 @@
     ctx.continuationParts = parts.length;
     Object.defineProperty(ctx, 'parts', { value: parts, enumerable: false });
     Object.defineProperty(ctx, 'versionInfo', { value: v, enumerable: false });
+
+    const art = detectArtifacts(messageEl, opts);
+    ctx.artifactRefs = art.refs;
+    ctx.artifactPanels = art.panels.length;
+    ctx.embeds = messageEl.querySelectorAll(EMBED_SELECTOR).length;
+    Object.defineProperty(ctx, 'artifactPanelEls', { value: art.panels, enumerable: false });
+    if (art.refs && !art.panels.length) ctx.notes.push('в сообщении есть артефакт, панель не найдена: содержимое не прочитано');
+    if (ctx.embeds) ctx.notes.push(`встроенных блоков (iframe/object/embed): ${ctx.embeds}`);
 
     ctx.lazy = detectLazy(messageEl, opts);
     if (ctx.lazy) ctx.notes.push('ответ частично вне видимой области списка (виртуализация); полнота не гарантирована');

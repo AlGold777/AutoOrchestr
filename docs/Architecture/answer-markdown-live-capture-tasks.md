@@ -1172,3 +1172,45 @@
 - Блок кода/таблица: сверяю с `shared/answer-markdown-providers.js` (`codeBlock`, `tableRoot`, `isUiNode`), добавляю фикстуру и тест, меняю статус в матрице на «фикстура».
 - Формула/диаграмма/артефакт/источники/версии/свёрнутое: передаю разметку владельцам WP2 (формулы, диаграммы) и WP3 (артефакты, источники, контекст) как реальные образцы; сам правила не пишу вне своей зоны.
 - Расхождение с матрицей (например, подпись языка не там, где предполагалось) — правка правил и матрицы в том же шаге.
+
+## Claude: диаграмма, iframe и панель артефакта (WP3)
+
+Жалоба: диаграмма из ответа Claude в карточке не отразилась (ни картинки, ни пометки). Реального образца нет: `tests/fixtures/live-answer-skeletons/claude.json` не содержит iframe, artifact, mermaid (в нём только 2 иконки svg). Нужен снимок, на котором диаграмма есть. GPT-плагин отдаёт только текст страницы, поэтому снимаем штатным инструментом проекта.
+
+### Шаги (штатный захват, без текста переписки)
+
+1. Откройте claude.ai в расширенном Chrome с установленным расширением, новый чат. Отправьте: «Нарисуй диаграмму (flowchart на 4 узла) и создай артефакт-схему». Дождитесь полного окончания генерации (кнопка Stop исчезла). Диаграмма и панель артефакта должны быть видны на экране. Остальные 8 вкладок моделей можно не открывать: для них в отчёте будет статус «не захвачено», это нормально.
+2. Откройте панель результатов расширения (`result_new.html` или `pipeline_panel.html`) и нажмите кнопку **B1** (`#capture-b1-skeletons-btn`, подпись «Capture sanitized answer DOM skeletons»). Реализация: `results.js` → сообщение `CAPTURE_B1_SANITIZED_SKELETONS` → `background/b1-skeleton-collector.js` → `content-scripts/dom-skeleton-capture.js` на вкладке.
+3. Браузер скачает `B1 Sanitized Answer Skeletons <дата-время>.json` (папка «Загрузки»; имя собирает `downloadDiagnosticsJson` в `results.js`). Пришлите этот файл: из него берётся `results[platform=claude].capture.html`. Текст заменён на `⟦TEXT:n⟧`, `src`/`srcdoc`/`href` вырезаны (разрешены только id, class, role, data-testid, aria-hidden и подобные), теги `iframe`, `svg`, `canvas`, `object`, `embed` сохраняются.
+4. Ограничение: захват берёт только элемент текущего ответа (`messageRootSelector` из `answer-pipeline-selectors.js`). Панель артефакта, лежащая вне его, в снимок не попадёт. Поэтому дополнительно нужен шаг 5.
+
+### Шаг 5. Панель артефакта и источник диаграммы (консоль DevTools, не текст)
+
+На той же странице откройте DevTools → Console и выполните (выводит только структуру, без текста):
+
+~~~js
+(() => {
+  const sk = (n, d = 0) => d > 6 ? '' : n.nodeType !== 1 ? '' :
+    '<' + n.tagName.toLowerCase() +
+    ['id', 'role', 'data-testid', 'aria-label', 'aria-hidden', 'aria-expanded', 'data-artifact', 'type', 'sandbox']
+      .filter((a) => n.hasAttribute(a)).map((a) => ` ${a}="${a === 'aria-label' ? n.getAttribute(a).length + ' симв.' : n.getAttribute(a)}"`).join('') +
+    (n.tagName === 'IFRAME' ? ` src-host="${(() => { try { return new URL(n.src).host; } catch (_) { return n.src ? 'bad' : 'none'; } })()}" srcdoc="${n.hasAttribute('srcdoc')}" same-origin="${(() => { try { return !!n.contentDocument; } catch (_) { return false; } })()}"` : '') +
+    '>' + [...n.children].map((c) => sk(c, d + 1)).join('') + '</' + n.tagName.toLowerCase() + '>';
+  const out = {
+    iframes: [...document.querySelectorAll('iframe, object, embed')].map((n) => sk(n)),
+    svgBig: [...document.querySelectorAll('svg')].filter((s) => s.getBoundingClientRect().width > 48).map((s) => ({ parentChain: (() => { const a = []; for (let p = s.parentElement; p && a.length < 6; p = p.parentElement) a.push(p.tagName.toLowerCase() + (p.getAttribute('role') ? `[role=${p.getAttribute('role')}]` : '') + (p.getAttribute('aria-hidden') ? '[aria-hidden]' : '')); return a; })(), w: Math.round(s.getBoundingClientRect().width), h: Math.round(s.getBoundingClientRect().height), shapes: s.querySelectorAll('path,rect,circle,line,text').length })),
+    artifactLike: [...document.querySelectorAll('[data-testid*="artifact" i], [aria-label*="artifact" i], [class*="artifact" i], [role="dialog"], [role="complementary"]')].slice(0, 12).map((n) => sk(n)),
+    versionSwitcher: [...document.querySelectorAll('button, span')].filter((n) => /^\s*\d+\s*\/\s*\d+\s*$/.test(n.textContent) && !n.children.length).map((n) => n.parentElement.outerHTML.replace(/>[^<]+</g, '>…<').slice(0, 400))
+  };
+  copy(JSON.stringify(out, null, 2));
+  return 'скопировано в буфер обмена';
+})()
+~~~
+
+Вставьте результат из буфера. Он нужен, чтобы увидеть: где диаграмма (iframe / svg / панель), доступен ли iframe (`same-origin`, `srcdoc`), какой у обёртки svg `role`/`aria-hidden`, как называется панель артефакта и как выглядит переключатель версий.
+
+### Что проверяется по результатам
+
+- (а) iframe: есть ли `iframe` в `iframes` и `same-origin=false` → содержимое недоступно, в карточке и Markdown должна быть пометка (`extras-embed`).
+- (б) панель вне сообщения: `artifactLike` содержит узел вне `messageRootSelector` → читать через `AnswerCopyContext.collect().artifactPanelEls`.
+- (в) svg в `svgBig` с родителем `button`/`[role=button]`/`[aria-hidden]` → её вырезают `isContentSvg` (`content-utils.js`) и `isUiNode` движка.

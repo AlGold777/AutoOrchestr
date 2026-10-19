@@ -96,4 +96,23 @@ describe('синтетика, по известной структуре', () =>
   test('нет элемента → безопасный объект с пометкой', () => {
     expect(collect(null).notes.length).toBe(1);
   });
+  // синтетика, по известной структуре; селекторы артефактов не проверены вживую
+  test('артефакт: ссылка в сообщении + панель рядом → панель найдена, не сериализуется', () => {
+    mount('<div id="m">Текст<button data-testid="artifact-card">Схема</button></div><aside data-artifact data-artifact-title="Схема"><pre>x</pre></aside>');
+    const c = collect(document.getElementById('m'), { document });
+    expect(c).toMatchObject({ artifactRefs: 1, artifactPanels: 1 });
+    expect(c.artifactPanelEls[0].tagName).toBe('ASIDE');
+    expect(JSON.parse(JSON.stringify(c)).artifactPanelEls).toBeUndefined();
+  });
+  test('артефакт упомянут, панели нет → пометка в notes', () => {
+    mount('<div id="m"><button aria-label="Open artifact">x</button></div>');
+    const c = collect(document.getElementById('m'), { document });
+    expect(c.artifactRefs).toBe(1);
+    expect(c.artifactPanels).toBe(0);
+    expect(c.notes.join()).toMatch(/панель не найдена/);
+  });
+  test('встроенные блоки считаются', () => {
+    mount('<div id="m"><iframe></iframe><object></object></div>');
+    expect(collect(document.getElementById('m')).embeds).toBe(2);
+  });
 });

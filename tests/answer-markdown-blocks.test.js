@@ -476,6 +476,77 @@ describe('block math format is fixed to $$ (not ```math)', () => {
   });
 });
 
+// Разметка Mermaid-блока ChatGPT по образцу, присланному пользователем (синтетика, по этой структуре):
+// шапка «Код Mermaid» + svg с большим <style> + подписи узлов в foreignObject/span + обычный текст дальше.
+// Соглашения id узлов/рёбер mermaid v10/v11 — по памяти, не проверено вживую.
+const BIG_CSS = '#chatgpt-mermaid-_r_3n_{font-family:sans-serif;}@keyframes edge-animation-frame{from{stroke-dashoffset:0}}' + '.x{fill:red}'.repeat(500);
+const node = (id, x, y, label, extra = '') => `<g class="node default" id="chatgpt-mermaid-_r_3n_-flowchart-${id}-0" data-id="${id}" transform="translate(${x}, ${y})">${extra}<foreignObject><div><span class="nodeLabel"><p>${label}</p></span></div></foreignObject></g>`;
+const edge = (a, b, n = 0, cls = 'flowchart-link') => `<path id="chatgpt-mermaid-_r_3n_-L_${a}_${b}_${n}" data-id="L_${a}_${b}_${n}" class="${cls}"/>`;
+const chatgptMermaid = (inner, extraBefore = '') => `<div class="block"><div class="header"><span>Код Mermaid</span><button aria-label="Копировать">Copy</button></div>${extraBefore}` +
+  `<svg id="chatgpt-mermaid-_r_3n_" width="100%" viewBox="0 0 300 300" aria-roledescription="flowchart-v2" role="graphics-document document"><style>${BIG_CSS}</style><g class="root">${inner}</g></svg></div>`;
+const FLOW = '<g class="clusters"><g class="cluster" id="sg1"><rect x="0" y="0" width="150" height="150"/><g class="cluster-label"><foreignObject><span class="nodeLabel"><p>Модули</p></span></foreignObject></g></g></g>' +
+  '<g class="edgePaths">' + edge('A', 'B') + edge('B', 'C', 1) + '</g>' +
+  '<g class="edgeLabels"><g class="edgeLabel"><g class="label" data-id="L_A_B_0"><foreignObject><span class="nodeLabel"><p>есть</p></span></foreignObject></g></g><g class="edgeLabel"><g class="label" data-id="L_B_C_1"></g></g></g>' +
+  '<g class="nodes">' + node('A', 50, 30, 'Семейный реестр') + node('B', 50, 100, 'Источники данных', '<polygon/>') + node('C', 250, 250, 'Календарь') + '</g>';
+
+(fs.existsSync(path.join(__dirname, '..', 'shared', 'answer-markdown.js')) ? describe : describe.skip)('ChatGPT-style mermaid block (синтетика по образцу пользователя)', () => {
+  const Engine = require('../shared/answer-markdown');
+  beforeAll(() => Blocks.register(Engine));
+  const run = (html) => { const h = document.createElement('div'); h.innerHTML = html; return Engine.convert(h, {}); };
+
+  test('svg only: no CSS, no merged labels, header label dropped, flowchart reconstructed and marked', () => {
+    const r = run(`<p>Вот схема:</p>${chatgptMermaid(FLOW)}<p>Особенности: текст после.</p>`);
+    expect(r.markdown).not.toMatch(/keyframes|font-family|stroke-dashoffset|\.x\{/);
+    expect(r.markdown).not.toContain('Код Mermaid');
+    expect(r.markdown).not.toMatch(/Семейный реестрИсточники/);
+    expect(r.markdown).toContain('```mermaid\n%% реконструировано из SVG, возможны расхождения\nflowchart TD');
+    expect(r.markdown).toContain('subgraph sg1 ["Модули"]');
+    expect(r.markdown).toContain('A["Семейный реестр"]');
+    expect(r.markdown).toContain('B{"Источники данных"}');
+    expect(r.markdown).toContain('A -->|есть| B');
+    expect(r.markdown).toContain('B --> C');
+    expect(r.markdown).toMatch(/```\n+Особенности: текст после\./);
+    expect(r.report.found.diagram).toBe(1);
+    expect(r.report.copied.diagram).toBe(1);
+    expect(r.report.mismatches).toEqual([]);
+  });
+
+  test('visible source block in the same wrapper wins: one mermaid block, exact source', () => {
+    const r = run(chatgptMermaid(FLOW, '<pre><code class="language-mermaid">graph TD\n  A[Старт] --> B[Конец]</code></pre>'));
+    expect(r.markdown.match(/```mermaid/g)).toHaveLength(1);
+    expect(r.markdown).toContain('graph TD\n  A[Старт] --> B[Конец]');
+    expect(r.markdown).not.toContain('реконструировано');
+    expect(r.report.mismatches).toEqual([]);
+  });
+
+  test('hidden Code tab / textarea / script type=text/mermaid supply the source', () => {
+    expect(run(chatgptMermaid(FLOW, '<div hidden><pre><code class="language-mermaid">graph LR\nX-->Y</code></pre></div>')).markdown).toContain('```mermaid\ngraph LR\nX-->Y\n```');
+    expect(run(chatgptMermaid(FLOW, '<textarea>sequenceDiagram\nA->>B: hi</textarea>')).markdown).toContain('```mermaid\nsequenceDiagram\nA->>B: hi\n```');
+    expect(run(chatgptMermaid(FLOW, '<script type="text/mermaid">graph TD\nQ-->W</script>')).markdown).toContain('```mermaid\ngraph TD\nQ-->W\n```');
+  });
+
+  test('not a flowchart (sequence) and no source: placeholder + svg without the huge CSS', () => {
+    const r = run(`<div><span>Mermaid</span><svg id="chatgpt-mermaid-_r_9_" viewBox="0 0 100 100" aria-roledescription="sequence"><style>${BIG_CSS}</style><g class="actor"><text>A</text></g><g><text>B</text></g></svg></div>`);
+    expect(r.markdown).toMatch(/тип=diagram, причина=mermaid: рендерер оставил только SVG без исходника; CSS \d+ симв\. вырезан/);
+    expect(r.markdown).toContain('```svg\n<svg');
+    expect(r.markdown).toContain('<!-- CSS из <style>');
+    expect(r.markdown).not.toMatch(/keyframes|font-family/);
+    expect(r.markdown).not.toMatch(/^Mermaid$/m);
+    expect(r.report.mismatches).toEqual([]);
+    expect(r.report.complete).toBe(false);
+  });
+
+  test('flowchart with an unresolvable edge is not guessed: falls back to placeholder', () => {
+    const bad = FLOW.replace(/L_A_B_0/g, 'L_zz_0');
+    expect(run(chatgptMermaid(bad)).markdown).toMatch(/рендерер оставил только SVG/);
+  });
+
+  test('small <style> stays; text of <style>/<script> never appears via diagram source helpers', () => {
+    const r = run('<div class="mermaid"><style>.a{color:red}</style>graph TD;A-->B</div>');
+    expect(r.markdown.trim()).toBe('```mermaid\ngraph TD;A-->B\n```');
+  });
+});
+
 const enginePath = path.join(__dirname, '..', 'shared', 'answer-markdown.js');
 (fs.existsSync(enginePath) ? describe : describe.skip)('integration with the real engine (shared/answer-markdown.js)', () => {
   let Engine;

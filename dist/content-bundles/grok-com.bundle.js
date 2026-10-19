@@ -8046,7 +8046,13 @@
   const SVG_IMG_MIN_SIDE = 48;
   const SVG_IMG_MAX_BASE64 = 400000;
   const SVG_IMG_TOTAL_MAX_BASE64 = 1500000;
-  const SVG_SKIP_ANCESTORS = 'button, [role="button"], [aria-hidden="true"], [inert], header, footer, nav, aside, form, [data-message-part-type="reasoning"]';
+  // Never content: page chrome and reasoning. A picture inside a button / aria-hidden wrapper is
+  // content only when it is not an icon: it looks like a diagram (see looksLikeDiagram).
+  const SVG_HARD_SKIP_ANCESTORS = '[inert], header, footer, nav, aside, form, [data-message-part-type="reasoning"]';
+  const SVG_SOFT_SKIP_ANCESTORS = 'button, [role="button"], [aria-hidden="true"]';
+  const looksLikeDiagram = (svg) => !!svg.querySelector('text, foreignObject')
+    || svg.querySelectorAll('path, rect, circle, ellipse, line, polyline, polygon').length >= 6;
+  const EMBED_SELECTOR = 'iframe, object, embed';
   let lastInlineHtmlNotes = [];
   const utf8ToBase64 = (text) => {
     const bytes = new TextEncoder().encode(text);
@@ -8055,24 +8061,58 @@
     return btoa(binary);
   };
   const isContentSvg = (svg, root) => {
+    let inSoftWrapper = false;
     for (let node = svg.parentElement; node && node !== root.parentElement; node = node.parentElement) {
       if (node.localName === 'svg') return false;
-      if (node.matches?.(SVG_SKIP_ANCESTORS)) return false;
+      if (node.matches?.(SVG_HARD_SKIP_ANCESTORS)) return false;
+      if (node.matches?.(SVG_SOFT_SKIP_ANCESTORS)) inSoftWrapper = true;
     }
     const rect = svg.getBoundingClientRect();
-    return rect.width > SVG_IMG_MIN_SIDE && rect.height > SVG_IMG_MIN_SIDE;
+    if (!(rect.width > SVG_IMG_MIN_SIDE && rect.height > SVG_IMG_MIN_SIDE)) return false;
+    return !inSoftWrapper || looksLikeDiagram(svg);
   };
-  const svgToImage = (svg, doc, state) => {
-    const rect = svg.getBoundingClientRect();
-    const width = Math.round(rect.width);
-    const height = Math.round(rect.height);
+  // Fit the picture to its content (no empty field, nothing cut) and give it the size it has on the
+  // page. The same code is in background/job-orchestrator.js (htmlWithSvgImages); the svg tests keep both equal.
+  const fitSvgToContent = (svg, copy, rect) => {
+    const parse = (value) => String(value || '').trim().split(/[\s,]+/).map(Number);
+    const declared = parse(svg.getAttribute('viewBox'));
+    const view = declared.length === 4 && declared.every(Number.isFinite) && declared[2] > 0 && declared[3] > 0
+      ? { x: declared[0], y: declared[1], w: declared[2], h: declared[3] } : null;
+    // Rendered scale, user units -> screen pixels (preserveAspectRatio "meet" uses the smaller ratio).
+    const scale = view ? Math.min(rect.width / view.w, rect.height / view.h) : 1;
+    let box = view || { x: 0, y: 0, w: rect.width, h: rect.height };
+    try {
+      const bbox = svg.getBBox();
+      if (bbox && bbox.width > 0 && bbox.height > 0) {
+        const pad = Math.min(8, Math.max(1, 0.02 * Math.max(bbox.width, bbox.height))); // up to 8 units for labels and strokes, less on a small drawing
+        const fit = { x: bbox.x - pad, y: bbox.y - pad, w: bbox.width + 2 * pad, h: bbox.height + 2 * pad };
+        // What was visible on the page: the content box cut by the declared view box.
+        const x0 = view ? Math.max(fit.x, view.x) : fit.x;
+        const y0 = view ? Math.max(fit.y, view.y) : fit.y;
+        const x1 = view ? Math.min(fit.x + fit.w, view.x + view.w) : fit.x + fit.w;
+        const y1 = view ? Math.min(fit.y + fit.h, view.y + view.h) : fit.y + fit.h;
+        if (x1 - x0 > 0 && y1 - y0 > 0) box = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+      }
+    } catch (_) {}
+    const pxPerUnit = scale > 0 && Number.isFinite(scale) ? scale : 1;
+    const width = Math.max(1, Math.round(box.w * pxPerUnit));
+    const height = Math.max(1, Math.round(box.h * pxPerUnit));
+    copy.setAttribute('viewBox', `${box.x} ${box.y} ${box.w} ${box.h}`);
+    copy.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    copy.setAttribute('width', String(width));
+    copy.setAttribute('height', String(height));
+    // The page's own size limits (mermaid: max-width:1200px) would crop the standalone picture.
+    ['maxWidth', 'minWidth', 'width', 'height', 'maxHeight', 'minHeight'].forEach((name) => { copy.style[name] = ''; });
+    if (!copy.getAttribute('style')) copy.removeAttribute('style');
+    return { width, height };
+  };
+  const svgToImage = (svg, doc, state, rectOverride = null) => {
+    const rect = rectOverride || svg.getBoundingClientRect();
     const copy = svg.cloneNode(true);
     copy.querySelectorAll('script').forEach((node) => node.remove());
     copy.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
     copy.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
-    if (!copy.getAttribute('viewBox')) copy.setAttribute('viewBox', `0 0 ${width} ${height}`);
-    copy.setAttribute('width', String(width));
-    copy.setAttribute('height', String(height));
+    const { width, height } = fitSvgToContent(svg, copy, rect);
     const base64 = utf8ToBase64(new XMLSerializer().serializeToString(copy));
     state.position += 1;
     if (base64.length > SVG_IMG_MAX_BASE64 || state.total + base64.length > SVG_IMG_TOTAL_MAX_BASE64) {
@@ -8087,7 +8127,41 @@
     img.setAttribute('alt', 'Диаграмма');
     img.setAttribute('width', String(width));
     img.setAttribute('height', String(height));
+    img.setAttribute('data-ao-keep', '1');
     return img;
+  };
+  // An iframe / object / embed would be removed by the sanitizer without a trace. Its content svg
+  // (same-origin document or srcdoc) is saved as a picture like any diagram; anything else becomes a
+  // visible note (host only: no path, query or credentials) and a copyReport entry.
+  const embedToNode = (el, doc, state) => {
+    const kind = String(el.localName || 'iframe');
+    let inner = null;
+    let rect = null;
+    try { inner = el.contentDocument?.querySelector('svg') || null; } catch (_) { inner = null; }
+    if (!inner && el.getAttribute('srcdoc')) {
+      try {
+        inner = new DOMParser().parseFromString(el.getAttribute('srcdoc'), 'text/html').querySelector('svg');
+        if (inner) {
+          const box = (inner.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number);
+          const w = parseFloat(inner.getAttribute('width')) || box[2] || el.getBoundingClientRect().width;
+          const h = parseFloat(inner.getAttribute('height')) || box[3] || el.getBoundingClientRect().height;
+          rect = { width: w, height: h };
+        }
+      } catch (_) { inner = null; }
+    }
+    if (inner) {
+      rect = rect || inner.getBoundingClientRect();
+      if (rect.width > SVG_IMG_MIN_SIDE && rect.height > SVG_IMG_MIN_SIDE) return svgToImage(inner, doc, state, rect);
+    }
+    let host = '';
+    const address = el.getAttribute('src') || el.getAttribute('data') || '';
+    try { host = address ? new URL(address, el.ownerDocument.baseURI).hostname : ''; } catch (_) { host = ''; }
+    state.position += 1;
+    state.notes.push({ type: 'embed', reason: `встроенный блок (${kind}) не скопирован: ${host || 'без адреса'}`, position: state.position });
+    const note = doc.createElement('p');
+    note.textContent = `[встроенный блок не скопирован: ${kind} ${host || 'без адреса'}]`;
+    note.setAttribute('data-ao-keep', '1');
+    return note;
   };
   // sourceRoot has the layout (rects); cloneRoot is its structural copy that is edited.
   const replaceContentSvgs = (sourceRoot, cloneRoot, state) => {
@@ -8099,6 +8173,23 @@
         if (isContentSvg(svg, sourceRoot)) clones[index].replaceWith(svgToImage(svg, cloneRoot.ownerDocument, state));
       } catch (_) {}
     });
+    const embeds = Array.from(sourceRoot.querySelectorAll(EMBED_SELECTOR));
+    const embedClones = Array.from(cloneRoot.querySelectorAll(EMBED_SELECTOR));
+    if (embeds.length !== embedClones.length) return;
+    embeds.forEach((el, index) => {
+      try { embedClones[index].replaceWith(embedToNode(el, cloneRoot.ownerDocument, state)); } catch (_) {}
+    });
+  };
+  // Pictures and notes made above must survive the cleanup that removes buttons and hidden wrappers.
+  const hoistKeptNodes = (clone) => {
+    clone.querySelectorAll('[data-ao-keep]').forEach((node) => {
+      let top = null;
+      for (let n = node.parentElement; n && n !== clone; n = n.parentElement) {
+        if (n.matches(RESPONSE_CLEANUP_SELECTORS)) top = n;
+      }
+      if (top && top.parentNode) top.parentNode.insertBefore(node, top);
+      node.removeAttribute('data-ao-keep');
+    });
   };
 
   const buildInlineHtml = (element, options = {}) => {
@@ -8108,6 +8199,7 @@
     const svgState = { total: 0, position: 0, notes: [] };
     try { replaceContentSvgs(element, clone, svgState); } catch (_) {}
     lastInlineHtmlNotes = svgState.notes;
+    try { hoistKeptNodes(clone); } catch (_) {}
     try { stripHiddenElements(clone); } catch (_) {}
     try {
       clone.querySelectorAll(RESPONSE_CLEANUP_SELECTORS).forEach((node) => node.remove());
@@ -16682,6 +16774,7 @@ const scrollIntoViewSmoothly = async (element) => {
   const BLOCK_SELECTOR = Array.from(BLOCK_TAGS).join(',');
   const MATH_SELECTOR = '.katex, .katex-display, mjx-container, math, .MathJax, .MathJax_Display, [data-math]';
   const DIAGRAM_SELECTOR = '.mermaid, [data-mermaid]';
+  const COPY_LABEL_RE = /^\s*(copy|copied|скопировать|скопировано)\b/i;
   const LINE_NUMBER_RE = /(^|[\s_-])(line-?numbers?|linenumber|gutter|hljs-ln-numbers|hljs-ln-n)([\s_-]|$)/i;
 
   // Private-use sentinels: protect already-rendered fragments / hard breaks from whitespace collapsing.
@@ -16708,6 +16801,7 @@ const scrollIntoViewSmoothly = async (element) => {
       match: handler.match,
       render: handler.render,
       censusSelector: typeof handler.censusSelector === 'string' ? handler.censusSelector : '',
+      claimsUi: handler.claimsUi === true,
       isDefault: Boolean(internal),
       order: registrationOrder++
     };
@@ -16738,6 +16832,19 @@ const scrollIntoViewSmoothly = async (element) => {
     return node && node.nodeType === 1 ? String(node.localName || node.nodeName).toLowerCase() : '';
   }
 
+  // style/script/noscript/template carry no visible text in any namespace (svg:style, svg:script too).
+  const SILENT_TAGS = new Set(['style', 'script', 'noscript', 'template']);
+
+  // textContent without the text of SILENT_TAGS descendants; otherwise exact (nothing is normalized).
+  function cleanText(node) {
+    if (node.nodeType === 3) return node.data;
+    if (node.nodeType !== 1 && node.nodeType !== 11) return '';
+    if (node.nodeType === 1 && SILENT_TAGS.has(tagOf(node))) return '';
+    let out = '';
+    for (const c of (node.nodeType === 1 ? childrenOf(node) : Array.from(node.childNodes))) out += cleanText(c);
+    return out;
+  }
+
   function childrenOf(node) {
     if (node.nodeType === 1) {
       if (node.shadowRoot) return Array.from(node.shadowRoot.childNodes);
@@ -16757,13 +16864,30 @@ const scrollIntoViewSmoothly = async (element) => {
     return safe(() => (el.style && el.style[prop]) || '', '');
   }
 
+  // Minimal ctx for claimsUi handlers' match() when called outside a conversion (census, UI filter).
+  const LIGHT_CTX = Object.freeze({
+    provider: null, options: {}, position: 0, report: null,
+    convertChildren: () => '', fence, placeholder: () => '', text: (el) => cleanText(el)
+  });
+
+  // A handler with claimsUi:true that matches the element takes it out of the "interface" class:
+  // it is counted by the census and reaches the handler even if it is an iframe/role=button/aria-hidden node.
+  function isClaimed(el) {
+    for (const h of blockHandlers) {
+      if (h.claimsUi && safe(() => h.match(el, LIGHT_CTX), false)) return true;
+    }
+    return false;
+  }
+
   function isUiNode(el, rules) {
+    if (isClaimed(el)) return false;
     const tag = tagOf(el);
     if (SKIP_TAGS.has(tag)) return true;
     if (tag === 'input') return el.getAttribute('type') !== 'checkbox';
     if (el.hasAttribute('hidden') || el.hasAttribute('inert')) return true;
     if (el.getAttribute('aria-hidden') === 'true') return true;
     if (el.getAttribute('role') === 'button') return true;
+    if (COPY_LABEL_RE.test(el.getAttribute('aria-label') || '')) return true;
     if (inlineStyle(el, 'display') === 'none' || inlineStyle(el, 'visibility') === 'hidden') return true;
     if (rules && typeof rules.isUiNode === 'function' && safe(() => rules.isUiNode(el), false)) return true;
     return false;
@@ -16985,7 +17109,7 @@ const scrollIntoViewSmoothly = async (element) => {
       convertChildren: (el) => flow(childrenOf(el), st).join('\n\n'),
       fence,
       placeholder: (type, reason) => addPlaceholder(st, type, reason, position, currentType),
-      text: (el) => el.textContent || ''
+      text: (el) => cleanText(el)
     };
     // internal: built-in handlers reach the conversion state through ctx._st (not part of the public contract)
     Object.defineProperty(ctx, '_st', { value: st, enumerable: false });
@@ -17039,7 +17163,7 @@ const scrollIntoViewSmoothly = async (element) => {
       if (absorbBefore) {
         for (const k of Object.keys(absorbBefore)) st.found[k] = Math.max(0, (st.found[k] || 0) - absorbBefore[k]);
       }
-      return { markdown: result.markdown };
+      return { markdown: result.markdown, type };
     }
     return NO_HANDLER;
   }
@@ -17075,7 +17199,7 @@ const scrollIntoViewSmoothly = async (element) => {
         if (isUiNode(node, st.rules)) continue;
         const res = runHandlers(node, st);
         if (res !== NO_HANDLER) {
-          const blockLike = res.markdown.includes('\n') || BLOCK_TAGS.has(tagOf(node)) || hasBlockDescendant(node);
+          const blockLike = res.markdown.includes('\n') || res.type === 'svg' || res.type === 'diagram' || BLOCK_TAGS.has(tagOf(node)) || hasBlockDescendant(node);
           if (blockLike) { flush(); if (res.markdown) blocks.push(res.markdown); } else run.push({ md: res.markdown });
           continue;
         }
@@ -17185,7 +17309,7 @@ const scrollIntoViewSmoothly = async (element) => {
       case 'em': case 'i': return wrapMarks('*', kids());
       case 'del': case 's': case 'strike': return wrapMarks('~~', kids());
       case 'sup': case 'sub': { const inner = kids(); return inner ? `<${tag}>${inner}</${tag}>` : ''; }
-      case 'code': return token(st, codeSpan(el.textContent || ''));
+      case 'code': return token(st, codeSpan(cleanText(el)));
       case 'input':
         return el.getAttribute('type') === 'checkbox' ? (el.hasAttribute('checked') ? '[x] ' : '[ ] ') : '';
       case 'a': {
@@ -17236,7 +17360,8 @@ const scrollIntoViewSmoothly = async (element) => {
 
   function isCodeUi(el, rules) {
     const tag = tagOf(el);
-    if (tag === 'button' || tag === 'svg' || el.getAttribute('role') === 'button') return true;
+    if (tag === 'button' || tag === 'svg' || SILENT_TAGS.has(tag) || el.getAttribute('role') === 'button') return true;
+    if (COPY_LABEL_RE.test(el.getAttribute('aria-label') || '')) return true;
     if (el.hasAttribute('data-line-number') || el.hasAttribute('data-ln')) return true;
     if (LINE_NUMBER_RE.test(el.getAttribute('class') || '')) return true;
     if (inlineStyle(el, 'userSelect') === 'none' || inlineStyle(el, 'webkitUserSelect') === 'none') return true;
@@ -17373,7 +17498,7 @@ const scrollIntoViewSmoothly = async (element) => {
       registerBlock({
         name: `core-unhandled-${type}`, type, priority: -100,
         match: (el, ctx) => tagOf(el) !== 'pre' && builtinType(el, stRulesFromCtx(ctx)) === type,
-        render: (el, ctx) => ({ markdown: ctx.placeholder(type, 'обработчик типа не подключён', el), copied: 0 })
+        render: (el, ctx) => ({ markdown: ctx.placeholder(type, type === 'svg' || type === 'diagram' ? 'нет обработчика диаграммы' : 'обработчик типа не подключён', el), copied: 0 })
       }, true);
     });
   }
@@ -17417,6 +17542,11 @@ const scrollIntoViewSmoothly = async (element) => {
       blocks = flow([rootEl], st);
     } catch (err) {
       blocks = [addPlaceholder(st, 'ответ', `сбой конвертера: ${err && err.message}`, st.pos + 1, null)];
+    }
+    if (Number(context.artifactRefs) > 0 && !(Number(context.artifactPanels) > 0)) {
+      st.found.artifact = (st.found.artifact || 0) + 1;
+      blocks.push(addPlaceholder(st, 'artifact',
+        `панель артефакта не найдена: ссылок ${Number(context.artifactRefs)}, панелей 0`, st.pos + 1, 'artifact'));
     }
     let markdown = blocks.join('\n\n');
     if (st.footers.length) markdown += (markdown ? '\n\n' : '') + st.footers.join('\n');
@@ -17991,14 +18121,17 @@ const scrollIntoViewSmoothly = async (element) => {
     sourceList: '[data-source-list], [data-testid="sources"], [data-testid="source-list"]',
     searchCard: '[data-search-result], [data-testid="search-result"]',
     file: 'a[download], [data-file-name], [data-testid="file-attachment"]',
-    output: '[data-code-interpreter], [data-testid="code-interpreter"], [data-code-output]'
+    output: '[data-code-interpreter], [data-testid="code-interpreter"], [data-code-output]',
+    // Встроенные блоки: iframe/object/embed. Живой Claude с диаграммой не снят — не проверено вживую.
+    embed: 'iframe, object, embed'
   };
   // Для census у WP1/WP5: селекторы тех же элементов, что поглощают обработчики.
   const CENSUS_SELECTORS = {
     artifact: SELECTORS.artifact,
     source: [SELECTORS.citation, SELECTORS.sourceList, SELECTORS.searchCard].join(', '),
     file: SELECTORS.file,
-    output: SELECTORS.output
+    output: SELECTORS.output,
+    embed: SELECTORS.embed
   };
 
   const citationState = new WeakMap(); // report -> { byUrl: Map(url -> номер сноски) }
@@ -18157,14 +18290,68 @@ const scrollIntoViewSmoothly = async (element) => {
     })
   };
 
-  const handlers = [artifactHandler, citationHandler, sourceListHandler, fileHandler, outputHandler];
+  // ---------- встроенные блоки: iframe / object / embed ----------
+  // Содержимое читается, только если оно доступно: srcdoc, same-origin contentDocument. Иначе — заглушка, не пропуск.
+  function embedDocument(el) {
+    const srcdoc = el.getAttribute('srcdoc');
+    if (srcdoc) { try { return new DOMParser().parseFromString(srcdoc, 'text/html'); } catch (_) { return null; } }
+    try { return el.contentDocument || null; } catch (_) { return null; } // cross-origin бросает/даёт null
+  }
+  function hostOf(url) { try { return new URL(url, 'http://x').host; } catch (_) { return ''; } }
+
+  const embedHandler = {
+    name: 'extras-embed', type: 'artifact', priority: 200, censusSelector: SELECTORS.embed, claimsUi: true,
+    match: (el) => el.matches && el.matches(SELECTORS.embed),
+    render: guard('artifact', (el, ctx) => {
+      const tag = el.tagName.toLowerCase();
+      const title = oneLine(attr(el, 'title', 'aria-label', 'name')) || 'без названия';
+      const src = attr(el, 'src', 'data');
+      const marker = `Встроенный блок: ${tag}, ${title}`;
+      const doc = embedDocument(el);
+      const body = doc && doc.documentElement;
+      if (!body || !oneLine(body.textContent) && !body.querySelector('svg, canvas, img')) {
+        const why = `${tag} не прочитан (${src ? `cross-origin или нет доступа, src=${hostOf(src) || 'неизвестен'}` : 'нет src/srcdoc'})`;
+        return { markdown: `${marker}\n\n${ctx.placeholder('artifact', why, el)}`, copied: 0 };
+      }
+      const svgs = Array.from(body.querySelectorAll('svg'));
+      if (svgs.length === 1 && !oneLine((body.querySelector('body') || body).textContent.replace(svgs[0].textContent, ''))) {
+        let out = svgs[0].outerHTML;
+        if (!/^<svg\b[^>]*\sxmlns=/i.test(out)) out = out.replace(/^<svg\b/i, '<svg xmlns="http://www.w3.org/2000/svg"');
+        return { markdown: `${marker}\n\n${ctx.fence(out, 'svg')}`, copied: 1 };
+      }
+      return { markdown: `${marker}\n\n${ctx.fence(body.outerHTML, 'html')}`, copied: 1 };
+    })
+  };
+
+  // ---------- svg-диаграмма в обёртке button/role=button/aria-hidden ----------
+  // Движок и content-utils считают такие обёртки интерфейсом и вырезают. Эвристика (не проверено вживую):
+  // контентная картинка — не иконка: >=4 фигур или <text> или viewBox от 100x100.
+  function isContentSvg(svg) {
+    if (svg.querySelector('text')) return true;
+    if (svg.querySelectorAll('path, rect, circle, ellipse, line, polyline, polygon').length >= 4) return true;
+    const vb = String(svg.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number);
+    return vb.length === 4 && vb[2] >= 100 && vb[3] >= 100;
+  }
+  const wrappedSvgHandler = {
+    name: 'extras-wrapped-svg', type: 'svg', priority: 200, claimsUi: true, // claimsUi: match() должен вызываться ДО проверки isUiNode (запрос к WP1)
+    match: (el) => el.matches && el.matches('button, [role="button"], [aria-hidden="true"]')
+      && Array.from(el.querySelectorAll('svg')).some(isContentSvg),
+    render: guard('svg', (el, ctx) => {
+      const svg = Array.from(el.querySelectorAll('svg')).find(isContentSvg);
+      let out = svg.outerHTML;
+      if (!/^<svg\b[^>]*\sxmlns=/i.test(out)) out = out.replace(/^<svg\b/i, '<svg xmlns="http://www.w3.org/2000/svg"');
+      return { markdown: ctx.fence(out, 'svg'), copied: 1 };
+    })
+  };
+
+  const handlers = [artifactHandler, embedHandler, wrappedSvgHandler, citationHandler, sourceListHandler, fileHandler, outputHandler];
 
   function register(engine) {
     handlers.forEach((h) => engine.registerBlock(h));
     return handlers.length;
   }
 
-  return { SELECTORS, CENSUS_SELECTORS, handlers, register };
+  return { SELECTORS, CENSUS_SELECTORS, handlers, register, isContentSvg };
 });
 
 
@@ -18561,15 +18748,27 @@ const scrollIntoViewSmoothly = async (element) => {
     return r.top < v.top - 1 || r.bottom > v.bottom + 1;
   }
 
+  // Артефакты и встроенные блоки. Селекторы по общим признакам, НЕ ПРОВЕРЕНО ВЖИВУЮ (реального образца Claude с артефактом/диаграммой нет).
+  const ARTIFACT_REF_SELECTOR = '[data-testid*="artifact" i], [aria-label*="artifact" i], [class*="artifact" i]';
+  const ARTIFACT_PANEL_SELECTOR = '[data-artifact], [data-canvas], [data-testid*="artifact" i], [role="dialog"][aria-label*="artifact" i], [role="complementary"][aria-label*="artifact" i], [role="dialog"][aria-label*="canvas" i]';
+  const EMBED_SELECTOR = 'iframe, object, embed';
+
+  function detectArtifacts(el, opts) {
+    const doc = opts.document || el.ownerDocument;
+    const refs = Array.from(el.querySelectorAll(ARTIFACT_REF_SELECTOR));
+    const panels = doc ? Array.from(doc.querySelectorAll(ARTIFACT_PANEL_SELECTOR)).filter((p) => !el.contains(p) && !p.contains(el)) : [];
+    return { refs: refs.length, panels };
+  }
+
   /**
    * collect(messageEl, options) -> context для AnswerMarkdown.convert({ context }).
    * options: { turn?, isLatest?, document?, scroller?, assistantSelector?, userSelector?, expand? (по умолчанию false) }
-   * Результат: { version, regenerated, generating, truncated, collapsed, continuationParts, lazy, notes[] };
-   * непубличные (не сериализуются): .parts — элементы продолжений, .versionInfo.
+   * Результат: { version, regenerated, generating, truncated, collapsed, continuationParts, lazy, artifactRefs, artifactPanels, embeds, notes[] };
+   * непубличные (не сериализуются): .parts — элементы продолжений, .artifactPanelEls — панели артефактов вне сообщения, .versionInfo.
    */
   function collect(messageEl, options) {
     const opts = options || {};
-    const ctx = { version: null, regenerated: false, generating: false, truncated: false, collapsed: 0, continuationParts: 0, lazy: false, notes: [] };
+    const ctx = { version: null, regenerated: false, generating: false, truncated: false, collapsed: 0, continuationParts: 0, lazy: false, artifactRefs: 0, artifactPanels: 0, embeds: 0, notes: [] };
     if (!messageEl || !messageEl.querySelector) {
       ctx.notes.push('элемент ответа не передан');
       return ctx;
@@ -18593,6 +18792,14 @@ const scrollIntoViewSmoothly = async (element) => {
     ctx.continuationParts = parts.length;
     Object.defineProperty(ctx, 'parts', { value: parts, enumerable: false });
     Object.defineProperty(ctx, 'versionInfo', { value: v, enumerable: false });
+
+    const art = detectArtifacts(messageEl, opts);
+    ctx.artifactRefs = art.refs;
+    ctx.artifactPanels = art.panels.length;
+    ctx.embeds = messageEl.querySelectorAll(EMBED_SELECTOR).length;
+    Object.defineProperty(ctx, 'artifactPanelEls', { value: art.panels, enumerable: false });
+    if (art.refs && !art.panels.length) ctx.notes.push('в сообщении есть артефакт, панель не найдена: содержимое не прочитано');
+    if (ctx.embeds) ctx.notes.push(`встроенных блоков (iframe/object/embed): ${ctx.embeds}`);
 
     ctx.lazy = detectLazy(messageEl, opts);
     if (ctx.lazy) ctx.notes.push('ответ частично вне видимой области списка (виртуализация); полнота не гарантирована');
@@ -23206,6 +23413,64 @@ const scrollIntoViewSmoothly = async (element) => {
     flags: {},
     complete: false
   });
+  // Artifact / Canvas panels live outside the message element: they are converted with the same engine
+  // and appended ("Артефакт: название, тип" + content), counted in the report. The same code is in
+  // background/job-orchestrator.js (extractLatestAssistantSnapshotInPage); tests keep both equal.
+  const artifactPanelsMarkdown = (engine, context, provider) => {
+    const all = context && context.artifactPanelEls ? Array.from(context.artifactPanelEls) : [];
+    // Nested matches of the loose panel selector are one panel.
+    const panels = all.filter((panel) => !all.some((other) => other !== panel && other.contains(panel)));
+    const parts = [];
+    const sum = { found: {}, copied: {}, placeholders: [], mismatches: [], complete: true };
+    panels.forEach((panel, index) => {
+      const title = String(panel.getAttribute('aria-label') || panel.getAttribute('data-title')
+        || panel.querySelector('h1, h2, h3')?.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 120) || 'без названия';
+      const kind = String(panel.getAttribute('data-artifact-type') || panel.getAttribute('data-type') || '').trim().slice(0, 40);
+      const heading = `### Артефакт: ${title}${kind ? `, ${kind}` : ''}`;
+      try {
+        const converted = engine.convert(panel, { provider: provider || null });
+        const body = String(converted?.markdown ?? '').trim();
+        const rep = converted?.report && typeof converted.report === 'object' ? converted.report : null;
+        if (!rep || !body) throw new Error(!rep ? 'движок не вернул отчёт' : 'панель пуста');
+        parts.push(`${heading}\n\n${body}`);
+        Object.entries(rep.found || {}).forEach(([k, v]) => { sum.found[k] = (sum.found[k] || 0) + v; });
+        Object.entries(rep.copied || {}).forEach(([k, v]) => { sum.copied[k] = (sum.copied[k] || 0) + v; });
+        sum.placeholders.push(...(rep.placeholders || []));
+        sum.mismatches.push(...(rep.mismatches || []));
+        if (rep.complete === false) sum.complete = false;
+      } catch (err) {
+        const reason = `панель артефакта не прочитана: ${String(err?.message || err).replace(/[\],\n\r]+/g, ' ').slice(0, 80)}`;
+        parts.push(`${heading}\n\n[НЕ СКОПИРОВАНО: тип=artifact, причина=${reason}, позиция=${index + 1}]`);
+        sum.placeholders.push({ type: 'artifact', reason, position: index + 1 });
+        sum.complete = false;
+      }
+    });
+    return { markdown: parts.join('\n\n'), sum, panels: panels.length };
+  };
+  const mergeArtifactPanels = (markdown, report, panelsResult, context) => {
+    let outMarkdown = markdown;
+    let outReport = report;
+    if (panelsResult.panels) {
+      outMarkdown = `${markdown}\n\n${panelsResult.markdown}`;
+      const merge = (a, b) => { const out = { ...a }; Object.entries(b).forEach(([k, v]) => { out[k] = (out[k] || 0) + v; }); return out; };
+      outReport = {
+        ...report,
+        found: merge(report.found || {}, panelsResult.sum.found),
+        copied: merge(report.copied || {}, panelsResult.sum.copied),
+        placeholders: [...(report.placeholders || []), ...panelsResult.sum.placeholders],
+        mismatches: [...(report.mismatches || []), ...panelsResult.sum.mismatches],
+        complete: report.complete !== false && panelsResult.sum.complete
+      };
+    } else if (context && context.artifactRefs > 0 && !(report.placeholders || []).some((item) => item.type === 'artifact')) {
+      // The message points at an artifact whose panel is not on the page.
+      outReport = {
+        ...report,
+        placeholders: [...(report.placeholders || []), { type: 'artifact', reason: 'панель артефакта не найдена: содержимое не прочитано', position: 0 }],
+        complete: false
+      };
+    }
+    return { markdown: outMarkdown, report: outReport };
+  };
   const buildAnswerMarkdownFields = (element, provider) => {
     const stub = (reason) => ({
       answerMarkdown: `[НЕ СКОПИРОВАНО: тип=answer, причина=${reason}, позиция=1]`,
@@ -23220,7 +23485,7 @@ const scrollIntoViewSmoothly = async (element) => {
       if (ctxModule) {
         const fn = ['collect', 'capture', 'build'].find((name) => typeof ctxModule[name] === 'function');
         if (fn) {
-          try { context = ctxModule[fn](element, { provider, isLatest: true }); } catch (_) { context = undefined; }
+          try { context = ctxModule[fn](element, { provider, isLatest: true, document: element.ownerDocument }); } catch (_) { context = undefined; }
         }
       }
       const result = engine.convert(element, { provider: provider || null, context });
@@ -23232,7 +23497,13 @@ const scrollIntoViewSmoothly = async (element) => {
         out.copyReport = { ...report, placeholders: [...(report.placeholders || []), ...out.copyReport.placeholders], complete: false };
         return out;
       }
-      return { answerMarkdown: markdown, copyReport: report };
+      const merged = mergeArtifactPanels(markdown, report, artifactPanelsMarkdown(engine, context, provider), context);
+      if (merged.markdown.length > ANSWER_MARKDOWN_MAX_CHARS) {
+        const out = stub(`markdown длиннее ${ANSWER_MARKDOWN_MAX_CHARS} знаков`);
+        out.copyReport = { ...merged.report, placeholders: [...(merged.report.placeholders || []), ...out.copyReport.placeholders], complete: false };
+        return out;
+      }
+      return { answerMarkdown: merged.markdown, copyReport: merged.report };
     } catch (err) {
       return stub(`исключение: ${String(err?.message || err).slice(0, 120)}`);
     }

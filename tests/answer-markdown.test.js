@@ -216,7 +216,7 @@ describe('12. Census, report, заглушки', () => {
   test('неподдержанные типы — заглушка по формату, а не пропуск', () => {
     const { markdown, report } = run('<p>a</p><svg><circle/></svg><span class="katex">x</span>');
     expect(markdown).toMatch(AM.PLACEHOLDER_RE);
-    expect(markdown).toContain('[НЕ СКОПИРОВАНО: тип=svg, причина=обработчик типа не подключён, позиция=1]');
+    expect(markdown).toContain('[НЕ СКОПИРОВАНО: тип=svg, причина=нет обработчика диаграммы, позиция=1]');
     expect(report.placeholders.map((p) => p.type).sort()).toEqual(['math', 'svg']);
     expect(report.found).toEqual({ svg: 1, math: 1 });
     expect(report.mismatches).toEqual([]);
@@ -425,5 +425,53 @@ describe('GFM: таблицы и task-списки', () => {
 
   test('автоссылка остаётся ссылкой', () => {
     expect(md('<p><a href="https://e.com">https://e.com</a></p>')).toBe('[https://e.com](https://e.com)');
+  });
+});
+
+// Защита по образцу разметки Mermaid-блока ChatGPT (синтетика, по структуре из присланного образца текста страницы;
+// это не воспроизведение дефекта конвертера).
+describe('Защита: диаграммы без обработчика, style/script, шапки кода', () => {
+  const SVG = '<svg id="chatgpt-mermaid-_r_3n_"><style>#x{fill:red}</style><g><foreignObject><div><span>Модули</span></div><div><span>Реестр</span></div></foreignObject></g></svg>';
+  test('svg по образцу Mermaid-блока ChatGPT без обработчика: заглушка, CSS и подписи не выводятся, текст вокруг не склеен', () => {
+    const r = run(`<p>До</p><div>${SVG}</div><p>После</p>`);
+    expect(r.markdown).toBe('До\n\n[НЕ СКОПИРОВАНО: тип=svg, причина=нет обработчика диаграммы, позиция=1]\n\nПосле');
+    expect(r.report.mismatches).toEqual([]);
+    expect(r.report.complete).toBe(false);
+  });
+  test('style/script/noscript/template не попадают в текст', () => {
+    expect(md('<p>a<style>.x{}</style><script>1</script><noscript>n</noscript><template>t</template>b</p>')).toBe('ab');
+    expect(md('<p><code>a<script>1</script>b</code></p>')).toBe('`ab`');
+  });
+  test('шапка кода: кнопки и aria-label Copy не попадают', () => {
+    expect(md('<pre><div><button>Copy</button><span aria-label="Copy">c</span></div><div>x = 1</div></pre>')).toBe('```\nx = 1\n```');
+    expect(md('<pre><div><span>python</span><button>Copy</button></div><code>x = 1</code></pre>')).toBe('```\nx = 1\n```');
+  });
+});
+
+describe('claimsUi и контекст артефактов', () => {
+  test('claimsUi: обработчик получает iframe/role=button/aria-hidden, census считает', () => {
+    const off = AM.registerBlock({
+      name: 't-claim', type: 'artifact', priority: 100, claimsUi: true, censusSelector: 'iframe, .cl',
+      match: (e) => e.localName === 'iframe' || (e.classList && e.classList.contains('cl')),
+      render: (e, ctx) => ({ markdown: 'EMBED' })
+    });
+    const r = run('<p>x</p><iframe src="http://e"></iframe><div class="cl" role="button" aria-hidden="true">z</div>');
+    const c = AM.census(el('<iframe></iframe><div class="cl" aria-hidden="true"></div>'));
+    off();
+    expect(r.markdown).toBe('x\n\nEMBED\n\nEMBED');
+    expect(r.report.found).toEqual({ artifact: 2 });
+    expect(c).toEqual({ artifact: 2 });
+    expect(r.report.complete).toBe(true);
+    expect(run('<p>x</p><iframe></iframe>').report.found).toEqual({});
+  });
+
+  test('artifactRefs>0 и artifactPanels==0 -> заглушка и учёт в report', () => {
+    const r = run('<p>x</p>', { context: { artifactRefs: 2, artifactPanels: 0 } });
+    expect(r.markdown).toContain('[НЕ СКОПИРОВАНО: тип=artifact, причина=панель артефакта не найдена');
+    expect(r.report.found).toEqual({ artifact: 1 });
+    expect(r.report.placeholders).toHaveLength(1);
+    expect(r.report.mismatches).toEqual([]);
+    expect(r.report.complete).toBe(false);
+    expect(run('<p>x</p>', { context: { artifactRefs: 2, artifactPanels: 1 } }).report.complete).toBe(true);
   });
 });

@@ -1267,7 +1267,13 @@
   const SVG_IMG_MIN_SIDE = 48;
   const SVG_IMG_MAX_BASE64 = 400000;
   const SVG_IMG_TOTAL_MAX_BASE64 = 1500000;
-  const SVG_SKIP_ANCESTORS = 'button, [role="button"], [aria-hidden="true"], [inert], header, footer, nav, aside, form, [data-message-part-type="reasoning"]';
+  // Never content: page chrome and reasoning. A picture inside a button / aria-hidden wrapper is
+  // content only when it is not an icon: it looks like a diagram (see looksLikeDiagram).
+  const SVG_HARD_SKIP_ANCESTORS = '[inert], header, footer, nav, aside, form, [data-message-part-type="reasoning"]';
+  const SVG_SOFT_SKIP_ANCESTORS = 'button, [role="button"], [aria-hidden="true"]';
+  const looksLikeDiagram = (svg) => !!svg.querySelector('text, foreignObject')
+    || svg.querySelectorAll('path, rect, circle, ellipse, line, polyline, polygon').length >= 6;
+  const EMBED_SELECTOR = 'iframe, object, embed';
   let lastInlineHtmlNotes = [];
   const utf8ToBase64 = (text) => {
     const bytes = new TextEncoder().encode(text);
@@ -1276,24 +1282,58 @@
     return btoa(binary);
   };
   const isContentSvg = (svg, root) => {
+    let inSoftWrapper = false;
     for (let node = svg.parentElement; node && node !== root.parentElement; node = node.parentElement) {
       if (node.localName === 'svg') return false;
-      if (node.matches?.(SVG_SKIP_ANCESTORS)) return false;
+      if (node.matches?.(SVG_HARD_SKIP_ANCESTORS)) return false;
+      if (node.matches?.(SVG_SOFT_SKIP_ANCESTORS)) inSoftWrapper = true;
     }
     const rect = svg.getBoundingClientRect();
-    return rect.width > SVG_IMG_MIN_SIDE && rect.height > SVG_IMG_MIN_SIDE;
+    if (!(rect.width > SVG_IMG_MIN_SIDE && rect.height > SVG_IMG_MIN_SIDE)) return false;
+    return !inSoftWrapper || looksLikeDiagram(svg);
   };
-  const svgToImage = (svg, doc, state) => {
-    const rect = svg.getBoundingClientRect();
-    const width = Math.round(rect.width);
-    const height = Math.round(rect.height);
+  // Fit the picture to its content (no empty field, nothing cut) and give it the size it has on the
+  // page. The same code is in background/job-orchestrator.js (htmlWithSvgImages); the svg tests keep both equal.
+  const fitSvgToContent = (svg, copy, rect) => {
+    const parse = (value) => String(value || '').trim().split(/[\s,]+/).map(Number);
+    const declared = parse(svg.getAttribute('viewBox'));
+    const view = declared.length === 4 && declared.every(Number.isFinite) && declared[2] > 0 && declared[3] > 0
+      ? { x: declared[0], y: declared[1], w: declared[2], h: declared[3] } : null;
+    // Rendered scale, user units -> screen pixels (preserveAspectRatio "meet" uses the smaller ratio).
+    const scale = view ? Math.min(rect.width / view.w, rect.height / view.h) : 1;
+    let box = view || { x: 0, y: 0, w: rect.width, h: rect.height };
+    try {
+      const bbox = svg.getBBox();
+      if (bbox && bbox.width > 0 && bbox.height > 0) {
+        const pad = Math.min(8, Math.max(1, 0.02 * Math.max(bbox.width, bbox.height))); // up to 8 units for labels and strokes, less on a small drawing
+        const fit = { x: bbox.x - pad, y: bbox.y - pad, w: bbox.width + 2 * pad, h: bbox.height + 2 * pad };
+        // What was visible on the page: the content box cut by the declared view box.
+        const x0 = view ? Math.max(fit.x, view.x) : fit.x;
+        const y0 = view ? Math.max(fit.y, view.y) : fit.y;
+        const x1 = view ? Math.min(fit.x + fit.w, view.x + view.w) : fit.x + fit.w;
+        const y1 = view ? Math.min(fit.y + fit.h, view.y + view.h) : fit.y + fit.h;
+        if (x1 - x0 > 0 && y1 - y0 > 0) box = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+      }
+    } catch (_) {}
+    const pxPerUnit = scale > 0 && Number.isFinite(scale) ? scale : 1;
+    const width = Math.max(1, Math.round(box.w * pxPerUnit));
+    const height = Math.max(1, Math.round(box.h * pxPerUnit));
+    copy.setAttribute('viewBox', `${box.x} ${box.y} ${box.w} ${box.h}`);
+    copy.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    copy.setAttribute('width', String(width));
+    copy.setAttribute('height', String(height));
+    // The page's own size limits (mermaid: max-width:1200px) would crop the standalone picture.
+    ['maxWidth', 'minWidth', 'width', 'height', 'maxHeight', 'minHeight'].forEach((name) => { copy.style[name] = ''; });
+    if (!copy.getAttribute('style')) copy.removeAttribute('style');
+    return { width, height };
+  };
+  const svgToImage = (svg, doc, state, rectOverride = null) => {
+    const rect = rectOverride || svg.getBoundingClientRect();
     const copy = svg.cloneNode(true);
     copy.querySelectorAll('script').forEach((node) => node.remove());
     copy.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
     copy.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
-    if (!copy.getAttribute('viewBox')) copy.setAttribute('viewBox', `0 0 ${width} ${height}`);
-    copy.setAttribute('width', String(width));
-    copy.setAttribute('height', String(height));
+    const { width, height } = fitSvgToContent(svg, copy, rect);
     const base64 = utf8ToBase64(new XMLSerializer().serializeToString(copy));
     state.position += 1;
     if (base64.length > SVG_IMG_MAX_BASE64 || state.total + base64.length > SVG_IMG_TOTAL_MAX_BASE64) {
@@ -1308,7 +1348,41 @@
     img.setAttribute('alt', 'Диаграмма');
     img.setAttribute('width', String(width));
     img.setAttribute('height', String(height));
+    img.setAttribute('data-ao-keep', '1');
     return img;
+  };
+  // An iframe / object / embed would be removed by the sanitizer without a trace. Its content svg
+  // (same-origin document or srcdoc) is saved as a picture like any diagram; anything else becomes a
+  // visible note (host only: no path, query or credentials) and a copyReport entry.
+  const embedToNode = (el, doc, state) => {
+    const kind = String(el.localName || 'iframe');
+    let inner = null;
+    let rect = null;
+    try { inner = el.contentDocument?.querySelector('svg') || null; } catch (_) { inner = null; }
+    if (!inner && el.getAttribute('srcdoc')) {
+      try {
+        inner = new DOMParser().parseFromString(el.getAttribute('srcdoc'), 'text/html').querySelector('svg');
+        if (inner) {
+          const box = (inner.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number);
+          const w = parseFloat(inner.getAttribute('width')) || box[2] || el.getBoundingClientRect().width;
+          const h = parseFloat(inner.getAttribute('height')) || box[3] || el.getBoundingClientRect().height;
+          rect = { width: w, height: h };
+        }
+      } catch (_) { inner = null; }
+    }
+    if (inner) {
+      rect = rect || inner.getBoundingClientRect();
+      if (rect.width > SVG_IMG_MIN_SIDE && rect.height > SVG_IMG_MIN_SIDE) return svgToImage(inner, doc, state, rect);
+    }
+    let host = '';
+    const address = el.getAttribute('src') || el.getAttribute('data') || '';
+    try { host = address ? new URL(address, el.ownerDocument.baseURI).hostname : ''; } catch (_) { host = ''; }
+    state.position += 1;
+    state.notes.push({ type: 'embed', reason: `встроенный блок (${kind}) не скопирован: ${host || 'без адреса'}`, position: state.position });
+    const note = doc.createElement('p');
+    note.textContent = `[встроенный блок не скопирован: ${kind} ${host || 'без адреса'}]`;
+    note.setAttribute('data-ao-keep', '1');
+    return note;
   };
   // sourceRoot has the layout (rects); cloneRoot is its structural copy that is edited.
   const replaceContentSvgs = (sourceRoot, cloneRoot, state) => {
@@ -1320,6 +1394,23 @@
         if (isContentSvg(svg, sourceRoot)) clones[index].replaceWith(svgToImage(svg, cloneRoot.ownerDocument, state));
       } catch (_) {}
     });
+    const embeds = Array.from(sourceRoot.querySelectorAll(EMBED_SELECTOR));
+    const embedClones = Array.from(cloneRoot.querySelectorAll(EMBED_SELECTOR));
+    if (embeds.length !== embedClones.length) return;
+    embeds.forEach((el, index) => {
+      try { embedClones[index].replaceWith(embedToNode(el, cloneRoot.ownerDocument, state)); } catch (_) {}
+    });
+  };
+  // Pictures and notes made above must survive the cleanup that removes buttons and hidden wrappers.
+  const hoistKeptNodes = (clone) => {
+    clone.querySelectorAll('[data-ao-keep]').forEach((node) => {
+      let top = null;
+      for (let n = node.parentElement; n && n !== clone; n = n.parentElement) {
+        if (n.matches(RESPONSE_CLEANUP_SELECTORS)) top = n;
+      }
+      if (top && top.parentNode) top.parentNode.insertBefore(node, top);
+      node.removeAttribute('data-ao-keep');
+    });
   };
 
   const buildInlineHtml = (element, options = {}) => {
@@ -1329,6 +1420,7 @@
     const svgState = { total: 0, position: 0, notes: [] };
     try { replaceContentSvgs(element, clone, svgState); } catch (_) {}
     lastInlineHtmlNotes = svgState.notes;
+    try { hoistKeptNodes(clone); } catch (_) {}
     try { stripHiddenElements(clone); } catch (_) {}
     try {
       clone.querySelectorAll(RESPONSE_CLEANUP_SELECTORS).forEach((node) => node.remove());

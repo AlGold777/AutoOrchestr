@@ -25,6 +25,7 @@
   const BLOCK_SELECTOR = Array.from(BLOCK_TAGS).join(',');
   const MATH_SELECTOR = '.katex, .katex-display, mjx-container, math, .MathJax, .MathJax_Display, [data-math]';
   const DIAGRAM_SELECTOR = '.mermaid, [data-mermaid]';
+  const COPY_LABEL_RE = /^\s*(copy|copied|скопировать|скопировано)\b/i;
   const LINE_NUMBER_RE = /(^|[\s_-])(line-?numbers?|linenumber|gutter|hljs-ln-numbers|hljs-ln-n)([\s_-]|$)/i;
 
   // Private-use sentinels: protect already-rendered fragments / hard breaks from whitespace collapsing.
@@ -51,6 +52,7 @@
       match: handler.match,
       render: handler.render,
       censusSelector: typeof handler.censusSelector === 'string' ? handler.censusSelector : '',
+      claimsUi: handler.claimsUi === true,
       isDefault: Boolean(internal),
       order: registrationOrder++
     };
@@ -81,6 +83,19 @@
     return node && node.nodeType === 1 ? String(node.localName || node.nodeName).toLowerCase() : '';
   }
 
+  // style/script/noscript/template carry no visible text in any namespace (svg:style, svg:script too).
+  const SILENT_TAGS = new Set(['style', 'script', 'noscript', 'template']);
+
+  // textContent without the text of SILENT_TAGS descendants; otherwise exact (nothing is normalized).
+  function cleanText(node) {
+    if (node.nodeType === 3) return node.data;
+    if (node.nodeType !== 1 && node.nodeType !== 11) return '';
+    if (node.nodeType === 1 && SILENT_TAGS.has(tagOf(node))) return '';
+    let out = '';
+    for (const c of (node.nodeType === 1 ? childrenOf(node) : Array.from(node.childNodes))) out += cleanText(c);
+    return out;
+  }
+
   function childrenOf(node) {
     if (node.nodeType === 1) {
       if (node.shadowRoot) return Array.from(node.shadowRoot.childNodes);
@@ -100,13 +115,30 @@
     return safe(() => (el.style && el.style[prop]) || '', '');
   }
 
+  // Minimal ctx for claimsUi handlers' match() when called outside a conversion (census, UI filter).
+  const LIGHT_CTX = Object.freeze({
+    provider: null, options: {}, position: 0, report: null,
+    convertChildren: () => '', fence, placeholder: () => '', text: (el) => cleanText(el)
+  });
+
+  // A handler with claimsUi:true that matches the element takes it out of the "interface" class:
+  // it is counted by the census and reaches the handler even if it is an iframe/role=button/aria-hidden node.
+  function isClaimed(el) {
+    for (const h of blockHandlers) {
+      if (h.claimsUi && safe(() => h.match(el, LIGHT_CTX), false)) return true;
+    }
+    return false;
+  }
+
   function isUiNode(el, rules) {
+    if (isClaimed(el)) return false;
     const tag = tagOf(el);
     if (SKIP_TAGS.has(tag)) return true;
     if (tag === 'input') return el.getAttribute('type') !== 'checkbox';
     if (el.hasAttribute('hidden') || el.hasAttribute('inert')) return true;
     if (el.getAttribute('aria-hidden') === 'true') return true;
     if (el.getAttribute('role') === 'button') return true;
+    if (COPY_LABEL_RE.test(el.getAttribute('aria-label') || '')) return true;
     if (inlineStyle(el, 'display') === 'none' || inlineStyle(el, 'visibility') === 'hidden') return true;
     if (rules && typeof rules.isUiNode === 'function' && safe(() => rules.isUiNode(el), false)) return true;
     return false;
@@ -328,7 +360,7 @@
       convertChildren: (el) => flow(childrenOf(el), st).join('\n\n'),
       fence,
       placeholder: (type, reason) => addPlaceholder(st, type, reason, position, currentType),
-      text: (el) => el.textContent || ''
+      text: (el) => cleanText(el)
     };
     // internal: built-in handlers reach the conversion state through ctx._st (not part of the public contract)
     Object.defineProperty(ctx, '_st', { value: st, enumerable: false });
@@ -382,7 +414,7 @@
       if (absorbBefore) {
         for (const k of Object.keys(absorbBefore)) st.found[k] = Math.max(0, (st.found[k] || 0) - absorbBefore[k]);
       }
-      return { markdown: result.markdown };
+      return { markdown: result.markdown, type };
     }
     return NO_HANDLER;
   }
@@ -418,7 +450,7 @@
         if (isUiNode(node, st.rules)) continue;
         const res = runHandlers(node, st);
         if (res !== NO_HANDLER) {
-          const blockLike = res.markdown.includes('\n') || BLOCK_TAGS.has(tagOf(node)) || hasBlockDescendant(node);
+          const blockLike = res.markdown.includes('\n') || res.type === 'svg' || res.type === 'diagram' || BLOCK_TAGS.has(tagOf(node)) || hasBlockDescendant(node);
           if (blockLike) { flush(); if (res.markdown) blocks.push(res.markdown); } else run.push({ md: res.markdown });
           continue;
         }
@@ -528,7 +560,7 @@
       case 'em': case 'i': return wrapMarks('*', kids());
       case 'del': case 's': case 'strike': return wrapMarks('~~', kids());
       case 'sup': case 'sub': { const inner = kids(); return inner ? `<${tag}>${inner}</${tag}>` : ''; }
-      case 'code': return token(st, codeSpan(el.textContent || ''));
+      case 'code': return token(st, codeSpan(cleanText(el)));
       case 'input':
         return el.getAttribute('type') === 'checkbox' ? (el.hasAttribute('checked') ? '[x] ' : '[ ] ') : '';
       case 'a': {
@@ -579,7 +611,8 @@
 
   function isCodeUi(el, rules) {
     const tag = tagOf(el);
-    if (tag === 'button' || tag === 'svg' || el.getAttribute('role') === 'button') return true;
+    if (tag === 'button' || tag === 'svg' || SILENT_TAGS.has(tag) || el.getAttribute('role') === 'button') return true;
+    if (COPY_LABEL_RE.test(el.getAttribute('aria-label') || '')) return true;
     if (el.hasAttribute('data-line-number') || el.hasAttribute('data-ln')) return true;
     if (LINE_NUMBER_RE.test(el.getAttribute('class') || '')) return true;
     if (inlineStyle(el, 'userSelect') === 'none' || inlineStyle(el, 'webkitUserSelect') === 'none') return true;
@@ -716,7 +749,7 @@
       registerBlock({
         name: `core-unhandled-${type}`, type, priority: -100,
         match: (el, ctx) => tagOf(el) !== 'pre' && builtinType(el, stRulesFromCtx(ctx)) === type,
-        render: (el, ctx) => ({ markdown: ctx.placeholder(type, 'обработчик типа не подключён', el), copied: 0 })
+        render: (el, ctx) => ({ markdown: ctx.placeholder(type, type === 'svg' || type === 'diagram' ? 'нет обработчика диаграммы' : 'обработчик типа не подключён', el), copied: 0 })
       }, true);
     });
   }
@@ -760,6 +793,11 @@
       blocks = flow([rootEl], st);
     } catch (err) {
       blocks = [addPlaceholder(st, 'ответ', `сбой конвертера: ${err && err.message}`, st.pos + 1, null)];
+    }
+    if (Number(context.artifactRefs) > 0 && !(Number(context.artifactPanels) > 0)) {
+      st.found.artifact = (st.found.artifact || 0) + 1;
+      blocks.push(addPlaceholder(st, 'artifact',
+        `панель артефакта не найдена: ссылок ${Number(context.artifactRefs)}, панелей 0`, st.pos + 1, 'artifact'));
     }
     let markdown = blocks.join('\n\n');
     if (st.footers.length) markdown += (markdown ? '\n\n' : '') + st.footers.join('\n');

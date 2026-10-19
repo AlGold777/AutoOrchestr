@@ -19,14 +19,17 @@
     sourceList: '[data-source-list], [data-testid="sources"], [data-testid="source-list"]',
     searchCard: '[data-search-result], [data-testid="search-result"]',
     file: 'a[download], [data-file-name], [data-testid="file-attachment"]',
-    output: '[data-code-interpreter], [data-testid="code-interpreter"], [data-code-output]'
+    output: '[data-code-interpreter], [data-testid="code-interpreter"], [data-code-output]',
+    // Встроенные блоки: iframe/object/embed. Живой Claude с диаграммой не снят — не проверено вживую.
+    embed: 'iframe, object, embed'
   };
   // Для census у WP1/WP5: селекторы тех же элементов, что поглощают обработчики.
   const CENSUS_SELECTORS = {
     artifact: SELECTORS.artifact,
     source: [SELECTORS.citation, SELECTORS.sourceList, SELECTORS.searchCard].join(', '),
     file: SELECTORS.file,
-    output: SELECTORS.output
+    output: SELECTORS.output,
+    embed: SELECTORS.embed
   };
 
   const citationState = new WeakMap(); // report -> { byUrl: Map(url -> номер сноски) }
@@ -185,12 +188,66 @@
     })
   };
 
-  const handlers = [artifactHandler, citationHandler, sourceListHandler, fileHandler, outputHandler];
+  // ---------- встроенные блоки: iframe / object / embed ----------
+  // Содержимое читается, только если оно доступно: srcdoc, same-origin contentDocument. Иначе — заглушка, не пропуск.
+  function embedDocument(el) {
+    const srcdoc = el.getAttribute('srcdoc');
+    if (srcdoc) { try { return new DOMParser().parseFromString(srcdoc, 'text/html'); } catch (_) { return null; } }
+    try { return el.contentDocument || null; } catch (_) { return null; } // cross-origin бросает/даёт null
+  }
+  function hostOf(url) { try { return new URL(url, 'http://x').host; } catch (_) { return ''; } }
+
+  const embedHandler = {
+    name: 'extras-embed', type: 'artifact', priority: 200, censusSelector: SELECTORS.embed, claimsUi: true,
+    match: (el) => el.matches && el.matches(SELECTORS.embed),
+    render: guard('artifact', (el, ctx) => {
+      const tag = el.tagName.toLowerCase();
+      const title = oneLine(attr(el, 'title', 'aria-label', 'name')) || 'без названия';
+      const src = attr(el, 'src', 'data');
+      const marker = `Встроенный блок: ${tag}, ${title}`;
+      const doc = embedDocument(el);
+      const body = doc && doc.documentElement;
+      if (!body || !oneLine(body.textContent) && !body.querySelector('svg, canvas, img')) {
+        const why = `${tag} не прочитан (${src ? `cross-origin или нет доступа, src=${hostOf(src) || 'неизвестен'}` : 'нет src/srcdoc'})`;
+        return { markdown: `${marker}\n\n${ctx.placeholder('artifact', why, el)}`, copied: 0 };
+      }
+      const svgs = Array.from(body.querySelectorAll('svg'));
+      if (svgs.length === 1 && !oneLine((body.querySelector('body') || body).textContent.replace(svgs[0].textContent, ''))) {
+        let out = svgs[0].outerHTML;
+        if (!/^<svg\b[^>]*\sxmlns=/i.test(out)) out = out.replace(/^<svg\b/i, '<svg xmlns="http://www.w3.org/2000/svg"');
+        return { markdown: `${marker}\n\n${ctx.fence(out, 'svg')}`, copied: 1 };
+      }
+      return { markdown: `${marker}\n\n${ctx.fence(body.outerHTML, 'html')}`, copied: 1 };
+    })
+  };
+
+  // ---------- svg-диаграмма в обёртке button/role=button/aria-hidden ----------
+  // Движок и content-utils считают такие обёртки интерфейсом и вырезают. Эвристика (не проверено вживую):
+  // контентная картинка — не иконка: >=4 фигур или <text> или viewBox от 100x100.
+  function isContentSvg(svg) {
+    if (svg.querySelector('text')) return true;
+    if (svg.querySelectorAll('path, rect, circle, ellipse, line, polyline, polygon').length >= 4) return true;
+    const vb = String(svg.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number);
+    return vb.length === 4 && vb[2] >= 100 && vb[3] >= 100;
+  }
+  const wrappedSvgHandler = {
+    name: 'extras-wrapped-svg', type: 'svg', priority: 200, claimsUi: true, // claimsUi: match() должен вызываться ДО проверки isUiNode (запрос к WP1)
+    match: (el) => el.matches && el.matches('button, [role="button"], [aria-hidden="true"]')
+      && Array.from(el.querySelectorAll('svg')).some(isContentSvg),
+    render: guard('svg', (el, ctx) => {
+      const svg = Array.from(el.querySelectorAll('svg')).find(isContentSvg);
+      let out = svg.outerHTML;
+      if (!/^<svg\b[^>]*\sxmlns=/i.test(out)) out = out.replace(/^<svg\b/i, '<svg xmlns="http://www.w3.org/2000/svg"');
+      return { markdown: ctx.fence(out, 'svg'), copied: 1 };
+    })
+  };
+
+  const handlers = [artifactHandler, embedHandler, wrappedSvgHandler, citationHandler, sourceListHandler, fileHandler, outputHandler];
 
   function register(engine) {
     handlers.forEach((h) => engine.registerBlock(h));
     return handlers.length;
   }
 
-  return { SELECTORS, CENSUS_SELECTORS, handlers, register };
+  return { SELECTORS, CENSUS_SELECTORS, handlers, register, isContentSvg };
 });
