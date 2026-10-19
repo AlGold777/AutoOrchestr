@@ -236,6 +236,34 @@
     return null;
   }
 
+  // A rendered diagram whose source lives in a neighbouring panel ("Code view" next to
+  // "Preview"), possibly hidden: the nearest ancestor (up to 3 levels, never one holding
+  // another picture) with exactly one <pre> that has no svg. Hidden text is read here on
+  // purpose (the engine skips it as visible content); it is never copied as ordinary text.
+  const MERMAID_START = /^\s*(?:%%\{[\s\S]*?\}%%\s*)?(?:flowchart|graph|sequenceDiagram|classDiagram|stateDiagram(?:-v2)?|erDiagram|gantt|pie|journey|mindmap|timeline|gitGraph|quadrantChart|requirementDiagram|C4Context)\b/;
+  function hiddenWithin(node, scope) {
+    for (let n = node; n && n !== scope.parentElement; n = n.parentElement) {
+      if (n.hidden || attr(n, 'aria-hidden') === 'true' || /display\s*:\s*none/i.test(attr(n, 'style') || '')) return true;
+    }
+    return false;
+  }
+
+  function scopedSource(svg, ctx) {
+    let scope = svg.parentElement;
+    for (let depth = 0; scope && depth < 3 && tag(scope) !== 'body'; depth += 1, scope = scope.parentElement) {
+      if (scope.querySelectorAll('svg').length !== 1) return null;
+      const pres = Array.from(scope.querySelectorAll('pre')).filter((n) => !n.querySelector('svg') && !(n.closest && n.closest('svg')));
+      if (pres.length === 1) {
+        // Only a hidden panel: a visible one is already copied by the engine as a code block.
+        if (!hiddenWithin(pres[0], scope)) return null;
+        const text = textOf(pres[0], ctx);
+        return text.trim() ? text : null;
+      }
+      if (pres.length > 1) return null;
+    }
+    return null;
+  }
+
   function siblingSource(el, lang) {
     return [el.previousElementSibling, el.nextElementSibling].some((s) => s && !s.querySelector('svg') && detectLang(s) === lang);
   }
@@ -268,9 +296,10 @@
       return {
         type: 'diagram', count: 1, name: 'diagram',
         render(ctx) {
-          const src = attrSource(el);
-          if (src) return renderDiagramSource(lang, src, ctx, el);
-          return svgOnlyDiagram(el, el, lang, ctx);
+          const kind = lang;
+          const src = attrSource(el) || scopedSource(el, ctx);
+          if (src) return renderDiagramSource(kind, src, ctx, el);
+          return svgOnlyDiagram(el, el, kind, ctx);
         }
       };
     }
@@ -305,6 +334,9 @@
     return {
       type: 'svg', count: 1, name: 'svg',
       render(ctx) {
+        // A marker-less picture whose hidden "Code view" panel holds mermaid source: copy the source.
+        const panel = inCell(el) ? null : scopedSource(el, ctx);
+        if (panel && MERMAID_START.test(panel)) return { markdown: `\n\n${ctx.fence(stripEdgeNewlines(panel), 'mermaid')}\n\n`, copied: 1 };
         const src = serializeSvg(el);
         if (inCell(el)) return { markdown: ctx.placeholder('svg', CELL_REASON, el), copied: 0 };
         if (src.length > MAX_SVG) return { markdown: ctx.placeholder('svg', 'SVG слишком большой', el), copied: 0 };

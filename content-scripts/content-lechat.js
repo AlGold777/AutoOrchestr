@@ -1965,7 +1965,7 @@ const hydrateAttachments = (raw = []) =>
               llmName: MODEL,
               answer: cleaned,
               answerHtml: latestMarkup.html || payload.html || '',
-              ...(window.ContentUtils?.buildLatestAnswerCopy?.() || {}),
+              ...(window.ContentUtils?.buildLatestAnswerCopy?.(undefined, latestMarkup.node) || {}),
               meta: msg?.meta || null
             });
             chrome.runtime.sendMessage({

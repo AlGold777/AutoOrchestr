@@ -3077,6 +3077,23 @@ document.addEventListener('click', (event) => {
     const usableAnswerMarkdown = (copy) => (copy && copy.markdown
         && !(copy.report?.placeholders || []).some((item) => item.type === 'answer')) ? copy.markdown : '';
     const cardAnswerCopyText = (card, fallback = '') => usableAnswerMarkdown(card?._answerCopy) || fallback;
+    // No usable HTML but a markdown copy exists: show the markdown with its line breaks
+    // (pre-wrap), not the flat text as one paragraph; and say the HTML was missing.
+    const renderMarkdownWhenNoHtml = (body, card, html) => {
+        const markdown = usableAnswerMarkdown(card?._answerCopy);
+        if (!body || String(html || '').trim() || !markdown) return false;
+        const block = document.createElement('div');
+        block.style.whiteSpace = 'pre-wrap';
+        block.textContent = markdown;
+        body.replaceChildren(block);
+        const report = card._answerCopy.report || { version: 1, found: {}, copied: {}, placeholders: [], mismatches: [], flags: {} };
+        card._answerCopy = {
+            ...card._answerCopy,
+            report: { ...report, placeholders: [...(report.placeholders || []), { type: 'html', reason: 'html отсутствует', position: 0 }], complete: false }
+        };
+        paintCopyMarker(card);
+        return true;
+    };
     const applyAnswerCopyToCard = (card, llmName, requestId = '') => {
         if (!(card instanceof HTMLElement)) return;
         const pending = answerCopyPending[llmName];
@@ -3087,6 +3104,9 @@ document.addEventListener('click', (event) => {
         } else if (!pending) {
             delete card._answerCopy;
         }
+        paintCopyMarker(card);
+    };
+    const paintCopyMarker = (card) => {
         card.querySelector('.debate-copy-incomplete')?.remove();
         const note = describeCopyReport(card._answerCopy?.report);
         if (!note) return;
@@ -23210,10 +23230,10 @@ function checkCompareButtonState() {
             if (body) {
                 body.classList.remove('debate-model-card-empty');
                 const renderSourceHtml = resolveCompleteAnswerHtml(normalizedText, normalizedHtml);
-                renderDebateResponseBody(body, normalizedText, normalizedHtml);
+                applyAnswerCopyToCard(liveCard, llmName, requestId);
+                if (!renderMarkdownWhenNoHtml(body, liveCard, normalizedHtml)) renderDebateResponseBody(body, normalizedText, normalizedHtml);
                 emitAnswerCardRenderEvidence(llmName, liveCard, body, { ...meta, renderSourceHtml });
             }
-            applyAnswerCopyToCard(liveCard, llmName, requestId);
             syncDebateCardOutputLayout(liveCard);
             setDebatePrintingState(liveCard, llmName, !isFinal);
             liveCard.dataset.live = isFinal ? 'false' : 'true';
@@ -23280,9 +23300,9 @@ function checkCompareButtonState() {
         updateCardRole(card, meta.role || '');
         const body = card.querySelector('.debate-model-card-output');
         const renderSourceHtml = resolveCompleteAnswerHtml(normalizedText, normalizedHtml);
-        renderDebateResponseBody(body, normalizedText, normalizedHtml);
-        emitAnswerCardRenderEvidence(llmName, card, body, { ...meta, renderSourceHtml });
         applyAnswerCopyToCard(card, llmName, requestId);
+        if (!renderMarkdownWhenNoHtml(body, card, normalizedHtml)) renderDebateResponseBody(body, normalizedText, normalizedHtml);
+        emitAnswerCardRenderEvidence(llmName, card, body, { ...meta, renderSourceHtml });
         syncDebateCardOutputLayout(card);
         setDebatePrintingState(card, llmName, !isFinal);
         bindApprovalCheckbox(card);

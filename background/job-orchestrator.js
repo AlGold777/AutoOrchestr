@@ -177,6 +177,15 @@ function isStaleBaselineCandidate(entry, text, dispatchId = null) {
 }
 const LATE_COLLECT_CACHE_KEY_PREFIX = 'late_answer_snapshot_v1';
 const LATE_COLLECT_CACHE_MAX_CHARS = 200000;
+// A cut inside a data: image would leave broken markup: over the cap, diagram images
+// are replaced by the visible note first, then the usual cut applies.
+function capSnapshotHtml(html) {
+  let value = String(html || '');
+  if (value.length > LATE_COLLECT_CACHE_MAX_CHARS) {
+    value = value.replace(/<img\b[^>]*src="data:image\/svg\+xml;base64,[^"]*"[^>]*>/g, '<p>[диаграмма не сохранена: размер]</p>');
+  }
+  return value.slice(0, LATE_COLLECT_CACHE_MAX_CHARS);
+}
 const LATE_COLLECT_TOTAL_BUDGET_MS = 12000;
 const LATE_COLLECT_PING_TIMEOUT_MS = 900;
 const LATE_COLLECT_SLOW_PING_TIMEOUT_MS = 1500;
@@ -391,7 +400,11 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
       'article .prose',
       '.prose',
       '.answer',
-      '.result'
+      '.result',
+      // Confirmed by tests/fixtures/live-answer-skeletons/lechat.json: the assistant turn
+      // carries only the role attribute (no data-message-part-type).
+      '[data-message-author-role="assistant"]',
+      '[data-role="assistant"]'
     ],
     qwen: [
       'div.qwen-chat-message.qwen-chat-message-assistant div.response-message-content div.custom-qwen-markdown > div.qwen-markdown.qwen-markdown-loose',
@@ -491,6 +504,11 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
     const latest = assistants[assistants.length - 1];
     if (latest?.querySelector('[data-message-part-type]')) {
       nodes.splice(0, nodes.length, ...latest.querySelectorAll('[data-message-part-type="answer"]'));
+    } else if (latest) {
+      // No part markers: the latest assistant turn is the answer; wider page containers
+      // found by the loose selectors above must not compete with it.
+      nodes.splice(0, nodes.length, latest);
+      nodeSelectors.set(latest, '[data-message-author-role="assistant"]');
     }
   }
   const isRejectedNode = (node) => {
@@ -520,6 +538,65 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
     }
     return (hash >>> 0).toString(16);
   };
+  // Content SVG -> <img data:image/svg+xml;base64>, same rules as ContentUtils.buildInlineHtml
+  // (content-scripts/content-utils.js). Duplicated on purpose: this function is serialized into
+  // the page and cannot import it; tests/answer-markdown-svg-html.test.js checks both agree.
+  const htmlWithSvgImages = (sourceRoot, cloneRoot, state) => {
+    const SKIP = 'button, [role="button"], [aria-hidden="true"], [inert], header, footer, nav, aside, form, [data-message-part-type="reasoning"]';
+    const toBase64 = (text) => {
+      const bytes = new TextEncoder().encode(text);
+      let binary = '';
+      for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+      return btoa(binary);
+    };
+    let working = cloneRoot;
+    try {
+      // Edit a copy so the page DOM is never touched (this path is read-only).
+      working = cloneRoot.cloneNode(true);
+      const sources = Array.from(sourceRoot.querySelectorAll('svg'));
+      const clones = Array.from(working.querySelectorAll('svg'));
+      if (sources.length === clones.length) {
+        sources.forEach((svg, index) => {
+          try {
+            for (let n = svg.parentElement; n && n !== sourceRoot.parentElement; n = n.parentElement) {
+              if (n.localName === 'svg' || n.matches?.(SKIP)) return;
+            }
+            const rect = svg.getBoundingClientRect();
+            if (!(rect.width > 48 && rect.height > 48)) return;
+            const width = Math.round(rect.width);
+            const height = Math.round(rect.height);
+            const copy = svg.cloneNode(true);
+            copy.querySelectorAll('script').forEach((el) => el.remove());
+            copy.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+            copy.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+            if (!copy.getAttribute('viewBox')) copy.setAttribute('viewBox', `0 0 ${width} ${height}`);
+            copy.setAttribute('width', String(width));
+            copy.setAttribute('height', String(height));
+            const base64 = toBase64(new XMLSerializer().serializeToString(copy));
+            state.position += 1;
+            const doc = working.ownerDocument;
+            if (base64.length > 400000 || state.total + base64.length > 1500000) {
+              state.notes.push({ type: 'svg', reason: 'диаграмма не сохранена в HTML: размер', position: state.position });
+              const note = doc.createElement('p');
+              note.textContent = '[диаграмма не сохранена: размер]';
+              clones[index].replaceWith(note);
+              return;
+            }
+            state.total += base64.length;
+            const img = doc.createElement('img');
+            img.setAttribute('src', `data:image/svg+xml;base64,${base64}`);
+            img.setAttribute('alt', 'Диаграмма');
+            img.setAttribute('width', String(width));
+            img.setAttribute('height', String(height));
+            clones[index].replaceWith(img);
+          } catch (_) {}
+        });
+      }
+    } catch (_) {
+      working = cloneRoot;
+    }
+    return String(working.innerHTML || '').trim();
+  };
   let baseCandidates = nodes
     .filter((node) => node && !isRejectedNode(node))
     .map((node, index) => {
@@ -539,9 +616,13 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
       const className = String(node.className || '');
       const htmlNode = normalizedModel === 'gemini' ? node.cloneNode(true) : node;
       if (normalizedModel === 'gemini') htmlNode.querySelectorAll('h6.screen-reader-model-response-label').forEach(label => label.remove());
-      const html = normalizedModel === 'le chat' && window.ContentUtils?.buildInlineHtml
+      const svgState = { total: 0, position: 0, notes: [] };
+      const html = normalizedModel === 'le chat' && typeof window.ContentUtils?.getLastInlineHtmlNotes === 'function'
         ? window.ContentUtils.buildInlineHtml(node, { includeRoot: false })
-        : String(htmlNode.innerHTML || '').trim();
+        : htmlWithSvgImages(node, htmlNode, svgState);
+      const svgNotes = normalizedModel === 'le chat' && typeof window.ContentUtils?.getLastInlineHtmlNotes === 'function'
+        ? window.ContentUtils.getLastInlineHtmlNotes()
+        : svgState.notes;
       const isMarkdown = /markdown|prose|qwen-markdown|markdown-body/i.test(`${selector} ${className}`);
       const assistantNode = node.closest?.('[data-markdown-text-style="assistant-message"],[data-message-author-role="assistant"],[data-role="assistant"],.assistant-message,.qwen-chat-message-assistant,[class*="assistant" i]');
       const isAssistantRole = !!assistantNode;
@@ -550,6 +631,8 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
         index,
         text,
         html,
+        svgNotes,
+        node,
         mdNode: htmlNode,
         selector,
         descriptor,
@@ -566,6 +649,28 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
     .filter((candidate) => !(normalizedModel === 'gemini' && /(?:Ответ Gemini|Gemini said:?)\s*$/i.test(candidate.text)))
     .filter((candidate) => !excludeTextSignatures.has(normalizeSignature(candidate.text)))
     .filter((candidate) => !skipSelectors.has(candidate.selector) && !skipSelectors.has(candidate.descriptor));
+  // A candidate is one answer, never a page or a conversation: a node holding several
+  // assistant turns, a user message, the composer or navigation is a container. Same rule
+  // as ContentUtils.collectLateSnapshotCandidate; tests/answer-markdown-node-selection.test.js.
+  const ROLE_ASSISTANT = '[data-message-author-role="assistant"],[data-role="assistant"],[data-author-role="assistant"]';
+  const ROLE_USER = '[data-message-author-role="user"],[data-role="user"],[data-author-role="user"]';
+  const isWideContainer = (candidate) => {
+    try {
+      const target = candidate.node;
+      const assistants = target.querySelectorAll(ROLE_ASSISTANT).length + (target.matches(ROLE_ASSISTANT) ? 1 : 0);
+      return assistants > 1
+        || !!target.querySelector(ROLE_USER)
+        || !!target.querySelector('textarea,[contenteditable="true"],form,nav');
+    } catch (_) {
+      return false;
+    }
+  };
+  const beforeWide = baseCandidates.length;
+  baseCandidates = baseCandidates.filter((candidate) => !isWideContainer(candidate));
+  const wideRejected = beforeWide - baseCandidates.length;
+  // Of two nested candidates with (almost) the same text keep the inner one: it has no page chrome around it.
+  baseCandidates = baseCandidates.filter((outer) => !baseCandidates.some((inner) => inner !== outer
+    && outer.node.contains(inner.node) && inner.text.length >= outer.text.length * 0.9));
   // F6.2: positional turn anchor from the dispatch baseline — candidates that
   // were already on the page before this dispatch are previous conversation
   // turns. Best-effort: the scan's candidate space differs from the pipeline's,
@@ -642,6 +747,10 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
       }
     }
   }
+  if (best && copyReport && Array.isArray(best.svgNotes) && best.svgNotes.length) {
+    // Diagrams the HTML copy could not keep (size): reported, not dropped silently.
+    copyReport = { ...copyReport, placeholders: [...(copyReport.placeholders || []), ...best.svgNotes], complete: false };
+  }
   return best
     ? {
       ok: true,
@@ -663,6 +772,8 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
     : {
       ok: false,
       length: 0,
+      // Only page-level containers matched: say so instead of returning one as the answer.
+      reason: wideRejected > 0 ? 'wide_container_only' : 'no_candidate',
       candidates: 0,
       candidateCount: baseCandidates.length,
       strategyId,
@@ -732,7 +843,7 @@ async function saveAnswerSnapshotFromContent(message = {}, sender = {}) {
     llmName,
     tabId,
     text,
-    html: typeof message?.html === 'string' ? message.html.slice(0, LATE_COLLECT_CACHE_MAX_CHARS) : '',
+    html: typeof message?.html === 'string' ? capSnapshotHtml(message.html) : '',
     hash: message?.hash || simpleLateAnswerHash(text),
     length: text.length,
     url: typeof message?.url === 'string' ? message.url.slice(0, 1024) : '',
@@ -956,7 +1067,7 @@ async function runInlineLateExtract({ tabId, llmName, minChars = DOM_SNAPSHOT_RE
   if (snapshot?.ok && snapshot.text) {
     return snapshot;
   }
-  return { ok: false, length: snapshot?.length || 0, candidates: snapshot?.candidates || 0, error: result?.error || null };
+  return { ok: false, length: snapshot?.length || 0, candidates: snapshot?.candidates || 0, error: result?.error || snapshot?.reason || null };
 }
 
 async function lateCollectAnswer({ llmName, tabId, reason = 'late_collect', meta = {}, minChars = DOM_SNAPSHOT_RECOVERY_MIN_CHARS, manualRecovery = null } = {}) {

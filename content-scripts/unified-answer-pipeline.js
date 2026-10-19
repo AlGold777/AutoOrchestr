@@ -1409,7 +1409,17 @@ this.humanSession.on?.('session-stop', () => clearInterval(textStabilityMonitor)
         text = this.extractText(element);
       }
       const html = this.extractHtml(element);
-      return { text, html, ...this.extractAnswerMarkdown(element) };
+      const fields = this.extractAnswerMarkdown(element);
+      // Diagrams the HTML copy could not keep (size) are reported, not dropped silently.
+      const htmlNotes = window.ContentUtils?.getLastInlineHtmlNotes?.() || [];
+      if (htmlNotes.length && fields.copyReport) {
+        fields.copyReport = {
+          ...fields.copyReport,
+          placeholders: [...(fields.copyReport.placeholders || []), ...htmlNotes],
+          complete: false
+        };
+      }
+      return { text, html, ...fields };
     }
 
     extractAnswerMarkdown(element) {

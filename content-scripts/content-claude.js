@@ -2559,7 +2559,7 @@ function isLikelyClaudeModelLabel(text = '') {
                   llmName: MODEL,
                   answer: payload.text,
                   answerHtml: payload.html,
-                  ...(window.ContentUtils?.buildLatestAnswerCopy?.() || {}),
+                  ...(window.ContentUtils?.buildLatestAnswerCopy?.(undefined, latestMarkup.element) || {}),
                   meta: message?.meta || null
                 });
                 emitDiagnostic({

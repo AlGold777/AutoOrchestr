@@ -1259,10 +1259,76 @@
     'form'
   ].join(', ');
 
+  // Content SVG (diagrams, charts) -> <img data:image/svg+xml;base64>. An image runs no
+  // script and survives sanitizeHTML (utils/sanitize.js allows exactly this src form).
+  // The same rules are duplicated in background/job-orchestrator.js
+  // (extractLatestAssistantSnapshotInPage serializes into the page and cannot import this);
+  // tests/answer-markdown-svg-html.test.js keeps the two in step.
+  const SVG_IMG_MIN_SIDE = 48;
+  const SVG_IMG_MAX_BASE64 = 400000;
+  const SVG_IMG_TOTAL_MAX_BASE64 = 1500000;
+  const SVG_SKIP_ANCESTORS = 'button, [role="button"], [aria-hidden="true"], [inert], header, footer, nav, aside, form, [data-message-part-type="reasoning"]';
+  let lastInlineHtmlNotes = [];
+  const utf8ToBase64 = (text) => {
+    const bytes = new TextEncoder().encode(text);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(binary);
+  };
+  const isContentSvg = (svg, root) => {
+    for (let node = svg.parentElement; node && node !== root.parentElement; node = node.parentElement) {
+      if (node.localName === 'svg') return false;
+      if (node.matches?.(SVG_SKIP_ANCESTORS)) return false;
+    }
+    const rect = svg.getBoundingClientRect();
+    return rect.width > SVG_IMG_MIN_SIDE && rect.height > SVG_IMG_MIN_SIDE;
+  };
+  const svgToImage = (svg, doc, state) => {
+    const rect = svg.getBoundingClientRect();
+    const width = Math.round(rect.width);
+    const height = Math.round(rect.height);
+    const copy = svg.cloneNode(true);
+    copy.querySelectorAll('script').forEach((node) => node.remove());
+    copy.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    copy.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+    if (!copy.getAttribute('viewBox')) copy.setAttribute('viewBox', `0 0 ${width} ${height}`);
+    copy.setAttribute('width', String(width));
+    copy.setAttribute('height', String(height));
+    const base64 = utf8ToBase64(new XMLSerializer().serializeToString(copy));
+    state.position += 1;
+    if (base64.length > SVG_IMG_MAX_BASE64 || state.total + base64.length > SVG_IMG_TOTAL_MAX_BASE64) {
+      state.notes.push({ type: 'svg', reason: 'диаграмма не сохранена в HTML: размер', position: state.position });
+      const note = doc.createElement('p');
+      note.textContent = '[диаграмма не сохранена: размер]';
+      return note;
+    }
+    state.total += base64.length;
+    const img = doc.createElement('img');
+    img.setAttribute('src', `data:image/svg+xml;base64,${base64}`);
+    img.setAttribute('alt', 'Диаграмма');
+    img.setAttribute('width', String(width));
+    img.setAttribute('height', String(height));
+    return img;
+  };
+  // sourceRoot has the layout (rects); cloneRoot is its structural copy that is edited.
+  const replaceContentSvgs = (sourceRoot, cloneRoot, state) => {
+    const sources = Array.from(sourceRoot.querySelectorAll('svg'));
+    const clones = Array.from(cloneRoot.querySelectorAll('svg'));
+    if (sources.length !== clones.length) return;
+    sources.forEach((svg, index) => {
+      try {
+        if (isContentSvg(svg, sourceRoot)) clones[index].replaceWith(svgToImage(svg, cloneRoot.ownerDocument, state));
+      } catch (_) {}
+    });
+  };
+
   const buildInlineHtml = (element, options = {}) => {
     if (!element || element.nodeType !== 1) return '';
     const includeRoot = options.includeRoot !== false;
     const clone = cloneElementWithInlineStyles(element) || element.cloneNode(true);
+    const svgState = { total: 0, position: 0, notes: [] };
+    try { replaceContentSvgs(element, clone, svgState); } catch (_) {}
+    lastInlineHtmlNotes = svgState.notes;
     try { stripHiddenElements(clone); } catch (_) {}
     try {
       clone.querySelectorAll(RESPONSE_CLEANUP_SELECTORS).forEach((node) => node.remove());
@@ -1346,7 +1412,9 @@
       '[data-testid="message-content"]',
       '.prose',
       '.answer',
-      '.result'
+      '.result',
+      '[data-message-author-role="assistant"]',
+      '[data-role="assistant"]'
     ],
     Qwen: [
       'div.qwen-chat-message.qwen-chat-message-assistant div.response-message-content div.custom-qwen-markdown > div.qwen-markdown.qwen-markdown-loose',
@@ -1406,6 +1474,22 @@
     }
   };
 
+  // One candidate = one answer. A node holding several assistant turns, a user message, the
+  // composer or navigation is a page-level container. The same rule runs in
+  // extractLatestAssistantSnapshotInPage (background/job-orchestrator.js).
+  const ROLE_ASSISTANT_SELECTOR = '[data-message-author-role="assistant"],[data-role="assistant"],[data-author-role="assistant"]';
+  const ROLE_USER_SELECTOR = '[data-message-author-role="user"],[data-role="user"],[data-author-role="user"]';
+  const isWideAnswerContainer = (node) => {
+    try {
+      const assistants = node.querySelectorAll(ROLE_ASSISTANT_SELECTOR).length + (node.matches(ROLE_ASSISTANT_SELECTOR) ? 1 : 0);
+      return assistants > 1
+        || !!node.querySelector(ROLE_USER_SELECTOR)
+        || !!node.querySelector('textarea,[contenteditable="true"],form,nav');
+    } catch (_) {
+      return false;
+    }
+  };
+
   const collectLateSnapshotCandidate = (llmName = detectLlmNameFromLocation(), minChars = 80, options = {}) => {
     const selectors = lateSnapshotSelectorsByModel[llmName] || [];
     const seen = new Set();
@@ -1438,10 +1522,13 @@
       const latest = assistants[assistants.length - 1];
       if (latest?.querySelector('[data-message-part-type]')) {
         nodes.splice(0, nodes.length, ...latest.querySelectorAll('[data-message-part-type="answer"]'));
+      } else if (latest) {
+        nodes.splice(0, nodes.length, latest);
       }
     }
     const candidates = nodes
       .filter((node) => node && !isLateSnapshotRejectedNode(node))
+      .filter((node) => !isWideAnswerContainer(node))
       .map((node, index) => {
         const text = ['Le Chat', 'Gemini'].includes(llmName) && window.AnswerStructure
           ? window.AnswerStructure.linearizeText(node) : extractSafeVisibleText(node, 200000);
@@ -1453,8 +1540,13 @@
         return { node, text, visible, score: (visible ? 1000000 : 0) + index };
       })
       .filter((item) => item.text.length >= minChars
-        && !(llmName === 'Gemini' && /(?:Ответ Gemini|Gemini said:?)\s*$/i.test(item.text)))
+        && !(llmName === 'Gemini' && /(?:Ответ Gemini|Gemini said:?)\s*$/i.test(item.text)));
+    // Of two nested candidates with (almost) the same text keep the inner one.
+    const innermost = candidates
+      .filter((outer) => !candidates.some((inner) => inner !== outer
+        && outer.node.contains(inner.node) && inner.text.length >= outer.text.length * 0.9))
       .sort((a, b) => b.score - a.score);
+    candidates.splice(0, candidates.length, ...innermost);
     const best = candidates[0] || null;
     return best
       ? {
@@ -1483,7 +1575,10 @@
   };
   // For the adapters' own manual paths (getResponses / MANUAL_PING): the markdown
   // copy of the latest answer, spread next to answerHtml in the message.
-  const buildLatestAnswerCopy = (llmName = detectLlmNameFromLocation()) => {
+  // `node` (optional): the very element the adapter took text/html from, so all three
+  // describe the same answer; without it the node is chosen like a late snapshot.
+  const buildLatestAnswerCopy = (llmName = detectLlmNameFromLocation(), node = null) => {
+    if (node && node.nodeType === 1) return buildAnswerMarkdownCopy(node, llmName);
     const snapshot = collectLateSnapshotCandidate(llmName, 1, { withMarkdown: true });
     return snapshot.ok
       ? { answerMarkdown: snapshot.answerMarkdown, copyReport: snapshot.copyReport }
@@ -1607,6 +1702,7 @@
     extractSafeVisibleText,
     collectLateSnapshotCandidate,
     buildLatestAnswerCopy,
+    getLastInlineHtmlNotes: () => lastInlineHtmlNotes.slice(),
     initLateAnswerSnapshotObserver
   };
 })();

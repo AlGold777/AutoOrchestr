@@ -1387,7 +1387,7 @@ const chatgptScrollCoordinator = window.ScrollCoordinator
                         llmName: MODEL,
                         answer: cleaned,
                         answerHtml: latestMarkup.html || '',
-                        ...(window.ContentUtils?.buildLatestAnswerCopy?.() || {}),
+                        ...(window.ContentUtils?.buildLatestAnswerCopy?.(undefined, latestMarkup.node) || {}),
                         meta: window.ContentUtils?.ensureDispatchMeta?.(message?.meta || {}, MODEL) || message?.meta || null
                     });
                     chrome.runtime.sendMessage({ type: 'MANUAL_PING_RESULT', llmName: MODEL, status: 'success', pingId });
