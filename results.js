@@ -3077,15 +3077,13 @@ document.addEventListener('click', (event) => {
     const usableAnswerMarkdown = (copy) => (copy && copy.markdown
         && !(copy.report?.placeholders || []).some((item) => item.type === 'answer')) ? copy.markdown : '';
     const cardAnswerCopyText = (card, fallback = '') => usableAnswerMarkdown(card?._answerCopy) || fallback;
-    // No usable HTML but a markdown copy exists: show the markdown with its line breaks
-    // (pre-wrap), not the flat text as one paragraph; and say the HTML was missing.
+    // No usable HTML but a markdown copy exists: show the markdown as structure (headings, lists,
+    // code, tables), never the flat text as one paragraph; and say the HTML was missing.
     const renderMarkdownWhenNoHtml = (body, card, html) => {
         const markdown = usableAnswerMarkdown(card?._answerCopy);
         if (!body || String(html || '').trim() || !markdown) return false;
-        const block = document.createElement('div');
-        block.style.whiteSpace = 'pre-wrap';
-        block.textContent = markdown;
-        body.replaceChildren(block);
+        replaceChildrenFromSanitizedHtml(body, renderMarkdownHtml(markdown));
+        decorateLinksForNewTab(body);
         const report = card._answerCopy.report || { version: 1, found: {}, copied: {}, placeholders: [], mismatches: [], flags: {} };
         card._answerCopy = {
             ...card._answerCopy,
@@ -3093,6 +3091,38 @@ document.addEventListener('click', (event) => {
         };
         paintCopyMarker(card);
         return true;
+    };
+    // The card already shows this answer as flat text (an earlier message had no html) and a later
+    // message brings the same answer with structure: the structure replaces the flat text.
+    // Two renderings of one answer differ in page labels, hidden captions and spacing: the answer is
+    // the same when nearly all words of the shorter one are found in the longer one.
+    const looselySameAnswer = (a, b) => {
+        const words = (value) => String(value || '').toLowerCase().match(/[\p{L}\p{N}]{4,}/gu) || [];
+        const x = words(a);
+        const y = words(b);
+        const [short, long] = x.length <= y.length ? [x, y] : [y, x];
+        if (short.length < 5) return false;
+        const known = new Set(long);
+        const shared = short.filter((word) => known.has(word)).length;
+        return shared / short.length >= 0.85 && short.length >= long.length * 0.5;
+    };
+    const upgradeFlatCard = (card, text, html, llmName, requestId = '') => {
+        const body = card?.querySelector?.('.debate-model-card-output');
+        if (!body) return false;
+        if (body.querySelector('h1,h2,h3,h4,h5,h6,ul,ol,pre,table,blockquote')) return false;
+        applyAnswerCopyToCard(card, llmName, requestId);
+        const markdown = usableAnswerMarkdown(card._answerCopy);
+        const richHtml = ANSWER_HTML_STRUCTURE.test(String(html || '')) ? html : '';
+        if (richHtml) {
+            renderDebateResponseBody(body, text, richHtml, markdown);
+            return true;
+        }
+        if (markdown && ANSWER_HTML_STRUCTURE.test(renderMarkdownHtml(markdown))) {
+            replaceChildrenFromSanitizedHtml(body, renderMarkdownHtml(markdown));
+            decorateLinksForNewTab(body);
+            return true;
+        }
+        return false;
     };
     const applyAnswerCopyToCard = (card, llmName, requestId = '') => {
         if (!(card instanceof HTMLElement)) return;
@@ -19049,7 +19079,30 @@ document.addEventListener('click', (event) => {
         .replace(/\s+/g, ' ')
         .trim();
 
-    function resolveCompleteAnswerHtml(answerText = '', answerHtml = '') {
+    // Markdown -> HTML for a card (GFM subset, shared/markdown-to-html.js); the old flat converter
+    // only when that module is not loaded.
+    function renderMarkdownHtml(markdown) {
+        return typeof window.MarkdownToHtml?.render === 'function'
+            ? window.MarkdownToHtml.render(markdown)
+            : convertMarkdownToHTML(markdown);
+    }
+    const ANSWER_HTML_STRUCTURE = /<(?:h[1-6]|ul|ol|pre|table|blockquote)\b/i;
+    // How much of the text is left after the place where the html ends. The html's last words are
+    // looked up in the text (the occurrence nearest to the html's own length); page labels the html
+    // never had shift that place only a little, a cut-off html leaves a real tail behind it.
+    function textLeftAfterHtmlEnd(textProjection, htmlProjection) {
+        const tail = htmlProjection.slice(-60);
+        if (tail.length < 30) return 0;
+        let bestEnd = -1;
+        let bestDistance = Infinity;
+        for (let at = textProjection.indexOf(tail); at !== -1; at = textProjection.indexOf(tail, at + 1)) {
+            const end = at + tail.length;
+            const distance = Math.abs(end - htmlProjection.length);
+            if (distance < bestDistance) { bestDistance = distance; bestEnd = end; }
+        }
+        return bestEnd < 0 ? 0 : textProjection.length - bestEnd;
+    }
+    function resolveCompleteAnswerHtml(answerText = '', answerHtml = '', answerMarkdown = '') {
         const text = String(answerText || '').trim();
         const sourceHtml = sanitizeInlineHtml(String(answerHtml || '').trim());
         let sanitizedHtml = sourceHtml;
@@ -19059,7 +19112,8 @@ document.addEventListener('click', (event) => {
             fragment.content.querySelectorAll('h6.screen-reader-model-response-label').forEach(label => label.remove());
             sanitizedHtml = fragment.innerHTML;
         }
-        const textHtml = convertMarkdownToHTML(text);
+        // The structured source wins over the flat text: a markdown copy, when there is one, is the reference.
+        const textHtml = answerMarkdown ? renderMarkdownHtml(answerMarkdown) : convertMarkdownToHTML(text);
         if (!sanitizedHtml || !text) return sanitizedHtml || textHtml;
 
         // The text payload is the committed answer. Rich HTML is only a
@@ -19072,10 +19126,13 @@ document.addEventListener('click', (event) => {
         const sameAnswerHead = comparableHeadLength >= 40
             && textProjection.slice(0, comparableHeadLength) === htmlProjection.slice(0, comparableHeadLength);
         const missingTailChars = textProjection.length - htmlProjection.length;
+        // Fewer characters alone is not truncation: the flat text carries page labels (Copy, diagram
+        // captions...) the html does not. Truncated means the html lacks the end of the answer.
         const htmlProjectionIsTruncated = textProjection.length >= 120
             && sameAnswerHead
             && missingTailChars >= 24
-            && htmlProjection.length < textProjection.length * 0.99;
+            && htmlProjection.length < textProjection.length * 0.99
+            && textLeftAfterHtmlEnd(textProjection, htmlProjection) >= Math.max(24, textProjection.length * 0.02);
         // Captured while Gemini still showed only the heading of its thinking and the hidden
         // page label: a short projection with nothing of the answer's beginning. The text is the answer.
         const htmlHoldsNoAnswer = textProjection.length >= 200
@@ -19105,7 +19162,8 @@ document.addEventListener('click', (event) => {
         const rawHtml = payload.html || '';
         const sanitizedHtml = sanitizeInlineHtml(rawHtml);
         const richHtml = sanitizedHtml || (looksLikeHtml(normalizedText) ? sanitizeInlineHtml(normalizedText) : '');
-        const resolvedHtml = resolveCompleteAnswerHtml(normalizedText, richHtml);
+        const pendingMarkdown = typeof usableAnswerMarkdown === 'function' ? usableAnswerMarkdown(answerCopyPending[llmName]) : '';
+        const resolvedHtml = resolveCompleteAnswerHtml(normalizedText, richHtml, pendingMarkdown);
         const mainView = getCurrentViewKey() === 'main';
         const isPipelineRequest = isPipelineRequestMeta(meta);
         if (mainView && !isPipelineRequest && !isCurrentMainRequestResponse(llmName, meta)) {
@@ -22148,9 +22206,9 @@ function checkCompareButtonState() {
             card.dataset.turnClosed = 'true';
         });
     }
-    function renderDebateResponseBody(outputEl, text = '', html = '') {
+    function renderDebateResponseBody(outputEl, text = '', html = '', markdown = '') {
         if (!outputEl) return '';
-        const formattedHtml = resolveCompleteAnswerHtml(text, html);
+        const formattedHtml = resolveCompleteAnswerHtml(text, html, markdown);
         replaceChildrenFromSanitizedHtml(outputEl, formattedHtml);
         decorateLinksForNewTab(outputEl);
         return String(outputEl.innerHTML || '').trim();
@@ -23121,6 +23179,14 @@ function checkCompareButtonState() {
         applyPartialMarker(targetCard, meta);
         const primaryOutput = targetCard.querySelector('.debate-model-card-output');
         const primaryText = shownTextOf(targetCard);
+        // The same answer again, but now with structure while the card shows flat text (its first
+        // message had no html): the structure replaces the flat text, it is not a "revision" tab.
+        if (incomingShown && primaryText && looselySameAnswer(primaryText, incomingShown)
+            && upgradeFlatCard(targetCard, normalizedText, normalizedHtml, llmName, requestId)) {
+            patchDebateCardMessage(targetCard, { text: normalizedText, html: String(primaryOutput?.innerHTML || '').trim() });
+            closeIfFinal(targetCard);
+            return true;
+        }
         // Nothing new: the same text, or an older/shorter copy of what is shown.
         if (incomingShown && primaryText.startsWith(incomingShown)) {
             closeIfFinal(targetCard);
@@ -23231,7 +23297,7 @@ function checkCompareButtonState() {
                 body.classList.remove('debate-model-card-empty');
                 const renderSourceHtml = resolveCompleteAnswerHtml(normalizedText, normalizedHtml);
                 applyAnswerCopyToCard(liveCard, llmName, requestId);
-                if (!renderMarkdownWhenNoHtml(body, liveCard, normalizedHtml)) renderDebateResponseBody(body, normalizedText, normalizedHtml);
+                if (!renderMarkdownWhenNoHtml(body, liveCard, normalizedHtml)) renderDebateResponseBody(body, normalizedText, normalizedHtml, usableAnswerMarkdown(liveCard._answerCopy));
                 emitAnswerCardRenderEvidence(llmName, liveCard, body, { ...meta, renderSourceHtml });
             }
             syncDebateCardOutputLayout(liveCard);
@@ -23301,7 +23367,7 @@ function checkCompareButtonState() {
         const body = card.querySelector('.debate-model-card-output');
         const renderSourceHtml = resolveCompleteAnswerHtml(normalizedText, normalizedHtml);
         applyAnswerCopyToCard(card, llmName, requestId);
-        if (!renderMarkdownWhenNoHtml(body, card, normalizedHtml)) renderDebateResponseBody(body, normalizedText, normalizedHtml);
+        if (!renderMarkdownWhenNoHtml(body, card, normalizedHtml)) renderDebateResponseBody(body, normalizedText, normalizedHtml, usableAnswerMarkdown(card._answerCopy));
         emitAnswerCardRenderEvidence(llmName, card, body, { ...meta, renderSourceHtml });
         syncDebateCardOutputLayout(card);
         setDebatePrintingState(card, llmName, !isFinal);

@@ -124,7 +124,7 @@ describe('card without html shows the markdown, not one flat paragraph', () => {
     const src = read('results.js');
     return src.slice(src.indexOf('const answerCopyPending = {};'), src.indexOf('const debateFeedMessageMeta = (message)'));
   };
-  const api = () => new Function(`${block()}; return { stashAnswerCopy, applyAnswerCopyToCard, renderMarkdownWhenNoHtml };`)();
+  const api = () => new Function('replaceChildrenFromSanitizedHtml', 'decorateLinksForNewTab', 'renderMarkdownHtml', `${block()}; return { stashAnswerCopy, applyAnswerCopyToCard, renderMarkdownWhenNoHtml };`)((el, html) => { el.innerHTML = html; }, () => {}, (md) => require('../shared/markdown-to-html').render(md));
   const makeCard = () => {
     const card = document.createElement('div');
     card.innerHTML = '<span class="debate-model-card-meta"></span><div class="debate-model-card-output">flat text one paragraph</div>';
@@ -133,16 +133,16 @@ describe('card without html shows the markdown, not one flat paragraph', () => {
   };
   const report = { version: 1, found: {}, copied: {}, placeholders: [], mismatches: [], flags: {}, complete: true };
 
-  test('empty html + markdown: pre-wrap block with the line breaks and an "html отсутствует" marker', () => {
+  test('empty html + markdown: the markdown is shown as structure, with an "html отсутствует" marker', () => {
     const { stashAnswerCopy, applyAnswerCopyToCard, renderMarkdownWhenNoHtml } = api();
     const card = makeCard();
     stashAnswerCopy('Le Chat', { answerMarkdown: '# Title\n\n- a\n- b\n\n```js\nx = 1\n```', copyReport: report }, '');
     applyAnswerCopyToCard(card, 'Le Chat', '');
     const body = card.querySelector('.debate-model-card-output');
     expect(renderMarkdownWhenNoHtml(body, card, '')).toBe(true);
-    const shown = body.firstElementChild;
-    expect(shown.style.whiteSpace).toBe('pre-wrap');
-    expect(shown.textContent).toBe('# Title\n\n- a\n- b\n\n```js\nx = 1\n```');
+    expect(body.querySelector('h1').textContent).toBe('Title');
+    expect(body.querySelectorAll('li')).toHaveLength(2);
+    expect(body.querySelector('pre code').textContent).toBe('x = 1');
     expect(card.querySelector('.debate-copy-incomplete').title).toContain('html');
   });
 

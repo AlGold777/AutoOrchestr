@@ -83,12 +83,15 @@
     'hr',
     'img'
   ];
-  const ALLOWED_ATTR = ['href', 'class', 'style', 'colspan', 'rowspan', 'scope', 'src', 'alt', 'width', 'height'];
+  const ALLOWED_ATTR = ['href', 'class', 'style', 'colspan', 'rowspan', 'scope', 'src', 'alt', 'width', 'height', 'start'];
   const ALLOWED_URI_REGEXP = /^(https?:|mailto:|tel:|#)/i;
   // The only image form allowed: a diagram saved as an inline SVG data URL (it runs no
   // script as an <img>). Remote or any other image sources are dropped below.
   const SVG_DATA_IMG_RE = /^data:image\/svg\+xml;base64,[A-Za-z0-9+/]+={0,2}$/;
-  const PURIFY_URI_REGEXP = /^(?:(?:https?|mailto|tel):|#|data:image\/svg\+xml;base64,)/i;
+  // Plain numbers are allowed too (start, width, height, colspan, rowspan): DOMPurify checks every
+  // attribute value that is not on its own safe list against this expression. A bare number can
+  // not be a link target worth keeping: anchors are re-checked below, images by SVG_DATA_IMG_RE.
+  const PURIFY_URI_REGEXP = /^(?:(?:https?|mailto|tel):|#|data:image\/svg\+xml;base64,|\d+$)/i;
 
   const keepOnlySvgDataImages = (container) => {
     if (!container || typeof container.querySelectorAll !== 'function') return;

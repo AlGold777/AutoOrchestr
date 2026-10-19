@@ -103,6 +103,7 @@ describe('sanitizeHTML (DOMPurify) with diagram images', () => {
     expect(imgs).toHaveLength(1);
     expect(imgs[0].getAttribute('src')).toBe(svgSrc);
     expect(imgs[0].getAttribute('alt')).toBe('Диаграмма');
+    expect(imgs[0].getAttribute('width')).toBe('10');
     expect(imgs[0].hasAttribute('onerror')).toBe(false);
     expect(host.querySelector('a').hasAttribute('href')).toBe(false);
   });
