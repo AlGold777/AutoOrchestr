@@ -587,10 +587,51 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
     };
     let working = cloneRoot;
     // The picture (or, over the size limit, the note) for one svg whose layout is `rect`.
+    // The css of the shadow root an svg lives in (styles outside the svg, constructable sheets) goes into the picture.
+    const shadowCssOf = (svg) => {
+      const root = svg.getRootNode ? svg.getRootNode() : null;
+      if (!root || !root.host) return '';
+      const css = [];
+      try { root.querySelectorAll('style').forEach((style) => { if (!style.closest('svg')) css.push(style.textContent || ''); }); } catch (_) {}
+      try {
+        (root.adoptedStyleSheets || []).forEach((sheet) => css.push(Array.from(sheet.cssRules || []).map((rule) => rule.cssText).join('\n')));
+      } catch (_) {}
+      return css.join('\n').trim();
+    };
+    const collectShadowSvgs = (scope, out) => {
+      Array.from(scope.children).forEach((el) => {
+        if (el.localName === 'svg') { out.push(el); return; }
+        if (el.shadowRoot) collectShadowSvgs(el.shadowRoot, out);
+        collectShadowSvgs(el, out);
+      });
+      return out;
+    };
+    // Source svg <-> place in the copy, in document order, into open shadow roots (a host's copy is empty).
+    const pairSvgTargets = (source, copy, out = []) => {
+      const sourceChildren = Array.from(source.children);
+      const copyChildren = Array.from(copy.children);
+      if (sourceChildren.length !== copyChildren.length) return out;
+      sourceChildren.forEach((child, index) => {
+        const target = copyChildren[index];
+        if (child.localName === 'svg') { out.push({ svgs: [child], target, host: false }); return; }
+        if (child.shadowRoot) {
+          const inner = collectShadowSvgs(child.shadowRoot, []);
+          if (inner.length) out.push({ svgs: inner, target, host: child });
+        }
+        pairSvgTargets(child, target, out);
+      });
+      return out;
+    };
     const makeImage = (svg, rect) => {
       const doc = working.ownerDocument;
       const copy = svg.cloneNode(true);
       copy.querySelectorAll('script').forEach((el) => el.remove());
+      const outerCss = shadowCssOf(svg);
+      if (outerCss) {
+        const style = doc.createElementNS('http://www.w3.org/2000/svg', 'style');
+        style.textContent = outerCss;
+        copy.insertBefore(style, copy.firstChild);
+      }
       copy.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
       copy.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
       const { width, height } = fitSvgToContent(svg, copy, rect);
@@ -613,23 +654,32 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
     try {
       // Edit a copy so the page DOM is never touched (this path is read-only).
       working = cloneRoot.cloneNode(true);
-      const sources = Array.from(sourceRoot.querySelectorAll('svg'));
-      const clones = Array.from(working.querySelectorAll('svg'));
-      if (sources.length === clones.length) {
-        sources.forEach((svg, index) => {
-          try {
+      pairSvgTargets(sourceRoot, working).forEach(({ svgs, target, host }) => {
+        try {
+          const images = [];
+          svgs.forEach((svg) => {
             let inSoftWrapper = false;
-            for (let n = svg.parentElement; n && n !== sourceRoot.parentElement; n = n.parentElement) {
+            const up = (node) => node.parentElement || (node.getRootNode && node.getRootNode().host) || null;
+            for (let n = up(svg); n && n !== sourceRoot.parentElement; n = up(n)) {
               if (n.localName === 'svg' || n.matches?.(HARD_SKIP)) return;
               if (n.matches?.(SOFT_SKIP)) inSoftWrapper = true;
             }
             const rect = svg.getBoundingClientRect();
             if (!(rect.width > 48 && rect.height > 48)) return;
             if (inSoftWrapper && !looksLikeDiagram(svg)) return;
-            clones[index].replaceWith(makeImage(svg, rect));
-          } catch (_) {}
-        });
-      }
+            images.push(makeImage(svg, rect));
+          });
+          if (!images.length) return;
+          if (!host) { target.replaceWith(images[0]); return; }
+          if (images.length === 1) {
+            if (images[0].localName === 'img') images[0].setAttribute('alt', host.getAttribute('aria-label') || 'Диаграмма');
+            target.replaceWith(images[0]);
+            return;
+          }
+          target.textContent = '';
+          images.forEach((image) => target.append(image));
+        } catch (_) {}
+      });
       // iframe / object / embed: its content svg as a picture, anything else as a visible note.
       const embeds = Array.from(sourceRoot.querySelectorAll('iframe, object, embed'));
       const embedClones = Array.from(working.querySelectorAll('iframe, object, embed'));

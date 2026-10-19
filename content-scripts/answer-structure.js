@@ -112,7 +112,14 @@
       .join(' '));
   }
 
+  // An open shadow root that holds a picture (a diagram rendered into a shadow host) makes its host a block:
+  // the light DOM of such a host is empty, the picture is not seen by querySelectorAll.
+  function hasShadowMedia(node) {
+    try { return Boolean(node?.shadowRoot?.querySelector?.('svg, img, canvas, video')); } catch (_) { return false; }
+  }
+
   function hasNonTextContent(node) {
+    if (hasShadowMedia(node)) return true;
     const tag = String(node?.tagName || '').toUpperCase();
     if (tag === 'SVG') {
       return node.getAttribute?.('role') === 'img'
@@ -147,6 +154,12 @@
       if (semantic && (ownText || media || children.length === 0)) {
         const descriptor = describe(node);
         if (descriptor.length > 0 || descriptor.nonText) blocks.push(descriptor);
+        return;
+      }
+
+      if (hasShadowMedia(node)) {
+        // The host is the block (it is what the page shows as the picture); its shadow content is not walked again.
+        blocks.push(describe(node));
         return;
       }
 

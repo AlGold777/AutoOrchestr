@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-19 — Диаграммы Claude из открытого shadow root, версия 2.81.808
+
+- Причина (снято на живой странице claude.ai 2026-10-19, только чтение): диаграмма Claude — `div[dir=ltr][data-mermaid="true"][role="img"][aria-label="Диаграмма Mermaid"]` с открытым shadowRoot; внутри `<style>` и `<div><svg id="mermaid-…" aria-roledescription="flowchart-v2" viewBox=…>` (метки узлов — svg `<text>`, узлы `g.node` с id `mermaid-<uid>-flowchart-<ID>-<n>`), в светлом DOM у хоста нет ни svg, ни текста. `cloneNode` shadow-содержимое не копирует, `querySelectorAll(svg)` его не видит — в карточке оставался пустой блок, который вычищался. Исходника mermaid в DOM нет (`data-mermaid="true"` — метка).
+- HTML/карточка (`content-scripts/content-utils.js`, дубль в `extractLatestAssistantSnapshotInPage`): обход открытых shadowRoot; диаграмма хоста заменяется картинкой `data:image/svg+xml` с вшитыми стилями shadow-уровня и `alt` из `aria-label`; граница shadow пересекается при проверке предков; `AnswerStructure` считает хост с shadow-svg блоком.
+- Markdown (`shared/answer-markdown-blocks.js`): обработчик находит хост по `[data-mermaid]`/роли и заходит в shadowRoot, реконструирует flowchart (узлы по id `…-flowchart-<ID>-<n>`, рёбра, кластеры, направление) с комментарием `%% реконструировано из SVG` и пометкой в отчёте; иначе — SVG со стилями или заглушка, но не пустой результат.
+- Тесты: `tests/answer-markdown-shadow-svg.test.js` (синтетика по снятой структуре), браузерные в Chrome (`RUN_HTML_EXPORT_BROWSER_TESTS=1`). На живой странице исправление не прогонялось: фикстуру с настоящей разметкой сохранить не удалось (защитный фильтр блокирует вывод shadow root).
+
 ### 2026-10-19 — Блоки вне выбранного элемента ответа больше не теряются молча, версия 2.81.807
 
 - Причина жалобы «диаграмма Claude не показывается вообще, даже пустого блока»: блок лежит вне выбранного элемента ответа (но внутри хода ассистента) и терялся до конвертера, поэтому ни картинка, ни заглушка не появлялись. `AnswerCopyContext.collect` теперь определяет контейнер хода (`options.turn`/`turnSelector`, иначе ближайший предок без пользовательского сообщения и композера) и возвращает `context.outsideBlocks`: нетекстовые блоки хода вне элемента (iframe/object/embed, canvas, медиа, img и svg >48px, кастомные элементы с shadowRoot, признаки артефакта/виджета/диаграммы, код) без побочных эффектов, до 50 записей.

@@ -307,15 +307,26 @@
     return { markdown: `\n\n${ctx.fence(body, name)}\n\n`, copied: 1 };
   }
 
-  // ---- best-effort flowchart reconstruction from a rendered mermaid svg (conventions of mermaid v10/v11 as
-  // remembered; NOT verified live). Returns null whenever anything is not understood: no partial guesses.
+  // ---- best-effort flowchart reconstruction from a rendered mermaid svg (mermaid v11 flowchart-v2 conventions;
+  // structure confirmed on a live Claude DOM 2026-10-19 for nodes/clusters, edge ids are NOT confirmed).
+  // Returns { text, approx } or null whenever anything is not understood: no partial guesses.
   const collapse = (v) => String(v || '').replace(/\s+/g, ' ').trim();
 
+  // Label from html (.nodeLabel) or svg <text>: tspans/lines are separated, never glued ("Задачи<br/>уже есть").
   function labelText(g) {
     const nl = g.querySelector('.nodeLabel');
     if (nl) return collapse(textOf(nl));
-    const texts = Array.from(g.querySelectorAll('text')).map((t) => collapse(textOf(t))).filter(Boolean);
-    return texts.join(' ');
+    const parts = [];
+    for (const t of Array.from(g.querySelectorAll('text'))) {
+      const lines = Array.from(t.children).filter((c) => tag(c) === 'tspan');
+      if (!lines.length) { const x = collapse(textOf(t)); if (x) parts.push(x); continue; }
+      for (const ln of lines) {
+        const inner = Array.from(ln.children).filter((c) => tag(c) === 'tspan');
+        const x = inner.length > 1 ? collapse(inner.map((c) => textOf(c)).join(' ')) : collapse(textOf(ln));
+        if (x) parts.push(x);
+      }
+    }
+    return parts.join('<br/>');
   }
 
   function translateOf(g) {
@@ -331,21 +342,57 @@
   }
 
   const mdLabel = (t) => `"${String(t).replace(/"/g, '#quot;')}"`;
+  const NODE_CLASS_NOISE = new Set(['node', 'default', 'flowchart-label', 'clickable', 'statediagram-state', 'label-container']);
+
+  function splitEnds(body, ends, sep) {
+    for (const a of ends.keys()) {
+      if (!body.startsWith(a + sep)) continue;
+      const rest = body.slice(a.length + sep.length);
+      if (ends.has(rest)) return [a, rest];
+    }
+    return null;
+  }
+
+  function pathPoints(path) {
+    const nums = (attr(path, 'd') || '').match(/-?\d*\.?\d+(?:e-?\d+)?/gi);
+    if (!nums || nums.length < 4) return null;
+    const v = nums.map(parseFloat);
+    return { a: { x: v[0], y: v[1] }, b: { x: v[v.length - 2], y: v[v.length - 1] } };
+  }
 
   function reconstructFlowchart(svg) {
+    const svgId = attr(svg, 'id') || '';
     const nodes = [];
-    const byId = new Map();
+    const ends = new Map(); // id -> { x, y, hw, hh, node? }
     for (const g of Array.from(svg.querySelectorAll('g.node'))) {
       const id = flowNodeId(g);
-      if (!id || byId.has(id)) continue;
+      if (!id || ends.has(id)) continue;
       const pos = translateOf(g);
-      const label = labelText(g);
+      const rect = g.querySelector('rect, polygon, circle, ellipse');
+      const hw = rect ? (parseFloat(attr(rect, 'width')) || (parseFloat(attr(rect, 'r')) * 2) || 0) / 2 : 0;
+      const hh = rect ? (parseFloat(attr(rect, 'height')) || (parseFloat(attr(rect, 'r')) * 2) || 0) / 2 : 0;
       const shape = g.querySelector('polygon') ? '{}' : (g.querySelector('circle, ellipse') ? '(())' : '[]');
-      const node = { id, label: label || id, shape, x: pos ? pos.x : null, y: pos ? pos.y : null, cluster: null };
+      const classes = (attr(g, 'class') || '').split(/\s+/).filter((c) => c && !NODE_CLASS_NOISE.has(c) && /^[\w-]+$/.test(c));
+      const node = { id, label: labelText(g) || id, shape, classes, x: pos ? pos.x : null, y: pos ? pos.y : null, hw, hh, cluster: null };
       nodes.push(node);
-      byId.set(id, node);
+      ends.set(id, node);
     }
     if (!nodes.length) return null;
+
+    const clusters = [];
+    for (const g of Array.from(svg.querySelectorAll('g.cluster'))) {
+      const r = g.querySelector('rect');
+      const num = (n) => parseFloat(attr(r, n));
+      if (!r || ![num('x'), num('y'), num('width'), num('height')].every(Number.isFinite)) continue;
+      let rawId = attr(g, 'data-id') || attr(g, 'id') || `sg${clusters.length + 1}`;
+      if (svgId && rawId.startsWith(svgId + '-')) rawId = rawId.slice(svgId.length + 1);
+      const c = {
+        id: rawId, label: labelText(g), x: num('x'), y: num('y'), w: num('width'), h: num('height'), parent: null, isCluster: true
+      };
+      c.cx = c.x + c.w / 2; c.cy = c.y + c.h / 2; c.hw = c.w / 2; c.hh = c.h / 2;
+      clusters.push(c);
+      if (!ends.has(rawId)) ends.set(rawId, c);
+    }
 
     const pathEls = Array.from(svg.querySelectorAll('path.flowchart-link'));
     const paths = pathEls.length ? pathEls : Array.from(svg.querySelectorAll('.edgePaths path, g.edgePath path'));
@@ -356,45 +403,53 @@
       const id = holder ? attr(holder, 'data-id') : attr(g, 'data-id');
       if (id) labelById.set(id, labelText(g));
     });
+    const center = (e) => (e.isCluster ? { x: e.cx, y: e.cy } : { x: e.x, y: e.y });
+    const nearest = (pt) => {
+      let best = null; let bd = Infinity;
+      for (const [id, e] of ends) {
+        const c = center(e);
+        if (c.x === null) continue;
+        const dx = Math.max(Math.abs(pt.x - c.x) - (e.hw || 0), 0);
+        const dy = Math.max(Math.abs(pt.y - c.y) - (e.hh || 0), 0);
+        // smaller boxes win a tie: a node inside a cluster beats the cluster
+        const d = Math.hypot(dx, dy) + ((e.hw || 0) * (e.hh || 0)) / 1e7;
+        if (d < bd) { bd = d; best = id; }
+      }
+      return bd <= 12 ? best : null;
+    };
     const edges = [];
+    let approx = false;
     for (let i = 0; i < paths.length; i += 1) {
       const path = paths[i];
       const eid = attr(path, 'data-id') || attr(path, 'id') || '';
-      let from = null; let to = null;
       const cls = attr(path, 'class') || '';
+      let pair = null;
       const ls = /(?:^|\s)LS-(\S+)/.exec(cls); const le = /(?:^|\s)LE-(\S+)/.exec(cls);
-      if (ls && le && byId.has(ls[1]) && byId.has(le[1])) { from = ls[1]; to = le[1]; }
-      if (!from) {
+      if (ls && le && ends.has(ls[1]) && ends.has(le[1])) pair = [ls[1], le[1]];
+      if (!pair) {
         const m = /(?:^|[-_])L_(.+)_(\d+)$/.exec(eid);
-        if (m) {
-          for (const a of byId.keys()) {
-            if (!m[1].startsWith(a + '_')) continue;
-            const rest = m[1].slice(a.length + 1);
-            if (byId.has(rest)) { from = a; to = rest; break; }
-          }
-        }
+        if (m) pair = splitEnds(m[1], ends, '_');
       }
-      if (!from) return null;
+      if (!pair) {
+        const m = /(?:^|-)L-(.+)$/.exec(eid);
+        if (m) pair = splitEnds(m[1], ends, '-');
+      }
+      if (!pair) {
+        const pts = pathPoints(path);
+        const a = pts && nearest(pts.a); const b = pts && nearest(pts.b);
+        if (a && b && a !== b) { pair = [a, b]; approx = true; }
+      }
+      if (!pair) return null;
       let label = labelById.has(eid) ? labelById.get(eid) : '';
       if (!labelById.size && edgeLabels.length === paths.length) label = labelText(edgeLabels[i]);
       const style = /dotted/.test(cls) ? '-.->' : (/thick/.test(cls) ? '==>' : '-->');
-      edges.push({ from, to, label, style });
+      edges.push({ from: pair[0], to: pair[1], label, style });
     }
 
-    const clusters = [];
-    for (const g of Array.from(svg.querySelectorAll('g.cluster'))) {
-      const r = g.querySelector('rect');
-      const num = (n) => parseFloat(attr(r, n));
-      if (!r || ![num('x'), num('y'), num('width'), num('height')].every(Number.isFinite)) continue;
-      const rawId = attr(g, 'data-id') || attr(g, 'id') || `sg${clusters.length + 1}`;
-      clusters.push({
-        id: rawId.replace(/[^\w]/g, '_'), label: labelText(g), x: num('x'), y: num('y'), w: num('width'), h: num('height'), parent: null
-      });
-    }
     const inside = (c, x, y) => x >= c.x && x <= c.x + c.w && y >= c.y && y <= c.y + c.h;
     const area = (c) => c.w * c.h;
     for (const c of clusters) {
-      const encl = clusters.filter((o) => o !== c && inside(o, c.x + c.w / 2, c.y + c.h / 2) && area(o) > area(c));
+      const encl = clusters.filter((o) => o !== c && inside(o, c.cx, c.cy) && area(o) > area(c));
       c.parent = encl.sort((a, b) => area(a) - area(b))[0] || null;
     }
     for (const n of nodes) {
@@ -405,27 +460,33 @@
 
     let dx = 0; let dy = 0;
     for (const e of edges) {
-      const a = byId.get(e.from); const b = byId.get(e.to);
+      const a = center(ends.get(e.from)); const b = center(ends.get(e.to));
       if (a.x !== null && b.x !== null) { dx += b.x - a.x; dy += b.y - a.y; }
     }
     const dir = Math.abs(dy) >= Math.abs(dx) ? (dy >= 0 ? 'TD' : 'BT') : (dx >= 0 ? 'LR' : 'RL');
 
-    const lines = ['%% реконструировано из SVG, возможны расхождения', `flowchart ${dir}`];
+    const safe = (id) => String(id).replace(/[^\w]/g, '_');
+    const lines = ['%% реконструировано из SVG, возможны расхождения'];
+    if (approx) lines.push('%% рёбра определены по геометрии (приблизительно)');
+    lines.push(`flowchart ${dir}`);
     const nodeLine = (n, pad) => {
       const [o, c] = n.shape === '(())' ? ['((', '))'] : (n.shape === '{}' ? ['{', '}'] : ['[', ']']);
-      return `${pad}${n.id}${o}${mdLabel(n.label)}${c}`;
+      return `${pad}${safe(n.id)}${o}${mdLabel(n.label)}${c}`;
     };
     const emit = (cluster, pad) => {
       nodes.filter((n) => n.cluster === cluster).forEach((n) => lines.push(nodeLine(n, pad)));
       clusters.filter((c) => c.parent === cluster).forEach((c) => {
-        lines.push(`${pad}subgraph ${c.id}${c.label ? ` [${mdLabel(c.label)}]` : ''}`);
+        lines.push(`${pad}subgraph ${safe(c.id)}${c.label ? ` [${mdLabel(c.label)}]` : ''}`);
         emit(c, pad + '  ');
         lines.push(`${pad}end`);
       });
     };
     emit(null, '  ');
-    for (const e of edges) lines.push(`  ${e.from} ${e.style}${e.label ? `|${e.label}|` : ''} ${e.to}`);
-    return lines.join('\n');
+    for (const e of edges) lines.push(`  ${safe(e.from)} ${e.style}${e.label ? `|${e.label}|` : ''} ${safe(e.to)}`);
+    const byClass = new Map();
+    nodes.forEach((n) => n.classes.forEach((c) => byClass.set(c, (byClass.get(c) || []).concat(safe(n.id)))));
+    byClass.forEach((ids, c) => lines.push(`  class ${ids.join(',')} ${c}`));
+    return { text: lines.join('\n'), approx };
   }
 
   // Source stored next to / around a rendered mermaid svg (hidden "Code" tab, textarea, script type=text/mermaid).
@@ -464,9 +525,19 @@
     if (lang === 'mermaid' && !inCell(el)) {
       let rebuilt = null;
       try { rebuilt = reconstructFlowchart(svg); } catch (_) { rebuilt = null; }
-      if (rebuilt) return { markdown: `\n\n${ctx.fence(rebuilt, 'mermaid')}\n\n`, copied: 1, reconstructed: true };
+      if (rebuilt) return { markdown: `\n\n${ctx.fence(rebuilt.text, 'mermaid')}\n\n`, copied: 1, reconstructed: true, approximate: rebuilt.approx };
     }
-    const { src, cut } = serializeSvg(svg);
+    // Shadow-DOM renderer (live Claude DOM 2026-10-19): the host's own <style> sits next to the svg, keep it.
+    let target = svg;
+    const rootNode = svg.getRootNode && svg.getRootNode();
+    if (rootNode && rootNode.nodeType === 11) {
+      const styles = Array.from(rootNode.querySelectorAll('style')).filter((st) => !svg.contains(st));
+      if (styles.length) {
+        target = svg.cloneNode(true);
+        styles.slice().reverse().forEach((st) => target.insertBefore(st.cloneNode(true), target.firstChild));
+      }
+    }
+    const { src, cut } = serializeSvg(target);
     const note = ctx.placeholder('diagram', `${lang}: рендерер оставил только SVG без исходника${cut ? `; CSS ${cut} симв. вырезан` : ''}`, el);
     if (inCell(el)) return { markdown: note, copied: 0 };
     if (src.length > MAX_SVG) return { markdown: note, copied: 0 };
@@ -508,9 +579,12 @@
         }
       };
     }
-    const lang = detectLang(el);
+    // Claude: <div data-mermaid="true" role="img" aria-label="Диаграмма Mermaid"> is a host with an OPEN shadowRoot
+    // that holds the svg (light DOM is empty). Detected by the light-DOM markers, not by provider.
+    const hostLike = ['div', 'span', 'figure', 'section'].includes(t) && has(el, '[data-mermaid], [role="img"][aria-label*="mermaid" i]');
+    const lang = hostLike ? 'mermaid' : detectLang(el);
     if (!lang) return null;
-    const svg = el.querySelector('svg');
+    const svg = el.querySelector('svg') || (el.shadowRoot && el.shadowRoot.querySelector('svg')) || null;
     if (svg && siblingSource(el, lang)) {
       // The rendered picture is represented by the neighbouring source block (which is counted itself).
       return { type: 'diagram', count: 1, name: 'diagram', render: () => ({ markdown: '', copied: 1 }) };

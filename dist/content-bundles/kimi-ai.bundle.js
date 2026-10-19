@@ -8062,7 +8062,9 @@
   };
   const isContentSvg = (svg, root) => {
     let inSoftWrapper = false;
-    for (let node = svg.parentElement; node && node !== root.parentElement; node = node.parentElement) {
+    // The climb crosses shadow roots (a shadow root has no parentElement: continue through its host).
+    const up = (node) => node.parentElement || (node.getRootNode && node.getRootNode().host) || null;
+    for (let node = up(svg); node && node !== root.parentElement; node = up(node)) {
       if (node.localName === 'svg') return false;
       if (node.matches?.(SVG_HARD_SKIP_ANCESTORS)) return false;
       if (node.matches?.(SVG_SOFT_SKIP_ANCESTORS)) inSoftWrapper = true;
@@ -8106,10 +8108,28 @@
     if (!copy.getAttribute('style')) copy.removeAttribute('style');
     return { width, height };
   };
+  // The css that styles an svg living in a shadow root: every <style> of that root outside the svg, and its
+  // constructable style sheets. Inside a standalone svg they must be a <style> of the svg itself.
+  const shadowCssOf = (svg) => {
+    const root = svg.getRootNode ? svg.getRootNode() : null;
+    if (!root || !root.host) return '';
+    const css = [];
+    try { root.querySelectorAll('style').forEach((style) => { if (!style.closest('svg')) css.push(style.textContent || ''); }); } catch (_) {}
+    try {
+      (root.adoptedStyleSheets || []).forEach((sheet) => css.push(Array.from(sheet.cssRules || []).map((rule) => rule.cssText).join('\n')));
+    } catch (_) {}
+    return css.join('\n').trim();
+  };
   const svgToImage = (svg, doc, state, rectOverride = null) => {
     const rect = rectOverride || svg.getBoundingClientRect();
     const copy = svg.cloneNode(true);
     copy.querySelectorAll('script').forEach((node) => node.remove());
+    const outerCss = shadowCssOf(svg);
+    if (outerCss) {
+      const style = doc.createElementNS('http://www.w3.org/2000/svg', 'style');
+      style.textContent = outerCss;
+      copy.insertBefore(style, copy.firstChild);
+    }
     copy.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
     copy.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
     const { width, height } = fitSvgToContent(svg, copy, rect);
@@ -8163,14 +8183,48 @@
     note.setAttribute('data-ao-keep', '1');
     return note;
   };
+  // Pairs every svg of the source with its place in the structural copy, in document order, and
+  // goes INTO open shadow roots: a shadow host has no light children, its copy is an empty element, so the
+  // host (not the svg) is what is replaced there. The same walk is in background/job-orchestrator.js.
+  const collectShadowSvgs = (scope, out) => {
+    Array.from(scope.children).forEach((el) => {
+      if (el.localName === 'svg') { out.push(el); return; }
+      if (el.shadowRoot) collectShadowSvgs(el.shadowRoot, out);
+      collectShadowSvgs(el, out);
+    });
+    return out;
+  };
+  const pairSvgTargets = (source, copy, out = []) => {
+    const sourceChildren = Array.from(source.children);
+    const copyChildren = Array.from(copy.children);
+    if (sourceChildren.length !== copyChildren.length) return out;
+    sourceChildren.forEach((child, index) => {
+      const target = copyChildren[index];
+      if (child.localName === 'svg') { out.push({ svgs: [child], target, host: false }); return; }
+      if (child.shadowRoot) {
+        const inner = collectShadowSvgs(child.shadowRoot, []);
+        if (inner.length) out.push({ svgs: inner, target, host: child });
+      }
+      pairSvgTargets(child, target, out);
+    });
+    return out;
+  };
   // sourceRoot has the layout (rects); cloneRoot is its structural copy that is edited.
   const replaceContentSvgs = (sourceRoot, cloneRoot, state) => {
-    const sources = Array.from(sourceRoot.querySelectorAll('svg'));
-    const clones = Array.from(cloneRoot.querySelectorAll('svg'));
-    if (sources.length !== clones.length) return;
-    sources.forEach((svg, index) => {
+    const doc = cloneRoot.ownerDocument;
+    pairSvgTargets(sourceRoot, cloneRoot).forEach(({ svgs, target, host }) => {
       try {
-        if (isContentSvg(svg, sourceRoot)) clones[index].replaceWith(svgToImage(svg, cloneRoot.ownerDocument, state));
+        const content = svgs.filter((svg) => isContentSvg(svg, sourceRoot));
+        if (!content.length) return;
+        const images = content.map((svg) => svgToImage(svg, doc, state));
+        if (!host) { target.replaceWith(images[0]); return; }
+        if (images.length === 1) {
+          if (images[0].localName === 'img') images[0].setAttribute('alt', host.getAttribute('aria-label') || 'Диаграмма');
+          target.replaceWith(images[0]);
+          return;
+        }
+        target.textContent = '';
+        images.forEach((image) => target.append(image));
       } catch (_) {}
     });
     const embeds = Array.from(sourceRoot.querySelectorAll(EMBED_SELECTOR));
@@ -16669,7 +16723,14 @@ const scrollIntoViewSmoothly = async (element) => {
       .join(' '));
   }
 
+  // An open shadow root that holds a picture (a diagram rendered into a shadow host) makes its host a block:
+  // the light DOM of such a host is empty, the picture is not seen by querySelectorAll.
+  function hasShadowMedia(node) {
+    try { return Boolean(node?.shadowRoot?.querySelector?.('svg, img, canvas, video')); } catch (_) { return false; }
+  }
+
   function hasNonTextContent(node) {
+    if (hasShadowMedia(node)) return true;
     const tag = String(node?.tagName || '').toUpperCase();
     if (tag === 'SVG') {
       return node.getAttribute?.('role') === 'img'
@@ -16704,6 +16765,12 @@ const scrollIntoViewSmoothly = async (element) => {
       if (semantic && (ownText || media || children.length === 0)) {
         const descriptor = describe(node);
         if (descriptor.length > 0 || descriptor.nonText) blocks.push(descriptor);
+        return;
+      }
+
+      if (hasShadowMedia(node)) {
+        // The host is the block (it is what the page shows as the picture); its shadow content is not walked again.
+        blocks.push(describe(node));
         return;
       }
 
@@ -16764,6 +16831,19 @@ const scrollIntoViewSmoothly = async (element) => {
   const KNOWN_TYPES = ['heading', 'list', 'quote', 'hr', 'code', 'table', 'math', 'diagram', 'svg',
     'image', 'link', 'artifact', 'source', 'file', 'output'];
   const DIAGRAM_LANGS = new Set(['mermaid', 'plantuml', 'puml', 'dot', 'graphviz', 'd2']);
+
+  // context.outsideBlocks[].type -> report type
+  const DIAGRAM_HINT_RE = /диаграм|diagram|chart|график|svg|mermaid|схем/i;
+  const OUTSIDE_TYPES = {
+    embed: (b) => (DIAGRAM_HINT_RE.test(String(b.hint || '')) ? 'diagram' : 'artifact'),
+    widget: (b) => (DIAGRAM_HINT_RE.test(String(b.hint || '')) ? 'diagram' : 'artifact'),
+    artifact: (b) => (DIAGRAM_HINT_RE.test(String(b.hint || '')) ? 'diagram' : 'artifact'),
+    svg: () => 'svg',
+    image: () => 'image',
+    canvas: () => 'diagram',
+    media: () => 'file',
+    code: () => 'code'
+  };
 
   const SKIP_TAGS = new Set(['script', 'style', 'noscript', 'template', 'head', 'link', 'meta', 'button',
     'select', 'option', 'textarea', 'iframe', 'object', 'embed']);
@@ -17551,6 +17631,30 @@ const scrollIntoViewSmoothly = async (element) => {
     let markdown = blocks.join('\n\n');
     if (st.footers.length) markdown += (markdown ? '\n\n' : '') + st.footers.join('\n');
 
+    // Blocks of the assistant turn that lie outside the converted element (WP3: context.outsideBlocks).
+    // Their content is unreachable here, so each one is a counted placeholder appended at the end.
+    const outside = Array.isArray(context.outsideBlocks) ? context.outsideBlocks.filter((b) => b && typeof b === 'object') : [];
+    if (outside.length) {
+      const lines = outside.map((b, i) => {
+        const type = OUTSIDE_TYPES[b.type] ? OUTSIDE_TYPES[b.type](b) : 'artifact';
+        st.found[type] = (st.found[type] || 0) + 1;
+        const hint = String(b.hint || b.tag || b.type || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+        const pos = Number.isFinite(Number(b.position)) && Number(b.position) > 0 ? Math.floor(Number(b.position)) : st.pos + 1 + i;
+        return addPlaceholder(st, type, `блок вне выбранного элемента ответа${b.beforeSelected ? ' (перед ним)' : ''}: ${hint || 'без описания'}`, pos, type);
+      });
+      markdown += (markdown ? '\n\n' : '') + lines.join('\n\n');
+      flags.outsideBlocks = outside.length;
+    }
+    if (context.outsideBlocksTruncated) {
+      const n = Number(context.outsideBlocksTruncated);
+      const what = Number.isFinite(n) && n > 0 ? `ещё ${n} блоков` : 'часть блоков';
+      markdown += (markdown ? '\n\n' : '') + addPlaceholder(st, 'блок', `${what} вне выбранного элемента не перечислены`, st.pos + 1 + outside.length, null);
+      flags.outsideBlocks = flags.outsideBlocks || 0;
+    }
+    if (Array.isArray(context.notes) && context.notes.some((n) => /контейнер хода не определён/i.test(String(n)))) {
+      flags.turnUnresolved = true;
+    }
+
     const max = Number(opts.maxChars);
     if (Number.isFinite(max) && max > 0 && markdown.length > max) {
       markdown = markdown.slice(0, max).replace(/\s+$/, '')
@@ -17580,7 +17684,7 @@ const scrollIntoViewSmoothly = async (element) => {
       flags,
       complete: false
     };
-    report.complete = !mismatches.length && !st.placeholders.length && !flags.generating
+    report.complete = !flags.turnUnresolved && !mismatches.length && !st.placeholders.length && !flags.generating
       && !flags.truncated && !(flags.collapsed > 0);
     return { markdown, report };
   }
@@ -17639,7 +17743,14 @@ const scrollIntoViewSmoothly = async (element) => {
   const MATH_CENSUS_SELECTOR = MATH_SELECTOR.split(',').filter((x) => x !== 'script[type^="math/tex"]' && x !== '.MathJax_Preview').join(',');
   const RENDERED_MJ = '.MathJax_Display, .MathJax_SVG_Display, .MathJax, .MathJax_SVG, .MathJax_CHTML, mjx-container';
   // Containers the engine census must count as one diagram (pre blocks are counted by the engine itself).
-  const DIAGRAM_CENSUS_SELECTOR = ['.mermaid', '[data-mermaid]', '.plantuml', '.graphviz', '.d2', 'svg[id^="mermaid"]', 'svg[aria-roledescription]']
+  // aria-roledescription values mermaid puts on its svg (known list; not verified live).
+  const MERMAID_ROLES = ['flowchart', 'flowchart-v2', 'sequence', 'classDiagram', 'stateDiagram', 'er', 'gantt', 'pie', 'journey',
+    'gitGraph', 'mindmap', 'timeline', 'quadrantChart', 'requirement', 'c4', 'sankey', 'xychart', 'block', 'packet', 'kanban', 'architecture', 'radar'];
+  // Provider-independent: ChatGPT-style ids look like "chatgpt-mermaid-<n>", plain mermaid ids "mermaid-<n>".
+  const MERMAID_SVG_SELECTOR = ['svg[id*="mermaid" i]', 'svg[class*="mermaid" i]', 'svg[data-processed]']
+    .concat(MERMAID_ROLES.map((r) => `svg[aria-roledescription="${r}"]`)).join(',');
+  const DIAGRAM_LABEL_RE = /^(?:(?:код|code)\s+)?(?:mermaid|plantuml|graphviz|dot|d2)$/i;
+  const DIAGRAM_CENSUS_SELECTOR = ['.mermaid', '[data-mermaid]', '.plantuml', '.graphviz', '.d2', MERMAID_SVG_SELECTOR]
     .concat(Object.keys(DIAGRAM_LANGS).map((k) => `div.language-${k}, div.lang-${k}, span.language-${k}, span.lang-${k}, figure.language-${k}, section.language-${k}`)).join(',');
   const SHAPES = 'path,rect,circle,line,polyline,polygon,ellipse,text,image,foreignObject';
 
@@ -17653,7 +17764,20 @@ const scrollIntoViewSmoothly = async (element) => {
   const inCell = (el) => !!(el && el.closest && el.closest('td, th'));
   const CELL_REASON = 'многострочный блок в ячейке таблицы';
 
+  const NON_TEXT_TAGS = new Set(['style', 'script', 'noscript', 'template']);
+
+  // Exact text, but never the text of <style>/<script>/<noscript>/<template> (CSS must not leak into Markdown).
   function textOf(el, ctx) {
+    if (el.querySelector && el.querySelector('style, script, noscript, template')) {
+      let out = '';
+      (function walk(node) {
+        node.childNodes.forEach((n) => {
+          if (n.nodeType === 3) out += n.nodeValue;
+          else if (n.nodeType === 1 && !NON_TEXT_TAGS.has(tag(n))) walk(n);
+        });
+      })(el);
+      return out;
+    }
     return ctx && typeof ctx.text === 'function' ? ctx.text(el) : String(el.textContent || '');
   }
 
@@ -17773,15 +17897,24 @@ const scrollIntoViewSmoothly = async (element) => {
     return svg.querySelectorAll(SHAPES).length <= 1;
   }
 
+  const MAX_STYLE = 4096;
+
+  // SVG source; <style> larger than 4 KB is cut out (an xml comment marks the cut) so the block stays readable.
   function serializeSvg(svg) {
     let out = svg.outerHTML;
+    let cut = 0;
+    out = out.replace(/<style\b[^>]*>([\s\S]*?)<\/style>/gi, (m, css) => {
+      if (css.length <= MAX_STYLE) return m;
+      cut += css.length;
+      return '';
+    });
     if (!/^<svg\b[^>]*\sxmlns=/i.test(out)) out = out.replace(/^<svg\b/i, '<svg xmlns="http://www.w3.org/2000/svg"');
-    return out;
+    if (cut) out = out.replace(/^<svg\b[^>]*>/i, (m) => `${m}<!-- CSS из <style> (${cut} симв.) вырезан -->`);
+    return { src: out, cut };
   }
 
-  // Bare mermaid svg (no container). Graphviz svg without a container is exported as a plain svg block.
   function svgDiagramLang(svg) {
-    return has(svg, 'svg[id^="mermaid"], svg[aria-roledescription]') ? 'mermaid' : null;
+    return has(svg, MERMAID_SVG_SELECTOR) ? 'mermaid' : null;
   }
 
   // ---------------------------------------------------------------- diagrams
@@ -17878,16 +18011,260 @@ const scrollIntoViewSmoothly = async (element) => {
     return { markdown: `\n\n${ctx.fence(body, name)}\n\n`, copied: 1 };
   }
 
+  // ---- best-effort flowchart reconstruction from a rendered mermaid svg (mermaid v11 flowchart-v2 conventions;
+  // structure confirmed on a live Claude DOM 2026-10-19 for nodes/clusters, edge ids are NOT confirmed).
+  // Returns { text, approx } or null whenever anything is not understood: no partial guesses.
+  const collapse = (v) => String(v || '').replace(/\s+/g, ' ').trim();
+
+  // Label from html (.nodeLabel) or svg <text>: tspans/lines are separated, never glued ("Задачи<br/>уже есть").
+  function labelText(g) {
+    const nl = g.querySelector('.nodeLabel');
+    if (nl) return collapse(textOf(nl));
+    const parts = [];
+    for (const t of Array.from(g.querySelectorAll('text'))) {
+      const lines = Array.from(t.children).filter((c) => tag(c) === 'tspan');
+      if (!lines.length) { const x = collapse(textOf(t)); if (x) parts.push(x); continue; }
+      for (const ln of lines) {
+        const inner = Array.from(ln.children).filter((c) => tag(c) === 'tspan');
+        const x = inner.length > 1 ? collapse(inner.map((c) => textOf(c)).join(' ')) : collapse(textOf(ln));
+        if (x) parts.push(x);
+      }
+    }
+    return parts.join('<br/>');
+  }
+
+  function translateOf(g) {
+    const m = /translate\(\s*(-?[\d.]+)[ ,]+(-?[\d.]+)\s*\)/.exec(attr(g, 'transform') || '');
+    return m ? { x: parseFloat(m[1]), y: parseFloat(m[2]) } : null;
+  }
+
+  function flowNodeId(g) {
+    const d = attr(g, 'data-id');
+    if (d) return d;
+    const m = /(?:^|-)flowchart-(.+)-\d+$/.exec(attr(g, 'id') || '');
+    return m ? m[1] : null;
+  }
+
+  const mdLabel = (t) => `"${String(t).replace(/"/g, '#quot;')}"`;
+  const NODE_CLASS_NOISE = new Set(['node', 'default', 'flowchart-label', 'clickable', 'statediagram-state', 'label-container']);
+
+  function splitEnds(body, ends, sep) {
+    for (const a of ends.keys()) {
+      if (!body.startsWith(a + sep)) continue;
+      const rest = body.slice(a.length + sep.length);
+      if (ends.has(rest)) return [a, rest];
+    }
+    return null;
+  }
+
+  function pathPoints(path) {
+    const nums = (attr(path, 'd') || '').match(/-?\d*\.?\d+(?:e-?\d+)?/gi);
+    if (!nums || nums.length < 4) return null;
+    const v = nums.map(parseFloat);
+    return { a: { x: v[0], y: v[1] }, b: { x: v[v.length - 2], y: v[v.length - 1] } };
+  }
+
+  function reconstructFlowchart(svg) {
+    const svgId = attr(svg, 'id') || '';
+    const nodes = [];
+    const ends = new Map(); // id -> { x, y, hw, hh, node? }
+    for (const g of Array.from(svg.querySelectorAll('g.node'))) {
+      const id = flowNodeId(g);
+      if (!id || ends.has(id)) continue;
+      const pos = translateOf(g);
+      const rect = g.querySelector('rect, polygon, circle, ellipse');
+      const hw = rect ? (parseFloat(attr(rect, 'width')) || (parseFloat(attr(rect, 'r')) * 2) || 0) / 2 : 0;
+      const hh = rect ? (parseFloat(attr(rect, 'height')) || (parseFloat(attr(rect, 'r')) * 2) || 0) / 2 : 0;
+      const shape = g.querySelector('polygon') ? '{}' : (g.querySelector('circle, ellipse') ? '(())' : '[]');
+      const classes = (attr(g, 'class') || '').split(/\s+/).filter((c) => c && !NODE_CLASS_NOISE.has(c) && /^[\w-]+$/.test(c));
+      const node = { id, label: labelText(g) || id, shape, classes, x: pos ? pos.x : null, y: pos ? pos.y : null, hw, hh, cluster: null };
+      nodes.push(node);
+      ends.set(id, node);
+    }
+    if (!nodes.length) return null;
+
+    const clusters = [];
+    for (const g of Array.from(svg.querySelectorAll('g.cluster'))) {
+      const r = g.querySelector('rect');
+      const num = (n) => parseFloat(attr(r, n));
+      if (!r || ![num('x'), num('y'), num('width'), num('height')].every(Number.isFinite)) continue;
+      let rawId = attr(g, 'data-id') || attr(g, 'id') || `sg${clusters.length + 1}`;
+      if (svgId && rawId.startsWith(svgId + '-')) rawId = rawId.slice(svgId.length + 1);
+      const c = {
+        id: rawId, label: labelText(g), x: num('x'), y: num('y'), w: num('width'), h: num('height'), parent: null, isCluster: true
+      };
+      c.cx = c.x + c.w / 2; c.cy = c.y + c.h / 2; c.hw = c.w / 2; c.hh = c.h / 2;
+      clusters.push(c);
+      if (!ends.has(rawId)) ends.set(rawId, c);
+    }
+
+    const pathEls = Array.from(svg.querySelectorAll('path.flowchart-link'));
+    const paths = pathEls.length ? pathEls : Array.from(svg.querySelectorAll('.edgePaths path, g.edgePath path'));
+    const edgeLabels = Array.from(svg.querySelectorAll('.edgeLabels .edgeLabel, g.edgeLabel'));
+    const labelById = new Map();
+    edgeLabels.forEach((g) => {
+      const holder = g.querySelector('[data-id]');
+      const id = holder ? attr(holder, 'data-id') : attr(g, 'data-id');
+      if (id) labelById.set(id, labelText(g));
+    });
+    const center = (e) => (e.isCluster ? { x: e.cx, y: e.cy } : { x: e.x, y: e.y });
+    const nearest = (pt) => {
+      let best = null; let bd = Infinity;
+      for (const [id, e] of ends) {
+        const c = center(e);
+        if (c.x === null) continue;
+        const dx = Math.max(Math.abs(pt.x - c.x) - (e.hw || 0), 0);
+        const dy = Math.max(Math.abs(pt.y - c.y) - (e.hh || 0), 0);
+        // smaller boxes win a tie: a node inside a cluster beats the cluster
+        const d = Math.hypot(dx, dy) + ((e.hw || 0) * (e.hh || 0)) / 1e7;
+        if (d < bd) { bd = d; best = id; }
+      }
+      return bd <= 12 ? best : null;
+    };
+    const edges = [];
+    let approx = false;
+    for (let i = 0; i < paths.length; i += 1) {
+      const path = paths[i];
+      const eid = attr(path, 'data-id') || attr(path, 'id') || '';
+      const cls = attr(path, 'class') || '';
+      let pair = null;
+      const ls = /(?:^|\s)LS-(\S+)/.exec(cls); const le = /(?:^|\s)LE-(\S+)/.exec(cls);
+      if (ls && le && ends.has(ls[1]) && ends.has(le[1])) pair = [ls[1], le[1]];
+      if (!pair) {
+        const m = /(?:^|[-_])L_(.+)_(\d+)$/.exec(eid);
+        if (m) pair = splitEnds(m[1], ends, '_');
+      }
+      if (!pair) {
+        const m = /(?:^|-)L-(.+)$/.exec(eid);
+        if (m) pair = splitEnds(m[1], ends, '-');
+      }
+      if (!pair) {
+        const pts = pathPoints(path);
+        const a = pts && nearest(pts.a); const b = pts && nearest(pts.b);
+        if (a && b && a !== b) { pair = [a, b]; approx = true; }
+      }
+      if (!pair) return null;
+      let label = labelById.has(eid) ? labelById.get(eid) : '';
+      if (!labelById.size && edgeLabels.length === paths.length) label = labelText(edgeLabels[i]);
+      const style = /dotted/.test(cls) ? '-.->' : (/thick/.test(cls) ? '==>' : '-->');
+      edges.push({ from: pair[0], to: pair[1], label, style });
+    }
+
+    const inside = (c, x, y) => x >= c.x && x <= c.x + c.w && y >= c.y && y <= c.y + c.h;
+    const area = (c) => c.w * c.h;
+    for (const c of clusters) {
+      const encl = clusters.filter((o) => o !== c && inside(o, c.cx, c.cy) && area(o) > area(c));
+      c.parent = encl.sort((a, b) => area(a) - area(b))[0] || null;
+    }
+    for (const n of nodes) {
+      if (n.x === null) continue;
+      const encl = clusters.filter((c) => inside(c, n.x, n.y));
+      n.cluster = encl.sort((a, b) => area(a) - area(b))[0] || null;
+    }
+
+    let dx = 0; let dy = 0;
+    for (const e of edges) {
+      const a = center(ends.get(e.from)); const b = center(ends.get(e.to));
+      if (a.x !== null && b.x !== null) { dx += b.x - a.x; dy += b.y - a.y; }
+    }
+    const dir = Math.abs(dy) >= Math.abs(dx) ? (dy >= 0 ? 'TD' : 'BT') : (dx >= 0 ? 'LR' : 'RL');
+
+    const safe = (id) => String(id).replace(/[^\w]/g, '_');
+    const lines = ['%% реконструировано из SVG, возможны расхождения'];
+    if (approx) lines.push('%% рёбра определены по геометрии (приблизительно)');
+    lines.push(`flowchart ${dir}`);
+    const nodeLine = (n, pad) => {
+      const [o, c] = n.shape === '(())' ? ['((', '))'] : (n.shape === '{}' ? ['{', '}'] : ['[', ']']);
+      return `${pad}${safe(n.id)}${o}${mdLabel(n.label)}${c}`;
+    };
+    const emit = (cluster, pad) => {
+      nodes.filter((n) => n.cluster === cluster).forEach((n) => lines.push(nodeLine(n, pad)));
+      clusters.filter((c) => c.parent === cluster).forEach((c) => {
+        lines.push(`${pad}subgraph ${safe(c.id)}${c.label ? ` [${mdLabel(c.label)}]` : ''}`);
+        emit(c, pad + '  ');
+        lines.push(`${pad}end`);
+      });
+    };
+    emit(null, '  ');
+    for (const e of edges) lines.push(`  ${safe(e.from)} ${e.style}${e.label ? `|${e.label}|` : ''} ${safe(e.to)}`);
+    const byClass = new Map();
+    nodes.forEach((n) => n.classes.forEach((c) => byClass.set(c, (byClass.get(c) || []).concat(safe(n.id)))));
+    byClass.forEach((ids, c) => lines.push(`  class ${ids.join(',')} ${c}`));
+    return { text: lines.join('\n'), approx };
+  }
+
+  // Source stored next to / around a rendered mermaid svg (hidden "Code" tab, textarea, script type=text/mermaid).
+  function hiddenish(node, stop) {
+    for (let n = node; n && n !== stop; n = n.parentElement) {
+      if (n.hasAttribute('hidden') || n.hasAttribute('inert') || attr(n, 'aria-hidden') === 'true') return true;
+      if (/display\s*:\s*none|visibility\s*:\s*hidden/i.test(attr(n, 'style') || '')) return true;
+    }
+    return false;
+  }
+
+  // -> { emit: text } | { sibling: true } | null
+  function wrapperSource(svg, lang, ctx) {
+    let wrap = svg.parentElement;
+    for (let depth = 0; wrap && depth < 4; depth += 1, wrap = wrap.parentElement) {
+      if (wrap.querySelectorAll(MERMAID_SVG_SELECTOR).length > 1) return null;
+      const cands = Array.from(wrap.querySelectorAll('textarea, script[type*="mermaid"], pre, code'))
+        .filter((c) => !c.closest('svg') && !c.querySelector('svg'));
+      for (const c of cands) {
+        const t = tag(c);
+        // the engine's ctx.text() deliberately returns '' for <script>: read the source container directly
+        const text = t === 'textarea' || t === 'script' ? String(c.textContent || '') : textOf(c, ctx);
+        if (!text.trim()) continue;
+        if (t === 'textarea' || t === 'script') return { emit: text };
+        const strong = detectLang(c.closest('pre') || c) === lang;
+        if (!strong) continue;
+        const pre = c.closest('pre') || c;
+        if (hiddenish(pre, wrap.parentElement)) return { emit: text };
+        return { sibling: true };
+      }
+    }
+    return null;
+  }
+
   function svgOnlyDiagram(el, svg, lang, ctx) {
-    const note = ctx.placeholder('diagram', `${lang}: рендерер оставил только SVG без исходника`, el);
+    if (lang === 'mermaid' && !inCell(el)) {
+      let rebuilt = null;
+      try { rebuilt = reconstructFlowchart(svg); } catch (_) { rebuilt = null; }
+      if (rebuilt) return { markdown: `\n\n${ctx.fence(rebuilt.text, 'mermaid')}\n\n`, copied: 1, reconstructed: true, approximate: rebuilt.approx };
+    }
+    // Shadow-DOM renderer (live Claude DOM 2026-10-19): the host's own <style> sits next to the svg, keep it.
+    let target = svg;
+    const rootNode = svg.getRootNode && svg.getRootNode();
+    if (rootNode && rootNode.nodeType === 11) {
+      const styles = Array.from(rootNode.querySelectorAll('style')).filter((st) => !svg.contains(st));
+      if (styles.length) {
+        target = svg.cloneNode(true);
+        styles.slice().reverse().forEach((st) => target.insertBefore(st.cloneNode(true), target.firstChild));
+      }
+    }
+    const { src, cut } = serializeSvg(target);
+    const note = ctx.placeholder('diagram', `${lang}: рендерер оставил только SVG без исходника${cut ? `; CSS ${cut} симв. вырезан` : ''}`, el);
     if (inCell(el)) return { markdown: note, copied: 0 };
-    const src = serializeSvg(svg);
     if (src.length > MAX_SVG) return { markdown: note, copied: 0 };
     return { markdown: `\n\n${note}\n\n${ctx.fence(src, 'svg')}\n\n`, copied: 0 };
   }
 
+  // Header caption of a diagram block ("Код Mermaid"): its text must become the fence language, not text.
+  function isDiagramLabel(el) {
+    if (el.children.length && !Array.from(el.children).every((c) => has(c, 'button, [role="button"], svg'))) return false;
+    const own = Array.from(el.childNodes).filter((n) => n.nodeType === 3).map((n) => n.nodeValue).join('');
+    if (own.length > 40 || !DIAGRAM_LABEL_RE.test(collapse(own))) return false;
+    let a = el.parentElement;
+    for (let i = 0; a && i < 4; i += 1, a = a.parentElement) {
+      if (a.querySelector(MERMAID_SVG_SELECTOR) || a.querySelector('.mermaid')) return true;
+    }
+    return false;
+  }
+
   function analyzeDiagram(el) {
     const t = tag(el);
+    if (t !== 'svg' && el.children.length < 4 && el.textContent.length < 60 && isDiagramLabel(el)) {
+      return { type: 'diagram', count: 0, name: 'diagram', render: () => ({ markdown: '', copied: 0 }) };
+    }
     if (t === 'svg') {
       if (el.parentNode && el.parentNode.closest && el.parentNode.closest('svg')) return null;
       if (isIconSvg(el)) return null;
@@ -17896,16 +18273,22 @@ const scrollIntoViewSmoothly = async (element) => {
       return {
         type: 'diagram', count: 1, name: 'diagram',
         render(ctx) {
-          const kind = lang;
           const src = attrSource(el) || scopedSource(el, ctx);
-          if (src) return renderDiagramSource(kind, src, ctx, el);
-          return svgOnlyDiagram(el, el, kind, ctx);
+          if (src) return renderDiagramSource(lang, src, ctx, el);
+          const near = wrapperSource(el, lang, ctx);
+          // a visible source block next to the picture is written by its own handler: count this one as covered
+          if (near && near.sibling) return { markdown: '', copied: 1 };
+          if (near) return renderDiagramSource(lang, near.emit, ctx, el);
+          return svgOnlyDiagram(el, el, lang, ctx);
         }
       };
     }
-    const lang = detectLang(el);
+    // Claude: <div data-mermaid="true" role="img" aria-label="Диаграмма Mermaid"> is a host with an OPEN shadowRoot
+    // that holds the svg (light DOM is empty). Detected by the light-DOM markers, not by provider.
+    const hostLike = ['div', 'span', 'figure', 'section'].includes(t) && has(el, '[data-mermaid], [role="img"][aria-label*="mermaid" i]');
+    const lang = hostLike ? 'mermaid' : detectLang(el);
     if (!lang) return null;
-    const svg = el.querySelector('svg');
+    const svg = el.querySelector('svg') || (el.shadowRoot && el.shadowRoot.querySelector('svg')) || null;
     if (svg && siblingSource(el, lang)) {
       // The rendered picture is represented by the neighbouring source block (which is counted itself).
       return { type: 'diagram', count: 1, name: 'diagram', render: () => ({ markdown: '', copied: 1 }) };
@@ -17937,7 +18320,7 @@ const scrollIntoViewSmoothly = async (element) => {
         // A marker-less picture whose hidden "Code view" panel holds mermaid source: copy the source.
         const panel = inCell(el) ? null : scopedSource(el, ctx);
         if (panel && MERMAID_START.test(panel)) return { markdown: `\n\n${ctx.fence(stripEdgeNewlines(panel), 'mermaid')}\n\n`, copied: 1 };
-        const src = serializeSvg(el);
+        const { src } = serializeSvg(el);
         if (inCell(el)) return { markdown: ctx.placeholder('svg', CELL_REASON, el), copied: 0 };
         if (src.length > MAX_SVG) return { markdown: ctx.placeholder('svg', 'SVG слишком большой', el), copied: 0 };
         return { markdown: `\n\n${ctx.fence(src, 'svg')}\n\n`, copied: 1 };
@@ -18748,6 +19131,100 @@ const scrollIntoViewSmoothly = async (element) => {
     return r.top < v.top - 1 || r.bottom > v.bottom + 1;
   }
 
+  // ---- блоки хода вне выбранного элемента (диаграмма/виджет рядом с текстовым сегментом) ----
+  // Только общие признаки, НЕ ПРОВЕРЕНО ВЖИВУЮ: разметки Claude с диаграммой в репозитории нет.
+  const OUTSIDE_LIMIT = 50;
+  const COMPOSER_SELECTOR = 'textarea, [contenteditable="true"], form, [data-testid*="composer" i]';
+  const ARTIFACT_WORD_RE = /artifact/i;
+  const WIDGET_WORD_RE = /diagram|chart|visual|widget|mermaid|canvas/i;
+  const MIN_SIDE = 48;
+
+  function resolveTurn(el, opts) {
+    if (opts.turn) return opts.turn;
+    if (opts.turnSelector) { const t = el.closest(opts.turnSelector); if (t) return t; }
+    const asst = opts.assistantSelector || DEFAULT_ASSISTANT;
+    const user = opts.userSelector || DEFAULT_USER;
+    const count = (n) => n.querySelectorAll(asst).length + (n.matches(asst) ? 1 : 0);
+    let cur = el;
+    const base = count(el);
+    for (let p = el.parentElement; p && p !== el.ownerDocument.body && p !== el.ownerDocument.documentElement; p = p.parentElement) {
+      if (p.querySelector(user) || p.matches(user) || p.querySelector(COMPOSER_SELECTOR)) break;
+      if (count(p) > Math.max(base, 1)) break;
+      cur = p;
+    }
+    return cur === el ? null : cur;
+  }
+
+  function sizeOf(n) {
+    let w = 0; let h = 0;
+    try { const r = n.getBoundingClientRect(); w = r.width; h = r.height; } catch (_) { /* нет раскладки */ }
+    if (!(w && h)) { w = parseFloat(n.getAttribute('width')) || 0; h = parseFloat(n.getAttribute('height')) || 0; }
+    if (!(w && h) && n.getAttribute) {
+      const vb = String(n.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number);
+      if (vb.length === 4 && vb[2] > 0 && vb[3] > 0) { w = vb[2]; h = vb[3]; }
+    }
+    return { w, h, known: Boolean(w && h) };
+  }
+  function bigEnough(n) {
+    const s = sizeOf(n);
+    if (s.known) return s.w > MIN_SIDE && s.h > MIN_SIDE;
+    return n.localName === 'svg' ? Boolean(n.querySelector('text')) || n.querySelectorAll('path, rect, circle, ellipse, line, polyline, polygon').length >= 4 : true;
+  }
+  function markerText(n) {
+    return ['id', 'class', 'aria-label', 'data-testid', 'data-test-id'].map((a) => n.getAttribute(a) || '').join(' ')
+      + Array.from(n.attributes).filter((a) => a.name.startsWith('data-')).map((a) => a.name).join(' ');
+  }
+  function classifyOutside(n) {
+    const tag = n.localName;
+    if (tag === 'iframe' || tag === 'object' || tag === 'embed') return 'embed';
+    if (tag === 'canvas') return 'canvas';
+    if (tag === 'video' || tag === 'audio') return 'media';
+    if (tag === 'svg') return bigEnough(n) ? 'svg' : null;
+    if (tag === 'img') return bigEnough(n) ? 'image' : null;
+    if (tag === 'pre') return 'code';
+    if (n.shadowRoot) return 'widget';
+    if (tag === 'button' || tag === 'a' || tag === 'input' || tag === 'textarea' || tag === 'nav' || tag === 'header' || tag === 'footer') return null;
+    const m = markerText(n);
+    if (ARTIFACT_WORD_RE.test(m)) return 'artifact';
+    if (WIDGET_WORD_RE.test(m)) return 'widget';
+    const role = n.getAttribute('role');
+    if (role === 'img' || role === 'figure' || role === 'dialog' || tag === 'figure') return 'widget';
+    return null;
+  }
+  function hintOf(n) {
+    const parts = [n.localName];
+    const id = n.getAttribute('id');
+    if (id) parts.push('#' + id.replace(/\d+/g, '0'));
+    ['role', 'data-testid', 'data-test-id'].forEach((a) => { if (n.getAttribute(a)) parts.push(`${a}=${n.getAttribute(a)}`); });
+    return parts.join(' ').slice(0, 120);
+  }
+
+  function findOutsideBlocks(el, turn) {
+    const blocks = [];
+    let truncated = 0;
+    const walk = (node) => {
+      for (const child of Array.from(node.children)) {
+        if (child === el) continue;
+        if (child.contains(el)) { walk(child); continue; }
+        const type = classifyOutside(child);
+        if (type) {
+          if (blocks.length < OUTSIDE_LIMIT) {
+            blocks.push({ type, tag: child.localName, hint: hintOf(child), position: blocks.length + 1,
+              beforeSelected: Boolean(el.compareDocumentPosition(child) & 2) });
+          } else truncated += 1;
+          continue; // вложенное внутри найденного блока отдельно не считаем
+        }
+        if (child.matches(COMPOSER_SELECTOR) || child.matches('button, nav, header, footer, [aria-hidden="true"]:not(:has(svg))')) {
+          // кнопки и обёртки: только svg-диаграммы внутри кнопок/aria-hidden
+          if (!child.querySelector('svg')) continue;
+        }
+        walk(child);
+      }
+    };
+    walk(turn);
+    return { blocks, truncated };
+  }
+
   // Артефакты и встроенные блоки. Селекторы по общим признакам, НЕ ПРОВЕРЕНО ВЖИВУЮ (реального образца Claude с артефактом/диаграммой нет).
   const ARTIFACT_REF_SELECTOR = '[data-testid*="artifact" i], [aria-label*="artifact" i], [class*="artifact" i]';
   const ARTIFACT_PANEL_SELECTOR = '[data-artifact], [data-canvas], [data-testid*="artifact" i], [role="dialog"][aria-label*="artifact" i], [role="complementary"][aria-label*="artifact" i], [role="dialog"][aria-label*="canvas" i]';
@@ -18763,12 +19240,14 @@ const scrollIntoViewSmoothly = async (element) => {
   /**
    * collect(messageEl, options) -> context для AnswerMarkdown.convert({ context }).
    * options: { turn?, isLatest?, document?, scroller?, assistantSelector?, userSelector?, expand? (по умолчанию false) }
-   * Результат: { version, regenerated, generating, truncated, collapsed, continuationParts, lazy, artifactRefs, artifactPanels, embeds, notes[] };
+   * Результат: { version, regenerated, generating, truncated, collapsed, continuationParts, lazy, artifactRefs, artifactPanels, embeds, outsideBlocks[], outsideBlocksTruncated, notes[] };
+   * outsideBlocks: [{type:'embed'|'svg'|'image'|'canvas'|'media'|'widget'|'artifact'|'code', tag, hint, position, beforeSelected}] — нетекстовые блоки хода вне messageEl.
+   * options.turn / options.turnSelector задают контейнер хода; иначе — ближайший предок без пользовательского сообщения и композера.
    * непубличные (не сериализуются): .parts — элементы продолжений, .artifactPanelEls — панели артефактов вне сообщения, .versionInfo.
    */
   function collect(messageEl, options) {
     const opts = options || {};
-    const ctx = { version: null, regenerated: false, generating: false, truncated: false, collapsed: 0, continuationParts: 0, lazy: false, artifactRefs: 0, artifactPanels: 0, embeds: 0, notes: [] };
+    const ctx = { version: null, regenerated: false, generating: false, truncated: false, collapsed: 0, continuationParts: 0, lazy: false, artifactRefs: 0, artifactPanels: 0, embeds: 0, outsideBlocks: [], outsideBlocksTruncated: 0, notes: [] };
     if (!messageEl || !messageEl.querySelector) {
       ctx.notes.push('элемент ответа не передан');
       return ctx;
@@ -18793,6 +19272,17 @@ const scrollIntoViewSmoothly = async (element) => {
     Object.defineProperty(ctx, 'parts', { value: parts, enumerable: false });
     Object.defineProperty(ctx, 'versionInfo', { value: v, enumerable: false });
 
+    const turn = resolveTurn(messageEl, opts);
+    ctx.outsideBlocks = [];
+    ctx.outsideBlocksTruncated = 0;
+    if (!turn) ctx.notes.push('контейнер хода не определён');
+    else {
+      const o = findOutsideBlocks(messageEl, turn);
+      ctx.outsideBlocks = o.blocks;
+      ctx.outsideBlocksTruncated = o.truncated;
+      if (o.blocks.length) ctx.notes.push(`вне выбранного элемента в ходе нетекстовых блоков: ${o.blocks.length + o.truncated}`);
+      Object.defineProperty(ctx, 'turnEl', { value: turn, enumerable: false });
+    }
     const art = detectArtifacts(messageEl, opts);
     ctx.artifactRefs = art.refs;
     ctx.artifactPanels = art.panels.length;

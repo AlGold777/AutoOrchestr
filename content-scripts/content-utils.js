@@ -1283,7 +1283,9 @@
   };
   const isContentSvg = (svg, root) => {
     let inSoftWrapper = false;
-    for (let node = svg.parentElement; node && node !== root.parentElement; node = node.parentElement) {
+    // The climb crosses shadow roots (a shadow root has no parentElement: continue through its host).
+    const up = (node) => node.parentElement || (node.getRootNode && node.getRootNode().host) || null;
+    for (let node = up(svg); node && node !== root.parentElement; node = up(node)) {
       if (node.localName === 'svg') return false;
       if (node.matches?.(SVG_HARD_SKIP_ANCESTORS)) return false;
       if (node.matches?.(SVG_SOFT_SKIP_ANCESTORS)) inSoftWrapper = true;
@@ -1327,10 +1329,28 @@
     if (!copy.getAttribute('style')) copy.removeAttribute('style');
     return { width, height };
   };
+  // The css that styles an svg living in a shadow root: every <style> of that root outside the svg, and its
+  // constructable style sheets. Inside a standalone svg they must be a <style> of the svg itself.
+  const shadowCssOf = (svg) => {
+    const root = svg.getRootNode ? svg.getRootNode() : null;
+    if (!root || !root.host) return '';
+    const css = [];
+    try { root.querySelectorAll('style').forEach((style) => { if (!style.closest('svg')) css.push(style.textContent || ''); }); } catch (_) {}
+    try {
+      (root.adoptedStyleSheets || []).forEach((sheet) => css.push(Array.from(sheet.cssRules || []).map((rule) => rule.cssText).join('\n')));
+    } catch (_) {}
+    return css.join('\n').trim();
+  };
   const svgToImage = (svg, doc, state, rectOverride = null) => {
     const rect = rectOverride || svg.getBoundingClientRect();
     const copy = svg.cloneNode(true);
     copy.querySelectorAll('script').forEach((node) => node.remove());
+    const outerCss = shadowCssOf(svg);
+    if (outerCss) {
+      const style = doc.createElementNS('http://www.w3.org/2000/svg', 'style');
+      style.textContent = outerCss;
+      copy.insertBefore(style, copy.firstChild);
+    }
     copy.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
     copy.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
     const { width, height } = fitSvgToContent(svg, copy, rect);
@@ -1384,14 +1404,48 @@
     note.setAttribute('data-ao-keep', '1');
     return note;
   };
+  // Pairs every svg of the source with its place in the structural copy, in document order, and
+  // goes INTO open shadow roots: a shadow host has no light children, its copy is an empty element, so the
+  // host (not the svg) is what is replaced there. The same walk is in background/job-orchestrator.js.
+  const collectShadowSvgs = (scope, out) => {
+    Array.from(scope.children).forEach((el) => {
+      if (el.localName === 'svg') { out.push(el); return; }
+      if (el.shadowRoot) collectShadowSvgs(el.shadowRoot, out);
+      collectShadowSvgs(el, out);
+    });
+    return out;
+  };
+  const pairSvgTargets = (source, copy, out = []) => {
+    const sourceChildren = Array.from(source.children);
+    const copyChildren = Array.from(copy.children);
+    if (sourceChildren.length !== copyChildren.length) return out;
+    sourceChildren.forEach((child, index) => {
+      const target = copyChildren[index];
+      if (child.localName === 'svg') { out.push({ svgs: [child], target, host: false }); return; }
+      if (child.shadowRoot) {
+        const inner = collectShadowSvgs(child.shadowRoot, []);
+        if (inner.length) out.push({ svgs: inner, target, host: child });
+      }
+      pairSvgTargets(child, target, out);
+    });
+    return out;
+  };
   // sourceRoot has the layout (rects); cloneRoot is its structural copy that is edited.
   const replaceContentSvgs = (sourceRoot, cloneRoot, state) => {
-    const sources = Array.from(sourceRoot.querySelectorAll('svg'));
-    const clones = Array.from(cloneRoot.querySelectorAll('svg'));
-    if (sources.length !== clones.length) return;
-    sources.forEach((svg, index) => {
+    const doc = cloneRoot.ownerDocument;
+    pairSvgTargets(sourceRoot, cloneRoot).forEach(({ svgs, target, host }) => {
       try {
-        if (isContentSvg(svg, sourceRoot)) clones[index].replaceWith(svgToImage(svg, cloneRoot.ownerDocument, state));
+        const content = svgs.filter((svg) => isContentSvg(svg, sourceRoot));
+        if (!content.length) return;
+        const images = content.map((svg) => svgToImage(svg, doc, state));
+        if (!host) { target.replaceWith(images[0]); return; }
+        if (images.length === 1) {
+          if (images[0].localName === 'img') images[0].setAttribute('alt', host.getAttribute('aria-label') || 'Диаграмма');
+          target.replaceWith(images[0]);
+          return;
+        }
+        target.textContent = '';
+        images.forEach((image) => target.append(image));
       } catch (_) {}
     });
     const embeds = Array.from(sourceRoot.querySelectorAll(EMBED_SELECTOR));

@@ -150,6 +150,55 @@ run('Chrome: diagrams keep their scale, fill their picture and stay inside a 700
   }
 }, 120000);
 
+run('Chrome: a diagram in an open shadow root (Claude/Mermaid) is saved as a visible picture inside the card', async () => {
+  const browser = await chromium.launch({ headless: true, channel: 'chrome' });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1500, height: 900 } });
+    await page.addInitScript(() => { window.chrome = { runtime: { id: 'x', sendMessage() {} } }; });
+    await page.setContent(`<style>${PAGE_CSS}</style><div class="msg" data-message-author-role="assistant"><div id="src"></div></div><div id="card"></div>`);
+    await page.addScriptTag({ content: read('content-scripts/content-utils.js') });
+    const extractorSrc = sliceFunction(read('background/job-orchestrator.js'), 'extractLatestAssistantSnapshotInPage');
+    await page.evaluate((source) => { window.__extract = new Function(`${source}; return extractLatestAssistantSnapshotInPage;`)(); }, extractorSrc);
+    await page.evaluate(() => {
+      const src = document.getElementById('src');
+      src.innerHTML = '<p>Intro text of the answer, long enough to be a candidate for the extractor.</p><div id="slot" style="width:700px"></div><p>After.</p>';
+      const host = document.createElement('div');
+      host.setAttribute('data-mermaid', 'true'); host.setAttribute('role', 'img'); host.setAttribute('aria-label', 'Диаграмма Mermaid');
+      document.getElementById('slot').appendChild(host);
+      const shadow = host.attachShadow({ mode: 'open' });
+      shadow.innerHTML = '<style>.node rect{fill:#e0e0ff;stroke:#33a}</style><div><svg id="mermaid-r1" aria-roledescription="flowchart-v2" viewBox="0 0 306.28 1388.2" width="100%" style="max-width:306.28px"><g class="node"><rect x="10" y="10" width="280" height="1360"/></g></svg></div>';
+    });
+    const shown = await page.evaluate(() => {
+      const svg = document.getElementById('slot').firstElementChild.shadowRoot.querySelector('svg');
+      const r = svg.getBoundingClientRect();
+      return { w: r.width, h: r.height };
+    });
+    expect(shown.h).toBeGreaterThan(48);
+    for (const how of ['buildInlineHtml', 'extractor']) {
+      const html = await page.evaluate((mode) => (mode === 'extractor'
+        ? window.__extract('GPT', 10, {}).html
+        : window.ContentUtils.buildInlineHtml(document.getElementById('src'), { includeRoot: false })), how);
+      const m = await measure(page, html);
+      expect(m.noImage).toBeUndefined();
+      expect(m.shown.w).toBeLessThanOrEqual(m.cardWidth + 0.5);
+      expect(m.shown.w).toBeGreaterThan(20);
+      expect(m.shown.h).toBeGreaterThan(48);
+      // Painted pixels: the shadow-level style (fill) must have travelled with the picture.
+      const color = await page.evaluate(async () => {
+        const img = document.querySelector('#card img');
+        const loaded = new Image(); loaded.src = img.src; await loaded.decode();
+        const canvas = document.createElement('canvas'); canvas.width = loaded.naturalWidth; canvas.height = loaded.naturalHeight;
+        const ctx = canvas.getContext('2d'); ctx.drawImage(loaded, 0, 0);
+        const px = ctx.getImageData(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2), 1, 1).data;
+        return Array.from(px);
+      });
+      expect(color.slice(0, 3)).toEqual([224, 224, 255]);
+    }
+  } finally {
+    await browser.close();
+  }
+}, 120000);
+
 test('the img rule is in the card CSS and in every HTML export', () => {
   expect(read('styles/modals-responsive.css')).toMatch(/\.debate-model-card-output img[\s\S]*?max-width: 100%;\s*height: auto;\s*display: block;/);
   expect(read('results/debate-export.js')).toContain('img{max-width:100%;height:auto;display:block}');

@@ -632,3 +632,72 @@ const enginePath = path.join(__dirname, '..', 'shared', 'answer-markdown.js');
     expect(r.report.mismatches).toEqual([]);
   });
 });
+
+// Синтетика по живому DOM Claude, снятому 2026-10-19: хост div[data-mermaid="true"][role=img] с открытым shadowRoot,
+// в нём <style> и div > svg (flowchart-v2) с узлами g.node (id mermaid-<uid>-flowchart-<ID>-<n>), кластерами g.cluster
+// и подписями в svg <text>/<tspan>. Исходника в DOM нет. Id рёбер (L_<from>_<to>_<n>) — по соглашению mermaid v11,
+// вживую не подтверждены.
+describe('Claude mermaid host with open shadowRoot (синтетика по живому DOM Claude, снятому 2026-10-19)', () => {
+  const Engine = require('../shared/answer-markdown');
+  beforeAll(() => Blocks.register(Engine));
+  const U = 'mermaid-r54-r1-b1e1198bc';
+  const shadowSvg = (edgesXml) => `<style>.shadow-only-css{fill:red}</style><div><svg id="${U}" aria-roledescription="flowchart-v2" viewBox="0 0 306.28 1388.2" xmlns="http://www.w3.org/2000/svg">` +
+    '<style>.node.src rect{fill:#eef}</style><g class="root">' +
+    `<g class="clusters"><g class="cluster" id="${U}-REGISTRY"><rect x="0" y="100" width="200" height="100"/><g class="cluster-label"><text><tspan>Семейный реестр</tspan></text></g></g></g>` +
+    `<g class="edgePaths">${edgesXml}</g>` +
+    '<g class="nodes">' +
+    `<g class="node default src" id="${U}-flowchart-A1-0" transform="translate(100, 30)"><rect width="100" height="40"/><g class="label"><text><tspan>Задачи</tspan><tspan>уже есть</tspan></text></g></g>` +
+    `<g class="node default core" id="${U}-flowchart-R1-3" transform="translate(100, 150)"><rect width="80" height="40"/><g class="label"><text><tspan>Реестр</tspan></text></g></g>` +
+    `<g class="node default done" id="${U}-flowchart-O1-7" transform="translate(100, 300)"><rect width="100" height="40"/><g class="label"><text><tspan>Календарь</tspan></text></g></g>` +
+    '</g></g></svg></div>';
+  const IDEDGES = `<path id="${U}-L_A1_REGISTRY_0" class="flowchart-link" d="M100,50L100,100"/><path id="${U}-L_REGISTRY_O1_1" class="flowchart-link edge-pattern-dotted" d="M100,200L100,280"/>`;
+  const host = (edges) => {
+    const wrap = document.createElement('div');
+    wrap.innerHTML = '<p>Схема:</p><div dir="ltr" data-mermaid="true" role="img" aria-label="Диаграмма Mermaid"></div><p>Особенности: после.</p>';
+    wrap.querySelector('[data-mermaid]').attachShadow({ mode: 'open' }).innerHTML = shadowSvg(edges);
+    return wrap;
+  };
+
+  test('light DOM of the host is empty, yet the diagram is reconstructed from the shadow svg; counted found=copied=1', () => {
+    const wrap = host(IDEDGES);
+    expect(wrap.querySelector('[data-mermaid]').textContent).toBe('');
+    expect(wrap.querySelector('svg')).toBeNull();
+    const r = Engine.convert(wrap, {});
+    expect(r.markdown).toContain('```mermaid\n%% реконструировано из SVG, возможны расхождения\nflowchart TD');
+    expect(r.markdown).toContain('A1["Задачи<br/>уже есть"]');
+    expect(r.markdown).not.toMatch(/Задачиуже/);
+    expect(r.markdown).toContain('subgraph REGISTRY ["Семейный реестр"]');
+    expect(r.markdown).toContain('R1["Реестр"]');
+    expect(r.markdown).toContain('A1 --> REGISTRY');
+    expect(r.markdown).toContain('REGISTRY -.-> O1');
+    expect(r.markdown).toContain('class A1 src');
+    expect(r.markdown).not.toMatch(/shadow-only-css|fill:#eef/);
+    expect(r.markdown).toMatch(/```\n+Особенности: после\./);
+    expect(r.report.found.diagram).toBe(1);
+    expect(r.report.copied.diagram).toBe(1);
+    expect(r.report.mismatches).toEqual([]);
+  });
+
+  test('edge ids unknown: edges are recovered from path geometry and marked approximate', () => {
+    const r = Engine.convert(host('<path d="M100,50L100,100"/><path class="edge-pattern-dotted" d="M100,200L100,280"/>'), {});
+    expect(r.markdown).toContain('%% рёбра определены по геометрии (приблизительно)');
+    expect(r.markdown).toContain('A1 --> REGISTRY');
+    expect(r.markdown).toContain('REGISTRY --> O1'.replace('-->', '-.->'));
+  });
+
+  test('nothing resolvable: placeholder + svg that keeps the shadow-level <style>, never an empty result', () => {
+    const r = Engine.convert(host('<path d="M0,0"/>'), {});
+    expect(r.markdown).toMatch(/тип=diagram, причина=mermaid: рендерер оставил только SVG без исходника/);
+    expect(r.markdown).toContain('```svg');
+    expect(r.markdown).toContain('.shadow-only-css{fill:red}');
+    expect(r.report.mismatches).toEqual([]);
+    expect(r.report.complete).toBe(false);
+  });
+
+  test('role=img + aria-label "Mermaid" alone marks a host (without data-mermaid)', () => {
+    const w = document.createElement('div');
+    w.innerHTML = '<div role="img" aria-label="Диаграмма Mermaid"></div>';
+    w.firstChild.attachShadow({ mode: 'open' }).innerHTML = shadowSvg(IDEDGES);
+    expect(Engine.convert(w, {}).markdown).toContain('flowchart TD');
+  });
+});
