@@ -202,8 +202,18 @@
   // ---------------------------------------------------------------- census
 
   // Built-in type of an element (null if it is not a countable block). `absorbs` = census does not descend.
+  const PENDING_LABEL_RE = /диаграмм|diagram|mermaid|chart|график|схем/i;
+
+  // Lazily drawn diagram not rendered yet: role=status with a diagram-like aria-label and no content inside.
+  // Generic spinners (aria-label "Loading") do not match.
+  function isPendingDiagram(el) {
+    return el.getAttribute('role') === 'status' && PENDING_LABEL_RE.test(el.getAttribute('aria-label') || '')
+      && !safe(() => el.querySelector('svg, img, canvas, pre'), null);
+  }
+
   function builtinType(el, rules) {
     const tag = tagOf(el);
+    if (isPendingDiagram(el)) return 'diagram';
     if (tag === 'pre') return DIAGRAM_LANGS.has(langOf(el)) ? 'diagram' : 'code';
     if (rules && typeof rules.codeBlock === 'function') {
       const cb = safe(() => rules.codeBlock(el), null);
@@ -768,6 +778,13 @@
       name: 'core-image', type: 'image', priority: 0,
       match: (el) => tagOf(el) === 'img',
       render: renderImage
+    }, true);
+    registerBlock({
+      name: 'core-pending-diagram', type: 'diagram', priority: 0,
+      match: (el) => isPendingDiagram(el),
+      render: (el, ctx) => ({
+        markdown: ctx.placeholder('diagram', `страница не отрисовала диаграмму: ${el.getAttribute('aria-label')}`, el), copied: 0
+      })
     }, true);
     // Types whose real handlers live in other packages: until one is registered, a placeholder, never silence.
     ['math', 'diagram', 'svg', 'image'].forEach((type) => {

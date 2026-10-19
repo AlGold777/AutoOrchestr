@@ -593,3 +593,19 @@ describe('normalizeCodeBlocks', () => {
     expect(pre.outerHTML).toBe('<pre data-code-lang="go"><code class="language-go">x</code></pre>');
   });
 });
+
+describe('Ленивая диаграмма, ещё не отрисованная страницей', () => {
+  test('role=status с aria-label про диаграмму — счётная заглушка', () => {
+    const r = run('<p>text</p><div role="status" aria-label="Загрузка диаграммы Mermaid"></div><p>after</p>');
+    expect(r.markdown).toBe('text\n\n[НЕ СКОПИРОВАНО: тип=diagram, причина=страница не отрисовала диаграмму: Загрузка диаграммы Mermaid, позиция=1]\n\nafter');
+    expect(r.report.found).toEqual({ diagram: 1 });
+    expect(r.report.mismatches).toEqual([]);
+    expect(r.report.complete).toBe(false);
+  });
+  test('обычный спиннер и заполненный блок игнорируются/не считаются', () => {
+    const a = run('<p>t</p><div role="status" aria-label="Loading"></div>');
+    expect(a.markdown).toBe('t');
+    expect(a.report.complete).toBe(true);
+    expect(AM.census(el('<div role="status" aria-label="diagram"><svg><g/></svg></div>'))).toEqual({ svg: 1 });
+  });
+});

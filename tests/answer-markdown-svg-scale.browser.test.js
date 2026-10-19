@@ -201,6 +201,34 @@ run('Chrome: a diagram in an open shadow root (Claude/Mermaid) is saved as a vis
   }
 }, 120000);
 
+run('Chrome: a flowchart squeezed into a 412px panel (412x30 on the page) keeps its own size in the html and fits a 700px card', async () => {
+  const browser = await chromium.launch({ headless: true, channel: 'chrome' });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1500, height: 900 } });
+    await page.addInitScript(() => { window.chrome = { runtime: { id: 'x', sendMessage() {} } }; });
+    await page.setContent(`<style>${PAGE_CSS}</style><div class="msg" data-message-author-role="assistant"><div id="src" style="width:412px"></div></div><div id="card"></div>`);
+    await page.addScriptTag({ content: read('content-scripts/answer-html-builder.js') });
+    await page.addScriptTag({ content: read('content-scripts/content-utils.js') });
+    await page.evaluate(() => {
+      document.getElementById('src').innerHTML = `<p>Intro text of the answer, long enough to be a candidate for the extractor.</p>
+        <div data-code-block-preview-pane="mermaid" style="width:412px"><svg id="d" width="100%" viewBox="0 0 1800 130"><rect x="0" y="0" width="1800" height="130" fill="#36c"/></svg></div>`;
+    });
+    const onPage = await page.evaluate(() => { const r = document.getElementById('d').getBoundingClientRect(); return { w: r.width, h: r.height }; });
+    expect(Math.round(onPage.w)).toBe(412);
+    expect(onPage.h).toBeLessThan(35);   // the real situation: 412 x ~30
+    const html = await page.evaluate(() => window.ContentUtils.buildInlineHtml(document.getElementById('src'), { includeRoot: false }));
+    const m = await measure(page, html);
+    expect(m.noImage).toBeUndefined();
+    expect(m.attrs).toEqual({ width: '1800', height: '130' });        // own size by the view box, not 412x30
+    expect(m.natural).toEqual({ w: 1800, h: 130 });
+    expect(m.shown.w).toBeLessThanOrEqual(m.cardWidth + 0.5);          // the card still fits it (700px)
+    expect(m.shown.h).toBeGreaterThan(onPage.h);                       // and it is more legible than the 30px of the page
+    expect(m.shown.w / m.shown.h).toBeCloseTo(1800 / 130, 1);
+  } finally {
+    await browser.close();
+  }
+}, 120000);
+
 test('the img rule is in the card CSS and in every HTML export', () => {
   expect(read('styles/modals-responsive.css')).toMatch(/\.debate-model-card-output img[\s\S]*?max-width: 100%;\s*height: auto;\s*display: block;/);
   expect(read('results/debate-export.js')).toContain('img{max-width:100%;height:auto;display:block}');

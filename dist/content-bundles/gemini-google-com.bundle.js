@@ -6951,6 +6951,24 @@
   // (extractLatestAssistantSnapshotInPage serializes into the page and cannot import this);
   // tests/answer-markdown-svg-html.test.js keeps the two in step.
   const SVG_IMG_MIN_SIDE = 48;
+  // A picture is a diagram (content), not an icon, when it is wider than an icon AND any of: taller than an icon;
+  // wide (a flat flowchart LR squeezed into a panel is 412x30 on the page); its view box is wide, or much bigger than
+  // what is drawn; it carries a diagram mark (mermaid id/class, aria-roledescription, a diagram/preview container,
+  // role=img with a caption); it has the parts of a diagram (nodes, many texts/paths). Icons (<= 48 on both sides,
+  // few elements) keep being cut or turned into pictures by the icon rules.
+  const DIAGRAM_MARK_RE = /mermaid|flowchart|diagram|диаграмм|график|chart/i;
+  const isDiagramSized = (svg, rect) => {
+    if (!(rect.width > SVG_IMG_MIN_SIDE)) return false;
+    if (rect.height > SVG_IMG_MIN_SIDE || (rect.width >= 200 && rect.height >= 12)) return true;
+    const box = String(svg.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number);
+    if (box.length === 4 && box.every(Number.isFinite) && (box[2] > 200 || (box[2] * box[3]) >= 4 * Math.max(1, rect.width * rect.height))) return true;
+    const marks = `${svg.getAttribute('id') || ''} ${svg.getAttribute('class') || ''} ${svg.getAttribute('aria-roledescription') || ''} ${svg.getAttribute('aria-label') || ''}`;
+    if (DIAGRAM_MARK_RE.test(marks)) return true;
+    if (svg.closest('[data-code-block-preview-pane],[data-mermaid]')) return true;
+    const holder = svg.closest('[role="img"][aria-label]');
+    if (holder && DIAGRAM_MARK_RE.test(holder.getAttribute('aria-label') || '')) return true;
+    return svg.querySelectorAll('g.node, .node').length >= 3 || svg.querySelectorAll('text, path').length >= 5;
+  };
   const SVG_IMG_MAX_BASE64 = 400000;
   const SVG_IMG_TOTAL_MAX_BASE64 = 1500000;
   // Never content: page chrome and reasoning. A picture inside a button / aria-hidden wrapper is
@@ -7029,7 +7047,7 @@
       if (node.matches?.(SVG_SOFT_SKIP_ANCESTORS)) inSoftWrapper = true;
     }
     const rect = svg.getBoundingClientRect();
-    if (!(rect.width > SVG_IMG_MIN_SIDE && rect.height > SVG_IMG_MIN_SIDE)) return false;
+    if (!isDiagramSized(svg, rect)) return false;
     return !inSoftWrapper || looksLikeDiagram(svg);
   };
   // Fit the picture to its content (no empty field, nothing cut) and give it the size it has on the
@@ -7055,7 +7073,10 @@
         if (x1 - x0 > 0 && y1 - y0 > 0) box = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
       }
     } catch (_) {}
-    const pxPerUnit = scale > 0 && Number.isFinite(scale) ? scale : 1;
+    // A diagram the page squeezed into a narrow panel (a wide flowchart drawn 30px high) keeps its own size (1 unit = 1px)
+    // so that it stays legible; the card's max-width:100% still fits it to the card. Otherwise: the size it had on the page.
+    const squeezed = view && scale > 0 && scale < 0.6 && rect.height < 100;
+    const pxPerUnit = squeezed ? 1 : (scale > 0 && Number.isFinite(scale) ? scale : 1);
     const width = Math.max(1, Math.round(box.w * pxPerUnit));
     const height = Math.max(1, Math.round(box.h * pxPerUnit));
     copy.setAttribute('viewBox', `${box.x} ${box.y} ${box.w} ${box.h}`);
@@ -7130,7 +7151,7 @@
     }
     if (inner) {
       rect = rect || inner.getBoundingClientRect();
-      if (rect.width > SVG_IMG_MIN_SIDE && rect.height > SVG_IMG_MIN_SIDE) return svgToImage(inner, doc, state, rect);
+      if (isDiagramSized(inner, rect)) return svgToImage(inner, doc, state, rect);
     }
     let host = '';
     const address = el.getAttribute('src') || el.getAttribute('data') || '';
@@ -7229,16 +7250,22 @@
       walkPairs(child, copyChildren[index], visit);
     });
   };
+  // The page draws a diagram lazily (when it comes into view): until then there is a status placeholder, not a picture.
+  const LOADING_LABEL_RE = /диаграмм|diagram|mermaid|chart|график|схем/i;
+  const isLoadingPlaceholder = (el) => el.getAttribute('role') === 'status' && LOADING_LABEL_RE.test(el.getAttribute('aria-label') || '')
+    && !el.querySelector('svg, img, canvas, pre');
   const planHiddenAndMermaid = (source, copy) => {
     const hidden = new Set();
     const mermaid = [];
+    const loading = [];
     walkPairs(source, copy, (s, c) => {
       let style = null;
       try { style = window.getComputedStyle(s); } catch (_) { style = null; }
       if (style && (style.display === 'none' || style.visibility === 'hidden')) hidden.add(c);
       if (s.localName === 'pre' && MERMAID_SOURCE_RE.test(s.textContent || '')) mermaid.push({ source: s, copy: c });
+      if (isLoadingPlaceholder(s)) loading.push({ source: s, copy: c });
     });
-    return { hidden, mermaid };
+    return { hidden, mermaid, loading };
   };
   const mermaidSourceNear = (el) => {
     let depth = 0;
@@ -7253,7 +7280,7 @@
     const includeRoot = options.includeRoot !== false;
     const clone = cloneElementWithInlineStyles(element) || element.cloneNode(true);
     const svgState = { total: 0, position: 0, notes: [], iconCount: 0, iconBytes: 0 };
-    let plan = { hidden: new Set(), mermaid: [] };
+    let plan = { hidden: new Set(), mermaid: [], loading: [] };
     try { plan = planHiddenAndMermaid(element, clone); } catch (_) {}
     // Mermaid source: a clean code block marked as such, kept even when its panel is hidden.
     plan.mermaid.forEach(({ source, copy }) => {
@@ -7266,6 +7293,18 @@
         pre.appendChild(code);
         pre.setAttribute('data-ao-keep', '1');
         copy.replaceWith(pre);
+      } catch (_) {}
+    });
+    // A diagram the page has not drawn yet: say so (visible note + report), never a silent gap.
+    plan.loading.forEach(({ source, copy }) => {
+      try {
+        const label = (source.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+        svgState.position += 1;
+        svgState.notes.push({ type: 'diagram', reason: `страница не отрисовала диаграмму: ${label}`, position: svgState.position });
+        const note = clone.ownerDocument.createElement('p');
+        note.textContent = `[диаграмма не отрисована страницей: ${label}]`;
+        note.setAttribute('data-ao-keep', '1');
+        copy.replaceWith(note);
       } catch (_) {}
     });
     try { replaceContentSvgs(element, clone, svgState); } catch (_) {}
