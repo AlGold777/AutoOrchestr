@@ -868,3 +868,143 @@ describe('Perplexity mermaid: cross-origin iframe + hidden pre (синтетик
     expect(r.markdown).toMatch(/iframe не прочитан/);
   });
 });
+
+// Синтетика по живому DOM DeepSeek, снятому 2026-10-19: div.md-code-block = шапка (tablist «Diagram»/«Code» + кнопки) +
+// скрытый style + svg.flowchart.mermaid-svg#mermaid-svg-N; метки узлов в foreignObject; id узлов flowchart-<ID>-<n> без uid,
+// рёбра path.flowchart-link id L_<from>_<to>_<n>, g.edgeLabel по числу рёбер. Исходного pre в DOM нет.
+describe('DeepSeek mermaid code block (синтетика по живому DOM DeepSeek, снятому 2026-10-19)', () => {
+  const Engine = require('../shared/answer-markdown');
+  const Providers = require('../shared/answer-markdown-providers');
+  beforeAll(() => { Blocks.register(Engine); Providers.register(Engine); });
+  const fo = (inner) => `<foreignObject width="100" height="30"><div xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>${inner}</p></span></div></foreignObject>`;
+  const node = (id, n, x, y, label) => `<g class="node default" id="flowchart-${id}-${n}" transform="translate(${x}, ${y})"><rect width="100" height="40"/><g class="label">${fo(label)}</g></g>`;
+  const edge = (a, b, cls = 'edge-thickness-normal edge-pattern-solid') => `<path id="L_${a}_${b}_0" class="flowchart-link ${cls}" data-id="L_${a}_${b}_0" d="M0,0L1,1"/>`;
+  const elabel = (id, t) => `<g class="edgeLabel"><g class="label" data-id="${id}">${t ? `<foreignObject><div><span class="edgeLabel"><p>${t}</p></span></div></foreignObject>` : ''}</g></g>`;
+  const block = (body, lang = '') => `<div class="md-code-block md-code-block-light"><div class="md-code-block-banner"><div role="tablist"><div role="tab" aria-selected="true">Diagram</div><div role="tab">Code</div></div>` +
+    '<div role="button" aria-label="Download">Download</div><div role="button">Fullscreen</div></div><style>.md-code-block{color:red}</style>' +
+    `<div><svg id="mermaid-svg-3" class="flowchart mermaid-svg" role="graphics-document document" viewBox="-33.4 -33.4 735.3 1904.4"><style>#mermaid-svg-3{font-family:x}</style><g>${body}</g></svg></div></div>${lang}`;
+  const BODY = '<g class="edgePaths">' + edge('A', 'B') + edge('B', 'C', 'edge-thickness-normal edge-pattern-dotted') + '</g>' +
+    '<g class="edgeLabels">' + elabel('L_A_B_0', 'да') + elabel('L_B_C_0', '') + '</g>' +
+    '<g class="nodes">' + node('A', 0, 100, 30, 'Старт') + node('B', 1, 100, 130, 'Первая строка<br>вторая строка') + node('C', 3, 100, 230, 'Финал') + '</g>';
+  const run = (html, provider) => { const h = document.createElement('div'); h.innerHTML = html; return Engine.convert(h, { provider }); };
+
+  test('diagram tab block: flowchart reconstructed, header UI text and CSS absent, one diagram, <br> kept in labels', () => {
+    for (const provider of [null, 'DeepSeek']) {
+      const r = run(`<p>до</p>${block(BODY)}<p>после</p>`, provider);
+      expect(r.markdown).toContain('```mermaid\n%% реконструировано из SVG, возможны расхождения\nflowchart TD');
+      expect(r.markdown).toContain('A["Старт"]');
+      expect(r.markdown).toContain('B["Первая строка<br/>вторая строка"]');
+      expect(r.markdown).toContain('A -->|да| B');
+      expect(r.markdown).toContain('B -.-> C');
+      expect(r.markdown).not.toMatch(/Diagram|Download|Fullscreen|font-family|color:red/);
+      expect(r.markdown).not.toMatch(/```\s*\n*\s*(python|json)/);
+      expect(r.markdown).toMatch(/```\n+после/);
+      expect(r.report.found.diagram).toBe(1);
+      expect(r.report.copied.diagram).toBe(1);
+      expect(r.report.found.code || 0).toBe(0);
+      expect(r.report.placeholders).toEqual([]);
+      expect(r.report.mismatches).toEqual([]);
+      expect(r.report.flags.reconstructed).toBe(1);
+    }
+  });
+
+  test('normal thickness is a plain arrow (edge-thickness-normal is not "thick")', () => {
+    expect(run(block(BODY)).markdown).not.toContain('==>');
+  });
+
+  test('regression: ordinary .md-code-block with pre stays a code block with its language', () => {
+    const r = run('<div class="md-code-block"><div class="md-code-block-banner"><span>python</span></div><pre><span>print(1)</span></pre></div>', 'DeepSeek');
+    expect(r.markdown).toContain('```python\nprint(1)\n```');
+    expect(r.report.found.diagram || 0).toBe(0);
+  });
+});
+
+// Синтетика по живому DOM Qwen, снятому 2026-10-19: pre.qwen-markdown-code = шапка («mermaid», кнопки с aria-hidden svg,
+// «Код», «превью») + div.qwen-markdown-code.mermaid с скрытым Monaco (одна view-line = первая строка исходника, номер строки,
+// canvas) + отрисованный svg#mermaid-<id> (id у разных диаграмм бывает одинаковым). Исходник целиком в DOM отсутствует.
+// Конвенции sequence/state svg (rect.actor-top, text.messageText, line.messageLine0/1, g.node#state-<name>-<n>,
+// path.transition) — по памяти о mermaid v11, вживую не подтверждены.
+describe('Qwen mermaid code block (синтетика по живому DOM Qwen, снятому 2026-10-19)', () => {
+  const Engine = require('../shared/answer-markdown');
+  const Providers = require('../shared/answer-markdown-providers');
+  beforeAll(() => { Blocks.register(Engine); Providers.register(Engine); });
+  const run = (html, provider = 'Qwen') => { const h = document.createElement('div'); h.innerHTML = html; return Engine.convert(h, { provider }); };
+  const ICON = '<button><svg aria-hidden="true" class="icon" viewBox="0 0 16 16"><path d="M0 0h8v8z"/></svg></button>';
+  const wrap = (firstLine, svg) => `<pre class="qwen-markdown-code"><div class="hdr"><span>mermaid</span>${ICON.repeat(3)}<span>Код</span><span>превью</span></div>` +
+    `<div class="qwen-markdown-code mermaid"><div style="display:none"><div class="monaco-editor" role="code" style="width:0;height:0"><div class="view-lines"><div class="view-line"><span>${firstLine}</span></div></div><div class="line-numbers">1</div><canvas></canvas></div></div>${svg}</div></pre>`;
+  const actor = (name, x) => `<g><rect class="actor actor-top" name="${name}" x="${x}" y="0" width="100" height="40"/><text class="actor actor-box" x="${x + 50}" y="20"><tspan>${name}</tspan></text></g>`;
+  const SEQ = '<svg id="mermaid-179244703972" aria-roledescription="sequence" viewBox="0 0 702 257">' + actor('Alice', 0) + actor('Bob', 200) +
+    '<g><text class="messageText" x="100" y="80">Привет</text><line class="messageLine0" x1="50" y1="90" x2="250" y2="90" marker-end="url(#arrowhead)"/></g>' +
+    '<g><text class="messageText" x="100" y="130">Ответ</text><line class="messageLine1" x1="250" y1="140" x2="50" y2="140" marker-end="url(#arrowhead)"/></g>' +
+    '<rect class="note" x="150" y="170" width="150" height="30"/><text class="noteText"><tspan>заметка</tspan></text></svg>';
+  const fo = (t) => `<foreignObject><div><span class="nodeLabel"><p>${t}</p></span></div></foreignObject>`;
+  const FLOW = '<svg id="mermaid-179244703972" aria-roledescription="flowchart-v2" viewBox="0 0 363 376"><g class="edgePaths"><path id="L_A_B_0" class="flowchart-link edge-thickness-normal edge-pattern-solid" d="M1,1L2,2"/></g><g class="edgeLabels"><g class="edgeLabel"><g class="label" data-id="L_A_B_0"></g></g></g>' +
+    `<g class="nodes"><g class="node default" id="flowchart-A-0" transform="translate(50, 30)"><rect width="80" height="40"/><g class="label">${fo('Начало')}</g></g><g class="node default" id="flowchart-B-1" transform="translate(50, 130)"><rect width="80" height="40"/><g class="label">${fo('Конец')}</g></g></g></svg>`;
+  const STATE = '<svg id="mermaid-1792447" aria-roledescription="stateDiagram" class="statediagram" viewBox="0 0 200 300">' +
+    '<g class="edgePaths"><path id="edge0" class="transition" d="M100,27L100,80"/><path id="edge1" class="transition" d="M100,120L100,180"/></g>' +
+    '<g class="edgeLabels"><g class="edgeLabel"></g><g class="edgeLabel"><g class="label"><foreignObject><div><span class="edgeLabel"><p>go</p></span></div></foreignObject></g></g></g>' +
+    '<g class="nodes"><g class="node default" id="state-root_start-2" transform="translate(100, 20)"><circle r="7"/></g>' +
+    `<g class="node default" id="state-Idle-0" transform="translate(100, 100)"><rect width="80" height="40"/>${fo('Idle')}</g>` +
+    `<g class="node default" id="state-Running-1" transform="translate(100, 200)"><rect width="80" height="40"/>${fo('Running')}</g></g></svg>`;
+
+  test('sequence: participants, messages with direction/dashes, note; UI header, Monaco line and canvas are not in the output', () => {
+    const r = run(`<p>до</p>${wrap('sequenceDiagram', SEQ)}<p>после</p>`);
+    expect(r.markdown).toContain('```mermaid\n%% реконструировано из SVG, возможны расхождения\nsequenceDiagram');
+    expect(r.markdown).toContain('participant Alice');
+    expect(r.markdown).toContain('Alice ->> Bob: Привет');
+    expect(r.markdown).toContain('Bob -->> Alice: Ответ');
+    expect(r.markdown).toContain('Note over Bob: заметка');
+    expect(r.markdown.indexOf('Привет')).toBeLessThan(r.markdown.indexOf('Ответ'));
+    expect(r.markdown).not.toMatch(/превью|Код|mermaidКод|^1$/m);
+    expect(r.markdown).toMatch(/```\n+после/);
+    expect(r.report.found.diagram).toBe(1);
+    expect(r.report.copied.diagram).toBe(1);
+    expect(r.report.found.code || 0).toBe(0);
+    expect(r.report.mismatches).toEqual([]);
+    expect(r.report.placeholders).toEqual([]);
+    expect(r.report.flags.reconstructed).toBe(1);
+  });
+
+  test('flowchart (graph TD) and stateDiagram-v2 are reconstructed by their own rules', () => {
+    const f = run(wrap('graph TD', FLOW));
+    expect(f.markdown).toContain('flowchart TD');
+    expect(f.markdown).toContain('A["Начало"]');
+    expect(f.markdown).toContain('A --> B');
+    const st = run(wrap('stateDiagram-v2', STATE));
+    expect(st.markdown).toContain('stateDiagram-v2');
+    expect(st.markdown).toContain('[*] --> Idle');
+    expect(st.markdown).toContain('Idle --> Running: go');
+    expect(st.markdown).toContain('%% переходы определены по геометрии (приблизительно)');
+    expect(st.report.mismatches).toEqual([]);
+  });
+
+  test('the same svg id in two diagrams: each block is reconstructed from its own svg', () => {
+    const r = run(`${wrap('sequenceDiagram', SEQ)}${wrap('graph TD', FLOW)}`);
+    expect(r.markdown).toContain('sequenceDiagram');
+    expect(r.markdown).toContain('flowchart TD');
+    expect(r.markdown.indexOf('sequenceDiagram')).toBeLessThan(r.markdown.indexOf('flowchart TD'));
+    expect(r.report.found.diagram).toBe(2);
+    expect(r.report.copied.diagram).toBe(2);
+    expect(r.report.mismatches).toEqual([]);
+  });
+
+  test('unknown kind or loops: placeholder + svg body only (no header/buttons), never merged junk', () => {
+    const pie = '<svg id="mermaid-5" aria-roledescription="pie" viewBox="0 0 100 100"><style>.slice{fill:red}</style><g><path d="M0 0L5 5"/><text>Cats</text></g></svg>';
+    const r = run(wrap('pie', pie));
+    expect(r.markdown).toMatch(/тип=diagram, причина=mermaid: рендерер оставил только SVG без исходника/);
+    expect(r.markdown).toContain('```svg\n<svg');
+    expect(r.markdown).toContain('.slice{fill:red}');
+    expect(r.markdown).not.toMatch(/превью|mermaidКод|Monaco|monaco|view-line/);
+    expect(r.report.mismatches).toEqual([]);
+    const loop = run(wrap('sequenceDiagram', SEQ.replace('</svg>', '<line class="loopLine" x1="0" y1="0" x2="5" y2="0"/></svg>')));
+    expect(loop.markdown).toContain('```svg');
+  });
+
+  test('regression: ordinary Qwen code block (no svg, header buttons only) stays a code block', () => {
+    const r = run(`<pre class="qwen-markdown-code"><div class="hdr"><span>python</span>${ICON}</div><code class="language-python">print(1)\nprint(2)</code></pre>`);
+    expect(r.report.found.diagram || 0).toBe(0);
+    expect(r.report.found.code).toBe(1);
+    expect(r.markdown).toContain('print(1)\nprint(2)');
+    expect(r.markdown).not.toContain('```mermaid');
+  });
+});

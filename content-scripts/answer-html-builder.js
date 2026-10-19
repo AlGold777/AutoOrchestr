@@ -155,6 +155,8 @@
     'canvas',
     'button',
     '[role="button"]',
+    // tab strips switch views of a block (Diagram | Code): furniture, never the answer
+    '[role="tablist"]',
     '[data-message-part-type="reasoning"]',
     'h6.screen-reader-model-response-label',
     '[aria-hidden="true"]',
@@ -258,6 +260,18 @@
     img.setAttribute('data-ao-keep', '1');
     return img;
   };
+  // A picture that is not laid out (the tab that shows it is not the active one: display:none) has a 0x0 rectangle. A diagram
+  // is still content: take the size it declares (view box, width/height), but only for something that looks like a diagram.
+  const layoutRect = (svg) => {
+    const rect = svg.getBoundingClientRect();
+    if (rect.width > 0 || rect.height > 0) return rect;
+    const box = String(svg.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number);
+    const width = (box.length === 4 && box[2] > 0 ? box[2] : parseFloat(svg.getAttribute('width'))) || 0;
+    const height = (box.length === 4 && box[3] > 0 ? box[3] : parseFloat(svg.getAttribute('height'))) || 0;
+    const marks = `${svg.getAttribute('id') || ''} ${svg.getAttribute('class') || ''} ${svg.getAttribute('aria-roledescription') || ''}`;
+    const diagram = DIAGRAM_MARK_RE.test(marks) || svg.querySelectorAll('g.node, .node').length >= 3 || svg.querySelectorAll('text, path').length >= 5;
+    return width > 0 && height > 0 && diagram ? { width, height, top: 0, bottom: height, left: 0, right: width } : rect;
+  };
   const isContentSvg = (svg, root) => {
     let inSoftWrapper = false;
     // The climb crosses shadow roots (a shadow root has no parentElement: continue through its host).
@@ -267,7 +281,7 @@
       if (node.matches?.(SVG_HARD_SKIP_ANCESTORS)) return false;
       if (node.matches?.(SVG_SOFT_SKIP_ANCESTORS)) inSoftWrapper = true;
     }
-    const rect = svg.getBoundingClientRect();
+    const rect = layoutRect(svg);
     if (!isDiagramSized(svg, rect)) return false;
     return !inSoftWrapper || looksLikeDiagram(svg);
   };
@@ -296,7 +310,7 @@
     } catch (_) {}
     // A diagram the page squeezed into a narrow panel (a wide flowchart drawn 30px high) keeps its own size (1 unit = 1px)
     // so that it stays legible; the card's max-width:100% still fits it to the card. Otherwise: the size it had on the page.
-    const squeezed = view && scale > 0 && scale < 0.6 && rect.height < 100;
+    const squeezed = view && scale > 0 && scale < 0.6;
     const pxPerUnit = squeezed ? 1 : (scale > 0 && Number.isFinite(scale) ? scale : 1);
     const width = Math.max(1, Math.round(box.w * pxPerUnit));
     const height = Math.max(1, Math.round(box.h * pxPerUnit));
@@ -321,8 +335,15 @@
     } catch (_) {}
     return css.join('\n').trim();
   };
+  // "Диаграмма Mermaid (sequence)": the kind comes from aria-roledescription (flowchart-v2 -> flowchart).
+  const diagramAlt = (svg) => {
+    const kind = String(svg.getAttribute('aria-roledescription') || '').toLowerCase().replace(/-(?:v\d+|beta)$/, '').trim();
+    const mermaid = /mermaid|flowchart/i.test(`${svg.getAttribute('id') || ''} ${svg.getAttribute('class') || ''} ${kind}`)
+      || /^(?:sequence|flowchart|state|class|er|gantt|pie|journey|mindmap|timeline|gitgraph|quadrantchart|requirement|c4)/.test(kind);
+    return mermaid ? `Диаграмма Mermaid${kind ? ` (${kind})` : ''}` : 'Диаграмма';
+  };
   const svgToImage = (svg, doc, state, rectOverride = null) => {
-    const rect = rectOverride || svg.getBoundingClientRect();
+    const rect = rectOverride || layoutRect(svg);
     const copy = svg.cloneNode(true);
     copy.querySelectorAll('script').forEach((node) => node.remove());
     const outerCss = shadowCssOf(svg);
@@ -345,7 +366,7 @@
     state.total += base64.length;
     const img = doc.createElement('img');
     img.setAttribute('src', `data:image/svg+xml;base64,${base64}`);
-    img.setAttribute('alt', 'Диаграмма');
+    img.setAttribute('alt', diagramAlt(svg));
     img.setAttribute('width', String(width));
     img.setAttribute('height', String(height));
     img.setAttribute('data-ao-keep', '1');
@@ -535,12 +556,45 @@
       hoistKeptNodes(clone, plan.hidden);
       plan.hidden.forEach((node) => { if (node.parentNode) node.remove(); });
     } catch (_) {}
+    // A <pre> that is only the shell of a rendered diagram (header with tabs and buttons, a hidden editor, canvases, the picture) is
+    // not code: it becomes its picture. A <pre> that really holds the source (a visible editor with all lines) becomes a mermaid block.
+    try {
+      clone.querySelectorAll('pre').forEach((pre) => {
+        const pictures = Array.from(pre.querySelectorAll('img[alt^="Диаграмма"]'));
+        if (!pictures.length) return;
+        const lines = Array.from(pre.querySelectorAll('.view-line')).map((line) => line.textContent.replace(/\u00a0/g, ' '));
+        if (lines.length >= 2 && MERMAID_SOURCE_RE.test(lines.join('\n'))) {
+          const source = clone.ownerDocument.createElement('pre');
+          source.setAttribute('data-code-lang', 'mermaid');
+          const code = clone.ownerDocument.createElement('code');
+          code.className = 'language-mermaid';
+          code.textContent = lines.join('\n');
+          source.appendChild(code);
+          pre.replaceWith(source);
+          return;
+        }
+        const shell = clone.ownerDocument.createElement('div');
+        pictures.forEach((picture) => shell.appendChild(picture));
+        pre.replaceWith(shell);
+      });
+    } catch (_) {}
     // A provider's code block becomes a clean <pre data-code-lang><code class="language-x">exact text</code></pre>
     // (the engine's own detection, so the card, the html and the Markdown copy agree). No syntax highlighting is kept:
     // the code is plain text. Without the engine the old html is kept as it was.
     try {
       const engine = window.AnswerMarkdown;
       if (engine && typeof engine.normalizeCodeBlocks === 'function') engine.normalizeCodeBlocks(clone, { provider: options.provider || null });
+    } catch (_) {}
+    // A code block whose text is Mermaid source is a mermaid block even when the provider's own rules found no language
+    // (DeepSeek's banner carries the Diagram | Code tabs, not a language).
+    try {
+      clone.querySelectorAll('pre').forEach((pre) => {
+        if (pre.getAttribute('data-code-lang')) return;
+        if (!MERMAID_SOURCE_RE.test(pre.textContent || '')) return;
+        pre.setAttribute('data-code-lang', 'mermaid');
+        const code = pre.querySelector('code');
+        if (code && !code.className) code.className = 'language-mermaid';
+      });
     } catch (_) {}
     try { hoistKeptNodes(clone); } catch (_) {}
     try { stripHiddenElements(clone); } catch (_) {}

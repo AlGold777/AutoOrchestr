@@ -1256,6 +1256,7 @@
       '.message-item[data-role="assistant"] .message-content',
       '[data-role="assistant"] .markdown-body',
       'div.ds-message div.ds-markdown',
+      '.ds-markdown',
       '.assistant-message .markdown-body',
       '.markdown-body',
       '.message-content'

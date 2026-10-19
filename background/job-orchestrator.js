@@ -422,6 +422,8 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
       '[data-role="assistant"] .markdown-body',
       '[data-role="assistant"] .message-content',
       'div.ds-message div.ds-markdown',
+      // the answer block itself (live DOM and the repository skeleton have no ds-message wrapper)
+      '.ds-markdown',
       '.assistant-message .markdown-body',
       '.assistant-message',
       '.markdown-body',
