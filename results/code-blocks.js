@@ -179,12 +179,51 @@
       return (0.299 * r + 0.587 * g + 0.114 * b) < 110;
     } catch (_) { return false; }
   };
+  // The look of the diagrams WE draw from mermaid source: neutral monochrome (white blocks, thin grey borders, square corners, thin
+  // dark-grey lines, small filled arrowheads on a light grey panel), not mermaid's lilac default. Diagrams that arrive as a picture of
+  // the source page's own svg keep the page's look (they never pass here). Panel colors: styles/modals-responsive.css (.code-block-diagram).
+  const FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
+  const DIAGRAM_COLORS = {
+    light: { panel: '#f1f1f1', node: '#ffffff', border: '#d6d6d6', text: '#1f1f1f', line: '#666666', cluster: '#f7f7f7', lifeline: '#bdbdbd', signal: '#444444', special: '#5f5f5f' },
+    dark: { panel: '#2b2b2b', node: '#3a3a3a', border: '#555555', text: '#eeeeee', line: '#aaaaaa', cluster: '#333333', lifeline: '#666666', signal: '#cccccc', special: '#aaaaaa' }
+  };
+  const diagramConfig = (dark) => {
+    const c = dark ? DIAGRAM_COLORS.dark : DIAGRAM_COLORS.light;
+    return {
+      layout: 'dagre',
+      startOnLoad: false,
+      // securityLevel strict: labels are sanitized by mermaid; htmlLabels off: plain svg text, which an <img> shows reliably.
+      // layout dagre: the library's default for flowcharts is elk, whose 1.6 MB chunk is not shipped (scripts/vendor-mermaid.js).
+      securityLevel: 'strict',
+      theme: 'base',
+      look: 'classic',
+      htmlLabels: false,
+      fontFamily: FONT,
+      themeVariables: {
+        darkMode: !!dark,
+        background: c.panel, mainBkg: c.node, nodeBkg: c.node, primaryColor: c.node, primaryBorderColor: c.border, nodeBorder: c.border,
+        primaryTextColor: c.text, textColor: c.text, nodeTextColor: c.text, titleColor: c.text,
+        lineColor: c.line, arrowheadColor: c.line, secondaryColor: c.node, secondaryBorderColor: c.border, secondaryTextColor: c.text,
+        tertiaryColor: c.panel, tertiaryBorderColor: c.border, tertiaryTextColor: c.text,
+        clusterBkg: c.cluster, clusterBorder: c.border, edgeLabelBackground: c.panel, labelBackground: c.panel,
+        noteBkgColor: c.node, noteBorderColor: c.border, noteTextColor: c.text,
+        actorBkg: c.node, actorBorder: c.border, actorTextColor: c.text, actorLineColor: c.lifeline,
+        signalColor: c.signal, signalTextColor: c.signal, labelBoxBkgColor: c.node, labelBoxBorderColor: c.border, labelTextColor: c.text,
+        loopTextColor: c.text, activationBkgColor: c.cluster, activationBorderColor: c.border, sequenceNumberColor: c.node,
+        stateBkg: c.node, stateBorder: c.border, specialStateColor: c.special, transitionColor: c.line, transitionLabelColor: c.text,
+        compositeBackground: c.cluster, compositeBorder: c.border, compositeTitleBackground: c.node, innerEndBackground: c.special,
+        fontFamily: FONT, fontSize: '14px'
+      },
+      flowchart: { htmlLabels: false, curve: 'linear', padding: 12, useMaxWidth: false },
+      sequence: { useMaxWidth: false },
+      state: { useMaxWidth: false }
+    };
+  };
   const loadMermaid = (doc) => {
     if (!mermaidPromise) {
       mermaidPromise = Promise.resolve().then(() => (mermaidLoader || defaultLoader)()).then((mermaid) => {
         // securityLevel strict: labels are sanitized by mermaid; htmlLabels off: plain svg text, which an <img> shows reliably.
         // layout dagre: the library's default for flowcharts is elk, whose 1.6 MB chunk is not shipped (scripts/vendor-mermaid.js).
-        mermaid.initialize({ layout: 'dagre', startOnLoad: false, securityLevel: 'strict', theme: pageIsDark(doc) ? 'dark' : 'default', htmlLabels: false, flowchart: { htmlLabels: false } });
         return mermaid;
       });
       mermaidPromise.catch(() => { mermaidPromise = null; });
@@ -207,16 +246,18 @@
     return { ok: true, src: `data:image/svg+xml;base64,${btoa(binary)}`, width, height };
   };
   const renderDiagram = (doc, source) => {
-    const key = hashSource(source);
+    const dark = pageIsDark(doc);
+    const key = `${hashSource(source)}${dark ? ':dark' : ''}`;
     if (diagramCache.has(key)) return Promise.resolve(diagramCache.get(key));
     const job = renderChain.then(async () => {
       const id = `mermaid-card-${(diagramCounter += 1)}`;
       let timer = null;
       try {
         const mermaid = await loadMermaid(doc);
+        mermaid.initialize(diagramConfig(dark));   // the look follows the page's theme at the moment of drawing
         const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('превышено время отрисовки')), MERMAID_TIMEOUT_MS); });
         const { svg } = await Promise.race([mermaid.render(id, source), timeout]);
-        return toImage(doc, svg);
+        return { ...toImage(doc, svg), dark };
       } catch (error) {
         return { ok: false, reason: shortReason(error) };
       } finally {
@@ -239,6 +280,7 @@
       img.setAttribute('width', String(result.width));
       img.setAttribute('height', String(result.height));
       holder.replaceChildren(img);
+      wrapper.dataset.diagramTheme = result.dark ? 'dark' : 'light';
       wrapper.dataset.diagram = 'ready';
       wrapper.dataset.mode = 'diagram';
     } else {
@@ -329,5 +371,5 @@
     return container;
   }
 
-  return { install, decorateCodeBlocks, unwrapCodeBlocks, codeBlocksRuntime, setMermaidLoader, dispose, PAGE_SELECTOR, MERMAID_TIMEOUT_MS };
+  return { install, decorateCodeBlocks, unwrapCodeBlocks, codeBlocksRuntime, setMermaidLoader, dispose, PAGE_SELECTOR, MERMAID_TIMEOUT_MS, diagramConfig };
 });

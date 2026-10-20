@@ -59,7 +59,7 @@ describe('rendered diagram', () => {
     expect(mermaid.initialize).toHaveBeenCalledTimes(1);
     const config = mermaid.initialize.mock.calls[0][0];
     expect(config).toMatchObject({ layout: 'dagre', startOnLoad: false, securityLevel: 'strict', htmlLabels: false });
-    expect(['default', 'dark']).toContain(config.theme);
+    expect(config.theme).toBe('base'); // the neutral look (themeVariables), not mermaid's lilac default
   });
 
   test('the switch shows the source (exact) and the diagram again; Copy copies the source in both modes', async () => {

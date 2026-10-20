@@ -2969,7 +2969,11 @@ hr.section-divider {
 .code-block.is-diagram{position:relative}
 .code-block.is-diagram[data-mode="diagram"] pre{position:absolute;width:1px;height:1px;margin:-1px;padding:0;border:0;overflow:hidden;clip:rect(0,0,0,0);white-space:pre}
 .code-block.is-diagram[data-mode="code"] .code-block-diagram:not([data-failed]){display:none}
-.code-block-diagram{padding:12px;background:#fff;text-align:center}
+/* the panel of a diagram drawn from mermaid source: light grey, rounded, centered, no border (the look of the diagrams: results/code-blocks.js diagramConfig) */
+.code-block.is-diagram{border:0;background:transparent}
+.code-block.is-diagram .code-block-header{background:transparent;border-bottom:0;padding:2px 4px}
+.code-block-diagram{padding:16px 20px;background:#f1f1f1;border-radius:8px;text-align:center}
+.code-block.is-diagram[data-diagram-theme="dark"] .code-block-diagram:not([data-failed]){background:#2b2b2b}
 .code-block-diagram img{max-width:100%;height:auto;display:inline-block}
 .code-block-diagram[data-failed]{padding:6px 12px;background:#fff4e5;color:#8a4b00;font:12px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;text-align:left;border-bottom:1px solid #f0c78a}
 .code-block-diagram[data-failed]::before{content:attr(data-note)}
