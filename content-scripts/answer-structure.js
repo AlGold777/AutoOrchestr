@@ -56,7 +56,8 @@
       node.getAttribute?.('aria-label')
     ].filter(Boolean).join(' ').toLowerCase();
     if (/(thinking|thought|reasoning|analysis|scratch|trace|internal|reflection)/.test(semanticMarker)) return true;
-    return /(?:^|[\s_-])(thinking|thought|reasoning|scratchpad|chain-of-thought)(?:$|[\s_-])/.test(structuralMarker);
+    // a state flag (has-thoughts, no-thinking) is not a reasoning block
+    return /(?:^|[\s_-])(?<!(?:has|have|with|no|is|show|hide|toggle)[_-])(think|thinking|thought|thoughts|reasoning|cot|scratchpad|chain-of-thought)(?:$|[\s_-])/.test(structuralMarker);
   }
 
   // Providers with typed message parts explicitly separate public answers from

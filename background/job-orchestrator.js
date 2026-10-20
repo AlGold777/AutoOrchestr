@@ -421,6 +421,8 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
       '.message-item[data-role="assistant"] .message-content',
       '[data-role="assistant"] .markdown-body',
       '[data-role="assistant"] .message-content',
+      // the explicit marker of DeepSeek's answer first (the reasoning block may hold a .ds-markdown too)
+      '.ds-markdown.ds-assistant-message-main-content',
       'div.ds-message div.ds-markdown',
       // the answer block itself (live DOM and the repository skeleton have no ds-message wrapper)
       '.ds-markdown',
@@ -519,6 +521,16 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
     if (node?.closest?.('textarea,input,button,nav,header,footer,form,[contenteditable="true"],[data-message-part-type="reasoning"],[data-message-author-role="user"],[data-role="user"],[hidden],[inert],[aria-hidden="true"]')) return true;
     // The user's own message, whatever the provider calls it (data-testid="user-message"...): see AnswerHtmlBuilder.isUserMessage.
     if (globalThis.AnswerHtmlBuilder?.insideUserMessage?.(node)) return true;
+    // The model's reasoning block (a WHOLE WORD think/thinking/thought/reasoning/cot in a class, id or testid) is not an answer.
+    // Same rule as AnswerHtmlBuilder.isReasoningBlock (this function is serialized into the page and cannot import it).
+    const reasoningWords = ['think', 'thinking', 'thought', 'thoughts', 'reasoning', 'cot'];
+    for (let el = node; el && el.nodeType === 1; el = el.parentElement) {
+      const marker = [typeof el.className === 'string' ? el.className : '', el.id, el.getAttribute('data-testid'), el.getAttribute('data-type'), el.getAttribute('data-content-type')]
+        .filter(Boolean).join(' ').replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase();
+      const list = marker.split(/[^a-z0-9]+/);
+      // "has-thoughts" / "no-thinking" are state flags of an ordinary container, not a reasoning block
+      if (list.some((word, i) => reasoningWords.includes(word) && !(i > 0 && ['has', 'have', 'with', 'no', 'is', 'show', 'hide', 'toggle'].includes(list[i - 1])))) return true;
+    }
     return false;
   };
   const getText = (node) => {

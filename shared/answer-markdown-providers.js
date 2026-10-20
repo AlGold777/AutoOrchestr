@@ -223,8 +223,14 @@
       }
       return finishCode(query(pre, 'code') || pre, lang);
     },
-    // a reasoning block may also use .ds-markdown (unverified): the answer is the last one
-    answerRoot: (el) => { const all = matches(el, '.ds-markdown') ? [el] : queryAll(el, '.ds-markdown'); return all.length ? all[all.length - 1] : null; }
+    // The reasoning block holds a .ds-markdown too (inside .ds-think-content); the answer carries ds-assistant-message-main-content.
+    answerRoot: (el) => {
+      const all = matches(el, '.ds-markdown') ? [el] : queryAll(el, '.ds-markdown');
+      const main = all.filter((node) => matches(node, '.ds-assistant-message-main-content'));
+      const outside = all.filter((node) => !closest(node, '.ds-think-content'));
+      const pick = main.length ? main : outside;
+      return pick.length ? pick[pick.length - 1] : (all.length ? all[all.length - 1] : null);
+    }
   };
 
   const perplexity = {

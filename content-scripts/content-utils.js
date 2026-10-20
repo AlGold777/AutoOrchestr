@@ -1255,6 +1255,7 @@
       '.message-item[data-role="assistant"] .markdown-body',
       '.message-item[data-role="assistant"] .message-content',
       '[data-role="assistant"] .markdown-body',
+      '.ds-markdown.ds-assistant-message-main-content',
       'div.ds-message div.ds-markdown',
       '.ds-markdown',
       '.assistant-message .markdown-body',
@@ -1299,7 +1300,9 @@
     try {
       return !!node?.closest?.('textarea,input,button,nav,header,footer,form,aside,[contenteditable="true"],[role="combobox"],[data-message-part-type="reasoning"],[data-message-author-role="user"],[data-role="user"],[hidden],[inert],[aria-hidden="true"]')
         // the user's own message, whatever the provider calls it (AnswerHtmlBuilder.isUserMessage)
-        || !!window.AnswerHtmlBuilder?.insideUserMessage?.(node);
+        || !!window.AnswerHtmlBuilder?.insideUserMessage?.(node)
+        // the model's reasoning block (a whole word think/thinking/thought/reasoning/cot in a class or id)
+        || !!window.AnswerHtmlBuilder?.insideReasoning?.(node);
     } catch (_) {
       return false;
     }

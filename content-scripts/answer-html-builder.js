@@ -598,6 +598,10 @@
     } catch (_) {}
     try { hoistKeptNodes(clone); } catch (_) {}
     try { stripHiddenElements(clone); } catch (_) {}
+    // The model's reasoning is not the answer (a node widened to the whole message holds both).
+    try {
+      Array.from(clone.querySelectorAll(REASONING_PREFILTER)).filter(isReasoningBlock).forEach((block) => { if (block.parentNode && block !== clone) block.remove(); });
+    } catch (_) {}
     try {
       clone.querySelectorAll(RESPONSE_CLEANUP_SELECTORS).forEach((node) => node.remove());
     } catch (_) {}
@@ -666,11 +670,52 @@
       return Array.from(el.querySelectorAll(PAGE_CHROME_SEL)).some((node) => !isEditorInput(node));
     } catch (_) { return false; }
   };
+  // A reasoning ("thinking") block of the model, whatever the provider names it (ds-think-content, thinking-container, thought-chain,
+  // reasoning_block...): a WHOLE WORD of its class / id / testid / type says so. "thinker", "reasonable", "cotton" do not.
+  // The same rule is duplicated in background/job-orchestrator.js (extractLatestAssistantSnapshotInPage) and content-scripts/answer-structure.js.
+  const REASONING_WORDS = new Set(['think', 'thinking', 'thought', 'thoughts', 'reasoning', 'cot']);
+  const REASONING_PREFILTER = '[class*="think" i],[class*="thought" i],[class*="reasoning" i],[class*="cot" i],[id*="think" i],[id*="thought" i],[id*="reasoning" i],[data-testid*="think" i],[data-testid*="thought" i],[data-testid*="reasoning" i],[data-type*="reasoning" i],[data-type*="think" i],[data-content-type*="reasoning" i]';
+  const FLAG_WORDS = new Set(['has', 'have', 'with', 'no', 'is', 'show', 'hide', 'toggle']);
+  const nameWords = (value) => String(value || '').replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  const isReasoningBlock = (el) => {
+    if (!el || el.nodeType !== 1) return false;
+    const marker = [typeof el.className === 'string' ? el.className : (el.className && el.className.baseVal) || '', el.id,
+      el.getAttribute('data-testid'), el.getAttribute('data-type'), el.getAttribute('data-content-type')].filter(Boolean).join(' ');
+    // "has-thoughts" / "no-thinking" are state flags of an ordinary container (Gemini's answer container), not a reasoning block.
+    const list = nameWords(marker);
+    return list.some((word, i) => REASONING_WORDS.has(word) && !(i > 0 && FLAG_WORDS.has(list[i - 1])));
+  };
+  const insideReasoning = (el) => {
+    for (let node = el; node && node.nodeType === 1; node = node.parentElement) if (isReasoningBlock(node)) return true;
+    return false;
+  };
+  const containsReasoning = (el) => {
+    try { return Array.from(el.querySelectorAll(REASONING_PREFILTER)).some(isReasoningBlock); } catch (_) { return false; }
+  };
+  // Several sibling elements of ONE "message" family (ds-message + ds-message, chat-message...) mean a container of SEVERAL TURNS:
+  // an answer never reaches beyond one of them. Perplexity's several .prose of one turn are not a "message" family.
+  const familyOf = (el) => (typeof el.className === 'string' ? el.className : '').split(/\s+/)
+    .filter((token) => nameWords(token).some((word) => word === 'message' || word === 'msg')).sort().join(' ');
+  const hasMessageTwins = (el) => {
+    try {
+      const nodes = [el, ...Array.from(el.querySelectorAll('[class*="message" i],[class*="msg" i]'))];
+      return nodes.some((parent) => {
+        const seen = new Map();
+        for (const child of Array.from(parent.children)) {
+          const family = familyOf(child);
+          if (!family) continue;
+          seen.set(family, (seen.get(family) || 0) + 1);
+          if (seen.get(family) >= 2) return true;
+        }
+        return false;
+      });
+    } catch (_) { return false; }
+  };
   const TEXT_BLOCK_SEL = 'p,li,h1,h2,h3,h4,h5,h6,a,button,input,form,blockquote';
   const isPageLevel = (el) => {
     try {
       const assistants = el.querySelectorAll(ROLE_ASSISTANT_SEL).length + (el.matches(ROLE_ASSISTANT_SEL) ? 1 : 0);
-      return assistants > 1 || containsUserMessage(el) || containsPageChrome(el)
+      return assistants > 1 || containsUserMessage(el) || containsPageChrome(el) || hasMessageTwins(el)
         || /^(?:body|html|main)$/i.test(el.localName) || el.getAttribute('role') === 'main';
     } catch (_) { return false; }
   };
@@ -732,6 +777,10 @@
     isUserMessage,
     insideUserMessage,
     containsUserMessage,
-    containsPageChrome
+    containsPageChrome,
+    isReasoningBlock,
+    insideReasoning,
+    containsReasoning,
+    hasMessageTwins
   });
 })(typeof window !== 'undefined' ? window : globalThis);

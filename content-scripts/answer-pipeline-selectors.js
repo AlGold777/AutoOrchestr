@@ -266,6 +266,7 @@
       messageRoot: '.ds-markdown, .message-item[data-role="assistant"], [data-role="assistant"], [data-testid*="assistant"], [data-testid*="chat-response"], .assistant-message, [class*="message" i][class*="assistant" i]',
       answerContainer: 'main, [role=\"main\"], .chat-content, [class*=\"conversation\" i], [class*=\"chat\" i], article',
       lastMessage: [
+        '.ds-markdown.ds-assistant-message-main-content',
         '.ds-markdown',
         '.message-item[data-role=\"assistant\"]',
         'div[class*=\"assistant\" i]',
