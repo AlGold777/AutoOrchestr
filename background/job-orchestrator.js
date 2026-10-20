@@ -6426,7 +6426,7 @@ async function runPreCollectScrollNudge(llmName, tabId, sessionId, reason = 'pre
   // Our own visits are not evidence of progress and must not steal focus forever: an automatic nudge for an answer that is still
   // empty runs at most PRECOLLECT_NUDGE_MAX_PER_DISPATCH times per dispatch, with a growing pause, and never again after a visit
   // that left the answer exactly as empty as before. A click on "Get it" by the user (reason get_it_*) is never limited.
-  if (typeof gatePreCollectNudge === 'function' && !/^get_it_/.test(String(reason))) {
+  if (typeof gatePreCollectNudge === 'function' && options.manual !== true && !/^get_it_/.test(String(reason))) {
     const gate = gatePreCollectNudge(llmName, initialEntry, tabId, reason);
     if (!gate.allowed) return false;
   }
@@ -6548,7 +6548,10 @@ async function runPreCollectScrollNudge(llmName, tabId, sessionId, reason = 'pre
       args: [{ reason, llmName, requiredBottom }]
     });
     // Get it (a manual, user-asked visit): the page is at the bottom now; walk the answer upward, then back, before the pull.
-    if (requiredBottom && typeof runMaterializeSweepInTab === 'function') await runMaterializeSweepInTab(llmName, tabId);
+    // Automatic collection of a finished answer (round*_precollect, materialize recovery) prepares the same way, under the visit
+    // limits above; a nudge for a still printing answer (round2_batch_timeout) does not walk the page.
+    const sweepBeforePull = requiredBottom || /_precollect$/.test(String(reason)) || String(reason).startsWith('materialize_recovery_fallback');
+    if (sweepBeforePull && typeof runMaterializeSweepInTab === 'function') await runMaterializeSweepInTab(llmName, tabId);
     // Manual visits already wait for rendering in the page script. Do not add
     // the automatic nudge's extra stabilization delay on top of their dwell.
     if (!requiredBottom) await orchestratorSleepMs(PRECOLLECT_NUDGE_STABILIZE_MS);
@@ -10783,6 +10786,15 @@ async function collectFailedGetItPages(selectedModels, options) {
   return {status:'get_it_completed', results};
 }
 
+// The single preparation before a manual pull of an answer (see handleManualResponsePing). Manual: never limited like the automatic visits.
+async function prepareManualCollect(llmName, tabId, { reason = 'manual_ping_precollect', returnToTabId = null } = {}) {
+  return runPreCollectScrollNudge(llmName, tabId, getActiveSessionId(), reason, {
+    getIt: true,
+    manual: true,
+    returnToTabId: Number.isInteger(returnToTabId) ? returnToTabId : null
+  });
+}
+
 async function handleManualResponsePing(llmName, options = {}) {
   if (!llmName) {
     return { status: 'manual_ping_failed', error: 'LLM name missing' };
@@ -10912,15 +10924,17 @@ async function handleManualResponsePing(llmName, options = {}) {
     });
     return { status: 'manual_ping_sent' };
   }
-  if (options.getIt === true && options.skipBottomPreparation !== true) {
-    const prepared = await runPreCollectScrollNudge(llmName, tabId, getActiveSessionId(), 'get_it_precollect', {
-      getIt: true,
-      returnToTabId: options.reason === 'status_indicator_dblclick' ? options.returnToTabId : null
-    });
-    if (!prepared) return { status: 'manual_ping_failed', error: 'Не удалось перейти к концу беседы. Повторите Get it после завершения отправки запросов.' };
-  } else if (options.skipBottomPreparation !== true && !isFinalizedEntry(liveEntry)) {
-    await runPreCollectScrollNudge(llmName, tabId, getActiveSessionId(), 'manual_ping_precollect');
-  } else if (allowRecoverableTerminalPing || allowManualSelectorRecovery) {
+  // ONE preparation before every manual pull (Get answer, indicator click / double click, Get it, recoverable terminal, manual
+  // selector recovery): scroll to the end, walk the answer upward (materialize sweep), return to the results page. A finished
+  // answer is prepared too: the user pulls it again exactly when some blocks were not drawn. Only Get it must reach the end.
+  if (options.skipBottomPreparation !== true) {
+    const strict = options.getIt === true;
+    const prepared = typeof prepareManualCollect === 'function'
+      ? await prepareManualCollect(llmName, tabId, { reason: strict ? 'get_it_precollect' : 'manual_ping_precollect', returnToTabId: options.returnToTabId })
+      : await runPreCollectScrollNudge(llmName, tabId, getActiveSessionId(), 'get_it_precollect', { getIt: true, returnToTabId: options.returnToTabId });
+    if (!prepared && strict) return { status: 'manual_ping_failed', error: 'Не удалось перейти к концу беседы. Повторите Get it после завершения отправки запросов.' };
+  }
+  if (allowRecoverableTerminalPing || allowManualSelectorRecovery) {
     broadcastDiagnostic(llmName, {
       type: 'PING',
       label: allowManualSelectorRecovery ? 'Manual selector recovery started' : 'Manual ping override (recoverable terminal)',
