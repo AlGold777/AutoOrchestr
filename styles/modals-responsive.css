@@ -2951,6 +2951,18 @@ hr.section-divider {
 .code-block-header::before{content:attr(data-lang);text-transform:lowercase}
 .code-block-copy{appearance:none;border:1px solid #d0d7de;background:#fff;color:#24292f;border-radius:6px;padding:2px 10px;font:12px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;cursor:pointer}
 .code-block-copy::before{content:"Copy"}
+.code-block-open,.code-block-download{appearance:none;border:1px solid #d0d7de;background:#fff;color:#24292f;border-radius:6px;padding:2px 10px;font:12px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;cursor:pointer}
+.code-block-open{margin-left:auto}
+.code-block-open::before{content:"Просмотр"}
+.code-block-download::before{content:"Скачать"}
+.code-block-open:hover,.code-block-download:hover{background:#f3f4f6}
+.code-block-download.is-downloaded::before{content:"Скачано"}
+.code-block-download.is-failed::before{content:"Не удалось"}
+.code-block-header{gap:6px}
+.code-block-views{margin-left:auto}
+.code-block-views+.code-block-open{margin-left:0}
+.code-block pre{counter-reset:none}
+.code-block pre code::before,.code-block pre code::after{content:none}
 .code-block-copy:hover{background:#f3f4f6}
 .code-block-copy.is-copied::before{content:"Скопировано"}
 .code-block-copy.is-failed::before{content:"Не удалось"}
@@ -2977,4 +2989,25 @@ hr.section-divider {
 .code-block-diagram img{max-width:100%;height:auto;display:inline-block}
 .code-block-diagram[data-failed]{padding:6px 12px;background:#fff4e5;color:#8a4b00;font:12px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;text-align:left;border-bottom:1px solid #f0c78a}
 .code-block-diagram[data-failed]::before{content:attr(data-note)}
+/* the viewer (modal) of a code block */
+.code-viewer-overlay{position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:3vh 3vw}
+.code-viewer{display:flex;flex-direction:column;width:100%;height:100%;max-width:1400px;background:#fff;color:#24292f;border:1px solid #d0d7de;border-radius:10px;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,.35)}
+.code-viewer-head{display:flex;align-items:center;gap:8px;padding:8px 12px;background:#eaeef2;border-bottom:1px solid #d0d7de;font:13px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif}
+.code-viewer-lang{font-weight:600;text-transform:lowercase}
+.code-viewer-controls{margin-left:auto;display:inline-flex;gap:6px;flex-wrap:wrap}
+.code-viewer-btn{appearance:none;border:1px solid #d0d7de;background:#fff;color:#24292f;border-radius:6px;padding:3px 12px;font:inherit;cursor:pointer}
+.code-viewer-btn:hover{background:#f3f4f6}
+.code-viewer-btn[aria-pressed="true"]{background:#dbe9ff;border-color:#8bb4f0}
+.code-viewer-btn.is-copied,.code-viewer-btn.is-downloaded{background:#dcffe4;border-color:#8ad19a}
+.code-viewer-btn.is-failed{background:#ffe5e5;border-color:#e09a9a}
+.code-viewer-body{flex:1;min-height:0;overflow:auto;background:#fff}
+.code-viewer-code{margin:0;padding:16px;font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;overflow:auto;min-height:100%;box-sizing:border-box}
+.code-viewer-code code{font:inherit;background:transparent;padding:0;white-space:inherit}
+.code-viewer-frame{width:100%;height:100%;border:0;background:#fff;display:block}
+.code-viewer-img{display:block;max-width:100%;max-height:100%;margin:16px auto;object-fit:contain}
+.code-viewer-md{padding:16px 24px;font:15px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif;overflow-wrap:anywhere}
+.code-viewer-table{border-collapse:collapse;margin:16px;font:13px/1.4 system-ui,sans-serif}
+.code-viewer-table th,.code-viewer-table td{border:1px solid #d0d7de;padding:4px 10px;text-align:left}
+.code-viewer-table th{background:#f1f3f5}
+.code-viewer-note{padding:6px 16px;background:#fff4e5;color:#8a4b00;font:12px/1.4 system-ui,sans-serif}
 /* code-block:end */

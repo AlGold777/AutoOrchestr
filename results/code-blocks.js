@@ -13,10 +13,59 @@
   // Answer cards: feed cards and the model answer panels (and the revisions inside a card).
   const PAGE_SELECTOR = '.debate-model-card-output, .llm-panel .output, .post-terminal-answer-revision-body';
 
+  // ------------------------------------------------------------------ language -> file, preview kinds
+  const EXTENSIONS = {
+    python: 'py', py: 'py', javascript: 'js', js: 'js', typescript: 'ts', ts: 'ts', tsx: 'tsx', jsx: 'jsx', json: 'json', html: 'html', css: 'css',
+    bash: 'sh', sh: 'sh', shell: 'sh', zsh: 'sh', powershell: 'ps1', ps1: 'ps1', sql: 'sql', yaml: 'yml', yml: 'yml', xml: 'xml',
+    markdown: 'md', md: 'md', mermaid: 'mmd', svg: 'svg', csv: 'csv', java: 'java', kotlin: 'kt', swift: 'swift', go: 'go', rust: 'rs',
+    c: 'c', cpp: 'cpp', 'c++': 'cpp', csharp: 'cs', cs: 'cs', 'c#': 'cs', php: 'php', ruby: 'rb', rb: 'rb', dockerfile: '', toml: 'toml', ini: 'ini',
+    diff: 'patch', patch: 'patch'
+  };
+  const extensionOf = (lang) => {
+    const key = String(lang || '').trim().toLowerCase();
+    return Object.prototype.hasOwnProperty.call(EXTENSIONS, key) ? EXTENSIONS[key] : 'txt';
+  };
+  const safeNamePart = (value, fallback) => String(value || '').replace(/[\\/:*?"<>|\u0000-\u001f\s]+/g, '-').replace(/^[-.]+|[-.]+$/g, '').slice(0, 40) || fallback;
+  // <model or "code">-<language>-<N>.<ext>   (Dockerfile has no extension)
+  const downloadName = (model, lang, index) => {
+    const language = safeNamePart(String(lang || '').toLowerCase() === 'code' ? 'text' : lang, 'text');
+    const ext = extensionOf(lang);
+    return `${safeNamePart(model, 'code')}-${language}-${index}${ext ? `.${ext}` : ''}`;
+  };
+  const PREVIEW_KINDS = { html: 'html', svg: 'svg', markdown: 'markdown', md: 'markdown', mermaid: 'mermaid', json: 'json', csv: 'csv' };
+  const previewKind = (lang) => PREVIEW_KINDS[String(lang || '').trim().toLowerCase()] || '';
+  const HTML_PREVIEW_CSP = '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; img-src data:">';
+  const toBase64 = (text) => {
+    const bytes = new TextEncoder().encode(text);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(binary);
+  };
+  // A svg picture is shown only when it holds nothing active (it is an <img>, nothing runs in it anyway; this is a second fence).
+  const svgIsPlain = (text) => /^\s*(?:<\?xml[^>]*>\s*)?<svg\b/i.test(text) && !/<script\b|\son[a-z]+\s*=|<foreignObject\b|javascript:/i.test(text);
+  const parseCsv = (text) => {
+    const rows = [];
+    let row = []; let cell = ''; let quoted = false;
+    for (let i = 0; i < text.length; i += 1) {
+      const ch = text[i];
+      if (quoted) {
+        if (ch === '"' && text[i + 1] === '"') { cell += '"'; i += 1; } else if (ch === '"') quoted = false; else cell += ch;
+      } else if (ch === '"') quoted = true;
+      else if (ch === ',') { row.push(cell); cell = ''; }
+      else if (ch === '\n' || ch === '\r') { if (ch === '\r' && text[i + 1] === '\n') i += 1; row.push(cell); rows.push(row); row = []; cell = ''; }
+      else cell += ch;
+    }
+    if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+    return rows;
+  };
+  const LINE_NUMBER_NODES = '.line-number, .line-numbers, .line-numbers-rows, [class*="line-num" i], [class*="linenumber" i], [data-line-number], [data-linenumber], .cm-gutters, .hljs-ln-numbers, td.hljs-ln-line.hljs-ln-n';
+
   function codeBlocksRuntime(doc, containerSelector, observe, hooks) {
     const WRAP = 'code-block';
     const HEADER = 'code-block-header';
     const BUTTON = 'code-block-copy';
+    const OPEN = 'code-block-open';
+    const DOWNLOAD = 'code-block-download';
     const win = doc.defaultView || window;
 
     const languageOf = (pre) => {
@@ -42,6 +91,15 @@
       button.className = BUTTON;
       button.setAttribute('aria-label', 'Копировать код');
       button.title = 'Копировать код';
+      // Просмотр / Скачать: always present, whatever the provider's own block had. Labels come from CSS (no text nodes).
+      [[OPEN, 'Просмотр кода'], [DOWNLOAD, 'Скачать код']].forEach(([cls, label]) => {
+        const extra = doc.createElement('button');
+        extra.type = 'button';
+        extra.className = cls;
+        extra.setAttribute('aria-label', label);
+        extra.title = label;
+        header.appendChild(extra);
+      });
       header.appendChild(button);
       return header;
     };
@@ -52,11 +110,13 @@
       if (!container || !container.querySelectorAll) return 0;
       let made = 0;
       container.querySelectorAll('pre').forEach((pre) => {
+        // Line numbers of a raw saved <pre> (gutters, number cells) are not code: removed here, inside the pre only.
+        try { pre.querySelectorAll(LINE_NUMBER_NODES).forEach((node) => node.remove()); } catch (_) { /* keep the pre as it is */ }
         const parent = pre.parentElement;
         const lang = languageOf(pre);
         if (parent && parent.classList.contains(WRAP)) {
           const header = parent.querySelector(`:scope > .${HEADER}`);
-          if (!header || !header.querySelector(`.${BUTTON}`)) {
+          if (!header || !header.querySelector(`.${BUTTON}`) || !header.querySelector(`.${OPEN}`) || !header.querySelector(`.${DOWNLOAD}`)) {
             if (header) header.remove();
             parent.insertBefore(buildHeader(lang), pre);
             made += 1;
@@ -109,6 +169,209 @@
     };
     doc.addEventListener('click', onCopyClick, true);
 
+
+    // ---------------------------------------------------------------- download and viewer
+    const modelOf = (block) => {
+      const holder = block.closest('[data-llm-name]');
+      return holder ? holder.getAttribute('data-llm-name') : '';
+    };
+    const indexOf = (block) => {
+      const owner = block.closest(containerSelector) || doc;
+      return Array.from(owner.querySelectorAll(`.${WRAP}`)).indexOf(block) + 1 || 1;
+    };
+    // The same download as the exports (DebateExport.downloadText: Blob + temporary a[download] + revokeObjectURL).
+    const saveText = (name, text) => {
+      const exporter = win.DebateExport;
+      if (exporter && typeof exporter.downloadText === 'function') return exporter.downloadText(name, text, doc);
+      const url = win.URL.createObjectURL(new win.Blob([text], { type: 'text/plain;charset=utf-8' }));
+      const anchor = doc.createElement('a');
+      anchor.href = url; anchor.download = name;
+      doc.body.appendChild(anchor); anchor.click(); anchor.remove();
+      win.URL.revokeObjectURL(url);
+      return true;
+    };
+    const flash = (button, cls) => {
+      button.classList.add(cls);
+      win.setTimeout(() => { button.classList.remove(cls); }, 1500);
+    };
+    const downloadBlock = (block, pre, button) => {
+      const text = textOf(pre);
+      const ok = text ? saveText(downloadName(modelOf(block), languageOf(pre), indexOf(block)), text) : false;
+      if (button) flash(button, ok ? 'is-downloaded' : 'is-failed');
+      return ok;
+    };
+
+    let viewer = null;
+    const closeViewer = () => {
+      if (!viewer) return;
+      const { overlay, opener, onKey } = viewer;
+      doc.removeEventListener('keydown', onKey, true);
+      overlay.remove();
+      viewer = null;
+      if (opener && opener.focus && opener.isConnected) opener.focus();
+    };
+    const el = (tag, cls, text) => {
+      const node = doc.createElement(tag);
+      if (cls) node.className = cls;
+      if (text !== undefined) node.textContent = text;
+      return node;
+    };
+    const openViewer = (block, pre, opener) => {
+      closeViewer();
+      const lang = languageOf(pre);
+      const text = textOf(pre);
+      const kind = previewKind(lang);
+      const overlay = el('div', 'code-viewer-overlay');
+      const dialog = el('div', 'code-viewer');
+      dialog.setAttribute('role', 'dialog');
+      dialog.setAttribute('aria-modal', 'true');
+      dialog.setAttribute('aria-label', `Просмотр кода: ${lang}`);
+      const head = el('div', 'code-viewer-head');
+      head.appendChild(el('span', 'code-viewer-lang', lang));
+      const body = el('div', 'code-viewer-body');
+      const mkButton = (cls, label) => { const b = el('button', `code-viewer-btn ${cls}`, label); b.type = 'button'; return b; };
+      let mode = kind ? 'preview' : 'code';
+      let wrapOn = false;
+      const modeButtons = {};
+      const controls = el('span', 'code-viewer-controls');
+      if (kind) {
+        [['preview', 'Просмотр'], ['code', 'Код']].forEach(([key, label]) => {
+          const b = mkButton('code-viewer-mode', label);
+          b.setAttribute('data-mode', key);
+          modeButtons[key] = b;
+          controls.appendChild(b);
+        });
+      }
+      const wrapButton = mkButton('code-viewer-wrap', 'Перенос строк');
+      wrapButton.setAttribute('aria-pressed', 'false');
+      const copyButton = mkButton('code-viewer-copy', 'Копировать');
+      const saveButton = mkButton('code-viewer-save', 'Скачать');
+      const closeButton = mkButton('code-viewer-close', 'Закрыть');
+      closeButton.setAttribute('aria-label', 'Закрыть');
+      [wrapButton, copyButton, saveButton, closeButton].forEach((b) => controls.appendChild(b));
+      head.appendChild(controls);
+      dialog.append(head, body);
+      overlay.appendChild(dialog);
+
+      const showCode = () => {
+        const codePre = el('pre', 'code-viewer-code');
+        codePre.style.whiteSpace = wrapOn ? 'pre-wrap' : 'pre';
+        codePre.appendChild(el('code', '', text));
+        body.replaceChildren(codePre);
+      };
+      const showNote = (note) => { body.appendChild(el('div', 'code-viewer-note', note)); };
+      const showPreview = async () => {
+        body.replaceChildren();
+        try {
+          if (kind === 'html') {
+            const frame = el('iframe', 'code-viewer-frame');
+            frame.setAttribute('sandbox', '');   // no scripts, no same-origin, no forms, no popups
+            frame.setAttribute('title', 'Просмотр html');
+            frame.setAttribute('srcdoc', `${HTML_PREVIEW_CSP}${text}`);
+            body.appendChild(frame);
+          } else if (kind === 'svg') {
+            if (!svgIsPlain(text)) { showCode(); showNote('Картинка svg содержит активные элементы: показан код.'); return; }
+            const img = el('img', 'code-viewer-img');
+            img.setAttribute('alt', 'svg');
+            img.setAttribute('src', `data:image/svg+xml;base64,${toBase64(text)}`);
+            body.appendChild(img);
+          } else if (kind === 'markdown') {
+            const md = win.MarkdownToHtml && win.MarkdownToHtml.render;
+            if (typeof md !== 'function') { showCode(); return; }
+            const holder = el('div', 'code-viewer-md');
+            const html = md(text);
+            holder.innerHTML = typeof win.sanitizeHTML === 'function' ? win.sanitizeHTML(html) : '';
+            if (typeof win.sanitizeHTML !== 'function') holder.textContent = text;
+            body.appendChild(holder);
+          } else if (kind === 'json') {
+            let pretty = text;
+            try { pretty = JSON.stringify(JSON.parse(text), null, 2); } catch (_) { /* not json: as it is */ }
+            const codePre = el('pre', 'code-viewer-code');
+            codePre.style.whiteSpace = wrapOn ? 'pre-wrap' : 'pre';
+            codePre.appendChild(el('code', '', pretty));
+            body.appendChild(codePre);
+          } else if (kind === 'csv') {
+            const rows = parseCsv(text);
+            if (!rows.length || rows.length > 200) { showCode(); if (rows.length > 200) showNote('Больше 200 строк: показан код.'); return; }
+            const table = el('table', 'code-viewer-table');
+            rows.forEach((cells, i) => {
+              const tr = el('tr');
+              cells.forEach((cell) => tr.appendChild(el(i === 0 ? 'th' : 'td', '', cell)));
+              table.appendChild(tr);
+            });
+            body.appendChild(table);
+          } else if (kind === 'mermaid') {
+            const ready = block.querySelector(':scope > .code-block-diagram img');
+            let src = ready && ready.getAttribute('src');
+            if (!src) {
+              const result = await renderDiagram(doc, text);
+              if (!viewer || viewer.overlay !== overlay) return;
+              if (!result.ok) { mode = 'code'; refresh(); showNote(`Не удалось отрисовать диаграмму: ${result.reason}`); return; }
+              src = result.src;
+            }
+            const img = el('img', 'code-viewer-img');
+            img.setAttribute('alt', 'Диаграмма Mermaid');
+            img.setAttribute('src', src);
+            body.appendChild(img);
+          }
+        } catch (error) {
+          showCode();
+          showNote(`Не удалось показать просмотр: ${shortReason(error)}`);
+        }
+      };
+      function refresh() {
+        Object.keys(modeButtons).forEach((key) => modeButtons[key].setAttribute('aria-pressed', String(mode === key)));
+        wrapButton.hidden = mode === 'preview' && kind !== 'json';
+        if (mode === 'preview') showPreview(); else showCode();
+      }
+      overlay.addEventListener('click', (event) => {
+        if (event.target === overlay) { closeViewer(); return; }
+        const target = event.target && event.target.closest ? event.target.closest('button') : null;
+        if (!target) return;
+        if (target === closeButton) closeViewer();
+        else if (target === copyButton) writeClipboard(text).then((ok) => flash(copyButton, ok ? 'is-copied' : 'is-failed'));
+        else if (target === saveButton) {
+          const ok = text ? saveText(downloadName(modelOf(block), lang, indexOf(block)), text) : false;
+          flash(saveButton, ok ? 'is-downloaded' : 'is-failed');
+        } else if (target === wrapButton) {
+          wrapOn = !wrapOn;
+          wrapButton.setAttribute('aria-pressed', String(wrapOn));
+          refresh();
+        } else if (target.classList.contains('code-viewer-mode')) {
+          mode = target.getAttribute('data-mode');
+          refresh();
+        }
+      });
+      // Esc closes; Tab stays inside the dialog.
+      const onKey = (event) => {
+        if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeViewer(); return; }
+        if (event.key !== 'Tab') return;
+        const focusable = Array.from(dialog.querySelectorAll('button:not([hidden]), iframe, [tabindex]:not([tabindex="-1"])'));
+        if (!focusable.length) return;
+        const first = focusable[0]; const last = focusable[focusable.length - 1];
+        const active = doc.activeElement;
+        if (event.shiftKey && (active === first || !dialog.contains(active))) { event.preventDefault(); last.focus(); }
+        else if (!event.shiftKey && (active === last || !dialog.contains(active))) { event.preventDefault(); first.focus(); }
+      };
+      doc.addEventListener('keydown', onKey, true);
+      doc.body.appendChild(overlay);
+      viewer = { overlay, opener, onKey };
+      refresh();
+      closeButton.focus();
+    };
+
+    const onActionClick = (event) => {
+      const target = event.target && event.target.closest ? event.target.closest(`.${OPEN}, .${DOWNLOAD}`) : null;
+      if (!target) return;
+      const block = target.closest(`.${WRAP}`);
+      const pre = block && block.querySelector('pre');
+      if (!pre) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (target.classList.contains(OPEN)) openViewer(block, pre, target); else downloadBlock(block, pre, target);
+    };
+    doc.addEventListener('click', onActionClick, true);
+
     // The pre of an old saved card, of a path that sets html directly, of a later growth of the answer.
     const decorateIn = (node) => {
       if (!node || node.nodeType !== 1) return;
@@ -142,6 +405,8 @@
       dispose() {
         if (observer) observer.disconnect();
         doc.removeEventListener('click', onCopyClick, true);
+        doc.removeEventListener('click', onActionClick, true);
+        closeViewer();
       }
     };
   }
@@ -308,7 +573,7 @@
           button.setAttribute('aria-label', view === 'diagram' ? 'Показать диаграмму' : 'Показать код');
           views.appendChild(button);
         });
-        header.insertBefore(views, header.querySelector('.code-block-copy'));
+        header.insertBefore(views, header.querySelector('.code-block-open') || header.querySelector('.code-block-copy'));
       }
       if (!wrapper.querySelector(':scope > .code-block-diagram')) {
         const holder = doc.createElement('div');
@@ -371,5 +636,5 @@
     return container;
   }
 
-  return { install, decorateCodeBlocks, unwrapCodeBlocks, codeBlocksRuntime, setMermaidLoader, dispose, PAGE_SELECTOR, MERMAID_TIMEOUT_MS, diagramConfig };
+  return { install, decorateCodeBlocks, unwrapCodeBlocks, codeBlocksRuntime, setMermaidLoader, dispose, PAGE_SELECTOR, MERMAID_TIMEOUT_MS, diagramConfig, downloadName, extensionOf, previewKind };
 });

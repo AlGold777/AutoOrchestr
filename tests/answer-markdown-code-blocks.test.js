@@ -35,7 +35,7 @@ describe('decorateCodeBlocks', () => {
     const wrapper = out.querySelector('.code-block');
     expect(wrapper.querySelector('.code-block-header').getAttribute('data-lang')).toBe('python');
     expect(wrapper.querySelectorAll('button.code-block-copy')).toHaveLength(1);
-    expect(wrapper.querySelector('button').getAttribute('aria-label')).toBe('Копировать код');
+    expect(wrapper.querySelector('button.code-block-copy').getAttribute('aria-label')).toBe('Копировать код');
     const before = out.innerHTML;
     tools.decorateCodeBlocks(out);
     tools.decorateCodeBlocks(out);
