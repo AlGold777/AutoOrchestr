@@ -6373,7 +6373,7 @@ async function runMaterializeSweepInTab(llmName, tabId) {
       args: [llmName, MATERIALIZE_SWEEP_TAB_BUDGET_MS]
     }), MATERIALIZE_SWEEP_TAB_BUDGET_MS + 3000, () => null);
     const report = results?.[0]?.result || null;
-    emitTelemetry(llmName, 'ANSWER_MATERIALIZE_SWEEP', { level: 'info', details: report?.reason || 'no_report', meta: { tabId, ...(report || { reason: 'timeout_or_no_report' }) } });
+    emitTelemetry(llmName, 'ANSWER_MATERIALIZE_SWEEP', { level: report?.note ? 'warning' : 'info', details: `${report?.reason || 'no_report'}${report?.note ? `:${report.note}` : ''}`, meta: { tabId, ...(report || { reason: 'timeout_or_no_report' }) } });
     return report;
   } catch (err) {
     emitTelemetry(llmName, 'ANSWER_MATERIALIZE_SWEEP', { level: 'warning', details: err?.message || String(err), meta: { tabId, reason: 'sweep_failed' } });

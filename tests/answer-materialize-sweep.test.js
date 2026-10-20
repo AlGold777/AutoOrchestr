@@ -87,7 +87,7 @@ describe('materialization sweep', () => {
     expect(report.passes).toBeLessThanOrEqual(2);
     expect(report.durationMs).toBeGreaterThanOrEqual(0);
     expect(emitted).toEqual([report]);
-    expect(Object.keys(report).sort()).toEqual(['blocksAfter', 'blocksBefore', 'changed', 'durationMs', 'heightAfter', 'heightBefore', 'passes', 'placeholdersAfter', 'placeholdersBefore', 'provider', 'reason', 'steps', 'visible']);
+    expect(Object.keys(report).sort()).toEqual(['answerFound', 'answerHeight', 'blocksAfter', 'blocksBefore', 'changed', 'durationMs', 'heightAfter', 'heightBefore', 'passes', 'placeholdersAfter', 'placeholdersBefore', 'provider', 'reason', 'scrolledPx', 'steps', 'stoppedBy', 'visible']);
   });
 
   test('steps go upward by about 0.6 of the window and stop when the start of the answer is in view', async () => {

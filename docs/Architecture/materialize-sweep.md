@@ -34,3 +34,10 @@
 
 **Тесты.** `tests/answer-materialize-sweep.test.js` (jsdom, заглушки + двойник IntersectionObserver), `tests/answer-materialize-sweep.browser.test.js`
 (Chrome, настоящий IntersectionObserver; `RUN_HTML_EXPORT_BROWSER_TESTS=1`).
+
+## Граница прохода: начало ПОСЛЕДНЕГО ответа
+
+- `findAnswerElement(doc, provider)`: селекторы провайдера (`AnswerPipelineSelectors.PLATFORM_SELECTORS[...].messageRoot`), затем общие признаки; без сообщения пользователя, блока размышлений, контейнеров страницы (`AnswerHtmlBuilder`); берётся последний по документу и расширяется до хода (`expandToTurn`; расширение, проглотившее много текста, отвергается). Элемент, переданный вызывающим, расширяется до найденного хода.
+- Проход идёт вверх, пока начало ответа не окажется в окне (запас `topReserve` = 0,25 окна), не больше `ceil(расстояние/шаг)+2` шагов; после последнего шага верх ответа подтягивается к верхней границе окна.
+- Ответ не найден: не больше `unknownSteps` = 3 шагов (≈1,8 окна), в отчёте `note: 'answer_start_unknown'`.
+- Отчёт: `answerFound`, `answerHeight`, `scrolledPx`, `stoppedBy` (`answer_top` | `budget` | `user_input` | `unknown_cap` | `fits_viewport`).
