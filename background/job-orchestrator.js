@@ -587,6 +587,10 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
   // as ContentUtils.collectLateSnapshotCandidate; tests/answer-markdown-node-selection.test.js.
   const ROLE_ASSISTANT = '[data-message-author-role="assistant"],[data-role="assistant"],[data-author-role="assistant"]';
   const ROLE_USER = '[data-message-author-role="user"],[data-role="user"],[data-author-role="user"]';
+  // Inputs inside a code editor of the answer (Monaco/CodeMirror hidden textarea in a diagram) are not the page composer.
+  const EDITOR_HOST = 'pre,code,[role="code"],.monaco-editor,.cm-editor,.CodeMirror,[class*="monaco" i],[class*="codemirror" i],[class*="code-editor" i],[data-mode-id]';
+  const hasPageChrome = (root) => Array.from(root.querySelectorAll('textarea,[contenteditable="true"],form,nav'))
+    .some((el) => !(el.matches('textarea,[contenteditable="true"]') && (el.closest(EDITOR_HOST) || el.hasAttribute('readonly') || el.getAttribute('aria-hidden') === 'true')));
   const isWideContainer = (candidate) => {
     try {
       const target = candidate.node;
@@ -594,14 +598,32 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
       return assistants > 1
         || !!target.querySelector(ROLE_USER)
         || !!globalThis.AnswerHtmlBuilder?.containsUserMessage?.(target)
-        || !!target.querySelector('textarea,[contenteditable="true"],form,nav');
+        || hasPageChrome(target);
     } catch (_) {
       return false;
     }
   };
   const beforeWide = baseCandidates.length;
-  baseCandidates = baseCandidates.filter((candidate) => !isWideContainer(candidate));
+  const wideCandidates = baseCandidates.filter((candidate) => isWideContainer(candidate));
+  baseCandidates = baseCandidates.filter((candidate) => !wideCandidates.includes(candidate));
   const wideRejected = beforeWide - baseCandidates.length;
+  // Never lose the whole answer: when only page-level containers matched but there is ONE unambiguous
+  // candidate (after dropping outer ones that contain another), return it with an explicit note.
+  let degradedNote = null;
+  if (!baseCandidates.length && wideCandidates.length) {
+    // Only page chrome (composer/form/nav) made it wide: several turns or a user message inside is a wrong answer, not a degraded one.
+    const chromeOnly = wideCandidates.filter((c) => {
+      try {
+        return c.node.querySelectorAll(ROLE_ASSISTANT).length + (c.node.matches(ROLE_ASSISTANT) ? 1 : 0) <= 1
+          && !c.node.querySelector(ROLE_USER) && !globalThis.AnswerHtmlBuilder?.containsUserMessage?.(c.node);
+      } catch (_) { return false; }
+    });
+    const inner = chromeOnly.filter((outer) => !chromeOnly.some((other) => other !== outer && outer.node.contains(other.node)));
+    if (inner.length === 1) {
+      baseCandidates = inner;
+      degradedNote = { type: 'answer', reason: 'узел ответа похож на контейнер страницы; взят единственный кандидат', position: 0 };
+    }
+  }
   // Of two nested candidates with (almost) the same text keep the inner one: it has no page chrome around it.
   baseCandidates = baseCandidates.filter((outer) => !baseCandidates.some((inner) => inner !== outer
     && outer.node.contains(inner.node) && inner.text.length >= outer.text.length * 0.9));
@@ -651,10 +673,19 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
     // Widen to the node that holds the whole turn; when only a page-level container would, fail instead of half an answer.
     if (builder && typeof builder.expandToTurn === 'function') {
       const peers = baseCandidates.filter((candidate) => candidate !== best && candidate.selector === best.selector).map((candidate) => candidate.node);
-      const turn = builder.expandToTurn(best.node, peers);
-      if (turn.status === 'split') {
+      let turn = { node: best.node, status: 'ok' };
+      try {
+        turn = builder.expandToTurn(best.node, peers);
+      } catch (err) {
+        degradedNote = degradedNote || { type: 'answer', reason: `расширение до хода не удалось: ${String(err?.message || err).replace(/[\],\n\r]+/g, ' ').slice(0, 80)}`, position: 0 };
+      }
+      if (turn.status === 'split' && peers.length) {
+        // Equal peer blocks: which one is the answer is ambiguous, so fail with a reason.
         best = null;
         splitAcrossBlocks = true;
+      } else if (turn.status === 'split') {
+        // The only candidate: keep the main block (better than nothing) and say the answer may continue elsewhere.
+        degradedNote = degradedNote || { type: 'answer', reason: 'ответ из нескольких блоков; взят основной блок', position: 0 };
       } else if (turn.node !== best.node) {
         best = { ...best, node: turn.node, text: getText(turn.node) };
         turnExpanded = true;
@@ -667,12 +698,22 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
     // extension version. Without it (injection failed) the html is a plain copy and says so in the report.
     const builder = globalThis.AnswerHtmlBuilder;
     const usable = builder && typeof builder.build === 'function';
-    best.html = usable
-      ? builder.build(best.node, { includeRoot: false, provider: modelName })
-      : String(best.node.innerHTML || '').trim();
-    best.svgNotes = usable
-      ? builder.getLastNotes()
-      : [{ type: 'html', reason: 'html собран запасным путём (без раскладки и стилей)', position: 0 }];
+    let built = false;
+    if (usable) {
+      try {
+        best.html = builder.build(best.node, { includeRoot: false, provider: modelName });
+        best.svgNotes = builder.getLastNotes();
+        built = true;
+      } catch (_) { /* degrade below */ }
+    }
+    // An html with no text and no picture/code/table is an empty answer, however much text the node has: take the plain copy.
+    const hasContent = (html) => /<(?:img|pre|table|video|audio)\b/i.test(html) || String(html).replace(/<[^>]*>/g, '').replace(/&nbsp;|\s+/g, '').length > 0;
+    if (built && !hasContent(best.html) && hasContent(String(best.node.innerHTML || ''))) built = false;
+    if (!built) {
+      best.html = String(best.node.innerHTML || '').trim();
+      best.svgNotes = [{ type: 'html', reason: 'html собран запасным путём (без раскладки и стилей)', position: 0 }];
+    }
+    if (degradedNote) best.svgNotes = [...best.svgNotes, degradedNote];
     // Gemini: the Markdown copy is made without its hidden page label.
     best.mdNode = normalizedModel === 'gemini'
       ? (() => { const copy = best.node.cloneNode(true); copy.querySelectorAll('h6.screen-reader-model-response-label').forEach((label) => label.remove()); return copy; })()
@@ -6329,6 +6370,39 @@ async function runMaterializeSweepInTab(llmName, tabId) {
 }
 self.runMaterializeSweepInTab = runMaterializeSweepInTab;
 
+// Per dispatch limit of automatic pre-collect visits (tab activation). One number.
+const PRECOLLECT_NUDGE_MAX_PER_DISPATCH = 4;
+const PRECOLLECT_NUDGE_BASE_PAUSE_MS = 4000;
+const precollectNudgeState = new Map();
+function gatePreCollectNudge(llmName, entry, tabId, reason, now = Date.now()) {
+  const dispatchId = entry?.lastDispatchMeta?.dispatchId || `tab${tabId}`;
+  const key = `${llmName}:${dispatchId}`;
+  const answerSig = `${String(entry?.pendingFinalAnswer || entry?.answer || '').trim().length}`;
+  const state = precollectNudgeState.get(key) || { count: 0, lastAt: 0, lastSig: null, exhausted: false };
+  const skip = (why) => {
+    if (!state.exhausted) {
+      emitTelemetry(llmName, 'PRECOLLECT_NUDGE_SKIP', {
+        level: 'warning',
+        details: why,
+        meta: { tabId, reason, attempts: state.count, dispatchId, summary: `ответ не получен: ${why}` },
+        force: true
+      });
+    }
+    state.exhausted = why === 'attempts_exhausted' || why === 'same_empty_result' || state.exhausted;
+    precollectNudgeState.set(key, state);
+    return { allowed: false, reason: why };
+  };
+  if (state.count >= PRECOLLECT_NUDGE_MAX_PER_DISPATCH) return skip('attempts_exhausted');
+  if (state.count >= 2 && answerSig === '0' && state.lastSig === answerSig) return skip('same_empty_result');
+  if (state.count >= 1 && now - state.lastAt < PRECOLLECT_NUDGE_BASE_PAUSE_MS * (2 ** (state.count - 1))) return skip('backoff');
+  state.count += 1;
+  state.lastAt = now;
+  state.lastSig = answerSig;
+  precollectNudgeState.set(key, state);
+  if (precollectNudgeState.size > 200) precollectNudgeState.delete(precollectNudgeState.keys().next().value);
+  return { allowed: true };
+}
+
 async function runPreCollectScrollNudge(llmName, tabId, sessionId, reason = 'precollect_nudge', options = {}) {
   const requiredBottom = options.getIt === true;
   if (self.isInitialPromptPassActive?.()) return false;
@@ -6348,6 +6422,13 @@ async function runPreCollectScrollNudge(llmName, tabId, sessionId, reason = 'pre
       meta: { tabId, reason, activeFocusDeadlineAt: initialEntry.activeFocusDeadlineAt || null }
     });
     return false;
+  }
+  // Our own visits are not evidence of progress and must not steal focus forever: an automatic nudge for an answer that is still
+  // empty runs at most PRECOLLECT_NUDGE_MAX_PER_DISPATCH times per dispatch, with a growing pause, and never again after a visit
+  // that left the answer exactly as empty as before. A click on "Get it" by the user (reason get_it_*) is never limited.
+  if (typeof gatePreCollectNudge === 'function' && !/^get_it_/.test(String(reason))) {
+    const gate = gatePreCollectNudge(llmName, initialEntry, tabId, reason);
+    if (!gate.allowed) return false;
   }
   const performNudge = async () => {
     const liveEntry = jobState?.llms?.[llmName];

@@ -651,19 +651,33 @@
   // A turn the page marks explicitly as one assistant answer: the answer never reaches beyond it.
   const TURN_OWNER_SEL = `${ROLE_ASSISTANT_SEL},[role="article"],[data-testid="assistant-message"],[data-testid$="-assistant-message" i],[data-testid^="assistant-message" i]`;
   const TURN_BOUNDARY_SEL = `${ROLE_USER_SEL},textarea,[contenteditable="true"],form,nav,h1`;
+  const containsBoundary = (el) => Array.from(el.querySelectorAll(TURN_BOUNDARY_SEL)).some((mark) => !(mark.matches('textarea,[contenteditable="true"]') && isEditorInput(mark)));
   const PAGE_CHROME_SEL = 'textarea,[contenteditable="true"],form,nav';
+  // Inputs that belong to a CODE EDITOR inside the answer (Monaco / CodeMirror of a diagram or code block: a hidden <textarea>,
+  // a contenteditable layer) are not the page's composer. Only an input outside code blocks, not read-only and not hidden, is page chrome.
+  const EDITOR_HOST_SEL = 'pre, code, [role="code"], .monaco-editor, .cm-editor, .CodeMirror, [class*="monaco" i], [class*="codemirror" i], [class*="code-editor" i], [data-mode-id]';
+  const isEditorInput = (el) => {
+    if (el.closest(EDITOR_HOST_SEL)) return true;
+    if (el.hasAttribute('readonly') || el.getAttribute('aria-hidden') === 'true') return true;
+    return false;
+  };
+  const containsPageChrome = (el) => {
+    try {
+      return Array.from(el.querySelectorAll(PAGE_CHROME_SEL)).some((node) => !isEditorInput(node));
+    } catch (_) { return false; }
+  };
   const TEXT_BLOCK_SEL = 'p,li,h1,h2,h3,h4,h5,h6,a,button,input,form,blockquote';
   const isPageLevel = (el) => {
     try {
       const assistants = el.querySelectorAll(ROLE_ASSISTANT_SEL).length + (el.matches(ROLE_ASSISTANT_SEL) ? 1 : 0);
-      return assistants > 1 || containsUserMessage(el) || !!el.querySelector(PAGE_CHROME_SEL)
+      return assistants > 1 || containsUserMessage(el) || containsPageChrome(el)
         || /^(?:body|html|main)$/i.test(el.localName) || el.getAttribute('role') === 'main';
     } catch (_) { return false; }
   };
   const commonAncestor = (a, b) => { for (let n = a; n; n = n.parentElement) if (n.contains(b)) return n; return null; };
   const boundaryBetween = (scope, first, second) => {
     const [early, late] = (first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING) ? [first, second] : [second, first];
-    const marks = Array.from(scope.querySelectorAll(TURN_BOUNDARY_SEL));
+    const marks = Array.from(scope.querySelectorAll(TURN_BOUNDARY_SEL)).filter((mark) => !(mark.matches('textarea,[contenteditable="true"]') && isEditorInput(mark)));
     Array.from(scope.querySelectorAll(USER_CANDIDATES_SEL)).forEach((candidate) => { if (!marks.includes(candidate) && isUserMessage(candidate)) marks.push(candidate); });
     return marks.some((mark) => {
       if (early.contains(mark) || late.contains(mark) || mark.contains(early) || mark.contains(late)) return false;
@@ -694,7 +708,7 @@
     let walker = turn;
     for (let level = 0; level < 4; level += 1) {
       const parent = walker.parentElement;
-      if (!parent || (owner && !owner.contains(parent)) || isPageLevel(parent) || parent.querySelector(TURN_BOUNDARY_SEL) || containsUserMessage(parent)) break;
+      if (!parent || (owner && !owner.contains(parent)) || isPageLevel(parent) || containsBoundary(parent) || containsUserMessage(parent)) break;
       const extra = Array.from(parent.children).filter((child) => child !== walker && !child.contains(walker) && !walker.contains(child));
       if (!extra.length) { walker = parent; continue; }
       const onlyMedia = extra.every((child) => !child.matches(TEXT_BLOCK_SEL) && !child.querySelector(TEXT_BLOCK_SEL)
@@ -717,6 +731,7 @@
     expandToTurn,
     isUserMessage,
     insideUserMessage,
-    containsUserMessage
+    containsUserMessage,
+    containsPageChrome
   });
 })(typeof window !== 'undefined' ? window : globalThis);

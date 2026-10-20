@@ -7,7 +7,6 @@
  */
 const fs = require('fs');
 const path = require('path');
-const { execFileSync } = require('child_process');
 const { chromium } = require('playwright');
 
 const ROOT = path.join(__dirname, '..');
@@ -24,10 +23,6 @@ const ARROW = '<svg data-d-component="icon" class="arrow" width="18" height="18"
 const step = (label) => `<div data-d-component="box" data-d-direction="col" class="step"><div data-d-component="row" data-d-direction="row">${ICON}<p data-d-component="text" style="margin:0">${label}</p></div></div>`;
 const SCHEME = `<div data-d-component="box" data-d-direction="col" id="scheme">${step('Step one')}${ARROW}${step('Step two')}${ARROW}${step('Step three')}</div>`;
 const ORDINARY = `<h2>Title of the answer</h2><p>${'A normal paragraph of the answer with some words. '.repeat(6)}</p><ul><li>first item</li><li>second item</li><li>third <strong>item</strong></li></ul><pre><code>const a = 1;\nconst b = 2;</code></pre><table><tr><th>a</th><th>b</th></tr><tr><td>1</td><td>2</td></tr></table>`;
-
-const headVersion = () => {
-  try { return execFileSync('git', ['show', 'HEAD:content-scripts/content-utils.js'], { cwd: ROOT, encoding: 'utf8', maxBuffer: 20 * 1024 * 1024 }); } catch (_) { return null; }
-};
 
 run('Chrome: a DIL scheme keeps its columns, rows and arrows inside a 700px card; an ordinary answer does not grow', async () => {
   const browser = await chromium.launch({ headless: true, channel: 'chrome' });
@@ -91,18 +86,12 @@ run('Chrome: a DIL scheme keeps its columns, rows and arrows inside a 700px card
     });
     expect(painted).toEqual([143, 143, 143]);
 
-    // Size: an ordinary answer is not larger than it was before layout support (HEAD's content-utils).
+    // Size: an ordinary answer (no flex/grid) must not balloon. The ceiling is fixed rather than compared with git HEAD:
+    // HEAD's content-utils delegates to AnswerHtmlBuilder, so it is no longer a "before layout support" baseline.
+    // Measured 2355 characters for ORDINARY with computed styles; 3000 leaves headroom without hiding a 20x regression.
     const sizeNow = await page.evaluate((markup) => { document.getElementById('src').innerHTML = markup; return window.ContentUtils.buildInlineHtml(document.getElementById('src'), { includeRoot: false }).length; }, ORDINARY);
-    const old = headVersion();
-    if (old) {
-      const page2 = await browser.newPage({ viewport: { width: 1500, height: 900 } });
-      await page2.addInitScript(() => { window.chrome = { runtime: { id: 'x', sendMessage() {} } }; });
-      await page2.setContent(`<style>${PAGE_CSS}</style><div id="src">${ORDINARY}</div>`);
-      await page2.addScriptTag({ content: old });
-      const sizeBefore = await page2.evaluate(() => window.ContentUtils.buildInlineHtml(document.getElementById('src'), { includeRoot: false }).length);
-      console.log('ordinary answer html size: before', sizeBefore, 'after', sizeNow);
-      expect(sizeNow).toBeLessThanOrEqual(sizeBefore);
-    }
+    console.log('ordinary answer html size:', sizeNow);
+    expect(sizeNow).toBeLessThanOrEqual(3000);
     const schemeNow = html.length;
     console.log('DIL scheme html size', schemeNow, 'for', (await page.evaluate(() => document.getElementById('src').textContent.length)), 'chars of the ordinary text');
   } finally {

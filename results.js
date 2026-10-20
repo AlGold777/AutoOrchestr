@@ -19117,6 +19117,8 @@ document.addEventListener('click', (event) => {
         // The structured source wins over the flat text: a markdown copy, when there is one, is the reference.
         const textHtml = answerMarkdown ? renderMarkdownHtml(answerMarkdown) : convertMarkdownToHTML(text);
         if (!sanitizedHtml || !text) return sanitizedHtml || textHtml;
+        // Sanitized away to nothing visible (no text, no picture/code/table) while the text exists: the text is the answer.
+        if (!/<(?:img|pre|table|video|audio)\b/i.test(sanitizedHtml) && !plainTextFromHtml(sanitizedHtml).replace(/\s+/g, '')) return textHtml;
 
         // The text payload is the committed answer. Rich HTML is only a
         // projection of it and may have been captured from an incomplete DOM

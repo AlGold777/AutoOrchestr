@@ -1310,13 +1310,17 @@
   // extractLatestAssistantSnapshotInPage (background/job-orchestrator.js).
   const ROLE_ASSISTANT_SELECTOR = '[data-message-author-role="assistant"],[data-role="assistant"],[data-author-role="assistant"]';
   const ROLE_USER_SELECTOR = '[data-message-author-role="user"],[data-role="user"],[data-author-role="user"]';
+  // Same rule as the extractor: code-editor inputs inside the answer are not page chrome.
+  const EDITOR_HOST = 'pre,code,[role="code"],.monaco-editor,.cm-editor,.CodeMirror,[class*="monaco" i],[class*="codemirror" i],[class*="code-editor" i],[data-mode-id]';
+  const hasPageChrome = (root) => Array.from(root.querySelectorAll('textarea,[contenteditable="true"],form,nav'))
+    .some((el) => !(el.matches('textarea,[contenteditable="true"]') && (el.closest(EDITOR_HOST) || el.hasAttribute('readonly') || el.getAttribute('aria-hidden') === 'true')));
   const isWideAnswerContainer = (node) => {
     try {
       const assistants = node.querySelectorAll(ROLE_ASSISTANT_SELECTOR).length + (node.matches(ROLE_ASSISTANT_SELECTOR) ? 1 : 0);
       return assistants > 1
         || !!node.querySelector(ROLE_USER_SELECTOR)
         || !!window.AnswerHtmlBuilder?.containsUserMessage?.(node)
-        || !!node.querySelector('textarea,[contenteditable="true"],form,nav');
+        || hasPageChrome(node);
     } catch (_) {
       return false;
     }
@@ -1360,9 +1364,24 @@
         nodes.splice(0, nodes.length, latest);
       }
     }
-    const candidates = nodes
-      .filter((node) => node && !isLateSnapshotRejectedNode(node))
-      .filter((node) => !isWideAnswerContainer(node))
+    const notWide = nodes.filter((node) => node && !isLateSnapshotRejectedNode(node));
+    let degradedNote = null;
+    let pool = notWide.filter((node) => !isWideAnswerContainer(node));
+    if (!pool.length && notWide.length) {
+      // Never lose the whole answer: ONE unambiguous page-like candidate is returned with a note.
+      const chromeOnly = notWide.filter((node) => {
+        try {
+          return node.querySelectorAll(ROLE_ASSISTANT_SELECTOR).length + (node.matches(ROLE_ASSISTANT_SELECTOR) ? 1 : 0) <= 1
+            && !node.querySelector(ROLE_USER_SELECTOR) && !window.AnswerHtmlBuilder?.containsUserMessage?.(node);
+        } catch (_) { return false; }
+      });
+      const inner = chromeOnly.filter((outer) => !chromeOnly.some((other) => other !== outer && outer.contains(other)));
+      if (inner.length === 1) {
+        pool = inner;
+        degradedNote = { type: 'answer', reason: 'узел ответа похож на контейнер страницы; взят единственный кандидат', position: 0 };
+      }
+    }
+    const candidates = pool
       .map((node, index) => {
         const text = ['Le Chat', 'Gemini'].includes(llmName) && window.AnswerStructure
           ? window.AnswerStructure.linearizeText(node) : extractSafeVisibleText(node, 200000);
@@ -1386,9 +1405,17 @@
     // AnswerHtmlBuilder.expandToTurn); the same rule runs in the background's extractLatestAssistantSnapshotInPage.
     if (best && window.AnswerHtmlBuilder && typeof window.AnswerHtmlBuilder.expandToTurn === 'function') {
       const peers = candidates.filter((item) => item !== best && selectorOf.get(item.node) === selectorOf.get(best.node)).map((item) => item.node);
-      const turn = window.AnswerHtmlBuilder.expandToTurn(best.node, peers);
-      if (turn.status === 'split') return { ok: false, llmName, reason: 'answer_split_across_blocks', text: '', html: '', candidates: candidates.length };
-      if (turn.node !== best.node) {
+      let turn = { node: best.node, status: 'ok' };
+      try {
+        turn = window.AnswerHtmlBuilder.expandToTurn(best.node, peers);
+      } catch (err) {
+        degradedNote = degradedNote || { type: 'answer', reason: 'расширение до хода не удалось', position: 0 };
+      }
+      if (turn.status === 'split' && peers.length) {
+        return { ok: false, llmName, reason: 'answer_split_across_blocks', text: '', html: '', candidates: candidates.length };
+      } else if (turn.status === 'split') {
+        degradedNote = degradedNote || { type: 'answer', reason: 'ответ из нескольких блоков; взят основной блок', position: 0 };
+      } else if (turn.node !== best.node) {
         const widened = turn.node;
         best = {
           ...best,
@@ -1397,13 +1424,26 @@
         };
       }
     }
-    return best
-      ? {
-        ok: true, llmName, text: best.text, html: buildInlineHtml(best.node), visible: best.visible, candidates: candidates.length,
-        // Opt-in (manual pulls only; the streaming snapshot observer does not convert).
-        ...(options.withMarkdown ? buildAnswerMarkdownCopy(best.node, llmName) : {})
+    if (!best) return { ok: false, llmName, text: '', html: '', candidates: candidates.length };
+    let html;
+    try {
+      html = buildInlineHtml(best.node);
+      // An html with no text and no picture/code/table is an empty answer: take the plain copy.
+      const hasContent = (value) => /<(?:img|pre|table|video|audio)\b/i.test(value) || String(value).replace(/<[^>]*>/g, '').replace(/&nbsp;|\s+/g, '').length > 0;
+      if (!hasContent(html) && hasContent(String(best.node.innerHTML || ''))) throw new Error('empty html');
+    } catch (_) {
+      html = String(best.node.innerHTML || '').trim();
+      degradedNote = degradedNote || { type: 'html', reason: 'html собран запасным путём (без раскладки и стилей)', position: 0 };
+    }
+    let copy = {};
+    if (options.withMarkdown) {
+      // Opt-in (manual pulls only; the streaming snapshot observer does not convert).
+      copy = buildAnswerMarkdownCopy(best.node, llmName);
+      if (degradedNote && copy.copyReport) {
+        copy = { ...copy, copyReport: { ...copy.copyReport, placeholders: [...(copy.copyReport.placeholders || []), degradedNote], complete: false } };
       }
-      : { ok: false, llmName, text: '', html: '', candidates: candidates.length };
+    }
+    return { ok: true, llmName, text: best.text, html, visible: best.visible, candidates: candidates.length, ...(degradedNote ? { degraded: degradedNote.reason } : {}), ...copy };
   };
 
   // DOM->Markdown copy of a node, same fields and failure rules as the pipeline's
