@@ -71,6 +71,7 @@
   // (AnswerHtmlBuilder), widened to the whole turn (expandToTurn); without them the general marks of an answer.
   const PROVIDER_KEYS = { gpt: 'chatgpt', chatgpt: 'chatgpt', claude: 'claude', gemini: 'gemini', grok: 'grok', perplexity: 'perplexity', qwen: 'qwen',
     deepseek: 'deepseek', lechat: 'lechat', mistral: 'lechat', zai: 'zai', kimi: 'kimi' };
+  const PROVIDER_ANSWER_FIRST = { zai: ['.chat-assistant.markdown-prose'] };
   const GENERIC_ANSWER_SELECTORS = [ANSWER_ROLE_SELECTOR, '[data-testid*="assistant" i]', '[class*="assistant" i][class*="message" i]', 'model-response',
     '[role="article"]', '.markdown, .prose'];
   const lastInDocument = (list) => list.reduce((best, node) => (!best || (best.compareDocumentPosition(node) & 4 /* FOLLOWING */) ? node : best), null);
@@ -106,6 +107,9 @@
       try { return Array.from(doc.querySelectorAll(selector)).filter(accepted); } catch (_) { return []; }
     };
     const lists = [];
+    // where the provider's own block of an answer is known and sits INSIDE a wrapper that carries the id of the message
+    // (Z.ai: id="message-..." is on the wrapper of the user's turn as well), it comes first
+    (PROVIDER_ANSWER_FIRST[key] || []).forEach((selector) => lists.push(selector));
     if (key && platform[key] && platform[key].messageRoot) lists.push(platform[key].messageRoot);
     GENERIC_ANSWER_SELECTORS.forEach((selector) => lists.push(selector));
     for (const selector of lists) {

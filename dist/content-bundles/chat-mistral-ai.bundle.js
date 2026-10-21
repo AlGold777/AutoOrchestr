@@ -7666,6 +7666,7 @@
   // (AnswerHtmlBuilder), widened to the whole turn (expandToTurn); without them the general marks of an answer.
   const PROVIDER_KEYS = { gpt: 'chatgpt', chatgpt: 'chatgpt', claude: 'claude', gemini: 'gemini', grok: 'grok', perplexity: 'perplexity', qwen: 'qwen',
     deepseek: 'deepseek', lechat: 'lechat', mistral: 'lechat', zai: 'zai', kimi: 'kimi' };
+  const PROVIDER_ANSWER_FIRST = { zai: ['.chat-assistant.markdown-prose'] };
   const GENERIC_ANSWER_SELECTORS = [ANSWER_ROLE_SELECTOR, '[data-testid*="assistant" i]', '[class*="assistant" i][class*="message" i]', 'model-response',
     '[role="article"]', '.markdown, .prose'];
   const lastInDocument = (list) => list.reduce((best, node) => (!best || (best.compareDocumentPosition(node) & 4 /* FOLLOWING */) ? node : best), null);
@@ -7701,6 +7702,9 @@
       try { return Array.from(doc.querySelectorAll(selector)).filter(accepted); } catch (_) { return []; }
     };
     const lists = [];
+    // where the provider's own block of an answer is known and sits INSIDE a wrapper that carries the id of the message
+    // (Z.ai: id="message-..." is on the wrapper of the user's turn as well), it comes first
+    (PROVIDER_ANSWER_FIRST[key] || []).forEach((selector) => lists.push(selector));
     if (key && platform[key] && platform[key].messageRoot) lists.push(platform[key].messageRoot);
     GENERIC_ANSWER_SELECTORS.forEach((selector) => lists.push(selector));
     for (const selector of lists) {
@@ -9305,8 +9309,9 @@
         } catch (_) { return false; }
       });
       const inner = chromeOnly.filter((outer) => !chromeOnly.some((other) => other !== outer && outer.contains(other)));
-      if (inner.length === 1) {
-        pool = inner;
+      // several single answers of the page (every turn of a chat has one): the LAST of them is the answer
+      if (inner.length >= 1) {
+        pool = [inner.reduce((last, node) => (last.compareDocumentPosition(node) & 4 /* FOLLOWING */ ? node : last))];
         degradedNote = { type: 'answer', reason: 'узел ответа похож на контейнер страницы; взят единственный кандидат', position: 0 };
       }
     }
@@ -17173,7 +17178,8 @@ const scrollIntoViewSmoothly = async (element) => {
     },
     zai: {
       messageRoot: [
-        '[id^="message-"]',
+        // id="message-..." is on the wrapper of the user's turn as well: only a wrapper that holds an assistant block
+        '[id^="message-"]:has(.chat-assistant)',
         '[data-message-author-role="assistant"]',
         '[data-role="assistant"]',
         '[data-testid*="assistant" i]',

@@ -554,8 +554,13 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
     }
     return (hash >>> 0).toString(16);
   };
+  let rejectedCount = 0;
   let baseCandidates = nodes
-    .filter((node) => node && !isRejectedNode(node))
+    .filter((node) => {
+      if (!node) return false;
+      if (isRejectedNode(node)) { rejectedCount += 1; return false; }
+      return true;
+    })
     .map((node, index) => {
       const text = getText(node);
       let visible = true;
@@ -631,8 +636,9 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
       } catch (_) { return false; }
     });
     const inner = chromeOnly.filter((outer) => !chromeOnly.some((other) => other !== outer && outer.node.contains(other.node)));
-    if (inner.length === 1) {
-      baseCandidates = inner;
+    // several single answers of the page (every turn of a chat has one): the LAST of them is the answer
+    if (inner.length >= 1) {
+      baseCandidates = [inner.reduce((last, candidate) => (last.node.compareDocumentPosition(candidate.node) & 4 /* FOLLOWING */ ? candidate : last))];
       degradedNote = { type: 'answer', reason: 'узел ответа похож на контейнер страницы; взят единственный кандидат', position: 0 };
     }
   }
@@ -859,6 +865,8 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
       reason: splitAcrossBlocks ? 'answer_split_across_blocks' : (wideRejected > 0 ? 'wide_container_only' : 'no_candidate'),
       candidates: 0,
       candidateCount: baseCandidates.length,
+      // why nothing was chosen: nodes found / dropped as page parts, user or reasoning / dropped as too short or excluded / dropped as containers
+      diagnostic: `found=${nodes.length},rejected=${rejectedCount},kept=${beforeWide},wide=${wideRejected}`,
       strategyId,
       strategyIndex,
       anchorApplied
@@ -1153,7 +1161,7 @@ async function runInlineLateExtract({ tabId, llmName, minChars = DOM_SNAPSHOT_RE
   if (snapshot?.ok && snapshot.text) {
     return snapshot;
   }
-  return { ok: false, length: snapshot?.length || 0, candidates: snapshot?.candidates || 0, error: result?.error || snapshot?.reason || null, extractReason: snapshot?.reason || result?.error || null };
+  return { ok: false, length: snapshot?.length || 0, candidates: snapshot?.candidates || 0, error: result?.error || snapshot?.reason || null, extractReason: snapshot?.reason || result?.error || null, extractDiagnostic: snapshot?.diagnostic || null };
 }
 
 async function lateCollectAnswer({ llmName, tabId, reason = 'late_collect', meta = {}, minChars = DOM_SNAPSHOT_RECOVERY_MIN_CHARS, manualRecovery = null } = {}) {
@@ -1198,6 +1206,7 @@ async function lateCollectAnswer({ llmName, tabId, reason = 'late_collect', meta
           cachedLength: Number(extra.cachedLength || 0),
           elapsedMs: Math.max(0, Date.now() - startedAt),
           extractReason: result?.extractReason || null,
+          extractDiagnostic: result?.extractDiagnostic || null,
           manualRecovery: !!(manualRecovery || meta?.manualRecovery),
           preTerminalMaterialize: !!meta?.preTerminalMaterialize
         },
@@ -1385,6 +1394,7 @@ async function lateCollectAnswer({ llmName, tabId, reason = 'late_collect', meta
       source: 'none',
       reason: inline?.error || 'no_answer_extracted',
       extractReason: inline?.extractReason || null,
+      extractDiagnostic: inline?.extractDiagnostic || null,
       candidates: inline?.candidates || 0,
       candidateCount: inline?.candidateCount || inline?.candidates || 0
     }, { state: state.state, stateReason: state.reason, stateError: state.error || null, cachedLength: cached?.length || 0 });

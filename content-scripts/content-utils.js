@@ -1383,8 +1383,9 @@
         } catch (_) { return false; }
       });
       const inner = chromeOnly.filter((outer) => !chromeOnly.some((other) => other !== outer && outer.contains(other)));
-      if (inner.length === 1) {
-        pool = inner;
+      // several single answers of the page (every turn of a chat has one): the LAST of them is the answer
+      if (inner.length >= 1) {
+        pool = [inner.reduce((last, node) => (last.compareDocumentPosition(node) & 4 /* FOLLOWING */ ? node : last))];
         degradedNote = { type: 'answer', reason: 'узел ответа похож на контейнер страницы; взят единственный кандидат', position: 0 };
       }
     }

@@ -323,7 +323,8 @@
     },
     zai: {
       messageRoot: [
-        '[id^="message-"]',
+        // id="message-..." is on the wrapper of the user's turn as well: only a wrapper that holds an assistant block
+        '[id^="message-"]:has(.chat-assistant)',
         '[data-message-author-role="assistant"]',
         '[data-role="assistant"]',
         '[data-testid*="assistant" i]',
