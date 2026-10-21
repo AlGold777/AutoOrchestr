@@ -1219,6 +1219,10 @@
       'article'
     ],
     Claude: [
+      // the answer block of the live page (the same first choices as the in-page extractor of the background)
+      'div[data-is-streaming] div.font-claude-response.relative div.standard-markdown.grid-cols-1',
+      'div[data-is-streaming] div.standard-markdown.grid-cols-1',
+      '.font-claude-response .standard-markdown',
       '[data-testid*="assistant" i]',
       '[data-is-streaming="false"] .font-claude-message',
       '.font-claude-message',
@@ -1430,13 +1434,17 @@
     if (!best) return { ok: false, llmName, text: '', html: '', candidates: candidates.length };
     let html;
     try {
+      // Observation snapshots (options.enrich === false) carry the text and the plain html: the layout build is for a real pull.
+      if (options.enrich === false) { html = String(best.node.innerHTML || '').trim(); throw new Error('plain'); }
       html = buildInlineHtml(best.node);
       // An html with no text and no picture/code/table is an empty answer: take the plain copy.
       const hasContent = (value) => /<(?:img|pre|table|video|audio)\b/i.test(value) || String(value).replace(/<[^>]*>/g, '').replace(/&nbsp;|\s+/g, '').length > 0;
       if (!hasContent(html) && hasContent(String(best.node.innerHTML || ''))) throw new Error('empty html');
-    } catch (_) {
+    } catch (error) {
       html = String(best.node.innerHTML || '').trim();
-      degradedNote = degradedNote || { type: 'html', reason: 'html собран запасным путём (без раскладки и стилей)', position: 0 };
+      if (!(options.enrich === false && error && error.message === 'plain')) {
+        degradedNote = degradedNote || { type: 'html', reason: 'html собран запасным путём (без раскладки и стилей)', position: 0 };
+      }
     }
     let copy = {};
     if (options.withMarkdown) {
@@ -1499,7 +1507,7 @@
         timer = null;
         const llmName = detectLlmNameFromLocation();
         if (!llmName) return;
-        const snapshot = collectLateSnapshotCandidate(llmName, 80);
+        const snapshot = collectLateSnapshotCandidate(llmName, 80, { enrich: false });
         if (!snapshot.ok || !snapshot.text) return;
         const hash = simpleSnapshotHash(snapshot.text);
         const now = Date.now();

@@ -143,7 +143,7 @@ describe('background hand-over of pulled answers', () => {
     expect(ORCH).toContain('...lateCopy,');
     expect(ORCH).toContain('entry.answerMarkdown = lateCopy.answerMarkdown');
     expect(ORCH).toContain('answerMarkdown: inline.answerMarkdown');
-    expect(ORCH).toContain('args: [llmName, minChars, { ...(manualRecovery || {}), markdownInjectError }]');
+    expect(ORCH).toContain('args: [llmName, minChars, { ...(manualRecovery || {}), markdownInjectError, enrich }]');
     expect(ORCH).toMatch(/if \(!answerMarkdownCopy\.copyReport && !error\)/);
     expect((read('background/message-router.js').match(/withMessageAnswerCopy\(message\)/g) || []).length).toBe(2);
     expect(read('background/dispatch-coordinator.js')).toContain('lateCollectCopyFields');

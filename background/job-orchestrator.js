@@ -709,7 +709,9 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
     // diagrams, icons, hidden content, clean code blocks). The background injects it into a tab that runs an older
     // extension version. Without it (injection failed) the html is a plain copy and says so in the report.
     const builder = globalThis.AnswerHtmlBuilder;
-    const usable = builder && typeof builder.build === 'function';
+    // The TEXT of the answer is primary. Layout/svg/code enrichment only when asked for: an observation frame (options.enrich === false)
+    // returns the text and the plain html of the node at once.
+    const usable = manualOptions.enrich !== false && builder && typeof builder.build === 'function';
     let built = false;
     if (usable) {
       try {
@@ -723,7 +725,7 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
     if (built && !hasContent(best.html) && hasContent(String(best.node.innerHTML || ''))) built = false;
     if (!built) {
       best.html = String(best.node.innerHTML || '').trim();
-      best.svgNotes = [{ type: 'html', reason: 'html собран запасным путём (без раскладки и стилей)', position: 0 }];
+      best.svgNotes = manualOptions.enrich === false ? [] : [{ type: 'html', reason: 'html собран запасным путём (без раскладки и стилей)', position: 0 }];
     }
     if (degradedNote) best.svgNotes = [...best.svgNotes, degradedNote];
     // Gemini: the Markdown copy is made without its hidden page label.
@@ -736,7 +738,7 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
   // report.complete=false (spec: docs/Architecture/answer-markdown-spec.md, 4.2).
   let answerMarkdown = '';
   let copyReport = null;
-  if (best) {
+  if (best && manualOptions.enrich !== false) {
     const stub = (reason) => {
       answerMarkdown = `[НЕ СКОПИРОВАНО: тип=answer, причина=${reason}, позиция=1]`;
       copyReport = {
@@ -1137,20 +1139,21 @@ async function classifyLateCollectState(tabId, llmName, options = {}) {
   };
 }
 
-async function runInlineLateExtract({ tabId, llmName, minChars = DOM_SNAPSHOT_RECOVERY_MIN_CHARS, manualRecovery = null } = {}) {
+async function runInlineLateExtract({ tabId, llmName, minChars = DOM_SNAPSHOT_RECOVERY_MIN_CHARS, manualRecovery = null, enrich = true } = {}) {
   // Read-only fallback: execute a pure extractor only (no listeners, observers, reloads,
-  // prompt resend or DOM mutation). The only injection is the passive DOM->Markdown modules.
-  const markdownInjectError = await ensureAnswerMarkdownModulesInTab(tabId);
+  // prompt resend or DOM mutation). The only injection is the passive DOM->Markdown modules, and only when the
+  // result is enriched: an observation frame needs the text, fast, and injects nothing.
+  const markdownInjectError = enrich ? await ensureAnswerMarkdownModulesInTab(tabId) : null;
   const result = await withLateCollectExecutionLock(() => withLateCollectTimeout(chrome.scripting.executeScript({
     target: { tabId },
     func: extractLatestAssistantSnapshotInPage,
-    args: [llmName, minChars, { ...(manualRecovery || {}), markdownInjectError }]
+    args: [llmName, minChars, { ...(manualRecovery || {}), markdownInjectError, enrich }]
   }), LATE_COLLECT_EXECUTE_TIMEOUT_MS, (err) => ({ ok: false, error: err?.message || 'execute_timeout' })));
   const snapshot = Array.isArray(result) ? result.find((item) => item?.result)?.result : null;
   if (snapshot?.ok && snapshot.text) {
     return snapshot;
   }
-  return { ok: false, length: snapshot?.length || 0, candidates: snapshot?.candidates || 0, error: result?.error || snapshot?.reason || null };
+  return { ok: false, length: snapshot?.length || 0, candidates: snapshot?.candidates || 0, error: result?.error || snapshot?.reason || null, extractReason: snapshot?.reason || result?.error || null };
 }
 
 async function lateCollectAnswer({ llmName, tabId, reason = 'late_collect', meta = {}, minChars = DOM_SNAPSHOT_RECOVERY_MIN_CHARS, manualRecovery = null } = {}) {
@@ -1194,6 +1197,7 @@ async function lateCollectAnswer({ llmName, tabId, reason = 'late_collect', meta
           textHash: result?.textHash || (result?.text ? simpleLateAnswerHash(result.text) : null),
           cachedLength: Number(extra.cachedLength || 0),
           elapsedMs: Math.max(0, Date.now() - startedAt),
+          extractReason: result?.extractReason || null,
           manualRecovery: !!(manualRecovery || meta?.manualRecovery),
           preTerminalMaterialize: !!meta?.preTerminalMaterialize
         },
@@ -1319,7 +1323,10 @@ async function lateCollectAnswer({ llmName, tabId, reason = 'late_collect', meta
       }
       return Object.keys(base).length ? base : null;
     })();
-    const inline = await runInlineLateExtract({ tabId, llmName, minChars, manualRecovery: inlineScanOptions });
+    // An observation frame (the passive ping failed / an adaptive or round collect) gets the text only; enrichment (Markdown, layout html,
+    // module injection) is for the manual, materialize and audit collects.
+    const passiveFrame = /^(?:passive_ping_error:|observation_unavailable_retry|adaptive)/.test(String(reason)) && !manualLatestRecovery && !manualRecovery && !meta?.manualRecovery;
+    const inline = await runInlineLateExtract({ tabId, llmName, minChars, manualRecovery: inlineScanOptions, enrich: !passiveFrame });
     if (inline?.ok && inline.text) {
       await saveAnswerSnapshotFromContent({
         llmName,
@@ -1377,6 +1384,7 @@ async function lateCollectAnswer({ llmName, tabId, reason = 'late_collect', meta
       text: '',
       source: 'none',
       reason: inline?.error || 'no_answer_extracted',
+      extractReason: inline?.extractReason || null,
       candidates: inline?.candidates || 0,
       candidateCount: inline?.candidateCount || inline?.candidates || 0
     }, { state: state.state, stateReason: state.reason, stateError: state.error || null, cachedLength: cached?.length || 0 });
@@ -6361,7 +6369,7 @@ async function focusTabForVerification(llmName, tabId, durationMs, sessionId) {
 // (Mermaid diagrams) exist before the pull. Own budget (never added to the LATE_COLLECT_* limits); the tab is already active
 // (the focus lock of the nudge); a tab that is not shown reports visible:false. The report goes to telemetry only.
 const MATERIALIZE_SWEEP_TAB_BUDGET_MS = 8000;
-async function runMaterializeSweepInTab(llmName, tabId) {
+async function runMaterializeSweepInTab(llmName, tabId, options = {}) {
   try {
     const probe = await chrome.scripting.executeScript({ target: { tabId }, func: () => !!globalThis.AnswerMaterializeSweep });
     if (!probe?.[0]?.result) {
@@ -6369,11 +6377,11 @@ async function runMaterializeSweepInTab(llmName, tabId) {
     }
     const results = await withLateCollectTimeout(chrome.scripting.executeScript({
       target: { tabId },
-      func: (provider, budgetMs) => globalThis.AnswerMaterializeSweep.run({ provider, config: { budgetMs } }),
-      args: [llmName, MATERIALIZE_SWEEP_TAB_BUDGET_MS]
+      func: (provider, budgetMs, force) => globalThis.AnswerMaterializeSweep.run({ provider, force, config: { budgetMs } }),
+      args: [llmName, MATERIALIZE_SWEEP_TAB_BUDGET_MS, options.force === true]
     }), MATERIALIZE_SWEEP_TAB_BUDGET_MS + 3000, () => null);
     const report = results?.[0]?.result || null;
-    emitTelemetry(llmName, 'ANSWER_MATERIALIZE_SWEEP', { level: report?.note ? 'warning' : 'info', details: `${report?.reason || 'no_report'}${report?.note ? `:${report.note}` : ''}`, meta: { tabId, ...(report || { reason: 'timeout_or_no_report' }) } });
+    emitTelemetry(llmName, 'ANSWER_MATERIALIZE_SWEEP', { level: report?.note ? 'warning' : 'info', details: `${report?.reason || 'no_report'}${report?.note ? `:${report.note}` : ''}`, meta: { tabId, trigger: options.trigger || null, activated: options.activated === undefined ? null : options.activated, ...(report || { reason: 'timeout_or_no_report' }) } });
     return report;
   } catch (err) {
     emitTelemetry(llmName, 'ANSWER_MATERIALIZE_SWEEP', { level: 'warning', details: err?.message || String(err), meta: { tabId, reason: 'sweep_failed' } });
@@ -6417,16 +6425,23 @@ function gatePreCollectNudge(llmName, entry, tabId, reason, now = Date.now()) {
 
 async function runPreCollectScrollNudge(llmName, tabId, sessionId, reason = 'precollect_nudge', options = {}) {
   const requiredBottom = options.getIt === true;
-  if (self.isInitialPromptPassActive?.()) return false;
-  if (!llmName || !isValidTabId(tabId)) return false;
-  if (sessionId && !isSessionActive(sessionId)) return false;
+  // A manual pull ALWAYS leaves a trace of the upward pass: either its report, or why it was not called.
+  const skipSweep = (why) => {
+    if (requiredBottom) {
+      try { emitTelemetry(llmName, 'ANSWER_MATERIALIZE_SWEEP', { level: 'warning', details: `not_called:${why}`, meta: { tabId, reason: 'not_called', why, trigger: reason }, force: true }); } catch (_) { /* telemetry only */ }
+    }
+    return false;
+  };
+  if (self.isInitialPromptPassActive?.()) return skipSweep('initial_prompt_pass_active');
+  if (!llmName || !isValidTabId(tabId)) return skipSweep('no_tab');
+  if (sessionId && !isSessionActive(sessionId)) return skipSweep('session_inactive');
   const initialEntry = jobState?.llms?.[llmName];
   if (!initialEntry || (!requiredBottom && isFinalizedEntry(initialEntry))) {
     emitTelemetry(llmName, 'PRECOLLECT_NUDGE_SKIP', {
       details: 'terminal',
       meta: { tabId, reason }
     });
-    return false;
+    return skipSweep('no_entry');
   }
   if (!requiredBottom && self.isActiveFocusAllowedForEntry?.(initialEntry) === false) {
     emitTelemetry(llmName, 'PRECOLLECT_NUDGE_SKIP', {
@@ -6445,13 +6460,14 @@ async function runPreCollectScrollNudge(llmName, tabId, sessionId, reason = 'pre
   const performNudge = async () => {
     const liveEntry = jobState?.llms?.[llmName];
     if (self.isInitialPromptPassActive?.() || (sessionId && !isSessionActive(sessionId))
-      || liveEntry !== initialEntry || (!requiredBottom && isFinalizedEntry(liveEntry))) return false;
+      || liveEntry !== initialEntry || (!requiredBottom && isFinalizedEntry(liveEntry))) return skipSweep('state_changed_before_visit');
     if (!requiredBottom && self.isActiveFocusAllowedForEntry?.(liveEntry) === false) return false;
+    let activated = null;
     if (typeof activateTabForDispatch === 'function') {
-      await activateTabForDispatch(tabId);
+      activated = await activateTabForDispatch(tabId);
     }
     if (self.isInitialPromptPassActive?.() || (sessionId && !isSessionActive(sessionId))
-      || jobState?.llms?.[llmName] !== liveEntry || (!requiredBottom && isFinalizedEntry(liveEntry))) return false;
+      || jobState?.llms?.[llmName] !== liveEntry || (!requiredBottom && isFinalizedEntry(liveEntry))) return skipSweep('state_changed_after_activation');
     const manualVisitStartedAt = Date.now();
     const results = await chrome.scripting.executeScript({
       target: { tabId },
@@ -6563,7 +6579,8 @@ async function runPreCollectScrollNudge(llmName, tabId, sessionId, reason = 'pre
     // Automatic collection of a finished answer (round*_precollect, materialize recovery) prepares the same way, under the visit
     // limits above; a nudge for a still printing answer (round2_batch_timeout) does not walk the page.
     const sweepBeforePull = requiredBottom || /_precollect$/.test(String(reason)) || String(reason).startsWith('materialize_recovery_fallback');
-    if (sweepBeforePull && typeof runMaterializeSweepInTab === 'function') await runMaterializeSweepInTab(llmName, tabId);
+    if (sweepBeforePull && typeof runMaterializeSweepInTab === 'function') await runMaterializeSweepInTab(llmName, tabId, { force: requiredBottom, trigger: reason, activated });
+    else if (requiredBottom) skipSweep('sweep_unavailable');
     // Manual visits already wait for rendering in the page script. Do not add
     // the automatic nudge's extra stabilization delay on top of their dwell.
     if (!requiredBottom) await orchestratorSleepMs(PRECOLLECT_NUDGE_STABILIZE_MS);
@@ -6605,7 +6622,7 @@ async function runPreCollectScrollNudge(llmName, tabId, sessionId, reason = 'pre
       details: err?.message || String(err),
       meta: { tabId, reason }
     });
-    return false;
+    return skipSweep(`nudge_error:${String(err?.message || err).slice(0, 60)}`);
   }
 }
 

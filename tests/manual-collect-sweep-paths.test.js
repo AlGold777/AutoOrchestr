@@ -109,4 +109,24 @@ describe('path -> is the upward pass called (exactly once per path)', () => {
     expect(ping).toContain('returnToTabId: isAppUiTab(sender?.tab) ? sender.tab.id : null');
     expect(request).toContain('returnToTabId: isAppUiTab(sender?.tab) ? sender.tab.id : null');
   });
+
+  test('the user goes back to the results page only AFTER the upward pass', async () => {
+    const { c } = setup();
+    const order = [];
+    c.runMaterializeSweepInTab = jest.fn(async () => { order.push('sweep'); });
+    c.chrome.tabs.update = jest.fn(async () => { order.push('return'); });
+    await c.handleManualResponsePing('Qwen', { manualRecovery: true, reason: 'manual_button', returnToTabId: 99 });
+    expect(order.indexOf('sweep')).toBeGreaterThan(-1);
+    expect(order.indexOf('return')).toBeGreaterThan(order.indexOf('sweep'));
+  });
+
+  test('a manual pull that cannot walk leaves a trace: ANSWER_MATERIALIZE_SWEEP not_called with the reason', async () => {
+    const { c } = setup();
+    c.self.isInitialPromptPassActive = () => true;
+    await c.handleManualResponsePing('Qwen', { getIt: true, manualRecovery: true, reason: 'get_it_batch' });
+    const calls = c.emitTelemetry.mock.calls.filter(([, type]) => type === 'ANSWER_MATERIALIZE_SWEEP');
+    expect(calls.length).toBeGreaterThan(0);
+    expect(calls[0][2].meta).toMatchObject({ reason: 'not_called', why: 'initial_prompt_pass_active' });
+    expect(c.runMaterializeSweepInTab).not.toHaveBeenCalled();
+  });
 });

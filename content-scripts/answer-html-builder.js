@@ -694,21 +694,35 @@
   };
   // Several sibling elements of ONE "message" family (ds-message + ds-message, chat-message...) mean a container of SEVERAL TURNS:
   // an answer never reaches beyond one of them. Perplexity's several .prose of one turn are not a "message" family.
-  const familyOf = (el) => (typeof el.className === 'string' ? el.className : '').split(/\s+/)
-    .filter((token) => nameWords(token).some((word) => word === 'message' || word === 'msg')).sort().join(' ');
+  // A class names a MESSAGE when "message"/"msg" ends it (ds-message, chat-message) or is followed by item/bubble/container/turn/row
+  // (message-item): "hide-from-message-actions" is not a message.
+  const MESSAGE_TAILS = new Set(['item', 'bubble', 'container', 'turn', 'row', 'wrapper', 'block']);
+  const isMessageToken = (token) => {
+    const list = nameWords(token);
+    const at = list.findIndex((word) => word === 'message' || word === 'msg');
+    if (at < 0) return false;
+    return at === list.length - 1 || (at === list.length - 2 && MESSAGE_TAILS.has(list[at + 1]));
+  };
+  const familyOf = (el) => (typeof el.className === 'string' ? el.className : '').split(/\s+/).filter(isMessageToken).sort().join(' ');
   const hasMessageTwins = (el) => {
     try {
-      const nodes = [el, ...Array.from(el.querySelectorAll('[class*="message" i],[class*="msg" i]'))];
-      return nodes.some((parent) => {
-        const seen = new Map();
+      // Look at the PARENT of every message-family element inside: a parent holding two of one family (an item with the user's
+      // ds-message and the assistant's ds-message) is a container of several turns, whatever its own class is called.
+      const seen = new Set();
+      const members = Array.from(el.querySelectorAll('[class*="message" i],[class*="msg" i]'));
+      for (const member of members) {
+        const parent = member.parentElement;
+        if (!parent || seen.has(parent) || !(parent === el || el.contains(parent))) continue;
+        seen.add(parent);
+        const counts = new Map();
         for (const child of Array.from(parent.children)) {
           const family = familyOf(child);
           if (!family) continue;
-          seen.set(family, (seen.get(family) || 0) + 1);
-          if (seen.get(family) >= 2) return true;
+          counts.set(family, (counts.get(family) || 0) + 1);
+          if (counts.get(family) >= 2) return true;
         }
-        return false;
-      });
+      }
+      return false;
     } catch (_) { return false; }
   };
   const TEXT_BLOCK_SEL = 'p,li,h1,h2,h3,h4,h5,h6,a,button,input,form,blockquote';

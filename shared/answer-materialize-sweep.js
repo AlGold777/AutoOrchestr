@@ -22,7 +22,9 @@
     placeholderWaitMs: 1500,
     unknownSteps: 3,       // when the start of the answer is unknown: at most this many steps (~1.8 windows), never "to the page start"
     topReserve: 0.25,      // the walk may stop this part of the window BEFORE the start of the answer
-    activeTailMs: 400      // __AO_SWEEP_ACTIVE stays true this long after the end
+    activeTailMs: 400,     // __AO_SWEEP_ACTIVE stays true this long after the end
+    hiddenWaitMs: 1500,    // a tab that was just activated may report 'hidden' for a moment: wait this long for it to be shown
+    trustedInputOnly: true // only the user's own (trusted) events stop the walk; events a script dispatches do not
   });
   // An "unripe" block: a status placeholder the page replaces when the block is drawn.
   const UNRIPE_LABEL_RE = /загрузк|loading|диаграмм|diagram|rendering|mermaid|отрисов/i;
@@ -72,6 +74,18 @@
   const GENERIC_ANSWER_SELECTORS = [ANSWER_ROLE_SELECTOR, '[data-testid*="assistant" i]', '[class*="assistant" i][class*="message" i]', 'model-response',
     '[role="article"]', '.markdown, .prose'];
   const lastInDocument = (list) => list.reduce((best, node) => (!best || (best.compareDocumentPosition(node) & 4 /* FOLLOWING */) ? node : best), null);
+  // A virtual list keeps what is on screen in ANY order (a node mounted later sits later in the DOM, whatever its place on the page):
+  // the last answer is the one lowest on the page; the document order decides only when nothing has a position.
+  const lastOnPage = (list) => {
+    let best = null; let bestBottom = 0;
+    list.forEach((node) => {
+      let rect = null;
+      try { rect = node.getBoundingClientRect(); } catch (_) { rect = null; }
+      const bottom = rect ? rect.bottom : 0;
+      if (rect && (rect.width > 0 || rect.height > 0) && (best === null || bottom > bestBottom)) { best = node; bestBottom = bottom; }
+    });
+    return best || lastInDocument(list);
+  };
   function findAnswerElement(doc, provider) {
     const win = doc.defaultView || globalThis;
     const builder = win.AnswerHtmlBuilder || globalThis.AnswerHtmlBuilder || null;
@@ -98,7 +112,7 @@
       let found = collect(selector);
       // an outer node that holds another candidate is a container, not the answer
       found = found.filter((outer) => !found.some((inner) => inner !== outer && outer.contains(inner)));
-      const best = lastInDocument(found);
+      const best = lastOnPage(found);
       if (!best) continue;
       if (builder && typeof builder.expandToTurn === 'function') {
         try {
@@ -127,7 +141,8 @@
     const report = {
       provider: options.provider || null, passes: 0, steps: 0, durationMs: 0, heightBefore: 0, heightAfter: 0,
       blocksBefore: 0, blocksAfter: 0, placeholdersBefore: 0, placeholdersAfter: 0, changed: false, visible: true, reason: 'done',
-      answerFound: false, answerHeight: 0, scrolledPx: 0, stoppedBy: null
+      answerFound: false, answerHeight: 0, scrolledPx: 0, stoppedBy: null,
+      visibilityAtStart: null, hasFocusAtStart: null, hiddenWaitedMs: 0
     };
     const finish = (reason) => {
       report.reason = reason;
@@ -137,10 +152,24 @@
       return report;
     };
     if (!doc || !win) return finish('no_document');
+    try { report.visibilityAtStart = doc.visibilityState; report.hasFocusAtStart = typeof doc.hasFocus === 'function' ? doc.hasFocus() : null; } catch (_) { /* report only */ }
     // A page that is not shown does not draw lazy blocks (no intersections): say so, do not pretend.
     if (doc.visibilityState === 'hidden') {
-      report.visible = false;
-      return finish('page_hidden');
+      // The tab was activated a moment ago: it becomes visible within a frame or two. Wait for it (bounded) instead of giving up.
+      const waited = await new Promise((resolve) => {
+        const t0 = Date.now();
+        const tick = () => {
+          if (doc.visibilityState !== 'hidden') resolve(true);
+          else if (Date.now() - t0 >= cfg.hiddenWaitMs) resolve(false);
+          else win.setTimeout(tick, 50);
+        };
+        tick();
+      });
+      report.hiddenWaitedMs = Math.min(cfg.hiddenWaitMs, Date.now() - startedAt);
+      if (!waited) {
+        report.visible = false;
+        return finish('page_hidden');
+      }
     }
     // The element the caller tracks may be only one block of the last turn: when the resolver finds the turn around it, use that.
     let answerEl = options.answerEl || null;
@@ -168,7 +197,8 @@
     const minTop = () => (reverse ? -(scroller.scrollHeight - scroller.clientHeight) : 0);
     report.heightBefore = scroller.scrollHeight;
     const stateKey = `${scroller.scrollHeight}|${countBlocks(scope)}|${unripeIn(scope).length}`;
-    if (answerEl && lastSweepState.get(answerEl) === stateKey) {
+    // A pull the user asked for (options.force) always walks: the page may have lost the blocks again since the last sweep.
+    if (answerEl && options.force !== true && lastSweepState.get(answerEl) === stateKey) {
       report.heightAfter = report.heightBefore;
       report.blocksAfter = report.blocksBefore;
       report.placeholdersAfter = report.placeholdersBefore;
@@ -185,7 +215,8 @@
 
     const savedTop = getTop();
     let aborted = false;
-    const onUser = () => { aborted = true; };
+    // Only the user's own input (trusted events) stops the walk: a script's dispatched event (the page's own, our humanoid) does not.
+    const onUser = (event) => { if (cfg.trustedInputOnly && event && event.isTrusted === false) return; aborted = true; };
     USER_EVENTS.forEach((name) => doc.addEventListener(name, onUser, { capture: true, passive: true }));
     root_setActive(true);
     const over = () => Date.now() - startedAt > cfg.budgetMs;
@@ -203,10 +234,21 @@
     const signature = () => `${scroller.scrollHeight}|${countBlocks(scope)}|${unripeIn(scope).length}`;
     const frameTop = () => (isRoot(doc, scroller) ? 0 : scroller.getBoundingClientRect().top);
     // The start of the answer is in the window (it may be above the top by at most the reserve).
+    // A virtual list unmounts what scrolls out of its window: a detached node has no position (all zeros), so it says nothing.
+    const reresolve = () => {
+      if (answerEl && answerEl.isConnected === false) {
+        const again = findAnswerElement(doc, options.provider);
+        if (again) answerEl = again;
+      }
+    };
     const answerTopVisible = () => {
-      if (!answerEl) return false;
+      if (!answerEl || answerEl.isConnected === false) return false;
       return answerEl.getBoundingClientRect().top >= frameTop() - cfg.topReserve * scroller.clientHeight;
     };
+    // Where the start of the answer is, in scroll coordinates, worked out BEFORE the walk (the list may unmount the node on the way).
+    const targetTop = answerEl
+      ? savedTop + (answerEl.getBoundingClientRect().top - frameTop()) - cfg.topReserve * scroller.clientHeight
+      : null;
     let lowest = savedTop;  // the smallest scroll position reached (the farthest walk up)
 
     try {
@@ -221,7 +263,10 @@
           ? Math.ceil(Math.max(0, frameTop() - answerEl.getBoundingClientRect().top) / step) + 2
           : cfg.unknownSteps;
         while (!aborted && !over()) {
+          reresolve();
           if (answerTopVisible()) { report.stoppedBy = report.stoppedBy || 'answer_top'; break; }
+          // the node is gone (unmounted) or unreliable: the position worked out before the walk decides
+          if (answerEl && answerEl.isConnected === false && targetTop !== null && getTop() <= targetTop + 1) { report.stoppedBy = report.stoppedBy || 'answer_top'; break; }
           if (getTop() <= minTop() + 1) { report.stoppedBy = report.stoppedBy || 'answer_top'; break; }
           if (stepsDone >= stepCap) { report.stoppedBy = answerEl ? 'answer_top' : 'unknown_cap'; break; }
           setTop(Math.max(minTop(), getTop() - step));
@@ -231,7 +276,8 @@
           await settle();
         }
         // After the last step the start of the answer must not stay above the window: bring it to the top edge (no overshoot).
-        if (answerEl && !aborted) {
+        reresolve();
+        if (answerEl && answerEl.isConnected !== false && !aborted) {
           const delta = answerEl.getBoundingClientRect().top - frameTop();
           if (delta < -2) { setTop(getTop() + delta); lowest = Math.min(lowest, getTop()); }
         }

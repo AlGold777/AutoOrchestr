@@ -6,7 +6,7 @@ const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
 const read = (file) => fs.readFileSync(path.join(ROOT, file), 'utf8');
-const FAST = { settleMs: 5, settleCapMs: 25, placeholderWaitMs: 40, activeTailMs: 10 };
+const FAST = { settleMs: 5, settleCapMs: 25, placeholderWaitMs: 40, activeTailMs: 10, hiddenWaitMs: 60 };
 const LABEL = 'Загрузка диаграммы Mermaid';
 
 let Sweep;
@@ -87,7 +87,7 @@ describe('materialization sweep', () => {
     expect(report.passes).toBeLessThanOrEqual(2);
     expect(report.durationMs).toBeGreaterThanOrEqual(0);
     expect(emitted).toEqual([report]);
-    expect(Object.keys(report).sort()).toEqual(['answerFound', 'answerHeight', 'blocksAfter', 'blocksBefore', 'changed', 'durationMs', 'heightAfter', 'heightBefore', 'passes', 'placeholdersAfter', 'placeholdersBefore', 'provider', 'reason', 'scrolledPx', 'steps', 'stoppedBy', 'visible']);
+    expect(Object.keys(report).sort()).toEqual(['answerFound', 'answerHeight', 'blocksAfter', 'blocksBefore', 'changed', 'durationMs', 'hasFocusAtStart', 'heightAfter', 'heightBefore', 'hiddenWaitedMs', 'passes', 'placeholdersAfter', 'placeholdersBefore', 'provider', 'reason', 'scrolledPx', 'steps', 'stoppedBy', 'visibilityAtStart', 'visible']);
   });
 
   test('steps go upward by about 0.6 of the window and stop when the start of the answer is in view', async () => {
@@ -119,13 +119,35 @@ describe('materialization sweep', () => {
 
   test('the user touching the page stops the sweep at once and the position comes back', async () => {
     const page = mount([{ y: 100, lazy: true }, { y: 700, lazy: true }, { y: 1200, lazy: true }]);
-    const promise = Sweep.run({ answerEl: page.answer, config: { ...FAST, settleMs: 30, settleCapMs: 60 } });
+    const promise = Sweep.run({ answerEl: page.answer, config: { ...FAST, settleMs: 30, settleCapMs: 60, trustedInputOnly: false } });
     await new Promise((resolve) => setTimeout(resolve, 15));
     document.dispatchEvent(new Event('wheel', { bubbles: true }));
     const report = await promise;
     expect(report.reason).toBe('user_input');
     expect(page.top()).toBe(2400);
     expect(pending(page.answer)).toBeGreaterThan(0); // not finished: it gave way to the user
+  });
+
+  test('an event a script dispatches (not trusted) is not the user: the walk goes on', async () => {
+    const page = mount([{ y: 100, lazy: true }, { y: 700, lazy: true }]);
+    const promise = Sweep.run({ answerEl: page.answer, config: { ...FAST, settleMs: 30, settleCapMs: 60 } });
+    await new Promise((resolve) => setTimeout(resolve, 15));
+    document.dispatchEvent(new Event('wheel', { bubbles: true }));
+    document.dispatchEvent(new Event('mousedown', { bubbles: true }));
+    const report = await promise;
+    expect(report.reason).not.toBe('user_input');
+  });
+
+  test('a tab that has just been activated is hidden for a moment: the sweep waits and then walks', async () => {
+    const page = mount([{ y: 100, lazy: true }]);
+    let hidden = true;
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => (hidden ? 'hidden' : 'visible') });
+    setTimeout(() => { hidden = false; }, 80);
+    const report = await Sweep.run({ answerEl: page.answer, config: { ...FAST, hiddenWaitMs: 600 } });
+    delete document.visibilityState;
+    expect(report.visible).toBe(true);
+    expect(report.reason).not.toBe('page_hidden');
+    expect(page.moves.length).toBeGreaterThan(0);
   });
 
   test('a page that is not shown (background tab) cannot draw lazy blocks: reported, not pretended', async () => {
@@ -182,7 +204,7 @@ describe('wiring', () => {
     expect(lifecycle.indexOf('forceBottom:')).toBeLessThan(lifecycle.indexOf('expandDeferred: async () => {'));
     expect(lifecycle).toContain("emitLifecycleTelemetry('ANSWER_MATERIALIZE_SWEEP'");
     const orchestrator = read('background/job-orchestrator.js');
-    expect(orchestrator).toContain('await runMaterializeSweepInTab(llmName, tabId);');
+    expect(orchestrator).toContain('await runMaterializeSweepInTab(llmName, tabId, { force: requiredBottom, trigger: reason, activated });');
     expect(orchestrator.indexOf('scrollPreparation: results')).toBeGreaterThan(-1);
     expect(orchestrator).toContain("emitTelemetry(llmName, 'ANSWER_MATERIALIZE_SWEEP'");
     const manifest = JSON.parse(read('manifest.json'));

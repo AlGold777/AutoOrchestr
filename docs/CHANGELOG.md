@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-21 — Проход вверх по индикатору и пассивный сбор ответа: диагностика и разгрузка, версия 2.81.821
+
+- Проход вверх (`shared/answer-materialize-sweep.js`, `background/job-orchestrator.js`): телеметрия `ANSWER_MATERIALIZE_SWEEP` пишется при любом выходе, включая `page_hidden`, `user_input`, `unchanged_since_last_sweep`; в запись добавлены видимость и фокус страницы на старте и успех активации вкладки. Живая проверка на DeepSeek: после правок проход поднимается к началу ответа.
+- Пассивные пути сбора (`runInlineLateExtract`, параметр `enrich`) не запускают тяжёлое обогащение (Markdown, html), текст ответа первичен. Подробности: `docs/Architecture/materialize-sweep.md`.
+- Тесты: `tests/answer-materialize-sweep.test.js`, `tests/manual-collect-sweep-paths.test.js`, `tests/answer-markdown-manual-pull.test.js`. Постоянно падающие и не связанные с правкой: `results-debate-favorites` и ещё 8 наборов, падают и на 2.81.820.
+
 ### 2026-10-20 — Проход вверх идёт до начала последнего ответа, а не до начала страницы, версия 2.81.820
 
 - Причина: `findAnswerElement` в `shared/answer-materialize-sweep.js` находил ответ только по атрибутам роли `assistant` (`data-message-author-role`, `data-role`, `data-author-role`), которых нет у Claude, Grok, DeepSeek, Qwen, Perplexity, Gemini, Kimi, Z.ai; в пути «Get it» (`runMaterializeSweepInTab`) элемент ответа вообще не передавался. Тогда включался режим «начало ответа неизвестно»: до `unboundedSteps` = 12 шагов по 0,6 окна подряд, то есть почти семь экранов вверх и дальше, до начала страницы (очень далеко на длинном диалоге).
