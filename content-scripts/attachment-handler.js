@@ -364,6 +364,7 @@
     },
     'Le Chat': {
       strategies: ['drop', 'input'],
+      finishDragLifecycle: true,
       dropSelectors: [
         'textarea',
         'div[contenteditable="true"]',

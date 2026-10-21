@@ -1411,6 +1411,11 @@ const hydrateAttachments = (raw = []) =>
         el.dispatchEvent(ev);
         await sleep(40);
       }
+      // Le Chat keeps its full-page "Drop your files here" overlay open without leave/end.
+      for (const type of ['dragleave', 'dragend']) {
+        const rect = el.getBoundingClientRect?.() || { left: 0, top: 0, width: 0, height: 0 };
+        el.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt, clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2 }));
+      }
       await sleep(1400);
       return true;
       } catch (err) {
