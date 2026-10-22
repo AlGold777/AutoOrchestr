@@ -5,7 +5,7 @@
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '8';
+  const STAND_VERSION = '9';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -412,7 +412,7 @@
       ...Object.keys(st).filter((k) => !COMMON.includes(k))];
     const issues = issuesOf(stand.flat.find((e) => e.raw === st)?.key);
     return `<div class="custom-card-marks proto-stand-schema"><strong>Из схемы</strong>
-      ${issues.length ? `<div class="proto-stand-issues">${issues.map((it) => `<div class="is-${it.level}">${it.level === 'error' ? 'Ошибка' : 'Замечание'}: ${esc(it.msg)}</div>`).join('')}</div>` : ''}
+      ${issues.length ? `<div class="proto-stand-issues"><div class="proto-stand-summary">Стенд v${STAND_VERSION}</div>${issues.map((it) => `<div class="is-${it.level}">${it.level === 'error' ? 'Ошибка' : 'Замечание'}: ${esc(it.msg)}</div>`).join('')}</div>` : ''}
       <div class="proto-stand-rows">${keys.map((k) => `<div class="proto-stand-row"><span>${esc(LABELS[k] || k)} <code>${esc(k)}</code></span><div>${esc(fmt(k, st[k]))}</div></div>`).join('')}</div>
     </div>`;
   }
@@ -566,7 +566,7 @@
     modal.querySelector('#proto-stand-close').addEventListener('click', () => hide(modal));
     modal.querySelector('#proto-stand-example').addEventListener('click', () => { area.value = JSON.stringify(EXAMPLES.basic, null, 2); area.focus(); });
     modal.querySelector('#proto-stand-example-foreach').addEventListener('click', () => { area.value = JSON.stringify(EXAMPLES.foreach, null, 2); area.focus(); });
-    modal.querySelector('#proto-stand-clear').addEventListener('click', () => { area.value = ''; stand.text = ''; $('proto-stand-issues').innerHTML = ''; area.focus(); });
+    modal.querySelector('#proto-stand-clear').addEventListener('click', () => { area.value = ''; stand.text = ''; drawIssues('Поле очищено.', []); area.focus(); });
     modal.querySelector('#proto-stand-reset').addEventListener('click', () => { area.value = ''; stand.text = ''; reset(); });
     modal.querySelector('#proto-stand-apply').addEventListener('click', () => {
       stand.text = area.value;
@@ -582,7 +582,7 @@
     if (!box) return;
     const errors = list.filter((it) => it.level === 'error').length;
     const head = note || (stand.active ? (list.length ? `Ошибок: ${errors}, замечаний: ${list.length - errors}. Схема нарисована.` : 'Замечаний нет. Схема нарисована.') : '');
-    box.innerHTML = `${head ? `<div class="proto-stand-summary">${esc(head)}</div>` : ''}${list.map((it) => `<div class="is-${it.level}">${it.step ? `<b>${esc(it.step)}</b>: ` : ''}${esc(it.msg)}</div>`).join('')}`;
+    box.innerHTML = `<div class="proto-stand-summary">${esc(`Стенд v${STAND_VERSION}${head ? ` · ${head}` : ''}`)}</div>${list.map((it) => `<div class="is-${it.level}">${it.step ? `<b>${esc(it.step)}</b>: ` : ''}${esc(it.msg)}</div>`).join('')}`;
   }
   function openStand() {
     const modal = standModal();
