@@ -33,34 +33,41 @@ describe('release log regression guards', () => {
     expect(source).toContain("if (!pipelinePanel.classList.contains('is-collapsed')) {");
   });
 
-  test('Favourite card exposes TXT export immediately after its HTML export', () => {
+  test('Favourite card exposes Markdown export immediately after its HTML export', () => {
     const source = fs.readFileSync(path.join(__dirname, '..', 'results.js'), 'utf8');
     const htmlButtonIndex = source.indexOf('class="panel-action-btn panel-export-html-btn favorite-export-btn"');
-    const txtButtonIndex = source.indexOf('id="favorite-export-txt-btn"');
+    const mdButtonIndex = source.indexOf('id="favorite-export-md-btn"');
     const clearButtonIndex = source.indexOf('class="panel-action-btn panel-clear-response-btn favorite-clear-btn"');
 
     expect(htmlButtonIndex).toBeGreaterThan(-1);
-    expect(txtButtonIndex).toBeGreaterThan(htmlButtonIndex);
-    expect(clearButtonIndex).toBeGreaterThan(txtButtonIndex);
-    expect(source).toContain("event.target.closest('#favorite-export-txt-btn')");
-    expect(source).toContain("anchor.download = buildSingleCardExportFilename('Favourite', 'txt', now);");
-    expect(source).toContain('const textContent = `=== Favourite ===\\n${favoriteText}`;');
+    expect(mdButtonIndex).toBeGreaterThan(htmlButtonIndex);
+    expect(clearButtonIndex).toBeGreaterThan(mdButtonIndex);
+    expect(source).toContain("event.target.closest('#favorite-export-md-btn')");
+    expect(source).toContain("anchor.download = buildSingleCardExportFilename('Favourite', 'md', now);");
+    expect(source).toContain('const textContent = `# Favourite\\n\\n${favoriteText}\\n`;');
   });
 
-  test('TXT export sits after the all-responses HTML export and downloads plain text', () => {
+  test('Markdown export sits after the all-responses HTML export and downloads GFM', () => {
     const html = fs.readFileSync(path.join(__dirname, '..', 'result_new.html'), 'utf8');
     const source = fs.readFileSync(path.join(__dirname, '..', 'results.js'), 'utf8');
     const htmlButtonIndex = html.indexOf('id="export-html-btn"');
-    const txtButtonIndex = html.indexOf('id="export-txt-btn"');
+    const mdButtonIndex = html.indexOf('id="export-md-btn"');
     const copyButtonIndex = html.indexOf('id="copy-all-btn"');
 
     expect(htmlButtonIndex).toBeGreaterThan(-1);
-    expect(txtButtonIndex).toBeGreaterThan(htmlButtonIndex);
-    expect(copyButtonIndex).toBeGreaterThan(txtButtonIndex);
-    expect(html).toContain('aria-label="Export all responses as TXT">txt</button>');
-    expect(source).toContain("event.target.closest('#export-txt-btn')");
-    expect(source).toContain("type: 'text/plain;charset=utf-8'");
-    expect(source).toContain("buildResponseExportFilename(null, 'txt', now)");
+    expect(mdButtonIndex).toBeGreaterThan(htmlButtonIndex);
+    expect(copyButtonIndex).toBeGreaterThan(mdButtonIndex);
+    expect(html).toContain('aria-label="Export all responses as Markdown">md</button>');
+    expect(html).toContain('class="panel-action-btn panel-export-md-btn"');
+    expect(source).toContain("event.target.closest('#export-md-btn')");
+    expect(source).toContain("event.target.closest('.panel-export-md-btn')");
+    expect(source).toContain('function buildAllResponsesExportMarkdown()');
+    expect(source).toContain('function buildSingleResponseExportMarkdown(outputEl, modelName)');
+    expect(source).toContain('outputElement.__answerMarkdown = pendingMarkdown ||');
+    expect(source).toContain('String(outputEl?.__answerMarkdown ||');
+    expect(source).toContain("type: 'text/markdown;charset=utf-8'");
+    expect(source).toContain("buildResponseExportFilename(null, 'md', now)");
+    expect(source).toContain("buildSingleCardExportFilename(modelName, 'md')");
   });
 
   test('response selection toolbar also works inside the Favourite card', () => {

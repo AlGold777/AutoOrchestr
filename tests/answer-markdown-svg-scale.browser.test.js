@@ -41,7 +41,7 @@ const CASES = {
   offsetViewBox: { viewBox: [-300, -200, 800, 600], html: `<svg id="d" width="600" height="450" viewBox="-300 -200 800 600">${rect(-250, -150, 650, 450)}</svg>` }
 };
 
-const PAGE_CSS = 'body{margin:0;font:14px sans-serif}.msg{width:1400px}#card{width:700px;font-size:14px}#card img{max-width:100%;height:auto;display:block}';
+const PAGE_CSS = 'body{margin:0;font:14px sans-serif}.msg{width:1400px}#card{width:700px;font-size:14px}#card img{max-width:100%;height:auto;display:block;border-radius:10px}';
 
 async function measure(page, htmlString, extra) {
   return page.evaluate(async ({ htmlString: html, extra: more }) => {
@@ -231,7 +231,7 @@ run('Chrome: a flowchart squeezed into a 412px panel (412x30 on the page) keeps 
 
 test('the img rule is in the card CSS and in every HTML export', () => {
   expect(read('styles/modals-responsive.css')).toMatch(/\.debate-model-card-output img[\s\S]*?max-width: 100%;\s*height: auto;\s*display: block;/);
-  expect(read('results/debate-export.js')).toContain('img{max-width:100%;height:auto;display:block}');
+  expect(read('results/debate-export.js')).toContain('img{max-width:100%;height:auto;display:block;border-radius:10px}');
   const results = read('results.js');
-  expect((results.match(/img \{ max-width: 100%; height: auto; display: block; \}/g) || []).length).toBeGreaterThanOrEqual(3);
+  expect((results.match(/img \{ max-width: 100%; height: auto; display: block; \}/g) || []).length).toBeGreaterThanOrEqual(2);
 });

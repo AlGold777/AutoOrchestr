@@ -19143,6 +19143,9 @@ document.addEventListener('click', (event) => {
             applyAttributionMarker(panel, meta);
             const outputElement = panel.querySelector('.output');
             if (outputElement) {
+                // Retain the structured source for the per-card Markdown export.
+                // The visible HTML is useful as a fallback, but can flatten provider formatting.
+                outputElement.__answerMarkdown = pendingMarkdown || '';
                 const finalHtml = resolvedHtml || convertMarkdownToHTML(normalizedText);
                 const nextHash = String(finalHtml || '').length ? String(finalHtml).length + ':' + String(finalHtml).slice(0, 64) : '';
                 const prevHash = outputElement.dataset.hash || '';
@@ -19243,6 +19246,22 @@ function buildFavoriteExportHtml() {
     return wrapResponsesHtmlBundle(sections);
 }
 
+function buildFavoriteExportCardsHtml() {
+    return buildFavoriteGroups().map((group) => {
+        const groupName = String(group.sourceName || 'Model').trim() || 'Model';
+        const items = group.items.map((entry) => {
+            const itemHtml = entry.html ? sanitizeInlineHtml(entry.html) : '';
+            const fallbackText = String(entry.text || '').trim();
+            const bodyHtml = itemHtml || (fallbackText ? `<pre>${escapeHtml(fallbackText)}</pre>` : '');
+            if (!bodyHtml) return '';
+            const timeMeta = entry.timeLabel ? `<p class="response-meta">${escapeHtml(entry.timeLabel)}</p>` : '';
+            return `<div class="favorite-export-item">${timeMeta}<div class="response-body">${bodyHtml}</div></div>`;
+        }).filter(Boolean).join('\n');
+        if (!items) return '';
+        return `<section class="single-response-card"><h3>${escapeHtml(groupName)}</h3>\n${items}</section>`;
+    }).filter(Boolean).join('\n');
+}
+
 function buildFavoriteExportSectionsHtml() {
     const groups = buildFavoriteGroups();
     if (!groups.length) return '';
@@ -19296,7 +19315,7 @@ function ensureFavoritePanelUI() {
                     <div class="header-right favorite-panel-actions">
                         <button class="copy-btn favorite-copy-btn" data-target="${favoriteOutputId}" title="Copy favorites" aria-label="Copy favorites"><i class="ti ti-copy" aria-hidden="true"></i></button>
                         <button class="panel-action-btn panel-export-html-btn favorite-export-btn" data-target="${favoriteOutputId}" data-name="Favourite" data-label="⬆" title="Export favorites as HTML" aria-label="Export favorites as HTML"><i class="ti ti-download" aria-hidden="true"></i></button>
-                        <button type="button" id="favorite-export-txt-btn" class="control-icon-btn export-txt-btn favorite-export-txt-btn" title="Export favorites as TXT" aria-label="Export favorites as TXT">txt</button>
+                        <button type="button" id="favorite-export-md-btn" class="control-icon-btn export-md-btn favorite-export-md-btn" title="Export favorites as Markdown" aria-label="Export favorites as Markdown">md</button>
                         <button class="panel-action-btn panel-clear-response-btn favorite-clear-btn" data-target="${favoriteOutputId}" title="Clear favorites" aria-label="Clear favorites"><i class="ti ti-trash" aria-hidden="true"></i></button>
                     </div>
                 </div>
@@ -20442,8 +20461,15 @@ document.addEventListener('click', async (event) => {
 function getAllResponsesPromptText() {
     const basePromptText = pastedTextComposer.getText().trim();
     if (!basePromptText) return '';
-    const fullPrompt = applySelectedModifiersToPrompt(basePromptText, { includeResponses: true }) || '';
-    return fullPrompt.replace(/<LLM Responses>[\s\S]*?<\/>/gi, '').trim();
+    const fullPrompt = applySelectedModifiersToPrompt(basePromptText, {
+        includeResponses: true,
+        wrapPromptTag: false
+    }) || '';
+    return fullPrompt
+        .replace(/<LLM Responses>[\s\S]*?<\/>/gi, '')
+        .replace(/<\/?Prompt\s*>/gi, '')
+        .replace(/^[ \t]*<[ \t]*>[ \t]*$/gm, '')
+        .trim();
 }
 
 function formatSavedFileTimestamp(date = new Date()) {
@@ -20497,6 +20523,278 @@ function buildSingleCardExportFilename(subject, extension, date = new Date()) {
         .replace(/[\\/:?<>|*"']/g, '')
         .trim() || 'Model';
     return `${safeSubject} - ${formatExportPromptExcerpt()} - ${formatNamedExportStamp(date)}.${extension}`;
+}
+
+function escapeGfmText(value = '') {
+    return String(value ?? '')
+        .replace(/\\/g, '\\\\')
+        .replace(/([`*_{}\[\]<>|~#])/g, '\\$1')
+        .replace(/(^|\n)([ \t]{0,3})([-+*]|\d{1,9}\.)(?=\s)/g, '$1$2\\$3');
+}
+
+const GFM_BLOCK_TAGS = new Set([
+    'address', 'article', 'aside', 'blockquote', 'dd', 'details', 'dialog', 'div', 'dl', 'dt',
+    'fieldset', 'figcaption', 'figure', 'footer', 'form', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+    'hr', 'li', 'main', 'ol', 'p', 'pre', 'section', 'summary', 'table', 'tbody', 'td', 'tfoot',
+    'th', 'thead', 'tr', 'ul'
+]);
+
+function htmlToGfm(rawHtml = '') {
+    if (!String(rawHtml || '').trim()) return '';
+    const template = document.createElement('template');
+    template.innerHTML = sanitizeInlineHtml(String(rawHtml));
+    window.ResultsCodeBlocks?.unwrapCodeBlocks?.(template.content);
+    template.content.querySelectorAll('button,script,style,noscript,textarea,select,iframe,object,embed').forEach((node) => node.remove());
+
+    const inlineChildren = (node) => Array.from(node.childNodes || []).map(renderInline).join('');
+    const escapeDestination = (value) => String(value || '').trim()
+        .replace(/\s/g, '%20')
+        .replace(/</g, '%3C')
+        .replace(/>/g, '%3E');
+    const codeFence = (value) => {
+        const runs = String(value || '').match(/`+/g) || [];
+        return '`'.repeat(Math.max(3, ...runs.map((run) => run.length + 1)));
+    };
+    const renderCode = (node) => {
+        const code = node.querySelector('code');
+        const classNames = `${node.className || ''} ${code?.className || ''} ${node.getAttribute('data-language') || ''}`;
+        const language = classNames.match(/(?:language|lang)-?([a-z0-9_+.-]+)/i)?.[1] || '';
+        const text = String(node.textContent || '').replace(/\n+$/, '');
+        const fence = codeFence(text);
+        return `${fence}${language}\n${text}\n${fence}`;
+    };
+    const renderTable = (table) => {
+        const rows = Array.from(table.querySelectorAll('tr')).filter((row) => row.closest('table') === table);
+        if (!rows.length) return '';
+        const cellsFor = (row) => Array.from(row.children)
+            .filter((cell) => cell.tagName === 'TH' || cell.tagName === 'TD')
+            .flatMap((cell) => {
+                const value = inlineChildren(cell)
+                    .replace(/[ \t]*\n[ \t]*/g, '<br>')
+                    .replace(/(^|[^\\])\|/g, '$1\\|')
+                    .replace(/[ \t]+/g, ' ')
+                    .trim();
+                const span = Math.max(1, Number.parseInt(cell.getAttribute('colspan') || '1', 10) || 1);
+                return [value, ...Array(span - 1).fill('')];
+            });
+        const columnCount = Math.max(1, ...rows.map((row) => cellsFor(row).length));
+        const explicitHeaderIndex = rows.findIndex((row) => Array.from(row.children).some((cell) => cell.tagName === 'TH'));
+        const headerIndex = explicitHeaderIndex >= 0 ? explicitHeaderIndex : 0;
+        const header = cellsFor(rows[headerIndex]);
+        while (header.length < columnCount) header.push('');
+        const headerRow = `| ${header.slice(0, columnCount).join(' | ')} |`;
+        const alignments = headerIndex >= 0
+            ? Array.from(rows[headerIndex].children).filter((cell) => cell.tagName === 'TH' || cell.tagName === 'TD')
+                .flatMap((cell) => Array(Math.max(1, Number.parseInt(cell.getAttribute('colspan') || '1', 10) || 1)).fill(
+                    String(cell.getAttribute('align') || cell.style.textAlign || '').toLowerCase()
+                ))
+            : [];
+        const separator = `| ${Array.from({ length: columnCount }, (_, index) => {
+            const align = alignments[index];
+            return align === 'center' ? ':---:' : align === 'right' ? '---:' : align === 'left' ? ':---' : '---';
+        }).join(' | ')} |`;
+        const bodyRows = rows.filter((_, index) => index !== headerIndex).map((row) => {
+            const cells = cellsFor(row);
+            while (cells.length < columnCount) cells.push('');
+            return `| ${cells.slice(0, columnCount).join(' | ')} |`;
+        });
+        return [headerRow, separator, ...bodyRows].join('\n');
+    };
+    const renderList = (list, indent = 0) => {
+        const ordered = list.tagName === 'OL';
+        let nextNumber = Number.parseInt(list.getAttribute('start') || '1', 10) || 1;
+        const prefix = ' '.repeat(indent);
+        return Array.from(list.children).filter((item) => item.tagName === 'LI').map((item) => {
+            const number = Number.parseInt(item.getAttribute('value') || '', 10) || nextNumber;
+            const marker = ordered ? `${number}.` : '-';
+            nextNumber = number + 1;
+            const pieces = [];
+            let inlineRun = [];
+            const flushInline = () => {
+                const value = inlineRun.map(renderInline).join('').trim();
+                if (value) pieces.push({ text: value });
+                inlineRun = [];
+            };
+            Array.from(item.childNodes).forEach((child) => {
+                const tag = child.nodeType === 1 ? child.tagName.toLowerCase() : '';
+                if (tag === 'ul' || tag === 'ol') {
+                    flushInline();
+                    pieces.push({ list: renderList(child, indent + marker.length + 1) });
+                } else if (GFM_BLOCK_TAGS.has(tag)) {
+                    flushInline();
+                    const value = renderBlock(child);
+                    if (value) pieces.push({ text: value });
+                } else {
+                    inlineRun.push(child);
+                }
+            });
+            flushInline();
+
+            const continuation = `${prefix}${' '.repeat(marker.length + 1)}`;
+            const lines = [];
+            let hasText = false;
+            pieces.forEach((piece) => {
+                if (piece.list) {
+                    lines.push(piece.list);
+                    return;
+                }
+                const partLines = piece.text.split('\n');
+                if (!hasText) {
+                    lines.push(`${prefix}${marker}${partLines[0] ? ` ${partLines[0]}` : ''}`);
+                    lines.push(...partLines.slice(1).map((line) => `${continuation}${line}`));
+                    hasText = true;
+                } else {
+                    lines.push(...partLines.map((line) => `${continuation}${line}`));
+                }
+            });
+            if (!hasText && !lines.length) lines.push(`${prefix}${marker}`);
+            return lines.join('\n');
+        }).join('\n');
+    };
+    const renderInline = (node) => {
+        if (node.nodeType === 3) return String(node.nodeValue || '').replace(/\s+/g, ' ').replace(/\\/g, '\\\\').replace(/([`*_{}\[\]<>|~#])/g, '\\$1');
+        if (node.nodeType !== 1) return '';
+        const tag = node.tagName.toLowerCase();
+        if (['button', 'script', 'style', 'noscript', 'textarea', 'select', 'iframe', 'object', 'embed'].includes(tag)) return '';
+        if (tag === 'br') return '  \n';
+        if (tag === 'input') return node.type === 'checkbox' ? (node.checked ? '[x] ' : '[ ] ') : '';
+        if (tag === 'img') {
+            const alt = escapeGfmText(node.getAttribute('alt') || '');
+            const src = escapeDestination(node.getAttribute('src') || '');
+            return src ? `![${alt}](<${src}>)` : alt;
+        }
+        if (tag === 'code') {
+            const value = String(node.textContent || '').replace(/\s+/g, ' ').trim();
+            if (!value) return '``';
+            const fence = '`'.repeat(Math.max(1, ...((value.match(/`+/g) || []).map((run) => run.length + 1))));
+            const pad = /^`|`$|^\s|\s$/.test(value) ? ' ' : '';
+            return `${fence}${pad}${value}${pad}${fence}`;
+        }
+        if (tag === 'a') {
+            const label = inlineChildren(node).trim();
+            const href = escapeDestination(node.getAttribute('href') || '');
+            return !href || /^javascript:/i.test(href) ? label : `[${label || href}](<${href}>)`;
+        }
+        if (tag === 'strong' || tag === 'b') return `**${inlineChildren(node).trim()}**`;
+        if (tag === 'em' || tag === 'i') return `*${inlineChildren(node).trim()}*`;
+        if (['del', 's', 'strike'].includes(tag)) return `~~${inlineChildren(node).trim()}~~`;
+        if (tag === 'sup' || tag === 'sub' || tag === 'mark' || tag === 'kbd') return `<${tag}>${inlineChildren(node)}</${tag}>`;
+        if (GFM_BLOCK_TAGS.has(tag)) return renderBlock(node);
+        return inlineChildren(node);
+    };
+    const renderFlow = (node) => {
+        const blocks = [];
+        let inlineRun = [];
+        const flushInline = () => {
+            const value = inlineRun.map(renderInline).join('').trim();
+            if (value) blocks.push(value);
+            inlineRun = [];
+        };
+        Array.from(node.childNodes || []).forEach((child) => {
+            const tag = child.nodeType === 1 ? child.tagName.toLowerCase() : '';
+            if (GFM_BLOCK_TAGS.has(tag)) {
+                flushInline();
+                const value = renderBlock(child);
+                if (value) blocks.push(value);
+            } else {
+                inlineRun.push(child);
+            }
+        });
+        flushInline();
+        return blocks.join('\n\n');
+    };
+    const renderBlock = (node) => {
+        if (node.nodeType === 3) return node.nodeValue.trim() ? escapeGfmText(node.nodeValue.trim()) : '';
+        if (node.nodeType !== 1) return '';
+        const tag = node.tagName.toLowerCase();
+        if (['button', 'script', 'style', 'noscript', 'textarea', 'select', 'iframe', 'object', 'embed'].includes(tag)) return '';
+        if (/^h[1-6]$/.test(tag)) return `${'#'.repeat(Number(tag[1]))} ${inlineChildren(node).trim()}`;
+        if (tag === 'p') return inlineChildren(node).trim();
+        if (tag === 'pre') return renderCode(node);
+        if (tag === 'table') return renderTable(node);
+        if (tag === 'ul' || tag === 'ol') return renderList(node);
+        if (tag === 'blockquote') {
+            const value = renderFlow(node).trim();
+            return value ? value.split('\n').map((line) => line ? `> ${line}` : '>').join('\n') : '';
+        }
+        if (tag === 'hr') return '---';
+        if (tag === 'svg' || tag === 'canvas') {
+            const label = String(node.getAttribute('aria-label') || node.getAttribute('title') || '').trim();
+            return label ? `[${escapeGfmText(label)}]` : '[Diagram]';
+        }
+        if (node.classList.contains('katex') || node.classList.contains('katex-display')) {
+            const tex = node.querySelector('annotation[encoding="application/x-tex"]')?.textContent?.trim();
+            return tex ? (node.classList.contains('katex-display') ? `$$\n${tex}\n$$` : `$${tex}$`) : inlineChildren(node).trim();
+        }
+        return renderFlow(node).trim();
+    };
+
+    return renderFlow(template.content).replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function plainTextToGfm(value = '') {
+    return String(value || '').replace(/\r\n?/g, '\n').trim().split(/\n{2,}/)
+        .map((paragraph) => paragraph.split('\n').map((line) => escapeGfmText(line)).join('  \n'))
+        .filter(Boolean).join('\n\n');
+}
+
+function markdownMetadataLine(value = '') {
+    return String(value || '').trim().split(/\s{2,}/).filter(Boolean).map((part) => {
+        if (/^https?:\/\//i.test(part)) return `<${part.replace(/\s/g, '%20').replace(/</g, '%3C').replace(/>/g, '%3E')}>`;
+        return escapeGfmText(part);
+    }).join('  ');
+}
+
+function buildFavoriteExportMarkdown(entries) {
+    return buildFavoriteGroups(entries).map((group) => {
+        const groupName = String(group.sourceName || 'Model').trim() || 'Model';
+        const items = group.items.map((entry) => {
+            const html = entry.html ? sanitizeInlineHtml(entry.html) : '';
+            const body = html ? htmlToGfm(html) : plainTextToGfm(entry.text || '');
+            if (!body) return '';
+            const time = entry.timeLabel ? `> ${escapeGfmText(entry.timeLabel)}` : '';
+            return [time, body].filter(Boolean).join('\n\n');
+        }).filter(Boolean);
+        return items.length ? `### ${escapeGfmText(groupName)}\n\n${items.join('\n\n---\n\n')}` : '';
+    }).filter(Boolean).join('\n\n');
+}
+
+function buildAllResponsesExportMarkdown() {
+    const { entries } = collectLLMResponses();
+    if (!entries.length) return '';
+    const prompt = getAllResponsesPromptText();
+    const favorites = buildFavoriteExportMarkdown();
+    const responses = entries.map((entry) => {
+        const body = (entry.html ? htmlToGfm(entry.html) : '') || plainTextToGfm(entry.text || '');
+        if (!body) return '';
+        const metadata = entry.metadataLine ? `> ${markdownMetadataLine(entry.metadataLine)}` : '';
+        return [`## ${escapeGfmText(entry.name || 'Model')}`, metadata, body].filter(Boolean).join('\n\n');
+    }).filter(Boolean);
+    if (!responses.length) return '';
+    const sections = [
+        '# LLM Responses',
+        `> Exported: ${formatSavedFileTimestamp()}`
+    ];
+    if (prompt) sections.push(`## Prompt\n\n${plainTextToGfm(prompt)}`);
+    if (favorites) sections.push(`## Favourite\n\n${favorites}`);
+    sections.push(responses.join('\n\n---\n\n'));
+    return `${sections.join('\n\n')}\n`;
+}
+
+function buildSingleResponseExportMarkdown(outputEl, modelName) {
+    const rawHtml = outputEl ? String(outputEl.innerHTML || '').trim() : '';
+    const sanitizedHtml = rawHtml ? sanitizeInlineHtml(rawHtml).trim() : '';
+    const text = outputEl ? String(outputEl.innerText || outputEl.textContent || '').trim() : '';
+    const sourceMarkdown = String(outputEl?.__answerMarkdown || '').trim();
+    const body = sourceMarkdown || (sanitizedHtml ? htmlToGfm(sanitizedHtml) : '') || plainTextToGfm(text);
+    if (!body) return '';
+    const name = String(modelName || 'Model').trim() || 'Model';
+    const metadata = markdownMetadataLine(buildMetadataLine(name));
+    return [
+        `# ${escapeGfmText(name)}`,
+        metadata ? `> ${metadata}` : '',
+        body
+    ].filter(Boolean).join('\n\n') + '\n';
 }
 
 function buildFavoriteExportText(entries) {
@@ -20644,6 +20942,73 @@ function buildAllResponsesExportHtml() {
         .model-home-icon { display: block; width: 34px; height: 34px; font-size: 34px; line-height: 1; text-align: center; }
         .model-home-label { width: 100%; font-size: 12px; font-weight: 600; line-height: 1; text-align: center; }
         .model-home-button:hover { color: #1f3b4c; transform: translateY(-1px); }
+
+        /* Modern Light skin from the supplied reference; export DOM and annotation hooks stay intact. */
+        :root { --ink: #25374c; --muted: #73869c; --line: #e2eaf3; --blue: #376fbd; --paper: #fff; --canvas: #f5f8fc; --soft-blue: #edf5ff; --shadow: 0 2px 5px rgba(30,57,90,.025), 0 14px 36px rgba(30,57,90,.035); color-scheme: light; }
+        html { scroll-behavior: smooth; scroll-padding-top: calc(var(--model-navigation-height, 0px) + clamp(22px, 3.4vw, 40px) + 22px); }
+        body { margin: 0 !important; padding: 24px clamp(16px, 4vw, 64px) 64px !important; background: linear-gradient(180deg, #f1f6fc 0, #f7f9fc 310px, #f5f8fc 100%) !important; color: var(--ink) !important; font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important; line-height: 1.65 !important; -webkit-font-smoothing: antialiased; }
+        #report { max-width: 920px; margin: auto; }
+        #report > section { border: 1px solid #e3eaf3 !important; border-radius: 20px !important; box-shadow: var(--shadow) !important; padding: clamp(22px, 3.4vw, 40px) !important; margin-bottom: 22px !important; background: #fff !important; }
+        .model-navigation { top: 0 !important; justify-content: flex-start !important; margin: 0 0 22px !important; border: 1px solid #e0e9f3 !important; border-radius: 16px !important; box-shadow: 0 8px 30px rgba(40,76,119,.065) !important; padding: 10px 14px !important; gap: 3px !important; background: rgba(255,255,255,.94) !important; backdrop-filter: blur(16px); isolation: isolate; }
+        .model-nav-button, .model-home-button { width: auto !important; min-height: 65px !important; min-width: 62px !important; border: 1px solid transparent !important; border-radius: 12px !important; text-decoration: none !important; box-sizing: border-box !important; padding: 7px 5px !important; color: #70839a !important; gap: 5px !important; transition: background .2s, color .2s !important; }
+        .model-nav-button:hover, .model-home-button:hover { border-color: #e0eafa !important; background: #f3f7fd !important; color: var(--blue) !important; transform: none !important; }
+        .model-nav-button.is-active { border-color: #c9def8 !important; background: linear-gradient(180deg, #f0f6ff, #e8f2ff) !important; color: #245fae !important; box-shadow: inset 0 1px 0 #fff !important; }
+        .model-nav-icon { width: 27px !important; height: 27px !important; background-color: currentColor !important; }
+        .model-home-icon { width: 27px !important; height: 27px !important; font-size: 27px !important; }
+        .model-nav-label, .model-home-label { font-size: 11.5px !important; font-weight: 650 !important; }
+        .model-nav-button:focus-visible, .model-home-button:focus-visible, .prompt-toggle:focus-visible { outline: 3px solid #9bc4f5 !important; outline-offset: 2px !important; }
+        .prompt-heading { position: relative !important; top: auto !important; margin-bottom: 16px !important; padding: 0 0 13px !important; border-bottom: 1px solid #eaf0f6 !important; }
+        .prompt-heading h2 { font-size: 19px !important; letter-spacing: -.025em !important; color: var(--ink); }
+        .export-timestamp { margin-left: auto !important; color: #8493a6 !important; font-size: 12px !important; font-variant-numeric: tabular-nums !important; letter-spacing: .025em !important; }
+        .prompt-toggle { border: 1px solid #dce6f1 !important; border-radius: 9px !important; background: #f3f7fc !important; color: #466789 !important; padding: 6px 12px !important; font-weight: 600 !important; cursor: pointer !important; }
+        .prompt-toggle:hover { background: #e9f2fd !important; border-color: #c7dcef !important; }
+        .export-prompt { background: #f7faff !important; border: 1px solid #e3edf8 !important; border-radius: 13px !important; padding: 20px 22px !important; color: #45586e !important; font-size: 13.5px !important; line-height: 1.75 !important; overflow-wrap: anywhere !important; tab-size: 2; }
+        .model-title { display: flex !important; align-items: center !important; min-height: 58px !important; padding: 15px 20px !important; margin: 0 0 23px !important; border: 1px solid #e0eafa !important; background: linear-gradient(110deg, #edf5ff 0%, #f6f9fd 100%) !important; color: #254c78 !important; border-radius: 13px !important; font-size: 21px !important; font-weight: 650 !important; letter-spacing: -.035em !important; scroll-margin-top: 0 !important; }
+        .model-title::before { content: ''; display: block; flex: none; width: 4px; height: 23px; margin-right: 14px; border-radius: 4px; background: #75a7df; }
+        .response-blank-line { height: 0 !important; }
+        .response-body { font-size: 15.5px !important; line-height: 1.76 !important; overflow-wrap: break-word !important; }
+        .response-body > div { max-width: 100%; }
+        .response-body p { line-height: 1.76 !important; }
+        .response-body p + p { margin-top: 18px !important; }
+        .response-body a { color: #2765ac !important; text-underline-offset: 3px; }
+        .response-body a:hover { color: #174f91 !important; }
+        .response-body strong, .response-body b, .response-body [data-d-default-strong] { font-weight: 650 !important; }
+        .response-body pre { background: #f5f8fc !important; border: 1px solid #e4ebf4 !important; border-radius: 12px !important; padding: 18px !important; line-height: 1.55 !important; overflow-x: auto !important; }
+        .response-body code { background: #f2f6fb !important; border-radius: 8px !important; font-size: .91em !important; }
+        .response-body blockquote { margin: 18px 0 !important; padding: 12px 18px !important; border-left: 3px solid #a4c4e9 !important; background: #f6faff !important; border-radius: 0 9px 9px 0 !important; }
+        .response-body table { display: block !important; max-width: 100% !important; overflow-x: auto !important; border-collapse: separate !important; border-spacing: 0 !important; border: 1px solid var(--line) !important; border-radius: 12px !important; }
+        .response-body th { background: #f0f6fc !important; font-weight: 650 !important; }
+        .response-body th, .response-body td { border: 0 !important; border-bottom: 1px solid #e8eef5 !important; padding: 12px 15px !important; }
+        .response-body tr:last-child td { border-bottom: 0 !important; }
+        .response-body tbody tr:nth-child(even) { background: #fbfdff !important; }
+        .response-body img { border-radius: 10px; }
+        .response-meta { font-size: 12px !important; letter-spacing: .02em !important; color: #8393a6 !important; overflow-wrap: anywhere; }
+        .response-end { color: #74869b !important; }
+        .response-separator { opacity: .4 !important; margin: 22px 0 !important; color: #c7d4e2 !important; }
+        ::selection { background: #d8eaff; color: #1f3d60; }
+        @media (max-width: 700px) {
+            html { scroll-padding-top: calc(var(--model-navigation-height, 0px) + 32px); }
+            body { padding: 10px 10px 36px !important; }
+            #report > section { border-radius: 15px !important; padding: 18px !important; margin-bottom: 14px !important; }
+            .model-navigation { top: 0 !important; flex-wrap: nowrap !important; overflow-x: auto !important; gap: 4px !important; padding: 7px !important; }
+            .model-nav-button, .model-home-button { min-width: 66px !important; min-height: 60px !important; padding: 7px !important; }
+            .model-title { font-size: 19px !important; min-height: 48px !important; padding: 12px 14px !important; }
+            .response-body { font-size: 14.5px !important; }
+            .export-prompt { padding: 15px !important; font-size: 12.5px !important; }
+            .export-timestamp { margin-left: 0 !important; }
+            .prompt-heading { gap: 8px !important; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            html { scroll-behavior: auto !important; }
+            .model-nav-button, .model-home-button { transition: none !important; }
+        }
+        @media print {
+            body { background: #fff !important; padding: 0 !important; }
+            #report { max-width: none !important; }
+            #report > section { box-shadow: none !important; border-color: #dfe5ec !important; }
+            .model-navigation { position: static !important; box-shadow: none !important; }
+            .model-title { break-after: avoid !important; }
+        }
     </style>
 </head>
 <body id="export-top" class="export-loading">
@@ -20710,6 +21075,9 @@ if (
 ) {
     window.__resultsExportDebug = {
         buildAllResponsesExportText,
+        buildAllResponsesExportMarkdown,
+        buildSingleResponseExportMarkdown,
+        htmlToGfm,
         buildAllResponsesExportHtml,
         formatSavedFileTimestamp,
         formatNamedExportStamp,
@@ -20752,22 +21120,21 @@ document.addEventListener('click', (event) => {
 });
 
 document.addEventListener('click', (event) => {
-    const btn = event.target.closest('#export-txt-btn');
+    const btn = event.target.closest('#export-md-btn');
     if (!btn) return;
 
-    const exportBody = buildAllResponsesExportText();
+    const exportBody = buildAllResponsesExportMarkdown();
     if (!exportBody) {
         flashButtonFeedback(btn, 'warn');
         return;
     }
 
     const now = new Date();
-    const textContent = `LLMs answers    ${formatSavedFileTimestamp(now)}\n\n${exportBody}`;
-    const blob = new Blob([textContent], { type: 'text/plain;charset=utf-8' });
+    const blob = new Blob([exportBody], { type: 'text/markdown;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = buildResponseExportFilename(null, 'txt', now);
+    anchor.download = buildResponseExportFilename(null, 'md', now);
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
@@ -20776,22 +21143,22 @@ document.addEventListener('click', (event) => {
 });
 
 document.addEventListener('click', (event) => {
-    const btn = event.target.closest('#favorite-export-txt-btn');
+    const btn = event.target.closest('#favorite-export-md-btn');
     if (!btn) return;
 
-    const favoriteText = buildFavoriteExportText();
+    const favoriteText = buildFavoriteExportMarkdown();
     if (!favoriteText) {
         flashButtonFeedback(btn, 'warn');
         return;
     }
 
-    const textContent = `=== Favourite ===\n${favoriteText}`;
-    const blob = new Blob([textContent], { type: 'text/plain;charset=utf-8' });
+    const textContent = `# Favourite\n\n${favoriteText}\n`;
+    const blob = new Blob([textContent], { type: 'text/markdown;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     const now = new Date();
     anchor.href = url;
-    anchor.download = buildSingleCardExportFilename('Favourite', 'txt', now);
+    anchor.download = buildSingleCardExportFilename('Favourite', 'md', now);
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
@@ -20831,6 +21198,45 @@ document.addEventListener('click', (event) => {
     flashButtonFeedback(btn, 'success');
 });
 
+const SINGLE_CARD_EXPORT_CSS = `
+        body { font-family: Arial, sans-serif; background: #ffffff; color: #111; padding: 24px; line-height: 1.5; }
+        h1 { font-size: 24px; margin-bottom: 8px; }
+        h3 { font-size: 16px; margin-top: 0; margin-bottom: 20px; }
+        pre { background: #f6f8fa; padding: 12px; border-radius: 8px; white-space: pre-wrap; word-wrap: break-word; }
+        img { max-width: 100%; height: auto; display: block; }
+        .response-body table { width: 100%; border-collapse: collapse; margin: 8px 0; }
+        .response-body th, .response-body td { border: 1px solid #ddd; padding: 6px 8px; vertical-align: top; }
+        .response-body ul, .response-body ol { padding-left: 24px; }
+        .response-meta { margin: 0 0 12px; color: #555; font-size: 14px; }
+
+        /* Modern Light skin adapted to the existing single-response document. */
+        :root { --ink: #25374c; --line: #e2eaf3; --blue: #376fbd; --canvas: #f5f8fc; --shadow: 0 2px 5px rgba(30,57,90,.025), 0 14px 36px rgba(30,57,90,.035); color-scheme: light; }
+        html { scroll-behavior: smooth; }
+        body { box-sizing: border-box; width: min(920px, calc(100% - 32px)); margin: 0 auto !important; padding: 24px 0 64px !important; background: linear-gradient(180deg, #f1f6fc 0, #f7f9fc 310px, #f5f8fc 100%) !important; color: var(--ink) !important; font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important; line-height: 1.65 !important; -webkit-font-smoothing: antialiased; }
+        h1 { margin: 0 0 18px !important; padding: 15px 20px !important; border: 1px solid #e0eafa !important; border-radius: 13px !important; background: linear-gradient(110deg, #edf5ff 0%, #f6f9fd 100%) !important; color: #254c78 !important; font-size: 21px !important; font-weight: 650 !important; letter-spacing: -.035em !important; }
+        h3 { color: #466789 !important; font-size: 15px !important; font-weight: 500 !important; }
+        .response-meta { color: #8393a6 !important; font-size: 12px !important; letter-spacing: .02em !important; overflow-wrap: anywhere; }
+        .response-body { margin: 16px 0 22px; padding: clamp(22px, 3.4vw, 40px) !important; border: 1px solid #e3eaf3 !important; border-radius: 20px !important; background: #fff !important; box-shadow: var(--shadow) !important; color: var(--ink) !important; font-size: 15.5px !important; line-height: 1.76 !important; overflow-wrap: break-word !important; }
+        .response-body, .response-body * { color: var(--ink) !important; }
+        .response-body p { line-height: 1.76 !important; }
+        .response-body p + p { margin-top: 18px !important; }
+        .response-body a { color: #2765ac !important; text-underline-offset: 3px; }
+        .response-body a:hover { color: #174f91 !important; }
+        .response-body strong, .response-body b, .response-body [data-d-default-strong] { font-weight: 650 !important; }
+        .response-body pre { background: #f5f8fc !important; border: 1px solid #e4ebf4 !important; border-radius: 12px !important; padding: 18px !important; line-height: 1.55 !important; overflow-x: auto !important; }
+        .response-body code { background: #f2f6fb !important; border-radius: 8px !important; font-size: .91em !important; }
+        .response-body blockquote { margin: 18px 0 !important; padding: 12px 18px !important; border-left: 3px solid #a4c4e9 !important; background: #f6faff !important; border-radius: 0 9px 9px 0 !important; }
+        .response-body table { display: block; max-width: 100%; overflow-x: auto; border: 1px solid var(--line) !important; border-radius: 12px !important; }
+        .response-body th { background: #f0f6fc !important; font-weight: 650 !important; }
+        .response-body th, .response-body td { border: 0 !important; border-bottom: 1px solid #e8eef5 !important; padding: 12px 15px !important; }
+        .response-body tr:last-child td { border-bottom: 0 !important; }
+        .response-body tbody tr:nth-child(even) { background: #fbfdff !important; }
+        .response-body img { border-radius: 10px; }
+        ::selection { background: #d8eaff; color: #1f3d60; }
+        @media (max-width: 700px) { body { width: calc(100% - 20px); padding: 10px 0 36px !important; } h1 { padding: 12px 14px !important; font-size: 19px !important; } .response-body { padding: 18px !important; font-size: 14.5px !important; border-radius: 15px !important; } }
+        @media print { body { width: auto; background: #fff !important; padding: 0 !important; } .response-body { box-shadow: none !important; border-color: #dfe5ec !important; } }
+`;
+
 //-- 1.1. Модифицируем экспорт для добавления имени модели-судьи --//
 document.addEventListener('click', (event) => {
     const btn = event.target.closest('.panel-export-html-btn');
@@ -20839,7 +21245,7 @@ document.addEventListener('click', (event) => {
     const targetId = btn.dataset.target;
     const outputEl = targetId ? document.getElementById(targetId) : null;
     if (targetId === favoriteOutputId) {
-        const favoriteHtml = buildFavoriteExportHtml();
+        const favoriteHtml = buildFavoriteExportCardsHtml();
         if (!favoriteHtml) {
             flashButtonFeedback(btn, 'warn');
             return;
@@ -20851,25 +21257,17 @@ document.addEventListener('click', (event) => {
     <meta charset="UTF-8">
     <title>Favourite</title>
     <style>
-        body { font-family: Arial, sans-serif; background: #ffffff; color: #111; padding: 24px; line-height: 1.5; }
-        h1 { margin: 0 0 16px; font-size: 22px; }
-        h2 { margin: 18px 0 10px; font-size: 18px; }
-        pre { background: #f6f8fa; padding: 12px; border-radius: 8px; white-space: pre-wrap; word-wrap: break-word; }
-        img { max-width: 100%; height: auto; display: block; }
-        .copied-response { margin-bottom: 20px; }
-        .copied-meta { margin: 0 0 10px; color: #555; font-size: 13px; }
-        .copied-body { background: #f8fafc; padding: 12px; border-radius: 8px; }
-        .copied-body pre { background: #eef2f7; }
-        .favorite-export-items { display: flex; flex-direction: column; gap: 12px; }
-        .favorite-export-item + .favorite-export-item { margin-top: 0; }
-        .favorite-export-item .response-meta { margin: 0 0 10px; color: #555; font-size: 13px; }
-        .favorite-export-item .response-body { background: #f8fafc; padding: 12px; border-radius: 8px; }
-        .favorite-export-item .response-body pre { background: #eef2f7; }
+${SINGLE_CARD_EXPORT_CSS}
+        .favorite-export-item + .favorite-export-item { margin-top: 14px; }
     </style>
 </head>
 <body>
+<div id="report">
     <h1>Favourite</h1>
+    <p class="response-meta">${formatSavedFileTimestamp()}</p>
     ${favoriteHtml}
+</div>
+${window.DebateExport?.annotationScript?.() || ''}
 </body>
 </html>`;
 
@@ -20913,17 +21311,21 @@ document.addEventListener('click', (event) => {
         htmlBodyContent = `
             <h1>${escapeHtml(modelName)}</h1>
             <p class="response-meta">${savedFileTimestamp}</p>
+            <section class="single-response-card">
             <h3 style="color: #555; font-weight: normal;">Generated by: ${escapeHtml(judgeName)}</h3>
             ${metadataHtml}
             <div class="response-body">${sanitizedHtml || `<pre>${escapeHtml(text)}</pre>`}</div>
+            </section>
         `;
     } else {
         // Стандартная логика для всех остальных панелей
         htmlBodyContent = `
             <h1>${escapeHtml(modelName)} Response</h1>
             <p class="response-meta">${savedFileTimestamp}</p>
+            <section class="single-response-card">
             ${metadataHtml}
             <div class="response-body">${sanitizedHtml || `<pre>${escapeHtml(text)}</pre>`}</div>
+            </section>
         `;
     }
 
@@ -20933,19 +21335,14 @@ document.addEventListener('click', (event) => {
     <meta charset="UTF-8">
     <title>${escapeHtml(modelName)} Response</title>
     <style>
-        body { font-family: Arial, sans-serif; background: #ffffff; color: #111; padding: 24px; line-height: 1.5; }
-        h1 { font-size: 24px; margin-bottom: 8px; }
-        h3 { font-size: 16px; margin-top: 0; margin-bottom: 20px; }
-        pre { background: #f6f8fa; padding: 12px; border-radius: 8px; white-space: pre-wrap; word-wrap: break-word; }
-        img { max-width: 100%; height: auto; display: block; }
-        .response-body table { width: 100%; border-collapse: collapse; margin: 8px 0; }
-        .response-body th, .response-body td { border: 1px solid #ddd; padding: 6px 8px; vertical-align: top; }
-        .response-body ul, .response-body ol { padding-left: 24px; }
-        .response-meta { margin: 0 0 12px; color: #555; font-size: 14px; }
+${SINGLE_CARD_EXPORT_CSS}
     </style>
 </head>
 <body>
+<div id="report">
     ${htmlBodyContent}
+</div>
+${window.DebateExport?.annotationScript?.() || ''}
 </body>
 </html>`;
 
@@ -20967,23 +21364,23 @@ document.addEventListener('click', (event) => {
 });
 
 document.addEventListener('click', (event) => {
-    const btn = event.target.closest('.panel-export-txt-btn');
+    const btn = event.target.closest('.panel-export-md-btn');
     if (!btn) return;
 
     const targetId = btn.dataset.target;
     const outputEl = targetId ? document.getElementById(targetId) : null;
     const modelName = btn.dataset.name || 'Model';
-    const text = outputEl ? (outputEl.innerText || outputEl.textContent || '').trim() : '';
-    if (!text) {
+    const markdown = buildSingleResponseExportMarkdown(outputEl, modelName);
+    if (!markdown) {
         flashButtonFeedback(btn, 'warn');
         return;
     }
 
-    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = buildSingleCardExportFilename(modelName, 'txt');
+    anchor.download = buildSingleCardExportFilename(modelName, 'md');
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();

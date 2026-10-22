@@ -258,7 +258,7 @@
                     <div class="llm-header-right">
                         <div class="toolbar-cluster">
                             <button id="export-html-btn" class="control-icon-btn" data-format="html" data-label="⬆ HTML" title="Export all responses as HTML"><i class="ti ti-download" aria-hidden="true"></i></button>
-                            <button type="button" id="export-txt-btn" class="control-icon-btn export-txt-btn" data-format="txt" title="Export all responses as TXT" aria-label="Export all responses as TXT">txt</button>
+                            <button type="button" id="export-md-btn" class="control-icon-btn export-md-btn" data-format="md" title="Export all responses as Markdown" aria-label="Export all responses as Markdown">md</button>
                             <button type="button" id="copy-all-btn" class="control-icon-btn" title="Copy all responses" aria-label="Copy all responses"><i class="ti ti-copy" aria-hidden="true"></i></button>
                             <button id="clear-all-btn" class="panel-action-btn panel-clear-response-btn clear-all-btn" title="Clear all responses" aria-label="Clear all responses"><i class="ti ti-trash" aria-hidden="true"></i></button>
                         </div>
@@ -281,7 +281,7 @@
                 <button class="panel-action-btn panel-clear-response-btn" data-target="comparison-output" title="Clear response" aria-label="Clear response"><i class="ti ti-trash" aria-hidden="true"></i></button>
                 <button class="copy-btn" data-target="comparison-output" title="Copy response"><i class="ti ti-copy" aria-hidden="true"></i></button>
                 <button class="panel-action-btn panel-export-html-btn" data-target="comparison-output" data-name="Comparative Analysis" data-label="⬆" title="Export this response as HTML"><i class="ti ti-download" aria-hidden="true"></i></button>
-                <button class="panel-action-btn panel-export-txt-btn" data-target="comparison-output" data-name="Comparative Analysis" data-label="txt" title="Export this response as TXT">txt</button>
+                <button class="panel-action-btn panel-export-md-btn" data-target="comparison-output" data-name="Comparative Analysis" data-label="md" title="Export this response as Markdown">md</button>
                 <button id="close-comparison-btn" class="panel-action-btn" title="Close panel" aria-label="Close panel"><i class="ti ti-x" aria-hidden="true"></i></button>
             </div>
         </div>
@@ -303,7 +303,7 @@
   <div class="header-right">
      <button class="copy-btn" data-target="output-gpt" title="Copy response"><i class="ti ti-copy" aria-hidden="true"></i></button>
     <button class="panel-action-btn panel-export-html-btn" data-target="output-gpt" data-name="GPT" data-label="⬆" title="Export this response as HTML"><i class="ti ti-download" aria-hidden="true"></i></button>
-    <button class="panel-action-btn panel-export-txt-btn" data-target="output-gpt" data-name="GPT" data-label="txt" title="Export this response as TXT">txt</button>
+    <button class="panel-action-btn panel-export-md-btn" data-target="output-gpt" data-name="GPT" data-label="md" title="Export this response as Markdown">md</button>
      <button class="panel-action-btn panel-clear-response-btn" data-target="output-gpt" title="Clear response" aria-label="Clear response"><i class="ti ti-trash" aria-hidden="true"></i></button>
 
 </div>
@@ -321,7 +321,7 @@
   <div class="header-right">
     <button class="copy-btn" data-target="output-claude" title="Copy response"><i class="ti ti-copy" aria-hidden="true"></i></button>
     <button class="panel-action-btn panel-export-html-btn" data-target="output-claude" data-name="Claude" data-label="⬆" title="Export this response as HTML"><i class="ti ti-download" aria-hidden="true"></i></button>
-    <button class="panel-action-btn panel-export-txt-btn" data-target="output-claude" data-name="Claude" data-label="txt" title="Export this response as TXT">txt</button>
+    <button class="panel-action-btn panel-export-md-btn" data-target="output-claude" data-name="Claude" data-label="md" title="Export this response as Markdown">md</button>
      <button class="panel-action-btn panel-clear-response-btn" data-target="output-claude" title="Clear response" aria-label="Clear response"><i class="ti ti-trash" aria-hidden="true"></i></button>
 
 </div>
@@ -341,7 +341,7 @@
   <div class="header-right">
      <button class="copy-btn" data-target="output-qwen" title="Copy response"><i class="ti ti-copy" aria-hidden="true"></i></button>
     <button class="panel-action-btn panel-export-html-btn" data-target="output-qwen" data-name="Qwen" data-label="⬆" title="Export this response as HTML"><i class="ti ti-download" aria-hidden="true"></i></button>
-    <button class="panel-action-btn panel-export-txt-btn" data-target="output-qwen" data-name="Qwen" data-label="txt" title="Export this response as TXT">txt</button>
+    <button class="panel-action-btn panel-export-md-btn" data-target="output-qwen" data-name="Qwen" data-label="md" title="Export this response as Markdown">md</button>
      <button class="panel-action-btn panel-clear-response-btn" data-target="output-qwen" title="Clear response" aria-label="Clear response"><i class="ti ti-trash" aria-hidden="true"></i></button>
 
 </div>
@@ -358,7 +358,7 @@
         <div class="header-right">
           <button class="copy-btn" data-target="output-zai" title="Copy response"><i class="ti ti-copy" aria-hidden="true"></i></button>
           <button class="panel-action-btn panel-export-html-btn" data-target="output-zai" data-name="Z.ai" data-label="⬆" title="Export this response as HTML"><i class="ti ti-download" aria-hidden="true"></i></button>
-          <button class="panel-action-btn panel-export-txt-btn" data-target="output-zai" data-name="Z.ai" data-label="txt" title="Export this response as TXT">txt</button>
+          <button class="panel-action-btn panel-export-md-btn" data-target="output-zai" data-name="Z.ai" data-label="md" title="Export this response as Markdown">md</button>
           <button class="panel-action-btn panel-clear-response-btn" data-target="output-zai" title="Clear response" aria-label="Clear response"><i class="ti ti-trash" aria-hidden="true"></i></button>
         </div>
       </div>
@@ -372,7 +372,7 @@
         <div class="header-right">
           <button class="copy-btn" data-target="output-kimi" title="Copy response"><i class="ti ti-copy" aria-hidden="true"></i></button>
           <button class="panel-action-btn panel-export-html-btn" data-target="output-kimi" data-name="Kimi" data-label="⬆" title="Export this response as HTML"><i class="ti ti-download" aria-hidden="true"></i></button>
-          <button class="panel-action-btn panel-export-txt-btn" data-target="output-kimi" data-name="Kimi" data-label="txt" title="Export this response as TXT">txt</button>
+          <button class="panel-action-btn panel-export-md-btn" data-target="output-kimi" data-name="Kimi" data-label="md" title="Export this response as Markdown">md</button>
           <button class="panel-action-btn panel-clear-response-btn" data-target="output-kimi" title="Clear response" aria-label="Clear response"><i class="ti ti-trash" aria-hidden="true"></i></button>
         </div>
       </div>
@@ -389,7 +389,7 @@
   <div class="header-right">
      <button class="copy-btn" data-target="output-gemini" title="Copy response"><i class="ti ti-copy" aria-hidden="true"></i></button>
     <button class="panel-action-btn panel-export-html-btn" data-target="output-gemini" data-name="Gemini" data-label="⬆" title="Export this response as HTML"><i class="ti ti-download" aria-hidden="true"></i></button>
-    <button class="panel-action-btn panel-export-txt-btn" data-target="output-gemini" data-name="Gemini" data-label="txt" title="Export this response as TXT">txt</button>
+    <button class="panel-action-btn panel-export-md-btn" data-target="output-gemini" data-name="Gemini" data-label="md" title="Export this response as Markdown">md</button>
      <button class="panel-action-btn panel-clear-response-btn" data-target="output-gemini" title="Clear response" aria-label="Clear response"><i class="ti ti-trash" aria-hidden="true"></i></button>
 
 </div>
@@ -409,7 +409,7 @@
   <div class="header-right">
     <button class="copy-btn" data-target="output-grok" title="Copy response"><i class="ti ti-copy" aria-hidden="true"></i></button>
     <button class="panel-action-btn panel-export-html-btn" data-target="output-grok" data-name="Grok" data-label="⬆" title="Export this response as HTML"><i class="ti ti-download" aria-hidden="true"></i></button>
-    <button class="panel-action-btn panel-export-txt-btn" data-target="output-grok" data-name="Grok" data-label="txt" title="Export this response as TXT">txt</button>
+    <button class="panel-action-btn panel-export-md-btn" data-target="output-grok" data-name="Grok" data-label="md" title="Export this response as Markdown">md</button>
      <button class="panel-action-btn panel-clear-response-btn" data-target="output-grok" title="Clear response" aria-label="Clear response"><i class="ti ti-trash" aria-hidden="true"></i></button>
 
 </div>
@@ -429,7 +429,7 @@
   <div class="header-right">
      <button class="copy-btn" data-target="output-deepseek" title="Copy response"><i class="ti ti-copy" aria-hidden="true"></i></button>
     <button class="panel-action-btn panel-export-html-btn" data-target="output-deepseek" data-name="DeepSeek" data-label="⬆" title="Export this response as HTML"><i class="ti ti-download" aria-hidden="true"></i></button>
-    <button class="panel-action-btn panel-export-txt-btn" data-target="output-deepseek" data-name="DeepSeek" data-label="txt" title="Export this response as TXT">txt</button>
+    <button class="panel-action-btn panel-export-md-btn" data-target="output-deepseek" data-name="DeepSeek" data-label="md" title="Export this response as Markdown">md</button>
      <button class="panel-action-btn panel-clear-response-btn" data-target="output-deepseek" title="Clear response" aria-label="Clear response"><i class="ti ti-trash" aria-hidden="true"></i></button>
 
 </div>
@@ -449,7 +449,7 @@
   <div class="header-right">
     <button class="copy-btn" data-target="output-lechat" title="Copy response"><i class="ti ti-copy" aria-hidden="true"></i></button>
     <button class="panel-action-btn panel-export-html-btn" data-target="output-lechat" data-name="Le Chat" data-label="⬆" title="Export this response as HTML"><i class="ti ti-download" aria-hidden="true"></i></button>
-    <button class="panel-action-btn panel-export-txt-btn" data-target="output-lechat" data-name="Le Chat" data-label="txt" title="Export this response as TXT">txt</button>
+    <button class="panel-action-btn panel-export-md-btn" data-target="output-lechat" data-name="Le Chat" data-label="md" title="Export this response as Markdown">md</button>
      <button class="panel-action-btn panel-clear-response-btn" data-target="output-lechat" title="Clear response" aria-label="Clear response"><i class="ti ti-trash" aria-hidden="true"></i></button>
 
 </div>
@@ -469,7 +469,7 @@
   <div class="header-right">
      <button class="copy-btn" data-target="output-perplexity" title="Copy response"><i class="ti ti-copy" aria-hidden="true"></i></button>
     <button class="panel-action-btn panel-export-html-btn" data-target="output-perplexity" data-name="Perplexity" data-label="⬆" title="Export this response as HTML"><i class="ti ti-download" aria-hidden="true"></i></button>
-    <button class="panel-action-btn panel-export-txt-btn" data-target="output-perplexity" data-name="Perplexity" data-label="txt" title="Export this response as TXT">txt</button>
+    <button class="panel-action-btn panel-export-md-btn" data-target="output-perplexity" data-name="Perplexity" data-label="md" title="Export this response as Markdown">md</button>
      <button class="panel-action-btn panel-clear-response-btn" data-target="output-perplexity" title="Clear response" aria-label="Clear response"><i class="ti ti-trash" aria-hidden="true"></i></button>
 
 </div>
