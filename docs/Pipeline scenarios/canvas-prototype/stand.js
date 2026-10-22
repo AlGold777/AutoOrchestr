@@ -5,7 +5,7 @@
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '5';
+  const STAND_VERSION = '6';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -529,6 +529,7 @@
       <header class="custom-card-top custom-defaults-top">
         <h3 class="custom-card-model" id="proto-stand-title">Стенд схемы<span class="custom-card-where">JSON { task, steps } · клавиша I · v${STAND_VERSION}</span></h3>
         <div class="proto-stand-actions">
+          <button type="button" class="modal-button" id="proto-stand-clear" title="Очистить поле" aria-label="Очистить поле"><i class="ti ti-trash" aria-hidden="true"></i></button>
           <button type="button" class="modal-button" id="proto-stand-example">Загрузить пример</button>
           <button type="button" class="modal-button" id="proto-stand-reset">Сбросить</button>
           <button type="button" class="modal-button accent" id="proto-stand-apply">Применить</button>
@@ -550,7 +551,8 @@
     modal.querySelector('#proto-stand-close').addEventListener('click', () => hide(modal));
     modal.querySelector('#proto-stand-example').addEventListener('click', () => { area.value = JSON.stringify(EXAMPLES.basic, null, 2); area.focus(); });
     modal.querySelector('#proto-stand-example-foreach').addEventListener('click', () => { area.value = JSON.stringify(EXAMPLES.foreach, null, 2); area.focus(); });
-    modal.querySelector('#proto-stand-reset').addEventListener('click', () => { reset(); });
+    modal.querySelector('#proto-stand-clear').addEventListener('click', () => { area.value = ''; stand.text = ''; $('proto-stand-issues').innerHTML = ''; area.focus(); });
+    modal.querySelector('#proto-stand-reset').addEventListener('click', () => { area.value = ''; stand.text = ''; reset(); });
     modal.querySelector('#proto-stand-apply').addEventListener('click', () => {
       stand.text = area.value;
       const { schema, flat, issues } = validate(area.value);
