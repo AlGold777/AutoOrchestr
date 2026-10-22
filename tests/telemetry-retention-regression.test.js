@@ -23,9 +23,9 @@ describe('telemetry retention and serialization', () => {
   });
 
   test('a full multi-model run fits in storage and export budgets', () => {
-    expect(TELEMETRY_SRC).toContain('const DIAGNOSTICS_EVENTS_MAX_ITEMS = 2000');
-    expect(TELEMETRY_SRC).toContain('const DIAGNOSTICS_EVENTS_MAX_BYTES = 1500000');
-    expect(ROUTER_SRC).toContain('const DIAGNOSTICS_EXPORT_MAX_ITEMS = 2000');
+    expect(TELEMETRY_SRC).toContain('const DIAGNOSTICS_EVENTS_MAX_ITEMS = 4000');
+    expect(TELEMETRY_SRC).toContain('const DIAGNOSTICS_EVENTS_MAX_BYTES = 3000000');
+    expect(ROUTER_SRC).toContain('const DIAGNOSTICS_EXPORT_MAX_ITEMS = 4000');
     expect(RESULTS_SRC).toContain("type: 'GET_DIAG_EVENTS', limit: 2000");
   });
 

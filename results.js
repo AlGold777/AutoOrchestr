@@ -16217,29 +16217,6 @@ document.addEventListener('click', (event) => {
             finish(null);
         }
     });
-    const requestProofTelemetrySnapshotForMarkdown = (timeoutMs = EXPORT_SNAPSHOT_DEADLINE_MS) => new Promise((resolve) => {
-        const runtime = (typeof chrome !== 'undefined' && chrome?.runtime) ? chrome.runtime : null;
-        if (!runtime?.sendMessage) {
-            resolve(null);
-            return;
-        }
-        let settled = false;
-        const finish = (value) => {
-            if (settled) return;
-            settled = true;
-            clearTimeout(timer);
-            resolve(value);
-        };
-        const timer = setTimeout(() => finish(null), Math.max(0, timeoutMs));
-        try {
-            runtime.sendMessage({ type: 'GET_PROOF_TELEMETRY_SNAPSHOT', runSessionId: null }, (resp) => {
-                if (runtime.lastError) finish(null);
-                else finish(resp || null);
-            });
-        } catch (_) {
-            finish(null);
-        }
-    });
     const confirmIncompleteRunExport = (runOutcomeSummary) => {
         if (!runOutcomeSummary?.success || runOutcomeSummary.complete !== false) return true;
         const pending = (runOutcomeSummary.models || [])
@@ -16248,7 +16225,7 @@ document.addEventListener('click', (event) => {
             .join('\n');
         return window.confirm(`The run is not complete. The export will be marked incomplete.\n\n${pending}\n\nExport anyway?`);
     };
-    const buildAllLogsMarkdown = (telemetryEvents = [], sources = [], logs = {}, runOutcomeSummary = null, proofShadow = null) => {
+    const buildAllLogsMarkdown = (telemetryEvents = [], sources = [], logs = {}, runOutcomeSummary = null) => {
         const title = 'All Logs';
         const version = chrome?.runtime?.getManifest?.()?.version || 'unknown';
         const exportedAt = new Date().toLocaleString();
@@ -16265,14 +16242,13 @@ document.addEventListener('click', (event) => {
         const telemetryRoundsSection = buildTelemetryRoundsMarkdown(scopedTelemetryEvents);
         const runSummarySection = buildRunOutcomeSummaryMarkdown(runOutcomeSummary);
         const diagnosticsSection = buildDiagnosticsSectionMarkdown(scopedDiagnostics.sources, scopedDiagnostics.logs);
-        const proofSection = proofShadow?.markdown ? `\n${proofShadow.markdown}` : '';
         const runLine = runScope.runSessionId
             ? `Run session: ${runScope.runSessionId} (${runScope.strict ? 'current' : 'fallback'})`
             : (runScope.scopeMode === 'cycle'
                 ? 'Run session: n/a (cycle fallback)'
                 : 'Run session: n/a (no active run)');
         const profileLine = `Generation wait profile: **${lastGenerationWaitProfile === 'long' ? 'LONG' : 'STANDARD'}** — ${generationWaitProfileLabel(lastGenerationWaitProfile)}`;
-        const markdown = `# ${title}\nVersion: ${version}\nExported: ${exportedAt}\n${runLine}\n${profileLine}\n\n${telemetrySection}${telemetryRoundsSection}${runSummarySection}${diagnosticsSection}${proofSection}`;
+        const markdown = `# ${title}\nVersion: ${version}\nExported: ${exportedAt}\n${runLine}\n${profileLine}\n\n${telemetrySection}${telemetryRoundsSection}${runSummarySection}${diagnosticsSection}`;
         // Defense-in-depth: scrub any provider key/token shape before the
         // "All Logs" markdown leaves the extension (shared/secret-redaction.js).
         // This export is the historical leak surface that motivated the module.
@@ -16851,13 +16827,12 @@ document.addEventListener('click', (event) => {
         if (sourceFilter) {
             sources = sources.filter((name) => sourceFilter.has(String(name || '').trim().toLowerCase()));
         }
-        const [telemetryEvents, runOutcomeSummary, proofSnapshot] = await Promise.all([
+        const [telemetryEvents, runOutcomeSummary] = await Promise.all([
             getTelemetryEventsForExport(snapshotTs).catch((err) => {
                 console.warn('[Diagnostics] telemetry export failed', err);
                 return [];
             }),
-            requestRunOutcomeSummary(EXPORT_SNAPSHOT_DEADLINE_MS),
-            requestProofTelemetrySnapshotForMarkdown(EXPORT_SNAPSHOT_DEADLINE_MS)
+            requestRunOutcomeSummary(EXPORT_SNAPSHOT_DEADLINE_MS)
         ]);
         const telemetryBridge = getTelemetryBridge();
         const onlyTelemetryProblems = btn.id === 'export-all-logs-md-telemetry'
@@ -16870,24 +16845,12 @@ document.addEventListener('click', (event) => {
         }
         const hasLogs = sources.length > 0;
         const hasTelemetry = telemetryEvents.length > 0;
-        const hasProofTelemetry = Boolean(proofSnapshot?.events?.length);
         const hasRunSummary = Boolean(runOutcomeSummary?.success && runOutcomeSummary.models?.length);
-        if (!hasLogs && !hasTelemetry && !hasProofTelemetry && !hasRunSummary) {
+        if (!hasLogs && !hasTelemetry && !hasRunSummary) {
             flashButtonFeedback(btn, 'warn');
             return;
         }
-        const proofShadow = proofSnapshot?.events && window.ProofTelemetryPresentations?.buildShadowBundle
-            ? window.ProofTelemetryPresentations.buildShadowBundle(telemetryEvents, proofSnapshot.events, {
-                generatedAt: snapshotTs,
-                title: 'Canonical proof telemetry (shadow)',
-                snapshotBoundary: {
-                    runSessionId: proofSnapshot.runSessionId,
-                    ledgerCompleteThroughSeq: proofSnapshot.lastSeq || proofSnapshot.events[proofSnapshot.events.length - 1]?.seq || 0
-                }
-            })
-            : null;
-        if (proofShadow) window.__PROOF_TELEMETRY_MARKDOWN_SHADOW__ = proofShadow;
-        const markdownContent = buildAllLogsMarkdown(telemetryEvents, sources, logsSnapshot, runOutcomeSummary, proofShadow);
+        const markdownContent = buildAllLogsMarkdown(telemetryEvents, sources, logsSnapshot, runOutcomeSummary);
         if (!confirmIncompleteRunExport(runOutcomeSummary)) {
             flashButtonFeedback(btn, 'warn');
             return;

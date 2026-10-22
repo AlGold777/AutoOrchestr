@@ -1,5 +1,14 @@
 # CHANGELOG — Project
 
+### 2026-10-22 — Перестройка телеметрии: сырые события вместо отчётов, версия 2.81.832
+
+- Удалён стек proof-oriented telemetry: фоновые `proof-telemetry-ledger.js` и `proof-telemetry-store.js` (IndexedDB), девять модулей `shared/proof-*`, экспортный воркер, `telemetry-export*.js`, `telemetry-digest.js`, `log-replay-harness.js`, `telemetry-spec/`, каталог `КОНТЕКСТ ДЛЯ АНАЛИЗА/`, мёртвые скрипты и около 60 тестов к ним. Состояние до удаления: тег `pre-telemetry-rebuild`.
+- Единственный сырой источник событий — кольцо `__diagnostics_events__`. В него теперь пишутся все события (раньше только 5% сессий), записью пачкой раз в 400 мс; пределы подняты до 4000 событий и 3 МБ. Сэмплирование осталось только для живой панели и логов по моделям.
+- `Telemetry → ↓` выгружает сырые события текущего прогона (`telemetry-raw/1`) с памяткой читателю; выбор задач и форматов (Digest, Canonical evidence, Full forensic) убран. Разбор делается запросом к модели: `docs/Telemetry/queries.md`.
+- Экспорт All Logs MD больше не запрашивает proof-снимок. Удалены неиспользуемые обработчики refresh/reset/copy и маршруты `GET_PROOF_TELEMETRY_SNAPSHOT`, `GET_PROOF_TELEMETRY_INCIDENTS`.
+- Область текущего прогона для `GET_DIAG_EVENTS` берётся из `jobState.session.startTime`, а не из ledger.
+- `docs/Telemetry/telemetry.md` переписан (что где хранится, что нельзя удалять вместе с «телеметрией»); разбор состояния до перестройки — `docs/Telemetry/cleanup-audit/`.
+
 ### 2026-10-22 — Le Chat: окно «Drop your files here» не остаётся поверх страницы, версия 2.81.831
 
 - Причина: имитация перетаскивания вложения (`dragenter`, `dragover`, `drop`) не завершалась событиями `dragleave` и `dragend`, и полноэкранное окно приёма файлов Le Chat оставалось открытым, хотя ответ уже генерировался и копировался.

@@ -196,7 +196,7 @@ describe('release log regression guards', () => {
       const disputEnd = html.indexOf('id="selectors0-tabpanel"', disputStart);
       const disputBlock = disputStart >= 0 && disputEnd >= 0 ? html.slice(disputStart, disputEnd) : '';
       expect(telemetryBlock).toContain('All platforms');
-      expect(telemetryBlock).toContain('All tasks');
+      expect(telemetryBlock).not.toContain('All tasks');
       expect(telemetryBlock).not.toContain('All types');
       expect(telemetryBlock).not.toContain('Presets');
       expect(disputBlock).not.toContain('All platforms');

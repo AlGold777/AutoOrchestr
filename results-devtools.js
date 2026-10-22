@@ -3,7 +3,6 @@
     if (window.__DEVTOOLS_TELEMETRY_READY__) return;
     window.__DEVTOOLS_TELEMETRY_READY__ = true;
     const telemetryPlatformSelect = document.getElementById('telemetry-platform-select');
-    const telemetryTaskSelect = document.getElementById('telemetry-task-select');
     const telemetryRefreshBtn = document.getElementById('telemetry-refresh-btn');
     const telemetryCopyBtn = document.getElementById('telemetry-copy-btn');
     const telemetryExportJsonBtn = document.getElementById('telemetry-export-json-btn');
@@ -54,14 +53,6 @@
         return modelId === platformFilter;
     };
     const selectedTelemetryModel = () => normalizePlatformName(telemetryPlatformSelect?.value || 'all') || 'all';
-    const selectedTelemetryTask = () => (telemetryTaskSelect?.value || 'all').toLowerCase().trim() || 'all';
-    const matchesProofTask = (event, taskFilter) => {
-        if (!taskFilter || taskFilter === 'all') return true;
-        const allowed = window.ProofOrientedTelemetry?.REPORT_EVENT_TYPES?.[taskFilter];
-        if (!allowed) return false;
-        const eventType = event?.eventType || window.ProofOrientedTelemetry?.canonicalType?.(event);
-        return allowed.includes(String(eventType || ''));
-    };
     const resolveTelemetryPlatformName = (event) => {
         const raw = event?.platform || event?.llmName || event?.meta?.llmName || event?.meta?.platform || 'unknown';
         const cleaned = String(raw || '').trim();
@@ -690,13 +681,9 @@
 
     const getTelemetryFilteredEvents = (events = []) => {
         const platformFilter = selectedTelemetryModel();
-        const taskFilter = selectedTelemetryTask();
         let filtered = Array.isArray(events) ? events.slice() : [];
         if (platformFilter !== 'all') {
             filtered = filtered.filter((event) => matchesTelemetryModel(event, platformFilter));
-        }
-        if (taskFilter !== 'all') {
-            filtered = filtered.filter((event) => matchesProofTask(event, taskFilter));
         }
         return { filtered: filtered.slice(-250) };
     };
@@ -741,32 +728,15 @@
         return source.filter((_, index) => keep.has(index));
     }
 
-    // Активные критерии фильтра (модель + задача) для экспортов (JSON/MD),
-    // чтобы выгрузка уважала выбранное в окне. Тот же предикат, что и у
-    // таймлайна, отличие одно — без UI-капа в 250 событий.
-    const isTelemetryFilterActive = () => selectedTelemetryModel() !== 'all' || selectedTelemetryTask() !== 'all';
+    // Активный фильтр модели для экспортов (JSON/MD), чтобы выгрузка уважала
+    // выбранное в окне. Тот же предикат, что и у таймлайна, отличие одно —
+    // без UI-капа в 250 событий.
+    const isTelemetryFilterActive = () => selectedTelemetryModel() !== 'all';
     const applyActiveTelemetryFilter = (events = []) => {
         const list = Array.isArray(events) ? events.slice() : [];
         if (!isTelemetryFilterActive()) return list;
         const platformFilter = selectedTelemetryModel();
-        const taskFilter = selectedTelemetryTask();
-        let filtered = list;
-        if (platformFilter !== 'all') {
-            filtered = filtered.filter((event) => matchesTelemetryModel(event, platformFilter));
-        }
-        if (taskFilter !== 'all') {
-            filtered = filtered.filter((event) => matchesProofTask(event, taskFilter));
-        }
-        return filtered;
-    };
-    const applyActiveProofFilter = (events = [], { includeTask = true } = {}) => {
-        const platformFilter = selectedTelemetryModel();
-        const taskFilter = selectedTelemetryTask();
-        return (Array.isArray(events) ? events : []).filter((event) => {
-            if (!matchesTelemetryModel(event, platformFilter, { keepSystem: true })) return false;
-            if (includeTask && !matchesProofTask(event, taskFilter)) return false;
-            return true;
-        });
+        return list.filter((event) => matchesTelemetryModel(event, platformFilter));
     };
     // Набор нормализованных имён платформ, к которым сейчас сведён экспорт.
     // Пустой массив = «все». Нужен для фильтрации секций диагностических логов
@@ -810,33 +780,6 @@
         telemetryPlatformSelect.value = optionValues.includes(current) ? current : 'all';
     };
 
-    let proofTimelineShadowTimer = null;
-    let proofTimelineShadowRevision = 0;
-    const scheduleProofTimelineShadow = (legacyEvents = []) => {
-        if (!window.ProofTelemetryPresentations?.buildShadowBundle || !chrome?.runtime?.sendMessage) return;
-        const revision = ++proofTimelineShadowRevision;
-        clearTimeout(proofTimelineShadowTimer);
-        proofTimelineShadowTimer = setTimeout(() => {
-            try {
-                chrome.runtime.sendMessage({ type: 'GET_PROOF_TELEMETRY_SNAPSHOT', runSessionId: null }, (snapshot) => {
-                    if (chrome.runtime.lastError || revision !== proofTimelineShadowRevision || !snapshot?.events) return;
-                    const shadow = window.ProofTelemetryPresentations.buildShadowBundle(legacyEvents, snapshot.events, {
-                        generatedAt: Date.now(),
-                        snapshotBoundary: {
-                            runSessionId: snapshot.runSessionId,
-                            ledgerCompleteThroughSeq: snapshot.lastSeq || snapshot.events[snapshot.events.length - 1]?.seq || 0
-                        }
-                    });
-                    window.__PROOF_TELEMETRY_TIMELINE_SHADOW__ = shadow;
-                    if (telemetryTimeline) {
-                        telemetryTimeline.dataset.proofShadowStatus = shadow.comparison.status;
-                        telemetryTimeline.dataset.proofShadowVersion = shadow.version;
-                    }
-                });
-            } catch (_) {}
-        }, 50);
-    };
-
     const renderTelemetry = (events = []) => {
         if (!telemetryTimeline) return;
         const scoped = filterEventsToCurrentRun(events);
@@ -845,7 +788,6 @@
         const { filtered } = getTelemetryFilteredEvents(scopedEvents);
         const visibleEvents = filtered;
         telemetryFilteredCache = visibleEvents;
-        scheduleProofTimelineShadow(visibleEvents);
         refreshTelemetryBridge();
         renderTelemetryRounds(scopedEvents);
         renderTelemetrySummary(visibleEvents);
@@ -1023,18 +965,7 @@
         }
     };
 
-    telemetryRefreshBtn && telemetryRefreshBtn.addEventListener('click', refreshTelemetry);
-    telemetryTaskSelect && telemetryTaskSelect.addEventListener('change', () => {
-        renderTelemetry(telemetryCache);
-        updateIncidentStatus();
-    });
     telemetryPlatformSelect && telemetryPlatformSelect.addEventListener('change', () => {
-        renderTelemetry(telemetryCache);
-        updateIncidentStatus();
-    });
-    telemetryResetBtn && telemetryResetBtn.addEventListener('click', () => {
-        if (telemetryPlatformSelect) telemetryPlatformSelect.value = 'all';
-        if (telemetryTaskSelect) telemetryTaskSelect.value = 'all';
         renderTelemetry(telemetryCache);
     });
     // Hard clear: wipe the backend diag/telemetry store AND every telemetry window
@@ -1059,7 +990,6 @@
         telemetryFilteredCache = [];
         telemetryEventKeys = new Set();
         if (telemetryPlatformSelect) telemetryPlatformSelect.value = 'all';
-        if (telemetryTaskSelect) telemetryTaskSelect.value = 'all';
         refreshTelemetryBridge();
         renderTelemetry([]);
         if (telemetryStatus) telemetryStatus.textContent = 'No telemetry events';
@@ -1085,17 +1015,9 @@
         renderTelemetryRounds([]);
         if (telemetryStatus) telemetryStatus.textContent = 'No telemetry events';
     });
-    document.addEventListener('telemetry-refresh-request', () => {
-        refreshTelemetry();
-    });
     document.addEventListener('diagnostics-clear-request', () => {
         replaceTelemetryEvents([]);
         if (telemetryStatus) telemetryStatus.textContent = 'No telemetry events';
-    });
-    document.addEventListener('telemetry-reset-request', () => {
-        if (telemetryPlatformSelect) telemetryPlatformSelect.value = 'all';
-        if (telemetryTaskSelect) telemetryTaskSelect.value = 'all';
-        renderTelemetry(telemetryCache);
     });
     // Export/copy are invoked ONLY through the delegated action listener below
     // (which calls these functions directly). They must NOT also get their own
@@ -1104,147 +1026,6 @@
     // twice → two downloaded JSON files. (refresh/reset/clear-all keep both
     // bindings because their double-invocation is idempotent; export writes a
     // file, so it must fire exactly once.)
-    const requestProofTelemetrySnapshot = (runSessionId = null) => new Promise((resolve) => {
-        try {
-            chrome.runtime.sendMessage({ type: 'GET_PROOF_TELEMETRY_SNAPSHOT', runSessionId }, (resp) => {
-                if (chrome.runtime.lastError || !resp) {
-                    resolve(null);
-                    return;
-                }
-                resolve(resp);
-            });
-        } catch (_) {
-            resolve(null);
-        }
-    });
-    const downloadSerializedProofArtifact = (json, filename) => {
-        return window.TelemetryExportRuntime.downloadSerializedArtifact(json, filename);
-    };
-    const downloadProofArtifact = (payload, filename) => {
-        const json = window.SecretRedaction?.stringifySafe
-            ? window.SecretRedaction.stringifySafe(payload)
-            : JSON.stringify(payload);
-        return downloadSerializedProofArtifact(json, filename);
-    };
-
-    const FULL_EXPORT_WORKER_TIMEOUT_MS = 20000;
-    const EXPORT_STAGE_DEADLINES_MS = Object.freeze({
-        cloning: 5000,
-        building: 15000,
-        'incident-index': 10000,
-        'derived-views': 10000,
-        attachments: 5000,
-        hashes: 10000,
-        finalizing: 5000,
-        redacting: 5000,
-        serializing: 5000
-    });
-    const telemetryExportWorkerClient = window.TelemetryExportRuntime.createWorkerClient({
-        workerFactory: () => new Worker(chrome.runtime.getURL('workers/telemetry-export-worker.js')),
-        overallTimeoutMs: FULL_EXPORT_WORKER_TIMEOUT_MS,
-        stageDeadlinesMs: EXPORT_STAGE_DEADLINES_MS,
-        reportStageTimeoutMs: 5000
-    });
-    const buildTelemetryJsonInWorker = (...args) => telemetryExportWorkerClient.build(...args);
-
-    const buildCanonicalTelemetryRecovery = (events, options, error) => ({
-        schemaVersion: '6.0',
-        containerType: 'canonical-ledger-recovery',
-        manifest: {
-            createdAt: new Date(options.exportedAt).toISOString(),
-            eventCount: events.length,
-            reason: 'all-presets worker did not complete'
-        },
-        sharedConfig: { extensionVersion: options.extensionVersion },
-        ledger: {
-            encoding: 'inline-json',
-            eventCount: events.length,
-            firstSeq: events[0]?.seq || 0,
-            lastSeq: events[events.length - 1]?.seq || 0,
-            events
-        },
-        exportAudit: {
-            recoveryExport: true,
-            allCanonicalEventsPreserved: true,
-            workerError: String(error?.message || error || 'unknown worker failure'),
-            sourceSnapshot: {
-                consistency: options.snapshotConsistency,
-                barrierTimedOut: options.snapshotBarrierTimedOut === true,
-                queuedMutationCount: options.queuedMutationCount,
-                pendingRecordCount: options.pendingRecordCount
-            }
-        }
-    });
-    // The full "all presets" export runs ~640KB, and roughly half of it is
-    // preset report definitions carrying no run data. Every diagnosis in
-    // practice comes from about a dozen fields inside ledger.events, so the
-    // Export button can write a small digest of exactly those.
-    // The JSON stays the archive; the digest is the part meant to be read.
-    // Same implementation as scripts/telemetry-digest.js, so a digest produced
-    // here and one produced from the file can never disagree.
-    // Digest remains the default. Canonical evidence is an explicit middle
-    // option; Full forensic remains available and unchanged.
-    const EXPORT_FORMAT_KEY = 'telemetryExportFormat';
-    const LEGACY_DIGEST_TOGGLE_KEY = 'telemetryExportDigestEnabled';
-    const exportFormatSelect = document.getElementById('telemetry-export-format-select');
-    if (exportFormatSelect) {
-        try {
-            chrome.storage?.local?.get?.([EXPORT_FORMAT_KEY, LEGACY_DIGEST_TOGGLE_KEY], (stored) => {
-                if (chrome.runtime?.lastError) return;
-                const saved = stored?.[EXPORT_FORMAT_KEY];
-                if (['digest', 'canonical-evidence', 'full-forensic'].includes(saved)) exportFormatSelect.value = saved;
-                else if (typeof stored?.[LEGACY_DIGEST_TOGGLE_KEY] === 'boolean') exportFormatSelect.value = stored[LEGACY_DIGEST_TOGGLE_KEY] ? 'digest' : 'full-forensic';
-            });
-        } catch (_) {}
-        exportFormatSelect.addEventListener('change', () => {
-            try {
-                chrome.storage?.local?.set?.({ [EXPORT_FORMAT_KEY]: exportFormatSelect.value });
-            } catch (_) {}
-        });
-    }
-    const telemetryExportFormat = () => exportFormatSelect?.value || 'digest';
-    const digestExportEnabled = () => telemetryExportFormat() === 'digest';
-
-    const buildTelemetryDigestSource = (events, options) => ({
-        manifest: { createdAt: new Date(options.exportedAt).toISOString() },
-        sharedConfig: { extensionVersion: options.extensionVersion },
-        ledger: { events }
-    });
-
-    const downloadTelemetryDigest = (payload, jsonFilename) => {
-        if (!window.TelemetryDigest?.buildDigest) return null;
-        try {
-            const text = window.TelemetryDigest.render(window.TelemetryDigest.buildDigest(payload));
-            if (!text || !text.trim()) return null;
-            const blob = new Blob([text], { type: 'text/plain' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = String(jsonFilename).replace(/\.json$/i, '') + '-digest.txt';
-            a.click();
-            setTimeout(() => URL.revokeObjectURL(url), 1000);
-            return text;
-        } catch (err) {
-            // A digest failure must never cost the user the export itself.
-            console.warn('[devtools] telemetry digest failed', err);
-            return null;
-        }
-    };
-    const describeSelectedIncident = (selection) => {
-        if (!selection?.selected) return 'No matching incident';
-        const scope = selection.selected.scope;
-        return `Incident ${scope.dispatchId || 'unattributed'} / generation ${scope.generationEpoch ?? 'unknown'} • ${selection.selectionReason} • ${selection.otherMatchingIncidents.length} other match(es)`;
-    };
-    const updateIncidentStatus = async () => {
-        const task = String(telemetryTaskSelect?.value || 'all');
-        const platform = String(telemetryPlatformSelect?.value || 'all');
-        if (task === 'all' || platform === 'all' || !window.ProofTelemetryIncidents) return;
-        const snapshot = await requestProofTelemetrySnapshot(null);
-        if (!snapshot?.events) return;
-        const modelId = snapshot.events.find((event) => normalizePlatformName(event.modelId) === normalizePlatformName(platform))?.modelId || platform;
-        const selection = window.ProofTelemetryIncidents.selectIncident(snapshot.events, { platform: modelId, task });
-        if (telemetryStatus) telemetryStatus.textContent = describeSelectedIncident(selection);
-    };
     const slugifyModelName = (value) => String(value || '')
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '-')
@@ -1265,8 +1046,42 @@
         if (names.length === 1) return slugifyModelName(names[0]);
         return names.length ? 'all-models' : 'unknown';
     };
+    // Экспорт телеметрии: сырые события текущего прогона без производных
+    // отчётов. Разбор делает модель по запросу под конкретную проблему
+    // (docs/Telemetry/queries.md); поэтому в файле только факты + короткая
+    // памятка читателю.
+    const TELEMETRY_EXPORT_FORMAT = 'telemetry-raw/1';
+    const TELEMETRY_READER_GUIDE = 'Сырые события телеметрии расширения, по возрастанию времени. '
+        + 'ts — миллисекунды; platform — модель; label — что произошло; level — важность; '
+        + 'meta.dispatchId — один запрос к модели, meta.runSessionId — один прогон. '
+        + 'Опирайся только на события из файла: чего в нём нет, того «не зафиксировано», а не «не было». '
+        + 'Лог ограничен по размеру и может начинаться с середины прогона.';
+    const requestTelemetryEventsForExport = () => new Promise((resolve) => {
+        try {
+            chrome.runtime.sendMessage({ type: 'GET_DIAG_EVENTS', limit: 5000 }, (resp) => {
+                if (chrome.runtime.lastError || !resp?.success) {
+                    resolve(null);
+                    return;
+                }
+                resolve(Array.isArray(resp.events) ? resp.events : []);
+            });
+        } catch (_) {
+            resolve(null);
+        }
+    });
+    const downloadTelemetryJson = (payload, filename) => {
+        const json = window.SecretRedaction?.stringifySafe
+            ? window.SecretRedaction.stringifySafe(payload)
+            : JSON.stringify(payload);
+        const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = filename;
+        anchor.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        return json.length;
+    };
     const exportTelemetryJson = async () => {
-        const exportRequestedAt = performance.now();
         const exportButton = telemetryExportJsonBtn;
         if (exportButton) {
             exportButton.disabled = true;
@@ -1274,166 +1089,44 @@
         }
         if (telemetryStatus) telemetryStatus.textContent = 'Preparing telemetry JSON…';
         try {
-            // Schema 5 is now the sole JSON export source. The snapshot call is
-            // also the persistence barrier: it waits for all earlier ledger
-            // appends and returns one immutable boundary.
-            const proofSnapshot = await requestProofTelemetrySnapshot(null);
-            const snapshotResponseAt = performance.now();
-            if (!proofSnapshot?.events?.length || !window.ProofOrientedTelemetry?.buildAllPresets) {
-                if (telemetryStatus) telemetryStatus.textContent = 'Native telemetry ledger is empty';
+            const stored = await requestTelemetryEventsForExport();
+            if (!stored) {
+                if (telemetryStatus) telemetryStatus.textContent = 'Telemetry export failed: background did not answer';
                 return;
             }
-            if (telemetryStatus) {
-                telemetryStatus.textContent = proofSnapshot.barrierTimedOut
-                    ? `Exporting committed snapshot (${proofSnapshot.eventCount} events; write queue continues in background)`
-                    : `Exporting ${proofSnapshot.eventCount} telemetry events`;
+            const events = applyActiveTelemetryFilter(stored);
+            if (!events.length) {
+                if (telemetryStatus) telemetryStatus.textContent = 'No telemetry events to export';
+                return;
             }
-            const task = String(telemetryTaskSelect?.value || 'all');
-            const platform = String(telemetryPlatformSelect?.value || 'all');
-            const canonicalEvents = applyActiveProofFilter(proofSnapshot.events, { includeTask: false });
-            if (!canonicalEvents.length) return;
-            const buildOptions = {
-                runSessionId: proofSnapshot.runSessionId,
-                exportedAt: Date.now(),
+            const runSessionId = resolveCurrentRunSessionId(events) || null;
+            const exportedAt = Date.now();
+            const payload = {
+                format: TELEMETRY_EXPORT_FORMAT,
                 extensionVersion: chrome?.runtime?.getManifest?.().version || 'unknown',
+                exportedAt: new Date(exportedAt).toISOString(),
+                runSessionId,
+                model: selectedTelemetryModel(),
                 generationWaitProfile: window.ResultsShared?.getGenerationWaitProfile?.(),
-                canonicalLedger: true,
-                snapshotConsistency: proofSnapshot.snapshotConsistency || 'unknown',
-                runLifecycleStatus: proofSnapshot.status || 'unknown',
-                snapshotBarrierTimedOut: proofSnapshot.barrierTimedOut === true,
-                snapshotWaitMs: Number(proofSnapshot.snapshotWaitMs || 0),
-                queuedMutationCount: Number(proofSnapshot.queuedMutationCount || 0),
-                pendingRecordCount: Number(proofSnapshot.pendingRecordCount || 0)
+                eventCount: events.length,
+                firstTs: events[0]?.ts || null,
+                lastTs: events[events.length - 1]?.ts || null,
+                readerGuide: TELEMETRY_READER_GUIDE,
+                events
             };
-            if (task === 'all') {
-                const exportFormat = telemetryExportFormat();
-                const modelSlug = exportModelSlug(canonicalEvents);
-                const filename = exportFormat === 'canonical-evidence'
-                    ? `telemetry-canonical-evidence-${modelSlug}-${Date.now()}.json`
-                    : `telemetry-all-presets-${modelSlug}-${Date.now()}.json`;
-                const boundary = proofSnapshot.barrierTimedOut ? ' from the latest committed boundary' : '';
-                if (digestExportEnabled()) {
-                    const digest = downloadTelemetryDigest(
-                        buildTelemetryDigestSource(canonicalEvents, buildOptions),
-                        filename
-                    );
-                    if (digest) {
-                        if (telemetryStatus) telemetryStatus.textContent = `Digest exported${boundary}`;
-                        return;
-                    }
-                }
-                const outcome = await window.TelemetryExportRuntime.executeWithRecovery({
-                    build: () => buildTelemetryJsonInWorker(canonicalEvents, buildOptions, exportFormat, (progress) => {
-                        if (!telemetryStatus) return;
-                        telemetryStatus.textContent = progress.stage === 'serializing'
-                            ? `Serializing ${exportFormat === 'canonical-evidence' ? 'canonical evidence' : 'full telemetry'} JSON (${canonicalEvents.length} events)…`
-                            : `Building ${exportFormat === 'canonical-evidence' ? 'canonical evidence' : 'full report'} for ${canonicalEvents.length} events…`;
-                    }),
-                    download: (built) => downloadSerializedProofArtifact(built.json, filename),
-                    recover: (error) => {
-                        console.error('[devtools] telemetry worker failed; exporting canonical recovery ledger', error);
-                        const recovery = buildCanonicalTelemetryRecovery(canonicalEvents, buildOptions, error);
-                        const recoveryFilename = filename.replace(/all-presets|canonical-evidence/, 'canonical-recovery');
-                        return { recoveryFilename, downloadMetrics: downloadProofArtifact(recovery, recoveryFilename) };
-                    }
-                });
-                if (outcome.status === 'cancelled') return;
-                if (outcome.status === 'recovered') {
-                    if (telemetryStatus) {
-                        const reason = /TIMEOUT/.test(String(outcome.error?.code || '')) ? 'timed out' : 'failed';
-                        telemetryStatus.textContent = `Telemetry build ${reason} — canonical recovery JSON exported (${canonicalEvents.length} events)`;
-                    }
-                    return;
-                }
-                const built = outcome.built;
-                const downloadMetrics = outcome.downloadResult;
-                window.__PROOF_TELEMETRY_LAST_EXPORT_METRICS__ = Object.freeze({
-                        measuredAt: new Date().toISOString(),
-                        eventCount: canonicalEvents.length,
-                        artifactType: exportFormat,
-                        snapshotRequestMs: Math.max(0, snapshotResponseAt - exportRequestedAt),
-                        persistenceBoundaryMs: Number(proofSnapshot.snapshotWaitMs || 0),
-                        workerElapsedMs: Number(built.elapsedMs || 0),
-                        workerClientMs: Number(built.totalClientMs || 0),
-                        stageTimingsMs: Object.freeze({ ...(built.stageTimings || {}) }),
-                        blobBytes: Number(downloadMetrics?.blobBytes || 0),
-                        blobDownloadMs: Number(downloadMetrics?.blobDownloadMs || 0),
-                        overallMs: Math.max(0, performance.now() - exportRequestedAt)
-                });
-                if (telemetryStatus) {
-                    const label = exportFormat === 'canonical-evidence'
-                        ? 'Canonical evidence exported'
-                        : (digestExportEnabled() ? 'Digest unavailable — full JSON exported' : 'Full forensic JSON exported');
-                    telemetryStatus.textContent = `${label} in ${built.elapsedMs} ms${boundary}`;
-                }
-                return;
-            }
-            const selectedModelId = platform === 'all'
-                ? null
-                : (canonicalEvents.find((event) => normalizePlatformName(event.modelId) === normalizePlatformName(platform))?.modelId || platform);
-            const targets = window.ProofTelemetryIncidents?.selectIncidentReports?.(canonicalEvents, {
-                platform: selectedModelId,
-                task
-            }) || [];
-            if (!targets.length) {
-                if (telemetryStatus) telemetryStatus.textContent = 'No incidents available for the selected Task';
-                return;
-            }
-            if (telemetryStatus) telemetryStatus.textContent = `${targets.length} incident report(s) selected for ${task}`;
-            for (const target of targets) {
-                const safeModel = slugifyModelName(target.modelId);
-                const payload = await window.ProofOrientedTelemetry.buildStandaloneReport(canonicalEvents, {
-                    ...buildOptions,
-                    reportType: task,
-                    modelId: target.modelId,
-                    incidentId: target.incidentId
-                });
-                downloadProofArtifact(payload, `telemetry-${task}-${safeModel}-incident-${target.rank + 1}-${Date.now()}.json`);
-            }
-            chrome.storage.local.get(['proofTelemetryShadowCompare'], async (stored) => {
-                if (!stored?.proofTelemetryShadowCompare) return;
-                try {
-                    const previous = await window.ProofOrientedTelemetry.buildAllPresets(canonicalEvents, buildOptions);
-                    console.info('[proof-telemetry-shadow]', {
-                        task,
-                        incidentCount: targets.length,
-                        previousSharedReportEventCount: previous.reports?.[task]?.eventSeqs?.length || 0,
-                        status: 'compared'
-                    });
-                } catch (error) {
-                    console.warn('[proof-telemetry-shadow] comparison failed', error);
-                }
-            });
+            const bytes = downloadTelemetryJson(payload, `telemetry-${exportModelSlug(events)}-${exportedAt}.json`);
+            if (telemetryStatus) telemetryStatus.textContent = `Telemetry exported: ${events.length} events, ${Math.round(bytes / 1024)} KB`;
         } catch (err) {
             console.warn('[devtools] telemetry export json error', err);
             if (telemetryStatus) telemetryStatus.textContent = `JSON export failed: ${err?.message || 'unknown error'}`;
         } finally {
-            window.__PENDING_TELEMETRY_JSON_EXPORT__ = false;
             if (exportButton) {
                 exportButton.disabled = false;
                 exportButton.removeAttribute('aria-busy');
             }
         }
     };
-    document.addEventListener('telemetry-export-json-request', () => {
-        if (!window.__PENDING_TELEMETRY_JSON_EXPORT__) return;
-        exportTelemetryJson();
-    });
-    const copyTelemetry = async () => {
-        try {
-            const { filtered } = getTelemetryFilteredEvents(telemetryScopedCache);
-        const copyEvents = telemetryFilteredCache.length ? telemetryFilteredCache : filtered;
-        const stringifyEvent = window.SecretRedaction?.stringifySafe
-            ? (e) => window.SecretRedaction.stringifySafe(e)
-            : (e) => JSON.stringify(e);
-        const text = copyEvents.map(stringifyEvent).join('\n');
-        if (!text) return;
-        await writeClipboardText(text, telemetryCopyBtn);
-        } catch (err) {
-            console.warn('[devtools] telemetry copy error', err);
-        }
-    };
-    const TELEMETRY_ACTION_SELECTOR = '#telemetry-refresh-btn, #telemetry-reset-btn, #telemetry-copy-btn, #telemetry-export-json-btn, #telemetry-clear-all-btn';
+    const TELEMETRY_ACTION_SELECTOR = '#telemetry-export-json-btn, #telemetry-clear-all-btn';
     // Walk up the click target so text nodes or re-rendered buttons still trigger the telemetry handlers.
     const findTelemetryActionTarget = (event) => {
         let node = event?.target;
@@ -1453,20 +1146,6 @@
     document.addEventListener('click', (event) => {
         const target = findTelemetryActionTarget(event);
         if (!target) return;
-        if (target.id === 'telemetry-refresh-btn') {
-            refreshTelemetry();
-            return;
-        }
-        if (target.id === 'telemetry-reset-btn') {
-            if (telemetryPlatformSelect) telemetryPlatformSelect.value = 'all';
-            if (telemetryTaskSelect) telemetryTaskSelect.value = 'all';
-            renderTelemetry(telemetryCache);
-            return;
-        }
-        if (target.id === 'telemetry-copy-btn') {
-            copyTelemetry();
-            return;
-        }
         if (target.id === 'telemetry-export-json-btn') {
             exportTelemetryJson();
             return;
@@ -1540,7 +1219,6 @@
     window.__telemetryRefreshHook = refreshTelemetry;
     window.__telemetryResetHook = () => {
         if (telemetryPlatformSelect) telemetryPlatformSelect.value = 'all';
-        if (telemetryTaskSelect) telemetryTaskSelect.value = 'all';
         renderTelemetry(telemetryCache);
     };
 

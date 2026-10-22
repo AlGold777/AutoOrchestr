@@ -3,8 +3,8 @@
 const API_MODE_STORAGE_KEY = 'llmComparatorApiModeEnabled';
 const AUTO_FOCUS_NEW_TABS_KEY = 'autofocus_llm_tabs_enabled';
 const DIAGNOSTICS_EVENTS_KEY = '__diagnostics_events__';
-const DIAGNOSTICS_EXPORT_MAX_ITEMS = 2000;
-const DIAGNOSTICS_EXPORT_MAX_BYTES = 1500000;
+const DIAGNOSTICS_EXPORT_MAX_ITEMS = 4000;
+const DIAGNOSTICS_EXPORT_MAX_BYTES = 3000000;
 const llmStartChains = Object.create(null);
 const routerSessionTimerManager = (() => {
     const register = (typeof self?.registerSessionTimer === 'function') ? self.registerSessionTimer : (id) => id;
@@ -1994,70 +1994,6 @@ chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
     }
 });
 
-async function respondProofTelemetrySnapshot(message, sendResponse) {
-    try {
-        if (message?.incidentScope && self.ProofTelemetryLedger?.snapshotIncident) {
-            const events = await self.ProofTelemetryLedger.snapshotIncident(message.incidentScope);
-            sendResponse({
-                success: true,
-                schemaVersion: 6,
-                incidentScope: message.incidentScope,
-                eventCount: events.length,
-                events
-            });
-            return;
-        }
-        const ledger = self.ProofTelemetryLedger;
-        if (!ledger?.snapshot) {
-            sendResponse({ success: false, error: 'proof_telemetry_ledger_unavailable' });
-            return;
-        }
-        const snapshotStartedAt = Date.now();
-        const timeoutToken = Object.freeze({ timedOut: true });
-        let timeoutId = null;
-        const barrierSnapshot = ledger.snapshot({
-            runSessionId: message?.runSessionId || null
-        }).catch(() => timeoutToken);
-        const barrierDeadline = new Promise((resolve) => {
-            timeoutId = setTimeout(() => resolve(timeoutToken), 750);
-        });
-        let snapshot = await Promise.race([barrierSnapshot, barrierDeadline]);
-        if (timeoutId) clearTimeout(timeoutId);
-        const barrierTimedOut = snapshot === timeoutToken;
-        if (barrierTimedOut) {
-            const committed = await ledger.snapshotCommitted?.({
-                runSessionId: message?.runSessionId || null
-            });
-            if (!committed) {
-                sendResponse({ success: false, error: 'proof_telemetry_ledger_unavailable' });
-                return;
-            }
-            sendResponse({
-                success: true,
-                ...committed,
-                barrierTimedOut: true,
-                snapshotWaitMs: Date.now() - snapshotStartedAt,
-                snapshotConsistency: committed?.snapshotConsistency || 'committed_boundary',
-                queuedMutationCount: Number(committed?.queuedMutationCount || 0),
-                pendingRecordCount: Number(committed?.pendingRecordCount || 0)
-            });
-            return;
-        }
-        if (!snapshot) {
-            sendResponse({ success: false, error: 'proof_telemetry_ledger_unavailable' });
-            return;
-        }
-        sendResponse({
-            success: true,
-            ...snapshot,
-            barrierTimedOut,
-            snapshotWaitMs: Date.now() - snapshotStartedAt
-        });
-    } catch (err) {
-        sendResponse({ success: false, error: err?.message || String(err) });
-    }
-}
-
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     globalThis.LLMLog?.debug?.("[BACKGROUND] Received message:", message);
     if (message?.type === 'NOTES_CMD' || message?.type === 'NOTES_EVENT') {
@@ -2103,13 +2039,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             }
             chrome.storage.session.get(key, (sessionStored) => sendResponse({ ok: !chrome.runtime.lastError, payload: sessionStored?.[key] || null }));
         });
-        return true;
-    }
-    // Export must remain available during a cold service-worker start. It only
-    // depends on the proof ledger, which is imported before this router, and
-    // must not wait for unrelated job/tab/circuit initialization below.
-    if (message?.type === 'GET_PROOF_TELEMETRY_SNAPSHOT') {
-        void respondProofTelemetrySnapshot(message, sendResponse);
         return true;
     }
     // The debugger permission is restored only for the proven Le Chat and
@@ -2184,7 +2113,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     if (!continuesPipelineRun) {
                         try {
                             await writeDiagnosticsEventsToStorage([]);
-                            await self.ProofTelemetryLedger?.clear?.(null);
                             clearDiagnosticsRuntimeLogs();
                         } catch (err) {
                             console.warn('[DIAGNOSTICS] new run clear failed', err);
@@ -4681,10 +4609,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             source: sourceEvent.source || sender?.url || sender?.tab?.url || null,
                             meta
                         });
-                        await self.ProofTelemetryLedger?.record?.(evt, llmName || platform || 'SYSTEM', {
-                            runSessionId: meta.runSessionId || currentRunSessionId || null,
-                            producerComponent: 'content-script-diagnostic'
-                        });
                         const appendEvent = (arr) => {
                             let next = diagTrimDiagnosticsBuffer(
                                 [...arr, evt],
@@ -4792,12 +4716,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         // the previous session, and the page's own
                         // "current run" resolver — which reads the newest event it
                         // was given — then presented that stale run as the active
-                        // one. Scope to the ledger's current run session here so a
+                        // one. Scope to the current run session (jobState.session.startTime) here so a
                         // reload cannot resurrect an earlier session. Events that
                         // carry no run identity (setup/system lines) are kept.
                         const activeRunSessionId = message?.allRunSessions === true
                             ? null
-                            : (self.ProofTelemetryLedger?.currentRunSessionId?.() ?? null);
+                            : (jobState?.session?.startTime ?? null);
                         if (activeRunSessionId !== null && activeRunSessionId !== undefined) {
                             arr = arr.filter((entry) => {
                                 const entryRunSessionId = entry?.meta?.runSessionId
@@ -4821,26 +4745,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 return true;
             }
 
-            case 'GET_PROOF_TELEMETRY_INCIDENTS': {
-                (async () => {
-                    try {
-                        const incidents = await self.ProofTelemetryStore?.listIncidents?.({
-                            runGeneration: message?.runGeneration ?? null,
-                            modelId: message?.modelId || null
-                        }) || [];
-                        sendResponse({ success: true, incidents });
-                    } catch (err) {
-                        sendResponse({ success: false, error: err?.message || String(err) });
-                    }
-                })();
-                return true;
-            }
-
             case 'CLEAR_DIAG_EVENTS': {
                 (async () => {
                     try {
                         await writeDiagnosticsEventsToStorage([]);
-                        await self.ProofTelemetryLedger?.clear?.(null);
                         const runtimeCleared = clearDiagnosticsRuntimeLogs();
                         sendResponse({ success: true, runtimeCleared });
                     } catch (err) {

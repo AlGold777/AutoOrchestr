@@ -5616,13 +5616,6 @@ async function startProcessReservedRun(prompt, selectedLLMs, resultsTab, options
     promptSubmitWaiters.delete(llmName);
     dispatchMutexManager.clear(llmName);
   });
-  // Authoritatively admit the new run before any model telemetry can arrive.
-  // A mismatched late event is quarantined by the proof ledger and can no
-  // longer reset the active run implicitly.
-  await self.ProofTelemetryLedger?.beginRun?.(sessionStartTime, {
-    wallTs: sessionStartTime,
-    expectedModels: Array.isArray(selectedLLMs) ? selectedLLMs.slice() : []
-  });
   if (startGeneration !== jobStateStopGeneration
     || jobState !== reservedStartState
     || jobState?.session?.startTime !== sessionStartTime) {

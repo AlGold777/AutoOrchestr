@@ -4,7 +4,6 @@ const path = require('path');
 const ROOT = path.join(__dirname, '..');
 const LECHAT = fs.readFileSync(path.join(ROOT, 'content-scripts', 'content-lechat.js'), 'utf8');
 const ROUTER = fs.readFileSync(path.join(ROOT, 'background', 'message-router.js'), 'utf8');
-const PROOF = fs.readFileSync(path.join(ROOT, 'shared', 'proof-oriented-telemetry.js'), 'utf8');
 const PINNED = fs.readFileSync(path.join(ROOT, 'background', 'telemetry-logs.js'), 'utf8');
 
 // Run 1785914453420 (Le Chat, 2026-08-05): the prompt was visibly inserted and
@@ -52,48 +51,9 @@ describe('Le Chat submit method visibility', () => {
     expect(LECHAT).toMatch(/reportSubmitMethod\(submitMethod, submitEvidence/);
   });
 
-  test('the submit method survives into the proof ledger', () => {
-    expect(PROOF).toMatch(/PROVIDER_SUBMIT_METHOD_OBSERVED: 'SUBMISSION_EVIDENCE_CHANGED'/);
-    // Must not be named *_CONFIRMED: the contract layer would then upgrade the
-    // adapter's own partial observation to submission state "confirmed".
-    expect(PROOF).not.toContain('PROVIDER_SUBMIT_METHOD_CONFIRMED');
+  test('the submit method is pinned so it survives ring compaction', () => {
     expect(PINNED).toContain("'PROVIDER_SUBMIT_METHOD_OBSERVED'");
     expect(PINNED).toContain("'PROMPT_SUBMITTED_UNCONFIRMED'");
-  });
-
-  test('the submit method survives every export format, digest included', () => {
-    global.self = global;
-    require(path.join(ROOT, 'shared', 'proof-telemetry-contracts.js'));
-    require(path.join(ROOT, 'shared', 'proof-oriented-telemetry.js'));
-    require(path.join(ROOT, 'shared', 'telemetry-digest.js'));
-    const events = global.ProofOrientedTelemetry.buildLedger([{
-      label: 'PROVIDER_SUBMIT_METHOD_OBSERVED',
-      level: 'info',
-      ts: Date.now(),
-      platform: 'Le Chat',
-      meta: {
-        event: 'PROVIDER_SUBMIT_METHOD_OBSERVED',
-        submitMethod: 'ctrl_enter',
-        submitEvidence: 'direct',
-        attempts: ['ctrl_enter:confirmed'],
-        dispatchId: 'Le Chat:1:1'
-      }
-    }], { runSessionId: '1' });
-
-    // Canonical / full-forensic: the raw event and its metadata are embedded.
-    expect(events).toHaveLength(1);
-    expect(events[0].eventType).toBe('SUBMISSION_EVIDENCE_CHANGED');
-    expect(events[0].payload.metadata.submitMethod).toBe('ctrl_enter');
-    // Partial by construction — never upgraded to a confirmed submission.
-    expect(events[0].payload.typed).toEqual({ kind: 'submission', state: 'evidence_partial' });
-
-    // Digest: SUBMISSION_EVIDENCE_CHANGED is an ignored type, so the method
-    // would be dropped unless the digest reads this source label explicitly.
-    const rendered = global.TelemetryDigest.render(
-      global.TelemetryDigest.buildDigest({ ledger: { events }, sharedConfig: {}, manifest: {} })
-    );
-    expect(rendered).toContain('WHAT SUBMITTED THE PROMPT');
-    expect(rendered).toMatch(/ctrl_enter\s+evidence=direct/);
   });
 
   test('the router carries submitMethod on both accepted and unconfirmed submits', () => {

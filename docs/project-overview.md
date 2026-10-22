@@ -202,7 +202,6 @@ profile ladder is affected.
 
 ```bash
 npm test -- --runInBand
-npm run test:telemetry
 npm run test:qwen
 npm run auth:models
 npm run build:bundles
@@ -212,7 +211,6 @@ npm run scroll:stress
 | Script | Purpose |
 |---|---|
 | `npm test -- --runInBand` | Full Jest suite with serialized execution |
-| `npm run test:telemetry` | DevTools / telemetry diagnostic check |
 | `npm run test:qwen` | Provider-specific Qwen Playwright check |
 | `npm run auth:models` | Manual real-page login/composer readiness smoke |
 | `npm run build:bundles` | Builds adapter bundles into `dist/` |

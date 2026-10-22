@@ -967,10 +967,10 @@ describe('main-page request startup', () => {
     let preparationStarted;
     const preparing = new Promise(resolve => { preparationStarted = resolve; });
     context.getOrchestratorStopGeneration = () => generation;
-    context.ProofTelemetryLedger = { clear: () => new Promise(resolve => {
+    context.replaceDiagnosticsEventsConsistent = () => new Promise(resolve => {
       releaseDiagnostics = resolve;
       preparationStarted();
-    }) };
+    });
     const response = sendMessage({ type: 'START_FULLPAGE_PROCESS', prompt: 'Cancelled request',
       selectedLLMs: ['GPT'], sourceView: 'main', useApiFallback: false }, RESULTS_SENDER);
     await preparing;

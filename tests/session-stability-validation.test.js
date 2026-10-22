@@ -425,62 +425,6 @@ describe('session stability validation guards', () => {
     expect(await nextStart).toMatchObject({ ok: false, errorCode: 'TOS_ACK_REQUIRED' });
   });
 
-  test('start cancelled during proof-ledger admission cannot continue into a replacement run', async () => {
-    const context = createOrchestratorSandbox();
-    const pendingAdmissions = [];
-    const admissionReached = [];
-    const createdStates = [];
-    context.chrome.storage.local.get = jest.fn((key) => key === 'tos_acknowledged_v1'
-      ? Promise.resolve({ tos_acknowledged_v1: true })
-      : Promise.resolve({}));
-    context.PipelineRunState = {
-      create: ({ prompt, selectedModels, startedAt }) => {
-        const state = { prompt, session: { startTime: startedAt, selectedModels }, llms: {} };
-        createdStates.push(state);
-        return state;
-      }
-    };
-    context.resultsTabId = null;
-    context.TELEMETRY_SAMPLE_RATE = 0.1;
-    context.llmStartChains = {};
-    context.promptSubmitWaiters = new Map();
-    context.dispatchMutexManager = { clear: jest.fn() };
-    context.resolveTelemetrySampling = () => false;
-    context.ProofTelemetryLedger = {
-      beginRun: jest.fn((sessionId) => new Promise((resolve) => {
-        pendingAdmissions.push(resolve);
-        admissionReached[pendingAdmissions.length - 1]?.(sessionId);
-      }))
-    };
-    const firstAdmission = new Promise((resolve) => { admissionReached[0] = resolve; });
-    const oldStart = context.startProcess('Old', ['GPT'], 909);
-    await Promise.race([
-      firstAdmission,
-      oldStart.then(() => { throw new Error('old start returned before proof-ledger admission'); })
-    ]);
-
-    context.stopAllProcesses('replace_run');
-    const secondAdmission = new Promise((resolve) => { admissionReached[1] = resolve; });
-    const nextStart = context.startProcess('Next', ['GPT'], 909);
-    await Promise.race([
-      secondAdmission,
-      nextStart.then(() => { throw new Error('replacement start returned before proof-ledger admission'); })
-    ]);
-    const replacementState = createdStates[1];
-    expect(replacementState.llms).toEqual({});
-    expect(replacementState.session.runMode).toBeUndefined();
-
-    pendingAdmissions[0]();
-    await expect(oldStart).resolves.toMatchObject({ ok: false, errorCode: 'RUN_CANCELLED' });
-    expect(context.jobState).toBe(replacementState);
-    expect(replacementState.llms).toEqual({});
-    expect(replacementState.session.runMode).toBeUndefined();
-
-    context.stopAllProcesses('finish_test');
-    pendingAdmissions[1]();
-    await expect(nextStart).resolves.toMatchObject({ ok: false, errorCode: 'RUN_CANCELLED' });
-  });
-
   test.each([
     ['Stop', (context) => { context.jobState.session.startTime = null; }],
     ['completed card', (context) => { context.jobState.llms.GPT.cardAnswerComplete = true; }],
