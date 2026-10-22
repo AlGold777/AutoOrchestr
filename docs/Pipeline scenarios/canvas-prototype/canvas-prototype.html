@@ -12372,6 +12372,11 @@ window.ProtoState = {
       if (st.block === 'route' && Array.isArray(st.choices)) st.choices.forEach((c) => listOf(c?.goes).forEach((r) => refs.push(['goes', r, 'down'])));
       refs.forEach(([field, ref, dir]) => {
         if (!own(ref)) { add('error', e.key, `${field}: пустая ссылка.`); return; }
+        if (refId(ref) === 'item') {
+          if (field === 'inputs' && e.parent) return;
+          add('error', e.key, `${field}: «item» можно только в inputs этапов внутри body у foreach.`);
+          return;
+        }
         const target = byId.get(refId(ref));
         if (!target) { add('error', e.key, `${field}: этапа «${refId(ref)}» нет.`); return; }
         if (dir === 'up' && target.pos >= e.pos) add('error', e.key, `${field}: «${ref}» — ссылка ${target.pos === e.pos ? 'на себя' : 'вниз'}; можно только на этапы выше.`);
