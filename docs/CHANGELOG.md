@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-22 — Иконка Pipeline крупнее, Telemetry — вертикальная полоска, версия 2.81.841
+
+- Иконка «Pipeline panel» увеличена на 30 % (`.sidebar-toggle-icon-branch-v3`: 28.6 × 30.42 px).
+- Полоска «Telemetry» стала вертикальной: 6 × 30.42 px (высота равна иконке Pipeline), `.telemetry-toggle-bar`.
+
 ### 2026-10-22 — Иконки верхней панели, версия 2.81.840
 
 - Кнопка «Pipeline panel»: иконка заменена на ti-git-merge (`pipeline_panel.html`, `result_new.html`); старая сохранена в `docs/icons-backup/pipeline-panel-icon-branch-v3.html`.

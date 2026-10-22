@@ -96,8 +96,8 @@
 
 .sidebar-toggle-icon-branch-v3 {
     display: block;
-    width: 22px;
-    height: 23.4px;
+    width: 28.6px;
+    height: 30.42px;
     color: currentColor;
     flex: 0 0 auto;
 }
@@ -201,9 +201,9 @@
 .telemetry-toggle-bar {
     display: block;
     flex: 0 0 auto;
-    width: 22px;
-    height: 4px;
-    border-radius: 2px;
+    width: 6px;
+    height: 30.42px;
+    border-radius: 3px;
     background: #d1d5db;
 }
 
