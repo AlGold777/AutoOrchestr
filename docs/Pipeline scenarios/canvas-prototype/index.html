@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Прототип холста Basic</title>
+    <!-- Настоящие стили страницы pipeline (pipeline_panel.html); styles.css сам подключает Tabler Icons и styles/*.css. -->
+    <link rel="stylesheet" href="../../../styles.css">
+    <link rel="stylesheet" href="../../../styles/pipeline-card-cover.css">
+    <style>
+        /* Только элементы прототипа: верхняя строка и «булочки» артефактов. */
+        .proto-shell { max-width: var(--center-max-width); margin: 0 auto; padding: 12px 16px 24px; }
+        .proto-top-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 6px 4px 10px; }
+        .proto-top-bar .llm-buttons { gap: 14px; }
+        .proto-artifacts { width: 139px; margin-top: 10px; cursor: default; }
+        .proto-artifacts-label {
+            font-size: 10px; font-weight: 600; color: var(--pipeline-muted);
+            text-transform: uppercase; margin-bottom: 4px;
+        }
+        .proto-artifacts-row { display: flex; flex-wrap: wrap; gap: 4px; }
+        .proto-artifact {
+            display: inline-flex; align-items: center; gap: 4px; max-width: 100%;
+            box-sizing: border-box; padding: 2px 7px;
+            border: 1px solid #cbd5e1; border-radius: 999px; background: #f8fafc;
+            color: #94a3b8; font-size: 10px; line-height: 1.3; opacity: 0.72;
+            cursor: default; user-select: none; pointer-events: none;
+        }
+        .proto-artifact-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .proto-artifact-version { flex: 0 0 auto; font-weight: 600; }
+        .proto-artifacts-empty { font-size: 10px; color: #cbd5e1; }
+    </style>
+</head>
+<body class="pipeline-page">
+<div class="proto-shell">
+    <div class="proto-top-bar">
+        <div class="llm-selection-bar models-row models-row-header">
+            <div class="llm-buttons" id="protoModelButtons">
+                <button type="button" class="llm-button" data-model="Claude" title="Claude">
+                    <img class="llm-button-icon" src="../../../icons/models/claude.svg" alt="Claude icon">
+                    <span class="llm-button-label">Claude</span>
+                </button>
+                <button type="button" class="llm-button" data-model="GPT" title="GPT">
+                    <img class="llm-button-icon" src="../../../icons/models/openai.svg" alt="GPT icon">
+                    <span class="llm-button-label">GPT</span>
+                </button>
+                <button type="button" class="llm-button" data-model="Gemini" title="Gemini">
+                    <img class="llm-button-icon" src="../../../icons/models/gemini.svg" alt="Gemini icon">
+                    <span class="llm-button-label">Gemini</span>
+                </button>
+            </div>
+        </div>
+        <label class="debate-auto-toggle" title="Debate auto mode">
+            <input type="checkbox" id="debate-auto-toggle-btn" class="pipeline-radio debate-auto-radio" aria-label="Auto mode">
+            <span>Auto</span>
+        </label>
+    </div>
+
+    <div class="llm-controls">
+        <div class="control-buttons">
+            <div class="pipeline-panel pipeline-panel-inline has-custom-pipeline" id="pipeline-panel">
+                <div class="panel-header">
+                    <div class="panel-title-group">
+                        <div class="pipeline-name" id="currentPipelineName">Basic</div>
+                    </div>
+                    <div class="panel-header-actions">
+                        <div class="debate-round-control" title="Debate rounds" aria-label="Debate rounds">
+                            <button type="button" class="debate-round-stepper-btn" id="debate-round-minus-btn" aria-label="Decrease rounds">−</button>
+                            <input type="number" class="debate-round-value" id="debate-round-value" min="1" max="50" step="1" value="2" inputmode="numeric" aria-label="Debate rounds" readonly>
+                            <span class="debate-round-unit" id="debate-round-unit">rounds</span>
+                            <button type="button" class="debate-round-stepper-btn pipeline-add-round-btn" id="pipeline-add-round-btn" title="Increase rounds" aria-label="Increase rounds">+</button>
+                        </div>
+                        <label class="debate-select-wrap" title="Debate length">
+                            <select id="debate-length-select" class="mod-select mod-select-compact debate-select" aria-label="Debate length">
+                                <option value="300">300</option>
+                                <option value="500">500</option>
+                                <option value="700">700</option>
+                                <option value="1000">1000</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div class="pipeline-list-header-actions" aria-label="Pipeline actions">
+                        <button type="button" class="btn btn-icon" id="pipeline-add-btn" title="New empty pipeline flow" aria-label="New empty pipeline flow">+</button>
+                        <button type="button" class="btn btn-icon" id="pipeline-save-btn" title="Save current pipeline as user pipeline" aria-label="Save current pipeline as user pipeline"><i class="ti ti-device-floppy" aria-hidden="true"></i></button>
+                        <button type="button" class="btn" id="pipeline-export-btn" title="Export schema" aria-label="Export schema"><i class="ti ti-download" aria-hidden="true"></i></button>
+                        <button type="button" class="btn" id="pipeline-import-btn" title="Import schema" aria-label="Import schema"><i class="ti ti-upload" aria-hidden="true"></i></button>
+                        <button type="button" class="btn btn-icon" id="pipeline-profile-btn" title="Pipeline profiles" aria-label="Pipeline profiles"><svg viewBox="96 64 320 384" width="16" height="16" fill="currentColor" aria-hidden="true"><circle cx="256" cy="112" r="42"/><path d="M206 196C218 184 236 176 254 176C278 176 294 190 294 214L294 354C294 372 302 382 320 389C331 393 339 400 339 409C339 419 330 426 317 426H194C181 426 172 419 172 409C172 400 180 393 191 389C209 382 217 372 217 354V232C217 221 212 216 202 216H194C184 216 178 211 178 203C178 196 183 190 190 190C196 190 201 192 206 196Z"/></svg></button>
+                        <input type="file" id="proto-import-input" accept="application/json" hidden>
+                    </div>
+                </div>
+                <div class="pipeline-canvas">
+                    <!-- Колонки строит canvas.js из ProtoState. -->
+                    <div class="pipeline-flow" id="pipelineFlow"></div>
+                </div>
+                <div class="pipeline-list">
+                    <div class="pipeline-list-header">
+                        <h3>Pipelines</h3>
+                    </div>
+                    <div class="pipeline-items" id="pipelineItems">
+                        <div class="pipeline-item" data-name="Basic"><input type="radio" name="pipeline" class="pipeline-radio" checked><span class="pipeline-item-name" title="Basic">Basic</span></div>
+                        <div class="pipeline-item" data-name="Polishing"><input type="radio" name="pipeline" class="pipeline-radio"><span class="pipeline-item-name" title="Polishing">Polishing</span></div>
+                        <div class="pipeline-item" data-name="Delta"><input type="radio" name="pipeline" class="pipeline-radio"><span class="pipeline-item-name" title="Delta">Delta</span></div>
+                        <div class="pipeline-item" data-name="Test"><input type="radio" name="pipeline" class="pipeline-radio"><span class="pipeline-item-name" title="Test">Test</span></div>
+                        <div class="pipeline-item" data-name="Research"><input type="radio" name="pipeline" class="pipeline-radio"><span class="pipeline-item-name" title="Research">Research</span></div>
+                        <div class="pipeline-item" data-name="Architecture"><input type="radio" name="pipeline" class="pipeline-radio"><span class="pipeline-item-name" title="Architecture">Architecture</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<script src="state.js"></script>
+<script src="cards.js"></script>
+<script src="canvas.js"></script>
+</body>
+</html>
