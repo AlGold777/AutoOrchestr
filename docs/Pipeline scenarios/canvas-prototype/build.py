@@ -46,10 +46,20 @@ parts = ['window.__PROTO_ICONS__=' + json.dumps(icons) + ';',
 stand = os.path.join(HERE, 'stand.js')
 if os.path.exists(stand):
     parts.append(rd(stand))
-js = '\n'.join(parts).replace('</script', '<\\/script')
+banner = '''window.addEventListener('error', function (e) {
+  var bar = document.getElementById('proto-error-bar');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'proto-error-bar';
+    bar.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:99999;background:#dc2626;color:#fff;padding:8px 14px;font:13px system-ui,sans-serif;white-space:pre-wrap';
+    document.body ? document.body.appendChild(bar) : document.documentElement.appendChild(bar);
+  }
+  bar.textContent += 'Ошибка загрузки: ' + (e.message || e.error) + (e.lineno ? ' (строка ' + e.lineno + ')' : '') + '\\n';
+});'''
+scripts = ''.join('<script>\n' + s.replace('</script', '<\\/script') + '\n</script>\n' for s in [banner] + parts)
 
 html = re.sub(r'<script src="[^"]+"></script>\s*', '', html)
 html = html.replace('</head>', '<style>\n' + css_all + '\n</style>\n</head>', 1)
-html = html.replace('</body>', '<script>\n' + js + '\n</script>\n</body>', 1)
+html = html.replace('</body>', scripts + '</body>', 1)
 open(os.path.join(HERE, 'canvas-prototype.html'), 'w', encoding='utf-8').write(html)
 print('canvas-prototype.html', len(html), 'bytes')
