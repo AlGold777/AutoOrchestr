@@ -12271,7 +12271,7 @@ window.ProtoState = {
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '4';
+  const STAND_VERSION = '5';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -12281,7 +12281,7 @@ window.ProtoState = {
   const cut = (text, n) => { const s = String(text || '').trim().replace(/\s+/g, ' '); return s.length > n ? `${s.slice(0, n - 1)}…` : s; };
 
   // ---------- Формат схемы ----------
-  const COMMON = ['id', 'block', 'title', 'inputs', 'artifacts', 'repeats', 'because', 'why'];
+  const COMMON = ['id', 'block', 'title', 'inputs', 'optional_inputs', 'artifacts', 'repeats', 'because', 'why'];
   const FIELDS = {
     round: ['models', 'order', 'task'], synthesis: ['model', 'role', 'task'], gate: ['criteria'], route: ['choices'],
     owner: ['ask'], form: ['purpose'], source: ['kind'], file: ['file', 'mode'], list: ['from', 'rule'],
@@ -12292,9 +12292,10 @@ window.ProtoState = {
     owner: ['Владелец', 'ti-user'], form: ['Форма', 'ti-forms'], source: ['Источник', 'ti-file-text'], file: ['Файл', 'ti-file-export'],
     list: ['Список', 'ti-list'], foreach: ['Каждый', 'ti-repeat'], block: ['Блок', 'ti-box'], assemble: ['Сборка', 'ti-stack-2'], score: ['Оценка', 'ti-star']
   };
+  const MODEL_NAMES = ['Claude', 'GPT', 'Gemini', 'Grok', 'Le Chat', 'Qwen', 'DeepSeek', 'Perplexity', 'Z.ai', 'Kimi'];
   const ENUMS = { order: ['parallel', 'sequential'], kind: ['text', 'document', 'link'], mode: ['overwrite', 'append', 'read'] };
   const LABELS = {
-    id: 'этап', block: 'блок', title: 'название', why: 'зачем', inputs: 'вход', artifacts: 'артефакты', repeats: 'повтор', because: 'условие повтора',
+    id: 'этап', block: 'блок', title: 'название', why: 'зачем', inputs: 'вход', optional_inputs: 'вход, если этап был', artifacts: 'артефакты', repeats: 'повтор', because: 'условие повтора',
     models: 'модели', order: 'порядок', task: 'задание', model: 'модель', role: 'роль', criteria: 'критерии', choices: 'варианты', ask: 'вопрос',
     purpose: 'цель', kind: 'вид', file: 'файл', mode: 'режим', from: 'из', rule: 'правило', over: 'по', body: 'тело', name: 'имя',
     template: 'шаблон', weights: 'веса'
@@ -12376,6 +12377,7 @@ window.ProtoState = {
       const st = e.step;
       const refs = [];
       if (Array.isArray(st.inputs)) st.inputs.forEach((r) => refs.push(['inputs', r, 'up']));
+      if (Array.isArray(st.optional_inputs)) st.optional_inputs.forEach((r) => refs.push(['optional_inputs', r, 'up']));
       if (st.repeats != null) refs.push(['repeats', st.repeats, 'up']);
       if (st.block === 'foreach' && st.over != null) refs.push(['over', st.over, 'up']);
       if (st.block === 'list' && st.from != null) refs.push(['from', st.from, 'up']);
@@ -12398,6 +12400,44 @@ window.ProtoState = {
           if (!listOf(target.step.artifacts).includes(name)) add('error', e.key, `${field}: у ${refId(ref)} нет артефакта «${name}» в artifacts.`);
         }
       });
+    });
+    // Этапы, которые маршрут может пропустить: между развилкой и ближайшей целью каждого варианта.
+    const conditional = new Set();
+    flat.forEach((r) => {
+      if (r.step.block !== 'route' || !Array.isArray(r.step.choices)) return;
+      r.step.choices.forEach((c) => {
+        const pos = listOf(c?.goes).map((g) => byId.get(refId(g))?.pos).filter((x) => x != null && x > r.pos);
+        if (!pos.length) return;
+        const first = Math.min(...pos);
+        flat.forEach((x) => { if (x.pos > r.pos && x.pos < first && x.parent === r.parent) conditional.add(x.step.id); });
+      });
+    });
+    flat.forEach((e) => {
+      const st = e.step;
+      listOf(st.inputs).forEach((r) => {
+        if (conditional.has(refId(r)) && !conditional.has(st.id) && !listOf(st.optional_inputs).some((o) => refId(o) === refId(r))) {
+          add('warn', e.key, `inputs: ${refId(r)} может быть пропущен развилкой; вынесите «${r}» в optional_inputs.`);
+        }
+      });
+      // Петля должна заканчиваться повторной проверкой.
+      if (own(st.repeats) && own(st.because)) {
+        const gate = flat.find((x) => x.step.block === 'gate' && own(x.step.id) && new RegExp(`(^|[^\\w])${x.step.id}([^\\w]|$)`).test(st.because) && x.pos < e.pos);
+        if (gate && !flat.some((x) => x.pos > e.pos && x.step.block === 'gate' && x.step.repeats === gate.step.id)
+            && flat.find((x) => own(x.step.repeats) && own(x.step.because) && x.step.because.includes(gate.step.id)) === e) {
+          add('warn', e.key, `После повтора по условию «${st.because}» нет повторной проверки: добавьте этап gate с repeats: «${gate.step.id}».`);
+        }
+      }
+      [...(Array.isArray(st.models) ? st.models.map((m) => m?.name) : []), st.model].filter(own).forEach((n) => {
+        if (!MODEL_NAMES.includes(n)) add('warn', e.key, `Неизвестное имя модели «${n}»; допустимы: ${MODEL_NAMES.join(', ')}.`);
+      });
+      if (st.block === 'score' && st.weights != null && (typeof st.weights !== 'object' || Array.isArray(st.weights))) {
+        add('warn', e.key, 'weights должен быть объектом { "критерий": число }.');
+      }
+      const texts = [st.task, ...(Array.isArray(st.models) ? st.models.map((m) => m?.task) : [])].filter(own);
+      if (texts.some((x) => x.includes('{item}'))) {
+        if (!e.parent) add('error', e.key, '{item} в задании можно только внутри body у foreach.');
+        else if (!listOf(st.inputs).includes('item')) add('warn', e.key, 'В задании есть {item}, но «item» нет в inputs.');
+      }
     });
     return { schema, flat, issues };
   }
