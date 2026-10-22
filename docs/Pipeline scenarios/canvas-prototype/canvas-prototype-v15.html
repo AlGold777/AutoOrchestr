@@ -12271,7 +12271,7 @@ window.ProtoState = {
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '14';
+  const STAND_VERSION = '15';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -12284,7 +12284,7 @@ window.ProtoState = {
   const COMMON = ['id', 'block', 'title', 'inputs', 'optional_inputs', 'artifacts', 'repeats', 'because', 'why'];
   const FIELDS = {
     round: ['models', 'order', 'task'], synthesis: ['model', 'role', 'task', 'maxWords', 'request', 'discipline'], gate: ['criteria'], route: ['choices'],
-    owner: ['ask'], form: ['purpose'], source: ['kind', 'content'], file: ['file', 'mode'], list: ['from', 'rule'],
+    owner: ['ask'], form: ['purpose'], source: ['kind', 'content', 'attachment'], file: ['file', 'mode'], list: ['from', 'rule'],
     foreach: ['over', 'body'], block: ['name'], assemble: ['template'], score: ['criteria', 'weights']
   };
   const KIND = {
@@ -12299,7 +12299,7 @@ window.ProtoState = {
     id: 'этап', block: 'блок', title: 'название', why: 'зачем', inputs: 'вход', optional_inputs: 'вход, если этап был', artifacts: 'артефакты', repeats: 'повтор', because: 'условие повтора',
     models: 'модели', order: 'порядок', task: 'задание', model: 'модель', role: 'роль', criteria: 'критерии', choices: 'варианты', ask: 'вопрос',
     purpose: 'цель', kind: 'вид', file: 'файл', mode: 'режим', from: 'из', rule: 'правило', over: 'по', body: 'тело', name: 'имя',
-    template: 'шаблон', content: 'содержимое', weights: 'веса', maxWords: 'предел слов', request: 'свой запрос', discipline: 'дисциплина',
+    template: 'шаблон', content: 'содержимое', attachment: 'приложенный файл', weights: 'веса', maxWords: 'предел слов', request: 'свой запрос', discipline: 'дисциплина',
     defaults: 'общие значения ▶', run: 'запуск'
   };
   const DISC_LABELS = { limit: 'длина', content: 'содержание', delivery: 'доставка', correction: 'повторный запрос', lines: 'строки' };
@@ -12683,6 +12683,8 @@ window.ProtoState = {
       });
       if (st.block === 'synthesis' && !own(st.model)) add('warn', e.key, 'У синтеза нет model.');
       if (st.block === 'synthesis') checkOwnFields(st, '', e.key, add);
+      if (st.block === 'source' && !own(st.content) && !own(st.attachment)) add('warn', e.key, 'Материал не передан: нет ни content (текст), ни attachment (имя файла, приложенного к ответу).');
+      if (own(st.attachment) && !/\.[A-Za-z0-9]{1,8}$/.test(st.attachment.trim())) add('warn', e.key, `attachment «${st.attachment}»: нужно точное имя файла с расширением.`);
       if (st.block === 'route' && !Array.isArray(st.choices)) add('error', e.key, 'У route нет choices.');
       if (st.block === 'foreach' && !Array.isArray(st.body)) add('error', e.key, 'У foreach нет body (списка этапов).');
       if (own(st.repeats) && !own(st.because)) add('error', e.key, `Повтор ${st.repeats} без because.`);
