@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Собирает единый canvas-prototype.html из index.html, скриптов и настоящих стилей проекта.
+"""Собирает единый canvas-prototype-vN.html (N — STAND_VERSION из stand.js; старые сборки удаляются) из index.html, скриптов и настоящих стилей проекта.
 Запуск из любого места: python3 build.py"""
 import base64, json, os, re
 
@@ -61,5 +61,10 @@ scripts = ''.join('<script>\n' + s.replace('</script', '<\\/script') + '\n</scri
 html = re.sub(r'<script src="[^"]+"></script>\s*', '', html)
 html = html.replace('</head>', '<style>\n' + css_all + '\n</style>\n</head>', 1)
 html = html.replace('</body>', scripts + '</body>', 1)
-open(os.path.join(HERE, 'canvas-prototype.html'), 'w', encoding='utf-8').write(html)
-print('canvas-prototype.html', len(html), 'bytes')
+version = re.search(r"STAND_VERSION = '(\d+)'", rd(stand)).group(1) if os.path.exists(stand) else '0'
+out = 'canvas-prototype-v%s.html' % version
+for name in os.listdir(HERE):
+    if re.fullmatch(r'canvas-prototype(-v\d+)?\.html', name) and name != out:
+        os.remove(os.path.join(HERE, name))
+open(os.path.join(HERE, out), 'w', encoding='utf-8').write(html)
+print(out, len(html), 'bytes')
