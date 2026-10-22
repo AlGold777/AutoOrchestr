@@ -12271,7 +12271,7 @@ window.ProtoState = {
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '11';
+  const STAND_VERSION = '12';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -13206,7 +13206,8 @@ window.ProtoState = {
     area.focus();
   }
 
-  document.addEventListener('keydown', (event) => {
+  // Слушаем на window в фазе перехвата: так клавиша доходит раньше обработчиков страницы и расширений браузера.
+  window.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') {
       const info = $('proto-stand-info');
       if (info?.classList.contains('is-visible')) { hide(info); return; }
@@ -13220,8 +13221,20 @@ window.ProtoState = {
     if (t && (t.closest?.('input, textarea, select, [contenteditable=""], [contenteditable="true"]') || t.isContentEditable)) return;
     if (anyOpen() || document.querySelector('dialog[open]')) return;
     event.preventDefault();
+    event.stopPropagation();
     openStand();
-  });
+  }, true);
+
+  // Запасной вход, если клавишу перехватывает расширение браузера: маленькая кнопка без подписи.
+  const openButton = document.createElement('button');
+  openButton.type = 'button';
+  openButton.id = 'proto-stand-open';
+  openButton.title = `Стенд JSON (клавиша I) · v${STAND_VERSION}`;
+  openButton.setAttribute('aria-label', openButton.title);
+  openButton.innerHTML = '<i class="ti ti-braces" aria-hidden="true"></i>';
+  openButton.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:50;width:34px;height:34px;display:grid;place-items:center;border:1px solid #cbd5e1;border-radius:50%;background:#fff;color:#64748b;font-size:18px;cursor:pointer;box-shadow:0 2px 6px rgba(15,23,42,.12)';
+  openButton.addEventListener('click', () => { if (!anyOpen() && !document.querySelector('dialog[open]')) openStand(); });
+  document.body.appendChild(openButton);
 
   document.title = `${document.title} · v${STAND_VERSION}`;
 
