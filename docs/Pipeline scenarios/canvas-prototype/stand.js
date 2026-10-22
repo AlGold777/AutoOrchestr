@@ -5,7 +5,7 @@
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '6';
+  const STAND_VERSION = '7';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -55,7 +55,22 @@
     const issues = [];
     const add = (level, step, msg) => issues.push({ level, step, msg });
     let schema;
-    try { schema = JSON.parse(text); } catch (error) { add('error', null, `Неверный JSON: ${error.message}`); return { schema: null, flat: [], issues }; }
+    // Модели часто присылают JSON в обёртке: ```json … ``` или с текстом до и после. Берём первый JSON-объект, остальное отбрасываем.
+    const raw = String(text);
+    const start = raw.indexOf('{');
+    let body = start > 0 ? raw.slice(start) : raw;
+    if (start > 0 && raw.slice(0, start).trim().replace(/```\w*/g, '').trim()) add('warn', null, `Текст до JSON проигнорирован: «${cut(raw.slice(0, start), 60)}».`);
+    try { schema = JSON.parse(body); } catch (error) {
+      const m = /position (\d+)/.exec(error.message);
+      const pos = m ? Number(m[1]) : -1;
+      if (pos > 0 && /after JSON/.test(error.message)) {
+        try {
+          schema = JSON.parse(body.slice(0, pos));
+          add('warn', null, `После JSON был лишний текст, он проигнорирован: «${cut(body.slice(pos), 60)}».`);
+        } catch (inner) { schema = undefined; }
+      }
+      if (schema === undefined) { add('error', null, `Неверный JSON: ${error.message}`); return { schema: null, flat: [], issues }; }
+    }
     if (!schema || typeof schema !== 'object' || Array.isArray(schema)) { add('error', null, 'Схема должна быть объектом { task, steps }.'); return { schema: null, flat: [], issues }; }
     Object.keys(schema).filter((k) => !['task', 'steps'].includes(k)).forEach((k) => add('warn', null, `Неизвестное поле схемы «${k}».`));
     if (!own(schema.task)) add('warn', null, 'Нет task — фразы задачи.');
