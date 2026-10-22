@@ -5,7 +5,7 @@
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '1';
+  const STAND_VERSION = '4';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -487,7 +487,7 @@
     modal.setAttribute('aria-labelledby', 'proto-stand-title');
     modal.innerHTML = `<div class="modal-content">
       <header class="custom-card-top custom-defaults-top">
-        <h3 class="custom-card-model" id="proto-stand-title">Стенд схемы<span class="custom-card-where">JSON { task, steps } · клавиша I</span></h3>
+        <h3 class="custom-card-model" id="proto-stand-title">Стенд схемы<span class="custom-card-where">JSON { task, steps } · клавиша I · v${STAND_VERSION}</span></h3>
         <div class="proto-stand-actions">
           <button type="button" class="modal-button" id="proto-stand-example">Загрузить пример</button>
           <button type="button" class="modal-button" id="proto-stand-reset">Сбросить</button>
