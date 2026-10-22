@@ -483,7 +483,7 @@
         });
     };
 
-    window.ProtoCanvas = { render, drawInputSplitConnector, drawMergeSplitConnector };
+    window.ProtoCanvas = { render, syncChrome, drawInputSplitConnector, drawMergeSplitConnector };
 
     const start = () => {
         if (!S()) { console.warn('[proto] ProtoState is missing'); return; }
