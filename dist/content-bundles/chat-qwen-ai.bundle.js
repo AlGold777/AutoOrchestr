@@ -10328,6 +10328,7 @@
     },
     'Le Chat': {
       strategies: ['drop', 'input'],
+      finishDragLifecycle: true,
       dropSelectors: [
         'textarea',
         'div[contenteditable="true"]',
@@ -17180,6 +17181,8 @@ const scrollIntoViewSmoothly = async (element) => {
       messageRoot: [
         // id="message-..." is on the wrapper of the user's turn as well: only a wrapper that holds an assistant block
         '[id^="message-"]:has(.chat-assistant)',
+        // the assistant block itself can carry the id (no wrapper): match it directly as well
+        '[id^="message-"].chat-assistant',
         '[data-message-author-role="assistant"]',
         '[data-role="assistant"]',
         '[data-testid*="assistant" i]',

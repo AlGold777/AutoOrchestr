@@ -507,7 +507,7 @@ describe('Pipeline debate favorites view', () => {
         expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
         const submittedHtml = await blobToText(URL.createObjectURL.mock.calls[0][0]);
         const submittedDoc = new DOMParser().parseFromString(submittedHtml, 'text/html');
-        expect(submittedDoc.body.firstElementChild.className).toBe('feed-navigation');
+        expect(submittedDoc.querySelector('#report').firstElementChild.className).toBe('feed-navigation');
         expect(submittedDoc.querySelector('h1')).toBeNull();
         expect(submittedDoc.querySelector('.export-prompt').textContent).toBe(submittedPrompt);
         expect(submittedDoc.querySelector('.export-prompt').classList.contains('is-collapsed')).toBe(true);

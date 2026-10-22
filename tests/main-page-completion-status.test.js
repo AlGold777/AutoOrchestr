@@ -27,6 +27,7 @@ function createPage() {
     decorateLinksForNewTab: jest.fn(), revealPanelForLargeContent: jest.fn(),
     ingestLogs: jest.fn(), makeLocalDiagEntry: () => ({}), autoCollapseDiagnostics: jest.fn(),
     checkCompareButtonState: jest.fn(), convertMarkdownToHTML: text => text,
+    manualPingReveal: new Set(), stashAnswerCopy: jest.fn(),
     pipelineWaiter: { waiting: false }
   };
   vm.createContext(context);
@@ -86,6 +87,7 @@ function createRuntimePage() {
     decorateLinksForNewTab: jest.fn(), revealPanelForLargeContent: jest.fn(),
     ingestLogs: jest.fn(), makeLocalDiagEntry: () => ({}), autoCollapseDiagnostics: jest.fn(),
     checkCompareButtonState: jest.fn(), convertMarkdownToHTML: text => text,
+    manualPingReveal: new Set(), stashAnswerCopy: jest.fn(),
     pipelineWaiter: { waiting: false, handleFinal: jest.fn(), handlePartial: jest.fn(), missReason: () => 'rejected' }
   };
   vm.createContext(context);

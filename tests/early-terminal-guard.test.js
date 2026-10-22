@@ -587,7 +587,10 @@ describe('early terminal success guard', () => {
       dispatchId,
       source: 'inline_executeScript',
       responseMeta: {
+        // Same shape the manual ping sends in production (job-orchestrator.js, manual ping responseMeta):
+        // an explicit user recovery, which is what lets a forced late collect finalize without a verifier proof.
         source: 'manual_ping_late_collect', completionReason: 'user_collect_late_collect',
+        manualRecovery: true, manualOverride: true,
         lateCollectFinal: true, forceTerminalSuccess: true
       }
     });

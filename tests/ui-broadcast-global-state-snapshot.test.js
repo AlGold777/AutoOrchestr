@@ -67,7 +67,7 @@ function createResultsConsumer() {
   const renderStart = resultsSource.indexOf('function emitAnswerCardRenderEvidence(');
   const renderEnd = resultsSource.indexOf('const normalizeRenderedAnswerText', renderStart);
   vm.runInContext(resultsSource.slice(renderStart, renderEnd), context);
-  return { context, button: document.getElementById('start-button'), indicator: document.querySelector('.status-indicator'), output: document.querySelector('.output') };
+  return { context, panel: document.getElementById('panel-gpt'), button: document.getElementById('start-button'), indicator: document.querySelector('.status-indicator'), output: document.querySelector('.output') };
 }
 
 test('global state snapshot carries the session and per-model completion fields consumed by results.js', () => {

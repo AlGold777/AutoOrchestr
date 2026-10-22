@@ -71,6 +71,8 @@
     return String(html || '')
       .replace(TOKEN_RE, '')
       .replace(RESPONSE_MARKER_RE, '')
+      // The token sat at the end of a block after a space ("… proof. [[AO-…]]</p>"): drop the space it leaves.
+      .replace(/[ \t]+(<\/(?:p|div|li)>)/gi, '$1')
       .replace(/<(p|div|li)[^>]*>\s*(?:<br\s*\/?>)?\s*<\/\1>/gi, '');
   }
 

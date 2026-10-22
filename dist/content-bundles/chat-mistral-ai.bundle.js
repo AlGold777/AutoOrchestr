@@ -10328,6 +10328,7 @@
     },
     'Le Chat': {
       strategies: ['drop', 'input'],
+      finishDragLifecycle: true,
       dropSelectors: [
         'textarea',
         'div[contenteditable="true"]',
@@ -17180,6 +17181,8 @@ const scrollIntoViewSmoothly = async (element) => {
       messageRoot: [
         // id="message-..." is on the wrapper of the user's turn as well: only a wrapper that holds an assistant block
         '[id^="message-"]:has(.chat-assistant)',
+        // the assistant block itself can carry the id (no wrapper): match it directly as well
+        '[id^="message-"].chat-assistant',
         '[data-message-author-role="assistant"]',
         '[data-role="assistant"]',
         '[data-testid*="assistant" i]',
@@ -33292,6 +33295,11 @@ const hydrateAttachments = (raw = []) =>
         const ev = new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt, clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2 });
         el.dispatchEvent(ev);
         await sleep(40);
+      }
+      // Le Chat keeps its full-page "Drop your files here" overlay open without leave/end.
+      for (const type of ['dragleave', 'dragend']) {
+        const rect = el.getBoundingClientRect?.() || { left: 0, top: 0, width: 0, height: 0 };
+        el.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt, clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2 }));
       }
       await sleep(1400);
       return true;
