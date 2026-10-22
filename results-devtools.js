@@ -1053,7 +1053,8 @@
     const TELEMETRY_EXPORT_FORMAT = 'telemetry-raw/1';
     const TELEMETRY_VIEW_FORMAT = 'telemetry-view/1';
     const TELEMETRY_VIEW_FIELDS_GUIDE = 't — мс от startTs; p — модель; l — метка; v — уровень (нет у info); '
-        + 'd — details; m — meta (сжатая); n — сколько раз подряд повторилось, t2 — время последнего повтора. '
+        + 'y — тип события (нет у TELEMETRY); d — details; m — meta (сжатая; dispatchId указан в первой строке цепочки и при смене); '
+        + 'n — сколько раз подряд повторилось, t2 — время последнего повтора. '
         + 'В файле только события, относящиеся к задаче, и все error/warning; остальное отброшено (sourceEventCount — сколько было).';
     const EXPORT_PROFILE_KEY = 'telemetryExportProfile';
     const exportProfileSelect = document.getElementById('telemetry-export-profile-select');

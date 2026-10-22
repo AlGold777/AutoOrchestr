@@ -1,6 +1,6 @@
 # Телеметрия
 
-Версия документа: 2.81.833. История прежней схемы (proof-oriented ledger, пресеты, дайджесты, canonical evidence) удалена из дерева, её можно найти в git по тегу `pre-telemetry-rebuild` (файл `docs/Telemetry/telemetry.md` и каталог `telemetry-spec/`).
+Версия документа: 2.81.836. История прежней схемы (proof-oriented ledger, пресеты, дайджесты, canonical evidence) удалена из дерева, её можно найти в git по тегу `pre-telemetry-rebuild` (файл `docs/Telemetry/telemetry.md` и каталог `telemetry-spec/`).
 
 ## Принцип
 
@@ -49,3 +49,8 @@
 ## Добавление события
 
 Новое событие: `emitTelemetry(llmName, 'LABEL', { details, meta })`. Метка в верхнем регистре; стабильная, она станет ключом для запросов. Если событие нужно сохранить при вытеснении, добавить метку в `PINNED_LABELS`. Ничего регистрировать в схемах, реестрах или пресетах не нужно: их нет.
+
+## Как читать отсутствие события
+
+Кольцо хранит только то, что дошло до `dispatchTelemetry`. Отсутствие события не доказывает, что действия не было: адаптер мог не отправить сообщение, сообщение могло не дойти, фон мог отбросить его. Отказы, которые фон делает осознанно, оставляют следы с уровнем `warning`: `SENDER_TAB_MISMATCH_REJECTED`, `SENDER_WITHOUT_BINDING_REJECTED`, `LIFECYCLE_CORRELATION_REJECTED`, `PROMPT_INSERTION_REJECTED`. В сжатых профилях эти события и все `error`/`warning` сохраняются независимо от меток.
+

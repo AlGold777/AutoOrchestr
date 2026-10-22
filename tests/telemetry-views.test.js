@@ -98,4 +98,39 @@ describe('telemetry views', () => {
     const viewSize = JSON.stringify(Views.buildTelemetryView(all, 'truncated').events).length;
     expect(viewSize).toBeLessThan(rawSize / 20);
   });
+
+  test('send keeps the content adapter narrative by event type, not only by label', () => {
+    const rows = Views.buildTelemetryView([
+      ev(1, 'GPT send attempt', { type: 'SEND' }),
+      ev(2, 'GPT send button found', { type: 'SEND' }),
+      ev(3, 'Input value set', { type: 'DISPATCH' }),
+      ev(4, 'Some unrelated note', { type: 'INFO' })
+    ], 'send').events;
+    expect(rows.map((row) => row.l)).toEqual(['GPT send attempt', 'GPT send button found', 'Input value set']);
+    expect(rows[0].y).toBe('SEND');
+  });
+
+  test('send ends 30 s after the dispatch was accepted, except problems', () => {
+    const accepted = ev(1000, 'PROMPT_SUBMITTED_ACCEPTED');
+    const rows = Views.buildTelemetryView([
+      accepted,
+      ev(20000, 'TAB_READY_CHECK'),
+      ev(60000, 'TAB_READY_CHECK'),
+      ev(61000, 'TAB_ACTIVATION_IGNORED_PROGRAMMATIC', { level: 'warning' }),
+      ev(70000, 'DISPATCH_SEND', { meta: { dispatchId: 'Gemini:2' } })
+    ], 'send').events;
+    expect(rows.map((row) => row.t)).toEqual([0, 19000, 60000, 69000]);
+  });
+
+  test('repeated identity blocks are dropped and dispatchId is stated once per chain', () => {
+    const identity = { expectedIdentity: { a: 1 }, incomingIdentity: { b: 2 }, extVersion: '1', logCollection: { appended: 3 }, tabId: 7 };
+    const rows = Views.buildTelemetryView([
+      ev(1, 'DISPATCH_SEND', { meta: { dispatchId: 'GPT:1', ...identity } }),
+      ev(2, 'PROMPT_SUBMITTED_ACCEPTED', { meta: { dispatchId: 'GPT:1', ...identity } }),
+      ev(3, 'DISPATCH_SEND', { meta: { dispatchId: 'GPT:2', ...identity } })
+    ], 'send').events;
+    expect(rows[0].m).toEqual({ dispatchId: 'GPT:1', tabId: 7 });
+    expect(rows[1].m).toEqual({ tabId: 7 });
+    expect(rows[2].m).toEqual({ dispatchId: 'GPT:2', tabId: 7 });
+  });
 });

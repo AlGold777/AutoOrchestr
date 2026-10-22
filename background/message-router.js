@@ -2467,6 +2467,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 const senderGate = validateLifecycleSender(llmName, sender, 'PROMPT_INSERTION_OBSERVED', incomingMeta);
                 const correlationGate = validateLifecycleCorrelation(llmName, message, 'PROMPT_INSERTION_OBSERVED');
                 if (!entry || !senderGate.ok || !correlationGate.ok) {
+                    // The sender and correlation gates leave their own telemetry; a missing
+                    // model entry did not, so a dropped insertion verdict was indistinguishable
+                    // from one the adapter never sent.
+                    if (!entry && llmName) {
+                        emitTelemetry(llmName, 'PROMPT_INSERTION_REJECTED', {
+                            level: 'warning',
+                            details: 'missing_model_entry',
+                            meta: { insertionState: message.insertionState || null, method: message.method || null,
+                                reason: message.reason || null, ...deliveryIdentityMeta(incomingMeta) },
+                            force: true
+                        });
+                    }
                     if (typeof sendResponse === 'function') {
                         sendResponse({
                             status: 'prompt_insertion_rejected',
