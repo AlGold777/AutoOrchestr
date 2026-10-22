@@ -19254,8 +19254,7 @@ function buildFavoriteExportCardsHtml() {
             const fallbackText = String(entry.text || '').trim();
             const bodyHtml = itemHtml || (fallbackText ? `<pre>${escapeHtml(fallbackText)}</pre>` : '');
             if (!bodyHtml) return '';
-            const timeMeta = entry.timeLabel ? `<p class="response-meta">${escapeHtml(entry.timeLabel)}</p>` : '';
-            return `<div class="favorite-export-item">${timeMeta}<div class="response-body">${bodyHtml}</div></div>`;
+            return `<div class="favorite-export-item"><div class="response-body">${bodyHtml}</div></div>`;
         }).filter(Boolean).join('\n');
         if (!items) return '';
         return `<section class="single-response-card"><h3>${escapeHtml(groupName)}</h3>\n${items}</section>`;
@@ -19736,10 +19735,20 @@ function getResponseSelectionHtml() {
     const range = responseSelectionState.range;
     if (!range || range.collapsed) return '';
     try {
-        const fragment = range.cloneContents();
-        const container = document.createElement('div');
-        container.appendChild(fragment);
-        return String(container.innerHTML || '').trim();
+        let node = document.createElement('div');
+        node.appendChild(range.cloneContents());
+        // cloneContents drops the ancestors of a partial selection (bold, heading,
+        // list item, table cell...), so re-wrap it in shallow clones up to the output.
+        const root = range.commonAncestorContainer;
+        let el = root.nodeType === Node.TEXT_NODE ? root.parentElement : root;
+        while (el && !el.classList?.contains('output') && el !== document.body) {
+            const wrapper = el.cloneNode(false);
+            wrapper.removeAttribute('id');
+            while (node.firstChild) wrapper.appendChild(node.firstChild);
+            node.appendChild(wrapper);
+            el = el.parentElement;
+        }
+        return String(node.innerHTML || '').trim();
     } catch (err) {
         console.warn('[RESULTS] response selection html snapshot failed', err);
         return '';
@@ -21301,7 +21310,8 @@ ${window.DebateExport?.annotationScript?.() || ''}
 
     const modelName = btn.dataset.name || 'Model';
     const savedFileTimestamp = formatSavedFileTimestamp();
-    const metadataLine = buildMetadataLine(modelName);
+    // The saved-at stamp under the title is the only time; the card keeps just the source URL.
+    const metadataLine = String(llmResponseMetadata[modelName]?.url || '').trim();
     const metadataHtml = metadataLine ? `<p class="response-meta">${escapeHtml(metadataLine)}</p>` : '';
     let htmlBodyContent; // Создаем переменную для тела HTML
 
