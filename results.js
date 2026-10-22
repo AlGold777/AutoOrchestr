@@ -19231,6 +19231,7 @@ function collectLLMResponses() {
                 text,
                 html: htmlContent,
                 metadataLine,
+                sourceUrl: String(llmResponseMetadata[name]?.url || '').trim(),
                 formatted: `${headerParts.join('\n')}\n\n${text}\n${name} END`
             });
         }
@@ -20761,8 +20762,7 @@ function buildFavoriteExportMarkdown(entries) {
             const html = entry.html ? sanitizeInlineHtml(entry.html) : '';
             const body = html ? htmlToGfm(html) : plainTextToGfm(entry.text || '');
             if (!body) return '';
-            const time = entry.timeLabel ? `> ${escapeGfmText(entry.timeLabel)}` : '';
-            return [time, body].filter(Boolean).join('\n\n');
+            return body;
         }).filter(Boolean);
         return items.length ? `### ${escapeGfmText(groupName)}\n\n${items.join('\n\n---\n\n')}` : '';
     }).filter(Boolean).join('\n\n');
@@ -20776,7 +20776,7 @@ function buildAllResponsesExportMarkdown() {
     const responses = entries.map((entry) => {
         const body = (entry.html ? htmlToGfm(entry.html) : '') || plainTextToGfm(entry.text || '');
         if (!body) return '';
-        const metadata = entry.metadataLine ? `> ${markdownMetadataLine(entry.metadataLine)}` : '';
+        const metadata = entry.sourceUrl ? `> ${markdownMetadataLine(entry.sourceUrl)}` : '';
         return [`## ${escapeGfmText(entry.name || 'Model')}`, metadata, body].filter(Boolean).join('\n\n');
     }).filter(Boolean);
     if (!responses.length) return '';
@@ -20798,7 +20798,7 @@ function buildSingleResponseExportMarkdown(outputEl, modelName) {
     const body = sourceMarkdown || (sanitizedHtml ? htmlToGfm(sanitizedHtml) : '') || plainTextToGfm(text);
     if (!body) return '';
     const name = String(modelName || 'Model').trim() || 'Model';
-    const metadata = markdownMetadataLine(buildMetadataLine(name));
+    const metadata = markdownMetadataLine([formatSavedFileTimestamp(), String(llmResponseMetadata[name]?.url || '').trim()].filter(Boolean).join('  '));
     return [
         `# ${escapeGfmText(name)}`,
         metadata ? `> ${metadata}` : '',
