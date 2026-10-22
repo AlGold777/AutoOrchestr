@@ -88,7 +88,7 @@ describe('background global scope', () => {
     [
       'runAutomaticGetItForModel', 'resolveBoundTabIdForOrchestrator', 'resolvePromptForDispatch', 'handleLLMResponse',
       'handleManualResponsePing', 'reportDispatchPhase', 'commitIncompleteAnswer', 'isTerminalRouterEntry',
-      'sendMessageToResultsTab', 'openOrFocusResultsTab'
+      'sendMessageToResultsTab', 'openOrFocusResultsTab', 'getOrchestratorStopGeneration'
     ].forEach((name) => {
       const reachable = vm.runInContext(`typeof self.${name} === 'function' || typeof ${name} === 'function'`, ctx);
       expect([name, reachable]).toEqual([name, true]);

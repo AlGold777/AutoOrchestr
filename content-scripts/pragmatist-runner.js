@@ -274,9 +274,11 @@
   };
 
   const stopAll = (reason = 'manual') => {
+    window.__LLMScrollStopEpoch = Number(window.__LLMScrollStopEpoch || 0) + 1;
     try { commandExecutor.stop(); } catch (_) {}
     try { navigationDetector.stop(); } catch (_) {}
     try { streamWatcher.disconnect(); } catch (_) {}
+    try { broadcastListener.stop(); } catch (_) {}
     if (reason === 'kill_switch') {
       try { window.__LLMScrollHardStop = true; } catch (_) {}
     }
@@ -303,6 +305,8 @@
     try {
       chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (msg?.type === 'STOP_ALL' || msg?.type === 'STOP_AND_CLEANUP' || msg?.type === 'FORCE_HARD_STOP_RESTORE') {
+          if (typeof window.ContentUtils?.isStopCommandCurrent === 'function'
+              && !window.ContentUtils.isStopCommandCurrent(msg)) return;
           if (msg.platforms && Array.isArray(msg.platforms) && !msg.platforms.includes(adapter.name)) {
             return;
           }
@@ -337,33 +341,47 @@
   };
 
   const boot = async () => {
+    // The hard-stop flag can be cleared when a later request starts. Keep the
+    // boot attempt tied to the epoch it began in so that clearing that flag
+    // cannot revive an older async restore/discovery chain.
+    const bootStopEpoch = Number(window.__LLMScrollStopEpoch || 0);
+    const isBootCanceled = () => (
+      Number(window.__LLMScrollStopEpoch || 0) !== bootStopEpoch
+      || Boolean(window.__LLMScrollHardStop)
+    );
     try {
       const res = await chrome.storage.local.get(['settings']);
       applySettings(res?.settings || {});
     } catch (_) {}
+    if (isBootCanceled()) return;
     await stateManager.restore();
-    if (window.__LLMScrollHardStop) return;
+    if (isBootCanceled()) return;
     const connected = await (async () => {
       const deadline = Date.now() + 2500;
       while (Date.now() < deadline) {
+        if (isBootCanceled()) return false;
         if (streamWatcher.connect()) return true;
         await new Promise(r => setTimeout(r, 250));
       }
       console.warn('[PragmatistRunner] response container not found within timeout');
       return false;
     })();
+    if (isBootCanceled()) return;
     if (connected) {
       navigationDetector.start();
     }
     commandExecutor.start();
     broadcastListener.start();
     attachKillSwitchListener();
-    attachRuntimeListener();
     try {
       window.__PragmatistAdapter = { adapter, stateManager, streamWatcher, commandExecutor, sessionId };
     } catch (_) {}
   };
 
+  // Register Stop synchronously. Attaching from inside boot() can miss a Stop
+  // delivered while storage/state restore or response-container discovery is
+  // pending, after which boot would otherwise start command and ping timers.
+  attachRuntimeListener();
   boot().catch((err) => console.warn('[PragmatistRunner] boot failed', err));
 
   window.__pragmatistRunner = {

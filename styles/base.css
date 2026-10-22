@@ -17,12 +17,9 @@ button i.ti {
 }
 
 :root {
-    --bg-color: #F8F7F4;
-    --body-bg-color: rgba(0, 0, 0, 0.5);
     --text-color: #1a1a1a;
     --text-secondary-color: #6c757d;
     --border-color: #dee2e6;
-    --input-bg-color: #ffffff;
     --primary-button-bg: #1a1a1a;
     --primary-button-text: #ffffff;
     --secondary-button-bg: #ffffff;
@@ -37,15 +34,12 @@ button i.ti {
     --sidebar-right-width: 260px;
     --sidebar-bg: #ffffff;
     --sidebar-border: #e5e7eb;
-    --notes-bg: #f6f8fc;
     --notes-panel: #ffffff;
     --notes-panel-2: #f3f6fb;
     --notes-text: #111827;
     --notes-muted: #5b677a;
     --notes-border: rgba(17, 24, 39, 0.1);
     --notes-border-strong: rgba(17, 24, 39, 0.14);
-    --notes-shadow: 0 16px 40px rgba(17, 24, 39, 0.12);
-    --notes-radius: 14px;
     --notes-row-height: 34px;
     --pipeline-bg: #f8fafc;
     --pipeline-card: #ffffff;

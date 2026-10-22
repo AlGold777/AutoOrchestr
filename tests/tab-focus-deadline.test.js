@@ -3,7 +3,7 @@ const fs = require('fs');
 const vm = require('vm');
 function setup(update) {
   const c = { setTimeout, clearTimeout, isValidTabId: Number.isInteger,
-    self: {markProgrammaticTabFocus: jest.fn()}, chrome: {
+    jobState: {llms: {}}, self: {markProgrammaticTabFocus: jest.fn()}, chrome: {
       runtime: {lastError: null},
       tabs: {get: jest.fn(), update: jest.fn(update)},
       windows: {update: jest.fn()}

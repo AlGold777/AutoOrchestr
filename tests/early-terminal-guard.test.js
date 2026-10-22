@@ -4,6 +4,7 @@ const vm = require('vm');
 
 const JOB_ORCHESTRATOR_PATH = path.join(__dirname, '..', 'background', 'job-orchestrator.js');
 const JOB_ORCHESTRATOR_SOURCE = fs.readFileSync(JOB_ORCHESTRATOR_PATH, 'utf8');
+const DISPATCH_COORDINATOR_SOURCE = fs.readFileSync(path.join(__dirname, '..', 'background', 'dispatch-coordinator.js'), 'utf8');
 const STATUS_CONTRACT_SOURCE = fs.readFileSync(path.join(__dirname, '..', 'shared', 'status-contract.js'), 'utf8');
 const ANSWER_PROOF_NORMALIZATION_SOURCE = fs.readFileSync(path.join(__dirname, '..', 'shared', 'answer-proof-normalization.js'), 'utf8');
 const ANSWER_EVIDENCE_SOURCE = fs.readFileSync(path.join(__dirname, '..', 'shared', 'answer-evidence.js'), 'utf8');
@@ -129,7 +130,37 @@ function createSandbox() {
   vm.runInContext(RECOVERY_INTENT_SOURCE, context, { filename: 'shared/recovery-intent.js' });
   vm.runInContext(JOB_ORCHESTRATOR_SOURCE, context, { filename: 'background/job-orchestrator.js' });
 
+  const tokenStart = DISPATCH_COORDINATOR_SOURCE.indexOf('function answerHasDeliveryToken(');
+  const tokenEnd = DISPATCH_COORDINATOR_SOURCE.indexOf('// Commit the text the model already produced', tokenStart);
+  if (tokenStart < 0 || tokenEnd < 0) throw new Error('answerHasDeliveryToken source boundaries changed');
+  context.answerHasDeliveryToken = new Function('self', 'jobState',
+    `${DISPATCH_COORDINATOR_SOURCE.slice(tokenStart, tokenEnd)}\nreturn answerHasDeliveryToken;`
+  )(context, context.jobState);
+
   return { context, logs, stateUpdates, partialMessages };
+}
+
+function addCurrentDeliveryToken(context, llmName = 'GPT', overrides = {}) {
+  const entry = context.jobState.llms[llmName];
+  const dispatchId = `dispatch-${llmName.toLowerCase()}`;
+  const token = '[[AO-abc123]]';
+  entry.lastDispatchMeta = { dispatchId, generationEpoch: 7 };
+  context.jobState.session.promptsByModel = {
+    ...(context.jobState.session.promptsByModel || {}),
+    [llmName]: `Answer the question, then end with ${token}`
+  };
+  return {
+    entry,
+    token,
+    dispatchId,
+    answer: `42 is the result. ${token}`,
+    metaObj: {
+      dispatchId,
+      runSessionId: context.jobState.session.startTime,
+      generationEpoch: 7,
+      ...overrides
+    }
+  };
 }
 
 describe('early terminal success guard', () => {
@@ -519,6 +550,98 @@ describe('early terminal success guard', () => {
         entry: expect.objectContaining({ label: 'Submit confirmation inferred from answer evidence' })
       })
     ]));
+  });
+
+  test('infers GPT submit from the real current-dispatch end token, including a short answer', () => {
+    const { context } = createSandbox();
+    const { entry, answer, metaObj } = addCurrentDeliveryToken(context);
+
+    expect(context.answerHasDeliveryToken('GPT', answer)).toBe(true);
+    expect(context.inferPromptSubmittedFromAnswerEvidence('GPT', entry, {
+      trimmedAnswer: answer,
+      responseSource: 'late_collect',
+      metaObj
+    })).toBe(true);
+    expect(entry).toEqual(expect.objectContaining({
+      submitSource: 'inferred_answer_evidence',
+      confirmedDispatchId: 'dispatch-gpt',
+      awaitingSubmitConfirmation: false
+    }));
+  });
+
+  test('acceptLateCollectResult establishes GPT submit before the locked NO_SEND guard', () => {
+    const { context } = createSandbox();
+    const { entry, token, dispatchId, metaObj } = addCurrentDeliveryToken(context);
+    const answerBody = 'A'.repeat(2425);
+    const answer = `${answerBody}\n${token}`;
+    Object.assign(entry, {
+      status: 'NO_SEND', finalStatus: 'NO_SEND', finalStatusRecorded: true,
+      finalizedAt: Date.now(), answer: 'Error: ChatGPT send not confirmed'
+    });
+
+    const accepted = context.acceptLateCollectResult('GPT', {
+      ok: true, status: 'success', text: answer, html: `<p>${answerBody}</p>`,
+      source: 'inline_executeScript'
+    }, {
+      ...metaObj,
+      dispatchId,
+      source: 'inline_executeScript',
+      responseMeta: {
+        // Same shape the manual ping sends in production (job-orchestrator.js, manual ping responseMeta):
+        // an explicit user recovery, which is what lets a forced late collect finalize without a verifier proof.
+        source: 'manual_ping_late_collect', completionReason: 'user_collect_late_collect',
+        manualRecovery: true, manualOverride: true,
+        lateCollectFinal: true, forceTerminalSuccess: true
+      }
+    });
+
+    expect(accepted).toBe(true);
+    expect(entry.submitSource).toBe('inferred_answer_evidence');
+    expect(entry.promptSubmittedAt).toBeTruthy();
+    expect(entry.answer).toContain(answerBody);
+    expect(entry.answer.length).toBeGreaterThanOrEqual(2425);
+    if (entry.finalStatus !== 'SUCCESS') {
+      console.error('GPT token recovery trace', {
+        status: entry.status, finalStatus: entry.finalStatus, finalStatusRecorded: entry.finalStatusRecorded,
+        submitSource: entry.submitSource, confirmedDispatchId: entry.confirmedDispatchId,
+        promptSubmittedAt: entry.promptSubmittedAt, pendingFinalAnswer: entry.pendingFinalAnswer?.length,
+        answerLength: entry.answer?.length, finalizationEvidence: entry.finalizationEvidence,
+        latestFinalizationEvidence: entry.latestFinalizationEvidence,
+        states: context.updateModelState.mock.calls.slice(-8),
+        relevantLogs: context.appendLogEntry.mock.calls.map(([, log]) => log).filter(log => /submit|terminal|final|token/i.test(log?.label || '')).slice(-12)
+      });
+    }
+    expect(entry.finalStatus).toBe('SUCCESS');
+  });
+
+  test.each([
+    ['foreign delivery token', (data) => data.answer.replace(data.token, '[[AO-foreign]]')],
+    ['missing delivery token', (data) => '42 is the result.'],
+    ['wrong dispatch', (data) => data.answer, (data) => ({ ...data.metaObj, dispatchId: 'dispatch-other' })],
+    ['old session', (data) => data.answer, (data) => ({ ...data.metaObj, runSessionId: data.metaObj.runSessionId - 1 })],
+    ['wrong generation epoch', (data) => data.answer, (data) => ({ ...data.metaObj, generationEpoch: 6 })],
+    ['prompt echo', (data, context) => context.jobState.session.promptsByModel.GPT],
+    ['token only', (data) => data.token],
+    ['pre-dispatch baseline', (data) => {
+      data.entry.preDispatchAnswerSignature = data.answer.replace(/\s+/g, ' ').trim().toLowerCase();
+      data.entry.preDispatchAnswerDispatchId = data.dispatchId;
+      data.entry.preDispatchAnswerCapturedAt = Date.now();
+      return data.answer;
+    }]
+  ])('does not infer GPT submit from %s', (_label, answerFor, metaFor = data => data.metaObj) => {
+    const { context } = createSandbox();
+    const data = addCurrentDeliveryToken(context);
+    const answer = answerFor(data, context);
+    const metaObj = metaFor(data);
+
+    expect(context.answerHasDeliveryToken('GPT', answer)).toBe(
+      !['foreign delivery token', 'missing delivery token'].includes(_label)
+    );
+    expect(context.shouldInferSubmitFromAnswerEvidence('GPT', data.entry, {
+      trimmedAnswer: answer,
+      responseSource: 'inline_executeScript',
+      metaObj
+    })).toBe(false);
   });
 
   test('does not defer explicit user late collect terminal success', async () => {

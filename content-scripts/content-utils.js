@@ -45,7 +45,14 @@
       runResult: options.runResult
         || finalization.runResult
         || pipelineMeta.runResult
-        || null
+        || null,
+      // DOM->Markdown copy rides in responseMeta (all providers share this path);
+      // the background lifts it into the entry and strips it from the meta.
+      answerMarkdown: typeof options.answerMarkdown === 'string'
+        ? options.answerMarkdown
+        : (typeof pipelineMeta.answerMarkdown === 'string' ? pipelineMeta.answerMarkdown : undefined),
+      // Fallback sources carry none: the background marks such answers incomplete.
+      copyReport: options.copyReport || pipelineMeta.copyReport || undefined
     };
   };
 
@@ -61,6 +68,7 @@
     ? window.__LLMMainBridgeToken
     : null;
   let storedPipelineRunId = null;
+  let stoppedDispatchMeta = null;
   const getMainBridgeToken = () => mainBridgeToken || null;
   const setMainBridgeToken = (token) => {
     mainBridgeToken = typeof token === 'string' && token.trim() ? token.trim() : null;
@@ -242,6 +250,49 @@
       base.llmName = llmName;
     }
     return Object.keys(base).length ? base : null;
+  };
+
+  // A delayed, correlated Stop must not affect a newer known dispatch. The
+  // storage listener can require identity initialization; direct Stop messages
+  // remain able to cancel page startup before the first request is recorded.
+  const isStopCommandCurrent = (message, { requireKnownIdentity = false } = {}) => {
+    if (!message || typeof message !== 'object') return true;
+    const meta = message.meta && typeof message.meta === 'object' ? message.meta : {};
+    const readIdentity = (key, aliases = []) => {
+      for (const source of [meta, message]) {
+        for (const name of [key, ...aliases]) {
+          const value = source?.[name];
+          if (value !== undefined && value !== null && value !== '') return value;
+        }
+      }
+      return null;
+    };
+    const commandRunSessionId = readIdentity('runSessionId', ['sessionId']);
+    const commandDispatchId = readIdentity('dispatchId');
+    const commandPipelineRunId = readIdentity('pipelineRunId');
+    const commandDispatchIds = Array.isArray(message.activeDispatchIds)
+      ? message.activeDispatchIds
+      : (Array.isArray(meta.activeDispatchIds) ? meta.activeDispatchIds : null);
+    const hasIdentity = Boolean(commandRunSessionId || commandDispatchId || commandPipelineRunId || commandDispatchIds);
+    if (!hasIdentity) return true;
+
+    const currentMeta = ensureDispatchMeta({}) || {};
+    const currentRunSessionId = currentMeta.runSessionId || currentMeta.sessionId || getSessionId();
+    const currentDispatchId = currentMeta.dispatchId || null;
+    const currentPipelineRunId = currentMeta.pipelineRunId || storedPipelineRunId || null;
+    if (commandRunSessionId && (!currentRunSessionId
+        ? requireKnownIdentity
+        : String(commandRunSessionId) !== String(currentRunSessionId))) return false;
+    if (commandDispatchId && (!currentDispatchId
+        ? requireKnownIdentity
+        : String(commandDispatchId) !== String(currentDispatchId))) return false;
+    if (commandPipelineRunId && (!currentPipelineRunId
+        ? requireKnownIdentity
+        : String(commandPipelineRunId) !== String(currentPipelineRunId))) return false;
+    if (commandDispatchIds && (!currentDispatchId
+        ? requireKnownIdentity
+        : !commandDispatchIds.some((id) => String(id) === String(currentDispatchId)))) return false;
+    return true;
   };
 
   const FOCUS_REQUEST_THROTTLE_MS = 3000;
@@ -618,6 +669,7 @@
         modelName: llmName,
         dispatchId: meta?.dispatchId || null,
         runSessionId: meta?.runSessionId || meta?.sessionId || null,
+        generationEpoch: meta?.generationEpoch ?? null,
         promptSubmittedAt: Date.now(),
         traceId: meta?.traceId || meta?.dispatchId || null,
         baselineText: String(baselineText || ''),
@@ -877,9 +929,61 @@
     }
     return { stopped: false, reason: 'stop_unconfirmed' };
   };
+  // Mark the page synchronously when Stop arrives, even if the Pragmatist
+  // runner has not finished its asynchronous boot yet. The runner has its own
+  // listener for stopping provider observers and command polling.
+  try {
+    chrome.runtime.onMessage.addListener((message) => {
+      if (message?.type !== 'STOP_AND_CLEANUP') return false;
+      if (!isStopCommandCurrent(message)) return false;
+      const explicitMeta = message.meta && typeof message.meta === 'object' ? message.meta : {};
+      const currentMeta = ensureDispatchMeta({}) || {};
+      stoppedDispatchMeta = {
+        runSessionId: explicitMeta.runSessionId || explicitMeta.sessionId
+          || message.runSessionId || message.sessionId
+          || currentMeta.runSessionId || currentMeta.sessionId || null,
+        dispatchId: explicitMeta.dispatchId || message.dispatchId || currentMeta.dispatchId || null
+      };
+      try {
+        window.__LLMScrollHardStop = true;
+        window.__LLMScrollStopEpoch = Number(window.__LLMScrollStopEpoch || 0) + 1;
+      } catch (_) {}
+      try {
+        window.humanSessionController?.forceHardStop?.('background-stop');
+      } catch (_) {}
+      return false;
+    });
+  } catch (_) {}
+
+  // A new prompt is the explicit boundary between a stopped request and the
+  // next one. Clear only the hard-stop bit; the incremented stop epoch remains
+  // so work that was already awaiting when Stop arrived cannot resume.
+  try {
+    chrome.runtime.onMessage.addListener((message) => {
+      if (message?.type !== 'GET_ANSWER') return false;
+      if (!String(message.prompt || '').trim()) return false;
+      if (!stoppedDispatchMeta) return false;
+
+      const incomingMeta = message.meta && typeof message.meta === 'object' ? message.meta : {};
+      const incomingRunSessionId = incomingMeta.runSessionId || incomingMeta.sessionId
+        || message.runSessionId || message.sessionId || null;
+      const incomingDispatchId = incomingMeta.dispatchId || message.dispatchId || null;
+      const hasNewRun = Boolean(incomingRunSessionId && stoppedDispatchMeta.runSessionId
+        && String(incomingRunSessionId) !== String(stoppedDispatchMeta.runSessionId));
+      const hasNewDispatch = Boolean(incomingDispatchId && stoppedDispatchMeta.dispatchId
+        && String(incomingDispatchId) !== String(stoppedDispatchMeta.dispatchId));
+      if (!hasNewRun && !hasNewDispatch) return false;
+
+      try { window.__LLMScrollHardStop = false; } catch (_) {}
+      stoppedDispatchMeta = null;
+      return false;
+    });
+  } catch (_) {}
+
   try {
     chrome.runtime.onMessage.addListener((message) => {
       if (message?.type !== 'STOP_AND_CLEANUP' || !hasActiveRequest()) return false;
+      if (!isStopCommandCurrent(message)) return false;
       stopProviderGeneration()
         .catch((err) => ({ stopped: false, reason: `stop_failed:${err?.message || err}` }))
         .then((result) => {
@@ -1042,105 +1146,23 @@
     }
   }
 
-  const INLINE_STYLE_PROPERTIES = [
-    'color',
-    'background-color',
-    'font-family',
-    'font-size',
-    'font-weight',
-    'font-style',
-    'text-decoration',
-    'text-transform',
-    'line-height',
-    'letter-spacing',
-    'text-align',
-    'white-space',
-    'margin',
-    'margin-top',
-    'margin-right',
-    'margin-bottom',
-    'margin-left',
-    'padding',
-    'padding-top',
-    'padding-right',
-    'padding-bottom',
-    'padding-left',
-    'border',
-    'border-top',
-    'border-right',
-    'border-bottom',
-    'border-left',
-    'border-radius',
-    'list-style-type',
-    'list-style-position'
-  ];
-
-  const buildInlineStyle = (element) => {
-    if (!element || element.nodeType !== 1) return '';
-    const computed = window.getComputedStyle?.(element);
-    if (!computed) return '';
-    return INLINE_STYLE_PROPERTIES.map((prop) => {
-      const value = computed.getPropertyValue(prop);
-      return value ? `${prop}:${value.trim()};` : '';
-    }).join('');
-  };
-
-  const applyInlineStyles = (source, target) => {
-    const style = buildInlineStyle(source);
-    if (style) {
-      target.setAttribute('style', style);
-    }
-  };
-
-  const cloneElementWithInlineStyles = (element) => {
-    if (!element || element.nodeType !== 1) return null;
-    const clone = element.cloneNode(true);
-    const sourceWalker = document.createTreeWalker(element, NodeFilter.SHOW_ELEMENT, null);
-    const cloneWalker = document.createTreeWalker(clone, NodeFilter.SHOW_ELEMENT, null);
-    let sourceNode = element;
-    let cloneNode = clone;
-    while (sourceNode && cloneNode) {
-      applyInlineStyles(sourceNode, cloneNode);
-      sourceNode = sourceWalker.nextNode();
-      cloneNode = cloneWalker.nextNode();
-    }
-    return clone;
-  };
-
-  const stripHiddenElements = (root) => {
-    if (!root || root.nodeType !== 1) return;
-    root.querySelectorAll('[style*="display: none"], [style*="visibility: hidden"]').forEach((node) => node.remove());
-  };
-
-  const RESPONSE_CLEANUP_SELECTORS = [
-    'script',
-    'style',
-    'noscript',
-    'svg',
-    'canvas',
-    'button',
-    '[role="button"]',
-    '[data-message-part-type="reasoning"]',
-    'h6.screen-reader-model-response-label',
-    '[aria-hidden="true"]',
-    '[inert]',
-    'header',
-    'footer',
-    'nav',
-    'aside',
-    'form'
-  ].join(', ');
-
+  // The builder of an answer's html lives in content-scripts/answer-html-builder.js (also injected into old tabs by the
+  // background). If it is missing here, the html is a plain copy and says so: never a silent raw html.
+  let fallbackNotes = [];
   const buildInlineHtml = (element, options = {}) => {
     if (!element || element.nodeType !== 1) return '';
-    const includeRoot = options.includeRoot !== false;
-    const clone = cloneElementWithInlineStyles(element) || element.cloneNode(true);
-    try { stripHiddenElements(clone); } catch (_) {}
-    try {
-      clone.querySelectorAll(RESPONSE_CLEANUP_SELECTORS).forEach((node) => node.remove());
-    } catch (_) {}
-    return includeRoot ? (clone.outerHTML || '') : (clone.innerHTML || '');
+    const builder = window.AnswerHtmlBuilder;
+    if (builder && typeof builder.build === 'function') {
+      fallbackNotes = [];
+      return builder.build(element, { provider: detectLlmNameFromLocation(), ...options });
+    }
+    fallbackNotes = [{ type: 'html', reason: 'html собран запасным путём (без раскладки и стилей)', position: 0 }];
+    const copy = element.cloneNode(true);
+    copy.querySelectorAll('script, style, noscript, button, svg, canvas').forEach((node) => node.remove());
+    return options.includeRoot !== false ? (copy.outerHTML || '') : (copy.innerHTML || '');
   };
+  const getLastInlineHtmlNotes = () => (window.AnswerHtmlBuilder && !fallbackNotes.length
+    ? window.AnswerHtmlBuilder.getLastNotes() : fallbackNotes.slice());
 
   const detectLlmNameFromLocation = () => {
     const host = String(window.location?.hostname || '').toLowerCase();
@@ -1197,6 +1219,10 @@
       'article'
     ],
     Claude: [
+      // the answer block of the live page (the same first choices as the in-page extractor of the background)
+      'div[data-is-streaming] div.font-claude-response.relative div.standard-markdown.grid-cols-1',
+      'div[data-is-streaming] div.standard-markdown.grid-cols-1',
+      '.font-claude-response .standard-markdown',
       '[data-testid*="assistant" i]',
       '[data-is-streaming="false"] .font-claude-message',
       '.font-claude-message',
@@ -1218,7 +1244,9 @@
       '[data-testid="message-content"]',
       '.prose',
       '.answer',
-      '.result'
+      '.result',
+      '[data-message-author-role="assistant"]',
+      '[data-role="assistant"]'
     ],
     Qwen: [
       'div.qwen-chat-message.qwen-chat-message-assistant div.response-message-content div.custom-qwen-markdown > div.qwen-markdown.qwen-markdown-loose',
@@ -1231,7 +1259,9 @@
       '.message-item[data-role="assistant"] .markdown-body',
       '.message-item[data-role="assistant"] .message-content',
       '[data-role="assistant"] .markdown-body',
+      '.ds-markdown.ds-assistant-message-main-content',
       'div.ds-message div.ds-markdown',
+      '.ds-markdown',
       '.assistant-message .markdown-body',
       '.markdown-body',
       '.message-content'
@@ -1272,16 +1302,42 @@
     const tag = String(node?.tagName || '').toLowerCase();
     if (['input', 'textarea', 'button', 'nav', 'header', 'footer', 'form', 'aside'].includes(tag)) return true;
     try {
-      return !!node?.closest?.('textarea,input,button,nav,header,footer,form,aside,[contenteditable="true"],[role="combobox"],[data-message-part-type="reasoning"],[data-message-author-role="user"],[data-role="user"],[hidden],[inert],[aria-hidden="true"]');
+      return !!node?.closest?.('textarea,input,button,nav,header,footer,form,aside,[contenteditable="true"],[role="combobox"],[data-message-part-type="reasoning"],[data-message-author-role="user"],[data-role="user"],[hidden],[inert],[aria-hidden="true"]')
+        // the user's own message, whatever the provider calls it (AnswerHtmlBuilder.isUserMessage)
+        || !!window.AnswerHtmlBuilder?.insideUserMessage?.(node)
+        // the model's reasoning block (a whole word think/thinking/thought/reasoning/cot in a class or id)
+        || !!window.AnswerHtmlBuilder?.insideReasoning?.(node);
     } catch (_) {
       return false;
     }
   };
 
-  const collectLateSnapshotCandidate = (llmName = detectLlmNameFromLocation(), minChars = 80) => {
+  // One candidate = one answer. A node holding several assistant turns, a user message, the
+  // composer or navigation is a page-level container. The same rule runs in
+  // extractLatestAssistantSnapshotInPage (background/job-orchestrator.js).
+  const ROLE_ASSISTANT_SELECTOR = '[data-message-author-role="assistant"],[data-role="assistant"],[data-author-role="assistant"]';
+  const ROLE_USER_SELECTOR = '[data-message-author-role="user"],[data-role="user"],[data-author-role="user"]';
+  // Same rule as the extractor: code-editor inputs inside the answer are not page chrome.
+  const EDITOR_HOST = 'pre,code,[role="code"],.monaco-editor,.cm-editor,.CodeMirror,[class*="monaco" i],[class*="codemirror" i],[class*="code-editor" i],[data-mode-id]';
+  const hasPageChrome = (root) => Array.from(root.querySelectorAll('textarea,[contenteditable="true"],form,nav'))
+    .some((el) => !(el.matches('textarea,[contenteditable="true"]') && (el.closest(EDITOR_HOST) || el.hasAttribute('readonly') || el.getAttribute('aria-hidden') === 'true')));
+  const isWideAnswerContainer = (node) => {
+    try {
+      const assistants = node.querySelectorAll(ROLE_ASSISTANT_SELECTOR).length + (node.matches(ROLE_ASSISTANT_SELECTOR) ? 1 : 0);
+      return assistants > 1
+        || !!node.querySelector(ROLE_USER_SELECTOR)
+        || !!window.AnswerHtmlBuilder?.containsUserMessage?.(node)
+        || hasPageChrome(node);
+    } catch (_) {
+      return false;
+    }
+  };
+
+  const collectLateSnapshotCandidate = (llmName = detectLlmNameFromLocation(), minChars = 80, options = {}) => {
     const selectors = lateSnapshotSelectorsByModel[llmName] || [];
     const seen = new Set();
     const nodes = [];
+    const selectorOf = new Map();
     const visitRoot = (root) => {
       if (!root?.querySelectorAll) return;
       selectors.forEach((selector) => {
@@ -1290,6 +1346,7 @@
             if (node && !seen.has(node)) {
               seen.add(node);
               nodes.push(node);
+              selectorOf.set(node, selector);
             }
           });
         } catch (_) {}
@@ -1310,10 +1367,29 @@
       const latest = assistants[assistants.length - 1];
       if (latest?.querySelector('[data-message-part-type]')) {
         nodes.splice(0, nodes.length, ...latest.querySelectorAll('[data-message-part-type="answer"]'));
+      } else if (latest) {
+        nodes.splice(0, nodes.length, latest);
       }
     }
-    const candidates = nodes
-      .filter((node) => node && !isLateSnapshotRejectedNode(node))
+    const notWide = nodes.filter((node) => node && !isLateSnapshotRejectedNode(node));
+    let degradedNote = null;
+    let pool = notWide.filter((node) => !isWideAnswerContainer(node));
+    if (!pool.length && notWide.length) {
+      // Never lose the whole answer: ONE unambiguous page-like candidate is returned with a note.
+      const chromeOnly = notWide.filter((node) => {
+        try {
+          return node.querySelectorAll(ROLE_ASSISTANT_SELECTOR).length + (node.matches(ROLE_ASSISTANT_SELECTOR) ? 1 : 0) <= 1
+            && !node.querySelector(ROLE_USER_SELECTOR) && !window.AnswerHtmlBuilder?.containsUserMessage?.(node);
+        } catch (_) { return false; }
+      });
+      const inner = chromeOnly.filter((outer) => !chromeOnly.some((other) => other !== outer && outer.contains(other)));
+      // several single answers of the page (every turn of a chat has one): the LAST of them is the answer
+      if (inner.length >= 1) {
+        pool = [inner.reduce((last, node) => (last.compareDocumentPosition(node) & 4 /* FOLLOWING */ ? node : last))];
+        degradedNote = { type: 'answer', reason: 'узел ответа похож на контейнер страницы; взят единственный кандидат', position: 0 };
+      }
+    }
+    const candidates = pool
       .map((node, index) => {
         const text = ['Le Chat', 'Gemini'].includes(llmName) && window.AnswerStructure
           ? window.AnswerStructure.linearizeText(node) : extractSafeVisibleText(node, 200000);
@@ -1325,12 +1401,89 @@
         return { node, text, visible, score: (visible ? 1000000 : 0) + index };
       })
       .filter((item) => item.text.length >= minChars
-        && !(llmName === 'Gemini' && /(?:Ответ Gemini|Gemini said:?)\s*$/i.test(item.text)))
+        && !(llmName === 'Gemini' && /(?:Ответ Gemini|Gemini said:?)\s*$/i.test(item.text)));
+    // Of two nested candidates with (almost) the same text keep the inner one.
+    const innermost = candidates
+      .filter((outer) => !candidates.some((inner) => inner !== outer
+        && outer.node.contains(inner.node) && inner.text.length >= outer.text.length * 0.9))
       .sort((a, b) => b.score - a.score);
-    const best = candidates[0] || null;
-    return best
-      ? { ok: true, llmName, text: best.text, html: buildInlineHtml(best.node), visible: best.visible, candidates: candidates.length }
-      : { ok: false, llmName, text: '', html: '', candidates: candidates.length };
+    candidates.splice(0, candidates.length, ...innermost);
+    let best = candidates[0] || null;
+    // The answer of one turn may be several blocks: widen to the node that holds all of them, or fail (see
+    // AnswerHtmlBuilder.expandToTurn); the same rule runs in the background's extractLatestAssistantSnapshotInPage.
+    if (best && window.AnswerHtmlBuilder && typeof window.AnswerHtmlBuilder.expandToTurn === 'function') {
+      const peers = candidates.filter((item) => item !== best && selectorOf.get(item.node) === selectorOf.get(best.node)).map((item) => item.node);
+      let turn = { node: best.node, status: 'ok' };
+      try {
+        turn = window.AnswerHtmlBuilder.expandToTurn(best.node, peers);
+      } catch (err) {
+        degradedNote = degradedNote || { type: 'answer', reason: 'расширение до хода не удалось', position: 0 };
+      }
+      if (turn.status === 'split' && peers.length) {
+        return { ok: false, llmName, reason: 'answer_split_across_blocks', text: '', html: '', candidates: candidates.length };
+      } else if (turn.status === 'split') {
+        degradedNote = degradedNote || { type: 'answer', reason: 'ответ из нескольких блоков; взят основной блок', position: 0 };
+      } else if (turn.node !== best.node) {
+        const widened = turn.node;
+        best = {
+          ...best,
+          node: widened,
+          text: ['Le Chat', 'Gemini'].includes(llmName) && window.AnswerStructure ? window.AnswerStructure.linearizeText(widened) : extractSafeVisibleText(widened, 200000)
+        };
+      }
+    }
+    if (!best) return { ok: false, llmName, text: '', html: '', candidates: candidates.length };
+    let html;
+    try {
+      // Observation snapshots (options.enrich === false) carry the text and the plain html: the layout build is for a real pull.
+      if (options.enrich === false) { html = String(best.node.innerHTML || '').trim(); throw new Error('plain'); }
+      html = buildInlineHtml(best.node);
+      // An html with no text and no picture/code/table is an empty answer: take the plain copy.
+      const hasContent = (value) => /<(?:img|pre|table|video|audio)\b/i.test(value) || String(value).replace(/<[^>]*>/g, '').replace(/&nbsp;|\s+/g, '').length > 0;
+      if (!hasContent(html) && hasContent(String(best.node.innerHTML || ''))) throw new Error('empty html');
+    } catch (error) {
+      html = String(best.node.innerHTML || '').trim();
+      if (!(options.enrich === false && error && error.message === 'plain')) {
+        degradedNote = degradedNote || { type: 'html', reason: 'html собран запасным путём (без раскладки и стилей)', position: 0 };
+      }
+    }
+    let copy = {};
+    if (options.withMarkdown) {
+      // Opt-in (manual pulls only; the streaming snapshot observer does not convert).
+      copy = buildAnswerMarkdownCopy(best.node, llmName);
+      if (degradedNote && copy.copyReport) {
+        copy = { ...copy, copyReport: { ...copy.copyReport, placeholders: [...(copy.copyReport.placeholders || []), degradedNote], complete: false } };
+      }
+    }
+    return { ok: true, llmName, text: best.text, html, visible: best.visible, candidates: candidates.length, ...(degradedNote ? { degraded: degradedNote.reason } : {}), ...copy };
+  };
+
+  // DOM->Markdown copy of a node, same fields and failure rules as the pipeline's
+  // finalization (UnifiedAnswerPipeline.buildAnswerMarkdownFields); never silent.
+  const buildAnswerMarkdownCopy = (node, llmName) => {
+    try {
+      const builder = window.UnifiedAnswerPipeline?.buildAnswerMarkdownFields;
+      if (typeof builder === 'function') return builder(node, llmName || null);
+    } catch (_) {}
+    const reason = 'конвейер копирования недоступен';
+    return {
+      answerMarkdown: `[НЕ СКОПИРОВАНО: тип=answer, причина=${reason}, позиция=1]`,
+      copyReport: {
+        version: 1, provider: llmName || null, found: {}, copied: {},
+        placeholders: [{ type: 'answer', reason, position: 1 }], mismatches: [], flags: {}, complete: false
+      }
+    };
+  };
+  // For the adapters' own manual paths (getResponses / MANUAL_PING): the markdown
+  // copy of the latest answer, spread next to answerHtml in the message.
+  // `node` (optional): the very element the adapter took text/html from, so all three
+  // describe the same answer; without it the node is chosen like a late snapshot.
+  const buildLatestAnswerCopy = (llmName = detectLlmNameFromLocation(), node = null) => {
+    if (node && node.nodeType === 1) return buildAnswerMarkdownCopy(node, llmName);
+    const snapshot = collectLateSnapshotCandidate(llmName, 1, { withMarkdown: true });
+    return snapshot.ok
+      ? { answerMarkdown: snapshot.answerMarkdown, copyReport: snapshot.copyReport }
+      : { answerMarkdown: '', copyReport: buildAnswerMarkdownCopy(null, llmName).copyReport };
   };
 
   const simpleSnapshotHash = (value = '') => {
@@ -1355,7 +1508,7 @@
         timer = null;
         const llmName = detectLlmNameFromLocation();
         if (!llmName) return;
-        const snapshot = collectLateSnapshotCandidate(llmName, 80);
+        const snapshot = collectLateSnapshotCandidate(llmName, 80, { enrich: false });
         if (!snapshot.ok || !snapshot.text) return;
         const hash = simpleSnapshotHash(snapshot.text);
         const now = Date.now();
@@ -1423,6 +1576,7 @@
     storeDispatchMeta,
     getSessionId,
     ensureDispatchMeta,
+    isStopCommandCurrent,
     pasteTextFirst,
     promptMatchesComposer: pasteMatchesPrompt,
     countPromptOccurrences,
@@ -1444,10 +1598,14 @@
     ensureScrollToolkit: ensureScrollToolkit,
     ensureHumanoid,
     observeMutations,
-    cloneElementWithInlineStyles,
+    cloneElementWithInlineStyles: (element) => (window.AnswerHtmlBuilder
+      ? window.AnswerHtmlBuilder.cloneWithStyles(element)
+      : (element && element.nodeType === 1 ? element.cloneNode(true) : null)),
     buildInlineHtml,
     extractSafeVisibleText,
     collectLateSnapshotCandidate,
+    buildLatestAnswerCopy,
+    getLastInlineHtmlNotes,
     initLateAnswerSnapshotObserver
   };
 })();

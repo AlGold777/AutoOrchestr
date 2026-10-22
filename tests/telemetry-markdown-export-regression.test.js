@@ -16,7 +16,7 @@ describe('telemetry Markdown export regression', () => {
     const handlerAt = RESULTS_SRC.indexOf("event.target.closest('#export-all-logs-md, #export-all-logs-md-telemetry')");
     const handler = RESULTS_SRC.slice(handlerAt, handlerAt + 4200);
     expect(handler).toContain('const hasRunSummary = Boolean(');
-    expect(handler).toContain('!hasLogs && !hasTelemetry && !hasProofTelemetry && !hasRunSummary');
+    expect(handler).toContain('!hasLogs && !hasTelemetry && !hasRunSummary');
     expect(handler).toContain("downloadDiagnosticsMarkdown('All Logs'");
   });
 
@@ -34,8 +34,7 @@ describe('telemetry Markdown export regression', () => {
     expect(handler).toContain('const logsSnapshot = cloneLogsByModel(llmLogs);');
     expect(handler).toContain('getTelemetryEventsForExport(snapshotTs)');
     expect(handler).toContain('requestRunOutcomeSummary(EXPORT_SNAPSHOT_DEADLINE_MS)');
-    expect(handler).toContain('requestProofTelemetrySnapshotForMarkdown(EXPORT_SNAPSHOT_DEADLINE_MS)');
-    expect(handler).toContain('buildAllLogsMarkdown(telemetryEvents, sources, logsSnapshot, runOutcomeSummary, proofShadow)');
+    expect(handler).toContain('buildAllLogsMarkdown(telemetryEvents, sources, logsSnapshot, runOutcomeSummary)');
   });
 
   test('GET_DIAG_EVENTS reads committed storage without waiting for the telemetry write chain', () => {
@@ -54,11 +53,10 @@ describe('telemetry Markdown export regression', () => {
     expect(RESULTS_SRC).toContain('window.ProblemContextFilter.filterWithContext(source');
   });
 
-  test('JSON export uses only the native schema 5 snapshot', () => {
-    expect(DEVTOOLS_SRC).toContain("type: 'GET_PROOF_TELEMETRY_SNAPSHOT'");
-    expect(DEVTOOLS_SRC).toContain('canonicalLedger: true');
-    expect(DEVTOOLS_SRC).not.toContain('requestTelemetryExportSnapshot');
-    expect(DEVTOOLS_SRC).not.toContain('nativeLedgerAvailable');
+  test('JSON export is the raw event ring and needs no derived report', () => {
+    expect(DEVTOOLS_SRC).toContain("type: 'GET_DIAG_EVENTS'");
+    expect(DEVTOOLS_SRC).toContain("format: exportFormat");
+    expect(DEVTOOLS_SRC).not.toContain('GET_PROOF_TELEMETRY_SNAPSHOT');
   });
 
   test('content-tab diagnostics inherit run identity only from their mapped current tab', () => {

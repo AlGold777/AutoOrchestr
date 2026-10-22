@@ -11,8 +11,8 @@ const PLATFORM_DEGRADED_HOURLY_COOLDOWN_MS = 60 * 60 * 1000;
 const PLATFORM_HISTORY_MAX = 50;
 const MAX_LOG_ENTRIES = 120;
 const DIAG_KEY = '__diagnostics_events__';
-const DIAGNOSTICS_EVENTS_MAX_ITEMS = 2000;
-const DIAGNOSTICS_EVENTS_MAX_BYTES = 1500000;
+const DIAGNOSTICS_EVENTS_MAX_ITEMS = 4000;
+const DIAGNOSTICS_EVENTS_MAX_BYTES = 3000000;
 // v2.54.24 (2025-12-22 23:14 UTC): Telemetry sampling (Purpose: cap diagnostics volume to 5% of sessions).
 const TELEMETRY_SAMPLE_RATE = 0.05;
 const TELEMETRY_SCHEMA_VERSION = 2;
@@ -654,13 +654,6 @@ async function persistDiagnosticEvent(llmName, entry = {}, { sender, source } = 
 function dispatchTelemetry(llmName, entry = {}, { sender, source, force = false } = {}) {
   if (!entry) return null;
   const normalized = normalizeTelemetryEntry(entry, llmName);
-  // The schema 5 ledger is the unsampled source of truth. Record before legacy
-  // post-terminal suppression and UI sampling so audits can see late changes
-  // and absence of a legacy row never becomes absence of evidence.
-  self.ProofTelemetryLedger?.record?.(normalized, llmName, {
-    runSessionId: normalized.meta?.runSessionId || jobState?.session?.startTime || null,
-    producerComponent: source || normalized.type || 'background-telemetry'
-  }).catch((err) => console.warn('[proof-telemetry] append failed', err));
   const runEntry = jobState?.llms?.[llmName];
   if (runEntry && self.AnswerVerification?.appendTimeline) {
     const label = String(normalized.label || '').toUpperCase();
@@ -696,14 +689,32 @@ function dispatchTelemetry(llmName, entry = {}, { sender, source, force = false 
   const runSessionId = normalized.meta?.runSessionId || jobState?.session?.startTime || null;
   // Pinned labels are explicitly declared important — never let sampling drop them at
   // ingest (the pin only protects already-stored entries from pruning otherwise).
-  const sampled = force || normalized.level === 'error' || isPinnedTelemetryEvent(normalized) || resolveTelemetrySampling(runSessionId);
-  if (!sampled) return null;
   if (runSessionId && !normalized.meta.runSessionId) normalized.meta.runSessionId = runSessionId;
-  const saved = broadcastDiagnostic(llmName, normalized);
-  persistDiagnosticEvent(llmName, saved || normalized, { sender, source }).catch((err) => {
-    console.warn('[dispatchTelemetry] store failed', err);
-  });
+  // The ring (DIAG_KEY) is the only raw telemetry store and keeps every event of
+  // the run: it is the file a model analyses on request. Sampling only limits the
+  // live UI broadcast and the per-model log buffer, which cost a state save each.
+  const sampled = force || normalized.level === 'error' || isPinnedTelemetryEvent(normalized) || resolveTelemetrySampling(runSessionId);
+  const saved = sampled ? broadcastDiagnostic(llmName, normalized) : null;
+  queueDiagnosticRingWrite(llmName, saved || normalized, { sender, source });
   return saved || normalized;
+}
+
+// Events arrive in bursts of tens per second. Collect them for a short window so
+// the compressed ring is read and rewritten once per window, not once per event.
+const DIAGNOSTICS_RING_FLUSH_MS = 400;
+const diagnosticsRingQueue = [];
+let diagnosticsRingTimer = null;
+function flushDiagnosticRingQueue() {
+  diagnosticsRingTimer = null;
+  diagnosticsRingQueue.splice(0).forEach(([name, evt, opts]) => {
+    persistDiagnosticEvent(name, evt, opts).catch((err) => {
+      console.warn('[dispatchTelemetry] store failed', err);
+    });
+  });
+}
+function queueDiagnosticRingWrite(llmName, evt, opts) {
+  diagnosticsRingQueue.push([llmName, evt, opts]);
+  if (!diagnosticsRingTimer) diagnosticsRingTimer = setTimeout(flushDiagnosticRingQueue, DIAGNOSTICS_RING_FLUSH_MS);
 }
 
 function resolveEventLlmName(message, event, sender) {

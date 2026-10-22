@@ -52,6 +52,7 @@ describe('Basic schema guide stays true to the code', () => {
       Schema.DEFAULTS.discipline.delivery, Schema.DEFAULTS.discipline.correction].forEach((text) => expect(section('4')).toContain(text));
     expect(section('4')).toContain(`\`${Schema.DEFAULTS.run.policy}\``);
     expect(section('4')).toContain(`\`${Schema.DEFAULTS.run.maxWords}\``);
+    expect(section('4')).toContain(`\`${Schema.DEFAULTS.run.strictLength}\``);
   });
 
   test('the allowed shared limits are the ones of the length select', () => {

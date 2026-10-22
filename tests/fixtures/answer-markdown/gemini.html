@@ -1,0 +1,11 @@
+<!-- синтетика, по известной структуре: tests/fixtures/live-answer-skeletons/gemini.json
+     (model-response > response-container > ... > structured-content-container.model-response-text; служебные кастомные теги:
+      copy-button, message-actions, regenerate-button, thumb-up-button, thumb-down-button, mat-icon, thinking-overlay,
+      h2.screen-reader-model-response-label; чипы источников: source-footnote, sources-carousel-inline > source-inline-chip).
+     Блок кода в скелете отсутствует — не подтверждено; <code-block> ниже — НЕПРОВЕРЕННАЯ эвристика. -->
+<section data-case="answer-root">
+<model-response><div class="response-content"><thinking-overlay></thinking-overlay><div class="model-response-label-announcer"><h2 class="cdk-visually-hidden screen-reader-model-response-label">Gemini said</h2></div><structured-content-container class="model-response-text"><p>answer</p></structured-content-container><message-actions><copy-button><mat-icon>content_copy</mat-icon></copy-button><thumb-up-button></thumb-up-button></message-actions></div></model-response>
+</section>
+<section data-case="code-block-element-unverified">
+<code-block><div class="decoration"><span>Python</span><button>Copy</button></div><pre><code>print(1)</code></pre></code-block>
+</section>

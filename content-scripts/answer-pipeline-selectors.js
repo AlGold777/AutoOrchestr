@@ -266,6 +266,7 @@
       messageRoot: '.ds-markdown, .message-item[data-role="assistant"], [data-role="assistant"], [data-testid*="assistant"], [data-testid*="chat-response"], .assistant-message, [class*="message" i][class*="assistant" i]',
       answerContainer: 'main, [role=\"main\"], .chat-content, [class*=\"conversation\" i], [class*=\"chat\" i], article',
       lastMessage: [
+        '.ds-markdown.ds-assistant-message-main-content',
         '.ds-markdown',
         '.message-item[data-role=\"assistant\"]',
         'div[class*=\"assistant\" i]',
@@ -322,7 +323,10 @@
     },
     zai: {
       messageRoot: [
-        '[id^="message-"]',
+        // id="message-..." is on the wrapper of the user's turn as well: only a wrapper that holds an assistant block
+        '[id^="message-"]:has(.chat-assistant)',
+        // the assistant block itself can carry the id (no wrapper): match it directly as well
+        '[id^="message-"].chat-assistant',
         '[data-message-author-role="assistant"]',
         '[data-role="assistant"]',
         '[data-testid*="assistant" i]',

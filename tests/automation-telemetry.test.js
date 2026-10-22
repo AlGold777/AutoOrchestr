@@ -340,7 +340,7 @@ describe('card marks: incomplete and verify', () => {
     return document.querySelector('.debate-model-card');
   };
 
-  test('a cut-off answer gets a gray mark next to the model name; a complete one does not', () => {
+  test('a cut-off answer gets an inline mark next to the model name; a complete one does not', () => {
     const { applyAttributionMarker } = loadMarkers();
     const el = card();
     applyAttributionMarker(el, { status: 'STREAM_TIMEOUT' });
@@ -356,7 +356,7 @@ describe('card marks: incomplete and verify', () => {
     const { applyAttributionMarker } = loadMarkers();
     const el = card();
     applyAttributionMarker(el, { status: 'SUCCESS', attributionState: 'unproven', attributionLabel: 'Без метки доставки' });
-    expect(el.querySelector('.attribution-unproven-banner').textContent).toBe('Без метки доставки');
+    expect(el.querySelector('.attribution-unproven-banner')).toBeNull();
     expect(el.querySelector('.debate-approval-check').title).toBe('Verify and approve this answer');
     // Approval marks the answer verified by the user; later updates do not bring the banner back.
     el.dataset.attributionState = 'user_verified';

@@ -1,0 +1,59 @@
+{
+  "reviewedCommit": "233adeed8eb59f9b86f797d5016755564726ff9a",
+  "passed": 3194,
+  "failed": 20,
+  "passedSuites": 333,
+  "failedSuites": 6,
+  "failedCases": [
+    {
+      "file": "results-debate-favorites.test.js",
+      "tests": [
+        "selection toolbar is absolutely positioned near the selected fragment and has visible icons",
+        "model cards use 14px text, keep empty one-line cards, and cap long responses at five lines",
+        "wide card overlay uses the viewport and finalization removes printing marker",
+        "double-clicking empty session-bar space opens and closes the entire debate feed widely"
+      ]
+    },
+    {
+      "file": "release-log-regressions.test.js",
+      "tests": [
+        "state map actions use icon buttons and keep Case before Export",
+        "Disput stage insertion, tab reuse, manual mode and reload cleanup share one contract",
+        "pipeline control buttons are placed directly below the prompt group with vertical input layout",
+        "pro controls use one msg-header run button and list add action without an Output canvas stage",
+        "closed Disput composer keeps the run button inside the right edge of moderator input"
+      ]
+    },
+    {
+      "file": "pipeline-semi-auto.test.js",
+      "tests": [
+        "pressing a composer button keeps the focus in the input, so a shrinking input cannot move the button away",
+        "restore never overwrites text the moderator has typed since"
+      ]
+    },
+    {
+      "file": "telemetry-export-actions.test.js",
+      "tests": [
+        "Disput export whitelists diagnostic evidence and deep-redacts JSON"
+      ]
+    },
+    {
+      "file": "pipeline-feed-layout.test.js",
+      "tests": [
+        "collapsed top bar hides logo and model labels and is scoped to the pipeline page",
+        "collapsed top bar: 14px between icons, 7px tighter to the edge and to the input section",
+        "compact input trims 4px from the msg-header padding",
+        "the composer keeps one width with the feed open or closed; the top bar column keeps the main page width",
+        "compact moderator input is one line unless focused",
+        "live printing signal is a one-line chip in the card header",
+        "technical updates live in one badge popover with tabs"
+      ]
+    },
+    {
+      "file": "results-ui-recovery-triggers.test.js",
+      "tests": [
+        "rendering falls back to committed text when rich HTML loses its tail"
+      ]
+    }
+  ]
+}

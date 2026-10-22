@@ -6,6 +6,7 @@ const source = fs.readFileSync(require.resolve('../results'), 'utf8');
 test('repeated global snapshots cannot overwrite a manually displayed answer with an old artifact', () => {
   const output = { textContent: 'Full answer recovered from Grok', dataset: {} };
   const c = vm.createContext({
+    window: {},
     document: { getElementById: () => ({ querySelector: () => output }) },
     updateLLMPanelOutput: jest.fn((_model, text) => { output.textContent = text; })
   });
@@ -27,7 +28,8 @@ test('repeated global snapshots cannot overwrite a manually displayed answer wit
 test('manual result uses one rendering entry point for both card views', () => {
   const c = vm.createContext({
     updateLLMPanelOutput: jest.fn(), updateDebateModelCardOutput: jest.fn(),
-    manualPingReveal: new Set(['Grok']), setPingButtonState: jest.fn()
+    manualPingReveal: new Set(['Grok']), setPingButtonState: jest.fn(),
+    debateFeedMessageMeta: () => ({}), stashAnswerCopy: jest.fn()
   });
   const start = source.indexOf("case 'MANUAL_PING_RESULT':");
   const end = source.indexOf("case 'SELECTOR_OVERRIDE_CLEARED':", start);

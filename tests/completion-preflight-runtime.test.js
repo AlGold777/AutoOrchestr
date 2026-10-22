@@ -41,9 +41,12 @@ describe('Completion preflight runtime contract', () => {
 
     await expect(window.ContentUtils.reportDispatchBaseline(
       'GPT',
-      { dispatchId: 'GPT:delayed-ack', runSessionId: 77 },
+      { dispatchId: 'GPT:delayed-ack', runSessionId: 77, generationEpoch: 2 },
       'previous answer'
     )).resolves.toBe(true);
+    expect(window.LLMExtension.ResponseLifecycleDetector.startResponseLifecycleTracking).toHaveBeenCalledWith(
+      expect.objectContaining({ dispatchId: 'GPT:delayed-ack', generationEpoch: 2 })
+    );
     expect(window.__LLMDispatchPreflight).toEqual(expect.objectContaining({
       ok: true,
       dispatchId: 'GPT:delayed-ack'

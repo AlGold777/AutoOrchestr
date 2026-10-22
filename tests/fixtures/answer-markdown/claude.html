@@ -1,0 +1,10 @@
+<!-- синтетика, по известной структуре: tests/fixtures/live-answer-skeletons/claude.json
+     (div[data-is-streaming] > h2.sr-only (метка «Claude said») + div.font-claude-response > ... кнопка статуса мышления + span[role=status].sr-only).
+     Блок кода в скелете отсутствует — не подтверждено; ниже общая эвристика (подпись языка отдельным узлом в шапке + <pre><code>). -->
+<section data-case="answer-root">
+<div data-is-streaming="false"><h2 class="sr-only select-none">Claude said</h2><div class="font-claude-response relative"><button class="group/status"><span class="truncate">Thinking</span></button><span class="sr-only" role="status">done</span><div class="standard-markdown"><p>answer</p></div></div></div>
+</section>
+<section data-case="code-header-label-unverified">
+<div class="wrapper"><div class="header"><span>bash</span><button>Copy</button></div><pre><code>ls -la
+echo "x"</code></pre></div>
+</section>

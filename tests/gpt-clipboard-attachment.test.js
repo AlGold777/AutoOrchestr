@@ -24,7 +24,10 @@ describe('GPT attachment isolation', () => {
     expect(gptConfig).toContain("strategies: ['drop', 'input']");
     expect(gptConfig).not.toContain("'paste'");
     expect(gptConfig).not.toContain("'clipboard'");
-    expect(HANDLER_SRC).toContain('const baselineState = captureUploadBaseline(config)');
+    // A pending request reuses the original baseline only for the same run and
+    // file batch; otherwise a fresh baseline keeps old chips from confirming.
+    expect(HANDLER_SRC).toMatch(/const baselineState = pending\?\.baselineState \|\| captureUploadBaseline\(config\)/);
+    expect(HANDLER_SRC).toContain('const pending = runSessionId && previousUpload?.runSessionId === runSessionId');
   });
 
   test('unconfirmed attachment blocks the prompt instead of sending without the file', () => {
@@ -35,7 +38,7 @@ describe('GPT attachment isolation', () => {
 
   test('synthetic drop always closes the drag lifecycle', () => {
     expect(HANDLER_SRC).toContain("['dragleave', 'dragend']");
-    expect(GPT_SRC).toContain("['dragleave', 'dragend']");
+    expect(GPT_SRC).not.toContain('async function attachFilesToComposer');
     expect(BRIDGE_SRC).toContain("['dragleave', 'dragend']");
     expect(HANDLER_SRC.slice(HANDLER_SRC.indexOf('GPT: {'), HANDLER_SRC.indexOf('Grok: {')))
       .toContain('finishDragLifecycle: true');

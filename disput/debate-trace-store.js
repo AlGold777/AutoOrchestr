@@ -3,7 +3,7 @@
   'use strict';
 
   const Schema = root.DebateTraceSchema || (typeof require === 'function' ? require('./debate-trace-schema') : null);
-  const STORAGE_KEY = 'llmCodexDebateTrace.v1';
+  const STORAGE_KEY = 'aoTrace.v1';
   const MAX_RUNS = 2;
   const MAX_EVENTS_PER_RUN = 3000;
 
@@ -58,7 +58,7 @@
     });
     const purgeStoredRuns = async () => {
       // Remove snapshots written by previous versions; never read or restore them.
-      return storageCall(storage, 'remove', [...new Set([storageKey, STORAGE_KEY, 'llmCodexDebateTrace'])]);
+      return storageCall(storage, 'remove', [...new Set([storageKey, STORAGE_KEY, 'llmCodexDebateTrace.v1', 'llmCodexDebateTrace'])]);
     };
     const ensureRun = (runId, seed = {}) => {
       const id = String(runId || activeRunId || '').trim();

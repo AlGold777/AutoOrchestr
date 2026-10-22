@@ -329,6 +329,8 @@
       const mutationOptions = { childList: true, subtree: true, characterData: true, attributes: true };
       const stopObserve = window.ContentUtils?.observeMutations
         ? window.ContentUtils.observeMutations(this.container, mutationOptions, (mutations) => {
+          // Our own materialization sweep (shared/answer-materialize-sweep.js) is not the model's activity.
+          if (globalThis.__AO_SWEEP_ACTIVE === true) return;
           const answerRoot = this.currentAnswerElement;
           const currentText = answerRoot ? this.readAnswerText(answerRoot) : '';
           const currentHash = this.hashString(currentText);

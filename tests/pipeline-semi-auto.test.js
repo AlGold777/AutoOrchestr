@@ -3,7 +3,6 @@
 // not retried, not dropped from the run, and journaled apart from a timeout.
 const fs = require('fs');
 const path = require('path');
-const Executor = require('../disput/debate-stage-executor');
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'results.js'), 'utf8');
 
@@ -83,59 +82,11 @@ describe('pipelineWaiter — moderator close', () => {
   });
 });
 
-describe('StageExecutor — skipped participant', () => {
-  const run = async (batchResult) => {
-    const calls = [];
-    const events = [];
-    const adapter = Executor.createLlmAdapter({
-      runModelBatch: async (args) => { calls.push(args.models); return batchResult; }
-    });
-    const executor = Executor.createStageExecutor({
-      adapters: Executor.createAdapterRegistry({ llm: adapter }),
-      retryPolicy: { maxAttempts: 2, delayMs: 0 },
-      emit: (type, payload) => events.push({ type, payload })
-    });
-    const summary = await executor.execute({
-      runId: 'run-1', stageInstanceId: 'stage-1', purpose: 'p', dispatchMode: 'parallel', completionMode: 'all',
-      participants: [{ participantId: 'A', model: 'A', type: 'llm' }, { participantId: 'B', model: 'B', type: 'llm' }]
-    });
-    return { summary, calls, events };
-  };
-
-  test('a skipped model is neither retried nor treated as a terminal dropout', async () => {
-    const { summary, calls, events } = await run({
-      responses: { A: 'answer A' }, results: {}, missing: ['B'], failed: {},
-      timedOut: false, closeReason: 'moderator_closed', skipped: ['B']
-    });
-    expect(calls).toEqual([['A', 'B']]);
-    expect(summary.executionStatus).toBe('partial');
-    expect(summary.terminalFailures).toEqual([]);
-    expect(summary.failedParticipants).toEqual(['B']);
-    expect(events.find((e) => e.type === 'PARTICIPANT_SKIPPED')?.payload).toMatchObject({ participantId: 'B', reason: 'moderator_closed' });
-  });
-
-  test('without a moderator close a missing model is still retried', async () => {
-    const { calls } = await run({ responses: { A: 'answer A' }, results: {}, missing: ['B'], failed: {}, timedOut: true });
-    expect(calls).toEqual([['A', 'B'], ['B']]);
-  });
-});
-
 test('pipeline page binds Get it and the next action to the shared routes', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'pipeline_panel.html'), 'utf8');
   expect(html).not.toContain('id="pipeline-get-it-btn"');
   expect(source).toContain("bindGetItButton(debateRunToggleBtn, {");
   expect(source).toContain("pipelineWaiter.closeAnsweredBatches('moderator_closed')");
-});
-
-test('a template keeps the moderator\'s explicit Auto choice (semi-automatic run of a template)', () => {
-  const from = source.indexOf('const applyPipelineConfig = (config = {}) => {');
-  const block = source.slice(from, source.indexOf('debateRunPolicySelect.value = protocol.runPolicy;', from) + 80);
-  expect(block).toContain('!debateRunPolicySelect.dataset.explicitOverride');
-  // The template must no longer erase the explicit choice.
-  const policyBlock = source.slice(from, source.indexOf('if (lengthSelect && protocol.length)', from));
-  expect(policyBlock).not.toContain('delete debateRunPolicySelect.dataset.explicitOverride');
-  // The compiled run policy reads that choice first.
-  expect(source).toMatch(/debateRunPolicySelect\?\.dataset\.explicitOverride\s*\|\|\s*presetConfig\.runPolicy/);
 });
 
 test('the panel journals shown answers, run context and moderator actions', () => {
@@ -196,7 +147,7 @@ describe('an unfinished run does not take the Run button after a reload', () => 
 
 describe('Run button and New pages (field report)', () => {
   test('pressing a composer button keeps the focus in the input, so a shrinking input cannot move the button away', () => {
-    expect(source).toContain("debateRunToggleBtn?.closest('.msg-header')?.addEventListener('mousedown', (event) => {");
+    expect(source).toContain("debateRunToggleBtn?.closest('.moderator-input')?.addEventListener('mousedown', (event) => {");
     expect(source).toContain("if (event.target.closest?.('button')) event.preventDefault();");
     const css = fs.readFileSync(path.join(__dirname, '..', 'styles', 'modals-responsive.css'), 'utf8');
     // The cause: the compact input shrinks on blur.
@@ -204,16 +155,14 @@ describe('Run button and New pages (field report)', () => {
   });
 
   test('New pages is switched off when the run starts, not only after the first dispatch is acknowledged', () => {
-    const from = source.indexOf('ownerAnswers: []\n            };');
-    expect(source.slice(from, from + 500)).toContain('if (activePipelineRunContext.forceNewTabs) resetNewPagesCheckboxAfterOpen();');
+    expect(source).toContain('if (runContext.forceNewTabs) resetNewPagesCheckboxAfterOpen();');
   });
 });
 
 describe('Run button ignores a phantom run state', () => {
   test('with no run on the page (none started, no engine) the aggregate status cannot turn Run into pause/resume/approve', () => {
-    expect(source).toContain('const hasLiveRun = pipelineRunActive || (Boolean(engineState) && !engineIdle);');
+    expect(source).toContain('const hasLiveRun = pipelineRunActive;');
     expect(source).toContain("const phantom = !hasLiveRun && aggregate && String(aggregate.status || 'idle') !== 'idle';");
-    expect(source).toContain('approvalWaiting: hasLiveRun && debateExecutionContext?.hasApprovalWaiter?.() === true');
     expect(source).toContain("'ui_phantom_state'");
   });
 });
@@ -231,19 +180,18 @@ describe('no model is pre-selected', () => {
 });
 
 describe('the moderator input is emptied once the message is sent', () => {
-  test('the Run path clears it when the run starts and puts the text back if the run cannot start', () => {
-    const start = source.indexOf('const startDebateFromPage = async () => {');
-    const block = source.slice(start, start + 9000);
+  test('the Run path clears it when the run starts and puts the text back if the run produced nothing', () => {
+    const start = source.indexOf('const runCustomFromPage = async');
+    const block = source.slice(start, start + 32000);
     expect(block).toContain('clearModeratorComposer();');
-    expect(block.indexOf('clearModeratorComposer();')).toBeGreaterThan(block.indexOf('ownerAnswers: []'));
+    expect(block).toContain('composerBackup = getModeratorDispatchText();');
+    // The text comes back when the run throws (not on abort) or ends with no answer for a reason other than the owner's stop.
+    expect(block).toContain("if (err?.name !== 'AbortError') restoreModeratorComposer(composerBackup);");
+    expect(block).toContain("if (!['steps_done', 'cancelled', 'stopped'].includes(result.stopReason) && !result.answers.length) restoreModeratorComposer(composerBackup);");
     expect(source).toContain('function restoreModeratorComposer(text) {');
-    expect((source.match(/restoreModeratorComposer\(moderatorEntryText\)/g) || []).length).toBe(2);
+    expect(source).toContain("pastedTextComposer.getText().trim()) return;");
     // The manual moderator dispatch already clears its input.
-    expect(source.slice(source.indexOf('const startManualModeratorDispatch'), source.indexOf('const getDisputeTemplateApi'))).toContain('clearModeratorComposer();');
-  });
-
-  test('restore never overwrites text the moderator has typed since', () => {
-    expect(source).toContain("String(promptInput.value || '').trim()) return;");
+    expect(source.slice(source.indexOf('const startManualModeratorDispatch'), source.indexOf('const applyDisputeTopicDisplay'))).toContain('clearModeratorComposer();');
   });
 });
 

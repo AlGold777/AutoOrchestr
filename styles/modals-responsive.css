@@ -75,10 +75,6 @@
     line-height: 1.4;
 }
 
-#human-loop-alert-modal {
-    display: none;
-}
-
 .modal-button {
     padding: 10px 25px;
     border-radius: 8px;
@@ -122,10 +118,6 @@
 #delete-confirm:hover,
 #notification-ok-btn:hover {
     background-color: #0056b3;
-}
-
-#human-loop-alert-modal .modal-button {
-    min-width: 110px;
 }
 
 .modal-button.accent {
@@ -289,12 +281,6 @@
     margin-right: 20px;
 }
 
-.dev-tools-section h1 {
-    font-size: 22px;
-    margin: 0;
-    color: var(--text-color);
-}
-
 .form-panel h3, .sidebar-panel h4 {
     font-size: 16px;
     margin: 0 0 10px 0;
@@ -401,13 +387,6 @@
     margin-top: 32px;
 }
 
-.btn-ai-create {
-    background-color: #f59f01;
-    color: #ffffff;
-    width: 100%;
-    max-width: 200px;
-}
-
 .add-variable-btn {
     background-color: #e9ecef;
     color: var(--text-color);
@@ -463,15 +442,6 @@
 
 .remove-variable:hover {
     color: var(--text-color);
-}
-
-.ai-actions {
-    border-top: 1px solid #f0f0f0;
-    padding-top: 1px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 15px;
 }
 
 .model-selector {
@@ -718,14 +688,6 @@
 }
 
 
-.file-attachment-group {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 15px;
-    margin-top: 10px;
-}
-
 #file-name-display {
     font-size: 14px;
     color: var(--text-secondary-color);
@@ -927,13 +889,6 @@ body.pro-features-hidden .comparison-section {
 .prompt-container.prompt-sandwich.debate-composer.has-debate-feed .moderator-input {
     margin-top: auto;
 }
-.debate-controls {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    flex-wrap: wrap;
-    padding: 8px 8px 2px;
-}
 .debate-select {
     border: 1px solid #d4d8de;
     border-radius: 6px;
@@ -942,12 +897,6 @@ body.pro-features-hidden .comparison-section {
     font-size: 11px;
     padding: 4px 8px;
     min-height: 26px;
-}
-.debate-select-small {
-    width: 66px;
-}
-.debate-select-wide {
-    min-width: 170px;
 }
 .debate-btn {
     border: 1px solid #d4d8de;
@@ -1077,6 +1026,13 @@ body.pro-features-hidden .comparison-section {
     line-height: 1;
     padding: 0;
     cursor: pointer;
+}
+.debate-sel-toolbar .stb-sep {
+    width: 1px;
+    height: 14px;
+    margin: 2px 3px;
+    flex-shrink: 0;
+    background: rgba(255,255,255,.2);
 }
 .debate-sel-toolbar .stb.col {
     background: var(--swatch-color, #f8fafc) !important;
@@ -1274,13 +1230,6 @@ body.pro-features-hidden .comparison-section {
 .msg-head-right-top::-webkit-scrollbar {
     display: none;
 }
-.debate-run-controls {
-    flex: 0 0 auto;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    min-width: 0;
-}
 .msg-head-right-top > .debate-btn,
 .msg-head-right-top .pipeline-main-page-actions > .debate-btn {
     flex: 0 0 32px;
@@ -1302,18 +1251,6 @@ body.pro-features-hidden .comparison-section {
 .msg-head-right-top > .debate-btn.is-active {
     background: #111827;
     color: #fff;
-}
-.msg-head-right-top > .debate-btn.debate-get-it-btn {
-    background: #ffffff;
-    color: #111827;
-    box-shadow: inset 0 0 0 1px #d4d8de;
-}
-.msg-head-right-top > .debate-btn.debate-get-it-btn:hover:not(:disabled) {
-    box-shadow: inset 0 0 0 1px #9ca3af;
-}
-.msg-head-right-top > .debate-btn.debate-get-it-btn[data-collecting="true"] {
-    opacity: 0.55;
-    cursor: progress;
 }
 .msg-head-left > .prompt-mode-btn,
 .msg-head-right-top > .prompt-mode-btn {
@@ -1383,16 +1320,6 @@ body.pro-features-hidden .comparison-section {
     min-width: 86px;
     padding-right: 24px;
 }
-#debate-scheme-select {
-    width: 78px;
-    min-width: 78px;
-    padding-right: 22px;
-}
-.debate-length-stepper,
-.debate-turn-limit-stepper,
-.pipeline-round-stepper-value {
-    display: none;
-}
 .debate-turn-limit {
     display: none;
 }
@@ -1423,12 +1350,6 @@ body.pro-features-hidden .comparison-section {
 }
 .msg-head-right-top .top-new-pages-checkbox:checked + .top-toggle-track {
     background: #1f3b4c;
-}
-.msg-head-right-top .mod-controls {
-    flex: 0 0 auto;
-    display: flex;
-    align-items: center;
-    gap: 4px;
 }
 .mod-select {
     border: 1px solid #d1d5db;
@@ -1484,11 +1405,6 @@ body.pro-features-hidden .comparison-section {
 .mod-select-compact {
     width: 76px;
     min-width: 56px;
-}
-.mod-select-wide {
-    width: 136px;
-    min-width: 136px;
-    max-width: 136px;
 }
 .mod-select-policy {
     width: 66px;
@@ -1864,21 +1780,33 @@ body.pro-features-hidden .comparison-section {
 .debate-moderator-card .debate-model-card-output {
     font-size: 14px !important;
 }
-.debate-verdict-card {
-    border-color: #2563eb;
-    background: #eff6ff;
+/* Basic run feed: a gate, route, transition or artifacts line is one compact row, not an answer. */
+.basic-run-line {
+    padding: 4px 10px;
 }
-.debate-verdict-card .debate-model-card-name {
-    color: #1d4ed8;
-    font-weight: 700;
+.basic-run-line > .debate-model-card-header {
+    display: none;
+}
+.basic-run-line .debate-model-card-output {
+    color: var(--cm);
+    font-size: 13px;
+}
+.basic-run-line-button {
+    margin-left: 8px;
+    font-size: 13px;
+}
+.basic-run-stale {
+    margin-left: 6px;
+    padding: 0 5px;
+    border: 1px solid #b45309;
+    border-radius: 3px;
+    color: #b45309;
+    font-size: 12px;
+    line-height: 1.4;
 }
 .debate-model-card.is-approved {
     border-color: #cbd5e1;
     background: none;
-}
-.debate-model-card.debate-verdict-card.is-approved {
-    border-color: #2563eb;
-    background: #eff6ff;
 }
 .debate-model-card-meta .ib {
     width: 22px;
@@ -1939,32 +1867,6 @@ body.pro-features-hidden .comparison-section {
 .debate-fav.active i.ti-star::before {
     content: "\f6a6";
 }
-.debate-approval {
-    border: none;
-    background: transparent;
-    border-radius: 0;
-    margin: 2px 0 0;
-    padding: 2px 10px 0;
-    display: block;
-}
-.debate-approval-body {
-    font-size: 11px;
-    line-height: 1.5;
-    color: #334155;
-    max-height: 90px;
-    overflow-y: auto;
-    white-space: pre-wrap;
-    word-break: break-word;
-    border: none;
-    border-radius: 0;
-    background: transparent;
-    padding: 4px 0 2px;
-}
-.debate-approval-actions {
-    display: flex;
-    justify-content: flex-end;
-    margin-top: 6px;
-}
 .debate-model-card-output {
     display: block;
     width: 100%;
@@ -1989,6 +1891,13 @@ body.pro-features-hidden .comparison-section {
 }
 .debate-model-card-output :where([style*="font-size"]) {
     font-size: 14px !important;
+}
+.debate-model-card-output img,
+.post-terminal-answer-revision-body img,
+.llm-panel .output img {
+    max-width: 100%;
+    height: auto;
+    display: block;
 }
 .debate-model-card-output :where([style*="text-align"]) {
     text-align: left !important;
@@ -2091,11 +2000,6 @@ body.pro-features-hidden .comparison-section {
 .moderator-input textarea#modTa:focus {
     border: none;
     box-shadow: none;
-}
-.debate-approval-body {
-    min-height: 20px;
-    max-height: 120px;
-    overflow-y: auto;
 }
 .prompt-sandwich textarea#prompt-input {
     min-height: 120px; padding: 5px 15px; border-radius: 8px; background-color: rgba(255, 255, 255, 0.5);
@@ -2919,49 +2823,12 @@ hr.section-divider {
  {
     font-size: 22px;
 }
-.dropdown-judge {
-    border: none;
-    border-bottom: 1px solid #d1d5db;
-    background: transparent;
-    border-radius: 0;
-    width: 120px;
-    min-width: 120px;
-    max-width: 120px;
-    padding: 2px 0;
-    font-size: 14px;
-    font-weight: 600;
-    color: #1f2933;
-    margin-left: 8px;
-    flex: 0 0 auto;
-}
-
-.dropdown-judge-prompt {
-    width: 126px;
-    min-width: 126px;
-    max-width: 140px;
-    margin-left: 0;
-}
-
-.dropdown-judge:focus {
-    outline: none;
-    border-color: var(--accent-color);
-}
 
 .llm-header-right .use-as-input-btn {
     padding: 0px 10px;
     font-size: 13px;
 }
     
-.new-pages-inline {
-    margin-left: auto;
-}
-.telemetry-round-platform {
-    color: #0f172a;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    font-size: 11px;
-}
-
 /* Pipeline feed layout. Session tabs are hidden (state holder only); the bar keeps
    the session actions. */
 .debate-session-left[hidden] {
@@ -3077,3 +2944,70 @@ hr.section-divider {
 .pipeline-page .prompt-container.prompt-sandwich.debate-composer.has-selected-models:not(.has-debate-feed) .msg-header {
     margin-top: 0;
 }
+
+/* code-block:start */
+.code-block{margin:8px 0;border:1px solid #d0d7de;border-radius:8px;background:#f6f8fa;overflow:hidden;text-align:left}
+.code-block-header{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 8px;background:#eaeef2;border-bottom:1px solid #d0d7de;font:12px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;color:#57606a;white-space:normal}
+.code-block-header::before{content:attr(data-lang);text-transform:lowercase}
+.code-block-copy{appearance:none;border:1px solid #d0d7de;background:#fff;color:#24292f;border-radius:6px;padding:2px 10px;font:12px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;cursor:pointer}
+.code-block-copy::before{content:"Copy"}
+.code-block-open,.code-block-download{appearance:none;border:1px solid #d0d7de;background:#fff;color:#24292f;border-radius:6px;padding:2px 10px;font:12px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;cursor:pointer}
+.code-block-open{margin-left:auto}
+.code-block-open::before{content:"Просмотр"}
+.code-block-download::before{content:"Скачать"}
+.code-block-open:hover,.code-block-download:hover{background:#f3f4f6}
+.code-block-download.is-downloaded::before{content:"Скачано"}
+.code-block-download.is-failed::before{content:"Не удалось"}
+.code-block-header{gap:6px}
+.code-block-views{margin-left:auto}
+.code-block-views+.code-block-open{margin-left:0}
+.code-block pre{counter-reset:none}
+.code-block pre code::before,.code-block pre code::after{content:none}
+.code-block-copy:hover{background:#f3f4f6}
+.code-block-copy.is-copied::before{content:"Скопировано"}
+.code-block-copy.is-failed::before{content:"Не удалось"}
+.code-block pre{margin:0;padding:12px;background:transparent;border-radius:0;white-space:pre;overflow-x:auto;word-wrap:normal;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.code-block pre code{font:inherit;white-space:inherit;background:transparent;padding:0}
+.code-block.is-diagram .code-block-header::before{text-transform:capitalize}
+.code-block-views{display:inline-flex;gap:0;margin-left:auto;margin-right:8px}
+.code-block-view{appearance:none;border:1px solid #d0d7de;background:#fff;color:#24292f;padding:2px 10px;font:12px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;cursor:pointer}
+.code-block-view[data-view="diagram"]{border-radius:6px 0 0 6px}
+.code-block-view[data-view="code"]{border-radius:0 6px 6px 0;border-left:0}
+.code-block-view[data-view="diagram"]::before{content:"Диаграмма"}
+.code-block-view[data-view="code"]::before{content:"Код"}
+.code-block[data-mode="diagram"] .code-block-view[data-view="diagram"],.code-block[data-mode="code"] .code-block-view[data-view="code"]{background:#dbe9ff;border-color:#8bb4f0}
+.code-block.is-diagram:not([data-diagram="ready"]) .code-block-views{display:none}
+/* visually hidden, not display:none: the source stays in the card text (innerText), which is what is copied and handed over */
+.code-block.is-diagram{position:relative}
+.code-block.is-diagram[data-mode="diagram"] pre{position:absolute;width:1px;height:1px;margin:-1px;padding:0;border:0;overflow:hidden;clip:rect(0,0,0,0);white-space:pre}
+.code-block.is-diagram[data-mode="code"] .code-block-diagram:not([data-failed]){display:none}
+/* the panel of a diagram drawn from mermaid source: light grey, rounded, centered, no border (the look of the diagrams: results/code-blocks.js diagramConfig) */
+.code-block.is-diagram{border:0;background:transparent}
+.code-block.is-diagram .code-block-header{background:transparent;border-bottom:0;padding:2px 4px}
+.code-block-diagram{padding:16px 20px;background:#f1f1f1;border-radius:8px;text-align:center}
+.code-block.is-diagram[data-diagram-theme="dark"] .code-block-diagram:not([data-failed]){background:#2b2b2b}
+.code-block-diagram img{max-width:100%;height:auto;display:inline-block}
+.code-block-diagram[data-failed]{padding:6px 12px;background:#fff4e5;color:#8a4b00;font:12px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;text-align:left;border-bottom:1px solid #f0c78a}
+.code-block-diagram[data-failed]::before{content:attr(data-note)}
+/* the viewer (modal) of a code block */
+.code-viewer-overlay{position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:3vh 3vw}
+.code-viewer{display:flex;flex-direction:column;width:100%;height:100%;max-width:1400px;background:#fff;color:#24292f;border:1px solid #d0d7de;border-radius:10px;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,.35)}
+.code-viewer-head{display:flex;align-items:center;gap:8px;padding:8px 12px;background:#eaeef2;border-bottom:1px solid #d0d7de;font:13px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif}
+.code-viewer-lang{font-weight:600;text-transform:lowercase}
+.code-viewer-controls{margin-left:auto;display:inline-flex;gap:6px;flex-wrap:wrap}
+.code-viewer-btn{appearance:none;border:1px solid #d0d7de;background:#fff;color:#24292f;border-radius:6px;padding:3px 12px;font:inherit;cursor:pointer}
+.code-viewer-btn:hover{background:#f3f4f6}
+.code-viewer-btn[aria-pressed="true"]{background:#dbe9ff;border-color:#8bb4f0}
+.code-viewer-btn.is-copied,.code-viewer-btn.is-downloaded{background:#dcffe4;border-color:#8ad19a}
+.code-viewer-btn.is-failed{background:#ffe5e5;border-color:#e09a9a}
+.code-viewer-body{flex:1;min-height:0;overflow:auto;background:#fff}
+.code-viewer-code{margin:0;padding:16px;font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;overflow:auto;min-height:100%;box-sizing:border-box}
+.code-viewer-code code{font:inherit;background:transparent;padding:0;white-space:inherit}
+.code-viewer-frame{width:100%;height:100%;border:0;background:#fff;display:block}
+.code-viewer-img{display:block;max-width:100%;max-height:100%;margin:16px auto;object-fit:contain}
+.code-viewer-md{padding:16px 24px;font:15px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif;overflow-wrap:anywhere}
+.code-viewer-table{border-collapse:collapse;margin:16px;font:13px/1.4 system-ui,sans-serif}
+.code-viewer-table th,.code-viewer-table td{border:1px solid #d0d7de;padding:4px 10px;text-align:left}
+.code-viewer-table th{background:#f1f3f5}
+.code-viewer-note{padding:6px 16px;background:#fff4e5;color:#8a4b00;font:12px/1.4 system-ui,sans-serif}
+/* code-block:end */

@@ -71,6 +71,8 @@
     return String(html || '')
       .replace(TOKEN_RE, '')
       .replace(RESPONSE_MARKER_RE, '')
+      // The token sat at the end of a block after a space ("… proof. [[AO-…]]</p>"): drop the space it leaves.
+      .replace(/[ \t]+(<\/(?:p|div|li)>)/gi, '$1')
       .replace(/<(p|div|li)[^>]*>\s*(?:<br\s*\/?>)?\s*<\/\1>/gi, '');
   }
 
@@ -166,6 +168,17 @@
       return null;
     }
     const metadata = { ...(message.metadata || {}) };
+    // Preserve proof after removing the transport token from the visible text.
+    const tokenAt = answer.toLowerCase().lastIndexOf(tag(entry.token).toLowerCase());
+    const endMarkerSeen = state === 'verified'
+      && tokenAt >= 0 && answer.length - tokenAt - tag(entry.token).length <= 40
+      && Boolean(clean(answer));
+    if (endMarkerSeen) entry.answerEndMarkerSeen = true;
+    metadata.answerEndMarkerSeen = entry.answerEndMarkerSeen === true;
+    if (metadata.answerEndMarkerSeen) {
+      metadata.terminal = true;
+      metadata.status = 'SUCCESS';
+    }
     if (!final && entry.final && entry.finalKind === 'empty_answer' && answer.trim() && !entry.lateTextLogged) {
       entry.lateTextLogged = true;
       record({ kind: 'late_text', model, token: entry.token, requestId: entry.requestId, chars: answer.length, ms: Date.now() - entry.sentAt });

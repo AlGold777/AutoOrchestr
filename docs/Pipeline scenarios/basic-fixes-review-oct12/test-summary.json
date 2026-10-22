@@ -1,0 +1,121 @@
+{
+  "reviewedCommit": "46918d14591f5cac84d8f16e47f551ed2de66cc9",
+  "passed": 3325,
+  "failed": 21,
+  "passedSuites": 337,
+  "failedSuites": 7,
+  "failedCases": [
+    {
+      "file": "results-debate-favorites.test.js",
+      "test": "selection toolbar is absolutely positioned near the selected fragment and has visible icons",
+      "fullName": "Pipeline debate favorites view selection toolbar is absolutely positioned near the selected fragment and has visible icons"
+    },
+    {
+      "file": "results-debate-favorites.test.js",
+      "test": "model cards use 14px text, keep empty one-line cards, and cap long responses at five lines",
+      "fullName": "Pipeline debate favorites view model cards use 14px text, keep empty one-line cards, and cap long responses at five lines"
+    },
+    {
+      "file": "results-debate-favorites.test.js",
+      "test": "wide card overlay uses the viewport and finalization removes printing marker",
+      "fullName": "Pipeline debate favorites view wide card overlay uses the viewport and finalization removes printing marker"
+    },
+    {
+      "file": "results-debate-favorites.test.js",
+      "test": "double-clicking empty session-bar space opens and closes the entire debate feed widely",
+      "fullName": "Pipeline debate favorites view double-clicking empty session-bar space opens and closes the entire debate feed widely"
+    },
+    {
+      "file": "release-log-regressions.test.js",
+      "test": "state map actions use icon buttons and keep Case before Export",
+      "fullName": "release log regression guards state map actions use icon buttons and keep Case before Export"
+    },
+    {
+      "file": "release-log-regressions.test.js",
+      "test": "Disput stage insertion, tab reuse, manual mode and reload cleanup share one contract",
+      "fullName": "release log regression guards Disput stage insertion, tab reuse, manual mode and reload cleanup share one contract"
+    },
+    {
+      "file": "release-log-regressions.test.js",
+      "test": "pipeline control buttons are placed directly below the prompt group with vertical input layout",
+      "fullName": "release log regression guards pipeline control buttons are placed directly below the prompt group with vertical input layout"
+    },
+    {
+      "file": "release-log-regressions.test.js",
+      "test": "pro controls use one msg-header run button and list add action without an Output canvas stage",
+      "fullName": "release log regression guards pro controls use one msg-header run button and list add action without an Output canvas stage"
+    },
+    {
+      "file": "release-log-regressions.test.js",
+      "test": "closed Disput composer keeps the run button inside the right edge of moderator input",
+      "fullName": "release log regression guards closed Disput composer keeps the run button inside the right edge of moderator input"
+    },
+    {
+      "file": "pipeline-semi-auto.test.js",
+      "test": "pressing a composer button keeps the focus in the input, so a shrinking input cannot move the button away",
+      "fullName": "Run button and New pages (field report) pressing a composer button keeps the focus in the input, so a shrinking input cannot move the button away"
+    },
+    {
+      "file": "pipeline-semi-auto.test.js",
+      "test": "restore never overwrites text the moderator has typed since",
+      "fullName": "the moderator input is emptied once the message is sent restore never overwrites text the moderator has typed since"
+    },
+    {
+      "file": "pipeline-feed-layout.test.js",
+      "test": "collapsed top bar hides logo and model labels and is scoped to the pipeline page",
+      "fullName": "pipeline feed layout styles collapsed top bar hides logo and model labels and is scoped to the pipeline page"
+    },
+    {
+      "file": "pipeline-feed-layout.test.js",
+      "test": "collapsed top bar: 14px between icons, 7px tighter to the edge and to the input section",
+      "fullName": "pipeline feed layout styles collapsed top bar: 14px between icons, 7px tighter to the edge and to the input section"
+    },
+    {
+      "file": "pipeline-feed-layout.test.js",
+      "test": "compact input trims 4px from the msg-header padding",
+      "fullName": "pipeline feed layout styles compact input trims 4px from the msg-header padding"
+    },
+    {
+      "file": "pipeline-feed-layout.test.js",
+      "test": "the composer keeps one width with the feed open or closed; the top bar column keeps the main page width",
+      "fullName": "pipeline feed layout styles the composer keeps one width with the feed open or closed; the top bar column keeps the main page width"
+    },
+    {
+      "file": "pipeline-feed-layout.test.js",
+      "test": "compact moderator input is one line unless focused",
+      "fullName": "pipeline feed layout styles compact moderator input is one line unless focused"
+    },
+    {
+      "file": "pipeline-feed-layout.test.js",
+      "test": "live printing signal is a one-line chip in the card header",
+      "fullName": "pipeline feed layout styles live printing signal is a one-line chip in the card header"
+    },
+    {
+      "file": "pipeline-feed-layout.test.js",
+      "test": "technical updates live in one badge popover with tabs",
+      "fullName": "post-terminal revision label technical updates live in one badge popover with tabs"
+    },
+    {
+      "file": "telemetry-export-actions.test.js",
+      "test": "Disput export whitelists diagnostic evidence and deep-redacts JSON",
+      "fullName": "Telemetry export actions Disput export whitelists diagnostic evidence and deep-redacts JSON"
+    },
+    {
+      "file": "results-ui-recovery-triggers.test.js",
+      "test": "rendering falls back to committed text when rich HTML loses its tail",
+      "fullName": "main-page UI recovery triggers rendering falls back to committed text when rich HTML loses its tail"
+    },
+    {
+      "file": "background-global-scope.test.js",
+      "test": "no other background file references a name hidden inside the job-orchestrator block",
+      "fullName": "background global scope no other background file references a name hidden inside the job-orchestrator block"
+    }
+  ],
+  "newFailures": [
+    {
+      "file": "background-global-scope.test.js",
+      "test": "no other background file references a name hidden inside the job-orchestrator block",
+      "fullName": "background global scope no other background file references a name hidden inside the job-orchestrator block"
+    }
+  ]
+}

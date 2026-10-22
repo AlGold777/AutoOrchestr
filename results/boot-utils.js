@@ -7,7 +7,7 @@
 
     if (!root || root.ResultsBootUtils) return;
 
-    const DEBATE_TRANSCRIPT_STORAGE_KEY = 'llmCortexDebateEngineState.v1';
+    const DEBATE_TRANSCRIPT_STORAGE_KEY = 'aoEngineState.v1';
 
     const resetGeometryState = () => {
         const rootEl = document.documentElement;

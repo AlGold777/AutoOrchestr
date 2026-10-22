@@ -38,7 +38,7 @@
   // (terminal UNCERTAIN before the prompt was ever inserted, and a stale on-page
   // answer later upgraded it to a false SUCCESS) because this declaration was
   // missing while the attachments block references it.
-  const attachmentHandler = window.AttachmentHandler || null;
+  const getAttachmentHandler = () => window.AttachmentHandler || null;
   const baseAdapter = window.BaseLLMAdapter ? new window.BaseLLMAdapter({
     model: MODEL,
     isValidUrl: (url) => {
@@ -1411,6 +1411,11 @@ const hydrateAttachments = (raw = []) =>
         el.dispatchEvent(ev);
         await sleep(40);
       }
+      // Le Chat keeps its full-page "Drop your files here" overlay open without leave/end.
+      for (const type of ['dragleave', 'dragend']) {
+        const rect = el.getBoundingClientRect?.() || { left: 0, top: 0, width: 0, height: 0 };
+        el.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt, clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2 }));
+      }
       await sleep(1400);
       return true;
       } catch (err) {
@@ -1509,6 +1514,7 @@ const hydrateAttachments = (raw = []) =>
         }
 
         if (Array.isArray(attachments) && attachments.length) {
+          const attachmentHandler = getAttachmentHandler();
           if (!attachmentHandler?.attach) {
             throw { type: 'attachment_failed', message: 'Le Chat confirmed attachment handler unavailable' };
           }
@@ -1795,6 +1801,8 @@ const hydrateAttachments = (raw = []) =>
       if (baseAdapter?.handleMessage(msg, _sender, sendResponse)) return true;
       
       if (msg?.type === 'STOP_AND_CLEANUP') {
+        if (typeof window.ContentUtils?.isStopCommandCurrent === 'function'
+            && !window.ContentUtils.isStopCommandCurrent(msg)) return false;
         handleForceStopMessage(msg.payload?.traceId);
         stopContentScript('manual-toggle');
         if (typeof sendResponse === 'function') {
@@ -1804,6 +1812,8 @@ const hydrateAttachments = (raw = []) =>
       }
 
       if (msg?.type === 'HUMANOID_FORCE_STOP') {
+        if (typeof window.ContentUtils?.isStopCommandCurrent === 'function'
+            && !window.ContentUtils.isStopCommandCurrent(msg)) return false;
         handleForceStopMessage(msg.payload?.traceId);
         if (typeof sendResponse === 'function') {
           sendResponse({ status: 'force_stop_ack' });
@@ -1960,6 +1970,7 @@ const hydrateAttachments = (raw = []) =>
               llmName: MODEL,
               answer: cleaned,
               answerHtml: latestMarkup.html || payload.html || '',
+              ...(window.ContentUtils?.buildLatestAnswerCopy?.(undefined, latestMarkup.node) || {}),
               meta: msg?.meta || null
             });
             chrome.runtime.sendMessage({

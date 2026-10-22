@@ -16,7 +16,7 @@
 
   function create({ runtime = root.chrome?.runtime, storage = root.chrome?.storage?.local, runStore = null, transportPolicy = root.TransportPolicy } = {}) {
     const send = createChromeSender(runtime);
-    const storageKey = root.DebateRunStore?.STORAGE_KEY || 'llmCodexDebateRun.v1';
+    const storageKey = root.DebateRunStore?.STORAGE_KEY || 'aoRunTransport.v1';
     let persistChain = Promise.resolve();
     let pendingState = null;
     let drainScheduled = false;

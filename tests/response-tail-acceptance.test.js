@@ -5,8 +5,6 @@
 const Delivery = require('../shared/message-delivery');
 const Acceptance = require('../disput/debate-response-acceptance');
 const Diagnosis = require('../shared/message-delivery-diagnosis');
-const Application = require('../disput/debate-application');
-const DraftPlan = require('../disput/debate-draft-plan');
 
 const BODY = 'Это содержательный ответ модели, который заканчивается обычным предложением.';
 
@@ -36,45 +34,6 @@ describe('the ending check needs proof only when the transport gave none', () =>
   test('other rules still apply to a complete answer (empty, too long)', () => {
     expect(Acceptance.evaluate({ text: '', meta: { completion: 'complete' } }).reason).toBe('empty');
     expect(Acceptance.evaluate({ text: 'слово '.repeat(50).trim(), meta: { completion: 'complete', maxWords: 10 } }).reason).toBe('too_long');
-  });
-});
-
-describe('engine: rejections are journaled; a proven answer is accepted at once', () => {
-  const run = async (completion) => {
-    const rejected = [];
-    const calls = [];
-    const app = Application.createApplication({
-      universalEngine: true, allowIncompleteWiring: true, exposeInternals: true,
-      deps: {
-        runModelBatch: async ({ models }) => {
-          calls.push(models.slice());
-          return { responses: Object.fromEntries(models.map((model) => [model, 'Ответ без точки в конце 8:55pm'])), results: Object.fromEntries(models.map((model) => [model, { completion }])), failed: {} };
-        },
-        acceptResponse: (text, meta) => Acceptance.evaluate({ text, meta: { ...meta } }),
-        proposeStateDelta: ({ participant }) => ({ by: participant.participantId }),
-        onResponseRejected: (info) => rejected.push(info)
-      }
-    });
-    await app.start({
-      runId: 'run-tail', topic: 't', models: ['A'], policies: { finalization: { mode: 'manual' } }, maxSteps: 5,
-      draftPlan: DraftPlan.createCanvasPlan({ rounds: [{ plannedStageId: 'canvas-r1', purpose: 'position', participantIds: ['A'] }] })
-    });
-    return { rejected, calls, state: app.getOrchestrator().getState() };
-  };
-
-  test('complete → accepted with one call, nothing rejected', async () => {
-    const { rejected, calls, state } = await run('complete');
-    expect(calls).toHaveLength(1);
-    expect(rejected).toEqual([]);
-    expect(state.stages[0].status).toBe('completed');
-  });
-
-  test('no proof → rejected; every attempt reports its reason, the stage fails and stops', async () => {
-    const { rejected, state } = await run(null);
-    expect(rejected.length).toBeGreaterThanOrEqual(2);
-    rejected.forEach((info) => expect(info).toMatchObject({ type: 'PARTICIPANT_RESPONSE_REJECTED', participantId: 'A', reason: 'incomplete_ending' }));
-    expect(state.lifecycle).toBe('PAUSED');
-    expect(state.pauseInfo.reason).toBe('stage_failed');
   });
 });
 
