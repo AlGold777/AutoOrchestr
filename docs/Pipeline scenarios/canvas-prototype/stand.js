@@ -6,7 +6,7 @@
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '16';
+  const STAND_VERSION = '17';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -1326,7 +1326,7 @@
     basic: {
       task: 'Подготовить план запуска нового тарифа для малого бизнеса',
       steps: [
-        { id: 's1', block: 'source', kind: 'text', title: 'Описание тарифа', artifacts: ['Бриф'], why: 'Даёт всем моделям одинаковые исходные данные о тарифе.' },
+        { id: 's1', block: 'source', kind: 'text', title: 'Описание тарифа', content: 'Тариф «Старт» для малого бизнеса: 5 пользователей, 990 ₽ в месяц, запуск через 6 недель.', artifacts: ['Бриф'], why: 'Даёт всем моделям одинаковые исходные данные о тарифе.' },
         { id: 's2', block: 'round', title: 'Первые планы', order: 'parallel', task: 'Предложи план запуска тарифа по брифу.', inputs: ['s1.Бриф'], artifacts: ['Черновики'],
           models: [{ name: 'Claude', role: 'автор', task: 'Сделай упор на сроки и этапы.' }, { name: 'GPT', role: 'критик', task: 'Ищи риски и слабые места.' }, { name: 'Gemini', role: 'аналитик', task: 'Оцени рынок и цены.' }],
           why: 'Три независимых взгляда на одну задачу.' },
@@ -1335,13 +1335,14 @@
         { id: 's5', block: 'round', title: 'Доработка', repeats: 's2', because: 'проверка s4 не пройдена', order: 'sequential', task: 'Исправь план по замечаниям проверки.', inputs: ['s3.План', 's4.Вердикт'], artifacts: ['Правки'],
           models: [{ name: 'Claude', role: 'автор' }, { name: 'GPT', role: 'критик' }, { name: 'Gemini', role: 'аналитик' }], why: 'Закрыть замечания проверки.' },
         { id: 's6', block: 'synthesis', title: 'Итоговый план', repeats: 's3', because: 'после доработки', model: 'GPT', role: 'судья', task: 'Собери итоговый план с учётом правок.', inputs: ['s5.Правки', 's3.План'], artifacts: ['Итог'], why: 'Окончательная версия плана.' },
-        { id: 's7', block: 'file', title: 'Сохранить план', file: 'plan.md', mode: 'overwrite', inputs: ['s6.Итог'], why: 'Результат нужен файлом.' }
+        { id: 's7', block: 'gate', title: 'Повторная проверка плана', repeats: 's4', because: 'после доработки', criteria: 'Есть сроки, бюджет и ответственные; нет противоречий.', inputs: ['s6.Итог'], why: 'Закрыть петлю проверкой.' },
+        { id: 's8', block: 'file', title: 'Сохранить план', file: 'plan.md', mode: 'overwrite', inputs: ['s6.Итог'], why: 'Результат нужен файлом.' }
       ]
     },
     foreach: {
       task: 'Оценить каждую идею из списка и собрать рейтинг',
       steps: [
-        { id: 's1', block: 'source', kind: 'document', title: 'Список идей', artifacts: ['Идеи'], why: 'Исходный материал — документ с идеями.' },
+        { id: 's1', block: 'source', kind: 'document', title: 'Список идей', attachment: 'идеи.md', artifacts: ['Идеи'], why: 'Исходный материал — документ с идеями.' },
         { id: 's2', block: 'list', title: 'Разбить на пункты', from: 's1.Идеи', rule: 'одна идея — один пункт', artifacts: ['Пункты'], why: 'Каждую идею разбираем отдельно.' },
         { id: 's3', block: 'foreach', title: 'Разбор каждой идеи', over: 's2.Пункты', artifacts: ['Разборы'], why: 'Одинаковый разбор для всех пунктов.',
           body: [
@@ -1362,7 +1363,7 @@
       },
       run: { policy: 'manual', maxWords: 500 },
       steps: [
-        { id: 's1', block: 'source', kind: 'text', title: 'Требования к сервису', artifacts: ['Требования'], why: 'Всем моделям — одинаковые требования.' },
+        { id: 's1', block: 'source', kind: 'text', title: 'Требования к сервису', content: 'Внутренний сервис заявок: до 200 пользователей, интеграция с почтой, срок разработки 3 месяца, команда из 4 человек.', artifacts: ['Требования'], why: 'Всем моделям — одинаковые требования.' },
         { id: 's2', block: 'round', title: 'Первые предложения', order: 'parallel', task: 'Предложи стек для сервиса по требованиям.', inputs: ['s1.Требования'], artifacts: ['Предложения'],
           models: [
             { name: 'Claude', role: 'архитектор', maxWords: 700, discipline: { lines: ['Начни со схемы архитектуры в 3–5 пунктах.'] } },
