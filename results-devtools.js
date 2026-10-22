@@ -1051,6 +1051,25 @@
     // (docs/Telemetry/queries.md); поэтому в файле только факты + короткая
     // памятка читателю.
     const TELEMETRY_EXPORT_FORMAT = 'telemetry-raw/1';
+    const TELEMETRY_VIEW_FORMAT = 'telemetry-view/1';
+    const TELEMETRY_VIEW_FIELDS_GUIDE = 't — мс от startTs; p — модель; l — метка; v — уровень (нет у info); '
+        + 'd — details; m — meta (сжатая); n — сколько раз подряд повторилось, t2 — время последнего повтора. '
+        + 'В файле только события, относящиеся к задаче, и все error/warning; остальное отброшено (sourceEventCount — сколько было).';
+    const EXPORT_PROFILE_KEY = 'telemetryExportProfile';
+    const exportProfileSelect = document.getElementById('telemetry-export-profile-select');
+    if (exportProfileSelect) {
+        try {
+            chrome.storage?.local?.get?.([EXPORT_PROFILE_KEY], (stored) => {
+                if (chrome.runtime?.lastError) return;
+                const saved = stored?.[EXPORT_PROFILE_KEY];
+                if (saved && Array.from(exportProfileSelect.options).some((option) => option.value === saved)) exportProfileSelect.value = saved;
+            });
+        } catch (_) {}
+        exportProfileSelect.addEventListener('change', () => {
+            try { chrome.storage?.local?.set?.({ [EXPORT_PROFILE_KEY]: exportProfileSelect.value }); } catch (_) {}
+        });
+    }
+    const telemetryExportProfile = () => exportProfileSelect?.value || 'raw';
     const TELEMETRY_READER_GUIDE = 'Сырые события телеметрии расширения, по возрастанию времени. '
         + 'ts — миллисекунды; platform — модель; label — что произошло; level — важность; '
         + 'meta.dispatchId — один запрос к модели, meta.runSessionId — один прогон. '
@@ -1101,21 +1120,33 @@
             }
             const runSessionId = resolveCurrentRunSessionId(events) || null;
             const exportedAt = Date.now();
+            const profileId = telemetryExportProfile();
+            const view = window.TelemetryViews
+                ? window.TelemetryViews.buildTelemetryView(events, profileId)
+                : { profile: 'raw', compact: false, events, sourceCount: events.length };
+            const profileTask = view.compact ? window.TelemetryViews.getProfile(view.profile).task : null;
+            const exportFormat = view.compact ? TELEMETRY_VIEW_FORMAT : TELEMETRY_EXPORT_FORMAT;
             const payload = {
-                format: TELEMETRY_EXPORT_FORMAT,
+                format: exportFormat,
+                profile: view.profile,
                 extensionVersion: chrome?.runtime?.getManifest?.().version || 'unknown',
                 exportedAt: new Date(exportedAt).toISOString(),
                 runSessionId,
                 model: selectedTelemetryModel(),
                 generationWaitProfile: window.ResultsShared?.getGenerationWaitProfile?.(),
-                eventCount: events.length,
+                eventCount: view.events.length,
+                sourceEventCount: events.length,
                 firstTs: events[0]?.ts || null,
                 lastTs: events[events.length - 1]?.ts || null,
-                readerGuide: TELEMETRY_READER_GUIDE,
-                events
+                ...(view.compact ? { startTs: view.startTs, fieldsGuide: TELEMETRY_VIEW_FIELDS_GUIDE } : {}),
+                readerGuide: profileTask ? `${TELEMETRY_READER_GUIDE} Задача: ${profileTask}` : TELEMETRY_READER_GUIDE,
+                events: view.events
             };
-            const bytes = downloadTelemetryJson(payload, `telemetry-${exportModelSlug(events)}-${exportedAt}.json`);
-            if (telemetryStatus) telemetryStatus.textContent = `Telemetry exported: ${events.length} events, ${Math.round(bytes / 1024)} KB`;
+            const filenameParts = ['telemetry'];
+            if (view.compact) filenameParts.push(view.profile);
+            filenameParts.push(exportModelSlug(events), exportedAt);
+            const bytes = downloadTelemetryJson(payload, `${filenameParts.join('-')}.json`);
+            if (telemetryStatus) telemetryStatus.textContent = `Telemetry exported: ${view.events.length} of ${events.length} events, ${Math.round(bytes / 1024)} KB`;
         } catch (err) {
             console.warn('[devtools] telemetry export json error', err);
             if (telemetryStatus) telemetryStatus.textContent = `JSON export failed: ${err?.message || 'unknown error'}`;

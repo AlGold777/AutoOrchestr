@@ -55,7 +55,7 @@ describe('telemetry Markdown export regression', () => {
 
   test('JSON export is the raw event ring and needs no derived report', () => {
     expect(DEVTOOLS_SRC).toContain("type: 'GET_DIAG_EVENTS'");
-    expect(DEVTOOLS_SRC).toContain("format: TELEMETRY_EXPORT_FORMAT");
+    expect(DEVTOOLS_SRC).toContain("format: exportFormat");
     expect(DEVTOOLS_SRC).not.toContain('GET_PROOF_TELEMETRY_SNAPSHOT');
   });
 

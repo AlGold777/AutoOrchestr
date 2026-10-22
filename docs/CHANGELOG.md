@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-22 — Профили экспорта телеметрии под типовые проблемы, версия 2.81.833
+
+- Рядом с кнопкой экспорта Telemetry появился список профилей: `Raw (all)` по умолчанию (как раньше, до 3 МБ) и четыре сжатых под задачи — запрос не отправлен, окончание генерации, какой ответ последний, обрезанный ответ. Выбор запоминается.
+- Сжатый профиль (`telemetry-view/1`, `shared/telemetry-views.js`) оставляет события по меткам задачи и все error/warning, сжимает поля и мету, схлопывает подряд идущие повторы и вписывает в файл задачу для модели. Тесты: `tests/telemetry-views.test.js`, `tests/telemetry-export-filename.test.js`.
+
 ### 2026-10-22 — Перестройка телеметрии: сырые события вместо отчётов, версия 2.81.832
 
 - Удалён стек proof-oriented telemetry: фоновые `proof-telemetry-ledger.js` и `proof-telemetry-store.js` (IndexedDB), девять модулей `shared/proof-*`, экспортный воркер, `telemetry-export*.js`, `telemetry-digest.js`, `log-replay-harness.js`, `telemetry-spec/`, каталог `КОНТЕКСТ ДЛЯ АНАЛИЗА/`, мёртвые скрипты и около 60 тестов к ним. Состояние до удаления: тег `pre-telemetry-rebuild`.

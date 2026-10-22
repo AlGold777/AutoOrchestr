@@ -521,6 +521,14 @@
                                         </select>
                                     </div>
                                     <div class="telemetry-actions">
+                                        <label class="sr-only" for="telemetry-export-profile-select">Telemetry export profile</label>
+                                        <select id="telemetry-export-profile-select" class="devtools-select" title="Export: all raw events, or only what one kind of problem needs">
+                                            <option value="raw" selected>Raw (all)</option>
+                                            <option value="send">Prompt not sent</option>
+                                            <option value="completion">End of generation</option>
+                                            <option value="lastAnswer">Which answer is last</option>
+                                            <option value="truncated">Truncated answer</option>
+                                        </select>
                                         <button type="button" class="diag-icon-btn" id="telemetry-export-json-btn" title="Export telemetry as JSON" aria-label="Export telemetry as JSON"><i class="ti ti-download" aria-hidden="true"></i></button>
                                         <button type="button" class="diag-icon-btn" id="export-all-logs-md-telemetry" aria-label="Export diagnostics and telemetry as Markdown" title="Export All Logs">MD</button>
                                         <button type="button" class="diag-icon-btn" id="capture-b1-skeletons-btn" title="Capture privacy-safe answer DOM skeletons from the nine open model tabs" aria-label="Capture sanitized answer DOM skeletons">B1</button>
@@ -843,6 +851,7 @@
     <script src="shared/status-contract.js"></script>
     <script src="shared/problem-context-filter.js"></script>
     <script src="shared/telemetry-meta-delta.js"></script>
+    <script src="shared/telemetry-views.js"></script>
     <script src="shared/answer-proof-normalization.js"></script>
     <script src="shared/secret-redaction.js"></script>
     <script src="shared/transport-policy.js"></script>

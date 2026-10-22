@@ -13,6 +13,10 @@ const TELEMETRY_HTML = `
     <option value="all">All platforms</option>
     <option value="gemini">Gemini</option>
   </select>
+  <select id="telemetry-export-profile-select">
+    <option value="raw">Raw</option>
+    <option value="completion">End of generation</option>
+  </select>
   <button id="telemetry-export-json-btn"></button>
   <div id="telemetry-rounds"></div>
   <div id="telemetry-timeline"></div>
@@ -35,6 +39,7 @@ const rawEvent = (platform, ts, label = 'DISPATCH_SEND') => ({
 let downloads = [];
 let storedEvents = [];
 let platformSelect;
+let profileSelect;
 
 const runExport = async () => {
     downloads = [];
@@ -79,12 +84,16 @@ beforeAll(() => {
         downloads.push({ filename: this.download, text: lastBlobText });
     };
     // eslint-disable-next-line global-require
+    window.TelemetryViews = require(path.join(__dirname, '..', 'shared', 'telemetry-views.js'));
+    // eslint-disable-next-line global-require
     require(DEVTOOLS_PATH);
     platformSelect = document.getElementById('telemetry-platform-select');
+    profileSelect = document.getElementById('telemetry-export-profile-select');
 });
 
 beforeEach(() => {
     platformSelect.value = 'all';
+    profileSelect.value = 'raw';
 });
 
 describe('telemetry export', () => {
@@ -124,5 +133,20 @@ describe('telemetry export', () => {
         expect(payload.eventCount).toBe(2);
         expect(payload.readerGuide).toContain('не зафиксировано');
         expect(payload.events[1].label).toBe('MODEL_FINAL');
+    });
+
+    test('a problem profile exports a compact view with the task for the reader', async () => {
+        storedEvents = [rawEvent('Gemini', 1, 'SELECTOR_STATS'), rawEvent('Gemini', 2, 'ANSWER_COMPLETE_DETECTED'), rawEvent('Gemini', 3, 'MODEL_FINAL')];
+        profileSelect.value = 'completion';
+        const { filename, text } = await runExport();
+        expect(filename).toMatch(/^telemetry-completion-gemini-\d+\.json$/);
+        const payload = JSON.parse(text);
+        expect(payload.format).toBe('telemetry-view/1');
+        expect(payload.profile).toBe('completion');
+        expect(payload.sourceEventCount).toBe(3);
+        expect(payload.eventCount).toBe(2);
+        expect(payload.events.map((row) => row.l)).toEqual(['ANSWER_COMPLETE_DETECTED', 'MODEL_FINAL']);
+        expect(payload.readerGuide).toContain('Задача:');
+        expect(payload.fieldsGuide).toContain('n —');
     });
 });

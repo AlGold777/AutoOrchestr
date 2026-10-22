@@ -1,6 +1,6 @@
 # Телеметрия
 
-Версия документа: 2.81.832. История прежней схемы (proof-oriented ledger, пресеты, дайджесты, canonical evidence) удалена из дерева, её можно найти в git по тегу `pre-telemetry-rebuild` (файл `docs/Telemetry/telemetry.md` и каталог `telemetry-spec/`).
+Версия документа: 2.81.833. История прежней схемы (proof-oriented ledger, пресеты, дайджесты, canonical evidence) удалена из дерева, её можно найти в git по тегу `pre-telemetry-rebuild` (файл `docs/Telemetry/telemetry.md` и каталог `telemetry-spec/`).
 
 ## Принцип
 
@@ -24,7 +24,9 @@
 
 ## Экспорт
 
-- `Telemetry → ↓` (`results-devtools.js`): JSON `telemetry-raw/1` с событиями текущего прогона (по выбранной модели), версией расширения, `runSessionId` и памяткой читателю. Секреты маскируются `SecretRedaction`.
+- `Telemetry → ↓` (`results-devtools.js`) выгружает события текущего прогона (по выбранной модели) в JSON с версией расширения, `runSessionId` и памяткой читателю. Секреты маскируются `SecretRedaction`. Список слева от кнопки выбирает профиль:
+  - **Raw (all)**, по умолчанию: все события как есть, формат `telemetry-raw/1`.
+  - **Prompt not sent**, **End of generation**, **Which answer is last**, **Truncated answer**: формат `telemetry-view/1`. Остаются события по меткам задачи и все error/warning, поля сжаты (`t` — мс от начала, `p`, `l`, `v`, `d`, `m`), подряд идущие повторы схлопнуты (`n`), в `readerGuide` вписана задача для модели. Правила и списки меток: `shared/telemetry-views.js`; изменение правил не требует миграции данных.
 - `Telemetry → MD` (All Logs): Markdown с событиями, раундами, сводкой прогона и логами моделей (`results.js`, `buildAllLogsMarkdown`).
 - `Disput → JSON/MD/Extract`: отчёт трейса Disput; события по моделям Disput получает из того же потока через переводчик меток (`results.js`, `diagnosticTraceMapping`).
 - `B1`: безопасные DOM-скелеты ответов (калибровка, не телеметрия прогона).
