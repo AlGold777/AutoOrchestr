@@ -34,3 +34,12 @@
 
 ## API холста (`window.ProtoCanvas`, агент A)
 - `render()` — перерисовать из `ProtoState`.
+
+## Стенд схем (`stand.js`, `window.ProtoStand`)
+Клавиша I (Ш) вне полей ввода и окон открывает окно вставки JSON-схемы `{ task, steps }` (формат и примеры — `stand-examples.json`).
+«Применить» проверяет схему (замечания — в окне и меткой «!» на карточке) и, если JSON читается, рисует холст по ней:
+раунды и синтезы кладутся в `ProtoState` (`rounds`, `final`), поэтому их окна — окна `cards.js`, дополненные разделом «Из схемы»;
+остальные блоки — карточки с окном «Из схемы». «Сбросить» возвращает состояние и холст, бывшие до первого «Применить».
+- `ProtoStand.active` — пока `true`, `ProtoCanvas.render()` отдаёт отрисовку в `ProtoStand.render()`.
+- `ProtoCanvas` дополнительно отдаёт `drawInputSplitConnector(svgId, stackId, color, targetMode)` и `drawMergeSplitConnector` — ими стенд рисует линии.
+- `ProtoStand.validate(text)` → `{ schema, flat, issues }`; `open()`, `reset()`, `examples`.

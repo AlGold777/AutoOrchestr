@@ -142,13 +142,13 @@
     };
     const arrow = (y, cls) => `<polygon points="44,${y - 4} 50,${y} 44,${y + 4}" class="arrow-head ${cls}"/>`;
 
-    const drawInputSplitConnector = (svgId, targetStackId, colorClass) => {
+    const drawInputSplitConnector = (svgId, targetStackId, colorClass, targetMode = 'input') => {
         const svg = $(svgId);
         const entryPoint = $('entryPoint');
         const entryWrapper = $('entryWrapper');
         if (!svg) return;
         const targetStack = $(targetStackId);
-        const active = modeLookup(targetStackId, 'input');
+        const active = modeLookup(targetStackId, targetMode);
         const inactive = inactiveIndices(targetStack, active);
         const all = [...active, ...inactive];
         if (!all.length) { svg.innerHTML = ''; if (entryPoint) entryPoint.style.marginTop = '26px'; return; }
@@ -233,6 +233,7 @@
     };
 
     const drawAll = () => {
+        if (window.ProtoStand?.active) { window.ProtoStand.draw(); return; }
         const rounds = S().rounds;
         const total = rounds.length;
         updateLayout();
@@ -282,6 +283,8 @@
         const state = S();
         const root = flow();
         if (!state || !root) return;
+        // Стенд схем (stand.js) рисует холст сам, пока применена схема.
+        if (window.ProtoStand?.active) { window.ProtoStand.render(); return; }
         if (!state.rounds.length) state.rounds.push(newRound(1));
         const total = state.rounds.length;
         root.innerHTML = `
@@ -480,7 +483,7 @@
         });
     };
 
-    window.ProtoCanvas = { render };
+    window.ProtoCanvas = { render, drawInputSplitConnector, drawMergeSplitConnector };
 
     const start = () => {
         if (!S()) { console.warn('[proto] ProtoState is missing'); return; }
