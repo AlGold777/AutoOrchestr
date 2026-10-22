@@ -5,7 +5,7 @@
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '12';
+  const STAND_VERSION = '13';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -959,16 +959,17 @@
     openStand();
   }, true);
 
-  // Запасной вход, если клавишу перехватывает расширение браузера: маленькая кнопка без подписи.
-  const openButton = document.createElement('button');
-  openButton.type = 'button';
-  openButton.id = 'proto-stand-open';
-  openButton.title = `Стенд JSON (клавиша I) · v${STAND_VERSION}`;
-  openButton.setAttribute('aria-label', openButton.title);
-  openButton.innerHTML = '<i class="ti ti-braces" aria-hidden="true"></i>';
-  openButton.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:50;width:34px;height:34px;display:grid;place-items:center;border:1px solid #cbd5e1;border-radius:50%;background:#fff;color:#64748b;font-size:18px;cursor:pointer;box-shadow:0 2px 6px rgba(15,23,42,.12)';
-  openButton.addEventListener('click', () => { if (!anyOpen() && !document.querySelector('dialog[open]')) openStand(); });
-  document.body.appendChild(openButton);
+  // Кнопка «i» в шапке панели (#pipeline-profile-btn) открывает стенд; клавиша I делает то же.
+  const infoButton = document.getElementById('pipeline-profile-btn');
+  if (infoButton) {
+    infoButton.title = `Стенд JSON (кнопка «i» или клавиша I) · v${STAND_VERSION}`;
+    infoButton.setAttribute('aria-label', infoButton.title);
+    infoButton.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!anyOpen() && !document.querySelector('dialog[open]')) openStand();
+    }, true);
+  }
 
   document.title = `${document.title} · v${STAND_VERSION}`;
 
