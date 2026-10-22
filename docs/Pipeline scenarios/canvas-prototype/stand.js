@@ -69,6 +69,16 @@
       if (entry.step.block === 'foreach' && Array.isArray(entry.step.body)) walk(entry.step.body, entry);
     });
     walk(schema.steps, null);
+    // Повтор наследует настройки повторяемого этапа: models, model, order, role, если у него их нет.
+    const firstById = new Map();
+    flat.forEach((e) => { if (own(e.step.id) && !firstById.has(e.step.id)) firstById.set(e.step.id, e); });
+    flat.forEach((e) => {
+      const src = own(e.step.repeats) ? firstById.get(e.step.repeats) : null;
+      if (!src || src.pos >= e.pos || src.step.block !== e.step.block) return;
+      ['models', 'model', 'order', 'role'].forEach((k) => {
+        if (e.step[k] == null && src.step[k] != null) { e.step[k] = JSON.parse(JSON.stringify(src.step[k])); (e.inherited = e.inherited || []).push(k); }
+      });
+    });
     const byId = new Map();
     flat.forEach((e) => {
       const st = e.step;
