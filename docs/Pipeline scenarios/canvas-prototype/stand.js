@@ -2,10 +2,11 @@
 // «Применить» проверяет схему и перерисовывает холст по ней. Раунды и синтезы схемы кладутся в
 // window.ProtoState, поэтому их окна — настоящие окна cards.js; остальные блоки — окна «Из схемы».
 // Холст (canvas.js) отдаёт отрисовку сюда, пока ProtoStand.active; «Сбросить» возвращает исходный холст.
+// Каталог шаблонов: Save сохраняет применённую схему шаблоном в JSON-файл на компьютере; шаблоны — пункты списка Pipelines.
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '15';
+  const STAND_VERSION = '16';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -587,6 +588,9 @@
     Object.assign(stand, { active: false, layout: [], issues: [], flat: [], schema: null, snapshot: null, name: null, current: null, comment: '' });
     canvas().render?.();
     drawIssues();
+    catalog.activeId = null;
+    catalog.loadedId = null;
+    drawCatalog();
   }
 
   // ---------- Холст ----------
@@ -870,8 +874,8 @@
       if (col?.synth) col.synth.model = select.value;
       render();
     }, true);
-    // «Новый pipeline» и импорт состояния — только на исходном холсте.
-    ['pipeline-add-btn', 'pipeline-import-btn'].forEach((id) => $(id)?.addEventListener('click', () => { if (stand.active) reset(); }, true));
+    // «Новый pipeline» — только на исходном холсте.
+    $('pipeline-add-btn')?.addEventListener('click', () => { if (stand.active) reset(); }, true);
     root.addEventListener('resize', () => { if (stand.active) draw(); });
     flow.addEventListener('toggle', () => { if (stand.active) draw(); }, true);
   }
@@ -919,7 +923,7 @@
       stand.text = area.value;
       const { schema, flat, issues, comment } = validate(area.value);
       stand.comment = comment;
-      if (schema) applySchema(schema, flat, issues);
+      if (schema) { applySchema(schema, flat, issues); catalog.activeId = null; catalog.loadedId = null; drawCatalog(); }
       drawIssues(schema ? null : 'Схема не применена.', issues);
       if (schema && !issues.length) hide(modal);
     });
@@ -973,6 +977,305 @@
     }, true);
   }
 
+  // ---------- Каталог шаблонов ----------
+  // Применённые схемы сохраняются шаблонами (Save) в один JSON-файл на компьютере (File System Access API);
+  // handle файла — в IndexedDB, копия каталога — в localStorage. Список — пункты #pipelineItems под Default.
+  const CATALOG_FORMAT = 'autoorchestr-stand-templates';
+  const CACHE_KEY = 'protoStandTemplates';
+  const FILE_TYPES = [{ description: 'JSON', accept: { 'application/json': ['.json'] } }];
+  const catalog = {
+    templates: [], handle: null, fileName: '', loaded: false, status: 'none', // none | ready | prompt | unread
+    activeId: null, loadedId: null, unsaved: new Set(), deleted: new Set()
+  };
+  const plural = (n, forms) => forms[n % 10 === 1 && n % 100 !== 11 ? 0 : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? 1 : 2];
+  const uid = () => (root.crypto?.randomUUID ? root.crypto.randomUUID()
+    : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3) | 8).toString(16); }));
+  const pickSchema = (s) => JSON.parse(JSON.stringify(['task', 'steps', 'defaults', 'run'].reduce((o, k) => (s[k] !== undefined ? { ...o, [k]: s[k] } : o), {})));
+  const countSteps = (s) => (Array.isArray(s?.steps) ? s.steps.length : 0);
+  const catalogDoc = () => ({ format: CATALOG_FORMAT, version: 1, stand: STAND_VERSION, templates: catalog.templates });
+  const catalogText = () => JSON.stringify(catalogDoc(), null, 2);
+
+  let toastTimer = 0;
+  function toast(text) {
+    let box = $('proto-stand-toast');
+    if (!box) { box = document.createElement('div'); box.id = 'proto-stand-toast'; box.setAttribute('role', 'status'); document.body.appendChild(box); }
+    box.textContent = text;
+    box.classList.add('is-visible');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => box.classList.remove('is-visible'), 2500);
+  }
+
+  // Содержимое файла → список шаблонов или null, если файл не похож на каталог.
+  function parseCatalog(text) {
+    let doc;
+    try { doc = JSON.parse(text); } catch (error) { return null; }
+    if (!isObj(doc) || doc.format !== CATALOG_FORMAT || !Array.isArray(doc.templates)) return null;
+    return doc.templates.filter((t) => isObj(t) && isObj(t.schema) && Array.isArray(t.schema.steps)).map((t) => ({
+      id: own(t.id) ? t.id : uid(),
+      name: own(t.name) ? t.name : (own(t.schema.task) ? cut(t.schema.task, 48) : 'Схема'),
+      savedAt: own(t.savedAt) ? t.savedAt : new Date().toISOString(),
+      schema: t.schema,
+      comment: own(t.comment) ? t.comment : ''
+    }));
+  }
+  function saveCache() { try { localStorage.setItem(CACHE_KEY, catalogText()); } catch (error) { /* кэш недоступен */ } }
+  function loadCache() {
+    try { const list = parseCatalog(localStorage.getItem(CACHE_KEY) || ''); if (list) catalog.templates = list; } catch (error) { /* кэш недоступен */ }
+  }
+
+  // IndexedDB 'proto-stand' / 'kv': handle файла каталога под ключом 'catalogHandle'.
+  function idb(mode, fn) {
+    return new Promise((resolve, reject) => {
+      let req;
+      try { req = indexedDB.open('proto-stand', 1); } catch (error) { reject(error); return; }
+      req.onupgradeneeded = () => req.result.createObjectStore('kv');
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const db = req.result;
+        try {
+          const tx = db.transaction('kv', mode);
+          const r = fn(tx.objectStore('kv'));
+          tx.oncomplete = () => { db.close(); resolve(r?.result); };
+          tx.onerror = tx.onabort = () => { db.close(); reject(tx.error); };
+        } catch (error) { db.close(); reject(error); }
+      };
+    });
+  }
+  const idbGetHandle = () => idb('readonly', (s) => s.get('catalogHandle'));
+  const idbSetHandle = (h) => idb('readwrite', (s) => s.put(h, 'catalogHandle')).catch((error) => console.warn('[stand] handle не сохранён', error));
+
+  async function access(h, ask) {
+    try {
+      if (await h.queryPermission({ mode: 'readwrite' }) === 'granted') return true;
+      return ask ? (await h.requestPermission({ mode: 'readwrite' })) === 'granted' : false;
+    } catch (error) { return false; }
+  }
+  const readHandle = async (h) => (await h.getFile()).text();
+  async function writeHandle(h, text) { const w = await h.createWritable(); await w.write(text); await w.close(); }
+
+  // Каталог из файла: шаблоны файла + несохранённые в файл шаблоны из памяти, без удалённых в этой сессии.
+  async function readCatalogFile(h) {
+    const list = parseCatalog(await readHandle(h));
+    if (!list) throw new Error('format');
+    const mem = catalog.templates.filter((t) => catalog.unsaved.has(t.id));
+    catalog.templates = [...list.filter((t) => !catalog.deleted.has(t.id) && !mem.some((m) => m.id === t.id)), ...mem];
+    catalog.loaded = true;
+    catalog.status = 'ready';
+    if (catalog.activeId && !catalog.templates.some((t) => t.id === catalog.activeId)) { catalog.activeId = null; catalog.loadedId = null; }
+    saveCache();
+  }
+
+  // Восстановление handle при загрузке страницы (и в проверках — с подставленным handle).
+  async function restore(h) {
+    if (!h) { catalog.status = 'none'; drawCatalog(); return catalog.status; }
+    catalog.handle = h;
+    catalog.fileName = h.name || 'stand-templates.json';
+    catalog.loaded = false;
+    if (await access(h, false)) {
+      try { await readCatalogFile(h); } catch (error) { catalog.status = 'unread'; }
+    } else catalog.status = 'prompt';
+    drawCatalog();
+    return catalog.status;
+  }
+
+  // Запись всего каталога в файл. Вызывается из клика (жест): выбор файла и запрос прав допустимы.
+  async function persist() {
+    if (!catalog.handle) {
+      if (typeof root.showSaveFilePicker !== 'function') return { ok: false, msg: 'Нет доступа к файлам: используйте Export' };
+      let h;
+      try { h = await root.showSaveFilePicker({ suggestedName: 'stand-templates.json', types: FILE_TYPES }); } catch (error) {
+        return { ok: false, msg: error?.name === 'AbortError' ? 'Файл не выбран: шаблон только в памяти' : `Файл не выбран (${error?.message || error}): шаблон только в памяти` };
+      }
+      Object.assign(catalog, { handle: h, fileName: h.name || 'stand-templates.json', loaded: true, status: 'ready' });
+      idbSetHandle(h);
+    } else {
+      if (!(await access(catalog.handle, true))) { catalog.status = catalog.loaded ? catalog.status : 'prompt'; drawCatalog(); return { ok: false, msg: 'Нет доступа к файлу: шаблон только в памяти' }; }
+      if (!catalog.loaded) {
+        let text = '';
+        try { text = await readHandle(catalog.handle); } catch (error) { /* файла нет — будет создан */ }
+        if (text.trim()) {
+          try { await readCatalogFile(catalog.handle); } catch (error) { catalog.status = 'unread'; drawCatalog(); return { ok: false, msg: `${catalog.fileName}: файл не похож на каталог шаблонов — шаблон только в памяти` }; }
+        }
+        Object.assign(catalog, { loaded: true, status: 'ready' });
+      }
+    }
+    try { await writeHandle(catalog.handle, catalogText()); } catch (error) { return { ok: false, msg: `Не удалось записать ${catalog.fileName}: ${error?.message || error}` }; }
+    catalog.unsaved.clear();
+    catalog.deleted.clear();
+    drawCatalog();
+    return { ok: true, msg: `Каталог: ${catalog.fileName}` };
+  }
+
+  const uniqueName = (base, skipId) => {
+    const taken = new Set(catalog.templates.filter((t) => t.id !== skipId).map((t) => t.name));
+    let name = base;
+    for (let n = 2; taken.has(name); n++) name = `${base} (${n})`;
+    return name;
+  };
+  async function saveTemplate() {
+    if (!stand.active || !stand.schema) { toast('Сначала примените схему (кнопка i)'); return; }
+    const now = new Date().toISOString();
+    let tpl = catalog.loadedId ? catalog.templates.find((t) => t.id === catalog.loadedId) : null;
+    if (tpl) Object.assign(tpl, { schema: pickSchema(stand.schema), savedAt: now, comment: stand.comment || '' });
+    else {
+      tpl = { id: uid(), name: uniqueName(own(stand.schema.task) ? cut(stand.schema.task, 48) : 'Схема'), savedAt: now, schema: pickSchema(stand.schema), comment: stand.comment || '' };
+      catalog.templates.push(tpl);
+    }
+    catalog.unsaved.add(tpl.id);
+    catalog.activeId = catalog.loadedId = tpl.id;
+    saveCache();
+    drawCatalog();
+    const res = await persist();
+    toast(`Сохранено: ${tpl.name}\n${res.msg}`);
+  }
+
+  function applyTemplate(tpl) {
+    const text = JSON.stringify(tpl.schema, null, 2);
+    const { schema, flat, issues } = validate(text);
+    if (!schema) { toast(`Шаблон не применён: ${issues.find((it) => it.level === 'error')?.msg || 'ошибка схемы'}`); return; }
+    stand.text = text;
+    stand.comment = tpl.comment || '';
+    const area = $('proto-stand-json');
+    if (area) area.value = text;
+    applySchema(schema, flat, issues);
+    drawIssues();
+    catalog.activeId = catalog.loadedId = tpl.id;
+    drawCatalog();
+  }
+
+  async function deleteTemplate(tpl) {
+    if (!root.confirm(`Удалить шаблон «${tpl.name}»?`)) return;
+    catalog.templates = catalog.templates.filter((t) => t !== tpl);
+    catalog.unsaved.delete(tpl.id);
+    catalog.deleted.add(tpl.id);
+    saveCache();
+    if (catalog.activeId === tpl.id) reset(); else drawCatalog();
+    const res = catalog.handle ? await persist() : null;
+    toast(`Удалено: ${tpl.name}${res && !res.ok ? `\n${res.msg}` : ''}`);
+  }
+
+  async function openCatalogFile() {
+    if (!catalog.handle) return;
+    if (!(await access(catalog.handle, true))) { toast('Нет доступа к файлу каталога'); return; }
+    try { await readCatalogFile(catalog.handle); toast(`Каталог: ${catalog.fileName} · ${catalog.templates.length} ${plural(catalog.templates.length, ['шаблон', 'шаблона', 'шаблонов'])}`); } catch (error) {
+      catalog.status = 'unread';
+      toast(error?.message === 'format' ? 'Файл не похож на каталог шаблонов' : `Файл не прочитан: ${error?.message || error}`);
+    }
+    drawCatalog();
+  }
+
+  // Import: файл выбирается и становится каталогом (его handle — для последующих записей).
+  async function importCatalog() {
+    let h = null;
+    let text;
+    if (typeof root.showOpenFilePicker === 'function') {
+      try { [h] = await root.showOpenFilePicker({ types: FILE_TYPES, multiple: false }); } catch (error) { if (error?.name !== 'AbortError') toast(`Файл не выбран: ${error?.message || error}`); return; }
+      try { text = await readHandle(h); } catch (error) { toast(`Файл не прочитан: ${error?.message || error}`); return; }
+    } else {
+      const input = Object.assign(document.createElement('input'), { type: 'file', accept: 'application/json,.json' });
+      const file = await new Promise((resolve) => { input.addEventListener('change', () => resolve(input.files?.[0] || null), { once: true }); input.click(); });
+      if (!file) return;
+      text = await file.text();
+    }
+    const list = parseCatalog(text);
+    if (!list) { toast('Файл не похож на каталог шаблонов'); return; }
+    if (catalog.templates.length && !root.confirm(`Заменить текущий каталог (${catalog.templates.length} ${plural(catalog.templates.length, ['шаблон', 'шаблона', 'шаблонов'])}) шаблонами из файла (${list.length})?`)) return;
+    catalog.templates = list;
+    catalog.unsaved.clear();
+    catalog.deleted.clear();
+    if (h) { Object.assign(catalog, { handle: h, fileName: h.name || 'stand-templates.json', loaded: true, status: 'ready' }); idbSetHandle(h); }
+    if (catalog.activeId && !list.some((t) => t.id === catalog.activeId)) { catalog.activeId = null; catalog.loadedId = null; }
+    saveCache();
+    drawCatalog();
+    toast(`Каталог: ${h ? catalog.fileName : 'из файла'} · ${list.length} ${plural(list.length, ['шаблон', 'шаблона', 'шаблонов'])}${h ? '' : '\nНет доступа к файлам: изменения — через Export'}`);
+  }
+
+  function exportCatalog() {
+    if (!catalog.templates.length) { toast('Каталог пуст: сохраните схему (Save)'); return; }
+    const url = URL.createObjectURL(new Blob([catalogText()], { type: 'application/json' }));
+    const a = Object.assign(document.createElement('a'), { href: url, download: 'stand-templates.json' });
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast(`Скачан stand-templates.json · ${catalog.templates.length} ${plural(catalog.templates.length, ['шаблон', 'шаблона', 'шаблонов'])}`);
+  }
+
+  // Пункт списка — разметка настоящего UI (results.js, buildPipelineItem).
+  function itemHtml(name, title, active, attrs, deletable) {
+    return `<div class="pipeline-item${active ? ' active' : ''}" data-name="${esc(name)}"${attrs}>
+      <span class="pipeline-item-main"><input type="radio" name="pipeline" class="pipeline-radio"${active ? ' checked' : ''}><span class="pipeline-item-name" title="${esc(title)}">${esc(name)}</span></span>${deletable
+      ? '<button type="button" class="pipeline-item-delete" title="Удалить шаблон" aria-label="Удалить шаблон">×</button>' : ''}</div>`;
+  }
+  function drawCatalog() {
+    const box = $('pipelineItems');
+    if (!box) return;
+    const status = catalog.status === 'none' ? 'Каталог: нет файла'
+      : `Каталог: ${catalog.fileName}${catalog.status === 'prompt' ? ' · нет доступа' : catalog.status === 'unread' ? ' · не прочитан' : ''}`;
+    const date = (iso) => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? String(iso || '') : d.toLocaleString('ru-RU'); };
+    box.innerHTML = `<div class="proto-catalog-status" title="${esc(status)}">${esc(status)}</div>${itemHtml('Default', 'Default — исходный холст', !stand.active, ' data-catalog-default', false)}${catalog.templates.map((t) => {
+      const n = countSteps(t.schema);
+      return itemHtml(t.name, `${t.name} · ${n} ${plural(n, ['этап', 'этапа', 'этапов'])} · ${date(t.savedAt)}`, stand.active && t.id === catalog.activeId, ` data-template-id="${esc(t.id)}"`, true);
+    }).join('')}${catalog.status === 'prompt' ? `<div class="pipeline-item proto-catalog-open" data-catalog-open title="Разрешить доступ и прочитать файл">
+      <span class="pipeline-item-main"><i class="ti ti-folder-open" aria-hidden="true"></i><span class="pipeline-item-name">Открыть каталог: ${esc(catalog.fileName)}</span></span></div>` : ''}`;
+  }
+
+  // Долгое нажатие (≥ 600 мс без движения) показывает «×» у пункта шаблона; следующий за ним click подавляется.
+  const LONG_MS = 600;
+  const press = { timer: 0, hide: 0, x: 0, y: 0, item: null, suppress: false };
+  const clearLongpress = () => { clearTimeout(press.hide); document.querySelectorAll('.pipeline-item.is-longpress').forEach((el) => el.classList.remove('is-longpress')); };
+  function bindCatalog() {
+    const box = $('pipelineItems');
+    if (!box) return;
+    box.addEventListener('pointerdown', (event) => {
+      press.suppress = false;
+      clearTimeout(press.timer);
+      const item = event.target.closest('.pipeline-item[data-template-id]');
+      if (!item || event.target.closest('.pipeline-item-delete')) return;
+      Object.assign(press, { item, x: event.clientX, y: event.clientY });
+      press.timer = setTimeout(() => {
+        clearLongpress();
+        item.classList.add('is-longpress');
+        press.suppress = true;
+        press.hide = setTimeout(clearLongpress, 6000);
+      }, LONG_MS);
+    });
+    box.addEventListener('pointermove', (event) => { if (press.timer && Math.hypot(event.clientX - press.x, event.clientY - press.y) > 6) clearTimeout(press.timer); });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach((type) => box.addEventListener(type, () => clearTimeout(press.timer)));
+    box.addEventListener('contextmenu', (event) => { if (event.target.closest('.pipeline-item[data-template-id]')) event.preventDefault(); });
+    // Клики по списку обрабатывает каталог (раньше обработчика холста).
+    box.addEventListener('click', (event) => {
+      event.stopPropagation();
+      const t = event.target;
+      if (press.suppress) { press.suppress = false; event.preventDefault(); return; }
+      const item = t.closest('.pipeline-item');
+      if (!item) return;
+      if (item.hasAttribute('data-catalog-open')) { openCatalogFile(); return; }
+      if (item.hasAttribute('data-catalog-default')) { reset(); return; }
+      const tpl = catalog.templates.find((x) => x.id === item.dataset.templateId);
+      if (!tpl) return;
+      if (t.closest('.pipeline-item-delete')) { event.preventDefault(); deleteTemplate(tpl); return; }
+      applyTemplate(tpl);
+    }, true);
+    document.addEventListener('pointerdown', (event) => { if (!event.target.closest?.('.pipeline-item.is-longpress')) clearLongpress(); }, true);
+    window.addEventListener('keydown', (event) => { if (event.key === 'Escape') clearLongpress(); }, true);
+    // Кнопки шапки панели: Save / Import / Export — каталог шаблонов (перехват раньше обработчиков холста).
+    window.addEventListener('click', (event) => {
+      const btn = event.target.closest?.('#pipeline-save-btn, #pipeline-import-btn, #pipeline-export-btn');
+      if (!btn) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (btn.id === 'pipeline-save-btn') saveTemplate();
+      else if (btn.id === 'pipeline-import-btn') importCatalog();
+      else exportCatalog();
+    }, true);
+    const titles = { 'pipeline-save-btn': 'Сохранить схему шаблоном в каталог', 'pipeline-import-btn': 'Открыть файл каталога шаблонов', 'pipeline-export-btn': 'Скачать каталог шаблонов (stand-templates.json)' };
+    Object.entries(titles).forEach(([id, text]) => { const b = $(id); if (b) { b.title = text; b.setAttribute('aria-label', text); } });
+    loadCache();
+    drawCatalog();
+    idbGetHandle().then(restore, () => restore(null));
+  }
+
   document.title = `${document.title} · v${STAND_VERSION}`;
 
   // ---------- Стили стенда (только то, чего нет в настоящих стилях) ----------
@@ -1007,6 +1310,14 @@
     .proto-stand-row { display: contents; }
     .proto-stand-row > span { color: var(--pipeline-muted); white-space: nowrap; }
     .proto-stand-row > div { color: var(--pipeline-text); white-space: pre-wrap; overflow-wrap: anywhere; }
+    .pipeline-item.is-longpress .pipeline-item-delete { opacity: 1; pointer-events: auto; }
+    .pipeline-item[data-template-id] { -webkit-touch-callout: none; user-select: none; }
+    .proto-catalog-status { line-height: 25px; font-size: 11px; color: var(--pipeline-muted); opacity: 0.85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .proto-catalog-open .ti { font-size: 14px; color: var(--pipeline-muted); }
+    #proto-stand-toast { position: fixed; left: 50%; bottom: 24px; z-index: 100000; transform: translate(-50%, 8px); max-width: min(480px, calc(100vw - 32px));
+      padding: 7px 14px; border: 1px solid #e2e8f0; border-radius: 8px; background: #fff; color: var(--pipeline-text); box-shadow: 0 6px 20px rgba(15, 23, 42, 0.14);
+      font-size: 12px; line-height: 1.45; white-space: pre-line; overflow-wrap: anywhere; text-align: center; opacity: 0; pointer-events: none; transition: opacity 0.15s ease, transform 0.15s ease; }
+    #proto-stand-toast.is-visible { opacity: 1; transform: translate(-50%, 0); }
   `;
   document.head.appendChild(style);
 
@@ -1076,8 +1387,11 @@
 
   root.ProtoStand = {
     get active() { return stand.active; },
-    version: STAND_VERSION, render, draw, validate, reset, open: openStand, examples: EXAMPLES
+    version: STAND_VERSION, render, draw, validate, reset, open: openStand, examples: EXAMPLES,
+    // Каталог шаблонов (для проверок): состояние, восстановление по handle, перерисовка списка.
+    catalog: { state: catalog, restore, draw: drawCatalog, save: saveTemplate, parse: parseCatalog, text: catalogText }
   };
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bindFlow);
-  else bindFlow();
+  const start = () => { bindFlow(); bindCatalog(); };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
 })(window);
