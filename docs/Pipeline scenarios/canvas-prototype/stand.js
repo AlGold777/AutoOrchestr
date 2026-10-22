@@ -5,7 +5,7 @@
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '7';
+  const STAND_VERSION = '8';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -614,7 +614,8 @@
   const openButton = document.createElement('button');
   openButton.type = 'button';
   openButton.id = 'proto-stand-open';
-  openButton.textContent = 'Стенд JSON (I)';
+  openButton.textContent = `Стенд JSON (I) · v${STAND_VERSION}`;
+  document.title = `${document.title} · v${STAND_VERSION}`;
   openButton.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:50;padding:8px 14px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#334155;font:600 13px system-ui,sans-serif;cursor:pointer;box-shadow:0 2px 6px rgba(15,23,42,.12)';
   openButton.addEventListener('click', () => { if (!anyOpen() && !document.querySelector('dialog[open]')) openStand(); });
   document.body.appendChild(openButton);
