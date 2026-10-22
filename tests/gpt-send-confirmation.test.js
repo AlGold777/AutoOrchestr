@@ -77,3 +77,11 @@ test.each([
 
   await expect(confirm()).resolves.toBe(false);
 });
+
+test('GPT send is not confirmed while the composer still holds the prompt', async () => {
+  const gateStart = source.indexOf('const composerStillHoldsPrompt =');
+  const gateEnd = source.indexOf('        let sendButton = null;', gateStart);
+  expect(gateStart).toBeGreaterThan(0);
+  const body = source.slice(gateStart, gateEnd);
+  expect(body).toMatch(/if \(composerStillHoldsPrompt\(\)\) \{ await sleep\(120\); continue; \}/);
+});

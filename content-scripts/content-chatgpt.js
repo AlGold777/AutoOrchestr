@@ -1144,8 +1144,18 @@ const chatgptScrollCoordinator = window.ScrollCoordinator
         const preSendUserCount = document.querySelectorAll(userTurnSelector).length;
         const preSendAssistant = grabLatestAssistantMarkup();
         const confirmChatgptSend = async () => {
+          // A send that did not happen leaves the full prompt in the composer.
+          // Stop button, user-turn count and assistant markup can all change
+          // for unrelated reasons (history hydration, a still-running answer),
+          // so none of them confirms a send while the composer still holds it.
+          const composerStillHoldsPrompt = () => {
+            if (typeof resolveLiveComposer !== 'function' || typeof expectedComposerText === 'undefined' || !expectedComposerText) return false;
+            const live = resolveLiveComposer();
+            return Boolean(live) && normalizeForComparison(readComposerValue(live)) === expectedComposerText;
+          };
           const deadline = Date.now() + 3500;
           while (Date.now() < deadline) {
+            if (composerStillHoldsPrompt()) { await sleep(120); continue; }
             const stopBtn = document.querySelector('button[data-testid="stop-button"], button[aria-label*="Stop" i]');
             if (stopBtn && isElementInteractable(stopBtn)) return true;
             const after = document.querySelectorAll(userTurnSelector).length;
