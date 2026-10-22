@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-22 — Pipeline: цвет иконки, полоска Telemetry под ней, версия 2.81.842
+
+- Иконка «Pipeline panel» окрашена в `rgb(133 137 142)` (`.right-sidebar-toggle-btn`).
+- Полоска «Telemetry» горизонтальная, `#30609445`, 28.6 × 4 px, стоит под иконкой Pipeline (кнопки в блоке `.sidebar-toggle-stack`, полоска позиционируется абсолютно).
+
 ### 2026-10-22 — Иконка Pipeline крупнее, Telemetry — вертикальная полоска, версия 2.81.841
 
 - Иконка «Pipeline panel» увеличена на 30 % (`.sidebar-toggle-icon-branch-v3`: 28.6 × 30.42 px).
