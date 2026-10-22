@@ -198,14 +198,13 @@
     align-self: center;
 }
 
-.telemetry-toggle-icon {
+.telemetry-toggle-bar {
     display: block;
     flex: 0 0 auto;
-    line-height: 1;
-    width: 32px;
-    height: 32px;
-    font-size: 32px;
-    color: #111827;
+    width: 22px;
+    height: 4px;
+    border-radius: 2px;
+    background: #d1d5db;
 }
 
 .top-new-pages-toggle {
