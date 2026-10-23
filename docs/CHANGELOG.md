@@ -1,5 +1,20 @@
 # CHANGELOG — Project
 
+### 2026-10-22 — Pipeline: цвет иконки, полоска Telemetry под ней, версия 2.81.842
+
+- Иконка «Pipeline panel» окрашена в `rgb(133 137 142)` (`.right-sidebar-toggle-btn`).
+- Полоска «Telemetry» горизонтальная, `#30609445`, 28.6 × 4 px, стоит под иконкой Pipeline (кнопки в блоке `.sidebar-toggle-stack`, полоска позиционируется абсолютно).
+
+### 2026-10-22 — Иконка Pipeline крупнее, Telemetry — вертикальная полоска, версия 2.81.841
+
+- Иконка «Pipeline panel» увеличена на 30 % (`.sidebar-toggle-icon-branch-v3`: 28.6 × 30.42 px).
+- Полоска «Telemetry» стала вертикальной: 6 × 30.42 px (высота равна иконке Pipeline), `.telemetry-toggle-bar`.
+
+### 2026-10-22 — Иконки верхней панели, версия 2.81.840
+
+- Кнопка «Pipeline panel»: иконка заменена на ti-git-merge (`pipeline_panel.html`, `result_new.html`); старая сохранена в `docs/icons-backup/pipeline-panel-icon-branch-v3.html`.
+- Кнопка «Telemetry»: вместо шестерёнки — серая полоска высотой 4 px (`.telemetry-toggle-bar`, `styles/app-controls.css`); кнопка работает как раньше.
+
 ### 2026-10-22 — GPT: отправка не подтверждается, пока в поле ввода остался запрос, версия 2.81.835
 
 - В телеметрии `send_action_completed: confirmed` и `PROMPT_SUBMITTED_ACCEPTED` приходили, хотя в чате запрос не появился и текст остался в поле. Подтверждение шло по кнопке Stop, росту числа сообщений или новой разметке ассистента — всё это меняется и без отправки (догрузка истории, незавершённый предыдущий ответ в переиспользованной вкладке). Теперь (`content-scripts/content-chatgpt.js`, `confirmChatgptSend`) ни один признак не засчитывается, пока живое поле ввода содержит полный запрос; без подтверждения срабатывают запасные пути (кнопка Send, Enter).

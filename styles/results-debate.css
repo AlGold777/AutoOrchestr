@@ -193,13 +193,14 @@
     color: #0f172a;
 }
 
-.export-txt-btn {
+.export-txt-btn,
+.export-md-btn {
     font-size: 11px;
     font-weight: 700;
     text-transform: lowercase;
 }
 
-.favorite-panel-actions .favorite-export-txt-btn {
+.favorite-panel-actions .favorite-export-md-btn {
     width: 26px;
     height: 26px;
 }
@@ -934,7 +935,7 @@ body.llm-stream-preview-open .llm-results .llm-panel.llm-panel-session-restored:
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  font-size: 16px;
+  font-size: 15px;
   line-height: 1;
   padding: 0;
   transition: transform 0.15s ease, color 0.15s ease;
@@ -1011,7 +1012,7 @@ body.llm-stream-preview-open .llm-results .llm-panel.llm-panel-session-restored:
 .header-right {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 1px;
   margin-left: auto;
 }
 
