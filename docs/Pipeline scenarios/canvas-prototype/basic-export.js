@@ -93,6 +93,17 @@
       if (own(st.why)) step.goal = st.why.trim();
       out.push(step);
     });
+    // В Basic финальный синтез — последний шаг: проверки и вопросы после него встают перед ним и читают то, что читает синтез.
+    const finalAt = out.findIndex((st) => st.ref === 'final');
+    if (finalAt >= 0 && finalAt < out.length - 1) {
+      const final = out[finalAt];
+      const trailing = out.splice(finalAt + 1);
+      trailing.forEach((st) => {
+        if (st.kind === 'gate' && st.input === 'previous') st.input = final.input;
+        warnings.push(`Шаг ${st.ref} стоял после финального синтеза: в Basic он перенесён перед ним.`);
+      });
+      out.splice(finalAt, 0, ...trailing);
+    }
     steps.filter((st) => repeatOf(st)).forEach((st) => { if (st.block === 'gate' && !steps.some((o) => o.block === 'gate' && o.id === st.repeats)) warnings.push(`Повторная проверка ${st.id} без первой проверки пропущена.`); });
 
     const result = { schemaVersion: 1, origin: 'user' };
