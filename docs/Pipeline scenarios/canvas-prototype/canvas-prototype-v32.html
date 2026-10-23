@@ -14588,7 +14588,7 @@ window.ProtoState = {
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '31';
+  const STAND_VERSION = '32';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -15170,10 +15170,12 @@ window.ProtoState = {
     });
     stand.layout.forEach((col) => { col.docs = []; });
     stand.docs = docs;
-    docs.forEach((st) => {
-      const sink = st.block === 'file' && st.mode !== 'read';
-      const at = stand.layout.findIndex((col) => listOf(sink ? st.inputs : col.step.inputs).some((r) => refId(r) === (sink ? col.step.id : st.id)));
-      const col = stand.layout[at >= 0 ? at : (sink ? stand.layout.length - 1 : 0)];
+    // Входные документы (материал, чтение файла) крепятся к In; запись файла — к этапу, чей результат она сохраняет.
+    stand.inDocs = docs.filter((st) => !(st.block === 'file' && st.mode !== 'read'));
+    stand.inDocs.forEach((st) => { st.__col = -1; });
+    docs.filter((st) => st.block === 'file' && st.mode !== 'read').forEach((st) => {
+      const at = stand.layout.findIndex((col) => listOf(st.inputs).some((r) => refId(r) === col.step.id));
+      const col = stand.layout[at >= 0 ? at : stand.layout.length - 1];
       if (col) { col.docs.push(st); st.__col = stand.layout.indexOf(col); }
     });
     // Промежуточный синтез между раундами — в слот раунда, после которого он стоит.
@@ -15231,7 +15233,7 @@ window.ProtoState = {
   const artifactTargets = (k, name) => { const all = S().models || []; const own = stand.artTo?.[`${k}|${name}`]; return own ? all.filter((m) => own.includes(m)) : all; };
   const DOC_KIND = { text: 'текст', document: 'файл', link: 'ссылка', read: 'чтение', overwrite: 'файл', append: 'дописать' };
   const docKind = (d) => (d.block === 'file' ? DOC_KIND[d.mode === 'read' ? 'read' : d.mode === 'append' ? 'append' : 'overwrite'] : DOC_KIND[d.kind] || 'материал');
-  const docChips = (k) => (stand.layout[k]?.docs || []).map((d) => {
+  const docChips = (k) => (k === -1 ? (stand.inDocs || []) : (stand.layout[k]?.docs || [])).map((d) => {
     const sink = d.block === 'file' && d.mode !== 'read';
     const to = sink ? [] : artifactTargets('doc', d.id); const all = (S().models || []).length;
     const label = `${docKind(d)}${!sink && to.length < all ? ` · ${to.length}/${all}` : ''}`;
@@ -15287,7 +15289,7 @@ window.ProtoState = {
       if (p >= 0 && !links.some((l) => l.from === p && l.to === c && l.name === name)) links.push({ from: p, to: c, name });
     }));
     (stand.docs || []).filter((d) => !(d.block === 'file' && d.mode !== 'read')).forEach((d) => stand.layout.forEach((col, c) => {
-      if (c !== d.__col && listOf(col.step.inputs).some((r) => refId(r) === d.id)) links.push({ from: d.__col, to: c, name: d.id, doc: true });
+      if (listOf(col.step.inputs).some((r) => refId(r) === d.id)) links.push({ from: -1, to: c, name: d.id, doc: true });
     }));
     return links;
   };
@@ -15405,7 +15407,7 @@ window.ProtoState = {
     const cols = stand.layout;
     let html = `<div class="stage-column entry-column">
         <div class="stage-label"><span class="entry-badge">In</span></div>
-        <div class="proto-art-zone"></div>
+        <div class="proto-art-zone">${docChips(-1)}</div>
         <div class="entry-wrapper" id="entryWrapper"><div class="entry-point" id="entryPoint" title="${esc(own(stand.schema?.description) ? cut(stand.schema.description, 400) : 'Общие значения')}" style="cursor:pointer">▶</div></div>
       </div>
       <div class="connector-group"><svg class="connector-svg" id="svg-in-models"></svg></div>`;
@@ -15413,7 +15415,7 @@ window.ProtoState = {
       if (k > 0) html += `<div class="connector-group"><svg class="connector-svg" id="stand-svg-${k}"></svg></div>`;
       html += columnHtml(col, k, k > 0 ? cols[k - 1].step.id : '');
     });
-    const per = Math.max(0, ...cols.map((col) => listOf(col.step.artifacts).length + (col.docs || []).length));
+    const per = Math.max(0, (stand.inDocs || []).length, ...cols.map((col) => listOf(col.step.artifacts).length + (col.docs || []).length));
     root.style.setProperty('--proto-art-zone', per ? `${per * 28 + 6}px` : '0px');
     root.style.paddingTop = artifactLinks().length ? `${12 + artifactLinks().length * 6}px` : '';
     root.innerHTML = html;
@@ -15458,7 +15460,7 @@ window.ProtoState = {
     const slots = new Map();
     let html = '';
     links.forEach((link, i) => {
-      const col = columns[link.from];
+      const col = link.from === -1 ? root.querySelector(':scope > .entry-column') : columns[link.from];
       const to = columns[link.to]?.querySelector('.stage-label > span');
       const box = [...(col?.querySelectorAll('.proto-art') || [])].find((el) => el.dataset.art === (link.doc ? `doc|${link.name}` : `${link.from}|${link.name}`));
       if (!box || !to) return;
