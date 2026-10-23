@@ -75,3 +75,16 @@ describe('the pages load the Basic modules', () => {
     expect(at('basic-control.js')).toBeLessThan(at('custom-engine.js'));
   });
 });
+
+describe('Basic artifact registry: description of an artifact', () => {
+  const lineage = { step: 'r9', participant: 'author-B', id: 'map' };
+  const source = { step: 'r9', participant: 'author-B', visit: 1 };
+
+  test('a description is stored on the entry; without one the entry has no description field', () => {
+    const registry = Artifacts.createRegistry();
+    const { entry } = Artifacts.register(registry, { id: 'map', name: 'Map', lineage, source, answerRef: 't1', pointer: '', description: 'Для проверки' });
+    expect(entry.description).toBe('Для проверки');
+    const plain = Artifacts.register(Artifacts.createRegistry(), { id: 'map', name: 'Map', lineage, source, answerRef: 't1', pointer: '' });
+    expect(plain.entry).not.toHaveProperty('description');
+  });
+});

@@ -861,6 +861,7 @@
     return {
       ref: String(step.ref || ''),
       disabled: Boolean(disabled),
+      goal: typeof step.goal === 'string' ? step.goal : '',
       task: typeof step.task === 'string' ? step.task : '',
       output: {
         name: String(output.name || ''),
@@ -871,10 +872,13 @@
       }
     };
   }
-  // An edit of an owner: { field: 'task', value } | { field: 'output', value: { name, form, sections (lines), strictLength } }.
+  // An edit of an owner: { field: 'goal', value } | { field: 'task', value } | { field: 'output', value: { name, form, sections (lines), strictLength } }.
   function ownerAfterEdit(step = {}, edit = {}) {
     const next = { ...step };
-    if (edit.field === 'task') {
+    if (edit.field === 'goal') {
+      if (String(edit.value || '').trim()) next.goal = String(edit.value);
+      else delete next.goal;
+    } else if (edit.field === 'task') {
       if (String(edit.value || '').trim()) next.task = String(edit.value);
       else delete next.task;
     } else if (edit.field === 'output') {
@@ -889,6 +893,14 @@
     const doc = container.ownerDocument;
     const disabled = Boolean(model.disabled);
     const send = (edit) => { if (typeof emit === 'function') emit(edit); };
+    const goal = el(doc, 'textarea', 'stage-card-owner-goal');
+    goal.rows = 2; goal.value = model.goal; goal.disabled = disabled; goal.spellcheck = false;
+    goal.setAttribute('aria-label', 'Назначение этапа');
+    goal.addEventListener('change', () => send({ field: 'goal', value: goal.value }));
+    const goalWrap = el(doc, 'label', 'stage-card-setting stage-card-owner-goal-label');
+    goalWrap.append(doc.createTextNode('Назначение этапа '), goal);
+    container.append(goalWrap);
+    container.append(el(doc, 'p', 'stage-card-muted', 'Для чего этот этап и что человек должен сделать — видит владелец в окне вопроса'));
     const task = el(doc, 'textarea', 'stage-card-owner-task');
     task.rows = 4; task.value = model.task; task.disabled = disabled; task.spellcheck = false;
     task.setAttribute('aria-label', 'Что должен предоставить владелец');
@@ -951,8 +963,8 @@
   // The text of the owner window (N07): the task, what the owner was given (the input items of the engine) and the form of
   // the answer that is expected. A file item shows its name only: the page does not open files yet.
   const OWNER_ITEM_LIMIT = 6000;
-  function ownerAskMessage({ task = '', input = [], output = null, reason = '', detail = '', reasonText = '' } = {}) {
-    const parts = [String(task || '')];
+  function ownerAskMessage({ task = '', goal = '', input = [], output = null, reason = '', detail = '', reasonText = '' } = {}) {
+    const parts = [goal ? `Назначение: ${String(goal)}` : '', String(task || '')];
     const items = Array.isArray(input) ? input : [];
     if (items.length) {
       parts.push('Вам передано:');

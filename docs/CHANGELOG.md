@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-23 — Basic: этап владельца — зелёная рамка и «Назначение этапа», описание артефакта (output.artifacts[].description), карточка владельца «User», версия 2.81.845
+
+- Карточка владельца на холсте — зелёная рамка (`styles/pipeline.css`); её окно и заголовок окна вопроса называются «User».
+- Окно владельца: поле «Назначение этапа» (`goal`). В окне вопроса владельцу назначение идёт первым абзацем «Назначение: …» (`StageCard.ownerAskMessage`, `results/stage-card.js`); `provideOwnerResult` получает `goal` (`disput/custom-engine.js`).
+- Артефакт: необязательное `description` в `output.artifacts[]` (проверка типа в `disput/basic-schema.js`), сохраняется в записи реестра (`disput/basic-artifacts.js`) и показывается первой строкой в окне артефакта (`results.js`).
+- Тесты: `tests/basic-schema.test.js`, `tests/basic-artifacts.test.js`, `tests/stage-card-basic.test.js`.
+
 ### 2026-10-23 — Basic: схемы по умолчанию в Загрузки/Схемы (экспорт — chrome.downloads, импорт — окно со стартом в Загрузках), версия 2.81.844
 
 - Экспорт схемы сохраняет файл в `Загрузки/Схемы` через `chrome.downloads`; при отказе API — прежний скачивание через ссылку (`results.js`, `exportBasicSchema`, `downloadSchemaViaDownloadsApi`).

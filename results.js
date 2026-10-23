@@ -4356,7 +4356,7 @@ document.addEventListener('click', (event) => {
         const customControls = new Map();
         const getCustomControls = () => customControls.get(draftPlanStorageKey()) || [];
         const CONTROL_KINDS_CANVAS = ['gate', 'route', 'owner'];
-        const CONTROL_TITLE = { gate: 'Проверка', route: 'Маршрут', owner: 'Владелец' };
+        const CONTROL_TITLE = { gate: 'Проверка', route: 'Маршрут', owner: 'User' };
         const controlStackId = (ref) => `ctl-${String(ref).replace(/[^A-Za-z0-9_-]+/g, '-')}-stack`;
         const controlLinkId = (ref) => `svg-in-${String(ref).replace(/[^A-Za-z0-9_-]+/g, '-')}`;
         // Saves the list for the pipeline; a saved pipeline keeps it at once (as the round card does), a draft only in memory.
@@ -7089,7 +7089,8 @@ document.addEventListener('click', (event) => {
                 const item = artifacts[index];
                 await askChoiceDialog({
                     title: item.name,
-                    message: window.StageCard.feed.artifactText(textOf(item.content.answerRef), item.content.pointer, window.BasicOutput.readPointer),
+                    // The description of the artifact (output.artifacts[].description) goes first, as a line of its own.
+                    message: [item.description, window.StageCard.feed.artifactText(textOf(item.content.answerRef), item.content.pointer, window.BasicOutput.readPointer)].filter(Boolean).join('\n\n'),
                     cancelText: 'Закрыть'
                 });
             }
@@ -7371,9 +7372,9 @@ document.addEventListener('click', (event) => {
                     },
                     // The owner's answer of an owner step: a text (a file is not supported on this page yet).
                     checkUnknown,
-                    provideOwnerResult: ({ stepRef, task, input, output, reason, detail }) => askChoiceDialog({
+                    provideOwnerResult: ({ stepRef, task, goal, input, output, reason, detail }) => askChoiceDialog({
                         title: `Ответ владельца: ${stepRef}`,
-                        message: window.StageCard.ownerAskMessage({ task, input, output, reason, detail, reasonText: reason ? (window.CustomEngine?.REASON_TEXT?.[reason] || reason) : '' }),
+                        message: window.StageCard.ownerAskMessage({ task, goal, input, output, reason, detail, reasonText: reason ? (window.CustomEngine?.REASON_TEXT?.[reason] || reason) : '' }),
                         textInput: { label: 'Ответ владельца' },
                         choices: [{ value: 'send', label: 'Отправить' }]
                     }),

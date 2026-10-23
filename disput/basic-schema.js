@@ -434,7 +434,8 @@
       list.forEach((artifact, at) => {
         const at2 = `${path}.artifacts[${at}]`;
         if (!isObject(artifact)) { fail(at2, 'ожидается объект'); return; }
-        unknownKeys(artifact, ['id', 'name', 'pointer', 'revisionOf'], at2);
+        unknownKeys(artifact, ['id', 'name', 'pointer', 'revisionOf', 'description'], at2);
+        if ('description' in artifact && typeof artifact.description !== 'string') fail(`${at2}.description`, 'описание артефакта: строка');
         if (typeof artifact.id !== 'string' || !artifact.id.trim()) fail(`${at2}.id`, 'ID артефакта: непустой текст');
         else if (ids.has(artifact.id)) fail(`${at2}.id`, `артефакт «${artifact.id}» повторяется`);
         else ids.add(artifact.id);

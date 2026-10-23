@@ -968,6 +968,7 @@ body.is-resizing {
     .pipeline-stage-dialog { border-color: #384252; background: #202733; color: #e7ebf3; }
     .stage-card-badge, .stage-card-instruction { background: #2b3445; color: #e7ebf3; }
     .stage-card-copy { border-color: #384252; background: #202733; color: #e7ebf3; }
+    .pipeline-control-step[data-control-kind="owner"] .pipeline-control-card { border-color: #22c55e; background: #14301f; color: #dcfce7; }
 }
 
 .pipeline-list.is-collapsed .pipeline-list-header {
@@ -1473,4 +1474,11 @@ body.is-resizing {
     font-size: 12px;
     text-align: left;
     cursor: pointer;
+}
+
+/* The owner card: a green frame (higher specificity than the dashed rule above). */
+.pipeline-control-step[data-control-kind="owner"] .pipeline-control-card {
+    border: 3px solid #16a34a;
+    background: #f0fdf4;
+    color: #14532d;
 }

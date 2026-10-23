@@ -13,13 +13,15 @@
 
   // Registers one version. The same line and source give the entry registered before (idempotent): a repeated
   // acceptance never makes a second version. Returns { entry, created }.
-  function register(registry, { id, name, lineage, source, answerRef, pointer, valid = true, inputs = [] }) {
+  function register(registry, { id, name, lineage, source, answerRef, pointer, valid = true, inputs = [], description = '' }) {
     const key = versionKey(lineage, source);
     const existing = registry.entries.find((entry) => versionKey(entry.lineage, entry.source) === key);
     if (existing) return { entry: existing, created: false };
     const entry = {
       id, name, lineage: { ...lineage }, source: { ...source }, content: { answerRef, pointer }, valid: valid !== false, inputs: inputs.slice()
     };
+    // The description (output.artifacts[].description) is kept only when the author gave one.
+    if (description) entry.description = String(description);
     registry.entries.push(entry);
     return { entry, created: true };
   }

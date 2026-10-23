@@ -1350,3 +1350,23 @@ describe('Basic schema: description is the presentation of the pipeline, for the
     expect(errorPaths(base(steps, { description: 5 }))).toEqual(['description']);
   });
 });
+
+describe('Basic schema: artifact description (output.artifacts[].description)', () => {
+  test('a string description is valid and stays on the artifact as given', () => {
+    const schema = base([round('r1', ['A'], { output: { artifacts: [{ id: 'map', name: 'Map', pointer: '', description: 'Карта после правок' }] } })]);
+    expect(Schema.validate(schema)).toEqual([]);
+    expect(schema.steps[0].output.artifacts[0].description).toBe('Карта после правок');
+  });
+
+  test('the description survives assembly, the way the engine reads the output of a step', () => {
+    const schema = base([round('r1', ['A'], { output: { artifacts: [{ id: 'map', name: 'Map', pointer: '', description: 'Карта' }] } })]);
+    const steps = Schema.assemble(schema);
+    expect(steps[0].output.artifacts[0].description).toBe('Карта');
+  });
+
+  test('a description that is not a string is an error with its path', () => {
+    const schema = base([round('r1', ['A'], { output: { artifacts: [{ id: 'map', name: 'Map', pointer: '', description: 5 }] } })]);
+    expect(errorPaths(schema)).toEqual(['steps[0].output.artifacts[0].description']);
+    expect(Schema.describeErrors(Schema.validate(schema))).toBe('steps[0].output.artifacts[0].description: описание артефакта: строка');
+  });
+});

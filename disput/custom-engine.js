@@ -926,7 +926,7 @@
               if (declaration.revisionOf && !revision) throw new EngineError('missing_input', `шаг «${step.ref}» · output.artifacts`, `ревизия «${declaration.id}» без полученной версии`);
               Artifacts.register(registry, { id: declaration.id, name: declaration.name,
                 lineage: revision ? { ...revision.artifact.lineage } : { step: step.ref, participant: model.id, id: declaration.id },
-                source: { step: step.ref, participant: model.id, visit: activeVisit }, answerRef, pointer: declaration.pointer, inputs });
+                source: { step: step.ref, participant: model.id, visit: activeVisit }, answerRef, pointer: declaration.pointer, inputs, description: declaration.description });
             });
           }
           delete outcome[model.id].detail;
@@ -1071,7 +1071,7 @@
       });
       for (;;) {
         await checkpointNow('decision', { pendingOwner: { kind: 'owner', stepRef: step.ref, visit: entry.visit } });
-        const reply = await ownerWait(() => provideOwnerResult({ stepRef: step.ref, visit: entry.visit, task: step.task, output: step.output,
+        const reply = await ownerWait(() => provideOwnerResult({ stepRef: step.ref, visit: entry.visit, task: step.task, output: step.output, ...(step.goal ? { goal: step.goal } : {}),
           ...(step.input !== 'none' ? { input } : {}), ...(reason ? { reason, detail } : {}) }));
         if (reply === null) throw new StopRun('stopped');
         const verdict = ownerVerdict(step, reply);
@@ -1093,7 +1093,7 @@
           Artifacts.register(registry, { id: declaration.id, name: declaration.name,
             lineage: revision ? { ...revision.artifact.lineage } : { step: step.ref, participant: OWNER_PARTICIPANT, id: declaration.id },
             source: { step: step.ref, participant: OWNER_PARTICIPANT, visit: entry.visit }, answerRef: textRef, pointer: declaration.pointer,
-            inputs: items.filter((item) => item.artifact).map((item) => item.artifact) });
+            inputs: items.filter((item) => item.artifact).map((item) => item.artifact), description: declaration.description });
         });
         entry.owner = { text: verdict.text, textRef, ...(verdict.file ? { file: verdict.file } : {}) };
         emit('custom_owner', { step: step.index, ref: step.ref, visit: entry.visit, accepted: true, reason: null });

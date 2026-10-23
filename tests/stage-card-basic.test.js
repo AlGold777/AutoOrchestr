@@ -447,3 +447,33 @@ describe('N07: the text of the owner window', () => {
     expect(long).toContain('(показано 6000 из 7000 символов)');
   });
 });
+
+describe('Owner goal (Назначение этапа) and the owner question', () => {
+  const owner = { ref: 'owner:7', kind: 'owner', models: [], task: 'Утвердите текст' };
+
+  test('the goal is in the model and an edit sets or removes it', () => {
+    expect(StageCard.ownerWindowModel({ ...owner, goal: 'Проверить юридическую часть' }).goal).toBe('Проверить юридическую часть');
+    expect(StageCard.ownerWindowModel(owner).goal).toBe('');
+    expect(StageCard.ownerAfterEdit(owner, { field: 'goal', value: 'Цель' }).goal).toBe('Цель');
+    expect(StageCard.ownerAfterEdit({ ...owner, goal: 'Цель' }, { field: 'goal', value: '  ' })).not.toHaveProperty('goal');
+    expect(StageCard.ownerAfterEdit({ ...owner, goal: 'Цель' }, { field: 'task', value: 'Новое' }).goal).toBe('Цель');
+  });
+
+  test('the owner question starts with the goal before the task; without a goal the text is as before', () => {
+    const withGoal = StageCard.ownerAskMessage({ task: 'Утвердите текст', goal: 'Проверить юридическую часть' });
+    expect(withGoal).toBe('Назначение: Проверить юридическую часть\nУтвердите текст');
+    expect(StageCard.ownerAskMessage({ task: 'Утвердите текст', goal: '' })).toBe('Утвердите текст');
+  });
+
+  test('the window has the goal field with its hint, and an edit of the goal goes out as a goal edit', () => {
+    const container = document.createElement('div');
+    const seen = [];
+    StageCard.renderOwnerWindow(container, StageCard.ownerWindowModel({ ...owner, goal: 'Цель' }), (edit) => seen.push(edit));
+    const goal = container.querySelector('.stage-card-owner-goal');
+    expect(goal.value).toBe('Цель');
+    expect(container.textContent).toContain('Для чего этот этап и что человек должен сделать — видит владелец в окне вопроса');
+    goal.value = 'Новая цель';
+    goal.dispatchEvent(new Event('change'));
+    expect(seen[0]).toEqual({ field: 'goal', value: 'Новая цель' });
+  });
+});
