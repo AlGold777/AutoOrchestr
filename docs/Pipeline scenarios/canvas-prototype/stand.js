@@ -6,7 +6,7 @@
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '22';
+  const STAND_VERSION = '23';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -1206,6 +1206,8 @@
     if (catalog.activeId && !list.some((t) => t.id === catalog.activeId)) { catalog.activeId = null; catalog.loadedId = null; }
     saveCache();
     drawCatalog();
+    const open = list.find((t) => t.id === catalog.activeId) || list[0];
+    if (open) applyTemplate(open);
     toast(`Каталог: ${h ? catalog.fileName : 'из файла'} · ${list.length} ${plural(list.length, ['шаблон', 'шаблона', 'шаблонов'])}${h ? '' : '\nНет доступа к файлам: изменения — через Export'}`);
   }
 
