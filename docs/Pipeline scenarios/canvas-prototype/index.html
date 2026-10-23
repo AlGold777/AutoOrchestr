@@ -19,10 +19,12 @@
         .proto-art {
             display: flex; align-items: center; justify-content: space-between; gap: 4px; height: 24px;
             box-sizing: border-box; padding: 0 8px; border: 1px solid #cbd5e1; border-radius: 6px;
-            background: #f8fafc; color: #475569; font-size: 11px; cursor: default; user-select: none;
+            background: #f8fafc; color: #475569; font-size: 11px; cursor: pointer; user-select: none;
         }
         .proto-art-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .proto-art-version { flex: 0 0 auto; font-weight: 600; color: #94a3b8; }
+        .proto-art-models { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 6px; }
+        .proto-art-models label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
         .proto-art-svg { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; z-index: 2; }
         .proto-art-line { fill: none; stroke: #94a3b8; stroke-width: 1.4; stroke-linejoin: round; }
     </style>

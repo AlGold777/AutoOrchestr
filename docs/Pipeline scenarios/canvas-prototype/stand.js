@@ -6,7 +6,7 @@
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '25';
+  const STAND_VERSION = '26';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -572,6 +572,7 @@
       if (round && !round.intermediateSynthesis) round.intermediateSynthesis = col.synth;
     });
     state.final = final || { on: false, model: state.models.includes('Claude') ? 'Claude' : state.models[0], task: '', discipline: state.emptyDiscipline() };
+    stand.artTo = {};
     stand.schema = schema;
     stand.flat = flat;
     stand.issues = issues;
@@ -588,7 +589,7 @@
     if (name && stand.name != null) { name.textContent = stand.name; name.title = ''; }
     const entry = $('entryPoint');
     if (entry) entry.title = '';
-    Object.assign(stand, { active: false, layout: [], issues: [], flat: [], schema: null, snapshot: null, name: null, current: null, comment: '' });
+    Object.assign(stand, { artTo: {}, active: false, layout: [], issues: [], flat: [], schema: null, snapshot: null, name: null, current: null, comment: '' });
     canvas().render?.();
     drawIssues();
     catalog.activeId = null;
@@ -611,7 +612,43 @@
   const repeatText = (st) => (own(st.repeats) ? `<div class="proto-stand-line proto-stand-repeat">повтор ${esc(st.repeats)}${own(st.because) ? ` · ${esc(st.because)}` : ''}</div>` : '');
   // Артефакты этапа — в зоне над блоками моделей, под бейджем. Версия: сколько этапов выше (включая этот) выдали артефакт с тем же именем.
   const artifactVersion = (k, name) => stand.layout.slice(0, k + 1).filter((c) => listOf(c.step.artifacts).map(String).includes(name)).length;
-  const artifactZone = (k, st) => `<div class="proto-art-zone">${listOf(st.artifacts).map(String).map((name) => `<span class="proto-art" data-art="${k}|${esc(name)}" title="${esc(name)} v${artifactVersion(k, name)}"><span class="proto-art-title">${esc(name)}</span><span class="proto-art-version">v${artifactVersion(k, name)}</span></span>`).join('')}</div>`;
+  // Кому отправляется артефакт: по умолчанию всем моделям холста; снятые галочки хранятся только на стенде (в схему не пишутся).
+  const artifactTargets = (k, name) => { const all = S().models || []; const own = stand.artTo?.[`${k}|${name}`]; return own ? all.filter((m) => own.includes(m)) : all; };
+  const artifactZone = (k, st) => `<div class="proto-art-zone">${listOf(st.artifacts).map(String).map((name) => {
+    const to = artifactTargets(k, name); const all = (S().models || []).length;
+    const version = `v${artifactVersion(k, name)}${to.length < all ? ` · ${to.length}/${all}` : ''}`;
+    return `<span class="proto-art" data-art="${k}|${esc(name)}" title="${esc(name)} ${esc(version)} — клик: кому отправлять"><span class="proto-art-title">${esc(name)}</span><span class="proto-art-version">${esc(version)}</span></span>`;
+  }).join('')}</div>`;
+  function openArtifact(k, name) {
+    const col = stand.layout[k];
+    if (!col) return;
+    stand.current = null;
+    const modal = infoModal();
+    const models = S().models || [];
+    const on = artifactTargets(k, name);
+    const users = artifactLinks().filter((l) => l.from === k && l.name === name).map((l) => stand.layout[l.to].step);
+    modal.querySelector('.modal-content').innerHTML = `
+      <header class="custom-card-top custom-defaults-top">
+        <h3 class="custom-card-model"><i class="ti ti-file-text" aria-hidden="true"></i>${esc(name)}<span class="custom-card-where">артефакт v${artifactVersion(k, name)} · ${esc(col.step.id || '')}</span></h3>
+        <button type="button" class="modal-button" data-stand-close>Закрыть</button>
+      </header>
+      <div class="custom-card-body">
+        <div class="proto-stand-rows">
+          <div class="proto-stand-row"><span>создаёт</span><div>${esc(col.step.id || '')} · ${esc(col.step.title || '')}</div></div>
+          <div class="proto-stand-row"><span>берут</span><div>${users.length ? users.map((u) => `${esc(u.id || '')} · ${esc(u.title || '')}`).join('<br>') : 'никто'}</div></div>
+        </div>
+        <div class="custom-card-marks"><strong>Кому отправлять</strong>
+          <div class="proto-art-models">${models.map((m) => `<label><input type="checkbox" data-art-model="${esc(m)}"${on.includes(m) ? ' checked' : ''}> ${esc(m)}</label>`).join('')}</div>
+          <div class="custom-card-note">По умолчанию — всем моделям. Снятая модель артефакт не получает.</div>
+        </div>
+      </div>`;
+    modal.querySelectorAll('[data-art-model]').forEach((box) => box.addEventListener('change', () => {
+      stand.artTo = stand.artTo || {};
+      stand.artTo[`${k}|${name}`] = [...modal.querySelectorAll('[data-art-model]')].filter((b) => b.checked).map((b) => b.dataset.artModel);
+      render();
+    }));
+    show(modal);
+  }
   // Стрелки: от артефакта в колонке производителя к бейджу этапа, который берёт "<id>.<имя>" во входе.
   const artifactLinks = () => {
     const links = [];
@@ -887,6 +924,14 @@
     flow.addEventListener('click', (event) => {
       if (!stand.active) return;
       const t = event.target;
+      const art = t.closest('.proto-art');
+      if (art) {
+        event.stopPropagation();
+        event.preventDefault();
+        const [k, ...rest] = art.dataset.art.split('|');
+        openArtifact(Number(k), rest.join('|'));
+        return;
+      }
       const badge = t.closest('.round-badge');
       if (badge) {
         event.stopPropagation();
