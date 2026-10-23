@@ -6,7 +6,7 @@
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '18';
+  const STAND_VERSION = '19';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -578,6 +578,8 @@
     stand.active = true;
     const name = $('currentPipelineName');
     if (name) { name.textContent = own(schema.task) ? cut(schema.task, 60) : 'Схема'; name.title = schema.task || ''; }
+    const entry = $('entryPoint');
+    if (entry) entry.title = own(schema.description) ? schema.description : '';
     render();
   }
 
@@ -586,6 +588,8 @@
     if (stand.snapshot) DATA_KEYS.forEach((k) => { state[k] = stand.snapshot[k]; });
     const name = $('currentPipelineName');
     if (name && stand.name != null) { name.textContent = stand.name; name.title = ''; }
+    const entry = $('entryPoint');
+    if (entry) entry.title = '';
     Object.assign(stand, { active: false, layout: [], issues: [], flat: [], schema: null, snapshot: null, name: null, current: null, comment: '' });
     canvas().render?.();
     drawIssues();
@@ -693,7 +697,7 @@
     const cols = stand.layout;
     let html = `<div class="stage-column entry-column">
         <div class="stage-label"><span class="entry-badge">In</span></div>
-        <div class="entry-wrapper" id="entryWrapper"><div class="entry-point" id="entryPoint" title="Общие значения" style="cursor:pointer">▶</div></div>
+        <div class="entry-wrapper" id="entryWrapper"><div class="entry-point" id="entryPoint" title="${esc(own(stand.schema?.description) ? stand.schema.description : 'Общие значения')}" style="cursor:pointer">▶</div></div>
       </div>
       <div class="connector-group"><svg class="connector-svg" id="svg-in-models"></svg></div>`;
     cols.forEach((col, k) => {
@@ -776,10 +780,10 @@
       : ($('pipeline-block-info-modal')?.classList.contains('is-visible') ? $('pipeline-block-info-modal').querySelector('.custom-card-body') : null);
     if (!box || box.querySelector(':scope > .proto-stand-schema')) return;
     box.insertAdjacentHTML('beforeend', schemaSection(cur.step, cur.root));
-    if (cur.root && own(cur.step.description)) box.insertAdjacentHTML('afterbegin', descriptionBlock(cur.step.description));
+    if (cur.root) box.insertAdjacentHTML('afterbegin', descriptionBlock(cur.step.description));
   }
   // Описание схемы для пользователя: на работу не влияет. Свёрнуто до двух строк, по кнопке — на весь экран.
-  const descriptionBlock = (text) => `<div class="proto-stand-desc" id="proto-stand-desc"><div class="proto-stand-desc-head"><strong>Description</strong><button type="button" class="proto-stand-desc-toggle" aria-expanded="false" aria-controls="proto-stand-desc-text" title="Развернуть на весь экран">⤢</button></div><div class="proto-stand-desc-text" id="proto-stand-desc-text">${esc(text)}</div></div>`;
+  const descriptionBlock = (text) => `<div class="proto-stand-desc" id="proto-stand-desc"><div class="proto-stand-desc-head"><strong>Description</strong><button type="button" class="proto-stand-desc-toggle" aria-expanded="false" aria-controls="proto-stand-desc-text" title="Развернуть на весь экран">⤢</button></div><div class="proto-stand-desc-text" id="proto-stand-desc-text">${own(text) ? esc(text) : '<em>Описание не задано: в схеме нет поля description.</em>'}</div></div>`;
   document.addEventListener('click', (event) => {
     const button = event.target.closest('.proto-stand-desc-toggle');
     if (!button) return;
