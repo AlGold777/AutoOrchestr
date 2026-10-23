@@ -6,7 +6,7 @@
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '17';
+  const STAND_VERSION = '18';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -362,7 +362,8 @@
     if (value == null) return fail();
     const schema = rootOf(value, add);
     if (!schema) return fail();
-    Object.keys(schema).filter((k) => !['task', 'steps', 'defaults', 'run'].includes(k)).forEach((k) => add('warn', null, `Неизвестное поле схемы «${k}».`));
+    Object.keys(schema).filter((k) => !['task', 'description', 'steps', 'defaults', 'run'].includes(k)).forEach((k) => add('warn', null, `Неизвестное поле схемы «${k}».`));
+    if ('description' in schema && typeof schema.description !== 'string') add('warn', null, 'description должен быть строкой — описание не показано.');
     if (!own(schema.task)) add('warn', null, 'Нет task — фразы задачи.');
     else if (STUB.test(schema.task)) add('warn', null, `Заглушка вместо текста в поле task: «${cut(schema.task, 30)}» — модель сократила ответ.`);
     if (!Array.isArray(schema.steps) || !schema.steps.length) { add('error', null, 'steps должен быть непустым списком этапов.'); return fail(); }
@@ -775,7 +776,19 @@
       : ($('pipeline-block-info-modal')?.classList.contains('is-visible') ? $('pipeline-block-info-modal').querySelector('.custom-card-body') : null);
     if (!box || box.querySelector(':scope > .proto-stand-schema')) return;
     box.insertAdjacentHTML('beforeend', schemaSection(cur.step, cur.root));
+    if (cur.root && own(cur.step.description)) box.insertAdjacentHTML('afterbegin', descriptionBlock(cur.step.description));
   }
+  // Описание схемы для пользователя: на работу не влияет. Свёрнуто до двух строк, по кнопке — на весь экран.
+  const descriptionBlock = (text) => `<div class="proto-stand-desc" id="proto-stand-desc"><div class="proto-stand-desc-head"><strong>Description</strong><button type="button" class="proto-stand-desc-toggle" aria-expanded="false" aria-controls="proto-stand-desc-text" title="Развернуть на весь экран">⤢</button></div><div class="proto-stand-desc-text" id="proto-stand-desc-text">${esc(text)}</div></div>`;
+  document.addEventListener('click', (event) => {
+    const button = event.target.closest('.proto-stand-desc-toggle');
+    if (!button) return;
+    const box = button.closest('.proto-stand-desc');
+    const full = box.classList.toggle('is-full');
+    button.setAttribute('aria-expanded', String(full));
+    button.textContent = full ? '✕' : '⤢';
+    button.title = full ? 'Свернуть' : 'Развернуть на весь экран';
+  });
   new MutationObserver(ensureSection).observe(document.body, { childList: true, subtree: true });
 
   function infoModal() {
@@ -990,7 +1003,7 @@
   const plural = (n, forms) => forms[n % 10 === 1 && n % 100 !== 11 ? 0 : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? 1 : 2];
   const uid = () => (root.crypto?.randomUUID ? root.crypto.randomUUID()
     : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3) | 8).toString(16); }));
-  const pickSchema = (s) => JSON.parse(JSON.stringify(['task', 'steps', 'defaults', 'run'].reduce((o, k) => (s[k] !== undefined ? { ...o, [k]: s[k] } : o), {})));
+  const pickSchema = (s) => JSON.parse(JSON.stringify(['task', 'description', 'steps', 'defaults', 'run'].reduce((o, k) => (s[k] !== undefined ? { ...o, [k]: s[k] } : o), {})));
   const countSteps = (s) => (Array.isArray(s?.steps) ? s.steps.length : 0);
   const catalogDoc = () => ({ format: CATALOG_FORMAT, version: 1, stand: STAND_VERSION, templates: catalog.templates });
   const catalogText = () => JSON.stringify(catalogDoc(), null, 2);
@@ -1305,6 +1318,12 @@
     .proto-stand-comment > div { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 4px; }
     .proto-stand-summary { font-weight: 600; color: var(--pipeline-text); }
     .proto-stand-schema { grid-template-columns: 1fr; }
+    .proto-stand-desc { margin-bottom: 10px; }
+    .proto-stand-desc-head { display: flex; justify-content: space-between; align-items: center; }
+    .proto-stand-desc-toggle { border: 0; background: none; cursor: pointer; font-size: 16px; color: var(--pipeline-muted); }
+    .proto-stand-desc-text { white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--pipeline-text); }
+    .proto-stand-desc.is-full { position: fixed; inset: 0; z-index: 10000; background: var(--pipeline-surface, #fff); padding: 16px 24px; overflow: auto; margin: 0; }
+    .proto-stand-desc.is-full .proto-stand-desc-text { display: block; overflow: visible; }
     #proto-stand-info .modal-content { height: auto; max-height: calc(100dvh - 32px); }
     .proto-stand-rows { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin-top: 6px; }
     .proto-stand-row { display: contents; }

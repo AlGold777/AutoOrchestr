@@ -48,12 +48,9 @@ button i.ti {
 }
 
 :root {
-    --bg-color: #F8F7F4;
-    --body-bg-color: rgba(0, 0, 0, 0.5);
     --text-color: #1a1a1a;
     --text-secondary-color: #6c757d;
     --border-color: #dee2e6;
-    --input-bg-color: #ffffff;
     --primary-button-bg: #1a1a1a;
     --primary-button-text: #ffffff;
     --secondary-button-bg: #ffffff;
@@ -68,15 +65,12 @@ button i.ti {
     --sidebar-right-width: 260px;
     --sidebar-bg: #ffffff;
     --sidebar-border: #e5e7eb;
-    --notes-bg: #f6f8fc;
     --notes-panel: #ffffff;
     --notes-panel-2: #f3f6fb;
     --notes-text: #111827;
     --notes-muted: #5b677a;
     --notes-border: rgba(17, 24, 39, 0.1);
     --notes-border-strong: rgba(17, 24, 39, 0.14);
-    --notes-shadow: 0 16px 40px rgba(17, 24, 39, 0.12);
-    --notes-radius: 14px;
     --notes-row-height: 34px;
     --pipeline-bg: #f8fafc;
     --pipeline-card: #ffffff;
@@ -313,27 +307,6 @@ body.right-sidebar-reset .app-sidebar-right {
     background: rgba(255, 255, 255, 0.98);
 }
 
-.notes-search-wrap {
-    display: flex;
-    justify-content: flex-end;
-    justify-self: end;
-    width: min(240px, 100%);
-    flex: 0 1 auto;
-    min-width: 0;
-    position: relative;
-    align-items: center;
-}
-
-.sidebar-close-btn {
-    border: none;
-    background: transparent;
-    color: #9ca3af;
-    font-size: 18px;
-    line-height: 1;
-    cursor: pointer;
-    padding: 0;
-}
-
 .notes-tabs-bar {
     display: flex;
     align-items: flex-end;
@@ -505,10 +478,6 @@ body.right-sidebar-reset .app-sidebar-right {
     background: rgba(17, 24, 39, 0.03);
 }
 
-.notes-top-block .notes-tabs {
-    padding: 0;
-}
-
 .sessions-action-btn {
     border: none;
     background: none;
@@ -609,12 +578,6 @@ body.right-sidebar-reset .app-sidebar-right {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-}
-
-.sessions-item-meta {
-    font-size: 11px;
-    color: var(--notes-muted);
-    flex: 0 0 auto;
 }
 
  .sessions-item-run {
@@ -1126,16 +1089,6 @@ body.right-sidebar-reset .app-sidebar-right {
     text-transform: lowercase;
 }
 
-.sidebar-placeholder {
-    border: 1px dashed #e5e7eb;
-    border-radius: 12px;
-    padding: 16px;
-    font-size: 13px;
-    color: #9ca3af;
-    text-align: center;
-    background: #f8fafc;
-}
-
 .sidebar-resizer {
     position: absolute;
     top: 0;
@@ -1375,15 +1328,6 @@ body.is-resizing {
     margin-top: 0;
 }
 
-.pipeline-panel .header-actions {
-    display: flex;
-    margin-right: 15px;
-    gap: 8px;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    flex: 1 1 0;
-}
-
 .pipeline-panel .pipeline-run-slot {
     display: flex;
     align-items: center;
@@ -1407,16 +1351,6 @@ body.is-resizing {
     background: var(--pipeline-bg);
 }
 
-.pipeline-panel .btn-primary {
-    background: var(--pipeline-blue);
-    border-color: var(--pipeline-blue);
-    color: #ffffff;
-}
-
-.pipeline-panel .btn-primary:hover {
-    background: #1d4ed8;
-}
-
 .pipeline-panel .btn-icon {
     width: 32px;
     height: 32px;
@@ -1425,15 +1359,6 @@ body.is-resizing {
     align-items: center;
     justify-content: center;
     font-size: 14px;
-}
-
-.pipeline-panel .btn-clear {
-    border-color: #fca5a5;
-    color: #ef4444;
-}
-
-.pipeline-panel .btn-clear:hover {
-    background: #fee2e2;
 }
 
 .pipeline-canvas {
@@ -1552,10 +1477,6 @@ body.is-resizing {
 
 .pipeline-synthesis-block .model-header {
     gap: 6px;
-}
-
-.pipeline-synth-select {
-    width: 100%;
 }
 
 .synthesis-flow-select {
@@ -2001,74 +1922,12 @@ body.is-resizing {
     }
 }
 
-.collector-row {
-    width: 105px;
-    height: var(--pipeline-block-height);
-    margin-bottom: var(--pipeline-block-gap);
-    padding: 0 10px;
-    background: var(--pipeline-purple-soft);
-    border: 2px solid var(--pipeline-purple);
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    transition: all 0.3s;
-    box-sizing: border-box;
-}
-
-.collector-row:last-child {
-    margin-bottom: 0;
-}
-
-.collector-row.inactive {
-    border-color: var(--pipeline-purple);
-    background: var(--pipeline-purple-soft);
-    opacity: 1;
-}
-
-.results-column .collector-row {
-    background: var(--pipeline-green-soft);
-    border-color: var(--pipeline-green);
-}
-
-.results-column .collector-row.inactive {
-    border-color: var(--pipeline-green);
-    background: var(--pipeline-green-soft);
-}
-
-.results-column .collector-model-name {
-    color: #15803d;
-}
-
-.results-column .collector-checkbox {
-    accent-color: var(--pipeline-green);
-}
-
 .status-indicator {
     width: 10px;
     height: 10px;
     border-radius: 50%;
     background: #cbd5e1;
     flex-shrink: 0;
-}
-
-.collector-model-name {
-    font-size: 11px;
-    color: #6d28d9;
-    flex: 1;
-    font-weight: 500;
-}
-
-.collector-checkbox {
-    width: 14px;
-    height: 14px;
-    accent-color: var(--pipeline-purple);
-    cursor: pointer;
-}
-
-.collector-checkbox:disabled {
-    opacity: 0.35;
-    cursor: not-allowed;
 }
 
 .pipeline-synthesis-block.inactive:not(.selected-synthesizer) {
@@ -2084,40 +1943,6 @@ body.is-resizing {
 .round-buttons {
     display: flex;
     gap: 6px;
-}
-
-.add-round-btn,
-.remove-round-btn {
-    width: 32px;
-    height: 32px;
-    border-radius: 8px;
-    border: 2px dashed #cbd5e1;
-    background: #f8fafc;
-    color: var(--pipeline-muted);
-    font-size: 18px;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.add-round-btn:hover {
-    border-color: var(--pipeline-blue);
-    border-style: solid;
-    color: var(--pipeline-blue);
-    background: var(--pipeline-blue-soft);
-}
-
-.remove-round-btn {
-    display: none;
-}
-
-.remove-round-btn:hover {
-    border-color: #ef4444;
-    border-style: solid;
-    color: #ef4444;
-    background: #fee2e2;
 }
 
 .pipeline-list {
@@ -2189,39 +2014,12 @@ body.is-resizing {
     margin-left: 10px;
 }
 
-.pipeline-list-round-actions {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-
 .pipeline-list-header-actions {
     display: flex;
     align-items: center;
     justify-content: flex-end;
     gap: 8px;
     margin-left: auto;
-}
-
-.add-pipeline-btn {
-    width: 18px;
-    height: 18px;
-    border: none;
-    background: transparent;
-    color: var(--pipeline-muted);
-    font-size: 16px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s ease;
-}
-
-.add-pipeline-btn:hover {
-    border-color: var(--pipeline-blue);
-    border-style: solid;
-    color: var(--pipeline-blue);
-    background: var(--pipeline-blue-soft);
 }
 
 .pipeline-items {
@@ -2238,207 +2036,6 @@ body.is-resizing {
     display: none;
 }
 
-.disput-state-map-panel {
-    margin: 12px 0 0;
-    border-top: 1px solid var(--pipeline-border);
-    padding-top: 10px;
-}
-
-.pipeline-page .disput-state-map-panel { display: flex; align-items: center; gap: 8px; width: 100%; }
-.pipeline-page .disput-state-map-panel > .disput-state-map-toggle { flex: 1 1 auto; width: auto; min-height: 32px; justify-content: flex-start; gap: 8px; padding: 0; border: 0; background: transparent; list-style: none; }
-.pipeline-page .disput-state-map-panel > .disput-state-map-toggle::-webkit-details-marker { display: none; }
-.disput-state-map-title { font-size: 13px; font-weight: 700; }
-.disput-state-map-caret { transition: transform .15s ease; }
-.pipeline-page .disput-state-map-panel:not([open]) .disput-state-map-caret { transform: rotate(-90deg); }
-.pipeline-page .disput-state-map-panel > .disput-state-map-actions { flex: 0 0 auto; margin: 0 0 0 auto; }
-.pipeline-page .disput-state-map-panel:not([open]) > :not(summary) { display: none; }
-
-.disput-state-map-toggle {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 10px 12px;
-    border: 1px solid var(--pipeline-border);
-    border-radius: 10px;
-    background: #fff;
-    color: #1f2937;
-    text-align: left;
-}
-
-.disput-state-map-toggle span:first-child { display: grid; gap: 2px; min-width: 0; }
-.disput-state-map-toggle strong { font-size: 13px; }
-.disput-state-map-toggle small { color: #6b7280; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.disput-state-map-panel.is-open .disput-state-map-toggle > span:last-child { transform: rotate(180deg); }
-
-.disput-state-map-workspace {
-    position: fixed;
-    z-index: 120;
-    top: 72px;
-    right: 390px;
-    bottom: 24px;
-    left: 24px;
-    display: flex;
-    flex-direction: column;
-    min-width: 720px;
-    overflow: hidden;
-    border: 1px solid #d7dee8;
-    border-radius: 14px;
-    background: #f6f8fb;
-    box-shadow: 0 20px 60px rgba(20, 31, 48, .2);
-}
-
-.disput-state-map-workspace[hidden] { display: none; }
-body.pipeline-page .disput-state-map-workspace { right: 24px; }
-
-body.pipeline-page #disput-state-map-panel .disput-state-map-workspace {
-    bottom: auto;
-    min-width: 0;
-    background: #fff;
-}
-body.pipeline-page #disput-state-map-panel .disput-state-map-toolbar,
-body.pipeline-page #disput-state-map-panel [data-map-run],
-body.pipeline-page #disput-state-map-panel [data-map-summary],
-body.pipeline-page #disput-state-map-panel [data-map-mode],
-body.pipeline-page #disput-state-map-panel [data-map-filter],
-body.pipeline-page #disput-state-map-panel [data-map-search],
-body.pipeline-page #disput-state-map-panel [data-map-compare],
-body.pipeline-page #disput-state-map-panel [data-map-compare-a],
-body.pipeline-page #disput-state-map-panel [data-map-compare-b],
-body.pipeline-page #disput-state-map-panel [data-map-zoom],
-body.pipeline-page #disput-state-map-panel [data-map-content],
-body.pipeline-page #disput-state-map-panel [data-map-drawer] {
-    display: none !important;
-}
-body.pipeline-page #disput-state-map-panel .disput-state-map-actions > button:not([data-case-export]):not([data-map-export]):not([data-case-import-action]):not([data-case-delete]):not([data-map-close]) {
-    display: none !important;
-}
-.disput-state-map-workspace.disput-state-map-workspace-shell {
-    bottom: auto;
-    min-width: 0;
-    background: #fff;
-}
-.disput-state-map-workspace-shell .disput-state-map-header {
-    border-bottom: 0;
-}
-.disput-state-map-header-shell > strong {
-    font-size: 13px;
-}
-.disput-state-map-header, .disput-state-map-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; border-bottom: 1px solid #dce3ec; background: #fff; }
-.disput-state-map-header > div:first-child { display: grid; gap: 2px; }
-.disput-state-map-header span { color: #657186; font-size: 11px; }
-.disput-state-map-header > select { max-width: 220px; padding: 6px 8px; border: 1px solid #dce3ec; border-radius: 8px; background: #fff; color: #46546b; }
-.disput-state-map-actions, .disput-map-segments { display: inline-flex; gap: 3px; padding: 3px; border: 1px solid #dce3ec; border-radius: 9px; background: #f4f6f9; }
-.disput-state-map-actions button, .disput-map-segments button { padding: 6px 10px; border: 0; border-radius: 7px; background: transparent; color: #657186; }
-.disput-state-map-actions [data-case-import-action], .disput-state-map-actions [data-case-delete] { width: 28px; padding: 6px; border: 0; background: transparent; color: #657186; }
-.disput-state-map-actions .disput-map-icon-action { width: 28px; padding: 6px; }
-.disput-state-map-actions [data-case-import-action]:hover, .disput-state-map-actions [data-case-delete]:hover { background: #eef1f6; color: #172033; }
-.disput-state-map-actions button.is-active, .disput-map-segments button.is-active { background: #fff; color: #172033; box-shadow: 0 1px 4px rgba(31, 47, 77, .14); }
-.disput-state-map-toolbar input { width: 230px; padding: 7px 10px; border: 1px solid #dce3ec; border-radius: 8px; }
-.disput-map-compare { display: inline-flex; align-items: center; gap: 4px; }
-.disput-map-compare select { width: 132px; padding: 6px; border: 1px solid #dce3ec; border-radius: 7px; background: #fff; color: #46546b; font-size: 9px; }
-.disput-map-compare button, .disput-map-comparison button { padding: 5px 7px; border: 1px solid #dce3ec; border-radius: 6px; background: #fff; color: #46546b; font-size: 9px; }
-.disput-map-zoom { display: inline-flex; border: 1px solid #dce3ec; border-radius: 8px; overflow: hidden; }
-.disput-map-zoom button { min-width: 32px; padding: 6px; border: 0; border-right: 1px solid #dce3ec; background: #fff; color: #46546b; }
-.disput-map-zoom button:last-child { border-right: 0; }
-.disput-state-map-content { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 14px; color: #172033; }
-.disput-map-attention { margin-bottom: 12px; padding: 12px; border: 1px solid #edd7a7; border-radius: 11px; background: none; }
-.disput-map-attention h3, .disput-map-panel h3, .disput-graf-column h3 { margin: 0; font-size: 12px; }
-.disput-map-structure { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 12px; align-items: start; }
-.disput-map-side { display: grid; gap: 12px; }
-.disput-map-panel, .disput-graf-column { overflow: hidden; border: 1px solid #dce3ec; border-radius: 11px; background: #fff; }
-.disput-map-panel > header { display: flex; justify-content: space-between; padding: 10px 11px; border-bottom: 1px solid #dce3ec; }
-.disput-map-panel > div, .disput-graf-column { padding: 9px; }
-.disput-map-card { display: grid; gap: 6px; margin-bottom: 7px; padding: 9px; border: 1px solid #dce3ec; border-left-width: 3px; border-radius: 9px; background: #fff; transition: .15s; }
-.disput-map-card.is-blocking { border-left-color: #c94852; }
-.disput-map-card.is-focused { box-shadow: 0 0 0 3px #eef1ff; border-color: #4f6bed; }
-.disput-map-card:focus-visible { outline: 2px solid #4f6bed; outline-offset: 2px; }
-.disput-map-type-evidence { border-left-color: #2f855a; }
-.disput-map-type-revision { border-left-color: #6b5bd2; }
-.disput-map-type-dissent { border-left-color: #b7791f; }
-.disput-map-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
-.disput-map-card-head strong { font-size: 11px; line-height: 1.35; }
-.disput-map-card-status { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 2px; flex: none; }
-.disput-map-card p { margin: 0; color: #657186; font-size: 10px; }
-.disput-map-card p.is-collapsed { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
-.disput-map-expand { justify-self: start; padding: 0; border: 0; background: none; color: #4f6bed; font-size: 9px; }
-.disput-map-card-meta { display: flex; flex-wrap: wrap; gap: 5px 9px; color: #657186; font-size: 9px; }
-.disput-map-badge { flex: none; padding: 2px 6px; border: 1px solid #c7d1df; border-radius: 999px; color: #657186; font-size: 8px; }
-.disput-map-link { padding: 0; border: 0; background: none; color: #4f6bed; font-size: inherit; }
-.disput-map-related-link { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.disput-map-related-link .disput-map-link { min-width: 0; text-align: left; }
-.disput-map-link-remove { flex: none; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: #9a5960; font-size: 15px; line-height: 18px; cursor: pointer; }
-.disput-map-link-remove:hover, .disput-map-link-remove:focus-visible { background: #fbecee; color: #b4232f; }
-.disput-map-axis { width: 100%; display: flex; justify-content: space-between; gap: 8px; padding: 8px; border: 0; border-bottom: 1px solid #edf1f5; background: #fff; text-align: left; }
-.disput-map-empty { padding: 12px; color: #657186; font-size: 10px; }
-.disput-map-results-count { margin-bottom: 8px; color: #657186; font-size: 10px; }
-.disput-map-diff { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; margin-bottom: 10px; padding: 9px 11px; border: 1px solid #dce3ec; border-radius: 9px; background: #fff; font-size: 10px; }
-.disput-map-diff small { grid-column: 1 / -1; color: #657186; }
-.disput-map-comparison { display: grid; gap: 8px; margin-bottom: 10px; padding: 10px; border: 1px solid #cfd7ff; border-radius: 9px; background: #f7f8ff; font-size: 10px; }
-.disput-map-comparison > header { display: flex; justify-content: space-between; align-items: center; }
-.disput-map-comparison > div { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
-.disput-map-comparison > div strong { min-width: 96px; }
-.disput-map-comparison > div span { color: #657186; }
-.disput-map-comparison [data-diff-kind="added"] { border-color: #8bc9a7; }
-.disput-map-comparison [data-diff-kind="changed"] { border-color: #d8b36d; }
-.disput-map-comparison [data-diff-kind="removed"] { border-color: #df9298; }
-.disput-map-automation { display: grid; gap: 7px; margin-bottom: 12px; padding: 11px; border: 1px solid #cfd7ff; border-radius: 11px; background: #f7f8ff; }
-.disput-map-automation > header { display: flex; justify-content: space-between; gap: 10px; }
-.disput-map-automation > header h3 { margin: 0; font-size: 12px; }
-.disput-map-automation > header span { color: #657186; font-size: 9px; }
-.disput-map-automation article { display: grid; grid-template-columns: 160px minmax(0,1fr) auto; gap: 8px; align-items: center; padding: 7px; border-radius: 8px; background: #fff; font-size: 10px; }
-.disput-map-automation article > span { color: #657186; }
-.disput-map-automation article button { margin-left: 5px; padding: 4px 7px; border: 1px solid #cfd7ff; border-radius: 6px; background: #fff; }
-.disput-map-automation article.disput-map-decision { grid-template-columns: minmax(160px,.8fr) minmax(220px,1fr) auto; border: 1px solid #b8c3ff; }
-.disput-map-decision button.is-recommended { background: #3949ab; border-color: #3949ab; color: #fff; }
-.disput-map-history { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
-.disput-map-history .disput-map-panel > div { display: grid; gap: 6px; padding: 9px; }
-.disput-map-history article { display: grid; grid-template-columns: minmax(140px,.7fr) minmax(0,1fr) auto; gap: 8px; padding: 8px; border-radius: 8px; background: #f6f8fb; font-size: 10px; }
-.disput-map-history article span, .disput-map-history article small { color: #657186; }
-.disput-graf { position: relative; display: grid; grid-template-columns: repeat(3, minmax(240px, 1fr)); gap: 16px; min-width: 820px; padding: 18px; border: 1px solid #dce3ec; border-radius: 12px; background-color: #fafbfd; background-image: linear-gradient(#edf1f6 1px, transparent 1px), linear-gradient(90deg, #edf1f6 1px, transparent 1px); background-size: 24px 24px; transform-origin: top left; }
-.disput-graf-column { align-self: start; }
-.disput-graf-column { position: relative; z-index: 2; }
-.disput-graf-links { position: absolute; inset: 0; z-index: 1; overflow: visible; pointer-events: none; }
-.disput-graf-link { fill: none; stroke: #8a99ad; stroke-width: 1.5; opacity: .75; }
-.disput-graf-link-evidence { stroke: #2f855a; }
-.disput-graf-link-revision { stroke: #6b5bd2; }
-.disput-graf-link.is-blocking { stroke: #c94852; stroke-width: 2.5; }
-.disput-map-axis-alert { display: flex; justify-content: space-between; width: 100%; padding: 7px; border: 0; background: transparent; text-align: left; }
-.disput-map-drawer { position: absolute; z-index: 5; top: 57px; right: 0; bottom: 0; width: min(390px, 42vw); overflow: auto; border-left: 1px solid #dce3ec; background: #fff; box-shadow: -12px 0 32px rgba(31, 47, 77, .12); }
-.disput-map-drawer[hidden] { display: none; }
-.disput-map-drawer > header { position: sticky; top: 0; display: flex; justify-content: space-between; gap: 8px; padding: 12px; border-bottom: 1px solid #dce3ec; background: #fff; }
-.disput-map-drawer > header button { border: 0; background: none; font-size: 20px; }
-.disput-map-drawer-body { display: grid; gap: 14px; padding: 14px; font-size: 11px; }
-.disput-map-drawer-body dl { display: grid; grid-template-columns: 110px 1fr; gap: 6px; margin: 0; }
-.disput-map-drawer-body dt { color: #657186; }
-.disput-map-drawer-body dd { margin: 0; }
-.disput-map-drawer-body section { display: grid; gap: 6px; }
-.disput-map-drawer-human-actions { gap: 8px !important; }
-.disput-map-drawer-links { gap: 6px !important; }
-.disput-map-drawer-source { gap: 0 !important; }
-.disput-map-drawer-source button { justify-self: start; padding: 6px 8px; border: 1px solid #dce3ec; border-radius: 6px; background: #f7f9fc; color: #46546b; font-size: 9px; }
-.disput-map-drawer-source button:disabled { cursor: not-allowed; opacity: .55; }
-.disput-map-system-information { margin-top: 2px; border: 1px solid #dce3ec; border-radius: 8px; background: #f7f9fc; }
-.disput-map-system-information > summary { cursor: pointer; padding: 8px 9px; color: #46546b; font-size: 10px; font-weight: 700; }
-.disput-map-system-information-body { display: grid; gap: 14px; padding: 0 9px 9px; }
-.disput-map-system-information-body > p { margin: 0; color: #657186; }
-.disput-map-human-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-.disput-map-human-actions button { padding: 5px 7px; border: 1px solid #dce3ec; border-radius: 6px; background: #fff; color: #46546b; font-size: 9px; }
-.disput-map-drawer-body h4 { margin: 0; }
-.disput-map-drawer-body pre { max-height: 180px; overflow: auto; margin: 0; padding: 8px; border-radius: 7px; background: #f4f6f9; white-space: pre-wrap; font-size: 9px; }
-.pipeline-profile-dialog { width: min(760px, calc(100vw - 32px)); height: min(720px, calc(100vh - 48px)); padding: 0; border: 1px solid #dce3ec; border-radius: 14px; background: #fff; color: #172033; box-shadow: 0 24px 80px rgba(20,31,48,.3); }
-.pipeline-profile-dialog::backdrop { background: rgba(20,31,48,.35); }
-.pipeline-profile-dialog[open] { display: grid; grid-template-rows: auto auto minmax(240px,1fr) auto auto; gap: 10px; padding: 14px; }
-.pipeline-profile-dialog header { display: flex; justify-content: space-between; align-items: center; }
-.pipeline-profile-dialog header button { border: 0; background: none; font-size: 22px; }
-.pipeline-profile-dialog select, .pipeline-profile-dialog textarea { width: 100%; box-sizing: border-box; border: 1px solid #dce3ec; border-radius: 8px; padding: 8px; }
-.pipeline-profile-dialog textarea { resize: none; font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; }
-.pipeline-profile-actions { display: flex; flex-wrap: wrap; gap: 7px; }
-.pipeline-profile-actions button { padding: 7px 10px; border: 1px solid #dce3ec; border-radius: 7px; background: #f7f9fc; }
-.pipeline-profile-dialog [data-profile-status] { min-height: 18px; margin: 0; color: #657186; font-size: 11px; }
-.pipeline-profile-dialog [data-profile-status][data-kind="error"] { color: #b4232c; }
-.pipeline-profile-dialog [data-profile-status][data-kind="ok"] { color: #237a4b; }
 .pipeline-stage-dialog { width: min(560px, calc(100vw - 32px)); max-height: min(80vh, 720px); overflow: auto; padding: 18px 20px; border: 1px solid #cbd5e1; border-radius: 12px; background: #fff; color: #172033; text-align: left; box-shadow: 0 24px 80px rgba(20,31,48,.3); }
 .pipeline-stage-dialog::backdrop { background: rgba(20,31,48,.35); }
 .pipeline-stage-dialog h2 { margin: 0; color: #2563eb; font-size: 20px; font-weight: 700; text-align: left; }
@@ -2479,24 +2076,12 @@ body.pipeline-page #disput-state-map-panel .disput-state-map-actions > button:no
 .stage-card-copy { padding: 4px 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; cursor: pointer; }
 
 @media (max-width: 1100px) {
-    .disput-state-map-workspace { right: 12px; left: 12px; min-width: 0; }
-    .disput-map-structure { grid-template-columns: 1fr; }
-    .disput-state-map-toolbar { flex-wrap: wrap; }
-    .disput-state-map-toolbar input { flex: 1; min-width: 160px; }
-    .disput-map-history { grid-template-columns: 1fr; }
 }
 
 @media (prefers-color-scheme: dark) {
     .pipeline-stage-dialog { border-color: #384252; background: #202733; color: #e7ebf3; }
     .stage-card-badge, .stage-card-instruction { background: #2b3445; color: #e7ebf3; }
     .stage-card-copy { border-color: #384252; background: #202733; color: #e7ebf3; }
-    .disput-state-map-workspace, .disput-state-map-content { background: #141922; color: #e7ebf3; }
-    .disput-state-map-header, .disput-state-map-toolbar, .disput-map-panel, .disput-graf-column, .disput-map-card, .disput-map-axis, .disput-map-diff, .disput-map-drawer, .disput-map-drawer > header, .disput-map-comparison { border-color: #384252; background: #202733; color: #e7ebf3; }
-    .disput-map-attention { border-color: #6a5530; background: #2b261d; }
-    .disput-map-automation { border-color: #485584; background: #202538; }
-    .disput-map-automation article, .disput-map-automation article button, .disput-map-compare select, .disput-map-compare button, .disput-map-comparison button, .disput-map-zoom button { border-color: #445064; background: #283140; color: #e7ebf3; }
-    .disput-graf { border-color: #384252; background-color: #181e28; background-image: linear-gradient(#293241 1px, transparent 1px), linear-gradient(90deg, #293241 1px, transparent 1px); }
-    .disput-map-card p, .disput-map-card-meta, .disput-map-results-count, .disput-state-map-header span { color: #aeb8c8; }
 }
 
 .pipeline-list.is-collapsed .pipeline-list-header {
@@ -2648,6 +2233,8 @@ body.pipeline-page #disput-state-map-panel .disput-state-map-actions > button:no
 .custom-card-head span { line-height: 1.4; color: var(--pipeline-muted); font-size: 11px; font-weight: 400; }
 .custom-card-field textarea { display: block; width: 100%; flex: 1; min-height: 180px; height: 0; resize: none; padding: 13px 15px; border: 1px solid #c4d6cc; border-radius: 10px; background: #fff; color: #202936; font: inherit; font-size: 14px; line-height: 1.65; box-sizing: border-box; }
 .custom-card-field textarea:focus-visible, .custom-card-length input:focus-visible { outline: 2px solid #86b9aa; outline-offset: 2px; }
+/* The inherited value shown in an emptied field is a hint, not text: lighter than typed text (#202936) so a deleted value is visible at once. */
+.custom-card-field textarea::placeholder, .custom-card-discipline textarea::placeholder, .custom-card-length input::placeholder { color: #a7b3ad; opacity: 1; }
 .custom-card-note { margin-top: 7px; color: var(--pipeline-muted); font-size: 12px; line-height: 1.5; }
 .custom-card-note button { padding: 0; border: 0; background: none; color: #237565; font: inherit; cursor: pointer; }
 .custom-card-marks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 18px; flex-shrink: 0; padding-top: 12px;  color: var(--pipeline-muted); font-size: 12px; line-height: 1.55; }
@@ -2765,14 +2352,6 @@ body.pipeline-page #disput-state-map-panel .disput-state-map-actions > button:no
     border-bottom: 1px solid var(--pipeline-border);
     padding-bottom: 12px;
     margin-bottom: 14px;
-}
-
-.pipeline-info-kicker {
-    margin: 0 0 4px;
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0;
-    color: var(--pipeline-muted);
 }
 
 .pipeline-info-header h3 {
@@ -2978,6 +2557,32 @@ body.pipeline-page #disput-state-map-panel .disput-state-map-actions > button:no
     }
 }
 
+/* Control steps (gate, route, owner): a card column after its anchor; they are added from the card of the stage they follow. */
+.pipeline-control-title {
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.pipeline-control-delete-btn {
+    margin-left: 4px;
+    padding: 0 4px;
+    line-height: 1;
+}
+
+.pipeline-control-card {
+    display: block;
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px dashed currentColor;
+    border-radius: 8px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 12px;
+    text-align: left;
+    cursor: pointer;
+}
+
 .top-control-bar {
     display: flex;
     justify-content: space-between;
@@ -3076,8 +2681,8 @@ body.pipeline-page #disput-state-map-panel .disput-state-map-actions > button:no
 
 .sidebar-toggle-icon-branch-v3 {
     display: block;
-    width: 22px;
-    height: 23.4px;
+    width: 28.6px;
+    height: 30.42px;
     color: currentColor;
     flex: 0 0 auto;
 }
@@ -3166,26 +2771,37 @@ body.pipeline-page #disput-state-map-panel .disput-state-map-actions > button:no
     overflow-y: hidden;
 }
 
+.sidebar-toggle-stack {
+    position: relative;
+    width: 28.6px;
+    height: 46px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+}
+
 .right-sidebar-toggle-btn {
     margin-bottom: 0;
-    align-self: center;
+    color: rgb(133 137 142);
 }
 
 .telemetry-toggle-btn {
-    width: 42px;
-    height: 46px;
-    margin-bottom: 0;
-    align-self: center;
+    position: absolute;
+    left: 0;
+    top: 36px;
+    width: 28.6px;
+    height: 8px;
+    padding: 0;
 }
 
-.telemetry-toggle-icon {
+.telemetry-toggle-bar {
     display: block;
-    flex: 0 0 auto;
-    line-height: 1;
-    width: 32px;
-    height: 32px;
-    font-size: 32px;
-    color: #111827;
+    width: 100%;
+    height: 4px;
+    margin-top: 2px;
+    border-radius: 2px;
+    background: #30609445;
 }
 
 .top-new-pages-toggle {
@@ -3322,10 +2938,6 @@ body.left-sidebar-open .mode-pill .pill-dot {
 
 .mode-pill.is-active .pill-dot {
     background: #22c55e;
-}
-
-.mode-pill-inline {
-    padding: 8px 14px;
 }
 
 .floating-tooltip {
@@ -3853,14 +3465,6 @@ body.left-sidebar-open .mode-pill .pill-dot {
     height: 32px;
 }
 
-.send-controls-group {
-    display: flex;
-    align-items: center;
-    justify-content: flex-start;
-    gap: 10px;
-    margin-top: 14px;
-}
-
 
 .dropdown {
 
@@ -3878,31 +3482,6 @@ body.left-sidebar-open .mode-pill .pill-dot {
 }
 #evaluator-select {
     width: 200px;
-}
-
-.create-new {
-    width: 38px;
-    height: 38px;
-    border-radius: 50%;
-    border: 1px solid #ccc;
-    background: transparent;
-    color: #0000008f;
-    font-size: 22px;
-    font-weight: 350;
-    line-height: 1;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    transition: transform 0.2s ease, border-color 0.2s ease;
-}
-
-.create-new:hover {
-    transform: scale(1.05);
-}
-
-.create-new:active {
-    transform: scale(0.95);
 }
 
 .llm-controls {
@@ -3994,35 +3573,6 @@ body.prompt-submitted:not(.pipeline-page) .app-main .container:has(#prefix-conta
     margin-top: 10px;
 }
 
-.dev-tools-panel {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    align-items: center;
-    justify-content: flex-start;
-    margin: 10px 0;
-    padding: 8px 12px;
-    border: 1px dashed #cbd5f5;
-    border-radius: 10px;
-    background: #f8fafc;
-}
-
-.dev-tools-panel button {
-    border: 1px solid #d1d5db;
-    background: #fff;
-    border-radius: 8px;
-    padding: 6px 12px;
-    font-size: 14px;
-    cursor: pointer;
-    transition: background-color 0.2s ease, color 0.2s ease;
-}
-
-.dev-tools-panel button:hover {
-    background: #0ea5e9;
-    color: #fff;
-    border-color: #0ea5e9;
-}
-
 .dev-tools-status {
     font-size: 12px;
     color: #0f172a;
@@ -4049,20 +3599,6 @@ body.prompt-submitted:not(.pipeline-page) .app-main .container:has(#prefix-conta
     box-sizing: border-box;
     flex: 1 1 auto;
     min-height: 0;
-}
-
-.dev-tools-section {
-    display: flex;
-    flex-direction: column;
-    gap: 0px;
-    width: 100%;
-    box-sizing: border-box;
-}
-
-.modal-divider {
-    border: none;
-    border-top: 1px solid #e2e8f0;
-    margin: 0;
 }
 
 .devtools-tablist {
@@ -4151,15 +3687,6 @@ body.prompt-submitted:not(.pipeline-page) .app-main .container:has(#prefix-conta
 
 .diagnostics-log-wrapper.is-hidden {
     display: none;
-}
-
-.diagnostics-title {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-weight: 600;
-    font-size: 14px;
-    color: #111827;
 }
 
 .diagnostics-actions {
@@ -4292,21 +3819,6 @@ body.prompt-submitted:not(.pipeline-page) .app-main .container:has(#prefix-conta
     transform: scale(0.95);
 }
 
-.diag-collapse-toggle::before {
-    content: '';
-    display: inline-block;
-    width: 0;
-    height: 0;
-    border-left: 6px solid transparent;
-    border-right: 6px solid transparent;
-    border-top: 10px solid #111827;
-    transition: transform 0.2s ease;
-}
-
-.diag-collapse-toggle.is-expanded::before {
-    transform: rotate(180deg);
-}
-
 .diag-clear-btn {
     font-size: 16px;
     color: #111827;
@@ -4431,27 +3943,6 @@ body.prompt-submitted:not(.pipeline-page) .app-main .container:has(#prefix-conta
     align-items: start;
 }
 
-.version-watch-header {
-    align-items: center;
-}
-
-.version-watch-title-row {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.version-watch-status {
-    font-size: 13px;
-    font-weight: 600;
-    color: #6b7280;
-    line-height: 1.4;
-}
-
-.version-watch-status:empty {
-    display: none;
-}
-
 .selector-health-header {
     align-items: center;
 }
@@ -4569,42 +4060,6 @@ body.prompt-submitted:not(.pipeline-page) .app-main .container:has(#prefix-conta
     font-size: 12px;
 }
 
-#commands-tabpanel .devtools-card-grid {
-    grid-template-columns: 1.6fr 1fr;
-}
-
-#commands-tabpanel .devtools-card {
-    align-self: start;
-}
-
-#commands-tabpanel .devtools-card-body {
-    padding: 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-}
-
-#commands-tabpanel .devtools-button-bar {
-    gap: 12px;
-    align-items: center;
-    padding: 0;
-}
-
-#commands-tabpanel #cmd-platform-select {
-    width: 100%;
-    border: none;
-    background: none;
-    font-size: 16px;
-    font-weight: 600;
-    margin-top: -15px;
-}
-
-#commands-tabpanel textarea#cmd-prompt {
-    width: 100%;
-    margin: 0;
-    margin-top: 10px;
-}
-
 .devtools-card {
     background: #fff;
     border: 1px solid #e5e7eb;
@@ -4671,29 +4126,6 @@ body.prompt-submitted:not(.pipeline-page) .app-main .container:has(#prefix-conta
 .devtools-pill-btn:active {
     transform: translateY(0);
     box-shadow: 0 1px 4px rgba(15, 23, 42, 0.2);
-}
-
-#diag-tabpanel .devtools-pill-label {
-    font-size: 16px;
-    font-weight: 700;
-}
-
-#diag-tabpanel .devtools-toolbar {
-    display: grid;
-    grid-template-columns: auto 1fr;
-    align-items: center;
-    gap: 2px 12px;
-    margin-top: 10px;
-}
-
-#diag-tabpanel .devtools-toolbar-actions {
-    display: flex;
-    align-items: center;
-    gap: 18px;
-}
-
-#diag-tabpanel .devtools-card-grid {
-    margin-top: 8px;
 }
 
 .devtools-card-header {
@@ -4918,32 +4350,6 @@ body.prompt-submitted:not(.pipeline-page) .app-main .container:has(#prefix-conta
     line-height: 1.4;
 }
 
-.telemetry-presets {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-    margin-top: 4px;
-}
-
-.telemetry-presets .devtools-pill-label {
-    font-size: 13px;
-    font-weight: 700;
-    color: #475569;
-}
-
-.telemetry-presets .devtools-pill-btn {
-    margin-top: 0;
-    padding: 3px 12px 6px;
-    font-size: 13px;
-}
-
-.telemetry-presets .devtools-pill-btn.is-active {
-    background: #111827;
-    color: #f9fafb;
-    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.2);
-}
-
 .telemetry-summary-row {
     display: grid;
     grid-template-columns: 90px 70px 70px 160px minmax(0, 1fr) minmax(0, 1.2fr);
@@ -5063,24 +4469,6 @@ body.prompt-submitted:not(.pipeline-page) .app-main .container:has(#prefix-conta
     color: #475569;
 }
 
-#commands-tabpanel .devtools-card {
-    align-self: flex-start;
-}
-
-#commands-tabpanel .devtools-card {
-    box-shadow: none;
-}
-
-.devtools-button-bar {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-}
-
-.devtools-button-bar button {
-    flex: 1 1 180px;
-}
-
 .ghost-icon-btn {
     border: none;
     background: none;
@@ -5094,153 +4482,7 @@ body.prompt-submitted:not(.pipeline-page) .app-main .container:has(#prefix-conta
     opacity: 1;
 }
 
-.selector-version-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
-.selector-version-empty {
-    color: #6b7280;
-    font-size: 14px;
-}
-
-.selector-version-item {
-    border: 1px dashed #d1d5db;
-    border-radius: 12px;
-    padding: 10px 12px;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    background: #f9fafb;
-}
-
-.selector-version-item.is-expired {
-    border-color: #f87171;
-    background: #fef2f2;
-}
-
-.selector-version-item.is-expiring-soon {
-    border-color: #fbbf24;
-    background: #fffbeb;
-}
-
-.version-pill {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-weight: 600;
-}
-
-.version-meta {
-    font-size: 13px;
-    color: #4b5563;
-}
-
-.version-meta-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    font-size: 13px;
-    color: #4b5563;
-}
-
-.version-meta-list li {
-    display: flex;
-    justify-content: space-between;
-    gap: 8px;
-}
-
-.version-meta-list li.is-expired {
-    color: #b91c1c;
-}
-
-.version-chip {
-    font-weight: 600;
-}
-
 /* (reverted) telemetry table styles removed */
-
-.live-selector-controls {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-}
-
-.live-selector-controls label {
-    flex: 1 1 180px;
-    font-size: 13px;
-    color: #4b5563;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
-
-.live-selector-controls select {
-    border-radius: 8px;
-    border: 1px solid #d1d5db;
-    padding: 6px 8px;
-    font-size: 14px;
-}
-
-.live-selector-meta {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    padding: 10px 12px;
-    border: 1px solid #e5e7eb;
-    border-radius: 12px;
-    background: #fff;
-    font-size: 13px;
-    color: #4b5563;
-}
-
-.live-selector-meta-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.live-selector-meta-row .meta-label {
-    font-weight: 600;
-    color: #6b7280;
-}
-
-.live-selector-meta-row .meta-value {
-    font-weight: 600;
-    color: #111827;
-}
-
-.live-selector-active {
-    border: 1px solid #e5e7eb;
-    border-radius: 12px;
-    padding: 10px 12px;
-    background: #f9fafb;
-    font-size: 13px;
-    color: #1f2937;
-}
-
-.live-selector-active-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    font-weight: 600;
-    color: #4b5563;
-    margin-bottom: 8px;
-}
-
-.live-selector-active-list {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-}
 
 .live-selector-list {
     border: 1px dashed #d1d5db;
@@ -5299,71 +4541,6 @@ body.prompt-submitted:not(.pipeline-page) .app-main .container:has(#prefix-conta
     gap: 4px;
 }
 
-.live-selector-actions {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
-.live-selector-actions input {
-    border-radius: 8px;
-    border: 1px solid #d1d5db;
-    padding: 10px;
-    font-size: 14px;
-}
-
-.live-selector-buttons {
-    display: flex;
-    gap: 8px;
-}
-
-.live-selector-buttons button {
-    flex: 1;
-}
-
-.live-selector-status {
-    font-size: 13px;
-    color: #4b5563;
-}
-
-.live-selector-status.is-success {
-    color: #15803d;
-}
-
-.live-selector-status.is-warning {
-    color: #b45309;
-}
-
-.live-selector-status.is-error {
-    color: #b91c1c;
-}
-
-.selector-validation-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 2px 8px;
-    border-radius: 999px;
-    background: #e5e7eb;
-    color: #374151;
-    font-size: 12px;
-}
-
-.selector-validation-chip.is-success {
-    background: #dcfce7;
-    color: #166534;
-}
-
-.selector-validation-chip.is-warning {
-    background: #fef3c7;
-    color: #92400e;
-}
-
-.selector-validation-chip.is-error {
-    background: #fee2e2;
-    color: #991b1b;
-}
-
 .selector-audit-list {
     display: flex;
     flex-direction: column;
@@ -5413,17 +4590,6 @@ body.prompt-submitted:not(.pipeline-page) .app-main .container:has(#prefix-conta
     flex-wrap: wrap;
 }
 
-.selectors0-hero-actions {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-wrap: wrap;
-}
-
-.selectors0-hero-actions .devtools-pill-btn {
-    margin-top: 0;
-}
-
 .selectors0-hero h1 {
     margin: 0;
     font-size: 22px;
@@ -5468,85 +4634,6 @@ body.prompt-submitted:not(.pipeline-page) .app-main .container:has(#prefix-conta
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
 }
 
-.selectors0-card-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
-}
-
-.selectors0-card-header h2 {
-    margin: 0;
-    font-size: 16px;
-    color: #0f172a;
-}
-
-.selectors0-card-subtitle {
-    margin: 4px 0 0;
-    font-size: 13px;
-    color: #6b7280;
-}
-
-.selectors0-connection {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 13px;
-    color: #6b7280;
-    white-space: nowrap;
-}
-
-.selectors0-connection-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: #f59e0b;
-}
-
-.selectors0-connection-dot.is-ok {
-    background: #22c55e;
-}
-
-.selectors0-connection-dot.is-error {
-    background: #ef4444;
-}
-
-.selectors0-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 12px;
-}
-
-.selectors0-field {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    font-size: 13px;
-    color: #4b5563;
-}
-
-.selectors0-field select {
-    border: 1px solid #d1d5db;
-    border-radius: 10px;
-    padding: 8px 10px;
-    font-size: 14px;
-    background: #fff;
-}
-
-.selectors0-pick {
-    display: flex;
-    flex-direction: row;
-    gap: 8px;
-    flex-wrap: wrap;
-    align-items: center;
-}
-
-.selectors0-helper {
-    margin: 0;
-    font-size: 12px;
-    color: #6b7280;
-}
-
 .selectors0-input {
     display: flex;
     flex-direction: column;
@@ -5565,67 +4652,6 @@ body.prompt-submitted:not(.pipeline-page) .app-main .container:has(#prefix-conta
     padding: 10px 12px;
     font-size: 14px;
     background: #fff;
-}
-
-.selectors0-action-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-}
-
-.selectors0-quality {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-    font-size: 12px;
-    color: #6b7280;
-}
-
-.selectors0-quality-label {
-    font-weight: 600;
-    color: #4b5563;
-}
-
-.selectors0-quality-pill {
-    padding: 2px 8px;
-    border-radius: 999px;
-    background: #e5e7eb;
-    color: #374151;
-    font-size: 12px;
-}
-
-.selectors0-quality-pill.is-strong {
-    background: #dcfce7;
-    color: #166534;
-}
-
-.selectors0-quality-pill.is-ok {
-    background: #e0f2fe;
-    color: #0369a1;
-}
-
-.selectors0-quality-pill.is-risky {
-    background: #fef3c7;
-    color: #92400e;
-}
-
-.selectors0-quality-pill.is-invalid {
-    background: #fee2e2;
-    color: #991b1b;
-}
-
-.selectors0-quality-reason {
-    color: #6b7280;
-}
-
-.selectors0-result {
-    font-size: 12px;
-    color: #6b7280;
-    background: #f9fafb;
-    border: 1px dashed #e2e8f0;
-    border-radius: 10px;
-    padding: 8px 10px;
 }
 
 .selectors0-candidate-list,
@@ -5799,13 +4825,6 @@ body.prompt-submitted:not(.pipeline-page) .app-main .container:has(#prefix-conta
     padding-left: 5px;
 }
 
-.selectors0-workbench .selectors-actions {
-    margin-left: auto;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-
 .selectors0-workbench .selectors-btn-record.is-active {
     color: #dc2626;
     animation: selectorsPulse 1.2s infinite;
@@ -5852,16 +4871,6 @@ body.prompt-submitted:not(.pipeline-page) .app-main .container:has(#prefix-conta
     display: none;
 }
 
-.selectors0-workbench .selectors-row-body {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-}
-
-.selectors0-workbench .selectors0-grid {
-    gap: 8px;
-}
-
 .selectors0-workbench .selectors-row-header {
     display: flex;
     align-items: center;
@@ -5873,11 +4882,6 @@ body.prompt-submitted:not(.pipeline-page) .app-main .container:has(#prefix-conta
     display: flex;
     align-items: center;
     gap: 6px;
-}
-
-.selectors0-workbench .selectors-emoji {
-    font-size: 18px;
-    padding-left: 10px;
 }
 
 .selectors0-workbench .selectors-actions {
@@ -5897,36 +4901,7 @@ body.prompt-submitted:not(.pipeline-page) .app-main .container:has(#prefix-conta
     font-size: 14px;
 }
 
-.selectors0-workbench .selectors-btn-trash {
-    padding: 4px 6px;
-}
 
-
-
-.selectors0-cta {
-    background: #0f172a;
-    color: #f9fafb;
-    border-color: #0f172a;
-    font-size: 15px;
-    padding: 12px 16px;
-}
-
-.selectors0-cta:hover {
-    box-shadow: 0 10px 18px rgba(15, 23, 42, 0.22);
-}
-
-.selectors0-secondary {
-    background: #fff7ed;
-    border-color: #fed7aa;
-    color: #9a3412;
-}
-
-.selectors0-primary {
-    background: #f59e0b;
-    border-color: #f59e0b;
-    color: #111827;
-    font-weight: 600;
-}
 
 .selectors0-advanced summary,
 .selectors0-collapsible summary {
@@ -5971,12 +4946,6 @@ body.prompt-submitted:not(.pipeline-page) .app-main .container:has(#prefix-conta
     padding-bottom: 6px;
 }
 
-.selectors0-card--flat {
-    background: transparent;
-    border: none;
-    box-shadow: none;
-}
-
 .selectors0-advanced-history {
     margin-top: 6px;
     display: flex;
@@ -5992,12 +4961,6 @@ body.prompt-submitted:not(.pipeline-page) .app-main .container:has(#prefix-conta
     font-size: 13px;
     font-weight: 600;
     color: #111827;
-}
-
-.selectors0-advanced-note {
-    margin: 0;
-    font-size: 12px;
-    color: #6b7280;
 }
 
 .selectors0-advanced-actions {
@@ -6089,25 +5052,6 @@ body.prompt-submitted:not(.pipeline-page) .app-main .container:has(#prefix-conta
     }
 }
 
-    gap: 8px;
-}
-
-@media (max-width: 980px) {
-    .selectors0-layout {
-        grid-template-columns: 1fr;
-    }
-}
-
-@media (max-width: 640px) {
-    .selectors0-action-row {
-        flex-direction: column;
-    }
-
-    .selectors0-cta,
-    .selectors0-secondary {
-        width: 100%;
-    }
-}
 
 .sr-only {
     position: absolute;
@@ -6260,12 +5204,6 @@ body.prompt-submitted:not(.pipeline-page) .app-main .container:has(#prefix-conta
     overflow-x: clip;
 }
 
-/* тонкая выравнивающая обёртка для кнопки Go */
-.go-wrapper,
-#go-it-button {
-    display: none;
-}
-
 /* если нужно — гарантируем, что ряд модификаторов растягивается */
 .modifiers-row {
     width: 100%;
@@ -6309,26 +5247,19 @@ body.prompt-submitted:not(.pipeline-page) .app-main .container:has(#prefix-conta
     color: #0f172a;
 }
 
-.export-txt-btn {
+.export-txt-btn,
+.export-md-btn {
     font-size: 11px;
     font-weight: 700;
     text-transform: lowercase;
 }
 
-.favorite-panel-actions .favorite-export-txt-btn {
+.favorite-panel-actions .favorite-export-md-btn {
     width: 26px;
     height: 26px;
 }
 
 
-
-.evaluator-select-group {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 15px;
-    margin: -5px; /* Добавим немного вертикального отступа для воздуха */
-}
 
 .control-button {
     padding: 6px 15px;
@@ -6369,57 +5300,6 @@ body.prompt-submitted:not(.pipeline-page) .app-main .container:has(#prefix-conta
 .control-button:not(:disabled):active {
     transform: translateY(1px) scale(0.98);
     box-shadow: 0 6px 12px rgba(17, 24, 39, 0.18);
-}
-
-.checkbox-label {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    font-size: 14px;
-}
-
-.checkbox-label input[type="checkbox"] {
-    appearance: none;
-    -webkit-appearance: none;
-    -moz-appearance: none;
-    width: 20px;
-    height: 20px;
-    border: 2px solid #d1d5db;
-    border-radius: 6px;
-    background-color: #fffafafb;
-    position: relative;
-    cursor: pointer;
-    outline: none;
-    transition: background-color 0.2s ease-in-out, border-color 0.2s ease-in-out;
-    display: inline-block;
-    vertical-align: middle;
-}
-
-.checkbox-label input[type="checkbox"]:checked {
-    background-color: #1875c2eb;
-    border-color: transparent;
-    background-image: url("data:image/svg+xml,%3csvg viewBox='0 0 16 16' fill='white' xmlns='http://www.w3.org/2000/svg'%3e%3cpath d='M12.207 4.793a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0l-2-2a1 1 0 011.414-1.414L6.5 9.086l4.293-4.293a1 1 0 011.414 0z'/%3e%3c/svg%3e");
-    background-size: 100% 100%;
-    background-position: center;
-    background-repeat: no-repeat;
-}
-
-.checkbox-label {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 14px;
-    cursor: pointer;
-    -webkit-user-select: none;
-    -moz-user-select: none;
-    user-select: none;
-    
-}
-
-.section-title {
-    font-size: 18px;
-    color: #374151;
-    text-align: left;
 }
 
 .view-toggle-group {
@@ -6483,29 +5363,6 @@ body.prompt-submitted:not(.pipeline-page) .app-main .container:has(#prefix-conta
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
-}
-.llm-header-bar.get-answers-row {
-  justify-content: center;
-  margin-top: -4px;
-}
-.llm-header-bar.get-answers-row #get-it-button {
-  min-width: 140px;
-}
-
-.llm-header-left {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex: 1 1 0;
-  margin-top: 2px;
-  justify-content: flex-start;
-}
-
-.llm-header-center {
-  flex: 0 0 auto;
-  display: flex;
-  justify-content: center;
-  min-width: 160px;
 }
 
 .llm-header-right {
@@ -6588,15 +5445,6 @@ body.prompt-submitted:not(.pipeline-page) .app-main .container:has(#prefix-conta
   transition: background 0.2s ease, transform 0.1s ease;
 }
 
-.export-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  white-space: nowrap;
-  font-size: 13px;
-}
-
 .hidden {
     display: none;
 }
@@ -6636,18 +5484,7 @@ body.prompt-submitted:not(.pipeline-page) .app-main .container:has(#prefix-conta
 }
 
 .attribution-unproven-banner {
-    display: inline-flex;
-    align-items: center;
-    width: max-content;
-    margin: 2px 8px 4px 0;
-    padding: 2px 7px;
-    border: 1px solid #f59e0b;
-    border-radius: 999px;
-    background: #fff7ed;
-    color: #9a3412;
-    font-size: 11px;
-    font-weight: 700;
-    line-height: 1.4;
+    display: none;
 }
 
 .answer-partial-mark {
@@ -6656,6 +5493,7 @@ body.prompt-submitted:not(.pipeline-page) .app-main .container:has(#prefix-conta
     margin: 0 0 0 8px;
     padding: 0 6px;
     border-radius: 999px;
+    box-shadow: inset 0 0 0 1px #f59e0b;
     background: transparent;
     color: #969ca5;
     font-size: 11px;
@@ -6942,17 +5780,6 @@ body.llm-stream-preview-open .llm-results .llm-panel.llm-panel-session-restored:
   gap: 10px;
 }
 
-.favorite-item-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-bottom: 0;
-  font-size: 12px;
-  color: #475569;
-  flex: 0 0 auto;
-}
-
 .favorite-item-body {
   color: #111827;
   line-height: 1.55;
@@ -7162,7 +5989,7 @@ body.llm-stream-preview-open .llm-results .llm-panel.llm-panel-session-restored:
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  font-size: 16px;
+  font-size: 15px;
   line-height: 1;
   padding: 0;
   transition: transform 0.15s ease, color 0.15s ease;
@@ -7206,14 +6033,6 @@ body.llm-stream-preview-open .llm-results .llm-panel.llm-panel-session-restored:
         transform: translateY(0);
     }
 
-.use-input-btn {
-
-    border: 1px;
-    border-radius: 6px;
-    background: transparent;
-
-}
-
 .btn-flash-success {
     background-color: rgba(26, 115, 232, 0.14) !important;
 }
@@ -7247,7 +6066,7 @@ body.llm-stream-preview-open .llm-results .llm-panel.llm-panel-session-restored:
 .header-right {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 1px;
   margin-left: auto;
 }
 
@@ -7318,11 +6137,6 @@ body.llm-stream-preview-open .llm-results .llm-panel.llm-panel-session-restored:
 
 .status-indicator.uncertain {
   background-color: #94a3b8;
-}
-
-.status-indicator.recoverable-error,
-.status-indicator.critical-error {
-    background-color: #f87171; /* alias for error */
 }
 
 .status-indicator.api-mode {
@@ -7484,48 +6298,9 @@ body.llm-stream-preview-open .llm-results .llm-panel.llm-panel-session-restored:
   color: #94a3b8;
 }
 
-.diag-status-entry {
-  flex-direction: column;
-  align-items: stretch;
-  gap: 4px;
-}
-
-.diag-status-grid {
-  display: grid;
-  grid-template-columns: minmax(150px, 220px) 1fr;
-  gap: 6px 12px;
-  width: 100%;
-  align-items: center;
-}
-
-.diag-status-cell {
-  font-size: 12px;
-  color: #0f172a;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.diag-status-indicator {
-  font-weight: 700;
-}
-
-.diag-status-text {
-  color: #0f172a;
-}
-
 @media (max-width: 960px) {
-  .indicator-legend-row,
-  .diag-status-grid {
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  }
 }
 
-
-.copy-btn:hover {
-  background: #e9f3ff;
-  transform: scale(1.05);
-}
 
 .diag-modal-block.is-expanded .diag-modal-body {
     max-height: 500px; /* Расширенная высота лога. На ней скролл будет работать, если лог > 500px */
@@ -7627,12 +6402,6 @@ body.llm-stream-preview-open .llm-results .llm-panel.llm-panel-session-restored:
     margin-top: 20px;
 }
 
-.comparison-panel {
-    border-radius: 20px;
-    padding: 5px;
-    text-align: left;
-}
-
 .comparison-panel h3 {
     margin-top: 0;
     font-size: 18px;
@@ -7721,8 +6490,6 @@ body.llm-stream-preview-open .llm-results .llm-panel.llm-panel-session-restored:
 .disput-health-warning, .disput-severity-warning td { color: #9a6700; }
 .disput-health-high, .disput-severity-high td { color: #b54708; }
 .disput-health-critical, .disput-severity-critical td { color: #c62828; }
-.disput-stage-failed td { color: #c62828; }
-.disput-stage-running td { color: #9a6700; }
 .disput-trace-table { min-width: 720px; }
 /* Post-completion updates (technical messages): one badge right of the message time,
    one popover with a tab per update. */
@@ -7896,10 +6663,6 @@ body.llm-stream-preview-open .llm-results .llm-panel:not(.favorite-panel):not(.l
     line-height: 1.4;
 }
 
-#human-loop-alert-modal {
-    display: none;
-}
-
 .modal-button {
     padding: 10px 25px;
     border-radius: 8px;
@@ -7943,10 +6706,6 @@ body.llm-stream-preview-open .llm-results .llm-panel:not(.favorite-panel):not(.l
 #delete-confirm:hover,
 #notification-ok-btn:hover {
     background-color: #0056b3;
-}
-
-#human-loop-alert-modal .modal-button {
-    min-width: 110px;
 }
 
 .modal-button.accent {
@@ -8110,12 +6869,6 @@ body.llm-stream-preview-open .llm-results .llm-panel:not(.favorite-panel):not(.l
     margin-right: 20px;
 }
 
-.dev-tools-section h1 {
-    font-size: 22px;
-    margin: 0;
-    color: var(--text-color);
-}
-
 .form-panel h3, .sidebar-panel h4 {
     font-size: 16px;
     margin: 0 0 10px 0;
@@ -8222,13 +6975,6 @@ body.llm-stream-preview-open .llm-results .llm-panel:not(.favorite-panel):not(.l
     margin-top: 32px;
 }
 
-.btn-ai-create {
-    background-color: #f59f01;
-    color: #ffffff;
-    width: 100%;
-    max-width: 200px;
-}
-
 .add-variable-btn {
     background-color: #e9ecef;
     color: var(--text-color);
@@ -8284,15 +7030,6 @@ body.llm-stream-preview-open .llm-results .llm-panel:not(.favorite-panel):not(.l
 
 .remove-variable:hover {
     color: var(--text-color);
-}
-
-.ai-actions {
-    border-top: 1px solid #f0f0f0;
-    padding-top: 1px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 15px;
 }
 
 .model-selector {
@@ -8539,14 +7276,6 @@ body.llm-stream-preview-open .llm-results .llm-panel:not(.favorite-panel):not(.l
 }
 
 
-.file-attachment-group {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 15px;
-    margin-top: 10px;
-}
-
 #file-name-display {
     font-size: 14px;
     color: var(--text-secondary-color);
@@ -8748,13 +7477,6 @@ body.pro-features-hidden .comparison-section {
 .prompt-container.prompt-sandwich.debate-composer.has-debate-feed .moderator-input {
     margin-top: auto;
 }
-.debate-controls {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    flex-wrap: wrap;
-    padding: 8px 8px 2px;
-}
 .debate-select {
     border: 1px solid #d4d8de;
     border-radius: 6px;
@@ -8763,12 +7485,6 @@ body.pro-features-hidden .comparison-section {
     font-size: 11px;
     padding: 4px 8px;
     min-height: 26px;
-}
-.debate-select-small {
-    width: 66px;
-}
-.debate-select-wide {
-    min-width: 170px;
 }
 .debate-btn {
     border: 1px solid #d4d8de;
@@ -8898,6 +7614,13 @@ body.pro-features-hidden .comparison-section {
     line-height: 1;
     padding: 0;
     cursor: pointer;
+}
+.debate-sel-toolbar .stb-sep {
+    width: 1px;
+    height: 14px;
+    margin: 2px 3px;
+    flex-shrink: 0;
+    background: rgba(255,255,255,.2);
 }
 .debate-sel-toolbar .stb.col {
     background: var(--swatch-color, #f8fafc) !important;
@@ -9095,13 +7818,6 @@ body.pro-features-hidden .comparison-section {
 .msg-head-right-top::-webkit-scrollbar {
     display: none;
 }
-.debate-run-controls {
-    flex: 0 0 auto;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    min-width: 0;
-}
 .msg-head-right-top > .debate-btn,
 .msg-head-right-top .pipeline-main-page-actions > .debate-btn {
     flex: 0 0 32px;
@@ -9123,18 +7839,6 @@ body.pro-features-hidden .comparison-section {
 .msg-head-right-top > .debate-btn.is-active {
     background: #111827;
     color: #fff;
-}
-.msg-head-right-top > .debate-btn.debate-get-it-btn {
-    background: #ffffff;
-    color: #111827;
-    box-shadow: inset 0 0 0 1px #d4d8de;
-}
-.msg-head-right-top > .debate-btn.debate-get-it-btn:hover:not(:disabled) {
-    box-shadow: inset 0 0 0 1px #9ca3af;
-}
-.msg-head-right-top > .debate-btn.debate-get-it-btn[data-collecting="true"] {
-    opacity: 0.55;
-    cursor: progress;
 }
 .msg-head-left > .prompt-mode-btn,
 .msg-head-right-top > .prompt-mode-btn {
@@ -9204,16 +7908,6 @@ body.pro-features-hidden .comparison-section {
     min-width: 86px;
     padding-right: 24px;
 }
-#debate-scheme-select {
-    width: 78px;
-    min-width: 78px;
-    padding-right: 22px;
-}
-.debate-length-stepper,
-.debate-turn-limit-stepper,
-.pipeline-round-stepper-value {
-    display: none;
-}
 .debate-turn-limit {
     display: none;
 }
@@ -9244,12 +7938,6 @@ body.pro-features-hidden .comparison-section {
 }
 .msg-head-right-top .top-new-pages-checkbox:checked + .top-toggle-track {
     background: #1f3b4c;
-}
-.msg-head-right-top .mod-controls {
-    flex: 0 0 auto;
-    display: flex;
-    align-items: center;
-    gap: 4px;
 }
 .mod-select {
     border: 1px solid #d1d5db;
@@ -9305,11 +7993,6 @@ body.pro-features-hidden .comparison-section {
 .mod-select-compact {
     width: 76px;
     min-width: 56px;
-}
-.mod-select-wide {
-    width: 136px;
-    min-width: 136px;
-    max-width: 136px;
 }
 .mod-select-policy {
     width: 66px;
@@ -9685,21 +8368,33 @@ body.pro-features-hidden .comparison-section {
 .debate-moderator-card .debate-model-card-output {
     font-size: 14px !important;
 }
-.debate-verdict-card {
-    border-color: #2563eb;
-    background: #eff6ff;
+/* Basic run feed: a gate, route, transition or artifacts line is one compact row, not an answer. */
+.basic-run-line {
+    padding: 4px 10px;
 }
-.debate-verdict-card .debate-model-card-name {
-    color: #1d4ed8;
-    font-weight: 700;
+.basic-run-line > .debate-model-card-header {
+    display: none;
+}
+.basic-run-line .debate-model-card-output {
+    color: var(--cm);
+    font-size: 13px;
+}
+.basic-run-line-button {
+    margin-left: 8px;
+    font-size: 13px;
+}
+.basic-run-stale {
+    margin-left: 6px;
+    padding: 0 5px;
+    border: 1px solid #b45309;
+    border-radius: 3px;
+    color: #b45309;
+    font-size: 12px;
+    line-height: 1.4;
 }
 .debate-model-card.is-approved {
     border-color: #cbd5e1;
     background: none;
-}
-.debate-model-card.debate-verdict-card.is-approved {
-    border-color: #2563eb;
-    background: #eff6ff;
 }
 .debate-model-card-meta .ib {
     width: 22px;
@@ -9760,32 +8455,6 @@ body.pro-features-hidden .comparison-section {
 .debate-fav.active i.ti-star::before {
     content: "\f6a6";
 }
-.debate-approval {
-    border: none;
-    background: transparent;
-    border-radius: 0;
-    margin: 2px 0 0;
-    padding: 2px 10px 0;
-    display: block;
-}
-.debate-approval-body {
-    font-size: 11px;
-    line-height: 1.5;
-    color: #334155;
-    max-height: 90px;
-    overflow-y: auto;
-    white-space: pre-wrap;
-    word-break: break-word;
-    border: none;
-    border-radius: 0;
-    background: transparent;
-    padding: 4px 0 2px;
-}
-.debate-approval-actions {
-    display: flex;
-    justify-content: flex-end;
-    margin-top: 6px;
-}
 .debate-model-card-output {
     display: block;
     width: 100%;
@@ -9810,6 +8479,13 @@ body.pro-features-hidden .comparison-section {
 }
 .debate-model-card-output :where([style*="font-size"]) {
     font-size: 14px !important;
+}
+.debate-model-card-output img,
+.post-terminal-answer-revision-body img,
+.llm-panel .output img {
+    max-width: 100%;
+    height: auto;
+    display: block;
 }
 .debate-model-card-output :where([style*="text-align"]) {
     text-align: left !important;
@@ -9912,11 +8588,6 @@ body.pro-features-hidden .comparison-section {
 .moderator-input textarea#modTa:focus {
     border: none;
     box-shadow: none;
-}
-.debate-approval-body {
-    min-height: 20px;
-    max-height: 120px;
-    overflow-y: auto;
 }
 .prompt-sandwich textarea#prompt-input {
     min-height: 120px; padding: 5px 15px; border-radius: 8px; background-color: rgba(255, 255, 255, 0.5);
@@ -10740,49 +9411,12 @@ hr.section-divider {
  {
     font-size: 22px;
 }
-.dropdown-judge {
-    border: none;
-    border-bottom: 1px solid #d1d5db;
-    background: transparent;
-    border-radius: 0;
-    width: 120px;
-    min-width: 120px;
-    max-width: 120px;
-    padding: 2px 0;
-    font-size: 14px;
-    font-weight: 600;
-    color: #1f2933;
-    margin-left: 8px;
-    flex: 0 0 auto;
-}
-
-.dropdown-judge-prompt {
-    width: 126px;
-    min-width: 126px;
-    max-width: 140px;
-    margin-left: 0;
-}
-
-.dropdown-judge:focus {
-    outline: none;
-    border-color: var(--accent-color);
-}
 
 .llm-header-right .use-as-input-btn {
     padding: 0px 10px;
     font-size: 13px;
 }
     
-.new-pages-inline {
-    margin-left: auto;
-}
-.telemetry-round-platform {
-    color: #0f172a;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    font-size: 11px;
-}
-
 /* Pipeline feed layout. Session tabs are hidden (state holder only); the bar keeps
    the session actions. */
 .debate-session-left[hidden] {
@@ -10897,6 +9531,101 @@ hr.section-divider {
 }
 .pipeline-page .prompt-container.prompt-sandwich.debate-composer.has-selected-models:not(.has-debate-feed) .msg-header {
     margin-top: 0;
+}
+
+/* code-block:start */
+.code-block{margin:8px 0;border:1px solid #d0d7de;border-radius:8px;background:#f6f8fa;overflow:hidden;text-align:left}
+.code-block-header{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 8px;background:#eaeef2;border-bottom:1px solid #d0d7de;font:12px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;color:#57606a;white-space:normal}
+.code-block-header::before{content:attr(data-lang);text-transform:lowercase}
+.code-block-copy{appearance:none;border:1px solid #d0d7de;background:#fff;color:#24292f;border-radius:6px;padding:2px 10px;font:12px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;cursor:pointer}
+.code-block-copy::before{content:"Copy"}
+.code-block-open,.code-block-download{appearance:none;border:1px solid #d0d7de;background:#fff;color:#24292f;border-radius:6px;padding:2px 10px;font:12px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;cursor:pointer}
+.code-block-open{margin-left:auto}
+.code-block-open::before{content:"Просмотр"}
+.code-block-download::before{content:"Скачать"}
+.code-block-open:hover,.code-block-download:hover{background:#f3f4f6}
+.code-block-download.is-downloaded::before{content:"Скачано"}
+.code-block-download.is-failed::before{content:"Не удалось"}
+.code-block-header{gap:6px}
+.code-block-views{margin-left:auto}
+.code-block-views+.code-block-open{margin-left:0}
+.code-block pre{counter-reset:none}
+.code-block pre code::before,.code-block pre code::after{content:none}
+.code-block-copy:hover{background:#f3f4f6}
+.code-block-copy.is-copied::before{content:"Скопировано"}
+.code-block-copy.is-failed::before{content:"Не удалось"}
+.code-block pre{margin:0;padding:12px;background:transparent;border-radius:0;white-space:pre;overflow-x:auto;word-wrap:normal;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.code-block pre code{font:inherit;white-space:inherit;background:transparent;padding:0}
+.code-block.is-diagram .code-block-header::before{text-transform:capitalize}
+.code-block-views{display:inline-flex;gap:0;margin-left:auto;margin-right:8px}
+.code-block-view{appearance:none;border:1px solid #d0d7de;background:#fff;color:#24292f;padding:2px 10px;font:12px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;cursor:pointer}
+.code-block-view[data-view="diagram"]{border-radius:6px 0 0 6px}
+.code-block-view[data-view="code"]{border-radius:0 6px 6px 0;border-left:0}
+.code-block-view[data-view="diagram"]::before{content:"Диаграмма"}
+.code-block-view[data-view="code"]::before{content:"Код"}
+.code-block[data-mode="diagram"] .code-block-view[data-view="diagram"],.code-block[data-mode="code"] .code-block-view[data-view="code"]{background:#dbe9ff;border-color:#8bb4f0}
+.code-block.is-diagram:not([data-diagram="ready"]) .code-block-views{display:none}
+/* visually hidden, not display:none: the source stays in the card text (innerText), which is what is copied and handed over */
+.code-block.is-diagram{position:relative}
+.code-block.is-diagram[data-mode="diagram"] pre{position:absolute;width:1px;height:1px;margin:-1px;padding:0;border:0;overflow:hidden;clip:rect(0,0,0,0);white-space:pre}
+.code-block.is-diagram[data-mode="code"] .code-block-diagram:not([data-failed]){display:none}
+/* the panel of a diagram drawn from mermaid source: light grey, rounded, centered, no border (the look of the diagrams: results/code-blocks.js diagramConfig) */
+.code-block.is-diagram{border:0;background:transparent}
+.code-block.is-diagram .code-block-header{background:transparent;border-bottom:0;padding:2px 4px}
+.code-block-diagram{padding:16px 20px;background:#f1f1f1;border-radius:8px;text-align:center}
+.code-block.is-diagram[data-diagram-theme="dark"] .code-block-diagram:not([data-failed]){background:#2b2b2b}
+.code-block-diagram img{max-width:100%;height:auto;display:inline-block}
+.code-block-diagram[data-failed]{padding:6px 12px;background:#fff4e5;color:#8a4b00;font:12px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;text-align:left;border-bottom:1px solid #f0c78a}
+.code-block-diagram[data-failed]::before{content:attr(data-note)}
+/* the viewer (modal) of a code block */
+.code-viewer-overlay{position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:3vh 3vw}
+.code-viewer{display:flex;flex-direction:column;width:100%;height:100%;max-width:1400px;background:#fff;color:#24292f;border:1px solid #d0d7de;border-radius:10px;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,.35)}
+.code-viewer-head{display:flex;align-items:center;gap:8px;padding:8px 12px;background:#eaeef2;border-bottom:1px solid #d0d7de;font:13px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif}
+.code-viewer-lang{font-weight:600;text-transform:lowercase}
+.code-viewer-controls{margin-left:auto;display:inline-flex;gap:6px;flex-wrap:wrap}
+.code-viewer-btn{appearance:none;border:1px solid #d0d7de;background:#fff;color:#24292f;border-radius:6px;padding:3px 12px;font:inherit;cursor:pointer}
+.code-viewer-btn:hover{background:#f3f4f6}
+.code-viewer-btn[aria-pressed="true"]{background:#dbe9ff;border-color:#8bb4f0}
+.code-viewer-btn.is-copied,.code-viewer-btn.is-downloaded{background:#dcffe4;border-color:#8ad19a}
+.code-viewer-btn.is-failed{background:#ffe5e5;border-color:#e09a9a}
+.code-viewer-body{flex:1;min-height:0;overflow:auto;background:#fff}
+.code-viewer-code{margin:0;padding:16px;font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;overflow:auto;min-height:100%;box-sizing:border-box}
+.code-viewer-code code{font:inherit;background:transparent;padding:0;white-space:inherit}
+.code-viewer-frame{width:100%;height:100%;border:0;background:#fff;display:block}
+.code-viewer-img{display:block;max-width:100%;max-height:100%;margin:16px auto;object-fit:contain}
+.code-viewer-md{padding:16px 24px;font:15px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif;overflow-wrap:anywhere}
+.code-viewer-table{border-collapse:collapse;margin:16px;font:13px/1.4 system-ui,sans-serif}
+.code-viewer-table th,.code-viewer-table td{border:1px solid #d0d7de;padding:4px 10px;text-align:left}
+.code-viewer-table th{background:#f1f3f5}
+.code-viewer-note{padding:6px 16px;background:#fff4e5;color:#8a4b00;font:12px/1.4 system-ui,sans-serif}
+/* code-block:end */
+
+/* Choice dialog (results/choice-dialog.js): a modal with any number of buttons and an optional text field. */
+.choice-dialog {
+  width: min(520px, calc(100vw - 32px));
+  padding: 20px;
+  border: 1px solid var(--border-color, #d0d7de);
+  border-radius: 10px;
+  background: var(--surface-color, #fff);
+  color: var(--text-color, #1f2328);
+}
+.choice-dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
+.choice-dialog-title { margin: 0 0 8px; font-size: 16px; }
+.choice-dialog-message { margin: 0 0 12px; white-space: pre-line; font-size: 14px; max-height: 50vh; overflow: auto; }
+.choice-dialog-text {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 12px;
+  font: inherit;
+  font-size: 14px;
+}
+.choice-dialog-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.choice-dialog-actions button { padding: 6px 12px; border-radius: 6px; font: inherit; cursor: pointer; }
+.choice-dialog-choice { border: 1px solid var(--accent-color, #0969da); background: var(--accent-color, #0969da); color: #fff; }
+.choice-dialog-cancel { border: 1px solid var(--border-color, #d0d7de); background: transparent; color: inherit; }
+@media (max-width: 600px) {
+  .choice-dialog { padding: 16px; }
+  .choice-dialog-actions button { flex: 1 1 100%; }
 }
 
 
@@ -11118,7 +9847,10 @@ window.ProtoState = {
             ...(Array.isArray(roleChoice.prompts) ? roleChoice.prompts : []).map((prompt) => ({ value: String(prompt.id), label: String(prompt.label || prompt.id) }))
           ]
         };
-        if (roleChoice.settings) model.settings = settingsModel(roleChoice.settings, roleChoice);
+        if (roleChoice.settings) {
+          model.settings = settingsModel(roleChoice.settings, { ...roleChoice, enabledCount: working.length });
+          if (model.settings.owner.checked) model.badges.push('владелец: одобрение');
+        }
         return model;
       }
       model.sections.push({ title: 'Участники раунда', items: working.length ? working : ['никто не отправляет'] });
@@ -11147,20 +9879,229 @@ window.ProtoState = {
 
   const ORDER_LABELS = { parallel: 'Параллельно', sequential: 'По очереди' };
   const INPUT_LABELS = { none: 'Ничего', previous: 'Ответы предыдущего шага', all: 'Всё принятое за все предыдущие шаги' };
-  // The default of the input depends on the place: the first round has none, a later round takes the previous step.
-  function settingsModel(settings, { first = false, inheritedTask = '', disabled = false } = {}) {
+  const STEPS_LABEL = 'Выбранные этапы';
+  const REQUIRE_LABELS = { any: 'Любой ответ', all: 'Все включённые', count: 'Число' };
+  const isPlain = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
+  // The input «выбранные этапы» (4.3): the owner's list of step refs keeps its order; entries that are not step refs
+  // (a participant, an artifact written in JSON) stay in place. Returns the new list for the step ref.
+  function stepsAfterToggle(current, ref, checked) {
+    const list = Array.isArray(current) ? current.slice() : [];
+    const at = list.indexOf(ref);
+    if (checked && at < 0) list.push(ref);
+    if (!checked && at >= 0) list.splice(at, 1);
+    return list;
+  }
+
+  // The owner's edit of the output: name, form, sections (non-empty lines) and strictLength replace their values;
+  // the other fields (format, requiredFields, artifacts, revisionOf) stay as they are. A json format has no sections.
+  function outputAfterEdit(current = {}, edited = {}) {
+    const next = { ...(isPlain(current) ? current : {}) };
+    ['name', 'form', 'sections', 'strictLength'].forEach((key) => delete next[key]);
+    if (String(edited.name || '').trim()) next.name = String(edited.name);
+    if (String(edited.form || '').trim()) next.form = String(edited.form);
+    const sections = list(edited.sections).map((line) => line.trim()).filter(Boolean);
+    if (sections.length && next.format !== 'json') next.sections = sections;
+    if (edited.strictLength === true) next.strictLength = true;
+    return next;
+  }
+
+  // The fields of a step the card shows: input, require, owner, output. A draft is a choice the owner made in the card
+  // that the schema does not hold yet («выбранные этапы» without a step, the number of required answers).
+  function stepRestModel(settings = {}, { enabledCount = 0, drafts = {} } = {}) {
+    const req = settings.require;
+    const requireValue = typeof req === 'number' ? 'count' : (req === 'any' || req === 'all' ? req : (drafts.require === 'count' ? 'count' : ''));
+    const output = isPlain(settings.output) ? settings.output : {};
+    return {
+      require: {
+        value: requireValue,
+        count: typeof req === 'number' ? req : '',
+        max: Number(enabledCount) || 0,
+        options: [
+          { value: '', label: 'По умолчанию (любой ответ)' },
+          { value: 'any', label: REQUIRE_LABELS.any },
+          { value: 'all', label: REQUIRE_LABELS.all },
+          { value: 'count', label: REQUIRE_LABELS.count }
+        ]
+      },
+      owner: { checked: settings.owner === 'approve' },
+      output: {
+        name: String(output.name || ''),
+        form: String(output.form || ''),
+        sections: Array.isArray(output.sections) ? output.sections.map(String).join('\n') : '',
+        strictLength: output.strictLength === true,
+        json: output.format === 'json'
+      }
+    };
+  }
+
+  // The input of a step: `first` (the first round has nothing to feed in) gives null. An array of refs or a drafted
+  // «steps» shows the choice «выбранные этапы» with the earlier steps; `kind` decides the other options.
+  function stepInputModel(settings = {}, { kind = 'round', first = false, earlier = [], drafts = {} } = {}) {
+    if (first && kind === 'round') return null;
+    const input = Array.isArray(settings.input) ? settings.input : String(settings.input || '');
+    const picked = Array.isArray(input) ? input : [];
+    const defaultInput = kind === 'round' && first ? 'none' : 'previous';
+    const stepsMode = Array.isArray(input) || input === 'steps' || drafts.input === 'steps';
+    const refs = picked.filter((item) => typeof item === 'string');
+    const options = [
+      { value: '', label: `По умолчанию (${INPUT_LABELS[defaultInput].toLowerCase()})` },
+      ...(kind === 'round' ? Object.entries(INPUT_LABELS).map(([value, label]) => ({ value, label })) : [{ value: 'previous', label: INPUT_LABELS.previous }]),
+      { value: 'steps', label: STEPS_LABEL }
+    ];
+    return {
+      value: stepsMode ? 'steps' : input,
+      options,
+      steps: earlier.map((item) => {
+        const at = refs.indexOf(item.ref);
+        return { ref: item.ref, label: item.label, disabled: !item.enabled, checked: at >= 0, number: at >= 0 ? at + 1 : 0 };
+      }),
+      objectRefs: picked.length - refs.length
+    };
+  }
+
+  // The fields of a synthesis (its window): input, require, owner, output. Settings are the step's own fields.
+  function stepFieldsModel({ kind = 'round', settings = {}, earlier = [], enabledCount = 0, drafts = {}, disabled = false } = {}) {
+    return {
+      disabled: Boolean(disabled),
+      input: stepInputModel(settings, { kind, earlier, drafts }),
+      ...stepRestModel(settings, { enabledCount, drafts })
+    };
+  }
+
+  // The order, the input and the task of a round card; `first` and `inheritedTask` as before. The input of a later round
+  // is the previous step by default, the first round has no input (null).
+  function settingsModel(settings, { first = false, inheritedTask = '', disabled = false, earlier = [], enabledCount = 0, drafts = {} } = {}) {
     const order = String(settings.order || '');
-    const input = String(settings.input || '');
+    const input = stepInputModel(settings, { kind: 'round', first, earlier, drafts });
+    const stepsMode = input?.value === 'steps';
     const defaultInput = first ? 'none' : 'previous';
-    const effectiveInput = input || defaultInput;
+    const effectiveInput = stepsMode ? 'steps' : (input?.value || defaultInput);
     return {
       disabled: Boolean(disabled),
       order: { value: order, options: [{ value: '', label: `По умолчанию (${ORDER_LABELS.parallel.toLowerCase()})` }, ...Object.entries(ORDER_LABELS).map(([value, label]) => ({ value, label }))] },
-      // The first round has no earlier step: its input is not offered.
-      input: first ? null : { value: input, options: [{ value: '', label: `По умолчанию (${INPUT_LABELS[defaultInput].toLowerCase()})` }, ...Object.entries(INPUT_LABELS).map(([value, label]) => ({ value, label }))] },
-      // The task is sent only with an input; with none it is not used.
-      task: effectiveInput === 'none' ? null : { value: String(settings.task || ''), placeholder: String(inheritedTask || '') }
+      input,
+      // The task is always shown. With the input nothing only the task written here is sent (the shared one is not), so the
+      // placeholder of the shared task stays empty and the label says so. «выбранные этапы» sends the step's answers, so the task goes.
+      task: { value: String(settings.task || ''), placeholder: effectiveInput === 'none' ? '' : String(inheritedTask || ''), sent: effectiveInput !== 'none' },
+      ...stepRestModel(settings, { enabledCount, drafts })
     };
+  }
+
+  // A select row of a card (order, input): the choice goes to emit(field, value).
+  function choiceRow(container, field, label, data, emit) {
+    const doc = container.ownerDocument;
+    const select = el(doc, 'select', `stage-card-${field}-select`);
+    data.options.forEach((item) => { const option = el(doc, 'option', '', item.label); option.value = item.value; select.append(option); });
+    select.value = data.value;
+    select.disabled = Boolean(data.disabled);
+    select.addEventListener('change', () => emit(field, select.value));
+    const wrap = el(doc, 'label', `stage-card-setting stage-card-${field}`);
+    wrap.append(doc.createTextNode(`${label} `), select);
+    container.append(wrap);
+  }
+
+  // The list of steps of the input «выбранные этапы». emit('steps', { ref, checked }) — the page keeps the order of choice.
+  // The number is the place of the step in the owner's list; a switched-off step is marked, not hidden.
+  function renderSteps(container, input, emit, disabled = false) {
+    const doc = container.ownerDocument;
+    const box = el(doc, 'fieldset', 'stage-card-steps');
+    box.append(el(doc, 'legend', '', 'Этапы для входа (номер — порядок выбора)'));
+    if (!input.steps.length) box.append(el(doc, 'p', 'stage-card-muted', 'Раньше этих шагов нет.'));
+    input.steps.forEach((item) => {
+      const row = el(doc, 'label', 'stage-card-step-option');
+      const check = el(doc, 'input');
+      check.type = 'checkbox';
+      check.checked = item.checked;
+      check.disabled = Boolean(disabled);
+      check.addEventListener('change', () => emit('steps', { ref: item.ref, checked: check.checked }));
+      row.append(check, doc.createTextNode(` ${item.label}${item.disabled ? ' (выключен)' : ''}${item.number ? ` · ${item.number}` : ''}`));
+      box.append(row);
+    });
+    if (input.objectRefs) box.append(el(doc, 'p', 'stage-card-muted', `Ссылки на участников и артефакты (${input.objectRefs}) заданы в JSON и сохраняются.`));
+    container.append(box);
+  }
+
+  // The fields after the task: how many answers are needed, the owner's approval, the output of the step.
+  // A number of answers goes to emit('require', n) only when it is typed; 'count' is the choice of a number.
+  function renderRest(container, fields, emit) {
+    const doc = container.ownerDocument;
+    const disabled = Boolean(fields.disabled);
+    const requireSelect = el(doc, 'select', 'stage-card-require-select');
+    fields.require.options.forEach((item) => { const option = el(doc, 'option', '', item.label); option.value = item.value; requireSelect.append(option); });
+    requireSelect.value = fields.require.value;
+    requireSelect.disabled = disabled;
+    requireSelect.addEventListener('change', () => emit('require', requireSelect.value));
+    const requireWrap = el(doc, 'label', 'stage-card-setting stage-card-require');
+    requireWrap.append(doc.createTextNode('Сколько ответов нужно '), requireSelect);
+    if (fields.require.value === 'count') {
+      const count = el(doc, 'input', 'stage-card-require-count');
+      count.type = 'number';
+      count.min = '1';
+      count.max = String(fields.require.max);
+      count.step = '1';
+      count.value = fields.require.count === '' ? '' : String(fields.require.count);
+      count.disabled = disabled;
+      count.setAttribute('aria-label', 'Число ответов');
+      count.addEventListener('change', () => { if (count.value !== '') emit('require', Number(count.value)); });
+      requireWrap.append(count, doc.createTextNode(` из ${fields.require.max}`));
+    }
+    container.append(requireWrap);
+
+    const ownerBox = el(doc, 'input', 'stage-card-owner-check');
+    ownerBox.type = 'checkbox';
+    ownerBox.checked = fields.owner.checked;
+    ownerBox.disabled = disabled;
+    ownerBox.addEventListener('change', () => emit('owner', ownerBox.checked ? 'approve' : ''));
+    const ownerWrap = el(doc, 'label', 'stage-card-setting stage-card-owner');
+    ownerWrap.append(ownerBox, doc.createTextNode(' Спросить владельца после этапа'));
+    container.append(ownerWrap);
+
+    const output = fields.output;
+    const group = el(doc, 'section', 'stage-card-output');
+    group.append(el(doc, 'h3', '', 'Выход этапа'));
+    const nameInput = el(doc, 'input', 'stage-card-output-name');
+    nameInput.type = 'text';
+    nameInput.value = output.name;
+    nameInput.disabled = disabled;
+    nameInput.setAttribute('aria-label', 'Имя результата');
+    const formArea = el(doc, 'textarea', 'stage-card-output-form');
+    formArea.rows = 2;
+    formArea.value = output.form;
+    formArea.disabled = disabled;
+    formArea.setAttribute('aria-label', 'Форма ответа');
+    const sectionsArea = el(doc, 'textarea', 'stage-card-output-sections');
+    sectionsArea.rows = 3;
+    sectionsArea.value = output.sections;
+    sectionsArea.disabled = disabled || output.json;
+    sectionsArea.setAttribute('aria-label', 'Разделы ответа, по одному на строку');
+    const strict = el(doc, 'input', 'stage-card-output-strict');
+    strict.type = 'checkbox';
+    strict.checked = output.strictLength;
+    strict.disabled = disabled;
+    const emitOutput = () => emit('output', { name: nameInput.value, form: formArea.value, sections: sectionsArea.value.split('\n'), strictLength: strict.checked });
+    [[nameInput, 'Имя результата'], [formArea, 'Форма ответа'], [sectionsArea, 'Разделы ответа (по одному на строку)']].forEach(([node, text]) => {
+      const wrap = el(doc, 'label', 'stage-card-output-field');
+      wrap.append(doc.createTextNode(`${text} `), node);
+      group.append(wrap);
+      node.addEventListener('change', emitOutput);
+    });
+    const strictWrap = el(doc, 'label', 'stage-card-output-field');
+    strictWrap.append(strict, doc.createTextNode(' Строгая длина (предел слов)'));
+    group.append(strictWrap);
+    strict.addEventListener('change', emitOutput);
+    if (output.json) group.append(el(doc, 'p', 'stage-card-muted', 'Формат json: заголовки не проверяются, поля задаются в схеме (requiredFields).'));
+    container.append(group);
+  }
+
+  // The window of a synthesis: its input (with the steps list), then the same fields as a round card has after its task.
+  function renderStepFields(container, fields, onField) {
+    const emit = (field, value) => { if (typeof onField === 'function') onField(field, value); };
+    if (fields.input) {
+      choiceRow(container, 'input', 'Вход синтеза', { ...fields.input, disabled: fields.disabled }, emit);
+      if (fields.input.value === 'steps') renderSteps(container, fields.input, emit, fields.disabled);
+    }
+    renderRest(container, fields, emit);
   }
 
   const el = (documentRef, tag, className, text) => {
@@ -11170,7 +10111,7 @@ window.ProtoState = {
     return node;
   };
 
-  function render(container, model, { onCopy = null, onRole = null, onRoundPrompt = null, onSetting = null } = {}) {
+  function render(container, model, { onCopy = null, onRole = null, onRoundPrompt = null, onSetting = null, addControl = null } = {}) {
     const doc = container.ownerDocument;
     container.replaceChildren();
     if (model.subtitle) container.append(el(doc, 'p', 'stage-card-subtitle', model.subtitle));
@@ -11209,18 +10150,9 @@ window.ProtoState = {
       if (model.settings) {
         const settings = model.settings;
         const emit = (field, value) => { if (typeof onSetting === 'function') onSetting(field, value); };
-        const choice = (field, label, data) => {
-          const select = el(doc, 'select', `stage-card-${field}-select`);
-          data.options.forEach((item) => { const option = el(doc, 'option', '', item.label); option.value = item.value; select.append(option); });
-          select.value = data.value;
-          select.disabled = settings.disabled;
-          select.addEventListener('change', () => emit(field, select.value));
-          const wrap = el(doc, 'label', `stage-card-setting stage-card-${field}`);
-          wrap.append(doc.createTextNode(`${label} `), select);
-          container.append(wrap);
-        };
-        choice('order', 'Порядок работы', settings.order);
-        if (settings.input) choice('input', 'Вход раунда', settings.input);
+        choiceRow(container, 'order', 'Порядок работы', { ...settings.order, disabled: settings.disabled }, emit);
+        if (settings.input) choiceRow(container, 'input', 'Вход раунда', { ...settings.input, disabled: settings.disabled }, emit);
+        if (settings.input?.value === 'steps') renderSteps(container, settings.input, emit, settings.disabled);
         if (settings.task) {
           const area = el(doc, 'textarea', 'stage-card-task');
           area.value = settings.task.value;
@@ -11231,9 +10163,11 @@ window.ProtoState = {
           area.setAttribute('aria-label', 'Задание раунда');
           area.addEventListener('change', () => emit('task', area.value));
           const wrap = el(doc, 'label', 'stage-card-setting stage-card-task-label');
-          wrap.append(doc.createTextNode('Задание раунда (пусто — общее) '), area);
+          wrap.append(doc.createTextNode(settings.task.sent ? 'Задание раунда (пусто — общее) ' : 'Задание раунда (при входе «ничего» отправляется только оно) '), area);
           container.append(wrap);
         }
+        renderRest(container, settings, emit);
+        if (addControl) renderAddControl(container, addControl);
       }
     } else {
       const people = el(doc, 'div', 'stage-card-people');
@@ -11271,7 +10205,580 @@ window.ProtoState = {
     }
   }
 
-  const api = Object.freeze({ buildModel, render, STATUS });
+  // The run feed of Basic (results.js): pure texts of the events and of the answer cards. Old events without the
+  // new fields give the same text as before; a participant id equal to the model name is not repeated.
+  const ROUTE_REASON = {
+    rule: 'по правилу', otherwise: 'иначе', model: 'выбрала модель', owner: 'выбрал владелец',
+    conflict_first: 'первый из подходящих', conflict_owner: 'выбрал владелец из подходящих',
+    invalid_route: 'ответ модели не распознан, выбрал владелец'
+  };
+  const feed = Object.freeze({
+    // The label of an answer card: the step, the participant (when it is not the model) and the visit (from the second).
+    role({ label = '', modelName = '', participantId = '', visit = 1 } = {}) {
+      const parts = [`Basic · ${label}`];
+      if (participantId && participantId !== modelName) parts.push(`участник ${participantId}`);
+      if (Number(visit) > 1) parts.push(`заход ${visit}`);
+      return parts.join(' · ');
+    },
+    gate({ ref = '', pass = false, unmet = [] } = {}) {
+      const head = `Проверка ${ref}: ${pass ? 'пройдена' : 'не пройдена'}`;
+      return !pass && unmet.length ? `${head}. Не выполнено: ${unmet.join('; ')}` : head;
+    },
+    route({ ref = '', caseLabel = '', reason = '' } = {}) {
+      return `Маршрут ${ref}: вариант «${caseLabel}», ${ROUTE_REASON[reason] || reason}`;
+    },
+    // stopText: the text of a stop reason (the engine's STOP_TEXT); a limit names its count.
+    transition({ from = '', to = '', action = 'goto', count = null, maxLoops = null, reason = '' } = {}, stopText = (value) => value) {
+      if (action === 'stop') {
+        return reason === 'loop_limit'
+          ? `Переход ${from} → ${to} не выполнен: лимит ${maxLoops} исчерпан`
+          : `Прогон остановлен после ${from}: ${stopText(reason)}`;
+      }
+      const head = `${action === 'return' ? 'Возврат' : 'Переход'} ${from} → ${to}`;
+      return count != null && maxLoops != null ? `${head}, переход ${count} из ${maxLoops}` : head;
+    },
+    // The title of an artifact in the registry: name, participant (owner for an owner step), visit, validity.
+    artifactTitle({ name = '', source = {}, valid = true } = {}) {
+      const author = source.participant === 'owner' ? 'владелец' : `участник ${source.participant}`;
+      return `${name} · ${author} · заход ${source.visit}${valid === false ? ' · устарело' : ''}`;
+    },
+    // The text of an artifact: the whole answer for an empty pointer, else the value at the pointer (JSON as text).
+    artifactText(answer = '', pointer = '', readPointer) {
+      if (!pointer) return String(answer || '');
+      let value;
+      try { value = JSON.parse(answer); } catch (_) { return `Указатель ${pointer}: ответ не является JSON.`; }
+      const read = readPointer(value, pointer);
+      if (!read.found) return `Указатель ${pointer} не найден в ответе.`;
+      return typeof read.value === 'string' ? read.value : JSON.stringify(read.value, null, 2);
+    }
+  });
+
+  // Control steps (6.1–6.3 of the spec): a gate, a route and an owner are cards on the canvas. A window edits only the fields
+  // listed here; controlAfterEdit gives back the whole step, so every other field stays as it is.
+  const isTransition = (value) => isPlain(value) && typeof value.goto === 'string';
+  // The view of a transition (onPass, onFail, a case's action, otherwise): `absent` is the mode of a missing value.
+  // A value the window does not edit (its shape is other) gives mode 'json'.
+  function transitionView(value, absent) {
+    if (value === undefined || value === null) return { mode: absent };
+    if (value === 'stop' || value === 'ask') return { mode: value };
+    if (isTransition(value)) return { mode: 'goto', goto: value.goto, maxLoops: value.maxLoops ?? '' };
+    if (isPlain(value) && Object.keys(value).length === 1 && typeof value.stop === 'string') return { mode: 'stop', stop: value.stop };
+    if (isPlain(value) && value.return === true && Object.keys(value).every((key) => key === 'return' || key === 'maxLoops')) return { mode: 'return', maxLoops: value.maxLoops ?? '' };
+    return { mode: 'json' };
+  }
+  // The value of a transition after an edit (`kind`: pass, fail, action, otherwise). A missing value is undefined.
+  // A goto keeps its feedback, invalidate and resumeAt: the window does not edit them.
+  function transitionAfterEdit(current, edit = {}, kind = 'action') {
+    if (edit.mode === 'next' || edit.mode === 'none') return undefined;
+    const limit = edit.maxLoops === '' || edit.maxLoops == null ? {} : { maxLoops: Number(edit.maxLoops) };
+    if (edit.mode === 'ask') return 'ask';
+    if (edit.mode === 'stop') return kind === 'fail' ? 'stop' : { stop: String(edit.stop ?? '') };
+    if (edit.mode === 'return') return { return: true, ...limit };
+    if (edit.mode === 'goto') {
+      const kept = isTransition(current) ? Object.fromEntries(Object.entries(current).filter(([key]) => key !== 'goto' && key !== 'maxLoops')) : {};
+      return { ...kept, goto: String(edit.goto ?? ''), ...limit };
+    }
+    return current;
+  }
+
+  // The window of a gate: criteria (one per line), its checkers (the available models; an unchecked one stays in the
+  // schema with enabled false), pass, and the transitions onFail and onPass. `names` are the models the page offers.
+  function gateWindowModel(step = {}, { names = [], refs = [], disabled = false } = {}) {
+    const models = Array.isArray(step.models) ? step.models.filter(isPlain) : [];
+    const checked = new Set(models.filter((model) => model.enabled !== false).map((model) => String(model.name)));
+    const known = [...new Set([...names.map(String), ...models.map((model) => String(model.name))])];
+    return {
+      ref: String(step.ref || ''),
+      disabled: Boolean(disabled),
+      criteria: Array.isArray(step.criteria) ? step.criteria.map(String).join('\n') : '',
+      checkers: known.map((name) => ({ name, checked: checked.has(name) })),
+      pass: typeof step.pass === 'string' ? step.pass : '',
+      onFail: transitionView(step.onFail, 'stop'),
+      onPass: transitionView(step.onPass, 'next'),
+      refs: refs.map(String).filter((ref) => ref !== String(step.ref || ''))
+    };
+  }
+  // An edit of a gate: { field: 'criteria', value } | { field: 'checker', name, checked } | { field: 'pass', value } |
+  // { field: 'onFail' | 'onPass', mode, goto, maxLoops, stop }. Returns the new step; the input is not changed.
+  function gateAfterEdit(step = {}, edit = {}) {
+    const next = { ...step };
+    if (edit.field === 'criteria') {
+      const lines = String(edit.value || '').split('\n').map((line) => line.trim()).filter(Boolean);
+      if (lines.length) next.criteria = lines;
+      else delete next.criteria;
+    } else if (edit.field === 'checker') {
+      const models = Array.isArray(step.models) ? step.models.map((model) => (isPlain(model) ? { ...model } : model)) : [];
+      const at = models.findIndex((model) => isPlain(model) && model.name === edit.name);
+      if (at < 0 && edit.checked) models.push({ name: String(edit.name) });
+      else if (at >= 0 && edit.checked) delete models[at].enabled;
+      else if (at >= 0) models[at].enabled = false;
+      next.models = models;
+    } else if (edit.field === 'pass') {
+      if (edit.value === 'all' || edit.value === 'any') next.pass = edit.value;
+      else delete next.pass;
+    } else if (edit.field === 'onFail' || edit.field === 'onPass') {
+      const key = edit.field;
+      const value = transitionAfterEdit(step[key], edit, key === 'onFail' ? 'fail' : 'pass');
+      if (value === undefined) delete next[key];
+      else next[key] = value;
+    }
+    return next;
+  }
+
+  // The window's controls: a select of a transition with its target (a ref of the canvas) and the number of loops.
+  // The change goes to emit(field, { mode, goto, maxLoops, stop }); a goto without a target is sent as it is (the schema says so).
+  function renderTransition(container, { field, label, view, options, refs, disabled, withStop, emit }) {
+    const doc = container.ownerDocument;
+    const state = { mode: view.mode, goto: view.goto || '', maxLoops: view.maxLoops ?? '', stop: view.stop || '' };
+    const box = el(doc, 'fieldset', `stage-card-transition stage-card-${field}`);
+    box.append(el(doc, 'legend', '', label));
+    const mode = el(doc, 'select', `stage-card-${field}-mode`);
+    mode.setAttribute('aria-label', label);
+    const choices = state.mode === 'json' ? [...options, { value: 'json', label: 'задан в JSON, сохраняется как есть', disabled: true }] : options;
+    choices.forEach((item) => { const option = el(doc, 'option', '', item.label); option.value = item.value; option.disabled = Boolean(item.disabled); mode.append(option); });
+    mode.value = state.mode;
+    mode.disabled = Boolean(disabled) || state.mode === 'json';
+    const send = () => { if (typeof emit === 'function') emit({ field, mode: state.mode, goto: state.goto, maxLoops: state.maxLoops, stop: state.stop }); };
+    mode.addEventListener('change', () => { state.mode = mode.value; send(); });
+    box.append(mode);
+    if (state.mode === 'goto' || state.mode === 'return') {
+      if (state.mode === 'goto') {
+        const target = el(doc, 'select', `stage-card-${field}-goto`);
+        target.setAttribute('aria-label', `${label}: переход на шаг`);
+        target.append(new Option('— выберите шаг —', ''));
+        [...new Set([...refs, state.goto].filter(Boolean))].forEach((ref) => target.append(new Option(ref, ref)));
+        target.value = state.goto;
+        target.disabled = Boolean(disabled);
+        target.addEventListener('change', () => { state.goto = target.value; send(); });
+        box.append(target);
+      }
+      const loops = el(doc, 'input', `stage-card-${field}-loops`);
+      loops.type = 'number'; loops.min = '1'; loops.max = '5'; loops.step = '1';
+      loops.value = state.maxLoops === '' ? '' : String(state.maxLoops);
+      loops.placeholder = 'лимит 1–5';
+      loops.disabled = Boolean(disabled);
+      loops.setAttribute('aria-label', `${label}: лимит переходов`);
+      loops.addEventListener('change', () => { state.maxLoops = loops.value; send(); });
+      box.append(loops);
+    }
+    if (withStop && state.mode === 'stop') {
+      const reason = el(doc, 'input', `stage-card-${field}-stop`);
+      reason.type = 'text'; reason.value = state.stop; reason.disabled = Boolean(disabled);
+      reason.setAttribute('aria-label', `${label}: причина остановки`);
+      reason.addEventListener('change', () => { state.stop = reason.value; send(); });
+      box.append(reason);
+    }
+    container.append(box);
+  }
+
+  // The window of a gate. Every change goes to emit(edit) with the edit's field (see gateAfterEdit).
+  function renderGateWindow(container, model, emit) {
+    const doc = container.ownerDocument;
+    const disabled = Boolean(model.disabled);
+    const send = (edit) => { if (typeof emit === 'function') emit(edit); };
+    const criteria = el(doc, 'textarea', 'stage-card-criteria');
+    criteria.rows = 4;
+    criteria.value = model.criteria;
+    criteria.disabled = disabled;
+    criteria.spellcheck = false;
+    criteria.setAttribute('aria-label', 'Критерии проверки, по одному на строку');
+    criteria.addEventListener('change', () => send({ field: 'criteria', value: criteria.value }));
+    const critWrap = el(doc, 'label', 'stage-card-setting stage-card-criteria-label');
+    critWrap.append(doc.createTextNode('Критерии (по одному на строку) '), criteria);
+    container.append(critWrap);
+
+    const checkers = el(doc, 'fieldset', 'stage-card-checkers');
+    checkers.append(el(doc, 'legend', '', 'Проверяющие'));
+    model.checkers.forEach((item) => {
+      const row = el(doc, 'label', 'stage-card-checker');
+      const check = el(doc, 'input', 'stage-card-checker-check');
+      check.type = 'checkbox';
+      check.checked = item.checked;
+      check.disabled = disabled;
+      check.addEventListener('change', () => send({ field: 'checker', name: item.name, checked: check.checked }));
+      row.append(check, doc.createTextNode(` ${item.name}`));
+      checkers.append(row);
+    });
+    if (!model.checkers.length) checkers.append(el(doc, 'p', 'stage-card-muted', 'Моделей нет.'));
+    container.append(checkers);
+
+    const pass = el(doc, 'select', 'stage-card-pass-select');
+    [['', 'По умолчанию (все проверяющие)'], ['all', 'Все проверяющие прошли'], ['any', 'Достаточно одного']].forEach(([value, label]) => {
+      const option = el(doc, 'option', '', label); option.value = value; pass.append(option);
+    });
+    pass.value = model.pass;
+    pass.disabled = disabled;
+    pass.setAttribute('aria-label', 'Проверка прошла, если');
+    pass.addEventListener('change', () => send({ field: 'pass', value: pass.value }));
+    const passWrap = el(doc, 'label', 'stage-card-setting stage-card-pass');
+    passWrap.append(doc.createTextNode('Проходит, если '), pass);
+    container.append(passWrap);
+
+    renderTransition(container, { field: 'onFail', label: 'При провале', view: model.onFail, refs: model.refs, disabled, withStop: false, emit: send,
+      options: [{ value: 'stop', label: 'Остановить прогон' }, { value: 'ask', label: 'Спросить владельца' }, { value: 'goto', label: 'Перейти к шагу' }] });
+    renderTransition(container, { field: 'onPass', label: 'После успеха', view: model.onPass, refs: model.refs, disabled, withStop: false, emit: send,
+      options: [{ value: 'next', label: 'Следующий шаг' }, { value: 'goto', label: 'Перейти к шагу' }] });
+  }
+
+  // The window of a route (6.2). `by` rule reads the step's input (the sources numbered in the conditions); model gives the
+  // one model that chooses and its task; owner gives nothing (the owner chooses). A composite condition (all, any) is kept as it is.
+  const ROUTE_BY_LABELS = [['', '— выберите —'], ['rule', 'По правилу (условие на данных)'], ['model', 'Выбирает модель'], ['owner', 'Выбирает владелец']];
+  const ROUTE_CONFLICT_LABELS = [['', 'По умолчанию: остановить'], ['first', 'Первый подходящий'], ['owner', 'Выбирает владелец']];
+  const ROUTE_OPS = ['eq', 'in', 'exists'];
+  const isComposite = (cond) => isPlain(cond) && (Array.isArray(cond.all) || Array.isArray(cond.any));
+  // A value as the window shows it: a string as it is, anything else as JSON.
+  const valueText = (value) => (typeof value === 'string' ? value : JSON.stringify(value));
+  // A value typed in the window: JSON when it parses (a number, true, a quoted text), else the text itself.
+  const parseValue = (text) => { try { return JSON.parse(text); } catch (_) { return String(text); } };
+  // The list of `in` is written by comma; each item is read as a value.
+  const parseList = (text) => String(text || '').split(',').map((item) => item.trim()).filter(Boolean).map(parseValue);
+  function caseView(item = {}) {
+    const cond = item.when;
+    const composite = isComposite(cond);
+    const when = composite || !isPlain(cond) ? null : {
+      source: cond.source ?? '', pointer: String(cond.pointer ?? ''), op: ROUTE_OPS.includes(cond.op) ? cond.op : 'eq',
+      value: Array.isArray(cond.value) ? cond.value.map(valueText).join(', ') : (cond.value === undefined ? '' : valueText(cond.value))
+    };
+    return { id: String(item.id ?? ''), label: String(item.label ?? ''), composite, when, action: transitionView(item.action, 'goto') };
+  }
+  // The sources of a rule: the answers of the participants of the steps before this one (`earlier`: [{ ref, label,
+  // participants: [{ id, name }] }]). The number of a source is its place in the input (from 0, as the conditions read it).
+  const isParticipantSource = (src) => isPlain(src) && typeof src.step === 'string' && 'participant' in src && !('artifact' in src);
+  function routeWindowModel(step = {}, { names = [], refs = [], earlier = [], disabled = false } = {}) {
+    const select = isPlain(step.select) ? step.select : {};
+    const models = Array.isArray(step.models) ? step.models.filter(isPlain) : [];
+    const chosen = models.find((model) => model.enabled !== false);
+    const input = Array.isArray(step.input) ? step.input : [];
+    const sources = earlier.flatMap((item) => item.participants.map((participant) => {
+      const at = input.findIndex((src) => isParticipantSource(src) && src.step === item.ref && src.participant === participant.id);
+      return { step: item.ref, participant: participant.id, label: `${item.label} · ${participant.name}`, checked: at >= 0, number: at };
+    }));
+    return {
+      ref: String(step.ref || ''),
+      disabled: Boolean(disabled),
+      refs: refs.map(String).filter((ref) => ref !== String(step.ref || '')),
+      by: typeof select.by === 'string' ? select.by : '',
+      modelNames: [...new Set([...names.map(String), ...models.map((model) => String(model.name))])],
+      model: chosen ? String(chosen.name) : '',
+      task: typeof step.task === 'string' ? step.task : '',
+      sources,
+      otherSources: input.filter((src) => !isParticipantSource(src)).length,
+      conflict: typeof select.conflict === 'string' ? select.conflict : '',
+      otherwise: transitionView(select.otherwise, 'none'),
+      cases: (Array.isArray(select.cases) ? select.cases : []).map(caseView)
+    };
+  }
+  // An edit of a route: { field: 'by', value } | { field: 'model', value } | { field: 'task', value } | { field: 'conflict', value } |
+  // { field: 'source', step, participant, checked } | { field: 'otherwise', mode, goto, maxLoops, stop } | { field: 'caseAdd' } | { field: 'caseRemove', index } |
+  // { field: 'case', index, id, label, when (null: none; undefined: kept), action: { mode, goto, maxLoops, stop } }.
+  // Changing `by` drops what the new kind does not have: the conditions and the otherwise away from a rule, the models
+  // away from a model, the model and the task away from a rule and an owner.
+  function routeAfterEdit(step = {}, edit = {}) {
+    const next = { ...step };
+    const select = isPlain(step.select) ? { ...step.select } : {};
+    const cases = Array.isArray(select.cases) ? select.cases.map((item) => ({ ...item })) : [];
+    const put = (target, key, value) => { if (value === '' || value === undefined || value === null) delete target[key]; else target[key] = value; };
+    if (edit.field === 'by') {
+      put(select, 'by', edit.value);
+      if (edit.value !== 'rule') {
+        delete select.conflict;
+        delete select.otherwise;
+        cases.forEach((item) => { delete item.when; });
+      }
+      if (edit.value === 'rule' || edit.value === 'owner') next.models = [];
+      if (edit.value === 'owner') delete next.task;
+    } else if (edit.field === 'source') {
+      // The sources of a rule are kept in the input in their order; an entry the window does not show stays where it is.
+      const input = Array.isArray(step.input) ? step.input.map((src) => (isPlain(src) ? { ...src } : src)) : [];
+      const at = input.findIndex((src) => isParticipantSource(src) && src.step === edit.step && src.participant === edit.participant);
+      if (edit.checked && at < 0) input.push({ step: String(edit.step), participant: edit.participant });
+      else if (!edit.checked && at >= 0) input.splice(at, 1);
+      if (input.length) next.input = input;
+      else delete next.input;
+    } else if (edit.field === 'model') {
+      next.models = edit.value ? [{ name: String(edit.value) }] : [];
+    } else if (edit.field === 'task') {
+      put(next, 'task', edit.value);
+    } else if (edit.field === 'conflict') {
+      put(select, 'conflict', edit.value);
+    } else if (edit.field === 'otherwise') {
+      const value = transitionAfterEdit(select.otherwise, edit, 'otherwise');
+      put(select, 'otherwise', value);
+    } else if (edit.field === 'caseAdd') {
+      const taken = new Set(cases.map((item) => item.id));
+      let n = cases.length + 1;
+      while (taken.has(`case${n}`)) n += 1;
+      cases.push({ id: `case${n}` });
+    } else if (edit.field === 'caseRemove') {
+      cases.splice(Number(edit.index), 1);
+    } else if (edit.field === 'case' && cases[Number(edit.index)]) {
+      const at = Number(edit.index);
+      const current = cases[at];
+      const updated = { id: String(edit.id ?? current.id ?? '') };
+      if (String(edit.label ?? '').trim()) updated.label = String(edit.label);
+      if (current.when !== undefined) updated.when = current.when;
+      if (edit.when === null) delete updated.when;
+      else if (isPlain(edit.when)) {
+        // An empty source is not a number: it is left out, and the schema names the error at its place.
+        const cond = { ...(String(edit.when.source ?? '').trim() === '' ? {} : { source: Number(edit.when.source) }), pointer: String(edit.when.pointer ?? ''), op: edit.when.op };
+        if (edit.when.op !== 'exists') cond.value = edit.when.op === 'in' ? parseList(edit.when.value) : parseValue(String(edit.when.value ?? ''));
+        updated.when = cond;
+      }
+      const action = transitionAfterEdit(current.action, edit.action, 'action');
+      if (action !== undefined) updated.action = action;
+      cases[at] = updated;
+    }
+    select.cases = cases;
+    next.select = select;
+    return next;
+  }
+  // The window of a route: the choice, the model and the task (model), the conditions and the cases with their actions,
+  // the otherwise and the conflict (rule). Every change goes to emit(edit) with the field (see routeAfterEdit).
+  function renderRouteWindow(container, model, emit) {
+    const doc = container.ownerDocument;
+    const disabled = Boolean(model.disabled);
+    const send = (edit) => { if (typeof emit === 'function') emit(edit); };
+    const choose = (field, label, options, value, onChange) => {
+      const select = el(doc, 'select', `stage-card-route-${field}`);
+      options.forEach(([optionValue, text]) => { const option = el(doc, 'option', '', text); option.value = optionValue; select.append(option); });
+      select.value = value;
+      select.disabled = disabled;
+      select.setAttribute('aria-label', label);
+      select.addEventListener('change', () => onChange(select.value));
+      const wrap = el(doc, 'label', `stage-card-setting stage-card-route-${field}-label`);
+      wrap.append(doc.createTextNode(`${label} `), select);
+      container.append(wrap);
+      return select;
+    };
+    choose('by', 'Выбор варианта', ROUTE_BY_LABELS, model.by, (value) => send({ field: 'by', value }));
+    if (model.by === 'model') {
+      choose('model', 'Модель, которая выбирает', [['', '— выберите модель —'], ...model.modelNames.map((name) => [name, name])], model.model, (value) => send({ field: 'model', value }));
+      const task = el(doc, 'textarea', 'stage-card-route-task');
+      task.rows = 3; task.value = model.task; task.disabled = disabled; task.spellcheck = false;
+      task.setAttribute('aria-label', 'Задание модели, которая выбирает вариант');
+      task.addEventListener('change', () => send({ field: 'task', value: task.value }));
+      const wrap = el(doc, 'label', 'stage-card-setting stage-card-route-task-label');
+      wrap.append(doc.createTextNode('Задание модели '), task);
+      container.append(wrap);
+    }
+    if (model.by === 'rule') {
+      const sources = el(doc, 'fieldset', 'stage-card-route-sources');
+      sources.append(el(doc, 'legend', '', 'Источники условия (номер — место в списке входа, с 0)'));
+      if (!model.sources.length) sources.append(el(doc, 'p', 'stage-card-muted', 'Раньше нет участников с ответами.'));
+      model.sources.forEach((src) => {
+        const row = el(doc, 'label', 'stage-card-source');
+        const check = el(doc, 'input', 'stage-card-source-check');
+        check.type = 'checkbox';
+        check.checked = src.checked;
+        check.disabled = disabled;
+        check.addEventListener('change', () => send({ field: 'source', step: src.step, participant: src.participant, checked: check.checked }));
+        row.append(check, doc.createTextNode(` ${src.label}${src.checked ? ` · источник ${src.number}` : ''}`));
+        sources.append(row);
+      });
+      if (model.otherSources) sources.append(el(doc, 'p', 'stage-card-muted', `Ещё источников: ${model.otherSources} (заданы в JSON, сохраняются как есть).`));
+      container.append(sources);
+      choose('conflict', 'Если подошло несколько', ROUTE_CONFLICT_LABELS, model.conflict, (value) => send({ field: 'conflict', value }));
+    }
+    const cases = el(doc, 'fieldset', 'stage-card-cases');
+    cases.append(el(doc, 'legend', '', 'Варианты'));
+    if (!model.cases.length) cases.append(el(doc, 'p', 'stage-card-muted', 'Вариантов нет.'));
+    const sendCase = (index, state) => send({ field: 'case', index, id: state.id, label: state.label, when: state.when, action: state.action });
+    model.cases.forEach((item, index) => {
+      const box = el(doc, 'div', 'stage-card-case');
+      const state = { id: item.id, label: item.label, when: model.by === 'rule' ? (item.composite ? undefined : item.when) : null, action: { ...item.action } };
+      const idInput = el(doc, 'input', 'stage-card-case-id');
+      idInput.type = 'text'; idInput.value = item.id; idInput.disabled = disabled; idInput.placeholder = 'ID варианта';
+      idInput.setAttribute('aria-label', 'ID варианта');
+      idInput.addEventListener('change', () => { state.id = idInput.value; sendCase(index, state); });
+      const labelInput = el(doc, 'input', 'stage-card-case-label');
+      labelInput.type = 'text'; labelInput.value = item.label; labelInput.disabled = disabled; labelInput.placeholder = 'название для выбора';
+      labelInput.setAttribute('aria-label', 'Название варианта');
+      labelInput.addEventListener('change', () => { state.label = labelInput.value; sendCase(index, state); });
+      box.append(idInput, labelInput);
+      if (model.by === 'rule') {
+        if (item.composite) box.append(el(doc, 'p', 'stage-card-muted', 'Составное условие (all/any): сохраняется как есть, в JSON.'));
+        else {
+          const when = item.when || { source: '', pointer: '', op: 'eq', value: '' };
+          const source = el(doc, 'input', 'stage-card-case-source');
+          source.type = 'number'; source.min = '0'; source.step = '1'; source.value = String(when.source); source.disabled = disabled;
+          source.setAttribute('aria-label', 'Источник: номер входа');
+          const pointer = el(doc, 'input', 'stage-card-case-pointer');
+          pointer.type = 'text'; pointer.value = when.pointer; pointer.placeholder = '/route'; pointer.disabled = disabled;
+          pointer.setAttribute('aria-label', 'Указатель JSON');
+          const op = el(doc, 'select', 'stage-card-case-op');
+          ROUTE_OPS.forEach((value) => { const option = el(doc, 'option', '', value); option.value = value; op.append(option); });
+          op.value = when.op; op.disabled = disabled; op.setAttribute('aria-label', 'Оператор условия');
+          const value = el(doc, 'input', 'stage-card-case-value');
+          value.type = 'text'; value.value = when.value; value.disabled = disabled || when.op === 'exists';
+          value.placeholder = when.op === 'in' ? 'значения через запятую' : 'значение (текст или JSON)';
+          value.setAttribute('aria-label', 'Значение условия');
+          const condition = () => ({ source: source.value, pointer: pointer.value, op: op.value, value: value.value });
+          const onCondition = () => { state.when = condition(); value.disabled = op.value === 'exists'; sendCase(index, state); };
+          source.addEventListener('change', onCondition);
+          pointer.addEventListener('change', onCondition);
+          op.addEventListener('change', onCondition);
+          value.addEventListener('change', onCondition);
+          box.append(source, pointer, op, value);
+        }
+      }
+      renderTransition(box, { field: `case${index}`, label: 'Действие варианта', view: item.action, refs: model.refs, disabled, withStop: true,
+        options: [{ value: 'goto', label: 'Перейти к шагу' }, { value: 'stop', label: 'Остановить прогон' }, { value: 'return', label: 'Вернуться' }],
+        emit: (payload) => { state.action = { mode: payload.mode, goto: payload.goto, maxLoops: payload.maxLoops, stop: payload.stop }; sendCase(index, state); } });
+      const remove = el(doc, 'button', 'stage-card-case-remove', '×');
+      remove.type = 'button'; remove.disabled = disabled; remove.setAttribute('aria-label', 'Удалить вариант');
+      remove.addEventListener('click', () => send({ field: 'caseRemove', index }));
+      box.append(remove);
+      cases.append(box);
+    });
+    const add = el(doc, 'button', 'stage-card-case-add', '+ вариант');
+    add.type = 'button'; add.disabled = disabled;
+    add.addEventListener('click', () => send({ field: 'caseAdd' }));
+    cases.append(add);
+    container.append(cases);
+    if (model.by === 'rule') {
+      renderTransition(container, { field: 'otherwise', label: 'Если ни один не подошёл', view: model.otherwise, refs: model.refs, disabled, withStop: true, emit: send,
+        options: [{ value: 'none', label: 'Нет: ошибка маршрута' }, { value: 'goto', label: 'Перейти к шагу' }, { value: 'stop', label: 'Остановить прогон' }, { value: 'return', label: 'Вернуться' }] });
+    }
+  }
+
+  // The window of an owner (6.1 of the spec, 8.1): the task the owner has to provide and the output of the step (as the round
+  // windows have it). The input of an owner is not edited here; it stays as the schema has it.
+  function ownerWindowModel(step = {}, { disabled = false } = {}) {
+    const output = isPlain(step.output) ? step.output : {};
+    return {
+      ref: String(step.ref || ''),
+      disabled: Boolean(disabled),
+      task: typeof step.task === 'string' ? step.task : '',
+      output: {
+        name: String(output.name || ''),
+        form: String(output.form || ''),
+        sections: Array.isArray(output.sections) ? output.sections.map(String).join('\n') : '',
+        strictLength: output.strictLength === true,
+        json: output.format === 'json'
+      }
+    };
+  }
+  // An edit of an owner: { field: 'task', value } | { field: 'output', value: { name, form, sections (lines), strictLength } }.
+  function ownerAfterEdit(step = {}, edit = {}) {
+    const next = { ...step };
+    if (edit.field === 'task') {
+      if (String(edit.value || '').trim()) next.task = String(edit.value);
+      else delete next.task;
+    } else if (edit.field === 'output') {
+      const output = outputAfterEdit(step.output, edit.value);
+      if (Object.keys(output).length) next.output = output;
+      else delete next.output;
+    }
+    return next;
+  }
+  // The window of an owner. A change goes to emit(edit) with the field (see ownerAfterEdit).
+  function renderOwnerWindow(container, model, emit) {
+    const doc = container.ownerDocument;
+    const disabled = Boolean(model.disabled);
+    const send = (edit) => { if (typeof emit === 'function') emit(edit); };
+    const task = el(doc, 'textarea', 'stage-card-owner-task');
+    task.rows = 4; task.value = model.task; task.disabled = disabled; task.spellcheck = false;
+    task.setAttribute('aria-label', 'Что должен предоставить владелец');
+    task.addEventListener('change', () => send({ field: 'task', value: task.value }));
+    const taskWrap = el(doc, 'label', 'stage-card-setting stage-card-owner-task-label');
+    taskWrap.append(doc.createTextNode('Что должен предоставить владелец '), task);
+    container.append(taskWrap);
+
+    const output = model.output;
+    const group = el(doc, 'section', 'stage-card-output');
+    group.append(el(doc, 'h3', '', 'Выход этапа'));
+    const name = el(doc, 'input', 'stage-card-output-name');
+    name.type = 'text'; name.value = output.name; name.disabled = disabled; name.setAttribute('aria-label', 'Имя результата');
+    const form = el(doc, 'textarea', 'stage-card-output-form');
+    form.rows = 2; form.value = output.form; form.disabled = disabled; form.setAttribute('aria-label', 'Форма ответа');
+    const sections = el(doc, 'textarea', 'stage-card-output-sections');
+    sections.rows = 3; sections.value = output.sections; sections.disabled = disabled || output.json;
+    sections.setAttribute('aria-label', 'Разделы ответа, по одному на строку');
+    const strict = el(doc, 'input', 'stage-card-output-strict');
+    strict.type = 'checkbox'; strict.checked = output.strictLength; strict.disabled = disabled;
+    const emitOutput = () => send({ field: 'output', value: { name: name.value, form: form.value, sections: sections.value.split('\n'), strictLength: strict.checked } });
+    [[name, 'Имя результата'], [form, 'Форма ответа'], [sections, 'Разделы ответа (по одному на строку)']].forEach(([node, text]) => {
+      const wrap = el(doc, 'label', 'stage-card-output-field');
+      wrap.append(doc.createTextNode(`${text} `), node);
+      group.append(wrap);
+      node.addEventListener('change', emitOutput);
+    });
+    const strictWrap = el(doc, 'label', 'stage-card-output-field');
+    strictWrap.append(strict, doc.createTextNode(' Строгая длина (предел слов)'));
+    group.append(strictWrap);
+    strict.addEventListener('change', emitOutput);
+    container.append(group);
+  }
+
+  // The text of a control on its canvas card (the owner's words; a switched-off checker is not named).
+  // «Шаг после этапа»: the way to add a gate, a route or an owner step lives in the card of the stage it follows.
+  const ADD_CONTROL_OPTIONS = [['', '— нет —'], ['gate', 'Проверка (gate)'], ['route', 'Маршрут (route)'], ['owner', 'Владелец (owner)']];
+  function renderAddControl(container, { disabled = false, note = '', onAdd = null } = {}) {
+    const doc = container.ownerDocument;
+    const select = el(doc, 'select', 'stage-card-add-control');
+    ADD_CONTROL_OPTIONS.forEach(([value, label]) => {
+      const option = el(doc, 'option', '', label);
+      option.value = value;
+      select.append(option);
+    });
+    select.disabled = Boolean(disabled);
+    select.setAttribute('aria-label', 'Добавить шаг после этапа');
+    select.addEventListener('change', () => {
+      const kind = select.value;
+      select.value = '';
+      if (kind && typeof onAdd === 'function') onAdd(kind);
+    });
+    const row = el(doc, 'label', 'stage-card-setting stage-card-add-control-row');
+    row.append(doc.createTextNode('Шаг после этого этапа '), select);
+    container.append(row);
+    if (disabled && note) container.append(el(doc, 'p', 'stage-card-muted', note));
+    return select;
+  }
+
+  // The text of the owner window (N07): the task, what the owner was given (the input items of the engine) and the form of
+  // the answer that is expected. A file item shows its name only: the page does not open files yet.
+  const OWNER_ITEM_LIMIT = 6000;
+  function ownerAskMessage({ task = '', input = [], output = null, reason = '', detail = '', reasonText = '' } = {}) {
+    const parts = [String(task || '')];
+    const items = Array.isArray(input) ? input : [];
+    if (items.length) {
+      parts.push('Вам передано:');
+      items.forEach((item) => {
+        const label = item.label || [item.step, item.participant].filter(Boolean).join(' / ') || 'источник';
+        let body;
+        if (item.file) body = `[файл${item.file.name ? ` «${item.file.name}»` : ''}]`;
+        else {
+          const text = String(item.text ?? '');
+          body = text.length > OWNER_ITEM_LIMIT ? `${text.slice(0, OWNER_ITEM_LIMIT)}\n… (показано ${OWNER_ITEM_LIMIT} из ${text.length} символов)` : text;
+        }
+        parts.push(`— ${label}:\n${body}`);
+      });
+    }
+    if (isPlain(output) && (output.name || output.form)) {
+      parts.push(`Ожидается: ${[output.name, output.form].filter(Boolean).join(' — ')}`);
+    }
+    if (reason) parts.push(`Прошлый ответ не принят: ${reasonText || reason}${detail ? ` (${detail})` : ''}.`);
+    return parts.filter(Boolean).join('\n');
+  }
+
+  function controlSummary(step = {}) {
+    if (step.kind === 'gate') {
+      const checkers = (Array.isArray(step.models) ? step.models : []).filter((model) => isPlain(model) && model.enabled !== false).map((model) => model.name);
+      return `проверяют: ${checkers.length ? checkers.join(', ') : 'никто'}`;
+    }
+    if (step.kind === 'owner') return step.task ? `задание: ${String(step.task).split('\n')[0]}` : 'задание не задано';
+    if (step.kind === 'route') {
+      const by = isPlain(step.select) ? step.select.by : '';
+      const count = isPlain(step.select) && Array.isArray(step.select.cases) ? step.select.cases.length : 0;
+      const kind = { rule: 'по правилу', model: 'выбирает модель', owner: 'выбирает владелец' }[by] || 'вид не выбран';
+      return `${kind}, вариантов: ${count}`;
+    }
+    return '';
+  }
+
+  const api = Object.freeze({ buildModel, render, renderStepFields, stepFieldsModel, stepsAfterToggle, outputAfterEdit, STATUS, feed,
+    gateWindowModel, gateAfterEdit, renderGateWindow, controlSummary, transitionView, transitionAfterEdit,
+    routeWindowModel, routeAfterEdit, renderRouteWindow, ownerWindowModel, ownerAfterEdit, renderOwnerWindow, renderAddControl, ownerAskMessage });
   root.StageCard = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
@@ -12272,7 +11779,7 @@ window.ProtoState = {
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '17';
+  const STAND_VERSION = '18';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -12628,7 +12135,8 @@ window.ProtoState = {
     if (value == null) return fail();
     const schema = rootOf(value, add);
     if (!schema) return fail();
-    Object.keys(schema).filter((k) => !['task', 'steps', 'defaults', 'run'].includes(k)).forEach((k) => add('warn', null, `Неизвестное поле схемы «${k}».`));
+    Object.keys(schema).filter((k) => !['task', 'description', 'steps', 'defaults', 'run'].includes(k)).forEach((k) => add('warn', null, `Неизвестное поле схемы «${k}».`));
+    if ('description' in schema && typeof schema.description !== 'string') add('warn', null, 'description должен быть строкой — описание не показано.');
     if (!own(schema.task)) add('warn', null, 'Нет task — фразы задачи.');
     else if (STUB.test(schema.task)) add('warn', null, `Заглушка вместо текста в поле task: «${cut(schema.task, 30)}» — модель сократила ответ.`);
     if (!Array.isArray(schema.steps) || !schema.steps.length) { add('error', null, 'steps должен быть непустым списком этапов.'); return fail(); }
@@ -13041,7 +12549,19 @@ window.ProtoState = {
       : ($('pipeline-block-info-modal')?.classList.contains('is-visible') ? $('pipeline-block-info-modal').querySelector('.custom-card-body') : null);
     if (!box || box.querySelector(':scope > .proto-stand-schema')) return;
     box.insertAdjacentHTML('beforeend', schemaSection(cur.step, cur.root));
+    if (cur.root && own(cur.step.description)) box.insertAdjacentHTML('afterbegin', descriptionBlock(cur.step.description));
   }
+  // Описание схемы для пользователя: на работу не влияет. Свёрнуто до двух строк, по кнопке — на весь экран.
+  const descriptionBlock = (text) => `<div class="proto-stand-desc" id="proto-stand-desc"><div class="proto-stand-desc-head"><strong>Description</strong><button type="button" class="proto-stand-desc-toggle" aria-expanded="false" aria-controls="proto-stand-desc-text" title="Развернуть на весь экран">⤢</button></div><div class="proto-stand-desc-text" id="proto-stand-desc-text">${esc(text)}</div></div>`;
+  document.addEventListener('click', (event) => {
+    const button = event.target.closest('.proto-stand-desc-toggle');
+    if (!button) return;
+    const box = button.closest('.proto-stand-desc');
+    const full = box.classList.toggle('is-full');
+    button.setAttribute('aria-expanded', String(full));
+    button.textContent = full ? '✕' : '⤢';
+    button.title = full ? 'Свернуть' : 'Развернуть на весь экран';
+  });
   new MutationObserver(ensureSection).observe(document.body, { childList: true, subtree: true });
 
   function infoModal() {
@@ -13256,7 +12776,7 @@ window.ProtoState = {
   const plural = (n, forms) => forms[n % 10 === 1 && n % 100 !== 11 ? 0 : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? 1 : 2];
   const uid = () => (root.crypto?.randomUUID ? root.crypto.randomUUID()
     : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3) | 8).toString(16); }));
-  const pickSchema = (s) => JSON.parse(JSON.stringify(['task', 'steps', 'defaults', 'run'].reduce((o, k) => (s[k] !== undefined ? { ...o, [k]: s[k] } : o), {})));
+  const pickSchema = (s) => JSON.parse(JSON.stringify(['task', 'description', 'steps', 'defaults', 'run'].reduce((o, k) => (s[k] !== undefined ? { ...o, [k]: s[k] } : o), {})));
   const countSteps = (s) => (Array.isArray(s?.steps) ? s.steps.length : 0);
   const catalogDoc = () => ({ format: CATALOG_FORMAT, version: 1, stand: STAND_VERSION, templates: catalog.templates });
   const catalogText = () => JSON.stringify(catalogDoc(), null, 2);
@@ -13571,6 +13091,12 @@ window.ProtoState = {
     .proto-stand-comment > div { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 4px; }
     .proto-stand-summary { font-weight: 600; color: var(--pipeline-text); }
     .proto-stand-schema { grid-template-columns: 1fr; }
+    .proto-stand-desc { margin-bottom: 10px; }
+    .proto-stand-desc-head { display: flex; justify-content: space-between; align-items: center; }
+    .proto-stand-desc-toggle { border: 0; background: none; cursor: pointer; font-size: 16px; color: var(--pipeline-muted); }
+    .proto-stand-desc-text { white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--pipeline-text); }
+    .proto-stand-desc.is-full { position: fixed; inset: 0; z-index: 10000; background: var(--pipeline-surface, #fff); padding: 16px 24px; overflow: auto; margin: 0; }
+    .proto-stand-desc.is-full .proto-stand-desc-text { display: block; overflow: visible; }
     #proto-stand-info .modal-content { height: auto; max-height: calc(100dvh - 32px); }
     .proto-stand-rows { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin-top: 6px; }
     .proto-stand-row { display: contents; }
