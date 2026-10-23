@@ -6,7 +6,7 @@
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '26';
+  const STAND_VERSION = '27';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -22,6 +22,8 @@
     owner: ['ask'], form: ['purpose'], source: ['kind', 'content', 'attachment'], file: ['file', 'mode'], list: ['from', 'rule'],
     foreach: ['over', 'body'], block: ['name'], assemble: ['template'], score: ['criteria', 'weights']
   };
+  // Блоки, где работает человек: в холсте — зелёная рамка, в окне — «Назначение».
+  const HUMAN_BLOCKS = ['owner', 'form'];
   const KIND = {
     round: ['Раунд', 'ti-users'], synthesis: ['Синтез', 'ti-git-merge'], gate: ['Проверка', 'ti-shield-check'], route: ['Развилка', 'ti-arrows-split'],
     owner: ['Владелец', 'ti-user'], form: ['Форма', 'ti-forms'], source: ['Источник', 'ti-file-text'], file: ['Файл', 'ti-file-export'],
@@ -58,6 +60,9 @@
   // Модели присылают JSON в обёртке (```json … ```, текст до и после), «мягкий» JSON, оборванный ответ,
   // Mermaid или внутреннее состояние прототипа. Однозначно исправимое исправляется с замечанием, остальное — ошибка.
   const isObj = (value) => !!value && typeof value === 'object' && !Array.isArray(value);
+  // Артефакт этапа: строка (имя) или объект { name, description }. Имя и описание читаются через эти хелперы.
+  const artName = (a) => (isObj(a) ? String(a.name ?? '') : String(a ?? '')).trim();
+  const artDesc = (a) => (isObj(a) && typeof a.description === 'string' ? a.description.trim() : '');
   const STATE_MSG = 'Это не схема, а внутреннее состояние прототипа (rounds, models…). Попросите ответ в формате { "task": …, "steps": […] }.';
   const QUOTES = { '"': '"', '“': '”“', '”': '”“', '„': '“”', "'": "'", '‘': '’‘', '’': '’‘' };
   const KEY_START = /[A-Za-z_$Ѐ-ӿ]/;
@@ -390,6 +395,10 @@
       });
     });
     const byId = new Map();
+    // Артефакт без описания — мягкое замечание; одно и то же имя предупреждается один раз, если ни один этап не дал описания.
+    const described = new Set();
+    flat.forEach((e) => listOf(e.step.artifacts).forEach((a) => { if (own(artDesc(a))) described.add(artName(a)); }));
+    const warnedArt = new Set();
     flat.forEach((e) => {
       const st = e.step;
       if (e.raw !== st) {
@@ -410,6 +419,12 @@
         if (st[k] != null && FIELDS[st.block]?.includes(k) && !values.includes(st[k])) add('warn', e.key, `${k}: «${st[k]}» — ожидается ${values.join(' | ')}.`);
       });
       ['inputs', 'artifacts'].forEach((k) => { if (st[k] != null && !Array.isArray(st[k])) add('error', e.key, `${k} должен быть списком.`); });
+      listOf(st.artifacts).forEach((a, i) => {
+        if (typeof a !== 'string' && !isObj(a)) { add('error', e.key, `artifacts[${i}]: ожидается имя или объект { "name", "description" }.`); return; }
+        const name = artName(a);
+        if (!own(name)) { add('error', e.key, `artifacts[${i}]: нет name.`); return; }
+        if (!described.has(name) && !warnedArt.has(name)) { warnedArt.add(name); add('warn', e.key, `У артефакта «${name}» нет описания.`); }
+      });
       if (st.block === 'round' && (!Array.isArray(st.models) || !st.models.length)) add('error', e.key, 'У раунда нет models.');
       if (st.block === 'round' && Array.isArray(st.models)) st.models.forEach((m, i) => {
         if (!own(m?.name)) add('error', e.key, `models[${i}]: нет name.`);
@@ -451,7 +466,7 @@
         const dot = String(ref).indexOf('.');
         if (dot > 0) {
           const name = String(ref).slice(dot + 1);
-          if (!listOf(target.step.artifacts).includes(name)) add('error', e.key, `${field}: у ${refId(ref)} нет артефакта «${name}» в artifacts.`);
+          if (!listOf(target.step.artifacts).map(artName).includes(name)) add('error', e.key, `${field}: у ${refId(ref)} нет артефакта «${name}» в artifacts.`);
         }
       });
     });
@@ -554,7 +569,7 @@
               task: [roleLine, own(m.task) ? m.task.trim() : ''].filter(Boolean).join('\n\n'), ...ownFields(m) };
           }),
           intermediateSynthesis: null,
-          artifacts: listOf(st.artifacts).map((title, k) => ({ id: `${st.id}-a${k + 1}`, title: String(title), version: 1 }))
+          artifacts: listOf(st.artifacts).map((a, k) => ({ id: `${st.id}-a${k + 1}`, title: artName(a), version: 1 }))
         });
         col.round = index;
       } else if (st.block === 'synthesis') {
@@ -611,13 +626,18 @@
   };
   const repeatText = (st) => (own(st.repeats) ? `<div class="proto-stand-line proto-stand-repeat">повтор ${esc(st.repeats)}${own(st.because) ? ` · ${esc(st.because)}` : ''}</div>` : '');
   // Артефакты этапа — в зоне над блоками моделей, под бейджем. Версия: сколько этапов выше (включая этот) выдали артефакт с тем же именем.
-  const artifactVersion = (k, name) => stand.layout.slice(0, k + 1).filter((c) => listOf(c.step.artifacts).map(String).includes(name)).length;
+  const artifactVersion = (k, name) => stand.layout.slice(0, k + 1).filter((c) => listOf(c.step.artifacts).map(artName).includes(name)).length;
+  // Описание артефакта: у первого этапа схемы, который его задал (имя может повторяться в нескольких этапах).
+  const artifactDesc = (name) => {
+    for (const c of stand.layout) { const a = listOf(c.step.artifacts).find((x) => artName(x) === name && own(artDesc(x))); if (a) return artDesc(a); }
+    return '';
+  };
   // Кому отправляется артефакт: по умолчанию всем моделям холста; снятые галочки хранятся только на стенде (в схему не пишутся).
   const artifactTargets = (k, name) => { const all = S().models || []; const own = stand.artTo?.[`${k}|${name}`]; return own ? all.filter((m) => own.includes(m)) : all; };
-  const artifactZone = (k, st) => `<div class="proto-art-zone">${listOf(st.artifacts).map(String).map((name) => {
+  const artifactZone = (k, st) => `<div class="proto-art-zone">${listOf(st.artifacts).map(artName).map((name) => {
     const to = artifactTargets(k, name); const all = (S().models || []).length;
     const version = `v${artifactVersion(k, name)}${to.length < all ? ` · ${to.length}/${all}` : ''}`;
-    return `<span class="proto-art" data-art="${k}|${esc(name)}" title="${esc(name)} ${esc(version)} — клик: кому отправлять"><span class="proto-art-title">${esc(name)}</span><span class="proto-art-version">${esc(version)}</span></span>`;
+    return `<span class="proto-art" data-art="${k}|${esc(name)}" title="${esc(name)} ${esc(version)} — ${esc(artifactDesc(name) || 'описание не задано')} · клик: кому отправлять"><span class="proto-art-title">${esc(name)}</span><span class="proto-art-version">${esc(version)}</span></span>`;
   }).join('')}</div>`;
   function openArtifact(k, name) {
     const col = stand.layout[k];
@@ -636,6 +656,9 @@
         <div class="proto-stand-rows">
           <div class="proto-stand-row"><span>создаёт</span><div>${esc(col.step.id || '')} · ${esc(col.step.title || '')}</div></div>
           <div class="proto-stand-row"><span>берут</span><div>${users.length ? users.map((u) => `${esc(u.id || '')} · ${esc(u.title || '')}`).join('<br>') : 'никто'}</div></div>
+        </div>
+        <div class="custom-card-marks"><strong>Описание</strong>
+          <div class="custom-card-note">${esc(artifactDesc(name) || 'не задано')}</div>
         </div>
         <div class="custom-card-marks"><strong>Кому отправлять</strong>
           <div class="proto-art-models">${models.map((m) => `<label><input type="checkbox" data-art-model="${esc(m)}"${on.includes(m) ? ' checked' : ''}> ${esc(m)}</label>`).join('')}</div>
@@ -656,7 +679,7 @@
       const id = refId(ref);
       const name = String(ref).slice(id.length + 1);
       if (!name) return;
-      const p = stand.layout.findIndex((x, k) => k < c && x.step.id === id && listOf(x.step.artifacts).map(String).includes(name));
+      const p = stand.layout.findIndex((x, k) => k < c && x.step.id === id && listOf(x.step.artifacts).map(artName).includes(name));
       if (p >= 0 && !links.some((l) => l.from === p && l.to === c && l.name === name)) links.push({ from: p, to: c, name });
     }));
     return links;
@@ -717,13 +740,14 @@
     const goes = st.block === 'route' ? listOf(st.choices).map((c) => `<div class="proto-stand-line">${esc(cut(c?.when, 30))} → ${esc(listOf(c?.goes).join(', '))}</div>`).join('') : '';
     const from = st.block === 'list' && own(st.from) && refId(st.from) !== prevId ? `<div class="proto-stand-line">из: ${esc(st.from)}</div>` : '';
     const over = st.block === 'foreach' && own(st.over) && refId(st.over) !== prevId ? `<div class="proto-stand-line">по: ${esc(st.over)}</div>` : '';
+    const human = HUMAN_BLOCKS.includes(st.block);
     return `<div class="stage-column" data-stand-key="${esc(key)}">
-        ${head(esc(label), ' proto-stand-kind')}
+        ${head(esc(label), ` proto-stand-kind${human ? ' proto-human-kind' : ''}`)}
         ${artifactZone(k, st)}
         <div class="model-stack" id="${stack}">
-          <div class="model-block inactive proto-stand-card" data-stand-key="${esc(key)}">
-            <div class="model-header"><i class="ti ${icon} proto-stand-icon" aria-hidden="true"></i><span class="model-name" title="${esc(st.title)}">${esc(st.title || '—')}</span>${bang(key)}</div>
-            <div class="proto-stand-line"><b>${esc(st.id || '')}</b> ${esc(cut(st.why, 70))}</div>
+          <div class="model-block inactive proto-stand-card${human ? ' proto-human' : ''}" data-stand-key="${esc(key)}">
+            <div class="model-header"><i class="ti ${icon} proto-stand-icon" aria-hidden="true"></i><span class="model-name" title="${esc(st.title)}">${human ? 'User' : esc(st.title || '—')}</span>${bang(key)}</div>
+            <div class="proto-stand-line">${human ? `<b>${esc(st.id || '')}</b> ${esc(cut(st.title, 40))}` : `<b>${esc(st.id || '')}</b>`} ${esc(cut(st.why, 70))}</div>
             ${repeatText(st)}${goes}${from}${over}
             ${st.block === 'foreach' ? nestedHtml(st.body) : ''}
           </div>
@@ -819,6 +843,7 @@
       return value.map((m) => (m && typeof m === 'object' ? [`${m.name || '?'}${own(m.role) ? ` (роль: ${m.role})` : ''}${own(m.task) ? ` — ${m.task}` : ''}`,
         ...Object.keys(m).filter((x) => !['name', 'role', 'task'].includes(x)).map((x) => indent(`${LABELS[x] || x}:${['discipline', 'request'].includes(x) ? `\n${indent(fmt(x, m[x]))}` : ` ${fmt(x, m[x])}`}`))].join('\n') : String(m))).join('\n');
     }
+    if (key === 'artifacts' && Array.isArray(value)) return value.map((a) => (artDesc(a) ? `${artName(a)} — ${artDesc(a)}` : artName(a))).join('; ');
     if (key === 'discipline') return fmtDiscipline(value);
     if (key === 'maxWords') return wordsOf(value) ? `${wordsOf(value)} слов` : String(value);
     if (key === 'modelNotes' && isObj(value)) return Object.entries(value).map(([n, v]) => `${n}: ${v}`).join('\n') || '—';
@@ -884,16 +909,27 @@
     }
     return modal;
   }
+  // «Назначение» — первый раздел окна человеческого блока: зачем он и что человек делает.
+  const purposeSection = (st) => {
+    if (!HUMAN_BLOCKS.includes(st.block)) return '';
+    const extra = st.block === 'owner'
+      ? `<div class="custom-card-note"><b>Вопрос человеку:</b> ${esc(own(st.ask) ? st.ask : 'не задан')}</div>`
+      : `<div class="custom-card-note"><b>Что заполняет человек:</b> ${esc(own(st.purpose) ? st.purpose : 'не задано')}</div>`;
+    return `<div class="custom-card-marks proto-stand-purpose"><strong>Назначение</strong>
+      <div class="custom-card-note">${esc(own(st.why) ? st.why : 'не задано')}</div>
+      ${extra}
+    </div>`;
+  };
   function openInfo(st) {
     stand.current = null;
     const modal = infoModal();
     const [label, icon] = KIND[st.block] || [String(st.block || '?'), 'ti-help'];
     modal.querySelector('.modal-content').innerHTML = `
       <header class="custom-card-top custom-defaults-top">
-        <h3 class="custom-card-model"><i class="ti ${icon}" aria-hidden="true"></i>${esc(st.title || st.id || '—')}<span class="custom-card-where">${esc(label)} · ${esc(st.id || '')}</span></h3>
+        <h3 class="custom-card-model"><i class="ti ${icon}" aria-hidden="true"></i>${HUMAN_BLOCKS.includes(st.block) ? 'User' : esc(st.title || st.id || '—')}<span class="custom-card-where">${esc(label)} · ${esc(st.id || '')}${HUMAN_BLOCKS.includes(st.block) && own(st.title) ? ` · ${esc(st.title)}` : ''}</span></h3>
         <button type="button" class="modal-button" data-stand-close>Закрыть</button>
       </header>
-      <div class="custom-card-body">${schemaSection(st)}</div>`;
+      <div class="custom-card-body">${purposeSection(st)}${schemaSection(st)}</div>`;
     show(modal);
   }
   const show = (modal) => { modal.style.display = 'flex'; modal.classList.add('is-visible'); modal.setAttribute('aria-hidden', 'false'); document.body.classList.add('modal-open'); };

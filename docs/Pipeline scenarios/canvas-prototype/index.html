@@ -27,6 +27,9 @@
         .proto-art-models label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
         .proto-art-svg { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; z-index: 2; }
         .proto-art-line { fill: none; stroke: #94a3b8; stroke-width: 1.4; stroke-linejoin: round; }
+        /* Блок человека (owner, form): зелёная рамка и бейдж. Селектор длиннее .model-block.inactive из styles/pipeline.css. */
+        .model-block.inactive.proto-human { border: 3px solid #16a34a; background: #f0fdf4; opacity: 1; }
+        .round-badge.proto-stand-kind.proto-human-kind { background: #dcfce7; color: #166534; }
     </style>
 </head>
 <body class="pipeline-page">
