@@ -55,14 +55,6 @@
     return out;
   }
 
-  // The order of the answers: a round with several participants (parallel by default), a control step as the schema has it.
-  function orderText(step, count) {
-    if (count === 0) return 'не применяется';
-    if (count === 1) return 'один участник';
-    if (step.kind === 'round') return step.order === 'sequential' ? 'по очереди' : 'параллельно; мнения участников независимы';
-    return 'порядок в схеме не задан';
-  }
-
   function outputText(step, entry, run) {
     const out = isObject(step.output) ? step.output : null;
     const pieces = [];
@@ -183,7 +175,6 @@
         number: entry.number, ref: entry.ref, kind: entry.kind, kindLabel: KIND_LABEL[entry.kind] || String(entry.kind),
         title: entry.title, goal: entry.goal, rules: entry.rules, quality: entry.quality,
         participants: entry.participants, count: entry.count,
-        order: field('order', 'Порядок', orderText(step, entry.count), 'schema'),
         input: field('input', 'Вход', input, 'schema'),
         output: field('output', 'Выход', outputText(step, entry, run), 'schema'),
         task,
@@ -252,7 +243,7 @@
       const people = stage.participants.map((item) => [item.name, item.role && `роль: ${item.role}`, item.id && `id: ${item.id}`,
         item.task && `задание участника: ${item.task}`].filter(Boolean).join(', '));
       lines.push(`- **Участники (${stage.count}):** ${people.length ? people.join('; ') : '_нет_'}`);
-      ['order', 'input', 'output', 'task', 'rules', 'quality', 'owner'].filter((key) => stage[key])
+      ['input', 'output', 'task', 'rules', 'quality', 'owner'].filter((key) => stage[key])
         .forEach((key) => lines.push(fieldLine(stage[key])));
     });
     lines.push('', '## Заполнение', '', `Заполнено полей автора: ${completeness.filled} из ${completeness.total}.`, '');

@@ -90,13 +90,16 @@ describe('T01: participant order [B, A] through the canvas and back', () => {
     expect(back2).toEqual(back1);
   });
 
-  test('sequential send goes B then A, and A gets the answer of B', async () => {
-    const schema = base([round('r1', ['B', 'A'], { order: 'sequential', input: 'none', task: 'Добавь' })]);
-    const { send, calls } = transport({ B: ['ответ B'], A: ['ответ A'], });
-    const result = await Engine.run({ task: 'T', steps: Schema.assemble(schema), send });
-    expect(calls.slice(0, 2).map((call) => call.models)).toEqual([['B'], ['A']]);
-    expect(calls[1].prompts.A).toContain('Ответы участников этого раунда до тебя:\n\nОтвет 1:\nответ B');
-    expect(calls[0].prompts.B).not.toContain('ответ A');
-    expect(result.steps[0].outcome.A.ok).toBe(true);
+  test('the request goes to B and A at once, in the order [B, A]; a relay B then A is two rounds of one model', async () => {
+    const together = transport({ B: ['ответ B'], A: ['ответ A'] });
+    await Engine.run({ task: 'T', steps: Schema.assemble(base([round('r1', ['B', 'A'], { input: 'none', task: 'Добавь' })])), send: together.send });
+    expect(together.calls.map((call) => call.models)).toEqual([['B', 'A']]);
+    expect(together.calls[0].prompts.A).not.toContain('ответ B');
+    const relay = transport({ B: ['ответ B'], A: ['ответ A'] });
+    const result = await Engine.run({ task: 'T', send: relay.send,
+      steps: Schema.assemble(base([round('r1', ['B'], { input: 'none', task: 'Добавь' }), round('r2', ['A'], { task: 'Добавь' })])) });
+    expect(relay.calls.map((call) => call.models)).toEqual([['B'], ['A']]);
+    expect(relay.calls[1].prompts.A).toContain('Ответы предыдущего шага:\n\nОтвет 1:\nответ B');
+    expect(result.steps[1].outcome.A.ok).toBe(true);
   });
 });

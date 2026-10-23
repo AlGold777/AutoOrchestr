@@ -30,8 +30,7 @@
   const ICONS = { Claude: 'claude', GPT: 'openai', Gemini: 'gemini', Grok: 'grok', 'Le Chat': 'le_chat', Qwen: 'qwen', DeepSeek: 'deepseek', Perplexity: 'perplexity', 'Z.ai': 'zai', Kimi: 'kimi' };
   const PLACEHOLDER = {
     previous: '‹ответы предыдущего шага появятся при запуске›',
-    all: '‹все принятые ответы предыдущих шагов появятся при запуске›',
-    earlier: '‹ответы моделей, работающих до тебя в этом раунде, появятся при запуске›'
+    all: '‹все принятые ответы предыдущих шагов появятся при запуске›'
   };
   const DISCIPLINE_KEYS = ['limit', 'content', 'delivery', 'correction'];
   const DISCIPLINE_ROWS = [['limit', 'Длина'], ['content', 'Требования к содержанию'], ['delivery', 'Доставка'], ['correction', 'Повторный запрос']];
@@ -71,7 +70,7 @@
     if (id === 'custom') return defaults().roundPrompts[ref] || '';
     return ROLES.find((item) => item.id === id)?.text || '';
   };
-  // step: { kind, ref, label, input, order, task (round level), models: [{ name, ... }] }, target: the model's own settings.
+  // step: { kind, ref, label, input, task (round level), models: [{ name, ... }] }, target: the model's own settings.
   function stepFor(kind, index, name) {
     const state = S();
     const rounds = state.rounds || [];
@@ -80,7 +79,7 @@
     const target = (round.models || []).find((model) => model.name === name);
     if (!target) return null;
     return { kind, index, ref: round.ref || `r${index + 1}`, label: `Раунд ${index + 1}`, input: roundInput(round, index),
-      order: round.order || 'parallel', roundTask: round.task, names: round.models.filter((model) => model.enabled !== false).map((model) => model.name), target, name };
+      roundTask: round.task, target, name };
   }
   const taskFallback = () => first(defaults().roundTask) || basic().roundTask;
   const inheritedTask = (step) => first(step.roundTask) || taskFallback(step);
@@ -94,7 +93,6 @@
     if (step.input !== 'none' && hasEarlierStep) {
       parts.push(step.input === 'all' ? 'Принятые ответы всех предыдущих шагов:\n\nВход:\n{вход}' : 'Ответы предыдущего шага:\n\nОтвет 1:\n{вход}');
     }
-    if (step.order === 'sequential' && step.names.indexOf(step.name) > 0) parts.push('Ответы участников этого раунда до тебя:\n\nОтвет 1:\n{ответы до тебя}');
     if (step.input !== 'none' && own(task)) parts.push(`Задание:\n${task.trim()}`);
     const extra = roleText(role, step.ref);
     if (own(extra)) parts.push(`Дополнительно для тебя:\n${extra.trim()}`);
@@ -406,7 +404,7 @@
         roles: models.map((item) => roleId(item.role)),
         disabled: false,
         roundPrompt: defaults().roundPrompts[ref] || '',
-        settings: { order: round.order || '', input: round.input || '', task: round.task || '' },
+        settings: { input: round.input || '', task: round.task || '' },
         first: index === 0,
         inheritedTask: first(defaults().roundTask) || basic().roundTask
       }

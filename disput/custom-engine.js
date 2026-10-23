@@ -3,20 +3,20 @@
 // synthesis) comes from the step's task and the models' roles; the engine executes and passes data.
 // A synthesis is a round of one model with a role; the accepted answers of the last step are the result.
 //
-// Step: { kind: 'round' | 'owner', order: 'parallel' | 'sequential', task, input, models, ref?, round? }
+// Step: { kind: 'round' | 'owner', task, input, models, ref?, round? }
 //   ref and round (the number of a round) come from the schema, so a switched-off round keeps its number
 //   in labels, previews and the journal; without them the engine counts the steps it gets.
 //   models: [{ id, name, extra, promptTemplate, maxWords, input? }] — card order is call order. A participant is its id
 //   (the id is the name by default); two participants of one model are two entries with two ids.
 //   promptTemplate replaces automatic assembly; maxWords reaches the caller on every attempt.
 //   input: 'none' | 'previous' | 'all' | [sources]. The run's task is always sent. A participant's own input replaces
-//          the shared one of the step; the answers before the participant in a sequential round stay a separate block.
+//          the shared one of the step.
 //     previous — accepted answers of the last step that has any (a skipped step passes nothing on);
 //     all      — every accepted answer of all earlier steps;
 //     [sources] — a step ref (all its accepted answers), { step, participant, required? } (one answer);
 //                a required source without an answer stops the run before the request (missing_input).
-//   sequential — each model also gets the accepted answers of the models before it in this step;
-//   parallel   — every model gets the same input.
+//   A round sends its request to all its models at once; they answer independently and the round waits for all of them.
+//   A relay is rounds of one model in a row: the next round gets the answer of the previous one through its input.
 // Transport: sendParticipants(requests, meta) → { byParticipant: { [participantId]: reply }, closedByOwner } when the
 //   page gives it (requests: { participantId, modelName, prompt, chat, stepRef, visit, attempt }); otherwise the legacy
 //   send(models, promptsByModel, meta) → { byModel: { [model]: reply }, closedByOwner }, which needs unique model names
@@ -27,14 +27,14 @@
 // Output (basic-output.js): an answer is checked after the technical acceptance by the step's output (length, sections,
 //   JSON fields, artifacts); a rejected participant is corrected with the reason and its detail. runStrictLength (run.strictLength)
 //   gives the length check to every step whose output does not set output.strictLength itself.
-// Require: a step ends when the accepted answers reach its threshold (any, all or N). Owner approval (owner: approve)
+// A step is complete when every participant has an accepted answer. Owner approval (owner: approve)
 //   asks the owner after the step in every mode. Artifacts (basic-artifacts.js): an accepted answer is stored once
 //   (putText) and its declared artifacts are registered; a source { artifact, version } gives only that content.
 // Pointer: the run is at a position of the plan and only moves forward, step after step: there are no branches and no
 //   transitions. A check is an ordinary round (its criteria are in the task); a decision is the owner's step (kind: owner).
 // Transition: decide(problem) → 'continue' | 'retry' | 'skip' | 'stop'. Asked after every step in semi-automatic
-//   mode, in Auto when the threshold is not met, and after every step with approval. 'continue' is never offered
-//   below the threshold. A prompt over maxPromptChars stops the run before sending.
+//   mode, in Auto when a participant has no accepted answer, and after every step with approval. 'continue' is never
+//   offered while a participant has no accepted answer. A prompt over maxPromptChars stops the run before sending.
 // Owner (kind: owner, 8.1): the owner gives a text or a file through provideOwnerResult; no model is asked. A text goes through
 // the step's output check and its declared artifacts; a binary file is kept as a reference and never given to a model as text.
 // Stop keeps what was collected. [[ASK: …]] lines of accepted answers go to askOwner; the answers
@@ -106,12 +106,12 @@
     return lines.length ? `Формат ответа:\n${lines.join('\n')}` : '';
   }
 
-  function buildPrompt({ task, step, model, input = [], inputMode = 'none', earlier = [], ownerAnswers = [], askInstruction = '', output = null }) {
+  function buildPrompt({ task, step, model, input = [], inputMode = 'none', ownerAnswers = [], askInstruction = '', output = null }) {
     if (askInstruction && typeof model.discipline?.ask === 'string') askInstruction = model.discipline.ask;
     if (typeof model.promptTemplate === 'string' && model.promptTemplate.trim()) {
       // One pass: placeholders occurring inside model answers remain data, never instructions.
-      const values = { '{задача}': text(task), '{вход}': inputMode === 'all' || inputMode === 'sources' ? labelled(input) : numbered(input), '{ответы до тебя}': numbered(earlier) };
-      const parts = [model.promptTemplate.replace(/\{задача\}|\{вход\}|\{ответы до тебя\}/g, (key) => values[key])];
+      const values = { '{задача}': text(task), '{вход}': inputMode === 'all' || inputMode === 'sources' ? labelled(input) : numbered(input) };
+      const parts = [model.promptTemplate.replace(/\{задача\}|\{вход\}/g, (key) => values[key])];
       if (formatBlock(output)) parts.push(formatBlock(output));
       if (ownerAnswers.length) parts.push(`Ответы User на вопросы:\n${ownerAnswers.map((item) => `- ${item.question}: ${item.answer}`).join('\n')}`);
       if (askInstruction) parts.push(askInstruction);
@@ -124,7 +124,6 @@
         ? `Принятые ответы всех предыдущих шагов:\n\n${labelled(input)}`
         : `Ответы предыдущего шага:\n\n${numbered(input)}`);
     }
-    if (earlier.length) parts.push(`Ответы участников этого раунда до тебя:\n\n${numbered(earlier)}`);
     const taskInstruction = model.task ?? step.task;
     if (text(taskInstruction)) parts.push(`Задание:\n${text(taskInstruction)}`);
     if (formatBlock(output)) parts.push(formatBlock(output));
@@ -190,14 +189,12 @@
       if (kind === 'round') round = Number.isSafeInteger(step.round) && step.round > 0 ? step.round : round + 1;
       return {
         index, ref: typeof step.ref === 'string' ? step.ref : null, kind, round: kind === 'round' ? round : null,
-        order: kind === 'round' && step.order === 'sequential' ? 'sequential' : 'parallel',
         task: text(step.task),
         // A list of sources stays a list here: the input is checked before the run (assertExecutable).
         input: Array.isArray(step.input) ? step.input.slice() : (step.input ?? (kind === 'owner' ? 'none' : 'previous')),
         output: step.output ?? null,
         // continue: the participant keeps its chat; new: a new chat on the first request of each visit (4.2).
         chat: step.chat === 'new' ? 'new' : 'continue',
-        require: step.require ?? 'any',
         approve: step.owner === 'approve',
         models: (step.models || []).map((model) => (typeof model === 'string' ? { name: model, id: model, extra: '' } : {
           name: model.name, id: model.id ?? model.name, extra: text(model.extra), task: typeof model.task === 'string' ? model.task : null, promptTemplate: typeof model.promptTemplate === 'string' ? model.promptTemplate : null,
@@ -287,11 +284,6 @@
     if (step.output !== undefined) {
       const problem = outputProblem(step.output, fail, 'output');
       if (problem) return problem;
-    }
-    if (step.require !== undefined && step.require !== 'any' && step.require !== 'all') {
-      if (!Number.isSafeInteger(step.require) || step.require < 1) return fail('invalid_field', 'require', 'require: any, all или целое число больше 0');
-      const count = Array.isArray(step.models) ? step.models.length : 0;
-      if (step.require > count) return fail('invalid_field', 'require', `требуется больше ответов, чем участников: ${count}`);
     }
     if (step.owner !== undefined && step.owner !== 'approve') return fail('invalid_field', 'owner', 'owner: только approve');
     if (step.chat !== undefined && step.chat !== 'continue' && step.chat !== 'new') return fail('unsupported_field', 'chat', 'чат: continue или new');
@@ -437,7 +429,7 @@
     let stopDetail = '';
     // The plan as the run sees it: a report shows what was intended, not only what happened.
     emit('custom_start', { semiAuto: Boolean(semiAuto), maxAttempts, taskChars: text(task).length,
-      steps: plan.map((step) => ({ step: step.index, ref: step.ref, label: stepLabel(step), order: step.order, input: modeOf(step.input), models: step.models.map((model) => model.name) })) });
+      steps: plan.map((step) => ({ step: step.index, ref: step.ref, label: stepLabel(step), input: modeOf(step.input), models: step.models.map((model) => model.name) })) });
 
     class StopRun extends Error { constructor(reason, detail = '') { super(reason); this.stopReason = reason; this.stopDetail = detail; } }
 
@@ -498,8 +490,6 @@
     }
 
     // Accepted answers of a step, each with its participant and its source (step, model, attempt) for the record.
-    // The answers the step needs (ТЗ 4.2): all → every enabled participant, a number → that number, any → one.
-    const neededOf = (step) => (step.require === 'all' ? step.models.length : (Number.isSafeInteger(step.require) ? step.require : 1));
     const acceptedOf = (entry) => {
       if (!entry || entry.skipped || entry.valid === false) return [];
       if (entry.step.kind === 'owner') {
@@ -565,9 +555,8 @@
         if (required) {
           const who = whole ? '' : ` участник «${source.participant}»`;
           const stopped = (why) => new StopRun('missing_input', `шаг «${ref}»${who} ${why}; шаг «${step.ref}» не отправлен`);
-          // A required source is complete: its answers reach the threshold (3.1).
+          // A step is kept only with the answers of all its participants (a skipped one gives none), so a required source needs one (3.1).
           if (!answers.length) throw stopped('не дал принятого ответа');
-          if (whole && answers.length < neededOf(entry.step)) throw stopped('не набрал порога принятых ответов');
         }
         return answers.map((item) => ({
           label: `${stepLabel(entry.step)}${entry.step.output?.name ? ` («${entry.step.output.name}»)` : ''}, участник ${item.participant}, визит ${entry.visit}`,
@@ -607,21 +596,21 @@
       return [];
     }
     // Instructions (owner-editable behaviour) and input (data from other models) are kept apart.
-    function partsFor(step, model, input, earlier, spec) {
+    function partsFor(step, model, input, spec) {
       return {
         instructions: { task: text(task), stepTask: model.task ?? step.task, extra: model.extra || '', askInstruction: semiAuto ? (model.discipline?.ask ?? askInstruction) : '',
           ownerAnswers: ownerAnswers.slice() },
-        input: { mode: modeOf(spec), items: input, earlier }
+        input: { mode: modeOf(spec), items: input }
       };
     }
 
-    function promptFor(step, model, earlier) {
+    function promptFor(step, model) {
       const spec = specOf(step, model);
       const input = inputFor(step, spec, { model });
-      const prompt = buildPrompt({ task, step, model, input, inputMode: modeOf(spec), earlier,
+      const prompt = buildPrompt({ task, step, model, input, inputMode: modeOf(spec),
         ownerAnswers, askInstruction: semiAuto ? askInstruction : '', output: outputOf(step, model) });
       if (prompt.length > maxPromptChars) throw new StopRun('context_full');
-      return { prompt, parts: partsFor(step, model, input, earlier, spec) };
+      return { prompt, parts: partsFor(step, model, input, spec) };
     }
 
     // Sends the participants with their prompts, then corrections; fills `outcome` by participant id. Every attempt
@@ -731,27 +720,10 @@
       return { closedByOwner: false };
     }
 
+    // The same request goes to all the participants at once; they answer independently.
     async function execute(step, models, outcome, firstAttempt = 1) {
-      if (step.order === 'sequential') {
-        for (const model of models) {
-          // Only the participants before this one in card order, also on a retry.
-          const position = step.models.findIndex((item) => item.id === model.id);
-          const earlier = step.models.slice(0, position).map((item) => outcome[item.id])
-            .filter((item) => item?.ok)
-            .map((item) => ({ text: item.text, source: { step: step.index, label: stepLabel(step), model: item.model, attempt: item.attempt } }));
-          const reply = await attempt(step, [model], { [model.id]: { ...promptFor(step, model, earlier), retryOf: outcome[model.id]?.attempt || null } }, outcome, firstAttempt);
-          if (reply.closedByOwner) {
-            // The owner closed the step: the participants after this one are not called.
-            models.slice(models.indexOf(model) + 1).forEach((rest) => {
-              outcome[rest.id] = { ok: false, reason: 'closed_by_owner', text: '', status: '', model: rest.name, participant: rest.id, attempt: outcome[rest.id]?.attempt || 0, transportRequestId: '' };
-            });
-            break;
-          }
-        }
-      } else {
-        const requests = Object.fromEntries(models.map((model) => [model.id, { ...promptFor(step, model, []), retryOf: outcome[model.id]?.attempt || null }]));
-        await attempt(step, models, requests, outcome, firstAttempt);
-      }
+      const requests = Object.fromEntries(models.map((model) => [model.id, { ...promptFor(step, model), retryOf: outcome[model.id]?.attempt || null }]));
+      await attempt(step, models, requests, outcome, firstAttempt);
     }
 
     // The owner's answer to an owner step (8.1): a text, or a reference to a file that the page stored. An empty or rejected
@@ -991,21 +963,22 @@
           for (;;) {
             const accepted = step.models.filter((model) => outcome[model.id]?.ok).map((model) => model.id);
             const failed = step.models.filter((model) => !outcome[model.id]?.ok).map((model) => model.id);
-            const required = neededOf(step);
-            const enough = accepted.length >= required;
+            // The round waits for the answers of all its participants.
+            const required = step.models.length;
+            const enough = !failed.length;
             // An owner approval (owner: approve) is asked after the step in every mode, also on the last step.
             const approve = step.approve === true;
             emit('custom_step', { step: step.index, label: stepLabel(step), accepted: accepted.length, failed: failed.length, required, approve });
             if (enough && !semiAuto && !approve) break;
             if (enough && semiAuto && last && !failed.length && !approve) break;
-            // Below the threshold "continue" is not offered: the owner repeats, skips or stops the step.
+            // Without every answer "continue" is not offered: the owner repeats, skips or stops the step.
             const choices = enough ? ['continue', ...(failed.length ? ['retry'] : []), 'stop'] : ['retry', 'skip', 'stop'];
             if (typeof decide === 'function') await checkpointNow('decision', { pendingOwner: { kind: 'decision', stepRef: step.ref, visit: entry.visit } });
             const action = typeof decide === 'function'
               ? await ownerWait(() => decide({ step: step.index, label: stepLabel(step), accepted, failed, choices, last, required, approve,
                 reasons: Object.fromEntries(failed.map((id) => [id, outcome[id]?.reason || ''])) }))
               : null;
-            // The fallback "an accepted answer goes on" holds only when the threshold is met and no approval is asked.
+            // The fallback "the answers go on" holds only when every answer is accepted and no approval is asked.
             if (!choices.includes(action)) { if (enough && !approve) break; throw new StopRun('no_decision'); }
             // A decision that ends the step is saved before the checkpoint: a reload does not ask it again.
             if (action === 'continue' || action === 'skip') state.decisions[decidedKey] = action;
@@ -1057,8 +1030,7 @@
   const PLACEHOLDER = Object.freeze({
     previous: '‹ответы предыдущего шага появятся при запуске›',
     sources: '‹ответы выбранных этапов появятся при запуске›',
-    all: '‹все принятые ответы предыдущих шагов появятся при запуске›',
-    earlier: '‹ответы моделей, работающих до тебя в этом раунде, появятся при запуске›'
+    all: '‹все принятые ответы предыдущих шагов появятся при запуске›'
   });
   const TRANSPORT_LINES = Object.freeze([
     'Предел длины ответа — по настройке модели или pipeline.',
@@ -1074,14 +1046,12 @@
     const spec = specOf(step, model);
     const input = spec === 'none' || !plan.some((item) => item.index < step.index) ? []
       : [{ label: 'Вход', text: PLACEHOLDER[modeOf(spec)] || PLACEHOLDER.previous }];
-    const position = step.models.findIndex((item) => item.name === model.name);
-    const earlier = step.order === 'sequential' && position > 0 ? [{ text: PLACEHOLDER.earlier }] : [];
-    const prompt = buildPrompt({ task, step, model, input, inputMode: modeOf(spec), earlier, ownerAnswers: [],
+    const prompt = buildPrompt({ task, step, model, input, inputMode: modeOf(spec), ownerAnswers: [],
       askInstruction: semiAuto ? askInstruction : '', output: outputOf(step, model) });
     const template = typeof model.promptTemplate === 'string' && model.promptTemplate.trim() ? model.promptTemplate
       : buildPrompt({ task: '{задача}', step, model, input: input.length ? [{ label: 'Вход', text: '{вход}' }] : [],
-        inputMode: modeOf(spec), earlier: earlier.length ? [{ text: '{ответы до тебя}' }] : [], output: outputOf(step, model) });
-    return { label: stepLabel(step), order: step.order, inputMode: modeOf(spec), prompt, template, transportLines: TRANSPORT_LINES.slice(),
+        inputMode: modeOf(spec), output: outputOf(step, model) });
+    return { label: stepLabel(step), inputMode: modeOf(spec), prompt, template, transportLines: TRANSPORT_LINES.slice(),
       instructions: { task: text(task), stepTask: model.task ?? step.task, extra: model.extra || '', askInstruction: semiAuto ? askInstruction : '' } };
   }
 

@@ -27,9 +27,9 @@
   // roleChoice (Custom rounds only): { prompts: [{ id, label }], roles: [prompt id or ''] per block,
   // disabled, roundPrompt } — one select for the whole round; mixed roles show 'разные' until chosen.
   // The round's text field shows only while 'custom' is selected.
-  // roleChoice.settings (the round card of Basic): { order, input, task } the owner set ('' = not set, inherited),
+  // roleChoice.settings (the round card of Basic): { input, task } the owner set ('' = not set, inherited),
   // inheritedTask (the text the round would take), first (the first round: nothing to feed in), disabled.
-  // They give the order of work, the input and the round's task.
+  // They give the input and the round's task.
   function buildModel({ round, templateStage = null, participants = [], stageRun = null, roleChoice = null } = {}) {
     const working = list(participants.filter((item) => item && item.send).map((item) => item.name));
     const waiting = list(participants.filter((item) => item && !item.send).map((item) => item.name));
@@ -61,7 +61,7 @@
           ]
         };
         if (roleChoice.settings) {
-          model.settings = settingsModel(roleChoice.settings, { ...roleChoice, enabledCount: working.length });
+          model.settings = settingsModel(roleChoice.settings, roleChoice);
           if (model.settings.owner.checked) model.badges.push('User: одобрение');
         }
         return model;
@@ -90,10 +90,8 @@
     return model;
   }
 
-  const ORDER_LABELS = { parallel: 'Параллельно', sequential: 'По очереди' };
   const INPUT_LABELS = { none: 'Ничего', previous: 'Ответы предыдущего шага', all: 'Всё принятое за все предыдущие шаги' };
   const STEPS_LABEL = 'Выбранные этапы';
-  const REQUIRE_LABELS = { any: 'Любой ответ', all: 'Все включённые', count: 'Число' };
   const isPlain = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
   // The input «выбранные этапы» (4.3): the owner's list of step refs keeps its order; entries that are not step refs
@@ -119,24 +117,10 @@
     return next;
   }
 
-  // The fields of a step the card shows: input, require, owner, output. A draft is a choice the owner made in the card
-  // that the schema does not hold yet («выбранные этапы» without a step, the number of required answers).
-  function stepRestModel(settings = {}, { enabledCount = 0, drafts = {} } = {}) {
-    const req = settings.require;
-    const requireValue = typeof req === 'number' ? 'count' : (req === 'any' || req === 'all' ? req : (drafts.require === 'count' ? 'count' : ''));
+  // The fields of a step the card shows after the task: owner, output.
+  function stepRestModel(settings = {}) {
     const output = isPlain(settings.output) ? settings.output : {};
     return {
-      require: {
-        value: requireValue,
-        count: typeof req === 'number' ? req : '',
-        max: Number(enabledCount) || 0,
-        options: [
-          { value: '', label: 'По умолчанию (любой ответ)' },
-          { value: 'any', label: REQUIRE_LABELS.any },
-          { value: 'all', label: REQUIRE_LABELS.all },
-          { value: 'count', label: REQUIRE_LABELS.count }
-        ]
-      },
       owner: { checked: settings.owner === 'approve' },
       output: {
         name: String(output.name || ''),
@@ -173,26 +157,25 @@
     };
   }
 
-  // The order, the input and the task of a round card; `first` and `inheritedTask` as before. The input of a later round
-  // is the previous step by default, the first round has no input (null).
-  function settingsModel(settings, { first = false, inheritedTask = '', disabled = false, earlier = [], enabledCount = 0, drafts = {} } = {}) {
-    const order = String(settings.order || '');
+  // The input and the task of a round card; `first` and `inheritedTask` as before. The input of a later round
+  // is the previous step by default, the first round has no input (null). A draft is a choice the owner made in the card
+  // that the schema does not hold yet («выбранные этапы» without a step).
+  function settingsModel(settings, { first = false, inheritedTask = '', disabled = false, earlier = [], drafts = {} } = {}) {
     const input = stepInputModel(settings, { first, earlier, drafts });
     const stepsMode = input?.value === 'steps';
     const defaultInput = first ? 'none' : 'previous';
     const effectiveInput = stepsMode ? 'steps' : (input?.value || defaultInput);
     return {
       disabled: Boolean(disabled),
-      order: { value: order, options: [{ value: '', label: `По умолчанию (${ORDER_LABELS.parallel.toLowerCase()})` }, ...Object.entries(ORDER_LABELS).map(([value, label]) => ({ value, label }))] },
       input,
       // The task is always shown. With the input nothing only the task written here is sent (the shared one is not), so the
       // placeholder of the shared task stays empty and the label says so. «выбранные этапы» sends the step's answers, so the task goes.
       task: { value: String(settings.task || ''), placeholder: effectiveInput === 'none' ? '' : String(inheritedTask || ''), sent: effectiveInput !== 'none' },
-      ...stepRestModel(settings, { enabledCount, drafts })
+      ...stepRestModel(settings)
     };
   }
 
-  // A select row of a card (order, input): the choice goes to emit(field, value).
+  // A select row of a card (input): the choice goes to emit(field, value).
   function choiceRow(container, field, label, data, emit) {
     const doc = container.ownerDocument;
     const select = el(doc, 'select', `stage-card-${field}-select`);
@@ -226,32 +209,10 @@
     container.append(box);
   }
 
-  // The fields after the task: how many answers are needed, the owner's approval, the output of the step.
-  // A number of answers goes to emit('require', n) only when it is typed; 'count' is the choice of a number.
+  // The fields after the task: the owner's approval, the output of the step.
   function renderRest(container, fields, emit) {
     const doc = container.ownerDocument;
     const disabled = Boolean(fields.disabled);
-    const requireSelect = el(doc, 'select', 'stage-card-require-select');
-    fields.require.options.forEach((item) => { const option = el(doc, 'option', '', item.label); option.value = item.value; requireSelect.append(option); });
-    requireSelect.value = fields.require.value;
-    requireSelect.disabled = disabled;
-    requireSelect.addEventListener('change', () => emit('require', requireSelect.value));
-    const requireWrap = el(doc, 'label', 'stage-card-setting stage-card-require');
-    requireWrap.append(doc.createTextNode('Сколько ответов нужно '), requireSelect);
-    if (fields.require.value === 'count') {
-      const count = el(doc, 'input', 'stage-card-require-count');
-      count.type = 'number';
-      count.min = '1';
-      count.max = String(fields.require.max);
-      count.step = '1';
-      count.value = fields.require.count === '' ? '' : String(fields.require.count);
-      count.disabled = disabled;
-      count.setAttribute('aria-label', 'Число ответов');
-      count.addEventListener('change', () => { if (count.value !== '') emit('require', Number(count.value)); });
-      requireWrap.append(count, doc.createTextNode(` из ${fields.require.max}`));
-    }
-    container.append(requireWrap);
-
     const ownerBox = el(doc, 'input', 'stage-card-owner-check');
     ownerBox.type = 'checkbox';
     ownerBox.checked = fields.owner.checked;
@@ -344,7 +305,6 @@
       if (model.settings) {
         const settings = model.settings;
         const emit = (field, value) => { if (typeof onSetting === 'function') onSetting(field, value); };
-        choiceRow(container, 'order', 'Порядок работы', { ...settings.order, disabled: settings.disabled }, emit);
         if (settings.input) choiceRow(container, 'input', 'Вход раунда', { ...settings.input, disabled: settings.disabled }, emit);
         if (settings.input?.value === 'steps') renderSteps(container, settings.input, emit, settings.disabled);
         if (settings.task) {

@@ -35,18 +35,9 @@ describe('Custom engine: a required whole-step source (D3, ТЗ 3.1)', () => {
     expect(prompt.indexOf('ответ B')).toBeLessThan(prompt.indexOf('ответ A'));
   });
 
-  test('a participant that did not answer is left out when the threshold of the step is met', async () => {
+  test('a required whole result with one participant failed (the owner skips the round) is missing: no request to C', async () => {
     const { send, calls } = transport({ A: ['ответ A'], B: [''], C: ['ок'] });
-    const result = await Engine.run({ task: 'T', steps: [R1({ require: 1 }), R2({ step: 'r1', required: true })], send, maxAttempts: 1 });
-    expect(result.stopReason).toBe('steps_done');
-    const prompt = sentTo(calls, 'C')[0].prompts.C;
-    expect(prompt).toContain('ответ A');
-    expect(prompt).not.toContain('участник B');
-  });
-
-  test('a required whole result below the threshold (require all, one failed) is missing: no request to C', async () => {
-    const { send, calls } = transport({ A: ['ответ A'], B: [''], C: ['ок'] });
-    const result = await Engine.run({ task: 'T', steps: [R1({ require: 'all' }), R2({ step: 'r1', required: true })], send, maxAttempts: 1, decide: async () => 'skip' });
+    const result = await Engine.run({ task: 'T', steps: [R1(), R2({ step: 'r1', required: true })], send, maxAttempts: 1, decide: async () => 'skip' });
     expect(result.stopReason).toBe('missing_input');
     expect(result.stopDetail).toContain('шаг «r1»');
     expect(sentTo(calls, 'C')).toEqual([]);
@@ -71,7 +62,7 @@ describe('Custom engine: a required whole-step source (D3, ТЗ 3.1)', () => {
 
   test('a participant source stays exact: a required participant that did not answer is missing, the others do not matter', async () => {
     const { send, calls } = transport({ A: ['ответ A'], B: [''], C: ['ок'] });
-    const result = await Engine.run({ task: 'T', steps: [R1({ require: 1 }), R2({ step: 'r1', participant: 'B', required: true })], send, maxAttempts: 1 });
+    const result = await Engine.run({ task: 'T', steps: [R1(), R2({ step: 'r1', participant: 'B', required: true })], send, maxAttempts: 1, decide: async () => 'skip' });
     expect(result.stopReason).toBe('missing_input');
     expect(result.stopDetail).toContain('участник «B»');
     expect(sentTo(calls, 'C')).toEqual([]);

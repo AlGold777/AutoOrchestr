@@ -4271,7 +4271,7 @@ document.addEventListener('click', (event) => {
             updatePipelineAll();
         };
         // The card of a round keeps the choices the schema does not hold yet as drafts, by pipeline and ref:
-        // «выбранные этапы» before a step is picked, «число» before a number is typed. A draft shows until the owner makes the value.
+        // «выбранные этапы» before a step is picked. A draft shows until the owner makes the value.
         const stepDrafts = new Map();
         const stepDraftsOf = (ref) => stepDrafts.get(`${draftPlanStorageKey()}\n${ref}`) || {};
         const stepLabel = (ref) => {
@@ -4291,8 +4291,8 @@ document.addEventListener('click', (event) => {
             }));
         };
         // A change of a field in the card of a round. The value goes to the schema's field
-        // (saved at once, like the round card); a choice without a value yet is a draft. max: the number of enabled models.
-        const commitStepField = async (ref, field, value, max = 0) => {
+        // (saved at once, like the round card); a choice without a value yet is a draft.
+        const commitStepField = async (ref, field, value) => {
             const current = getCustomRoundSettings()[ref] || {};
             const drafts = { ...stepDraftsOf(ref) };
             let key = field;
@@ -4303,15 +4303,6 @@ document.addEventListener('click', (event) => {
             }
             delete drafts[key];
             if (key === 'input' && (stored === 'steps' || (Array.isArray(stored) && !stored.length))) { drafts.input = 'steps'; stored = ''; }
-            if (key === 'require') {
-                if (stored === 'count') {
-                    stored = typeof current.require === 'number' ? current.require : '';
-                    if (stored === '') drafts.require = 'count';
-                } else if (typeof stored === 'number' && (!Number.isSafeInteger(stored) || stored < 1 || stored > max)) {
-                    showNotification(`Число ответов: от 1 до ${max}.`, 'warn');
-                    return;
-                }
-            }
             if (key === 'output') stored = window.StageCard.outputAfterEdit(current.output, value);
             stepDrafts.set(`${draftPlanStorageKey()}\n${ref}`, drafts);
             await setCustomRoundSetting(ref, key, stored);
@@ -6266,7 +6257,7 @@ document.addEventListener('click', (event) => {
         };
         // Custom (disput/custom-engine.js): the shared pipeline engine. The canvas gives the steps
         // in plan order: round cards (their models) and owner steps; a synthesis is a round of one model
-        // with a role. Rounds are parallel and pass on the accepted answers of the previous step; the round card's own order, task and
+        // with a role. A round sends one request to all its models (they answer independently) and passes on the accepted answers of the previous step; the round card's own task and
         // input come with the card editor. Semi-automatic (run policy not Auto) asks the owner after
         // every step; a step without accepted answers asks in both modes.
         // The page state as a Basic schema (disput/basic-schema.js): the canvas gives the steps, the cards
@@ -6333,7 +6324,8 @@ document.addEventListener('click', (event) => {
             const put = (target, key, value) => { if (value !== undefined) target[key] = value; };
             // The fields the owner set in the card of a round (by ref, customRoundSettings), as the schema's step
             // fields. An empty value (nothing, an empty list, an empty object) is not written.
-            const ROUND_STEP_KEYS = ['order', 'input', 'task', 'require', 'owner', 'chat', 'output'];
+            // The removed fields (order, require) of an older saved card are not carried over.
+            const ROUND_STEP_KEYS = ['input', 'task', 'owner', 'chat', 'output'];
             const stepFieldsOf = (ref) => {
                 const own = {};
                 ROUND_STEP_KEYS.forEach((key) => {
@@ -6455,7 +6447,7 @@ document.addEventListener('click', (event) => {
             basicRunExplicit.set(key, { ...(basicRunExplicit.get(key) || {}), [field]: true });
         };
         const basicSchemaLoadErrors = new Map();
-        // The schema the working copies were read from. The fields the canvas does not edit (output, require, owner, chat,
+        // The schema the working copies were read from. The fields the canvas does not edit (output, owner, chat,
         // a participant's input, the specification text: spec and a step's title, goal, rules, quality) are kept from it on
         // Save and on Run; the control steps come from customControls.
         const basicSourceSchema = new Map();
@@ -8778,7 +8770,7 @@ document.addEventListener('click', (event) => {
                 const roleChoice = isCustomEnginePipeline() && document.querySelector(`#r${round}-models .role-selector`)
                     ? { prompts: getRoleOptionPrompts(), roles: (stack?.items || []).map((item) => item.role || ''), disabled: pipelineRunActive,
                         roundPrompt: getCustomRoundPrompt(`r${round}`),
-                        // The round card of Basic: the order, the input, the task, the number of answers, the owner and the output.
+                        // The round card of Basic: the input, the task, the owner and the output.
                         settings: getCustomRoundSettings()[`r${round}`] || {}, drafts: stepDraftsOf(`r${round}`), earlier: stepsBefore(`r${round}`),
                         first: round === 1, inheritedTask: resolveCustomFields({}, 'round').task.value }
                     : null;
@@ -8797,7 +8789,7 @@ document.addEventListener('click', (event) => {
                     onRoundPrompt: (text) => setCustomRoundPrompt(`r${round}`, text),
                     onSetting: async (field, value) => {
                         if (pipelineRunActive) return;
-                        await commitStepField(`r${round}`, field, value, (stack?.items || []).filter((item) => item.send).length);
+                        await commitStepField(`r${round}`, field, value);
                         openStageCard(roundBadge);
                     },
                     addControl: roleChoice ? addControlOptionsFor(`r${round}`, dialog) : null

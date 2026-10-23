@@ -54,22 +54,22 @@ describe('Custom engine', () => {
     expect(calls[1].meta.maxWordsByModel).toEqual({ A: 77, B: null });
   });
 
-  test('correction retry preserves the card response length; sequential templates receive earlier answers', async () => {
+  test('correction retry preserves the card response length', async () => {
     const { send, calls } = transport({ A: ['first'], B: ['', 'second'] });
-    await Engine.run({ task: 'T', steps: [{ order: 'sequential', input: 'none', models: ['A',
-      { name: 'B', promptTemplate: 'Use {ответы до тебя}', maxWords: 51 }] }], send });
-    expect(calls[1].prompts.B).toBe('Use Ответ 1:\nfirst');
-    expect(calls[2].prompts.B).toBe('Use Ответ 1:\nfirst'); // empty: the same request again, not a correction
+    await Engine.run({ task: 'T', steps: [{ input: 'none', models: ['A',
+      { name: 'B', promptTemplate: 'Use {задача}', maxWords: 51 }] }], send });
+    expect(calls[0].prompts.B).toBe('Use T');
+    expect(calls[1].prompts.B).toBe('Use T'); // empty: the same request again, not a correction
+    expect(calls[0].meta.maxWordsByModel.B).toBe(51);
     expect(calls[1].meta.maxWordsByModel.B).toBe(51);
-    expect(calls[2].meta.maxWordsByModel.B).toBe(51);
   });
   test('parallel rounds: every model gets the same input; the next round gets the accepted answers of the previous', async () => {
     const { send, calls } = transport({ A: ['a1', 'a2'], B: ['b1', 'b2'] });
     const result = await Engine.run({
       task: 'Задача T',
       steps: [
-        { order: 'parallel', task: 'Ответь', input: 'none', models: ['A', 'B'] },
-        { order: 'parallel', task: 'Улучши', input: 'previous', models: ['A', 'B'] }
+        { task: 'Ответь', input: 'none', models: ['A', 'B'] },
+        { task: 'Улучши', input: 'previous', models: ['A', 'B'] }
       ],
       send
     });
@@ -81,12 +81,24 @@ describe('Custom engine', () => {
     expect(result.stopReason).toBe('steps_done');
   });
 
-  test('sequential: each model also gets the answers of the models before it in the step', async () => {
+  test('a round sends one request to all its models at once and waits for all of them', async () => {
     const { send, calls } = transport({ A: ['a1'], B: ['b1'], C: ['c1'] });
-    await Engine.run({ task: 'T', steps: [{ order: 'sequential', task: 'Добавь', input: 'none', models: ['A', 'B', 'C'] }], send });
-    expect(calls.map((call) => call.models)).toEqual([['A'], ['B'], ['C']]);
-    expect(calls[0].prompts.A).not.toContain('этого раунда');
-    expect(calls[2].prompts.C).toContain('Ответы участников этого раунда до тебя:\n\nОтвет 1:\na1\n\nОтвет 2:\nb1');
+    const result = await Engine.run({ task: 'T', steps: [{ task: 'Добавь', input: 'none', models: ['A', 'B', 'C'] }], send });
+    expect(calls.map((call) => call.models)).toEqual([['A', 'B', 'C']]);
+    expect(calls[0].prompts.A).toBe(calls[0].prompts.C);
+    expect(calls[0].prompts.C).not.toContain('a1');
+    expect(result.answers).toEqual(['a1', 'b1', 'c1']);
+  });
+
+  test('a relay is rounds of one model in a row: the second round gets the answer of the first through its input', async () => {
+    const { send, calls } = transport({ A: ['a1'], B: ['b1'] });
+    const result = await Engine.run({ task: 'T', steps: [
+      { ref: 'r1', kind: 'round', task: 'Начни', input: 'none', models: ['A'] },
+      { ref: 'r2', kind: 'round', task: 'Продолжи', input: 'previous', models: ['B'] }
+    ], send });
+    expect(calls.map((call) => call.models)).toEqual([['A'], ['B']]);
+    expect(calls[1].prompts.B).toContain('Ответы предыдущего шага:\n\nОтвет 1:\na1');
+    expect(result.answers).toEqual(['b1']);
   });
 
   test('a model addition goes only to that model', async () => {
@@ -134,15 +146,16 @@ describe('Custom engine', () => {
     expect(result.answers).toEqual(['полный ответ.']);
   });
 
-  test('Auto goes on with a partial step; the missing model is in the history', async () => {
-    const { send } = transport({ A: ['a1', 'a2'], B: [] });
-    const decide = jest.fn();
+  test('Auto does not go on with a partial step: the round waits for every model, so the owner decides without "continue"', async () => {
+    const { send, calls } = transport({ A: ['a1'], B: [] });
+    const decide = jest.fn(async () => 'stop');
     const result = await Engine.run({
       task: 'T', steps: [{ task: 'x', input: 'none', models: ['A', 'B'] }, { task: 'y', input: 'previous', models: ['A'] }], send, decide
     });
-    expect(decide).not.toHaveBeenCalled();
+    expect(decide.mock.calls[0][0]).toMatchObject({ accepted: ['A'], failed: ['B'], required: 2, choices: ['retry', 'skip', 'stop'] });
     expect(result.steps[0].outcome.B).toMatchObject({ ok: false, attempt: 2 });
-    expect(result.answers).toEqual(['a2']);
+    expect(calls.map((call) => call.models)).toEqual([['A', 'B'], ['B']]);
+    expect(result.stopReason).toBe('stopped');
   });
 
   test('no accepted answer: the owner chooses retry, skip or stop — never continue', async () => {
@@ -238,14 +251,14 @@ describe('Custom engine', () => {
     expect(result).toMatchObject({ stopReason: 'cancelled', answers: ['a1'] });
   });
 
-  test('Stop in the middle of a sequential step keeps the answers already accepted in it', async () => {
+  test('Stop in the middle of a step keeps the answers already accepted in it', async () => {
     const controller = new AbortController();
     const send = async (models) => {
       if (models[0] === 'B') { controller.abort(); throw new DOMException('cancelled', 'AbortError'); }
       return { byModel: { A: { text: 'a1', status: 'SUCCESS' } } };
     };
     const result = await Engine.run({
-      task: 'T', signal: controller.signal, send, steps: [{ order: 'sequential', task: 'x', input: 'none', models: ['A', 'B'] }]
+      task: 'T', signal: controller.signal, send, steps: [{ task: 'x', input: 'none', models: ['A', 'B'] }]
     });
     expect(result).toMatchObject({ stopReason: 'cancelled', answers: ['a1'] });
   });
@@ -275,15 +288,6 @@ describe('Custom engine', () => {
     expect(result.answers[0]).toContain('a1');
   });
 
-  test('closing a sequential step by the owner closes the whole step: later models are not called', async () => {
-    const { send, calls } = transport({ A: ['a1'], B: ['b1'], C: ['c1'] }, { closedByOwner: true });
-    const result = await Engine.run({ task: 'T', steps: [{ order: 'sequential', task: 'x', input: 'none', models: ['A', 'B', 'C'] }], send });
-    expect(calls.map((call) => call.models)).toEqual([['A']]);
-    expect(result.steps[0].outcome.A).toMatchObject({ ok: true, text: 'a1' });
-    expect(result.steps[0].outcome.B).toMatchObject({ ok: false, reason: 'closed_by_owner' });
-    expect(result.steps[0].outcome.C).toMatchObject({ ok: false, reason: 'closed_by_owner' });
-  });
-
   test('[[ASK]] goes to the owner; the answer reaches the next steps', async () => {
     const { send, calls } = transport({ A: ['a1\n[[ASK: Срок? || неделя || месяц]]'], B: ['b1'] });
     await Engine.run({
@@ -305,7 +309,7 @@ describe('Custom engine', () => {
     });
     expect(events[events.length - 1]).toMatchObject({ kind: 'custom_end', stopReason: 'steps_done' });
     expect(events[0]).toMatchObject({ kind: 'custom_start', semiAuto: false, taskChars: 1,
-      steps: [{ step: 0, label: 'Раунд 1', order: 'parallel', input: 'none', models: ['A'] }] });
+      steps: [{ step: 0, label: 'Раунд 1', input: 'none', models: ['A'] }] });
   });
 });
 
@@ -319,7 +323,6 @@ describe('Custom engine refuses what it does not execute yet', () => {
     ['an owner step with models', [{ ref: 'owner:o', kind: 'owner', task: 'Дай ответ', models: [{ name: 'A' }] }], 'invalid_field', 'models'],
     ['an output format other than json', [{ ref: 'r1', kind: 'round', output: { format: 'xml' }, models: ['A'] }], 'unsupported_field', 'output.format'],
     ['an empty list of artifacts', [{ ref: 'r1', kind: 'round', output: { format: 'json', requiredFields: ['/m'], artifacts: [] }, models: ['A'] }], 'invalid_field', 'output.artifacts'],
-    ['require other than any, all or a number', [{ ref: 'r1', kind: 'round', require: 'some', models: ['A', 'B'] }], 'invalid_field', 'require'],
     ['an owner value other than approve', [{ ref: 'r1', kind: 'round', owner: 'sign', models: ['A'] }], 'invalid_field', 'owner'],
     ['a chat that is neither continue nor new', [{ ref: 'r1', kind: 'round', chat: 'shared', models: ['A'] }], 'unsupported_field', 'chat'],
     ['an artifact source without its version', [{ ref: 'r1', kind: 'round', models: ['A'] }, { ref: 'r2', kind: 'round', input: [{ artifact: { step: 'r1', participant: 'A', id: 'map' } }], models: ['B'] }], 'invalid_input', 'r2'],
@@ -343,10 +346,10 @@ describe('Custom engine refuses what it does not execute yet', () => {
     expect(calls).toHaveLength(0);
   });
 
-  test('the executed fields still run: any, continue, a plain input', async () => {
+  test('the executed fields still run: continue, a plain input', async () => {
     const { send, calls } = ask();
     const result = await Engine.run({ task: 'T', send, steps: [
-      { ref: 'r1', kind: 'round', require: 'any', owner: undefined, chat: 'continue', input: 'none', models: ['A'] },
+      { ref: 'r1', kind: 'round', owner: undefined, chat: 'continue', input: 'none', models: ['A'] },
       { ref: 'r2', kind: 'round', input: 'previous', models: ['B'] }
     ] });
     expect(result.stopReason).toBe('steps_done');
@@ -381,9 +384,11 @@ describe('Custom engine addressed inputs', () => {
     expect(prompt).not.toContain('c1');
   });
 
+  // The round of A and B waits for both: without B's answer the owner skips it, so r1 passes nothing on.
+  const skipIncomplete = async () => 'skip';
   test('a participant that failed is not replaced by the nearest accepted answer', async () => {
     const { send, calls } = transport({ A: ['a1'], B: [], C: ['c1'] });
-    await Engine.run({ task: 'T', send, steps: [
+    await Engine.run({ task: 'T', send, decide: skipIncomplete, steps: [
       { ref: 'r1', kind: 'round', input: 'none', models: ['A', 'B'] },
       { ref: 'r2', kind: 'round', input: [{ step: 'r1', participant: 'B' }], models: ['C'] }
     ] });
@@ -394,7 +399,7 @@ describe('Custom engine addressed inputs', () => {
 
   test('a required source without an actual answer stops the run before the request; nothing is sent', async () => {
     const { send, calls } = transport({ A: ['a1'], B: [], C: ['c1'] });
-    const result = await Engine.run({ task: 'T', send, steps: [
+    const result = await Engine.run({ task: 'T', send, decide: skipIncomplete, steps: [
       { ref: 'r1', kind: 'round', input: 'none', models: ['A', 'B'] },
       { ref: 'r2', kind: 'round', input: [{ step: 'r1', participant: 'B', required: true }], models: ['C'] }
     ] });
@@ -405,7 +410,7 @@ describe('Custom engine addressed inputs', () => {
 
   test('an optional source without an answer gives no text; the others still go in', async () => {
     const { send, calls } = transport({ A: ['a1'], B: [], C: ['c1'], E: ['e1'] });
-    const result = await Engine.run({ task: 'T', send, steps: [
+    const result = await Engine.run({ task: 'T', send, decide: skipIncomplete, steps: [
       { ref: 'r1', kind: 'round', input: 'none', models: ['A', 'B'] },
       { ref: 'r2', kind: 'round', input: 'none', models: ['C'] },
       { ref: 'r3', kind: 'round', input: [{ step: 'r1', participant: 'B' }, { step: 'r2', participant: 'C', required: true }, { step: 'r9', participant: 'Z' }], models: ['E'] }
@@ -467,8 +472,7 @@ describe('Custom engine addressed inputs', () => {
 });
 
 // Participants (A02, pack P02 step 3): a participant is an id; two participants of one model are two requests
-// through sendParticipants; a participant's own input replaces the shared one; the answers before a participant
-// in a sequential round stay a separate block.
+// through sendParticipants; a participant's own input replaces the shared one.
 describe('Custom engine participants', () => {
   // A transport with participant ids: replies[participantId] is a list, one reply per request to that participant.
   function participantTransport(replies) {
@@ -532,14 +536,6 @@ describe('Custom engine participants', () => {
     const prompt = calls[1].requests[0].prompt;
     expect(prompt).toContain('Ответы выбранных источников:\n\nРаунд 1, участник expert-B, визит 1:\nb1');
     expect(prompt).not.toContain('a1');
-  });
-
-  test('in a sequential round the answers before a participant stay a separate block even when its input is none', async () => {
-    const { sendParticipants, calls } = participantTransport({ 'expert-A': ['a1'], 'expert-B': ['b1'] });
-    await Engine.run({ task: 'T', sendParticipants, steps: [
-      { ref: 'r1', kind: 'round', order: 'sequential', input: 'none', models: [expert('expert-A'), expert('expert-B', { input: 'none' })] }
-    ] });
-    expect(calls[1].requests[0].prompt).toContain('Ответы участников этого раунда до тебя:\n\nОтвет 1:\na1');
   });
 
   test('a retry sends only the failed participant, under the same id, in its own chat', async () => {
@@ -674,17 +670,17 @@ describe('Custom engine output check', () => {
   });
 });
 
-// Required number of answers (A02, pack P02 step 5; ТЗ 4.2, plan 1.3): the step ends when the threshold is met;
-// below it the owner decides (retry, skip, stop), and "continue" is never offered; an absent or invalid decision
-// below the threshold is no_decision, even when some answers were accepted.
-describe('Custom engine required answers', () => {
-  const two = (require) => ({ ref: 'r1', kind: 'round', input: 'none', require, models: ['A', 'B'] });
+// The answers of a round (ТЗ 4.2): the round waits for the answers of all its participants; without every answer the
+// owner decides (retry, skip, stop), and "continue" is never offered; an absent or invalid decision is no_decision, even
+// when some answers were accepted.
+describe('Custom engine: a round waits for all its participants', () => {
+  const two = () => ({ ref: 'r1', kind: 'round', input: 'none', models: ['A', 'B'] });
 
-  test('all: one failed participant leaves the step below the threshold; the owner decides and gets no "continue"', async () => {
+  test('one failed participant leaves the step incomplete; the owner decides and gets no "continue"', async () => {
     // B fails its request and its correction: only then the owner decides (a correction inside the attempt comes first).
     const { send, calls } = transport({ A: ['a1'], B: ['', '', 'b3'] });
     const decide = jest.fn(async ({ choices }) => (choices.includes('retry') ? 'retry' : 'continue'));
-    const result = await Engine.run({ task: 'T', send, decide, steps: [two('all')] });
+    const result = await Engine.run({ task: 'T', send, decide, steps: [two()] });
     expect(decide).toHaveBeenCalledTimes(1);
     expect(decide.mock.calls[0][0]).toMatchObject({ accepted: ['A'], failed: ['B'], choices: ['retry', 'skip', 'stop'], required: 2 });
     expect(calls.map((call) => call.models)).toEqual([['A', 'B'], ['B'], ['B']]);
@@ -692,45 +688,37 @@ describe('Custom engine required answers', () => {
     expect(result.stopReason).toBe('steps_done');
   });
 
-  test('N of the participants: the threshold is met by accepted answers, a retry counts them; below it the step is not left by the fallback', async () => {
-    const met = transport({ A: ['a1'], B: ['b1'], C: [''] });
-    const enough = await Engine.run({ task: 'T', send: met.send, steps: [{ ref: 'r1', kind: 'round', input: 'none', require: 2, models: ['A', 'B', 'C'] }] });
-    expect(enough.stopReason).toBe('steps_done');
-    expect(met.calls.map((call) => call.models)).toEqual([['A', 'B', 'C'], ['C']]); // the usual retry of C, then the step goes on
-    const short = transport({ A: ['a1'], B: [''], C: [''] });
-    const result = await Engine.run({ task: 'T', send: short.send, decide: jest.fn(async () => 'continue'), steps: [{ ref: 'r1', kind: 'round', input: 'none', require: 2, models: ['A', 'B', 'C'] }] });
-    expect(result.stopReason).toBe('no_decision');
-  });
-
-  test('below the threshold without a decision the run stops with no_decision, even with an accepted answer', async () => {
+  test('without every answer and without a decision the run stops with no_decision, even with an accepted answer', async () => {
     const { send } = transport({ A: ['a1'], B: [''] });
-    const result = await Engine.run({ task: 'T', send, steps: [two('all')] });
+    const result = await Engine.run({ task: 'T', send, steps: [two()] });
     expect(result).toMatchObject({ stopReason: 'no_decision' });
     const invalid = transport({ A: ['a1'], B: [''] });
-    const bad = await Engine.run({ task: 'T', send: invalid.send, decide: async () => 'continue', steps: [two('all')] });
+    const bad = await Engine.run({ task: 'T', send: invalid.send, decide: async () => 'continue', steps: [two()] });
     expect(bad.stopReason).toBe('no_decision');
   });
 
-  test('the manual last step asks the owner when the threshold is not met, and does not finish on its own', async () => {
+  test('the manual last step asks the owner when an answer is missing, and does not finish on its own', async () => {
     const { send } = transport({ A: ['a1'], B: [''] });
     const decide = jest.fn(async () => 'stop');
-    const result = await Engine.run({ task: 'T', semiAuto: true, send, decide, steps: [{ ref: 'r1', kind: 'round', input: 'none', require: 'all', models: ['A', 'B'] }] });
+    const result = await Engine.run({ task: 'T', semiAuto: true, send, decide, steps: [two()] });
     expect(decide).toHaveBeenCalledTimes(1);
     expect(result.stopReason).toBe('stopped');
   });
 
-  test('a threshold above the number of participants is refused before the first request', async () => {
-    const { send, calls } = transport({ A: ['a1'] });
-    await expect(Engine.run({ task: 'T', send, steps: [{ ref: 'r1', kind: 'round', input: 'none', require: 2, models: ['A'] }] }))
-      .rejects.toMatchObject({ code: 'invalid_field' });
-    expect(calls).toHaveLength(0);
-  });
-
-  test('"any" and the whole threshold met: the run goes on without a question, as before', async () => {
+  test('every answer accepted: the run goes on without a question', async () => {
     const { send } = transport({ A: ['a1'], B: ['b1'] });
     const decide = jest.fn();
-    await Engine.run({ task: 'T', send, decide, steps: [two('all')] });
+    await Engine.run({ task: 'T', send, decide, steps: [two()] });
     expect(decide).not.toHaveBeenCalled();
+  });
+
+  test('an older plan with order and require runs without failing: the fields are ignored', async () => {
+    const { send, calls } = transport({ A: ['a1'], B: [''] });
+    const decide = jest.fn(async () => 'stop');
+    const result = await Engine.run({ task: 'T', send, decide, steps: [{ ...two(), order: 'sequential', require: 1 }] });
+    expect(calls[0].models).toEqual(['A', 'B']);
+    expect(decide.mock.calls[0][0]).toMatchObject({ failed: ['B'], required: 2, choices: ['retry', 'skip', 'stop'] });
+    expect(result.stopReason).toBe('stopped');
   });
 });
 
@@ -758,11 +746,11 @@ describe('Custom engine owner approval', () => {
     expect(ok.stopReason).toBe('steps_done');
   });
 
-  test('approve with a threshold not met: the owner gets no "continue", and an invalid answer stops the run', async () => {
+  test('approve with an answer missing: the owner gets no "continue", and an invalid answer stops the run', async () => {
     const { send, calls } = transport({ A: ['a1'], B: [''] });
     const decide = jest.fn(async () => 'continue');
     const result = await Engine.run({ task: 'T', send, decide, steps: [
-      { ref: 'r1', kind: 'round', input: 'none', owner: 'approve', require: 'all', models: ['A', 'B'] },
+      { ref: 'r1', kind: 'round', input: 'none', owner: 'approve', models: ['A', 'B'] },
       { ref: 'r2', kind: 'round', input: 'previous', models: ['A'] }
     ] });
     expect(decide.mock.calls[0][0].choices).toEqual(['retry', 'skip', 'stop']);

@@ -1985,9 +1985,9 @@ describe('Pipeline debate favorites view', () => {
     ] });
     expect(window.__pipelineLifecycleDebug.customStepsFromPlan({ plannedStages: [{ plannedStageId: 'canvas-r1', participantIds: [] }] }, { ref: 'r1', name: 'GPT' })[0].models.map((model) => model.name)).toEqual(['GPT']);
     expect(steps.map((step) => ({ ...step, models: step.models.map((model) => model.name) }))).toEqual([
-      { kind: 'round', ref: 'r1', round: 1, order: 'parallel', task: '', input: 'none', models: ['GPT', 'Claude'] },
-      { kind: 'round', ref: 'r2', round: 2, order: 'parallel', task: expect.stringContaining('Учти ответы'), input: 'previous', models: ['GPT'] },
-      { kind: 'round', ref: 'r3', round: 3, order: 'parallel', task: expect.stringContaining('Учти ответы'), input: 'previous', models: ['Claude'] }
+      { kind: 'round', ref: 'r1', round: 1, task: '', input: 'none', models: ['GPT', 'Claude'] },
+      { kind: 'round', ref: 'r2', round: 2, task: expect.stringContaining('Учти ответы'), input: 'previous', models: ['GPT'] },
+      { kind: 'round', ref: 'r3', round: 3, task: expect.stringContaining('Учти ответы'), input: 'previous', models: ['Claude'] }
     ]);
     // The round of one model with the synthesis role is a synthesis: its role text reaches the model.
     expect(steps[2].models[0].extra).toContain('Построй собственное экспертное решение');
@@ -3552,7 +3552,7 @@ describe('Pipeline debate favorites view', () => {
         try {
           const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
             { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }] },
-            { ref: 'r2', kind: 'round', require: 1, models: [{ name: 'Claude' }] }
+            { ref: 'r2', kind: 'round', models: [{ name: 'Claude' }] }
           ] };
           expect((await h.debug.installBasicSchema('Removed round', schema)).ok).toBe(true);
           document.querySelector('.pipeline-item[data-name="Removed round"]').click();
@@ -3641,7 +3641,7 @@ describe('Pipeline debate favorites view', () => {
           const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
             { ref: 'r1', kind: 'round', models: [{ name: 'Claude', id: 'claude-a' }, { name: 'GPT' }] },
             { ref: 'owner:check', kind: 'owner', models: [], task: 'Проверьте полноту', input: 'previous' },
-            { ref: 'r2', kind: 'round', input: 'previous', require: 2, owner: 'approve', chat: 'continue',
+            { ref: 'r2', kind: 'round', input: 'previous', owner: 'approve', chat: 'continue',
               output: { name: 'Итог', form: 'кратко', sections: ['Вывод'], strictLength: true },
               models: [{ name: 'GPT' }, { name: 'Claude', id: 'claude-a', input: 'none' }] },
             { ref: 'owner:fix', kind: 'owner', models: [], task: 'Передайте файл' },
@@ -3665,7 +3665,7 @@ describe('Pipeline debate favorites view', () => {
           const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, defaults: { roundTask: 'RT_TASK' }, steps: [
             { ref: 'r1', kind: 'round', models: [{ name: 'Claude' }, { name: 'GPT', role: 'interaction_critical_audit' }] },
             { ref: 'r2', kind: 'round', models: [{ name: 'Gemini', role: 'interaction_meta_synthesis' }] },
-            { ref: 'r3', kind: 'round', order: 'sequential', input: 'all', task: 'RT_ROUND', models: [{ name: 'Claude', maxWords: 90 }] },
+            { ref: 'r3', kind: 'round', input: 'all', task: 'RT_ROUND', models: [{ name: 'Claude', maxWords: 90 }] },
             { ref: 'r4', kind: 'round', models: [{ name: 'Claude', role: 'interaction_meta_synthesis' }] }
           ] };
           expect((await h.debug.installBasicSchema('Round trip', schema)).ok).toBe(true);
@@ -3991,20 +3991,18 @@ describe('Pipeline debate favorites view', () => {
     }, 30000);
   });
 
-  describe('the round card of Basic: order, input and task of a round', () => {
+  describe('the round card of Basic: input and task of a round', () => {
     const rows = (card) => ({
-      order: card.querySelector('.stage-card-order-select'), input: card.querySelector('.stage-card-input-select'), task: card.querySelector('.stage-card-task'),
+      input: card.querySelector('.stage-card-input-select'), task: card.querySelector('.stage-card-task'),
       role: card.querySelector('.stage-card-role-select')
     });
     const choose = async (select, value) => { select.value = value; select.dispatchEvent(new Event('change')); await settleCustomCard(); };
     const type = async (area, value) => { area.value = value; area.dispatchEvent(new Event('change')); await settleCustomCard(); };
 
-    test('the first round offers the order only; a later round also the input and, with an input, the task with the inherited text', () => {
+    test('the first round has no input; a later round offers the input and, with an input, the task with the inherited text', () => {
       const h = setupCustomInheritance('Round card rows');
       try {
         const first = rows(openRoundCard(1));
-        expect(first.order.value).toBe('');
-        expect([...first.order.options].map((option) => option.textContent)).toEqual(['По умолчанию (параллельно)', 'Параллельно', 'По очереди']);
         expect(first.input).toBeNull();
         expect(first.task.placeholder).toBe('');
         const second = rows(openRoundCard(2));
@@ -4049,22 +4047,6 @@ describe('Pipeline debate favorites view', () => {
       } finally { h.cleanup(); }
     }, 30000);
 
-    test('"By turns" calls the models of the round one after another, each seeing the answers before it', async () => {
-      const h = setupCustomInheritance('Round card order');
-      try {
-        await h.run();
-        expect(h.starts.map((start) => start.selectedLLMs.length)).toEqual([2, 2]);
-        await choose(rows(openRoundCard(2)).order, 'sequential');
-        expect(h.debug.getCustomRoundSettings().r2).toEqual({ order: 'sequential' });
-        await h.run();
-        expect(h.starts.map((start) => start.selectedLLMs.length)).toEqual([2, 1, 1]);
-        expect(h.starts[1].promptsByModel.CLAUDE || h.starts[1].promptsByModel.GPT).not.toContain('до тебя');
-        const second = h.starts[2].promptsByModel[h.starts[2].selectedLLMs[0]];
-        expect(second).toContain('Ответы участников этого раунда до тебя');
-        expect(second).toContain('Accepted');
-      } finally { h.cleanup(); }
-    }, 30000);
-
     test('"Everything accepted" as the input gives a later round the answers of all earlier steps', async () => {
       const h = setupCustomInheritance('Round card input');
       try {
@@ -4082,11 +4064,10 @@ describe('Pipeline debate favorites view', () => {
       const h = setupCustomInheritance('Round card saved');
       try {
         await h.general({ roundTask: 'GENERAL_FOR_SAVE' });
-        await choose(rows(openRoundCard(2)).order, 'sequential');
         await choose(rows(openRoundCard(2)).input, 'all');
         await type(rows(openRoundCard(2)).task, 'SAVED_ROUND_TASK');
         const record = h.debug.getPipelineStoreSnapshot().pipelines['Round card saved'];
-        expect(record.schema.steps.find((step) => step.ref === 'r2')).toMatchObject({ kind: 'round', order: 'sequential', input: 'all', task: 'SAVED_ROUND_TASK' });
+        expect(record.schema.steps.find((step) => step.ref === 'r2')).toMatchObject({ kind: 'round', input: 'all', task: 'SAVED_ROUND_TASK' });
         expect(window.BasicSchema.validate(record.schema)).toEqual([]);
         // Reload: the card shows what was saved.
         const copy = JSON.parse(JSON.stringify(record));
@@ -4094,22 +4075,22 @@ describe('Pipeline debate favorites view', () => {
         h.debug.setPipelineStoreForTest({ active: 'Round card saved', order: ['Round card saved'], pipelines: { 'Round card saved': copy } });
         h.debug.applyPipelineConfig(copy);
         const card = rows(openRoundCard(2));
-        expect([card.order.value, card.input.value, card.task.value]).toEqual(['sequential', 'all', 'SAVED_ROUND_TASK']);
+        expect([card.input.value, card.task.value]).toEqual(['all', 'SAVED_ROUND_TASK']);
         // Going back to the default removes the field from the schema.
-        await choose(card.order, '');
-        expect('order' in h.debug.getPipelineStoreSnapshot().pipelines['Round card saved'].schema.steps.find((step) => step.ref === 'r2')).toBe(false);
+        await choose(card.input, '');
+        expect('input' in h.debug.getPipelineStoreSnapshot().pipelines['Round card saved'].schema.steps.find((step) => step.ref === 'r2')).toBe(false);
         // An installed schema brings its round settings onto the card.
         const result = await h.debug.installBasicSchema('Round card installed', { schemaVersion: 1, origin: 'user', steps: [
           { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }, { name: 'Claude' }] },
-          { ref: 'r2', kind: 'round', order: 'sequential', input: 'none', models: [{ name: 'GPT' }, { name: 'Claude' }] }
+          { ref: 'r2', kind: 'round', input: 'none', models: [{ name: 'GPT' }, { name: 'Claude' }] }
         ] });
         expect(result.ok).toBe(true);
         document.querySelector('.pipeline-item[data-name="Round card installed"]').click();
         await settleCustomCard();
         const installed = rows(openRoundCard(2));
-        expect([installed.order.value, installed.input.value]).toEqual(['sequential', 'none']);
+        expect(installed.input.value).toBe('none');
         expect(installed.task.value).toBe('');
-        expect(h.debug.buildBasicRun(window.__pipelineDraftPlanForCanvas(window.__getActivePipelineDraftPlan())).steps[1]).toMatchObject({ order: 'sequential', input: 'none', task: '' });
+        expect(h.debug.buildBasicRun(window.__pipelineDraftPlanForCanvas(window.__getActivePipelineDraftPlan())).steps[1]).toMatchObject({ input: 'none', task: '' });
       } finally { h.cleanup(); }
     }, 30000);
 
@@ -4127,25 +4108,25 @@ describe('Pipeline debate favorites view', () => {
         running = h.run();
         for (let i = 0; i < 50 && !release; i++) await settleCustomCard();
         const card = rows(openRoundCard(2));
-        expect([card.order.disabled, card.input.disabled, card.task.disabled, card.role.disabled]).toEqual([true, true, true, true]);
-        await choose(card.order, 'sequential');
+        expect([card.input.disabled, card.task.disabled, card.role.disabled]).toEqual([true, true, true]);
+        await choose(card.input, 'all');
         expect(h.debug.getCustomRoundSettings().r2).toBeUndefined();
       } finally { release?.(); if (running) await running; h.cleanup(); }
     }, 30000);
 
-    describe('the input of steps, the number of answers, the owner and the output', () => {
+    describe('the input of steps, the owner and the output', () => {
       const planOf = () => window.__pipelineDraftPlanForCanvas(window.__getActivePipelineDraftPlan());
       const toggle = async (box, checked) => { box.checked = checked; box.dispatchEvent(new Event('change')); await settleCustomCard(); };
       const withoutModels = (steps) => steps.map(({ models, ...rest }) => rest);
 
-      test('rounds (the last one of one model with the synthesis role) keep their steps input, count, owner and output through save, load and a second save; a cleared field stays cleared', async () => {
+      test('rounds (the last one of one model with the synthesis role) keep their steps input, owner and output through save, load and a second save; a cleared field stays cleared', async () => {
         const h = setupCustomInheritance('Step fields');
         try {
           const schema = {
             schemaVersion: 1, origin: 'user', run: { policy: 'auto' },
             steps: [
               { ref: 'r1', kind: 'round', output: { name: 'Карта', format: 'json', requiredFields: ['/map'] }, models: [{ name: 'GPT' }, { name: 'Claude' }] },
-              { ref: 'r2', kind: 'round', input: ['r1', { step: 'r1', participant: 'GPT' }], require: 1, owner: 'approve',
+              { ref: 'r2', kind: 'round', input: ['r1', { step: 'r1', participant: 'GPT' }], owner: 'approve',
                 output: { name: 'Замечания', sections: ['Карта', 'Замечания'], strictLength: true }, models: [{ name: 'GPT' }, { name: 'Claude' }] },
               { ref: 'r3', kind: 'round', input: ['r2'], owner: 'approve', output: { name: 'Итог', form: 'Сводка' }, models: [{ name: 'Claude', role: 'interaction_meta_synthesis' }] }
             ]
@@ -4159,8 +4140,6 @@ describe('Pipeline debate favorites view', () => {
           const card = openRoundCard(2);
           expect(card.querySelector('.stage-card-input-select').value).toBe('steps');
           expect([...card.querySelectorAll('.stage-card-steps input')].map((box) => box.checked)).toEqual([true]);
-          expect(card.querySelector('.stage-card-require-select').value).toBe('count');
-          expect(card.querySelector('.stage-card-require-count').value).toBe('1');
           expect(card.querySelector('.stage-card-owner-check').checked).toBe(true);
           expect(card.querySelector('.stage-card-output-name').value).toBe('Замечания');
           expect(card.querySelector('.stage-card-output-sections').value).toBe('Карта\nЗамечания');
@@ -4169,11 +4148,6 @@ describe('Pipeline debate favorites view', () => {
           // The owner's changes: a step off the list, the count above the models, the owner off, the output name.
           await toggle(card.querySelector('.stage-card-steps input'), false);
           expect(withoutModels(h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' }).steps)[1].input).toEqual([{ step: 'r1', participant: 'GPT' }]);
-          const count = openRoundCard(2).querySelector('.stage-card-require-count');
-          count.value = '5';
-          count.dispatchEvent(new Event('change'));
-          await settleCustomCard();
-          expect(document.getElementById('notification-message').textContent).toContain('от 1 до 2');
           await toggle(openRoundCard(2).querySelector('.stage-card-owner-check'), false);
           await toggle(openRoundCard(2).querySelector('.stage-card-steps input'), true);
           const name = openRoundCard(2).querySelector('.stage-card-output-name');
@@ -4181,7 +4155,7 @@ describe('Pipeline debate favorites view', () => {
           name.dispatchEvent(new Event('change'));
           await settleCustomCard();
           const edited = withoutModels(h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' }).steps)[1];
-          expect(edited).toMatchObject({ input: [{ step: 'r1', participant: 'GPT' }, 'r1'], require: 1, output: { name: 'Замечания 2', sections: ['Карта', 'Замечания'], strictLength: true } });
+          expect(edited).toMatchObject({ input: [{ step: 'r1', participant: 'GPT' }, 'r1'], output: { name: 'Замечания 2', sections: ['Карта', 'Замечания'], strictLength: true } });
           expect(edited).not.toHaveProperty('owner');
 
           // The input goes back to the default: nothing is written, and the source of the load does not bring it back.

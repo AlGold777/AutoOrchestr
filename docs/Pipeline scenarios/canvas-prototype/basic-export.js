@@ -48,7 +48,6 @@
       const input = inputRefs(st);
       const step = { ref, kind: st.block };
       if (st.block === 'round') {
-        step.order = st.order === 'sequential' ? 'sequential' : 'parallel';
         step.input = input.length ? input : 'none';
         if (own(st.task)) step.task = st.task.trim();
         step.models = list(st.models).filter((m) => isObj(m) && own(m.name)).map(modelOf);
@@ -97,7 +96,6 @@
       const inputs = refList(st.input);
       if (inputs.length) step.inputs = inputs;
       if (st.kind === 'round' || st.kind === 'gate') {
-        step.order = st.order === 'sequential' ? 'sequential' : 'parallel';
         if (st.kind === 'gate') {
           step.block = 'round';
           step.task = [`Критерии проверки: ${list(st.criteria).filter(own).join('; ') || 'ответ полный'}`, own(st.task) ? st.task : ''].filter(Boolean).join('\n\n');
@@ -113,7 +111,6 @@
       } else if (st.kind === 'synthesis') {
         const m = list(st.models).find((x) => isObj(x) && own(x.name));
         step.block = 'round';
-        step.order = 'parallel';
         if (own(st.task)) step.task = st.task;
         const model = { name: m ? m.name : 'Claude', role: m && own(m.role) && m.role !== 'None' ? m.role : 'свести' };
         if (m && own(m.task)) model.task = m.task;

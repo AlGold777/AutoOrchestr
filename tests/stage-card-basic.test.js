@@ -2,24 +2,25 @@
 const StageCard = require('../results/stage-card');
 const Schema = require('../disput/basic-schema');
 
-const choice = (extra = {}) => ({ prompts: [], roles: [''], settings: { order: '', input: '', task: '' }, first: false, inheritedTask: 'INHERITED', disabled: false, ...extra });
+const choice = (extra = {}) => ({ prompts: [], roles: [''], settings: { input: '', task: '' }, first: false, inheritedTask: 'INHERITED', disabled: false, ...extra });
 const build = (extra) => StageCard.buildModel({ round: 2, participants: [], roleChoice: choice(extra) });
 
 describe('Round card of Basic: model', () => {
-  test('the first round has the order only; the default input is nothing there and the previous step later', () => {
+  test('the first round has no input choice; the default input is nothing there and the previous step later; there is no order', () => {
     const first = build({ first: true }).settings;
     expect(first.input).toBeNull();
     expect(first.task).toEqual({ value: '', placeholder: '', sent: false });
     const later = build().settings;
     expect(later.input.options[0].label).toBe('По умолчанию (ответы предыдущего шага)');
     expect(later.task).toEqual({ value: '', placeholder: 'INHERITED', sent: true });
+    expect(later).not.toHaveProperty('order');
+    expect(later).not.toHaveProperty('require');
   });
 
   test('the task is offered with any input; with nothing it is sent only when written here, so the shared task is not suggested', () => {
-    expect(build({ settings: { order: '', input: 'none', task: '' } }).settings.task).toEqual({ value: '', placeholder: '', sent: false });
-    expect(build({ settings: { order: '', input: 'none', task: 'MINE' } }).settings.task.value).toBe('MINE');
-    expect(build({ settings: { order: '', input: 'all', task: 'T' } }).settings.task).toEqual({ value: 'T', placeholder: 'INHERITED', sent: true });
-    expect(build({ settings: { order: 'sequential', input: 'previous', task: '' } }).settings.order.value).toBe('sequential');
+    expect(build({ settings: { input: 'none', task: '' } }).settings.task).toEqual({ value: '', placeholder: '', sent: false });
+    expect(build({ settings: { input: 'none', task: 'MINE' } }).settings.task.value).toBe('MINE');
+    expect(build({ settings: { input: 'all', task: 'T' } }).settings.task).toEqual({ value: 'T', placeholder: 'INHERITED', sent: true });
   });
 
   test('a card without settings stays as it was: the role only', () => {
@@ -31,25 +32,24 @@ describe('Round card of Basic: render', () => {
   test('a change of a field is reported with its name; disabled fields are disabled', () => {
     const container = document.createElement('div');
     const seen = [];
-    StageCard.render(container, build({ settings: { order: '', input: 'all', task: '' } }), { onSetting: (field, value) => seen.push([field, value]) });
-    const order = container.querySelector('.stage-card-order-select');
-    order.value = 'sequential';
-    order.dispatchEvent(new Event('change'));
+    StageCard.render(container, build({ settings: { input: 'all', task: '' } }), { onSetting: (field, value) => seen.push([field, value]) });
+    expect(container.querySelector('.stage-card-order-select')).toBeNull();
+    expect(container.querySelector('.stage-card-require-select')).toBeNull();
     const input = container.querySelector('.stage-card-input-select');
     input.value = 'none';
     input.dispatchEvent(new Event('change'));
     const task = container.querySelector('.stage-card-task');
     task.value = 'TEXT';
     task.dispatchEvent(new Event('change'));
-    expect(seen).toEqual([['order', 'sequential'], ['input', 'none'], ['task', 'TEXT']]);
+    expect(seen).toEqual([['input', 'none'], ['task', 'TEXT']]);
     const locked = document.createElement('div');
-    StageCard.render(locked, build({ disabled: true, settings: { order: '', input: 'all', task: '' } }), {});
+    StageCard.render(locked, build({ disabled: true, settings: { input: 'all', task: '' } }), {});
     expect([...locked.querySelectorAll('select, textarea')].every((node) => node.disabled)).toBe(true);
   });
 
   test('text of the task and the options are written as text, not as markup', () => {
     const container = document.createElement('div');
-    StageCard.render(container, build({ settings: { order: '', input: 'all', task: '<img src=x onerror=alert(1)>' }, inheritedTask: '<b>x</b>' }), {});
+    StageCard.render(container, build({ settings: { input: 'all', task: '<img src=x onerror=alert(1)>' }, inheritedTask: '<b>x</b>' }), {});
     expect(container.querySelector('img')).toBeNull();
     expect(container.querySelector('.stage-card-task').value).toBe('<img src=x onerror=alert(1)>');
     expect(container.querySelector('.stage-card-task').placeholder).toBe('<b>x</b>');
@@ -57,20 +57,20 @@ describe('Round card of Basic: render', () => {
 });
 
 describe('Round card of Basic: schema', () => {
-  test('order, input and task of a round come back as the settings of its card, and only for rounds', () => {
+  test('input and task of a round come back as the settings of its card, and only for rounds', () => {
     const settings = Schema.toSettings({ schemaVersion: 1, origin: 'user', steps: [
       { ref: 'r1', kind: 'round', models: [] },
-      { ref: 'r2', kind: 'round', order: 'sequential', input: 'all', task: 'T', models: [] },
+      { ref: 'r2', kind: 'round', input: 'all', task: 'T', models: [] },
       { ref: 'owner:o', kind: 'owner', task: 'S', models: [] }
     ] });
-    expect(settings.customRoundSettings).toEqual({ r2: { order: 'sequential', input: 'all', task: 'T' } });
+    expect(settings.customRoundSettings).toEqual({ r2: { input: 'all', task: 'T' } });
   });
 });
 
 describe('Round card of Basic: the first round shows its task', () => {
   test('the task field of the first round is on the card with the input nothing (P00 sends the explicit task)', () => {
     const container = document.createElement('div');
-    StageCard.render(container, build({ first: true, settings: { order: '', input: '', task: 'FIRST TASK' } }), {});
+    StageCard.render(container, build({ first: true, settings: { input: '', task: 'FIRST TASK' } }), {});
     const task = container.querySelector('.stage-card-task');
     expect(task).not.toBeNull();
     expect(task.value).toBe('FIRST TASK');
@@ -84,7 +84,7 @@ describe('Step controls of Basic: input «выбранные этапы»', () =
     { ref: 'r2', label: 'Раунд 2', enabled: true },
     { ref: 'r3', label: 'Раунд 3', enabled: false }
   ];
-  const roundWith = (settings) => build({ earlier, enabledCount: 2, settings: { order: '', input: '', task: '', ...settings } });
+  const roundWith = (settings) => build({ earlier, settings: { input: '', task: '', ...settings } });
 
   test('the input offers «выбранные этапы»; the list keeps the canvas order and marks switched-off steps', () => {
     const input = roundWith({}).settings.input;
@@ -100,7 +100,7 @@ describe('Step controls of Basic: input «выбранные этапы»', () =
   });
 
   test('a choice without a picked step stays «выбранные этапы» while the card asks for it', () => {
-    expect(build({ earlier, settings: { order: '', input: '', task: '' }, drafts: { input: 'steps' } }).settings.input.value).toBe('steps');
+    expect(build({ earlier, settings: { input: '', task: '' }, drafts: { input: 'steps' } }).settings.input.value).toBe('steps');
   });
 
   test('checking a step is reported as the step and its new state; the owner sees a list entry that is not a step as a note', () => {
@@ -130,29 +130,12 @@ describe('Step controls of Basic: input «выбранные этапы»', () =
   });
 });
 
-describe('Step controls of Basic: require, owner, output', () => {
+describe('Step controls of Basic: owner, output', () => {
   const three = ['A', 'B', 'C'].map((name) => ({ name, input: true, send: true }));
   const roundCard = (settings, extra = {}) => StageCard.buildModel({ round: 2, participants: three,
-    roleChoice: choice({ earlier: [], settings: { order: '', input: '', task: '', ...settings }, ...extra }) });
+    roleChoice: choice({ earlier: [], settings: { input: '', task: '', ...settings }, ...extra }) });
   const fields = (settings, extra = {}) => roundCard(settings, extra).settings;
   const renderFields = (container, settings, onSetting) => StageCard.render(container, roundCard(settings), { onSetting });
-
-  test('require is any by default, all, or a number up to the enabled models; the number field shows only for a number', () => {
-    expect(fields({}).require.value).toBe('');
-    expect(fields({ require: 2 }).require).toMatchObject({ value: 'count', count: 2, max: 3 });
-    expect(fields({}, { drafts: { require: 'count' } }).require.value).toBe('count');
-    const container = document.createElement('div');
-    const seen = [];
-    renderFields(container, { require: 2 }, (field, value) => seen.push([field, value]));
-    const count = container.querySelector('.stage-card-require-count');
-    expect(count.value).toBe('2');
-    expect(count.max).toBe('3');
-    count.value = '1';
-    count.dispatchEvent(new Event('change'));
-    container.querySelector('.stage-card-require-select').value = 'all';
-    container.querySelector('.stage-card-require-select').dispatchEvent(new Event('change'));
-    expect(seen).toEqual([['require', 1], ['require', 'all']]);
-  });
 
   test('owner asks the owner after the step: a checkbox that reports approve or nothing, and the round card marks it', () => {
     expect(fields({ owner: 'approve' }).owner.checked).toBe(true);
@@ -163,7 +146,7 @@ describe('Step controls of Basic: require, owner, output', () => {
     box.checked = true;
     box.dispatchEvent(new Event('change'));
     expect(seen).toEqual([['owner', 'approve']]);
-    const round = StageCard.buildModel({ round: 2, participants: [], roleChoice: { prompts: [], roles: [''], settings: { order: '', input: '', task: '', owner: 'approve' }, earlier: [], enabledCount: 1 } });
+    const round = StageCard.buildModel({ round: 2, participants: [], roleChoice: { prompts: [], roles: [''], settings: { input: '', task: '', owner: 'approve' }, earlier: [] } });
     expect(round.badges).toContain('User: одобрение');
   });
 

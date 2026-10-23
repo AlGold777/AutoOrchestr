@@ -34,8 +34,6 @@
     {
       "ref": "r2",
       "kind": "round",
-      "order": "parallel",
-      "require": 2,
       "chat": "new",
       "input": [
         {
@@ -114,8 +112,6 @@
     {
       "ref": "r6",
       "kind": "round",
-      "order": "parallel",
-      "require": 2,
       "input": [
         {
           "step": "r4",

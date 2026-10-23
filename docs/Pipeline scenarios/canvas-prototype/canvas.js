@@ -234,7 +234,7 @@
     // ---------- Действия над состоянием ----------
 
     const newRound = (n) => ({
-        ref: `r${n}`, order: '', input: '', task: '', role: 'None',
+        ref: `r${n}`, input: '', task: '', role: 'None',
         models: S().models.map((name) => S().protoModel(name)),
         artifacts: []
     });

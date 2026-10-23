@@ -6,7 +6,7 @@
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '44';
+  const STAND_VERSION = '45';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -18,7 +18,7 @@
   // ---------- Формат схемы ----------
   const COMMON = ['id', 'block', 'title', 'inputs', 'artifacts', 'why'];
   const FIELDS = {
-    round: ['models', 'order', 'task'], owner: ['ask'], file: ['file', 'mode']
+    round: ['models', 'task'], owner: ['ask'], file: ['file', 'mode']
   };
   // Виды этапов, которых больше нет: в схеме их выражают обычными этапами (текст ошибки — в проверке).
   const REMOVED_BLOCKS = {
@@ -50,17 +50,16 @@
   const APP_BLOCKS = ['file'];
   const MODEL_KEYS = ['name', 'role', 'task', 'maxWords', 'discipline'];
   const MODEL_NAMES = ['Claude', 'GPT', 'Gemini', 'Grok', 'Le Chat', 'Qwen', 'DeepSeek', 'Perplexity', 'Z.ai', 'Kimi'];
-  const ENUMS = { order: ['parallel', 'sequential'], mode: ['overwrite', 'append'] };
+  const ENUMS = { mode: ['overwrite', 'append'] };
   const LABELS = {
     id: 'этап', block: 'блок', title: 'название', why: 'зачем', inputs: 'вход', artifacts: 'артефакты',
-    models: 'модели', order: 'порядок', task: 'задание', model: 'модель', role: 'роль', ask: 'вопрос',
+    models: 'модели', task: 'задание', model: 'модель', role: 'роль', ask: 'вопрос',
     file: 'файл', mode: 'режим', maxWords: 'предел слов', discipline: 'дисциплина',
     defaults: 'общие значения ▶', run: 'запуск'
   };
   const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
   const DISC_LABELS = { limit: 'длина', content: 'содержание', delivery: 'доставка', correction: 'повторный запрос', lines: 'строки' };
   const POLICY_TEXT = { auto: 'автоматически', manual: 'вручную' };
-  const ORDER_TEXT = { parallel: 'параллельно', sequential: 'по очереди' };
   // Роли окна модели (cards.js, ROLES) по словам схемы.
   const ROLE_IDS = [
     [/свод|свести|синтез|synth/i, 'interaction_meta_synthesis'],
@@ -429,6 +428,7 @@
       if (!own(st.why)) add('error', e.key, 'Нет why — зачем этот этап.');
       Object.keys(st).forEach((k) => {
         if (k === 'optional_inputs') add('warn', e.key, 'Поле «optional_inputs» не поддерживается и не применяется: пропускаемых этапов нет, все входы обязательны.');
+        else if (k === 'order') add('warn', e.key, 'Поле «order» не поддерживается и не применяется: все модели раунда отвечают независимо; эстафета — раунды по одной модели подряд.');
         else if (has(REMOVED_FIELDS, k)) add('warn', e.key, `Поле «${k}» не поддерживается и не применяется. ${REMOVED_FIELDS[k]}.`);
         else if (k === 'body') add('error', e.key, 'Поле «body» не поддерживается: вложенных этапов нет.');
         else if (FIELDS[st.block] && !COMMON.includes(k) && !FIELDS[st.block].includes(k)) add('warn', e.key, `Неизвестное поле «${k}» для блока ${st.block}.`);
@@ -528,7 +528,6 @@
         const inputs = listOf(st.inputs);
         state.rounds.push({
           ref: own(st.id) ? st.id : `r${index + 1}`,
-          order: ENUMS.order.includes(st.order) ? st.order : '',
           input: inputs.length ? (inputs.length > 1 ? 'all' : 'previous') : (index === 0 ? '' : 'none'),
           task: own(st.task) ? st.task : '', role: 'None',
           models: listOf(st.models).filter((m) => m && typeof m === 'object').map((m) => {
@@ -545,7 +544,6 @@
     });
     // Исходные артефакты крепятся к In: от каждого стрелка к этапу, который берёт его через «in.Имя».
     stand.inDocs = listOf(schema.artifacts).filter((a) => isObj(a) && own(a.name)).map((a) => ({ id: a.name.trim(), title: a.name.trim(), src: a }));
-    stand.artTo = {};
     stand.schema = schema;
     stand.flat = flat;
     stand.issues = issues;
@@ -562,7 +560,7 @@
     if (name && stand.name != null) { name.textContent = stand.name; name.title = ''; }
     const entry = $('entryPoint');
     if (entry) entry.title = '';
-    Object.assign(stand, { artTo: {}, active: false, layout: [], issues: [], flat: [], schema: null, snapshot: null, name: null, current: null, comment: '' });
+    Object.assign(stand, { active: false, layout: [], issues: [], flat: [], schema: null, snapshot: null, name: null, current: null, comment: '' });
     canvas().render?.();
     drawIssues();
     catalog.activeId = null;
@@ -589,28 +587,22 @@
     for (const c of stand.layout) { const a = listOf(c.step.artifacts).find((x) => artName(x) === name && own(artDesc(x))); if (a) return artDesc(a); }
     return '';
   };
-  // Кому отправляется артефакт: по умолчанию всем моделям холста; снятые галочки хранятся только на стенде (в схему не пишутся).
-  const artifactTargets = (k, name) => { const all = S().models || []; const own = stand.artTo?.[`${k}|${name}`]; return own ? all.filter((m) => own.includes(m)) : all; };
   // Вид исходного артефакта: текст в схеме или файл, приложенный к ответу.
   const docKind = (d) => (own(d.src?.content) ? 'текст' : own(d.src?.attachment) ? 'файл' : 'не передан');
   // Исходные артефакты — в зоне над In (k = -1); у колонок этапов исходных артефактов нет.
   const docChips = (k) => (k === -1 ? (stand.inDocs || []) : []).map((d) => {
-    const to = artifactTargets('doc', d.id); const all = (S().models || []).length;
-    const label = `${docKind(d)}${to.length < all ? ` · ${to.length}/${all}` : ''}`;
+    const label = docKind(d);
     return `<span class="proto-art proto-art-doc" data-art="doc|${esc(d.id)}" title="${esc(d.title)} — ${esc(label)} (исходный артефакт)"><span class="proto-art-title">${esc(d.title)}</span><span class="proto-art-version">${esc(label)}</span></span>`;
   }).join('');
   const artifactZone = (k, st) => `<div class="proto-art-zone">${listOf(st.artifacts).map(artName).map((name) => {
-    const to = artifactTargets(k, name); const all = (S().models || []).length;
-    const version = `v${artifactVersion(k, name)}${to.length < all ? ` · ${to.length}/${all}` : ''}`;
-    return `<span class="proto-art" data-art="${k}|${esc(name)}" title="${esc(name)} ${esc(version)} — ${esc(artifactDesc(name) || 'описание не задано')} · клик: кому отправлять"><span class="proto-art-title">${esc(name)}</span><span class="proto-art-version">${esc(version)}</span></span>`;
+    const version = `v${artifactVersion(k, name)}`;
+    return `<span class="proto-art" data-art="${k}|${esc(name)}" title="${esc(name)} ${esc(version)} — ${esc(artifactDesc(name) || 'описание не задано')}"><span class="proto-art-title">${esc(name)}</span><span class="proto-art-version">${esc(version)}</span></span>`;
   }).join('')}${docChips(k)}</div>`;
   function openArtifact(k, name) {
     const col = stand.layout[k];
     if (!col) return;
     stand.current = null;
     const modal = infoModal();
-    const models = S().models || [];
-    const on = artifactTargets(k, name);
     const users = artifactLinks().filter((l) => !l.doc && l.from === k && l.name === name).map((l) => stand.layout[l.to].step);
     modal.querySelector('.modal-content').innerHTML = `
       <header class="custom-card-top custom-defaults-top">
@@ -625,16 +617,7 @@
         <div class="custom-card-marks"><strong>Описание</strong>
           <div class="custom-card-note">${esc(artifactDesc(name) || 'не задано')}</div>
         </div>
-        <div class="custom-card-marks"><strong>Кому отправлять</strong>
-          <div class="proto-art-models">${models.map((m) => `<label><input type="checkbox" data-art-model="${esc(m)}"${on.includes(m) ? ' checked' : ''}> ${esc(m)}</label>`).join('')}</div>
-          <div class="custom-card-note">По умолчанию — всем моделям. Снятая модель артефакт не получает.</div>
-        </div>
       </div>`;
-    modal.querySelectorAll('[data-art-model]').forEach((box) => box.addEventListener('change', () => {
-      stand.artTo = stand.artTo || {};
-      stand.artTo[`${k}|${name}`] = [...modal.querySelectorAll('[data-art-model]')].filter((b) => b.checked).map((b) => b.dataset.artModel);
-      render();
-    }));
     show(modal);
   }
   // Стрелки: от артефакта в колонке производителя к бейджу этапа, который берёт "<id>.<имя>" во входе.
@@ -658,8 +641,6 @@
     if (!st) return;
     stand.current = null;
     const modal = infoModal();
-    const models = S().models || [];
-    const on = artifactTargets('doc', id);
     const users = stand.layout.filter((c) => listOf(c.step.inputs).some((r) => r === `in.${id}`)).map((c) => c.step);
     modal.querySelector('.modal-content').innerHTML = `
       <header class="custom-card-top custom-defaults-top">
@@ -674,16 +655,7 @@
         <div class="custom-card-marks"><strong>Описание</strong>
           <div class="custom-card-note" style="white-space:pre-wrap">${esc(artDesc(st.src) || st.src.content || 'не задано')}</div>
         </div>
-        <div class="custom-card-marks"><strong>Кому отправлять</strong>
-          <div class="proto-art-models">${models.map((m) => `<label><input type="checkbox" data-art-model="${esc(m)}"${on.includes(m) ? ' checked' : ''}> ${esc(m)}</label>`).join('')}</div>
-          <div class="custom-card-note">По умолчанию — всем моделям. Снятая модель материал не получает.</div>
-        </div>
       </div>`;
-    modal.querySelectorAll('[data-art-model]').forEach((box) => box.addEventListener('change', () => {
-      stand.artTo = stand.artTo || {};
-      stand.artTo[`doc|${id}`] = [...modal.querySelectorAll('[data-art-model]')].filter((b) => b.checked).map((b) => b.dataset.artModel);
-      render();
-    }));
     show(modal);
   }
   const modelBlock = (model, index) => {
@@ -715,7 +687,7 @@
           ${head(`R${col.round + 1}`)}
           ${artifactZone(k, st)}
           <div class="model-stack" id="${stack}">${round.models.map(modelBlock).join('')}</div>
-          <div class="proto-stand-meta">${bang(key)}<span class="proto-stand-line"><b>${esc(st.id || '')}</b> ${esc(cut(st.title, 40))}${round.order === 'sequential' ? ' · по очереди' : ''}</span>${tail}</div>
+          <div class="proto-stand-meta">${bang(key)}<span class="proto-stand-line"><b>${esc(st.id || '')}</b> ${esc(cut(st.title, 40))}</span>${tail}</div>
         </div>`;
     }
     const [label, icon] = KIND[st.block] || [String(st.block || '?'), 'ti-help'];
@@ -832,7 +804,6 @@
       const names = { roundTask: 'задание раундов', discipline: 'дисциплина', modelNotes: 'особенности моделей' };
       return Object.entries(value).map(([k, v]) => (isObj(v) ? `${names[k] || k}:\n${indent(fmt(k, v))}` : `${names[k] || k}: ${fmt(k, v)}`)).join('\n');
     }
-    if (key === 'order') return `${value}${ORDER_TEXT[value] ? ` (${ORDER_TEXT[value]})` : ''}`;
     if (Array.isArray(value)) return value.map((v) => (v && typeof v === 'object' ? fmt('', v) : String(v))).join(', ');
     if (typeof value === 'object') return Object.entries(value).map(([k, v]) => `${k}: ${typeof v === 'object' ? fmt(k, v) : v}`).join(', ');
     return String(value);
@@ -1466,7 +1437,6 @@
           "id": "s1",
           "block": "round",
           "title": "Первые планы",
-          "order": "parallel",
           "task": "Предложи план запуска тарифа по брифу.",
           "models": [
             {
@@ -1527,7 +1497,6 @@
             }
           ],
           "why": "Не отдавать план без сроков и бюджета.",
-          "order": "parallel",
           "models": [
             {
               "name": "GPT",
@@ -1552,20 +1521,54 @@
           "why": "Нужна ли доработка плана, решает User."
         },
         {
-          "id": "s5",
+          "id": "s5a",
           "block": "round",
-          "title": "Доработка",
-          "order": "sequential",
+          "title": "Доработка (1/3)",
           "task": "Исправь план по замечаниям проверки и решению User. Если доработка не нужна, верни план без изменений.",
           "models": [
             {
               "name": "Claude",
               "role": "автор"
-            },
+            }
+          ],
+          "inputs": [
+            "s2.План",
+            "s3.Вердикт",
+            "s4.Решение"
+          ],
+          "artifacts": [
+            "Правки"
+          ],
+          "why": "Закрыть замечания проверки."
+        },
+        {
+          "id": "s5b",
+          "block": "round",
+          "title": "Доработка (2/3)",
+          "task": "Исправь план по замечаниям проверки и решению User. Если доработка не нужна, верни план без изменений.",
+          "models": [
             {
               "name": "GPT",
               "role": "критик"
-            },
+            }
+          ],
+          "inputs": [
+            "s2.План",
+            "s3.Вердикт",
+            "s4.Решение",
+            "s5a.Правки"
+          ],
+          "artifacts": [
+            "Правки"
+          ],
+          "why": "Закрыть замечания проверки."
+        },
+        {
+          "id": "s5c",
+          "block": "round",
+          "title": "Доработка (3/3)",
+          "task": "Исправь план по замечаниям проверки и решению User. Если доработка не нужна, верни план без изменений.",
+          "models": [
             {
               "name": "Gemini",
               "role": "аналитик"
@@ -1574,7 +1577,9 @@
           "inputs": [
             "s2.План",
             "s3.Вердикт",
-            "s4.Решение"
+            "s4.Решение",
+            "s5a.Правки",
+            "s5b.Правки"
           ],
           "artifacts": [
             "Правки"
@@ -1594,7 +1599,9 @@
           "task": "Собери итоговый план с учётом правок.",
           "inputs": [
             "s2.План",
-            "s5.Правки"
+            "s5a.Правки",
+            "s5b.Правки",
+            "s5c.Правки"
           ],
           "artifacts": [
             "Итог"
@@ -1610,7 +1617,6 @@
             "s6.Итог"
           ],
           "why": "Итоговый план проверяется тем же критерием.",
-          "order": "parallel",
           "models": [
             {
               "name": "GPT",
@@ -1662,7 +1668,6 @@
           "id": "s1",
           "block": "round",
           "title": "Первые предложения",
-          "order": "parallel",
           "task": "Предложи стек для сервиса по требованиям.",
           "models": [
             {
@@ -1695,10 +1700,9 @@
           "why": "Три независимых предложения."
         },
         {
-          "id": "s2",
+          "id": "s2a",
           "block": "round",
-          "title": "Критика",
-          "order": "sequential",
+          "title": "Критика (1/2)",
           "inputs": [
             "s1.Предложения"
           ],
@@ -1715,7 +1719,22 @@
                   "Риски нумеруй: 1, 2, 3."
                 ]
               }
-            },
+            }
+          ],
+          "why": "Найти риски до выбора."
+        },
+        {
+          "id": "s2b",
+          "block": "round",
+          "title": "Критика (2/2)",
+          "inputs": [
+            "s1.Предложения",
+            "s2a.Замечания"
+          ],
+          "artifacts": [
+            "Замечания"
+          ],
+          "models": [
             {
               "name": "Claude",
               "role": "архитектор",
@@ -1733,7 +1752,8 @@
           "task": "Исправь своё предложение по замечаниям.",
           "inputs": [
             "s1.Предложения",
-            "s2.Замечания"
+            "s2a.Замечания",
+            "s2b.Замечания"
           ],
           "artifacts": [
             "Доработки"

@@ -114,10 +114,10 @@ describe('T18: the architecture schema is valid, shows on the canvas and keeps i
     map.stages.filter((item) => item.mechanics === 'ждёт бизнес-решения').forEach((item) => expect(item.mechanicsNote).toBeTruthy());
   });
 
-  test('the seven independent stages have parallel rounds with at least two participants', () => {
+  test('the seven independent stages have rounds with at least two participants (they answer one request independently)', () => {
     ['S02', 'S05', 'S14', 'S18', 'S19', 'S20', 'S27'].forEach((stage) => {
       const rounds = map.stages.find((item) => item.stage === stage).refs.map((ref) => byRef[ref]).filter((step) => step.kind === 'round');
-      const parallel = rounds.filter((step) => step.order === 'parallel' && step.models.length >= 2);
+      const parallel = rounds.filter((step) => step.models.length >= 2);
       expect(parallel.length).toBeGreaterThanOrEqual(1);
     });
   });
@@ -161,10 +161,10 @@ describe('T18: the architecture schema is valid, shows on the canvas and keeps i
     const settings = Schema.toSettings(schema);
     schema.steps.forEach((step) => {
       if (step.kind === 'round') {
-        const expected = Object.fromEntries(['order', 'input', 'task', 'require', 'owner', 'chat', 'output'].filter((key) => key in step).map((key) => [key, step[key]]));
+        const expected = Object.fromEntries(['input', 'task', 'owner', 'chat', 'output'].filter((key) => key in step).map((key) => [key, step[key]]));
         expect(settings.customRoundSettings[step.ref]).toEqual(expected);
       } else {
-        const fields = ['input', 'task', 'require', 'owner', 'chat', 'output'];
+        const fields = ['input', 'task', 'owner', 'chat', 'output'];
         const expected = Object.fromEntries(fields.filter((key) => key in step).map((key) => [key, step[key]]));
         expect(settings.customStepSettings[step.ref]).toEqual(expected);
       }
@@ -179,7 +179,7 @@ describe('T18: the architecture schema is valid, shows on the canvas and keeps i
 describe('T07: two ids of one model in S18 go as two independent chats', () => {
   test('two Claude ids in one step: two requests, each with its participant id and chat new; the author of the revision keeps its id', async () => {
     const twin = { schemaVersion: 1, origin: 'user', steps: [
-      { ref: 'r1', kind: 'round', order: 'parallel', chat: 'new', require: 2, input: 'none', models: [{ name: 'Claude', id: 'S18-a' }, { name: 'Claude', id: 'S18-b' }] },
+      { ref: 'r1', kind: 'round', chat: 'new', input: 'none', models: [{ name: 'Claude', id: 'S18-a' }, { name: 'Claude', id: 'S18-b' }] },
       { ref: 'r2', kind: 'round', input: [{ step: 'r1', participant: 'S18-a', required: true }], models: [{ name: 'Claude', id: 'S18-a' }] }
     ] };
     expect(Schema.validate(twin)).toEqual([]);
@@ -238,7 +238,7 @@ describe('T02, T04, T03: inputs of the architecture chosen by address', () => {
     expect(s10[0].prompt).not.toContain('КАРТА_S08');
   });
 
-  test('T05: require 2 with one empty answer in S02: the empty answer is retried, continue is not offered, no_decision; S03 is not sent', async () => {
+  test('T05: one empty answer in S02 (the round waits for both): the empty answer is retried, continue is not offered, no_decision; S03 is not sent', async () => {
     const transport = fakeTransport(baseReply({ text: (ref, pid) => (pid === 'S02-b' ? '' : `ответ ${ref} ${pid}`) }));
     const result = await run({ sendParticipants: transport.sendParticipants }, owners());
     expect(result.stopReason).toBe('no_decision');

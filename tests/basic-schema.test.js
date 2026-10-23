@@ -44,9 +44,10 @@ describe('Basic schema: assembly of engine steps', () => {
     const steps = Schema.assemble(base([
       round('r1', ['A', 'B']), round('r2', ['A']), round('r3', [{ name: 'C', role: 'interaction_meta_synthesis' }])
     ]), { roleText: (role) => (role ? `ROLE ${role}` : '') });
-    expect(steps.map((step) => [step.kind, step.ref, step.order, step.input])).toEqual([
-      ['round', 'r1', 'parallel', 'none'], ['round', 'r2', 'parallel', 'previous'], ['round', 'r3', 'parallel', 'previous']
+    expect(steps.map((step) => [step.kind, step.ref, step.input])).toEqual([
+      ['round', 'r1', 'none'], ['round', 'r2', 'previous'], ['round', 'r3', 'previous']
     ]);
+    steps.forEach((step) => { expect(step).not.toHaveProperty('order'); expect(step).not.toHaveProperty('require'); });
     expect(steps[0].task).toBe('');
     expect(steps[0].models.map((model) => model.task)).toEqual(['', '']);
     expect(steps[1].task).toBe(Schema.DEFAULTS.roundTask);
@@ -57,13 +58,13 @@ describe('Basic schema: assembly of engine steps', () => {
     });
   });
 
-  test('explicit order, input and task of a step reach its models', () => {
+  test('explicit input and task of a step reach its models', () => {
     const [first, second] = Schema.assemble(base([
       round('r1', ['A']),
-      round('r2', ['A', 'B'], { order: 'sequential', input: 'all', task: 'STEP_TASK' })
+      round('r2', ['A', 'B'], { input: 'all', task: 'STEP_TASK' })
     ]));
     expect(first.input).toBe('none');
-    expect(second).toMatchObject({ order: 'sequential', input: 'all', task: 'STEP_TASK' });
+    expect(second).toMatchObject({ input: 'all', task: 'STEP_TASK' });
     expect(second.models.map((model) => model.task)).toEqual(['STEP_TASK', 'STEP_TASK']);
   });
 
@@ -325,7 +326,6 @@ describe('Basic schema: check before the first request', () => {
     expect(errorPaths(null)).toEqual(['']);
     expect(errorPaths({ steps: [] })).toEqual(['schemaVersion', 'origin', 'steps']);
     expect(errorPaths(base([{ ref: 'r1', kind: 'loop', models: [] }]))).toEqual(['steps[0].kind', 'steps']);
-    expect(errorPaths(base([round('r1', ['A'], { order: 'random' })]))).toEqual(['steps[0].order']);
     expect(errorPaths(base([round('r1', ['A'], { input: 'everything' })]))).toEqual(['steps[0].input']);
     expect(errorPaths(base([round('r1', ['A']), round('r1', ['B'])]))).toEqual(['steps[1].ref']);
     expect(errorPaths(base([round('r1', ['A', 'A'])]))).toEqual(['steps[0].models[1].name']);
@@ -349,7 +349,7 @@ describe('Basic schema: check before the first request', () => {
       defaults: { roundTask: 'R', discipline: { limit: 'l', content: 'c', delivery: 'd', correction: 'k', lines: ['x'] }, modelNotes: { A: 'n' }, roundPrompts: { r2: 'p' } },
       steps: [
         round('r1', [{ name: 'A', role: 'x', request: 'q', maxWords: 10, task: 't', discipline: { limit: '', lines: [] } }]),
-        round('r2', ['A'], { order: 'sequential', input: 'previous', task: '' }),
+        round('r2', ['A'], { input: 'previous', task: '' }),
         round('r3', ['B'], { task: 'T' }), round('r4', ['B'])
       ]
     };
@@ -661,18 +661,16 @@ describe('Basic schema: output of a step, artifacts and revisions (5.1–5.2)', 
   });
 });
 
-describe('Basic schema: how many answers a step needs, owner approval and chat (4.2, 1.3, 1.4)', () => {
-  test('require any, all or a number from 1 to the enabled participants are valid and reach assemble', () => {
+describe('Basic schema: the removed fields require and order, owner approval and chat (4.2, 1.4)', () => {
+  test('require and order are refused at their path with what the round does now', () => {
     [['any'], ['all'], [2]].forEach(([require]) => {
-      const schema = base([round('r1', ['A', 'B', { name: 'C', enabled: false }], { require }), round('r2', ['D'])]);
-      expect(Schema.validate(schema)).toEqual([]);
-      expect(Schema.assemble(schema)[0].require).toBe(require);
+      expect(Schema.validate(base([round('r1', ['A', 'B'], { require })]))).toEqual([
+        { path: 'steps[0].require', message: 'поле require не поддерживается: раунд ждёт ответов всех своих моделей' }]);
     });
-  });
-
-  test('a switched-off step keeps its number of answers, and the number is checked again when the step is switched on', () => {
-    expect(Schema.validate(base([round('r1', [{ name: 'A', enabled: false }], { require: 2 }), round('r2', ['B']), round('r3', ['B'])]))).toEqual([]);
-    expect(errorPaths(base([round('r1', ['A'], { require: 2 }), round('r2', ['B'])]))).toEqual(['steps[0].require']);
+    ['parallel', 'sequential'].forEach((order) => {
+      expect(Schema.validate(base([round('r1', ['A', 'B'], { order })]))).toEqual([
+        { path: 'steps[0].order', message: 'поле order не поддерживается: все модели раунда отвечают независимо; эстафета — раунды по одной модели подряд' }]);
+    });
   });
 
   test('owner approval and the chat of the step reach assemble; the defaults are not written', () => {
@@ -682,17 +680,10 @@ describe('Basic schema: how many answers a step needs, owner approval and chat (
     expect(steps[0]).toMatchObject({ owner: 'approve', chat: 'new' });
     expect(steps[1].owner).toBe('approve');
     expect(steps[1]).not.toHaveProperty('chat');
-    expect(steps[1]).not.toHaveProperty('require');
   });
 
   test('wrong values are named with their exact path', () => {
     const cases = [
-      [{ require: 0 }, 'steps[0].require'],
-      [{ require: 1.5 }, 'steps[0].require'],
-      [{ require: '2' }, 'steps[0].require'],
-      [{ require: 'some' }, 'steps[0].require'],
-      [{ require: true }, 'steps[0].require'],
-      [{ require: 3 }, 'steps[0].require'],
       [{ owner: 'auto' }, 'steps[0].owner'],
       [{ owner: '' }, 'steps[0].owner'],
       [{ chat: 'keep' }, 'steps[0].chat']
@@ -774,12 +765,12 @@ describe('Basic schema: owner steps on the canvas (9)', () => {
 
   test('the settings keep every new field per kind and per participant, keyed by the participant id', () => {
     const schema = base([
-      round('r1', [{ name: 'GPT', id: 'expert-1', input: 'none', task: 'T1' }, { name: 'GPT', id: 'expert-2', input: ['r0'] }], { require: 'all', owner: 'approve', chat: 'new', output: { name: 'Карта', sections: ['A'] } }),
+      round('r1', [{ name: 'GPT', id: 'expert-1', input: 'none', task: 'T1' }, { name: 'GPT', id: 'expert-2', input: ['r0'] }], { owner: 'approve', chat: 'new', output: { name: 'Карта', sections: ['A'] } }),
       { ref: 'owner:x', kind: 'owner', input: [{ step: 'r1', participant: 'expert-1' }], task: 'Решите', models: [] },
       round('r2', [{ name: 'Claude', request: 'R' }], { task: 'S' })
     ]);
     const settings = Schema.toSettings(schema);
-    expect(settings.customRoundSettings.r1).toEqual({ require: 'all', owner: 'approve', chat: 'new', output: { name: 'Карта', sections: ['A'] } });
+    expect(settings.customRoundSettings.r1).toEqual({ owner: 'approve', chat: 'new', output: { name: 'Карта', sections: ['A'] } });
     expect(settings.customModelSettings.r1['expert-1']).toEqual({ task: 'T1', input: 'none' });
     expect(settings.customModelSettings.r1['expert-2']).toEqual({ input: ['r0'] });
     expect(settings.customStepSettings['owner:x']).toEqual({ input: [{ step: 'r1', participant: 'expert-1' }], task: 'Решите' });
@@ -1015,7 +1006,7 @@ describe('Basic schema: a pipeline without a round is checked the same way every
 
 describe('Basic schema: a switched-off declared participant keeps its declaration (R12)', () => {
   const schemaWith = (r2Input) => base([
-    round('r1', ['A', { name: 'GPT', id: 'gpt-1' }, { name: 'C', id: 'c-1', enabled: false }], { require: 'all' }),
+    round('r1', ['A', { name: 'GPT', id: 'gpt-1' }, { name: 'C', id: 'c-1', enabled: false }]),
     round('r2', [{ name: 'A', input: r2Input }]),
     round('r3', ['B'])
   ]);
@@ -1034,12 +1025,11 @@ describe('Basic schema: a switched-off declared participant keeps its declaratio
     expect(Schema.assemble(schema)[1].models[0].input).toEqual(['r1', { step: 'r1', participant: 'c-1' }]);
   });
 
-  test('a required source to a switched-off participant is not a validator error: the run decides it; require all leaves it out', () => {
+  test('a required source to a switched-off participant is not a validator error: the run decides it; the round leaves it out', () => {
     const schema = schemaWith([{ step: 'r1', participant: 'c-1', required: true }]);
     expect(Schema.validate(schema)).toEqual([]);
     const first = Schema.assemble(schema)[0];
     expect(first.models.map((model) => model.id)).toEqual(['A', 'gpt-1']);
-    expect(first.require).toBe('all');
   });
 
   test('switching the participant on again keeps its id and its place in the step', () => {

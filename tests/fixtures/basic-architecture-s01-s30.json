@@ -34,8 +34,6 @@
     {
       "ref": "r2",
       "kind": "round",
-      "order": "parallel",
-      "require": 2,
       "chat": "new",
       "input": [
         {
@@ -114,8 +112,6 @@
     {
       "ref": "r6",
       "kind": "round",
-      "order": "parallel",
-      "require": 2,
       "input": [
         {
           "step": "r4",
@@ -528,8 +524,6 @@
     {
       "ref": "r19",
       "kind": "round",
-      "order": "parallel",
-      "require": 2,
       "chat": "new",
       "input": [
         {
@@ -663,8 +657,6 @@
     {
       "ref": "r25",
       "kind": "round",
-      "order": "parallel",
-      "require": 2,
       "chat": "new",
       "input": [
         {
@@ -731,8 +723,6 @@
     {
       "ref": "r26",
       "kind": "round",
-      "order": "parallel",
-      "require": 2,
       "chat": "new",
       "input": [
         {
@@ -800,8 +790,6 @@
     {
       "ref": "r27",
       "kind": "round",
-      "order": "parallel",
-      "require": 2,
       "input": [
         "r25",
         "r26"
@@ -1123,8 +1111,6 @@
     {
       "ref": "r37",
       "kind": "round",
-      "order": "parallel",
-      "require": 2,
       "chat": "new",
       "input": [
         {

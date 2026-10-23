@@ -11,7 +11,8 @@
 //   defaults (the ▶ card): { roundTask?, discipline?, modelNotes?, roundPrompts? }
 //   spec: { purpose?, inputs?, result?, application?, readiness?, rules?, boundaries?, failure? } — the open pipeline's
 //     specification, text for the document only: the engine and the requests to models never read it (see SPEC_KEYS)
-//   step: { ref, kind: 'round' | 'owner', order?, input?, task?, models, title?, goal?, rules?, quality? }
+//   step: { ref, kind: 'round' | 'owner', input?, task?, models, title?, goal?, rules?, quality? }
+//   a round sends one request to all its enabled models; they answer independently and the round waits for all of them
 //   a synthesis is not a kind of step but a role: a round of one model with a role (the last such round is the result)
 //   step text for the specification (title, goal, rules, quality): documents only, like spec
 //   model: { name, enabled?, onCanvas?, role?, request?, maxWords?, task?, discipline? }   (request: '' = no own request)
@@ -41,17 +42,20 @@
   const STEP_TEXT_KEYS = Object.freeze(['title', 'goal', 'rules', 'quality']);
   // The fields a step of each kind may have (an unknown field is an error with its path).
   const STEP_KEYS = Object.freeze({
-    round: Object.freeze(['ref', 'kind', 'order', 'input', 'task', 'models', 'output', 'require', 'owner', 'chat', ...STEP_TEXT_KEYS]),
+    round: Object.freeze(['ref', 'kind', 'input', 'task', 'models', 'output', 'owner', 'chat', ...STEP_TEXT_KEYS]),
     owner: Object.freeze(['ref', 'kind', 'task', 'input', 'output', 'models', ...STEP_TEXT_KEYS])
   });
   const CONTROL_REF = Object.freeze({
     owner: 'ref User: «owner:<id>», id — латинские буквы, цифры, «_» и «-»'
   });
-  const ORDERS = Object.freeze(['parallel', 'sequential']);
+  // The removed step fields are refused with what the round does instead.
+  const REMOVED_FIELD_HINT = Object.freeze({
+    require: 'поле require не поддерживается: раунд ждёт ответов всех своих моделей',
+    order: 'поле order не поддерживается: все модели раунда отвечают независимо; эстафета — раунды по одной модели подряд'
+  });
   const INPUTS = Object.freeze(['none', 'previous', 'all']);
   const POLICIES = Object.freeze(['auto', 'manual']);
   const OUTPUT_FORMATS = Object.freeze(['json']);
-  const REQUIRE_WORDS = Object.freeze(['any', 'all']);
   const OWNER_STEPS = Object.freeze(['approve']);
   const CHAT_MODES = Object.freeze(['continue', 'new']);
   const POINTER_FORBIDDEN = Object.freeze(['__proto__', 'prototype', 'constructor']);
@@ -125,9 +129,9 @@
       const input = step.input || defaultInput(roundIndex);
       const stepFields = resolveFields({ task: step.task }, step.kind, {}, defaults);
       // The number a round keeps even when the rounds before it are switched off.
-      const out = { kind: step.kind, ref: step.ref, round: roundIndex + 1, order: step.order || 'parallel' };
+      const out = { kind: step.kind, ref: step.ref, round: roundIndex + 1 };
       if ('output' in step) out.output = JSON.parse(JSON.stringify(step.output));
-      ['require', 'owner', 'chat'].forEach((key) => { if (key in step) out[key] = step[key]; });
+      ['owner', 'chat'].forEach((key) => { if (key in step) out[key] = step[key]; });
       out.task = input === 'none' && !writtenTask(stepFields.task) ? '' : stepFields.task.value;
       // A list of sources goes to the engine as it is.
       out.input = Array.isArray(input) ? JSON.parse(JSON.stringify(input)) : input;
@@ -414,17 +418,13 @@
       if (!isObject(step)) { fail(path, 'ожидается объект'); return; }
       // A removed kind (gate, route, synthesis) is named once, with the way to write it now; its other fields are not checked.
       if (Object.hasOwn(REMOVED_KIND_HINT, step.kind)) { fail(`${path}.kind`, `тип шага: допустимо ${KINDS.join(', ')}; ${REMOVED_KIND_HINT[step.kind]}`); return; }
-      unknownKeys(step, STEP_KEYS[step.kind] || STEP_KEYS.round, path);
+      // A removed field (require, order) is named with what the round does now; any other unknown field is reported as such.
+      Object.keys(REMOVED_FIELD_HINT).forEach((key) => { if (key in step) fail(`${path}.${key}`, REMOVED_FIELD_HINT[key]); });
+      unknownKeys(step, [...(STEP_KEYS[step.kind] || STEP_KEYS.round), ...Object.keys(REMOVED_FIELD_HINT)], path);
       if ('output' in step) {
         // A step's shared output is the answer of every author without its own; the owner is the author of its own.
         const inheriting = step.kind === 'owner' ? [{ id: 'owner' }] : (Array.isArray(step.models) ? step.models : []).filter((model) => isObject(model) && model.enabled !== false && !('output' in model));
         checkOutput(step.output, `${path}.output`, step, index, inheriting);
-      }
-      // A number of answers is checked against the enabled participants; a switched-off step keeps its number.
-      if ('require' in step && !REQUIRE_WORDS.includes(step.require)) {
-        const enabledCount = (Array.isArray(step.models) ? step.models : []).filter((model) => isObject(model) && model.enabled !== false).length;
-        if (!(Number.isSafeInteger(step.require) && step.require > 0)) fail(`${path}.require`, 'require: допустимо any, all или целое число больше 0');
-        else if (enabledCount && step.require > enabledCount) fail(`${path}.require`, `требуется больше ответов, чем включённых участников: ${enabledCount}`);
       }
       if ('owner' in step) oneOf(step.owner, OWNER_STEPS, `${path}.owner`, 'User в шаге');
       if ('chat' in step) oneOf(step.chat, CHAT_MODES, `${path}.chat`, 'чат шага');
@@ -433,7 +433,6 @@
       else refs.add(step.ref);
       oneOf(step.kind, KINDS, `${path}.kind`, 'тип шага');
       if (CONTROL_KINDS.includes(step.kind) && typeof step.ref === 'string' && !new RegExp(`^${step.kind}:[A-Za-z0-9_-]+$`).test(step.ref)) fail(`${path}.ref`, CONTROL_REF[step.kind]);
-      if ('order' in step) oneOf(step.order, ORDERS, `${path}.order`, 'порядок');
       if ('input' in step) checkInput(step.input, `${path}.input`, index);
       if ('task' in step) text(step.task, `${path}.task`);
       STEP_TEXT_KEYS.forEach((key) => { if (key in step) text(step[key], `${path}.${key}`); });
@@ -472,10 +471,10 @@
 
   // The settings of the cards in the form the page edits them (the cards write only what the owner set):
   // customModelSettings[ref][participantId] = { promptTemplate, maxWords, task, discipline, input } — the key is the id of
-  // the participant (its name when it has none); customRoundSettings[ref] = { order, input, task, require, owner, chat, output }
+  // the participant (its name when it has none); customRoundSettings[ref] = { input, task, owner, chat, output }
   // of a round; customStepSettings[ref] = the fields of an owner step; customDefaults = the ▶ card.
-  const ROUND_FIELDS = ['order', 'input', 'task', 'require', 'owner', 'chat', 'output'];
-  const STEP_FIELDS = ['input', 'task', 'require', 'owner', 'chat', 'output'];
+  const ROUND_FIELDS = ['input', 'task', 'owner', 'chat', 'output'];
+  const STEP_FIELDS = ['input', 'task', 'owner', 'chat', 'output'];
   function toSettings(schema) {
     const customModelSettings = {};
     const customRoundSettings = {};

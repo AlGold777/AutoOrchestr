@@ -41,7 +41,7 @@ describe('Basic spec: the interface and the three layers', () => {
       { name: 'Claude', role: 'critic', id: '', words: 300 }
     ]);
     expect(round.count).toBe(2);
-    expect(round.order).toMatchObject({ value: 'параллельно; мнения участников независимы', source: 'schema' });
+    expect(round).not.toHaveProperty('order');
     // The first round has no input, and Basic's task is not sent to it: nothing is written, so nothing is shown as default.
     expect(round.input.value).toBe('нет: этап получает только задание');
     expect(round.task).toMatchObject({ value: '', source: 'missing' });
@@ -51,7 +51,6 @@ describe('Basic spec: the interface and the three layers', () => {
     expect(synthesis.title).toMatchObject({ value: 'Раунд 2', source: 'schema' });
     expect(synthesis.kindLabel).toBe('раунд');
     expect(synthesis.participants).toEqual([{ name: 'Claude', role: 'interaction_meta_synthesis', id: '', words: 300 }]);
-    expect(synthesis.order.value).toBe('один участник');
     expect(synthesis.input.value).toBe('ответы: «Раунд 1»');
     expect(synthesis.task).toMatchObject({ value: '', source: 'default' });
     expect(synthesis.output.value).toContain('ответ в свободной форме (выход не задан)');
@@ -181,10 +180,8 @@ describe('Basic spec: the owner, the participants and the stage kinds', () => {
     expect(byKey(model.whole, 'ownerInvolvement').value).toBe('User решает только при проблемах; утверждает этапы: Раунд 2; этапы User: User s01');
     expect(model.stages[1]).toMatchObject({ kindLabel: 'User', count: 0, participants: [] });
     expect(model.stages[1].owner.value).toBe('этап выполняет User');
-    expect(model.stages[1].order.value).toBe('не применяется');
     expect(model.stages[1].task).toMatchObject({ value: 'Утвердить', source: 'schema' });
     expect(model.stages[2].owner.value).toBe('User утверждает ответ этапа');
-    expect(model.stages[2].order.value).toBe('параллельно; мнения участников независимы');
     expect(model.stages[2].task).toMatchObject({ value: '', source: 'default' });
     // The owner reads r1 (its input); r2 reads the owner by default (previous), so the owner's output name is the label.
     expect(model.scheme.links).toEqual([{ from: 1, to: 2, label: 'ответы этапа «Раунд 1»' }, { from: 2, to: 3, label: 'Policy' }]);

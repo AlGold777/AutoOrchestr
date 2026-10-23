@@ -21,8 +21,6 @@
         }
         .proto-art-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .proto-art-version { flex: 0 0 auto; font-weight: 600; color: #94a3b8; }
-        .proto-art-models { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 6px; }
-        .proto-art-models label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
         .proto-art-svg { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; z-index: 2; }
         .proto-art-line { fill: none; stroke: #94a3b8; stroke-width: 1.4; stroke-linejoin: round; }
         /* Блок человека (owner, form): зелёная рамка и бейдж. Селектор длиннее .model-block.inactive из styles/pipeline.css. */
@@ -1896,7 +1894,7 @@ body.is-resizing {
 .stage-card-role { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
 .stage-card-role-select { min-width: 0; flex: 1; padding: 3px 6px; font: inherit; font-size: 12px; }
 .stage-card-setting { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 12px; }
-.stage-card-order-select, .stage-card-input-select { min-width: 0; flex: 1; padding: 3px 6px; font: inherit; font-size: 12px; }
+.stage-card-input-select { min-width: 0; flex: 1; padding: 3px 6px; font: inherit; font-size: 12px; }
 .stage-card-task-label { flex-direction: column; align-items: stretch; }
 .stage-card-task { width: 100%; box-sizing: border-box; padding: 6px 8px; font: inherit; font-size: 12px; }
 .stage-card-role-prompt { width: 100%; box-sizing: border-box; margin: 0 0 10px; padding: 6px 8px; font: inherit; font-size: 12px; }
@@ -9628,9 +9626,9 @@ window.ProtoState = {
   defaults: { roundTask: '', discipline: emptyDiscipline(), modelNotes: {}, roundPrompts: {} },
   run: { policy: 'auto', maxWords: 300 },
   rounds: [
-    { ref: 'r1', order: '', input: '', task: '', role: 'None', models: ['Claude', 'GPT', 'Gemini'].map(protoModel),
+    { ref: 'r1', input: '', task: '', role: 'None', models: ['Claude', 'GPT', 'Gemini'].map(protoModel),
       artifacts: [{ id: 'a1', title: 'Карта функций', version: 1 }, { id: 'a2', title: 'Список рисков', version: 2 }] },
-    { ref: 'r2', order: '', input: '', task: '', role: 'None', models: ['Claude', 'GPT', 'Gemini'].map(protoModel),
+    { ref: 'r2', input: '', task: '', role: 'None', models: ['Claude', 'GPT', 'Gemini'].map(protoModel),
       artifacts: [{ id: 'a3', title: 'План работ', version: 1 }] }
   ],
   emptyDiscipline,
@@ -9669,9 +9667,9 @@ window.ProtoState = {
   // roleChoice (Custom rounds only): { prompts: [{ id, label }], roles: [prompt id or ''] per block,
   // disabled, roundPrompt } — one select for the whole round; mixed roles show 'разные' until chosen.
   // The round's text field shows only while 'custom' is selected.
-  // roleChoice.settings (the round card of Basic): { order, input, task } the owner set ('' = not set, inherited),
+  // roleChoice.settings (the round card of Basic): { input, task } the owner set ('' = not set, inherited),
   // inheritedTask (the text the round would take), first (the first round: nothing to feed in), disabled.
-  // They give the order of work, the input and the round's task.
+  // They give the input and the round's task.
   function buildModel({ round, templateStage = null, participants = [], stageRun = null, roleChoice = null } = {}) {
     const working = list(participants.filter((item) => item && item.send).map((item) => item.name));
     const waiting = list(participants.filter((item) => item && !item.send).map((item) => item.name));
@@ -9703,7 +9701,7 @@ window.ProtoState = {
           ]
         };
         if (roleChoice.settings) {
-          model.settings = settingsModel(roleChoice.settings, { ...roleChoice, enabledCount: working.length });
+          model.settings = settingsModel(roleChoice.settings, roleChoice);
           if (model.settings.owner.checked) model.badges.push('User: одобрение');
         }
         return model;
@@ -9732,10 +9730,8 @@ window.ProtoState = {
     return model;
   }
 
-  const ORDER_LABELS = { parallel: 'Параллельно', sequential: 'По очереди' };
   const INPUT_LABELS = { none: 'Ничего', previous: 'Ответы предыдущего шага', all: 'Всё принятое за все предыдущие шаги' };
   const STEPS_LABEL = 'Выбранные этапы';
-  const REQUIRE_LABELS = { any: 'Любой ответ', all: 'Все включённые', count: 'Число' };
   const isPlain = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
   // The input «выбранные этапы» (4.3): the owner's list of step refs keeps its order; entries that are not step refs
@@ -9761,24 +9757,10 @@ window.ProtoState = {
     return next;
   }
 
-  // The fields of a step the card shows: input, require, owner, output. A draft is a choice the owner made in the card
-  // that the schema does not hold yet («выбранные этапы» without a step, the number of required answers).
-  function stepRestModel(settings = {}, { enabledCount = 0, drafts = {} } = {}) {
-    const req = settings.require;
-    const requireValue = typeof req === 'number' ? 'count' : (req === 'any' || req === 'all' ? req : (drafts.require === 'count' ? 'count' : ''));
+  // The fields of a step the card shows after the task: owner, output.
+  function stepRestModel(settings = {}) {
     const output = isPlain(settings.output) ? settings.output : {};
     return {
-      require: {
-        value: requireValue,
-        count: typeof req === 'number' ? req : '',
-        max: Number(enabledCount) || 0,
-        options: [
-          { value: '', label: 'По умолчанию (любой ответ)' },
-          { value: 'any', label: REQUIRE_LABELS.any },
-          { value: 'all', label: REQUIRE_LABELS.all },
-          { value: 'count', label: REQUIRE_LABELS.count }
-        ]
-      },
       owner: { checked: settings.owner === 'approve' },
       output: {
         name: String(output.name || ''),
@@ -9815,26 +9797,25 @@ window.ProtoState = {
     };
   }
 
-  // The order, the input and the task of a round card; `first` and `inheritedTask` as before. The input of a later round
-  // is the previous step by default, the first round has no input (null).
-  function settingsModel(settings, { first = false, inheritedTask = '', disabled = false, earlier = [], enabledCount = 0, drafts = {} } = {}) {
-    const order = String(settings.order || '');
+  // The input and the task of a round card; `first` and `inheritedTask` as before. The input of a later round
+  // is the previous step by default, the first round has no input (null). A draft is a choice the owner made in the card
+  // that the schema does not hold yet («выбранные этапы» without a step).
+  function settingsModel(settings, { first = false, inheritedTask = '', disabled = false, earlier = [], drafts = {} } = {}) {
     const input = stepInputModel(settings, { first, earlier, drafts });
     const stepsMode = input?.value === 'steps';
     const defaultInput = first ? 'none' : 'previous';
     const effectiveInput = stepsMode ? 'steps' : (input?.value || defaultInput);
     return {
       disabled: Boolean(disabled),
-      order: { value: order, options: [{ value: '', label: `По умолчанию (${ORDER_LABELS.parallel.toLowerCase()})` }, ...Object.entries(ORDER_LABELS).map(([value, label]) => ({ value, label }))] },
       input,
       // The task is always shown. With the input nothing only the task written here is sent (the shared one is not), so the
       // placeholder of the shared task stays empty and the label says so. «выбранные этапы» sends the step's answers, so the task goes.
       task: { value: String(settings.task || ''), placeholder: effectiveInput === 'none' ? '' : String(inheritedTask || ''), sent: effectiveInput !== 'none' },
-      ...stepRestModel(settings, { enabledCount, drafts })
+      ...stepRestModel(settings)
     };
   }
 
-  // A select row of a card (order, input): the choice goes to emit(field, value).
+  // A select row of a card (input): the choice goes to emit(field, value).
   function choiceRow(container, field, label, data, emit) {
     const doc = container.ownerDocument;
     const select = el(doc, 'select', `stage-card-${field}-select`);
@@ -9868,32 +9849,10 @@ window.ProtoState = {
     container.append(box);
   }
 
-  // The fields after the task: how many answers are needed, the owner's approval, the output of the step.
-  // A number of answers goes to emit('require', n) only when it is typed; 'count' is the choice of a number.
+  // The fields after the task: the owner's approval, the output of the step.
   function renderRest(container, fields, emit) {
     const doc = container.ownerDocument;
     const disabled = Boolean(fields.disabled);
-    const requireSelect = el(doc, 'select', 'stage-card-require-select');
-    fields.require.options.forEach((item) => { const option = el(doc, 'option', '', item.label); option.value = item.value; requireSelect.append(option); });
-    requireSelect.value = fields.require.value;
-    requireSelect.disabled = disabled;
-    requireSelect.addEventListener('change', () => emit('require', requireSelect.value));
-    const requireWrap = el(doc, 'label', 'stage-card-setting stage-card-require');
-    requireWrap.append(doc.createTextNode('Сколько ответов нужно '), requireSelect);
-    if (fields.require.value === 'count') {
-      const count = el(doc, 'input', 'stage-card-require-count');
-      count.type = 'number';
-      count.min = '1';
-      count.max = String(fields.require.max);
-      count.step = '1';
-      count.value = fields.require.count === '' ? '' : String(fields.require.count);
-      count.disabled = disabled;
-      count.setAttribute('aria-label', 'Число ответов');
-      count.addEventListener('change', () => { if (count.value !== '') emit('require', Number(count.value)); });
-      requireWrap.append(count, doc.createTextNode(` из ${fields.require.max}`));
-    }
-    container.append(requireWrap);
-
     const ownerBox = el(doc, 'input', 'stage-card-owner-check');
     ownerBox.type = 'checkbox';
     ownerBox.checked = fields.owner.checked;
@@ -9986,7 +9945,6 @@ window.ProtoState = {
       if (model.settings) {
         const settings = model.settings;
         const emit = (field, value) => { if (typeof onSetting === 'function') onSetting(field, value); };
-        choiceRow(container, 'order', 'Порядок работы', { ...settings.order, disabled: settings.disabled }, emit);
         if (settings.input) choiceRow(container, 'input', 'Вход раунда', { ...settings.input, disabled: settings.disabled }, emit);
         if (settings.input?.value === 'steps') renderSteps(container, settings.input, emit, settings.disabled);
         if (settings.task) {
@@ -10244,8 +10202,7 @@ window.ProtoState = {
   const ICONS = { Claude: 'claude', GPT: 'openai', Gemini: 'gemini', Grok: 'grok', 'Le Chat': 'le_chat', Qwen: 'qwen', DeepSeek: 'deepseek', Perplexity: 'perplexity', 'Z.ai': 'zai', Kimi: 'kimi' };
   const PLACEHOLDER = {
     previous: '‹ответы предыдущего шага появятся при запуске›',
-    all: '‹все принятые ответы предыдущих шагов появятся при запуске›',
-    earlier: '‹ответы моделей, работающих до тебя в этом раунде, появятся при запуске›'
+    all: '‹все принятые ответы предыдущих шагов появятся при запуске›'
   };
   const DISCIPLINE_KEYS = ['limit', 'content', 'delivery', 'correction'];
   const DISCIPLINE_ROWS = [['limit', 'Длина'], ['content', 'Требования к содержанию'], ['delivery', 'Доставка'], ['correction', 'Повторный запрос']];
@@ -10285,7 +10242,7 @@ window.ProtoState = {
     if (id === 'custom') return defaults().roundPrompts[ref] || '';
     return ROLES.find((item) => item.id === id)?.text || '';
   };
-  // step: { kind, ref, label, input, order, task (round level), models: [{ name, ... }] }, target: the model's own settings.
+  // step: { kind, ref, label, input, task (round level), models: [{ name, ... }] }, target: the model's own settings.
   function stepFor(kind, index, name) {
     const state = S();
     const rounds = state.rounds || [];
@@ -10294,7 +10251,7 @@ window.ProtoState = {
     const target = (round.models || []).find((model) => model.name === name);
     if (!target) return null;
     return { kind, index, ref: round.ref || `r${index + 1}`, label: `Раунд ${index + 1}`, input: roundInput(round, index),
-      order: round.order || 'parallel', roundTask: round.task, names: round.models.filter((model) => model.enabled !== false).map((model) => model.name), target, name };
+      roundTask: round.task, target, name };
   }
   const taskFallback = () => first(defaults().roundTask) || basic().roundTask;
   const inheritedTask = (step) => first(step.roundTask) || taskFallback(step);
@@ -10308,7 +10265,6 @@ window.ProtoState = {
     if (step.input !== 'none' && hasEarlierStep) {
       parts.push(step.input === 'all' ? 'Принятые ответы всех предыдущих шагов:\n\nВход:\n{вход}' : 'Ответы предыдущего шага:\n\nОтвет 1:\n{вход}');
     }
-    if (step.order === 'sequential' && step.names.indexOf(step.name) > 0) parts.push('Ответы участников этого раунда до тебя:\n\nОтвет 1:\n{ответы до тебя}');
     if (step.input !== 'none' && own(task)) parts.push(`Задание:\n${task.trim()}`);
     const extra = roleText(role, step.ref);
     if (own(extra)) parts.push(`Дополнительно для тебя:\n${extra.trim()}`);
@@ -10620,7 +10576,7 @@ window.ProtoState = {
         roles: models.map((item) => roleId(item.role)),
         disabled: false,
         roundPrompt: defaults().roundPrompts[ref] || '',
-        settings: { order: round.order || '', input: round.input || '', task: round.task || '' },
+        settings: { input: round.input || '', task: round.task || '' },
         first: index === 0,
         inheritedTask: first(defaults().roundTask) || basic().roundTask
       }
@@ -10892,7 +10848,7 @@ window.ProtoState = {
     // ---------- Действия над состоянием ----------
 
     const newRound = (n) => ({
-        ref: `r${n}`, order: '', input: '', task: '', role: 'None',
+        ref: `r${n}`, input: '', task: '', role: 'None',
         models: S().models.map((name) => S().protoModel(name)),
         artifacts: []
     });
@@ -11179,20 +11135,20 @@ window.ProtoState = {
 // synthesis) comes from the step's task and the models' roles; the engine executes and passes data.
 // A synthesis is a round of one model with a role; the accepted answers of the last step are the result.
 //
-// Step: { kind: 'round' | 'owner', order: 'parallel' | 'sequential', task, input, models, ref?, round? }
+// Step: { kind: 'round' | 'owner', task, input, models, ref?, round? }
 //   ref and round (the number of a round) come from the schema, so a switched-off round keeps its number
 //   in labels, previews and the journal; without them the engine counts the steps it gets.
 //   models: [{ id, name, extra, promptTemplate, maxWords, input? }] — card order is call order. A participant is its id
 //   (the id is the name by default); two participants of one model are two entries with two ids.
 //   promptTemplate replaces automatic assembly; maxWords reaches the caller on every attempt.
 //   input: 'none' | 'previous' | 'all' | [sources]. The run's task is always sent. A participant's own input replaces
-//          the shared one of the step; the answers before the participant in a sequential round stay a separate block.
+//          the shared one of the step.
 //     previous — accepted answers of the last step that has any (a skipped step passes nothing on);
 //     all      — every accepted answer of all earlier steps;
 //     [sources] — a step ref (all its accepted answers), { step, participant, required? } (one answer);
 //                a required source without an answer stops the run before the request (missing_input).
-//   sequential — each model also gets the accepted answers of the models before it in this step;
-//   parallel   — every model gets the same input.
+//   A round sends its request to all its models at once; they answer independently and the round waits for all of them.
+//   A relay is rounds of one model in a row: the next round gets the answer of the previous one through its input.
 // Transport: sendParticipants(requests, meta) → { byParticipant: { [participantId]: reply }, closedByOwner } when the
 //   page gives it (requests: { participantId, modelName, prompt, chat, stepRef, visit, attempt }); otherwise the legacy
 //   send(models, promptsByModel, meta) → { byModel: { [model]: reply }, closedByOwner }, which needs unique model names
@@ -11203,14 +11159,14 @@ window.ProtoState = {
 // Output (basic-output.js): an answer is checked after the technical acceptance by the step's output (length, sections,
 //   JSON fields, artifacts); a rejected participant is corrected with the reason and its detail. runStrictLength (run.strictLength)
 //   gives the length check to every step whose output does not set output.strictLength itself.
-// Require: a step ends when the accepted answers reach its threshold (any, all or N). Owner approval (owner: approve)
+// A step is complete when every participant has an accepted answer. Owner approval (owner: approve)
 //   asks the owner after the step in every mode. Artifacts (basic-artifacts.js): an accepted answer is stored once
 //   (putText) and its declared artifacts are registered; a source { artifact, version } gives only that content.
 // Pointer: the run is at a position of the plan and only moves forward, step after step: there are no branches and no
 //   transitions. A check is an ordinary round (its criteria are in the task); a decision is the owner's step (kind: owner).
 // Transition: decide(problem) → 'continue' | 'retry' | 'skip' | 'stop'. Asked after every step in semi-automatic
-//   mode, in Auto when the threshold is not met, and after every step with approval. 'continue' is never offered
-//   below the threshold. A prompt over maxPromptChars stops the run before sending.
+//   mode, in Auto when a participant has no accepted answer, and after every step with approval. 'continue' is never
+//   offered while a participant has no accepted answer. A prompt over maxPromptChars stops the run before sending.
 // Owner (kind: owner, 8.1): the owner gives a text or a file through provideOwnerResult; no model is asked. A text goes through
 // the step's output check and its declared artifacts; a binary file is kept as a reference and never given to a model as text.
 // Stop keeps what was collected. [[ASK: …]] lines of accepted answers go to askOwner; the answers
@@ -11282,12 +11238,12 @@ window.ProtoState = {
     return lines.length ? `Формат ответа:\n${lines.join('\n')}` : '';
   }
 
-  function buildPrompt({ task, step, model, input = [], inputMode = 'none', earlier = [], ownerAnswers = [], askInstruction = '', output = null }) {
+  function buildPrompt({ task, step, model, input = [], inputMode = 'none', ownerAnswers = [], askInstruction = '', output = null }) {
     if (askInstruction && typeof model.discipline?.ask === 'string') askInstruction = model.discipline.ask;
     if (typeof model.promptTemplate === 'string' && model.promptTemplate.trim()) {
       // One pass: placeholders occurring inside model answers remain data, never instructions.
-      const values = { '{задача}': text(task), '{вход}': inputMode === 'all' || inputMode === 'sources' ? labelled(input) : numbered(input), '{ответы до тебя}': numbered(earlier) };
-      const parts = [model.promptTemplate.replace(/\{задача\}|\{вход\}|\{ответы до тебя\}/g, (key) => values[key])];
+      const values = { '{задача}': text(task), '{вход}': inputMode === 'all' || inputMode === 'sources' ? labelled(input) : numbered(input) };
+      const parts = [model.promptTemplate.replace(/\{задача\}|\{вход\}/g, (key) => values[key])];
       if (formatBlock(output)) parts.push(formatBlock(output));
       if (ownerAnswers.length) parts.push(`Ответы User на вопросы:\n${ownerAnswers.map((item) => `- ${item.question}: ${item.answer}`).join('\n')}`);
       if (askInstruction) parts.push(askInstruction);
@@ -11300,7 +11256,6 @@ window.ProtoState = {
         ? `Принятые ответы всех предыдущих шагов:\n\n${labelled(input)}`
         : `Ответы предыдущего шага:\n\n${numbered(input)}`);
     }
-    if (earlier.length) parts.push(`Ответы участников этого раунда до тебя:\n\n${numbered(earlier)}`);
     const taskInstruction = model.task ?? step.task;
     if (text(taskInstruction)) parts.push(`Задание:\n${text(taskInstruction)}`);
     if (formatBlock(output)) parts.push(formatBlock(output));
@@ -11366,14 +11321,12 @@ window.ProtoState = {
       if (kind === 'round') round = Number.isSafeInteger(step.round) && step.round > 0 ? step.round : round + 1;
       return {
         index, ref: typeof step.ref === 'string' ? step.ref : null, kind, round: kind === 'round' ? round : null,
-        order: kind === 'round' && step.order === 'sequential' ? 'sequential' : 'parallel',
         task: text(step.task),
         // A list of sources stays a list here: the input is checked before the run (assertExecutable).
         input: Array.isArray(step.input) ? step.input.slice() : (step.input ?? (kind === 'owner' ? 'none' : 'previous')),
         output: step.output ?? null,
         // continue: the participant keeps its chat; new: a new chat on the first request of each visit (4.2).
         chat: step.chat === 'new' ? 'new' : 'continue',
-        require: step.require ?? 'any',
         approve: step.owner === 'approve',
         models: (step.models || []).map((model) => (typeof model === 'string' ? { name: model, id: model, extra: '' } : {
           name: model.name, id: model.id ?? model.name, extra: text(model.extra), task: typeof model.task === 'string' ? model.task : null, promptTemplate: typeof model.promptTemplate === 'string' ? model.promptTemplate : null,
@@ -11463,11 +11416,6 @@ window.ProtoState = {
     if (step.output !== undefined) {
       const problem = outputProblem(step.output, fail, 'output');
       if (problem) return problem;
-    }
-    if (step.require !== undefined && step.require !== 'any' && step.require !== 'all') {
-      if (!Number.isSafeInteger(step.require) || step.require < 1) return fail('invalid_field', 'require', 'require: any, all или целое число больше 0');
-      const count = Array.isArray(step.models) ? step.models.length : 0;
-      if (step.require > count) return fail('invalid_field', 'require', `требуется больше ответов, чем участников: ${count}`);
     }
     if (step.owner !== undefined && step.owner !== 'approve') return fail('invalid_field', 'owner', 'owner: только approve');
     if (step.chat !== undefined && step.chat !== 'continue' && step.chat !== 'new') return fail('unsupported_field', 'chat', 'чат: continue или new');
@@ -11613,7 +11561,7 @@ window.ProtoState = {
     let stopDetail = '';
     // The plan as the run sees it: a report shows what was intended, not only what happened.
     emit('custom_start', { semiAuto: Boolean(semiAuto), maxAttempts, taskChars: text(task).length,
-      steps: plan.map((step) => ({ step: step.index, ref: step.ref, label: stepLabel(step), order: step.order, input: modeOf(step.input), models: step.models.map((model) => model.name) })) });
+      steps: plan.map((step) => ({ step: step.index, ref: step.ref, label: stepLabel(step), input: modeOf(step.input), models: step.models.map((model) => model.name) })) });
 
     class StopRun extends Error { constructor(reason, detail = '') { super(reason); this.stopReason = reason; this.stopDetail = detail; } }
 
@@ -11674,8 +11622,6 @@ window.ProtoState = {
     }
 
     // Accepted answers of a step, each with its participant and its source (step, model, attempt) for the record.
-    // The answers the step needs (ТЗ 4.2): all → every enabled participant, a number → that number, any → one.
-    const neededOf = (step) => (step.require === 'all' ? step.models.length : (Number.isSafeInteger(step.require) ? step.require : 1));
     const acceptedOf = (entry) => {
       if (!entry || entry.skipped || entry.valid === false) return [];
       if (entry.step.kind === 'owner') {
@@ -11741,9 +11687,8 @@ window.ProtoState = {
         if (required) {
           const who = whole ? '' : ` участник «${source.participant}»`;
           const stopped = (why) => new StopRun('missing_input', `шаг «${ref}»${who} ${why}; шаг «${step.ref}» не отправлен`);
-          // A required source is complete: its answers reach the threshold (3.1).
+          // A step is kept only with the answers of all its participants (a skipped one gives none), so a required source needs one (3.1).
           if (!answers.length) throw stopped('не дал принятого ответа');
-          if (whole && answers.length < neededOf(entry.step)) throw stopped('не набрал порога принятых ответов');
         }
         return answers.map((item) => ({
           label: `${stepLabel(entry.step)}${entry.step.output?.name ? ` («${entry.step.output.name}»)` : ''}, участник ${item.participant}, визит ${entry.visit}`,
@@ -11783,21 +11728,21 @@ window.ProtoState = {
       return [];
     }
     // Instructions (owner-editable behaviour) and input (data from other models) are kept apart.
-    function partsFor(step, model, input, earlier, spec) {
+    function partsFor(step, model, input, spec) {
       return {
         instructions: { task: text(task), stepTask: model.task ?? step.task, extra: model.extra || '', askInstruction: semiAuto ? (model.discipline?.ask ?? askInstruction) : '',
           ownerAnswers: ownerAnswers.slice() },
-        input: { mode: modeOf(spec), items: input, earlier }
+        input: { mode: modeOf(spec), items: input }
       };
     }
 
-    function promptFor(step, model, earlier) {
+    function promptFor(step, model) {
       const spec = specOf(step, model);
       const input = inputFor(step, spec, { model });
-      const prompt = buildPrompt({ task, step, model, input, inputMode: modeOf(spec), earlier,
+      const prompt = buildPrompt({ task, step, model, input, inputMode: modeOf(spec),
         ownerAnswers, askInstruction: semiAuto ? askInstruction : '', output: outputOf(step, model) });
       if (prompt.length > maxPromptChars) throw new StopRun('context_full');
-      return { prompt, parts: partsFor(step, model, input, earlier, spec) };
+      return { prompt, parts: partsFor(step, model, input, spec) };
     }
 
     // Sends the participants with their prompts, then corrections; fills `outcome` by participant id. Every attempt
@@ -11907,27 +11852,10 @@ window.ProtoState = {
       return { closedByOwner: false };
     }
 
+    // The same request goes to all the participants at once; they answer independently.
     async function execute(step, models, outcome, firstAttempt = 1) {
-      if (step.order === 'sequential') {
-        for (const model of models) {
-          // Only the participants before this one in card order, also on a retry.
-          const position = step.models.findIndex((item) => item.id === model.id);
-          const earlier = step.models.slice(0, position).map((item) => outcome[item.id])
-            .filter((item) => item?.ok)
-            .map((item) => ({ text: item.text, source: { step: step.index, label: stepLabel(step), model: item.model, attempt: item.attempt } }));
-          const reply = await attempt(step, [model], { [model.id]: { ...promptFor(step, model, earlier), retryOf: outcome[model.id]?.attempt || null } }, outcome, firstAttempt);
-          if (reply.closedByOwner) {
-            // The owner closed the step: the participants after this one are not called.
-            models.slice(models.indexOf(model) + 1).forEach((rest) => {
-              outcome[rest.id] = { ok: false, reason: 'closed_by_owner', text: '', status: '', model: rest.name, participant: rest.id, attempt: outcome[rest.id]?.attempt || 0, transportRequestId: '' };
-            });
-            break;
-          }
-        }
-      } else {
-        const requests = Object.fromEntries(models.map((model) => [model.id, { ...promptFor(step, model, []), retryOf: outcome[model.id]?.attempt || null }]));
-        await attempt(step, models, requests, outcome, firstAttempt);
-      }
+      const requests = Object.fromEntries(models.map((model) => [model.id, { ...promptFor(step, model), retryOf: outcome[model.id]?.attempt || null }]));
+      await attempt(step, models, requests, outcome, firstAttempt);
     }
 
     // The owner's answer to an owner step (8.1): a text, or a reference to a file that the page stored. An empty or rejected
@@ -12167,21 +12095,22 @@ window.ProtoState = {
           for (;;) {
             const accepted = step.models.filter((model) => outcome[model.id]?.ok).map((model) => model.id);
             const failed = step.models.filter((model) => !outcome[model.id]?.ok).map((model) => model.id);
-            const required = neededOf(step);
-            const enough = accepted.length >= required;
+            // The round waits for the answers of all its participants.
+            const required = step.models.length;
+            const enough = !failed.length;
             // An owner approval (owner: approve) is asked after the step in every mode, also on the last step.
             const approve = step.approve === true;
             emit('custom_step', { step: step.index, label: stepLabel(step), accepted: accepted.length, failed: failed.length, required, approve });
             if (enough && !semiAuto && !approve) break;
             if (enough && semiAuto && last && !failed.length && !approve) break;
-            // Below the threshold "continue" is not offered: the owner repeats, skips or stops the step.
+            // Without every answer "continue" is not offered: the owner repeats, skips or stops the step.
             const choices = enough ? ['continue', ...(failed.length ? ['retry'] : []), 'stop'] : ['retry', 'skip', 'stop'];
             if (typeof decide === 'function') await checkpointNow('decision', { pendingOwner: { kind: 'decision', stepRef: step.ref, visit: entry.visit } });
             const action = typeof decide === 'function'
               ? await ownerWait(() => decide({ step: step.index, label: stepLabel(step), accepted, failed, choices, last, required, approve,
                 reasons: Object.fromEntries(failed.map((id) => [id, outcome[id]?.reason || ''])) }))
               : null;
-            // The fallback "an accepted answer goes on" holds only when the threshold is met and no approval is asked.
+            // The fallback "the answers go on" holds only when every answer is accepted and no approval is asked.
             if (!choices.includes(action)) { if (enough && !approve) break; throw new StopRun('no_decision'); }
             // A decision that ends the step is saved before the checkpoint: a reload does not ask it again.
             if (action === 'continue' || action === 'skip') state.decisions[decidedKey] = action;
@@ -12233,8 +12162,7 @@ window.ProtoState = {
   const PLACEHOLDER = Object.freeze({
     previous: '‹ответы предыдущего шага появятся при запуске›',
     sources: '‹ответы выбранных этапов появятся при запуске›',
-    all: '‹все принятые ответы предыдущих шагов появятся при запуске›',
-    earlier: '‹ответы моделей, работающих до тебя в этом раунде, появятся при запуске›'
+    all: '‹все принятые ответы предыдущих шагов появятся при запуске›'
   });
   const TRANSPORT_LINES = Object.freeze([
     'Предел длины ответа — по настройке модели или pipeline.',
@@ -12250,14 +12178,12 @@ window.ProtoState = {
     const spec = specOf(step, model);
     const input = spec === 'none' || !plan.some((item) => item.index < step.index) ? []
       : [{ label: 'Вход', text: PLACEHOLDER[modeOf(spec)] || PLACEHOLDER.previous }];
-    const position = step.models.findIndex((item) => item.name === model.name);
-    const earlier = step.order === 'sequential' && position > 0 ? [{ text: PLACEHOLDER.earlier }] : [];
-    const prompt = buildPrompt({ task, step, model, input, inputMode: modeOf(spec), earlier, ownerAnswers: [],
+    const prompt = buildPrompt({ task, step, model, input, inputMode: modeOf(spec), ownerAnswers: [],
       askInstruction: semiAuto ? askInstruction : '', output: outputOf(step, model) });
     const template = typeof model.promptTemplate === 'string' && model.promptTemplate.trim() ? model.promptTemplate
       : buildPrompt({ task: '{задача}', step, model, input: input.length ? [{ label: 'Вход', text: '{вход}' }] : [],
-        inputMode: modeOf(spec), earlier: earlier.length ? [{ text: '{ответы до тебя}' }] : [], output: outputOf(step, model) });
-    return { label: stepLabel(step), order: step.order, inputMode: modeOf(spec), prompt, template, transportLines: TRANSPORT_LINES.slice(),
+        inputMode: modeOf(spec), output: outputOf(step, model) });
+    return { label: stepLabel(step), inputMode: modeOf(spec), prompt, template, transportLines: TRANSPORT_LINES.slice(),
       instructions: { task: text(task), stepTask: model.task ?? step.task, extra: model.extra || '', askInstruction: semiAuto ? askInstruction : '' } };
   }
 
@@ -12281,7 +12207,8 @@ window.ProtoState = {
 //   defaults (the ▶ card): { roundTask?, discipline?, modelNotes?, roundPrompts? }
 //   spec: { purpose?, inputs?, result?, application?, readiness?, rules?, boundaries?, failure? } — the open pipeline's
 //     specification, text for the document only: the engine and the requests to models never read it (see SPEC_KEYS)
-//   step: { ref, kind: 'round' | 'owner', order?, input?, task?, models, title?, goal?, rules?, quality? }
+//   step: { ref, kind: 'round' | 'owner', input?, task?, models, title?, goal?, rules?, quality? }
+//   a round sends one request to all its enabled models; they answer independently and the round waits for all of them
 //   a synthesis is not a kind of step but a role: a round of one model with a role (the last such round is the result)
 //   step text for the specification (title, goal, rules, quality): documents only, like spec
 //   model: { name, enabled?, onCanvas?, role?, request?, maxWords?, task?, discipline? }   (request: '' = no own request)
@@ -12311,17 +12238,20 @@ window.ProtoState = {
   const STEP_TEXT_KEYS = Object.freeze(['title', 'goal', 'rules', 'quality']);
   // The fields a step of each kind may have (an unknown field is an error with its path).
   const STEP_KEYS = Object.freeze({
-    round: Object.freeze(['ref', 'kind', 'order', 'input', 'task', 'models', 'output', 'require', 'owner', 'chat', ...STEP_TEXT_KEYS]),
+    round: Object.freeze(['ref', 'kind', 'input', 'task', 'models', 'output', 'owner', 'chat', ...STEP_TEXT_KEYS]),
     owner: Object.freeze(['ref', 'kind', 'task', 'input', 'output', 'models', ...STEP_TEXT_KEYS])
   });
   const CONTROL_REF = Object.freeze({
     owner: 'ref User: «owner:<id>», id — латинские буквы, цифры, «_» и «-»'
   });
-  const ORDERS = Object.freeze(['parallel', 'sequential']);
+  // The removed step fields are refused with what the round does instead.
+  const REMOVED_FIELD_HINT = Object.freeze({
+    require: 'поле require не поддерживается: раунд ждёт ответов всех своих моделей',
+    order: 'поле order не поддерживается: все модели раунда отвечают независимо; эстафета — раунды по одной модели подряд'
+  });
   const INPUTS = Object.freeze(['none', 'previous', 'all']);
   const POLICIES = Object.freeze(['auto', 'manual']);
   const OUTPUT_FORMATS = Object.freeze(['json']);
-  const REQUIRE_WORDS = Object.freeze(['any', 'all']);
   const OWNER_STEPS = Object.freeze(['approve']);
   const CHAT_MODES = Object.freeze(['continue', 'new']);
   const POINTER_FORBIDDEN = Object.freeze(['__proto__', 'prototype', 'constructor']);
@@ -12395,9 +12325,9 @@ window.ProtoState = {
       const input = step.input || defaultInput(roundIndex);
       const stepFields = resolveFields({ task: step.task }, step.kind, {}, defaults);
       // The number a round keeps even when the rounds before it are switched off.
-      const out = { kind: step.kind, ref: step.ref, round: roundIndex + 1, order: step.order || 'parallel' };
+      const out = { kind: step.kind, ref: step.ref, round: roundIndex + 1 };
       if ('output' in step) out.output = JSON.parse(JSON.stringify(step.output));
-      ['require', 'owner', 'chat'].forEach((key) => { if (key in step) out[key] = step[key]; });
+      ['owner', 'chat'].forEach((key) => { if (key in step) out[key] = step[key]; });
       out.task = input === 'none' && !writtenTask(stepFields.task) ? '' : stepFields.task.value;
       // A list of sources goes to the engine as it is.
       out.input = Array.isArray(input) ? JSON.parse(JSON.stringify(input)) : input;
@@ -12684,17 +12614,13 @@ window.ProtoState = {
       if (!isObject(step)) { fail(path, 'ожидается объект'); return; }
       // A removed kind (gate, route, synthesis) is named once, with the way to write it now; its other fields are not checked.
       if (Object.hasOwn(REMOVED_KIND_HINT, step.kind)) { fail(`${path}.kind`, `тип шага: допустимо ${KINDS.join(', ')}; ${REMOVED_KIND_HINT[step.kind]}`); return; }
-      unknownKeys(step, STEP_KEYS[step.kind] || STEP_KEYS.round, path);
+      // A removed field (require, order) is named with what the round does now; any other unknown field is reported as such.
+      Object.keys(REMOVED_FIELD_HINT).forEach((key) => { if (key in step) fail(`${path}.${key}`, REMOVED_FIELD_HINT[key]); });
+      unknownKeys(step, [...(STEP_KEYS[step.kind] || STEP_KEYS.round), ...Object.keys(REMOVED_FIELD_HINT)], path);
       if ('output' in step) {
         // A step's shared output is the answer of every author without its own; the owner is the author of its own.
         const inheriting = step.kind === 'owner' ? [{ id: 'owner' }] : (Array.isArray(step.models) ? step.models : []).filter((model) => isObject(model) && model.enabled !== false && !('output' in model));
         checkOutput(step.output, `${path}.output`, step, index, inheriting);
-      }
-      // A number of answers is checked against the enabled participants; a switched-off step keeps its number.
-      if ('require' in step && !REQUIRE_WORDS.includes(step.require)) {
-        const enabledCount = (Array.isArray(step.models) ? step.models : []).filter((model) => isObject(model) && model.enabled !== false).length;
-        if (!(Number.isSafeInteger(step.require) && step.require > 0)) fail(`${path}.require`, 'require: допустимо any, all или целое число больше 0');
-        else if (enabledCount && step.require > enabledCount) fail(`${path}.require`, `требуется больше ответов, чем включённых участников: ${enabledCount}`);
       }
       if ('owner' in step) oneOf(step.owner, OWNER_STEPS, `${path}.owner`, 'User в шаге');
       if ('chat' in step) oneOf(step.chat, CHAT_MODES, `${path}.chat`, 'чат шага');
@@ -12703,7 +12629,6 @@ window.ProtoState = {
       else refs.add(step.ref);
       oneOf(step.kind, KINDS, `${path}.kind`, 'тип шага');
       if (CONTROL_KINDS.includes(step.kind) && typeof step.ref === 'string' && !new RegExp(`^${step.kind}:[A-Za-z0-9_-]+$`).test(step.ref)) fail(`${path}.ref`, CONTROL_REF[step.kind]);
-      if ('order' in step) oneOf(step.order, ORDERS, `${path}.order`, 'порядок');
       if ('input' in step) checkInput(step.input, `${path}.input`, index);
       if ('task' in step) text(step.task, `${path}.task`);
       STEP_TEXT_KEYS.forEach((key) => { if (key in step) text(step[key], `${path}.${key}`); });
@@ -12742,10 +12667,10 @@ window.ProtoState = {
 
   // The settings of the cards in the form the page edits them (the cards write only what the owner set):
   // customModelSettings[ref][participantId] = { promptTemplate, maxWords, task, discipline, input } — the key is the id of
-  // the participant (its name when it has none); customRoundSettings[ref] = { order, input, task, require, owner, chat, output }
+  // the participant (its name when it has none); customRoundSettings[ref] = { input, task, owner, chat, output }
   // of a round; customStepSettings[ref] = the fields of an owner step; customDefaults = the ▶ card.
-  const ROUND_FIELDS = ['order', 'input', 'task', 'require', 'owner', 'chat', 'output'];
-  const STEP_FIELDS = ['input', 'task', 'require', 'owner', 'chat', 'output'];
+  const ROUND_FIELDS = ['input', 'task', 'owner', 'chat', 'output'];
+  const STEP_FIELDS = ['input', 'task', 'owner', 'chat', 'output'];
   function toSettings(schema) {
     const customModelSettings = {};
     const customRoundSettings = {};
@@ -12883,7 +12808,6 @@ window.ProtoState = {
       const input = inputRefs(st);
       const step = { ref, kind: st.block };
       if (st.block === 'round') {
-        step.order = st.order === 'sequential' ? 'sequential' : 'parallel';
         step.input = input.length ? input : 'none';
         if (own(st.task)) step.task = st.task.trim();
         step.models = list(st.models).filter((m) => isObj(m) && own(m.name)).map(modelOf);
@@ -12932,7 +12856,6 @@ window.ProtoState = {
       const inputs = refList(st.input);
       if (inputs.length) step.inputs = inputs;
       if (st.kind === 'round' || st.kind === 'gate') {
-        step.order = st.order === 'sequential' ? 'sequential' : 'parallel';
         if (st.kind === 'gate') {
           step.block = 'round';
           step.task = [`Критерии проверки: ${list(st.criteria).filter(own).join('; ') || 'ответ полный'}`, own(st.task) ? st.task : ''].filter(Boolean).join('\n\n');
@@ -12948,7 +12871,6 @@ window.ProtoState = {
       } else if (st.kind === 'synthesis') {
         const m = list(st.models).find((x) => isObj(x) && own(x.name));
         step.block = 'round';
-        step.order = 'parallel';
         if (own(st.task)) step.task = st.task;
         const model = { name: m ? m.name : 'Claude', role: m && own(m.role) && m.role !== 'None' ? m.role : 'свести' };
         if (m && own(m.task)) model.task = m.task;
@@ -12989,7 +12911,7 @@ window.ProtoState = {
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '44';
+  const STAND_VERSION = '45';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -13001,7 +12923,7 @@ window.ProtoState = {
   // ---------- Формат схемы ----------
   const COMMON = ['id', 'block', 'title', 'inputs', 'artifacts', 'why'];
   const FIELDS = {
-    round: ['models', 'order', 'task'], owner: ['ask'], file: ['file', 'mode']
+    round: ['models', 'task'], owner: ['ask'], file: ['file', 'mode']
   };
   // Виды этапов, которых больше нет: в схеме их выражают обычными этапами (текст ошибки — в проверке).
   const REMOVED_BLOCKS = {
@@ -13033,17 +12955,16 @@ window.ProtoState = {
   const APP_BLOCKS = ['file'];
   const MODEL_KEYS = ['name', 'role', 'task', 'maxWords', 'discipline'];
   const MODEL_NAMES = ['Claude', 'GPT', 'Gemini', 'Grok', 'Le Chat', 'Qwen', 'DeepSeek', 'Perplexity', 'Z.ai', 'Kimi'];
-  const ENUMS = { order: ['parallel', 'sequential'], mode: ['overwrite', 'append'] };
+  const ENUMS = { mode: ['overwrite', 'append'] };
   const LABELS = {
     id: 'этап', block: 'блок', title: 'название', why: 'зачем', inputs: 'вход', artifacts: 'артефакты',
-    models: 'модели', order: 'порядок', task: 'задание', model: 'модель', role: 'роль', ask: 'вопрос',
+    models: 'модели', task: 'задание', model: 'модель', role: 'роль', ask: 'вопрос',
     file: 'файл', mode: 'режим', maxWords: 'предел слов', discipline: 'дисциплина',
     defaults: 'общие значения ▶', run: 'запуск'
   };
   const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
   const DISC_LABELS = { limit: 'длина', content: 'содержание', delivery: 'доставка', correction: 'повторный запрос', lines: 'строки' };
   const POLICY_TEXT = { auto: 'автоматически', manual: 'вручную' };
-  const ORDER_TEXT = { parallel: 'параллельно', sequential: 'по очереди' };
   // Роли окна модели (cards.js, ROLES) по словам схемы.
   const ROLE_IDS = [
     [/свод|свести|синтез|synth/i, 'interaction_meta_synthesis'],
@@ -13412,6 +13333,7 @@ window.ProtoState = {
       if (!own(st.why)) add('error', e.key, 'Нет why — зачем этот этап.');
       Object.keys(st).forEach((k) => {
         if (k === 'optional_inputs') add('warn', e.key, 'Поле «optional_inputs» не поддерживается и не применяется: пропускаемых этапов нет, все входы обязательны.');
+        else if (k === 'order') add('warn', e.key, 'Поле «order» не поддерживается и не применяется: все модели раунда отвечают независимо; эстафета — раунды по одной модели подряд.');
         else if (has(REMOVED_FIELDS, k)) add('warn', e.key, `Поле «${k}» не поддерживается и не применяется. ${REMOVED_FIELDS[k]}.`);
         else if (k === 'body') add('error', e.key, 'Поле «body» не поддерживается: вложенных этапов нет.');
         else if (FIELDS[st.block] && !COMMON.includes(k) && !FIELDS[st.block].includes(k)) add('warn', e.key, `Неизвестное поле «${k}» для блока ${st.block}.`);
@@ -13511,7 +13433,6 @@ window.ProtoState = {
         const inputs = listOf(st.inputs);
         state.rounds.push({
           ref: own(st.id) ? st.id : `r${index + 1}`,
-          order: ENUMS.order.includes(st.order) ? st.order : '',
           input: inputs.length ? (inputs.length > 1 ? 'all' : 'previous') : (index === 0 ? '' : 'none'),
           task: own(st.task) ? st.task : '', role: 'None',
           models: listOf(st.models).filter((m) => m && typeof m === 'object').map((m) => {
@@ -13528,7 +13449,6 @@ window.ProtoState = {
     });
     // Исходные артефакты крепятся к In: от каждого стрелка к этапу, который берёт его через «in.Имя».
     stand.inDocs = listOf(schema.artifacts).filter((a) => isObj(a) && own(a.name)).map((a) => ({ id: a.name.trim(), title: a.name.trim(), src: a }));
-    stand.artTo = {};
     stand.schema = schema;
     stand.flat = flat;
     stand.issues = issues;
@@ -13545,7 +13465,7 @@ window.ProtoState = {
     if (name && stand.name != null) { name.textContent = stand.name; name.title = ''; }
     const entry = $('entryPoint');
     if (entry) entry.title = '';
-    Object.assign(stand, { artTo: {}, active: false, layout: [], issues: [], flat: [], schema: null, snapshot: null, name: null, current: null, comment: '' });
+    Object.assign(stand, { active: false, layout: [], issues: [], flat: [], schema: null, snapshot: null, name: null, current: null, comment: '' });
     canvas().render?.();
     drawIssues();
     catalog.activeId = null;
@@ -13572,28 +13492,22 @@ window.ProtoState = {
     for (const c of stand.layout) { const a = listOf(c.step.artifacts).find((x) => artName(x) === name && own(artDesc(x))); if (a) return artDesc(a); }
     return '';
   };
-  // Кому отправляется артефакт: по умолчанию всем моделям холста; снятые галочки хранятся только на стенде (в схему не пишутся).
-  const artifactTargets = (k, name) => { const all = S().models || []; const own = stand.artTo?.[`${k}|${name}`]; return own ? all.filter((m) => own.includes(m)) : all; };
   // Вид исходного артефакта: текст в схеме или файл, приложенный к ответу.
   const docKind = (d) => (own(d.src?.content) ? 'текст' : own(d.src?.attachment) ? 'файл' : 'не передан');
   // Исходные артефакты — в зоне над In (k = -1); у колонок этапов исходных артефактов нет.
   const docChips = (k) => (k === -1 ? (stand.inDocs || []) : []).map((d) => {
-    const to = artifactTargets('doc', d.id); const all = (S().models || []).length;
-    const label = `${docKind(d)}${to.length < all ? ` · ${to.length}/${all}` : ''}`;
+    const label = docKind(d);
     return `<span class="proto-art proto-art-doc" data-art="doc|${esc(d.id)}" title="${esc(d.title)} — ${esc(label)} (исходный артефакт)"><span class="proto-art-title">${esc(d.title)}</span><span class="proto-art-version">${esc(label)}</span></span>`;
   }).join('');
   const artifactZone = (k, st) => `<div class="proto-art-zone">${listOf(st.artifacts).map(artName).map((name) => {
-    const to = artifactTargets(k, name); const all = (S().models || []).length;
-    const version = `v${artifactVersion(k, name)}${to.length < all ? ` · ${to.length}/${all}` : ''}`;
-    return `<span class="proto-art" data-art="${k}|${esc(name)}" title="${esc(name)} ${esc(version)} — ${esc(artifactDesc(name) || 'описание не задано')} · клик: кому отправлять"><span class="proto-art-title">${esc(name)}</span><span class="proto-art-version">${esc(version)}</span></span>`;
+    const version = `v${artifactVersion(k, name)}`;
+    return `<span class="proto-art" data-art="${k}|${esc(name)}" title="${esc(name)} ${esc(version)} — ${esc(artifactDesc(name) || 'описание не задано')}"><span class="proto-art-title">${esc(name)}</span><span class="proto-art-version">${esc(version)}</span></span>`;
   }).join('')}${docChips(k)}</div>`;
   function openArtifact(k, name) {
     const col = stand.layout[k];
     if (!col) return;
     stand.current = null;
     const modal = infoModal();
-    const models = S().models || [];
-    const on = artifactTargets(k, name);
     const users = artifactLinks().filter((l) => !l.doc && l.from === k && l.name === name).map((l) => stand.layout[l.to].step);
     modal.querySelector('.modal-content').innerHTML = `
       <header class="custom-card-top custom-defaults-top">
@@ -13608,16 +13522,7 @@ window.ProtoState = {
         <div class="custom-card-marks"><strong>Описание</strong>
           <div class="custom-card-note">${esc(artifactDesc(name) || 'не задано')}</div>
         </div>
-        <div class="custom-card-marks"><strong>Кому отправлять</strong>
-          <div class="proto-art-models">${models.map((m) => `<label><input type="checkbox" data-art-model="${esc(m)}"${on.includes(m) ? ' checked' : ''}> ${esc(m)}</label>`).join('')}</div>
-          <div class="custom-card-note">По умолчанию — всем моделям. Снятая модель артефакт не получает.</div>
-        </div>
       </div>`;
-    modal.querySelectorAll('[data-art-model]').forEach((box) => box.addEventListener('change', () => {
-      stand.artTo = stand.artTo || {};
-      stand.artTo[`${k}|${name}`] = [...modal.querySelectorAll('[data-art-model]')].filter((b) => b.checked).map((b) => b.dataset.artModel);
-      render();
-    }));
     show(modal);
   }
   // Стрелки: от артефакта в колонке производителя к бейджу этапа, который берёт "<id>.<имя>" во входе.
@@ -13641,8 +13546,6 @@ window.ProtoState = {
     if (!st) return;
     stand.current = null;
     const modal = infoModal();
-    const models = S().models || [];
-    const on = artifactTargets('doc', id);
     const users = stand.layout.filter((c) => listOf(c.step.inputs).some((r) => r === `in.${id}`)).map((c) => c.step);
     modal.querySelector('.modal-content').innerHTML = `
       <header class="custom-card-top custom-defaults-top">
@@ -13657,16 +13560,7 @@ window.ProtoState = {
         <div class="custom-card-marks"><strong>Описание</strong>
           <div class="custom-card-note" style="white-space:pre-wrap">${esc(artDesc(st.src) || st.src.content || 'не задано')}</div>
         </div>
-        <div class="custom-card-marks"><strong>Кому отправлять</strong>
-          <div class="proto-art-models">${models.map((m) => `<label><input type="checkbox" data-art-model="${esc(m)}"${on.includes(m) ? ' checked' : ''}> ${esc(m)}</label>`).join('')}</div>
-          <div class="custom-card-note">По умолчанию — всем моделям. Снятая модель материал не получает.</div>
-        </div>
       </div>`;
-    modal.querySelectorAll('[data-art-model]').forEach((box) => box.addEventListener('change', () => {
-      stand.artTo = stand.artTo || {};
-      stand.artTo[`doc|${id}`] = [...modal.querySelectorAll('[data-art-model]')].filter((b) => b.checked).map((b) => b.dataset.artModel);
-      render();
-    }));
     show(modal);
   }
   const modelBlock = (model, index) => {
@@ -13698,7 +13592,7 @@ window.ProtoState = {
           ${head(`R${col.round + 1}`)}
           ${artifactZone(k, st)}
           <div class="model-stack" id="${stack}">${round.models.map(modelBlock).join('')}</div>
-          <div class="proto-stand-meta">${bang(key)}<span class="proto-stand-line"><b>${esc(st.id || '')}</b> ${esc(cut(st.title, 40))}${round.order === 'sequential' ? ' · по очереди' : ''}</span>${tail}</div>
+          <div class="proto-stand-meta">${bang(key)}<span class="proto-stand-line"><b>${esc(st.id || '')}</b> ${esc(cut(st.title, 40))}</span>${tail}</div>
         </div>`;
     }
     const [label, icon] = KIND[st.block] || [String(st.block || '?'), 'ti-help'];
@@ -13815,7 +13709,6 @@ window.ProtoState = {
       const names = { roundTask: 'задание раундов', discipline: 'дисциплина', modelNotes: 'особенности моделей' };
       return Object.entries(value).map(([k, v]) => (isObj(v) ? `${names[k] || k}:\n${indent(fmt(k, v))}` : `${names[k] || k}: ${fmt(k, v)}`)).join('\n');
     }
-    if (key === 'order') return `${value}${ORDER_TEXT[value] ? ` (${ORDER_TEXT[value]})` : ''}`;
     if (Array.isArray(value)) return value.map((v) => (v && typeof v === 'object' ? fmt('', v) : String(v))).join(', ');
     if (typeof value === 'object') return Object.entries(value).map(([k, v]) => `${k}: ${typeof v === 'object' ? fmt(k, v) : v}`).join(', ');
     return String(value);
@@ -14449,7 +14342,6 @@ window.ProtoState = {
           "id": "s1",
           "block": "round",
           "title": "Первые планы",
-          "order": "parallel",
           "task": "Предложи план запуска тарифа по брифу.",
           "models": [
             {
@@ -14510,7 +14402,6 @@ window.ProtoState = {
             }
           ],
           "why": "Не отдавать план без сроков и бюджета.",
-          "order": "parallel",
           "models": [
             {
               "name": "GPT",
@@ -14535,20 +14426,54 @@ window.ProtoState = {
           "why": "Нужна ли доработка плана, решает User."
         },
         {
-          "id": "s5",
+          "id": "s5a",
           "block": "round",
-          "title": "Доработка",
-          "order": "sequential",
+          "title": "Доработка (1/3)",
           "task": "Исправь план по замечаниям проверки и решению User. Если доработка не нужна, верни план без изменений.",
           "models": [
             {
               "name": "Claude",
               "role": "автор"
-            },
+            }
+          ],
+          "inputs": [
+            "s2.План",
+            "s3.Вердикт",
+            "s4.Решение"
+          ],
+          "artifacts": [
+            "Правки"
+          ],
+          "why": "Закрыть замечания проверки."
+        },
+        {
+          "id": "s5b",
+          "block": "round",
+          "title": "Доработка (2/3)",
+          "task": "Исправь план по замечаниям проверки и решению User. Если доработка не нужна, верни план без изменений.",
+          "models": [
             {
               "name": "GPT",
               "role": "критик"
-            },
+            }
+          ],
+          "inputs": [
+            "s2.План",
+            "s3.Вердикт",
+            "s4.Решение",
+            "s5a.Правки"
+          ],
+          "artifacts": [
+            "Правки"
+          ],
+          "why": "Закрыть замечания проверки."
+        },
+        {
+          "id": "s5c",
+          "block": "round",
+          "title": "Доработка (3/3)",
+          "task": "Исправь план по замечаниям проверки и решению User. Если доработка не нужна, верни план без изменений.",
+          "models": [
             {
               "name": "Gemini",
               "role": "аналитик"
@@ -14557,7 +14482,9 @@ window.ProtoState = {
           "inputs": [
             "s2.План",
             "s3.Вердикт",
-            "s4.Решение"
+            "s4.Решение",
+            "s5a.Правки",
+            "s5b.Правки"
           ],
           "artifacts": [
             "Правки"
@@ -14577,7 +14504,9 @@ window.ProtoState = {
           "task": "Собери итоговый план с учётом правок.",
           "inputs": [
             "s2.План",
-            "s5.Правки"
+            "s5a.Правки",
+            "s5b.Правки",
+            "s5c.Правки"
           ],
           "artifacts": [
             "Итог"
@@ -14593,7 +14522,6 @@ window.ProtoState = {
             "s6.Итог"
           ],
           "why": "Итоговый план проверяется тем же критерием.",
-          "order": "parallel",
           "models": [
             {
               "name": "GPT",
@@ -14645,7 +14573,6 @@ window.ProtoState = {
           "id": "s1",
           "block": "round",
           "title": "Первые предложения",
-          "order": "parallel",
           "task": "Предложи стек для сервиса по требованиям.",
           "models": [
             {
@@ -14678,10 +14605,9 @@ window.ProtoState = {
           "why": "Три независимых предложения."
         },
         {
-          "id": "s2",
+          "id": "s2a",
           "block": "round",
-          "title": "Критика",
-          "order": "sequential",
+          "title": "Критика (1/2)",
           "inputs": [
             "s1.Предложения"
           ],
@@ -14698,7 +14624,22 @@ window.ProtoState = {
                   "Риски нумеруй: 1, 2, 3."
                 ]
               }
-            },
+            }
+          ],
+          "why": "Найти риски до выбора."
+        },
+        {
+          "id": "s2b",
+          "block": "round",
+          "title": "Критика (2/2)",
+          "inputs": [
+            "s1.Предложения",
+            "s2a.Замечания"
+          ],
+          "artifacts": [
+            "Замечания"
+          ],
+          "models": [
             {
               "name": "Claude",
               "role": "архитектор",
@@ -14716,7 +14657,8 @@ window.ProtoState = {
           "task": "Исправь своё предложение по замечаниям.",
           "inputs": [
             "s1.Предложения",
-            "s2.Замечания"
+            "s2a.Замечания",
+            "s2b.Замечания"
           ],
           "artifacts": [
             "Доработки"

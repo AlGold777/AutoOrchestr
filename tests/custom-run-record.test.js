@@ -138,11 +138,11 @@ describe('Custom request preview', () => {
   test('before a run the template marks the data that does not exist yet and lists transport lines apart', () => {
     const preview = Engine.previewPrompt({
       task: 'T',
-      steps: [{ task: 'x', input: 'none', models: ['A'] }, { order: 'sequential', task: 'y', input: 'previous', models: ['A', { name: 'B', extra: 'Кратко.' }] }],
+      steps: [{ task: 'x', input: 'none', models: ['A'] }, { task: 'y', input: 'previous', models: ['A', { name: 'B', extra: 'Кратко.' }] }],
       stepIndex: 1, modelName: 'B'
     });
     expect(preview.prompt).toContain(Engine.PLACEHOLDER.previous);
-    expect(preview.prompt).toContain(Engine.PLACEHOLDER.earlier);
+    expect(Engine.PLACEHOLDER).not.toHaveProperty('earlier');
     expect(preview.prompt).toContain('Дополнительно для тебя:\nКратко.');
     expect(preview.prompt).not.toContain('[[AO-');
     expect(preview.transportLines.join('\n')).toContain('Метка доставки');
