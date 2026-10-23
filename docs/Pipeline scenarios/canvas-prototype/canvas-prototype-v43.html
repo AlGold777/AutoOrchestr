@@ -10223,11 +10223,6 @@ window.ProtoState = {
 
   // The run feed of Basic (results.js): pure texts of the events and of the answer cards. Old events without the
   // new fields give the same text as before; a participant id equal to the model name is not repeated.
-  const ROUTE_REASON = {
-    rule: 'по правилу', otherwise: 'иначе', model: 'выбрала модель', owner: 'выбрал User',
-    conflict_first: 'первый из подходящих', conflict_owner: 'выбрал User из подходящих',
-    invalid_route: 'ответ модели не распознан, выбрал User'
-  };
   const feed = Object.freeze({
     // The label of an answer card: the step, the participant (when it is not the model) and the visit (from the second).
     role({ label = '', modelName = '', participantId = '', visit = 1 } = {}) {
@@ -10235,18 +10230,6 @@ window.ProtoState = {
       if (participantId && participantId !== modelName) parts.push(`участник ${participantId}`);
       if (Number(visit) > 1) parts.push(`заход ${visit}`);
       return parts.join(' · ');
-    },
-    gate({ ref = '', pass = false, unmet = [] } = {}) {
-      const head = `Проверка ${ref}: ${pass ? 'пройдена' : 'не пройдена'}`;
-      return !pass && unmet.length ? `${head}. Не выполнено: ${unmet.join('; ')}` : head;
-    },
-    route({ ref = '', caseLabel = '', reason = '' } = {}) {
-      return `Маршрут ${ref}: вариант «${caseLabel}», ${ROUTE_REASON[reason] || reason}`;
-    },
-    // stopText: the text of a stop reason (the engine's STOP_TEXT).
-    transition({ from = '', to = '', action = 'goto', reason = '' } = {}, stopText = (value) => value) {
-      if (action === 'stop') return `Прогон остановлен после ${from}: ${stopText(reason)}`;
-      return `Переход ${from} → ${to}`;
     },
     // The title of an artifact in the registry: name, participant (owner for an owner step), visit, validity.
     artifactTitle({ name = '', source = {}, valid = true } = {}) {
@@ -10263,377 +10246,6 @@ window.ProtoState = {
       return typeof read.value === 'string' ? read.value : JSON.stringify(read.value, null, 2);
     }
   });
-
-  // Control steps (6.1–6.3 of the spec): a gate, a route and an owner are cards on the canvas. A window edits only the fields
-  // listed here; controlAfterEdit gives back the whole step, so every other field stays as it is.
-  const isTransition = (value) => isPlain(value) && typeof value.goto === 'string';
-  // The view of a transition (onPass, onFail, a case's action, otherwise): `absent` is the mode of a missing value.
-  // A value the window does not edit (its shape is other) gives mode 'json'.
-  function transitionView(value, absent) {
-    if (value === undefined || value === null) return { mode: absent };
-    if (value === 'stop' || value === 'ask') return { mode: value };
-    if (isTransition(value)) return { mode: 'goto', goto: value.goto };
-    if (isPlain(value) && Object.keys(value).length === 1 && typeof value.stop === 'string') return { mode: 'stop', stop: value.stop };
-    return { mode: 'json' };
-  }
-  // The value of a transition after an edit (`kind`: pass, fail, action, otherwise). A missing value is undefined.
-  function transitionAfterEdit(current, edit = {}, kind = 'action') {
-    if (edit.mode === 'next' || edit.mode === 'none') return undefined;
-    if (edit.mode === 'ask') return 'ask';
-    if (edit.mode === 'stop') return kind === 'fail' ? 'stop' : { stop: String(edit.stop ?? '') };
-    if (edit.mode === 'goto') return { goto: String(edit.goto ?? '') };
-    return current;
-  }
-
-  // The window of a gate: criteria (one per line), its checkers (the available models; an unchecked one stays in the
-  // schema with enabled false), pass, and the transitions onFail and onPass. `names` are the models the page offers.
-  function gateWindowModel(step = {}, { names = [], refs = [], disabled = false } = {}) {
-    const models = Array.isArray(step.models) ? step.models.filter(isPlain) : [];
-    const checked = new Set(models.filter((model) => model.enabled !== false).map((model) => String(model.name)));
-    const known = [...new Set([...names.map(String), ...models.map((model) => String(model.name))])];
-    return {
-      ref: String(step.ref || ''),
-      disabled: Boolean(disabled),
-      criteria: Array.isArray(step.criteria) ? step.criteria.map(String).join('\n') : '',
-      checkers: known.map((name) => ({ name, checked: checked.has(name) })),
-      pass: typeof step.pass === 'string' ? step.pass : '',
-      onFail: transitionView(step.onFail, 'stop'),
-      onPass: transitionView(step.onPass, 'next'),
-      refs: refs.map(String).filter((ref) => ref !== String(step.ref || ''))
-    };
-  }
-  // An edit of a gate: { field: 'criteria', value } | { field: 'checker', name, checked } | { field: 'pass', value } |
-  // { field: 'onFail' | 'onPass', mode, goto, stop }. Returns the new step; the input is not changed.
-  function gateAfterEdit(step = {}, edit = {}) {
-    const next = { ...step };
-    if (edit.field === 'criteria') {
-      const lines = String(edit.value || '').split('\n').map((line) => line.trim()).filter(Boolean);
-      if (lines.length) next.criteria = lines;
-      else delete next.criteria;
-    } else if (edit.field === 'checker') {
-      const models = Array.isArray(step.models) ? step.models.map((model) => (isPlain(model) ? { ...model } : model)) : [];
-      const at = models.findIndex((model) => isPlain(model) && model.name === edit.name);
-      if (at < 0 && edit.checked) models.push({ name: String(edit.name) });
-      else if (at >= 0 && edit.checked) delete models[at].enabled;
-      else if (at >= 0) models[at].enabled = false;
-      next.models = models;
-    } else if (edit.field === 'pass') {
-      if (edit.value === 'all' || edit.value === 'any') next.pass = edit.value;
-      else delete next.pass;
-    } else if (edit.field === 'onFail' || edit.field === 'onPass') {
-      const key = edit.field;
-      const value = transitionAfterEdit(step[key], edit, key === 'onFail' ? 'fail' : 'pass');
-      if (value === undefined) delete next[key];
-      else next[key] = value;
-    }
-    return next;
-  }
-
-  // The window's controls: a select of a transition with its target (a ref of the canvas).
-  // The change goes to emit(field, { mode, goto, stop }); a goto without a target is sent as it is (the schema says so).
-  function renderTransition(container, { field, label, view, options, refs, disabled, withStop, emit }) {
-    const doc = container.ownerDocument;
-    const state = { mode: view.mode, goto: view.goto || '', stop: view.stop || '' };
-    const box = el(doc, 'fieldset', `stage-card-transition stage-card-${field}`);
-    box.append(el(doc, 'legend', '', label));
-    const mode = el(doc, 'select', `stage-card-${field}-mode`);
-    mode.setAttribute('aria-label', label);
-    const choices = state.mode === 'json' ? [...options, { value: 'json', label: 'задан в JSON, сохраняется как есть', disabled: true }] : options;
-    choices.forEach((item) => { const option = el(doc, 'option', '', item.label); option.value = item.value; option.disabled = Boolean(item.disabled); mode.append(option); });
-    mode.value = state.mode;
-    mode.disabled = Boolean(disabled) || state.mode === 'json';
-    const send = () => { if (typeof emit === 'function') emit({ field, mode: state.mode, goto: state.goto, stop: state.stop }); };
-    mode.addEventListener('change', () => { state.mode = mode.value; send(); });
-    box.append(mode);
-    if (state.mode === 'goto') {
-      const target = el(doc, 'select', `stage-card-${field}-goto`);
-      target.setAttribute('aria-label', `${label}: переход на шаг`);
-      target.append(new Option('— выберите шаг —', ''));
-      [...new Set([...refs, state.goto].filter(Boolean))].forEach((ref) => target.append(new Option(ref, ref)));
-      target.value = state.goto;
-      target.disabled = Boolean(disabled);
-      target.addEventListener('change', () => { state.goto = target.value; send(); });
-      box.append(target);
-    }
-    if (withStop && state.mode === 'stop') {
-      const reason = el(doc, 'input', `stage-card-${field}-stop`);
-      reason.type = 'text'; reason.value = state.stop; reason.disabled = Boolean(disabled);
-      reason.setAttribute('aria-label', `${label}: причина остановки`);
-      reason.addEventListener('change', () => { state.stop = reason.value; send(); });
-      box.append(reason);
-    }
-    container.append(box);
-  }
-
-  // The window of a gate. Every change goes to emit(edit) with the edit's field (see gateAfterEdit).
-  function renderGateWindow(container, model, emit) {
-    const doc = container.ownerDocument;
-    const disabled = Boolean(model.disabled);
-    const send = (edit) => { if (typeof emit === 'function') emit(edit); };
-    const criteria = el(doc, 'textarea', 'stage-card-criteria');
-    criteria.rows = 4;
-    criteria.value = model.criteria;
-    criteria.disabled = disabled;
-    criteria.spellcheck = false;
-    criteria.setAttribute('aria-label', 'Критерии проверки, по одному на строку');
-    criteria.addEventListener('change', () => send({ field: 'criteria', value: criteria.value }));
-    const critWrap = el(doc, 'label', 'stage-card-setting stage-card-criteria-label');
-    critWrap.append(doc.createTextNode('Критерии (по одному на строку) '), criteria);
-    container.append(critWrap);
-
-    const checkers = el(doc, 'fieldset', 'stage-card-checkers');
-    checkers.append(el(doc, 'legend', '', 'Проверяющие'));
-    model.checkers.forEach((item) => {
-      const row = el(doc, 'label', 'stage-card-checker');
-      const check = el(doc, 'input', 'stage-card-checker-check');
-      check.type = 'checkbox';
-      check.checked = item.checked;
-      check.disabled = disabled;
-      check.addEventListener('change', () => send({ field: 'checker', name: item.name, checked: check.checked }));
-      row.append(check, doc.createTextNode(` ${item.name}`));
-      checkers.append(row);
-    });
-    if (!model.checkers.length) checkers.append(el(doc, 'p', 'stage-card-muted', 'Моделей нет.'));
-    container.append(checkers);
-
-    const pass = el(doc, 'select', 'stage-card-pass-select');
-    [['', 'По умолчанию (все проверяющие)'], ['all', 'Все проверяющие прошли'], ['any', 'Достаточно одного']].forEach(([value, label]) => {
-      const option = el(doc, 'option', '', label); option.value = value; pass.append(option);
-    });
-    pass.value = model.pass;
-    pass.disabled = disabled;
-    pass.setAttribute('aria-label', 'Проверка прошла, если');
-    pass.addEventListener('change', () => send({ field: 'pass', value: pass.value }));
-    const passWrap = el(doc, 'label', 'stage-card-setting stage-card-pass');
-    passWrap.append(doc.createTextNode('Проходит, если '), pass);
-    container.append(passWrap);
-
-    renderTransition(container, { field: 'onFail', label: 'При провале', view: model.onFail, refs: model.refs, disabled, withStop: false, emit: send,
-      options: [{ value: 'stop', label: 'Остановить прогон' }, { value: 'ask', label: 'Спросить User' }, { value: 'goto', label: 'Перейти к шагу' }] });
-    renderTransition(container, { field: 'onPass', label: 'После успеха', view: model.onPass, refs: model.refs, disabled, withStop: false, emit: send,
-      options: [{ value: 'next', label: 'Следующий шаг' }, { value: 'goto', label: 'Перейти к шагу' }] });
-  }
-
-  // The window of a route (6.2). `by` rule reads the step's input (the sources numbered in the conditions); model gives the
-  // one model that chooses and its task; owner gives nothing (the owner chooses). A composite condition (all, any) is kept as it is.
-  const ROUTE_BY_LABELS = [['', '— выберите —'], ['rule', 'По правилу (условие на данных)'], ['model', 'Выбирает модель'], ['owner', 'Выбирает User']];
-  const ROUTE_CONFLICT_LABELS = [['', 'По умолчанию: остановить'], ['first', 'Первый подходящий'], ['owner', 'Выбирает User']];
-  const ROUTE_OPS = ['eq', 'in', 'exists'];
-  const isComposite = (cond) => isPlain(cond) && (Array.isArray(cond.all) || Array.isArray(cond.any));
-  // A value as the window shows it: a string as it is, anything else as JSON.
-  const valueText = (value) => (typeof value === 'string' ? value : JSON.stringify(value));
-  // A value typed in the window: JSON when it parses (a number, true, a quoted text), else the text itself.
-  const parseValue = (text) => { try { return JSON.parse(text); } catch (_) { return String(text); } };
-  // The list of `in` is written by comma; each item is read as a value.
-  const parseList = (text) => String(text || '').split(',').map((item) => item.trim()).filter(Boolean).map(parseValue);
-  function caseView(item = {}) {
-    const cond = item.when;
-    const composite = isComposite(cond);
-    const when = composite || !isPlain(cond) ? null : {
-      source: cond.source ?? '', pointer: String(cond.pointer ?? ''), op: ROUTE_OPS.includes(cond.op) ? cond.op : 'eq',
-      value: Array.isArray(cond.value) ? cond.value.map(valueText).join(', ') : (cond.value === undefined ? '' : valueText(cond.value))
-    };
-    return { id: String(item.id ?? ''), label: String(item.label ?? ''), composite, when, action: transitionView(item.action, 'goto') };
-  }
-  // The sources of a rule: the answers of the participants of the steps before this one (`earlier`: [{ ref, label,
-  // participants: [{ id, name }] }]). The number of a source is its place in the input (from 0, as the conditions read it).
-  const isParticipantSource = (src) => isPlain(src) && typeof src.step === 'string' && 'participant' in src && !('artifact' in src);
-  function routeWindowModel(step = {}, { names = [], refs = [], earlier = [], disabled = false } = {}) {
-    const select = isPlain(step.select) ? step.select : {};
-    const models = Array.isArray(step.models) ? step.models.filter(isPlain) : [];
-    const chosen = models.find((model) => model.enabled !== false);
-    const input = Array.isArray(step.input) ? step.input : [];
-    const sources = earlier.flatMap((item) => item.participants.map((participant) => {
-      const at = input.findIndex((src) => isParticipantSource(src) && src.step === item.ref && src.participant === participant.id);
-      return { step: item.ref, participant: participant.id, label: `${item.label} · ${participant.name}`, checked: at >= 0, number: at };
-    }));
-    return {
-      ref: String(step.ref || ''),
-      disabled: Boolean(disabled),
-      refs: refs.map(String).filter((ref) => ref !== String(step.ref || '')),
-      by: typeof select.by === 'string' ? select.by : '',
-      modelNames: [...new Set([...names.map(String), ...models.map((model) => String(model.name))])],
-      model: chosen ? String(chosen.name) : '',
-      task: typeof step.task === 'string' ? step.task : '',
-      sources,
-      otherSources: input.filter((src) => !isParticipantSource(src)).length,
-      conflict: typeof select.conflict === 'string' ? select.conflict : '',
-      otherwise: transitionView(select.otherwise, 'none'),
-      cases: (Array.isArray(select.cases) ? select.cases : []).map(caseView)
-    };
-  }
-  // An edit of a route: { field: 'by', value } | { field: 'model', value } | { field: 'task', value } | { field: 'conflict', value } |
-  // { field: 'source', step, participant, checked } | { field: 'otherwise', mode, goto, stop } | { field: 'caseAdd' } | { field: 'caseRemove', index } |
-  // { field: 'case', index, id, label, when (null: none; undefined: kept), action: { mode, goto, stop } }.
-  // Changing `by` drops what the new kind does not have: the conditions and the otherwise away from a rule, the models
-  // away from a model, the model and the task away from a rule and an owner.
-  function routeAfterEdit(step = {}, edit = {}) {
-    const next = { ...step };
-    const select = isPlain(step.select) ? { ...step.select } : {};
-    const cases = Array.isArray(select.cases) ? select.cases.map((item) => ({ ...item })) : [];
-    const put = (target, key, value) => { if (value === '' || value === undefined || value === null) delete target[key]; else target[key] = value; };
-    if (edit.field === 'by') {
-      put(select, 'by', edit.value);
-      if (edit.value !== 'rule') {
-        delete select.conflict;
-        delete select.otherwise;
-        cases.forEach((item) => { delete item.when; });
-      }
-      if (edit.value === 'rule' || edit.value === 'owner') next.models = [];
-      if (edit.value === 'owner') delete next.task;
-    } else if (edit.field === 'source') {
-      // The sources of a rule are kept in the input in their order; an entry the window does not show stays where it is.
-      const input = Array.isArray(step.input) ? step.input.map((src) => (isPlain(src) ? { ...src } : src)) : [];
-      const at = input.findIndex((src) => isParticipantSource(src) && src.step === edit.step && src.participant === edit.participant);
-      if (edit.checked && at < 0) input.push({ step: String(edit.step), participant: edit.participant });
-      else if (!edit.checked && at >= 0) input.splice(at, 1);
-      if (input.length) next.input = input;
-      else delete next.input;
-    } else if (edit.field === 'model') {
-      next.models = edit.value ? [{ name: String(edit.value) }] : [];
-    } else if (edit.field === 'task') {
-      put(next, 'task', edit.value);
-    } else if (edit.field === 'conflict') {
-      put(select, 'conflict', edit.value);
-    } else if (edit.field === 'otherwise') {
-      const value = transitionAfterEdit(select.otherwise, edit, 'otherwise');
-      put(select, 'otherwise', value);
-    } else if (edit.field === 'caseAdd') {
-      const taken = new Set(cases.map((item) => item.id));
-      let n = cases.length + 1;
-      while (taken.has(`case${n}`)) n += 1;
-      cases.push({ id: `case${n}` });
-    } else if (edit.field === 'caseRemove') {
-      cases.splice(Number(edit.index), 1);
-    } else if (edit.field === 'case' && cases[Number(edit.index)]) {
-      const at = Number(edit.index);
-      const current = cases[at];
-      const updated = { id: String(edit.id ?? current.id ?? '') };
-      if (String(edit.label ?? '').trim()) updated.label = String(edit.label);
-      if (current.when !== undefined) updated.when = current.when;
-      if (edit.when === null) delete updated.when;
-      else if (isPlain(edit.when)) {
-        // An empty source is not a number: it is left out, and the schema names the error at its place.
-        const cond = { ...(String(edit.when.source ?? '').trim() === '' ? {} : { source: Number(edit.when.source) }), pointer: String(edit.when.pointer ?? ''), op: edit.when.op };
-        if (edit.when.op !== 'exists') cond.value = edit.when.op === 'in' ? parseList(edit.when.value) : parseValue(String(edit.when.value ?? ''));
-        updated.when = cond;
-      }
-      const action = transitionAfterEdit(current.action, edit.action, 'action');
-      if (action !== undefined) updated.action = action;
-      cases[at] = updated;
-    }
-    select.cases = cases;
-    next.select = select;
-    return next;
-  }
-  // The window of a route: the choice, the model and the task (model), the conditions and the cases with their actions,
-  // the otherwise and the conflict (rule). Every change goes to emit(edit) with the field (see routeAfterEdit).
-  function renderRouteWindow(container, model, emit) {
-    const doc = container.ownerDocument;
-    const disabled = Boolean(model.disabled);
-    const send = (edit) => { if (typeof emit === 'function') emit(edit); };
-    const choose = (field, label, options, value, onChange) => {
-      const select = el(doc, 'select', `stage-card-route-${field}`);
-      options.forEach(([optionValue, text]) => { const option = el(doc, 'option', '', text); option.value = optionValue; select.append(option); });
-      select.value = value;
-      select.disabled = disabled;
-      select.setAttribute('aria-label', label);
-      select.addEventListener('change', () => onChange(select.value));
-      const wrap = el(doc, 'label', `stage-card-setting stage-card-route-${field}-label`);
-      wrap.append(doc.createTextNode(`${label} `), select);
-      container.append(wrap);
-      return select;
-    };
-    choose('by', 'Выбор варианта', ROUTE_BY_LABELS, model.by, (value) => send({ field: 'by', value }));
-    if (model.by === 'model') {
-      choose('model', 'Модель, которая выбирает', [['', '— выберите модель —'], ...model.modelNames.map((name) => [name, name])], model.model, (value) => send({ field: 'model', value }));
-      const task = el(doc, 'textarea', 'stage-card-route-task');
-      task.rows = 3; task.value = model.task; task.disabled = disabled; task.spellcheck = false;
-      task.setAttribute('aria-label', 'Задание модели, которая выбирает вариант');
-      task.addEventListener('change', () => send({ field: 'task', value: task.value }));
-      const wrap = el(doc, 'label', 'stage-card-setting stage-card-route-task-label');
-      wrap.append(doc.createTextNode('Задание модели '), task);
-      container.append(wrap);
-    }
-    if (model.by === 'rule') {
-      const sources = el(doc, 'fieldset', 'stage-card-route-sources');
-      sources.append(el(doc, 'legend', '', 'Источники условия (номер — место в списке входа, с 0)'));
-      if (!model.sources.length) sources.append(el(doc, 'p', 'stage-card-muted', 'Раньше нет участников с ответами.'));
-      model.sources.forEach((src) => {
-        const row = el(doc, 'label', 'stage-card-source');
-        const check = el(doc, 'input', 'stage-card-source-check');
-        check.type = 'checkbox';
-        check.checked = src.checked;
-        check.disabled = disabled;
-        check.addEventListener('change', () => send({ field: 'source', step: src.step, participant: src.participant, checked: check.checked }));
-        row.append(check, doc.createTextNode(` ${src.label}${src.checked ? ` · источник ${src.number}` : ''}`));
-        sources.append(row);
-      });
-      if (model.otherSources) sources.append(el(doc, 'p', 'stage-card-muted', `Ещё источников: ${model.otherSources} (заданы в JSON, сохраняются как есть).`));
-      container.append(sources);
-      choose('conflict', 'Если подошло несколько', ROUTE_CONFLICT_LABELS, model.conflict, (value) => send({ field: 'conflict', value }));
-    }
-    const cases = el(doc, 'fieldset', 'stage-card-cases');
-    cases.append(el(doc, 'legend', '', 'Варианты'));
-    if (!model.cases.length) cases.append(el(doc, 'p', 'stage-card-muted', 'Вариантов нет.'));
-    const sendCase = (index, state) => send({ field: 'case', index, id: state.id, label: state.label, when: state.when, action: state.action });
-    model.cases.forEach((item, index) => {
-      const box = el(doc, 'div', 'stage-card-case');
-      const state = { id: item.id, label: item.label, when: model.by === 'rule' ? (item.composite ? undefined : item.when) : null, action: { ...item.action } };
-      const idInput = el(doc, 'input', 'stage-card-case-id');
-      idInput.type = 'text'; idInput.value = item.id; idInput.disabled = disabled; idInput.placeholder = 'ID варианта';
-      idInput.setAttribute('aria-label', 'ID варианта');
-      idInput.addEventListener('change', () => { state.id = idInput.value; sendCase(index, state); });
-      const labelInput = el(doc, 'input', 'stage-card-case-label');
-      labelInput.type = 'text'; labelInput.value = item.label; labelInput.disabled = disabled; labelInput.placeholder = 'название для выбора';
-      labelInput.setAttribute('aria-label', 'Название варианта');
-      labelInput.addEventListener('change', () => { state.label = labelInput.value; sendCase(index, state); });
-      box.append(idInput, labelInput);
-      if (model.by === 'rule') {
-        if (item.composite) box.append(el(doc, 'p', 'stage-card-muted', 'Составное условие (all/any): сохраняется как есть, в JSON.'));
-        else {
-          const when = item.when || { source: '', pointer: '', op: 'eq', value: '' };
-          const source = el(doc, 'input', 'stage-card-case-source');
-          source.type = 'number'; source.min = '0'; source.step = '1'; source.value = String(when.source); source.disabled = disabled;
-          source.setAttribute('aria-label', 'Источник: номер входа');
-          const pointer = el(doc, 'input', 'stage-card-case-pointer');
-          pointer.type = 'text'; pointer.value = when.pointer; pointer.placeholder = '/route'; pointer.disabled = disabled;
-          pointer.setAttribute('aria-label', 'Указатель JSON');
-          const op = el(doc, 'select', 'stage-card-case-op');
-          ROUTE_OPS.forEach((value) => { const option = el(doc, 'option', '', value); option.value = value; op.append(option); });
-          op.value = when.op; op.disabled = disabled; op.setAttribute('aria-label', 'Оператор условия');
-          const value = el(doc, 'input', 'stage-card-case-value');
-          value.type = 'text'; value.value = when.value; value.disabled = disabled || when.op === 'exists';
-          value.placeholder = when.op === 'in' ? 'значения через запятую' : 'значение (текст или JSON)';
-          value.setAttribute('aria-label', 'Значение условия');
-          const condition = () => ({ source: source.value, pointer: pointer.value, op: op.value, value: value.value });
-          const onCondition = () => { state.when = condition(); value.disabled = op.value === 'exists'; sendCase(index, state); };
-          source.addEventListener('change', onCondition);
-          pointer.addEventListener('change', onCondition);
-          op.addEventListener('change', onCondition);
-          value.addEventListener('change', onCondition);
-          box.append(source, pointer, op, value);
-        }
-      }
-      renderTransition(box, { field: `case${index}`, label: 'Действие варианта', view: item.action, refs: model.refs, disabled, withStop: true,
-        options: [{ value: 'goto', label: 'Перейти к шагу' }, { value: 'stop', label: 'Остановить прогон' }],
-        emit: (payload) => { state.action = { mode: payload.mode, goto: payload.goto, stop: payload.stop }; sendCase(index, state); } });
-      const remove = el(doc, 'button', 'stage-card-case-remove', '×');
-      remove.type = 'button'; remove.disabled = disabled; remove.setAttribute('aria-label', 'Удалить вариант');
-      remove.addEventListener('click', () => send({ field: 'caseRemove', index }));
-      box.append(remove);
-      cases.append(box);
-    });
-    const add = el(doc, 'button', 'stage-card-case-add', '+ вариант');
-    add.type = 'button'; add.disabled = disabled;
-    add.addEventListener('click', () => send({ field: 'caseAdd' }));
-    cases.append(add);
-    container.append(cases);
-    if (model.by === 'rule') {
-      renderTransition(container, { field: 'otherwise', label: 'Если ни один не подошёл', view: model.otherwise, refs: model.refs, disabled, withStop: true, emit: send,
-        options: [{ value: 'none', label: 'Нет: ошибка маршрута' }, { value: 'goto', label: 'Перейти к шагу' }, { value: 'stop', label: 'Остановить прогон' }] });
-    }
-  }
 
   // The window of an owner (6.1 of the spec, 8.1): the task the owner has to provide and the output of the step (as the round
   // windows have it). The input of an owner is not edited here; it stays as the schema has it.
@@ -10716,9 +10328,8 @@ window.ProtoState = {
     container.append(group);
   }
 
-  // The text of a control on its canvas card (the owner's words; a switched-off checker is not named).
-  // «Шаг после этапа»: the way to add a gate, a route or an owner step lives in the card of the stage it follows.
-  const ADD_CONTROL_OPTIONS = [['', '— нет —'], ['gate', 'Проверка (gate)'], ['route', 'Маршрут (route)'], ['owner', 'User (owner)']];
+  // «Шаг после этапа»: the way to add an owner step lives in the card of the stage it follows.
+  const ADD_CONTROL_OPTIONS = [['', '— нет —'], ['owner', 'User (owner)']];
   function renderAddControl(container, { disabled = false, note = '', onAdd = null } = {}) {
     const doc = container.ownerDocument;
     const select = el(doc, 'select', 'stage-card-add-control');
@@ -10767,24 +10378,14 @@ window.ProtoState = {
     return parts.filter(Boolean).join('\n');
   }
 
+  // The text of an owner step on its canvas card (the owner's words).
   function controlSummary(step = {}) {
-    if (step.kind === 'gate') {
-      const checkers = (Array.isArray(step.models) ? step.models : []).filter((model) => isPlain(model) && model.enabled !== false).map((model) => model.name);
-      return `проверяют: ${checkers.length ? checkers.join(', ') : 'никто'}`;
-    }
     if (step.kind === 'owner') return step.task ? `задание: ${String(step.task).split('\n')[0]}` : 'задание не задано';
-    if (step.kind === 'route') {
-      const by = isPlain(step.select) ? step.select.by : '';
-      const count = isPlain(step.select) && Array.isArray(step.select.cases) ? step.select.cases.length : 0;
-      const kind = { rule: 'по правилу', model: 'выбирает модель', owner: 'выбирает User' }[by] || 'вид не выбран';
-      return `${kind}, вариантов: ${count}`;
-    }
     return '';
   }
 
   const api = Object.freeze({ buildModel, render, renderStepFields, stepFieldsModel, stepsAfterToggle, outputAfterEdit, STATUS, feed,
-    gateWindowModel, gateAfterEdit, renderGateWindow, controlSummary, transitionView, transitionAfterEdit,
-    routeWindowModel, routeAfterEdit, renderRouteWindow, ownerWindowModel, ownerAfterEdit, renderOwnerWindow, renderAddControl, ownerAskMessage });
+    controlSummary, ownerWindowModel, ownerAfterEdit, renderOwnerWindow, renderAddControl, ownerAskMessage });
   root.StageCard = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
@@ -11928,107 +11529,6 @@ window.ProtoState = {
 
 </script>
 <script>
-// Basic control steps (technical spec 6.1, 6.2): the verdict of a gate and the pass rule of its checkers.
-// Pure functions: the engine (disput/custom-engine.js) calls them, the tests too.
-// A text answer of a gate ends with the verdict line «ВЕРДИКТ: ПРОШЁЛ» or «ВЕРДИКТ: НЕ ПРОШЁЛ»; a fail names each unmet
-// criterion in a «НЕ ВЫПОЛНЕНО: …» line right above the verdict. A json answer has verdict «pass» | «fail» and unmet (a list
-// of strings, not empty on fail). Without a verdict the answer is refused as no_verdict and corrected in the same chat.
-(function initBasicControl(root) {
-  'use strict';
-
-  const Output = root.BasicOutput || (typeof require === 'function' ? require('./basic-output') : null);
-  const PASS_LINE = 'ВЕРДИКТ: ПРОШЁЛ';
-  const FAIL_LINE = 'ВЕРДИКТ: НЕ ПРОШЁЛ';
-  const UNMET = 'НЕ ВЫПОЛНЕНО:';
-
-  const noVerdict = (detail) => ({ ok: false, reason: 'no_verdict', detail });
-
-  // The verdict of one checker answer: { ok: true, verdict: 'pass' | 'fail', unmet: [...] } or { ok: false, reason, detail }.
-  function verdictOf(raw, { json = false } = {}) {
-    if (json) {
-      const value = Output.parseJsonAnswer(raw);
-      if (!value || (value.verdict !== 'pass' && value.verdict !== 'fail')) return noVerdict('поле verdict: "pass" или "fail"');
-      if (value.verdict === 'pass') return { ok: true, verdict: 'pass', unmet: [] };
-      const unmet = Array.isArray(value.unmet) ? value.unmet : [];
-      if (!unmet.length || unmet.some((item) => typeof item !== 'string' || !item.trim())) return noVerdict('поле unmet: непустой список строк при "fail"');
-      return { ok: true, verdict: 'fail', unmet: unmet.map((item) => item.trim()) };
-    }
-    const lines = String(raw == null ? '' : raw).split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-    const last = lines[lines.length - 1];
-    if (last === PASS_LINE) return { ok: true, verdict: 'pass', unmet: [] };
-    if (last !== FAIL_LINE) return noVerdict(`последней строкой ${PASS_LINE} или ${FAIL_LINE}`);
-    const unmet = [];
-    for (let at = lines.length - 2; at >= 0 && lines[at].startsWith(UNMET); at -= 1) {
-      const item = lines[at].slice(UNMET.length).trim();
-      if (!item) return noVerdict(`строка «${UNMET} …» с текстом перед ${FAIL_LINE}`);
-      unmet.unshift(item);
-    }
-    if (!unmet.length) return noVerdict(`строка «${UNMET} …» перед ${FAIL_LINE}`);
-    return { ok: true, verdict: 'fail', unmet };
-  }
-
-  // The pass rule over the verdicts of the accepted checkers: all, or any. No verdict is never a pass.
-  const passed = (verdicts, rule) => {
-    if (!verdicts.length) return false;
-    return rule === 'any' ? verdicts.some((item) => item === 'pass') : verdicts.every((item) => item === 'pass');
-  };
-
-  // The instruction of the verdict, added to the request of a gate (the criteria are listed before it).
-  const verdictInstruction = (json) => (json
-    ? 'Поле verdict — "pass" или "fail"; поле unmet — список невыполненных критериев (непустой при "fail").'
-    : `Заверши ответ строкой «${PASS_LINE}» или «${FAIL_LINE}». При «НЕ ПРОШЁЛ» перед ней — строка «${UNMET} …» по каждому невыполненному критерию.`);
-
-  // The value of an answer read as json: the whole answer, or one block of json with nothing around it. Not json: ok false.
-  function jsonValueOf(raw) {
-    const body = String(raw == null ? '' : raw).trim();
-    const fenced = /^```json[ \t]*\r?\n([\s\S]*?)\r?\n```$/.exec(body);
-    try {
-      return { ok: true, value: JSON.parse(fenced ? fenced[1] : body) };
-    } catch (_) {
-      return { ok: false };
-    }
-  }
-
-  // Strict equality of JSON values: no type coercion; the keys of an object in any order, the items of a list in order.
-  function sameJson(left, right) {
-    if (Array.isArray(left) || Array.isArray(right)) {
-      return Array.isArray(left) && Array.isArray(right) && left.length === right.length && left.every((item, at) => sameJson(item, right[at]));
-    }
-    if (left !== null && right !== null && typeof left === 'object' && typeof right === 'object') {
-      const keys = Object.keys(left);
-      return keys.length === Object.keys(right).length && keys.every((key) => Object.prototype.hasOwnProperty.call(right, key) && sameJson(left[key], right[key]));
-    }
-    return left === right;
-  }
-
-  // A condition of a rule (6.2): { source, pointer, op, value? } or { all: [...] } / { any: [...] }. `read(source, pointer)` gives
-  // { found, value } (found is false for a missing field and for a source without an answer); it may throw for an unreadable source.
-  function matches(cond, read) {
-    if (Array.isArray(cond.all)) return cond.all.every((item) => matches(item, read));
-    if (Array.isArray(cond.any)) return cond.any.some((item) => matches(item, read));
-    const { found, value } = read(cond.source, cond.pointer);
-    if (cond.op === 'exists') return Boolean(found);
-    if (!found) return false;
-    if (cond.op === 'eq') return sameJson(value, cond.value);
-    return cond.value.some((item) => sameJson(item, value));
-  }
-
-  // The answer of a model route (6.2): one json object whose route is one of the case ids. Anything else is invalid_route.
-  function routeOf(raw, ids) {
-    const value = Output.parseJsonAnswer(raw);
-    if (!value || typeof value.route !== 'string' || !ids.includes(value.route)) {
-      return { ok: false, reason: 'invalid_route', detail: `(допустимо: ${ids.join(', ')})` };
-    }
-    return { ok: true, fields: { route: value.route } };
-  }
-
-  const api = Object.freeze({ verdictOf, passed, verdictInstruction, jsonValueOf, sameJson, matches, routeOf });
-  root.BasicControl = api;
-  if (typeof module !== 'undefined' && module.exports) module.exports = api;
-})(typeof window !== 'undefined' ? window : globalThis);
-
-</script>
-<script>
 // Custom engine: the shared pipeline workhorse. A run is one sequence of steps; the canvas shows
 // them as round cards and synthesis inserts, the engine knows only steps. Meaning (answer, critique,
 // improvement, check, synthesis) comes from the step's task; the engine executes and passes data.
@@ -12061,10 +11561,8 @@ window.ProtoState = {
 // Require: a step ends when the accepted answers reach its threshold (any, all or N). Owner approval (owner: approve)
 //   asks the owner after the step in every mode. Artifacts (basic-artifacts.js): an accepted answer is stored once
 //   (putText) and its declared artifacts are registered; a source { artifact, version } gives only that content.
-// Gate (basic-control.js): checkers answer with a verdict; the gate passes by require (the answers) and pass (all | any).
-//   A fail stops the run (gate_failed) or asks the owner (onFail: ask).
-// Pointer: the run is at a position of the plan and only moves forward. A gate's onPass/onFail (and the cases of a route) may take
-//   goto (to a step lower in the list) or stop. There is no way back: a repeat is one more ordinary step lower in the list.
+// Pointer: the run is at a position of the plan and only moves forward, step after step: there are no branches and no
+//   transitions. A check is an ordinary round (its criteria are in the task); a decision is the owner's step (kind: owner).
 // Transition: decide(problem) → 'continue' | 'retry' | 'skip' | 'stop'. Asked after every step in semi-automatic
 //   mode, in Auto when the threshold is not met, and after every step with approval. 'continue' is never offered
 //   below the threshold. A prompt over maxPromptChars stops the run before sending.
@@ -12077,7 +11575,6 @@ window.ProtoState = {
 
   const Output = root.BasicOutput || (typeof require === 'function' ? require('./basic-output') : null);
   const Artifacts = root.BasicArtifacts || (typeof require === 'function' ? require('./basic-artifacts') : null);
-  const Control = root.BasicControl || (typeof require === 'function' ? require('./basic-control') : null);
   const DEFAULT_ATTEMPTS = 2;
   const SYNTHESIS_TASK = 'Сведи эти ответы в один итоговый ответ на задачу.';
   const REASON_TEXT = Object.freeze({
@@ -12092,9 +11589,7 @@ window.ProtoState = {
     missing_section: 'не содержит раздел',
     invalid_output: 'не в формате ответа',
     missing_field: 'без обязательного поля',
-    missing_artifact: 'без объявленного артефакта',
-    no_verdict: 'без вердикта',
-    invalid_route: 'не назвал вариант маршрута'
+    missing_artifact: 'без объявленного артефакта'
   });
   const STOP_TEXT = Object.freeze({
     steps_done: 'все шаги пройдены',
@@ -12103,23 +11598,12 @@ window.ProtoState = {
     cancelled: 'остановлено пользователем',
     no_decision: 'нет принятых ответов, решение User не получено',
     missing_input: 'обязательный вход не получен, запрос не отправлен',
-    gate_failed: 'проверка не пройдена',
-    route_not_found: 'ни один вариант маршрута не подошёл, иначе не задан',
-    route_ambiguous: 'подошло несколько вариантов маршрута',
-    invalid_route_input: 'источник правила маршрута не читается как JSON',
     unsupported_input: 'двоичный файл не передаётся тексту модели; шаг не отправлен'
   });
-  // The fields of each transition (6.3); a field outside them is refused before the first request.
-  const ACTION_FIELDS = Object.freeze({ goto: ['goto'], stop: ['stop'] });
-  // The removed ways back: a schema that still uses them is refused with the reason (a repeat is an ordinary step lower in the list).
-  const BACK_FIELDS = Object.freeze(['return', 'maxLoops', 'feedback', 'invalidate', 'resumeAt']);
-  const NO_BACK = 'возврат назад не поддерживается: добавьте обычный шаг ниже по списку';
-
   const text = (value) => String(value == null ? '' : value).trim();
   // The key of a step in the state of the run: its ref, or its position in the schema for a step without a ref.
   const refKey = (step) => step.ref ?? `#${step.index}`;
   const stepLabel = (step) => {
-    if (step.kind === 'gate') return `Проверка ${step.ref}`;
     if (step.kind === 'owner') return `User ${step.ref}`;
     return step.kind === 'synthesis' ? `Синтез после раунда ${step.afterRound}` : `Раунд ${step.round}`;
   };
@@ -12154,11 +11638,6 @@ window.ProtoState = {
     return lines.length ? `Формат ответа:\n${lines.join('\n')}` : '';
   }
 
-  // The block of a gate: its criteria, and the verdict the answer ends with (6.1).
-  const gateBlock = (step, output) => `Критерии проверки:\n${step.criteria.map((item) => `- ${item}`).join('\n')}\n${Control.verdictInstruction(output?.format === 'json')}`;
-  // The block of a model route: its cases with their labels, and the answer it names (6.2).
-  const routeBlock = (step) => `Варианты маршрута:\n${step.select.cases.map((item) => `- ${item.id} — ${item.label}`).join('\n')}\nОтвет — один JSON-объект {"route": "<id варианта>"} без текста вокруг.`;
-
   function buildPrompt({ task, step, model, input = [], inputMode = 'none', earlier = [], ownerAnswers = [], askInstruction = '', output = null }) {
     if (askInstruction && typeof model.discipline?.ask === 'string') askInstruction = model.discipline.ask;
     if (typeof model.promptTemplate === 'string' && model.promptTemplate.trim()) {
@@ -12166,8 +11645,6 @@ window.ProtoState = {
       const values = { '{задача}': text(task), '{вход}': inputMode === 'all' || inputMode === 'sources' ? labelled(input) : numbered(input), '{ответы до тебя}': numbered(earlier) };
       const parts = [model.promptTemplate.replace(/\{задача\}|\{вход\}|\{ответы до тебя\}/g, (key) => values[key])];
       if (formatBlock(output)) parts.push(formatBlock(output));
-      if (step.kind === 'gate') parts.push(gateBlock(step, output));
-      if (step.kind === 'route') parts.push(routeBlock(step));
       if (ownerAnswers.length) parts.push(`Ответы User на вопросы:\n${ownerAnswers.map((item) => `- ${item.question}: ${item.answer}`).join('\n')}`);
       if (askInstruction) parts.push(askInstruction);
       return parts.join('\n\n');
@@ -12183,8 +11660,6 @@ window.ProtoState = {
     const taskInstruction = model.task ?? step.task;
     if (text(taskInstruction)) parts.push(`Задание:\n${text(taskInstruction)}`);
     if (formatBlock(output)) parts.push(formatBlock(output));
-    if (step.kind === 'gate') parts.push(gateBlock(step, output));
-    if (step.kind === 'route') parts.push(routeBlock(step));
     if (text(model.extra)) parts.push(`Дополнительно для тебя:\n${text(model.extra)}`);
     if (ownerAnswers.length) parts.push(`Ответы User на вопросы:\n${ownerAnswers.map((item) => `- ${item.question}: ${item.answer}`).join('\n')}`);
     if (askInstruction) parts.push(askInstruction);
@@ -12207,8 +11682,7 @@ window.ProtoState = {
     if (verdict.ok === false) return { ok: false, reason: verdict.reason || 'rejected', text: value };
     const shape = check ? check(value) : null;
     if (shape && !shape.ok) return { ok: false, reason: shape.reason, detail: shape.detail || '', text: value };
-    // The fields of a check (a gate's verdict, a route's choice) go with the answer.
-    return { ok: true, reason: '', text: value, ...(shape?.fields ? { ...shape.fields } : {}) };
+    return { ok: true, reason: '', text: value };
   }
 
   // The input item that a revision names (5.2): an artifact of the same line, and the same version when the revision names one.
@@ -12239,26 +11713,11 @@ window.ProtoState = {
     return typeof read.value === 'string' ? read.value : JSON.stringify(read.value);
   }
 
-  // A route's select as the run keeps it: the cases with their conditions, labels and actions; a rule keeps its conflict and otherwise.
-  function normalizeSelect(select) {
-    const plain = isPlain(select) ? select : {};
-    const cases = (Array.isArray(plain.cases) ? plain.cases : []).filter(isPlain).map((item) => ({
-      id: item.id, ...(item.when !== undefined ? { when: JSON.parse(JSON.stringify(item.when)) } : {}),
-      ...(item.label !== undefined ? { label: item.label } : {}), action: isPlain(item.action) ? { ...item.action } : item.action
-    }));
-    const out = { by: plain.by, cases };
-    if (plain.by === 'rule') {
-      out.conflict = plain.conflict === 'first' || plain.conflict === 'owner' ? plain.conflict : 'stop';
-      if (plain.otherwise !== undefined) out.otherwise = isPlain(plain.otherwise) ? { ...plain.otherwise } : plain.otherwise;
-    }
-    return out;
-  }
-
   // Numbers the steps for labels: rounds by their card, syntheses by the round before them.
   function normalizeSteps(steps = []) {
     let round = 0;
     return steps.map((step, index) => {
-      const kind = ['synthesis', 'gate', 'route', 'owner'].includes(step.kind) ? step.kind : 'round';
+      const kind = ['synthesis', 'owner'].includes(step.kind) ? step.kind : 'round';
       // A switched-off round keeps its number: the schema gives the number, the engine only counts without it.
       if (kind === 'round') round = Number.isSafeInteger(step.round) && step.round > 0 ? step.round : round + 1;
       return {
@@ -12273,12 +11732,6 @@ window.ProtoState = {
         chat: step.chat === 'new' ? 'new' : 'continue',
         require: step.require ?? 'any',
         approve: step.owner === 'approve',
-        // A gate: its criteria, the rule of its checkers (all | any) and what a fail does (stop | ask).
-        criteria: Array.isArray(step.criteria) ? step.criteria.slice() : null,
-        pass: step.pass === 'any' ? 'any' : 'all',
-        ...(kind === 'route' ? { select: normalizeSelect(step.select) } : {}),
-        onFail: isPlain(step.onFail) ? { ...step.onFail } : (step.onFail === 'ask' ? 'ask' : 'stop'),
-        ...(step.onPass !== undefined ? { onPass: isPlain(step.onPass) ? { ...step.onPass } : step.onPass } : {}),
         models: (step.models || []).map((model) => (typeof model === 'string' ? { name: model, id: model, extra: '' } : {
           name: model.name, id: model.id ?? model.name, extra: text(model.extra), task: typeof model.task === 'string' ? model.task : null, promptTemplate: typeof model.promptTemplate === 'string' ? model.promptTemplate : null,
           discipline: model.discipline ? { ...model.discipline } : null,
@@ -12288,7 +11741,7 @@ window.ProtoState = {
         }))
           .filter((model) => model.name)
       };
-    }).filter((step) => step.models.length || step.kind === 'route' || step.kind === 'owner');
+    }).filter((step) => step.models.length || step.kind === 'owner');
   }
 
   // A fault that stops a run before its first request. `address` names the step (its ref) and the field.
@@ -12301,11 +11754,9 @@ window.ProtoState = {
     }
   }
 
-  const EXECUTED_KINDS = Object.freeze(['round', 'synthesis', 'gate', 'route', 'owner']);
+  const EXECUTED_KINDS = Object.freeze(['round', 'synthesis', 'owner']);
   // The participant that an owner step's answer and artifacts are registered under: the owner has no model (8.1).
   const OWNER_PARTICIPANT = 'owner';
-  const ROUTE_BY = Object.freeze(['rule', 'model', 'owner']);
-  const CONDITION_FIELDS = Object.freeze(['source', 'pointer', 'op', 'value']);
   const INPUT_VALUES = Object.freeze(['none', 'previous', 'all']);
   // An input (of a step or of a participant) that the engine cannot execute, or null. `fail` builds the error with its address.
   function inputProblem(spec, kind, fail, field) {
@@ -12332,63 +11783,6 @@ window.ProtoState = {
     if (!INPUT_VALUES.includes(spec) || (kind === 'synthesis' && spec !== 'previous')) return fail('invalid_input', field, 'вход: none, previous, all или список источников; синтез — только previous');
     return null;
   }
-  // A condition of a rule (6.2): its source is a number of the route's input list, and that input is one participant or artifact.
-  function conditionProblem(cond, input, fail, field) {
-    if (!isPlain(cond)) return fail('invalid_field', field, 'условие: объект с полями source, pointer, op, value');
-    const composite = ['all', 'any'].filter((key) => key in cond);
-    if (composite.length) {
-      if (composite.length > 1 || Object.keys(cond).length > 1) return fail('invalid_field', field, 'условие: либо all, либо any, без других полей');
-      const key = composite[0];
-      if (!Array.isArray(cond[key]) || !cond[key].length) return fail('invalid_field', `${field}.${key}`, 'условие: непустой список условий');
-      for (const [at, item] of cond[key].entries()) {
-        const problem = conditionProblem(item, input, fail, `${field}.${key}[${at}]`);
-        if (problem) return problem;
-      }
-      return null;
-    }
-    const extra = Object.keys(cond).find((key) => !CONDITION_FIELDS.includes(key));
-    if (extra !== undefined) return fail('invalid_field', `${field}.${extra}`, `поле «${extra}» не входит в условие`);
-    if (!Number.isSafeInteger(cond.source) || cond.source < 0 || cond.source >= input.length) return fail('invalid_field', `${field}.source`, 'источник: номер входа маршрута из input');
-    if (!isPlain(input[cond.source])) return fail('invalid_field', `${field}.source`, 'правило читает точный источник: участника или артефакт');
-    if (typeof cond.pointer !== 'string' || (cond.pointer !== '' && !cond.pointer.startsWith('/'))) return fail('invalid_field', `${field}.pointer`, 'указатель: пустой или начинается с «/»');
-    if (!['eq', 'in', 'exists'].includes(cond.op)) return fail('invalid_field', `${field}.op`, 'оператор условия: eq, in или exists');
-    if (cond.op === 'eq' && !('value' in cond)) return fail('invalid_field', `${field}.value`, 'для eq укажите value');
-    if (cond.op === 'in' && !(Array.isArray(cond.value) && cond.value.length)) return fail('invalid_field', `${field}.value`, 'для in нужен непустой список значений');
-    if (cond.op === 'exists' && 'value' in cond) return fail('invalid_field', `${field}.value`, 'для exists значение не указывают');
-    return null;
-  }
-  // A route (6.2) as the engine runs it: its select, its cases, its conditions and its models, checked before the first request.
-  function routeProblem(step, fail) {
-    const select = step.select;
-    if (!isPlain(select)) return fail('invalid_field', 'select', 'выбор маршрута: объект с полем by');
-    if (!ROUTE_BY.includes(select.by)) return fail('invalid_field', 'select.by', 'выбор маршрута: rule, model или owner');
-    const models = Array.isArray(step.models) ? step.models : [];
-    if (select.by === 'model') {
-      if (models.length !== 1) return fail('invalid_field', 'models', 'маршрут по модели: ровно один включённый участник');
-      if (!text(step.task) && !text(models[0]?.task)) return fail('invalid_field', 'task', 'задание маршрута по модели: непустой текст');
-    } else if (models.length) return fail('invalid_field', 'models', 'у маршрута по правилу и User моделей нет');
-    if (select.by === 'rule' && !Array.isArray(step.input)) return fail('invalid_input', 'input', 'правило читает точные источники: укажите input списком');
-    if ('conflict' in select && (select.by !== 'rule' || !['stop', 'first', 'owner'].includes(select.conflict))) return fail('invalid_field', 'select.conflict', 'конфликт выбора: stop, first или owner, только для правила');
-    if ('otherwise' in select && select.by !== 'rule') return fail('invalid_field', 'select.otherwise', 'вариант по умолчанию задаётся только для правила');
-    if (!Array.isArray(select.cases) || !select.cases.length) return fail('invalid_field', 'select.cases', 'ожидается непустой список вариантов');
-    const ids = new Set();
-    for (const [at, item] of select.cases.entries()) {
-      const field = `select.cases[${at}]`;
-      if (!isPlain(item) || typeof item.id !== 'string' || !item.id.trim()) return fail('invalid_field', `${field}.id`, 'ID варианта: непустой текст');
-      if (ids.has(item.id)) return fail('invalid_field', `${field}.id`, `вариант «${item.id}» повторяется`);
-      ids.add(item.id);
-      if (select.by === 'rule') {
-        if (!('when' in item)) return fail('invalid_field', `${field}.when`, 'правило: условие when обязательно');
-        const problem = conditionProblem(item.when, step.input, fail, `${field}.when`);
-        if (problem) return problem;
-      } else {
-        if ('when' in item) return fail('invalid_field', `${field}.when`, 'условие задаётся только для правила');
-        if (typeof item.label !== 'string' || !item.label.trim()) return fail('invalid_field', `${field}.label`, 'название варианта: непустой текст');
-      }
-    }
-    return null;
-  }
-
   // The output of a step or of a participant (5.8, 3.2): the fields the engine executes, or null. `field` names it in the error.
   function outputProblem(output, kind, fail, field) {
     if (!output || typeof output !== 'object' || Array.isArray(output)) return fail('invalid_field', field, 'выход: объект');
@@ -12419,16 +11813,6 @@ window.ProtoState = {
       if (!text(step.task)) return fail('invalid_field', 'task', 'задание User: непустой текст');
       if (Array.isArray(step.models) && step.models.length) return fail('invalid_field', 'models', 'у User нет моделей');
     }
-    if (step.kind === 'route') {
-      const problem = routeProblem(step, fail);
-      if (problem) return problem;
-    }
-    if (step.kind === 'gate') {
-      if (!Array.isArray(step.criteria) || !step.criteria.length || step.criteria.some((item) => typeof item !== 'string' || !item.trim())) return fail('invalid_field', 'criteria', 'критерии: непустой список непустых строк');
-      if (step.pass !== undefined && step.pass !== 'all' && step.pass !== 'any') return fail('invalid_field', 'pass', 'pass: all или any');
-      if (step.onPass !== undefined && !isPlain(step.onPass)) return fail('invalid_field', 'onPass', 'onPass: переход (объект)');
-      if (step.onFail !== undefined && !isPlain(step.onFail) && step.onFail !== 'stop' && step.onFail !== 'ask') return fail('invalid_field', 'onFail', 'onFail: stop, ask или переход (объект)');
-    }
     if (step.input !== undefined) {
       const problem = inputProblem(step.input, step.kind, fail, 'input');
       if (problem) return problem;
@@ -12454,7 +11838,6 @@ window.ProtoState = {
         if (problem) return problem;
       }
       if (model && typeof model === 'object' && model.output !== undefined) {
-        if (step.kind === 'route') return fail('invalid_field', `модель «${name}» · output`, 'у участника маршрута выход не задаётся');
         const problem = outputProblem(model.output, step.kind, fail, `модель «${name}» · output`);
         if (problem) return problem;
       }
@@ -12523,45 +11906,10 @@ window.ProtoState = {
     });
   }
 
-  // The transitions of the plan (6.3, 6.4), checked before the first request: one shape per action (goto or stop), its fields,
-  // a known target lower in the list. There is no way back. Null when all is well.
-  function transitionsProblem(plan) {
-    const targetOf = (ref) => plan.findIndex((item) => item.ref === ref);
-    const actions = [];
-    plan.forEach((step, pos) => {
-      if (step.kind === 'gate') {
-        if (step.onPass !== undefined) actions.push({ step, pos, field: 'onPass', action: step.onPass });
-        if (isPlain(step.onFail)) actions.push({ step, pos, field: 'onFail', action: step.onFail });
-      } else if (step.kind === 'route') {
-        step.select.cases.forEach((item, at) => actions.push({ step, pos, field: `select.cases[${at}]`, action: item.action }));
-        if (step.select.otherwise !== undefined) actions.push({ step, pos, field: 'select.otherwise', action: step.select.otherwise });
-      }
-    });
-    for (const { step, pos, field, action } of actions) {
-      const fail = (code, at, message) => new EngineError(code, `шаг «${step.ref}» · ${at}`, message);
-      if (!isPlain(action)) return fail('invalid_field', field, 'переход: объект с одним полем goto или stop');
-      const back = BACK_FIELDS.find((key) => key in action);
-      if (back !== undefined) return fail('invalid_field', `${field}.${back}`, `«${back}»: ${NO_BACK}`);
-      const kinds = ['goto', 'stop'].filter((key) => key in action);
-      if (kinds.length !== 1) return fail('invalid_field', field, 'переход: ровно одно из goto, stop');
-      const [kind] = kinds;
-      const extra = Object.keys(action).find((key) => !ACTION_FIELDS[kind].includes(key));
-      if (extra !== undefined) return fail('invalid_field', `${field}.${extra}`, `поле «${extra}» не входит в переход «${kind}»`);
-      if (kind === 'stop') {
-        if (typeof action.stop !== 'string' || !action.stop.trim()) return fail('invalid_field', `${field}.stop`, 'причина остановки: непустой текст');
-        continue;
-      }
-      if (typeof action.goto !== 'string' || !action.goto) return fail('invalid_field', `${field}.goto`, 'ref перехода: непустой текст');
-      if (targetOf(action.goto) < 0) return fail('unknown_target', `${field}.goto`, `шаг «${action.goto}» не исполняется в этом прогоне`);
-      if (targetOf(action.goto) <= pos) return fail('invalid_field', `${field}.goto`, NO_BACK);
-    }
-    return null;
-  }
-
   async function run({
     task, steps = [], maxAttempts = DEFAULT_ATTEMPTS, semiAuto = false, maxPromptChars = Infinity,
     accept = defaultAccept, parseAsks = null, askOwner = null, askInstruction = '', decide = null,
-    send = null, sendParticipants = null, runMaxWords = null, runStrictLength = false, putText: putCallback = null, getText: getCallback = null, chooseRoute = null, provideOwnerResult = null,
+    send = null, sendParticipants = null, runMaxWords = null, runStrictLength = false, putText: putCallback = null, getText: getCallback = null, provideOwnerResult = null,
     checkpoint = null, resolveUnknown = null, checkUnknown = null, resume = null,
     signal = null, onEvent = null, onRequest = null, onResponse = null
   }) {
@@ -12584,27 +11932,12 @@ window.ProtoState = {
       return output.strictLength === strictLength ? output : { ...output, strictLength };
     };
     // The check of an answer of one participant by the output of its step, or null when there is nothing to check.
-    // A gate's checker is also checked for its verdict (6.1), after the output. A route's answer has no output: only its length is checked.
     const checkFor = (step, model) => {
       const limit = model.maxWords ?? runLimit;
-      if (step.kind === 'route') {
-        const lengthOnly = { strictLength: strictLengthOf(outputOf(step, model)) };
-        return (value) => {
-          const base = Output.checkAnswer(value, lengthOnly, { limit });
-          return base.ok ? Control.routeOf(value, step.select.cases.map((item) => item.id)) : base;
-        };
-      }
       const output = checkedOutput(outputOf(step, model));
-      const shape = output ? (value) => Output.checkAnswer(value, output, { limit }) : null;
-      if (step.kind !== 'gate') return shape;
-      return (value) => {
-        const base = shape ? shape(value) : { ok: true };
-        if (!base.ok) return base;
-        const verdict = Control.verdictOf(value, { json: output?.format === 'json' });
-        return verdict.ok ? { ok: true, fields: { verdict: verdict.verdict, unmet: verdict.unmet } } : verdict;
-      };
+      return output ? (value) => Output.checkAnswer(value, output, { limit }) : null;
     };
-    if (!Output || !Artifacts || !Control) throw new Error('basic_modules_missing: загружены не все модули Basic (basic-output.js, basic-artifacts.js, basic-control.js)');
+    if (!Output || !Artifacts) throw new Error('basic_modules_missing: загружены не все модули Basic (basic-output.js, basic-artifacts.js)');
     const participants = typeof sendParticipants === 'function';
     if (!participants && typeof send !== 'function') throw new Error('custom_send_required');
     assertExecutable(steps, { participants });
@@ -12618,8 +11951,6 @@ window.ProtoState = {
     const emit = (kind, fields) => { if (typeof onEvent === 'function') onEvent(kind, fields); };
     const aborted = () => Boolean(signal?.aborted);
     const plan = normalizeSteps(steps);
-    const transitionProblem = transitionsProblem(plan);
-    if (transitionProblem) throw transitionProblem;
     if (plan.some((step) => step.kind === 'owner') && typeof provideOwnerResult !== 'function') {
       throw new Error('provide_owner_required: шагу User нужен callback provideOwnerResult (вопрос User)');
     }
@@ -12635,7 +11966,7 @@ window.ProtoState = {
     let prefetched = null;
     let inFlight = []; // the participants whose request is being sent now: unknown after a reload until their answer is judged
     let chatBindings = {}; // participantId → { modelName, stepRef, visit, transportRequestId }: the chat of each participant (kept on resume)
-    let openOwner = null; // the owner interaction that is open now (a decision, a route, an owner step, an ASK): kept on a stop
+    let openOwner = null; // the owner interaction that is open now (a decision, an owner step, an ASK): kept on a stop
     let stopDetail = '';
     // The plan as the run sees it: a report shows what was intended, not only what happened.
     emit('custom_start', { semiAuto: Boolean(semiAuto), maxAttempts, taskChars: text(task).length,
@@ -12645,12 +11976,11 @@ window.ProtoState = {
 
     // The live state for a checkpoint (8.2): plain data only. The pointer is the step in progress (or the next one between steps);
     // a pending owner interaction and the pending participants of a send are named, so a reload can show them.
-    // The live state for a checkpoint (8.2): plain data only. The pointer is the step in progress (or the next one between steps).
-    // The step in progress keeps its visit, phase, accepted answers, the participants in flight, route and owner answer.
+    // The step in progress keeps its visit, phase, accepted answers, the participants in flight and the owner answer.
     const compactOutcome = (outcome) => Object.fromEntries(Object.entries(outcome || {}).map(([id, item]) => { const { text, ...rest } = item; return [id, rest]; }));
     const ownerOf = (owner) => ({ textRef: owner.textRef ?? null, binary: Boolean(owner.binary), file: owner.file ?? null });
     const savedEntry = (item) => ({ stepRef: item.step.ref, index: item.step.index, visit: item.visit, valid: item.valid !== false, skipped: Boolean(item.skipped),
-      outcome: compactOutcome(item.outcome), ...(item.route ? { route: item.route } : {}), ...(item.owner ? { owner: ownerOf(item.owner) } : {}) });
+      outcome: compactOutcome(item.outcome), ...(item.owner ? { owner: ownerOf(item.owner) } : {}) });
     function liveState(phase, extra = {}) {
       const step = plan[pos];
       const outcomeNow = current?.outcome || {};
@@ -12660,17 +11990,16 @@ window.ProtoState = {
         // `active` is true while a step is in progress; between steps the current position is the next step, not started.
         current: current && step ? { active: true, stepRef: step.ref, visit: activeVisit, phase, valid: current.valid !== false,
           accepted: Object.keys(outcomeNow).filter((id) => outcomeNow[id]?.ok), pending: extra.pending ?? inFlight,
-          outcome: compactOutcome(outcomeNow), route: current.route ?? null,
-          owner: current.owner ? ownerOf(current.owner) : null, ...(extra.applied ? { applied: extra.applied } : {}) }
+          outcome: compactOutcome(outcomeNow),
+          owner: current.owner ? ownerOf(current.owner) : null }
           : { active: false, stepRef: step ? step.ref : null, visit: step ? (state.visits[refKey(step)] || 0) : 0, phase, valid: true,
-            accepted: [], pending: [], outcome: {}, route: null, owner: null },
+            accepted: [], pending: [], outcome: {}, owner: null },
         results: finished.map(savedEntry),
-        routes: finished.filter((item) => item.route).map((item) => ({ stepRef: item.step.ref, visit: item.visit, id: item.route.id, by: item.route.by, reason: item.route.reason })),
         ownerAnswers, artifacts: registry.entries, pendingOwner: openOwner, chatBindings
       }));
     }
     // The checkpoint (8.2) is awaited before the next external action. A failed save is not swallowed: the run stops with
-    // checkpoint_failed, so no request and no transition follows it. Without a callback the run is autonomous and saves nothing.
+    // checkpoint_failed, so no request follows it. Without a callback the run is autonomous and saves nothing.
     async function checkpointNow(phase, extra = {}) {
       if (typeof checkpoint !== 'function') return;
       if ('pendingOwner' in extra) openOwner = extra.pendingOwner;
@@ -12704,13 +12033,8 @@ window.ProtoState = {
     // Accepted answers of a step, each with its participant and its source (step, model, attempt) for the record.
     // The answers the step needs (ТЗ 4.2): all → every enabled participant, a number → that number, any → one.
     const neededOf = (step) => (step.require === 'all' ? step.models.length : (Number.isSafeInteger(step.require) ? step.require : 1));
-    // A gate passes when its accepted checkers reach the threshold (require) and their verdicts pass by the rule (pass).
-    // A skipped gate has no verdict, so it does not pass.
-    const verdictsOf = (step, outcome) => step.models.filter((model) => outcome[model.id]?.ok).map((model) => outcome[model.id].verdict);
-    const gatePass = (step, outcome, skipped = false) => !skipped && verdictsOf(step, outcome).length >= neededOf(step)
-      && Control.passed(verdictsOf(step, outcome), step.pass);
     const acceptedOf = (entry) => {
-      if (!entry || entry.skipped || entry.valid === false || entry.step.kind === 'route') return [];
+      if (!entry || entry.skipped || entry.valid === false) return [];
       if (entry.step.kind === 'owner') {
         // The owner's answer is data of its step, not an answer of a model: it is labelled as the owner's.
         return entry.owner ? [{ text: entry.owner.text, textRef: entry.owner.textRef, participant: OWNER_PARTICIPANT, ...(entry.owner.binary ? { binary: true, file: entry.owner.file } : {}),
@@ -12774,10 +12098,9 @@ window.ProtoState = {
         if (required) {
           const who = whole ? '' : ` участник «${source.participant}»`;
           const stopped = (why) => new StopRun('missing_input', `шаг «${ref}»${who} ${why}; шаг «${step.ref}» не отправлен`);
-          // A required source is complete: its answers reach the threshold and its gate passes (3.1).
+          // A required source is complete: its answers reach the threshold (3.1).
           if (!answers.length) throw stopped('не дал принятого ответа');
           if (whole && answers.length < neededOf(entry.step)) throw stopped('не набрал порога принятых ответов');
-          if (entry.step.kind === 'gate' && !gatePass(entry.step, entry.outcome, entry.skipped)) throw stopped('не прошёл проверку');
         }
         return answers.map((item) => ({
           label: `${stepLabel(entry.step)}${entry.step.output?.name ? ` («${entry.step.output.name}»)` : ''}, участник ${item.participant}, визит ${entry.visit}`,
@@ -12837,7 +12160,7 @@ window.ProtoState = {
     // Sends the participants with their prompts, then corrections; fills `outcome` by participant id. Every attempt
     // is a history entry of its own: a retry never rewrites the attempt it follows, it refers to it.
     async function attempt(step, models, requests, outcome, firstAttempt = 1) {
-      const phase = step.kind === 'route' ? 'route' : 'answer';
+      const phase = 'answer';
       let pending = models.slice();
       let current = requests; // participant id → { prompt, parts, retryOf }
       for (let tryNo = firstAttempt; pending.length && tryNo < firstAttempt + maxAttempts; tryNo += 1) {
@@ -12918,7 +12241,6 @@ window.ProtoState = {
           Object.assign(entries[model.id], {
             state: 'done', finishedAt: Date.now(), sentPrompt: typeof result.sentPrompt === 'string' ? result.sentPrompt : null,
             answer: text(result.text), attribution: result.attribution || '', accepted: verdict.ok, reason: verdict.reason || '', ...(verdict.detail ? { detail: verdict.detail } : {}),
-            ...(verdict.verdict ? { verdict: verdict.verdict, unmet: verdict.unmet } : {}),
             status: result.status || '', transportRequestId: result.transportRequestId || ''
           });
           if (typeof onResponse === 'function') onResponse(entries[model.id]);
@@ -12965,18 +12287,6 @@ window.ProtoState = {
       }
     }
 
-    // The value of a source of a rule route: its answer (or artifact) read as JSON at the pointer. No answer: found false.
-    function readSourceOf(step, index, pointer) {
-      const items = sourceItems([step.input[index]], step);
-      if (!items.length) return { found: false };
-      const json = Control.jsonValueOf(items[0].text);
-      if (!json.ok) throw new StopRun('invalid_route_input', `шаг «${step.ref}», источник ${index}: ответ не читается как JSON`);
-      return Output.readPointer(json.value, pointer);
-    }
-    const caseAction = (step, id) => (id === 'otherwise' ? step.select.otherwise : step.select.cases.find((item) => item.id === id).action);
-    // The choice of a route (6.2). A rule decides by its conditions: none holds → otherwise (or route_not_found); several → conflict
-    // (stop by default, first, or the owner among the matching cases). A model names a case; a failed answer goes to the owner.
-    // The owner's null is a cancel (stopped); an absent or an invalid id is no_decision.
     // The owner's answer to an owner step (8.1): a text, or a reference to a file that the page stored. An empty or rejected
     // text is asked again with its reason; null (the dialog cancelled) stops the run. Only an accepted text is stored once and
     // its declared artifacts are registered; a binary file is kept as a reference (no text, no output check).
@@ -13050,67 +12360,15 @@ window.ProtoState = {
       }
     }
 
-    async function routeChoice(step, entry) {
-      const ownerChoice = async (choices, reason) => {
-        const id = typeof chooseRoute === 'function'
-          ? await (async () => {
-            await checkpointNow('decision', { pendingOwner: { kind: 'route', stepRef: step.ref, visit: entry.visit } });
-            const chosen = await ownerWait(() => chooseRoute({ stepRef: step.ref, visit: entry.visit, choices, reason }));
-            await checkpointNow('decision', { pendingOwner: null });
-            return chosen;
-          })()
-          : undefined;
-        if (id === null) throw new StopRun('stopped');
-        if (!choices.includes(id)) throw new StopRun('no_decision');
-        return id;
-      };
-      if (step.select.by === 'owner') return { id: await ownerChoice(step.select.cases.map((item) => item.id), 'owner'), by: 'owner', reason: 'owner' };
-      if (step.select.by === 'model') {
-        if (!entry.outcome[step.models[0].id]) await execute(step, step.models, entry.outcome);
-        const verdict = entry.outcome[step.models[0].id];
-        if (verdict?.ok) return { id: verdict.route, by: 'model', reason: 'model' };
-        return { id: await ownerChoice(step.select.cases.map((item) => item.id), 'invalid_route'), by: 'owner', reason: 'invalid_route' };
-      }
-      const matched = step.select.cases.filter((item) => Control.matches(item.when, (index, pointer) => readSourceOf(step, index, pointer)));
-      if (!matched.length) {
-        if (step.select.otherwise !== undefined) return { id: 'otherwise', by: 'rule', reason: 'otherwise' };
-        throw new StopRun('route_not_found', step.ref);
-      }
-      if (matched.length === 1) return { id: matched[0].id, by: 'rule', reason: 'rule' };
-      if (step.select.conflict === 'first') return { id: matched[0].id, by: 'rule', reason: 'conflict_first' };
-      if (step.select.conflict === 'owner') return { id: await ownerChoice(matched.map((item) => item.id), 'conflict'), by: 'owner', reason: 'conflict_owner' };
-      throw new StopRun('route_ambiguous', matched.map((item) => item.id).join(', '));
-    }
-
-    // The next position after a step: the next step, or the transition the step wrote (6.3, 6.4): a goto to a step lower in the
-    // list (checked before the run) or a stop, which ends the run with its reason.
-    async function transit(pos, action, caseId, applied = null) {
-      const step = plan[pos];
-      if (!action) return pos + 1;
-      // A transition that the reload found applied goes on to its saved target: it is not applied a second time (8.3).
-      if (applied) return plan.findIndex((item) => item.ref === applied.target);
-      await checkpointNow('transition');
-      if ('stop' in action) {
-        emit('custom_transition', { from: step.ref, case: caseId, action: 'stop', reason: action.stop });
-        throw new StopRun(action.stop);
-      }
-      const target = action.goto;
-      const to = plan.findIndex((item) => item.ref === target);
-      // The transition is applied: the state now says so, and a reload goes on from its target.
-      await checkpointNow('transition', { applied: { target } });
-      emit('custom_transition', { from: step.ref, case: caseId, action: 'goto', to: target });
-      return to;
-    }
-
     // The step in progress: on Stop its accepted answers are kept like those of finished steps.
     let current = null;
     let pos = 0; // the pointer (pc): the position of the step the run is at
-    let resumePoint = null; // the step that the saved state was in: its visit, phase, outcome, owner and route
+    let resumePoint = null; // the step that the saved state was in: its visit, phase, outcome and owner
 
     // Resume (8.3): the saved state is taken back as it was. The steps are the ones the caller gives (the saved schema);
     // the finished steps are not sent again, the accepted answers of the interrupted visit stay, the validity is restored, not reset.
     // Texts come back through getText. A state saved by an older version may hold fields that no longer exist (the counters of
-    // transitions, the stack, the feedback, the dependencies): they are ignored.
+    // transitions, the stack, the feedback, the dependencies, the routes, a route or an applied transition): they are ignored.
     const pointAt = (ref) => plan.findIndex((item) => item.ref === ref);
     const restoredText = (ref, where) => {
       const value = getText(ref);
@@ -13141,7 +12399,6 @@ window.ProtoState = {
         const step = plan[pointAt(item.stepRef)];
         if (!step) throw new EngineError('resume_mismatch', `шаг «${item.stepRef}»`, 'шага сохранённого состояния нет в схеме продолжения');
         const entry = { step, visit: item.visit, outcome: restoredOutcome(item.outcome), skipped: Boolean(item.skipped), valid: item.valid !== false };
-        if (item.route) entry.route = item.route;
         if (item.owner) entry.owner = restoredOwner(item.owner);
         results.push(entry);
       });
@@ -13152,7 +12409,7 @@ window.ProtoState = {
       if (cur && cur.active && at >= 0 && cur.stepRef === saved.pc) {
         resumePoint = { index: at, visit: cur.visit, phase: cur.phase, pending: Array.isArray(cur.pending) ? cur.pending : [], outcome: restoredOutcome(cur.outcome),
           valid: cur.valid !== false,
-          owner: cur.owner ? restoredOwner(cur.owner) : null, route: cur.route || null, applied: cur.applied || null };
+          owner: cur.owner ? restoredOwner(cur.owner) : null };
       }
     }
     // A request that may have been sent before the reload has no known answer: the owner decides, and the request is never
@@ -13246,28 +12503,12 @@ window.ProtoState = {
         const outcome = resumed ? resumed.outcome : {};
         const entry = { step, visit: activeVisit, outcome, skipped: false, valid: resumed ? resumed.valid : true };
         if (resumed?.owner) entry.owner = resumed.owner;
-        if (resumed?.route) entry.route = resumed.route;
-        // A transition that the reload found applied goes on to its saved target: nothing is applied twice (8.3).
-        const applied = resumed?.applied ?? null;
         current = entry;
-        if (step.kind === 'route') {
-          // A route sends nothing by itself: the rule decides, a model or the owner names the case. Its answer is not an answer of the step.
-          if (resumed && !entry.route) await settleUnknown(step, entry, resumed.pending);
-          if (!entry.route) {
-            const choice = await routeChoice(step, entry);
-            entry.route = { id: choice.id, by: choice.by, reason: choice.reason };
-            emit('custom_route', { step: step.index, ref: step.ref, visit: entry.visit, case: choice.id, by: choice.by, reason: choice.reason });
-          }
-          results.push(entry);
-          pos = await transit(pos, caseAction(step, entry.route.id), entry.route.id, applied);
-          current = null;
-          continue;
-        }
         if (step.kind === 'owner') {
           // The owner's answer is asked until it is accepted; an accepted one (also one found after a reload) is not asked again.
           if (!entry.owner) await ownerAnswer(step, entry);
           results.push(entry);
-          pos = await transit(pos, null, null, applied);
+          pos += 1;
           current = null;
           continue;
         }
@@ -13276,8 +12517,8 @@ window.ProtoState = {
         const never = step.models.filter((model) => !outcome[model.id]);
         if (never.length) await execute(step, never, outcome);
         const last = step === plan[plan.length - 1];
-        // A visit whose decision is saved, or that has passed its decision (asks, transition), is not asked again.
-        const decided = Boolean(resumed) && (resumed.phase === 'asks' || resumed.phase === 'transition' || state.decisions[decidedKey] !== undefined);
+        // A visit whose decision is saved, or that has passed its decision (asks), is not asked again.
+        const decided = Boolean(resumed) && (resumed.phase === 'asks' || state.decisions[decidedKey] !== undefined);
         if (decided) entry.skipped = state.decisions[decidedKey] === 'skip';
         if (!decided) {
           for (;;) {
@@ -13288,8 +12529,6 @@ window.ProtoState = {
             // An owner approval (owner: approve) is asked after the step in every mode, also on the last step.
             const approve = step.approve === true;
             emit('custom_step', { step: step.index, label: stepLabel(step), accepted: accepted.length, failed: failed.length, required, approve });
-            // A failing gate with enough answers goes to its verdict below, not to the pause of a step.
-            if (step.kind === 'gate' && enough && !gatePass(step, outcome)) break;
             if (enough && !semiAuto && !approve) break;
             if (enough && semiAuto && last && !failed.length && !approve) break;
             // Below the threshold "continue" is not offered: the owner repeats, skips or stops the step.
@@ -13312,42 +12551,6 @@ window.ProtoState = {
             await execute(step, step.models.filter((model) => failed.includes(model.id)), outcome, firstAttempt);
           }
         }
-        // The verdict of a gate (6.1): a pass takes onPass; a fail takes onFail (a transition), or stops the run (stop), or the
-        // owner decides (ask). A skipped gate fails. The step's transition is then taken by transit().
-        let action = null;
-        let caseId = null;
-        if (step.kind === 'gate') {
-          const pass = gatePass(step, outcome, entry.skipped);
-          const unmet = [...new Set(step.models.filter((model) => outcome[model.id]?.verdict === 'fail').flatMap((model) => outcome[model.id].unmet || []))];
-          emit('custom_gate', { step: step.index, ref: step.ref, pass, unmet, rule: step.pass });
-          if (pass) {
-            action = step.onPass ?? null;
-            caseId = 'onPass';
-          } else {
-            caseId = 'onFail';
-            if (isPlain(step.onFail)) action = step.onFail;
-            else if (step.onFail !== 'ask') throw new StopRun('gate_failed', unmet.join('; ') || (entry.skipped ? 'шаг пропущен User' : 'недостаточно ответов проверяющих'));
-            else {
-              // The decision of a failed gate is saved like the decision of a step: a reload does not ask it again.
-              const gateKey = `${decidedKey}:gate`;
-              let decision = state.decisions[gateKey];
-              if (decision === undefined) {
-                const accepted = step.models.filter((model) => outcome[model.id]?.ok).map((model) => model.id);
-                const failed = step.models.filter((model) => !outcome[model.id]?.ok).map((model) => model.id);
-                if (typeof decide === 'function') await checkpointNow('decision', { pendingOwner: { kind: 'decision', stepRef: step.ref, visit: entry.visit } });
-                decision = typeof decide === 'function'
-                  ? await ownerWait(() => decide({ step: step.index, label: stepLabel(step), accepted, failed, choices: ['continue', 'stop'], last: step === plan[plan.length - 1],
-                    required: neededOf(step), approve: false, reasons: {}, unmet }))
-                  : null;
-                if (!['continue', 'stop'].includes(decision)) throw new StopRun('no_decision');
-                state.decisions[gateKey] = decision;
-                if (typeof decide === 'function') await checkpointNow('decision', { pendingOwner: null });
-              }
-              emit('custom_decision', { step: step.index, action: decision });
-              if (decision === 'stop') throw new StopRun('stopped');
-            }
-          }
-        }
         results.push(entry);
         if (typeof parseAsks === 'function' && typeof askOwner === 'function' && !entry.skipped) {
           const asks = acceptedOf(entry).flatMap((item) => parseAsks(item.text) || []);
@@ -13357,22 +12560,22 @@ window.ProtoState = {
             await checkpointNow('asks', { pendingOwner: null });
           }
         }
-        pos = await transit(pos, action, caseId, applied);
+        pos += 1;
         current = null;
       }
     } catch (error) {
       if (!(error instanceof StopRun)) throw error;
       stopReason = error.stopReason;
       stopDetail = error.stopDetail || '';
-      // The step in progress keeps its accepted answers (and its route or owner answer) when it was not kept yet.
-      if (current && !results.includes(current) && (acceptedOf(current).length || current.route || current.owner)) results.push(current);
+      // The step in progress keeps its accepted answers (and its owner answer) when it was not kept yet.
+      if (current && !results.includes(current) && (acceptedOf(current).length || current.owner)) results.push(current);
     }
 
     if (aborted() && stopReason === 'steps_done') stopReason = 'cancelled';
     await checkpointNow('done');
     emit('custom_end', { stopReason, stopDetail, steps: results.length });
     return {
-      steps: results.map((entry) => ({ index: entry.step.index, ref: entry.step.ref, kind: entry.step.kind, label: stepLabel(entry.step), visit: entry.visit, valid: entry.valid, skipped: entry.skipped, outcome: entry.outcome, ...(entry.route ? { route: entry.route } : {}), ...(entry.owner?.file ? { file: entry.owner.file } : {}) })),
+      steps: results.map((entry) => ({ index: entry.step.index, ref: entry.step.ref, kind: entry.step.kind, label: stepLabel(entry.step), visit: entry.visit, valid: entry.valid, skipped: entry.skipped, outcome: entry.outcome, ...(entry.owner?.file ? { file: entry.owner.file } : {}) })),
       // The state of the run as plain data (ТЗ 7): the pointer, the visits and the decisions.
       state: liveState('done'),
       answers: inputFor({ input: 'previous' }, 'previous', { strict: false }).map((item) => item.text),
@@ -13398,8 +12601,8 @@ window.ProtoState = {
     const plan = normalizeSteps(steps);
     const step = plan.find((item) => item.index === stepIndex) || plan[stepIndex];
     if (!step) return null;
-    // A step the run would refuse, and a route (it sends nothing by itself), have no prompt to show.
-    if (unexecutedOf(steps[stepIndex], stepIndex) || step.kind === 'route' || step.kind === 'owner') return null;
+    // A step the run would refuse, and an owner step (it sends nothing to a model), have no prompt to show.
+    if (unexecutedOf(steps[stepIndex], stepIndex) || step.kind === 'owner') return null;
     const model = step.models.find((item) => item.name === modelName) || { name: modelName, extra: '' };
     const spec = specOf(step, model);
     const input = spec === 'none' || !plan.some((item) => item.index < step.index) ? []
@@ -13453,8 +12656,12 @@ window.ProtoState = {
   // Every released version stays supported; a newer one than this Basic is refused.
   const SUPPORTED_VERSIONS = Object.freeze([1]);
   const ORIGINS = Object.freeze(['builtin', 'user']);
-  const KINDS = Object.freeze(['round', 'synthesis', 'gate', 'route', 'owner']);
-  const CONTROL_KINDS = Object.freeze(['gate', 'route', 'owner']);
+  const KINDS = Object.freeze(['round', 'synthesis', 'owner']);
+  // The step the owner (User) does itself; it has no models. There is no branch and no transition: steps run in their order.
+  const CONTROL_KINDS = Object.freeze(['owner']);
+  // The removed kinds (a check and a branch) are refused with the way to write them now.
+  const REMOVED_KINDS = Object.freeze(['gate', 'route']);
+  const REMOVED_KIND_HINT = 'проверка — обычный раунд: критерии в task; решение принимает User шагом owner';
   // The specification text (documents only): the root `spec` and the text fields of a step. Engine and requests never read them.
   const SPEC_KEYS = Object.freeze(['purpose', 'inputs', 'result', 'application', 'readiness', 'rules', 'boundaries', 'failure']);
   const STEP_TEXT_KEYS = Object.freeze(['title', 'goal', 'rules', 'quality']);
@@ -13462,24 +12669,11 @@ window.ProtoState = {
   const STEP_KEYS = Object.freeze({
     round: Object.freeze(['ref', 'kind', 'order', 'input', 'task', 'models', 'output', 'require', 'owner', 'chat', ...STEP_TEXT_KEYS]),
     synthesis: Object.freeze(['ref', 'kind', 'order', 'input', 'task', 'models', 'output', 'require', 'owner', 'chat', ...STEP_TEXT_KEYS]),
-    gate: Object.freeze(['ref', 'kind', 'input', 'task', 'models', 'output', 'require', 'chat', 'criteria', 'pass', 'onFail', 'onPass', ...STEP_TEXT_KEYS]),
-    route: Object.freeze(['ref', 'kind', 'input', 'task', 'models', 'select', ...STEP_TEXT_KEYS]),
     owner: Object.freeze(['ref', 'kind', 'task', 'input', 'output', 'models', ...STEP_TEXT_KEYS])
   });
   const CONTROL_REF = Object.freeze({
-    gate: 'ref проверки: «gate:<id>», id — латинские буквы, цифры, «_» и «-»',
-    route: 'ref маршрута: «route:<id>», id — латинские буквы, цифры, «_» и «-»',
     owner: 'ref User: «owner:<id>», id — латинские буквы, цифры, «_» и «-»'
   });
-  const ROUTE_BY = Object.freeze(['rule', 'model', 'owner']);
-  const ROUTE_CONFLICT = Object.freeze(['stop', 'first', 'owner']);
-  const ACTION_KINDS = Object.freeze(['goto', 'stop']);
-  // The removed ways back (a repeat is an ordinary step lower in the list): a schema that still has them is refused with the reason.
-  const BACK_FIELDS = Object.freeze(['return', 'maxLoops', 'feedback', 'invalidate', 'resumeAt']);
-  const NO_BACK = 'возврат назад не поддерживается: добавьте обычный шаг ниже по списку';
-  const ROUTE_OPS = Object.freeze(['eq', 'in', 'exists']);
-  const GATE_PASS = Object.freeze(['all', 'any']);
-  const GATE_ON_FAIL = Object.freeze(['stop', 'ask']);
   const ORDERS = Object.freeze(['parallel', 'sequential']);
   const INPUTS = Object.freeze(['none', 'previous', 'all']);
   const POLICIES = Object.freeze(['auto', 'manual']);
@@ -13503,8 +12697,6 @@ window.ProtoState = {
 
   const DEFAULTS = Object.freeze({
     run: Object.freeze({ policy: 'manual', maxWords: 300, strictLength: false }),
-    gate: Object.freeze({ pass: 'all', onFail: 'stop' }),
-    route: Object.freeze({ conflict: 'stop' }),
     roundTask: 'Учти ответы предыдущего шага и дай свой улучшенный ответ на задачу.',
     synthesisTask: Engine.SYNTHESIS_TASK,
     discipline: Object.freeze({
@@ -13542,31 +12734,13 @@ window.ProtoState = {
 
   const clone = (value) => JSON.parse(JSON.stringify(value));
 
-  // A gate, a route or an owner: the fields as the schema has them, with the Basic defaults of the kind written in.
-  // The task of their models is the owner's own text only: no inherited task reaches a checker or a chooser.
-  function assembleControl(step, roleText) {
+  // An owner step: the fields as the schema has them; it has no models.
+  function assembleControl(step) {
     const out = { kind: step.kind, ref: step.ref };
     if ('input' in step) out.input = clone(step.input);
     if ('output' in step) out.output = clone(step.output);
-    ['require', 'chat'].forEach((key) => { if (key in step) out[key] = step[key]; });
     if (typeof step.task === 'string') out.task = step.task;
-    if (step.kind === 'owner') return { ...out, models: [] };
-    if (step.kind === 'gate') {
-      Object.assign(out, { criteria: clone(step.criteria), pass: step.pass ?? DEFAULTS.gate.pass, onFail: clone(step.onFail ?? DEFAULTS.gate.onFail) });
-      if ('onPass' in step) out.onPass = clone(step.onPass);
-    }
-    if (step.kind === 'route') {
-      out.select = clone(step.select);
-      if (out.select.by === 'rule' && !('conflict' in out.select)) out.select.conflict = DEFAULTS.route.conflict;
-    }
-    out.models = (step.models || []).filter((model) => model.enabled !== false).map((model) => ({
-      name: model.name,
-      id: idOf(model),
-      task: typeof model.task === 'string' ? model.task : (typeof step.task === 'string' ? step.task : ''),
-      extra: roleText(model.role || '', step.ref) || '',
-      ...('output' in model ? { output: clone(model.output) } : {})
-    }));
-    return out;
+    return { ...out, models: [] };
   }
 
   // Engine steps from a schema. `context.roleText(role, ref)` turns a model's role into its extra text.
@@ -13575,7 +12749,7 @@ window.ProtoState = {
     const finalStep = schema.steps.find((step) => step.ref === 'final');
     let rounds = 0;
     return schema.steps.map((step) => {
-      if (CONTROL_KINDS.includes(step.kind)) return assembleControl(step, roleText);
+      if (CONTROL_KINDS.includes(step.kind)) return assembleControl(step);
       const roundIndex = step.kind === 'round' ? rounds++ : -1;
       const input = step.input || defaultInput(step.kind, roundIndex);
       const stepFields = resolveFields({ task: step.task }, step.kind, {}, defaults);
@@ -13712,8 +12886,8 @@ window.ProtoState = {
   }
 
   // The place of an intermediate synthesis (R11), one rule for validate and toCanvas: the nearest steps around it that are
-  // not control steps (gate, route, owner) must be rounds. So `r1 → synth → gate → r2` and `r1 → gate → synth → r2` are
-  // both valid, and control steps never need a round next to them. Two syntheses never meet.
+  // not owner steps must be rounds. So `r1 → synth → owner → r2` and `r1 → owner → synth → r2` are
+  // both valid, and owner steps never need a round next to them. Two syntheses never meet.
   function synthesisPlaceErrors(steps) {
     const errors = [];
     const nearest = (index, step) => {
@@ -13728,15 +12902,14 @@ window.ProtoState = {
     return errors;
   }
 
-  // The one check of executability (R09) for validate and toCanvas: a control step (gate, route, owner) runs by itself
-  // (a gate's checkers are checked by their own rule); a round runs with an enabled model. A synthesis only works on
+  // The one check of executability (R09) for validate and toCanvas: an owner step runs by itself; a round runs with an enabled model. A synthesis only works on
   // the answers of an earlier step, so it alone is not runnable. A pipeline without a round is valid; an empty one or
   // one with no runnable step is named at `steps`.
   function executabilityErrors(steps) {
     const runnable = steps.some((step) => isObject(step) && (CONTROL_KINDS.includes(step.kind)
       || (step.kind === 'round' && Array.isArray(step.models) && step.models.some((model) => isObject(model) && model.enabled !== false))));
     if (runnable) return [];
-    return [{ path: 'steps', message: 'нет исполнимого шага: нужен раунд с включённой моделью или шаг проверки, маршрута или User' }];
+    return [{ path: 'steps', message: 'нет исполнимого шага: нужен раунд с включённой моделью или шаг User' }];
   }
 
   // Errors before the first request: [{ path, message }]. A schema is never corrected silently.
@@ -13803,11 +12976,6 @@ window.ProtoState = {
     const positions = new Map();
     schema.steps.forEach((step, at) => { if (isObject(step) && typeof step.ref === 'string' && !positions.has(step.ref)) positions.set(step.ref, at); });
     const namesById = new Map();
-    // A round or a synthesis with no enabled model is switched off: assembly takes it out, so a transition may not name it.
-    const switchedOff = (index) => {
-      const step = schema.steps[index];
-      return isObject(step) && (step.kind === 'round' || step.kind === 'synthesis') && !(Array.isArray(step.models) && step.models.some((model) => isObject(model) && model.enabled !== false));
-    };
     const contextAt = (index) => ({ fail, errors, steps: schema.steps, positions, index });
     const checkInputList = (list, path, index) => {
       if (!list.length) { fail(path, 'ожидается непустой список источников'); return; }
@@ -13822,8 +12990,7 @@ window.ProtoState = {
     // The input of a step or of a participant: a value of the list of inputs, or a list of sources.
     const checkInput = (value, path, kind, index) => {
       if (Array.isArray(value)) { checkInputList(value, path, index); return; }
-      // A route reads the previous answers or named sources; an owner takes any input a model step takes (none, previous, all, list).
-      if (kind === 'route') { if (value !== 'previous') fail(path, 'вход: допустимо previous или список источников'); return; }
+      // An owner takes any input a model step takes (none, previous, all, list).
       oneOf(value, INPUTS, path, 'вход');
       if (kind === 'synthesis' && value !== 'previous') fail(path, 'синтез всегда получает ответы предыдущего шага');
     };
@@ -13890,107 +13057,17 @@ window.ProtoState = {
       });
     };
 
-    // A transition (6.3): exactly one of goto, stop. `origin` is the index of the step that writes it. A goto names a step
-    // lower in the list: there is no way back (a repeat is one more ordinary step).
-    const checkAction = (action, path, origin) => {
-      if (!isObject(action)) { fail(path, 'переход: объект с одним полем goto или stop'); return; }
-      const back = BACK_FIELDS.find((key) => key in action);
-      if (back !== undefined) { fail(`${path}.${back}`, `«${back}»: ${NO_BACK}`); return; }
-      const kinds = ACTION_KINDS.filter((key) => key in action);
-      if (kinds.length !== 1) { fail(path, 'переход: ровно одно из goto, stop'); return; }
-      const [kind] = kinds;
-      unknownKeys(action, [kind], path);
-      if (kind === 'stop' && (typeof action.stop !== 'string' || !action.stop.trim())) fail(`${path}.stop`, 'причина остановки: непустой текст');
-      if (kind === 'goto') {
-        if (typeof action.goto !== 'string' || !action.goto) fail(`${path}.goto`, 'ref перехода: непустой текст');
-        else if (!positions.has(action.goto)) fail(`${path}.goto`, `неизвестный шаг «${action.goto}»`);
-        else if (switchedOff(positions.get(action.goto))) fail(`${path}.goto`, `переход на выключенный шаг «${action.goto}»`);
-        else if (positions.get(action.goto) <= origin) fail(`${path}.goto`, NO_BACK);
-      }
-    };
-
-    // A rule condition (6.2): an atomic one { source, pointer, op, value? } or { all: [...] } / { any: [...] }.
-    // `inputs` is the list of the route's sources, or null when the route has no list (its error is already named).
-    const checkCondition = (cond, path, inputs) => {
-      if (!isObject(cond)) { fail(path, 'условие: объект с полями source, pointer, op, value'); return; }
-      const composite = ['all', 'any'].filter((key) => key in cond);
-      if (composite.length) {
-        if (composite.length > 1 || Object.keys(cond).length > 1) { fail(path, 'условие: либо all, либо any, без других полей'); return; }
-        const [key] = composite;
-        if (!Array.isArray(cond[key]) || !cond[key].length) { fail(`${path}.${key}`, 'условие: непустой список условий'); return; }
-        cond[key].forEach((item, at) => checkCondition(item, `${path}.${key}[${at}]`, inputs));
-        return;
-      }
-      unknownKeys(cond, ['source', 'pointer', 'op', 'value'], path);
-      if (inputs) {
-        if (!Number.isSafeInteger(cond.source) || cond.source < 0) fail(`${path}.source`, 'источник: номер входа маршрута, целое от 0');
-        else if (cond.source >= inputs.length) fail(`${path}.source`, 'источник: номер вне списка input маршрута');
-        else if (!isObject(inputs[cond.source])) fail(`${path}.source`, 'правило читает точный источник: участника или артефакт');
-      }
-      const problem = pointerError(cond.pointer);
-      if (problem) fail(`${path}.pointer`, problem);
-      oneOf(cond.op, ROUTE_OPS, `${path}.op`, 'оператор условия');
-      if (cond.op === 'eq' && !('value' in cond)) fail(`${path}.value`, 'для eq укажите value');
-      if (cond.op === 'in' && !(Array.isArray(cond.value) && cond.value.length)) fail(`${path}.value`, 'для in нужен непустой список значений');
-      if (cond.op === 'exists' && 'value' in cond) fail(`${path}.value`, 'для exists значение не указывают');
-    };
-
-    // A gate, a route or an owner (3.1, 6.1, 6.2, 4.1). Their transitions are checked as shape here.
+    // An owner step (4.1): its task, and no models.
     const checkControl = (step, path) => {
-      const enabled = (Array.isArray(step.models) ? step.models : []).filter((model) => isObject(model) && model.enabled !== false);
-      if (step.kind === 'owner') {
-        if (typeof step.task !== 'string' || !step.task.trim()) fail(`${path}.task`, 'задание User: непустой текст');
-        if (Array.isArray(step.models) && step.models.length) fail(`${path}.models`, 'у User нет моделей');
-        return;
-      }
-      if (step.kind === 'gate') {
-        // A gate is a check by its models (6.1): without an enabled checker it is an error, not a step that vanishes.
-        if (!enabled.length) fail(`${path}.models`, 'проверка без включённых проверяющих: включите хотя бы одного');
-        if (!Array.isArray(step.criteria) || !step.criteria.length) fail(`${path}.criteria`, 'критерии проверки: непустой список строк');
-        else step.criteria.forEach((item, at) => { if (typeof item !== 'string' || !item.trim()) fail(`${path}.criteria[${at}]`, 'критерий: непустой текст'); });
-        if ('pass' in step) oneOf(step.pass, GATE_PASS, `${path}.pass`, 'pass проверки');
-        if ('onFail' in step && !isObject(step.onFail)) oneOf(step.onFail, GATE_ON_FAIL, `${path}.onFail`, 'onFail проверки');
-        return;
-      }
-      const select = step.select;
-      if (!isObject(select)) { fail(`${path}.select`, 'выбор маршрута: объект с полем by'); return; }
-      unknownKeys(select, ['by', 'conflict', 'cases', 'otherwise'], `${path}.select`);
-      oneOf(select.by, ROUTE_BY, `${path}.select.by`, 'выбор маршрута');
-      const rule = select.by === 'rule';
-      if (select.by === 'model') {
-        if (enabled.length !== 1) fail(`${path}.models`, 'маршрут по модели: ровно один включённый участник');
-        if (typeof step.task !== 'string' || !step.task.trim()) fail(`${path}.task`, 'задание маршрута по модели: непустой текст');
-      } else if (Array.isArray(step.models) && step.models.length) fail(`${path}.models`, 'у маршрута по правилу и User моделей нет');
-      if ('conflict' in select) {
-        if (!rule) fail(`${path}.select.conflict`, 'конфликт выбора задаётся только для правила');
-        else oneOf(select.conflict, ROUTE_CONFLICT, `${path}.select.conflict`, 'конфликт выбора');
-      }
-      if ('otherwise' in select && !rule) fail(`${path}.select.otherwise`, 'вариант по умолчанию задаётся только для правила');
-      // A rule reads the exact sources of the route's input list; without the list the rule has nothing to read.
-      const inputs = Array.isArray(step.input) ? step.input : null;
-      if (rule && !inputs) fail(`${path}.input`, 'правило читает точные источники: укажите input списком');
-      if (!Array.isArray(select.cases) || !select.cases.length) { fail(`${path}.select.cases`, 'ожидается непустой список вариантов'); return; }
-      const caseIds = new Set();
-      select.cases.forEach((item, at) => {
-        const at2 = `${path}.select.cases[${at}]`;
-        if (!isObject(item)) { fail(at2, 'ожидается объект варианта'); return; }
-        unknownKeys(item, ['id', 'when', 'label', 'action'], at2);
-        if (typeof item.id !== 'string' || !item.id.trim()) fail(`${at2}.id`, 'ID варианта: непустой текст');
-        else if (caseIds.has(item.id)) fail(`${at2}.id`, `вариант «${item.id}» повторяется`);
-        else caseIds.add(item.id);
-        if (rule) {
-          checkCondition(item.when, `${at2}.when`, inputs);
-          if ('label' in item && typeof item.label !== 'string') fail(`${at2}.label`, 'название варианта: текст');
-        } else {
-          if ('when' in item) fail(`${at2}.when`, 'условие только для правила: варианты модели и User описываются label');
-          if (typeof item.label !== 'string' || !item.label.trim()) fail(`${at2}.label`, 'название варианта: непустой текст');
-        }
-      });
+      if (typeof step.task !== 'string' || !step.task.trim()) fail(`${path}.task`, 'задание User: непустой текст');
+      if (Array.isArray(step.models) && step.models.length) fail(`${path}.models`, 'у User нет моделей');
     };
 
     schema.steps.forEach((step, index) => {
       const path = `steps[${index}]`;
       if (!isObject(step)) { fail(path, 'ожидается объект'); return; }
+      // A removed kind (gate, route) is named once, with the way to write it now; its other fields are not checked.
+      if (REMOVED_KINDS.includes(step.kind)) { fail(`${path}.kind`, `тип шага: допустимо ${KINDS.join(', ')}; ${REMOVED_KIND_HINT}`); return; }
       unknownKeys(step, STEP_KEYS[step.kind] || STEP_KEYS.round, path);
       if ('output' in step) {
         // A step's shared output is the answer of every author without its own; the owner is the author of its own.
@@ -14023,9 +13100,7 @@ window.ProtoState = {
         const modelPath = `${path}.models[${at}]`;
         if (!isObject(model)) { fail(modelPath, 'ожидается объект'); return; }
         unknownKeys(model, ['name', 'id', 'enabled', 'onCanvas', 'role', 'request', 'maxWords', 'task', 'discipline', 'input', 'output'], modelPath);
-        // A participant of a route chooses; it has no answer of its own (its route output has its own contract).
-        if (step.kind === 'route' && 'output' in model) fail(`${modelPath}.output`, 'у участника маршрута выход не задаётся');
-        else if ('output' in model) checkOutput(model.output, `${modelPath}.output`, step, index, [model]);
+        if ('output' in model) checkOutput(model.output, `${modelPath}.output`, step, index, [model]);
         if ('enabled' in model && typeof model.enabled !== 'boolean') fail(`${modelPath}.enabled`, 'ожидается true или false');
         if ('onCanvas' in model && typeof model.onCanvas !== 'boolean') fail(`${modelPath}.onCanvas`, 'ожидается true или false');
         if (typeof model.name !== 'string' || !model.name.trim()) fail(`${modelPath}.name`, 'имя модели не указано');
@@ -14047,7 +13122,6 @@ window.ProtoState = {
         if ('discipline' in model) checkDiscipline(model.discipline, `${modelPath}.discipline`);
       });
       if (CONTROL_KINDS.includes(step.kind)) checkControl(step, path);
-      actionsOf(step, path).forEach(({ path: at, action }) => checkAction(action, at, index));
     });
     errors.push(...synthesisPlaceErrors(schema.steps), ...executabilityErrors(schema.steps));
     return errors;
@@ -14056,9 +13130,9 @@ window.ProtoState = {
   // The settings of the cards in the form the page edits them (the cards write only what the owner set):
   // customModelSettings[ref][participantId] = { promptTemplate, maxWords, task, discipline, input } — the key is the id of
   // the participant (its name when it has none); customRoundSettings[ref] = { order, input, task, require, owner, chat, output }
-  // of a round; customStepSettings[ref] = the fields of a synthesis, a gate, a route or an owner; customDefaults = the ▶ card.
+  // of a round; customStepSettings[ref] = the fields of a synthesis or an owner; customDefaults = the ▶ card.
   const ROUND_FIELDS = ['order', 'input', 'task', 'require', 'owner', 'chat', 'output'];
-  const STEP_FIELDS = ['input', 'task', 'require', 'owner', 'chat', 'output', 'criteria', 'pass', 'onFail', 'onPass', 'select'];
+  const STEP_FIELDS = ['input', 'task', 'require', 'owner', 'chat', 'output'];
   function toSettings(schema) {
     const customModelSettings = {};
     const customRoundSettings = {};
@@ -14086,11 +13160,11 @@ window.ProtoState = {
   }
 
   // The canvas a schema stands for: the rounds, the participants of each round with their roles, the final synthesizer,
-  // the intermediate syntheses and the control steps (gate, route, owner) in their order. `models` is the list of the models
+  // the intermediate syntheses and the owner steps in their order. `models` is the list of the models
   // the canvas knows, in its order; `isRole(id)` tells a known role. A schema the canvas cannot show gives errors (with the
   // place), never a changed schema. A round is one block per participant (two participants of one model are two blocks,
   // told apart by id); the rounds limit counts rounds only. An intermediate synthesis is right after a round and before
-  // the next one; a control step may stand anywhere; a switched-off model is on the canvas only with onCanvas, a switched-off synthesis is not.
+  // the next one; an owner step may stand anywhere; a switched-off model is on the canvas only with onCanvas, a switched-off synthesis is not.
   function toCanvas(schema, { models = [], isRole = () => true, runWords = null } = {}) {
     const errors = [];
     const fail = (path, message) => errors.push({ path, message });
@@ -14155,21 +13229,6 @@ window.ProtoState = {
   });
 
   const describeErrors = (errors) => errors.map((error) => (error.path ? `${error.path}: ${error.message}` : error.message)).join('; ');
-
-  // The transitions a step writes, with their paths: a gate's onPass and onFail (when an action), the cases and otherwise of a route.
-  function actionsOf(step, path) {
-    if (!isObject(step)) return [];
-    if (step.kind === 'gate') {
-      return [...('onPass' in step ? [{ path: `${path}.onPass`, action: step.onPass }] : []),
-        ...(isObject(step.onFail) ? [{ path: `${path}.onFail`, action: step.onFail }] : [])];
-    }
-    if (step.kind === 'route' && isObject(step.select)) {
-      const cases = Array.isArray(step.select.cases) ? step.select.cases : [];
-      return [...cases.map((item, at) => (isObject(item) ? { path: `${path}.select.cases[${at}].action`, action: item.action } : null)).filter(Boolean),
-        ...('otherwise' in step.select ? [{ path: `${path}.select.otherwise`, action: step.select.otherwise }] : [])];
-    }
-    return [];
-  }
 
   const api = Object.freeze({ SCHEMA_VERSION, SUPPORTED_VERSIONS, ORIGINS, DEFAULTS, pick, resolveFields, assemble, resolveRun, toSettings, toCanvas, validate, describeErrors });
   root.BasicSchema = api;
@@ -14332,7 +13391,7 @@ window.ProtoState = {
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '42';
+  const STAND_VERSION = '43';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};

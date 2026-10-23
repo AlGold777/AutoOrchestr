@@ -18,97 +18,46 @@ function transport(answers) {
   return { send, calls };
 }
 
-const PASS = 'Разбор.\nВЕРДИКТ: ПРОШЁЛ';
-const FAIL = (unmet) => `Разбор.\nНЕ ВЫПОЛНЕНО: ${unmet}\nВЕРДИКТ: НЕ ПРОШЁЛ`;
 const r1 = { ref: 'r1', kind: 'round', input: 'none', models: ['A'] };
-const gate = (onFail, extra = {}) => ({ ref: 'gate:g1', kind: 'gate', criteria: ['полнота'], models: ['B'], onFail, ...extra });
-const r2 = { ref: 'r2', kind: 'round', models: ['C'] };
+// A check is an ordinary round: its criteria are in the task, and its answer is an answer like any other.
+const check = { ref: 'r2', kind: 'round', task: 'Проверь по критериям: полнота. Перечисли невыполненные.', models: ['B'] };
+const decision = { ref: 'owner:ok', kind: 'owner', input: 'previous', task: 'Прочитайте проверку и решите, что делать дальше' };
+const r3 = { ref: 'r3', kind: 'round', input: 'all', models: ['C'] };
 
-describe('Custom engine transitions: forward only (6.3)', () => {
-  const r3 = { ref: 'r3', kind: 'round', models: ['D'] };
+describe('Custom engine: a linear run of rounds and an owner step (no branches, no transitions)', () => {
+  test('the steps run in their order; the owner decides by its answer, the next round reads it', async () => {
+    const { send, calls } = transport({ A: ['карта'], B: ['не выполнено: полнота'], C: ['итог'] });
+    const events = [];
+    const result = await Engine.run({ task: 'T', steps: [r1, check, decision, r3], send,
+      provideOwnerResult: async () => 'Доработать раздел о сроках', onEvent: (kind) => events.push(kind) });
+    expect(result.stopReason).toBe('steps_done');
+    expect(calls.map((call) => call.models[0])).toEqual(['A', 'B', 'C']);
+    expect(result.steps.map((step) => [step.ref, step.visit])).toEqual([['r1', 1], ['r2', 1], ['owner:ok', 1], ['r3', 1]]);
+    expect(calls[2].prompts.C).toContain('Доработать раздел о сроках');
+    expect(events.some((kind) => /gate|route|transition/.test(kind))).toBe(false);
+    expect(result.state.visits).toEqual({ r1: 1, r2: 1, 'owner:ok': 1, r3: 1 });
+    ['loopCounters', 'continuationStack', 'feedback', 'dependencies', 'routes'].forEach((field) => expect(result.state).not.toHaveProperty(field));
+  });
 
   test('a technical retry of an answer keeps its visit; only the attempt counts up', async () => {
-    const { send, calls } = transport({ A: ['', 'карта'], B: [PASS] });
-    await Engine.run({ task: 'T', steps: [r1, gate(undefined)], send });
+    const { send, calls } = transport({ A: ['', 'карта'], B: ['проверка'] });
+    await Engine.run({ task: 'T', steps: [r1, check], send });
     expect(calls[0].meta).toMatchObject({ attempt: 1, visit: 1 });
     expect(calls[1].meta).toMatchObject({ attempt: 2, visit: 1 });
   });
 
-  test('onFail goto forward skips the steps between: the failed gate goes on to the target', async () => {
-    const { send, calls } = transport({ A: ['карта'], B: [FAIL('срок')], D: ['d'] });
-    const result = await Engine.run({ task: 'T', steps: [r1, gate({ goto: 'r3' }), r2, r3], send });
-    expect(result.stopReason).toBe('steps_done');
-    expect(calls.map((call) => call.models[0])).toEqual(['A', 'B', 'D']);
-    expect(result.steps.map((step) => [step.ref, step.visit])).toEqual([['r1', 1], ['gate:g1', 1], ['r3', 1]]);
-  });
-
-  test('stop names its reason as the stop reason; the step result stays in the history', async () => {
-    const { send, calls } = transport({ A: ['карта'], B: [FAIL('срок')] });
-    const result = await Engine.run({ task: 'T', steps: [r1, gate({ stop: 'нужна ручная проверка' }), r2], send });
-    expect(result.stopReason).toBe('нужна ручная проверка');
-    expect(calls).toHaveLength(2);
-    expect(result.steps.map((step) => step.ref)).toEqual(['r1', 'gate:g1']);
-  });
-
-  test('a goto to the current or an earlier step is refused before the first request, with the new text', async () => {
-    for (const target of ['r1', 'gate:g1']) {
-      const { send, calls } = transport({ A: ['a'], B: [FAIL('x')], C: ['c'] });
-      const error = await Engine.run({ task: 'T', steps: [r1, gate({ goto: target }), r2], send }).catch((item) => item);
-      expect(error).toBeInstanceOf(Engine.EngineError);
-      expect(error.code).toBe('invalid_field');
-      expect(error.message).toContain('возврат назад не поддерживается: добавьте обычный шаг ниже по списку');
-      expect(calls).toHaveLength(0);
-    }
-  });
-
-  test('return, maxLoops, feedback, invalidate and resumeAt are refused before the first request', async () => {
-    const cases = [{ return: true }, { goto: 'r2', maxLoops: 1 }, { goto: 'r2', feedback: [{ step: 'r1', participant: 'A' }] },
-      { goto: 'r2', invalidate: ['r1'] }, { goto: 'r2', resumeAt: 'r1' }];
-    for (const action of cases) {
-      const { send, calls } = transport({ A: ['a'], B: [FAIL('x')], C: ['c'] });
-      const error = await Engine.run({ task: 'T', steps: [r1, gate(action), r2], send }).catch((item) => item);
-      expect(error).toBeInstanceOf(Engine.EngineError);
-      expect(error.message).toContain('возврат назад не поддерживается');
-      expect(calls).toHaveLength(0);
-    }
-  });
-
-  test('an unknown target, an empty stop and two actions at once are refused before the first request', async () => {
-    const cases = [
-      [gate({ goto: 'nope' }), 'unknown_target', 'nope'],
-      [gate({ goto: 'r2', stop: 'x' }), 'invalid_field', 'onFail'],
-      [gate({ stop: '   ' }), 'invalid_field', 'onFail']
+  test('a gate or a route step is refused before the first request: the engine does not execute these kinds', async () => {
+    const removed = [
+      { ref: 'gate:g1', kind: 'gate', criteria: ['полнота'], models: ['B'], onFail: { goto: 'r3' } },
+      { ref: 'route:x', kind: 'route', models: [], select: { by: 'owner', cases: [{ id: 'a', label: 'A', action: { goto: 'r3' } }] } }
     ];
-    for (const [step, code, mention] of cases) {
-      const { send, calls } = transport({ A: ['a'], B: [FAIL('x')], C: ['c'] });
-      const error = await Engine.run({ task: 'T', steps: [r1, step, r2], send }).catch((item) => item);
+    for (const step of removed) {
+      const { send, calls } = transport({ A: ['a'], B: ['b'], C: ['c'] });
+      const error = await Engine.run({ task: 'T', steps: [r1, step, r3], send }).catch((item) => item);
       expect(error).toBeInstanceOf(Engine.EngineError);
-      expect(error.code).toBe(code);
-      expect(error.message).toContain(mention);
+      expect(error.code).toBe('unsupported_kind');
+      expect(error.message).toContain(step.kind);
       expect(calls).toHaveLength(0);
     }
-  });
-
-  test('onPass: a passing gate takes its transition; the step after it is the target, not the next step', async () => {
-    const steps = [r1, gate(undefined, { onPass: { goto: 'r3' } }), r2, { ref: 'r3', kind: 'round', models: ['D'] }];
-    const { send, calls } = transport({ A: ['v1'], B: [PASS], C: ['c'], D: ['d'] });
-    const result = await Engine.run({ task: 'T', steps, send });
-    expect(result.stopReason).toBe('steps_done');
-    expect(calls.map((call) => call.models[0])).toEqual(['A', 'B', 'D']);
-    expect(result.steps.map((step) => step.ref)).toEqual(['r1', 'gate:g1', 'r3']);
-  });
-
-  test('the journal names the transition: from, case, action and target', async () => {
-    const { send } = transport({ A: ['v1'], B: [FAIL('срок')], D: ['d'] });
-    const events = [];
-    await Engine.run({ task: 'T', steps: [r1, gate({ goto: 'r3' }), r2, r3], send, onEvent: (kind, fields) => events.push([kind, fields]) });
-    expect(events).toContainEqual(['custom_transition', { from: 'gate:g1', case: 'onFail', action: 'goto', to: 'r3' }]);
-  });
-
-  test('the state of the run has no counters, stack or feedback: only the pointer, the visits and the decisions', async () => {
-    const { send } = transport({ A: ['v1'], B: [PASS], C: ['c'] });
-    const result = await Engine.run({ task: 'T', steps: [r1, gate(undefined), r2], send });
-    ['loopCounters', 'continuationStack', 'feedback', 'dependencies'].forEach((field) => expect(result.state).not.toHaveProperty(field));
-    expect(result.state.visits).toEqual({ r1: 1, 'gate:g1': 1, r2: 1 });
   });
 });

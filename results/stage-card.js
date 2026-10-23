@@ -420,11 +420,6 @@
 
   // The run feed of Basic (results.js): pure texts of the events and of the answer cards. Old events without the
   // new fields give the same text as before; a participant id equal to the model name is not repeated.
-  const ROUTE_REASON = {
-    rule: 'по правилу', otherwise: 'иначе', model: 'выбрала модель', owner: 'выбрал User',
-    conflict_first: 'первый из подходящих', conflict_owner: 'выбрал User из подходящих',
-    invalid_route: 'ответ модели не распознан, выбрал User'
-  };
   const feed = Object.freeze({
     // The label of an answer card: the step, the participant (when it is not the model) and the visit (from the second).
     role({ label = '', modelName = '', participantId = '', visit = 1 } = {}) {
@@ -432,18 +427,6 @@
       if (participantId && participantId !== modelName) parts.push(`участник ${participantId}`);
       if (Number(visit) > 1) parts.push(`заход ${visit}`);
       return parts.join(' · ');
-    },
-    gate({ ref = '', pass = false, unmet = [] } = {}) {
-      const head = `Проверка ${ref}: ${pass ? 'пройдена' : 'не пройдена'}`;
-      return !pass && unmet.length ? `${head}. Не выполнено: ${unmet.join('; ')}` : head;
-    },
-    route({ ref = '', caseLabel = '', reason = '' } = {}) {
-      return `Маршрут ${ref}: вариант «${caseLabel}», ${ROUTE_REASON[reason] || reason}`;
-    },
-    // stopText: the text of a stop reason (the engine's STOP_TEXT).
-    transition({ from = '', to = '', action = 'goto', reason = '' } = {}, stopText = (value) => value) {
-      if (action === 'stop') return `Прогон остановлен после ${from}: ${stopText(reason)}`;
-      return `Переход ${from} → ${to}`;
     },
     // The title of an artifact in the registry: name, participant (owner for an owner step), visit, validity.
     artifactTitle({ name = '', source = {}, valid = true } = {}) {
@@ -460,377 +443,6 @@
       return typeof read.value === 'string' ? read.value : JSON.stringify(read.value, null, 2);
     }
   });
-
-  // Control steps (6.1–6.3 of the spec): a gate, a route and an owner are cards on the canvas. A window edits only the fields
-  // listed here; controlAfterEdit gives back the whole step, so every other field stays as it is.
-  const isTransition = (value) => isPlain(value) && typeof value.goto === 'string';
-  // The view of a transition (onPass, onFail, a case's action, otherwise): `absent` is the mode of a missing value.
-  // A value the window does not edit (its shape is other) gives mode 'json'.
-  function transitionView(value, absent) {
-    if (value === undefined || value === null) return { mode: absent };
-    if (value === 'stop' || value === 'ask') return { mode: value };
-    if (isTransition(value)) return { mode: 'goto', goto: value.goto };
-    if (isPlain(value) && Object.keys(value).length === 1 && typeof value.stop === 'string') return { mode: 'stop', stop: value.stop };
-    return { mode: 'json' };
-  }
-  // The value of a transition after an edit (`kind`: pass, fail, action, otherwise). A missing value is undefined.
-  function transitionAfterEdit(current, edit = {}, kind = 'action') {
-    if (edit.mode === 'next' || edit.mode === 'none') return undefined;
-    if (edit.mode === 'ask') return 'ask';
-    if (edit.mode === 'stop') return kind === 'fail' ? 'stop' : { stop: String(edit.stop ?? '') };
-    if (edit.mode === 'goto') return { goto: String(edit.goto ?? '') };
-    return current;
-  }
-
-  // The window of a gate: criteria (one per line), its checkers (the available models; an unchecked one stays in the
-  // schema with enabled false), pass, and the transitions onFail and onPass. `names` are the models the page offers.
-  function gateWindowModel(step = {}, { names = [], refs = [], disabled = false } = {}) {
-    const models = Array.isArray(step.models) ? step.models.filter(isPlain) : [];
-    const checked = new Set(models.filter((model) => model.enabled !== false).map((model) => String(model.name)));
-    const known = [...new Set([...names.map(String), ...models.map((model) => String(model.name))])];
-    return {
-      ref: String(step.ref || ''),
-      disabled: Boolean(disabled),
-      criteria: Array.isArray(step.criteria) ? step.criteria.map(String).join('\n') : '',
-      checkers: known.map((name) => ({ name, checked: checked.has(name) })),
-      pass: typeof step.pass === 'string' ? step.pass : '',
-      onFail: transitionView(step.onFail, 'stop'),
-      onPass: transitionView(step.onPass, 'next'),
-      refs: refs.map(String).filter((ref) => ref !== String(step.ref || ''))
-    };
-  }
-  // An edit of a gate: { field: 'criteria', value } | { field: 'checker', name, checked } | { field: 'pass', value } |
-  // { field: 'onFail' | 'onPass', mode, goto, stop }. Returns the new step; the input is not changed.
-  function gateAfterEdit(step = {}, edit = {}) {
-    const next = { ...step };
-    if (edit.field === 'criteria') {
-      const lines = String(edit.value || '').split('\n').map((line) => line.trim()).filter(Boolean);
-      if (lines.length) next.criteria = lines;
-      else delete next.criteria;
-    } else if (edit.field === 'checker') {
-      const models = Array.isArray(step.models) ? step.models.map((model) => (isPlain(model) ? { ...model } : model)) : [];
-      const at = models.findIndex((model) => isPlain(model) && model.name === edit.name);
-      if (at < 0 && edit.checked) models.push({ name: String(edit.name) });
-      else if (at >= 0 && edit.checked) delete models[at].enabled;
-      else if (at >= 0) models[at].enabled = false;
-      next.models = models;
-    } else if (edit.field === 'pass') {
-      if (edit.value === 'all' || edit.value === 'any') next.pass = edit.value;
-      else delete next.pass;
-    } else if (edit.field === 'onFail' || edit.field === 'onPass') {
-      const key = edit.field;
-      const value = transitionAfterEdit(step[key], edit, key === 'onFail' ? 'fail' : 'pass');
-      if (value === undefined) delete next[key];
-      else next[key] = value;
-    }
-    return next;
-  }
-
-  // The window's controls: a select of a transition with its target (a ref of the canvas).
-  // The change goes to emit(field, { mode, goto, stop }); a goto without a target is sent as it is (the schema says so).
-  function renderTransition(container, { field, label, view, options, refs, disabled, withStop, emit }) {
-    const doc = container.ownerDocument;
-    const state = { mode: view.mode, goto: view.goto || '', stop: view.stop || '' };
-    const box = el(doc, 'fieldset', `stage-card-transition stage-card-${field}`);
-    box.append(el(doc, 'legend', '', label));
-    const mode = el(doc, 'select', `stage-card-${field}-mode`);
-    mode.setAttribute('aria-label', label);
-    const choices = state.mode === 'json' ? [...options, { value: 'json', label: 'задан в JSON, сохраняется как есть', disabled: true }] : options;
-    choices.forEach((item) => { const option = el(doc, 'option', '', item.label); option.value = item.value; option.disabled = Boolean(item.disabled); mode.append(option); });
-    mode.value = state.mode;
-    mode.disabled = Boolean(disabled) || state.mode === 'json';
-    const send = () => { if (typeof emit === 'function') emit({ field, mode: state.mode, goto: state.goto, stop: state.stop }); };
-    mode.addEventListener('change', () => { state.mode = mode.value; send(); });
-    box.append(mode);
-    if (state.mode === 'goto') {
-      const target = el(doc, 'select', `stage-card-${field}-goto`);
-      target.setAttribute('aria-label', `${label}: переход на шаг`);
-      target.append(new Option('— выберите шаг —', ''));
-      [...new Set([...refs, state.goto].filter(Boolean))].forEach((ref) => target.append(new Option(ref, ref)));
-      target.value = state.goto;
-      target.disabled = Boolean(disabled);
-      target.addEventListener('change', () => { state.goto = target.value; send(); });
-      box.append(target);
-    }
-    if (withStop && state.mode === 'stop') {
-      const reason = el(doc, 'input', `stage-card-${field}-stop`);
-      reason.type = 'text'; reason.value = state.stop; reason.disabled = Boolean(disabled);
-      reason.setAttribute('aria-label', `${label}: причина остановки`);
-      reason.addEventListener('change', () => { state.stop = reason.value; send(); });
-      box.append(reason);
-    }
-    container.append(box);
-  }
-
-  // The window of a gate. Every change goes to emit(edit) with the edit's field (see gateAfterEdit).
-  function renderGateWindow(container, model, emit) {
-    const doc = container.ownerDocument;
-    const disabled = Boolean(model.disabled);
-    const send = (edit) => { if (typeof emit === 'function') emit(edit); };
-    const criteria = el(doc, 'textarea', 'stage-card-criteria');
-    criteria.rows = 4;
-    criteria.value = model.criteria;
-    criteria.disabled = disabled;
-    criteria.spellcheck = false;
-    criteria.setAttribute('aria-label', 'Критерии проверки, по одному на строку');
-    criteria.addEventListener('change', () => send({ field: 'criteria', value: criteria.value }));
-    const critWrap = el(doc, 'label', 'stage-card-setting stage-card-criteria-label');
-    critWrap.append(doc.createTextNode('Критерии (по одному на строку) '), criteria);
-    container.append(critWrap);
-
-    const checkers = el(doc, 'fieldset', 'stage-card-checkers');
-    checkers.append(el(doc, 'legend', '', 'Проверяющие'));
-    model.checkers.forEach((item) => {
-      const row = el(doc, 'label', 'stage-card-checker');
-      const check = el(doc, 'input', 'stage-card-checker-check');
-      check.type = 'checkbox';
-      check.checked = item.checked;
-      check.disabled = disabled;
-      check.addEventListener('change', () => send({ field: 'checker', name: item.name, checked: check.checked }));
-      row.append(check, doc.createTextNode(` ${item.name}`));
-      checkers.append(row);
-    });
-    if (!model.checkers.length) checkers.append(el(doc, 'p', 'stage-card-muted', 'Моделей нет.'));
-    container.append(checkers);
-
-    const pass = el(doc, 'select', 'stage-card-pass-select');
-    [['', 'По умолчанию (все проверяющие)'], ['all', 'Все проверяющие прошли'], ['any', 'Достаточно одного']].forEach(([value, label]) => {
-      const option = el(doc, 'option', '', label); option.value = value; pass.append(option);
-    });
-    pass.value = model.pass;
-    pass.disabled = disabled;
-    pass.setAttribute('aria-label', 'Проверка прошла, если');
-    pass.addEventListener('change', () => send({ field: 'pass', value: pass.value }));
-    const passWrap = el(doc, 'label', 'stage-card-setting stage-card-pass');
-    passWrap.append(doc.createTextNode('Проходит, если '), pass);
-    container.append(passWrap);
-
-    renderTransition(container, { field: 'onFail', label: 'При провале', view: model.onFail, refs: model.refs, disabled, withStop: false, emit: send,
-      options: [{ value: 'stop', label: 'Остановить прогон' }, { value: 'ask', label: 'Спросить User' }, { value: 'goto', label: 'Перейти к шагу' }] });
-    renderTransition(container, { field: 'onPass', label: 'После успеха', view: model.onPass, refs: model.refs, disabled, withStop: false, emit: send,
-      options: [{ value: 'next', label: 'Следующий шаг' }, { value: 'goto', label: 'Перейти к шагу' }] });
-  }
-
-  // The window of a route (6.2). `by` rule reads the step's input (the sources numbered in the conditions); model gives the
-  // one model that chooses and its task; owner gives nothing (the owner chooses). A composite condition (all, any) is kept as it is.
-  const ROUTE_BY_LABELS = [['', '— выберите —'], ['rule', 'По правилу (условие на данных)'], ['model', 'Выбирает модель'], ['owner', 'Выбирает User']];
-  const ROUTE_CONFLICT_LABELS = [['', 'По умолчанию: остановить'], ['first', 'Первый подходящий'], ['owner', 'Выбирает User']];
-  const ROUTE_OPS = ['eq', 'in', 'exists'];
-  const isComposite = (cond) => isPlain(cond) && (Array.isArray(cond.all) || Array.isArray(cond.any));
-  // A value as the window shows it: a string as it is, anything else as JSON.
-  const valueText = (value) => (typeof value === 'string' ? value : JSON.stringify(value));
-  // A value typed in the window: JSON when it parses (a number, true, a quoted text), else the text itself.
-  const parseValue = (text) => { try { return JSON.parse(text); } catch (_) { return String(text); } };
-  // The list of `in` is written by comma; each item is read as a value.
-  const parseList = (text) => String(text || '').split(',').map((item) => item.trim()).filter(Boolean).map(parseValue);
-  function caseView(item = {}) {
-    const cond = item.when;
-    const composite = isComposite(cond);
-    const when = composite || !isPlain(cond) ? null : {
-      source: cond.source ?? '', pointer: String(cond.pointer ?? ''), op: ROUTE_OPS.includes(cond.op) ? cond.op : 'eq',
-      value: Array.isArray(cond.value) ? cond.value.map(valueText).join(', ') : (cond.value === undefined ? '' : valueText(cond.value))
-    };
-    return { id: String(item.id ?? ''), label: String(item.label ?? ''), composite, when, action: transitionView(item.action, 'goto') };
-  }
-  // The sources of a rule: the answers of the participants of the steps before this one (`earlier`: [{ ref, label,
-  // participants: [{ id, name }] }]). The number of a source is its place in the input (from 0, as the conditions read it).
-  const isParticipantSource = (src) => isPlain(src) && typeof src.step === 'string' && 'participant' in src && !('artifact' in src);
-  function routeWindowModel(step = {}, { names = [], refs = [], earlier = [], disabled = false } = {}) {
-    const select = isPlain(step.select) ? step.select : {};
-    const models = Array.isArray(step.models) ? step.models.filter(isPlain) : [];
-    const chosen = models.find((model) => model.enabled !== false);
-    const input = Array.isArray(step.input) ? step.input : [];
-    const sources = earlier.flatMap((item) => item.participants.map((participant) => {
-      const at = input.findIndex((src) => isParticipantSource(src) && src.step === item.ref && src.participant === participant.id);
-      return { step: item.ref, participant: participant.id, label: `${item.label} · ${participant.name}`, checked: at >= 0, number: at };
-    }));
-    return {
-      ref: String(step.ref || ''),
-      disabled: Boolean(disabled),
-      refs: refs.map(String).filter((ref) => ref !== String(step.ref || '')),
-      by: typeof select.by === 'string' ? select.by : '',
-      modelNames: [...new Set([...names.map(String), ...models.map((model) => String(model.name))])],
-      model: chosen ? String(chosen.name) : '',
-      task: typeof step.task === 'string' ? step.task : '',
-      sources,
-      otherSources: input.filter((src) => !isParticipantSource(src)).length,
-      conflict: typeof select.conflict === 'string' ? select.conflict : '',
-      otherwise: transitionView(select.otherwise, 'none'),
-      cases: (Array.isArray(select.cases) ? select.cases : []).map(caseView)
-    };
-  }
-  // An edit of a route: { field: 'by', value } | { field: 'model', value } | { field: 'task', value } | { field: 'conflict', value } |
-  // { field: 'source', step, participant, checked } | { field: 'otherwise', mode, goto, stop } | { field: 'caseAdd' } | { field: 'caseRemove', index } |
-  // { field: 'case', index, id, label, when (null: none; undefined: kept), action: { mode, goto, stop } }.
-  // Changing `by` drops what the new kind does not have: the conditions and the otherwise away from a rule, the models
-  // away from a model, the model and the task away from a rule and an owner.
-  function routeAfterEdit(step = {}, edit = {}) {
-    const next = { ...step };
-    const select = isPlain(step.select) ? { ...step.select } : {};
-    const cases = Array.isArray(select.cases) ? select.cases.map((item) => ({ ...item })) : [];
-    const put = (target, key, value) => { if (value === '' || value === undefined || value === null) delete target[key]; else target[key] = value; };
-    if (edit.field === 'by') {
-      put(select, 'by', edit.value);
-      if (edit.value !== 'rule') {
-        delete select.conflict;
-        delete select.otherwise;
-        cases.forEach((item) => { delete item.when; });
-      }
-      if (edit.value === 'rule' || edit.value === 'owner') next.models = [];
-      if (edit.value === 'owner') delete next.task;
-    } else if (edit.field === 'source') {
-      // The sources of a rule are kept in the input in their order; an entry the window does not show stays where it is.
-      const input = Array.isArray(step.input) ? step.input.map((src) => (isPlain(src) ? { ...src } : src)) : [];
-      const at = input.findIndex((src) => isParticipantSource(src) && src.step === edit.step && src.participant === edit.participant);
-      if (edit.checked && at < 0) input.push({ step: String(edit.step), participant: edit.participant });
-      else if (!edit.checked && at >= 0) input.splice(at, 1);
-      if (input.length) next.input = input;
-      else delete next.input;
-    } else if (edit.field === 'model') {
-      next.models = edit.value ? [{ name: String(edit.value) }] : [];
-    } else if (edit.field === 'task') {
-      put(next, 'task', edit.value);
-    } else if (edit.field === 'conflict') {
-      put(select, 'conflict', edit.value);
-    } else if (edit.field === 'otherwise') {
-      const value = transitionAfterEdit(select.otherwise, edit, 'otherwise');
-      put(select, 'otherwise', value);
-    } else if (edit.field === 'caseAdd') {
-      const taken = new Set(cases.map((item) => item.id));
-      let n = cases.length + 1;
-      while (taken.has(`case${n}`)) n += 1;
-      cases.push({ id: `case${n}` });
-    } else if (edit.field === 'caseRemove') {
-      cases.splice(Number(edit.index), 1);
-    } else if (edit.field === 'case' && cases[Number(edit.index)]) {
-      const at = Number(edit.index);
-      const current = cases[at];
-      const updated = { id: String(edit.id ?? current.id ?? '') };
-      if (String(edit.label ?? '').trim()) updated.label = String(edit.label);
-      if (current.when !== undefined) updated.when = current.when;
-      if (edit.when === null) delete updated.when;
-      else if (isPlain(edit.when)) {
-        // An empty source is not a number: it is left out, and the schema names the error at its place.
-        const cond = { ...(String(edit.when.source ?? '').trim() === '' ? {} : { source: Number(edit.when.source) }), pointer: String(edit.when.pointer ?? ''), op: edit.when.op };
-        if (edit.when.op !== 'exists') cond.value = edit.when.op === 'in' ? parseList(edit.when.value) : parseValue(String(edit.when.value ?? ''));
-        updated.when = cond;
-      }
-      const action = transitionAfterEdit(current.action, edit.action, 'action');
-      if (action !== undefined) updated.action = action;
-      cases[at] = updated;
-    }
-    select.cases = cases;
-    next.select = select;
-    return next;
-  }
-  // The window of a route: the choice, the model and the task (model), the conditions and the cases with their actions,
-  // the otherwise and the conflict (rule). Every change goes to emit(edit) with the field (see routeAfterEdit).
-  function renderRouteWindow(container, model, emit) {
-    const doc = container.ownerDocument;
-    const disabled = Boolean(model.disabled);
-    const send = (edit) => { if (typeof emit === 'function') emit(edit); };
-    const choose = (field, label, options, value, onChange) => {
-      const select = el(doc, 'select', `stage-card-route-${field}`);
-      options.forEach(([optionValue, text]) => { const option = el(doc, 'option', '', text); option.value = optionValue; select.append(option); });
-      select.value = value;
-      select.disabled = disabled;
-      select.setAttribute('aria-label', label);
-      select.addEventListener('change', () => onChange(select.value));
-      const wrap = el(doc, 'label', `stage-card-setting stage-card-route-${field}-label`);
-      wrap.append(doc.createTextNode(`${label} `), select);
-      container.append(wrap);
-      return select;
-    };
-    choose('by', 'Выбор варианта', ROUTE_BY_LABELS, model.by, (value) => send({ field: 'by', value }));
-    if (model.by === 'model') {
-      choose('model', 'Модель, которая выбирает', [['', '— выберите модель —'], ...model.modelNames.map((name) => [name, name])], model.model, (value) => send({ field: 'model', value }));
-      const task = el(doc, 'textarea', 'stage-card-route-task');
-      task.rows = 3; task.value = model.task; task.disabled = disabled; task.spellcheck = false;
-      task.setAttribute('aria-label', 'Задание модели, которая выбирает вариант');
-      task.addEventListener('change', () => send({ field: 'task', value: task.value }));
-      const wrap = el(doc, 'label', 'stage-card-setting stage-card-route-task-label');
-      wrap.append(doc.createTextNode('Задание модели '), task);
-      container.append(wrap);
-    }
-    if (model.by === 'rule') {
-      const sources = el(doc, 'fieldset', 'stage-card-route-sources');
-      sources.append(el(doc, 'legend', '', 'Источники условия (номер — место в списке входа, с 0)'));
-      if (!model.sources.length) sources.append(el(doc, 'p', 'stage-card-muted', 'Раньше нет участников с ответами.'));
-      model.sources.forEach((src) => {
-        const row = el(doc, 'label', 'stage-card-source');
-        const check = el(doc, 'input', 'stage-card-source-check');
-        check.type = 'checkbox';
-        check.checked = src.checked;
-        check.disabled = disabled;
-        check.addEventListener('change', () => send({ field: 'source', step: src.step, participant: src.participant, checked: check.checked }));
-        row.append(check, doc.createTextNode(` ${src.label}${src.checked ? ` · источник ${src.number}` : ''}`));
-        sources.append(row);
-      });
-      if (model.otherSources) sources.append(el(doc, 'p', 'stage-card-muted', `Ещё источников: ${model.otherSources} (заданы в JSON, сохраняются как есть).`));
-      container.append(sources);
-      choose('conflict', 'Если подошло несколько', ROUTE_CONFLICT_LABELS, model.conflict, (value) => send({ field: 'conflict', value }));
-    }
-    const cases = el(doc, 'fieldset', 'stage-card-cases');
-    cases.append(el(doc, 'legend', '', 'Варианты'));
-    if (!model.cases.length) cases.append(el(doc, 'p', 'stage-card-muted', 'Вариантов нет.'));
-    const sendCase = (index, state) => send({ field: 'case', index, id: state.id, label: state.label, when: state.when, action: state.action });
-    model.cases.forEach((item, index) => {
-      const box = el(doc, 'div', 'stage-card-case');
-      const state = { id: item.id, label: item.label, when: model.by === 'rule' ? (item.composite ? undefined : item.when) : null, action: { ...item.action } };
-      const idInput = el(doc, 'input', 'stage-card-case-id');
-      idInput.type = 'text'; idInput.value = item.id; idInput.disabled = disabled; idInput.placeholder = 'ID варианта';
-      idInput.setAttribute('aria-label', 'ID варианта');
-      idInput.addEventListener('change', () => { state.id = idInput.value; sendCase(index, state); });
-      const labelInput = el(doc, 'input', 'stage-card-case-label');
-      labelInput.type = 'text'; labelInput.value = item.label; labelInput.disabled = disabled; labelInput.placeholder = 'название для выбора';
-      labelInput.setAttribute('aria-label', 'Название варианта');
-      labelInput.addEventListener('change', () => { state.label = labelInput.value; sendCase(index, state); });
-      box.append(idInput, labelInput);
-      if (model.by === 'rule') {
-        if (item.composite) box.append(el(doc, 'p', 'stage-card-muted', 'Составное условие (all/any): сохраняется как есть, в JSON.'));
-        else {
-          const when = item.when || { source: '', pointer: '', op: 'eq', value: '' };
-          const source = el(doc, 'input', 'stage-card-case-source');
-          source.type = 'number'; source.min = '0'; source.step = '1'; source.value = String(when.source); source.disabled = disabled;
-          source.setAttribute('aria-label', 'Источник: номер входа');
-          const pointer = el(doc, 'input', 'stage-card-case-pointer');
-          pointer.type = 'text'; pointer.value = when.pointer; pointer.placeholder = '/route'; pointer.disabled = disabled;
-          pointer.setAttribute('aria-label', 'Указатель JSON');
-          const op = el(doc, 'select', 'stage-card-case-op');
-          ROUTE_OPS.forEach((value) => { const option = el(doc, 'option', '', value); option.value = value; op.append(option); });
-          op.value = when.op; op.disabled = disabled; op.setAttribute('aria-label', 'Оператор условия');
-          const value = el(doc, 'input', 'stage-card-case-value');
-          value.type = 'text'; value.value = when.value; value.disabled = disabled || when.op === 'exists';
-          value.placeholder = when.op === 'in' ? 'значения через запятую' : 'значение (текст или JSON)';
-          value.setAttribute('aria-label', 'Значение условия');
-          const condition = () => ({ source: source.value, pointer: pointer.value, op: op.value, value: value.value });
-          const onCondition = () => { state.when = condition(); value.disabled = op.value === 'exists'; sendCase(index, state); };
-          source.addEventListener('change', onCondition);
-          pointer.addEventListener('change', onCondition);
-          op.addEventListener('change', onCondition);
-          value.addEventListener('change', onCondition);
-          box.append(source, pointer, op, value);
-        }
-      }
-      renderTransition(box, { field: `case${index}`, label: 'Действие варианта', view: item.action, refs: model.refs, disabled, withStop: true,
-        options: [{ value: 'goto', label: 'Перейти к шагу' }, { value: 'stop', label: 'Остановить прогон' }],
-        emit: (payload) => { state.action = { mode: payload.mode, goto: payload.goto, stop: payload.stop }; sendCase(index, state); } });
-      const remove = el(doc, 'button', 'stage-card-case-remove', '×');
-      remove.type = 'button'; remove.disabled = disabled; remove.setAttribute('aria-label', 'Удалить вариант');
-      remove.addEventListener('click', () => send({ field: 'caseRemove', index }));
-      box.append(remove);
-      cases.append(box);
-    });
-    const add = el(doc, 'button', 'stage-card-case-add', '+ вариант');
-    add.type = 'button'; add.disabled = disabled;
-    add.addEventListener('click', () => send({ field: 'caseAdd' }));
-    cases.append(add);
-    container.append(cases);
-    if (model.by === 'rule') {
-      renderTransition(container, { field: 'otherwise', label: 'Если ни один не подошёл', view: model.otherwise, refs: model.refs, disabled, withStop: true, emit: send,
-        options: [{ value: 'none', label: 'Нет: ошибка маршрута' }, { value: 'goto', label: 'Перейти к шагу' }, { value: 'stop', label: 'Остановить прогон' }] });
-    }
-  }
 
   // The window of an owner (6.1 of the spec, 8.1): the task the owner has to provide and the output of the step (as the round
   // windows have it). The input of an owner is not edited here; it stays as the schema has it.
@@ -913,9 +525,8 @@
     container.append(group);
   }
 
-  // The text of a control on its canvas card (the owner's words; a switched-off checker is not named).
-  // «Шаг после этапа»: the way to add a gate, a route or an owner step lives in the card of the stage it follows.
-  const ADD_CONTROL_OPTIONS = [['', '— нет —'], ['gate', 'Проверка (gate)'], ['route', 'Маршрут (route)'], ['owner', 'User (owner)']];
+  // «Шаг после этапа»: the way to add an owner step lives in the card of the stage it follows.
+  const ADD_CONTROL_OPTIONS = [['', '— нет —'], ['owner', 'User (owner)']];
   function renderAddControl(container, { disabled = false, note = '', onAdd = null } = {}) {
     const doc = container.ownerDocument;
     const select = el(doc, 'select', 'stage-card-add-control');
@@ -964,24 +575,14 @@
     return parts.filter(Boolean).join('\n');
   }
 
+  // The text of an owner step on its canvas card (the owner's words).
   function controlSummary(step = {}) {
-    if (step.kind === 'gate') {
-      const checkers = (Array.isArray(step.models) ? step.models : []).filter((model) => isPlain(model) && model.enabled !== false).map((model) => model.name);
-      return `проверяют: ${checkers.length ? checkers.join(', ') : 'никто'}`;
-    }
     if (step.kind === 'owner') return step.task ? `задание: ${String(step.task).split('\n')[0]}` : 'задание не задано';
-    if (step.kind === 'route') {
-      const by = isPlain(step.select) ? step.select.by : '';
-      const count = isPlain(step.select) && Array.isArray(step.select.cases) ? step.select.cases.length : 0;
-      const kind = { rule: 'по правилу', model: 'выбирает модель', owner: 'выбирает User' }[by] || 'вид не выбран';
-      return `${kind}, вариантов: ${count}`;
-    }
     return '';
   }
 
   const api = Object.freeze({ buildModel, render, renderStepFields, stepFieldsModel, stepsAfterToggle, outputAfterEdit, STATUS, feed,
-    gateWindowModel, gateAfterEdit, renderGateWindow, controlSummary, transitionView, transitionAfterEdit,
-    routeWindowModel, routeAfterEdit, renderRouteWindow, ownerWindowModel, ownerAfterEdit, renderOwnerWindow, renderAddControl, ownerAskMessage });
+    controlSummary, ownerWindowModel, ownerAfterEdit, renderOwnerWindow, renderAddControl, ownerAskMessage });
   root.StageCard = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

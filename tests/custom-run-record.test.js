@@ -189,7 +189,7 @@ describe('Custom run record, version 2 (8.2)', () => {
     const base = { ref: 'r1', participant: 'A', model: 'A', attempt: 1, phase: 'answer', prompt: 'p', parts: {} };
     Record.recordAttempt(record, { ...base, step: 0, visit: 1, state: 'sent' });
     Record.recordAttempt(record, { ...base, step: 0, visit: 2, state: 'sent' });
-    Record.recordAttempt(record, { ...base, step: 0, visit: 2, phase: 'route', state: 'sent' });
+    Record.recordAttempt(record, { ...base, step: 0, visit: 2, phase: 'owner', state: 'sent' });
     expect(record.attempts).toHaveLength(3);
     Record.recordAttempt(record, { ...base, step: 0, visit: 2, state: 'done', answer: 'a', accepted: true });
     expect(record.attempts[1]).toMatchObject({ state: 'done', accepted: true });
@@ -208,10 +208,10 @@ describe('Custom run record, version 2 (8.2)', () => {
   test('the snapshot has the fields of 8.2 and keeps every text by reference; it is plain JSON', async () => {
     const { record, result } = await recordedOwnerRun();
     Record.setSnapshot(record, { schema: [{ ref: 'owner:evidence', kind: 'owner' }], runSettings: { semiAuto: false, maxAttempts: 2 }, state: result.state,
-      routes: [], ownerAnswers: result.ownerAnswers });
+      ownerAnswers: result.ownerAnswers });
     const snapshot = record.snapshot;
     // The registry is record.artifacts (5.3), not a second copy in the snapshot.
-    expect(Object.keys(snapshot).sort()).toEqual(['chatBindings', 'current', 'decisions', 'ownerAnswers', 'pc', 'pendingOwner', 'results', 'routes', 'runSettings', 'schema', 'taskRef', 'visits']);
+    expect(Object.keys(snapshot).sort()).toEqual(['chatBindings', 'current', 'decisions', 'ownerAnswers', 'pc', 'pendingOwner', 'results', 'runSettings', 'schema', 'taskRef', 'visits']);
     expect(snapshot.chatBindings).toEqual({});
     expect(snapshot.current).toMatchObject({ stepRef: null, phase: 'done' });
     expect(Record.canResume(record)).toBe(true);
@@ -220,7 +220,7 @@ describe('Custom run record, version 2 (8.2)', () => {
 
   test('a snapshot of an older version, with counters, a stack, feedback and dependencies, is still complete and exportable: the extra fields are ignored', async () => {
     const { record, result } = await recordedOwnerRun();
-    Record.setSnapshot(record, { schema: [{ ref: 'owner:evidence', kind: 'owner' }], runSettings: {}, state: result.state, routes: [], ownerAnswers: result.ownerAnswers });
+    Record.setSnapshot(record, { schema: [{ ref: 'owner:evidence', kind: 'owner' }], runSettings: {}, state: result.state, ownerAnswers: result.ownerAnswers });
     const ref = record.put('Замечание по тезису');
     Object.assign(record.snapshot, { loopCounters: { 'G1:onFail': 1 }, continuationStack: [], dependencies: {}, feedback: { 'owner:evidence': [{ label: 'User', textRef: ref, pointer: '' }] } });
     const back = Record.revive(JSON.parse(JSON.stringify(Record.serialize(record))));
@@ -267,7 +267,7 @@ function chromeArea({ failGet = '', failSet = '', failRemove = '', throwOn = '',
 function pageCheckpoint(record, store, steps) {
   return (state) => {
     Record.setArtifacts(record, state.artifacts);
-    Record.setSnapshot(record, { schema: steps, runSettings: {}, state, current: state.current, routes: state.routes, ownerAnswers: state.ownerAnswers, pendingOwner: state.pendingOwner });
+    Record.setSnapshot(record, { schema: steps, runSettings: {}, state, current: state.current, ownerAnswers: state.ownerAnswers, pendingOwner: state.pendingOwner });
     return store.save(record);
   };
 }
@@ -345,7 +345,7 @@ describe('Custom run record storage: the chrome.storage adapter rejects every fa
 });
 
 describe('Custom run record export is self-contained (R04)', () => {
-  // A run with a binary owner file, an owner answer that declares an artifact, a gate that goes on to the next
+  // A run with a binary owner file, an owner answer that declares an artifact, a check round before the next
   // round (the transport refuses its request, so the run stops there), and an attempt that was sent and never answered.
   async function fullRun() {
     const storage = memoryStorage();
@@ -357,7 +357,7 @@ describe('Custom run record export is self-contained (R04)', () => {
       { ref: 'O0', kind: 'owner', task: 'Приложи файл' },
       { ref: 'O1', kind: 'owner', task: 'Дай тезис', output: { format: 'json', requiredFields: ['/thesis'], artifacts: [{ id: 'thesis', name: 'Тезис', pointer: '/thesis' }] } },
       { ref: 'S1', kind: 'round', task: 'Тезис', input: 'none', models: ['A'] },
-      { ref: 'G1', kind: 'gate', criteria: ['c'], models: ['B'], onFail: { goto: 'S2' } },
+      { ref: 'G1', kind: 'round', task: 'Проверь по критерию c', input: 'previous', models: ['B'] },
       { ref: 'S2', kind: 'round', task: 'Доработай', input: 'previous', models: ['C'] }
     ];
     const FAIL = 'Разбор.\nНЕ ВЫПОЛНЕНО: x\nВЕРДИКТ: НЕ ПРОШЁЛ';

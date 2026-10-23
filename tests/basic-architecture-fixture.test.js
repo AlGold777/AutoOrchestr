@@ -1,8 +1,8 @@
 // T18 and T19 (ТЗ 10): the architecture of 30 stages (design-system-architecture.md) as one Basic schema,
 // the S01–S30 → technical refs table, the count of steps, and runs of the whole schema on a fake transport.
 // The schema and the table are fixtures: tests/fixtures/basic-architecture-s01-s30.json and …map.json.
-// Synthetic conditions (Q10: return and change conditions the architecture does not define) are marked in the
-// table (`synthetic`). Fake send and owner callbacks only: no provider is called.
+// The schema is linear: the checks G1–G4 are rounds of one model (criteria in the task), the choices of User are owner
+// steps; the synthetic return conditions (Q10) are gone. Fake send and owner callbacks only: no provider is called.
 const fs = require('fs');
 const path = require('path');
 const Engine = require('../disput/custom-engine');
@@ -29,26 +29,24 @@ function fakeTransport(replyFor) {
   return { calls, sendParticipants };
 }
 
-// The plain answers of the architecture: gates pass, the synthetic conditions are off unless the test turns them on.
+// The plain answers of the architecture (the JSON answers have their required fields).
 function baseReply(opts = {}) {
   return (stepRef, participantId) => {
-    if (stepRef.startsWith('gate:')) return 'ВЕРДИКТ: ПРОШЁЛ';
-    if (participantId === 'S12-reviewer') return JSON.stringify({ decisionImpact: opts.decisionImpact?.() ?? 'no', findings: 'ЗАМЕЧАНИЕ_S12' });
-    if (participantId === 'S19-a' || participantId === 'S19-b') return JSON.stringify({ chgProposal: opts.chg?.(participantId) ? 'yes' : 'no', review: 'r' });
+    if (participantId === 'S12-reviewer') return JSON.stringify({ decisionImpact: 'no', findings: 'ЗАМЕЧАНИЕ_S12' });
+    if (participantId === 'S19-a' || participantId === 'S19-b') return JSON.stringify({ chgProposal: 'no', review: 'r' });
     if (participantId === 'S26-closer') return JSON.stringify({ closedDecisions: 'c', directionBroken: false });
     if (participantId === 'S27-a' || participantId === 'S27-b') return JSON.stringify({ requiresVerification: false, failures: 'x' });
-    if (participantId === 'S29-reviewer') return JSON.stringify({ outcome: opts.outcome?.() ?? 'baseline' });
+    if (participantId === 'S29-reviewer') return JSON.stringify({ outcome: 'baseline' });
     return opts.text?.(stepRef, participantId) ?? `ответ ${stepRef} ${participantId}`;
   };
 }
 
-// The owner and the route choices of the architecture: the owner approves, chooses «next» and, where it is set, returns.
+// The owner of the architecture: gives the text of each owner step and approves.
 function owners(opts = {}) {
   const asked = [];
   return {
     asked,
     provideOwnerResult: async ({ stepRef }) => { asked.push(stepRef); return `текст User ${stepRef}`; },
-    chooseRoute: async ({ stepRef }) => { asked.push(stepRef); return opts.choose?.(stepRef) ?? 'next'; },
     decide: async (arg) => { asked.push('decide'); return opts.decide ? opts.decide(arg) : 'continue'; }
   };
 }
@@ -91,9 +89,10 @@ describe('T18: the architecture schema is valid, shows on the canvas and keeps i
     const canvas = Schema.toCanvas(schema, { models: MODELS });
     expect(canvas.errors).toEqual([]);
     expect(canvas.rounds).toHaveLength(map.summary.rounds);
-    // Counted by the fixture generator: 30 business stages, 53 technical steps (with the route of S18's change), 33 rounds (gates, routes, owner
-    // steps and syntheses do not count toward the 50-round limit).
-    expect(map.summary).toMatchObject({ businessStages: 30, technicalSteps: 53, rounds: 33, syntheses: 5, gates: 4, routes: 9, owners: 2, ownerApprovals: 3 });
+    // 30 business stages, 49 technical steps, 37 rounds (the checks G1–G4 are rounds; owner steps and syntheses do not count
+    // toward the 50-round limit), 7 owner steps (the former choices of User included).
+    expect(map.summary).toMatchObject({ businessStages: 30, technicalSteps: 49, rounds: 37, syntheses: 5, owners: 7, ownerApprovals: 3 });
+    expect(schema.steps.map((step) => step.kind).every((kind) => ['round', 'synthesis', 'owner'].includes(kind))).toBe(true);
     expect(map.summary.rounds).toBeLessThanOrEqual(50);
   });
 
@@ -136,27 +135,23 @@ describe('T18: the architecture schema is valid, shows on the canvas and keeps i
     expect(revisionA.output.artifacts[0].revisionOf).toEqual({ artifact: { step: s18.ref, participant: 'S18-a', id: 'candidate' }, version: 'latest', required: true });
   });
 
-  test('gates G1–G4 are gate steps after S13, S17, S22 and S30 with criteria and pass rules', () => {
-    const gates = schema.steps.filter((step) => step.kind === 'gate');
-    expect(gates.map((gate) => gate.ref)).toEqual(['gate:g1', 'gate:g2', 'gate:g3', 'gate:g4']);
-    gates.forEach((gate) => {
-      expect(gate.criteria.length).toBeGreaterThan(0);
-      expect(gate.pass).toBe('all');
-      expect(gate.onFail).toBe('ask');
+  test('the checks G1–G4 are rounds of one model after S13, S17, S22 and S30, with the criteria in the task', () => {
+    const checks = ['r16', 'r20', 'r28', 'r37'].map((ref) => byRef[ref]);
+    checks.forEach((step, at) => {
+      expect(step.kind).toBe('round');
+      expect(step.models).toHaveLength(1);
+      expect(step.task).toContain(`Проверка G${at + 1}`);
+      expect(step.task).toContain('Критерии:');
     });
     expect(byRef['r15'].owner).toBe('approve');
-    expect(byRef['r33'].owner).toBe('approve');
+    expect(byRef['r36'].owner).toBe('approve');
   });
 
-  test('there is no way back: the former returns and controlled changes stop the run (synthetic conditions are marked in the table)', () => {
-    const actionOf = (ref, caseId) => byRef[ref].select.cases.find((item) => item.id === caseId)?.action;
-    const stops = [['route:s12', 'back_s10_synthetic'], ['route:chg19', 'chg_pfb_synthetic'], ['route:chg13', 'return'], ['route:chg25', 'chg_aip'],
-      ['route:chg17', 'return'], ['route:s26', 'direction_broken_synthetic'], ['route:s27', 'verify_s24_synthetic'], ['route:s29', 'close_s26_synthetic'],
-      ['route:s29', 'revise_s28_synthetic']];
-    stops.forEach(([ref, caseId]) => expect(actionOf(ref, caseId)).toEqual({ stop: expect.stringContaining('возврат назад не поддерживается') }));
-    expect(actionOf('route:s29', 'baseline_s30')).toEqual({ goto: 'r33' });
-    expect(JSON.stringify(schema)).not.toMatch(/maxLoops|resumeAt|"return"\s*:\s*true/);
-    expect(map.synthetic.map((item) => item.ref)).toEqual(['route:s12', 'route:chg19', 'route:s26', 'route:s27', 'route:s29']);
+  test('there is no way back and no branch: the former choices of User are owner steps, the synthetic conditions are gone', () => {
+    expect(map.ownerChoices).toEqual(['owner:chg13', 'owner:chg17', 'owner:chg18', 'owner:chg25', 'owner:s29']);
+    map.ownerChoices.forEach((ref) => expect(byRef[ref]).toMatchObject({ kind: 'owner', models: [] }));
+    expect(JSON.stringify(schema)).not.toMatch(/maxLoops|resumeAt|"return"\s*:\s*true|"goto"|"select"|"criteria"|"onFail"/);
+    expect(map).not.toHaveProperty('synthetic');
   });
 
   test('the settings of the canvas keep every explicit field of every step (no silent loss)', () => {
@@ -166,13 +161,13 @@ describe('T18: the architecture schema is valid, shows on the canvas and keeps i
         const expected = Object.fromEntries(['order', 'input', 'task', 'require', 'owner', 'chat', 'output'].filter((key) => key in step).map((key) => [key, step[key]]));
         expect(settings.customRoundSettings[step.ref]).toEqual(expected);
       } else {
-        const fields = ['input', 'task', 'require', 'owner', 'chat', 'output', 'criteria', 'pass', 'onFail', 'onPass', 'select'];
+        const fields = ['input', 'task', 'require', 'owner', 'chat', 'output'];
         const expected = Object.fromEntries(fields.filter((key) => key in step).map((key) => [key, step[key]]));
         expect(settings.customStepSettings[step.ref]).toEqual(expected);
       }
     });
     // Per-participant inputs of S19 (each reviewer sees the other candidate) are kept with the participant.
-    expect(settings.customModelSettings['r20']['S19-a'].input).toEqual(byRef.r20.models[0].input);
+    expect(settings.customModelSettings['r22']['S19-a'].input).toEqual(byRef.r22.models[0].input);
   });
 });
 
@@ -195,24 +190,17 @@ describe('T07: two ids of one model in S18 go as two independent chats', () => {
 });
 
 describe('T18: runs of the whole architecture on a fake transport', () => {
-  test('the linear run goes through all 52 steps in order; gates and owner steps are asked where the table says', async () => {
+  test('the linear run goes through all 49 steps in order; the owner steps and approvals are asked where the table says', async () => {
     const transport = fakeTransport(baseReply());
     const ask = owners();
     const result = await run({ sendParticipants: transport.sendParticipants }, ask);
     expect(result.stopReason).toBe('steps_done');
     expect(result.steps.map((step) => step.ref)).toEqual(schema.steps.map((step) => step.ref));
-    // One request per participant of the schema (53); the transport gets one batch per wave of a step.
+    // One request per participant of the schema (49); the transport gets one batch per wave of a step.
     expect(transport.calls.reduce((sum, call) => sum + call.length, 0)).toBe(map.summary.participantsTotal);
     // The owner in the order of the run: the text of owner:s01; approvals of S13, S22, S30 (decide; S05 asks none: the Design System has only an escalation there);
-    // route choices after G1 (chg13), after G2 (chg17), after the recomputed S18 (chg18), owner:s25 and its route (chg25).
-    expect(ask.asked).toEqual(['owner:s01', 'decide', 'route:chg13', 'route:chg17', 'route:chg18', 'decide', 'owner:s25', 'route:chg25', 'decide']);
-  });
-
-  test('S12 with a finding that changes a decision stops the run (there is no way back to S10); S10 is sent once', async () => {
-    const transport = fakeTransport(baseReply({ decisionImpact: () => 'yes' }));
-    const result = await run({ sendParticipants: transport.sendParticipants }, owners());
-    expect(result.stopReason).toContain('возврат назад не поддерживается');
-    expect(transport.calls.filter((call) => call[0].stepRef === 'r11')).toHaveLength(1);
+    // the owner steps after G1 (chg13), after G2 (chg17), after S18 (chg18), owner:s25, chg25 and the outcome of S29.
+    expect(ask.asked).toEqual(['owner:s01', 'decide', 'owner:chg13', 'owner:chg17', 'owner:chg18', 'decide', 'owner:s25', 'owner:chg25', 'owner:s29', 'decide']);
   });
 
   test('a null owner decision on the approved last step is no_decision, and the run does not finish', async () => {
@@ -220,7 +208,7 @@ describe('T18: runs of the whole architecture on a fake transport', () => {
     const ask = owners({ decide: () => null });
     const result = await run({ sendParticipants: transport.sendParticipants }, ask);
     expect(result.stopReason).toBe('no_decision');
-    expect(result.steps.at(-1).ref).not.toBe('gate:g4');
+    expect(result.steps.at(-1).ref).not.toBe('r37');
   });
 });
 
@@ -259,12 +247,12 @@ describe('T02, T04, T03: inputs of the architecture chosen by address', () => {
 describe('T04: a JSON answer without a required field is corrected alone; the accepted neighbour is not sent again', () => {
   test('S27: S27-a lacks /failures (a required field), S27-b is accepted: only S27-a gets the correction, and the reason names the field', async () => {
     const transport = fakeTransport((ref, pid, attempt) => {
-      if (ref === 'r29' && pid === 'S27-a' && attempt === 1) return JSON.stringify({ requiresVerification: false });
+      if (ref === 'r32' && pid === 'S27-a' && attempt === 1) return JSON.stringify({ requiresVerification: false });
       return baseReply()(ref, pid);
     });
     const result = await run({ sendParticipants: transport.sendParticipants }, owners());
     expect(result.stopReason).toBe('steps_done');
-    const batches = transport.calls.filter((call) => call[0].stepRef === 'r29');
+    const batches = transport.calls.filter((call) => call[0].stepRef === 'r32');
     expect(batches).toHaveLength(2);
     expect(batches[0].map((request) => request.participantId)).toEqual(['S27-a', 'S27-b']);
     expect(batches[1].map((request) => request.participantId)).toEqual(['S27-a']);
@@ -281,8 +269,8 @@ describe('T19: a large input is not cut and stops before the request (stress fix
     const transport = fakeTransport(baseReply({ text: (ref, pid) => (pid === 'S28-producer' || pid === 'S29-verifier' ? big : `ответ ${ref} ${pid}`) }));
     const result = await run({ sendParticipants: transport.sendParticipants, maxPromptChars: 150000 }, owners());
     expect(result.stopReason).toBe('context_full');
-    expect(transport.calls.some((call) => call[0].stepRef === 'r33')).toBe(false);
-    const s28 = transport.calls.find((call) => call[0].stepRef === 'r28');
+    expect(transport.calls.some((call) => call[0].stepRef === 'r36')).toBe(false);
+    const s28 = transport.calls.find((call) => call[0].stepRef === 'r33');
     expect(s28).toBeDefined();
   });
 
@@ -298,7 +286,7 @@ describe('T19: a large input is not cut and stops before the request (stress fix
     const transport = fakeTransport(baseReply({ text: (ref, pid) => (pid === 'S28-producer' ? big : `ответ ${ref} ${pid}`) }));
     const result = await run({ sendParticipants: transport.sendParticipants, maxPromptChars: 1000000 }, owners());
     expect(result.stopReason).toBe('steps_done');
-    const s29 = transport.calls.find((call) => call[0].stepRef === 'r31');
+    const s29 = transport.calls.find((call) => call[0].stepRef === 'r34');
     expect(s29[0].prompt).toContain(big);
   });
 });

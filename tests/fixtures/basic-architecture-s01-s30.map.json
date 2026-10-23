@@ -1,5 +1,5 @@
 {
-  "description": "Таблица соответствия S01–S30 → технические ref (ТЗ 10, T18). Синтетические условия (Q10) помечены synthetic: true. Возвратов назад в Basic нет: бывшие возвраты и CHG-переходы в схеме заменены остановкой (stop), примечания о возвратах ниже относятся к прежней версии таблицы.",
+  "description": "Таблица соответствия S01–S30 → технические ref (ТЗ 10, T18). Схема линейна: проверок (gate) и развилок (route) в Basic нет. Проверки G1–G4 — раунды из одной модели с критериями в task; выборы User (CHG13, CHG17, CHG18, CHG25, исход S29) — шаги owner; синтетические условия возвратов (Q10) убраны.",
   "stages": [
     {
       "stage": "S01",
@@ -144,11 +144,10 @@
       "roles": "Reviewer + Producer",
       "refs": [
         "r13",
-        "r14",
-        "route:s12"
+        "r14"
       ],
       "participants": 2,
-      "notes": "Возврат S12→S10: route:s12 по синтетическому условию decisionImpact (Q10).",
+      "notes": "Возврат S12→S10 убран: схема линейна.",
       "mechanics": "доказана"
     },
     {
@@ -158,11 +157,11 @@
       "roles": "Decision Closer + Owner",
       "refs": [
         "r15",
-        "gate:g1",
-        "route:chg13"
+        "r16",
+        "owner:chg13"
       ],
-      "participants": 3,
-      "notes": "owner: approve; gate G1 (ask); CHG13 — выбор User «вернуться к S19».",
+      "participants": 2,
+      "notes": "owner: approve; проверка G1 — раунд r16 (одна модель, критерии в task); CHG13 — шаг User owner:chg13: продолжить или остановить прогон.",
       "mechanics": "доказана"
     },
     {
@@ -171,7 +170,7 @@
       "phase": "discovery",
       "roles": "Producer ∥ (≥2)",
       "refs": [
-        "r16"
+        "r17"
       ],
       "participants": 2,
       "notes": "Два независимых участника, chat new, require 2.",
@@ -195,7 +194,7 @@
       "phase": "discovery",
       "roles": "Verifier",
       "refs": [
-        "r17"
+        "r18"
       ],
       "participants": 1,
       "notes": "",
@@ -208,12 +207,12 @@
       "roles": "Synthesizer + Decision Closer",
       "refs": [
         "synth:s17",
-        "r18",
-        "gate:g2",
-        "route:chg17"
+        "r19",
+        "r20",
+        "owner:chg17"
       ],
-      "participants": 4,
-      "notes": "Артефакт aip; gate G2 (ask). CHG17 — выбор User «вернуться к S25» после CHG25 (S25 → S16 → S17 → G2).",
+      "participants": 3,
+      "notes": "Артефакт aip; проверка G2 — раунд r20 (одна модель, критерии в task); CHG17 — шаг User owner:chg17.",
       "mechanics": "доказана"
     },
     {
@@ -222,11 +221,11 @@
       "phase": "generation",
       "roles": "Producer ∥ (≥2)",
       "refs": [
-        "r19",
-        "route:chg18"
+        "r21",
+        "owner:chg18"
       ],
       "participants": 2,
-      "notes": "Два независимых участника (Claude S18-a, GPT S18-b), chat new. Два ID одной модели в шаге страница не устанавливает (A06), это проверяется engine-тестом. CHG19: после пересчёта S18 User возвращает прогон к S19 (route:chg18, return; required-источники r15, r18, r19 проверяются до решения).",
+      "notes": "Два независимых участника (Claude S18-a, GPT S18-b), chat new. Два ID одной модели в шаге страница не устанавливает (A06), это проверяется engine-тестом. CHG18 — шаг User owner:chg18: получает r15, r19, r21 (required) и решает, продолжать ли.",
       "mechanics": "доказана"
     },
     {
@@ -235,11 +234,10 @@
       "phase": "generation",
       "roles": "Reviewer ∥ (≥2)",
       "refs": [
-        "r20",
-        "route:chg19"
+        "r22"
       ],
       "participants": 2,
-      "notes": "Каждый рецензент видит кандидата другого участника (адресный вход участника). CHG19 — синтетическое условие (Q10).",
+      "notes": "Каждый рецензент видит кандидата другого участника (адресный вход участника).",
       "mechanics": "доказана"
     },
     {
@@ -248,9 +246,9 @@
       "phase": "generation",
       "roles": "Reviewer + Producer",
       "refs": [
-        "r21",
-        "r22",
-        "r23"
+        "r23",
+        "r24",
+        "r25"
       ],
       "participants": 4,
       "notes": "Критика ∥; ревизия каждым автором своего кандидата (revisionOf, chat continue). Ревизии — отдельные раунды (revisionOf step-level).",
@@ -263,7 +261,7 @@
       "roles": "Synthesizer + Reviewer",
       "refs": [
         "synth:s21",
-        "r24"
+        "r26"
       ],
       "participants": 2,
       "notes": "",
@@ -275,11 +273,11 @@
       "phase": "generation",
       "roles": "Decision Closer + Owner",
       "refs": [
-        "r25",
-        "gate:g3"
+        "r27",
+        "r28"
       ],
-      "participants": 3,
-      "notes": "owner: approve; gate G3 (ask).",
+      "participants": 2,
+      "notes": "owner: approve; проверка G3 — раунд r28 (одна модель, критерии в task).",
       "mechanics": "доказана"
     },
     {
@@ -288,7 +286,7 @@
       "phase": "generation",
       "roles": "Synthesizer",
       "refs": [
-        "r26"
+        "r29"
       ],
       "participants": 1,
       "notes": "Выражено раундом (холст не допускает synth после gate). Артефакт pca.",
@@ -300,7 +298,7 @@
       "phase": "evidence",
       "roles": "Synthesizer",
       "refs": [
-        "r27"
+        "r30"
       ],
       "participants": 1,
       "notes": "Выражено раундом (см. S23). Цель возврата S27→S24.",
@@ -313,12 +311,12 @@
       "roles": "Verifier (шаг User)",
       "refs": [
         "owner:s25",
-        "route:chg25"
+        "owner:chg25"
       ],
       "participants": 0,
-      "notes": "owner:s25 — текст User. CHG25 — выбор User «к AIP (S16)» с повторным G2 и возвратом.",
+      "notes": "owner:s25 — текст User. CHG25 — шаг User owner:chg25: возврат к AIP (S16) — новым прогоном.",
       "mechanics": "ждёт бизнес-решения",
-      "mechanicsNote": "Возврат CHG25 → AIP (S16) убран (в схеме остановка). Состав пересчёта S24 (r27) до ввода User ТЗ не задаёт: без него r28 останавливается missing_input (остановка доказана, продолжение нет)."
+      "mechanicsNote": "Возврат CHG25 → AIP (S16) в схеме не выражается. Состав пересчёта S24 (r30) до ввода User ТЗ не задаёт: без него r31 останавливается missing_input (остановка доказана, продолжение нет)."
     },
     {
       "stage": "S26",
@@ -326,13 +324,12 @@
       "phase": "evidence",
       "roles": "Decision Closer",
       "refs": [
-        "r28",
-        "route:s26"
+        "r31"
       ],
       "participants": 1,
-      "notes": "Синтетическое условие directionBroken (Q10) → S22 (G3 повторно).",
+      "notes": "Ветки directionBroken → S22 в схеме нет: схема линейна.",
       "mechanics": "ждёт бизнес-решения",
-      "mechanicsNote": "Ветка directionBroken → S22 (G3) не проходит прогоном в тестах. Условие Q10 и состав повторного G3 не заданы."
+      "mechanicsNote": "Повторный G3 при сломанном направлении ТЗ не задаёт (Q10)."
     },
     {
       "stage": "S27",
@@ -340,13 +337,12 @@
       "phase": "evidence",
       "roles": "Reviewer ∥ (≥2)",
       "refs": [
-        "r29",
-        "route:s27"
+        "r32"
       ],
       "participants": 2,
-      "notes": "Синтетическое условие requiresVerification (Q10) → S24 (maxLoops 1).",
+      "notes": "Ветки requiresVerification → S24 в схеме нет: схема линейна.",
       "mechanics": "ждёт бизнес-решения",
-      "mechanicsNote": "Ветка requiresVerification → S24 не проходит прогоном в тестах. Условие Q10, тип находки и состав пересчёта не заданы."
+      "mechanicsNote": "Условие Q10, тип находки и состав пересчёта не заданы."
     },
     {
       "stage": "S28",
@@ -354,7 +350,7 @@
       "phase": "evidence",
       "roles": "Producer",
       "refs": [
-        "r30"
+        "r33"
       ],
       "participants": 1,
       "notes": "Вход — только закрытые решения (S26) и findings (S27); revisionOf линии S23 pca. Отдельного CHG-механизма нет: см. раздел «невыражаемое».",
@@ -366,14 +362,14 @@
       "phase": "evidence",
       "roles": "Reviewer + Verifier",
       "refs": [
-        "r31",
-        "r32",
-        "route:s29"
+        "r34",
+        "r35",
+        "owner:s29"
       ],
       "participants": 2,
-      "notes": "Выбор S26/S28/S30 по синтетическому исходу outcome (Q10); otherwise — stop.",
+      "notes": "Исход close / revise / baseline читает User на шаге owner:s29 и решает, продолжать ли к S30.",
       "mechanics": "ждёт бизнес-решения",
-      "mechanicsNote": "Исход close / revise / baseline: выбор записан в схеме; ветки S26 и S28 в тестах не проходят. Условие Q10."
+      "mechanicsNote": "Ветки S26 и S28 в схеме не выражаются: схема линейна, User читает исход и останавливает прогон. Условие Q10."
     },
     {
       "stage": "S30",
@@ -381,78 +377,37 @@
       "phase": "evidence",
       "roles": "Decision Closer + Owner",
       "refs": [
-        "r33",
-        "gate:g4"
+        "r36",
+        "r37"
       ],
-      "participants": 3,
-      "notes": "owner: approve; gate G4 (ask).",
+      "participants": 2,
+      "notes": "owner: approve; проверка G4 — раунд r37 (одна модель, критерии в task).",
       "mechanics": "доказана"
     }
   ],
-  "synthetic": [
-    {
-      "ref": "route:s12",
-      "field": "/decisionImpact",
-      "value": "yes",
-      "purpose": "возврат S12→S10"
-    },
-    {
-      "ref": "route:chg19",
-      "field": "/chgProposal",
-      "value": "yes",
-      "purpose": "CHG S19→S10 с resumeAt S19"
-    },
-    {
-      "ref": "route:s26",
-      "field": "/directionBroken",
-      "value": true,
-      "purpose": "возврат к S22 (G3)"
-    },
-    {
-      "ref": "route:s27",
-      "field": "/requiresVerification",
-      "value": true,
-      "purpose": "возврат S27→S24"
-    },
-    {
-      "ref": "route:s29",
-      "field": "/outcome",
-      "value": "close | revise | baseline",
-      "purpose": "выбор S26 / S28 / S30"
-    }
-  ],
   "ownerChoices": [
-    "route:chg13 (return / next)",
-    "route:chg25 (chg_aip / next)",
-    "route:chg17 (next / return)",
-    "route:chg18 (next / return)"
+    "owner:chg13",
+    "owner:chg17",
+    "owner:chg18",
+    "owner:chg25",
+    "owner:s29"
   ],
   "summary": {
     "businessStages": 30,
-    "technicalSteps": 53,
-    "rounds": 33,
+    "technicalSteps": 49,
+    "rounds": 37,
     "syntheses": 5,
-    "gates": 4,
-    "routes": 9,
-    "owners": 2,
+    "owners": 7,
     "ownerApprovals": 3,
-    "participantsTotal": 53,
+    "participantsTotal": 49,
     "controlSteps": [
       "owner:s01",
-      "route:s12",
-      "gate:g1",
-      "route:chg13",
-      "gate:g2",
-      "route:chg17",
-      "route:chg18",
-      "route:chg19",
-      "gate:g3",
+      "owner:chg13",
+      "owner:chg17",
+      "owner:chg18",
       "owner:s25",
-      "route:chg25",
-      "route:s26",
-      "route:s27",
-      "route:s29",
-      "gate:g4"
+      "owner:chg25",
+      "owner:s29"
     ]
   }
 }

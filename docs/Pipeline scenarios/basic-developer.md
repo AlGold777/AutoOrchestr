@@ -25,13 +25,12 @@ GPT подготавливает запрос через `ContentUtils.ensurePro
 | Файл | Символы | Что там |
 | --- | --- | --- |
 | `disput/custom-engine.js` | `CustomEngine`, `run`, `attempt`, `normalizeSteps`, `buildPrompt`, `previewPrompt`, `correctionPrompt`, `inputFor`, `judge`, `resolveSetting`, `STOP_TEXT`, `REASON_TEXT`, `DEFAULT_ATTEMPTS`, `SYNTHESIS_TASK`, `EngineError`, `unexecutedOf`, `assertExecutable`, `sourceItems`, `sendParticipants`, `artifactItems`, `contentOf`, `revisionItem` | Движок: шаги, запросы, приём, повторы, пауза |
-| `disput/basic-schema.js` | `BasicSchema`, `DEFAULTS`, `validate`, `assemble`, `resolveFields`, `resolveRun`, `toSettings`, `toCanvas`, `describeErrors` | Формат схемы: умолчания, проверка (переходы только вперёд: `goto` ниже по списку или `stop`), сборка шагов, показ на холсте |
+| `disput/basic-schema.js` | `BasicSchema`, `DEFAULTS`, `validate`, `assemble`, `resolveFields`, `resolveRun`, `toSettings`, `toCanvas`, `describeErrors` | Формат схемы: умолчания, проверка (виды шага `round`, `synthesis`, `owner`; шаги идут по порядку, `gate` и `route` отклоняются), сборка шагов, показ на холсте |
 | `disput/basic-artifacts.js` | `BasicArtifacts`, `createRegistry`, `register`, `latest`, `version`, `lineKey`, `markInvalid` | Реестр артефактов прогона: одна запись на версию, ссылка на ответ и указатель, без копии текста (чистые функции) |
 | `disput/basic-output.js` | `BasicOutput`, `checkAnswer`, `readPointer`, `parseJsonAnswer`, `countWords` | Проверка ответа по выходу шага: длина, JSON и поля, разделы, артефакты (чистые функции; вызывает движок) |
-| `disput/basic-control.js` | `BasicControl`, `verdictOf`, `passed`, `verdictInstruction`, `jsonValueOf`, `sameJson`, `matches`, `routeOf` | Вердикт проверки (gate): текст и JSON, правило `pass` all/any; условия правила маршрута, точное сравнение JSON, ответ модели маршрута; чистые функции (вызывает движок) |
 | `disput/basic-spec.js` | `BasicSpec`, `build`, `toMarkdown` | Описание pipeline «для человека» по схеме: три слоя (pipeline в целом, схема процесса, этапы), поля автора и автоматические поля, `missing` для незаполненного; чистые функции, без DOM (окно спецификации подключит их отдельно) |
 | `disput/custom-run-record.js` | `CustomRunRecord`, `createRun`, `recordAttempt`, `attemptKey`, `finishRun`, `serialize`, `revive`, `textOf`, `setSnapshot`, `setArtifacts`, `canResume`, `exportRun`, `createStore` | Запись о прогоне (версия 2: реестр и снимок состояния) |
-| `results/stage-card.js` | `StageCard`, `buildModel`, `render` | Окно настроек раунда |
+| `results/stage-card.js` | `StageCard`, `buildModel`, `render`, `renderOwnerWindow`, `renderAddControl` | Окно настроек раунда, окно шага User, выбор «Шаг после этого этапа» (только User) |
 | `disput/pipeline-presets.js` | `BUILTIN_PIPELINE_DEFINITIONS`, `PIPELINE_PRESETS`, `makePreset` | Шаблон Basic и пресет `CUSTOM` |
 | `disput/debate-draft-plan.js` | `createCanvasPlan`, `insertSynthesis`, `normalize` | План холста |
 | `disput/debate-response-acceptance.js` | `evaluate` | Техническая приёмка ответа |
@@ -66,6 +65,7 @@ GPT подготавливает запрос через `ContentUtils.ensurePro
 | Файл | Что проверяет |
 | --- | --- |
 | `tests/custom-engine.test.js` | Движок: шаги, запросы, приём, повторы, бюджет, пауза, вопросы |
+| `tests/custom-engine-flow.test.js` | Линейный прогон раундов и шага User; `gate` и `route` отклоняются до первого запроса |
 | `tests/custom-run-record.test.js` | Запись о прогоне, хранение через адаптер `chrome.storage` (отказы), экспорт со всеми ссылками, состояние `not_sent` |
 | `tests/custom-extract.test.js` | Разбор прогона в Extract (Transport) |
 | `tests/custom-engine-checkpoint.test.js` | Checkpoint: точки записи состояния, живое состояние, `checkpoint_failed`, автономный запуск без callback |
@@ -73,11 +73,11 @@ GPT подготавливает запрос через `ContentUtils.ensurePro
 | `tests/basic-participant-transport.test.js` | Участники в транспорте: волны, ответы по participantId, `chat`, привязки в снимке, фон не подменяет вкладку другого участника (контракт в коде, без браузера) |
 | `tests/tab-manager-session-scope.test.js` (блоки «participants» и «bound per run») | Чаты участников на моках `chrome.tabs`: привязка по run ID и participant ID, потерянный чат останавливает запрос без отправки, повтор захода в том же чате, отказ записи привязки |
 | `tests/transport-participant-api.test.js` | Участник и API-режим: отказ `participant_api_unsupported` до отправки, запрос без участника идёт прежним API-путём; потерянный чат завершает модель явным статусом (vm-песочница оркестратора) |
-| `tests/custom-engine-resume.test.js` | Продолжение из снимка: неизвестный запрос, пропуск, решение User и окно после перезагрузки, применённый переход, снимок старой версии с лишними полями, схема снимка |
+| `tests/custom-engine-resume.test.js` | Продолжение из снимка: неизвестный запрос, пропуск, решение User и окно после перезагрузки, снимок старой версии с лишними полями (в том числе маршруты и применённый переход), схема снимка |
 | `tests/custom-engine-owner.test.js` | Шаг User: текст и его проверка, пустой ответ, отмена и Stop, файлы, `unsupported_input` |
 | `tests/basic-artifacts.test.js` | Реестр артефактов: идемпотентность, последняя версия линии, авторы |
 | `tests/basic-output.test.js` | Проверка выхода: слова, JSON Pointer, порядок причин отказа |
-| `tests/basic-spec.test.js` | Описание pipeline: три слоя, поля автора и `missing`, связи `previous`/`all`/список, участие User, переходы проверки и маршрута, фикстура S01–S30, пустые схемы, Markdown |
+| `tests/basic-spec.test.js` | Описание pipeline: три слоя, поля автора и `missing`, связи `previous`/`all`/список, участие User, схема без переходов, фикстура S01–S30, пустые схемы, Markdown |
 | `tests/basic-schema.test.js` | Формат схемы: наследование, сборка, проверка, `toCanvas`, `toSettings` |
 | `tests/basic-architecture-fixture.test.js` | Архитектура S01–S30 (`tests/fixtures/basic-architecture-s01-s30.json`, таблица `…map.json`): проверка, холст, настройки, прогоны на fake transport, бюджет |
 | `tests/basic-schema-guide.test.js` | Инструкция автора схем совпадает с кодом |
@@ -159,7 +159,7 @@ GPT подготавливает запрос через `ContentUtils.ensurePro
 - Save шаблона создаёт схему `user` с `basedOn` = имя шаблона; повторный Save и сохранение карточки сохраняют `basedOn`.
 - Настройки выключенной модели и шага, которого нет на холсте, остаются в схеме с `enabled: false`.
 - Ответы, статусы и другие данные прогона в схему не попадают.
-- Текст спецификации (`spec` и `title`, `goal`, `rules`, `quality` шагов; см. guide, 5.10) холст не редактирует. Save, Run и Export берут его из исходной схемы (`basicSourceSchema`, та же схема, из которой читаются поля, которых холст не редактирует) по `ref` шага; `spec` берётся целиком. Поля не дописываются, если в исходной схеме их не было. Для шага, которого нет в исходной схеме, ничего не добавляется; у шага из `customControls` (проверка, маршрут, User) поля сохраняются вместе с самим шагом.
+- Текст спецификации (`spec` и `title`, `goal`, `rules`, `quality` шагов; см. guide, 5.10) холст не редактирует. Save, Run и Export берут его из исходной схемы (`basicSourceSchema`, та же схема, из которой читаются поля, которых холст не редактирует) по `ref` шага; `spec` берётся целиком. Поля не дописываются, если в исходной схеме их не было. Для шага, которого нет в исходной схеме, ничего не добавляется; у шага из `customControls` (шаг User) поля сохраняются вместе с самим шагом.
 - В схеме записываются `schemaVersion` (с первого сохранения) и `origin`.
 - Кнопка Save спрашивает имя. Имя шаблона занять нельзя; существующее имя спрашивает подтверждение замены.
 - Схема собирается с холста (с `basedOn`, если это копия шаблона; повторный Save сохраняет прежний `basedOn`) и
@@ -226,7 +226,7 @@ Ctrl/Cmd+S сохраняет подсветки и избранное вмес�
 
 Не в этой записи: шаблон Default — он собирается из кода
 (`disput/pipeline-presets.js`) при каждой загрузке и схемой в хранилище не является; записи прогонов — отдельные
-ключи по одному на прогон (`disput/custom-run-record.js`). Запись и чтение идут через `CustomRunRecord.chromeStorage(chrome.storage.local)`: ошибка `chrome.runtime.lastError` и синхронное исключение отклоняют промис, а не дают вид успешной записи. Ошибка записи в точке сохранения состояния (checkpoint) останавливает прогон с `checkpoint_failed` до следующего запроса и перехода.
+ключи по одному на прогон (`disput/custom-run-record.js`). Запись и чтение идут через `CustomRunRecord.chromeStorage(chrome.storage.local)`: ошибка `chrome.runtime.lastError` и синхронное исключение отклоняют промис, а не дают вид успешной записи. Ошибка записи в точке сохранения состояния (checkpoint) останавливает прогон с `checkpoint_failed` до следующего запроса.
 
 Файлом схема становится только при обмене: **Export schema** выгружает одну схему pipeline, который сейчас на холсте,
 файлом `<имя pipeline>.json`; **Import schema** принимает файл с одной схемой (имя предлагается из имени файла) либо
@@ -375,5 +375,5 @@ Ctrl/Cmd+S сохраняет подсветки и избранное вмес�
 3b. **Вложения (R05).** Второй заход того же участника в новый чат получает файлы; продолжение в тот же чат их не повторяет; две модели в одной волне получают файлы каждая в свой чат. Не проверено в провайдерах.
 4. **Повтор в той же вкладке.** Исправление уходит в ту же вкладку и тот же чат; вложения не отправляются повторно.
 3c. **Проверка неизвестной попытки (N04).** Прервать отправку (потеря связи или перезагрузка), открыть «проверить»: найденный ответ виден, повторной отправки нет; вкладка закрыта — `chat_unavailable`, не успех. Не проверено в провайдерах.
-5. **Страница в браузере.** Установить `tests/fixtures/basic-architecture-s01-s30.json` (в fixture S18 — Claude и GPT, не два Claude), открыть холст, сохранить, загрузить, сохранить снова; проверить окна gate, route и owner.
-6. **CHG S19 и S25 сняты.** Возвратов назад в Basic нет (2.81.846): в фикстуре `tests/fixtures/basic-architecture-s01-s30.json` бывшие возвраты и CHG-переходы — остановки (`stop`). Если нужен повтор, его записывают обычным шагом ниже по списку.
+5. **Страница в браузере.** Установить `tests/fixtures/basic-architecture-s01-s30.json` (в fixture S18 — Claude и GPT, не два Claude), открыть холст, сохранить, загрузить, сохранить снова; проверить окно owner.
+6. **CHG S19 и S25 сняты.** Возвратов назад в Basic нет (2.81.846), проверок и развилок тоже (2.81.848): в фикстуре `tests/fixtures/basic-architecture-s01-s30.json` проверки G1–G4 — раунды из одной модели с критериями в `task`, выборы User (CHG13, CHG17, CHG18, CHG25, исход S29) — шаги `owner`, синтетические условия возвратов убраны. Если нужен повтор, его записывают обычным шагом ниже по списку.

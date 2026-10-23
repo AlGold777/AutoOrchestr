@@ -56,7 +56,7 @@ describe('Custom engine checkpoint (ТЗ 7, 8.2, T20)', () => {
     const afterA = states.find((state) => state.current.stepRef === 'S1' && state.current.phase === 'judge');
     expect(afterA.current.accepted).toEqual(['A']);
     expect(afterA.artifacts).toEqual([]);
-    expect(states.every((state) => state.current.pending !== undefined && Array.isArray(state.routes))).toBe(true);
+    expect(states.every((state) => state.current.pending !== undefined && !('routes' in state))).toBe(true);
   });
 
   test('a failed checkpoint stops the run: the next request is not sent and the error is not swallowed', async () => {
@@ -93,20 +93,12 @@ describe('Custom engine checkpoint (ТЗ 7, 8.2, T20)', () => {
     expect(decisions.map((state) => state.pendingOwner)).toEqual([{ kind: 'decision', stepRef: 'S1', visit: 1 }, null]);
   });
 
-  test('a checkpoint is written before a transition and again after it, with the target named as applied', async () => {
+  test('the run has no transition phase: every checkpoint is send, judge, decision, asks or done', async () => {
     const log = [];
     const { checkpoint, states } = checkpointing(log);
-    const steps = [
-      { ref: 'S10', kind: 'round', input: 'none', models: ['A'] },
-      { ref: 'G1', kind: 'gate', criteria: ['c'], models: ['B'], onFail: { goto: 'S12' } },
-      { ref: 'S11', kind: 'round', models: ['C'] },
-      { ref: 'S12', kind: 'round', models: ['D'] }
-    ];
-    const FAIL = 'Разбор.\nНЕ ВЫПОЛНЕНО: x\nВЕРДИКТ: НЕ ПРОШЁЛ';
-    const result = await Engine.run({ task: 'T', steps, send: transport({ A: ['a1'], B: [FAIL], D: ['d1'] }, log), checkpoint });
-    expect(result.stopReason).toBe('steps_done');
-    const transitions = states.filter((state) => state.current.phase === 'transition');
-    expect(transitions.map((state) => [state.pc, state.current.applied?.target ?? null])).toEqual([['G1', null], ['G1', 'S12']]);
-    ['loopCounters', 'continuationStack', 'feedback', 'dependencies'].forEach((field) => expect(transitions[0]).not.toHaveProperty(field));
+    await Engine.run({ task: 'T', steps: TWO_ROUNDS, send: transport({ A: ['a1'], B: ['b1'] }, log), checkpoint });
+    expect(states.every((state) => ['send', 'judge', 'decision', 'asks', 'done'].includes(state.current.phase))).toBe(true);
+    ['loopCounters', 'continuationStack', 'feedback', 'dependencies', 'routes'].forEach((field) => expect(states[0]).not.toHaveProperty(field));
   });
+
 });

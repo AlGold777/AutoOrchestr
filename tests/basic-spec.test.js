@@ -96,7 +96,7 @@ describe('Basic spec: the author fields', () => {
 });
 
 describe('Basic spec: the links of the input', () => {
-  // Stages: 1 r1 (answer with a name), 2 r2 (previous), 3 gate (previous), 4 r3 (previous, skips the gate),
+  // Stages: 1 r1 (answer with a name), 2 r2 (previous), 3 owner (previous), 4 r3 (previous: the owner's answer),
   // 5 r4 (a list: a participant of r1, r2, an artifact of r3), 6 r5 (all answer steps before it).
   const linked = () => ({
     schemaVersion: 1,
@@ -104,7 +104,7 @@ describe('Basic spec: the links of the input', () => {
     steps: [
       { ref: 'r1', kind: 'round', models: [{ name: 'A' }, { name: 'B' }], output: { name: 'Decision Policy', form: 'Текст' } },
       { ref: 'r2', kind: 'round', input: 'previous', models: [{ name: 'C' }] },
-      { ref: 'gate:g', kind: 'gate', input: 'previous', criteria: ['полнота'], models: [{ name: 'K' }], onFail: 'ask' },
+      { ref: 'owner:g', kind: 'owner', input: 'previous', task: 'Проверьте полноту', models: [] },
       { ref: 'r3', kind: 'round', input: 'previous', models: [{ name: 'D' }] },
       {
         ref: 'r4', kind: 'round', models: [{ name: 'E' }],
@@ -120,11 +120,11 @@ describe('Basic spec: the links of the input', () => {
     expect(model.stages[1].input.value).toBe('ответы: «Раунд 1»');
   });
 
-  test('previous skips a gate: the step after the gate reads the round before it', () => {
+  test('an owner step is an answer step: the step after it reads the owner answer', () => {
     const model = Spec.build(linked());
     expect(model.scheme.links.filter((link) => link.to === 3)).toEqual([{ from: 2, to: 3, label: 'ответы этапа «Раунд 2»' }]);
-    expect(model.scheme.links.filter((link) => link.to === 4)).toEqual([{ from: 2, to: 4, label: 'ответы этапа «Раунд 2»' }]);
-    expect(model.stages[3].input.value).toBe('ответы: «Раунд 2»');
+    expect(model.scheme.links.filter((link) => link.to === 4)).toEqual([{ from: 3, to: 4, label: 'ответы этапа «User g»' }]);
+    expect(model.stages[3].input.value).toBe('ответы: «User g»');
   });
 
   test('all takes every earlier answer step', () => {
@@ -132,10 +132,11 @@ describe('Basic spec: the links of the input', () => {
     expect(model.scheme.links.filter((link) => link.to === 6)).toEqual([
       { from: 1, to: 6, label: 'Decision Policy' },
       { from: 2, to: 6, label: 'ответы этапа «Раунд 2»' },
+      { from: 3, to: 6, label: 'ответы этапа «User g»' },
       { from: 4, to: 6, label: 'ответы этапа «Раунд 3»' },
       { from: 5, to: 6, label: 'ответы этапа «Раунд 4»' }
     ]);
-    expect(model.stages[5].input.value).toBe('ответы: «Раунд 1», «Раунд 2», «Раунд 3», «Раунд 4»');
+    expect(model.stages[5].input.value).toBe('ответы: «Раунд 1», «Раунд 2», «User g», «Раунд 3», «Раунд 4»');
   });
 
   test('a list takes the named sources: a participant, a step, an artifact (the label is the step label)', () => {
@@ -202,42 +203,19 @@ describe('Basic spec: the owner, the participants and the stage kinds', () => {
     expect(byKey(model.whole, 'volume').value).toContain('этапов: 2; участников: 1; запросов не меньше 2');
   });
 
-  test('gate and route transitions are shown in the scheme; a rule condition is not described', () => {
+  test('the scheme lists the stages in order without transitions: there are no branches', () => {
     const schema = {
       schemaVersion: 1,
       origin: 'user',
-      run: { policy: 'manual' },
       steps: [
         { ref: 'r1', kind: 'round', models: [{ name: 'A' }] },
-        {
-          ref: 'gate:g1', kind: 'gate', input: 'previous', criteria: ['полнота'], models: [{ name: 'K' }],
-          onPass: { goto: 'r2' }, onFail: { stop: 'нужна доработка' }
-        },
-        { ref: 'r2', kind: 'round', models: [{ name: 'B' }] },
-        {
-          ref: 'route:r', kind: 'route', input: ['r1'], select: {
-            by: 'rule', cases: [{ id: 'stop', when: { source: 0, pointer: '/x', op: 'exists' }, action: { stop: 'нет данных' } }],
-            otherwise: { goto: 'r2' }
-          }
-        }
+        { ref: 'owner:ok', kind: 'owner', input: 'previous', task: 'Решите, принять ли ответ', models: [] },
+        { ref: 'r2', kind: 'round', models: [{ name: 'B' }] }
       ]
     };
     const model = Spec.build(schema);
-    const [, gate, , route] = model.scheme.stages;
-    expect(gate.transitions).toEqual([
-      'проверяющие: нужны все прошедшие',
-      'при прохождении: переход к «Раунд 2»',
-      'при провале: остановка: нужна доработка'
-    ]);
-    expect(route.transitions).toEqual([
-      'выбирает по правилу; при нескольких подходящих: остановка',
-      'вариант «stop»: остановка: нет данных',
-      'иначе: переход к «Раунд 2»'
-    ]);
-    expect(model.stages[1].criteria).toMatchObject({ value: 'полнота', source: 'schema' });
-    expect(model.stages[1].title.value).toBe('Проверка g1');
-    expect(model.stages[3].title.value).toBe('Маршрут r');
-    expect(Spec.toMarkdown(model)).toContain('   - при провале: остановка: нужна доработка');
+    expect(model.scheme.stages.map((stage) => [stage.title, stage.kindLabel])).toEqual([['Раунд 1', 'раунд'], ['User ok', 'User'], ['Раунд 2', 'раунд']]);
+    expect(model.scheme.stages.every((stage) => !('transitions' in stage))).toBe(true);
   });
 });
 

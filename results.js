@@ -4350,13 +4350,13 @@ document.addEventListener('click', (event) => {
                 await persistPipelineStore();
             }
         };
-        // The control steps (gate, route, owner) of a Basic pipeline: [{ after, step }], where `after` is the ref of the step
+        // The control steps (owner) of a Basic pipeline: [{ after, step }], where `after` is the ref of the step
         // before it on the canvas (a round, an intermediate synthesis or another control). The step is kept whole, as the
         // schema has it; a window edits some of its fields (StageCard). Placed after `after` by placeControls.
         const customControls = new Map();
         const getCustomControls = () => customControls.get(draftPlanStorageKey()) || [];
-        const CONTROL_KINDS_CANVAS = ['gate', 'route', 'owner'];
-        const CONTROL_TITLE = { gate: 'Проверка', route: 'Маршрут', owner: 'User' };
+        const CONTROL_KINDS_CANVAS = ['owner'];
+        const CONTROL_TITLE = { owner: 'User' };
         const controlStackId = (ref) => `ctl-${String(ref).replace(/[^A-Za-z0-9_-]+/g, '-')}-stack`;
         const controlLinkId = (ref) => `svg-in-${String(ref).replace(/[^A-Za-z0-9_-]+/g, '-')}`;
         // Saves the list for the pipeline; a saved pipeline keeps it at once (as the round card does), a draft only in memory.
@@ -4378,8 +4378,6 @@ document.addEventListener('click', (event) => {
             return `${kind}:${n}`;
         };
         const controlAfterEdit = (step, edit) => {
-            if (step.kind === 'gate') return window.StageCard.gateAfterEdit(step, edit);
-            if (step.kind === 'route') return window.StageCard.routeAfterEdit(step, edit);
             if (step.kind === 'owner') return window.StageCard.ownerAfterEdit(step, edit);
             return step;
         };
@@ -4399,9 +4397,8 @@ document.addEventListener('click', (event) => {
             }
             const ref = freshControlRef(kind);
             const list = getCustomControls().map((item) => (item.after === anchor ? { ...item, after: ref } : item));
-            // A new control is empty: what the owner has not set is not written (a missing kind or a missing condition is an error).
-            const kindDefault = kind === 'gate' ? { models: [] } : kind === 'route' ? { models: [], select: {} } : { models: [] };
-            list.push({ after: anchor, step: { ref, kind, ...kindDefault } });
+            // A new control is empty: what the owner has not set is not written (a missing task is an error).
+            list.push({ after: anchor, step: { ref, kind, models: [] } });
             await setCustomControls(list, { persist: false });
             updatePipelineAll();
             return true;
@@ -4418,7 +4415,7 @@ document.addEventListener('click', (event) => {
         // The canvas has an intermediate synthesis right after this round: a control there is refused (the schema
         // needs the synthesis to stand directly after the round and before the next one).
         const intermediateAfterRound = (anchor) => (draftPlanForCanvas(getActiveDraftPlan()).plannedStages || []).some((stage) => stage.outputIntent === 'working_synthesis' && stage.upstream?.includes(`canvas-${anchor}`));
-        const INTERMEDIATE_CONTROL_NOTE = 'Между раундом и его промежуточным синтезом проверку или маршрут не ставят: синтез стоит сразу после раунда и перед следующим раундом. Уберите синтез или шаг управления.';
+        const INTERMEDIATE_CONTROL_NOTE = 'Между раундом и его промежуточным синтезом шаг User не ставят: синтез стоит сразу после раунда и перед следующим раундом. Уберите синтез или шаг User.';
         // The card of a round or a synthesis keeps the choices the schema does not hold yet as drafts, by pipeline and ref:
         // «выбранные этапы» before a step is picked, «число» before a number is typed. A draft shows until the owner makes the value.
         const stepDrafts = new Map();
@@ -7155,7 +7152,7 @@ document.addEventListener('click', (event) => {
             const chatBindings = resumeRecord ? { ...(resumeRecord.snapshot?.chatBindings || {}) } : {};
             const checkpointRecord = (state) => {
                 window.CustomRunRecord.setArtifacts(record, state.artifacts);
-                window.CustomRunRecord.setSnapshot(record, { schema: built.schema, runSettings: { semiAuto, maxAttempts: engine.DEFAULT_ATTEMPTS, runMaxWords: built.run.maxWords ?? null }, state: { ...state, chatBindings: { ...chatBindings } }, current: state.current, routes: state.routes, ownerAnswers: state.ownerAnswers, pendingOwner: state.pendingOwner });
+                window.CustomRunRecord.setSnapshot(record, { schema: built.schema, runSettings: { semiAuto, maxAttempts: engine.DEFAULT_ATTEMPTS, runMaxWords: built.run.maxWords ?? null }, state: { ...state, chatBindings: { ...chatBindings } }, current: state.current, ownerAnswers: state.ownerAnswers, pendingOwner: state.pendingOwner });
                 return writeRecord();
             };
             const recordAttempt = (entry) => {
@@ -7360,16 +7357,6 @@ document.addEventListener('click', (event) => {
                     parseAsks: (text) => window.DebateStageMarkers?.parse?.(text)?.askItems || [],
                     askOwner: askCustomOwner,
                     decide: askCustomDecision,
-                    // The route choice: the owner picks a case by its label from the schema (a cancel is null, the run stops).
-                    chooseRoute: ({ stepRef, choices, reason }) => {
-                        const cases = steps.find((item) => item.ref === stepRef)?.select?.cases || [];
-                        const label = (id) => String(cases.find((item) => item.id === id)?.label || id);
-                        return askChoiceDialog({
-                            title: 'Выбор маршрута',
-                            message: `${stepRef}: ${reason === 'conflict_owner' ? 'подошло несколько вариантов, выберите один' : 'выберите вариант'}.`,
-                            choices: choices.map((id) => ({ value: id, label: label(id) }))
-                        });
-                    },
                     // The owner's answer of an owner step: a text (a file is not supported on this page yet).
                     checkUnknown,
                     provideOwnerResult: ({ stepRef, task, goal, input, output, reason, detail }) => askChoiceDialog({
@@ -7428,13 +7415,6 @@ document.addEventListener('click', (event) => {
                         // A step with accepted answers, or one the owner skipped, is done; otherwise it stays running until a decision.
                         if (kind === 'custom_step' && fields.accepted > 0) setCustomStepStatus(fields.step, 'completed');
                         if (kind === 'custom_decision' && fields.action === 'skip') setCustomStepStatus(fields.step, 'completed');
-                        // The control events of the run go to the feed as short lines (not as answers of models).
-                        if (kind === 'custom_gate') appendBasicRunLine(window.StageCard?.feed?.gate(fields));
-                        if (kind === 'custom_route') {
-                            const cases = steps.find((item) => item.ref === fields.ref)?.select?.cases || [];
-                            appendBasicRunLine(window.StageCard?.feed?.route({ ref: fields.ref, caseLabel: String(cases.find((item) => item.id === fields.case)?.label ?? fields.case), reason: fields.reason }));
-                        }
-                        if (kind === 'custom_transition') appendBasicRunLine(window.StageCard?.feed?.transition(fields, (reason) => engine.STOP_TEXT[reason] || reason));
                         window.MessageDelivery?.batchEvent?.(kind, { pipelineRunId: runContext.pipelineRunId, ...fields });
                     }
                 });
@@ -7446,8 +7426,7 @@ document.addEventListener('click', (event) => {
                     CustomRecord.setArtifacts(record, result.artifacts);
                     CustomRecord.setSnapshot(record, {
                         schema: built.schema, runSettings: { semiAuto, maxAttempts: engine.DEFAULT_ATTEMPTS, runMaxWords: built.run.maxWords ?? null },
-                        state: result.state, ownerAnswers: result.ownerAnswers,
-                        routes: result.steps.filter((item) => item.route).map((item) => ({ stepRef: item.ref, visit: item.visit, ...item.route }))
+                        state: result.state, ownerAnswers: result.ownerAnswers
                     });
                     CustomRecord.finishRun(record, { stopReason: result.stopReason });
                     await saveRecord(true);
@@ -9239,17 +9218,7 @@ document.addEventListener('click', (event) => {
 
         // Stage card: the round badge opens the stage's card (template stage text,
         // who works, run status). Plain rounds show their participants.
-        // The answers a rule may read: the participants (enabled models) of the rounds and syntheses before the step.
-        const participantsBefore = (ref) => {
-            const steps = basicSchemaFromPage(draftPlanForCanvas(getActiveDraftPlan()), null, { forSave: true }).steps || [];
-            const at = steps.findIndex((step) => step.ref === ref);
-            return steps.slice(0, Math.max(0, at)).filter((step) => step.kind === 'round' || step.kind === 'synthesis').map((step) => ({
-                ref: step.ref,
-                label: stepLabel(step.ref),
-                participants: (step.models || []).filter((model) => model.enabled !== false).map((model) => ({ id: model.id ?? model.name, name: model.name }))
-            })).filter((item) => item.participants.length);
-        };
-        // The window of a control step: a gate, a route and an owner have their windows.
+        // The window of a control step: the owner has its window.
         // «Шаг после этапа» in the card of a round or a control: the new step stands after it, and the card closes to show it.
         const addControlOptionsFor = (anchor, dialog) => {
             const refused = intermediateAfterRound(anchor);
@@ -9268,14 +9237,11 @@ document.addEventListener('click', (event) => {
             const { step } = entry;
             title.textContent = `${CONTROL_TITLE[step.kind] || step.kind} ${step.ref}`;
             body.replaceChildren();
-            const options = { names: getAllPipelineModelNames(), refs: schemaRefsForWindows(), earlier: participantsBefore(ref), disabled: pipelineRunActive };
             const onEdit = async (edit) => {
                 if (pipelineRunActive) return;
                 await commitControl(ref, edit);
                 openControlCard(ref);
             };
-            if (step.kind === 'gate') window.StageCard.renderGateWindow(body, window.StageCard.gateWindowModel(step, options), onEdit);
-            if (step.kind === 'route') window.StageCard.renderRouteWindow(body, window.StageCard.routeWindowModel(step, options), onEdit);
             if (step.kind === 'owner') window.StageCard.renderOwnerWindow(body, window.StageCard.ownerWindowModel(step, { disabled: pipelineRunActive }), onEdit);
             window.StageCard.renderAddControl(body, addControlOptionsFor(ref, dialog));
             if (!dialog.open) dialog.showModal();

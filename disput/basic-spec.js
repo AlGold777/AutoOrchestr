@@ -3,18 +3,17 @@
 // toMarkdown(model) renders it. A field is { key, label, value, source }: 'schema' (taken from the schema or derived
 // from it), 'author' (the author's own text of spec, title, goal, rules, quality), 'missing' (no such field, value ''),
 // 'default' (the Basic default task applies; its text is not copied here).
-// The stages are the steps assemble() keeps: a round or a synthesis with an enabled model, and every gate, route, owner.
+// The stages are the steps assemble() keeps: a round or a synthesis with an enabled model, and every owner step.
 (function initBasicSpec(root) {
   'use strict';
 
   const Schema = root.BasicSchema || (typeof require === 'function' ? require('./basic-schema') : null);
 
   // The control kinds assemble() always keeps (the same list as in basic-schema.js).
-  const CONTROL_KINDS = ['gate', 'route', 'owner'];
+  const CONTROL_KINDS = ['owner'];
   // The steps whose answer a later step can take as input (an owner's answer is its own text).
   const ANSWER_KINDS = ['round', 'synthesis', 'owner'];
-  const KIND_LABEL = Object.freeze({ round: 'раунд', synthesis: 'синтез', gate: 'проверка', route: 'маршрут', owner: 'User' });
-  const CONFLICT_TEXT = Object.freeze({ stop: 'остановка', first: 'берётся первый подходящий', owner: 'решает User' });
+  const KIND_LABEL = Object.freeze({ round: 'раунд', synthesis: 'синтез', owner: 'User' });
   const SPEC_FIELDS = Object.freeze([
     ['purpose', 'Назначение'], ['inputs', 'Исходные данные'], ['result', 'Итоговый результат'], ['application', 'Применение результата'],
     ['readiness', 'Критерии готовности'], ['rules', 'Общие правила и ограничения'], ['boundaries', 'Границы'], ['failure', 'Поведение при сбое']
@@ -89,38 +88,6 @@
     return pieces.join('; ');
   }
 
-  // One transition of a gate or a route, as text. titleOf turns a ref into the title of its stage.
-  function actionText(action, titleOf) {
-    if (!isObject(action)) return 'переход не задан';
-    if ('stop' in action) return `остановка: ${action.stop}`;
-    if ('goto' in action) return `переход к ${titleOf(action.goto)}`;
-    return 'переход не задан';
-  }
-
-  // The transitions of a gate or a route. A rule's conditions are not described: they stay in the schema.
-  function transitionsOf(step, titleOf) {
-    if (step.kind === 'gate') {
-      const pass = step.pass ?? Schema.DEFAULTS.gate.pass;
-      const onFail = step.onFail ?? Schema.DEFAULTS.gate.onFail;
-      return [
-        `проверяющие: ${pass === 'any' ? 'достаточно одного прошедшего' : 'нужны все прошедшие'}`,
-        `при прохождении: ${'onPass' in step ? actionText(step.onPass, titleOf) : 'дальше по порядку'}`,
-        `при провале: ${isObject(onFail) ? actionText(onFail, titleOf) : (onFail === 'ask' ? 'спросить User' : 'остановка')}`
-      ];
-    }
-    if (step.kind !== 'route' || !isObject(step.select)) return [];
-    const select = step.select;
-    const lines = [];
-    if (select.by === 'model') lines.push(`выбирает модель «${enabledModels(step)[0]?.name ?? ''}»`);
-    else if (select.by === 'owner') lines.push('выбирает User');
-    else lines.push(`выбирает по правилу; при нескольких подходящих: ${CONFLICT_TEXT[select.conflict ?? Schema.DEFAULTS.route.conflict] || ''}`);
-    (Array.isArray(select.cases) ? select.cases : []).filter(isObject).forEach((item) => {
-      lines.push(`вариант «${textOf(item.label) || item.id}»: ${actionText(item.action, titleOf)}`);
-    });
-    if ('otherwise' in select) lines.push(`иначе: ${actionText(select.otherwise, titleOf)}`);
-    return lines;
-  }
-
   // The schema as a description: { whole, scheme, stages, completeness } (fields are { key, label, value, source }).
   function build(schema, { name = '' } = {}) {
     const source = isObject(schema) ? schema : {};
@@ -155,10 +122,6 @@
     });
     const byRef = new Map();
     entries.forEach((entry) => { if (!byRef.has(entry.ref)) byRef.set(entry.ref, entry); });
-    const titleOf = (ref) => {
-      const entry = byRef.get(ref);
-      return entry ? `«${entry.title.value}»` : `«${ref}» (этап выключен)`;
-    };
     const labelOf = (entry, participant) => {
       const model = participant === undefined ? null : (entry.raw.models || []).find((item) => isObject(item) && idOf(item) === participant);
       const out = model && isObject(model.output) ? model.output : entry.raw.output;
@@ -225,10 +188,8 @@
         input: field('input', 'Вход', input, 'schema'),
         output: field('output', 'Выход', outputText(step, entry, run), 'schema'),
         task,
-        owner: field('owner', 'User', owner, 'schema'),
-        transitions: transitionsOf(step, titleOf)
+        owner: field('owner', 'User', owner, 'schema')
       };
-      if (entry.kind === 'gate') result.criteria = field('criteria', 'Критерии', Array.isArray(step.criteria) ? step.criteria.filter(textOf).join('; ') : '', Array.isArray(step.criteria) ? 'schema' : 'missing');
       return result;
     });
 
@@ -240,7 +201,7 @@
     if (ownerSteps.length) ownerParts.push(`этапы User: ${ownerSteps.join(', ')}`);
     const requests = entries.reduce((sum, entry) => sum + entry.count, 0);
     const multi = entries.filter((entry) => entry.count > 1).map((entry) => entry.title.value);
-    const volume = `этапов: ${entries.length}; участников: ${participantKeys.size}; запросов не меньше ${requests} (точное число зависит от повторов и переходов); этапы с несколькими участниками: ${multi.length ? multi.join(', ') : 'нет'}`;
+    const volume = `этапов: ${entries.length}; участников: ${participantKeys.size}; запросов не меньше ${requests} (точное число зависит от повторов); этапы с несколькими участниками: ${multi.length ? multi.join(', ') : 'нет'}`;
     whole.push(field('ownerInvolvement', 'Участие User', ownerParts.join('; '), 'schema'), field('volume', 'Объём', volume, 'schema'));
 
     const filled = log.filter((item) => item.filled).length;
@@ -248,7 +209,7 @@
       name: typeof name === 'string' ? name : '',
       whole,
       scheme: {
-        stages: stages.map((stage) => ({ number: stage.number, ref: stage.ref, title: stage.title.value, kindLabel: stage.kindLabel, transitions: stage.transitions })),
+        stages: stages.map((stage) => ({ number: stage.number, ref: stage.ref, title: stage.title.value, kindLabel: stage.kindLabel })),
         links
       },
       stages,
@@ -277,7 +238,6 @@
     if (!scheme.stages.length) lines.push('_Этапов нет._');
     scheme.stages.forEach((item) => {
       lines.push(`${item.number}. **${item.title}** (\`${item.ref}\`) — ${item.kindLabel}`);
-      item.transitions.forEach((text) => lines.push(`   - ${text}`));
     });
     if (scheme.links.length) {
       const titleOfNumber = (number) => (scheme.stages.find((item) => item.number === number) || { title: '—' }).title;
@@ -293,7 +253,7 @@
       const people = stage.participants.map((item) => [item.name, item.role && `роль: ${item.role}`, item.id && `id: ${item.id}`,
         item.task && `задание участника: ${item.task}`].filter(Boolean).join(', '));
       lines.push(`- **Участники (${stage.count}):** ${people.length ? people.join('; ') : '_нет_'}`);
-      ['order', 'input', 'output', 'task', 'rules', 'quality', 'owner', 'criteria'].filter((key) => stage[key])
+      ['order', 'input', 'output', 'task', 'rules', 'quality', 'owner'].filter((key) => stage[key])
         .forEach((key) => lines.push(fieldLine(stage[key])));
     });
     lines.push('', '## Заполнение', '', `Заполнено полей автора: ${completeness.filled} из ${completeness.total}.`, '');

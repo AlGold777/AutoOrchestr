@@ -138,17 +138,17 @@
 
   // A snapshot of the state of the run (8.2) as plain data: the schema as the run was started with, the pointer, the visits,
   // the position of the current step, the finished results (their accepted answers by text reference), the decisions taken,
-  // the routes and the owner's answers. A snapshot of an older version may hold more fields (counters, stack, feedback, dependencies): they are ignored. The registry is record.artifacts (5.3), not a second copy here. chatBindings holds the chats of the participants (participantId → tab and request), written while a request is in flight (V01).
+  // the owner's answers. A snapshot of an older version may hold more fields (counters, stack, feedback, dependencies, routes): they are ignored. The registry is record.artifacts (5.3), not a second copy here. chatBindings holds the chats of the participants (participantId → tab and request), written while a request is in flight (V01).
   const copyOf = (value) => (value === undefined ? null : JSON.parse(JSON.stringify(value)));
   // The chats of the participants are an object by participantId; a list (an old snapshot) and no value are an empty object.
   const plainOf = (value) => (value && typeof value === 'object' && !Array.isArray(value) ? copyOf(value) : {});
-  function setSnapshot(record, { schema = [], runSettings = {}, state = {}, current = null, routes = [], ownerAnswers = [], pendingOwner = null } = {}) {
+  function setSnapshot(record, { schema = [], runSettings = {}, state = {}, current = null, ownerAnswers = [], pendingOwner = null } = {}) {
     const visits = state.visits || {};
     record.snapshot = copyOf({
       schema, taskRef: record.taskRef, runSettings, pc: state.pc ?? null, visits,
       current: current || state.current || { stepRef: state.pc ?? null, visit: visits[state.pc] || 0, phase: 'done', accepted: [], pending: [] },
       results: state.results || [], decisions: state.decisions || {},
-      routes, ownerAnswers, pendingOwner, chatBindings: plainOf(state.chatBindings)
+      ownerAnswers, pendingOwner, chatBindings: plainOf(state.chatBindings)
     });
     return record.snapshot;
   }

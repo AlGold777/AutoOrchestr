@@ -446,38 +446,6 @@
       "task": "S12, Producer: применить только явные findings к спецификации."
     },
     {
-      "ref": "route:s12",
-      "kind": "route",
-      "models": [],
-      "input": [
-        {
-          "step": "r13",
-          "participant": "S12-reviewer",
-          "required": true
-        }
-      ],
-      "select": {
-        "by": "rule",
-        "cases": [
-          {
-            "id": "back_s10_synthetic",
-            "when": {
-              "source": 0,
-              "pointer": "/decisionImpact",
-              "op": "eq",
-              "value": "yes"
-            },
-            "action": {
-              "stop": "возврат назад не поддерживается: back_s10_synthetic"
-            }
-          }
-        ],
-        "otherwise": {
-          "goto": "r15"
-        }
-      }
-    },
-    {
       "ref": "r15",
       "kind": "round",
       "owner": "approve",
@@ -532,8 +500,8 @@
       "task": "S13, Decision Closer: зафиксировать продуктовый baseline; User утверждает."
     },
     {
-      "ref": "gate:g1",
-      "kind": "gate",
+      "ref": "r16",
+      "kind": "round",
       "input": [
         {
           "step": "r15",
@@ -541,53 +509,22 @@
           "required": true
         }
       ],
-      "require": "all",
-      "pass": "all",
-      "onFail": "ask",
-      "criteria": [
-        "Все blocking product decisions закрыты или явно отложены",
-        "OPEN помечены non-blocking и видны в Known Unknowns",
-        "Deferred scope перечислен явно",
-        "Трасса «решение → возможность → требование» полная"
-      ],
+      "task": "Проверка G1: проверить критерии PFB.\nКритерии:\n- Все blocking product decisions закрыты или явно отложены\n- OPEN помечены non-blocking и видны в Known Unknowns\n- Deferred scope перечислен явно\n- Трасса «решение → возможность → требование» полная\nПо каждому критерию: выполнен или нет и почему.",
       "models": [
         {
           "name": "GPT",
           "id": "G1-a"
-        },
-        {
-          "name": "Gemini",
-          "id": "G1-b"
         }
-      ],
-      "task": "Gate G1: проверить критерии PFB."
+      ]
     },
     {
-      "ref": "route:chg13",
-      "kind": "route",
-      "models": [],
-      "select": {
-        "by": "owner",
-        "cases": [
-          {
-            "id": "next",
-            "label": "Продолжить к S14",
-            "action": {
-              "goto": "r16"
-            }
-          },
-          {
-            "id": "return",
-            "label": "Вернуться к точке изменения (S19)",
-            "action": {
-              "stop": "возврат назад не поддерживается: Вернуться к точке изменения (S19)"
-            }
-          }
-        ]
-      }
+      "ref": "owner:chg13",
+      "kind": "owner",
+      "task": "Решите: Продолжить к S14 или вернуться к точке изменения (S19) — тогда остановите прогон и запустите новый.",
+      "models": []
     },
     {
-      "ref": "r16",
+      "ref": "r17",
       "kind": "round",
       "order": "parallel",
       "require": 2,
@@ -615,7 +552,7 @@
       "ref": "synth:s15",
       "kind": "synthesis",
       "input": [
-        "r16"
+        "r17"
       ],
       "models": [
         {
@@ -626,7 +563,7 @@
       "task": "S15, Synthesizer: единый реестр ограничений с provenance; не сливать ограничения с разными условиями."
     },
     {
-      "ref": "r17",
+      "ref": "r18",
       "kind": "round",
       "input": [
         {
@@ -653,7 +590,7 @@
           "required": true
         },
         {
-          "step": "r17",
+          "step": "r18",
           "participant": "S16-verifier",
           "required": true
         }
@@ -667,7 +604,7 @@
       "task": "S17, Synthesizer: собрать Architecture Input Package одной версии."
     },
     {
-      "ref": "r18",
+      "ref": "r19",
       "kind": "round",
       "input": [
         {
@@ -696,62 +633,31 @@
       "task": "S17, Decision Closer: зафиксировать decision boundaries и invariants."
     },
     {
-      "ref": "gate:g2",
-      "kind": "gate",
+      "ref": "r20",
+      "kind": "round",
       "input": [
         {
-          "step": "r18",
+          "step": "r19",
           "participant": "S17-closer",
           "required": true
         }
       ],
-      "require": "all",
-      "pass": "all",
-      "onFail": "ask",
-      "criteria": [
-        "У каждого ограничения есть verification status",
-        "Фактами названы только VERIFIED",
-        "Все модели получают идентичный пакет одной версии",
-        "Decision boundaries и invariants зафиксированы"
-      ],
+      "task": "Проверка G2: проверить критерии AIP.\nКритерии:\n- У каждого ограничения есть verification status\n- Фактами названы только VERIFIED\n- Все модели получают идентичный пакет одной версии\n- Decision boundaries и invariants зафиксированы\nПо каждому критерию: выполнен или нет и почему.",
       "models": [
         {
           "name": "Gemini",
           "id": "G2-a"
-        },
-        {
-          "name": "Grok",
-          "id": "G2-b"
         }
-      ],
-      "task": "Gate G2: проверить критерии AIP."
+      ]
     },
     {
-      "ref": "route:chg17",
-      "kind": "route",
-      "models": [],
-      "select": {
-        "by": "owner",
-        "cases": [
-          {
-            "id": "next",
-            "label": "Продолжить к S18",
-            "action": {
-              "goto": "r19"
-            }
-          },
-          {
-            "id": "return",
-            "label": "Вернуться к точке изменения (S25)",
-            "action": {
-              "stop": "возврат назад не поддерживается: Вернуться к точке изменения (S25)"
-            }
-          }
-        ]
-      }
+      "ref": "owner:chg17",
+      "kind": "owner",
+      "task": "Решите: Продолжить к S18 или вернуться к точке изменения (S25) — тогда остановите прогон и запустите новый.",
+      "models": []
     },
     {
-      "ref": "r19",
+      "ref": "r21",
       "kind": "round",
       "order": "parallel",
       "require": 2,
@@ -759,7 +665,7 @@
       "input": [
         {
           "artifact": {
-            "step": "r18",
+            "step": "r19",
             "participant": "S17-closer",
             "id": "aip"
           },
@@ -791,9 +697,8 @@
       "task": "S18, независимо: сформировать architecture candidate с assumptions и trade-offs; продукт не переопределять."
     },
     {
-      "ref": "route:chg18",
-      "kind": "route",
-      "models": [],
+      "ref": "owner:chg18",
+      "kind": "owner",
       "input": [
         {
           "step": "r15",
@@ -801,43 +706,26 @@
           "required": true
         },
         {
-          "step": "r18",
+          "step": "r19",
           "participant": "S17-closer",
           "required": true
         },
         {
-          "step": "r19",
+          "step": "r21",
           "participant": "S18-a",
           "required": true
         },
         {
-          "step": "r19",
+          "step": "r21",
           "participant": "S18-b",
           "required": true
         }
       ],
-      "select": {
-        "by": "owner",
-        "cases": [
-          {
-            "id": "next",
-            "label": "Продолжить к S19",
-            "action": {
-              "goto": "r20"
-            }
-          },
-          {
-            "id": "return",
-            "label": "Вернуться к точке изменения (S19)",
-            "action": {
-              "stop": "возврат назад не поддерживается: Вернуться к точке изменения (S19)"
-            }
-          }
-        ]
-      }
+      "task": "Решите: Продолжить к S19 или вернуться к точке изменения (S19) — тогда остановите прогон и запустите новый.",
+      "models": []
     },
     {
-      "ref": "r20",
+      "ref": "r22",
       "kind": "round",
       "order": "parallel",
       "require": 2,
@@ -845,7 +733,7 @@
       "input": [
         {
           "artifact": {
-            "step": "r18",
+            "step": "r19",
             "participant": "S17-closer",
             "id": "aip"
           },
@@ -859,13 +747,13 @@
           "id": "S19-a",
           "input": [
             {
-              "step": "r19",
+              "step": "r21",
               "participant": "S18-b",
               "required": true
             },
             {
               "artifact": {
-                "step": "r18",
+                "step": "r19",
                 "participant": "S17-closer",
                 "id": "aip"
               },
@@ -879,13 +767,13 @@
           "id": "S19-b",
           "input": [
             {
-              "step": "r19",
+              "step": "r21",
               "participant": "S18-a",
               "required": true
             },
             {
               "artifact": {
-                "step": "r18",
+                "step": "r19",
                 "participant": "S17-closer",
                 "id": "aip"
               },
@@ -906,45 +794,13 @@
       "task": "S19, Reviewer: проверить coverage, feasibility, consistency, failure modes, security чужого кандидата."
     },
     {
-      "ref": "route:chg19",
-      "kind": "route",
-      "models": [],
-      "input": [
-        {
-          "step": "r20",
-          "participant": "S19-a",
-          "required": true
-        }
-      ],
-      "select": {
-        "by": "rule",
-        "cases": [
-          {
-            "id": "chg_pfb_synthetic",
-            "when": {
-              "source": 0,
-              "pointer": "/chgProposal",
-              "op": "eq",
-              "value": "yes"
-            },
-            "action": {
-              "stop": "возврат назад не поддерживается: chg_pfb_synthetic"
-            }
-          }
-        ],
-        "otherwise": {
-          "goto": "r21"
-        }
-      }
-    },
-    {
-      "ref": "r21",
+      "ref": "r23",
       "kind": "round",
       "order": "parallel",
       "require": 2,
       "input": [
-        "r19",
-        "r20"
+        "r21",
+        "r22"
       ],
       "models": [
         {
@@ -959,19 +815,19 @@
       "task": "S20, Reviewer: критиковать любой кандидат; trade-offs и несовместимые assumptions явно."
     },
     {
-      "ref": "r22",
+      "ref": "r24",
       "kind": "round",
       "input": [
         {
           "artifact": {
-            "step": "r19",
+            "step": "r21",
             "participant": "S18-a",
             "id": "candidate"
           },
           "version": "latest",
           "required": true
         },
-        "r21"
+        "r23"
       ],
       "models": [
         {
@@ -989,7 +845,7 @@
             "pointer": "",
             "revisionOf": {
               "artifact": {
-                "step": "r19",
+                "step": "r21",
                 "participant": "S18-a",
                 "id": "candidate"
               },
@@ -1002,19 +858,19 @@
       "task": "S20, Producer (автор A): ревизовать свой кандидат с учётом критики."
     },
     {
-      "ref": "r23",
+      "ref": "r25",
       "kind": "round",
       "input": [
         {
           "artifact": {
-            "step": "r19",
+            "step": "r21",
             "participant": "S18-b",
             "id": "candidate"
           },
           "version": "latest",
           "required": true
         },
-        "r21"
+        "r23"
       ],
       "models": [
         {
@@ -1032,7 +888,7 @@
             "pointer": "",
             "revisionOf": {
               "artifact": {
-                "step": "r19",
+                "step": "r21",
                 "participant": "S18-b",
                 "id": "candidate"
               },
@@ -1050,7 +906,7 @@
       "input": [
         {
           "artifact": {
-            "step": "r19",
+            "step": "r21",
             "participant": "S18-a",
             "id": "candidate"
           },
@@ -1059,7 +915,7 @@
         },
         {
           "artifact": {
-            "step": "r19",
+            "step": "r21",
             "participant": "S18-b",
             "id": "candidate"
           },
@@ -1067,11 +923,11 @@
           "required": true
         },
         {
-          "step": "r18",
+          "step": "r19",
           "participant": "S17-closer",
           "required": true
         },
-        "r21"
+        "r23"
       ],
       "models": [
         {
@@ -1082,7 +938,7 @@
       "task": "S21, Synthesizer: сравнить кандидатов по requirements, constraints, quality attributes и рискам."
     },
     {
-      "ref": "r24",
+      "ref": "r26",
       "kind": "round",
       "input": [
         {
@@ -1100,12 +956,12 @@
       "task": "S21, Reviewer: проверить сравнение; trade-offs и evidence-зависимые решения выделить."
     },
     {
-      "ref": "r25",
+      "ref": "r27",
       "kind": "round",
       "owner": "approve",
       "input": [
         {
-          "step": "r24",
+          "step": "r26",
           "participant": "S21-reviewer",
           "required": true
         },
@@ -1136,41 +992,29 @@
       "task": "S22, Decision Closer: выбрать направление в пределах authority; User утверждает A2+."
     },
     {
-      "ref": "gate:g3",
-      "kind": "gate",
+      "ref": "r28",
+      "kind": "round",
       "input": [
         {
-          "step": "r25",
+          "step": "r27",
           "participant": "S22-closer",
           "required": true
         }
       ],
-      "require": "all",
-      "pass": "all",
-      "onFail": "ask",
-      "criteria": [
-        "У направления есть явный rationale",
-        "Класс полномочий соответствует Decision Policy",
-        "Evidence-зависимое вынесено как blockers"
-      ],
+      "task": "Проверка G3: проверить критерии направления.\nКритерии:\n- У направления есть явный rationale\n- Класс полномочий соответствует Decision Policy\n- Evidence-зависимое вынесено как blockers\nПо каждому критерию: выполнен или нет и почему.",
       "models": [
         {
           "name": "DeepSeek",
           "id": "G3-a"
-        },
-        {
-          "name": "Kimi",
-          "id": "G3-b"
         }
-      ],
-      "task": "Gate G3: проверить критерии направления."
+      ]
     },
     {
-      "ref": "r26",
+      "ref": "r29",
       "kind": "round",
       "input": [
         {
-          "step": "r25",
+          "step": "r27",
           "participant": "S22-closer",
           "required": true
         }
@@ -1195,11 +1039,11 @@
       "task": "S23, Synthesizer: оформить выбранное направление; open decisions не закрывать скрыто."
     },
     {
-      "ref": "r27",
+      "ref": "r30",
       "kind": "round",
       "input": [
         {
-          "step": "r17",
+          "step": "r18",
           "participant": "S16-verifier",
           "required": true
         },
@@ -1209,12 +1053,12 @@
           "required": true
         },
         {
-          "step": "r25",
+          "step": "r27",
           "participant": "S22-closer",
           "required": true
         },
         {
-          "step": "r26",
+          "step": "r29",
           "participant": "S23-synth",
           "required": true
         }
@@ -1238,37 +1082,19 @@
       }
     },
     {
-      "ref": "route:chg25",
-      "kind": "route",
-      "models": [],
-      "select": {
-        "by": "owner",
-        "cases": [
-          {
-            "id": "next",
-            "label": "Продолжить к S26",
-            "action": {
-              "goto": "r28"
-            }
-          },
-          {
-            "id": "chg_aip",
-            "label": "CHG: вернуться к AIP (S16) с повторной проверкой",
-            "action": {
-              "stop": "возврат назад не поддерживается: CHG: вернуться к AIP (S16) с повторной проверкой"
-            }
-          }
-        ]
-      }
+      "ref": "owner:chg25",
+      "kind": "owner",
+      "task": "Решите: Продолжить к S26 или cHG: вернуться к AIP (S16) с повторной проверкой — тогда остановите прогон и запустите новый.",
+      "models": []
     },
     {
-      "ref": "r28",
+      "ref": "r31",
       "kind": "round",
       "input": [
         "owner:s25",
         "owner:s01",
         {
-          "step": "r27",
+          "step": "r30",
           "participant": "S24-synth",
           "required": true
         }
@@ -1290,51 +1116,19 @@
       "task": "S26, Decision Closer: закрыть blocking decisions по evidence; required changes явно."
     },
     {
-      "ref": "route:s26",
-      "kind": "route",
-      "models": [],
-      "input": [
-        {
-          "step": "r28",
-          "participant": "S26-closer",
-          "required": true
-        }
-      ],
-      "select": {
-        "by": "rule",
-        "cases": [
-          {
-            "id": "direction_broken_synthetic",
-            "when": {
-              "source": 0,
-              "pointer": "/directionBroken",
-              "op": "eq",
-              "value": true
-            },
-            "action": {
-              "stop": "возврат назад не поддерживается: direction_broken_synthetic"
-            }
-          }
-        ],
-        "otherwise": {
-          "goto": "r29"
-        }
-      }
-    },
-    {
-      "ref": "r29",
+      "ref": "r32",
       "kind": "round",
       "order": "parallel",
       "require": 2,
       "chat": "new",
       "input": [
         {
-          "step": "r26",
+          "step": "r29",
           "participant": "S23-synth",
           "required": true
         },
         {
-          "step": "r28",
+          "step": "r31",
           "participant": "S26-closer",
           "required": true
         }
@@ -1360,44 +1154,12 @@
       "task": "S27, Reviewer: независимо искать failure classes, blind spots и новые риски; не исправлять."
     },
     {
-      "ref": "route:s27",
-      "kind": "route",
-      "models": [],
-      "input": [
-        {
-          "step": "r29",
-          "participant": "S27-a",
-          "required": true
-        }
-      ],
-      "select": {
-        "by": "rule",
-        "cases": [
-          {
-            "id": "verify_s24_synthetic",
-            "when": {
-              "source": 0,
-              "pointer": "/requiresVerification",
-              "op": "eq",
-              "value": true
-            },
-            "action": {
-              "stop": "возврат назад не поддерживается: verify_s24_synthetic"
-            }
-          }
-        ],
-        "otherwise": {
-          "goto": "r30"
-        }
-      }
-    },
-    {
-      "ref": "r30",
+      "ref": "r33",
       "kind": "round",
       "input": [
         {
           "artifact": {
-            "step": "r26",
+            "step": "r29",
             "participant": "S23-synth",
             "id": "pca"
           },
@@ -1405,11 +1167,11 @@
           "required": true
         },
         {
-          "step": "r28",
+          "step": "r31",
           "participant": "S26-closer",
           "required": true
         },
-        "r29"
+        "r32"
       ],
       "models": [
         {
@@ -1427,7 +1189,7 @@
             "pointer": "",
             "revisionOf": {
               "artifact": {
-                "step": "r26",
+                "step": "r29",
                 "participant": "S23-synth",
                 "id": "pca"
               },
@@ -1440,11 +1202,11 @@
       "task": "S28, Producer: внести только трассируемые изменения по closed decisions и failure findings."
     },
     {
-      "ref": "r31",
+      "ref": "r34",
       "kind": "round",
       "input": [
         {
-          "step": "r30",
+          "step": "r33",
           "participant": "S28-producer",
           "required": true
         }
@@ -1465,16 +1227,16 @@
       "task": "S29, Reviewer: проверить ADR, consistency и traceability; выбрать исход."
     },
     {
-      "ref": "r32",
+      "ref": "r35",
       "kind": "round",
       "input": [
         {
-          "step": "r30",
+          "step": "r33",
           "participant": "S28-producer",
           "required": true
         },
         {
-          "step": "r31",
+          "step": "r34",
           "participant": "S29-reviewer",
           "required": true
         }
@@ -1488,69 +1250,26 @@
       "task": "S29, Verifier: ADR Set, Consistency Report, Traceability Report."
     },
     {
-      "ref": "route:s29",
-      "kind": "route",
-      "models": [],
+      "ref": "owner:s29",
+      "kind": "owner",
       "input": [
         {
-          "step": "r31",
+          "step": "r34",
           "participant": "S29-reviewer",
           "required": true
         }
       ],
-      "select": {
-        "by": "rule",
-        "cases": [
-          {
-            "id": "close_s26_synthetic",
-            "when": {
-              "source": 0,
-              "pointer": "/outcome",
-              "op": "eq",
-              "value": "close"
-            },
-            "action": {
-              "stop": "возврат назад не поддерживается: close_s26_synthetic"
-            }
-          },
-          {
-            "id": "revise_s28_synthetic",
-            "when": {
-              "source": 0,
-              "pointer": "/outcome",
-              "op": "eq",
-              "value": "revise"
-            },
-            "action": {
-              "stop": "возврат назад не поддерживается: revise_s28_synthetic"
-            }
-          },
-          {
-            "id": "baseline_s30",
-            "when": {
-              "source": 0,
-              "pointer": "/outcome",
-              "op": "eq",
-              "value": "baseline"
-            },
-            "action": {
-              "goto": "r33"
-            }
-          }
-        ],
-        "otherwise": {
-          "stop": "исход S29 не определён"
-        }
-      }
+      "task": "Прочитайте исход ревизора S29 (close — к S26, revise — к S28, baseline — к S30) и решите, продолжать ли к S30. Если нужен S26 или S28 — остановите прогон и запустите новый.",
+      "models": []
     },
     {
-      "ref": "r33",
+      "ref": "r36",
       "kind": "round",
       "owner": "approve",
       "input": [
         {
           "artifact": {
-            "step": "r26",
+            "step": "r29",
             "participant": "S23-synth",
             "id": "pca"
           },
@@ -1558,7 +1277,7 @@
           "required": true
         },
         {
-          "step": "r32",
+          "step": "r35",
           "participant": "S29-verifier",
           "required": true
         },
@@ -1584,35 +1303,22 @@
       "task": "S30, Decision Closer: зафиксировать CAB после G4; User утверждает."
     },
     {
-      "ref": "gate:g4",
-      "kind": "gate",
+      "ref": "r37",
+      "kind": "round",
       "input": [
         {
-          "step": "r33",
+          "step": "r36",
           "participant": "S30-closer",
           "required": true
         }
       ],
-      "require": "all",
-      "pass": "all",
-      "onFail": "ask",
-      "criteria": [
-        "Нет blocking issues",
-        "ADR записаны",
-        "Трасса «требование → архитектурное решение → evidence» без разрывов",
-        "Опровергнутые assumptions отражены через change events"
-      ],
+      "task": "Проверка G4: проверить критерии CAB.\nКритерии:\n- Нет blocking issues\n- ADR записаны\n- Трасса «требование → архитектурное решение → evidence» без разрывов\n- Опровергнутые assumptions отражены через change events\nПо каждому критерию: выполнен или нет и почему.",
       "models": [
-        {
-          "name": "Kimi",
-          "id": "G4-a"
-        },
         {
           "name": "Grok",
           "id": "G4-b"
         }
-      ],
-      "task": "Gate G4: проверить критерии CAB."
+      ]
     }
   ]
 }

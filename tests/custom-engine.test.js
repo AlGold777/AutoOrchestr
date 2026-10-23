@@ -314,10 +314,8 @@ describe('Custom engine', () => {
 describe('Custom engine refuses what it does not execute yet', () => {
   const ask = () => transport({ A: ['a1'], B: ['b1'] });
   const cases = [
-    ['a gate without criteria', [{ ref: 'gate:g1', kind: 'gate', models: [{ name: 'A' }] }], 'invalid_field', 'criteria'],
-    ['a gate whose transition on pass names no step', [{ ref: 'gate:g1', kind: 'gate', criteria: ['c'], onPass: { goto: 'nope' }, models: [{ name: 'A' }] }], 'unknown_target', 'nope'],
-    ['a gate with pass other than all or any', [{ ref: 'gate:g1', kind: 'gate', criteria: ['c'], pass: 'most', models: [{ name: 'A' }] }], 'invalid_field', 'pass'],
-    ['a route with no select is refused', [{ ref: 'route:x', kind: 'route', models: [] }], 'invalid_field', 'select'],
+    ['a removed gate step', [{ ref: 'gate:g1', kind: 'gate', criteria: ['c'], models: [{ name: 'A' }] }], 'unsupported_kind', 'gate'],
+    ['a removed route step', [{ ref: 'route:x', kind: 'route', models: [] }], 'unsupported_kind', 'route'],
     ['an owner step with models', [{ ref: 'owner:o', kind: 'owner', task: 'Дай ответ', models: [{ name: 'A' }] }], 'invalid_field', 'models'],
     ['an output format other than json', [{ ref: 'r1', kind: 'round', output: { format: 'xml' }, models: ['A'] }], 'unsupported_field', 'output.format'],
     ['an empty list of artifacts', [{ ref: 'r1', kind: 'round', output: { format: 'json', requiredFields: ['/m'], artifacts: [] }, models: ['A'] }], 'invalid_field', 'output.artifacts'],

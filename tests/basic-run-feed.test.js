@@ -20,26 +20,12 @@ describe('Basic run feed: answer card label (1)', () => {
   });
 });
 
-describe('Basic run feed: control events are short lines (2)', () => {
-  test('a gate says whether it passed, and the unmet criteria only when it did not', () => {
-    expect(feed.gate({ ref: 'g1', pass: true, unmet: [] })).toBe('Проверка g1: пройдена');
-    expect(feed.gate({ ref: 'g1', pass: false, unmet: ['ошибок нет', 'есть ссылки'] })).toBe('Проверка g1: не пройдена. Не выполнено: ошибок нет; есть ссылки');
-    expect(feed.gate({ ref: 'g1', pass: false, unmet: [] })).toBe('Проверка g1: не пройдена');
-  });
-
-  test('a route names the chosen case and the reason of the choice', () => {
-    expect(feed.route({ ref: 'r3', caseLabel: 'Доработать', reason: 'rule' })).toBe('Маршрут r3: вариант «Доработать», по правилу');
-    expect(feed.route({ ref: 'r3', caseLabel: 'Принять', reason: 'owner' })).toBe('Маршрут r3: вариант «Принять», выбрал User');
-    expect(feed.route({ ref: 'r3', caseLabel: 'x', reason: 'unknown_reason' })).toBe('Маршрут r3: вариант «x», unknown_reason');
-  });
-
-  test('a transition names the target', () => {
-    expect(feed.transition({ from: 'g1', to: 'final', action: 'goto' })).toBe('Переход g1 → final');
-  });
-
-  test('a stop by a transition names the reason', () => {
-    const stopText = (reason) => ({ stopped: 'остановлено User' })[reason] || reason;
-    expect(feed.transition({ from: 'g1', action: 'stop', reason: 'stopped' }, stopText)).toBe('Прогон остановлен после g1: остановлено User');
+describe('Basic run feed: no gate, route or transition lines', () => {
+  test('the feed has no gate, route or transition texts, and the page sends no such events to it', () => {
+    expect(feed.gate).toBeUndefined();
+    expect(feed.route).toBeUndefined();
+    expect(feed.transition).toBeUndefined();
+    expect(results).not.toMatch(/custom_gate|custom_route|custom_transition/);
   });
 });
 
@@ -67,10 +53,7 @@ describe('Basic run feed: wiring in the page (results.js)', () => {
     expect(results).toContain("pipelineRoundId: `s${step + 1}${request?.visit > 1 ? `v${request.visit}` : ''}`,");
   });
 
-  test('the gate, route and transition events go to the feed as lines; the other events do not', () => {
-    expect(results).toContain("if (kind === 'custom_gate') appendBasicRunLine(window.StageCard?.feed?.gate(fields));");
-    expect(results).toContain("if (kind === 'custom_route') {");
-    expect(results).toContain("if (kind === 'custom_transition') appendBasicRunLine(window.StageCard?.feed?.transition(fields, (reason) => engine.STOP_TEXT[reason] || reason));");
+  test('the events of the run go to the delivery batch', () => {
     expect(results).toContain("window.MessageDelivery?.batchEvent?.(kind, { pipelineRunId: runContext.pipelineRunId, ...fields });");
   });
 

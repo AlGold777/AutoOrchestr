@@ -29,8 +29,12 @@
   // Every released version stays supported; a newer one than this Basic is refused.
   const SUPPORTED_VERSIONS = Object.freeze([1]);
   const ORIGINS = Object.freeze(['builtin', 'user']);
-  const KINDS = Object.freeze(['round', 'synthesis', 'gate', 'route', 'owner']);
-  const CONTROL_KINDS = Object.freeze(['gate', 'route', 'owner']);
+  const KINDS = Object.freeze(['round', 'synthesis', 'owner']);
+  // The step the owner (User) does itself; it has no models. There is no branch and no transition: steps run in their order.
+  const CONTROL_KINDS = Object.freeze(['owner']);
+  // The removed kinds (a check and a branch) are refused with the way to write them now.
+  const REMOVED_KINDS = Object.freeze(['gate', 'route']);
+  const REMOVED_KIND_HINT = 'проверка — обычный раунд: критерии в task; решение принимает User шагом owner';
   // The specification text (documents only): the root `spec` and the text fields of a step. Engine and requests never read them.
   const SPEC_KEYS = Object.freeze(['purpose', 'inputs', 'result', 'application', 'readiness', 'rules', 'boundaries', 'failure']);
   const STEP_TEXT_KEYS = Object.freeze(['title', 'goal', 'rules', 'quality']);
@@ -38,24 +42,11 @@
   const STEP_KEYS = Object.freeze({
     round: Object.freeze(['ref', 'kind', 'order', 'input', 'task', 'models', 'output', 'require', 'owner', 'chat', ...STEP_TEXT_KEYS]),
     synthesis: Object.freeze(['ref', 'kind', 'order', 'input', 'task', 'models', 'output', 'require', 'owner', 'chat', ...STEP_TEXT_KEYS]),
-    gate: Object.freeze(['ref', 'kind', 'input', 'task', 'models', 'output', 'require', 'chat', 'criteria', 'pass', 'onFail', 'onPass', ...STEP_TEXT_KEYS]),
-    route: Object.freeze(['ref', 'kind', 'input', 'task', 'models', 'select', ...STEP_TEXT_KEYS]),
     owner: Object.freeze(['ref', 'kind', 'task', 'input', 'output', 'models', ...STEP_TEXT_KEYS])
   });
   const CONTROL_REF = Object.freeze({
-    gate: 'ref проверки: «gate:<id>», id — латинские буквы, цифры, «_» и «-»',
-    route: 'ref маршрута: «route:<id>», id — латинские буквы, цифры, «_» и «-»',
     owner: 'ref User: «owner:<id>», id — латинские буквы, цифры, «_» и «-»'
   });
-  const ROUTE_BY = Object.freeze(['rule', 'model', 'owner']);
-  const ROUTE_CONFLICT = Object.freeze(['stop', 'first', 'owner']);
-  const ACTION_KINDS = Object.freeze(['goto', 'stop']);
-  // The removed ways back (a repeat is an ordinary step lower in the list): a schema that still has them is refused with the reason.
-  const BACK_FIELDS = Object.freeze(['return', 'maxLoops', 'feedback', 'invalidate', 'resumeAt']);
-  const NO_BACK = 'возврат назад не поддерживается: добавьте обычный шаг ниже по списку';
-  const ROUTE_OPS = Object.freeze(['eq', 'in', 'exists']);
-  const GATE_PASS = Object.freeze(['all', 'any']);
-  const GATE_ON_FAIL = Object.freeze(['stop', 'ask']);
   const ORDERS = Object.freeze(['parallel', 'sequential']);
   const INPUTS = Object.freeze(['none', 'previous', 'all']);
   const POLICIES = Object.freeze(['auto', 'manual']);
@@ -79,8 +70,6 @@
 
   const DEFAULTS = Object.freeze({
     run: Object.freeze({ policy: 'manual', maxWords: 300, strictLength: false }),
-    gate: Object.freeze({ pass: 'all', onFail: 'stop' }),
-    route: Object.freeze({ conflict: 'stop' }),
     roundTask: 'Учти ответы предыдущего шага и дай свой улучшенный ответ на задачу.',
     synthesisTask: Engine.SYNTHESIS_TASK,
     discipline: Object.freeze({
@@ -118,31 +107,13 @@
 
   const clone = (value) => JSON.parse(JSON.stringify(value));
 
-  // A gate, a route or an owner: the fields as the schema has them, with the Basic defaults of the kind written in.
-  // The task of their models is the owner's own text only: no inherited task reaches a checker or a chooser.
-  function assembleControl(step, roleText) {
+  // An owner step: the fields as the schema has them; it has no models.
+  function assembleControl(step) {
     const out = { kind: step.kind, ref: step.ref };
     if ('input' in step) out.input = clone(step.input);
     if ('output' in step) out.output = clone(step.output);
-    ['require', 'chat'].forEach((key) => { if (key in step) out[key] = step[key]; });
     if (typeof step.task === 'string') out.task = step.task;
-    if (step.kind === 'owner') return { ...out, models: [] };
-    if (step.kind === 'gate') {
-      Object.assign(out, { criteria: clone(step.criteria), pass: step.pass ?? DEFAULTS.gate.pass, onFail: clone(step.onFail ?? DEFAULTS.gate.onFail) });
-      if ('onPass' in step) out.onPass = clone(step.onPass);
-    }
-    if (step.kind === 'route') {
-      out.select = clone(step.select);
-      if (out.select.by === 'rule' && !('conflict' in out.select)) out.select.conflict = DEFAULTS.route.conflict;
-    }
-    out.models = (step.models || []).filter((model) => model.enabled !== false).map((model) => ({
-      name: model.name,
-      id: idOf(model),
-      task: typeof model.task === 'string' ? model.task : (typeof step.task === 'string' ? step.task : ''),
-      extra: roleText(model.role || '', step.ref) || '',
-      ...('output' in model ? { output: clone(model.output) } : {})
-    }));
-    return out;
+    return { ...out, models: [] };
   }
 
   // Engine steps from a schema. `context.roleText(role, ref)` turns a model's role into its extra text.
@@ -151,7 +122,7 @@
     const finalStep = schema.steps.find((step) => step.ref === 'final');
     let rounds = 0;
     return schema.steps.map((step) => {
-      if (CONTROL_KINDS.includes(step.kind)) return assembleControl(step, roleText);
+      if (CONTROL_KINDS.includes(step.kind)) return assembleControl(step);
       const roundIndex = step.kind === 'round' ? rounds++ : -1;
       const input = step.input || defaultInput(step.kind, roundIndex);
       const stepFields = resolveFields({ task: step.task }, step.kind, {}, defaults);
@@ -288,8 +259,8 @@
   }
 
   // The place of an intermediate synthesis (R11), one rule for validate and toCanvas: the nearest steps around it that are
-  // not control steps (gate, route, owner) must be rounds. So `r1 → synth → gate → r2` and `r1 → gate → synth → r2` are
-  // both valid, and control steps never need a round next to them. Two syntheses never meet.
+  // not owner steps must be rounds. So `r1 → synth → owner → r2` and `r1 → owner → synth → r2` are
+  // both valid, and owner steps never need a round next to them. Two syntheses never meet.
   function synthesisPlaceErrors(steps) {
     const errors = [];
     const nearest = (index, step) => {
@@ -304,15 +275,14 @@
     return errors;
   }
 
-  // The one check of executability (R09) for validate and toCanvas: a control step (gate, route, owner) runs by itself
-  // (a gate's checkers are checked by their own rule); a round runs with an enabled model. A synthesis only works on
+  // The one check of executability (R09) for validate and toCanvas: an owner step runs by itself; a round runs with an enabled model. A synthesis only works on
   // the answers of an earlier step, so it alone is not runnable. A pipeline without a round is valid; an empty one or
   // one with no runnable step is named at `steps`.
   function executabilityErrors(steps) {
     const runnable = steps.some((step) => isObject(step) && (CONTROL_KINDS.includes(step.kind)
       || (step.kind === 'round' && Array.isArray(step.models) && step.models.some((model) => isObject(model) && model.enabled !== false))));
     if (runnable) return [];
-    return [{ path: 'steps', message: 'нет исполнимого шага: нужен раунд с включённой моделью или шаг проверки, маршрута или User' }];
+    return [{ path: 'steps', message: 'нет исполнимого шага: нужен раунд с включённой моделью или шаг User' }];
   }
 
   // Errors before the first request: [{ path, message }]. A schema is never corrected silently.
@@ -379,11 +349,6 @@
     const positions = new Map();
     schema.steps.forEach((step, at) => { if (isObject(step) && typeof step.ref === 'string' && !positions.has(step.ref)) positions.set(step.ref, at); });
     const namesById = new Map();
-    // A round or a synthesis with no enabled model is switched off: assembly takes it out, so a transition may not name it.
-    const switchedOff = (index) => {
-      const step = schema.steps[index];
-      return isObject(step) && (step.kind === 'round' || step.kind === 'synthesis') && !(Array.isArray(step.models) && step.models.some((model) => isObject(model) && model.enabled !== false));
-    };
     const contextAt = (index) => ({ fail, errors, steps: schema.steps, positions, index });
     const checkInputList = (list, path, index) => {
       if (!list.length) { fail(path, 'ожидается непустой список источников'); return; }
@@ -398,8 +363,7 @@
     // The input of a step or of a participant: a value of the list of inputs, or a list of sources.
     const checkInput = (value, path, kind, index) => {
       if (Array.isArray(value)) { checkInputList(value, path, index); return; }
-      // A route reads the previous answers or named sources; an owner takes any input a model step takes (none, previous, all, list).
-      if (kind === 'route') { if (value !== 'previous') fail(path, 'вход: допустимо previous или список источников'); return; }
+      // An owner takes any input a model step takes (none, previous, all, list).
       oneOf(value, INPUTS, path, 'вход');
       if (kind === 'synthesis' && value !== 'previous') fail(path, 'синтез всегда получает ответы предыдущего шага');
     };
@@ -466,107 +430,17 @@
       });
     };
 
-    // A transition (6.3): exactly one of goto, stop. `origin` is the index of the step that writes it. A goto names a step
-    // lower in the list: there is no way back (a repeat is one more ordinary step).
-    const checkAction = (action, path, origin) => {
-      if (!isObject(action)) { fail(path, 'переход: объект с одним полем goto или stop'); return; }
-      const back = BACK_FIELDS.find((key) => key in action);
-      if (back !== undefined) { fail(`${path}.${back}`, `«${back}»: ${NO_BACK}`); return; }
-      const kinds = ACTION_KINDS.filter((key) => key in action);
-      if (kinds.length !== 1) { fail(path, 'переход: ровно одно из goto, stop'); return; }
-      const [kind] = kinds;
-      unknownKeys(action, [kind], path);
-      if (kind === 'stop' && (typeof action.stop !== 'string' || !action.stop.trim())) fail(`${path}.stop`, 'причина остановки: непустой текст');
-      if (kind === 'goto') {
-        if (typeof action.goto !== 'string' || !action.goto) fail(`${path}.goto`, 'ref перехода: непустой текст');
-        else if (!positions.has(action.goto)) fail(`${path}.goto`, `неизвестный шаг «${action.goto}»`);
-        else if (switchedOff(positions.get(action.goto))) fail(`${path}.goto`, `переход на выключенный шаг «${action.goto}»`);
-        else if (positions.get(action.goto) <= origin) fail(`${path}.goto`, NO_BACK);
-      }
-    };
-
-    // A rule condition (6.2): an atomic one { source, pointer, op, value? } or { all: [...] } / { any: [...] }.
-    // `inputs` is the list of the route's sources, or null when the route has no list (its error is already named).
-    const checkCondition = (cond, path, inputs) => {
-      if (!isObject(cond)) { fail(path, 'условие: объект с полями source, pointer, op, value'); return; }
-      const composite = ['all', 'any'].filter((key) => key in cond);
-      if (composite.length) {
-        if (composite.length > 1 || Object.keys(cond).length > 1) { fail(path, 'условие: либо all, либо any, без других полей'); return; }
-        const [key] = composite;
-        if (!Array.isArray(cond[key]) || !cond[key].length) { fail(`${path}.${key}`, 'условие: непустой список условий'); return; }
-        cond[key].forEach((item, at) => checkCondition(item, `${path}.${key}[${at}]`, inputs));
-        return;
-      }
-      unknownKeys(cond, ['source', 'pointer', 'op', 'value'], path);
-      if (inputs) {
-        if (!Number.isSafeInteger(cond.source) || cond.source < 0) fail(`${path}.source`, 'источник: номер входа маршрута, целое от 0');
-        else if (cond.source >= inputs.length) fail(`${path}.source`, 'источник: номер вне списка input маршрута');
-        else if (!isObject(inputs[cond.source])) fail(`${path}.source`, 'правило читает точный источник: участника или артефакт');
-      }
-      const problem = pointerError(cond.pointer);
-      if (problem) fail(`${path}.pointer`, problem);
-      oneOf(cond.op, ROUTE_OPS, `${path}.op`, 'оператор условия');
-      if (cond.op === 'eq' && !('value' in cond)) fail(`${path}.value`, 'для eq укажите value');
-      if (cond.op === 'in' && !(Array.isArray(cond.value) && cond.value.length)) fail(`${path}.value`, 'для in нужен непустой список значений');
-      if (cond.op === 'exists' && 'value' in cond) fail(`${path}.value`, 'для exists значение не указывают');
-    };
-
-    // A gate, a route or an owner (3.1, 6.1, 6.2, 4.1). Their transitions are checked as shape here.
+    // An owner step (4.1): its task, and no models.
     const checkControl = (step, path) => {
-      const enabled = (Array.isArray(step.models) ? step.models : []).filter((model) => isObject(model) && model.enabled !== false);
-      if (step.kind === 'owner') {
-        if (typeof step.task !== 'string' || !step.task.trim()) fail(`${path}.task`, 'задание User: непустой текст');
-        if (Array.isArray(step.models) && step.models.length) fail(`${path}.models`, 'у User нет моделей');
-        return;
-      }
-      if (step.kind === 'gate') {
-        // A gate is a check by its models (6.1): without an enabled checker it is an error, not a step that vanishes.
-        if (!enabled.length) fail(`${path}.models`, 'проверка без включённых проверяющих: включите хотя бы одного');
-        if (!Array.isArray(step.criteria) || !step.criteria.length) fail(`${path}.criteria`, 'критерии проверки: непустой список строк');
-        else step.criteria.forEach((item, at) => { if (typeof item !== 'string' || !item.trim()) fail(`${path}.criteria[${at}]`, 'критерий: непустой текст'); });
-        if ('pass' in step) oneOf(step.pass, GATE_PASS, `${path}.pass`, 'pass проверки');
-        if ('onFail' in step && !isObject(step.onFail)) oneOf(step.onFail, GATE_ON_FAIL, `${path}.onFail`, 'onFail проверки');
-        return;
-      }
-      const select = step.select;
-      if (!isObject(select)) { fail(`${path}.select`, 'выбор маршрута: объект с полем by'); return; }
-      unknownKeys(select, ['by', 'conflict', 'cases', 'otherwise'], `${path}.select`);
-      oneOf(select.by, ROUTE_BY, `${path}.select.by`, 'выбор маршрута');
-      const rule = select.by === 'rule';
-      if (select.by === 'model') {
-        if (enabled.length !== 1) fail(`${path}.models`, 'маршрут по модели: ровно один включённый участник');
-        if (typeof step.task !== 'string' || !step.task.trim()) fail(`${path}.task`, 'задание маршрута по модели: непустой текст');
-      } else if (Array.isArray(step.models) && step.models.length) fail(`${path}.models`, 'у маршрута по правилу и User моделей нет');
-      if ('conflict' in select) {
-        if (!rule) fail(`${path}.select.conflict`, 'конфликт выбора задаётся только для правила');
-        else oneOf(select.conflict, ROUTE_CONFLICT, `${path}.select.conflict`, 'конфликт выбора');
-      }
-      if ('otherwise' in select && !rule) fail(`${path}.select.otherwise`, 'вариант по умолчанию задаётся только для правила');
-      // A rule reads the exact sources of the route's input list; without the list the rule has nothing to read.
-      const inputs = Array.isArray(step.input) ? step.input : null;
-      if (rule && !inputs) fail(`${path}.input`, 'правило читает точные источники: укажите input списком');
-      if (!Array.isArray(select.cases) || !select.cases.length) { fail(`${path}.select.cases`, 'ожидается непустой список вариантов'); return; }
-      const caseIds = new Set();
-      select.cases.forEach((item, at) => {
-        const at2 = `${path}.select.cases[${at}]`;
-        if (!isObject(item)) { fail(at2, 'ожидается объект варианта'); return; }
-        unknownKeys(item, ['id', 'when', 'label', 'action'], at2);
-        if (typeof item.id !== 'string' || !item.id.trim()) fail(`${at2}.id`, 'ID варианта: непустой текст');
-        else if (caseIds.has(item.id)) fail(`${at2}.id`, `вариант «${item.id}» повторяется`);
-        else caseIds.add(item.id);
-        if (rule) {
-          checkCondition(item.when, `${at2}.when`, inputs);
-          if ('label' in item && typeof item.label !== 'string') fail(`${at2}.label`, 'название варианта: текст');
-        } else {
-          if ('when' in item) fail(`${at2}.when`, 'условие только для правила: варианты модели и User описываются label');
-          if (typeof item.label !== 'string' || !item.label.trim()) fail(`${at2}.label`, 'название варианта: непустой текст');
-        }
-      });
+      if (typeof step.task !== 'string' || !step.task.trim()) fail(`${path}.task`, 'задание User: непустой текст');
+      if (Array.isArray(step.models) && step.models.length) fail(`${path}.models`, 'у User нет моделей');
     };
 
     schema.steps.forEach((step, index) => {
       const path = `steps[${index}]`;
       if (!isObject(step)) { fail(path, 'ожидается объект'); return; }
+      // A removed kind (gate, route) is named once, with the way to write it now; its other fields are not checked.
+      if (REMOVED_KINDS.includes(step.kind)) { fail(`${path}.kind`, `тип шага: допустимо ${KINDS.join(', ')}; ${REMOVED_KIND_HINT}`); return; }
       unknownKeys(step, STEP_KEYS[step.kind] || STEP_KEYS.round, path);
       if ('output' in step) {
         // A step's shared output is the answer of every author without its own; the owner is the author of its own.
@@ -599,9 +473,7 @@
         const modelPath = `${path}.models[${at}]`;
         if (!isObject(model)) { fail(modelPath, 'ожидается объект'); return; }
         unknownKeys(model, ['name', 'id', 'enabled', 'onCanvas', 'role', 'request', 'maxWords', 'task', 'discipline', 'input', 'output'], modelPath);
-        // A participant of a route chooses; it has no answer of its own (its route output has its own contract).
-        if (step.kind === 'route' && 'output' in model) fail(`${modelPath}.output`, 'у участника маршрута выход не задаётся');
-        else if ('output' in model) checkOutput(model.output, `${modelPath}.output`, step, index, [model]);
+        if ('output' in model) checkOutput(model.output, `${modelPath}.output`, step, index, [model]);
         if ('enabled' in model && typeof model.enabled !== 'boolean') fail(`${modelPath}.enabled`, 'ожидается true или false');
         if ('onCanvas' in model && typeof model.onCanvas !== 'boolean') fail(`${modelPath}.onCanvas`, 'ожидается true или false');
         if (typeof model.name !== 'string' || !model.name.trim()) fail(`${modelPath}.name`, 'имя модели не указано');
@@ -623,7 +495,6 @@
         if ('discipline' in model) checkDiscipline(model.discipline, `${modelPath}.discipline`);
       });
       if (CONTROL_KINDS.includes(step.kind)) checkControl(step, path);
-      actionsOf(step, path).forEach(({ path: at, action }) => checkAction(action, at, index));
     });
     errors.push(...synthesisPlaceErrors(schema.steps), ...executabilityErrors(schema.steps));
     return errors;
@@ -632,9 +503,9 @@
   // The settings of the cards in the form the page edits them (the cards write only what the owner set):
   // customModelSettings[ref][participantId] = { promptTemplate, maxWords, task, discipline, input } — the key is the id of
   // the participant (its name when it has none); customRoundSettings[ref] = { order, input, task, require, owner, chat, output }
-  // of a round; customStepSettings[ref] = the fields of a synthesis, a gate, a route or an owner; customDefaults = the ▶ card.
+  // of a round; customStepSettings[ref] = the fields of a synthesis or an owner; customDefaults = the ▶ card.
   const ROUND_FIELDS = ['order', 'input', 'task', 'require', 'owner', 'chat', 'output'];
-  const STEP_FIELDS = ['input', 'task', 'require', 'owner', 'chat', 'output', 'criteria', 'pass', 'onFail', 'onPass', 'select'];
+  const STEP_FIELDS = ['input', 'task', 'require', 'owner', 'chat', 'output'];
   function toSettings(schema) {
     const customModelSettings = {};
     const customRoundSettings = {};
@@ -662,11 +533,11 @@
   }
 
   // The canvas a schema stands for: the rounds, the participants of each round with their roles, the final synthesizer,
-  // the intermediate syntheses and the control steps (gate, route, owner) in their order. `models` is the list of the models
+  // the intermediate syntheses and the owner steps in their order. `models` is the list of the models
   // the canvas knows, in its order; `isRole(id)` tells a known role. A schema the canvas cannot show gives errors (with the
   // place), never a changed schema. A round is one block per participant (two participants of one model are two blocks,
   // told apart by id); the rounds limit counts rounds only. An intermediate synthesis is right after a round and before
-  // the next one; a control step may stand anywhere; a switched-off model is on the canvas only with onCanvas, a switched-off synthesis is not.
+  // the next one; an owner step may stand anywhere; a switched-off model is on the canvas only with onCanvas, a switched-off synthesis is not.
   function toCanvas(schema, { models = [], isRole = () => true, runWords = null } = {}) {
     const errors = [];
     const fail = (path, message) => errors.push({ path, message });
@@ -731,21 +602,6 @@
   });
 
   const describeErrors = (errors) => errors.map((error) => (error.path ? `${error.path}: ${error.message}` : error.message)).join('; ');
-
-  // The transitions a step writes, with their paths: a gate's onPass and onFail (when an action), the cases and otherwise of a route.
-  function actionsOf(step, path) {
-    if (!isObject(step)) return [];
-    if (step.kind === 'gate') {
-      return [...('onPass' in step ? [{ path: `${path}.onPass`, action: step.onPass }] : []),
-        ...(isObject(step.onFail) ? [{ path: `${path}.onFail`, action: step.onFail }] : [])];
-    }
-    if (step.kind === 'route' && isObject(step.select)) {
-      const cases = Array.isArray(step.select.cases) ? step.select.cases : [];
-      return [...cases.map((item, at) => (isObject(item) ? { path: `${path}.select.cases[${at}].action`, action: item.action } : null)).filter(Boolean),
-        ...('otherwise' in step.select ? [{ path: `${path}.select.otherwise`, action: step.select.otherwise }] : [])];
-    }
-    return [];
-  }
 
   const api = Object.freeze({ SCHEMA_VERSION, SUPPORTED_VERSIONS, ORIGINS, DEFAULTS, pick, resolveFields, assemble, resolveRun, toSettings, toCanvas, validate, describeErrors });
   root.BasicSchema = api;
