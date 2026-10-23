@@ -6,7 +6,7 @@
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '39';
+  const STAND_VERSION = '40';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -16,44 +16,45 @@
   const cut = (text, n) => { const s = String(text || '').trim().replace(/\s+/g, ' '); return s.length > n ? `${s.slice(0, n - 1)}…` : s; };
 
   // ---------- Формат схемы ----------
-  const COMMON = ['id', 'block', 'title', 'inputs', 'optional_inputs', 'artifacts', 'why'];
+  const COMMON = ['id', 'block', 'title', 'inputs', 'artifacts', 'why'];
   const FIELDS = {
-    round: ['models', 'order', 'task'], route: ['choices'],
-    owner: ['ask'], file: ['file', 'mode'], assemble: ['template']
+    round: ['models', 'order', 'task'], owner: ['ask'], file: ['file', 'mode']
   };
   // Виды этапов, которых больше нет: в схеме их выражают обычными этапами (текст ошибки — в проверке).
   const REMOVED_BLOCKS = {
-    gate: 'Проверка — обычный этап моделей: критерии запишите в task; результат читает route и выбирает путь вперёд',
+    gate: 'Проверка — обычный этап моделей: критерии запишите в task, затем поставьте этап owner: человек читает вердикт и решает, нужна ли доработка',
     foreach: 'Перебора по пунктам нет: один этап модели с заданием на все пункты сразу',
     block: 'Готовой части нет: этап записывается обычным образом',
     synthesis: 'Синтез — это роль: запишите этап round из одной модели с role «свести» (models: [{ "name": "Claude", "role": "свести" }])',
     form: 'Опросник — round из одной модели с ролью «свести» и артефактом «Опросник» (HTML), затем owner с артефактом «Ответы»',
     list: 'Список — обычный этап модели с артефактом «Список …»',
     source: 'Исходный материал — верхнеуровневый artifacts (name и content или attachment), ссылка в inputs: «in.Имя»',
-    score: 'Оценка по баллам — round с ролью «жюри», веса записываются словами в task'
+    score: 'Оценка по баллам — round с ролью «жюри», веса записываются словами в task',
+    route: 'Ветвления в схеме нет: все этапы выполняются по порядку. Если нужно решение человека — поставьте этап owner с вопросом ask, а следующий этап читает его ответ',
+    assemble: 'Склейка — просто новый артефакт: запишите этап round, который объединяет входы и выдаёт новый артефакт'
   };
   // Поля, которых больше нет: значение игнорируется, проверка предупреждает.
   const REMOVED_FIELDS = {
     repeats: 'Повтор записывается обычным этапом ниже по списку',
-    because: 'Условие повтора не записывается: развилка ведёт вперёд, к этапу доработки ниже по списку',
+    because: 'Условие повтора не записывается: решение о доработке принимает этап owner, затем идёт этап доработки ниже по списку',
     weights: 'Веса записываются словами в task',
     request: 'Свой запрос не записывается: задание пишется в task'
   };
   // Блоки, где работает человек: в холсте — зелёная рамка, в окне — «Назначение».
   const HUMAN_BLOCKS = ['owner'];
   const KIND = {
-    round: ['Раунд', 'ti-users'], route: ['Развилка', 'ti-arrows-split'],
-    owner: ['Владелец', 'ti-user'], file: ['Файл', 'ti-file-export'], assemble: ['Сборка', 'ti-stack-2']
+    round: ['Раунд', 'ti-users'],
+    owner: ['Владелец', 'ti-user'], file: ['Файл', 'ti-file-export']
   };
   // Этапы приложения (без нейросети): в холсте помечаются словом «приложение».
-  const APP_BLOCKS = ['file', 'assemble'];
+  const APP_BLOCKS = ['file'];
   const MODEL_KEYS = ['name', 'role', 'task', 'maxWords', 'discipline'];
   const MODEL_NAMES = ['Claude', 'GPT', 'Gemini', 'Grok', 'Le Chat', 'Qwen', 'DeepSeek', 'Perplexity', 'Z.ai', 'Kimi'];
   const ENUMS = { order: ['parallel', 'sequential'], mode: ['overwrite', 'append'] };
   const LABELS = {
-    id: 'этап', block: 'блок', title: 'название', why: 'зачем', inputs: 'вход', optional_inputs: 'вход, если этап был', artifacts: 'артефакты',
-    models: 'модели', order: 'порядок', task: 'задание', model: 'модель', role: 'роль', choices: 'варианты', ask: 'вопрос',
-    file: 'файл', mode: 'режим', template: 'шаблон', maxWords: 'предел слов', discipline: 'дисциплина',
+    id: 'этап', block: 'блок', title: 'название', why: 'зачем', inputs: 'вход', artifacts: 'артефакты',
+    models: 'модели', order: 'порядок', task: 'задание', model: 'модель', role: 'роль', ask: 'вопрос',
+    file: 'файл', mode: 'режим', maxWords: 'предел слов', discipline: 'дисциплина',
     defaults: 'общие значения ▶', run: 'запуск'
   };
   const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
@@ -297,7 +298,7 @@
         const a = ['input', 'depends_on', 'requires'].find((k) => st[k] != null);
         if (a) { st.inputs = st[a]; delete st[a]; fixed(`«${a}» вместо «inputs» — переименовано.`); }
       }
-      ['inputs', 'optional_inputs', 'artifacts'].forEach((k) => { if (typeof st[k] === 'string') { st[k] = [st[k]]; fixed(`${k} строкой — превращён в список.`); } });
+      ['inputs', 'artifacts'].forEach((k) => { if (typeof st[k] === 'string') { st[k] = [st[k]]; fixed(`${k} строкой — превращён в список.`); } });
       if (Array.isArray(st.models) && st.models.some((m) => typeof m === 'string')) {
         st.models = st.models.map((m) => (typeof m === 'string' ? { name: m.trim() } : m));
         fixed('models списком имён — превращён в объекты { name }.');
@@ -427,7 +428,8 @@
       if (!own(st.title)) add('error', e.key, 'Нет title.');
       if (!own(st.why)) add('error', e.key, 'Нет why — зачем этот этап.');
       Object.keys(st).forEach((k) => {
-        if (has(REMOVED_FIELDS, k)) add('warn', e.key, `Поле «${k}» не поддерживается и не применяется. ${REMOVED_FIELDS[k]}.`);
+        if (k === 'optional_inputs') add('warn', e.key, 'Поле «optional_inputs» не поддерживается и не применяется: пропускаемых этапов нет, все входы обязательны.');
+        else if (has(REMOVED_FIELDS, k)) add('warn', e.key, `Поле «${k}» не поддерживается и не применяется. ${REMOVED_FIELDS[k]}.`);
         else if (k === 'body') add('error', e.key, 'Поле «body» не поддерживается: вложенных этапов нет.');
         else if (FIELDS[st.block] && !COMMON.includes(k) && !FIELDS[st.block].includes(k)) add('warn', e.key, `Неизвестное поле «${k}» для блока ${st.block}.`);
       });
@@ -448,16 +450,13 @@
         Object.keys(m).filter((k) => !MODEL_KEYS.includes(k)).forEach((k) => add('warn', e.key, `models[${i}].${k}: неизвестное поле модели; допустимы ${MODEL_KEYS.join(', ')}.`));
         checkOwnFields(m, `models[${i}].`, e.key, add);
       });
-      if (st.block === 'route' && !Array.isArray(st.choices)) add('error', e.key, 'У route нет choices.');
     });
-    // Ссылки: вверх — inputs/optional_inputs; «in.Имя» — исходный артефакт; вниз — route.goes.
+    // Ссылки: только вверх — inputs; «in.Имя» — исходный артефакт.
     flat.forEach((e) => {
       const st = e.step;
       const refs = [];
       if (Array.isArray(st.inputs)) st.inputs.forEach((r) => refs.push(['inputs', r, 'up']));
-      if (Array.isArray(st.optional_inputs)) st.optional_inputs.forEach((r) => refs.push(['optional_inputs', r, 'up']));
-      if (st.block === 'route' && Array.isArray(st.choices)) st.choices.forEach((c) => listOf(c?.goes).forEach((r) => refs.push(['goes', r, 'down'])));
-      refs.forEach(([field, ref, dir]) => {
+      refs.forEach(([field, ref]) => {
         if (!own(ref)) { add('error', e.key, `${field}: пустая ссылка.`); return; }
         if (/^in\./.test(ref)) {
           const name = String(ref).slice(3);
@@ -466,8 +465,7 @@
         }
         const target = byId.get(refId(ref));
         if (!target) { add('error', e.key, `${field}: этапа «${refId(ref)}» нет.`); return; }
-        if (dir === 'up' && target.pos >= e.pos) add('error', e.key, `${field}: «${ref}» — ссылка ${target.pos === e.pos ? 'на себя' : 'вниз'}; можно только на этапы выше.`);
-        if (dir === 'down' && target.pos <= e.pos) add('error', e.key, `goes: «${ref}» — переход назад; route ведёт только к этапам ниже.`);
+        if (target.pos >= e.pos) add('error', e.key, `${field}: «${ref}» — ссылка ${target.pos === e.pos ? 'на себя' : 'вниз'}; можно только на этапы выше.`);
         const dot = String(ref).indexOf('.');
         if (dot > 0) {
           const name = String(ref).slice(dot + 1);
@@ -475,24 +473,8 @@
         }
       });
     });
-    // Этапы, которые маршрут может пропустить: между развилкой и ближайшей целью каждого варианта.
-    const conditional = new Set();
-    flat.forEach((r) => {
-      if (r.step.block !== 'route' || !Array.isArray(r.step.choices)) return;
-      r.step.choices.forEach((c) => {
-        const pos = listOf(c?.goes).map((g) => byId.get(refId(g))?.pos).filter((x) => x != null && x > r.pos);
-        if (!pos.length) return;
-        const first = Math.min(...pos);
-        flat.forEach((x) => { if (x.pos > r.pos && x.pos < first) conditional.add(x.step.id); });
-      });
-    });
     flat.forEach((e) => {
       const st = e.step;
-      listOf(st.inputs).forEach((r) => {
-        if (conditional.has(refId(r)) && !conditional.has(st.id) && !listOf(st.optional_inputs).some((o) => refId(o) === refId(r))) {
-          add('warn', e.key, `inputs: ${refId(r)} может быть пропущен развилкой; вынесите «${r}» в optional_inputs.`);
-        }
-      });
       [...(Array.isArray(st.models) ? st.models.map((m) => m?.name) : []), st.model].filter(own).forEach((n) => {
         if (!MODEL_NAMES.includes(n)) add('warn', e.key, `Неизвестное имя модели «${n}»; допустимы: ${MODEL_NAMES.join(', ')}.`);
       });
@@ -601,9 +583,7 @@
   };
   const inputsText = (st) => {
     const req = listOf(st.inputs).filter(own);
-    const opt = listOf(st.optional_inputs).filter(own);
-    return (req.length ? `<div class="proto-stand-line">вход: ${esc(req.join(', '))}</div>` : '')
-      + (opt.length ? `<div class="proto-stand-line">вход, если этап был: ${esc(opt.join(', '))}</div>` : '');
+    return req.length ? `<div class="proto-stand-line">вход: ${esc(req.join(', '))}</div>` : '';
   };
   // Артефакты этапа — в зоне над блоками моделей, под бейджем. Версия: сколько этапов выше (включая этот) выдали артефакт с тем же именем.
   const artifactVersion = (k, name) => stand.layout.slice(0, k + 1).filter((c) => listOf(c.step.artifacts).map(artName).includes(name)).length;
@@ -742,7 +722,6 @@
         </div>`;
     }
     const [label, icon] = KIND[st.block] || [String(st.block || '?'), 'ti-help'];
-    const goes = st.block === 'route' ? listOf(st.choices).map((c) => `<div class="proto-stand-line">${esc(cut(c?.when, 30))} → ${esc(listOf(c?.goes).join(', '))}</div>`).join('') : '';
     const human = HUMAN_BLOCKS.includes(st.block);
     const app = APP_BLOCKS.includes(st.block) ? '<div class="proto-stand-line proto-stand-app">приложение</div>' : '';
     return `<div class="stage-column" data-stand-key="${esc(key)}">
@@ -752,7 +731,6 @@
           <div class="model-block inactive proto-stand-card${human ? ' proto-human' : ''}" data-stand-key="${esc(key)}">
             <div class="model-header"><i class="ti ${icon} proto-stand-icon" aria-hidden="true"></i><span class="model-name" title="${esc(st.title)}">${human ? 'User' : esc(st.title || '—')}</span>${bang(key)}</div>
             ${app}<div class="proto-stand-line">${human ? `<b>${esc(st.id || '')}</b> ${esc(cut(st.title, 40))}` : `<b>${esc(st.id || '')}</b>`} ${esc(cut(st.why, 70))}</div>
-            ${goes}
           </div>
         </div>
         <div class="proto-stand-meta">${inputsText(st, prevId)}</div>
@@ -857,7 +835,6 @@
       const names = { roundTask: 'задание раундов', synthesisTask: 'задание синтеза', discipline: 'дисциплина', modelNotes: 'особенности моделей' };
       return Object.entries(value).map(([k, v]) => (isObj(v) ? `${names[k] || k}:\n${indent(fmt(k, v))}` : `${names[k] || k}: ${fmt(k, v)}`)).join('\n');
     }
-    if (key === 'choices' && Array.isArray(value)) return value.map((c) => `когда ${c?.when || '?'} → ${listOf(c?.goes).join(', ') || '—'}`).join('\n');
     if (key === 'order') return `${value}${ORDER_TEXT[value] ? ` (${ORDER_TEXT[value]})` : ''}`;
     if (Array.isArray(value)) return value.map((v) => (v && typeof v === 'object' ? fmt('', v) : String(v))).join(', ');
     if (typeof value === 'object') return Object.entries(value).map(([k, v]) => `${k}: ${typeof v === 'object' ? fmt(k, v) : v}`).join(', ');
@@ -1563,33 +1540,26 @@
         },
         {
           "id": "s4",
-          "block": "route",
-          "title": "План годен?",
-          "choices": [
-            {
-              "when": "вердикт «не прошло»",
-              "goes": [
-                "s5"
-              ]
-            },
-            {
-              "when": "вердикт «прошло»",
-              "goes": [
-                "s6"
-              ]
-            }
-          ],
+          "block": "owner",
+          "title": "Решение по проверке",
+          "ask": "Прочитайте вердикт и напишите «доработать» или «утвердить».",
           "inputs": [
             "s3.Вердикт"
           ],
-          "why": "Выбрать путь вперёд по вердикту."
+          "artifacts": [
+            {
+              "name": "Решение",
+              "description": "Слово «доработать» или «утвердить» и пожелания владельца"
+            }
+          ],
+          "why": "Нужна ли доработка плана, решает человек."
         },
         {
           "id": "s5",
           "block": "round",
           "title": "Доработка",
           "order": "sequential",
-          "task": "Исправь план по замечаниям проверки.",
+          "task": "Исправь план по замечаниям проверки и решению владельца. Если доработка не нужна, верни план без изменений.",
           "models": [
             {
               "name": "Claude",
@@ -1606,7 +1576,8 @@
           ],
           "inputs": [
             "s2.План",
-            "s3.Вердикт"
+            "s3.Вердикт",
+            "s4.Решение"
           ],
           "artifacts": [
             "Правки"
@@ -1625,15 +1596,13 @@
           ],
           "task": "Собери итоговый план с учётом правок.",
           "inputs": [
-            "s2.План"
+            "s2.План",
+            "s5.Правки"
           ],
           "artifacts": [
             "Итог"
           ],
-          "why": "Окончательная версия плана.",
-          "optional_inputs": [
-            "s5.Правки"
-          ]
+          "why": "Окончательная версия плана."
         },
         {
           "id": "s7",

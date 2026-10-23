@@ -42,6 +42,17 @@ describe('Stand ↔ Basic exchange', () => {
     expect(warnings).toEqual(['Синтез Basic импортирован как раунд из одной модели с ролью.']);
   });
 
+  test('a route of a Basic file is skipped with a remark and does not break the import', () => {
+    const basic = { schemaVersion: 1, origin: 'user', steps: [
+      { ref: 'r1', kind: 'round', models: [{ name: 'Claude' }] },
+      { ref: 'route:x', kind: 'route', input: ['r1'], routes: [] },
+      { ref: 'r2', kind: 'round', models: [{ name: 'GPT' }] }
+    ] };
+    const { schema, warnings } = Exchange.fromBasic(basic);
+    expect(schema.steps.map((st) => st.block)).toEqual(['round', 'round']);
+    expect(warnings).toEqual(['Маршрут Basic не импортирован: в черновой схеме ветвления нет.']);
+  });
+
   test('source artifacts of the stand are not exported to Basic and the warning names them', () => {
     const { warnings } = Exchange.toBasic({ task: 'T', artifacts: [{ name: 'Бриф', content: 'текст' }], steps: [
       { id: 's1', block: 'round', title: 'R', why: 'w', models: [{ name: 'Claude' }], task: 'Сделай', inputs: ['in.Бриф'] }] });

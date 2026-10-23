@@ -1,6 +1,6 @@
 // Обмен схемами между стендом ({ task, steps: [{ id, block, … }] }) и Basic ({ schemaVersion, origin, steps: [{ ref, kind, models }] }).
 // toBasic — экспорт со стенда: файл, который принимает кнопка Import в Basic. fromBasic — импорт файла Basic на стенд.
-// Переносятся round, owner, defaults, run, description. Остальные этапы (route, file, assemble) и исходные артефакты
+// Переносятся round, owner, defaults, run, description. Остальные этапы (file) и исходные артефакты
 // пропускаются с предупреждением. Проверки на стенде нет: шаг gate из файла Basic приходит на стенд обычным раундом.
 (function initBasicExport(root) {
   'use strict';
@@ -120,6 +120,9 @@
         warnings.push('Синтез Basic импортирован как раунд из одной модели с ролью.');
       } else if (st.kind === 'owner') {
         step.ask = own(st.task) ? st.task : 'Дайте ответ';
+      } else if (st.kind === 'route') {
+        warnings.push('Маршрут Basic не импортирован: в черновой схеме ветвления нет.');
+        return;
       } else {
         warnings.push(`Шаг ${st.ref} (${st.kind}) не перенесён на стенд.`);
         return;
