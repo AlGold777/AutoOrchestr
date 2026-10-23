@@ -6,7 +6,7 @@
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '24';
+  const STAND_VERSION = '25';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -609,11 +609,20 @@
     return rest.length ? `<div class="proto-stand-line">вход: ${esc(rest.join(', '))}</div>` : '';
   };
   const repeatText = (st) => (own(st.repeats) ? `<div class="proto-stand-line proto-stand-repeat">повтор ${esc(st.repeats)}${own(st.because) ? ` · ${esc(st.because)}` : ''}</div>` : '');
-  const artifactsHtml = (list) => {
-    const items = list.length
-      ? list.map((t) => `<span class="proto-artifact" title="${esc(t)} v1"><span class="proto-artifact-title">${esc(t)}</span><span class="proto-artifact-version">v1</span></span>`).join('')
-      : '<span class="proto-artifacts-empty">—</span>';
-    return `<div class="proto-artifacts" aria-disabled="true"><div class="proto-artifacts-label">Артефакты</div><div class="proto-artifacts-row">${items}</div></div>`;
+  // Артефакты этапа — в зоне над блоками моделей, под бейджем. Версия: сколько этапов выше (включая этот) выдали артефакт с тем же именем.
+  const artifactVersion = (k, name) => stand.layout.slice(0, k + 1).filter((c) => listOf(c.step.artifacts).map(String).includes(name)).length;
+  const artifactZone = (k, st) => `<div class="proto-art-zone">${listOf(st.artifacts).map(String).map((name) => `<span class="proto-art" data-art="${k}|${esc(name)}" title="${esc(name)} v${artifactVersion(k, name)}"><span class="proto-art-title">${esc(name)}</span><span class="proto-art-version">v${artifactVersion(k, name)}</span></span>`).join('')}</div>`;
+  // Стрелки: от артефакта в колонке производителя к бейджу этапа, который берёт "<id>.<имя>" во входе.
+  const artifactLinks = () => {
+    const links = [];
+    stand.layout.forEach((col, c) => listOf(col.step.inputs).forEach((ref) => {
+      const id = refId(ref);
+      const name = String(ref).slice(id.length + 1);
+      if (!name) return;
+      const p = stand.layout.findIndex((x, k) => k < c && x.step.id === id && listOf(x.step.artifacts).map(String).includes(name));
+      if (p >= 0 && !links.some((l) => l.from === p && l.to === c && l.name === name)) links.push({ from: p, to: c, name });
+    }));
+    return links;
   };
   const modelBlock = (model, index) => {
     const on = model.enabled !== false;
@@ -647,15 +656,16 @@
       const round = S().rounds[col.round];
       return `<div class="stage-column" data-round-index="${col.round}" data-stand-key="${esc(key)}">
           ${head(`R${col.round + 1}`)}
+          ${artifactZone(k, st)}
           <div class="model-stack" id="${stack}">${round.models.map(modelBlock).join('')}</div>
           <div class="proto-stand-meta">${bang(key)}<span class="proto-stand-line"><b>${esc(st.id || '')}</b> ${esc(cut(st.title, 40))}${round.order === 'sequential' ? ' · по очереди' : ''}</span>${tail}</div>
-          ${artifactsHtml(listOf(st.artifacts))}
         </div>`;
     }
     if (col.synth) {
       const options = S().models.map((n) => `<option value="${esc(n)}"${n === col.synth.model ? ' selected' : ''}>${esc(n)}</option>`).join('');
       return `<div class="stage-column${col.final ? ' synthesis-capable' : ''}"${col.final ? ' id="synthesisColumn" data-stage="synthesis"' : ''} data-stand-key="${esc(key)}">
           ${head(col.final ? 'Final' : 'Синтез')}
+          ${artifactZone(k, st)}
           <div class="model-stack" id="${stack}">
             <div class="model-block pipeline-synthesis-block selected-synthesizer proto-stand-card" data-stand-key="${esc(key)}">
               <div class="model-header"><span class="status-indicator" aria-hidden="true"></span><span class="model-name">Synthesis</span>${bang(key)}</div>
@@ -664,7 +674,6 @@
             </div>
           </div>
           <div class="proto-stand-meta"><span class="proto-stand-line"><b>${esc(st.id || '')}</b> ${esc(cut(st.title, 40))}</span>${tail}</div>
-          ${artifactsHtml(listOf(st.artifacts))}
         </div>`;
     }
     const [label, icon] = KIND[st.block] || [String(st.block || '?'), 'ti-help'];
@@ -673,6 +682,7 @@
     const over = st.block === 'foreach' && own(st.over) && refId(st.over) !== prevId ? `<div class="proto-stand-line">по: ${esc(st.over)}</div>` : '';
     return `<div class="stage-column" data-stand-key="${esc(key)}">
         ${head(esc(label), ' proto-stand-kind')}
+        ${artifactZone(k, st)}
         <div class="model-stack" id="${stack}">
           <div class="model-block inactive proto-stand-card" data-stand-key="${esc(key)}">
             <div class="model-header"><i class="ti ${icon} proto-stand-icon" aria-hidden="true"></i><span class="model-name" title="${esc(st.title)}">${esc(st.title || '—')}</span>${bang(key)}</div>
@@ -682,7 +692,6 @@
           </div>
         </div>
         <div class="proto-stand-meta">${inputsText(st, prevId)}</div>
-        ${artifactsHtml(listOf(st.artifacts))}
       </div>`;
   }
 
@@ -695,6 +704,7 @@
     const cols = stand.layout;
     let html = `<div class="stage-column entry-column">
         <div class="stage-label"><span class="entry-badge">In</span></div>
+        <div class="proto-art-zone"></div>
         <div class="entry-wrapper" id="entryWrapper"><div class="entry-point" id="entryPoint" title="${esc(own(stand.schema?.description) ? cut(stand.schema.description, 400) : 'Общие значения')}" style="cursor:pointer">▶</div></div>
       </div>
       <div class="connector-group"><svg class="connector-svg" id="svg-in-models"></svg></div>`;
@@ -702,6 +712,9 @@
       if (k > 0) html += `<div class="connector-group"><svg class="connector-svg" id="stand-svg-${k}"></svg></div>`;
       html += columnHtml(col, k, k > 0 ? cols[k - 1].step.id : '');
     });
+    const per = Math.max(0, ...cols.map((col) => listOf(col.step.artifacts).length));
+    root.style.setProperty('--proto-art-zone', per ? `${per * 28 + 6}px` : '0px');
+    root.style.paddingTop = artifactLinks().length ? `${12 + artifactLinks().length * 6}px` : '';
     root.innerHTML = html;
     // Шапка (число раундов, предел слов, Auto) — как у холста, из ProtoState.
     canvas().syncChrome?.();
@@ -729,6 +742,33 @@
       const color = linksTo(cols[k].step, cols[k - 1].step.id) ? 'brain-flow' : 'inactive';
       canvas().drawMergeSplitConnector?.(`stand-svg-${k}`, `stand-stack-${k - 1}`, `stand-stack-${k}`, color, { sourceMode: mode(cols[k - 1], 'send'), targetMode: mode(cols[k], 'input') });
     }
+      drawArtifactLinks();
+  }
+  // Линии артефактов рисуются поверх потока: вверх в полосу над бейджами, вдоль неё и вниз на бейдж потребителя.
+  function drawArtifactLinks() {
+    const root = $('pipelineFlow');
+    if (!root) return;
+    root.querySelector(':scope > .proto-art-svg')?.remove();
+    const links = artifactLinks();
+    if (!links.length) return;
+    const columns = [...root.querySelectorAll(':scope > .stage-column:not(.entry-column)')];
+    const base = root.getBoundingClientRect();
+    const rel = (el) => { const r = el.getBoundingClientRect(); return { l: r.left - base.left, r: r.right - base.left, t: r.top - base.top, b: r.bottom - base.top, cx: (r.left + r.right) / 2 - base.left, cy: (r.top + r.bottom) / 2 - base.top }; };
+    const slots = new Map();
+    let html = '';
+    links.forEach((link, i) => {
+      const col = columns[link.from];
+      const to = columns[link.to]?.querySelector('.stage-label > span');
+      const box = [...(col?.querySelectorAll('.proto-art') || [])].find((el) => el.dataset.art === `${link.from}|${link.name}`);
+      if (!box || !to) return;
+      const a = rel(box); const c = rel(col); const t = rel(to);
+      const slot = slots.get(link.from) || 0; slots.set(link.from, slot + 1);
+      const xv = c.r + 6 + slot * 4;
+      const lane = 6 + i * 6;
+      const path = `M ${a.r} ${a.cy} H ${xv} V ${lane} H ${t.cx} V ${t.t - 2}`;
+      html += `<path d="${path}" class="proto-art-line"/><path d="M ${t.cx - 4} ${t.t - 7} L ${t.cx} ${t.t - 1} L ${t.cx + 4} ${t.t - 7}" class="proto-art-line"/>`;
+    });
+    root.insertAdjacentHTML('afterbegin', `<svg class="proto-art-svg" width="${root.scrollWidth}" height="${root.scrollHeight}" aria-hidden="true">${html}</svg>`);
   }
 
   // ---------- Окна ----------

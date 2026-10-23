@@ -12,22 +12,19 @@
         .proto-shell { max-width: var(--center-max-width); margin: 0 auto; padding: 12px 16px 24px; }
         .proto-top-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 6px 4px 10px; }
         .proto-top-bar .llm-buttons { gap: 14px; }
-        .proto-artifacts { width: 139px; margin-top: 10px; cursor: default; }
-        .proto-artifacts-label {
-            font-size: 10px; font-weight: 600; color: var(--pipeline-muted);
-            text-transform: uppercase; margin-bottom: 4px;
+        /* Артефакты: зона над блоками моделей, под бейджем этапа; одинаковой высоты во всех колонках, чтобы потоки не съезжали. */
+        #pipelineFlow { position: relative; }
+        #pipelineFlow .connector-group { padding-top: calc(26px + var(--proto-art-zone, 0px)); }
+        .proto-art-zone { width: 139px; height: var(--proto-art-zone, 0px); display: flex; flex-direction: column; gap: 4px; padding-top: 6px; box-sizing: border-box; }
+        .proto-art {
+            display: flex; align-items: center; justify-content: space-between; gap: 4px; height: 24px;
+            box-sizing: border-box; padding: 0 8px; border: 1px solid #cbd5e1; border-radius: 6px;
+            background: #f8fafc; color: #475569; font-size: 11px; cursor: default; user-select: none;
         }
-        .proto-artifacts-row { display: flex; flex-wrap: wrap; gap: 4px; }
-        .proto-artifact {
-            display: inline-flex; align-items: center; gap: 4px; max-width: 100%;
-            box-sizing: border-box; padding: 2px 7px;
-            border: 1px solid #cbd5e1; border-radius: 999px; background: #f8fafc;
-            color: #94a3b8; font-size: 10px; line-height: 1.3; opacity: 0.72;
-            cursor: default; user-select: none; pointer-events: none;
-        }
-        .proto-artifact-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .proto-artifact-version { flex: 0 0 auto; font-weight: 600; }
-        .proto-artifacts-empty { font-size: 10px; color: #cbd5e1; }
+        .proto-art-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .proto-art-version { flex: 0 0 auto; font-weight: 600; color: #94a3b8; }
+        .proto-art-svg { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; z-index: 2; }
+        .proto-art-line { fill: none; stroke: #94a3b8; stroke-width: 1.4; stroke-linejoin: round; }
     </style>
 </head>
 <body class="pipeline-page">
