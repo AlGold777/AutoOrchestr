@@ -12,11 +12,16 @@ describe('Stand ↔ Basic exchange', () => {
     expect(Schema.validate(basic)).toEqual([]);
   });
 
-  test('the loop of the stand becomes onFail.goto and the repeat steps are not duplicated', () => {
-    const loop = list.map((e) => e.schema || e).find((s) => s.steps.some((st) => st.repeats));
-    const { schema: basic } = Exchange.toBasic(loop);
-    expect(basic.steps.some((st) => st.kind === 'gate' && st.onFail?.goto)).toBe(true);
-    expect(basic.steps.length).toBeLessThan(loop.steps.length);
+  test('a check exports without onFail: the stand has no returns back', () => {
+    const schema = list.map((e) => e.schema || e).find((s) => s.steps.some((st) => st.block === 'gate'));
+    const { schema: basic } = Exchange.toBasic(schema);
+    expect(basic.steps.filter((st) => st.kind === 'gate').every((st) => !st.onFail)).toBe(true);
+  });
+
+  test('source artifacts of the stand are not exported to Basic and the warning names them', () => {
+    const { warnings } = Exchange.toBasic({ task: 'T', artifacts: [{ name: 'Бриф', content: 'текст' }], steps: [
+      { id: 's1', block: 'round', title: 'R', why: 'w', models: [{ name: 'Claude' }], task: 'Сделай', inputs: ['in.Бриф'] }] });
+    expect(warnings.some((w) => w.includes('Бриф'))).toBe(true);
   });
 
   test('description and run travel both ways', () => {
@@ -31,9 +36,9 @@ describe('Stand ↔ Basic exchange', () => {
 
   test('blocks Basic does not have are skipped with a warning', () => {
     const { schema: basic, warnings } = Exchange.toBasic({ task: 'T', steps: [
-      { id: 's1', block: 'source', title: 'S', why: 'w', kind: 'text', content: 'x' },
-      { id: 's2', block: 'round', title: 'R', why: 'w', models: [{ name: 'Claude' }], task: 'Сделай', inputs: ['s1'] }] });
-    expect(warnings.some((w) => w.includes('s1'))).toBe(true);
+      { id: 's1', block: 'round', title: 'R', why: 'w', models: [{ name: 'Claude' }], task: 'Сделай' },
+      { id: 's2', block: 'file', title: 'F', why: 'w', file: 'x.md', mode: 'overwrite', inputs: ['s1'] }] });
+    expect(warnings.some((w) => w.includes('s2'))).toBe(true);
     expect(Schema.validate(basic)).toEqual([]);
   });
 });

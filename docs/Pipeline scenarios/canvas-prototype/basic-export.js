@@ -1,7 +1,7 @@
 // Обмен схемами между стендом ({ task, steps: [{ id, block, … }] }) и Basic ({ schemaVersion, origin, steps: [{ ref, kind, models }] }).
 // toBasic — экспорт со стенда: файл, который принимает кнопка Import в Basic. fromBasic — импорт файла Basic на стенд.
-// Переносятся round, synthesis, gate, owner, defaults, run, description. Остальные блоки пропускаются с предупреждением.
-// Повтор шага (repeats) в Basic — переход проверки назад (onFail.goto с maxLoops), поэтому повторные шаги не переносятся.
+// Переносятся round, synthesis, gate, owner, defaults, run, description. Остальные этапы (file, assemble) и исходные артефакты
+// пропускаются с предупреждением. Возвратов назад в схеме стенда нет, поэтому onFail у проверки не записывается.
 (function initBasicExport(root) {
   'use strict';
 
@@ -10,7 +10,7 @@
   const list = (v) => (Array.isArray(v) ? v : []);
   const idPart = (id, fallback) => (String(id || '').replace(/[^A-Za-z0-9_-]/g, '') || fallback);
   const RUN_WORDS = [300, 500, 700, 1000];
-  const MODEL_COPY = ['maxWords', 'request', 'discipline'];
+  const MODEL_COPY = ['maxWords', 'discipline'];
 
   // Ссылка входа стенда ("s2" или "s3.Артефакт") → id этапа.
   const stepOf = (ref) => String(ref).split('.')[0];
@@ -20,16 +20,13 @@
     const warnings = [];
     const steps = list(schema?.steps).filter(isObj);
     const pos = new Map(steps.map((st, i) => [st.id, i]));
-    const repeatOf = (st) => (own(st.repeats) && pos.has(st.repeats) && pos.get(st.repeats) < pos.get(st.id) ? st.repeats : '');
-    const kept = steps.filter((st) => !repeatOf(st));
-    const lastSynth = kept.map((st) => st.block).lastIndexOf('synthesis');
-    const finalStep = lastSynth >= 0 && !kept.slice(lastSynth + 1).some((st) => st.block === 'round') ? kept[lastSynth] : null;
+    const lastSynth = steps.map((st) => st.block).lastIndexOf('synthesis');
+    const finalStep = lastSynth >= 0 && !steps.slice(lastSynth + 1).some((st) => st.block === 'round') ? steps[lastSynth] : null;
 
     // Первый проход: ref каждого переносимого шага.
     const refs = new Map();
     let rounds = 0;
     steps.forEach((st, i) => {
-      if (repeatOf(st)) return;
       if (st.block === 'round') refs.set(st.id, `r${++rounds}`);
       else if (st.block === 'synthesis') refs.set(st.id, st === finalStep ? 'final' : `synth:${idPart(st.id, `s${i + 1}`)}`);
       else if (st.block === 'gate') refs.set(st.id, `gate:${idPart(st.id, `s${i + 1}`)}`);
@@ -58,7 +55,6 @@
 
     const out = [];
     steps.forEach((st, i) => {
-      if (repeatOf(st)) return;
       const ref = refs.get(st.id);
       if (!ref) { warnings.push(`Этап ${st.id || i + 1} (${st.block}) не перенесён: в Basic такого блока нет.`); return; }
       const input = inputRefs(st);
@@ -78,12 +74,6 @@
         step.input = input.length ? input : 'previous';
         step.criteria = own(st.criteria) ? [st.criteria.trim()] : ['Ответ полный и без противоречий'];
         step.models = [{ name: firstModel(i) }];
-        // Повторные шаги и повторная проверка — это возврат назад: первая проверка отправляет к самому раннему повторённому шагу.
-        const targets = steps.filter((o) => repeatOf(o) && o.block !== 'gate' && String(o.because || '').includes(st.id)).map((o) => repeatOf(o)).filter((id) => refs.has(id));
-        if (targets.length) {
-          const first = targets.sort((a, b) => pos.get(a) - pos.get(b))[0];
-          step.onFail = { goto: refs.get(first), maxLoops: 3 };
-        }
       } else if (st.block === 'owner') {
         step.task = own(st.ask) ? st.ask.trim() : 'Дайте ответ';
         step.models = [];
@@ -104,7 +94,7 @@
       });
       out.splice(finalAt, 0, ...trailing);
     }
-    steps.filter((st) => repeatOf(st)).forEach((st) => { if (st.block === 'gate' && !steps.some((o) => o.block === 'gate' && o.id === st.repeats)) warnings.push(`Повторная проверка ${st.id} без первой проверки пропущена.`); });
+    list(schema?.artifacts).filter(isObj).forEach((a) => warnings.push(`Исходный артефакт «${a.name}» не перенесён: в Basic исходных артефактов нет.`));
 
     const result = { schemaVersion: 1, origin: 'user' };
     if (own(schema.description)) result.description = schema.description;
@@ -155,7 +145,7 @@
         if (own(st.task)) step.task = st.task;
       } else if (st.kind === 'gate') {
         step.criteria = list(st.criteria).filter(own).join('; ') || 'Ответ полный';
-        if (st.onFail?.goto) warnings.push(`Возврат проверки ${st.ref} на ${st.onFail.goto} не перенесён: на стенде он записывается повторными этапами.`);
+        if (st.onFail?.goto) warnings.push(`Возврат проверки ${st.ref} на ${st.onFail.goto} не перенесён: на стенде возвратов назад нет.`);
       } else if (st.kind === 'owner') {
         step.ask = own(st.task) ? st.task : 'Дайте ответ';
       } else {

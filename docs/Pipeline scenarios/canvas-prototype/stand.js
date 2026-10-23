@@ -6,7 +6,7 @@
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '36';
+  const STAND_VERSION = '37';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -16,29 +16,45 @@
   const cut = (text, n) => { const s = String(text || '').trim().replace(/\s+/g, ' '); return s.length > n ? `${s.slice(0, n - 1)}…` : s; };
 
   // ---------- Формат схемы ----------
-  const COMMON = ['id', 'block', 'title', 'inputs', 'optional_inputs', 'artifacts', 'repeats', 'because', 'why'];
+  const COMMON = ['id', 'block', 'title', 'inputs', 'optional_inputs', 'artifacts', 'why'];
   const FIELDS = {
-    round: ['models', 'order', 'task'], synthesis: ['model', 'role', 'task', 'maxWords', 'request', 'discipline'], gate: ['criteria'], route: ['choices'],
-    owner: ['ask'], form: ['purpose'], source: ['kind', 'content', 'attachment'], file: ['file', 'mode'], list: ['from', 'rule'],
-    foreach: ['over', 'body'], block: ['name'], assemble: ['template'], score: ['criteria', 'weights']
+    round: ['models', 'order', 'task'], synthesis: ['model', 'role', 'task', 'maxWords', 'discipline'], gate: ['criteria'], route: ['choices'],
+    owner: ['ask'], file: ['file', 'mode'], assemble: ['template']
+  };
+  // Виды этапов, которых больше нет: в схеме их выражают обычными этапами (текст ошибки — в проверке).
+  const REMOVED_BLOCKS = {
+    foreach: 'Перебора по пунктам нет: один этап модели с заданием на все пункты сразу',
+    block: 'Готовой части нет: этап записывается обычным образом',
+    form: 'Опросник — synthesis с артефактом «Опросник» (HTML), затем owner с артефактом «Ответы»',
+    list: 'Список — обычный этап модели с артефактом «Список …»',
+    source: 'Исходный материал — верхнеуровневый artifacts (name и content или attachment), ссылка в inputs: «in.Имя»',
+    score: 'Оценка по баллам — synthesis с ролью «жюри», веса записываются словами в task'
+  };
+  // Поля, которых больше нет: значение игнорируется, проверка предупреждает.
+  const REMOVED_FIELDS = {
+    repeats: 'Повтор записывается обычным этапом ниже по списку',
+    because: 'Условие повтора не записывается: развилка ведёт вперёд, к этапу доработки ниже по списку',
+    weights: 'Веса записываются словами в task',
+    request: 'Свой запрос не записывается: задание пишется в task'
   };
   // Блоки, где работает человек: в холсте — зелёная рамка, в окне — «Назначение».
-  const HUMAN_BLOCKS = ['owner', 'form'];
+  const HUMAN_BLOCKS = ['owner'];
   const KIND = {
     round: ['Раунд', 'ti-users'], synthesis: ['Синтез', 'ti-git-merge'], gate: ['Проверка', 'ti-shield-check'], route: ['Развилка', 'ti-arrows-split'],
-    owner: ['Владелец', 'ti-user'], form: ['Форма', 'ti-forms'], source: ['Источник', 'ti-file-text'], file: ['Файл', 'ti-file-export'],
-    list: ['Список', 'ti-list'], foreach: ['Каждый', 'ti-repeat'], block: ['Блок', 'ti-box'], assemble: ['Сборка', 'ti-stack-2'], score: ['Оценка', 'ti-star']
+    owner: ['Владелец', 'ti-user'], file: ['Файл', 'ti-file-export'], assemble: ['Сборка', 'ti-stack-2']
   };
-  const MODEL_KEYS = ['name', 'role', 'task', 'maxWords', 'request', 'discipline'];
+  // Этапы приложения (без нейросети): в холсте помечаются словом «приложение».
+  const APP_BLOCKS = ['file', 'assemble'];
+  const MODEL_KEYS = ['name', 'role', 'task', 'maxWords', 'discipline'];
   const MODEL_NAMES = ['Claude', 'GPT', 'Gemini', 'Grok', 'Le Chat', 'Qwen', 'DeepSeek', 'Perplexity', 'Z.ai', 'Kimi'];
-  const ENUMS = { order: ['parallel', 'sequential'], kind: ['text', 'document', 'link'], mode: ['overwrite', 'append', 'read'] };
+  const ENUMS = { order: ['parallel', 'sequential'], mode: ['overwrite', 'append'] };
   const LABELS = {
-    id: 'этап', block: 'блок', title: 'название', why: 'зачем', inputs: 'вход', optional_inputs: 'вход, если этап был', artifacts: 'артефакты', repeats: 'повтор', because: 'условие повтора',
+    id: 'этап', block: 'блок', title: 'название', why: 'зачем', inputs: 'вход', optional_inputs: 'вход, если этап был', artifacts: 'артефакты',
     models: 'модели', order: 'порядок', task: 'задание', model: 'модель', role: 'роль', criteria: 'критерии', choices: 'варианты', ask: 'вопрос',
-    purpose: 'цель', kind: 'вид', file: 'файл', mode: 'режим', from: 'из', rule: 'правило', over: 'по', body: 'тело', name: 'имя',
-    template: 'шаблон', content: 'содержимое', attachment: 'приложенный файл', weights: 'веса', maxWords: 'предел слов', request: 'свой запрос', discipline: 'дисциплина',
+    file: 'файл', mode: 'режим', template: 'шаблон', maxWords: 'предел слов', discipline: 'дисциплина',
     defaults: 'общие значения ▶', run: 'запуск'
   };
+  const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
   const DISC_LABELS = { limit: 'длина', content: 'содержание', delivery: 'доставка', correction: 'повторный запрос', lines: 'строки' };
   const POLICY_TEXT = { auto: 'автоматически', manual: 'вручную' };
   const ORDER_TEXT = { parallel: 'параллельно', sequential: 'по очереди' };
@@ -250,7 +266,6 @@
   const STUB = /^\s*(?:\.{2,}|…|todo|tbd|и\s*т\.\s*д\.?|etc\.?)\s*$|(?:…|\.\.\.)\s*$/i;
   function stubs(obj, path, key, add) {
     Object.entries(obj).forEach(([k, val]) => {
-      if (k === 'body') return;
       const at = `${path}${k}`;
       if (typeof val === 'string' && STUB.test(val)) add('warn', key, `Заглушка вместо текста в поле ${at}: «${cut(val, 30)}» — модель сократила ответ.`);
       else if (Array.isArray(val)) val.forEach((x, i) => {
@@ -273,9 +288,9 @@
       }
       if (typeof st.block === 'string') {
         const b = st.block.trim().toLowerCase();
-        if (b !== st.block && FIELDS[b]) { fixed(`block «${st.block}» → «${b}».`); st.block = b; }
+        if (b !== st.block && (has(FIELDS, b) || has(REMOVED_BLOCKS, b))) { fixed(`block «${st.block}» → «${b}».`); st.block = b; }
       }
-      if (st.title == null && st.block !== 'block' && own(st.name)) { st.title = st.name; delete st.name; fixed('«name» вместо «title» — переименовано.'); }
+      if (st.title == null && own(st.name)) { st.title = st.name; delete st.name; fixed('«name» вместо «title» — переименовано.'); }
       if (st.inputs == null) {
         const a = ['input', 'depends_on', 'requires'].find((k) => st[k] != null);
         if (a) { st.inputs = st[a]; delete st[a]; fixed(`«${a}» вместо «inputs» — переименовано.`); }
@@ -286,10 +301,6 @@
         fixed('models списком имён — превращён в объекты { name }.');
       }
       stubs(st, '', key, add);
-      if (st.block === 'foreach' && st.body != null) {
-        st.body = mapToList(st.body, `${key}.body`, key, add);
-        fixSteps(st.body, `${key}.body`, add);
-      }
     });
   }
   // Новые поля: предел слов, дисциплина, defaults, run.
@@ -352,8 +363,22 @@
   // Свои поля модели раунда и синтеза.
   function checkOwnFields(owner, where, key, add) {
     checkWords(owner, where, key, add);
-    checkText(owner, 'request', where, key, add);
     checkDiscipline(owner.discipline, where, key, add);
+  }
+  // Исходные артефакты (верхнеуровневый artifacts): name и content или attachment.
+  function checkSources(schema, add) {
+    const list = schema.artifacts;
+    if (list == null) return [];
+    if (!Array.isArray(list)) { add('error', null, 'artifacts верхнего уровня должен быть списком исходных артефактов { name, content | attachment }.'); return []; }
+    const names = [];
+    list.forEach((a, i) => {
+      if (!isObj(a)) { add('error', null, `artifacts[${i}]: ожидается объект { "name", "content" | "attachment" }.`); return; }
+      if (!own(a.name)) { add('error', null, `artifacts[${i}]: нет name.`); return; }
+      names.push(a.name.trim());
+      if (!own(a.content) && !own(a.attachment)) add('warn', null, `Артефакт «${a.name}» не передан: нет ни content (текст), ни attachment (имя файла, приложенного к ответу).`);
+      if (own(a.attachment) && !/\.[A-Za-z0-9]{1,8}$/.test(a.attachment.trim())) add('warn', null, `attachment «${a.attachment}»: нужно точное имя файла с расширением.`);
+    });
+    return names;
   }
 
   // ---------- Проверка ----------
@@ -367,7 +392,8 @@
     if (value == null) return fail();
     const schema = rootOf(value, add);
     if (!schema) return fail();
-    Object.keys(schema).filter((k) => !['task', 'version', 'description', 'steps', 'defaults', 'run'].includes(k)).forEach((k) => add('warn', null, `Неизвестное поле схемы «${k}».`));
+    Object.keys(schema).filter((k) => !['task', 'version', 'description', 'artifacts', 'steps', 'defaults', 'run'].includes(k)).forEach((k) => add('warn', null, `Неизвестное поле схемы «${k}».`));
+    const sourceNames = checkSources(schema, add);
     if ('version' in schema && !(Number.isInteger(schema.version) && schema.version >= 1)) add('warn', null, 'version должен быть целым числом от 1 — показано v1.');
     if ('description' in schema && typeof schema.description !== 'string') add('warn', null, 'description должен быть строкой — описание не показано.');
     if (!own(schema.task)) add('warn', null, 'Нет task — фразы задачи.');
@@ -376,24 +402,9 @@
     checkRoot(schema, add);
     fixSteps(schema.steps, 'steps', add);
 
-    // Порядок проверки ссылок: этапы списка, тело foreach — сразу после самого foreach.
-    const flat = [];
-    const walk = (steps, parent) => steps.forEach((step, i) => {
-      const entry = { step: step && typeof step === 'object' && !Array.isArray(step) ? step : {}, key: '', pos: flat.length, parent, raw: step };
-      entry.key = own(entry.step.id) ? entry.step.id : `${parent ? `${parent.key}.body` : 'steps'}[${i}]`;
-      flat.push(entry);
-      if (entry.step.block === 'foreach' && Array.isArray(entry.step.body)) walk(entry.step.body, entry);
-    });
-    walk(schema.steps, null);
-    // Повтор наследует настройки повторяемого этапа: models, model, order, role, если у него их нет.
-    const firstById = new Map();
-    flat.forEach((e) => { if (own(e.step.id) && !firstById.has(e.step.id)) firstById.set(e.step.id, e); });
-    flat.forEach((e) => {
-      const src = own(e.step.repeats) ? firstById.get(e.step.repeats) : null;
-      if (!src || src.pos >= e.pos || src.step.block !== e.step.block) return;
-      ['models', 'model', 'order', 'role'].forEach((k) => {
-        if (e.step[k] == null && src.step[k] != null) { e.step[k] = JSON.parse(JSON.stringify(src.step[k])); (e.inherited = e.inherited || []).push(k); }
-      });
+    const flat = schema.steps.map((step, i) => {
+      const obj = isObj(step) ? step : {};
+      return { step: obj, key: own(obj.id) ? obj.id : `steps[${i}]`, pos: i, raw: step };
     });
     const byId = new Map();
     // Артефакт без описания — мягкое замечание; одно и то же имя предупреждается один раз, если ни один этап не дал описания.
@@ -409,13 +420,15 @@
       if (!own(st.id)) add('error', e.key, 'Нет id.');
       else if (byId.has(st.id)) add('error', e.key, `id «${st.id}» повторяется.`);
       else byId.set(st.id, e);
-      if (!FIELDS[st.block]) add('error', e.key, st.block ? `Неизвестный блок «${st.block}».` : 'Нет block.');
+      if (has(REMOVED_BLOCKS, st.block)) add('error', e.key, `Вид этапа «${st.block}» не поддерживается. ${REMOVED_BLOCKS[st.block]}.`);
+      else if (!FIELDS[st.block]) add('error', e.key, st.block ? `Неизвестный блок «${st.block}».` : 'Нет block.');
       if (!own(st.title)) add('error', e.key, 'Нет title.');
       if (!own(st.why)) add('error', e.key, 'Нет why — зачем этот этап.');
-      if (FIELDS[st.block]) {
-        Object.keys(st).filter((k) => !COMMON.includes(k) && !FIELDS[st.block].includes(k) && !(st.block === 'source' && k === 'title'))
-          .forEach((k) => add('warn', e.key, `Неизвестное поле «${k}» для блока ${st.block}.`));
-      }
+      Object.keys(st).forEach((k) => {
+        if (has(REMOVED_FIELDS, k)) add('warn', e.key, `Поле «${k}» не поддерживается и не применяется. ${REMOVED_FIELDS[k]}.`);
+        else if (k === 'body') add('error', e.key, 'Поле «body» не поддерживается: вложенных этапов нет.');
+        else if (FIELDS[st.block] && !COMMON.includes(k) && !FIELDS[st.block].includes(k)) add('warn', e.key, `Неизвестное поле «${k}» для блока ${st.block}.`);
+      });
       Object.entries(ENUMS).forEach(([k, values]) => {
         if (st[k] != null && FIELDS[st.block]?.includes(k) && !values.includes(st[k])) add('warn', e.key, `${k}: «${st[k]}» — ожидается ${values.join(' | ')}.`);
       });
@@ -429,41 +442,32 @@
       if (st.block === 'round' && (!Array.isArray(st.models) || !st.models.length)) add('error', e.key, 'У раунда нет models.');
       if (st.block === 'round' && Array.isArray(st.models)) st.models.forEach((m, i) => {
         if (!own(m?.name)) add('error', e.key, `models[${i}]: нет name.`);
-        if (!isObj(m) || e.inherited?.includes('models')) return;
+        if (!isObj(m)) return;
         Object.keys(m).filter((k) => !MODEL_KEYS.includes(k)).forEach((k) => add('warn', e.key, `models[${i}].${k}: неизвестное поле модели; допустимы ${MODEL_KEYS.join(', ')}.`));
         checkOwnFields(m, `models[${i}].`, e.key, add);
       });
       if (st.block === 'synthesis' && !own(st.model)) add('warn', e.key, 'У синтеза нет model.');
       if (st.block === 'synthesis') checkOwnFields(st, '', e.key, add);
-      if (st.block === 'source' && !own(st.content) && !own(st.attachment)) add('warn', e.key, 'Материал не передан: нет ни content (текст), ни attachment (имя файла, приложенного к ответу).');
-      if (own(st.attachment) && !/\.[A-Za-z0-9]{1,8}$/.test(st.attachment.trim())) add('warn', e.key, `attachment «${st.attachment}»: нужно точное имя файла с расширением.`);
       if (st.block === 'route' && !Array.isArray(st.choices)) add('error', e.key, 'У route нет choices.');
-      if (st.block === 'foreach' && !Array.isArray(st.body)) add('error', e.key, 'У foreach нет body (списка этапов).');
-      if (own(st.repeats) && !own(st.because)) add('error', e.key, `Повтор ${st.repeats} без because.`);
-      if (own(st.because) && !own(st.repeats)) add('warn', e.key, 'because без repeats.');
     });
-    // Ссылки: вверх — inputs/repeats/over/from; вниз — route.goes.
+    // Ссылки: вверх — inputs/optional_inputs; «in.Имя» — исходный артефакт; вниз — route.goes.
     flat.forEach((e) => {
       const st = e.step;
       const refs = [];
       if (Array.isArray(st.inputs)) st.inputs.forEach((r) => refs.push(['inputs', r, 'up']));
       if (Array.isArray(st.optional_inputs)) st.optional_inputs.forEach((r) => refs.push(['optional_inputs', r, 'up']));
-      if (st.repeats != null) refs.push(['repeats', st.repeats, 'up']);
-      if (st.block === 'foreach' && st.over != null) refs.push(['over', st.over, 'up']);
-      if (st.block === 'list' && st.from != null) refs.push(['from', st.from, 'up']);
       if (st.block === 'route' && Array.isArray(st.choices)) st.choices.forEach((c) => listOf(c?.goes).forEach((r) => refs.push(['goes', r, 'down'])));
       refs.forEach(([field, ref, dir]) => {
         if (!own(ref)) { add('error', e.key, `${field}: пустая ссылка.`); return; }
-        if (refId(ref) === 'item') {
-          if (field === 'inputs' && e.parent) return;
-          add('error', e.key, `${field}: «item» можно только в inputs этапов внутри body у foreach.`);
+        if (/^in\./.test(ref)) {
+          const name = String(ref).slice(3);
+          if (!sourceNames.includes(name)) add('error', e.key, `${field}: нет исходного артефакта «${name}» в artifacts верхнего уровня.`);
           return;
         }
         const target = byId.get(refId(ref));
         if (!target) { add('error', e.key, `${field}: этапа «${refId(ref)}» нет.`); return; }
         if (dir === 'up' && target.pos >= e.pos) add('error', e.key, `${field}: «${ref}» — ссылка ${target.pos === e.pos ? 'на себя' : 'вниз'}; можно только на этапы выше.`);
         if (dir === 'down' && target.pos <= e.pos) add('error', e.key, `goes: «${ref}» — переход назад; route ведёт только к этапам ниже.`);
-        if (field === 'repeats' && target.step.block !== st.block) add('warn', e.key, `repeats: ${ref} — блок ${target.step.block}, а этот ${st.block}.`);
         const dot = String(ref).indexOf('.');
         if (dot > 0) {
           const name = String(ref).slice(dot + 1);
@@ -479,7 +483,7 @@
         const pos = listOf(c?.goes).map((g) => byId.get(refId(g))?.pos).filter((x) => x != null && x > r.pos);
         if (!pos.length) return;
         const first = Math.min(...pos);
-        flat.forEach((x) => { if (x.pos > r.pos && x.pos < first && x.parent === r.parent) conditional.add(x.step.id); });
+        flat.forEach((x) => { if (x.pos > r.pos && x.pos < first) conditional.add(x.step.id); });
       });
     });
     flat.forEach((e) => {
@@ -489,25 +493,9 @@
           add('warn', e.key, `inputs: ${refId(r)} может быть пропущен развилкой; вынесите «${r}» в optional_inputs.`);
         }
       });
-      // Петля должна заканчиваться повторной проверкой.
-      if (own(st.repeats) && own(st.because)) {
-        const gate = flat.find((x) => x.step.block === 'gate' && own(x.step.id) && new RegExp(`(^|[^\\w])${x.step.id}([^\\w]|$)`).test(st.because) && x.pos < e.pos);
-        if (gate && !flat.some((x) => x.pos > e.pos && x.step.block === 'gate' && x.step.repeats === gate.step.id)
-            && flat.find((x) => own(x.step.repeats) && own(x.step.because) && x.step.because.includes(gate.step.id)) === e) {
-          add('warn', e.key, `После повтора по условию «${st.because}» нет повторной проверки: добавьте этап gate с repeats: «${gate.step.id}».`);
-        }
-      }
       [...(Array.isArray(st.models) ? st.models.map((m) => m?.name) : []), st.model].filter(own).forEach((n) => {
         if (!MODEL_NAMES.includes(n)) add('warn', e.key, `Неизвестное имя модели «${n}»; допустимы: ${MODEL_NAMES.join(', ')}.`);
       });
-      if (st.block === 'score' && st.weights != null && (typeof st.weights !== 'object' || Array.isArray(st.weights))) {
-        add('warn', e.key, 'weights должен быть объектом { "критерий": число }.');
-      }
-      const texts = [st.task, ...(Array.isArray(st.models) ? st.models.map((m) => m?.task) : [])].filter(own);
-      if (texts.some((x) => x.includes('{item}'))) {
-        if (!e.parent) add('error', e.key, '{item} в задании можно только внутри body у foreach.');
-        else if (!listOf(st.inputs).includes('item')) add('warn', e.key, 'В задании есть {item}, но «item» нет в inputs.');
-      }
     });
     return { schema, flat, issues, comment: ctx.comment };
   }
@@ -524,7 +512,7 @@
     out.lines = listOf(d.lines).filter(own).map((x) => x.trim());
     return out;
   }
-  const ownFields = (o) => ({ request: own(o.request) ? o.request.trim() : '', maxWords: wordsOf(o.maxWords), discipline: disciplineOf(o.discipline) });
+  const ownFields = (o) => ({ maxWords: wordsOf(o.maxWords), discipline: disciplineOf(o.discipline) });
 
   // Схема → ProtoState: раунды и синтезы в порядке списка; layout — колонки холста.
   function applySchema(schema, flat, issues) {
@@ -550,16 +538,8 @@
     const r = isObj(schema.run) ? schema.run : {};
     state.run = { ...clone(stand.snapshot.run || {}), ...(['auto', 'manual'].includes(r.policy) ? { policy: r.policy } : {}), ...(wordsOf(r.maxWords) ? { maxWords: wordsOf(r.maxWords) } : {}) };
     state.rounds = [];
-    // Материал (source) — это артефакт, а не этап: стоит над колонкой In, в поток колонок не попадает.
-    // Документы (материал, файлы) — не этапы, а сопровождение этапов: лежат в зоне этапа, который их берёт или чей результат сохраняют.
-    // Блоки документов без моделей (list, score, assemble) тоже не этапы: приложение делает из документов новый документ,
-    // он лежит в зоне предыдущего этапа потока и сопровождает его.
-    const isOp = (st) => ['list', 'score', 'assemble'].includes(st.block);
-    const isDoc = (st) => st.block === 'source' || st.block === 'file' || isOp(st);
-    const docs = steps.filter(isDoc);
-    const flow = steps.filter((st) => !isDoc(st));
-    let lastFlow = null;
-    steps.forEach((st) => { if (isOp(st)) st.__host = lastFlow; else if (!isDoc(st)) lastFlow = st; });
+    // Исходные артефакты (верхнеуровневый artifacts) — не этапы: лежат в зоне над колонкой In. Все этапы схемы — колонки потока.
+    const flow = steps;
     const lastSynth = flow.map((st) => st.block).lastIndexOf('synthesis');
     const finalAt = lastSynth >= 0 && !flow.slice(lastSynth + 1).some((st) => st.block === 'round') ? lastSynth : -1;
     let final = null;
@@ -592,19 +572,8 @@
       }
       return col;
     });
-    stand.layout.forEach((col) => { col.docs = []; });
-    stand.docs = docs;
-    // Входные документы (материал, чтение файла) крепятся к In; запись файла — к этапу, чей результат она сохраняет.
-    const sinkFile = (st) => st.block === 'file' && st.mode !== 'read';
-    const hostOf = (st) => (isOp(st) && st.__host ? stand.layout.findIndex((col) => col.step === st.__host) : -1);
-    stand.inDocs = docs.filter((st) => !sinkFile(st) && hostOf(st) < 0);
-    stand.inDocs.forEach((st) => { st.__col = -1; });
-    docs.filter((st) => isOp(st) && hostOf(st) >= 0).forEach((st) => { st.__col = hostOf(st); stand.layout[st.__col].docs.push(st); });
-    docs.filter((st) => st.block === 'file' && st.mode !== 'read').forEach((st) => {
-      const at = stand.layout.findIndex((col) => listOf(st.inputs).some((r) => refId(r) === col.step.id));
-      const col = stand.layout[at >= 0 ? at : stand.layout.length - 1];
-      if (col) { col.docs.push(st); st.__col = stand.layout.indexOf(col); }
-    });
+    // Исходные артефакты крепятся к In: от каждого стрелка к этапу, который берёт его через «in.Имя».
+    stand.inDocs = listOf(schema.artifacts).filter((a) => isObj(a) && own(a.name)).map((a) => ({ id: a.name.trim(), title: a.name.trim(), src: a }));
     // Промежуточный синтез между раундами — в слот раунда, после которого он стоит.
     stand.layout.forEach((col) => {
       const round = col.synth && !col.final && col.after >= 0 && col.after < state.rounds.length - 1 ? state.rounds[col.after] : null;
@@ -648,7 +617,6 @@
     const rest = listOf(st.inputs).filter((r) => refId(r) !== skip);
     return rest.length ? `<div class="proto-stand-line">вход: ${esc(rest.join(', '))}</div>` : '';
   };
-  const repeatText = (st) => (own(st.repeats) ? `<div class="proto-stand-line proto-stand-repeat">повтор ${esc(st.repeats)}${own(st.because) ? ` · ${esc(st.because)}` : ''}</div>` : '');
   // Артефакты этапа — в зоне над блоками моделей, под бейджем. Версия: сколько этапов выше (включая этот) выдали артефакт с тем же именем.
   const artifactVersion = (k, name) => stand.layout.slice(0, k + 1).filter((c) => listOf(c.step.artifacts).map(artName).includes(name)).length;
   // Описание артефакта: у первого этапа схемы, который его задал (имя может повторяться в нескольких этапах).
@@ -658,14 +626,13 @@
   };
   // Кому отправляется артефакт: по умолчанию всем моделям холста; снятые галочки хранятся только на стенде (в схему не пишутся).
   const artifactTargets = (k, name) => { const all = S().models || []; const own = stand.artTo?.[`${k}|${name}`]; return own ? all.filter((m) => own.includes(m)) : all; };
-  const DOC_KIND = { text: 'текст', document: 'файл', link: 'ссылка', read: 'чтение', overwrite: 'файл', append: 'дописать', list: 'список', score: 'баллы', assemble: 'сборка' };
-  const docKind = (d) => (['list', 'score', 'assemble'].includes(d.block) ? DOC_KIND[d.block] : d.block === 'file' ? DOC_KIND[d.mode === 'read' ? 'read' : d.mode === 'append' ? 'append' : 'overwrite'] : DOC_KIND[d.kind] || 'материал');
-  const docChips = (k) => (k === -1 ? (stand.inDocs || []) : (stand.layout[k]?.docs || [])).map((d) => {
-    const sink = d.block === 'file' && d.mode !== 'read';
-    const to = sink ? [] : artifactTargets('doc', d.id); const all = (S().models || []).length;
-    const label = `${docKind(d)}${!sink && to.length < all ? ` · ${to.length}/${all}` : ''}`;
-    const title = d.block === 'file' ? (d.file || d.title || d.id) : ['list', 'score', 'assemble'].includes(d.block) ? (listOf(d.artifacts).map(artName)[0] || d.title || d.id) : (d.title || d.id);
-    return `<span class="proto-art proto-art-doc${sink ? ' proto-art-file' : ''}" data-art="doc|${esc(d.id)}" title="${esc(title)} — ${esc(label)}${['list', 'score', 'assemble'].includes(d.block) ? ' (делает приложение, без нейросети)' : ''}"><span class="proto-art-title">${esc(title)}</span><span class="proto-art-version">${esc(label)}</span></span>`;
+  // Вид исходного артефакта: текст в схеме или файл, приложенный к ответу.
+  const docKind = (d) => (own(d.src?.content) ? 'текст' : own(d.src?.attachment) ? 'файл' : 'не передан');
+  // Исходные артефакты — в зоне над In (k = -1); у колонок этапов исходных артефактов нет.
+  const docChips = (k) => (k === -1 ? (stand.inDocs || []) : []).map((d) => {
+    const to = artifactTargets('doc', d.id); const all = (S().models || []).length;
+    const label = `${docKind(d)}${to.length < all ? ` · ${to.length}/${all}` : ''}`;
+    return `<span class="proto-art proto-art-doc" data-art="doc|${esc(d.id)}" title="${esc(d.title)} — ${esc(label)} (исходный артефакт)"><span class="proto-art-title">${esc(d.title)}</span><span class="proto-art-version">${esc(label)}</span></span>`;
   }).join('');
   const artifactZone = (k, st) => `<div class="proto-art-zone">${listOf(st.artifacts).map(artName).map((name) => {
     const to = artifactTargets(k, name); const all = (S().models || []).length;
@@ -712,38 +679,35 @@
       const id = refId(ref);
       const name = String(ref).slice(id.length + 1);
       if (!name) return;
+      if (id === 'in') {
+        if ((stand.inDocs || []).some((d) => d.id === name) && !links.some((l) => l.from === -1 && l.to === c && l.name === name)) links.push({ from: -1, to: c, name, doc: true });
+        return;
+      }
       const p = stand.layout.findIndex((x, k) => k < c && x.step.id === id && listOf(x.step.artifacts).map(artName).includes(name));
       if (p >= 0 && !links.some((l) => l.from === p && l.to === c && l.name === name)) links.push({ from: p, to: c, name });
-    }));
-    (stand.docs || []).filter((d) => !(d.block === 'file' && d.mode !== 'read')).forEach((d) => stand.layout.forEach((col, c) => {
-      if (c !== d.__col && listOf(col.step.inputs).some((r) => refId(r) === d.id)) links.push({ from: d.__col, to: c, name: d.id, doc: true });
     }));
     return links;
   };
   function openSource(id) {
-    const st = (stand.docs || []).find((x) => x.id === id);
+    const st = (stand.inDocs || []).find((x) => x.id === id);
     if (!st) return;
     stand.current = null;
     const modal = infoModal();
     const models = S().models || [];
     const on = artifactTargets('doc', id);
-    const users = stand.layout.filter((c) => listOf(c.step.inputs).some((r) => refId(r) === id)).map((c) => c.step);
+    const users = stand.layout.filter((c) => listOf(c.step.inputs).some((r) => r === `in.${id}`)).map((c) => c.step);
     modal.querySelector('.modal-content').innerHTML = `
       <header class="custom-card-top custom-defaults-top">
-        <h3 class="custom-card-model"><i class="ti ti-file-text" aria-hidden="true"></i>${esc(st.title || st.id)}<span class="custom-card-where">документ (${esc(docKind(st))}) · ${esc(st.id)}</span></h3>
+        <h3 class="custom-card-model"><i class="ti ti-file-text" aria-hidden="true"></i>${esc(st.title)}<span class="custom-card-where">исходный артефакт (${esc(docKind(st))})</span></h3>
         <button type="button" class="modal-button" data-stand-close>Закрыть</button>
       </header>
       <div class="custom-card-body">
         <div class="proto-stand-rows">
-          ${['list', 'score', 'assemble'].includes(st.block) ? `<div class="proto-stand-row"><span>делает</span><div>приложение, без нейросети: ${esc({ list: 'делит материал на пронумерованные части', score: 'считает баллы по весам', assemble: 'склеивает документ по шаблону' }[st.block])}</div></div>
-          <div class="proto-stand-row"><span>из</span><div>${esc(listOf(st.inputs).join(', ') || '—')}</div></div>
-          ${own(st.rule) ? `<div class="proto-stand-row"><span>правило</span><div>${esc(st.rule)}</div></div>` : ''}
-          ${isObj(st.weights) ? `<div class="proto-stand-row"><span>веса</span><div>${esc(Object.entries(st.weights).map(([k, v]) => `${k}: ${v}`).join(', '))}</div></div>` : ''}
-          ${own(st.template) ? `<div class="proto-stand-row"><span>шаблон</span><div style="white-space:pre-wrap">${esc(st.template)}</div></div>` : ''}` : `<div class="proto-stand-row"><span>файл</span><div>${esc(st.attachment || st.file || 'нет')}</div></div>`}
+          <div class="proto-stand-row"><span>источник</span><div>${own(st.src.content) ? 'текст в схеме' : esc(st.src.attachment || 'не передан')}</div></div>
           <div class="proto-stand-row"><span>берут</span><div>${users.length ? users.map((u) => `${esc(u.id || '')} · ${esc(u.title || '')}`).join('<br>') : 'никто'}</div></div>
         </div>
         <div class="custom-card-marks"><strong>Описание</strong>
-          <div class="custom-card-note" style="white-space:pre-wrap">${esc(st.content || listOf(st.artifacts).map(artDesc).find(Boolean) || st.why || 'не задано')}</div>
+          <div class="custom-card-note" style="white-space:pre-wrap">${esc(artDesc(st.src) || st.src.content || 'не задано')}</div>
         </div>
         <div class="custom-card-marks"><strong>Кому отправлять</strong>
           <div class="proto-art-models">${models.map((m) => `<label><input type="checkbox" data-art-model="${esc(m)}"${on.includes(m) ? ' checked' : ''}> ${esc(m)}</label>`).join('')}</div>
@@ -774,17 +738,12 @@
         <select class="role-selector judge-prompt-selector"${on ? '' : ' disabled'}>${options}</select>
       </div>`;
   };
-  const nestedHtml = (body) => `<details class="proto-stand-body"><summary>Этапы: ${listOf(body).length}</summary>${listOf(body).map((sub) => {
-    const key = stand.flat.find((e) => e.raw === sub)?.key || '';
-    return `<div class="proto-stand-sub" data-stand-key="${esc(key)}" title="Двойной клик — поля этапа">${esc(sub?.id || '?')} · ${esc(KIND[sub?.block]?.[0] || sub?.block || '?')} — ${esc(cut(sub?.title, 40))}${bang(key)}</div>`;
-  }).join('')}</details>`;
-
   function columnHtml(col, k, prevId) {
     const st = col.step;
     const key = col.key;
     const stack = `stand-stack-${k}`;
     const head = (badge, extra = '') => `<div class="stage-label"><span class="round-badge${extra}">${badge}</span></div>`;
-    const tail = `${repeatText(st)}${inputsText(st, prevId)}`;
+    const tail = inputsText(st, prevId);
     if (col.round != null) {
       const round = S().rounds[col.round];
       return `<div class="stage-column" data-round-index="${col.round}" data-stand-key="${esc(key)}">
@@ -811,26 +770,24 @@
     }
     const [label, icon] = KIND[st.block] || [String(st.block || '?'), 'ti-help'];
     const goes = st.block === 'route' ? listOf(st.choices).map((c) => `<div class="proto-stand-line">${esc(cut(c?.when, 30))} → ${esc(listOf(c?.goes).join(', '))}</div>`).join('') : '';
-    const from = st.block === 'list' && own(st.from) && refId(st.from) !== prevId ? `<div class="proto-stand-line">из: ${esc(st.from)}</div>` : '';
-    const over = st.block === 'foreach' && own(st.over) && refId(st.over) !== prevId ? `<div class="proto-stand-line">по: ${esc(st.over)}</div>` : '';
     const human = HUMAN_BLOCKS.includes(st.block);
+    const app = APP_BLOCKS.includes(st.block) ? '<div class="proto-stand-line proto-stand-app">приложение</div>' : '';
     return `<div class="stage-column" data-stand-key="${esc(key)}">
         ${head(esc(label), ` proto-stand-kind${human ? ' proto-human-kind' : ''}`)}
         ${artifactZone(k, st)}
         <div class="model-stack" id="${stack}">
           <div class="model-block inactive proto-stand-card${human ? ' proto-human' : ''}" data-stand-key="${esc(key)}">
             <div class="model-header"><i class="ti ${icon} proto-stand-icon" aria-hidden="true"></i><span class="model-name" title="${esc(st.title)}">${human ? 'User' : esc(st.title || '—')}</span>${bang(key)}</div>
-            <div class="proto-stand-line">${human ? `<b>${esc(st.id || '')}</b> ${esc(cut(st.title, 40))}` : `<b>${esc(st.id || '')}</b>`} ${esc(cut(st.why, 70))}</div>
-            ${repeatText(st)}${goes}${from}${over}
-            ${st.block === 'foreach' ? nestedHtml(st.body) : ''}
+            ${app}<div class="proto-stand-line">${human ? `<b>${esc(st.id || '')}</b> ${esc(cut(st.title, 40))}` : `<b>${esc(st.id || '')}</b>`} ${esc(cut(st.why, 70))}</div>
+            ${goes}
           </div>
         </div>
         <div class="proto-stand-meta">${inputsText(st, prevId)}</div>
       </div>`;
   }
 
-  // Линия к этапу активна, если он берёт вход у соседа слева (inputs/repeats/from/over); иначе — серая.
-  const linksTo = (st, id) => !!id && [...listOf(st.inputs), st.from, st.over].some((r) => own(r) && refId(r) === id);
+  // Линия к этапу активна, если он берёт вход у соседа слева (inputs); иначе — серая.
+  const linksTo = (st, id) => !!id && listOf(st.inputs).some((r) => own(r) && refId(r) === id);
 
   function render() {
     const root = $('pipelineFlow');
@@ -846,7 +803,7 @@
       if (k > 0) html += `<div class="connector-group"><svg class="connector-svg" id="stand-svg-${k}"></svg></div>`;
       html += columnHtml(col, k, k > 0 ? cols[k - 1].step.id : '');
     });
-    const per = Math.max(0, (stand.inDocs || []).length, ...cols.map((col) => listOf(col.step.artifacts).length + (col.docs || []).length));
+    const per = Math.max(0, (stand.inDocs || []).length, ...cols.map((col) => listOf(col.step.artifacts).length));
     root.style.setProperty('--proto-art-zone', per ? `${per * 28 + 6}px` : '0px');
     root.style.paddingTop = artifactLinks().length ? `${12 + artifactLinks().length * 6}px` : '';
     root.innerHTML = html;
@@ -914,7 +871,7 @@
     if (value == null || value === '') return '—';
     if (key === 'models' && Array.isArray(value)) {
       return value.map((m) => (m && typeof m === 'object' ? [`${m.name || '?'}${own(m.role) ? ` (роль: ${m.role})` : ''}${own(m.task) ? ` — ${m.task}` : ''}`,
-        ...Object.keys(m).filter((x) => !['name', 'role', 'task'].includes(x)).map((x) => indent(`${LABELS[x] || x}:${['discipline', 'request'].includes(x) ? `\n${indent(fmt(x, m[x]))}` : ` ${fmt(x, m[x])}`}`))].join('\n') : String(m))).join('\n');
+        ...Object.keys(m).filter((x) => !['name', 'role', 'task'].includes(x)).map((x) => indent(`${LABELS[x] || x}:${x === 'discipline' ? `\n${indent(fmt(x, m[x]))}` : ` ${fmt(x, m[x])}`}`))].join('\n') : String(m))).join('\n');
     }
     if (key === 'artifacts' && Array.isArray(value)) return value.map((a) => (artDesc(a) ? `${artName(a)} — ${artDesc(a)}` : artName(a))).join('; ');
     if (key === 'discipline') return fmtDiscipline(value);
@@ -928,7 +885,6 @@
       return Object.entries(value).map(([k, v]) => (isObj(v) ? `${names[k] || k}:\n${indent(fmt(k, v))}` : `${names[k] || k}: ${fmt(k, v)}`)).join('\n');
     }
     if (key === 'choices' && Array.isArray(value)) return value.map((c) => `когда ${c?.when || '?'} → ${listOf(c?.goes).join(', ') || '—'}`).join('\n');
-    if (key === 'body' && Array.isArray(value)) return value.map((s) => `${s?.id || '?'} · ${s?.block || '?'} — ${s?.title || ''}`).join('\n');
     if (key === 'order') return `${value}${ORDER_TEXT[value] ? ` (${ORDER_TEXT[value]})` : ''}`;
     if (Array.isArray(value)) return value.map((v) => (v && typeof v === 'object' ? fmt('', v) : String(v))).join(', ');
     if (typeof value === 'object') return Object.entries(value).map(([k, v]) => `${k}: ${typeof v === 'object' ? fmt(k, v) : v}`).join(', ');
@@ -936,7 +892,7 @@
   };
   // isRoot — раздел окна ▶: поля верхнего уровня схемы (task, defaults, run) и общие замечания.
   function schemaSection(st, isRoot) {
-    const keys = isRoot ? ['task', 'defaults', 'run'] : [...COMMON.filter((k) => k in st || ['block', 'title', 'why', 'inputs', 'artifacts'].includes(k)),
+    const keys = isRoot ? ['task', 'artifacts', 'defaults', 'run'] : [...COMMON.filter((k) => k in st || ['block', 'title', 'why', 'inputs', 'artifacts'].includes(k)),
       ...Object.keys(st).filter((k) => !COMMON.includes(k))];
     const issues = isRoot ? issuesOf(null) : issuesOf(stand.flat.find((e) => e.raw === st)?.key);
     return `<div class="custom-card-marks proto-stand-schema"><strong>Из схемы</strong>
@@ -985,12 +941,9 @@
   // «Назначение» — первый раздел окна человеческого блока: зачем он и что человек делает.
   const purposeSection = (st) => {
     if (!HUMAN_BLOCKS.includes(st.block)) return '';
-    const extra = st.block === 'owner'
-      ? `<div class="custom-card-note"><b>Вопрос человеку:</b> ${esc(own(st.ask) ? st.ask : 'не задан')}</div>`
-      : `<div class="custom-card-note"><b>Что заполняет человек:</b> ${esc(own(st.purpose) ? st.purpose : 'не задано')}</div>`;
     return `<div class="custom-card-marks proto-stand-purpose"><strong>Назначение</strong>
       <div class="custom-card-note">${esc(own(st.why) ? st.why : 'не задано')}</div>
-      ${extra}
+      <div class="custom-card-note"><b>Вопрос человеку:</b> ${esc(own(st.ask) ? st.ask : 'не задан')}</div>
     </div>`;
   };
   function openInfo(st) {
@@ -1010,7 +963,6 @@
   const anyOpen = () => ['pipeline-block-info-modal', 'proto-stand-info', 'proto-stand-modal'].some((id) => $(id)?.classList.contains('is-visible')) || !!$('pipeline-stage-dialog')?.open;
 
   const colOf = (key) => stand.layout.find((c) => c.key === key);
-  const stepOf = (key) => stand.flat.find((e) => e.key === key)?.raw;
   function openSynth(col) {
     stand.current = { step: col.step, where: 'card' };
     const state = S();
@@ -1056,8 +1008,6 @@
       const t = event.target;
       if (t.closest('select, input, button, option')) return;
       event.stopPropagation();
-      const sub = t.closest('.proto-stand-sub');
-      if (sub) { const st = stepOf(sub.dataset.standKey); if (st) openInfo(st); return; }
       if (t.closest('summary')) return;
       const column = t.closest('.stage-column[data-stand-key]');
       const col = colOf(column?.dataset.standKey);
@@ -1116,7 +1066,7 @@
           <textarea id="proto-stand-json" spellcheck="false" placeholder='{ "task": "…", "steps": [ … ] }'></textarea>
         </div>
         <div class="proto-stand-issues" id="proto-stand-issues"></div>
-        <div class="custom-card-note"><button type="button" id="proto-stand-example-foreach">Пример с foreach</button> <button type="button" id="proto-stand-example-defaults">Пример с defaults</button></div>
+        <div class="custom-card-note"><button type="button" id="proto-stand-example-defaults">Пример с defaults</button></div>
       </div>
     </div>`;
     document.body.appendChild(modal);
@@ -1124,7 +1074,6 @@
     modal.addEventListener('click', (event) => { if (event.target === modal) hide(modal); });
     modal.querySelector('#proto-stand-close').addEventListener('click', () => hide(modal));
     modal.querySelector('#proto-stand-example').addEventListener('click', () => { area.value = JSON.stringify(EXAMPLES.basic, null, 2); area.focus(); });
-    modal.querySelector('#proto-stand-example-foreach').addEventListener('click', () => { area.value = JSON.stringify(EXAMPLES.foreach, null, 2); area.focus(); });
     modal.querySelector('#proto-stand-example-defaults').addEventListener('click', () => { area.value = JSON.stringify(EXAMPLES.defaults, null, 2); area.focus(); });
     modal.querySelector('#proto-stand-clear').addEventListener('click', () => { area.value = ''; stand.text = ''; stand.comment = ''; drawIssues('Поле очищено.', []); area.focus(); });
     modal.querySelector('#proto-stand-reset').addEventListener('click', () => { area.value = ''; stand.text = ''; reset(); });
@@ -1201,7 +1150,7 @@
   const plural = (n, forms) => forms[n % 10 === 1 && n % 100 !== 11 ? 0 : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? 1 : 2];
   const uid = () => (root.crypto?.randomUUID ? root.crypto.randomUUID()
     : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3) | 8).toString(16); }));
-  const pickSchema = (s) => JSON.parse(JSON.stringify(['task', 'version', 'description', 'steps', 'defaults', 'run'].reduce((o, k) => (s[k] !== undefined ? { ...o, [k]: s[k] } : o), {})));
+  const pickSchema = (s) => JSON.parse(JSON.stringify(['task', 'version', 'description', 'artifacts', 'steps', 'defaults', 'run'].reduce((o, k) => (s[k] !== undefined ? { ...o, [k]: s[k] } : o), {})));
   const countSteps = (s) => (Array.isArray(s?.steps) ? s.steps.length : 0);
   const catalogDoc = () => ({ format: CATALOG_FORMAT, version: 1, stand: STAND_VERSION, templates: catalog.templates });
   const catalogText = () => JSON.stringify(catalogDoc(), null, 2);
@@ -1540,15 +1489,12 @@
     .model-block.proto-stand-card { height: auto; min-height: var(--pipeline-block-height); justify-content: flex-start; gap: 3px; cursor: pointer; }
     .proto-stand-icon { font-size: 14px; color: var(--pipeline-muted); flex: 0 0 auto; }
     .proto-stand-line { display: block; font-size: 10px; line-height: 1.35; color: var(--pipeline-muted); overflow-wrap: anywhere; }
-    .proto-stand-repeat { color: #b45309; }
+    .proto-stand-app { font-weight: 600; color: var(--pipeline-text); }
     .proto-stand-meta { width: 139px; margin-top: 6px; }
     .proto-stand-kind { background: #f1f5f9; color: #64748b; text-transform: uppercase; }
     .proto-stand-bang { flex: 0 0 auto; display: inline-grid; place-items: center; width: 14px; height: 14px; border-radius: 50%; background: #dc2626; color: #fff; font-size: 10px; font-weight: 700; cursor: help; }
     .proto-stand-bang.is-warn { background: #f59e0b; }
     .proto-stand-meta > .proto-stand-bang { float: right; }
-    .proto-stand-body { font-size: 10px; color: var(--pipeline-text); }
-    .proto-stand-body summary { cursor: pointer; color: var(--pipeline-muted); }
-    .proto-stand-sub { display: flex; gap: 4px; align-items: center; padding: 2px 0; border-top: 1px dashed #e2e8f0; cursor: pointer; overflow-wrap: anywhere; }
     .proto-stand-actions { display: flex; gap: 8px; justify-self: end; flex-wrap: wrap; }
     .proto-stand-actions .modal-button { padding: 6px 14px; font-size: 13px; }
     #proto-stand-modal .custom-card-field textarea { font-family: ui-monospace, Menlo, monospace; font-size: 12px; line-height: 1.5; }
@@ -1585,65 +1531,288 @@
 
   // ---------- Примеры ----------
   const EXAMPLES = {
-    basic: {
-      task: 'Подготовить план запуска нового тарифа для малого бизнеса',
-      steps: [
-        { id: 's1', block: 'source', kind: 'text', title: 'Описание тарифа', content: 'Тариф «Старт» для малого бизнеса: 5 пользователей, 990 ₽ в месяц, запуск через 6 недель.', artifacts: ['Бриф'], why: 'Даёт всем моделям одинаковые исходные данные о тарифе.' },
-        { id: 's2', block: 'round', title: 'Первые планы', order: 'parallel', task: 'Предложи план запуска тарифа по брифу.', inputs: ['s1.Бриф'], artifacts: ['Черновики'],
-          models: [{ name: 'Claude', role: 'автор', task: 'Сделай упор на сроки и этапы.' }, { name: 'GPT', role: 'критик', task: 'Ищи риски и слабые места.' }, { name: 'Gemini', role: 'аналитик', task: 'Оцени рынок и цены.' }],
-          why: 'Три независимых взгляда на одну задачу.' },
-        { id: 's3', block: 'synthesis', title: 'Сводный план', model: 'Claude', role: 'свести', task: 'Сведи черновики в один план.', inputs: ['s2.Черновики'], artifacts: ['План'], why: 'Нужен один план вместо трёх.' },
-        { id: 's4', block: 'gate', title: 'Проверка плана', criteria: 'Есть сроки, бюджет и ответственные; нет противоречий.', inputs: ['s3.План'], artifacts: ['Вердикт'], why: 'Не отдавать план без сроков и бюджета.' },
-        { id: 's5', block: 'round', title: 'Доработка', repeats: 's2', because: 'проверка s4 не пройдена', order: 'sequential', task: 'Исправь план по замечаниям проверки.', inputs: ['s3.План', 's4.Вердикт'], artifacts: ['Правки'],
-          models: [{ name: 'Claude', role: 'автор' }, { name: 'GPT', role: 'критик' }, { name: 'Gemini', role: 'аналитик' }], why: 'Закрыть замечания проверки.' },
-        { id: 's6', block: 'synthesis', title: 'Итоговый план', repeats: 's3', because: 'после доработки', model: 'GPT', role: 'судья', task: 'Собери итоговый план с учётом правок.', inputs: ['s5.Правки', 's3.План'], artifacts: ['Итог'], why: 'Окончательная версия плана.' },
-        { id: 's7', block: 'gate', title: 'Повторная проверка плана', repeats: 's4', because: 'после доработки', criteria: 'Есть сроки, бюджет и ответственные; нет противоречий.', inputs: ['s6.Итог'], why: 'Закрыть петлю проверкой.' },
-        { id: 's8', block: 'file', title: 'Сохранить план', file: 'plan.md', mode: 'overwrite', inputs: ['s6.Итог'], why: 'Результат нужен файлом.' }
+    "basic": {
+      "task": "Подготовить план запуска нового тарифа для малого бизнеса",
+      "artifacts": [
+        {
+          "name": "Бриф",
+          "description": "Исходные данные о тарифе для всех моделей",
+          "content": "Тариф «Старт» для малого бизнеса: 5 пользователей, 990 ₽ в месяц, запуск через 6 недель."
+        }
+      ],
+      "steps": [
+        {
+          "id": "s1",
+          "block": "round",
+          "title": "Первые планы",
+          "order": "parallel",
+          "task": "Предложи план запуска тарифа по брифу.",
+          "models": [
+            {
+              "name": "Claude",
+              "role": "автор",
+              "task": "Сделай упор на сроки и этапы."
+            },
+            {
+              "name": "GPT",
+              "role": "критик",
+              "task": "Ищи риски и слабые места."
+            },
+            {
+              "name": "Gemini",
+              "role": "аналитик",
+              "task": "Оцени рынок и цены."
+            }
+          ],
+          "inputs": [
+            "in.Бриф"
+          ],
+          "artifacts": [
+            "Черновики"
+          ],
+          "why": "Три независимых взгляда на одну задачу."
+        },
+        {
+          "id": "s2",
+          "block": "synthesis",
+          "title": "Сводный план",
+          "model": "Claude",
+          "role": "свести",
+          "task": "Сведи черновики в один план.",
+          "inputs": [
+            "s1.Черновики"
+          ],
+          "artifacts": [
+            "План"
+          ],
+          "why": "Нужен один план вместо трёх."
+        },
+        {
+          "id": "s3",
+          "block": "gate",
+          "title": "Проверка плана",
+          "criteria": "Есть сроки, бюджет и ответственные; нет противоречий.",
+          "inputs": [
+            "s2.План"
+          ],
+          "artifacts": [
+            "Вердикт"
+          ],
+          "why": "Не отдавать план без сроков и бюджета."
+        },
+        {
+          "id": "s4",
+          "block": "round",
+          "title": "Доработка",
+          "order": "sequential",
+          "task": "Исправь план по замечаниям проверки.",
+          "models": [
+            {
+              "name": "Claude",
+              "role": "автор"
+            },
+            {
+              "name": "GPT",
+              "role": "критик"
+            },
+            {
+              "name": "Gemini",
+              "role": "аналитик"
+            }
+          ],
+          "inputs": [
+            "s2.План",
+            "s3.Вердикт"
+          ],
+          "artifacts": [
+            "Правки"
+          ],
+          "why": "Закрыть замечания проверки."
+        },
+        {
+          "id": "s5",
+          "block": "synthesis",
+          "title": "Итоговый план",
+          "model": "GPT",
+          "role": "судья",
+          "task": "Собери итоговый план с учётом правок.",
+          "inputs": [
+            "s4.Правки",
+            "s2.План"
+          ],
+          "artifacts": [
+            "Итог"
+          ],
+          "why": "Окончательная версия плана."
+        },
+        {
+          "id": "s6",
+          "block": "gate",
+          "title": "Повторная проверка плана",
+          "criteria": "Есть сроки, бюджет и ответственные; нет противоречий.",
+          "inputs": [
+            "s5.Итог"
+          ],
+          "why": "Итоговый план проверяется тем же критерием."
+        },
+        {
+          "id": "s7",
+          "block": "file",
+          "title": "Сохранить план",
+          "file": "plan.md",
+          "mode": "overwrite",
+          "inputs": [
+            "s5.Итог"
+          ],
+          "why": "Результат нужен файлом."
+        }
       ]
     },
-    foreach: {
-      task: 'Оценить каждую идею из списка и собрать рейтинг',
-      steps: [
-        { id: 's1', block: 'source', kind: 'document', title: 'Список идей', attachment: 'идеи.md', artifacts: ['Идеи'], why: 'Исходный материал — документ с идеями.' },
-        { id: 's2', block: 'list', title: 'Разбить на пункты', from: 's1.Идеи', rule: 'одна идея — один пункт', artifacts: ['Пункты'], why: 'Каждую идею разбираем отдельно.' },
-        { id: 's3', block: 'foreach', title: 'Разбор каждой идеи', over: 's2.Пункты', artifacts: ['Разборы'], why: 'Одинаковый разбор для всех пунктов.',
-          body: [
-            { id: 's3a', block: 'round', title: 'Разбор идеи', models: [{ name: 'Claude', role: 'аналитик' }, { name: 'GPT', role: 'критик' }], task: 'Разбери идею: плюсы, минусы, риски.', inputs: ['s3'], artifacts: ['Мнения'], why: 'Два взгляда на идею.' },
-            { id: 's3b', block: 'synthesis', title: 'Вывод по идее', model: 'Gemini', role: 'сгруппировать', inputs: ['s3a.Мнения'], artifacts: ['Вывод'], why: 'Один вывод на идею.' }
-          ] },
-        { id: 's4', block: 'assemble', title: 'Собрать отчёт', inputs: ['s3.Разборы'], template: '# Идеи\n{для каждой: название, вывод}', artifacts: ['Отчёт'], why: 'Все разборы в одном документе.' },
-        { id: 's5', block: 'score', title: 'Рейтинг', inputs: ['s4.Отчёт'], criteria: ['польза', 'стоимость', 'риск'], weights: { польза: 0.5, стоимость: 0.3, риск: 0.2 }, artifacts: ['Рейтинг'], why: 'Порядок, в котором браться за идеи.' }
-      ]
-    },
-    defaults: {
-      task: 'Выбрать технологический стек для внутреннего сервиса заявок',
-      defaults: {
-        roundTask: 'Учти ответы предыдущего раунда и улучши своё предложение.',
-        synthesisTask: 'Сведи предложения в одно решение с обоснованием.',
-        discipline: { content: 'Пиши по делу: варианты, плюсы, минусы, риски.', lines: ['Не повторяй чужие аргументы дословно.'] },
-        modelNotes: { Claude: 'Отвечай структурно, с короткими заголовками.', GPT: 'Называй конкретные библиотеки и версии.' }
+    "defaults": {
+      "task": "Выбрать технологический стек для внутреннего сервиса заявок",
+      "defaults": {
+        "roundTask": "Учти ответы предыдущего раунда и улучши своё предложение.",
+        "synthesisTask": "Сведи предложения в одно решение с обоснованием.",
+        "discipline": {
+          "content": "Пиши по делу: варианты, плюсы, минусы, риски.",
+          "lines": [
+            "Не повторяй чужие аргументы дословно."
+          ]
+        },
+        "modelNotes": {
+          "Claude": "Отвечай структурно, с короткими заголовками.",
+          "GPT": "Называй конкретные библиотеки и версии."
+        }
       },
-      run: { policy: 'manual', maxWords: 500 },
-      steps: [
-        { id: 's1', block: 'source', kind: 'text', title: 'Требования к сервису', content: 'Внутренний сервис заявок: до 200 пользователей, интеграция с почтой, срок разработки 3 месяца, команда из 4 человек.', artifacts: ['Требования'], why: 'Всем моделям — одинаковые требования.' },
-        { id: 's2', block: 'round', title: 'Первые предложения', order: 'parallel', task: 'Предложи стек для сервиса по требованиям.', inputs: ['s1.Требования'], artifacts: ['Предложения'],
-          models: [
-            { name: 'Claude', role: 'архитектор', maxWords: 700, discipline: { lines: ['Начни со схемы архитектуры в 3–5 пунктах.'] } },
-            { name: 'GPT', role: 'критик', task: 'Ищи слабые места каждого варианта.' },
-            { name: 'Gemini', role: 'аналитик', maxWords: 300 }
+      "run": {
+        "policy": "manual",
+        "maxWords": 500
+      },
+      "artifacts": [
+        {
+          "name": "Требования",
+          "description": "Одинаковые требования для всех моделей",
+          "content": "Внутренний сервис заявок: до 200 пользователей, интеграция с почтой, срок разработки 3 месяца, команда из 4 человек."
+        }
+      ],
+      "steps": [
+        {
+          "id": "s1",
+          "block": "round",
+          "title": "Первые предложения",
+          "order": "parallel",
+          "task": "Предложи стек для сервиса по требованиям.",
+          "models": [
+            {
+              "name": "Claude",
+              "role": "архитектор",
+              "maxWords": 700,
+              "discipline": {
+                "lines": [
+                  "Начни со схемы архитектуры в 3–5 пунктах."
+                ]
+              }
+            },
+            {
+              "name": "GPT",
+              "role": "критик",
+              "task": "Ищи слабые места каждого варианта."
+            },
+            {
+              "name": "Gemini",
+              "role": "аналитик",
+              "maxWords": 300
+            }
           ],
-          why: 'Три независимых предложения.' },
-        { id: 's3', block: 'round', title: 'Критика', order: 'sequential', inputs: ['s2.Предложения'], artifacts: ['Замечания'],
-          models: [
-            { name: 'GPT', role: 'критик', request: 'Задача:\n{задача}\n\nПредложения коллег:\n{вход}\n\nНайди в каждом предложении три главных риска и предложи, как их снизить.', discipline: { lines: ['Риски нумеруй: 1, 2, 3.'] } },
-            { name: 'Claude', role: 'архитектор', discipline: { limit: '[RESPONSE_LIMIT] Не больше {слов} слов.' } }
+          "inputs": [
+            "in.Требования"
           ],
-          why: 'Найти риски до выбора.' },
-        { id: 's4', block: 'round', title: 'Доработка', task: 'Исправь своё предложение по замечаниям.', inputs: ['s2.Предложения', 's3.Замечания'], artifacts: ['Доработки'],
-          models: [{ name: 'Claude', role: 'архитектор' }, { name: 'GPT', role: 'критик' }, { name: 'Gemini', role: 'аналитик', maxWords: 500 }],
-          why: 'Учесть критику.' },
-        { id: 's5', block: 'synthesis', title: 'Итоговое решение', model: 'Claude', role: 'свести', maxWords: 1000,
-          discipline: { lines: ['В конце — таблица: компонент, выбор, причина.'] }, inputs: ['s4.Доработки'], artifacts: ['Решение'], why: 'Одно решение вместо трёх.' }
+          "artifacts": [
+            "Предложения"
+          ],
+          "why": "Три независимых предложения."
+        },
+        {
+          "id": "s2",
+          "block": "round",
+          "title": "Критика",
+          "order": "sequential",
+          "inputs": [
+            "s1.Предложения"
+          ],
+          "artifacts": [
+            "Замечания"
+          ],
+          "models": [
+            {
+              "name": "GPT",
+              "role": "критик",
+              "task": "Найди в каждом предложении три главных риска и предложи, как их снизить.",
+              "discipline": {
+                "lines": [
+                  "Риски нумеруй: 1, 2, 3."
+                ]
+              }
+            },
+            {
+              "name": "Claude",
+              "role": "архитектор",
+              "discipline": {
+                "limit": "[RESPONSE_LIMIT] Не больше {слов} слов."
+              }
+            }
+          ],
+          "why": "Найти риски до выбора."
+        },
+        {
+          "id": "s3",
+          "block": "round",
+          "title": "Доработка",
+          "task": "Исправь своё предложение по замечаниям.",
+          "inputs": [
+            "s1.Предложения",
+            "s2.Замечания"
+          ],
+          "artifacts": [
+            "Доработки"
+          ],
+          "models": [
+            {
+              "name": "Claude",
+              "role": "архитектор"
+            },
+            {
+              "name": "GPT",
+              "role": "критик"
+            },
+            {
+              "name": "Gemini",
+              "role": "аналитик",
+              "maxWords": 500
+            }
+          ],
+          "why": "Учесть критику."
+        },
+        {
+          "id": "s4",
+          "block": "synthesis",
+          "title": "Итоговое решение",
+          "model": "Claude",
+          "role": "свести",
+          "maxWords": 1000,
+          "discipline": {
+            "lines": [
+              "В конце — таблица: компонент, выбор, причина."
+            ]
+          },
+          "inputs": [
+            "s3.Доработки"
+          ],
+          "artifacts": [
+            "Решение"
+          ],
+          "why": "Одно решение вместо трёх."
+        }
       ]
     }
   };
