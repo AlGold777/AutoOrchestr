@@ -6,7 +6,7 @@
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '34';
+  const STAND_VERSION = '35';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -1400,11 +1400,11 @@
     let doc;
     try { doc = JSON.parse(text); } catch (error) { return false; }
     if (!isObj(doc) || !('schemaVersion' in doc) || !Array.isArray(doc.steps)) return false;
-    // Имя файла «v2.Название.json»: номер версии уходит в version схемы, остальное — название.
+    // Имя файла «Название v2.json»: номер версии уходит в version схемы, остальное — название.
     const base = fileName.replace(/\.json$/i, '');
-    const ver = /^v(\d+)\.(.+)$/.exec(base);
-    const { schema, warnings } = root.ProtoBasicExport.fromBasic(doc, { name: ver ? ver[2] : base });
-    if (ver && Number(ver[1]) >= 1) schema.version = Number(ver[1]);
+    const ver = /^(.+?) v(\d+)$/.exec(base);
+    const { schema, warnings } = root.ProtoBasicExport.fromBasic(doc, { name: ver ? ver[1] : base });
+    if (ver && Number(ver[2]) >= 1) schema.version = Number(ver[2]);
     const now = new Date().toISOString();
     const tpl = { id: uid(), name: uniqueName(cut(schema.task, 48)), savedAt: now, schema: pickSchema(schema), comment: '' };
     catalog.templates.push(tpl);
@@ -1424,7 +1424,7 @@
     const errors = root.BasicSchema?.validate(schema) || [];
     if (errors.length) { toast(`Экспорт в Basic невозможен: ${errors.slice(0, 3).map((e) => `${e.path ? `${e.path}: ` : ''}${e.message}`).join('; ')}${warnings.length ? `\n${warnings.slice(0, 4).join('\n')}` : ''}`); return; }
     const name = (own(stand.schema.task) ? cut(stand.schema.task, 48) : 'schema').replace(/[\\/:*?"<>|]+/g, ' ').trim();
-    const versioned = `v${Number.isInteger(stand.schema.version) && stand.schema.version >= 1 ? stand.schema.version : 1}.${name}`;
+    const versioned = `${name} v${Number.isInteger(stand.schema.version) && stand.schema.version >= 1 ? stand.schema.version : 1}`;
     const text = JSON.stringify(schema, null, 2);
     const note = warnings.length ? `\n${warnings.join('\n')}` : '';
     const download = () => {
