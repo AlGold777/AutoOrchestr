@@ -29,7 +29,7 @@ describe('Basic spec: the interface and the three layers', () => {
 
     expect(model.whole.map((item) => item.key)).toEqual([...SPEC_KEYS, 'ownerInvolvement', 'volume']);
     SPEC_KEYS.forEach((key) => expect(byKey(model.whole, key)).toMatchObject({ value: '', source: 'missing' }));
-    expect(byKey(model.whole, 'ownerInvolvement')).toMatchObject({ source: 'schema', value: 'владелец решает после каждого этапа' });
+    expect(byKey(model.whole, 'ownerInvolvement')).toMatchObject({ source: 'schema', value: 'User решает после каждого этапа' });
     expect(byKey(model.whole, 'volume').value).toContain('этапов: 2; участников: 2; запросов не меньше 3');
 
     expect(model.scheme.stages.map((item) => item.title)).toEqual(['Раунд 1', 'Итоговый синтез']);
@@ -174,12 +174,12 @@ describe('Basic spec: the owner, the participants and the stage kinds', () => {
       ]
     };
     const model = Spec.build(schema);
-    expect(byKey(model.whole, 'ownerInvolvement').value).toBe('владелец решает только при проблемах; утверждает этапы: Раунд 2; этапы владельца: Владелец s01');
-    expect(model.stages[1]).toMatchObject({ kindLabel: 'владелец', count: 0, participants: [] });
-    expect(model.stages[1].owner.value).toBe('этап выполняет владелец');
+    expect(byKey(model.whole, 'ownerInvolvement').value).toBe('User решает только при проблемах; утверждает этапы: Раунд 2; этапы User: User s01');
+    expect(model.stages[1]).toMatchObject({ kindLabel: 'User', count: 0, participants: [] });
+    expect(model.stages[1].owner.value).toBe('этап выполняет User');
     expect(model.stages[1].order.value).toBe('не применяется');
     expect(model.stages[1].task).toMatchObject({ value: 'Утвердить', source: 'schema' });
-    expect(model.stages[2].owner.value).toBe('владелец утверждает ответ этапа');
+    expect(model.stages[2].owner.value).toBe('User утверждает ответ этапа');
     expect(model.stages[2].order.value).toBe('параллельно; мнения участников независимы');
     expect(model.stages[2].task).toMatchObject({ value: '', source: 'default' });
     // The owner reads r1 (its input); r2 reads the owner by default (previous), so the owner's output name is the label.
@@ -257,7 +257,7 @@ describe('Basic spec: the Basic fixture S01–S30', () => {
     const md = Spec.toMarkdown(model);
     model.stages.forEach((stage) => expect(md).toContain(`## ${stage.number}. ${stage.title.value}`));
     expect(md).toContain('## Схема процесса');
-    expect(byKey(model.whole, 'ownerInvolvement').value).toContain('владелец решает только при проблемах');
+    expect(byKey(model.whole, 'ownerInvolvement').value).toContain('User решает только при проблемах');
   });
 });
 

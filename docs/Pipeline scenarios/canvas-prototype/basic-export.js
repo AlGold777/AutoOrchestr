@@ -79,7 +79,7 @@
       if (Object.keys(run).length) result.run = run;
     }
     result.steps = out;
-    if (!out.some((st) => st.kind === 'round' || st.kind === 'owner')) warnings.push('Нечего экспортировать: в схеме нет раунда или владельца.');
+    if (!out.some((st) => st.kind === 'round' || st.kind === 'owner')) warnings.push('Нечего экспортировать: в схеме нет раунда или этапа User.');
     return { schema: result, warnings };
   }
 

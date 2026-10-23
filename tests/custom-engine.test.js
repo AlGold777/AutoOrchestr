@@ -293,7 +293,7 @@ describe('Custom engine', () => {
       parseAsks: (value) => (/\[\[ASK: ([^|]+)/.exec(value) ? [{ question: /\[\[ASK: ([^|]+)/.exec(value)[1].trim() }] : []),
       askOwner: async (asks) => asks.map((item) => ({ question: item.question, answer: 'неделя' }))
     });
-    expect(calls[1].prompts.B).toContain('Ответы владельца на вопросы:\n- Срок?: неделя');
+    expect(calls[1].prompts.B).toContain('Ответы User на вопросы:\n- Срок?: неделя');
   });
 
   test('the journal names step, model, attempt, input and the request id', async () => {

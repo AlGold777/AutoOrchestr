@@ -13,8 +13,8 @@
   const CONTROL_KINDS = ['gate', 'route', 'owner'];
   // The steps whose answer a later step can take as input (an owner's answer is its own text).
   const ANSWER_KINDS = ['round', 'synthesis', 'owner'];
-  const KIND_LABEL = Object.freeze({ round: 'раунд', synthesis: 'синтез', gate: 'проверка', route: 'маршрут', owner: 'владелец' });
-  const CONFLICT_TEXT = Object.freeze({ stop: 'остановка', first: 'берётся первый подходящий', owner: 'решает владелец' });
+  const KIND_LABEL = Object.freeze({ round: 'раунд', synthesis: 'синтез', gate: 'проверка', route: 'маршрут', owner: 'User' });
+  const CONFLICT_TEXT = Object.freeze({ stop: 'остановка', first: 'берётся первый подходящий', owner: 'решает User' });
   const SPEC_FIELDS = Object.freeze([
     ['purpose', 'Назначение'], ['inputs', 'Исходные данные'], ['result', 'Итоговый результат'], ['application', 'Применение результата'],
     ['readiness', 'Критерии готовности'], ['rules', 'Общие правила и ограничения'], ['boundaries', 'Границы'], ['failure', 'Поведение при сбое']
@@ -105,14 +105,14 @@
       return [
         `проверяющие: ${pass === 'any' ? 'достаточно одного прошедшего' : 'нужны все прошедшие'}`,
         `при прохождении: ${'onPass' in step ? actionText(step.onPass, titleOf) : 'дальше по порядку'}`,
-        `при провале: ${isObject(onFail) ? actionText(onFail, titleOf) : (onFail === 'ask' ? 'спросить владельца' : 'остановка')}`
+        `при провале: ${isObject(onFail) ? actionText(onFail, titleOf) : (onFail === 'ask' ? 'спросить User' : 'остановка')}`
       ];
     }
     if (step.kind !== 'route' || !isObject(step.select)) return [];
     const select = step.select;
     const lines = [];
     if (select.by === 'model') lines.push(`выбирает модель «${enabledModels(step)[0]?.name ?? ''}»`);
-    else if (select.by === 'owner') lines.push('выбирает владелец');
+    else if (select.by === 'owner') lines.push('выбирает User');
     else lines.push(`выбирает по правилу; при нескольких подходящих: ${CONFLICT_TEXT[select.conflict ?? Schema.DEFAULTS.route.conflict] || ''}`);
     (Array.isArray(select.cases) ? select.cases : []).filter(isObject).forEach((item) => {
       lines.push(`вариант «${textOf(item.label) || item.id}»: ${actionText(item.action, titleOf)}`);
@@ -216,7 +216,7 @@
         }
       }
 
-      const owner = step.kind === 'owner' ? 'этап выполняет владелец' : (step.owner === 'approve' ? 'владелец утверждает ответ этапа' : 'не требуется');
+      const owner = step.kind === 'owner' ? 'этап выполняет User' : (step.owner === 'approve' ? 'User утверждает ответ этапа' : 'не требуется');
       const result = {
         number: entry.number, ref: entry.ref, kind: entry.kind, kindLabel: KIND_LABEL[entry.kind] || String(entry.kind),
         title: entry.title, goal: entry.goal, rules: entry.rules, quality: entry.quality,
@@ -225,7 +225,7 @@
         input: field('input', 'Вход', input, 'schema'),
         output: field('output', 'Выход', outputText(step, entry, run), 'schema'),
         task,
-        owner: field('owner', 'Владелец', owner, 'schema'),
+        owner: field('owner', 'User', owner, 'schema'),
         transitions: transitionsOf(step, titleOf)
       };
       if (entry.kind === 'gate') result.criteria = field('criteria', 'Критерии', Array.isArray(step.criteria) ? step.criteria.filter(textOf).join('; ') : '', Array.isArray(step.criteria) ? 'schema' : 'missing');
@@ -235,13 +235,13 @@
     // The whole: who decides, and the volume (the requests are at least one per participant; repeats are not counted).
     const approvals = entries.filter((entry) => entry.raw.owner === 'approve').map((entry) => entry.title.value);
     const ownerSteps = entries.filter((entry) => entry.kind === 'owner').map((entry) => entry.title.value);
-    const ownerParts = [run.policy === 'auto' ? 'владелец решает только при проблемах' : 'владелец решает после каждого этапа'];
+    const ownerParts = [run.policy === 'auto' ? 'User решает только при проблемах' : 'User решает после каждого этапа'];
     if (approvals.length) ownerParts.push(`утверждает этапы: ${approvals.join(', ')}`);
-    if (ownerSteps.length) ownerParts.push(`этапы владельца: ${ownerSteps.join(', ')}`);
+    if (ownerSteps.length) ownerParts.push(`этапы User: ${ownerSteps.join(', ')}`);
     const requests = entries.reduce((sum, entry) => sum + entry.count, 0);
     const multi = entries.filter((entry) => entry.count > 1).map((entry) => entry.title.value);
     const volume = `этапов: ${entries.length}; участников: ${participantKeys.size}; запросов не меньше ${requests} (точное число зависит от повторов и переходов); этапы с несколькими участниками: ${multi.length ? multi.join(', ') : 'нет'}`;
-    whole.push(field('ownerInvolvement', 'Участие владельца', ownerParts.join('; '), 'schema'), field('volume', 'Объём', volume, 'schema'));
+    whole.push(field('ownerInvolvement', 'Участие User', ownerParts.join('; '), 'schema'), field('volume', 'Объём', volume, 'schema'));
 
     const filled = log.filter((item) => item.filled).length;
     return {

@@ -11,7 +11,7 @@
         "owner:s01"
       ],
       "participants": 1,
-      "notes": "Producer (r1) затем Owner: text owner step (owner:s01); владелец получает ответ Producer (input: r1) и утверждает Decision Policy.",
+      "notes": "Producer (r1) затем Owner: text owner step (owner:s01); User получает ответ Producer (input: r1) и утверждает Decision Policy.",
       "mechanics": "доказана"
     },
     {
@@ -60,7 +60,7 @@
         "r4"
       ],
       "participants": 2,
-      "notes": "Два независимых рецензента, parallel, require 2. В документе у S05 только эскалация владельцу: подтверждение владельца не задано.",
+      "notes": "Два независимых рецензента, parallel, require 2. В документе у S05 только эскалация User: подтверждение User не задано.",
       "mechanics": "доказана"
     },
     {
@@ -162,7 +162,7 @@
         "route:chg13"
       ],
       "participants": 3,
-      "notes": "owner: approve; gate G1 (ask); CHG13 — выбор владельца «вернуться к S19».",
+      "notes": "owner: approve; gate G1 (ask); CHG13 — выбор User «вернуться к S19».",
       "mechanics": "доказана"
     },
     {
@@ -213,7 +213,7 @@
         "route:chg17"
       ],
       "participants": 4,
-      "notes": "Артефакт aip; gate G2 (ask). CHG17 — выбор владельца «вернуться к S25» после CHG25 (S25 → S16 → S17 → G2).",
+      "notes": "Артефакт aip; gate G2 (ask). CHG17 — выбор User «вернуться к S25» после CHG25 (S25 → S16 → S17 → G2).",
       "mechanics": "доказана"
     },
     {
@@ -226,7 +226,7 @@
         "route:chg18"
       ],
       "participants": 2,
-      "notes": "Два независимых участника (Claude S18-a, GPT S18-b), chat new. Два ID одной модели в шаге страница не устанавливает (A06), это проверяется engine-тестом. CHG19: после пересчёта S18 владелец возвращает прогон к S19 (route:chg18, return; required-источники r15, r18, r19 проверяются до решения).",
+      "notes": "Два независимых участника (Claude S18-a, GPT S18-b), chat new. Два ID одной модели в шаге страница не устанавливает (A06), это проверяется engine-тестом. CHG19: после пересчёта S18 User возвращает прогон к S19 (route:chg18, return; required-источники r15, r18, r19 проверяются до решения).",
       "mechanics": "доказана"
     },
     {
@@ -310,15 +310,15 @@
       "stage": "S25",
       "name": "Spikes / Platform Verification / Technology Research",
       "phase": "evidence",
-      "roles": "Verifier (шаг владельца)",
+      "roles": "Verifier (шаг User)",
       "refs": [
         "owner:s25",
         "route:chg25"
       ],
       "participants": 0,
-      "notes": "owner:s25 — текст владельца. CHG25 — выбор владельца «к AIP (S16)» с повторным G2 и возвратом.",
+      "notes": "owner:s25 — текст User. CHG25 — выбор User «к AIP (S16)» с повторным G2 и возвратом.",
       "mechanics": "ждёт бизнес-решения",
-      "mechanicsNote": "Возврат CHG25 → AIP (S16) убран (в схеме остановка). Состав пересчёта S24 (r27) до ввода владельца ТЗ не задаёт: без него r28 останавливается missing_input (остановка доказана, продолжение нет)."
+      "mechanicsNote": "Возврат CHG25 → AIP (S16) убран (в схеме остановка). Состав пересчёта S24 (r27) до ввода User ТЗ не задаёт: без него r28 останавливается missing_input (остановка доказана, продолжение нет)."
     },
     {
       "stage": "S26",

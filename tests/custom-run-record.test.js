@@ -159,7 +159,7 @@ test('the Disput Flow JSON export carries the latest Custom run record, redacted
 
 
 // Version 2 (ТЗ 8.2): the registry and the snapshot keep their texts by reference; the texts are the record's own.
-function recordedOwnerRun({ runId = 'run-owner', text = 'Тезис владельца' } = {}) {
+function recordedOwnerRun({ runId = 'run-owner', text = 'Тезис User' } = {}) {
   const record = Record.createRun({ runId, pipelineName: 'Mine', task: 'Задача T', steps: [{ ref: 'owner:evidence', kind: 'owner' }] });
   const steps = [{ ref: 'owner:evidence', kind: 'owner', task: 'Дай тезис', output: { format: 'json', requiredFields: ['/thesis'], artifacts: [{ id: 'thesis', name: 'Тезис', pointer: '/thesis' }] } }];
   return Engine.run({
@@ -179,8 +179,8 @@ describe('Custom run record, version 2 (8.2)', () => {
     expect(result.artifacts[0].content.answerRef).toBeTruthy();
     await store.save(record);
     const back = await store.load('run-owner');
-    expect(Record.textOf(back, back.artifacts[0].content.answerRef)).toBe(JSON.stringify({ thesis: 'Тезис владельца' }));
-    expect(Record.exportRun(back).artifacts[0]).toMatchObject({ id: 'thesis', name: 'Тезис', text: JSON.stringify({ thesis: 'Тезис владельца' }), source: { step: 'owner:evidence', participant: 'owner', visit: 1 } });
+    expect(Record.textOf(back, back.artifacts[0].content.answerRef)).toBe(JSON.stringify({ thesis: 'Тезис User' }));
+    expect(Record.exportRun(back).artifacts[0]).toMatchObject({ id: 'thesis', name: 'Тезис', text: JSON.stringify({ thesis: 'Тезис User' }), source: { step: 'owner:evidence', participant: 'owner', visit: 1 } });
   });
 
   test('a new record is version 2; an attempt key is the step, participant, visit, attempt and phase', () => {
@@ -222,7 +222,7 @@ describe('Custom run record, version 2 (8.2)', () => {
     const { record, result } = await recordedOwnerRun();
     Record.setSnapshot(record, { schema: [{ ref: 'owner:evidence', kind: 'owner' }], runSettings: {}, state: result.state, routes: [], ownerAnswers: result.ownerAnswers });
     const ref = record.put('Замечание по тезису');
-    Object.assign(record.snapshot, { loopCounters: { 'G1:onFail': 1 }, continuationStack: [], dependencies: {}, feedback: { 'owner:evidence': [{ label: 'Владелец', textRef: ref, pointer: '' }] } });
+    Object.assign(record.snapshot, { loopCounters: { 'G1:onFail': 1 }, continuationStack: [], dependencies: {}, feedback: { 'owner:evidence': [{ label: 'User', textRef: ref, pointer: '' }] } });
     const back = Record.revive(JSON.parse(JSON.stringify(Record.serialize(record))));
     expect(Record.canResume(back)).toBe(true);
     expect(Record.textOf(back, ref)).toBe('Замечание по тезису');
@@ -362,7 +362,7 @@ describe('Custom run record export is self-contained (R04)', () => {
     ];
     const FAIL = 'Разбор.\nНЕ ВЫПОЛНЕНО: x\nВЕРДИКТ: НЕ ПРОШЁЛ';
     const send = async (models, prompts) => { if (models.includes('C')) throw Object.assign(new Error('too long'), { code: 'context_full' }); return { byModel: Object.fromEntries(models.map((model) => [model, { text: model === 'A' ? 'a1' : FAIL, status: 'SUCCESS', attribution: 'verified', transportRequestId: model + '-1', sentPrompt: prompts[model] }])) }; };
-    const provideOwnerResult = async ({ stepRef }) => (stepRef === 'O0' ? { file: { name: 'brief.pdf', mime: 'application/pdf', size: fileContent.length, ref: fileRef } } : JSON.stringify({ thesis: 'Тезис владельца' }));
+    const provideOwnerResult = async ({ stepRef }) => (stepRef === 'O0' ? { file: { name: 'brief.pdf', mime: 'application/pdf', size: fileContent.length, ref: fileRef } } : JSON.stringify({ thesis: 'Тезис User' }));
     const result = await Engine.run({
       task: 'Задача T', steps, send, runId: 'run-full', provideOwnerResult,
       putText: (value) => record.put(value), getText: (ref) => (ref && record.texts[ref] !== undefined ? record.texts[ref] : undefined),
@@ -404,7 +404,7 @@ describe('Custom run record export is self-contained (R04)', () => {
     const { fileContent, fileRef, back } = await fullRun();
     const exported = JSON.parse(JSON.stringify(Record.exportRun(back)));
     expect(exported).toMatchObject({ version: 2, resumable: true, task: 'Задача T', stopReason: 'context_full' });
-    expect(exported.artifacts).toEqual([expect.objectContaining({ id: 'thesis', text: JSON.stringify({ thesis: 'Тезис владельца' }), source: expect.objectContaining({ step: 'O1', participant: 'owner' }) })]);
+    expect(exported.artifacts).toEqual([expect.objectContaining({ id: 'thesis', text: JSON.stringify({ thesis: 'Тезис User' }), source: expect.objectContaining({ step: 'O1', participant: 'owner' }) })]);
     const owner = exported.snapshot.results.find((item) => item.stepRef === 'O0');
     expect(owner.owner.file).toEqual({ name: 'brief.pdf', mime: 'application/pdf', size: fileContent.length, ref: fileRef });
     expect(exported.texts[fileRef]).toBe(fileContent);

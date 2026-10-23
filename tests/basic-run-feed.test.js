@@ -29,7 +29,7 @@ describe('Basic run feed: control events are short lines (2)', () => {
 
   test('a route names the chosen case and the reason of the choice', () => {
     expect(feed.route({ ref: 'r3', caseLabel: 'Доработать', reason: 'rule' })).toBe('Маршрут r3: вариант «Доработать», по правилу');
-    expect(feed.route({ ref: 'r3', caseLabel: 'Принять', reason: 'owner' })).toBe('Маршрут r3: вариант «Принять», выбрал владелец');
+    expect(feed.route({ ref: 'r3', caseLabel: 'Принять', reason: 'owner' })).toBe('Маршрут r3: вариант «Принять», выбрал User');
     expect(feed.route({ ref: 'r3', caseLabel: 'x', reason: 'unknown_reason' })).toBe('Маршрут r3: вариант «x», unknown_reason');
   });
 
@@ -38,8 +38,8 @@ describe('Basic run feed: control events are short lines (2)', () => {
   });
 
   test('a stop by a transition names the reason', () => {
-    const stopText = (reason) => ({ stopped: 'остановлено владельцем' })[reason] || reason;
-    expect(feed.transition({ from: 'g1', action: 'stop', reason: 'stopped' }, stopText)).toBe('Прогон остановлен после g1: остановлено владельцем');
+    const stopText = (reason) => ({ stopped: 'остановлено User' })[reason] || reason;
+    expect(feed.transition({ from: 'g1', action: 'stop', reason: 'stopped' }, stopText)).toBe('Прогон остановлен после g1: остановлено User');
   });
 });
 
@@ -48,7 +48,7 @@ describe('Basic run feed: stale versions and artifacts (3, 4)', () => {
     const source = { step: 'r1', participant: 'B', visit: 2 };
     expect(feed.artifactTitle({ name: 'Черновик', source, valid: true })).toBe('Черновик · участник B · заход 2');
     expect(feed.artifactTitle({ name: 'Черновик', source, valid: false })).toBe('Черновик · участник B · заход 2 · устарело');
-    expect(feed.artifactTitle({ name: 'Итог', source: { step: 'final', participant: 'owner', visit: 1 } })).toBe('Итог · владелец · заход 1');
+    expect(feed.artifactTitle({ name: 'Итог', source: { step: 'final', participant: 'owner', visit: 1 } })).toBe('Итог · User · заход 1');
   });
 
   test('the text of an artifact is the whole answer, or the value at its pointer (a text as it is, a list as JSON)', () => {

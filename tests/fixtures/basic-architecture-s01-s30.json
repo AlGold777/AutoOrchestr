@@ -529,7 +529,7 @@
           }
         ]
       },
-      "task": "S13, Decision Closer: зафиксировать продуктовый baseline; владелец утверждает."
+      "task": "S13, Decision Closer: зафиксировать продуктовый baseline; User утверждает."
     },
     {
       "ref": "gate:g1",
@@ -1133,7 +1133,7 @@
           }
         ]
       },
-      "task": "S22, Decision Closer: выбрать направление в пределах authority; владелец утверждает A2+."
+      "task": "S22, Decision Closer: выбрать направление в пределах authority; User утверждает A2+."
     },
     {
       "ref": "gate:g3",
@@ -1581,7 +1581,7 @@
           }
         ]
       },
-      "task": "S30, Decision Closer: зафиксировать CAB после G4; владелец утверждает."
+      "task": "S30, Decision Closer: зафиксировать CAB после G4; User утверждает."
     },
     {
       "ref": "gate:g4",

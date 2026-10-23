@@ -9810,7 +9810,7 @@ window.ProtoState = {
     gate: 'Ворота: решает модератор',
     pending: 'Ожидает',
     running: 'Выполняется',
-    awaiting_participant: 'Ждёт участника',
+    awaiting_participant: 'Ответ участника',
     completed: 'Выполнен',
     failed: 'Ошибка',
     cancelled: 'Отменён'
@@ -9865,7 +9865,7 @@ window.ProtoState = {
         };
         if (roleChoice.settings) {
           model.settings = settingsModel(roleChoice.settings, { ...roleChoice, enabledCount: working.length });
-          if (model.settings.owner.checked) model.badges.push('владелец: одобрение');
+          if (model.settings.owner.checked) model.badges.push('User: одобрение');
         }
         return model;
       }
@@ -10070,7 +10070,7 @@ window.ProtoState = {
     ownerBox.disabled = disabled;
     ownerBox.addEventListener('change', () => emit('owner', ownerBox.checked ? 'approve' : ''));
     const ownerWrap = el(doc, 'label', 'stage-card-setting stage-card-owner');
-    ownerWrap.append(ownerBox, doc.createTextNode(' Спросить владельца после этапа'));
+    ownerWrap.append(ownerBox, doc.createTextNode(' Спросить User после этапа'));
     container.append(ownerWrap);
 
     const output = fields.output;
@@ -10224,9 +10224,9 @@ window.ProtoState = {
   // The run feed of Basic (results.js): pure texts of the events and of the answer cards. Old events without the
   // new fields give the same text as before; a participant id equal to the model name is not repeated.
   const ROUTE_REASON = {
-    rule: 'по правилу', otherwise: 'иначе', model: 'выбрала модель', owner: 'выбрал владелец',
-    conflict_first: 'первый из подходящих', conflict_owner: 'выбрал владелец из подходящих',
-    invalid_route: 'ответ модели не распознан, выбрал владелец'
+    rule: 'по правилу', otherwise: 'иначе', model: 'выбрала модель', owner: 'выбрал User',
+    conflict_first: 'первый из подходящих', conflict_owner: 'выбрал User из подходящих',
+    invalid_route: 'ответ модели не распознан, выбрал User'
   };
   const feed = Object.freeze({
     // The label of an answer card: the step, the participant (when it is not the model) and the visit (from the second).
@@ -10250,7 +10250,7 @@ window.ProtoState = {
     },
     // The title of an artifact in the registry: name, participant (owner for an owner step), visit, validity.
     artifactTitle({ name = '', source = {}, valid = true } = {}) {
-      const author = source.participant === 'owner' ? 'владелец' : `участник ${source.participant}`;
+      const author = source.participant === 'owner' ? 'User' : `участник ${source.participant}`;
       return `${name} · ${author} · заход ${source.visit}${valid === false ? ' · устарело' : ''}`;
     },
     // The text of an artifact: the whole answer for an empty pointer, else the value at the pointer (JSON as text).
@@ -10409,15 +10409,15 @@ window.ProtoState = {
     container.append(passWrap);
 
     renderTransition(container, { field: 'onFail', label: 'При провале', view: model.onFail, refs: model.refs, disabled, withStop: false, emit: send,
-      options: [{ value: 'stop', label: 'Остановить прогон' }, { value: 'ask', label: 'Спросить владельца' }, { value: 'goto', label: 'Перейти к шагу' }] });
+      options: [{ value: 'stop', label: 'Остановить прогон' }, { value: 'ask', label: 'Спросить User' }, { value: 'goto', label: 'Перейти к шагу' }] });
     renderTransition(container, { field: 'onPass', label: 'После успеха', view: model.onPass, refs: model.refs, disabled, withStop: false, emit: send,
       options: [{ value: 'next', label: 'Следующий шаг' }, { value: 'goto', label: 'Перейти к шагу' }] });
   }
 
   // The window of a route (6.2). `by` rule reads the step's input (the sources numbered in the conditions); model gives the
   // one model that chooses and its task; owner gives nothing (the owner chooses). A composite condition (all, any) is kept as it is.
-  const ROUTE_BY_LABELS = [['', '— выберите —'], ['rule', 'По правилу (условие на данных)'], ['model', 'Выбирает модель'], ['owner', 'Выбирает владелец']];
-  const ROUTE_CONFLICT_LABELS = [['', 'По умолчанию: остановить'], ['first', 'Первый подходящий'], ['owner', 'Выбирает владелец']];
+  const ROUTE_BY_LABELS = [['', '— выберите —'], ['rule', 'По правилу (условие на данных)'], ['model', 'Выбирает модель'], ['owner', 'Выбирает User']];
+  const ROUTE_CONFLICT_LABELS = [['', 'По умолчанию: остановить'], ['first', 'Первый подходящий'], ['owner', 'Выбирает User']];
   const ROUTE_OPS = ['eq', 'in', 'exists'];
   const isComposite = (cond) => isPlain(cond) && (Array.isArray(cond.all) || Array.isArray(cond.any));
   // A value as the window shows it: a string as it is, anything else as JSON.
@@ -10681,13 +10681,13 @@ window.ProtoState = {
     const goalWrap = el(doc, 'label', 'stage-card-setting stage-card-owner-goal-label');
     goalWrap.append(doc.createTextNode('Назначение этапа '), goal);
     container.append(goalWrap);
-    container.append(el(doc, 'p', 'stage-card-muted', 'Для чего этот этап и что человек должен сделать — видит владелец в окне вопроса'));
+    container.append(el(doc, 'p', 'stage-card-muted', 'Для чего этот этап и что человек должен сделать — видит User в окне вопроса'));
     const task = el(doc, 'textarea', 'stage-card-owner-task');
     task.rows = 4; task.value = model.task; task.disabled = disabled; task.spellcheck = false;
-    task.setAttribute('aria-label', 'Что должен предоставить владелец');
+    task.setAttribute('aria-label', 'Что должен предоставить User');
     task.addEventListener('change', () => send({ field: 'task', value: task.value }));
     const taskWrap = el(doc, 'label', 'stage-card-setting stage-card-owner-task-label');
-    taskWrap.append(doc.createTextNode('Что должен предоставить владелец '), task);
+    taskWrap.append(doc.createTextNode('Что должен предоставить User '), task);
     container.append(taskWrap);
 
     const output = model.output;
@@ -10718,7 +10718,7 @@ window.ProtoState = {
 
   // The text of a control on its canvas card (the owner's words; a switched-off checker is not named).
   // «Шаг после этапа»: the way to add a gate, a route or an owner step lives in the card of the stage it follows.
-  const ADD_CONTROL_OPTIONS = [['', '— нет —'], ['gate', 'Проверка (gate)'], ['route', 'Маршрут (route)'], ['owner', 'Владелец (owner)']];
+  const ADD_CONTROL_OPTIONS = [['', '— нет —'], ['gate', 'Проверка (gate)'], ['route', 'Маршрут (route)'], ['owner', 'User (owner)']];
   function renderAddControl(container, { disabled = false, note = '', onAdd = null } = {}) {
     const doc = container.ownerDocument;
     const select = el(doc, 'select', 'stage-card-add-control');
@@ -10776,7 +10776,7 @@ window.ProtoState = {
     if (step.kind === 'route') {
       const by = isPlain(step.select) ? step.select.by : '';
       const count = isPlain(step.select) && Array.isArray(step.select.cases) ? step.select.cases.length : 0;
-      const kind = { rule: 'по правилу', model: 'выбирает модель', owner: 'выбирает владелец' }[by] || 'вид не выбран';
+      const kind = { rule: 'по правилу', model: 'выбирает модель', owner: 'выбирает User' }[by] || 'вид не выбран';
       return `${kind}, вариантов: ${count}`;
     }
     return '';
@@ -12087,7 +12087,7 @@ window.ProtoState = {
     truncation_marker: 'оборван',
     incomplete_ending: 'оборван на середине',
     error_output: 'ошибка вместо ответа',
-    closed_by_owner: 'раунд закрыт владельцем',
+    closed_by_owner: 'раунд закрыт User',
     too_long: 'длиннее допустимого',
     missing_section: 'не содержит раздел',
     invalid_output: 'не в формате ответа',
@@ -12099,9 +12099,9 @@ window.ProtoState = {
   const STOP_TEXT = Object.freeze({
     steps_done: 'все шаги пройдены',
     context_full: 'промпт не помещается в бюджет',
-    stopped: 'остановлено владельцем',
+    stopped: 'остановлено User',
     cancelled: 'остановлено пользователем',
-    no_decision: 'нет принятых ответов, решение владельца не получено',
+    no_decision: 'нет принятых ответов, решение User не получено',
     missing_input: 'обязательный вход не получен, запрос не отправлен',
     gate_failed: 'проверка не пройдена',
     route_not_found: 'ни один вариант маршрута не подошёл, иначе не задан',
@@ -12120,7 +12120,7 @@ window.ProtoState = {
   const refKey = (step) => step.ref ?? `#${step.index}`;
   const stepLabel = (step) => {
     if (step.kind === 'gate') return `Проверка ${step.ref}`;
-    if (step.kind === 'owner') return `Владелец ${step.ref}`;
+    if (step.kind === 'owner') return `User ${step.ref}`;
     return step.kind === 'synthesis' ? `Синтез после раунда ${step.afterRound}` : `Раунд ${step.round}`;
   };
   // The mode the prompt names: a list of sources is 'sources', the strings stay as they are.
@@ -12168,7 +12168,7 @@ window.ProtoState = {
       if (formatBlock(output)) parts.push(formatBlock(output));
       if (step.kind === 'gate') parts.push(gateBlock(step, output));
       if (step.kind === 'route') parts.push(routeBlock(step));
-      if (ownerAnswers.length) parts.push(`Ответы владельца на вопросы:\n${ownerAnswers.map((item) => `- ${item.question}: ${item.answer}`).join('\n')}`);
+      if (ownerAnswers.length) parts.push(`Ответы User на вопросы:\n${ownerAnswers.map((item) => `- ${item.question}: ${item.answer}`).join('\n')}`);
       if (askInstruction) parts.push(askInstruction);
       return parts.join('\n\n');
     }
@@ -12186,7 +12186,7 @@ window.ProtoState = {
     if (step.kind === 'gate') parts.push(gateBlock(step, output));
     if (step.kind === 'route') parts.push(routeBlock(step));
     if (text(model.extra)) parts.push(`Дополнительно для тебя:\n${text(model.extra)}`);
-    if (ownerAnswers.length) parts.push(`Ответы владельца на вопросы:\n${ownerAnswers.map((item) => `- ${item.question}: ${item.answer}`).join('\n')}`);
+    if (ownerAnswers.length) parts.push(`Ответы User на вопросы:\n${ownerAnswers.map((item) => `- ${item.question}: ${item.answer}`).join('\n')}`);
     if (askInstruction) parts.push(askInstruction);
     return parts.join('\n\n');
   }
@@ -12366,7 +12366,7 @@ window.ProtoState = {
     if (select.by === 'model') {
       if (models.length !== 1) return fail('invalid_field', 'models', 'маршрут по модели: ровно один включённый участник');
       if (!text(step.task) && !text(models[0]?.task)) return fail('invalid_field', 'task', 'задание маршрута по модели: непустой текст');
-    } else if (models.length) return fail('invalid_field', 'models', 'у маршрута по правилу и владельцу моделей нет');
+    } else if (models.length) return fail('invalid_field', 'models', 'у маршрута по правилу и User моделей нет');
     if (select.by === 'rule' && !Array.isArray(step.input)) return fail('invalid_input', 'input', 'правило читает точные источники: укажите input списком');
     if ('conflict' in select && (select.by !== 'rule' || !['stop', 'first', 'owner'].includes(select.conflict))) return fail('invalid_field', 'select.conflict', 'конфликт выбора: stop, first или owner, только для правила');
     if ('otherwise' in select && select.by !== 'rule') return fail('invalid_field', 'select.otherwise', 'вариант по умолчанию задаётся только для правила');
@@ -12416,8 +12416,8 @@ window.ProtoState = {
     if (step.kind !== undefined && !EXECUTED_KINDS.includes(step.kind)) return fail('unsupported_kind', 'kind', `вид «${step.kind}» движок пока не исполняет`);
     if (step.kind === 'owner') {
       // The owner (8.1) gives a text or a file; it has no models. Its input (N07) is checked below like a model's input.
-      if (!text(step.task)) return fail('invalid_field', 'task', 'задание владельца: непустой текст');
-      if (Array.isArray(step.models) && step.models.length) return fail('invalid_field', 'models', 'у владельца нет моделей');
+      if (!text(step.task)) return fail('invalid_field', 'task', 'задание User: непустой текст');
+      if (Array.isArray(step.models) && step.models.length) return fail('invalid_field', 'models', 'у User нет моделей');
     }
     if (step.kind === 'route') {
       const problem = routeProblem(step, fail);
@@ -12621,7 +12621,7 @@ window.ProtoState = {
     const transitionProblem = transitionsProblem(plan);
     if (transitionProblem) throw transitionProblem;
     if (plan.some((step) => step.kind === 'owner') && typeof provideOwnerResult !== 'function') {
-      throw new Error('provide_owner_required: шагу владельца нужен callback provideOwnerResult (вопрос владельцу)');
+      throw new Error('provide_owner_required: шагу User нужен callback provideOwnerResult (вопрос User)');
     }
     const ownerAnswers = [];
     const history = []; // every request: step, model, participant, attempt, prompt, outcome
@@ -12982,9 +12982,9 @@ window.ProtoState = {
     // its declared artifacts are registered; a binary file is kept as a reference (no text, no output check).
     const fileOf = (file) => ({ name: file.name, mime: file.mime, size: file.size, ref: file.ref });
     function ownerVerdict(step, reply) {
-      const at = `шаг «${step.ref}» · ответ владельца`;
+      const at = `шаг «${step.ref}» · ответ User`;
       const file = isPlain(reply) && isPlain(reply.file) ? reply.file : null;
-      if (!file && typeof reply !== 'string') throw new EngineError('invalid_owner_result', at, 'ответ владельца: текст или объект файла');
+      if (!file && typeof reply !== 'string') throw new EngineError('invalid_owner_result', at, 'ответ User: текст или объект файла');
       if (file) {
         if (!(text(file.name) && text(file.mime) && Number.isSafeInteger(file.size) && file.size >= 0 && text(file.ref))) {
           throw new EngineError('invalid_owner_result', at, 'файл: имя, MIME, размер и ссылка на сохранённое содержимое');
@@ -13014,7 +13014,7 @@ window.ProtoState = {
       const input = items.map(ownerItemOf);
       (step.output?.artifacts || []).forEach((declaration) => {
         if (declaration.revisionOf && !revisionItem(declaration, items)) {
-          throw new StopRun('missing_input', `ревизия «${declaration.id}»: владелец не получил версию, которую она дорабатывает; шаг «${step.ref}» не открыт`);
+          throw new StopRun('missing_input', `ревизия «${declaration.id}»: User не получил версию, которую она дорабатывает; шаг «${step.ref}» не открыт`);
         }
       });
       for (;;) {
@@ -13121,7 +13121,7 @@ window.ProtoState = {
       ...item, text: item.ok ? restoredText(item.textRef, `участник «${id}»`) : '' }]));
     const restoredOwner = (saved) => (saved.binary
       ? { binary: true, file: saved.file, textRef: null, text: '' }
-      : { text: restoredText(saved.textRef, 'ответ владельца'), textRef: saved.textRef, ...(saved.file ? { file: saved.file } : {}) });
+      : { text: restoredText(saved.textRef, 'ответ User'), textRef: saved.textRef, ...(saved.file ? { file: saved.file } : {}) });
     function restoreRun(saved) {
       if (!isPlain(saved)) throw new EngineError('resume_invalid', 'resume', 'состояние для продолжения: объект снимка');
       // A complete checkpoint holds every field of the state (V07). A missing `pc` would read as "the run is over" and end the
@@ -13326,7 +13326,7 @@ window.ProtoState = {
           } else {
             caseId = 'onFail';
             if (isPlain(step.onFail)) action = step.onFail;
-            else if (step.onFail !== 'ask') throw new StopRun('gate_failed', unmet.join('; ') || (entry.skipped ? 'шаг пропущен владельцем' : 'недостаточно ответов проверяющих'));
+            else if (step.onFail !== 'ask') throw new StopRun('gate_failed', unmet.join('; ') || (entry.skipped ? 'шаг пропущен User' : 'недостаточно ответов проверяющих'));
             else {
               // The decision of a failed gate is saved like the decision of a step: a reload does not ask it again.
               const gateKey = `${decidedKey}:gate`;
@@ -13469,7 +13469,7 @@ window.ProtoState = {
   const CONTROL_REF = Object.freeze({
     gate: 'ref проверки: «gate:<id>», id — латинские буквы, цифры, «_» и «-»',
     route: 'ref маршрута: «route:<id>», id — латинские буквы, цифры, «_» и «-»',
-    owner: 'ref владельца: «owner:<id>», id — латинские буквы, цифры, «_» и «-»'
+    owner: 'ref User: «owner:<id>», id — латинские буквы, цифры, «_» и «-»'
   });
   const ROUTE_BY = Object.freeze(['rule', 'model', 'owner']);
   const ROUTE_CONFLICT = Object.freeze(['stop', 'first', 'owner']);
@@ -13660,7 +13660,7 @@ window.ProtoState = {
       // The owner step has one participant, the synthetic id `owner`, and no model (3.3); a model with that id elsewhere is a model.
       if (steps[position].kind === 'owner') {
         if (participant === OWNER_PARTICIPANT) return true;
-        fail(at, 'у владельца один участник «owner»');
+        fail(at, 'у User один участник «owner»');
         return false;
       }
       const models = Array.isArray(steps[position].models) ? steps[position].models.filter(isObject) : [];
@@ -13736,7 +13736,7 @@ window.ProtoState = {
     const runnable = steps.some((step) => isObject(step) && (CONTROL_KINDS.includes(step.kind)
       || (step.kind === 'round' && Array.isArray(step.models) && step.models.some((model) => isObject(model) && model.enabled !== false))));
     if (runnable) return [];
-    return [{ path: 'steps', message: 'нет исполнимого шага: нужен раунд с включённой моделью или шаг проверки, маршрута или владельца' }];
+    return [{ path: 'steps', message: 'нет исполнимого шага: нужен раунд с включённой моделью или шаг проверки, маршрута или User' }];
   }
 
   // Errors before the first request: [{ path, message }]. A schema is never corrected silently.
@@ -13939,8 +13939,8 @@ window.ProtoState = {
     const checkControl = (step, path) => {
       const enabled = (Array.isArray(step.models) ? step.models : []).filter((model) => isObject(model) && model.enabled !== false);
       if (step.kind === 'owner') {
-        if (typeof step.task !== 'string' || !step.task.trim()) fail(`${path}.task`, 'задание владельца: непустой текст');
-        if (Array.isArray(step.models) && step.models.length) fail(`${path}.models`, 'у владельца нет моделей');
+        if (typeof step.task !== 'string' || !step.task.trim()) fail(`${path}.task`, 'задание User: непустой текст');
+        if (Array.isArray(step.models) && step.models.length) fail(`${path}.models`, 'у User нет моделей');
         return;
       }
       if (step.kind === 'gate') {
@@ -13960,7 +13960,7 @@ window.ProtoState = {
       if (select.by === 'model') {
         if (enabled.length !== 1) fail(`${path}.models`, 'маршрут по модели: ровно один включённый участник');
         if (typeof step.task !== 'string' || !step.task.trim()) fail(`${path}.task`, 'задание маршрута по модели: непустой текст');
-      } else if (Array.isArray(step.models) && step.models.length) fail(`${path}.models`, 'у маршрута по правилу и владельцу моделей нет');
+      } else if (Array.isArray(step.models) && step.models.length) fail(`${path}.models`, 'у маршрута по правилу и User моделей нет');
       if ('conflict' in select) {
         if (!rule) fail(`${path}.select.conflict`, 'конфликт выбора задаётся только для правила');
         else oneOf(select.conflict, ROUTE_CONFLICT, `${path}.select.conflict`, 'конфликт выбора');
@@ -13982,7 +13982,7 @@ window.ProtoState = {
           checkCondition(item.when, `${at2}.when`, inputs);
           if ('label' in item && typeof item.label !== 'string') fail(`${at2}.label`, 'название варианта: текст');
         } else {
-          if ('when' in item) fail(`${at2}.when`, 'условие только для правила: варианты модели и владельца описываются label');
+          if ('when' in item) fail(`${at2}.when`, 'условие только для правила: варианты модели и User описываются label');
           if (typeof item.label !== 'string' || !item.label.trim()) fail(`${at2}.label`, 'название варианта: непустой текст');
         }
       });
@@ -14003,7 +14003,7 @@ window.ProtoState = {
         if (!(Number.isSafeInteger(step.require) && step.require > 0)) fail(`${path}.require`, 'require: допустимо any, all или целое число больше 0');
         else if (enabledCount && step.require > enabledCount) fail(`${path}.require`, `требуется больше ответов, чем включённых участников: ${enabledCount}`);
       }
-      if ('owner' in step) oneOf(step.owner, OWNER_STEPS, `${path}.owner`, 'владелец шага');
+      if ('owner' in step) oneOf(step.owner, OWNER_STEPS, `${path}.owner`, 'User в шаге');
       if ('chat' in step) oneOf(step.chat, CHAT_MODES, `${path}.chat`, 'чат шага');
       if (typeof step.ref !== 'string' || !step.ref) fail(`${path}.ref`, 'ref шага не указан');
       else if (refs.has(step.ref)) fail(`${path}.ref`, `ref «${step.ref}» повторяется`);
@@ -14259,7 +14259,7 @@ window.ProtoState = {
       if (Object.keys(run).length) result.run = run;
     }
     result.steps = out;
-    if (!out.some((st) => st.kind === 'round' || st.kind === 'owner')) warnings.push('Нечего экспортировать: в схеме нет раунда или владельца.');
+    if (!out.some((st) => st.kind === 'round' || st.kind === 'owner')) warnings.push('Нечего экспортировать: в схеме нет раунда или этапа User.');
     return { schema: result, warnings };
   }
 
@@ -14332,7 +14332,7 @@ window.ProtoState = {
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '41';
+  const STAND_VERSION = '42';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -14348,7 +14348,7 @@ window.ProtoState = {
   };
   // Виды этапов, которых больше нет: в схеме их выражают обычными этапами (текст ошибки — в проверке).
   const REMOVED_BLOCKS = {
-    gate: 'Проверка — обычный этап моделей: критерии запишите в task, затем поставьте этап owner: человек читает вердикт и решает, нужна ли доработка',
+    gate: 'Проверка — обычный этап моделей: критерии запишите в task, затем поставьте этап owner: User читает вердикт и решает, нужна ли доработка',
     foreach: 'Перебора по пунктам нет: один этап модели с заданием на все пункты сразу',
     block: 'Готовой части нет: этап записывается обычным образом',
     synthesis: 'Синтез — это роль: запишите этап round из одной модели с role «свести» (models: [{ "name": "Claude", "role": "свести" }])',
@@ -14356,7 +14356,7 @@ window.ProtoState = {
     list: 'Список — обычный этап модели с артефактом «Список …»',
     source: 'Исходный материал — верхнеуровневый artifacts (name и content или attachment), ссылка в inputs: «in.Имя»',
     score: 'Оценка по баллам — round с ролью «жюри», веса записываются словами в task',
-    route: 'Ветвления в схеме нет: все этапы выполняются по порядку. Если нужно решение человека — поставьте этап owner с вопросом ask, а следующий этап читает его ответ',
+    route: 'Ветвления в схеме нет: все этапы выполняются по порядку. Если нужно решение User — поставьте этап owner с вопросом ask, а следующий этап читает его ответ',
     assemble: 'Склейка — просто новый артефакт: запишите этап round, который объединяет входы и выдаёт новый артефакт'
   };
   // Поля, которых больше нет: значение игнорируется, проверка предупреждает.
@@ -14366,11 +14366,11 @@ window.ProtoState = {
     weights: 'Веса записываются словами в task',
     request: 'Свой запрос не записывается: задание пишется в task'
   };
-  // Блоки, где работает человек: в холсте — зелёная рамка, в окне — «Назначение».
+  // Блоки, где работает User: в холсте — зелёная рамка, в окне — «Назначение».
   const HUMAN_BLOCKS = ['owner'];
   const KIND = {
     round: ['Раунд', 'ti-users'],
-    owner: ['Ответ человека', 'ti-user'], file: ['Файл', 'ti-file-export']
+    owner: ['Ответ User', 'ti-user'], file: ['Файл', 'ti-file-export']
   };
   // Этапы приложения (без нейросети): в холсте помечаются словом «приложение».
   const APP_BLOCKS = ['file'];
@@ -15214,12 +15214,12 @@ window.ProtoState = {
     }
     return modal;
   }
-  // «Назначение» — первый раздел окна человеческого блока: зачем он и что человек делает.
+  // «Назначение» — первый раздел окна блока User: зачем он и что делает User.
   const purposeSection = (st) => {
     if (!HUMAN_BLOCKS.includes(st.block)) return '';
     return `<div class="custom-card-marks proto-stand-purpose"><strong>Назначение</strong>
       <div class="custom-card-note">${esc(own(st.why) ? st.why : 'не задано')}</div>
-      <div class="custom-card-note"><b>Вопрос человеку:</b> ${esc(own(st.ask) ? st.ask : 'не задан')}</div>
+      <div class="custom-card-note"><b>Вопрос User:</b> ${esc(own(st.ask) ? st.ask : 'не задан')}</div>
     </div>`;
   };
   function openInfo(st) {
@@ -15875,17 +15875,17 @@ window.ProtoState = {
           "artifacts": [
             {
               "name": "Решение",
-              "description": "Слово «доработать» или «утвердить» и пожелания владельца"
+              "description": "Слово «доработать» или «утвердить» и пожелания User"
             }
           ],
-          "why": "Нужна ли доработка плана, решает человек."
+          "why": "Нужна ли доработка плана, решает User."
         },
         {
           "id": "s5",
           "block": "round",
           "title": "Доработка",
           "order": "sequential",
-          "task": "Исправь план по замечаниям проверки и решению владельца. Если доработка не нужна, верни план без изменений.",
+          "task": "Исправь план по замечаниям проверки и решению User. Если доработка не нужна, верни план без изменений.",
           "models": [
             {
               "name": "Claude",

@@ -275,7 +275,7 @@ function renderDebateDom() {
       <input id="file-input" type="file">
       <div id="file-name-display"></div>
       <dialog class="pipeline-stage-dialog owner-ask-dialog" id="owner-ask-dialog" aria-labelledby="owner-ask-title">
-        <header class="pipeline-stage-dialog-header"><h2 id="owner-ask-title">Вопрос владельцу</h2></header>
+        <header class="pipeline-stage-dialog-header"><h2 id="owner-ask-title">Вопрос User</h2></header>
         <p class="owner-ask-hint" id="owner-ask-hint"></p>
         <div class="pipeline-stage-card" id="owner-ask-list"></div>
         <div class="owner-ask-actions">

@@ -162,7 +162,7 @@ describe('Step controls of Basic: require, owner, output', () => {
     box.dispatchEvent(new Event('change'));
     expect(seen).toEqual([['owner', 'approve']]);
     const round = StageCard.buildModel({ round: 2, participants: [], roleChoice: { prompts: [], roles: [''], settings: { order: '', input: '', task: '', owner: 'approve' }, earlier: [], enabledCount: 1 } });
-    expect(round.badges).toContain('владелец: одобрение');
+    expect(round.badges).toContain('User: одобрение');
   });
 
   test('output: name, form and sections (one per line) and strict length are the fields; a json format turns the sections off', () => {
@@ -472,7 +472,7 @@ describe('Owner goal (Назначение этапа) and the owner question', 
     StageCard.renderOwnerWindow(container, StageCard.ownerWindowModel({ ...owner, goal: 'Цель' }), (edit) => seen.push(edit));
     const goal = container.querySelector('.stage-card-owner-goal');
     expect(goal.value).toBe('Цель');
-    expect(container.textContent).toContain('Для чего этот этап и что человек должен сделать — видит владелец в окне вопроса');
+    expect(container.textContent).toContain('Для чего этот этап и что человек должен сделать — видит User в окне вопроса');
     goal.value = 'Новая цель';
     goal.dispatchEvent(new Event('change'));
     expect(seen[0]).toEqual({ field: 'goal', value: 'Новая цель' });

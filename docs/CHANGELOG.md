@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-23 — Basic: термин «User» вместо «владелец» в интерфейсе и документах, версия 2.81.847
+
+- Человек, который отвечает в схеме, везде называется «User»: подписи окон и карточек, сообщения об ошибках схемы, описание pipeline, вопросы и уведомления страницы, документы Basic. Слов «ожидание/ждёт ответа» в этих текстах нет.
+- Идентификаторы не менялись: `kind: "owner"`, ref `owner:<id>`, `owner: "approve"`, `by: "owner"`, `conflict: "owner"`, коды ошибок, имена событий (`owner_answer`, `custom_owner`) и ключи хранилища; сохранённые схемы работают как прежде.
+- Тесты и фикстуры обновлены под новые строки.
+
 ### 2026-10-23 — Basic: возвраты назад убраны, схема исполняется только вперёд, версия 2.81.846
 
 - Убраны действие `return`, поля `maxLoops`, `feedback`, `invalidate`, `resumeAt`, лимит переходов, счётчики `loopCounters`, стек `continuationStack`, обратная связь для повторного захода, пересмотр результатов (зависимости визитов), проверка `unbounded_cycle`, `BasicSchema.graph`, стоп-причины `loop_limit` и `return_missing` (`disput/basic-schema.js`, `disput/custom-engine.js`, `disput/custom-run-record.js`, `disput/basic-spec.js`, `results/stage-card.js`).

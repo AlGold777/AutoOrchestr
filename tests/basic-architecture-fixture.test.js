@@ -47,7 +47,7 @@ function owners(opts = {}) {
   const asked = [];
   return {
     asked,
-    provideOwnerResult: async ({ stepRef }) => { asked.push(stepRef); return `текст владельца ${stepRef}`; },
+    provideOwnerResult: async ({ stepRef }) => { asked.push(stepRef); return `текст User ${stepRef}`; },
     chooseRoute: async ({ stepRef }) => { asked.push(stepRef); return opts.choose?.(stepRef) ?? 'next'; },
     decide: async (arg) => { asked.push('decide'); return opts.decide ? opts.decide(arg) : 'continue'; }
   };

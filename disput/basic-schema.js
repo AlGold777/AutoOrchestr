@@ -45,7 +45,7 @@
   const CONTROL_REF = Object.freeze({
     gate: 'ref проверки: «gate:<id>», id — латинские буквы, цифры, «_» и «-»',
     route: 'ref маршрута: «route:<id>», id — латинские буквы, цифры, «_» и «-»',
-    owner: 'ref владельца: «owner:<id>», id — латинские буквы, цифры, «_» и «-»'
+    owner: 'ref User: «owner:<id>», id — латинские буквы, цифры, «_» и «-»'
   });
   const ROUTE_BY = Object.freeze(['rule', 'model', 'owner']);
   const ROUTE_CONFLICT = Object.freeze(['stop', 'first', 'owner']);
@@ -236,7 +236,7 @@
       // The owner step has one participant, the synthetic id `owner`, and no model (3.3); a model with that id elsewhere is a model.
       if (steps[position].kind === 'owner') {
         if (participant === OWNER_PARTICIPANT) return true;
-        fail(at, 'у владельца один участник «owner»');
+        fail(at, 'у User один участник «owner»');
         return false;
       }
       const models = Array.isArray(steps[position].models) ? steps[position].models.filter(isObject) : [];
@@ -312,7 +312,7 @@
     const runnable = steps.some((step) => isObject(step) && (CONTROL_KINDS.includes(step.kind)
       || (step.kind === 'round' && Array.isArray(step.models) && step.models.some((model) => isObject(model) && model.enabled !== false))));
     if (runnable) return [];
-    return [{ path: 'steps', message: 'нет исполнимого шага: нужен раунд с включённой моделью или шаг проверки, маршрута или владельца' }];
+    return [{ path: 'steps', message: 'нет исполнимого шага: нужен раунд с включённой моделью или шаг проверки, маршрута или User' }];
   }
 
   // Errors before the first request: [{ path, message }]. A schema is never corrected silently.
@@ -515,8 +515,8 @@
     const checkControl = (step, path) => {
       const enabled = (Array.isArray(step.models) ? step.models : []).filter((model) => isObject(model) && model.enabled !== false);
       if (step.kind === 'owner') {
-        if (typeof step.task !== 'string' || !step.task.trim()) fail(`${path}.task`, 'задание владельца: непустой текст');
-        if (Array.isArray(step.models) && step.models.length) fail(`${path}.models`, 'у владельца нет моделей');
+        if (typeof step.task !== 'string' || !step.task.trim()) fail(`${path}.task`, 'задание User: непустой текст');
+        if (Array.isArray(step.models) && step.models.length) fail(`${path}.models`, 'у User нет моделей');
         return;
       }
       if (step.kind === 'gate') {
@@ -536,7 +536,7 @@
       if (select.by === 'model') {
         if (enabled.length !== 1) fail(`${path}.models`, 'маршрут по модели: ровно один включённый участник');
         if (typeof step.task !== 'string' || !step.task.trim()) fail(`${path}.task`, 'задание маршрута по модели: непустой текст');
-      } else if (Array.isArray(step.models) && step.models.length) fail(`${path}.models`, 'у маршрута по правилу и владельцу моделей нет');
+      } else if (Array.isArray(step.models) && step.models.length) fail(`${path}.models`, 'у маршрута по правилу и User моделей нет');
       if ('conflict' in select) {
         if (!rule) fail(`${path}.select.conflict`, 'конфликт выбора задаётся только для правила');
         else oneOf(select.conflict, ROUTE_CONFLICT, `${path}.select.conflict`, 'конфликт выбора');
@@ -558,7 +558,7 @@
           checkCondition(item.when, `${at2}.when`, inputs);
           if ('label' in item && typeof item.label !== 'string') fail(`${at2}.label`, 'название варианта: текст');
         } else {
-          if ('when' in item) fail(`${at2}.when`, 'условие только для правила: варианты модели и владельца описываются label');
+          if ('when' in item) fail(`${at2}.when`, 'условие только для правила: варианты модели и User описываются label');
           if (typeof item.label !== 'string' || !item.label.trim()) fail(`${at2}.label`, 'название варианта: непустой текст');
         }
       });
@@ -579,7 +579,7 @@
         if (!(Number.isSafeInteger(step.require) && step.require > 0)) fail(`${path}.require`, 'require: допустимо any, all или целое число больше 0');
         else if (enabledCount && step.require > enabledCount) fail(`${path}.require`, `требуется больше ответов, чем включённых участников: ${enabledCount}`);
       }
-      if ('owner' in step) oneOf(step.owner, OWNER_STEPS, `${path}.owner`, 'владелец шага');
+      if ('owner' in step) oneOf(step.owner, OWNER_STEPS, `${path}.owner`, 'User в шаге');
       if ('chat' in step) oneOf(step.chat, CHAT_MODES, `${path}.chat`, 'чат шага');
       if (typeof step.ref !== 'string' || !step.ref) fail(`${path}.ref`, 'ref шага не указан');
       else if (refs.has(step.ref)) fail(`${path}.ref`, `ref «${step.ref}» повторяется`);

@@ -289,7 +289,7 @@ function renderDebateDom() {
       <input id="file-input" type="file">
       <div id="file-name-display"></div>
       <dialog class="pipeline-stage-dialog owner-ask-dialog" id="owner-ask-dialog" aria-labelledby="owner-ask-title">
-        <header class="pipeline-stage-dialog-header"><h2 id="owner-ask-title">Вопрос владельцу</h2></header>
+        <header class="pipeline-stage-dialog-header"><h2 id="owner-ask-title">Вопрос User</h2></header>
         <p class="owner-ask-hint" id="owner-ask-hint"></p>
         <div class="pipeline-stage-card" id="owner-ask-list"></div>
         <div class="owner-ask-actions">
@@ -2493,7 +2493,7 @@ describe('Pipeline debate favorites view', () => {
   test('the notification of a Basic run says so when no answer was accepted', () => {
     const notice = window.__pipelineLifecycleDebug.basicRunNotice;
     expect(notice('все шаги пройдены', 2)).toBe('Basic: все шаги пройдены.');
-    expect(notice('остановлено владельцем', 0)).toBe('Basic: остановлено владельцем. Принятых ответов нет.');
+    expect(notice('остановлено User', 0)).toBe('Basic: остановлено User. Принятых ответов нет.');
   });
 
   test('Custom run: canvas blocks and links follow the engine stages, synthesis blocks included, and end done', async () => {
@@ -3595,7 +3595,7 @@ describe('Pipeline debate favorites view', () => {
           await settleCustomCard();
           const cancelled = h.debug.runCustomFromPage({ task: 'T' });
           await waitForDialog();
-          expect(document.querySelector('.choice-dialog-title').textContent).toBe('Ответ владельца: owner:fix');
+          expect(document.querySelector('.choice-dialog-title').textContent).toBe('Ответ User: owner:fix');
           expect(document.querySelector('.choice-dialog-message').textContent).toContain('Передайте текст');
           document.querySelector('.choice-dialog-cancel').click();
           await cancelled;

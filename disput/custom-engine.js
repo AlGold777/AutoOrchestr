@@ -56,7 +56,7 @@
     truncation_marker: 'оборван',
     incomplete_ending: 'оборван на середине',
     error_output: 'ошибка вместо ответа',
-    closed_by_owner: 'раунд закрыт владельцем',
+    closed_by_owner: 'раунд закрыт User',
     too_long: 'длиннее допустимого',
     missing_section: 'не содержит раздел',
     invalid_output: 'не в формате ответа',
@@ -68,9 +68,9 @@
   const STOP_TEXT = Object.freeze({
     steps_done: 'все шаги пройдены',
     context_full: 'промпт не помещается в бюджет',
-    stopped: 'остановлено владельцем',
+    stopped: 'остановлено User',
     cancelled: 'остановлено пользователем',
-    no_decision: 'нет принятых ответов, решение владельца не получено',
+    no_decision: 'нет принятых ответов, решение User не получено',
     missing_input: 'обязательный вход не получен, запрос не отправлен',
     gate_failed: 'проверка не пройдена',
     route_not_found: 'ни один вариант маршрута не подошёл, иначе не задан',
@@ -89,7 +89,7 @@
   const refKey = (step) => step.ref ?? `#${step.index}`;
   const stepLabel = (step) => {
     if (step.kind === 'gate') return `Проверка ${step.ref}`;
-    if (step.kind === 'owner') return `Владелец ${step.ref}`;
+    if (step.kind === 'owner') return `User ${step.ref}`;
     return step.kind === 'synthesis' ? `Синтез после раунда ${step.afterRound}` : `Раунд ${step.round}`;
   };
   // The mode the prompt names: a list of sources is 'sources', the strings stay as they are.
@@ -137,7 +137,7 @@
       if (formatBlock(output)) parts.push(formatBlock(output));
       if (step.kind === 'gate') parts.push(gateBlock(step, output));
       if (step.kind === 'route') parts.push(routeBlock(step));
-      if (ownerAnswers.length) parts.push(`Ответы владельца на вопросы:\n${ownerAnswers.map((item) => `- ${item.question}: ${item.answer}`).join('\n')}`);
+      if (ownerAnswers.length) parts.push(`Ответы User на вопросы:\n${ownerAnswers.map((item) => `- ${item.question}: ${item.answer}`).join('\n')}`);
       if (askInstruction) parts.push(askInstruction);
       return parts.join('\n\n');
     }
@@ -155,7 +155,7 @@
     if (step.kind === 'gate') parts.push(gateBlock(step, output));
     if (step.kind === 'route') parts.push(routeBlock(step));
     if (text(model.extra)) parts.push(`Дополнительно для тебя:\n${text(model.extra)}`);
-    if (ownerAnswers.length) parts.push(`Ответы владельца на вопросы:\n${ownerAnswers.map((item) => `- ${item.question}: ${item.answer}`).join('\n')}`);
+    if (ownerAnswers.length) parts.push(`Ответы User на вопросы:\n${ownerAnswers.map((item) => `- ${item.question}: ${item.answer}`).join('\n')}`);
     if (askInstruction) parts.push(askInstruction);
     return parts.join('\n\n');
   }
@@ -335,7 +335,7 @@
     if (select.by === 'model') {
       if (models.length !== 1) return fail('invalid_field', 'models', 'маршрут по модели: ровно один включённый участник');
       if (!text(step.task) && !text(models[0]?.task)) return fail('invalid_field', 'task', 'задание маршрута по модели: непустой текст');
-    } else if (models.length) return fail('invalid_field', 'models', 'у маршрута по правилу и владельцу моделей нет');
+    } else if (models.length) return fail('invalid_field', 'models', 'у маршрута по правилу и User моделей нет');
     if (select.by === 'rule' && !Array.isArray(step.input)) return fail('invalid_input', 'input', 'правило читает точные источники: укажите input списком');
     if ('conflict' in select && (select.by !== 'rule' || !['stop', 'first', 'owner'].includes(select.conflict))) return fail('invalid_field', 'select.conflict', 'конфликт выбора: stop, first или owner, только для правила');
     if ('otherwise' in select && select.by !== 'rule') return fail('invalid_field', 'select.otherwise', 'вариант по умолчанию задаётся только для правила');
@@ -385,8 +385,8 @@
     if (step.kind !== undefined && !EXECUTED_KINDS.includes(step.kind)) return fail('unsupported_kind', 'kind', `вид «${step.kind}» движок пока не исполняет`);
     if (step.kind === 'owner') {
       // The owner (8.1) gives a text or a file; it has no models. Its input (N07) is checked below like a model's input.
-      if (!text(step.task)) return fail('invalid_field', 'task', 'задание владельца: непустой текст');
-      if (Array.isArray(step.models) && step.models.length) return fail('invalid_field', 'models', 'у владельца нет моделей');
+      if (!text(step.task)) return fail('invalid_field', 'task', 'задание User: непустой текст');
+      if (Array.isArray(step.models) && step.models.length) return fail('invalid_field', 'models', 'у User нет моделей');
     }
     if (step.kind === 'route') {
       const problem = routeProblem(step, fail);
@@ -590,7 +590,7 @@
     const transitionProblem = transitionsProblem(plan);
     if (transitionProblem) throw transitionProblem;
     if (plan.some((step) => step.kind === 'owner') && typeof provideOwnerResult !== 'function') {
-      throw new Error('provide_owner_required: шагу владельца нужен callback provideOwnerResult (вопрос владельцу)');
+      throw new Error('provide_owner_required: шагу User нужен callback provideOwnerResult (вопрос User)');
     }
     const ownerAnswers = [];
     const history = []; // every request: step, model, participant, attempt, prompt, outcome
@@ -951,9 +951,9 @@
     // its declared artifacts are registered; a binary file is kept as a reference (no text, no output check).
     const fileOf = (file) => ({ name: file.name, mime: file.mime, size: file.size, ref: file.ref });
     function ownerVerdict(step, reply) {
-      const at = `шаг «${step.ref}» · ответ владельца`;
+      const at = `шаг «${step.ref}» · ответ User`;
       const file = isPlain(reply) && isPlain(reply.file) ? reply.file : null;
-      if (!file && typeof reply !== 'string') throw new EngineError('invalid_owner_result', at, 'ответ владельца: текст или объект файла');
+      if (!file && typeof reply !== 'string') throw new EngineError('invalid_owner_result', at, 'ответ User: текст или объект файла');
       if (file) {
         if (!(text(file.name) && text(file.mime) && Number.isSafeInteger(file.size) && file.size >= 0 && text(file.ref))) {
           throw new EngineError('invalid_owner_result', at, 'файл: имя, MIME, размер и ссылка на сохранённое содержимое');
@@ -983,7 +983,7 @@
       const input = items.map(ownerItemOf);
       (step.output?.artifacts || []).forEach((declaration) => {
         if (declaration.revisionOf && !revisionItem(declaration, items)) {
-          throw new StopRun('missing_input', `ревизия «${declaration.id}»: владелец не получил версию, которую она дорабатывает; шаг «${step.ref}» не открыт`);
+          throw new StopRun('missing_input', `ревизия «${declaration.id}»: User не получил версию, которую она дорабатывает; шаг «${step.ref}» не открыт`);
         }
       });
       for (;;) {
@@ -1090,7 +1090,7 @@
       ...item, text: item.ok ? restoredText(item.textRef, `участник «${id}»`) : '' }]));
     const restoredOwner = (saved) => (saved.binary
       ? { binary: true, file: saved.file, textRef: null, text: '' }
-      : { text: restoredText(saved.textRef, 'ответ владельца'), textRef: saved.textRef, ...(saved.file ? { file: saved.file } : {}) });
+      : { text: restoredText(saved.textRef, 'ответ User'), textRef: saved.textRef, ...(saved.file ? { file: saved.file } : {}) });
     function restoreRun(saved) {
       if (!isPlain(saved)) throw new EngineError('resume_invalid', 'resume', 'состояние для продолжения: объект снимка');
       // A complete checkpoint holds every field of the state (V07). A missing `pc` would read as "the run is over" and end the
@@ -1295,7 +1295,7 @@
           } else {
             caseId = 'onFail';
             if (isPlain(step.onFail)) action = step.onFail;
-            else if (step.onFail !== 'ask') throw new StopRun('gate_failed', unmet.join('; ') || (entry.skipped ? 'шаг пропущен владельцем' : 'недостаточно ответов проверяющих'));
+            else if (step.onFail !== 'ask') throw new StopRun('gate_failed', unmet.join('; ') || (entry.skipped ? 'шаг пропущен User' : 'недостаточно ответов проверяющих'));
             else {
               // The decision of a failed gate is saved like the decision of a step: a reload does not ask it again.
               const gateKey = `${decidedKey}:gate`;

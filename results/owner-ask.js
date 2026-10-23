@@ -1,4 +1,4 @@
-// "Вопрос владельцу": the dialog body for [[ASK: …]] markers of a stage. The owner picks from the
+// "Вопрос User": the dialog body for [[ASK: …]] markers of a stage. The owner picks from the
 // options the model proposed (one or several) and may add a short comment; nothing has to be
 // typed. A question without options offers one standard choice: "decide it yourself". Pure helpers
 // plus a textContent-only renderer; the page decides what to do with the collected answers.
@@ -81,7 +81,7 @@
   function toInstruction(answers = []) {
     return answers
       .filter((item) => clean(item.question) && clean(item.answer))
-      .map((item) => `Ответ владельца на вопрос «${clean(item.question)}»: ${clean(item.answer)}`)
+      .map((item) => `Ответ User на вопрос «${clean(item.question)}»: ${clean(item.answer)}`)
       .join('\n');
   }
 

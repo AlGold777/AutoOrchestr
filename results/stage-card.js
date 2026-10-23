@@ -7,7 +7,7 @@
     gate: 'Ворота: решает модератор',
     pending: 'Ожидает',
     running: 'Выполняется',
-    awaiting_participant: 'Ждёт участника',
+    awaiting_participant: 'Ответ участника',
     completed: 'Выполнен',
     failed: 'Ошибка',
     cancelled: 'Отменён'
@@ -62,7 +62,7 @@
         };
         if (roleChoice.settings) {
           model.settings = settingsModel(roleChoice.settings, { ...roleChoice, enabledCount: working.length });
-          if (model.settings.owner.checked) model.badges.push('владелец: одобрение');
+          if (model.settings.owner.checked) model.badges.push('User: одобрение');
         }
         return model;
       }
@@ -267,7 +267,7 @@
     ownerBox.disabled = disabled;
     ownerBox.addEventListener('change', () => emit('owner', ownerBox.checked ? 'approve' : ''));
     const ownerWrap = el(doc, 'label', 'stage-card-setting stage-card-owner');
-    ownerWrap.append(ownerBox, doc.createTextNode(' Спросить владельца после этапа'));
+    ownerWrap.append(ownerBox, doc.createTextNode(' Спросить User после этапа'));
     container.append(ownerWrap);
 
     const output = fields.output;
@@ -421,9 +421,9 @@
   // The run feed of Basic (results.js): pure texts of the events and of the answer cards. Old events without the
   // new fields give the same text as before; a participant id equal to the model name is not repeated.
   const ROUTE_REASON = {
-    rule: 'по правилу', otherwise: 'иначе', model: 'выбрала модель', owner: 'выбрал владелец',
-    conflict_first: 'первый из подходящих', conflict_owner: 'выбрал владелец из подходящих',
-    invalid_route: 'ответ модели не распознан, выбрал владелец'
+    rule: 'по правилу', otherwise: 'иначе', model: 'выбрала модель', owner: 'выбрал User',
+    conflict_first: 'первый из подходящих', conflict_owner: 'выбрал User из подходящих',
+    invalid_route: 'ответ модели не распознан, выбрал User'
   };
   const feed = Object.freeze({
     // The label of an answer card: the step, the participant (when it is not the model) and the visit (from the second).
@@ -447,7 +447,7 @@
     },
     // The title of an artifact in the registry: name, participant (owner for an owner step), visit, validity.
     artifactTitle({ name = '', source = {}, valid = true } = {}) {
-      const author = source.participant === 'owner' ? 'владелец' : `участник ${source.participant}`;
+      const author = source.participant === 'owner' ? 'User' : `участник ${source.participant}`;
       return `${name} · ${author} · заход ${source.visit}${valid === false ? ' · устарело' : ''}`;
     },
     // The text of an artifact: the whole answer for an empty pointer, else the value at the pointer (JSON as text).
@@ -606,15 +606,15 @@
     container.append(passWrap);
 
     renderTransition(container, { field: 'onFail', label: 'При провале', view: model.onFail, refs: model.refs, disabled, withStop: false, emit: send,
-      options: [{ value: 'stop', label: 'Остановить прогон' }, { value: 'ask', label: 'Спросить владельца' }, { value: 'goto', label: 'Перейти к шагу' }] });
+      options: [{ value: 'stop', label: 'Остановить прогон' }, { value: 'ask', label: 'Спросить User' }, { value: 'goto', label: 'Перейти к шагу' }] });
     renderTransition(container, { field: 'onPass', label: 'После успеха', view: model.onPass, refs: model.refs, disabled, withStop: false, emit: send,
       options: [{ value: 'next', label: 'Следующий шаг' }, { value: 'goto', label: 'Перейти к шагу' }] });
   }
 
   // The window of a route (6.2). `by` rule reads the step's input (the sources numbered in the conditions); model gives the
   // one model that chooses and its task; owner gives nothing (the owner chooses). A composite condition (all, any) is kept as it is.
-  const ROUTE_BY_LABELS = [['', '— выберите —'], ['rule', 'По правилу (условие на данных)'], ['model', 'Выбирает модель'], ['owner', 'Выбирает владелец']];
-  const ROUTE_CONFLICT_LABELS = [['', 'По умолчанию: остановить'], ['first', 'Первый подходящий'], ['owner', 'Выбирает владелец']];
+  const ROUTE_BY_LABELS = [['', '— выберите —'], ['rule', 'По правилу (условие на данных)'], ['model', 'Выбирает модель'], ['owner', 'Выбирает User']];
+  const ROUTE_CONFLICT_LABELS = [['', 'По умолчанию: остановить'], ['first', 'Первый подходящий'], ['owner', 'Выбирает User']];
   const ROUTE_OPS = ['eq', 'in', 'exists'];
   const isComposite = (cond) => isPlain(cond) && (Array.isArray(cond.all) || Array.isArray(cond.any));
   // A value as the window shows it: a string as it is, anything else as JSON.
@@ -878,13 +878,13 @@
     const goalWrap = el(doc, 'label', 'stage-card-setting stage-card-owner-goal-label');
     goalWrap.append(doc.createTextNode('Назначение этапа '), goal);
     container.append(goalWrap);
-    container.append(el(doc, 'p', 'stage-card-muted', 'Для чего этот этап и что человек должен сделать — видит владелец в окне вопроса'));
+    container.append(el(doc, 'p', 'stage-card-muted', 'Для чего этот этап и что человек должен сделать — видит User в окне вопроса'));
     const task = el(doc, 'textarea', 'stage-card-owner-task');
     task.rows = 4; task.value = model.task; task.disabled = disabled; task.spellcheck = false;
-    task.setAttribute('aria-label', 'Что должен предоставить владелец');
+    task.setAttribute('aria-label', 'Что должен предоставить User');
     task.addEventListener('change', () => send({ field: 'task', value: task.value }));
     const taskWrap = el(doc, 'label', 'stage-card-setting stage-card-owner-task-label');
-    taskWrap.append(doc.createTextNode('Что должен предоставить владелец '), task);
+    taskWrap.append(doc.createTextNode('Что должен предоставить User '), task);
     container.append(taskWrap);
 
     const output = model.output;
@@ -915,7 +915,7 @@
 
   // The text of a control on its canvas card (the owner's words; a switched-off checker is not named).
   // «Шаг после этапа»: the way to add a gate, a route or an owner step lives in the card of the stage it follows.
-  const ADD_CONTROL_OPTIONS = [['', '— нет —'], ['gate', 'Проверка (gate)'], ['route', 'Маршрут (route)'], ['owner', 'Владелец (owner)']];
+  const ADD_CONTROL_OPTIONS = [['', '— нет —'], ['gate', 'Проверка (gate)'], ['route', 'Маршрут (route)'], ['owner', 'User (owner)']];
   function renderAddControl(container, { disabled = false, note = '', onAdd = null } = {}) {
     const doc = container.ownerDocument;
     const select = el(doc, 'select', 'stage-card-add-control');
@@ -973,7 +973,7 @@
     if (step.kind === 'route') {
       const by = isPlain(step.select) ? step.select.by : '';
       const count = isPlain(step.select) && Array.isArray(step.select.cases) ? step.select.cases.length : 0;
-      const kind = { rule: 'по правилу', model: 'выбирает модель', owner: 'выбирает владелец' }[by] || 'вид не выбран';
+      const kind = { rule: 'по правилу', model: 'выбирает модель', owner: 'выбирает User' }[by] || 'вид не выбран';
       return `${kind}, вариантов: ${count}`;
     }
     return '';

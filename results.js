@@ -5784,7 +5784,7 @@ document.addEventListener('click', (event) => {
             if (!ownerAskDialog || !window.OwnerAsk) return;
             pendingOwnerAsks = info;
             const hint = document.getElementById('owner-ask-hint');
-            if (hint) hint.textContent = `${info.label || info.plannedStageId || 'Этап'}: модель просит ответа владельца. Выберите вариант, при желании добавьте комментарий. Ответ получат следующие этапы.`;
+            if (hint) hint.textContent = `${info.label || info.plannedStageId || 'Этап'}: модель просит ответа User. Выберите вариант, при желании добавьте комментарий. Ответ получат следующие этапы.`;
             window.OwnerAsk.render(document.getElementById('owner-ask-list'), info.asks || []);
             if (!ownerAskDialog.open) ownerAskDialog.showModal();
         };
@@ -7373,9 +7373,9 @@ document.addEventListener('click', (event) => {
                     // The owner's answer of an owner step: a text (a file is not supported on this page yet).
                     checkUnknown,
                     provideOwnerResult: ({ stepRef, task, goal, input, output, reason, detail }) => askChoiceDialog({
-                        title: `Ответ владельца: ${stepRef}`,
+                        title: `Ответ User: ${stepRef}`,
                         message: window.StageCard.ownerAskMessage({ task, goal, input, output, reason, detail, reasonText: reason ? (window.CustomEngine?.REASON_TEXT?.[reason] || reason) : '' }),
-                        textInput: { label: 'Ответ владельца' },
+                        textInput: { label: 'Ответ User' },
                         choices: [{ value: 'send', label: 'Отправить' }]
                     }),
                     // The request whose sending is not confirmed: send it again, or skip it for this attempt only.
@@ -8868,7 +8868,7 @@ document.addEventListener('click', (event) => {
                             <div class="custom-card-discipline-head"><span>${escapeHtml(name)}</span></div>
                             <textarea data-model-note="${escapeHtml(name)}" aria-label="Особенность: ${escapeHtml(name)}" rows="2" spellcheck="false"${pipelineRunActive ? ' readonly' : ''}>${escapeHtml(modelNotes[name] || '')}</textarea>
                         </div>`).join('') || '<div class="custom-card-note">На холсте нет моделей.</div>'}
-                        <div class="custom-card-note">Добавляется к каждому запросу модели после запроса и ответов владельца, перед лимитом. Пустое поле — ничего не добавлять.</div>
+                        <div class="custom-card-note">Добавляется к каждому запросу модели после запроса и ответов User, перед лимитом. Пустое поле — ничего не добавлять.</div>
                     </div>` : ''}
                     ${pipelineDefaults ? '' : `<span id="custom-card-length-note" class="custom-card-sr-only">Пусто — общий предел pipeline (${general}).</span>`}
                 </div>`;
@@ -9584,7 +9584,7 @@ document.addEventListener('click', (event) => {
                 const closed = pipelineWaiter.closeAnsweredBatches('moderator_closed');
                 window.MessageDelivery?.batchEvent?.('moderator_stage_close', { answered: preview.answeredModels, adopted: preview.partialModels, skipped: closed.skipped, stillWaiting: closed.stillWaiting });
                 if (closed.stillWaiting) {
-                    showNotification(`Этап закрыт частично: ${closed.stillWaiting} ожидание(й) ещё без ответов.`, 'info');
+                    showNotification(`Этап закрыт частично: ${closed.stillWaiting} вопрос(ов) ещё без ответов.`, 'info');
                 }
                 return;
             }
