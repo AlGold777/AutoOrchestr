@@ -6,7 +6,7 @@
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '19';
+  const STAND_VERSION = '20';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -578,8 +578,6 @@
     stand.active = true;
     const name = $('currentPipelineName');
     if (name) { name.textContent = own(schema.task) ? cut(schema.task, 60) : 'Схема'; name.title = schema.task || ''; }
-    const entry = $('entryPoint');
-    if (entry) entry.title = own(schema.description) ? schema.description : '';
     render();
   }
 
@@ -697,7 +695,7 @@
     const cols = stand.layout;
     let html = `<div class="stage-column entry-column">
         <div class="stage-label"><span class="entry-badge">In</span></div>
-        <div class="entry-wrapper" id="entryWrapper"><div class="entry-point" id="entryPoint" title="${esc(own(stand.schema?.description) ? stand.schema.description : 'Общие значения')}" style="cursor:pointer">▶</div></div>
+        <div class="entry-wrapper" id="entryWrapper"><div class="entry-point" id="entryPoint" title="${esc(own(stand.schema?.description) ? cut(stand.schema.description, 400) : 'Общие значения')}" style="cursor:pointer">▶</div></div>
       </div>
       <div class="connector-group"><svg class="connector-svg" id="svg-in-models"></svg></div>`;
     cols.forEach((col, k) => {
