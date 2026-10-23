@@ -12,22 +12,22 @@ describe('Stand ↔ Basic exchange', () => {
     expect(Schema.validate(basic)).toEqual([]);
   });
 
-  test('a check exports without onFail: the stand has no returns back', () => {
-    const schema = list.map((e) => e.schema || e).find((s) => s.steps.some((st) => st.block === 'gate'));
-    const { schema: basic } = Exchange.toBasic(schema);
-    expect(basic.steps.filter((st) => st.kind === 'gate').every((st) => !st.onFail)).toBe(true);
+  test('a stand check is a plain model step: no gate is exported', () => {
+    const { schema: basic } = Exchange.toBasic(list.map((e) => e.schema || e)[0]);
+    expect(basic.steps.some((st) => st.kind === 'gate')).toBe(false);
   });
 
-  test('a Basic file with a way back imports with a remark, not a fall: the back goto and the return are not carried over', () => {
+  test('a gate of a Basic file imports as a round with the criteria in the task and a remark', () => {
     const basic = { schemaVersion: 1, origin: 'user', steps: [
       { ref: 'r1', kind: 'round', models: [{ name: 'Claude' }] },
-      { ref: 'gate:g1', kind: 'gate', criteria: ['полнота'], models: [{ name: 'GPT' }], onFail: { goto: 'r1', maxLoops: 2 }, onPass: { return: true } },
+      { ref: 'gate:g1', kind: 'gate', criteria: ['полнота', 'сроки'], models: [{ name: 'GPT' }], onFail: { goto: 'r1', maxLoops: 2 }, onPass: { return: true } },
       { ref: 'final', kind: 'synthesis', models: [{ name: 'Claude' }] }
     ] };
     const { schema, warnings } = Exchange.fromBasic(basic);
-    expect(schema.steps.map((st) => st.block)).toEqual(['round', 'gate', 'synthesis']);
-    expect(warnings.filter((w) => w.startsWith('Возврат назад'))).toHaveLength(2);
-    expect(warnings.join(' ')).toContain('возвратов назад нет');
+    expect(schema.steps.map((st) => st.block)).toEqual(['round', 'round', 'synthesis']);
+    expect(schema.steps[1].models).toEqual([{ name: 'GPT' }]);
+    expect(schema.steps[1].task).toBe('Критерии проверки: полнота; сроки');
+    expect(warnings).toEqual(['Проверка Basic импортирована как обычный этап: ветвление по вердикту не перенесено.']);
   });
 
   test('source artifacts of the stand are not exported to Basic and the warning names them', () => {

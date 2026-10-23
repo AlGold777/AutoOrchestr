@@ -14180,8 +14180,8 @@ window.ProtoState = {
 <script>
 // Обмен схемами между стендом ({ task, steps: [{ id, block, … }] }) и Basic ({ schemaVersion, origin, steps: [{ ref, kind, models }] }).
 // toBasic — экспорт со стенда: файл, который принимает кнопка Import в Basic. fromBasic — импорт файла Basic на стенд.
-// Переносятся round, synthesis, gate, owner, defaults, run, description. Остальные этапы (file, assemble) и исходные артефакты
-// пропускаются с предупреждением. Возвратов назад в схеме стенда нет, поэтому onFail у проверки не записывается.
+// Переносятся round, synthesis, owner, defaults, run, description. Остальные этапы (route, file, assemble) и исходные артефакты
+// пропускаются с предупреждением. Проверки на стенде нет: шаг gate из файла Basic приходит на стенд обычным раундом.
 (function initBasicExport(root) {
   'use strict';
 
@@ -14209,7 +14209,6 @@ window.ProtoState = {
     steps.forEach((st, i) => {
       if (st.block === 'round') refs.set(st.id, `r${++rounds}`);
       else if (st.block === 'synthesis') refs.set(st.id, st === finalStep ? 'final' : `synth:${idPart(st.id, `s${i + 1}`)}`);
-      else if (st.block === 'gate') refs.set(st.id, `gate:${idPart(st.id, `s${i + 1}`)}`);
       else if (st.block === 'owner') refs.set(st.id, `owner:${idPart(st.id, `s${i + 1}`)}`);
     });
     const inputRefs = (st) => [...new Set(list(st.inputs).map(stepOf).filter((id) => refs.has(id) && pos.get(id) < pos.get(st.id)).map((id) => refs.get(id)).filter((ref) => ref !== 'final'))];
@@ -14249,11 +14248,7 @@ window.ProtoState = {
         const roleLine = own(st.role) ? `Роль: ${st.role.trim()}.` : '';
         const task = [roleLine, own(st.task) ? st.task.trim() : ''].filter(Boolean).join('\n\n');
         if (task) step.task = task;
-        step.models = [modelOf({ name: own(st.model) ? st.model : firstModel(i), maxWords: st.maxWords, request: st.request, discipline: st.discipline })];
-      } else if (st.block === 'gate') {
-        step.input = input.length ? input : 'previous';
-        step.criteria = own(st.criteria) ? [st.criteria.trim()] : ['Ответ полный и без противоречий'];
-        step.models = [{ name: firstModel(i) }];
+        step.models = [modelOf({ name: own(st.model) ? st.model : firstModel(i), maxWords: st.maxWords, discipline: st.discipline })];
       } else if (st.block === 'owner') {
         step.task = own(st.ask) ? st.ask.trim() : 'Дайте ответ';
         step.models = [];
@@ -14263,13 +14258,12 @@ window.ProtoState = {
       if (own(st.why)) step.goal = st.why.trim();
       out.push(step);
     });
-    // В Basic финальный синтез — последний шаг: проверки и вопросы после него встают перед ним и читают то, что читает синтез.
+    // В Basic финальный синтез — последний шаг: вопросы после него встают перед ним и читают то, что читает синтез.
     const finalAt = out.findIndex((st) => st.ref === 'final');
     if (finalAt >= 0 && finalAt < out.length - 1) {
       const final = out[finalAt];
       const trailing = out.splice(finalAt + 1);
       trailing.forEach((st) => {
-        if (st.kind === 'gate' && st.input === 'previous') st.input = final.input;
         warnings.push(`Шаг ${st.ref} стоял после финального синтеза: в Basic он перенесён перед ним.`);
       });
       out.splice(finalAt, 0, ...trailing);
@@ -14293,7 +14287,7 @@ window.ProtoState = {
       if (Object.keys(run).length) result.run = run;
     }
     result.steps = out;
-    if (!out.some((st) => st.kind === 'round' || st.kind === 'gate' || st.kind === 'owner')) warnings.push('Нечего экспортировать: в схеме нет раунда, проверки или владельца.');
+    if (!out.some((st) => st.kind === 'round' || st.kind === 'owner')) warnings.push('Нечего экспортировать: в схеме нет раунда или владельца.');
     return { schema: result, warnings };
   }
 
@@ -14308,9 +14302,13 @@ window.ProtoState = {
       const step = { id, block: st.kind, title: own(st.title) ? st.title : String(st.ref), why: own(st.goal) ? st.goal : 'Из схемы Basic' };
       const inputs = refList(st.input);
       if (inputs.length) step.inputs = inputs;
-      if (st.kind === 'round') {
+      if (st.kind === 'round' || st.kind === 'gate') {
         step.order = st.order === 'sequential' ? 'sequential' : 'parallel';
-        if (own(st.task)) step.task = st.task;
+        if (st.kind === 'gate') {
+          step.block = 'round';
+          step.task = [`Критерии проверки: ${list(st.criteria).filter(own).join('; ') || 'ответ полный'}`, own(st.task) ? st.task : ''].filter(Boolean).join('\n\n');
+          warnings.push('Проверка Basic импортирована как обычный этап: ветвление по вердикту не перенесено.');
+        } else if (own(st.task)) step.task = st.task;
         step.models = list(st.models).filter((m) => isObj(m) && own(m.name)).map((m) => {
           const model = { name: m.name };
           if (own(m.role) && m.role !== 'None') model.role = m.role;
@@ -14323,14 +14321,6 @@ window.ProtoState = {
         if (m) step.model = m.name;
         if (m && own(m.role) && m.role !== 'None') step.role = m.role;
         if (own(st.task)) step.task = st.task;
-      } else if (st.kind === 'gate') {
-        step.criteria = list(st.criteria).filter(own).join('; ') || 'Ответ полный';
-        [['onFail', st.onFail], ['onPass', st.onPass]].forEach(([field, action]) => {
-          if (!isObj(action)) return;
-          const target = steps.findIndex((x) => x.ref === action.goto);
-          if ('return' in action || (target >= 0 && target <= i)) warnings.push(`Возврат назад (${field} проверки ${st.ref}) не перенесён: возвратов назад нет ни на стенде, ни в Basic, добавьте обычный шаг ниже по списку.`);
-          else if ('goto' in action) warnings.push(`Переход проверки ${st.ref} (${field}) на ${action.goto} не перенесён: на стенде переходов нет.`);
-        });
       } else if (st.kind === 'owner') {
         step.ask = own(st.task) ? st.task : 'Дайте ответ';
       } else {
@@ -14362,7 +14352,7 @@ window.ProtoState = {
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '37';
+  const STAND_VERSION = '38';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -14374,11 +14364,12 @@ window.ProtoState = {
   // ---------- Формат схемы ----------
   const COMMON = ['id', 'block', 'title', 'inputs', 'optional_inputs', 'artifacts', 'why'];
   const FIELDS = {
-    round: ['models', 'order', 'task'], synthesis: ['model', 'role', 'task', 'maxWords', 'discipline'], gate: ['criteria'], route: ['choices'],
+    round: ['models', 'order', 'task'], synthesis: ['model', 'role', 'task', 'maxWords', 'discipline'], route: ['choices'],
     owner: ['ask'], file: ['file', 'mode'], assemble: ['template']
   };
   // Виды этапов, которых больше нет: в схеме их выражают обычными этапами (текст ошибки — в проверке).
   const REMOVED_BLOCKS = {
+    gate: 'Проверка — обычный этап моделей: критерии запишите в task; результат читает route и выбирает путь вперёд',
     foreach: 'Перебора по пунктам нет: один этап модели с заданием на все пункты сразу',
     block: 'Готовой части нет: этап записывается обычным образом',
     form: 'Опросник — synthesis с артефактом «Опросник» (HTML), затем owner с артефактом «Ответы»',
@@ -14396,7 +14387,7 @@ window.ProtoState = {
   // Блоки, где работает человек: в холсте — зелёная рамка, в окне — «Назначение».
   const HUMAN_BLOCKS = ['owner'];
   const KIND = {
-    round: ['Раунд', 'ti-users'], synthesis: ['Синтез', 'ti-git-merge'], gate: ['Проверка', 'ti-shield-check'], route: ['Развилка', 'ti-arrows-split'],
+    round: ['Раунд', 'ti-users'], synthesis: ['Синтез', 'ti-git-merge'], route: ['Развилка', 'ti-arrows-split'],
     owner: ['Владелец', 'ti-user'], file: ['Файл', 'ti-file-export'], assemble: ['Сборка', 'ti-stack-2']
   };
   // Этапы приложения (без нейросети): в холсте помечаются словом «приложение».
@@ -14406,7 +14397,7 @@ window.ProtoState = {
   const ENUMS = { order: ['parallel', 'sequential'], mode: ['overwrite', 'append'] };
   const LABELS = {
     id: 'этап', block: 'блок', title: 'название', why: 'зачем', inputs: 'вход', optional_inputs: 'вход, если этап был', artifacts: 'артефакты',
-    models: 'модели', order: 'порядок', task: 'задание', model: 'модель', role: 'роль', criteria: 'критерии', choices: 'варианты', ask: 'вопрос',
+    models: 'модели', order: 'порядок', task: 'задание', model: 'модель', role: 'роль', choices: 'варианты', ask: 'вопрос',
     file: 'файл', mode: 'режим', template: 'шаблон', maxWords: 'предел слов', discipline: 'дисциплина',
     defaults: 'общие значения ▶', run: 'запуск'
   };
@@ -14969,9 +14960,11 @@ window.ProtoState = {
     const err = list.some((it) => it.level === 'error');
     return `<span class="proto-stand-bang${err ? '' : ' is-warn'}" title="${esc(list.map((it) => it.msg).join('\n'))}">!</span>`;
   };
-  const inputsText = (st, skip) => {
-    const rest = listOf(st.inputs).filter((r) => refId(r) !== skip);
-    return rest.length ? `<div class="proto-stand-line">вход: ${esc(rest.join(', '))}</div>` : '';
+  const inputsText = (st) => {
+    const req = listOf(st.inputs).filter(own);
+    const opt = listOf(st.optional_inputs).filter(own);
+    return (req.length ? `<div class="proto-stand-line">вход: ${esc(req.join(', '))}</div>` : '')
+      + (opt.length ? `<div class="proto-stand-line">вход, если этап был: ${esc(opt.join(', '))}</div>` : '');
   };
   // Артефакты этапа — в зоне над блоками моделей, под бейджем. Версия: сколько этапов выше (включая этот) выдали артефакт с тем же именем.
   const artifactVersion = (k, name) => stand.layout.slice(0, k + 1).filter((c) => listOf(c.step.artifacts).map(artName).includes(name)).length;
@@ -15945,19 +15938,52 @@ window.ProtoState = {
         },
         {
           "id": "s3",
-          "block": "gate",
+          "block": "round",
           "title": "Проверка плана",
-          "criteria": "Есть сроки, бюджет и ответственные; нет противоречий.",
+          "task": "Проверь по критериям: есть сроки, бюджет и ответственные; нет противоречий. Ответь «прошло» или «не прошло» и перечисли замечания.",
           "inputs": [
             "s2.План"
           ],
           "artifacts": [
-            "Вердикт"
+            {
+              "name": "Вердикт",
+              "description": "Вердикт «прошло» или «не прошло» с замечаниями"
+            }
           ],
-          "why": "Не отдавать план без сроков и бюджета."
+          "why": "Не отдавать план без сроков и бюджета.",
+          "order": "parallel",
+          "models": [
+            {
+              "name": "GPT",
+              "role": "проверяющий"
+            }
+          ]
         },
         {
           "id": "s4",
+          "block": "route",
+          "title": "План годен?",
+          "choices": [
+            {
+              "when": "вердикт «не прошло»",
+              "goes": [
+                "s5"
+              ]
+            },
+            {
+              "when": "вердикт «прошло»",
+              "goes": [
+                "s6"
+              ]
+            }
+          ],
+          "inputs": [
+            "s3.Вердикт"
+          ],
+          "why": "Выбрать путь вперёд по вердикту."
+        },
+        {
+          "id": "s5",
           "block": "round",
           "title": "Доработка",
           "order": "sequential",
@@ -15986,39 +16012,48 @@ window.ProtoState = {
           "why": "Закрыть замечания проверки."
         },
         {
-          "id": "s5",
+          "id": "s6",
           "block": "synthesis",
           "title": "Итоговый план",
           "model": "GPT",
           "role": "судья",
           "task": "Собери итоговый план с учётом правок.",
           "inputs": [
-            "s4.Правки",
             "s2.План"
           ],
           "artifacts": [
             "Итог"
           ],
-          "why": "Окончательная версия плана."
-        },
-        {
-          "id": "s6",
-          "block": "gate",
-          "title": "Повторная проверка плана",
-          "criteria": "Есть сроки, бюджет и ответственные; нет противоречий.",
-          "inputs": [
-            "s5.Итог"
-          ],
-          "why": "Итоговый план проверяется тем же критерием."
+          "why": "Окончательная версия плана.",
+          "optional_inputs": [
+            "s5.Правки"
+          ]
         },
         {
           "id": "s7",
+          "block": "round",
+          "title": "Повторная проверка плана",
+          "task": "Проверь по критериям: есть сроки, бюджет и ответственные; нет противоречий. Ответь «прошло» или «не прошло» и перечисли замечания.",
+          "inputs": [
+            "s6.Итог"
+          ],
+          "why": "Итоговый план проверяется тем же критерием.",
+          "order": "parallel",
+          "models": [
+            {
+              "name": "GPT",
+              "role": "проверяющий"
+            }
+          ]
+        },
+        {
+          "id": "s8",
           "block": "file",
           "title": "Сохранить план",
           "file": "plan.md",
           "mode": "overwrite",
           "inputs": [
-            "s5.Итог"
+            "s6.Итог"
           ],
           "why": "Результат нужен файлом."
         }

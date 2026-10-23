@@ -6,7 +6,7 @@
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '37';
+  const STAND_VERSION = '38';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -18,11 +18,12 @@
   // ---------- Формат схемы ----------
   const COMMON = ['id', 'block', 'title', 'inputs', 'optional_inputs', 'artifacts', 'why'];
   const FIELDS = {
-    round: ['models', 'order', 'task'], synthesis: ['model', 'role', 'task', 'maxWords', 'discipline'], gate: ['criteria'], route: ['choices'],
+    round: ['models', 'order', 'task'], synthesis: ['model', 'role', 'task', 'maxWords', 'discipline'], route: ['choices'],
     owner: ['ask'], file: ['file', 'mode'], assemble: ['template']
   };
   // Виды этапов, которых больше нет: в схеме их выражают обычными этапами (текст ошибки — в проверке).
   const REMOVED_BLOCKS = {
+    gate: 'Проверка — обычный этап моделей: критерии запишите в task; результат читает route и выбирает путь вперёд',
     foreach: 'Перебора по пунктам нет: один этап модели с заданием на все пункты сразу',
     block: 'Готовой части нет: этап записывается обычным образом',
     form: 'Опросник — synthesis с артефактом «Опросник» (HTML), затем owner с артефактом «Ответы»',
@@ -40,7 +41,7 @@
   // Блоки, где работает человек: в холсте — зелёная рамка, в окне — «Назначение».
   const HUMAN_BLOCKS = ['owner'];
   const KIND = {
-    round: ['Раунд', 'ti-users'], synthesis: ['Синтез', 'ti-git-merge'], gate: ['Проверка', 'ti-shield-check'], route: ['Развилка', 'ti-arrows-split'],
+    round: ['Раунд', 'ti-users'], synthesis: ['Синтез', 'ti-git-merge'], route: ['Развилка', 'ti-arrows-split'],
     owner: ['Владелец', 'ti-user'], file: ['Файл', 'ti-file-export'], assemble: ['Сборка', 'ti-stack-2']
   };
   // Этапы приложения (без нейросети): в холсте помечаются словом «приложение».
@@ -50,7 +51,7 @@
   const ENUMS = { order: ['parallel', 'sequential'], mode: ['overwrite', 'append'] };
   const LABELS = {
     id: 'этап', block: 'блок', title: 'название', why: 'зачем', inputs: 'вход', optional_inputs: 'вход, если этап был', artifacts: 'артефакты',
-    models: 'модели', order: 'порядок', task: 'задание', model: 'модель', role: 'роль', criteria: 'критерии', choices: 'варианты', ask: 'вопрос',
+    models: 'модели', order: 'порядок', task: 'задание', model: 'модель', role: 'роль', choices: 'варианты', ask: 'вопрос',
     file: 'файл', mode: 'режим', template: 'шаблон', maxWords: 'предел слов', discipline: 'дисциплина',
     defaults: 'общие значения ▶', run: 'запуск'
   };
@@ -613,9 +614,11 @@
     const err = list.some((it) => it.level === 'error');
     return `<span class="proto-stand-bang${err ? '' : ' is-warn'}" title="${esc(list.map((it) => it.msg).join('\n'))}">!</span>`;
   };
-  const inputsText = (st, skip) => {
-    const rest = listOf(st.inputs).filter((r) => refId(r) !== skip);
-    return rest.length ? `<div class="proto-stand-line">вход: ${esc(rest.join(', '))}</div>` : '';
+  const inputsText = (st) => {
+    const req = listOf(st.inputs).filter(own);
+    const opt = listOf(st.optional_inputs).filter(own);
+    return (req.length ? `<div class="proto-stand-line">вход: ${esc(req.join(', '))}</div>` : '')
+      + (opt.length ? `<div class="proto-stand-line">вход, если этап был: ${esc(opt.join(', '))}</div>` : '');
   };
   // Артефакты этапа — в зоне над блоками моделей, под бейджем. Версия: сколько этапов выше (включая этот) выдали артефакт с тем же именем.
   const artifactVersion = (k, name) => stand.layout.slice(0, k + 1).filter((c) => listOf(c.step.artifacts).map(artName).includes(name)).length;
@@ -1589,19 +1592,52 @@
         },
         {
           "id": "s3",
-          "block": "gate",
+          "block": "round",
           "title": "Проверка плана",
-          "criteria": "Есть сроки, бюджет и ответственные; нет противоречий.",
+          "task": "Проверь по критериям: есть сроки, бюджет и ответственные; нет противоречий. Ответь «прошло» или «не прошло» и перечисли замечания.",
           "inputs": [
             "s2.План"
           ],
           "artifacts": [
-            "Вердикт"
+            {
+              "name": "Вердикт",
+              "description": "Вердикт «прошло» или «не прошло» с замечаниями"
+            }
           ],
-          "why": "Не отдавать план без сроков и бюджета."
+          "why": "Не отдавать план без сроков и бюджета.",
+          "order": "parallel",
+          "models": [
+            {
+              "name": "GPT",
+              "role": "проверяющий"
+            }
+          ]
         },
         {
           "id": "s4",
+          "block": "route",
+          "title": "План годен?",
+          "choices": [
+            {
+              "when": "вердикт «не прошло»",
+              "goes": [
+                "s5"
+              ]
+            },
+            {
+              "when": "вердикт «прошло»",
+              "goes": [
+                "s6"
+              ]
+            }
+          ],
+          "inputs": [
+            "s3.Вердикт"
+          ],
+          "why": "Выбрать путь вперёд по вердикту."
+        },
+        {
+          "id": "s5",
           "block": "round",
           "title": "Доработка",
           "order": "sequential",
@@ -1630,39 +1666,48 @@
           "why": "Закрыть замечания проверки."
         },
         {
-          "id": "s5",
+          "id": "s6",
           "block": "synthesis",
           "title": "Итоговый план",
           "model": "GPT",
           "role": "судья",
           "task": "Собери итоговый план с учётом правок.",
           "inputs": [
-            "s4.Правки",
             "s2.План"
           ],
           "artifacts": [
             "Итог"
           ],
-          "why": "Окончательная версия плана."
-        },
-        {
-          "id": "s6",
-          "block": "gate",
-          "title": "Повторная проверка плана",
-          "criteria": "Есть сроки, бюджет и ответственные; нет противоречий.",
-          "inputs": [
-            "s5.Итог"
-          ],
-          "why": "Итоговый план проверяется тем же критерием."
+          "why": "Окончательная версия плана.",
+          "optional_inputs": [
+            "s5.Правки"
+          ]
         },
         {
           "id": "s7",
+          "block": "round",
+          "title": "Повторная проверка плана",
+          "task": "Проверь по критериям: есть сроки, бюджет и ответственные; нет противоречий. Ответь «прошло» или «не прошло» и перечисли замечания.",
+          "inputs": [
+            "s6.Итог"
+          ],
+          "why": "Итоговый план проверяется тем же критерием.",
+          "order": "parallel",
+          "models": [
+            {
+              "name": "GPT",
+              "role": "проверяющий"
+            }
+          ]
+        },
+        {
+          "id": "s8",
           "block": "file",
           "title": "Сохранить план",
           "file": "plan.md",
           "mode": "overwrite",
           "inputs": [
-            "s5.Итог"
+            "s6.Итог"
           ],
           "why": "Результат нужен файлом."
         }

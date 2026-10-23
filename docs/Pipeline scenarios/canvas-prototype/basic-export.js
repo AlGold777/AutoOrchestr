@@ -1,7 +1,7 @@
 // Обмен схемами между стендом ({ task, steps: [{ id, block, … }] }) и Basic ({ schemaVersion, origin, steps: [{ ref, kind, models }] }).
 // toBasic — экспорт со стенда: файл, который принимает кнопка Import в Basic. fromBasic — импорт файла Basic на стенд.
-// Переносятся round, synthesis, gate, owner, defaults, run, description. Остальные этапы (file, assemble) и исходные артефакты
-// пропускаются с предупреждением. Возвратов назад в схеме стенда нет, поэтому onFail у проверки не записывается.
+// Переносятся round, synthesis, owner, defaults, run, description. Остальные этапы (route, file, assemble) и исходные артефакты
+// пропускаются с предупреждением. Проверки на стенде нет: шаг gate из файла Basic приходит на стенд обычным раундом.
 (function initBasicExport(root) {
   'use strict';
 
@@ -29,7 +29,6 @@
     steps.forEach((st, i) => {
       if (st.block === 'round') refs.set(st.id, `r${++rounds}`);
       else if (st.block === 'synthesis') refs.set(st.id, st === finalStep ? 'final' : `synth:${idPart(st.id, `s${i + 1}`)}`);
-      else if (st.block === 'gate') refs.set(st.id, `gate:${idPart(st.id, `s${i + 1}`)}`);
       else if (st.block === 'owner') refs.set(st.id, `owner:${idPart(st.id, `s${i + 1}`)}`);
     });
     const inputRefs = (st) => [...new Set(list(st.inputs).map(stepOf).filter((id) => refs.has(id) && pos.get(id) < pos.get(st.id)).map((id) => refs.get(id)).filter((ref) => ref !== 'final'))];
@@ -69,11 +68,7 @@
         const roleLine = own(st.role) ? `Роль: ${st.role.trim()}.` : '';
         const task = [roleLine, own(st.task) ? st.task.trim() : ''].filter(Boolean).join('\n\n');
         if (task) step.task = task;
-        step.models = [modelOf({ name: own(st.model) ? st.model : firstModel(i), maxWords: st.maxWords, request: st.request, discipline: st.discipline })];
-      } else if (st.block === 'gate') {
-        step.input = input.length ? input : 'previous';
-        step.criteria = own(st.criteria) ? [st.criteria.trim()] : ['Ответ полный и без противоречий'];
-        step.models = [{ name: firstModel(i) }];
+        step.models = [modelOf({ name: own(st.model) ? st.model : firstModel(i), maxWords: st.maxWords, discipline: st.discipline })];
       } else if (st.block === 'owner') {
         step.task = own(st.ask) ? st.ask.trim() : 'Дайте ответ';
         step.models = [];
@@ -83,13 +78,12 @@
       if (own(st.why)) step.goal = st.why.trim();
       out.push(step);
     });
-    // В Basic финальный синтез — последний шаг: проверки и вопросы после него встают перед ним и читают то, что читает синтез.
+    // В Basic финальный синтез — последний шаг: вопросы после него встают перед ним и читают то, что читает синтез.
     const finalAt = out.findIndex((st) => st.ref === 'final');
     if (finalAt >= 0 && finalAt < out.length - 1) {
       const final = out[finalAt];
       const trailing = out.splice(finalAt + 1);
       trailing.forEach((st) => {
-        if (st.kind === 'gate' && st.input === 'previous') st.input = final.input;
         warnings.push(`Шаг ${st.ref} стоял после финального синтеза: в Basic он перенесён перед ним.`);
       });
       out.splice(finalAt, 0, ...trailing);
@@ -113,7 +107,7 @@
       if (Object.keys(run).length) result.run = run;
     }
     result.steps = out;
-    if (!out.some((st) => st.kind === 'round' || st.kind === 'gate' || st.kind === 'owner')) warnings.push('Нечего экспортировать: в схеме нет раунда, проверки или владельца.');
+    if (!out.some((st) => st.kind === 'round' || st.kind === 'owner')) warnings.push('Нечего экспортировать: в схеме нет раунда или владельца.');
     return { schema: result, warnings };
   }
 
@@ -128,9 +122,13 @@
       const step = { id, block: st.kind, title: own(st.title) ? st.title : String(st.ref), why: own(st.goal) ? st.goal : 'Из схемы Basic' };
       const inputs = refList(st.input);
       if (inputs.length) step.inputs = inputs;
-      if (st.kind === 'round') {
+      if (st.kind === 'round' || st.kind === 'gate') {
         step.order = st.order === 'sequential' ? 'sequential' : 'parallel';
-        if (own(st.task)) step.task = st.task;
+        if (st.kind === 'gate') {
+          step.block = 'round';
+          step.task = [`Критерии проверки: ${list(st.criteria).filter(own).join('; ') || 'ответ полный'}`, own(st.task) ? st.task : ''].filter(Boolean).join('\n\n');
+          warnings.push('Проверка Basic импортирована как обычный этап: ветвление по вердикту не перенесено.');
+        } else if (own(st.task)) step.task = st.task;
         step.models = list(st.models).filter((m) => isObj(m) && own(m.name)).map((m) => {
           const model = { name: m.name };
           if (own(m.role) && m.role !== 'None') model.role = m.role;
@@ -143,14 +141,6 @@
         if (m) step.model = m.name;
         if (m && own(m.role) && m.role !== 'None') step.role = m.role;
         if (own(st.task)) step.task = st.task;
-      } else if (st.kind === 'gate') {
-        step.criteria = list(st.criteria).filter(own).join('; ') || 'Ответ полный';
-        [['onFail', st.onFail], ['onPass', st.onPass]].forEach(([field, action]) => {
-          if (!isObj(action)) return;
-          const target = steps.findIndex((x) => x.ref === action.goto);
-          if ('return' in action || (target >= 0 && target <= i)) warnings.push(`Возврат назад (${field} проверки ${st.ref}) не перенесён: возвратов назад нет ни на стенде, ни в Basic, добавьте обычный шаг ниже по списку.`);
-          else if ('goto' in action) warnings.push(`Переход проверки ${st.ref} (${field}) на ${action.goto} не перенесён: на стенде переходов нет.`);
-        });
       } else if (st.kind === 'owner') {
         step.ask = own(st.task) ? st.task : 'Дайте ответ';
       } else {
