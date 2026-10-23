@@ -6,7 +6,7 @@
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '32';
+  const STAND_VERSION = '34';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -367,7 +367,8 @@
     if (value == null) return fail();
     const schema = rootOf(value, add);
     if (!schema) return fail();
-    Object.keys(schema).filter((k) => !['task', 'description', 'steps', 'defaults', 'run'].includes(k)).forEach((k) => add('warn', null, `Неизвестное поле схемы «${k}».`));
+    Object.keys(schema).filter((k) => !['task', 'version', 'description', 'steps', 'defaults', 'run'].includes(k)).forEach((k) => add('warn', null, `Неизвестное поле схемы «${k}».`));
+    if ('version' in schema && !(Number.isInteger(schema.version) && schema.version >= 1)) add('warn', null, 'version должен быть целым числом от 1 — показано v1.');
     if ('description' in schema && typeof schema.description !== 'string') add('warn', null, 'description должен быть строкой — описание не показано.');
     if (!own(schema.task)) add('warn', null, 'Нет task — фразы задачи.');
     else if (STUB.test(schema.task)) add('warn', null, `Заглушка вместо текста в поле task: «${cut(schema.task, 30)}» — модель сократила ответ.`);
@@ -608,7 +609,7 @@
     stand.issues = issues;
     stand.active = true;
     const name = $('currentPipelineName');
-    if (name) { name.textContent = own(schema.task) ? cut(schema.task, 60) : 'Схема'; name.title = schema.task || ''; }
+    if (name) { name.textContent = `v${Number.isInteger(schema.version) && schema.version >= 1 ? schema.version : 1}.${own(schema.task) ? cut(schema.task, 60) : 'Схема'}`; name.title = schema.task || ''; }
     render();
   }
 
@@ -1188,7 +1189,7 @@
   const plural = (n, forms) => forms[n % 10 === 1 && n % 100 !== 11 ? 0 : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? 1 : 2];
   const uid = () => (root.crypto?.randomUUID ? root.crypto.randomUUID()
     : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3) | 8).toString(16); }));
-  const pickSchema = (s) => JSON.parse(JSON.stringify(['task', 'description', 'steps', 'defaults', 'run'].reduce((o, k) => (s[k] !== undefined ? { ...o, [k]: s[k] } : o), {})));
+  const pickSchema = (s) => JSON.parse(JSON.stringify(['task', 'version', 'description', 'steps', 'defaults', 'run'].reduce((o, k) => (s[k] !== undefined ? { ...o, [k]: s[k] } : o), {})));
   const countSteps = (s) => (Array.isArray(s?.steps) ? s.steps.length : 0);
   const catalogDoc = () => ({ format: CATALOG_FORMAT, version: 1, stand: STAND_VERSION, templates: catalog.templates });
   const catalogText = () => JSON.stringify(catalogDoc(), null, 2);
@@ -1399,7 +1400,11 @@
     let doc;
     try { doc = JSON.parse(text); } catch (error) { return false; }
     if (!isObj(doc) || !('schemaVersion' in doc) || !Array.isArray(doc.steps)) return false;
-    const { schema, warnings } = root.ProtoBasicExport.fromBasic(doc, { name: fileName.replace(/\.json$/i, '') });
+    // Имя файла «v2.Название.json»: номер версии уходит в version схемы, остальное — название.
+    const base = fileName.replace(/\.json$/i, '');
+    const ver = /^v(\d+)\.(.+)$/.exec(base);
+    const { schema, warnings } = root.ProtoBasicExport.fromBasic(doc, { name: ver ? ver[2] : base });
+    if (ver && Number(ver[1]) >= 1) schema.version = Number(ver[1]);
     const now = new Date().toISOString();
     const tpl = { id: uid(), name: uniqueName(cut(schema.task, 48)), savedAt: now, schema: pickSchema(schema), comment: '' };
     catalog.templates.push(tpl);
@@ -1419,19 +1424,20 @@
     const errors = root.BasicSchema?.validate(schema) || [];
     if (errors.length) { toast(`Экспорт в Basic невозможен: ${errors.slice(0, 3).map((e) => `${e.path ? `${e.path}: ` : ''}${e.message}`).join('; ')}${warnings.length ? `\n${warnings.slice(0, 4).join('\n')}` : ''}`); return; }
     const name = (own(stand.schema.task) ? cut(stand.schema.task, 48) : 'schema').replace(/[\\/:*?"<>|]+/g, ' ').trim();
+    const versioned = `v${Number.isInteger(stand.schema.version) && stand.schema.version >= 1 ? stand.schema.version : 1}.${name}`;
     const text = JSON.stringify(schema, null, 2);
     const note = warnings.length ? `\n${warnings.join('\n')}` : '';
     const download = () => {
       const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
-      const link = Object.assign(document.createElement('a'), { href: url, download: `${name}.json` });
+      const link = Object.assign(document.createElement('a'), { href: url, download: `${versioned}.json` });
       document.body.appendChild(link);
       link.click();
       link.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-      toast(`Скачан ${name}.json для Basic${note}`);
+      toast(`Скачан ${versioned}.json для Basic${note}`);
     };
     if (typeof root.showSaveFilePicker !== 'function') { download(); return; }
-    root.showSaveFilePicker({ ...PICKER, suggestedName: `${name}.json`, types: FILE_TYPES }).then(async (h) => {
+    root.showSaveFilePicker({ ...PICKER, suggestedName: `${versioned}.json`, types: FILE_TYPES }).then(async (h) => {
       const w = await h.createWritable();
       await w.write(text);
       await w.close();
