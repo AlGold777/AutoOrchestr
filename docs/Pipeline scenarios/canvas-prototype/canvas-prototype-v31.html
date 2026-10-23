@@ -14588,7 +14588,7 @@ window.ProtoState = {
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '28';
+  const STAND_VERSION = '31';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -15131,10 +15131,15 @@ window.ProtoState = {
     const r = isObj(schema.run) ? schema.run : {};
     state.run = { ...clone(stand.snapshot.run || {}), ...(['auto', 'manual'].includes(r.policy) ? { policy: r.policy } : {}), ...(wordsOf(r.maxWords) ? { maxWords: wordsOf(r.maxWords) } : {}) };
     state.rounds = [];
-    const lastSynth = steps.map((st) => st.block).lastIndexOf('synthesis');
-    const finalAt = lastSynth >= 0 && !steps.slice(lastSynth + 1).some((st) => st.block === 'round') ? lastSynth : -1;
+    // Материал (source) — это артефакт, а не этап: стоит над колонкой In, в поток колонок не попадает.
+    // Документы (материал, файлы) — не этапы, а сопровождение этапов: лежат в зоне этапа, который их берёт или чей результат сохраняют.
+    const isDoc = (st) => st.block === 'source' || st.block === 'file';
+    const docs = steps.filter(isDoc);
+    const flow = steps.filter((st) => !isDoc(st));
+    const lastSynth = flow.map((st) => st.block).lastIndexOf('synthesis');
+    const finalAt = lastSynth >= 0 && !flow.slice(lastSynth + 1).some((st) => st.block === 'round') ? lastSynth : -1;
     let final = null;
-    stand.layout = steps.map((st, i) => {
+    stand.layout = flow.map((st, i) => {
       const col = { step: st, key: flat.find((e) => e.raw === st)?.key || st.id };
       if (st.block === 'round') {
         const index = state.rounds.length;
@@ -15162,6 +15167,14 @@ window.ProtoState = {
         if (i === finalAt) { col.final = true; col.synth.on = true; final = col.synth; }
       }
       return col;
+    });
+    stand.layout.forEach((col) => { col.docs = []; });
+    stand.docs = docs;
+    docs.forEach((st) => {
+      const sink = st.block === 'file' && st.mode !== 'read';
+      const at = stand.layout.findIndex((col) => listOf(sink ? st.inputs : col.step.inputs).some((r) => refId(r) === (sink ? col.step.id : st.id)));
+      const col = stand.layout[at >= 0 ? at : (sink ? stand.layout.length - 1 : 0)];
+      if (col) { col.docs.push(st); st.__col = stand.layout.indexOf(col); }
     });
     // Промежуточный синтез между раундами — в слот раунда, после которого он стоит.
     stand.layout.forEach((col) => {
@@ -15216,11 +15229,20 @@ window.ProtoState = {
   };
   // Кому отправляется артефакт: по умолчанию всем моделям холста; снятые галочки хранятся только на стенде (в схему не пишутся).
   const artifactTargets = (k, name) => { const all = S().models || []; const own = stand.artTo?.[`${k}|${name}`]; return own ? all.filter((m) => own.includes(m)) : all; };
+  const DOC_KIND = { text: 'текст', document: 'файл', link: 'ссылка', read: 'чтение', overwrite: 'файл', append: 'дописать' };
+  const docKind = (d) => (d.block === 'file' ? DOC_KIND[d.mode === 'read' ? 'read' : d.mode === 'append' ? 'append' : 'overwrite'] : DOC_KIND[d.kind] || 'материал');
+  const docChips = (k) => (stand.layout[k]?.docs || []).map((d) => {
+    const sink = d.block === 'file' && d.mode !== 'read';
+    const to = sink ? [] : artifactTargets('doc', d.id); const all = (S().models || []).length;
+    const label = `${docKind(d)}${!sink && to.length < all ? ` · ${to.length}/${all}` : ''}`;
+    const title = d.block === 'file' ? (d.file || d.title || d.id) : (d.title || d.id);
+    return `<span class="proto-art proto-art-doc${sink ? ' proto-art-file' : ''}" data-art="doc|${esc(d.id)}" title="${esc(title)} — ${esc(label)}"><span class="proto-art-title">${esc(title)}</span><span class="proto-art-version">${esc(label)}</span></span>`;
+  }).join('');
   const artifactZone = (k, st) => `<div class="proto-art-zone">${listOf(st.artifacts).map(artName).map((name) => {
     const to = artifactTargets(k, name); const all = (S().models || []).length;
     const version = `v${artifactVersion(k, name)}${to.length < all ? ` · ${to.length}/${all}` : ''}`;
     return `<span class="proto-art" data-art="${k}|${esc(name)}" title="${esc(name)} ${esc(version)} — ${esc(artifactDesc(name) || 'описание не задано')} · клик: кому отправлять"><span class="proto-art-title">${esc(name)}</span><span class="proto-art-version">${esc(version)}</span></span>`;
-  }).join('')}</div>`;
+  }).join('')}${docChips(k)}</div>`;
   function openArtifact(k, name) {
     const col = stand.layout[k];
     if (!col) return;
@@ -15228,7 +15250,7 @@ window.ProtoState = {
     const modal = infoModal();
     const models = S().models || [];
     const on = artifactTargets(k, name);
-    const users = artifactLinks().filter((l) => l.from === k && l.name === name).map((l) => stand.layout[l.to].step);
+    const users = artifactLinks().filter((l) => !l.doc && l.from === k && l.name === name).map((l) => stand.layout[l.to].step);
     modal.querySelector('.modal-content').innerHTML = `
       <header class="custom-card-top custom-defaults-top">
         <h3 class="custom-card-model"><i class="ti ti-file-text" aria-hidden="true"></i>${esc(name)}<span class="custom-card-where">артефакт v${artifactVersion(k, name)} · ${esc(col.step.id || '')}</span></h3>
@@ -15264,8 +15286,44 @@ window.ProtoState = {
       const p = stand.layout.findIndex((x, k) => k < c && x.step.id === id && listOf(x.step.artifacts).map(artName).includes(name));
       if (p >= 0 && !links.some((l) => l.from === p && l.to === c && l.name === name)) links.push({ from: p, to: c, name });
     }));
+    (stand.docs || []).filter((d) => !(d.block === 'file' && d.mode !== 'read')).forEach((d) => stand.layout.forEach((col, c) => {
+      if (c !== d.__col && listOf(col.step.inputs).some((r) => refId(r) === d.id)) links.push({ from: d.__col, to: c, name: d.id, doc: true });
+    }));
     return links;
   };
+  function openSource(id) {
+    const st = (stand.docs || []).find((x) => x.id === id);
+    if (!st) return;
+    stand.current = null;
+    const modal = infoModal();
+    const models = S().models || [];
+    const on = artifactTargets('doc', id);
+    const users = stand.layout.filter((c) => listOf(c.step.inputs).some((r) => refId(r) === id)).map((c) => c.step);
+    modal.querySelector('.modal-content').innerHTML = `
+      <header class="custom-card-top custom-defaults-top">
+        <h3 class="custom-card-model"><i class="ti ti-file-text" aria-hidden="true"></i>${esc(st.title || st.id)}<span class="custom-card-where">документ (${esc(docKind(st))}) · ${esc(st.id)}</span></h3>
+        <button type="button" class="modal-button" data-stand-close>Закрыть</button>
+      </header>
+      <div class="custom-card-body">
+        <div class="proto-stand-rows">
+          <div class="proto-stand-row"><span>файл</span><div>${esc(st.attachment || st.file || 'нет')}</div></div>
+          <div class="proto-stand-row"><span>берут</span><div>${users.length ? users.map((u) => `${esc(u.id || '')} · ${esc(u.title || '')}`).join('<br>') : 'никто'}</div></div>
+        </div>
+        <div class="custom-card-marks"><strong>Описание</strong>
+          <div class="custom-card-note" style="white-space:pre-wrap">${esc(st.content || st.why || 'не задано')}</div>
+        </div>
+        <div class="custom-card-marks"><strong>Кому отправлять</strong>
+          <div class="proto-art-models">${models.map((m) => `<label><input type="checkbox" data-art-model="${esc(m)}"${on.includes(m) ? ' checked' : ''}> ${esc(m)}</label>`).join('')}</div>
+          <div class="custom-card-note">По умолчанию — всем моделям. Снятая модель материал не получает.</div>
+        </div>
+      </div>`;
+    modal.querySelectorAll('[data-art-model]').forEach((box) => box.addEventListener('change', () => {
+      stand.artTo = stand.artTo || {};
+      stand.artTo[`doc|${id}`] = [...modal.querySelectorAll('[data-art-model]')].filter((b) => b.checked).map((b) => b.dataset.artModel);
+      render();
+    }));
+    show(modal);
+  }
   const modelBlock = (model, index) => {
     const on = model.enabled !== false;
     const send = on && model.send !== false;
@@ -15355,7 +15413,7 @@ window.ProtoState = {
       if (k > 0) html += `<div class="connector-group"><svg class="connector-svg" id="stand-svg-${k}"></svg></div>`;
       html += columnHtml(col, k, k > 0 ? cols[k - 1].step.id : '');
     });
-    const per = Math.max(0, ...cols.map((col) => listOf(col.step.artifacts).length));
+    const per = Math.max(0, ...cols.map((col) => listOf(col.step.artifacts).length + (col.docs || []).length));
     root.style.setProperty('--proto-art-zone', per ? `${per * 28 + 6}px` : '0px');
     root.style.paddingTop = artifactLinks().length ? `${12 + artifactLinks().length * 6}px` : '';
     root.innerHTML = html;
@@ -15402,7 +15460,7 @@ window.ProtoState = {
     links.forEach((link, i) => {
       const col = columns[link.from];
       const to = columns[link.to]?.querySelector('.stage-label > span');
-      const box = [...(col?.querySelectorAll('.proto-art') || [])].find((el) => el.dataset.art === `${link.from}|${link.name}`);
+      const box = [...(col?.querySelectorAll('.proto-art') || [])].find((el) => el.dataset.art === (link.doc ? `doc|${link.name}` : `${link.from}|${link.name}`));
       if (!box || !to) return;
       const a = rel(box); const c = rel(col); const t = rel(to);
       const slot = slots.get(link.from) || 0; slots.set(link.from, slot + 1);
@@ -15547,7 +15605,7 @@ window.ProtoState = {
         event.stopPropagation();
         event.preventDefault();
         const [k, ...rest] = art.dataset.art.split('|');
-        openArtifact(Number(k), rest.join('|'));
+        if (k === 'doc') openSource(rest.join('|')); else openArtifact(Number(k), rest.join('|'));
         return;
       }
       const badge = t.closest('.round-badge');
