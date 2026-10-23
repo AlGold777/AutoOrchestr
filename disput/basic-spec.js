@@ -93,14 +93,7 @@
   function actionText(action, titleOf) {
     if (!isObject(action)) return 'переход не задан';
     if ('stop' in action) return `остановка: ${action.stop}`;
-    const loops = Number.isSafeInteger(action.maxLoops) ? `, не больше ${action.maxLoops} раз` : '';
-    if ('goto' in action) {
-      let text = `переход к ${titleOf(action.goto)}${loops}`;
-      if (Array.isArray(action.feedback)) text += ', с замечаниями';
-      if (Array.isArray(action.invalidate)) text += `, пересмотр: ${action.invalidate.map((ref) => titleOf(ref)).join(', ')}`;
-      return text;
-    }
-    if (action.return === true) return `возврат к точке продолжения${loops}`;
+    if ('goto' in action) return `переход к ${titleOf(action.goto)}`;
     return 'переход не задан';
   }
 

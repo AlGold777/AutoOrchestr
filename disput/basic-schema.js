@@ -49,8 +49,10 @@
   });
   const ROUTE_BY = Object.freeze(['rule', 'model', 'owner']);
   const ROUTE_CONFLICT = Object.freeze(['stop', 'first', 'owner']);
-  const ACTION_KINDS = Object.freeze(['goto', 'stop', 'return']);
-  const MAX_LOOPS = 5;
+  const ACTION_KINDS = Object.freeze(['goto', 'stop']);
+  // The removed ways back (a repeat is an ordinary step lower in the list): a schema that still has them is refused with the reason.
+  const BACK_FIELDS = Object.freeze(['return', 'maxLoops', 'feedback', 'invalidate', 'resumeAt']);
+  const NO_BACK = 'возврат назад не поддерживается: добавьте обычный шаг ниже по списку';
   const ROUTE_OPS = Object.freeze(['eq', 'in', 'exists']);
   const GATE_PASS = Object.freeze(['all', 'any']);
   const GATE_ON_FAIL = Object.freeze(['stop', 'ask']);
@@ -218,17 +220,15 @@
   // Returns the address of the source (for the duplicate check), or null when it has an error.
   // ctx: { fail, errors, steps, positions (ref → index), index (of the consumer step) }.
   function checkSource(source, path, ctx) {
-    const { fail, errors, steps, positions, index, later = false, strictOff = false, switchedOff } = ctx;
+    const { fail, errors, steps, positions, index } = ctx;
     const mark = errors.length;
     const unknown = (value, allowed, at) => Object.keys(value).forEach((key) => { if (!allowed.includes(key)) fail(`${at}.${key}`, 'неизвестное поле'); });
     // The step a reference names: it exists and comes before the consumer; final is never an ordinary source.
     const stepAt = (ref, at) => {
       if (typeof ref !== 'string' || !positions.has(ref)) { fail(at, `неизвестный шаг «${ref}»`); return -1; }
       const position = positions.get(ref);
-      if (!later && position >= index) fail(at, 'вход ссылается только на более ранний шаг');
-      else if (!later && steps[position].ref === 'final') fail(at, 'результат финального синтеза нельзя указать во входе');
-      // A transition (feedback) never names a switched-off step; an ordinary input may (it has no answers, 4.3).
-      else if (strictOff && switchedOff(position)) fail(at, `обратная связь из выключенного шага «${ref}»`);
+      if (position >= index) fail(at, 'вход ссылается только на более ранний шаг');
+      else if (steps[position].ref === 'final') fail(at, 'результат финального синтеза нельзя указать во входе');
       else return position;
       return -1;
     };
@@ -384,12 +384,12 @@
       const step = schema.steps[index];
       return isObject(step) && (step.kind === 'round' || step.kind === 'synthesis') && !(Array.isArray(step.models) && step.models.some((model) => isObject(model) && model.enabled !== false));
     };
-    const contextAt = (index, later = false, strictOff = false) => ({ fail, errors, steps: schema.steps, positions, index, later, strictOff, switchedOff });
-    const checkInputList = (list, path, index, later = false, strictOff = false) => {
+    const contextAt = (index) => ({ fail, errors, steps: schema.steps, positions, index });
+    const checkInputList = (list, path, index) => {
       if (!list.length) { fail(path, 'ожидается непустой список источников'); return; }
       const addresses = new Set();
       list.forEach((source, at) => {
-        const address = checkSource(source, `${path}[${at}]`, contextAt(index, later, strictOff));
+        const address = checkSource(source, `${path}[${at}]`, contextAt(index));
         if (!address) return;
         if (addresses.has(address)) fail(`${path}[${at}]`, 'источник повторяется');
         addresses.add(address);
@@ -466,42 +466,22 @@
       });
     };
 
-    // A transition (6.3): exactly one of goto, stop, return. `origin` is the index of the step that writes it.
-    // A transition to an early or the current step (and a return back) needs its limit maxLoops from 1 to 5.
-    const checkAction = (action, path, origin, resumeTargets) => {
-      if (!isObject(action)) { fail(path, 'переход: объект с одним полем goto, stop или return'); return; }
+    // A transition (6.3): exactly one of goto, stop. `origin` is the index of the step that writes it. A goto names a step
+    // lower in the list: there is no way back (a repeat is one more ordinary step).
+    const checkAction = (action, path, origin) => {
+      if (!isObject(action)) { fail(path, 'переход: объект с одним полем goto или stop'); return; }
+      const back = BACK_FIELDS.find((key) => key in action);
+      if (back !== undefined) { fail(`${path}.${back}`, `«${back}»: ${NO_BACK}`); return; }
       const kinds = ACTION_KINDS.filter((key) => key in action);
-      if (kinds.length !== 1) { fail(path, 'переход: ровно одно из goto, stop, return'); return; }
+      if (kinds.length !== 1) { fail(path, 'переход: ровно одно из goto, stop'); return; }
       const [kind] = kinds;
-      const fields = { goto: ['goto', 'maxLoops', 'feedback', 'invalidate', 'resumeAt'], stop: ['stop'], return: ['return', 'maxLoops'] }[kind];
-      unknownKeys(action, fields, path);
-      if ('maxLoops' in action && !(Number.isSafeInteger(action.maxLoops) && action.maxLoops >= 1 && action.maxLoops <= MAX_LOOPS)) fail(`${path}.maxLoops`, 'лимит переходов: целое от 1 до 5');
+      unknownKeys(action, [kind], path);
       if (kind === 'stop' && (typeof action.stop !== 'string' || !action.stop.trim())) fail(`${path}.stop`, 'причина остановки: непустой текст');
-      if (kind === 'return') {
-        if (action.return !== true) fail(`${path}.return`, 'return: только true');
-        if (!resumeTargets.length) fail(path, 'возврат без точки продолжения: ни один переход не задаёт resumeAt');
-        else if (!('maxLoops' in action) && resumeTargets.some((target) => target <= origin)) fail(path, 'возврат назад без maxLoops: укажите лимит от 1 до 5');
-      }
       if (kind === 'goto') {
         if (typeof action.goto !== 'string' || !action.goto) fail(`${path}.goto`, 'ref перехода: непустой текст');
         else if (!positions.has(action.goto)) fail(`${path}.goto`, `неизвестный шаг «${action.goto}»`);
         else if (switchedOff(positions.get(action.goto))) fail(`${path}.goto`, `переход на выключенный шаг «${action.goto}»`);
-        else if (positions.get(action.goto) <= origin && !('maxLoops' in action)) fail(path, 'переход назад без maxLoops: укажите лимит от 1 до 5');
-      }
-      if ('feedback' in action) {
-        if (!Array.isArray(action.feedback)) fail(`${path}.feedback`, 'ожидается список источников');
-        else checkInputList(action.feedback, `${path}.feedback`, origin, true, true);
-      }
-      if ('invalidate' in action) {
-        if (!Array.isArray(action.invalidate) || !action.invalidate.length) fail(`${path}.invalidate`, 'ожидается непустой список ref');
-        else action.invalidate.forEach((ref, at) => {
-          if (!positions.has(ref)) fail(`${path}.invalidate[${at}]`, `неизвестный шаг «${ref}»`);
-          else if (switchedOff(positions.get(ref))) fail(`${path}.invalidate[${at}]`, `пересмотр выключенного шага «${ref}»`);
-        });
-      }
-      if ('resumeAt' in action) {
-        if (!positions.has(action.resumeAt)) fail(`${path}.resumeAt`, `неизвестный шаг «${action.resumeAt}»`);
-        else if (switchedOff(positions.get(action.resumeAt))) fail(`${path}.resumeAt`, `точка продолжения на выключенный шаг «${action.resumeAt}»`);
+        else if (positions.get(action.goto) <= origin) fail(`${path}.goto`, NO_BACK);
       }
     };
 
@@ -584,11 +564,6 @@
       });
     };
 
-    // The points of continuation of the schema: a return goes back to one of them (6.3).
-    const resumeTargets = [];
-    schema.steps.forEach((step, at) => actionsOf(step, `steps[${at}]`).forEach(({ action }) => {
-      if (isObject(action) && positions.has(action.resumeAt)) resumeTargets.push(positions.get(action.resumeAt));
-    }));
     schema.steps.forEach((step, index) => {
       const path = `steps[${index}]`;
       if (!isObject(step)) { fail(path, 'ожидается объект'); return; }
@@ -648,12 +623,8 @@
         if ('discipline' in model) checkDiscipline(model.discipline, `${modelPath}.discipline`);
       });
       if (CONTROL_KINDS.includes(step.kind)) checkControl(step, path);
-      actionsOf(step, path).forEach(({ path: at, action }) => checkAction(action, at, index, resumeTargets));
+      actionsOf(step, path).forEach(({ path: at, action }) => checkAction(action, at, index));
     });
-    // A cycle that no limit stops is an error at the transition that closes it (6.4).
-    // The cycle comes from an unlimited transition, which is already named at its path: no second error there.
-    const { cycle } = graph(schema.steps);
-    if (cycle && !errors.some((error) => error.path === cycle)) fail(cycle, 'цикл без ограниченного перехода: укажите maxLoops');
     errors.push(...synthesisPlaceErrors(schema.steps), ...executabilityErrors(schema.steps));
     return errors;
   }
@@ -776,56 +747,7 @@
     return [];
   }
 
-  // The graph of the steps (6.3–6.4): edges { from, to, limited, path } between step indexes. A step with no written
-  // transition goes on to the next one (a route never does, a gate only when onPass or onFail 'ask' does not stand for it).
-  // A return may go to any resumeAt of the schema. A limited edge carries maxLoops.
-  function transitionsOf(steps) {
-    const positions = new Map();
-    steps.forEach((step, at) => { if (isObject(step) && typeof step.ref === 'string' && !positions.has(step.ref)) positions.set(step.ref, at); });
-    const resumeTargets = [];
-    steps.forEach((step, at) => actionsOf(step, `steps[${at}]`).forEach(({ action }) => {
-      if (isObject(action) && positions.has(action.resumeAt)) resumeTargets.push(positions.get(action.resumeAt));
-    }));
-    const edges = [];
-    steps.forEach((step, from) => {
-      if (!isObject(step)) return;
-      const linear = step.kind !== 'route' && (step.kind !== 'gate' || !('onPass' in step) || step.onFail === 'ask');
-      if (linear && from + 1 < steps.length) edges.push({ from, to: from + 1, limited: false, path: `steps[${from}]` });
-      actionsOf(step, `steps[${from}]`).forEach(({ path, action }) => {
-        if (!isObject(action)) return;
-        if (positions.has(action.goto)) edges.push({ from, to: positions.get(action.goto), limited: 'maxLoops' in action, path });
-        if (action.return === true) [...new Set(resumeTargets)].forEach((to) => edges.push({ from, to, limited: 'maxLoops' in action, path }));
-      });
-    });
-    return edges;
-  }
-
-  // The path of the edge that closes a cycle of unlimited edges, or null: the cycle has no limit to stop it.
-  function cycleOf(edges, count) {
-    const out = Array.from({ length: count }, () => []);
-    edges.forEach((edge) => { if (!edge.limited) out[edge.from].push(edge); });
-    const state = new Array(count).fill(0);
-    let found = null;
-    const visit = (node) => {
-      state[node] = 1;
-      for (const edge of out[node]) {
-        if (found) return;
-        if (state[edge.to] === 1) { found = edge; return; }
-        if (state[edge.to] === 0) visit(edge.to);
-      }
-      state[node] = 2;
-    };
-    for (let node = 0; node < count && !found; node += 1) if (state[node] === 0) visit(node);
-    return found ? found.path : null;
-  }
-
-  // The graph of a list of steps: its edges and the path of a cycle of unlimited edges (null when there is none).
-  const graph = (steps) => {
-    const edges = transitionsOf(steps);
-    return { edges, cycle: cycleOf(edges, steps.length) };
-  };
-
-  const api = Object.freeze({ SCHEMA_VERSION, SUPPORTED_VERSIONS, ORIGINS, DEFAULTS, pick, resolveFields, assemble, resolveRun, toSettings, toCanvas, validate, describeErrors, graph });
+  const api = Object.freeze({ SCHEMA_VERSION, SUPPORTED_VERSIONS, ORIGINS, DEFAULTS, pick, resolveFields, assemble, resolveRun, toSettings, toCanvas, validate, describeErrors });
   root.BasicSchema = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -790,7 +790,7 @@ describe('Basic schema: gate, route and owner steps (6.1, 6.2, 4.1)', () => {
       [ruleRoute([ruleCase('x', { source: 0, pointer: '/route', op: 'exists' }, { goto: 'final', stop: 'z' })]), [`${at}.select.cases[0].action`]],
       [ruleRoute([ruleCase('x', { source: 0, pointer: '/route', op: 'exists' }, { goto: '' })]), [`${at}.select.cases[0].action.goto`]],
       [ruleRoute([ruleCase('x', { source: 0, pointer: '/route', op: 'exists' }, { stop: '' })]), [`${at}.select.cases[0].action.stop`]],
-      [ruleRoute([ruleCase('x', { source: 0, pointer: '/route', op: 'exists' }, { goto: 'final', maxLoops: 2, colour: 'red' })]), [`${at}.select.cases[0].action.colour`]]
+      [ruleRoute([ruleCase('x', { source: 0, pointer: '/route', op: 'exists' }, { goto: 'final', colour: 'red' })]), [`${at}.select.cases[0].action.colour`]]
     ];
     cases.forEach(([step, paths], index) => expect({ index, paths: pathsOf(step) }).toEqual({ index, paths }));
 
@@ -847,57 +847,59 @@ describe('Basic schema: control steps on the canvas (9)', () => {
   });
 });
 
-describe('Basic schema: transitions, loop limits and the graph (6.3, 6.4)', () => {
+describe('Basic schema: transitions go forward only (6.3)', () => {
   const gate = (ref, models, extra = {}) => ({ ref, kind: 'gate', criteria: ['Есть источники'], models: models.map((name) => ({ name })), ...extra });
   // A route by owner at index 1 whose cases and otherwise take the given actions.
   const routeWith = (cases, extra = {}) => ({ ref: 'route:x', kind: 'route', models: [], select: { by: 'owner', cases: cases.map((action, at) => ({ id: `c${at}`, label: `Вариант ${at}`, action })), ...extra } });
   const plan = (step, tail = []) => base([round('r1', ['A']), step, round('r2', ['A']), synthesis('final', ['B']), ...tail]);
   const pathsOf = (schema) => errorPaths(schema);
   const CASE = 'steps[1].select.cases[0].action';
+  const NO_BACK = 'возврат назад не поддерживается: добавьте обычный шаг ниже по списку';
 
-  test('a forward transition needs no limit, a backward one takes its limit from 1 to 5, a gate has onPass and onFail actions', () => {
-    expect(Schema.validate(plan(routeWith([{ goto: 'final' }])))).toEqual([]);
-    [1, 5].forEach((maxLoops) => expect(Schema.validate(plan(routeWith([{ goto: 'r1', maxLoops }])))).toEqual([]));
-    expect(Schema.validate(plan(gate('gate:g1', ['A'], { onPass: { goto: 'final' }, onFail: { goto: 'r1', maxLoops: 2 } })))).toEqual([]);
+  test('a forward goto and a stop are valid, a gate has onPass and onFail actions', () => {
+    expect(Schema.validate(plan(routeWith([{ goto: 'final' }, { goto: 'r2' }, { stop: 'Конец' }])))).toEqual([]);
+    expect(Schema.validate(plan(gate('gate:g1', ['A'], { onPass: { goto: 'final' }, onFail: { goto: 'r2' } })))).toEqual([]);
   });
 
-  test('the spec return: S19 goes back to S10 with resumeAt S19, G1 returns to the point of continuation', () => {
-    const schema = base([
-      round('r1', ['A']), routeWith([{ goto: 'r1', maxLoops: 2, resumeAt: 'route:x' }]), gate('gate:g1', ['A'], { onPass: { return: true, maxLoops: 2 } }), synthesis('final', ['B'])
-    ]);
-    expect(Schema.validate(schema)).toEqual([]);
-    expect(Schema.assemble(schema)[2].onPass).toEqual({ return: true, maxLoops: 2 });
+  test('a goto to the current or an earlier step is refused with the new text, at the goto', () => {
+    const cases = [
+      [routeWith([{ goto: 'r1' }]), `${CASE}.goto`],
+      [routeWith([{ goto: 'route:x' }]), `${CASE}.goto`],
+      [gate('gate:g1', ['A'], { onFail: { goto: 'r1' } }), 'steps[1].onFail.goto'],
+      [gate('gate:g1', ['A'], { onPass: { goto: 'gate:g1' } }), 'steps[1].onPass.goto']
+    ];
+    cases.forEach(([step, path]) => {
+      const errors = Schema.validate(plan(step));
+      expect(errors).toHaveLength(1);
+      expect(errors[0].path).toBe(path);
+      expect(errors[0].message).toContain(NO_BACK);
+    });
   });
 
-  test('feedback may come from the current or a later step, invalidate names existing steps', () => {
-    expect(Schema.validate(plan(routeWith([{ goto: 'r1', maxLoops: 1, feedback: [{ step: 'r2', participant: 'A' }, 'final'], invalidate: ['r2'] }])))).toEqual([]);
+  test('return, maxLoops, feedback, invalidate and resumeAt are refused with their path and the same reason', () => {
+    const cases = [
+      [{ return: true }, 'return'],
+      [{ goto: 'final', maxLoops: 2 }, 'maxLoops'],
+      [{ goto: 'final', feedback: [{ step: 'r1', participant: 'A' }] }, 'feedback'],
+      [{ goto: 'final', invalidate: ['r1'] }, 'invalidate'],
+      [{ goto: 'final', resumeAt: 'r1' }, 'resumeAt'],
+      [{ stop: 'Конец', maxLoops: 2 }, 'maxLoops']
+    ];
+    cases.forEach(([action, field]) => {
+      const errors = Schema.validate(plan(routeWith([action])));
+      expect(errors.map((error) => error.path)).toEqual([`${CASE}.${field}`]);
+      expect(errors[0].message).toContain(NO_BACK);
+    });
   });
 
   test('a wrong transition is named with the path of its action', () => {
     const cases = [
       [routeWith([{ goto: 'r9' }]), [`${CASE}.goto`]],
-      [routeWith([{ goto: 'r1' }]), [CASE]],
-      [routeWith([{ goto: 'route:x' }]), [CASE]],
-      [routeWith([{ goto: 'r1', maxLoops: 0 }]), [`${CASE}.maxLoops`]],
-      [routeWith([{ goto: 'r1', maxLoops: 6 }]), [`${CASE}.maxLoops`]],
-      [routeWith([{ goto: 'r1', maxLoops: 1.5 }]), [`${CASE}.maxLoops`]],
-      [routeWith([{ goto: 'r1', maxLoops: '2' }]), [`${CASE}.maxLoops`]],
-      [routeWith([{ stop: 'Конец', maxLoops: 2 }]), [`${CASE}.maxLoops`]],
-      [routeWith([{ goto: 'final', resumeAt: 'r9' }]), [`${CASE}.resumeAt`]],
-      [routeWith([{ goto: 'final', feedback: [] }]), [`${CASE}.feedback`]],
-      [routeWith([{ goto: 'final', feedback: ['r9'] }]), [`${CASE}.feedback[0]`]],
-      [routeWith([{ goto: 'final', invalidate: [] }]), [`${CASE}.invalidate`]],
-      [routeWith([{ goto: 'final', invalidate: ['r9'] }]), [`${CASE}.invalidate[0]`]],
-      [routeWith([{ return: true }]), [CASE]],
-      [routeWith([{ goto: 'final', colour: 'red' }]), [`${CASE}.colour`]]
+      [routeWith([{ goto: 'final', colour: 'red' }]), [`${CASE}.colour`]],
+      [routeWith([{ goto: 'final', stop: 'x' }]), [CASE]],
+      [routeWith([{ stop: '' }]), [`${CASE}.stop`]]
     ];
     cases.forEach(([step, paths], index) => expect({ index, paths: pathsOf(plan(step)) }).toEqual({ index, paths }));
-  });
-
-  test('a return back needs a limit, and a return must have a point of continuation', () => {
-    const back = base([round('r1', ['A']), routeWith([{ goto: 'r1', maxLoops: 1, resumeAt: 'route:x' }]), gate('gate:g1', ['A'], { onPass: { return: true } }), synthesis('final', ['B'])]);
-    expect(pathsOf(back)).toEqual(['steps[2].onPass']);
-    expect(pathsOf(plan(gate('gate:g1', ['A'], { onPass: { return: true } })))).toEqual(['steps[1].onPass']);
   });
 
   test('a gate without onPass goes on to the next step, and a stop action stops', () => {
@@ -905,23 +907,10 @@ describe('Basic schema: transitions, loop limits and the graph (6.3, 6.4)', () =
     expect(pathsOf(plan(gate('gate:g1', ['A'], { onFail: 'retry' })))).toEqual(['steps[1].onFail']);
   });
 
-  test('a graph of transitions: linear steps, unlimited edges and limited edges; a cycle of unlimited edges is named by its action', () => {
-    const steps = [
-      { ref: 'r1', kind: 'round', models: [{ name: 'A' }] },
-      { ref: 'route:x', kind: 'route', models: [], select: { by: 'owner', cases: [{ id: 'back', label: 'Назад', action: { goto: 'r1' } }] } },
-      { ref: 'final', kind: 'synthesis', models: [{ name: 'B' }] }
-    ];
-    const graph = Schema.graph(steps);
-    expect(graph.edges).toEqual([
-      { from: 0, to: 1, limited: false, path: 'steps[0]' },
-      { from: 1, to: 0, limited: false, path: 'steps[1].select.cases[0].action' }
-    ]);
-    expect(graph.cycle).toBe('steps[1].select.cases[0].action');
-    steps[1].select.cases[0].action.maxLoops = 2;
-    expect(Schema.graph(steps).cycle).toBeNull();
+  test('the graph is gone: a forward-only schema has no cycle to check', () => {
+    expect(Schema.graph).toBeUndefined();
   });
 });
-
 
 describe('Basic schema: transitions never point at a switched-off step (A04 request)', () => {
   // r3 has no enabled model: a switched-off step. The route at index 1 may point at it; the ordinary input may not stop there.
@@ -936,17 +925,10 @@ describe('Basic schema: transitions never point at a switched-off step (A04 requ
 
   test('the same schema with the step switched on is valid for every field', () => {
     expect(Schema.validate(plan({ goto: 'r3' }, true))).toEqual([]);
-    expect(Schema.validate(plan({ goto: 'final', resumeAt: 'r3' }, true))).toEqual([]);
-    expect(Schema.validate(plan({ goto: 'final', invalidate: ['r3'] }, true))).toEqual([]);
-    expect(Schema.validate(plan({ goto: 'final', feedback: [{ step: 'r3', participant: 'B' }] }, true))).toEqual([]);
   });
 
-  test('a goto, a resumeAt, an invalidate and a feedback to a switched-off step are named with their path', () => {
+  test('a goto to a switched-off step is named with its path', () => {
     expect(errorPaths(plan({ goto: 'r3' }))).toEqual([`${ACTION}.goto`]);
-    expect(errorPaths(plan({ goto: 'final', resumeAt: 'r3' }))).toEqual([`${ACTION}.resumeAt`]);
-    expect(errorPaths(plan({ goto: 'final', invalidate: ['r3'] }))).toEqual([`${ACTION}.invalidate[0]`]);
-    expect(errorPaths(plan({ goto: 'final', feedback: ['r3'] }))).toEqual([`${ACTION}.feedback[0]`]);
-    expect(errorPaths(plan({ goto: 'final', feedback: [{ step: 'r3', participant: 'B' }] }))).toEqual([`${ACTION}.feedback[0].step`]);
   });
 
   test('an otherwise of a route to a switched-off step is named too', () => {
@@ -1090,12 +1072,12 @@ describe('Basic schema: the participant of an owner step is owner (3.3, R08)', (
   const mapOutput = { artifacts: [{ id: 'map', name: 'Карта', pointer: '' }] };
   const ownerSource = { step: 'owner:o', participant: 'owner' };
 
-  test('the owner step takes owner as its one participant: step, artifact, exact version and feedback are valid', () => {
+  test('the owner step takes owner as its one participant: step, artifact and exact version are valid', () => {
     const schema = base([
       round('r1', ['A'], { output: mapOutput }),
       ownerStep('owner:o', { output: { artifacts: [{ id: 'approved', name: 'Утверждённая карта', pointer: '' }] } }),
       round('r2', [{ name: 'A', input: [ownerSource, { artifact: { step: 'owner:o', participant: 'owner', id: 'approved' }, version: { step: 'owner:o', participant: 'owner', visit: 1 } }] }]),
-      { ref: 'gate:g1', kind: 'gate', criteria: ['Есть ответ'], models: [{ name: 'B' }], onFail: { goto: 'r2', maxLoops: 1, feedback: [ownerSource] } },
+      { ref: 'gate:g1', kind: 'gate', criteria: ['Есть ответ'], models: [{ name: 'B' }], onFail: { stop: 'Нет' } },
       synthesis('final', ['B'])
     ]);
     expect(Schema.validate(schema)).toEqual([]);

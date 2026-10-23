@@ -188,7 +188,7 @@ describe('Gate window of Basic: model and edits', () => {
   const gate = {
     ref: 'gate:1', kind: 'gate', models: [{ name: 'GPT', request: 'R', enabled: false }, { name: 'Claude' }],
     criteria: ['полнота', 'ясность'], pass: 'any',
-    onFail: { goto: 'r1', maxLoops: 2, feedback: [{ step: 'r1', participant: 'GPT' }], invalidate: ['r1'], resumeAt: 'gate:1' },
+    onFail: { goto: 'r1' },
     onPass: 'ask'
   };
   const names = ['GPT', 'Claude', 'Gemini'];
@@ -198,7 +198,7 @@ describe('Gate window of Basic: model and edits', () => {
     expect(model.criteria).toBe('полнота\nясность');
     expect(model.checkers).toEqual([{ name: 'GPT', checked: false }, { name: 'Claude', checked: true }, { name: 'Gemini', checked: false }]);
     expect(model.pass).toBe('any');
-    expect(model.onFail).toEqual({ mode: 'goto', goto: 'r1', maxLoops: 2 });
+    expect(model.onFail).toEqual({ mode: 'goto', goto: 'r1' });
     expect(model.onPass).toEqual({ mode: 'ask' });
     expect(model.refs).toEqual(['r1', 'r2']);
   });
@@ -226,9 +226,10 @@ describe('Gate window of Basic: model and edits', () => {
     expect(added.models[2]).toEqual({ name: 'Gemini' });
   });
 
-  test('a goto keeps feedback, invalidate and resumeAt; the loop limit is a number; a switch to ask drops the goto', () => {
-    const loops = StageCard.gateAfterEdit(gate, { field: 'onFail', mode: 'goto', goto: 'r2', maxLoops: '3', stop: '' });
-    expect(loops.onFail).toEqual({ goto: 'r2', maxLoops: 3, feedback: [{ step: 'r1', participant: 'GPT' }], invalidate: ['r1'], resumeAt: 'gate:1' });
+  test('a goto edit writes the goto only (the removed fields of an old schema are dropped); a switch to ask drops the goto', () => {
+    const old = { ...gate, onFail: { goto: 'r1', maxLoops: 2, feedback: [{ step: 'r1', participant: 'GPT' }], invalidate: ['r1'], resumeAt: 'gate:1' } };
+    expect(StageCard.gateAfterEdit(old, { field: 'onFail', mode: 'goto', goto: 'r2', stop: '' }).onFail).toEqual({ goto: 'r2' });
+    expect(StageCard.gateAfterEdit(old, { field: 'onFail', mode: 'return', goto: '', stop: '' }).onFail).toEqual(old.onFail);
     expect(StageCard.gateAfterEdit(gate, { field: 'onFail', mode: 'ask' }).onFail).toBe('ask');
     expect(StageCard.gateAfterEdit(gate, { field: 'onFail', mode: 'stop' }).onFail).toBe('stop');
     expect(StageCard.gateAfterEdit(gate, { field: 'onPass', mode: 'next' })).not.toHaveProperty('onPass');
@@ -236,7 +237,7 @@ describe('Gate window of Basic: model and edits', () => {
 
   test('a transition the window does not edit (its shape is other) stays unchanged by the other fields', () => {
     const odd = { ...gate, onPass: { goto: 'r1', maxLoops: 1 } };
-    expect(StageCard.gateWindowModel(odd, { names }).onPass).toEqual({ mode: 'goto', goto: 'r1', maxLoops: 1 });
+    expect(StageCard.gateWindowModel(odd, { names }).onPass).toEqual({ mode: 'goto', goto: 'r1' });
     const json = { ...gate, onFail: { stop: 'конец', maxLoops: 1 } };
     expect(StageCard.gateWindowModel(json, { names }).onFail).toEqual({ mode: 'json' });
     expect(StageCard.gateAfterEdit(json, { field: 'criteria', value: 'x' }).onFail).toEqual({ stop: 'конец', maxLoops: 1 });
@@ -259,7 +260,7 @@ describe('Gate window of Basic: model and edits', () => {
     mode.dispatchEvent(new Event('change'));
     expect(seen.map((edit) => edit.field)).toEqual(['criteria', 'pass', 'checker', 'onPass']);
     expect(seen[2]).toEqual({ field: 'checker', name: 'Gemini', checked: true });
-    expect(seen[3]).toEqual({ field: 'onPass', mode: 'goto', goto: '', maxLoops: '', stop: '' });
+    expect(seen[3]).toEqual({ field: 'onPass', mode: 'goto', goto: '', stop: '' });
     const locked = document.createElement('div');
     StageCard.renderGateWindow(locked, StageCard.gateWindowModel(gate, { names, disabled: true }), () => {});
     expect([...locked.querySelectorAll('select, textarea, input')].every((node) => node.disabled)).toBe(true);
@@ -272,7 +273,7 @@ describe('Route window of Basic: model and edits', () => {
     select: {
       by: 'rule', conflict: 'first',
       cases: [
-        { id: 'close', label: 'Закрыть', when: { source: 0, pointer: '/route', op: 'eq', value: 'close' }, action: { goto: 'r2', maxLoops: 2, feedback: [{ step: 'r1' }] } },
+        { id: 'close', label: 'Закрыть', when: { source: 0, pointer: '/route', op: 'eq', value: 'close' }, action: { goto: 'r2' } },
         { id: 'both', when: { all: [{ source: 0, pointer: '/a', op: 'exists' }, { source: 0, pointer: '/b', op: 'in', value: [1, 2] }] }, action: { stop: 'конец' } }
       ],
       otherwise: { goto: 'r2' }
@@ -286,15 +287,15 @@ describe('Route window of Basic: model and edits', () => {
     expect(model.sources).toEqual([]);
     expect(model.otherSources).toBe(0);
     expect(model.cases[0]).toEqual({ id: 'close', label: 'Закрыть', composite: false,
-      when: { source: 0, pointer: '/route', op: 'eq', value: 'close' }, action: { mode: 'goto', goto: 'r2', maxLoops: 2 } });
+      when: { source: 0, pointer: '/route', op: 'eq', value: 'close' }, action: { mode: 'goto', goto: 'r2' } });
     expect(model.cases[1].composite).toBe(true);
     expect(model.cases[1].action).toEqual({ mode: 'stop', stop: 'конец' });
-    expect(model.otherwise).toEqual({ mode: 'goto', goto: 'r2', maxLoops: '' });
+    expect(model.otherwise).toEqual({ mode: 'goto', goto: 'r2' });
     expect(model.refs).toEqual(['r1', 'r2']);
   });
 
   test('a condition value is typed as text or JSON: a quoted text, a number, a list for in, nothing for exists', () => {
-    const edit = (when) => StageCard.routeAfterEdit(route, { field: 'case', index: 0, id: 'close', label: '', when, action: { mode: 'goto', goto: 'r2', maxLoops: '' } });
+    const edit = (when) => StageCard.routeAfterEdit(route, { field: 'case', index: 0, id: 'close', label: '', when, action: { mode: 'goto', goto: 'r2' } });
     expect(edit({ source: '0', pointer: '/n', op: 'eq', value: '3' }).select.cases[0].when).toEqual({ source: 0, pointer: '/n', op: 'eq', value: 3 });
     expect(edit({ source: '0', pointer: '/n', op: 'eq', value: '"x"' }).select.cases[0].when.value).toBe('x');
     expect(edit({ source: '0', pointer: '/n', op: 'in', value: 'a, 2' }).select.cases[0].when.value).toEqual(['a', 2]);
@@ -307,9 +308,9 @@ describe('Route window of Basic: model and edits', () => {
     expect(after.select.cases[1]).toEqual({ id: 'both', label: 'Оба', when: route.select.cases[1].when, action: { stop: 'конец' } });
   });
 
-  test('the action of a case keeps feedback when it stays a goto; a stop reason is text', () => {
-    const goto = StageCard.routeAfterEdit(route, { field: 'case', index: 0, id: 'close', label: 'Закрыть', when: route.select.cases[0].when, action: { mode: 'goto', goto: 'r1', maxLoops: '4' } });
-    expect(goto.select.cases[0].action).toEqual({ goto: 'r1', maxLoops: 4, feedback: [{ step: 'r1' }] });
+  test('the action of a case is written as its goto; a stop reason is text', () => {
+    const goto = StageCard.routeAfterEdit(route, { field: 'case', index: 0, id: 'close', label: 'Закрыть', when: route.select.cases[0].when, action: { mode: 'goto', goto: 'r1' } });
+    expect(goto.select.cases[0].action).toEqual({ goto: 'r1' });
     const stop = StageCard.routeAfterEdit(route, { field: 'case', index: 0, id: 'close', label: 'Закрыть', when: route.select.cases[0].when, action: { mode: 'stop', stop: 'готово' } });
     expect(stop.select.cases[0].action).toEqual({ stop: 'готово' });
   });
@@ -326,7 +327,7 @@ describe('Route window of Basic: model and edits', () => {
     expect(model.select.by).toBe('model');
     expect(model.select).not.toHaveProperty('conflict');
     expect(model.select).not.toHaveProperty('otherwise');
-    expect(model.select.cases[0]).toEqual({ id: 'close', label: 'Закрыть', action: { goto: 'r2', maxLoops: 2, feedback: [{ step: 'r1' }] } });
+    expect(model.select.cases[0]).toEqual({ id: 'close', label: 'Закрыть', action: { goto: 'r2' } });
     expect(model.input).toEqual(route.input);
     const owner = StageCard.routeAfterEdit(model, { field: 'by', value: 'owner' });
     expect(owner.models).toEqual([]);
@@ -350,7 +351,7 @@ describe('Route window of Basic: model and edits', () => {
     container.querySelectorAll('.stage-card-case-remove')[1].click();
     expect(seen.map((edit) => edit.field)).toEqual(['by', 'conflict', 'case', 'caseAdd', 'caseRemove']);
     expect(seen[2]).toEqual({ field: 'case', index: 0, id: 'shut', label: 'Закрыть', when: { source: 0, pointer: '/route', op: 'eq', value: 'close' },
-      action: { mode: 'goto', goto: 'r2', maxLoops: 2 } });
+      action: { mode: 'goto', goto: 'r2' } });
     expect(seen[4]).toEqual({ field: 'caseRemove', index: 1 });
   });
 

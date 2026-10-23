@@ -211,7 +211,7 @@ describe('Basic spec: the owner, the participants and the stage kinds', () => {
         { ref: 'r1', kind: 'round', models: [{ name: 'A' }] },
         {
           ref: 'gate:g1', kind: 'gate', input: 'previous', criteria: ['полнота'], models: [{ name: 'K' }],
-          onPass: { goto: 'r2' }, onFail: { goto: 'r1', maxLoops: 2 }
+          onPass: { goto: 'r2' }, onFail: { stop: 'нужна доработка' }
         },
         { ref: 'r2', kind: 'round', models: [{ name: 'B' }] },
         {
@@ -227,7 +227,7 @@ describe('Basic spec: the owner, the participants and the stage kinds', () => {
     expect(gate.transitions).toEqual([
       'проверяющие: нужны все прошедшие',
       'при прохождении: переход к «Раунд 2»',
-      'при провале: переход к «Раунд 1», не больше 2 раз'
+      'при провале: остановка: нужна доработка'
     ]);
     expect(route.transitions).toEqual([
       'выбирает по правилу; при нескольких подходящих: остановка',
@@ -237,7 +237,7 @@ describe('Basic spec: the owner, the participants and the stage kinds', () => {
     expect(model.stages[1].criteria).toMatchObject({ value: 'полнота', source: 'schema' });
     expect(model.stages[1].title.value).toBe('Проверка g1');
     expect(model.stages[3].title.value).toBe('Маршрут r');
-    expect(Spec.toMarkdown(model)).toContain('   - при провале: переход к «Раунд 1», не больше 2 раз');
+    expect(Spec.toMarkdown(model)).toContain('   - при провале: остановка: нужна доработка');
   });
 });
 

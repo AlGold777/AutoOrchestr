@@ -138,7 +138,7 @@
 
   // A snapshot of the state of the run (8.2) as plain data: the schema as the run was started with, the pointer, the visits,
   // the position of the current step, the finished results (their accepted answers by text reference), the decisions taken,
-  // the routes, the counters, the stack, the feedback (text references), the dependencies and the owner's answers. The registry is record.artifacts (5.3), not a second copy here. chatBindings holds the chats of the participants (participantId → tab and request), written while a request is in flight (V01).
+  // the routes and the owner's answers. A snapshot of an older version may hold more fields (counters, stack, feedback, dependencies): they are ignored. The registry is record.artifacts (5.3), not a second copy here. chatBindings holds the chats of the participants (participantId → tab and request), written while a request is in flight (V01).
   const copyOf = (value) => (value === undefined ? null : JSON.parse(JSON.stringify(value)));
   // The chats of the participants are an object by participantId; a list (an old snapshot) and no value are an empty object.
   const plainOf = (value) => (value && typeof value === 'object' && !Array.isArray(value) ? copyOf(value) : {});
@@ -148,8 +148,7 @@
       schema, taskRef: record.taskRef, runSettings, pc: state.pc ?? null, visits,
       current: current || state.current || { stepRef: state.pc ?? null, visit: visits[state.pc] || 0, phase: 'done', accepted: [], pending: [] },
       results: state.results || [], decisions: state.decisions || {},
-      routes, loopCounters: state.loopCounters || {}, continuationStack: state.continuationStack || [], feedback: state.feedback || {},
-      dependencies: state.dependencies || {}, ownerAnswers, pendingOwner, chatBindings: plainOf(state.chatBindings)
+      routes, ownerAnswers, pendingOwner, chatBindings: plainOf(state.chatBindings)
     });
     return record.snapshot;
   }
@@ -187,8 +186,8 @@
     if ((record.version || 1) < 2 || !record.snapshot) return false;
     // Every field of the state must be there (V07): a snapshot with no `pc` would resume as a finished run.
     const shape = record.snapshot;
-    const objects = ['visits', 'decisions', 'loopCounters', 'feedback', 'dependencies'];
-    const lists = ['results', 'continuationStack'];
+    const objects = ['visits', 'decisions'];
+    const lists = ['results'];
     if (!('pc' in shape) || !objects.every((key) => shape[key] && typeof shape[key] === 'object' && !Array.isArray(shape[key])) || !lists.every((key) => Array.isArray(shape[key]))) return false;
     const { schema, current } = record.snapshot;
     if (!Array.isArray(schema) || !schema.length || !current || typeof current !== 'object') return false;
@@ -202,8 +201,7 @@
   // reference resolvable through texts. Records are read back in history form; the export says whether it can be resumed.
   function exportRun(record) {
     const resolve = (item) => ({ label: item.label, source: item.source, text: textOf(record, item.textRef) });
-    const snapshot = record.snapshot ? { ...record.snapshot, feedback: Object.fromEntries(Object.entries(record.snapshot.feedback || {})
-      .map(([key, items]) => [key, items.map((item) => ({ ...item, pointer: item.pointer ?? '', text: textOf(record, item.textRef) }))])) } : null;
+    const snapshot = record.snapshot ? { ...record.snapshot } : null;
     return {
       version: record.version || 1, resumable: canResume(record),
       runId: record.runId, pipelineName: record.pipelineName, startedAt: record.startedAt, finishedAt: record.finishedAt,

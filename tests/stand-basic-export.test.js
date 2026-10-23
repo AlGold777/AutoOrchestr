@@ -18,6 +18,18 @@ describe('Stand ↔ Basic exchange', () => {
     expect(basic.steps.filter((st) => st.kind === 'gate').every((st) => !st.onFail)).toBe(true);
   });
 
+  test('a Basic file with a way back imports with a remark, not a fall: the back goto and the return are not carried over', () => {
+    const basic = { schemaVersion: 1, origin: 'user', steps: [
+      { ref: 'r1', kind: 'round', models: [{ name: 'Claude' }] },
+      { ref: 'gate:g1', kind: 'gate', criteria: ['полнота'], models: [{ name: 'GPT' }], onFail: { goto: 'r1', maxLoops: 2 }, onPass: { return: true } },
+      { ref: 'final', kind: 'synthesis', models: [{ name: 'Claude' }] }
+    ] };
+    const { schema, warnings } = Exchange.fromBasic(basic);
+    expect(schema.steps.map((st) => st.block)).toEqual(['round', 'gate', 'synthesis']);
+    expect(warnings.filter((w) => w.startsWith('Возврат назад'))).toHaveLength(2);
+    expect(warnings.join(' ')).toContain('возвратов назад нет');
+  });
+
   test('source artifacts of the stand are not exported to Basic and the warning names them', () => {
     const { warnings } = Exchange.toBasic({ task: 'T', artifacts: [{ name: 'Бриф', content: 'текст' }], steps: [
       { id: 's1', block: 'round', title: 'R', why: 'w', models: [{ name: 'Claude' }], task: 'Сделай', inputs: ['in.Бриф'] }] });

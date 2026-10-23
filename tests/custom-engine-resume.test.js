@@ -153,52 +153,44 @@ describe('Custom engine resume (8.3, T15, T16, T13)', () => {
     expect(run2.stopReason).toBe('steps_done');
   });
 
-  test('a loop counter is not reset by a reload: the third transition is refused after the reload too (T13)', async () => {
+  test('a transition the reload found applied is not applied a second time: the run goes on from its target', async () => {
     const steps = [
       { ref: 'S10', kind: 'round', input: 'none', models: ['A'] },
-      { ref: 'G1', kind: 'gate', criteria: ['c'], models: ['B'], onFail: { goto: 'S10', maxLoops: 1 } }
-    ];
-    const controller = new AbortController();
-    const texts = textStore();
-    const first = keeper();
-    const run1 = await Engine.run({
-      task: 'T', steps, signal: controller.signal, checkpoint: first.checkpoint, putText: texts.putText, getText: texts.getText,
-      send: transport({ A: ['a1', 'a2'], B: [FAIL] }, [], { abortWhen: (models, meta) => models[0] === 'A' && meta.visit === 2, controller })
-    });
-    expect(run1.stopReason).toBe('cancelled');
-    expect(first.last().loopCounters).toEqual({ 'G1:onFail': 1 });
-    const log2 = [];
-    const run2 = await Engine.run({
-      task: 'T', steps, checkpoint: keeper().checkpoint, putText: texts.putText, getText: texts.getText, resume: clone(first.last()),
-      send: transport({ A: ['a2b'], B: [FAIL] }, log2), resolveUnknown: async () => 'resend'
-    });
-    expect(run2.stopReason).toBe('loop_limit');
-    expect(log2.map((call) => call.models[0])).toEqual(['A', 'B']);
-    expect(run2.state.loopCounters).toEqual({ 'G1:onFail': 1 });
-  });
-
-  test('a transition the reload found applied is not applied a second time: its counter stays at one', async () => {
-    const steps = [
-      { ref: 'S10', kind: 'round', input: 'none', models: ['A'] },
-      { ref: 'G1', kind: 'gate', criteria: ['c'], models: ['B'], onFail: { goto: 'S10', maxLoops: 2 } }
+      { ref: 'G1', kind: 'gate', criteria: ['c'], models: ['B'], onFail: { goto: 'S12' } },
+      { ref: 'S11', kind: 'round', models: ['C'] },
+      { ref: 'S12', kind: 'round', models: ['D'] }
     ];
     const texts = textStore();
     // The checkpoint after the transition is the last one that is saved: the next checkpoints fail (a crash right after it).
     const first = keeper({ failAfter: (state) => Boolean(state.current && state.current.applied) });
     const error = await Engine.run({
       task: 'T', steps, checkpoint: first.checkpoint, putText: texts.putText, getText: texts.getText,
-      send: transport({ A: ['a1', 'a2'], B: [FAIL, PASS] }, [])
+      send: transport({ A: ['a1'], B: [FAIL], D: ['d1'] }, [])
     }).catch((item) => item);
     expect(error.code).toBe('checkpoint_failed');
-    expect(first.last().current).toMatchObject({ active: true, stepRef: 'G1', phase: 'transition', applied: { target: 'S10' } });
+    expect(first.last().current).toMatchObject({ active: true, stepRef: 'G1', phase: 'transition', applied: { target: 'S12' } });
     const log2 = [];
     const run2 = await Engine.run({
       task: 'T', steps, checkpoint: keeper().checkpoint, putText: texts.putText, getText: texts.getText, resume: clone(first.last()),
-      send: transport({ A: ['a2'], B: [PASS] }, log2)
+      send: transport({ D: ['d1'] }, log2)
     });
     expect(run2.stopReason).toBe('steps_done');
-    expect(log2.map((call) => call.models[0])).toEqual(['A', 'B']);
-    expect(run2.state.loopCounters).toEqual({ 'G1:onFail': 1 });
+    expect(log2.map((call) => call.models[0])).toEqual(['D']);
+  });
+
+  test('a state saved by an older version, with counters, a stack, feedback and dependencies, is read without a fall: the extra fields are ignored', async () => {
+    const texts = textStore();
+    const first = keeper();
+    await Engine.run({ task: 'T', steps: TWO_ROUNDS, checkpoint: first.checkpoint, putText: texts.putText, getText: texts.getText, send: transport({ A: ['a1'], B: ['b1'] }, []) });
+    const full = clone(first.saved.find((state) => state.pc === 'S2' && state.current.phase === 'send'));
+    ['loopCounters', 'continuationStack', 'feedback', 'dependencies'].forEach((field) => expect(full).not.toHaveProperty(field));
+    const old = { ...full, loopCounters: { 'G1:onFail': 1 }, continuationStack: [{ resumeAt: 'S2', from: 'G1' }], feedback: { S2: [{ label: 'x', textRef: 'gone', pointer: '' }] },
+      dependencies: { '1@1': ['0@1'] }, current: { ...full.current, feedback: [{ label: 'x', textRef: 'gone', pointer: '' }] } };
+    const log = [];
+    const resumed = await Engine.run({ task: 'T', steps: TWO_ROUNDS, putText: texts.putText, getText: texts.getText, resume: old, send: transport({ B: ['b1'] }, log), resolveUnknown: async () => 'resend' });
+    expect(resumed.stopReason).toBe('steps_done');
+    expect(log.map((call) => call.models[0])).toEqual(['B']);
+    ['loopCounters', 'continuationStack', 'feedback', 'dependencies'].forEach((field) => expect(resumed.state).not.toHaveProperty(field));
   });
 
   test('the resumed run uses the steps it is given (the saved schema); a step of the saved state missing from them is refused', async () => {

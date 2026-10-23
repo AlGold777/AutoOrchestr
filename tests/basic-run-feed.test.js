@@ -33,16 +33,13 @@ describe('Basic run feed: control events are short lines (2)', () => {
     expect(feed.route({ ref: 'r3', caseLabel: 'x', reason: 'unknown_reason' })).toBe('Маршрут r3: вариант «x», unknown_reason');
   });
 
-  test('a transition names the target and the count of a limited one', () => {
-    expect(feed.transition({ from: 'r4', to: 'r2', action: 'return' })).toBe('Возврат r4 → r2');
-    expect(feed.transition({ from: 'g1', to: 'r2', action: 'goto', count: 2, maxLoops: 3 })).toBe('Переход g1 → r2, переход 2 из 3');
-    expect(feed.transition({ from: 'g1', to: 'final', action: 'goto', count: null, maxLoops: null })).toBe('Переход g1 → final');
+  test('a transition names the target', () => {
+    expect(feed.transition({ from: 'g1', to: 'final', action: 'goto' })).toBe('Переход g1 → final');
   });
 
-  test('a stop by a transition names the reason; a limit that is used up names its count', () => {
+  test('a stop by a transition names the reason', () => {
     const stopText = (reason) => ({ stopped: 'остановлено владельцем' })[reason] || reason;
     expect(feed.transition({ from: 'g1', action: 'stop', reason: 'stopped' }, stopText)).toBe('Прогон остановлен после g1: остановлено владельцем');
-    expect(feed.transition({ from: 'g1', to: 'r2', action: 'stop', reason: 'loop_limit', maxLoops: 2 }, stopText)).toBe('Переход g1 → r2 не выполнен: лимит 2 исчерпан');
   });
 });
 

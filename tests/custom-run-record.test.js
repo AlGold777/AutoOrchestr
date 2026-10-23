@@ -211,22 +211,22 @@ describe('Custom run record, version 2 (8.2)', () => {
       routes: [], ownerAnswers: result.ownerAnswers });
     const snapshot = record.snapshot;
     // The registry is record.artifacts (5.3), not a second copy in the snapshot.
-    expect(Object.keys(snapshot).sort()).toEqual(['chatBindings', 'continuationStack', 'current', 'decisions', 'dependencies', 'feedback', 'loopCounters', 'ownerAnswers', 'pc', 'pendingOwner', 'results', 'routes', 'runSettings', 'schema', 'taskRef', 'visits']);
+    expect(Object.keys(snapshot).sort()).toEqual(['chatBindings', 'current', 'decisions', 'ownerAnswers', 'pc', 'pendingOwner', 'results', 'routes', 'runSettings', 'schema', 'taskRef', 'visits']);
     expect(snapshot.chatBindings).toEqual({});
     expect(snapshot.current).toMatchObject({ stepRef: null, phase: 'done' });
     expect(Record.canResume(record)).toBe(true);
     expect(JSON.parse(JSON.stringify(snapshot))).toEqual(snapshot);
   });
 
-  test('serialize keeps the texts of the snapshot feedback; export resolves them with their sources', async () => {
+  test('a snapshot of an older version, with counters, a stack, feedback and dependencies, is still complete and exportable: the extra fields are ignored', async () => {
     const { record, result } = await recordedOwnerRun();
-    const feedbackText = 'Замечание по тезису';
-    const ref = record.put(feedbackText);
-    Record.setSnapshot(record, { schema: [], runSettings: {}, state: { pc: 'owner:evidence', visits: { 'owner:evidence': 1 }, feedback: { 'owner:evidence': [{ label: 'Владелец', source: { step: 0, visit: 1 }, textRef: ref, pointer: '' }] } }, routes: [], ownerAnswers: result.ownerAnswers });
-    const stored = JSON.parse(JSON.stringify(Record.serialize(record)));
-    const back = Record.revive(stored);
-    expect(Record.textOf(back, back.snapshot.feedback['owner:evidence'][0].textRef)).toBe(feedbackText);
-    expect(Record.exportRun(back).snapshot.feedback['owner:evidence'][0]).toMatchObject({ text: feedbackText, source: { step: 0, visit: 1 }, label: 'Владелец' });
+    Record.setSnapshot(record, { schema: [{ ref: 'owner:evidence', kind: 'owner' }], runSettings: {}, state: result.state, routes: [], ownerAnswers: result.ownerAnswers });
+    const ref = record.put('Замечание по тезису');
+    Object.assign(record.snapshot, { loopCounters: { 'G1:onFail': 1 }, continuationStack: [], dependencies: {}, feedback: { 'owner:evidence': [{ label: 'Владелец', textRef: ref, pointer: '' }] } });
+    const back = Record.revive(JSON.parse(JSON.stringify(Record.serialize(record))));
+    expect(Record.canResume(back)).toBe(true);
+    expect(Record.textOf(back, ref)).toBe('Замечание по тезису');
+    expect(Record.exportRun(back).resumable).toBe(true);
   });
 });
 
@@ -345,7 +345,7 @@ describe('Custom run record storage: the chrome.storage adapter rejects every fa
 });
 
 describe('Custom run record export is self-contained (R04)', () => {
-  // A run with a binary owner file, an owner answer that declares an artifact, the feedback of a gate that waits for the next
+  // A run with a binary owner file, an owner answer that declares an artifact, a gate that goes on to the next
   // round (the transport refuses its request, so the run stops there), and an attempt that was sent and never answered.
   async function fullRun() {
     const storage = memoryStorage();
@@ -357,7 +357,7 @@ describe('Custom run record export is self-contained (R04)', () => {
       { ref: 'O0', kind: 'owner', task: 'Приложи файл' },
       { ref: 'O1', kind: 'owner', task: 'Дай тезис', output: { format: 'json', requiredFields: ['/thesis'], artifacts: [{ id: 'thesis', name: 'Тезис', pointer: '/thesis' }] } },
       { ref: 'S1', kind: 'round', task: 'Тезис', input: 'none', models: ['A'] },
-      { ref: 'G1', kind: 'gate', criteria: ['c'], models: ['B'], onFail: { goto: 'S2', maxLoops: 1, feedback: [{ step: 'G1', participant: 'B' }] } },
+      { ref: 'G1', kind: 'gate', criteria: ['c'], models: ['B'], onFail: { goto: 'S2' } },
       { ref: 'S2', kind: 'round', task: 'Доработай', input: 'previous', models: ['C'] }
     ];
     const FAIL = 'Разбор.\nНЕ ВЫПОЛНЕНО: x\nВЕРДИКТ: НЕ ПРОШЁЛ';
@@ -400,7 +400,7 @@ describe('Custom run record export is self-contained (R04)', () => {
     }
   });
 
-  test('the export has the owner answer, the feedback still waiting for an owner step, the registry, the owner file and the unfinished attempt', async () => {
+  test('the export has the owner answer, the registry, the owner file and the unfinished attempt', async () => {
     const { fileContent, fileRef, back } = await fullRun();
     const exported = JSON.parse(JSON.stringify(Record.exportRun(back)));
     expect(exported).toMatchObject({ version: 2, resumable: true, task: 'Задача T', stopReason: 'context_full' });
@@ -408,11 +408,9 @@ describe('Custom run record export is self-contained (R04)', () => {
     const owner = exported.snapshot.results.find((item) => item.stepRef === 'O0');
     expect(owner.owner.file).toEqual({ name: 'brief.pdf', mime: 'application/pdf', size: fileContent.length, ref: fileRef });
     expect(exported.texts[fileRef]).toBe(fileContent);
-    const feedbackRef = exported.snapshot.current.feedback[0].textRef;
-    expect(exported.texts[feedbackRef]).toBe('Разбор.\nНЕ ВЫПОЛНЕНО: x\nВЕРДИКТ: НЕ ПРОШЁЛ');
     const unfinished = exported.attempts.find((item) => item.label === 'Незавершённый');
     expect(unfinished).toMatchObject({ state: 'unknown', ref: 'S9', participant: 'C', visit: 1, attempt: 1, phase: 'answer', prompt: 'Незавершённый запрос' });
-    expect(exported.snapshot).toEqual(expect.objectContaining({ chatBindings: expect.any(Object), dependencies: expect.any(Object) }));
+    expect(exported.snapshot).toEqual(expect.objectContaining({ chatBindings: expect.any(Object) }));
   });
 
   test('a version 1 record is still exported, and it is not resumable', () => {
@@ -444,7 +442,7 @@ describe('V07: a record is resumable only with the whole state of the checkpoint
     expect(Record.canResume(record)).toBe(false);
     expect(Record.exportRun(record).resumable).toBe(false);
     record.snapshot.pc = 'r1';
-    delete record.snapshot.loopCounters;
+    delete record.snapshot.decisions;
     expect(Record.canResume(record)).toBe(false);
   });
 });

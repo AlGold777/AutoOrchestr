@@ -38,18 +38,6 @@ describe('Custom engine chat (chat: new, 4.2, T07)', () => {
     expect(log[0][0].chat).toBe('continue');
   });
 
-  test('a new visit of the step starts a new chat again; the same visit does not', async () => {
-    const log = [];
-    const steps = [
-      { ref: 'S10', kind: 'round', chat: 'new', input: 'none', models: ['A'] },
-      { ref: 'G1', kind: 'gate', criteria: ['c'], models: ['B'], onFail: { goto: 'S10', maxLoops: 1 } }
-    ];
-    const result = await Engine.run({ task: 'T', steps, sendParticipants: participantTransport({ A: ['a1', 'a2'], B: [FAIL, PASS] }, log) });
-    expect(result.stopReason).toBe('steps_done');
-    const aCalls = log.flat().filter((request) => request.participantId === 'A').map((request) => [request.visit, request.attempt, request.chat]);
-    expect(aCalls).toEqual([[1, 1, 'new'], [2, 1, 'new']]);
-  });
-
   test('a chat other than continue or new is refused before the first request, with the address of the step', async () => {
     const log = [];
     const steps = [{ ref: 'S1', kind: 'round', chat: 'shared', input: 'none', models: ['A'] }];

@@ -3818,16 +3818,14 @@ describe('Pipeline debate favorites view', () => {
           field('.stage-card-onFail-mode').value = 'goto';
           field('.stage-card-onFail-mode').dispatchEvent(new Event('change'));
           await settleCustomCard();
-          field('.stage-card-onFail-goto').value = 'r1';
+          field('.stage-card-onFail-goto').value = 'r2';
           field('.stage-card-onFail-goto').dispatchEvent(new Event('change'));
           await settleCustomCard();
-          field('.stage-card-onFail-loops').value = '2';
-          field('.stage-card-onFail-loops').dispatchEvent(new Event('change'));
-          await settleCustomCard();
+          expect(dialogBody().querySelector('.stage-card-onFail-loops')).toBeNull();
 
           const built = h.debug.basicSchemaFromPage(planOf(), null, { forSave: true });
           expect(built.steps.map((step) => step.ref)).toEqual(['r1', 'gate:1', 'r2']);
-          expect(built.steps[1]).toEqual({ ref: 'gate:1', kind: 'gate', models: [{ name: 'GPT' }], criteria: ['полнота', 'ясность'], pass: 'any', onFail: { goto: 'r1', maxLoops: 2 } });
+          expect(built.steps[1]).toEqual({ ref: 'gate:1', kind: 'gate', models: [{ name: 'GPT' }], criteria: ['полнота', 'ясность'], pass: 'any', onFail: { goto: 'r2' } });
           expect(window.BasicSchema.validate(built)).toEqual([]);
           const back = built;
           expect((await h.debug.installBasicSchema('Gate again', back)).ok).toBe(true);
@@ -4103,10 +4101,10 @@ describe('Pipeline debate favorites view', () => {
           const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
             { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }, { name: 'Claude' }] },
             { ref: 'gate:1', kind: 'gate', models: [{ name: 'Gemini' }, { name: 'GPT', enabled: false }], criteria: ['полнота', 'ясность'], pass: 'any',
-              onFail: { goto: 'r1', maxLoops: 2, feedback: [{ step: 'r1', participant: 'GPT' }], invalidate: ['r1'] }, onPass: { goto: 'r2' } },
+              onFail: { goto: 'r2' }, onPass: { goto: 'r2' } },
             { ref: 'r2', kind: 'round', input: ['r1'], output: { name: 'Итог', form: 'кратко', sections: ['Вывод'] }, models: [{ name: 'GPT' }] },
             { ref: 'route:1', kind: 'route', models: [], input: [{ step: 'r2', participant: 'GPT' }], select: { by: 'rule', conflict: 'first',
-              cases: [{ id: 'again', label: 'Ещё', when: { source: 0, pointer: '/route', op: 'in', value: ['close', 'end'] }, action: { goto: 'r2', maxLoops: 2 } },
+              cases: [{ id: 'again', label: 'Ещё', when: { source: 0, pointer: '/route', op: 'in', value: ['close', 'end'] }, action: { stop: 'повтор не поддерживается' } },
                 { id: 'close', when: { source: 0, pointer: '/route', op: 'exists' }, action: { goto: 'owner:1' } }],
               otherwise: { stop: 'конец' } } },
             { ref: 'owner:1', kind: 'owner', models: [], task: 'Передайте файл', output: { name: 'Файл', sections: ['Описание'] } },

@@ -145,7 +145,12 @@
         if (own(st.task)) step.task = st.task;
       } else if (st.kind === 'gate') {
         step.criteria = list(st.criteria).filter(own).join('; ') || 'Ответ полный';
-        if (st.onFail?.goto) warnings.push(`Возврат проверки ${st.ref} на ${st.onFail.goto} не перенесён: на стенде возвратов назад нет.`);
+        [['onFail', st.onFail], ['onPass', st.onPass]].forEach(([field, action]) => {
+          if (!isObj(action)) return;
+          const target = steps.findIndex((x) => x.ref === action.goto);
+          if ('return' in action || (target >= 0 && target <= i)) warnings.push(`Возврат назад (${field} проверки ${st.ref}) не перенесён: возвратов назад нет ни на стенде, ни в Basic, добавьте обычный шаг ниже по списку.`);
+          else if ('goto' in action) warnings.push(`Переход проверки ${st.ref} (${field}) на ${action.goto} не перенесён: на стенде переходов нет.`);
+        });
       } else if (st.kind === 'owner') {
         step.ask = own(st.task) ? st.task : 'Дайте ответ';
       } else {

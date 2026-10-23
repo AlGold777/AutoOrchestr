@@ -93,18 +93,20 @@ describe('Custom engine checkpoint (ТЗ 7, 8.2, T20)', () => {
     expect(decisions.map((state) => state.pendingOwner)).toEqual([{ kind: 'decision', stepRef: 'S1', visit: 1 }, null]);
   });
 
-  test('a checkpoint is written after the invalidation of a transition, too', async () => {
+  test('a checkpoint is written before a transition and again after it, with the target named as applied', async () => {
     const log = [];
     const { checkpoint, states } = checkpointing(log);
     const steps = [
       { ref: 'S10', kind: 'round', input: 'none', models: ['A'] },
-      { ref: 'G1', kind: 'gate', criteria: ['c'], models: ['B'], onFail: { goto: 'S10', maxLoops: 1 } }
+      { ref: 'G1', kind: 'gate', criteria: ['c'], models: ['B'], onFail: { goto: 'S12' } },
+      { ref: 'S11', kind: 'round', models: ['C'] },
+      { ref: 'S12', kind: 'round', models: ['D'] }
     ];
     const FAIL = 'Разбор.\nНЕ ВЫПОЛНЕНО: x\nВЕРДИКТ: НЕ ПРОШЁЛ';
-    const PASS = 'Разбор.\nВЕРДИКТ: ПРОШЁЛ';
-    const result = await Engine.run({ task: 'T', steps, send: transport({ A: ['a1', 'a2'], B: [FAIL, PASS] }, log), checkpoint });
+    const result = await Engine.run({ task: 'T', steps, send: transport({ A: ['a1'], B: [FAIL], D: ['d1'] }, log), checkpoint });
     expect(result.stopReason).toBe('steps_done');
     const transitions = states.filter((state) => state.current.phase === 'transition');
-    expect(transitions.map((state) => state.pc)).toEqual(['G1', 'G1']);
+    expect(transitions.map((state) => [state.pc, state.current.applied?.target ?? null])).toEqual([['G1', null], ['G1', 'S12']]);
+    ['loopCounters', 'continuationStack', 'feedback', 'dependencies'].forEach((field) => expect(transitions[0]).not.toHaveProperty(field));
   });
 });

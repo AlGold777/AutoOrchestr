@@ -10243,15 +10243,10 @@ window.ProtoState = {
     route({ ref = '', caseLabel = '', reason = '' } = {}) {
       return `Маршрут ${ref}: вариант «${caseLabel}», ${ROUTE_REASON[reason] || reason}`;
     },
-    // stopText: the text of a stop reason (the engine's STOP_TEXT); a limit names its count.
-    transition({ from = '', to = '', action = 'goto', count = null, maxLoops = null, reason = '' } = {}, stopText = (value) => value) {
-      if (action === 'stop') {
-        return reason === 'loop_limit'
-          ? `Переход ${from} → ${to} не выполнен: лимит ${maxLoops} исчерпан`
-          : `Прогон остановлен после ${from}: ${stopText(reason)}`;
-      }
-      const head = `${action === 'return' ? 'Возврат' : 'Переход'} ${from} → ${to}`;
-      return count != null && maxLoops != null ? `${head}, переход ${count} из ${maxLoops}` : head;
+    // stopText: the text of a stop reason (the engine's STOP_TEXT).
+    transition({ from = '', to = '', action = 'goto', reason = '' } = {}, stopText = (value) => value) {
+      if (action === 'stop') return `Прогон остановлен после ${from}: ${stopText(reason)}`;
+      return `Переход ${from} → ${to}`;
     },
     // The title of an artifact in the registry: name, participant (owner for an owner step), visit, validity.
     artifactTitle({ name = '', source = {}, valid = true } = {}) {
@@ -10277,23 +10272,16 @@ window.ProtoState = {
   function transitionView(value, absent) {
     if (value === undefined || value === null) return { mode: absent };
     if (value === 'stop' || value === 'ask') return { mode: value };
-    if (isTransition(value)) return { mode: 'goto', goto: value.goto, maxLoops: value.maxLoops ?? '' };
+    if (isTransition(value)) return { mode: 'goto', goto: value.goto };
     if (isPlain(value) && Object.keys(value).length === 1 && typeof value.stop === 'string') return { mode: 'stop', stop: value.stop };
-    if (isPlain(value) && value.return === true && Object.keys(value).every((key) => key === 'return' || key === 'maxLoops')) return { mode: 'return', maxLoops: value.maxLoops ?? '' };
     return { mode: 'json' };
   }
   // The value of a transition after an edit (`kind`: pass, fail, action, otherwise). A missing value is undefined.
-  // A goto keeps its feedback, invalidate and resumeAt: the window does not edit them.
   function transitionAfterEdit(current, edit = {}, kind = 'action') {
     if (edit.mode === 'next' || edit.mode === 'none') return undefined;
-    const limit = edit.maxLoops === '' || edit.maxLoops == null ? {} : { maxLoops: Number(edit.maxLoops) };
     if (edit.mode === 'ask') return 'ask';
     if (edit.mode === 'stop') return kind === 'fail' ? 'stop' : { stop: String(edit.stop ?? '') };
-    if (edit.mode === 'return') return { return: true, ...limit };
-    if (edit.mode === 'goto') {
-      const kept = isTransition(current) ? Object.fromEntries(Object.entries(current).filter(([key]) => key !== 'goto' && key !== 'maxLoops')) : {};
-      return { ...kept, goto: String(edit.goto ?? ''), ...limit };
-    }
+    if (edit.mode === 'goto') return { goto: String(edit.goto ?? '') };
     return current;
   }
 
@@ -10315,7 +10303,7 @@ window.ProtoState = {
     };
   }
   // An edit of a gate: { field: 'criteria', value } | { field: 'checker', name, checked } | { field: 'pass', value } |
-  // { field: 'onFail' | 'onPass', mode, goto, maxLoops, stop }. Returns the new step; the input is not changed.
+  // { field: 'onFail' | 'onPass', mode, goto, stop }. Returns the new step; the input is not changed.
   function gateAfterEdit(step = {}, edit = {}) {
     const next = { ...step };
     if (edit.field === 'criteria') {
@@ -10341,11 +10329,11 @@ window.ProtoState = {
     return next;
   }
 
-  // The window's controls: a select of a transition with its target (a ref of the canvas) and the number of loops.
-  // The change goes to emit(field, { mode, goto, maxLoops, stop }); a goto without a target is sent as it is (the schema says so).
+  // The window's controls: a select of a transition with its target (a ref of the canvas).
+  // The change goes to emit(field, { mode, goto, stop }); a goto without a target is sent as it is (the schema says so).
   function renderTransition(container, { field, label, view, options, refs, disabled, withStop, emit }) {
     const doc = container.ownerDocument;
-    const state = { mode: view.mode, goto: view.goto || '', maxLoops: view.maxLoops ?? '', stop: view.stop || '' };
+    const state = { mode: view.mode, goto: view.goto || '', stop: view.stop || '' };
     const box = el(doc, 'fieldset', `stage-card-transition stage-card-${field}`);
     box.append(el(doc, 'legend', '', label));
     const mode = el(doc, 'select', `stage-card-${field}-mode`);
@@ -10354,28 +10342,18 @@ window.ProtoState = {
     choices.forEach((item) => { const option = el(doc, 'option', '', item.label); option.value = item.value; option.disabled = Boolean(item.disabled); mode.append(option); });
     mode.value = state.mode;
     mode.disabled = Boolean(disabled) || state.mode === 'json';
-    const send = () => { if (typeof emit === 'function') emit({ field, mode: state.mode, goto: state.goto, maxLoops: state.maxLoops, stop: state.stop }); };
+    const send = () => { if (typeof emit === 'function') emit({ field, mode: state.mode, goto: state.goto, stop: state.stop }); };
     mode.addEventListener('change', () => { state.mode = mode.value; send(); });
     box.append(mode);
-    if (state.mode === 'goto' || state.mode === 'return') {
-      if (state.mode === 'goto') {
-        const target = el(doc, 'select', `stage-card-${field}-goto`);
-        target.setAttribute('aria-label', `${label}: переход на шаг`);
-        target.append(new Option('— выберите шаг —', ''));
-        [...new Set([...refs, state.goto].filter(Boolean))].forEach((ref) => target.append(new Option(ref, ref)));
-        target.value = state.goto;
-        target.disabled = Boolean(disabled);
-        target.addEventListener('change', () => { state.goto = target.value; send(); });
-        box.append(target);
-      }
-      const loops = el(doc, 'input', `stage-card-${field}-loops`);
-      loops.type = 'number'; loops.min = '1'; loops.max = '5'; loops.step = '1';
-      loops.value = state.maxLoops === '' ? '' : String(state.maxLoops);
-      loops.placeholder = 'лимит 1–5';
-      loops.disabled = Boolean(disabled);
-      loops.setAttribute('aria-label', `${label}: лимит переходов`);
-      loops.addEventListener('change', () => { state.maxLoops = loops.value; send(); });
-      box.append(loops);
+    if (state.mode === 'goto') {
+      const target = el(doc, 'select', `stage-card-${field}-goto`);
+      target.setAttribute('aria-label', `${label}: переход на шаг`);
+      target.append(new Option('— выберите шаг —', ''));
+      [...new Set([...refs, state.goto].filter(Boolean))].forEach((ref) => target.append(new Option(ref, ref)));
+      target.value = state.goto;
+      target.disabled = Boolean(disabled);
+      target.addEventListener('change', () => { state.goto = target.value; send(); });
+      box.append(target);
     }
     if (withStop && state.mode === 'stop') {
       const reason = el(doc, 'input', `stage-card-${field}-stop`);
@@ -10485,8 +10463,8 @@ window.ProtoState = {
     };
   }
   // An edit of a route: { field: 'by', value } | { field: 'model', value } | { field: 'task', value } | { field: 'conflict', value } |
-  // { field: 'source', step, participant, checked } | { field: 'otherwise', mode, goto, maxLoops, stop } | { field: 'caseAdd' } | { field: 'caseRemove', index } |
-  // { field: 'case', index, id, label, when (null: none; undefined: kept), action: { mode, goto, maxLoops, stop } }.
+  // { field: 'source', step, participant, checked } | { field: 'otherwise', mode, goto, stop } | { field: 'caseAdd' } | { field: 'caseRemove', index } |
+  // { field: 'case', index, id, label, when (null: none; undefined: kept), action: { mode, goto, stop } }.
   // Changing `by` drops what the new kind does not have: the conditions and the otherwise away from a rule, the models
   // away from a model, the model and the task away from a rule and an owner.
   function routeAfterEdit(step = {}, edit = {}) {
@@ -10638,8 +10616,8 @@ window.ProtoState = {
         }
       }
       renderTransition(box, { field: `case${index}`, label: 'Действие варианта', view: item.action, refs: model.refs, disabled, withStop: true,
-        options: [{ value: 'goto', label: 'Перейти к шагу' }, { value: 'stop', label: 'Остановить прогон' }, { value: 'return', label: 'Вернуться' }],
-        emit: (payload) => { state.action = { mode: payload.mode, goto: payload.goto, maxLoops: payload.maxLoops, stop: payload.stop }; sendCase(index, state); } });
+        options: [{ value: 'goto', label: 'Перейти к шагу' }, { value: 'stop', label: 'Остановить прогон' }],
+        emit: (payload) => { state.action = { mode: payload.mode, goto: payload.goto, stop: payload.stop }; sendCase(index, state); } });
       const remove = el(doc, 'button', 'stage-card-case-remove', '×');
       remove.type = 'button'; remove.disabled = disabled; remove.setAttribute('aria-label', 'Удалить вариант');
       remove.addEventListener('click', () => send({ field: 'caseRemove', index }));
@@ -10653,7 +10631,7 @@ window.ProtoState = {
     container.append(cases);
     if (model.by === 'rule') {
       renderTransition(container, { field: 'otherwise', label: 'Если ни один не подошёл', view: model.otherwise, refs: model.refs, disabled, withStop: true, emit: send,
-        options: [{ value: 'none', label: 'Нет: ошибка маршрута' }, { value: 'goto', label: 'Перейти к шагу' }, { value: 'stop', label: 'Остановить прогон' }, { value: 'return', label: 'Вернуться' }] });
+        options: [{ value: 'none', label: 'Нет: ошибка маршрута' }, { value: 'goto', label: 'Перейти к шагу' }, { value: 'stop', label: 'Остановить прогон' }] });
     }
   }
 
@@ -12084,9 +12062,9 @@ window.ProtoState = {
 //   asks the owner after the step in every mode. Artifacts (basic-artifacts.js): an accepted answer is stored once
 //   (putText) and its declared artifacts are registered; a source { artifact, version } gives only that content.
 // Gate (basic-control.js): checkers answer with a verdict; the gate passes by require (the answers) and pass (all | any).
-//   A fail stops the run (gate_failed) or asks the owner (onFail: ask). Transitions after a gate come later.
-// Pointer: the run is at a position of the plan. A gate's onPass/onFail may take goto (with maxLoops, feedback, resumeAt), stop
-//   or return (to the saved resumeAt). Every new execution of a step is a new visit; a retry is not. Limits count per transition.
+//   A fail stops the run (gate_failed) or asks the owner (onFail: ask).
+// Pointer: the run is at a position of the plan and only moves forward. A gate's onPass/onFail (and the cases of a route) may take
+//   goto (to a step lower in the list) or stop. There is no way back: a repeat is one more ordinary step lower in the list.
 // Transition: decide(problem) → 'continue' | 'retry' | 'skip' | 'stop'. Asked after every step in semi-automatic
 //   mode, in Auto when the threshold is not met, and after every step with approval. 'continue' is never offered
 //   below the threshold. A prompt over maxPromptChars stops the run before sending.
@@ -12126,16 +12104,16 @@ window.ProtoState = {
     no_decision: 'нет принятых ответов, решение владельца не получено',
     missing_input: 'обязательный вход не получен, запрос не отправлен',
     gate_failed: 'проверка не пройдена',
-    loop_limit: 'лимит переходов исчерпан',
     route_not_found: 'ни один вариант маршрута не подошёл, иначе не задан',
     route_ambiguous: 'подошло несколько вариантов маршрута',
     invalid_route_input: 'источник правила маршрута не читается как JSON',
-    return_missing: 'возврат без сохранённой точки продолжения',
     unsupported_input: 'двоичный файл не передаётся тексту модели; шаг не отправлен'
   });
-  const MAX_LOOPS = 5;
   // The fields of each transition (6.3); a field outside them is refused before the first request.
-  const ACTION_FIELDS = Object.freeze({ goto: ['goto', 'maxLoops', 'feedback', 'invalidate', 'resumeAt'], stop: ['stop'], return: ['return', 'maxLoops'] });
+  const ACTION_FIELDS = Object.freeze({ goto: ['goto'], stop: ['stop'] });
+  // The removed ways back: a schema that still uses them is refused with the reason (a repeat is an ordinary step lower in the list).
+  const BACK_FIELDS = Object.freeze(['return', 'maxLoops', 'feedback', 'invalidate', 'resumeAt']);
+  const NO_BACK = 'возврат назад не поддерживается: добавьте обычный шаг ниже по списку';
 
   const text = (value) => String(value == null ? '' : value).trim();
   // The key of a step in the state of the run: its ref, or its position in the schema for a step without a ref.
@@ -12178,12 +12156,10 @@ window.ProtoState = {
 
   // The block of a gate: its criteria, and the verdict the answer ends with (6.1).
   const gateBlock = (step, output) => `Критерии проверки:\n${step.criteria.map((item) => `- ${item}`).join('\n')}\n${Control.verdictInstruction(output?.format === 'json')}`;
-  // The feedback of a return: a block of its own, given to the visit that the return starts (never to the first visit).
   // The block of a model route: its cases with their labels, and the answer it names (6.2).
   const routeBlock = (step) => `Варианты маршрута:\n${step.select.cases.map((item) => `- ${item.id} — ${item.label}`).join('\n')}\nОтвет — один JSON-объект {"route": "<id варианта>"} без текста вокруг.`;
-  const feedbackBlock = (items) => `Замечания, вызвавшие возврат:\n\n${labelled(items)}`;
 
-  function buildPrompt({ task, step, model, input = [], inputMode = 'none', earlier = [], feedback = [], ownerAnswers = [], askInstruction = '', output = null }) {
+  function buildPrompt({ task, step, model, input = [], inputMode = 'none', earlier = [], ownerAnswers = [], askInstruction = '', output = null }) {
     if (askInstruction && typeof model.discipline?.ask === 'string') askInstruction = model.discipline.ask;
     if (typeof model.promptTemplate === 'string' && model.promptTemplate.trim()) {
       // One pass: placeholders occurring inside model answers remain data, never instructions.
@@ -12192,7 +12168,6 @@ window.ProtoState = {
       if (formatBlock(output)) parts.push(formatBlock(output));
       if (step.kind === 'gate') parts.push(gateBlock(step, output));
       if (step.kind === 'route') parts.push(routeBlock(step));
-      if (feedback.length) parts.push(feedbackBlock(feedback));
       if (ownerAnswers.length) parts.push(`Ответы владельца на вопросы:\n${ownerAnswers.map((item) => `- ${item.question}: ${item.answer}`).join('\n')}`);
       if (askInstruction) parts.push(askInstruction);
       return parts.join('\n\n');
@@ -12205,7 +12180,6 @@ window.ProtoState = {
         : `Ответы предыдущего шага:\n\n${numbered(input)}`);
     }
     if (earlier.length) parts.push(`Ответы участников этого раунда до тебя:\n\n${numbered(earlier)}`);
-    if (feedback.length) parts.push(feedbackBlock(feedback));
     const taskInstruction = model.task ?? step.task;
     if (text(taskInstruction)) parts.push(`Задание:\n${text(taskInstruction)}`);
     if (formatBlock(output)) parts.push(formatBlock(output));
@@ -12549,9 +12523,8 @@ window.ProtoState = {
     });
   }
 
-  // The transitions of the plan (6.3, 6.4), checked before the first request: one shape per action, its fields, a known
-  // target (goto, resumeAt), the feedback as sources, a limit on every transition to an early or the current step, and no
-  // cycle without a limit (BasicSchema.graph). `invalidate` comes with the next pack: refused for now. Null when all is well.
+  // The transitions of the plan (6.3, 6.4), checked before the first request: one shape per action (goto or stop), its fields,
+  // a known target lower in the list. There is no way back. Null when all is well.
   function transitionsProblem(plan) {
     const targetOf = (ref) => plan.findIndex((item) => item.ref === ref);
     const actions = [];
@@ -12564,47 +12537,25 @@ window.ProtoState = {
         if (step.select.otherwise !== undefined) actions.push({ step, pos, field: 'select.otherwise', action: step.select.otherwise });
       }
     });
-    const resumePositions = actions.filter(({ action }) => isPlain(action) && typeof action.resumeAt === 'string')
-      .map(({ action }) => targetOf(action.resumeAt)).filter((at) => at >= 0);
     for (const { step, pos, field, action } of actions) {
       const fail = (code, at, message) => new EngineError(code, `шаг «${step.ref}» · ${at}`, message);
-      if (!isPlain(action)) return fail('invalid_field', field, 'переход: объект с одним полем goto, stop или return');
-      const kinds = ['goto', 'stop', 'return'].filter((key) => key in action);
-      if (kinds.length !== 1) return fail('invalid_field', field, 'переход: ровно одно из goto, stop, return');
+      if (!isPlain(action)) return fail('invalid_field', field, 'переход: объект с одним полем goto или stop');
+      const back = BACK_FIELDS.find((key) => key in action);
+      if (back !== undefined) return fail('invalid_field', `${field}.${back}`, `«${back}»: ${NO_BACK}`);
+      const kinds = ['goto', 'stop'].filter((key) => key in action);
+      if (kinds.length !== 1) return fail('invalid_field', field, 'переход: ровно одно из goto, stop');
       const [kind] = kinds;
       const extra = Object.keys(action).find((key) => !ACTION_FIELDS[kind].includes(key));
       if (extra !== undefined) return fail('invalid_field', `${field}.${extra}`, `поле «${extra}» не входит в переход «${kind}»`);
-      if ('maxLoops' in action && !(Number.isSafeInteger(action.maxLoops) && action.maxLoops >= 1 && action.maxLoops <= MAX_LOOPS)) {
-        return fail('invalid_field', `${field}.maxLoops`, 'лимит переходов: целое от 1 до 5');
-      }
       if (kind === 'stop') {
         if (typeof action.stop !== 'string' || !action.stop.trim()) return fail('invalid_field', `${field}.stop`, 'причина остановки: непустой текст');
         continue;
       }
-      if (kind === 'return' && action.return !== true) return fail('invalid_field', `${field}.return`, 'return: только true');
-      if (kind === 'goto') {
-        if (typeof action.goto !== 'string' || !action.goto) return fail('invalid_field', `${field}.goto`, 'ref перехода: непустой текст');
-        if (targetOf(action.goto) < 0) return fail('unknown_target', `${field}.goto`, `шаг «${action.goto}» не исполняется в этом прогоне`);
-        if ('invalidate' in action) {
-          if (!Array.isArray(action.invalidate) || !action.invalidate.length) return fail('invalid_field', `${field}.invalidate`, 'ожидается непустой список ref');
-          const unknown = action.invalidate.find((ref) => typeof ref !== 'string' || targetOf(ref) < 0);
-          if (unknown !== undefined) return fail('unknown_target', `${field}.invalidate`, `шаг «${unknown}» не исполняется в этом прогоне`);
-        }
-        if ('feedback' in action) {
-          if (!Array.isArray(action.feedback)) return fail('invalid_field', `${field}.feedback`, 'ожидается список источников');
-          const problem = inputProblem(action.feedback, 'round', fail, `${field}.feedback`);
-          if (problem) return problem;
-        }
-        if (targetOf(action.goto) <= pos && !('maxLoops' in action)) return fail('invalid_field', field, 'переход назад без maxLoops: укажите лимит от 1 до 5');
-      }
-      if ('resumeAt' in action && targetOf(action.resumeAt) < 0) return fail('unknown_target', `${field}.resumeAt`, `шаг «${action.resumeAt}» не исполняется в этом прогоне`);
-      if (kind === 'return' && resumePositions.some((at) => at <= pos) && !('maxLoops' in action)) {
-        return fail('invalid_field', field, 'возврат назад без maxLoops: укажите лимит от 1 до 5');
-      }
+      if (typeof action.goto !== 'string' || !action.goto) return fail('invalid_field', `${field}.goto`, 'ref перехода: непустой текст');
+      if (targetOf(action.goto) < 0) return fail('unknown_target', `${field}.goto`, `шаг «${action.goto}» не исполняется в этом прогоне`);
+      if (targetOf(action.goto) <= pos) return fail('invalid_field', `${field}.goto`, NO_BACK);
     }
-    const Schema = root.BasicSchema || (typeof require === 'function' ? require('./basic-schema') : null);
-    const { cycle } = Schema.graph(plan);
-    return cycle ? new EngineError('unbounded_cycle', cycle, 'цикл без ограниченного перехода: укажите maxLoops на переходе, который замыкает цикл') : null;
+    return null;
   }
 
   async function run({
@@ -12676,13 +12627,9 @@ window.ProtoState = {
     const history = []; // every request: step, model, participant, attempt, prompt, outcome
     const results = []; // per step: { step, outcome: { participantId: verdict }, skipped }
     let stopReason = 'steps_done';
-    // The state of the run (ТЗ 7): plain data. The visit of a step is the number of its executions; the feedback of a return
-    // waits for the visit it starts; the stack keeps the points where a return goes back.
-    // dependencies: the keys of the results and artifacts that each visit used (6.3); a stale key makes its consumer stale.
-    const state = { visits: {}, loopCounters: {}, continuationStack: [], feedback: {}, dependencies: {}, decisions: {} };
+    // The state of the run (ТЗ 7): plain data. The visit of a step is the number of its executions (the run only moves forward, so 1).
+    const state = { visits: {}, decisions: {} };
     let activeVisit = 1;
-    let activeFeedback = [];
-    let activeFeedbackRefs = []; // the feedback of the visit in progress, as references (for a checkpoint)
     // Answers found by the read-only check of an unconfirmed request (N04): participant id → a reply. The next attempt of that
     // participant takes the reply instead of sending, and it goes through the same acceptance as any reply.
     let prefetched = null;
@@ -12699,7 +12646,7 @@ window.ProtoState = {
     // The live state for a checkpoint (8.2): plain data only. The pointer is the step in progress (or the next one between steps);
     // a pending owner interaction and the pending participants of a send are named, so a reload can show them.
     // The live state for a checkpoint (8.2): plain data only. The pointer is the step in progress (or the next one between steps).
-    // The step in progress keeps its visit, phase, accepted answers, the participants in flight, its feedback, route and owner answer.
+    // The step in progress keeps its visit, phase, accepted answers, the participants in flight, route and owner answer.
     const compactOutcome = (outcome) => Object.fromEntries(Object.entries(outcome || {}).map(([id, item]) => { const { text, ...rest } = item; return [id, rest]; }));
     const ownerOf = (owner) => ({ textRef: owner.textRef ?? null, binary: Boolean(owner.binary), file: owner.file ?? null });
     const savedEntry = (item) => ({ stepRef: item.step.ref, index: item.step.index, visit: item.visit, valid: item.valid !== false, skipped: Boolean(item.skipped),
@@ -12709,15 +12656,14 @@ window.ProtoState = {
       const outcomeNow = current?.outcome || {};
       const finished = results.filter((item) => item !== current);
       return JSON.parse(JSON.stringify({
-        pc: step ? step.ref : null, visits: state.visits, loopCounters: state.loopCounters, continuationStack: state.continuationStack,
-        feedback: state.feedback, dependencies: state.dependencies, decisions: state.decisions,
+        pc: step ? step.ref : null, visits: state.visits, decisions: state.decisions,
         // `active` is true while a step is in progress; between steps the current position is the next step, not started.
         current: current && step ? { active: true, stepRef: step.ref, visit: activeVisit, phase, valid: current.valid !== false,
           accepted: Object.keys(outcomeNow).filter((id) => outcomeNow[id]?.ok), pending: extra.pending ?? inFlight,
-          outcome: compactOutcome(outcomeNow), feedback: activeFeedbackRefs, route: current.route ?? null,
+          outcome: compactOutcome(outcomeNow), route: current.route ?? null,
           owner: current.owner ? ownerOf(current.owner) : null, ...(extra.applied ? { applied: extra.applied } : {}) }
           : { active: false, stepRef: step ? step.ref : null, visit: step ? (state.visits[refKey(step)] || 0) : 0, phase, valid: true,
-            accepted: [], pending: [], outcome: {}, feedback: [], route: null, owner: null },
+            accepted: [], pending: [], outcome: {}, route: null, owner: null },
         results: finished.map(savedEntry),
         routes: finished.filter((item) => item.route).map((item) => ({ stepRef: item.step.ref, visit: item.visit, id: item.route.id, by: item.route.by, reason: item.route.reason })),
         ownerAnswers, artifacts: registry.entries, pendingOwner: openOwner, chatBindings
@@ -12870,34 +12816,19 @@ window.ProtoState = {
       }
       return [];
     }
-    // The feedback of a transition: its sources are resolved now, before the transition, and kept as addresses and text refs.
-    function feedbackOf(spec, target) {
-      return sourceItems(spec, target).map((item) => {
-        if (item.binary) throw new StopRun('unsupported_input', `файл «${item.file.name}» (${item.file.mime}) — двоичный; замечанием текстом не передаётся`);
-        return { label: item.label, source: item.source, ...(item.artifact ? { artifact: item.artifact } : {}), textRef: item.textRef, pointer: item.pointer ?? '' };
-      });
-    }
-    // The feedback stored for a step goes to its next visit only: it is taken here, when that visit starts.
-    function takeFeedback(key) {
-      const stored = state.feedback[key] || [];
-      delete state.feedback[key];
-      activeFeedbackRefs = stored.map((item) => ({ label: item.label, textRef: item.textRef, pointer: item.pointer ?? '' }));
-      return feedbackFrom(stored, key);
-    }
-
     // Instructions (owner-editable behaviour) and input (data from other models) are kept apart.
     function partsFor(step, model, input, earlier, spec) {
       return {
         instructions: { task: text(task), stepTask: model.task ?? step.task, extra: model.extra || '', askInstruction: semiAuto ? (model.discipline?.ask ?? askInstruction) : '',
           ownerAnswers: ownerAnswers.slice() },
-        input: { mode: modeOf(spec), items: input, earlier, feedback: activeFeedback }
+        input: { mode: modeOf(spec), items: input, earlier }
       };
     }
 
     function promptFor(step, model, earlier) {
       const spec = specOf(step, model);
       const input = inputFor(step, spec, { model });
-      const prompt = buildPrompt({ task, step, model, input, inputMode: modeOf(spec), earlier, feedback: activeFeedback,
+      const prompt = buildPrompt({ task, step, model, input, inputMode: modeOf(spec), earlier,
         ownerAnswers, askInstruction: semiAuto ? askInstruction : '', output: outputOf(step, model) });
       if (prompt.length > maxPromptChars) throw new StopRun('context_full');
       return { prompt, parts: partsFor(step, model, input, earlier, spec) };
@@ -13034,42 +12965,6 @@ window.ProtoState = {
       }
     }
 
-    // The keys of results (schema index and visit) and of artifact versions: what a visit used, and what becomes stale.
-    const resultKey = (entry) => `${entry.step.index}@${entry.visit}`;
-    const artifactKey = (entry) => `art:${Artifacts.lineKey(entry.lineage)}@${entry.source.step}|${entry.source.participant}|${entry.source.visit}`;
-    const producerKey = (entry) => {
-      const step = plan.find((item) => item.ref === entry.source.step);
-      return step ? `${step.index}@${entry.source.visit}` : null;
-    };
-    const usedKeysOf = (items) => [...new Set(items.map((item) => {
-      if (item.artifact) return artifactKey(item.artifact);
-      return item.source ? `${item.source.step}@${item.source.visit}` : null;
-    }).filter(Boolean))];
-    // The results and artifacts that become stale (6.3): the seeds, and whatever used a stale key, by the recorded dependencies.
-    // A stale result stays in the history; it is no answer any more, and a later failed or skipped visit does not bring it back.
-    function invalidateFrom(seeds) {
-      const stale = new Set(seeds);
-      let grew = true;
-      while (grew) {
-        grew = false;
-        Object.entries(state.dependencies).forEach(([consumer, used]) => {
-          if (!stale.has(consumer) && used.some((key) => stale.has(key))) {
-            stale.add(consumer);
-            grew = true;
-          }
-        });
-        registry.entries.forEach((entry) => {
-          const key = artifactKey(entry);
-          if (!stale.has(key) && stale.has(producerKey(entry))) {
-            stale.add(key);
-            grew = true;
-          }
-        });
-      }
-      results.forEach((entry) => { if (stale.has(resultKey(entry))) entry.valid = false; });
-      Artifacts.markInvalid(registry, (entry) => stale.has(artifactKey(entry)));
-    }
-
     // The value of a source of a rule route: its answer (or artifact) read as JSON at the pointer. No answer: found false.
     function readSourceOf(step, index, pointer) {
       const items = sourceItems([step.input[index]], step);
@@ -13187,58 +13082,35 @@ window.ProtoState = {
       throw new StopRun('route_ambiguous', matched.map((item) => item.id).join(', '));
     }
 
-    // The next position after a step: the next step, or the transition the step wrote (6.3, 6.4). A transition is taken only
-    // while its limit allows it; a stop, a missing return point and a limit end the run with their reason.
+    // The next position after a step: the next step, or the transition the step wrote (6.3, 6.4): a goto to a step lower in the
+    // list (checked before the run) or a stop, which ends the run with its reason.
     async function transit(pos, action, caseId, applied = null) {
       const step = plan[pos];
       if (!action) return pos + 1;
-      // A transition that the reload found applied goes on to its saved target: its counter, feedback, validity and stack
-      // are not applied a second time (8.3).
+      // A transition that the reload found applied goes on to its saved target: it is not applied a second time (8.3).
       if (applied) return plan.findIndex((item) => item.ref === applied.target);
       await checkpointNow('transition');
-      const from = refKey(step);
       if ('stop' in action) {
         emit('custom_transition', { from: step.ref, case: caseId, action: 'stop', reason: action.stop });
         throw new StopRun(action.stop);
       }
-      const frame = 'return' in action ? state.continuationStack[state.continuationStack.length - 1] : null;
-      if ('return' in action && !frame) throw new StopRun('return_missing');
-      const target = 'return' in action ? frame.resumeAt : action.goto;
+      const target = action.goto;
       const to = plan.findIndex((item) => item.ref === target);
-      const counter = `${from}:${caseId}`;
-      let count = null;
-      // A limit counts the transitions to an early or the current step; the check comes before the transition.
-      if (to <= pos && 'maxLoops' in action) {
-        const used = state.loopCounters[counter] || 0;
-        if (used >= action.maxLoops) {
-          emit('custom_transition', { from: step.ref, case: caseId, action: 'stop', reason: 'loop_limit', to: target, count: used, maxLoops: action.maxLoops });
-          throw new StopRun('loop_limit', counter);
-        }
-        count = used + 1;
-        state.loopCounters[counter] = count;
-      }
-      if ('return' in action) state.continuationStack.pop();
-      else {
-        // The feedback is resolved first, then the target and the steps the transition names are re-examined (6.3).
-        if (action.feedback) state.feedback[target] = feedbackOf(action.feedback, plan[to]);
-        const named = (action.invalidate || []).flatMap((ref) => results.filter((entry) => entry.step.ref === ref));
-        invalidateFrom([...results.filter((entry) => entry.step.index === plan[to].index), ...named].map(resultKey));
-        if (action.resumeAt) state.continuationStack.push({ resumeAt: action.resumeAt, from });
-      }
       // The transition is applied: the state now says so, and a reload goes on from its target.
       await checkpointNow('transition', { applied: { target } });
-      emit('custom_transition', { from: step.ref, case: caseId, action: 'return' in action ? 'return' : 'goto', to: target, count, maxLoops: action.maxLoops ?? null });
+      emit('custom_transition', { from: step.ref, case: caseId, action: 'goto', to: target });
       return to;
     }
 
     // The step in progress: on Stop its accepted answers are kept like those of finished steps.
     let current = null;
     let pos = 0; // the pointer (pc): the position of the step the run is at
-    let resumeAt = null; // the step that the saved state was in: its visit, phase, outcome, owner and route
+    let resumePoint = null; // the step that the saved state was in: its visit, phase, outcome, owner and route
 
     // Resume (8.3): the saved state is taken back as it was. The steps are the ones the caller gives (the saved schema);
-    // the finished steps are not sent again, the accepted answers of the interrupted visit stay, the counters, the stack,
-    // the feedback and the validity are restored, not reset. Texts come back through getText.
+    // the finished steps are not sent again, the accepted answers of the interrupted visit stay, the validity is restored, not reset.
+    // Texts come back through getText. A state saved by an older version may hold fields that no longer exist (the counters of
+    // transitions, the stack, the feedback, the dependencies): they are ignored.
     const pointAt = (ref) => plan.findIndex((item) => item.ref === ref);
     const restoredText = (ref, where) => {
       const value = getText(ref);
@@ -13250,22 +13122,17 @@ window.ProtoState = {
     const restoredOwner = (saved) => (saved.binary
       ? { binary: true, file: saved.file, textRef: null, text: '' }
       : { text: restoredText(saved.textRef, 'ответ владельца'), textRef: saved.textRef, ...(saved.file ? { file: saved.file } : {}) });
-    // The texts of the feedback of an interrupted visit, as the visit took them.
-    const feedbackFrom = (refs, key) => (refs || []).map((item) => ({
-      label: item.label, text: contentOf(restoredText(item.textRef, `шаг «${key}» · feedback`), item.pointer ?? '', `шаг «${key}» · feedback`)
-    }));
     function restoreRun(saved) {
       if (!isPlain(saved)) throw new EngineError('resume_invalid', 'resume', 'состояние для продолжения: объект снимка');
       // A complete checkpoint holds every field of the state (V07). A missing `pc` would read as "the run is over" and end the
       // run with no work done, so a partial snapshot is refused, not guessed.
       const lacking = [
-        ...['visits', 'decisions', 'loopCounters', 'feedback', 'dependencies'].filter((field) => !isPlain(saved[field])),
-        ...['results', 'continuationStack'].filter((field) => !Array.isArray(saved[field])),
+        ...['visits', 'decisions'].filter((field) => !isPlain(saved[field])),
+        ...['results'].filter((field) => !Array.isArray(saved[field])),
         ...('pc' in saved ? [] : ['pc'])
       ];
       if (lacking.length) throw new EngineError('resume_invalid', 'resume', `в снимке состояния нет полей: ${lacking.join(', ')}`);
-      ['visits', 'loopCounters', 'feedback', 'dependencies', 'decisions'].forEach((field) => { state[field] = isPlain(saved[field]) ? JSON.parse(JSON.stringify(saved[field])) : {}; });
-      state.continuationStack = Array.isArray(saved.continuationStack) ? JSON.parse(JSON.stringify(saved.continuationStack)) : [];
+      ['visits', 'decisions'].forEach((field) => { state[field] = isPlain(saved[field]) ? JSON.parse(JSON.stringify(saved[field])) : {}; });
       ownerAnswers.push(...(Array.isArray(saved.ownerAnswers) ? saved.ownerAnswers : []));
       // A list (an old snapshot) is no bindings: the chats are taken from the next reply of each participant.
       chatBindings = isPlain(saved.chatBindings) ? JSON.parse(JSON.stringify(saved.chatBindings)) : {};
@@ -13283,8 +13150,8 @@ window.ProtoState = {
       pos = at < 0 ? plan.length : at;
       const cur = saved.current;
       if (cur && cur.active && at >= 0 && cur.stepRef === saved.pc) {
-        resumeAt = { index: at, visit: cur.visit, phase: cur.phase, pending: Array.isArray(cur.pending) ? cur.pending : [], outcome: restoredOutcome(cur.outcome),
-          feedback: Array.isArray(cur.feedback) ? cur.feedback : [], valid: cur.valid !== false,
+        resumePoint = { index: at, visit: cur.visit, phase: cur.phase, pending: Array.isArray(cur.pending) ? cur.pending : [], outcome: restoredOutcome(cur.outcome),
+          valid: cur.valid !== false,
           owner: cur.owner ? restoredOwner(cur.owner) : null, route: cur.route || null, applied: cur.applied || null };
       }
     }
@@ -13355,13 +13222,11 @@ window.ProtoState = {
       while (pos < plan.length) {
         const step = plan[pos];
         const key = refKey(step);
-        const resumed = resumeAt && resumeAt.index === pos ? resumeAt : null;
-        resumeAt = null;
+        const resumed = resumePoint && resumePoint.index === pos ? resumePoint : null;
+        resumePoint = null;
         if (resumed) {
-          // The visit goes on: it is not a new execution, so its visit number and its feedback are kept.
+          // The visit goes on: it is not a new execution, so its visit number is kept.
           activeVisit = resumed.visit;
-          activeFeedback = feedbackFrom(resumed.feedback, key);
-          activeFeedbackRefs = resumed.feedback.slice();
         } else {
           // Every input of the step is resolved before its first request: a missing required one sends nothing, and
           // a revision whose source an author did not get stops the step (its line would be unknown).
@@ -13373,17 +13238,9 @@ window.ProtoState = {
               }
             });
           });
-          // A new execution of the step is a new visit; a technical retry is not. The feedback of a return is given to this visit.
+          // A new execution of the step is a new visit; a technical retry is not.
           state.visits[key] = (state.visits[key] || 0) + 1;
           activeVisit = state.visits[key];
-          // The sources of the feedback are used by this visit too (V02): a later stale source makes the visit stale.
-          const feedbackTaken = state.feedback[key] || [];
-          activeFeedback = takeFeedback(key);
-          // What this visit uses (the results and artifacts it took) is recorded: a later stale key makes the visit stale (6.3).
-          // The owner's answer is built on its input too: a change of that input makes the answer stale (N07, 6.3).
-          state.dependencies[`${step.index}@${activeVisit}`] = [...new Set([...usedKeysOf(step.kind === 'owner' ? answersFor(step, step.input ?? 'none')
-            : (step.models.length ? step.models.flatMap((model) => inputFor(step, specOf(step, model), { model })) : inputFor(step, step.input ?? 'none'))),
-            ...usedKeysOf(feedbackTaken)])];
         }
         const decidedKey = `${key}@${activeVisit}`;
         const outcome = resumed ? resumed.outcome : {};
@@ -13516,7 +13373,7 @@ window.ProtoState = {
     emit('custom_end', { stopReason, stopDetail, steps: results.length });
     return {
       steps: results.map((entry) => ({ index: entry.step.index, ref: entry.step.ref, kind: entry.step.kind, label: stepLabel(entry.step), visit: entry.visit, valid: entry.valid, skipped: entry.skipped, outcome: entry.outcome, ...(entry.route ? { route: entry.route } : {}), ...(entry.owner?.file ? { file: entry.owner.file } : {}) })),
-      // The state of the run as plain data (ТЗ 7): the pointer, the visits, the counters, the stack and the feedback.
+      // The state of the run as plain data (ТЗ 7): the pointer, the visits and the decisions.
       state: liveState('done'),
       answers: inputFor({ input: 'previous' }, 'previous', { strict: false }).map((item) => item.text),
       history, ownerAnswers, stopReason, stopDetail, checkpointed: typeof checkpoint === 'function',
@@ -13616,8 +13473,10 @@ window.ProtoState = {
   });
   const ROUTE_BY = Object.freeze(['rule', 'model', 'owner']);
   const ROUTE_CONFLICT = Object.freeze(['stop', 'first', 'owner']);
-  const ACTION_KINDS = Object.freeze(['goto', 'stop', 'return']);
-  const MAX_LOOPS = 5;
+  const ACTION_KINDS = Object.freeze(['goto', 'stop']);
+  // The removed ways back (a repeat is an ordinary step lower in the list): a schema that still has them is refused with the reason.
+  const BACK_FIELDS = Object.freeze(['return', 'maxLoops', 'feedback', 'invalidate', 'resumeAt']);
+  const NO_BACK = 'возврат назад не поддерживается: добавьте обычный шаг ниже по списку';
   const ROUTE_OPS = Object.freeze(['eq', 'in', 'exists']);
   const GATE_PASS = Object.freeze(['all', 'any']);
   const GATE_ON_FAIL = Object.freeze(['stop', 'ask']);
@@ -13785,17 +13644,15 @@ window.ProtoState = {
   // Returns the address of the source (for the duplicate check), or null when it has an error.
   // ctx: { fail, errors, steps, positions (ref → index), index (of the consumer step) }.
   function checkSource(source, path, ctx) {
-    const { fail, errors, steps, positions, index, later = false, strictOff = false, switchedOff } = ctx;
+    const { fail, errors, steps, positions, index } = ctx;
     const mark = errors.length;
     const unknown = (value, allowed, at) => Object.keys(value).forEach((key) => { if (!allowed.includes(key)) fail(`${at}.${key}`, 'неизвестное поле'); });
     // The step a reference names: it exists and comes before the consumer; final is never an ordinary source.
     const stepAt = (ref, at) => {
       if (typeof ref !== 'string' || !positions.has(ref)) { fail(at, `неизвестный шаг «${ref}»`); return -1; }
       const position = positions.get(ref);
-      if (!later && position >= index) fail(at, 'вход ссылается только на более ранний шаг');
-      else if (!later && steps[position].ref === 'final') fail(at, 'результат финального синтеза нельзя указать во входе');
-      // A transition (feedback) never names a switched-off step; an ordinary input may (it has no answers, 4.3).
-      else if (strictOff && switchedOff(position)) fail(at, `обратная связь из выключенного шага «${ref}»`);
+      if (position >= index) fail(at, 'вход ссылается только на более ранний шаг');
+      else if (steps[position].ref === 'final') fail(at, 'результат финального синтеза нельзя указать во входе');
       else return position;
       return -1;
     };
@@ -13951,12 +13808,12 @@ window.ProtoState = {
       const step = schema.steps[index];
       return isObject(step) && (step.kind === 'round' || step.kind === 'synthesis') && !(Array.isArray(step.models) && step.models.some((model) => isObject(model) && model.enabled !== false));
     };
-    const contextAt = (index, later = false, strictOff = false) => ({ fail, errors, steps: schema.steps, positions, index, later, strictOff, switchedOff });
-    const checkInputList = (list, path, index, later = false, strictOff = false) => {
+    const contextAt = (index) => ({ fail, errors, steps: schema.steps, positions, index });
+    const checkInputList = (list, path, index) => {
       if (!list.length) { fail(path, 'ожидается непустой список источников'); return; }
       const addresses = new Set();
       list.forEach((source, at) => {
-        const address = checkSource(source, `${path}[${at}]`, contextAt(index, later, strictOff));
+        const address = checkSource(source, `${path}[${at}]`, contextAt(index));
         if (!address) return;
         if (addresses.has(address)) fail(`${path}[${at}]`, 'источник повторяется');
         addresses.add(address);
@@ -14033,42 +13890,22 @@ window.ProtoState = {
       });
     };
 
-    // A transition (6.3): exactly one of goto, stop, return. `origin` is the index of the step that writes it.
-    // A transition to an early or the current step (and a return back) needs its limit maxLoops from 1 to 5.
-    const checkAction = (action, path, origin, resumeTargets) => {
-      if (!isObject(action)) { fail(path, 'переход: объект с одним полем goto, stop или return'); return; }
+    // A transition (6.3): exactly one of goto, stop. `origin` is the index of the step that writes it. A goto names a step
+    // lower in the list: there is no way back (a repeat is one more ordinary step).
+    const checkAction = (action, path, origin) => {
+      if (!isObject(action)) { fail(path, 'переход: объект с одним полем goto или stop'); return; }
+      const back = BACK_FIELDS.find((key) => key in action);
+      if (back !== undefined) { fail(`${path}.${back}`, `«${back}»: ${NO_BACK}`); return; }
       const kinds = ACTION_KINDS.filter((key) => key in action);
-      if (kinds.length !== 1) { fail(path, 'переход: ровно одно из goto, stop, return'); return; }
+      if (kinds.length !== 1) { fail(path, 'переход: ровно одно из goto, stop'); return; }
       const [kind] = kinds;
-      const fields = { goto: ['goto', 'maxLoops', 'feedback', 'invalidate', 'resumeAt'], stop: ['stop'], return: ['return', 'maxLoops'] }[kind];
-      unknownKeys(action, fields, path);
-      if ('maxLoops' in action && !(Number.isSafeInteger(action.maxLoops) && action.maxLoops >= 1 && action.maxLoops <= MAX_LOOPS)) fail(`${path}.maxLoops`, 'лимит переходов: целое от 1 до 5');
+      unknownKeys(action, [kind], path);
       if (kind === 'stop' && (typeof action.stop !== 'string' || !action.stop.trim())) fail(`${path}.stop`, 'причина остановки: непустой текст');
-      if (kind === 'return') {
-        if (action.return !== true) fail(`${path}.return`, 'return: только true');
-        if (!resumeTargets.length) fail(path, 'возврат без точки продолжения: ни один переход не задаёт resumeAt');
-        else if (!('maxLoops' in action) && resumeTargets.some((target) => target <= origin)) fail(path, 'возврат назад без maxLoops: укажите лимит от 1 до 5');
-      }
       if (kind === 'goto') {
         if (typeof action.goto !== 'string' || !action.goto) fail(`${path}.goto`, 'ref перехода: непустой текст');
         else if (!positions.has(action.goto)) fail(`${path}.goto`, `неизвестный шаг «${action.goto}»`);
         else if (switchedOff(positions.get(action.goto))) fail(`${path}.goto`, `переход на выключенный шаг «${action.goto}»`);
-        else if (positions.get(action.goto) <= origin && !('maxLoops' in action)) fail(path, 'переход назад без maxLoops: укажите лимит от 1 до 5');
-      }
-      if ('feedback' in action) {
-        if (!Array.isArray(action.feedback)) fail(`${path}.feedback`, 'ожидается список источников');
-        else checkInputList(action.feedback, `${path}.feedback`, origin, true, true);
-      }
-      if ('invalidate' in action) {
-        if (!Array.isArray(action.invalidate) || !action.invalidate.length) fail(`${path}.invalidate`, 'ожидается непустой список ref');
-        else action.invalidate.forEach((ref, at) => {
-          if (!positions.has(ref)) fail(`${path}.invalidate[${at}]`, `неизвестный шаг «${ref}»`);
-          else if (switchedOff(positions.get(ref))) fail(`${path}.invalidate[${at}]`, `пересмотр выключенного шага «${ref}»`);
-        });
-      }
-      if ('resumeAt' in action) {
-        if (!positions.has(action.resumeAt)) fail(`${path}.resumeAt`, `неизвестный шаг «${action.resumeAt}»`);
-        else if (switchedOff(positions.get(action.resumeAt))) fail(`${path}.resumeAt`, `точка продолжения на выключенный шаг «${action.resumeAt}»`);
+        else if (positions.get(action.goto) <= origin) fail(`${path}.goto`, NO_BACK);
       }
     };
 
@@ -14151,11 +13988,6 @@ window.ProtoState = {
       });
     };
 
-    // The points of continuation of the schema: a return goes back to one of them (6.3).
-    const resumeTargets = [];
-    schema.steps.forEach((step, at) => actionsOf(step, `steps[${at}]`).forEach(({ action }) => {
-      if (isObject(action) && positions.has(action.resumeAt)) resumeTargets.push(positions.get(action.resumeAt));
-    }));
     schema.steps.forEach((step, index) => {
       const path = `steps[${index}]`;
       if (!isObject(step)) { fail(path, 'ожидается объект'); return; }
@@ -14215,12 +14047,8 @@ window.ProtoState = {
         if ('discipline' in model) checkDiscipline(model.discipline, `${modelPath}.discipline`);
       });
       if (CONTROL_KINDS.includes(step.kind)) checkControl(step, path);
-      actionsOf(step, path).forEach(({ path: at, action }) => checkAction(action, at, index, resumeTargets));
+      actionsOf(step, path).forEach(({ path: at, action }) => checkAction(action, at, index));
     });
-    // A cycle that no limit stops is an error at the transition that closes it (6.4).
-    // The cycle comes from an unlimited transition, which is already named at its path: no second error there.
-    const { cycle } = graph(schema.steps);
-    if (cycle && !errors.some((error) => error.path === cycle)) fail(cycle, 'цикл без ограниченного перехода: укажите maxLoops');
     errors.push(...synthesisPlaceErrors(schema.steps), ...executabilityErrors(schema.steps));
     return errors;
   }
@@ -14343,56 +14171,7 @@ window.ProtoState = {
     return [];
   }
 
-  // The graph of the steps (6.3–6.4): edges { from, to, limited, path } between step indexes. A step with no written
-  // transition goes on to the next one (a route never does, a gate only when onPass or onFail 'ask' does not stand for it).
-  // A return may go to any resumeAt of the schema. A limited edge carries maxLoops.
-  function transitionsOf(steps) {
-    const positions = new Map();
-    steps.forEach((step, at) => { if (isObject(step) && typeof step.ref === 'string' && !positions.has(step.ref)) positions.set(step.ref, at); });
-    const resumeTargets = [];
-    steps.forEach((step, at) => actionsOf(step, `steps[${at}]`).forEach(({ action }) => {
-      if (isObject(action) && positions.has(action.resumeAt)) resumeTargets.push(positions.get(action.resumeAt));
-    }));
-    const edges = [];
-    steps.forEach((step, from) => {
-      if (!isObject(step)) return;
-      const linear = step.kind !== 'route' && (step.kind !== 'gate' || !('onPass' in step) || step.onFail === 'ask');
-      if (linear && from + 1 < steps.length) edges.push({ from, to: from + 1, limited: false, path: `steps[${from}]` });
-      actionsOf(step, `steps[${from}]`).forEach(({ path, action }) => {
-        if (!isObject(action)) return;
-        if (positions.has(action.goto)) edges.push({ from, to: positions.get(action.goto), limited: 'maxLoops' in action, path });
-        if (action.return === true) [...new Set(resumeTargets)].forEach((to) => edges.push({ from, to, limited: 'maxLoops' in action, path }));
-      });
-    });
-    return edges;
-  }
-
-  // The path of the edge that closes a cycle of unlimited edges, or null: the cycle has no limit to stop it.
-  function cycleOf(edges, count) {
-    const out = Array.from({ length: count }, () => []);
-    edges.forEach((edge) => { if (!edge.limited) out[edge.from].push(edge); });
-    const state = new Array(count).fill(0);
-    let found = null;
-    const visit = (node) => {
-      state[node] = 1;
-      for (const edge of out[node]) {
-        if (found) return;
-        if (state[edge.to] === 1) { found = edge; return; }
-        if (state[edge.to] === 0) visit(edge.to);
-      }
-      state[node] = 2;
-    };
-    for (let node = 0; node < count && !found; node += 1) if (state[node] === 0) visit(node);
-    return found ? found.path : null;
-  }
-
-  // The graph of a list of steps: its edges and the path of a cycle of unlimited edges (null when there is none).
-  const graph = (steps) => {
-    const edges = transitionsOf(steps);
-    return { edges, cycle: cycleOf(edges, steps.length) };
-  };
-
-  const api = Object.freeze({ SCHEMA_VERSION, SUPPORTED_VERSIONS, ORIGINS, DEFAULTS, pick, resolveFields, assemble, resolveRun, toSettings, toCanvas, validate, describeErrors, graph });
+  const api = Object.freeze({ SCHEMA_VERSION, SUPPORTED_VERSIONS, ORIGINS, DEFAULTS, pick, resolveFields, assemble, resolveRun, toSettings, toCanvas, validate, describeErrors });
   root.BasicSchema = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
@@ -14546,7 +14325,12 @@ window.ProtoState = {
         if (own(st.task)) step.task = st.task;
       } else if (st.kind === 'gate') {
         step.criteria = list(st.criteria).filter(own).join('; ') || 'Ответ полный';
-        if (st.onFail?.goto) warnings.push(`Возврат проверки ${st.ref} на ${st.onFail.goto} не перенесён: на стенде возвратов назад нет.`);
+        [['onFail', st.onFail], ['onPass', st.onPass]].forEach(([field, action]) => {
+          if (!isObj(action)) return;
+          const target = steps.findIndex((x) => x.ref === action.goto);
+          if ('return' in action || (target >= 0 && target <= i)) warnings.push(`Возврат назад (${field} проверки ${st.ref}) не перенесён: возвратов назад нет ни на стенде, ни в Basic, добавьте обычный шаг ниже по списку.`);
+          else if ('goto' in action) warnings.push(`Переход проверки ${st.ref} (${field}) на ${action.goto} не перенесён: на стенде переходов нет.`);
+        });
       } else if (st.kind === 'owner') {
         step.ask = own(st.task) ? st.task : 'Дайте ответ';
       } else {

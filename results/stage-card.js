@@ -440,15 +440,10 @@
     route({ ref = '', caseLabel = '', reason = '' } = {}) {
       return `Маршрут ${ref}: вариант «${caseLabel}», ${ROUTE_REASON[reason] || reason}`;
     },
-    // stopText: the text of a stop reason (the engine's STOP_TEXT); a limit names its count.
-    transition({ from = '', to = '', action = 'goto', count = null, maxLoops = null, reason = '' } = {}, stopText = (value) => value) {
-      if (action === 'stop') {
-        return reason === 'loop_limit'
-          ? `Переход ${from} → ${to} не выполнен: лимит ${maxLoops} исчерпан`
-          : `Прогон остановлен после ${from}: ${stopText(reason)}`;
-      }
-      const head = `${action === 'return' ? 'Возврат' : 'Переход'} ${from} → ${to}`;
-      return count != null && maxLoops != null ? `${head}, переход ${count} из ${maxLoops}` : head;
+    // stopText: the text of a stop reason (the engine's STOP_TEXT).
+    transition({ from = '', to = '', action = 'goto', reason = '' } = {}, stopText = (value) => value) {
+      if (action === 'stop') return `Прогон остановлен после ${from}: ${stopText(reason)}`;
+      return `Переход ${from} → ${to}`;
     },
     // The title of an artifact in the registry: name, participant (owner for an owner step), visit, validity.
     artifactTitle({ name = '', source = {}, valid = true } = {}) {
@@ -474,23 +469,16 @@
   function transitionView(value, absent) {
     if (value === undefined || value === null) return { mode: absent };
     if (value === 'stop' || value === 'ask') return { mode: value };
-    if (isTransition(value)) return { mode: 'goto', goto: value.goto, maxLoops: value.maxLoops ?? '' };
+    if (isTransition(value)) return { mode: 'goto', goto: value.goto };
     if (isPlain(value) && Object.keys(value).length === 1 && typeof value.stop === 'string') return { mode: 'stop', stop: value.stop };
-    if (isPlain(value) && value.return === true && Object.keys(value).every((key) => key === 'return' || key === 'maxLoops')) return { mode: 'return', maxLoops: value.maxLoops ?? '' };
     return { mode: 'json' };
   }
   // The value of a transition after an edit (`kind`: pass, fail, action, otherwise). A missing value is undefined.
-  // A goto keeps its feedback, invalidate and resumeAt: the window does not edit them.
   function transitionAfterEdit(current, edit = {}, kind = 'action') {
     if (edit.mode === 'next' || edit.mode === 'none') return undefined;
-    const limit = edit.maxLoops === '' || edit.maxLoops == null ? {} : { maxLoops: Number(edit.maxLoops) };
     if (edit.mode === 'ask') return 'ask';
     if (edit.mode === 'stop') return kind === 'fail' ? 'stop' : { stop: String(edit.stop ?? '') };
-    if (edit.mode === 'return') return { return: true, ...limit };
-    if (edit.mode === 'goto') {
-      const kept = isTransition(current) ? Object.fromEntries(Object.entries(current).filter(([key]) => key !== 'goto' && key !== 'maxLoops')) : {};
-      return { ...kept, goto: String(edit.goto ?? ''), ...limit };
-    }
+    if (edit.mode === 'goto') return { goto: String(edit.goto ?? '') };
     return current;
   }
 
@@ -512,7 +500,7 @@
     };
   }
   // An edit of a gate: { field: 'criteria', value } | { field: 'checker', name, checked } | { field: 'pass', value } |
-  // { field: 'onFail' | 'onPass', mode, goto, maxLoops, stop }. Returns the new step; the input is not changed.
+  // { field: 'onFail' | 'onPass', mode, goto, stop }. Returns the new step; the input is not changed.
   function gateAfterEdit(step = {}, edit = {}) {
     const next = { ...step };
     if (edit.field === 'criteria') {
@@ -538,11 +526,11 @@
     return next;
   }
 
-  // The window's controls: a select of a transition with its target (a ref of the canvas) and the number of loops.
-  // The change goes to emit(field, { mode, goto, maxLoops, stop }); a goto without a target is sent as it is (the schema says so).
+  // The window's controls: a select of a transition with its target (a ref of the canvas).
+  // The change goes to emit(field, { mode, goto, stop }); a goto without a target is sent as it is (the schema says so).
   function renderTransition(container, { field, label, view, options, refs, disabled, withStop, emit }) {
     const doc = container.ownerDocument;
-    const state = { mode: view.mode, goto: view.goto || '', maxLoops: view.maxLoops ?? '', stop: view.stop || '' };
+    const state = { mode: view.mode, goto: view.goto || '', stop: view.stop || '' };
     const box = el(doc, 'fieldset', `stage-card-transition stage-card-${field}`);
     box.append(el(doc, 'legend', '', label));
     const mode = el(doc, 'select', `stage-card-${field}-mode`);
@@ -551,28 +539,18 @@
     choices.forEach((item) => { const option = el(doc, 'option', '', item.label); option.value = item.value; option.disabled = Boolean(item.disabled); mode.append(option); });
     mode.value = state.mode;
     mode.disabled = Boolean(disabled) || state.mode === 'json';
-    const send = () => { if (typeof emit === 'function') emit({ field, mode: state.mode, goto: state.goto, maxLoops: state.maxLoops, stop: state.stop }); };
+    const send = () => { if (typeof emit === 'function') emit({ field, mode: state.mode, goto: state.goto, stop: state.stop }); };
     mode.addEventListener('change', () => { state.mode = mode.value; send(); });
     box.append(mode);
-    if (state.mode === 'goto' || state.mode === 'return') {
-      if (state.mode === 'goto') {
-        const target = el(doc, 'select', `stage-card-${field}-goto`);
-        target.setAttribute('aria-label', `${label}: переход на шаг`);
-        target.append(new Option('— выберите шаг —', ''));
-        [...new Set([...refs, state.goto].filter(Boolean))].forEach((ref) => target.append(new Option(ref, ref)));
-        target.value = state.goto;
-        target.disabled = Boolean(disabled);
-        target.addEventListener('change', () => { state.goto = target.value; send(); });
-        box.append(target);
-      }
-      const loops = el(doc, 'input', `stage-card-${field}-loops`);
-      loops.type = 'number'; loops.min = '1'; loops.max = '5'; loops.step = '1';
-      loops.value = state.maxLoops === '' ? '' : String(state.maxLoops);
-      loops.placeholder = 'лимит 1–5';
-      loops.disabled = Boolean(disabled);
-      loops.setAttribute('aria-label', `${label}: лимит переходов`);
-      loops.addEventListener('change', () => { state.maxLoops = loops.value; send(); });
-      box.append(loops);
+    if (state.mode === 'goto') {
+      const target = el(doc, 'select', `stage-card-${field}-goto`);
+      target.setAttribute('aria-label', `${label}: переход на шаг`);
+      target.append(new Option('— выберите шаг —', ''));
+      [...new Set([...refs, state.goto].filter(Boolean))].forEach((ref) => target.append(new Option(ref, ref)));
+      target.value = state.goto;
+      target.disabled = Boolean(disabled);
+      target.addEventListener('change', () => { state.goto = target.value; send(); });
+      box.append(target);
     }
     if (withStop && state.mode === 'stop') {
       const reason = el(doc, 'input', `stage-card-${field}-stop`);
@@ -682,8 +660,8 @@
     };
   }
   // An edit of a route: { field: 'by', value } | { field: 'model', value } | { field: 'task', value } | { field: 'conflict', value } |
-  // { field: 'source', step, participant, checked } | { field: 'otherwise', mode, goto, maxLoops, stop } | { field: 'caseAdd' } | { field: 'caseRemove', index } |
-  // { field: 'case', index, id, label, when (null: none; undefined: kept), action: { mode, goto, maxLoops, stop } }.
+  // { field: 'source', step, participant, checked } | { field: 'otherwise', mode, goto, stop } | { field: 'caseAdd' } | { field: 'caseRemove', index } |
+  // { field: 'case', index, id, label, when (null: none; undefined: kept), action: { mode, goto, stop } }.
   // Changing `by` drops what the new kind does not have: the conditions and the otherwise away from a rule, the models
   // away from a model, the model and the task away from a rule and an owner.
   function routeAfterEdit(step = {}, edit = {}) {
@@ -835,8 +813,8 @@
         }
       }
       renderTransition(box, { field: `case${index}`, label: 'Действие варианта', view: item.action, refs: model.refs, disabled, withStop: true,
-        options: [{ value: 'goto', label: 'Перейти к шагу' }, { value: 'stop', label: 'Остановить прогон' }, { value: 'return', label: 'Вернуться' }],
-        emit: (payload) => { state.action = { mode: payload.mode, goto: payload.goto, maxLoops: payload.maxLoops, stop: payload.stop }; sendCase(index, state); } });
+        options: [{ value: 'goto', label: 'Перейти к шагу' }, { value: 'stop', label: 'Остановить прогон' }],
+        emit: (payload) => { state.action = { mode: payload.mode, goto: payload.goto, stop: payload.stop }; sendCase(index, state); } });
       const remove = el(doc, 'button', 'stage-card-case-remove', '×');
       remove.type = 'button'; remove.disabled = disabled; remove.setAttribute('aria-label', 'Удалить вариант');
       remove.addEventListener('click', () => send({ field: 'caseRemove', index }));
@@ -850,7 +828,7 @@
     container.append(cases);
     if (model.by === 'rule') {
       renderTransition(container, { field: 'otherwise', label: 'Если ни один не подошёл', view: model.otherwise, refs: model.refs, disabled, withStop: true, emit: send,
-        options: [{ value: 'none', label: 'Нет: ошибка маршрута' }, { value: 'goto', label: 'Перейти к шагу' }, { value: 'stop', label: 'Остановить прогон' }, { value: 'return', label: 'Вернуться' }] });
+        options: [{ value: 'none', label: 'Нет: ошибка маршрута' }, { value: 'goto', label: 'Перейти к шагу' }, { value: 'stop', label: 'Остановить прогон' }] });
     }
   }
 

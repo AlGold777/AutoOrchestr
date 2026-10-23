@@ -468,15 +468,7 @@
               "value": "yes"
             },
             "action": {
-              "goto": "r11",
-              "maxLoops": 2,
-              "feedback": [
-                {
-                  "step": "r13",
-                  "participant": "S12-reviewer",
-                  "required": true
-                }
-              ]
+              "stop": "возврат назад не поддерживается: back_s10_synthetic"
             }
           }
         ],
@@ -588,8 +580,7 @@
             "id": "return",
             "label": "Вернуться к точке изменения (S19)",
             "action": {
-              "return": true,
-              "maxLoops": 1
+              "stop": "возврат назад не поддерживается: Вернуться к точке изменения (S19)"
             }
           }
         ]
@@ -753,8 +744,7 @@
             "id": "return",
             "label": "Вернуться к точке изменения (S25)",
             "action": {
-              "return": true,
-              "maxLoops": 1
+              "stop": "возврат назад не поддерживается: Вернуться к точке изменения (S25)"
             }
           }
         ]
@@ -840,8 +830,7 @@
             "id": "return",
             "label": "Вернуться к точке изменения (S19)",
             "action": {
-              "return": true,
-              "maxLoops": 1
+              "stop": "возврат назад не поддерживается: Вернуться к точке изменения (S19)"
             }
           }
         ]
@@ -939,9 +928,7 @@
               "value": "yes"
             },
             "action": {
-              "goto": "r11",
-              "maxLoops": 1,
-              "resumeAt": "r20"
+              "stop": "возврат назад не поддерживается: chg_pfb_synthetic"
             }
           }
         ],
@@ -1268,9 +1255,7 @@
             "id": "chg_aip",
             "label": "CHG: вернуться к AIP (S16) с повторной проверкой",
             "action": {
-              "goto": "r17",
-              "maxLoops": 1,
-              "resumeAt": "owner:s25"
+              "stop": "возврат назад не поддерживается: CHG: вернуться к AIP (S16) с повторной проверкой"
             }
           }
         ]
@@ -1327,8 +1312,7 @@
               "value": true
             },
             "action": {
-              "goto": "r25",
-              "maxLoops": 1
+              "stop": "возврат назад не поддерживается: direction_broken_synthetic"
             }
           }
         ],
@@ -1398,15 +1382,7 @@
               "value": true
             },
             "action": {
-              "goto": "r27",
-              "maxLoops": 1,
-              "feedback": [
-                {
-                  "step": "r29",
-                  "participant": "S27-a",
-                  "required": true
-                }
-              ]
+              "stop": "возврат назад не поддерживается: verify_s24_synthetic"
             }
           }
         ],
@@ -1534,8 +1510,7 @@
               "value": "close"
             },
             "action": {
-              "goto": "r28",
-              "maxLoops": 1
+              "stop": "возврат назад не поддерживается: close_s26_synthetic"
             }
           },
           {
@@ -1547,8 +1522,7 @@
               "value": "revise"
             },
             "action": {
-              "goto": "r30",
-              "maxLoops": 2
+              "stop": "возврат назад не поддерживается: revise_s28_synthetic"
             }
           },
           {
