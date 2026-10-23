@@ -1,87 +1,115 @@
-# Живой Chrome: проверка расширения, импорта и экспорта
+# Живой Chrome: как агенту работать с расширением в настоящем браузере
 
-Рабочий способ, которым проверялись импорт/экспорт схем Basic в загруженном расширении. Все шаги проверены на Google Chrome 155 (macOS).
+Инструкция для любого задания, где нужно увидеть или проверить расширение в Chrome: открыть страницу, нажать кнопку, прочитать текст, скопировать DOM, сделать снимок, перехватить скачивание. Владельца просить не нужно: всё делается через Chrome DevTools Protocol (CDP) в отдельном временном Chrome. «Нет доступа к живому Chrome» — не причина остановиться. Проверено на Google Chrome 155 (macOS), Node 22.
 
-## 1. Когда нужно
+## 1. Запуск отдельного Chrome
 
-- Проверить, что расширение работает в настоящем Chrome: импорт и экспорт схем, кнопки страницы, список pipeline, уведомления.
-- Жалоба «нет доступа к живому Chrome» не причина останавливаться: способ ниже не требует расширения-мостика и работает через CDP.
+`$S` — временная папка сессии (scratchpad). Профиль всегда новый, чтобы не мешали старые расширения и страницы, и чтобы не задеть браузер владельца.
 
-## 2. Рецепт
-
-Пути: основной чекаут `/Users/restart/Documents/GitHub/AutoOrchestr`, временная папка `$S` (scratchpad сессии).
-
-**2.1. Запуск Chrome**
-
-```
+```bash
 "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new \
-  --remote-debugging-port=9333 --user-data-dir=$S/profileN \
+  --remote-debugging-port=9333 --user-data-dir="$S/profile1" \
   --enable-unsafe-extension-debugging --no-first-run --no-default-browser-check \
-  about:blank > $S/chromeN.log 2>&1 & echo $! > $S/chrome.pid
+  about:blank > "$S/chrome1.log" 2>&1 &
+echo $! > "$S/chrome.pid"
+sleep 3; curl -s http://127.0.0.1:9333/json/version   # поле webSocketDebuggerUrl
 ```
 
-- `--user-data-dir` только временная папка: каждый запуск с новым `profileN`, иначе старые расширения и страницы остаются.
-- `--enable-unsafe-extension-debugging` нужен для `Extensions.loadUnpacked`.
-- `--load-extension` в branded Chrome 155 не работает: `chrome://extensions` остаётся пустым. `--disable-features=DisableLoadExtensionCommandLineSwitch` тоже не помог.
+- `--headless=new` — окна нет; если нужно видеть, уберите флаг (окно откроется на экране владельца, предупредите).
+- `--enable-unsafe-extension-debugging` нужен, чтобы загрузить распакованное расширение по CDP.
+- `--load-extension=…` в обычной сборке Chrome не работает (`chrome://extensions` остаётся пустым), `--disable-features=DisableLoadExtensionCommandLineSwitch` не помогает. Использовать только CDP-загрузку (раздел 3).
+- Порт 9333 занят — возьмите другой (9334…), номер профиля увеличивайте при каждом запуске.
 
-**2.2. Browser-level WebSocket**
+## 2. Подключение и вызов команд CDP
 
+В Node 22 есть встроенный `WebSocket`, пакеты не нужны. Минимальный помощник (сохранить в `$S/cdp.mjs`, он же образец для остальных заданий):
+
+```js
+// node $S/cdp.mjs  — подключается к браузеру, шлёт команды, возвращает result
+const base = 'http://127.0.0.1:9333';
+export async function connect() {
+  const { webSocketDebuggerUrl } = await (await fetch(`${base}/json/version`)).json();
+  const ws = new WebSocket(webSocketDebuggerUrl);
+  await new Promise((ok, fail) => { ws.onopen = ok; ws.onerror = fail; });
+  let id = 0; const wait = new Map(); const events = [];
+  ws.onmessage = (m) => {
+    const d = JSON.parse(m.data);
+    if (d.id && wait.has(d.id)) { const { ok, fail } = wait.get(d.id); wait.delete(d.id); d.error ? fail(new Error(JSON.stringify(d.error))) : ok(d.result); }
+    else events.push(d);                     // события: Runtime.consoleAPICalled, Runtime.exceptionThrown …
+  };
+  const send = (method, params = {}, sessionId) => new Promise((ok, fail) => {
+    const n = ++id; wait.set(n, { ok, fail });
+    ws.send(JSON.stringify({ id: n, method, params, ...(sessionId ? { sessionId } : {}) }));
+  });
+  return { send, events, close: () => ws.close() };
+}
 ```
-curl -s http://127.0.0.1:9333/json/version   # поле webSocketDebuggerUrl
+
+Все вызовы идут через один сокет; для команд страницы указывается `sessionId` (раздел 4).
+
+## 3. Загрузка расширения
+
+```js
+const { send } = await connect();
+const { id } = await send('Extensions.loadUnpacked', { path: '/Users/restart/Documents/GitHub/AutoOrchestr' });
 ```
 
-**2.3. Загрузка расширения**
+- `path` — всегда основной чекаут (оттуда загружено расширение у владельца), если не нужно проверить конкретную ветку или worktree: тогда путь к ней.
+- Ответ содержит `id` расширения. Брать из ответа, не угадывать: страницы чужих `chrome-extension://<id>/…` открываются пустыми.
+- Страницы расширения: `chrome-extension://<id>/<файл>.html`; список файлов — в корне проекта и в `manifest.json`. Какая страница содержит нужный элемент, проверяйте поиском в html (`grep -l 'id="…"' *.html`): одни и те же `id` есть не на всех страницах, и на неполной странице часть кода получает пустые данные.
 
-Через browser-level сокет отправить:
-`{"id":1,"method":"Extensions.loadUnpacked","params":{"path":"/Users/restart/Documents/GitHub/AutoOrchestr"}}`
+## 4. Открыть страницу и выполнить код
 
-Ответ: `{"id":1,"result":{"id":"<extension-id>"}}`. Этот id и есть id расширения. Для профиля, который уже запускался, он был `egfijmjjpedpikkfmfaekjbhjjjlhlgo`, но в новом профиле брать из ответа.
+```js
+const { targetId } = await send('Target.createTarget', { url: `chrome-extension://${id}/pipeline_panel.html` });
+const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true });
+await send('Runtime.enable', {}, sessionId);
+await send('DOM.enable', {}, sessionId);
+await new Promise((r) => setTimeout(r, 4000));                 // дать странице загрузиться
+const r = await send('Runtime.evaluate',
+  { expression: 'document.title', returnByValue: true, awaitPromise: true }, sessionId);
+console.log(r.result.value);
+```
 
-Не угадывать id: `Target.createTarget` на чужой `chrome-extension://<id>/…` открывает пустые страницы чужих расширений.
+- `Runtime.evaluate` выполняет любой JS на странице: клик (`el.click()`), чтение (`innerText`, `outerHTML`, `getAttribute`), вызов функций страницы, чтение `chrome.storage`, `fetch`. `awaitPromise: true` — чтобы дождаться промиса.
+- Содержимое любой страницы целиком: `document.documentElement.outerHTML`; один узел: `document.querySelector(sel).outerHTML`; вычисленные стили: `getComputedStyle(el)`.
+- Снимок экрана: `Page.captureScreenshot { format: 'png' }` → поле `data` (base64) записать в файл в `$S` и открыть Read-ом.
+- Размер окна: `Emulation.setDeviceMetricsOverride { width, height, deviceScaleFactor: 1, mobile: false }`.
+- Консоль и исключения страницы: события `Runtime.consoleAPICalled`, `Runtime.exceptionThrown` приходят в `events` (нужен `Runtime.enable`). Сетевые запросы: `Network.enable`, события `Network.requestWillBeSent`.
+- Настоящий клик/ввод по координатам: `Input.dispatchMouseEvent`, `Input.insertText` (по умолчанию хватает `el.click()` из `Runtime.evaluate`).
+- Веб-страницы (не расширения) открываются так же: `Target.createTarget { url: 'https://…' }`. Вход в аккаунты в чужом профиле не выполнять без разрешения владельца.
 
-**2.4. Открыть страницу расширения**
+## 5. Файлы и диалоги, которые CDP не может открыть
 
-`Target.createTarget {url: "chrome-extension://<id>/pipeline_panel.html"}`, затем `Target.attachToTarget {targetId, flatten: true}` и `Runtime.enable`, `DOM.enable`. Подождать ~4 с.
+Системные окна (выбор файла, сохранение) из CDP не открываются. Обход:
 
-- `pipeline_panel.html` содержит `#debate-length-select` (300/500/700/1000). Это обязательная страница для импорта схем с `run.maxWords`.
-- `result_new.html` этого select не содержит: список `runWords` пуст, и `run.maxWords` отклоняется.
+- **Скрытый `<input type=file>`**: найти узел и подставить файл. `DOM.getDocument {depth:-1}` → `DOM.querySelector {nodeId, selector}` → `DOM.setFileInputFiles {nodeId, files:[абсолютный путь]}`; страница получит обычное событие `change`.
+- **File System Access API** (`showOpenFilePicker`, `showSaveFilePicker`, `showDirectoryPicker`): подменить функцию на странице и проверить, с какими параметрами её вызвали:
+  ```js
+  window.__picker = [];
+  window.showOpenFilePicker = async (o) => { window.__picker.push(o); return [{ getFile: async () => new File([text], 'name.json', { type: 'application/json' }) }]; };
+  ```
+  Подмена не проверяет жест пользователя и не открывает реальное окно: это нужно оговаривать в отчёте.
+- **Скачивание**: `chrome.downloads` и ссылки `a[download]` кладут файл в папку загрузок профиля. Выбрать папку заранее можно командой `Browser.setDownloadBehavior { behavior: 'allow', downloadPath: '<папка в $S>', eventsEnabled: true }` (browser-уровень, без `sessionId`); иначе искать в `~/Downloads` по времени создания (`find ~/Downloads -newer "$S/chrome.pid"`).
+- **`confirm`/`prompt`/`alert`** самого браузера блокируют страницу: после `Page.enable` дождаться события `Page.javascriptDialogOpening` (в `events`, обычно 0,5–0,8 с после действия) и только затем `Page.handleJavaScriptDialog { accept: true }`. Вызов раньше события отвечает «No dialog is showing» (код −32602). Окна, нарисованные самим расширением, — обычный DOM.
 
-**2.5. Импорт файла**
+## 6. Приёмы, которые экономят время
 
-Сначала подготовить файл схемы: `node -e "const E=require('./basic-export.js'); const ex=require('./stand-examples.json'); console.log(JSON.stringify(E.toBasic(ex.defaults.schema||ex.defaults).schema,null,2))"` (в папке `docs/Pipeline scenarios/canvas-prototype/`). Ключи примеров: `basic`, `foreach`, `defaults`.
+- Сначала читайте страницу (`innerText`, `outerHTML` узла), потом действуйте: угадывать селекторы дороже.
+- Уведомления расширения — обычные элементы; не обрезайте текст (`slice`), печатайте целиком.
+- Проверка «после действия»: прочитать состояние до, выполнить, подождать 0,5–1 с, прочитать после; сравнить.
+- Исключение «Cannot add property ready, object is not extensible» при загрузке страниц расширения известно и к заданиям не относится.
+- Лог запуска Chrome — `$S/chromeN.log`; если порт не отвечает, смотреть его.
+- Версия расширения в проверяемом профиле: `grep '"version"' <путь>/manifest.json`; её нужно называть в отчёте.
 
-- Версия 2.81.843: клик по `#pipeline-import-btn` создаёт скрытый `input[type=file][accept="application/json"]` в конце `body`. Найти его через `DOM.getDocument {depth:-1}` и `DOM.querySelector {selector: 'body > input[type=file][accept="application/json"]'}`, затем `DOM.setFileInputFiles {nodeId, files: [<абсолютный путь>]}`.
-- Версия 2.81.844: импорт сначала вызывает `window.showOpenFilePicker`. Системное окно из CDP не открыть, поэтому подменяется шпионом (см. раздел 3).
-- После выбора файла появляется промпт «Имя pipeline для схемы:» с именем по файлу. Подтверждение: `document.getElementById('prompt-ok-btn').click()`.
+## 7. Уборка (обязательно)
 
-**2.6. Чтение результата**
+- Останавливать только свой Chrome: `kill $(cat "$S/chrome.pid")`, затем `pgrep -fl "remote-debugging-port=9333"` — пусто.
+- Удалять только файлы, созданные тестом (проверять по времени создания и по имени). Файлы владельца в любых папках, особенно в `Downloads`, не трогать; папки, существовавшие до теста, не удалять.
+- Временный профиль в `$S` можно оставить: это папка сессии.
+- Браузер владельца (его вкладки и расширения Claude in Chrome) не использовать для таких проверок и не закрывать.
 
-- Список pipeline: `[...document.querySelectorAll('#pipelineItems > *')].map(e => e.innerText.trim().split('\n')[0])`.
-- Холст: `document.querySelector('.pipeline-canvas').innerText`. Подсчёт `[class*=model]` даёт завышенное число, по нему блоки не считать.
-- Уведомления: leaf-элементы с текстом, например `[...document.querySelectorAll('*')].filter(e => e.children.length === 0 && /Схема|схем/.test(e.textContent)).map(e => e.textContent.trim())`. Селекторы `[class*=notification]` ничего не нашли.
-- Ошибки консоли и исключения: подписаться на `Runtime.consoleAPICalled` и `Runtime.exceptionThrown`.
+## 8. Что не проверено
 
-**2.7. Экспорт**
-
-`document.getElementById('pipeline-export-btn').click()` на выбранном pipeline. Уведомление: «Схема сохранена в Загрузки/Схемы: <имя>.json». Файл лежит в `/Users/restart/Downloads/Схемы/`.
-
-## 3. Рабочие приёмы
-
-- Шпион на выбор файла (проверено на 2.81.844):
-  `window.__picker=[]; window.showOpenFilePicker = async (o) => { window.__picker.push({id:o.id, startIn:o.startIn}); return [{getFile: async () => new File([text], 'name.json', {type:'application/json'})}]; }`
-  Вызов: `{id:"basicSchemas", startIn:"downloads"}`. Шпион не проверяет пользовательский жест и реальное окно выбора.
-- Проверка экспортированного файла: `find /Users/restart/Downloads/Схемы -maxdepth 1 -name '<имя>*.json'`, затем `head -c 200`.
-- Остановка своего Chrome: `kill $(cat $S/chrome.pid)`, затем `pkill -f "remote-debugging-port=9333"` и `pgrep -fl "remote-debugging-port=9333"`.
-
-## 4. Ловушки
-
-- Исключение «Cannot add property ready, object is not extensible» при загрузке страницы. Оно не связано с импортом и есть на обеих страницах.
-- Обрезанные уведомления: если в скрипте стоит `slice(0, 120)`, полный текст теряется. Выводить полный `textContent`.
-- Пустой `#debate-length-select` на `result_new.html` даёт отказ `run.maxWords`, хотя схема верная.
-- Старый экспортёр выпускал `final` до `gate`: валидатор требует синтез последним. Исправлено в стенде v22.
-- Пример `defaults` содержит `run.maxWords: 500`: значение должно быть в списке 300/500/700/1000.
-
-## 5. Уборка
-
-- Удалять только свои файлы и процессы. Например, в `Downloads/Схемы` файл `1111.json` принадлежит пользователю, его не трогать. Папка `Схемы` существовала до теста, не удалять.
-- Перед удалением файла проверить по времени создания, что он создан тестом.
+- Реальный пользовательский жест для `showOpenFilePicker` и реальное системное окно выбора файла.
+- Поведение headed-режима (с видимым окном) на экране владельца.
