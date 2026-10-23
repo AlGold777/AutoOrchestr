@@ -45,6 +45,7 @@ parts = ['window.__PROTO_ICONS__=' + json.dumps(icons) + ';',
          rd(os.path.join(HERE, 'canvas.js'))]
 stand = os.path.join(HERE, 'stand.js')
 if os.path.exists(stand):
+    parts.append(rd(os.path.join(HERE, 'basic-export.js')))
     parts.append(rd(stand))
 banner = '''window.addEventListener('error', function (e) {
   var bar = document.getElementById('proto-error-bar');

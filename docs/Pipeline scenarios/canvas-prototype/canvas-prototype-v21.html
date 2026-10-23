@@ -2235,6 +2235,12 @@ body.is-resizing {
 .custom-card-field textarea:focus-visible, .custom-card-length input:focus-visible { outline: 2px solid #86b9aa; outline-offset: 2px; }
 /* The inherited value shown in an emptied field is a hint, not text: lighter than typed text (#202936) so a deleted value is visible at once. */
 .custom-card-field textarea::placeholder, .custom-card-discipline textarea::placeholder, .custom-card-length input::placeholder { color: #a7b3ad; opacity: 1; }
+.custom-desc { margin-bottom: 10px; }
+.custom-desc-head { display: flex; justify-content: space-between; align-items: center; }
+.custom-desc-toggle { border: 0; background: none; cursor: pointer; font-size: 16px; color: var(--pipeline-muted); }
+.custom-desc-text { white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--pipeline-text); }
+.custom-desc.is-full { position: fixed; inset: 0; z-index: 10000; background: #fff; padding: 16px 24px; overflow: auto; margin: 0; }
+.custom-desc.is-full .custom-desc-text { display: block; overflow: visible; }
 .custom-card-note { margin-top: 7px; color: var(--pipeline-muted); font-size: 12px; line-height: 1.5; }
 .custom-card-note button { padding: 0; border: 0; background: none; color: #237565; font: inherit; cursor: pointer; }
 .custom-card-marks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 18px; flex-shrink: 0; padding-top: 12px;  color: var(--pipeline-muted); font-size: 12px; line-height: 1.55; }
@@ -11771,6 +11777,176 @@ window.ProtoState = {
 
 </script>
 <script>
+// Обмен схемами между стендом ({ task, steps: [{ id, block, … }] }) и Basic ({ schemaVersion, origin, steps: [{ ref, kind, models }] }).
+// toBasic — экспорт со стенда: файл, который принимает кнопка Import в Basic. fromBasic — импорт файла Basic на стенд.
+// Переносятся round, synthesis, gate, owner, defaults, run, description. Остальные блоки пропускаются с предупреждением.
+// Повтор шага (repeats) в Basic — переход проверки назад (onFail.goto с maxLoops), поэтому повторные шаги не переносятся.
+(function initBasicExport(root) {
+  'use strict';
+
+  const own = (v) => typeof v === 'string' && v.trim() !== '';
+  const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);
+  const list = (v) => (Array.isArray(v) ? v : []);
+  const idPart = (id, fallback) => (String(id || '').replace(/[^A-Za-z0-9_-]/g, '') || fallback);
+  const RUN_WORDS = [300, 500, 700, 1000];
+  const MODEL_COPY = ['maxWords', 'request', 'discipline'];
+
+  // Ссылка входа стенда ("s2" или "s3.Артефакт") → id этапа.
+  const stepOf = (ref) => String(ref).split('.')[0];
+
+  function toBasic(schema, opts = {}) {
+    const roleIdOf = opts.roleIdOf || (() => '');
+    const warnings = [];
+    const steps = list(schema?.steps).filter(isObj);
+    const pos = new Map(steps.map((st, i) => [st.id, i]));
+    const repeatOf = (st) => (own(st.repeats) && pos.has(st.repeats) && pos.get(st.repeats) < pos.get(st.id) ? st.repeats : '');
+    const kept = steps.filter((st) => !repeatOf(st));
+    const lastSynth = kept.map((st) => st.block).lastIndexOf('synthesis');
+    const finalStep = lastSynth >= 0 && !kept.slice(lastSynth + 1).some((st) => st.block === 'round') ? kept[lastSynth] : null;
+
+    // Первый проход: ref каждого переносимого шага.
+    const refs = new Map();
+    let rounds = 0;
+    steps.forEach((st, i) => {
+      if (repeatOf(st)) return;
+      if (st.block === 'round') refs.set(st.id, `r${++rounds}`);
+      else if (st.block === 'synthesis') refs.set(st.id, st === finalStep ? 'final' : `synth:${idPart(st.id, `s${i + 1}`)}`);
+      else if (st.block === 'gate') refs.set(st.id, `gate:${idPart(st.id, `s${i + 1}`)}`);
+      else if (st.block === 'owner') refs.set(st.id, `owner:${idPart(st.id, `s${i + 1}`)}`);
+    });
+    const inputRefs = (st) => [...new Set(list(st.inputs).map(stepOf).filter((id) => refs.has(id) && pos.get(id) < pos.get(st.id)).map((id) => refs.get(id)).filter((ref) => ref !== 'final'))];
+
+    const modelOf = (m) => {
+      const roleId = roleIdOf(m.role);
+      const roleLine = own(m.role) && !roleId ? `Роль: ${m.role.trim()}.` : '';
+      const task = [roleLine, own(m.task) ? m.task.trim() : ''].filter(Boolean).join('\n\n');
+      const out = { name: String(m.name) };
+      if (roleId && roleId !== 'None') out.role = roleId;
+      if (task) out.task = task;
+      MODEL_COPY.forEach((k) => { if (m[k] !== undefined && m[k] !== '') out[k] = m[k]; });
+      return out;
+    };
+    const firstModel = (before) => {
+      for (let i = before - 1; i >= 0; i -= 1) {
+        const st = steps[i];
+        const name = st.block === 'synthesis' ? st.model : list(st.models)[0]?.name;
+        if (own(name)) return name;
+      }
+      return list(steps.find((st) => st.block === 'round')?.models)[0]?.name || 'Claude';
+    };
+
+    const out = [];
+    steps.forEach((st, i) => {
+      if (repeatOf(st)) return;
+      const ref = refs.get(st.id);
+      if (!ref) { warnings.push(`Этап ${st.id || i + 1} (${st.block}) не перенесён: в Basic такого блока нет.`); return; }
+      const input = inputRefs(st);
+      const step = { ref, kind: st.block };
+      if (st.block === 'round') {
+        step.order = st.order === 'sequential' ? 'sequential' : 'parallel';
+        step.input = input.length ? input : 'none';
+        if (own(st.task)) step.task = st.task.trim();
+        step.models = list(st.models).filter((m) => isObj(m) && own(m.name)).map(modelOf);
+      } else if (st.block === 'synthesis') {
+        step.input = input.length ? input : 'previous';
+        const roleLine = own(st.role) ? `Роль: ${st.role.trim()}.` : '';
+        const task = [roleLine, own(st.task) ? st.task.trim() : ''].filter(Boolean).join('\n\n');
+        if (task) step.task = task;
+        step.models = [modelOf({ name: own(st.model) ? st.model : firstModel(i), maxWords: st.maxWords, request: st.request, discipline: st.discipline })];
+      } else if (st.block === 'gate') {
+        step.input = input.length ? input : 'previous';
+        step.criteria = own(st.criteria) ? [st.criteria.trim()] : ['Ответ полный и без противоречий'];
+        step.models = [{ name: firstModel(i) }];
+        // Повторные шаги и повторная проверка — это возврат назад: первая проверка отправляет к самому раннему повторённому шагу.
+        const targets = steps.filter((o) => repeatOf(o) && o.block !== 'gate' && String(o.because || '').includes(st.id)).map((o) => repeatOf(o)).filter((id) => refs.has(id));
+        if (targets.length) {
+          const first = targets.sort((a, b) => pos.get(a) - pos.get(b))[0];
+          step.onFail = { goto: refs.get(first), maxLoops: 3 };
+        }
+      } else if (st.block === 'owner') {
+        step.task = own(st.ask) ? st.ask.trim() : 'Дайте ответ';
+        step.models = [];
+        if (input.length) step.input = input;
+      }
+      if (own(st.title)) step.title = st.title.trim();
+      if (own(st.why)) step.goal = st.why.trim();
+      out.push(step);
+    });
+    steps.filter((st) => repeatOf(st)).forEach((st) => { if (st.block === 'gate' && !steps.some((o) => o.block === 'gate' && o.id === st.repeats)) warnings.push(`Повторная проверка ${st.id} без первой проверки пропущена.`); });
+
+    const result = { schemaVersion: 1, origin: 'user' };
+    if (own(schema.description)) result.description = schema.description;
+    const d = schema.defaults;
+    if (isObj(d)) {
+      const defaults = {};
+      ['roundTask', 'synthesisTask'].forEach((k) => { if (typeof d[k] === 'string') defaults[k] = d[k]; });
+      if (isObj(d.discipline)) defaults.discipline = d.discipline;
+      if (isObj(d.modelNotes)) defaults.modelNotes = d.modelNotes;
+      if (Object.keys(defaults).length) result.defaults = defaults;
+    }
+    if (isObj(schema.run)) {
+      const run = {};
+      if (['auto', 'manual'].includes(schema.run.policy)) run.policy = schema.run.policy;
+      if (RUN_WORDS.includes(schema.run.maxWords)) run.maxWords = schema.run.maxWords;
+      if (Object.keys(run).length) result.run = run;
+    }
+    result.steps = out;
+    if (!out.some((st) => st.kind === 'round' || st.kind === 'gate' || st.kind === 'owner')) warnings.push('Нечего экспортировать: в схеме нет раунда, проверки или владельца.');
+    return { schema: result, warnings };
+  }
+
+  function fromBasic(basic, opts = {}) {
+    const warnings = [];
+    const steps = list(basic?.steps).filter(isObj);
+    const ids = new Map(steps.map((st, i) => [st.ref, `s${i + 1}`]));
+    const refList = (input) => (Array.isArray(input) ? [...new Set(input.map((x) => (typeof x === 'string' ? x : x?.step)).map((r) => ids.get(r)).filter(Boolean))] : []);
+    const out = [];
+    steps.forEach((st, i) => {
+      const id = ids.get(st.ref);
+      const step = { id, block: st.kind, title: own(st.title) ? st.title : String(st.ref), why: own(st.goal) ? st.goal : 'Из схемы Basic' };
+      const inputs = refList(st.input);
+      if (inputs.length) step.inputs = inputs;
+      if (st.kind === 'round') {
+        step.order = st.order === 'sequential' ? 'sequential' : 'parallel';
+        if (own(st.task)) step.task = st.task;
+        step.models = list(st.models).filter((m) => isObj(m) && own(m.name)).map((m) => {
+          const model = { name: m.name };
+          if (own(m.role) && m.role !== 'None') model.role = m.role;
+          if (own(m.task)) model.task = m.task;
+          MODEL_COPY.forEach((k) => { if (m[k] !== undefined && m[k] !== '') model[k] = m[k]; });
+          return model;
+        });
+      } else if (st.kind === 'synthesis') {
+        const m = list(st.models).find((x) => isObj(x) && own(x.name));
+        if (m) step.model = m.name;
+        if (m && own(m.role) && m.role !== 'None') step.role = m.role;
+        if (own(st.task)) step.task = st.task;
+      } else if (st.kind === 'gate') {
+        step.criteria = list(st.criteria).filter(own).join('; ') || 'Ответ полный';
+        if (st.onFail?.goto) warnings.push(`Возврат проверки ${st.ref} на ${st.onFail.goto} не перенесён: на стенде он записывается повторными этапами.`);
+      } else if (st.kind === 'owner') {
+        step.ask = own(st.task) ? st.task : 'Дайте ответ';
+      } else {
+        warnings.push(`Шаг ${st.ref} (${st.kind}) не перенесён на стенд.`);
+        return;
+      }
+      out.push(step);
+    });
+    const schema = { task: own(opts.name) ? opts.name : (own(basic?.description) ? basic.description.trim().slice(0, 60) : 'Схема Basic') };
+    if (own(basic?.description)) schema.description = basic.description;
+    if (isObj(basic?.defaults)) schema.defaults = JSON.parse(JSON.stringify(basic.defaults));
+    if (isObj(basic?.run)) schema.run = JSON.parse(JSON.stringify(basic.run));
+    schema.steps = out;
+    return { schema, warnings };
+  }
+
+  const api = { toBasic, fromBasic };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  else root.ProtoBasicExport = api;
+}(typeof window !== 'undefined' ? window : globalThis));
+
+</script>
+<script>
 // Стенд схем прототипа холста Basic: клавиша I (или Ш) открывает окно вставки JSON-схемы этапов,
 // «Применить» проверяет схему и перерисовывает холст по ней. Раунды и синтезы схемы кладутся в
 // window.ProtoState, поэтому их окна — настоящие окна cards.js; остальные блоки — окна «Из схемы».
@@ -11779,7 +11955,7 @@ window.ProtoState = {
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '20';
+  const STAND_VERSION = '21';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -12956,15 +13132,19 @@ window.ProtoState = {
   async function importCatalog() {
     let h = null;
     let text;
+    let fileName = '';
     if (typeof root.showOpenFilePicker === 'function') {
       try { [h] = await root.showOpenFilePicker({ types: FILE_TYPES, multiple: false }); } catch (error) { if (error?.name !== 'AbortError') toast(`Файл не выбран: ${error?.message || error}`); return; }
+      fileName = h.name || '';
       try { text = await readHandle(h); } catch (error) { toast(`Файл не прочитан: ${error?.message || error}`); return; }
     } else {
       const input = Object.assign(document.createElement('input'), { type: 'file', accept: 'application/json,.json' });
       const file = await new Promise((resolve) => { input.addEventListener('change', () => resolve(input.files?.[0] || null), { once: true }); input.click(); });
       if (!file) return;
+      fileName = file.name;
       text = await file.text();
     }
+    if (importBasicText(text, fileName)) return;
     const list = parseCatalog(text);
     if (!list) { toast('Файл не похож на каталог шаблонов'); return; }
     if (catalog.templates.length && !root.confirm(`Заменить текущий каталог (${catalog.templates.length} ${plural(catalog.templates.length, ['шаблон', 'шаблона', 'шаблонов'])}) шаблонами из файла (${list.length})?`)) return;
@@ -12978,15 +13158,35 @@ window.ProtoState = {
     toast(`Каталог: ${h ? catalog.fileName : 'из файла'} · ${list.length} ${plural(list.length, ['шаблон', 'шаблона', 'шаблонов'])}${h ? '' : '\nНет доступа к файлам: изменения — через Export'}`);
   }
 
+  // Файл Basic (schemaVersion + steps) → шаблон каталога и схема на холсте.
+  function importBasicText(text, fileName) {
+    let doc;
+    try { doc = JSON.parse(text); } catch (error) { return false; }
+    if (!isObj(doc) || !('schemaVersion' in doc) || !Array.isArray(doc.steps)) return false;
+    const { schema, warnings } = root.ProtoBasicExport.fromBasic(doc, { name: fileName.replace(/\.json$/i, '') });
+    const now = new Date().toISOString();
+    const tpl = { id: uid(), name: uniqueName(cut(schema.task, 48)), savedAt: now, schema: pickSchema(schema), comment: '' };
+    catalog.templates.push(tpl);
+    catalog.unsaved.add(tpl.id);
+    saveCache();
+    applyTemplate(tpl);
+    persist().then((res) => toast(`Импорт из Basic: ${tpl.name}${warnings.length ? `\n${warnings.join('\n')}` : ''}\n${res.msg}`));
+    return true;
+  }
+
+  // Export: схема на холсте → файл, который принимает кнопка Import в Basic.
   function exportCatalog() {
-    if (!catalog.templates.length) { toast('Каталог пуст: сохраните схему (Save)'); return; }
-    const url = URL.createObjectURL(new Blob([catalogText()], { type: 'application/json' }));
-    const a = Object.assign(document.createElement('a'), { href: url, download: 'stand-templates.json' });
+    if (!stand.active || !stand.schema) { toast('Сначала примените схему (кнопка i) или откройте шаблон'); return; }
+    const { schema, warnings } = root.ProtoBasicExport.toBasic(pickSchema(stand.schema), { roleIdOf });
+    if (!schema.steps.length) { toast(`Нечего экспортировать\n${warnings.join('\n')}`); return; }
+    const name = (own(stand.schema.task) ? cut(stand.schema.task, 48) : 'schema').replace(/[\\/:*?"<>|]+/g, ' ').trim();
+    const url = URL.createObjectURL(new Blob([JSON.stringify(schema, null, 2)], { type: 'application/json' }));
+    const a = Object.assign(document.createElement('a'), { href: url, download: `${name}.json` });
     document.body.appendChild(a);
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    toast(`Скачан stand-templates.json · ${catalog.templates.length} ${plural(catalog.templates.length, ['шаблон', 'шаблона', 'шаблонов'])}`);
+    toast(`Скачан ${name}.json для Basic${warnings.length ? `\n${warnings.join('\n')}` : ''}`);
   }
 
   // Пункт списка — разметка настоящего UI (results.js, buildPipelineItem).
@@ -13057,7 +13257,7 @@ window.ProtoState = {
       else if (btn.id === 'pipeline-import-btn') importCatalog();
       else exportCatalog();
     }, true);
-    const titles = { 'pipeline-save-btn': 'Сохранить схему шаблоном в каталог', 'pipeline-import-btn': 'Открыть файл каталога шаблонов', 'pipeline-export-btn': 'Скачать каталог шаблонов (stand-templates.json)' };
+    const titles = { 'pipeline-save-btn': 'Сохранить схему шаблоном в каталог', 'pipeline-import-btn': 'Открыть файл каталога шаблонов или схему Basic', 'pipeline-export-btn': 'Скачать схему для Basic' };
     Object.entries(titles).forEach(([id, text]) => { const b = $(id); if (b) { b.title = text; b.setAttribute('aria-label', text); } });
     loadCache();
     drawCatalog();

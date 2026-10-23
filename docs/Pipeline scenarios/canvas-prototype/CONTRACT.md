@@ -122,8 +122,12 @@ Default (сброс стенда, `reset()`; не удаляется), шабл�
 - **Удаление.** «×» видна при наведении на активный пункт (настоящий CSS) и после долгого нажатия (≥ 600 мс без движения → `.is-longpress`;
   снимается нажатием вне пункта, Escape, через 6 с; click после долгого нажатия не применяет шаблон). `confirm` → удаление из каталога
   и файла; удалён активный — `reset()` и Default. Тост «Удалено: имя».
-- **Import** (`#pipeline-import-btn`): `showOpenFilePicker` → проверка `format`/`templates` (иначе «Файл не похож на каталог шаблонов»,
+- **Обмен со Basic** (`basic-export.js`, `ProtoBasicExport.toBasic` / `fromBasic`; проверен `tests/stand-basic-export.test.js` через `BasicSchema.validate`).
+  **Export** (`#pipeline-export-btn`) скачивает схему на холсте как файл Basic `<task>.json` (`schemaVersion`, `origin: user`, `ref` r1…/`final`/`synth:`/`gate:`/`owner:`,
+  `kind`, `models`; `description`, `defaults`, `run` переносятся): его принимает кнопка Import в Basic. Переносятся round, synthesis, gate, owner; повторные этапы
+  (`repeats`) не копируются — первая проверка получает `onFail: { goto, maxLoops: 3 }`; остальные блоки пропускаются с предупреждением в тосте.
+  **Import** принимает и файл Basic (`schemaVersion` + `steps`): он становится шаблоном каталога и открывается на холсте (возврат проверки `goto` не переносится).
+- **Import каталога** (`#pipeline-import-btn`): `showOpenFilePicker` → проверка `format`/`templates` (иначе «Файл не похож на каталог шаблонов»,
   каталог не меняется) → `confirm`, если каталог не пуст → каталог заменяется, файл становится файлом каталога.
-  Без File System Access — обычный выбор файла, без записи. **Export** (`#pipeline-export-btn`): скачать каталог как stand-templates.json
-  (Blob + `a[download]`). Без `showSaveFilePicker` Save хранит шаблоны в памяти и кэше, тост «Нет доступа к файлам: используйте Export».
+  Без File System Access — обычный выбор файла, без записи. Без `showSaveFilePicker` Save хранит шаблоны в памяти и кэше (файл каталога не пишется).
 - `ProtoStand.catalog` (для проверок): `state`, `restore(handle)`, `draw()`, `save()`, `parse(text)`, `text()`.

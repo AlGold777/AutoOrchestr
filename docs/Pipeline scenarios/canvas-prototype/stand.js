@@ -6,7 +6,7 @@
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '20';
+  const STAND_VERSION = '21';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -1183,15 +1183,19 @@
   async function importCatalog() {
     let h = null;
     let text;
+    let fileName = '';
     if (typeof root.showOpenFilePicker === 'function') {
       try { [h] = await root.showOpenFilePicker({ types: FILE_TYPES, multiple: false }); } catch (error) { if (error?.name !== 'AbortError') toast(`Файл не выбран: ${error?.message || error}`); return; }
+      fileName = h.name || '';
       try { text = await readHandle(h); } catch (error) { toast(`Файл не прочитан: ${error?.message || error}`); return; }
     } else {
       const input = Object.assign(document.createElement('input'), { type: 'file', accept: 'application/json,.json' });
       const file = await new Promise((resolve) => { input.addEventListener('change', () => resolve(input.files?.[0] || null), { once: true }); input.click(); });
       if (!file) return;
+      fileName = file.name;
       text = await file.text();
     }
+    if (importBasicText(text, fileName)) return;
     const list = parseCatalog(text);
     if (!list) { toast('Файл не похож на каталог шаблонов'); return; }
     if (catalog.templates.length && !root.confirm(`Заменить текущий каталог (${catalog.templates.length} ${plural(catalog.templates.length, ['шаблон', 'шаблона', 'шаблонов'])}) шаблонами из файла (${list.length})?`)) return;
@@ -1205,15 +1209,35 @@
     toast(`Каталог: ${h ? catalog.fileName : 'из файла'} · ${list.length} ${plural(list.length, ['шаблон', 'шаблона', 'шаблонов'])}${h ? '' : '\nНет доступа к файлам: изменения — через Export'}`);
   }
 
+  // Файл Basic (schemaVersion + steps) → шаблон каталога и схема на холсте.
+  function importBasicText(text, fileName) {
+    let doc;
+    try { doc = JSON.parse(text); } catch (error) { return false; }
+    if (!isObj(doc) || !('schemaVersion' in doc) || !Array.isArray(doc.steps)) return false;
+    const { schema, warnings } = root.ProtoBasicExport.fromBasic(doc, { name: fileName.replace(/\.json$/i, '') });
+    const now = new Date().toISOString();
+    const tpl = { id: uid(), name: uniqueName(cut(schema.task, 48)), savedAt: now, schema: pickSchema(schema), comment: '' };
+    catalog.templates.push(tpl);
+    catalog.unsaved.add(tpl.id);
+    saveCache();
+    applyTemplate(tpl);
+    persist().then((res) => toast(`Импорт из Basic: ${tpl.name}${warnings.length ? `\n${warnings.join('\n')}` : ''}\n${res.msg}`));
+    return true;
+  }
+
+  // Export: схема на холсте → файл, который принимает кнопка Import в Basic.
   function exportCatalog() {
-    if (!catalog.templates.length) { toast('Каталог пуст: сохраните схему (Save)'); return; }
-    const url = URL.createObjectURL(new Blob([catalogText()], { type: 'application/json' }));
-    const a = Object.assign(document.createElement('a'), { href: url, download: 'stand-templates.json' });
+    if (!stand.active || !stand.schema) { toast('Сначала примените схему (кнопка i) или откройте шаблон'); return; }
+    const { schema, warnings } = root.ProtoBasicExport.toBasic(pickSchema(stand.schema), { roleIdOf });
+    if (!schema.steps.length) { toast(`Нечего экспортировать\n${warnings.join('\n')}`); return; }
+    const name = (own(stand.schema.task) ? cut(stand.schema.task, 48) : 'schema').replace(/[\\/:*?"<>|]+/g, ' ').trim();
+    const url = URL.createObjectURL(new Blob([JSON.stringify(schema, null, 2)], { type: 'application/json' }));
+    const a = Object.assign(document.createElement('a'), { href: url, download: `${name}.json` });
     document.body.appendChild(a);
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    toast(`Скачан stand-templates.json · ${catalog.templates.length} ${plural(catalog.templates.length, ['шаблон', 'шаблона', 'шаблонов'])}`);
+    toast(`Скачан ${name}.json для Basic${warnings.length ? `\n${warnings.join('\n')}` : ''}`);
   }
 
   // Пункт списка — разметка настоящего UI (results.js, buildPipelineItem).
@@ -1284,7 +1308,7 @@
       else if (btn.id === 'pipeline-import-btn') importCatalog();
       else exportCatalog();
     }, true);
-    const titles = { 'pipeline-save-btn': 'Сохранить схему шаблоном в каталог', 'pipeline-import-btn': 'Открыть файл каталога шаблонов', 'pipeline-export-btn': 'Скачать каталог шаблонов (stand-templates.json)' };
+    const titles = { 'pipeline-save-btn': 'Сохранить схему шаблоном в каталог', 'pipeline-import-btn': 'Открыть файл каталога шаблонов или схему Basic', 'pipeline-export-btn': 'Скачать схему для Basic' };
     Object.entries(titles).forEach(([id, text]) => { const b = $(id); if (b) { b.title = text; b.setAttribute('aria-label', text); } });
     loadCache();
     drawCatalog();
