@@ -1338,3 +1338,15 @@ describe('Basic schema: the specification text (spec, a step\'s title, goal, rul
     expect(Schema.toSettings(schema)).toEqual(Schema.toSettings(plain));
   });
 });
+
+describe('Basic schema: description is the presentation of the pipeline, for the person only', () => {
+  const steps = [round('r1', ['Claude'])];
+  test('a long text is valid and does not change the assembled steps', () => {
+    const text = 'Презентация проекта.\n\n'.repeat(50);
+    expect(Schema.validate(base(steps, { description: text }))).toEqual([]);
+    expect(Schema.assemble(base(steps, { description: text }))).toEqual(Schema.assemble(base(steps)));
+  });
+  test('a description that is not a text is an error with its path', () => {
+    expect(errorPaths(base(steps, { description: 5 }))).toEqual(['description']);
+  });
+});

@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-23 — Basic: описание схемы (`description`), версия 2.81.843
+
+- Поле корня схемы `description` — презентация pipeline для человека; проверяется как текст, сохраняется вместе со схемой, на прогон не влияет (`disput/basic-schema.js`, `results.js`).
+- В окне ▶ — блок Description (2 строки, ⤢ — на весь экран); подсказка на ▶ — то же описание (`styles/pipeline.css`, `.custom-desc*`).
+
 ### 2026-10-22 — Pipeline: цвет иконки, полоска Telemetry под ней, версия 2.81.842
 
 - Иконка «Pipeline panel» окрашена в `rgb(133 137 142)` (`.right-sidebar-toggle-btn`).

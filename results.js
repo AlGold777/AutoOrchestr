@@ -6776,6 +6776,7 @@ document.addEventListener('click', (event) => {
             const runValue = forSave ? (run || basicRunForSave()) : { policy: getDebateRunPolicy(), maxWords: getDebateMaxWords(), ...basicStrictLengthRun() };
             return { schemaVersion: window.BasicSchema.SCHEMA_VERSION, origin: 'user', ...(forSave && basedOn ? { basedOn } : {}),
                 ...(sourceSchema && 'spec' in sourceSchema ? { spec: JSON.parse(JSON.stringify(sourceSchema.spec)) } : {}),
+                ...(sourceSchema && typeof sourceSchema.description === 'string' ? { description: sourceSchema.description } : {}),
                 ...(Object.keys(runValue).length ? { run: runValue } : {}),
                 ...(Object.keys(defaults).length ? { defaults } : {}), steps: withControls(steps.map(withSpecText)) };
         };
@@ -8722,6 +8723,10 @@ document.addEventListener('click', (event) => {
             if (block.closest?.('#synthesis-stack')) return window.__getDraftPlanSynthesizer?.(cardPlanFor(block)) || '';
             return block.querySelector('.model-name')?.textContent?.trim() || '';
         };
+        // The presentation of the pipeline (schema.description): shown in the ▶ card, collapsed to two lines; the engine never reads it.
+        const basicDescription = () => String(basicSourceSchema.get(draftPlanStorageKey())?.description || '').trim();
+        const basicDescriptionBlock = () => `<div class="custom-desc"><div class="custom-desc-head"><strong>Description</strong><button type="button" class="custom-desc-toggle" aria-expanded="false" title="Развернуть на весь экран">⤢</button></div>
+            <div class="custom-desc-text">${basicDescription() ? escapeHtml(basicDescription()) : '<em>Описание не задано.</em>'}</div></div>`;
         const renderCustomBlockInspector = async (block, modal, { pipelineDefaults = false } = {}) => {
             const modelName = pipelineDefaults ? '' : customBlockModel(block);
             const ref = pipelineDefaults ? '' : customBlockRef(block);
@@ -8769,6 +8774,7 @@ document.addEventListener('click', (event) => {
                     <button type="button" class="modal-button accent" id="custom-card-save">Save</button>
                 </header>
                 <div class="custom-card-body">
+                    ${pipelineDefaults ? basicDescriptionBlock() : ''}
                     ${!pipelineDefaults && step?.kind === 'synthesis' ? '<div class="custom-card-steps" id="custom-card-step-fields"></div>' : ''}
                     ${pipelineDefaults ? '<p class="custom-card-note">Общие значения для всех шагов. Своё значение модели имеет приоритет; пустое поле наследует значение из кода.</p>' : `<div class="custom-card-field">
                         <div class="custom-card-head"><label for="custom-card-request">Запрос</label><span><code>{задача}</code> и <code>{вход}</code> подставляются при запуске. Изменённый текст используется только для этой модели в этом шаге.</span><span class="custom-card-actions">${copyButton('custom-card-request', 'Запрос')}</span></div>
@@ -8817,6 +8823,13 @@ document.addEventListener('click', (event) => {
                 };
                 drawStepFields();
             }
+            content.querySelector('.custom-desc-toggle')?.addEventListener('click', (event) => {
+                const box = event.currentTarget.closest('.custom-desc');
+                const full = box.classList.toggle('is-full');
+                event.currentTarget.setAttribute('aria-expanded', String(full));
+                event.currentTarget.textContent = full ? '✕' : '⤢';
+                event.currentTarget.title = full ? 'Свернуть' : 'Развернуть на весь экран';
+            });
             const request = content.querySelector('#custom-card-request');
             const length = content.querySelector('#custom-card-length');
             const reset = content.querySelector('#custom-card-reset');
@@ -9620,6 +9633,13 @@ document.addEventListener('click', (event) => {
             if (window.PipelinePresets?.getPipelinePreset?.(getSelectedPipelinePresetId())?.runner === 'custom') showPipelineBlockInfo(null, { pipelineDefaults: true });
         };
         customEntryPoint?.addEventListener('click', openCustomDefaults);
+        // The tooltip of ▶ is the description of the open pipeline (the button is redrawn with the canvas, so it is set on hover).
+        pipelinePanel?.addEventListener('mouseover', (event) => {
+            const point = event.target.closest?.('#entryPoint');
+            if (!point) return;
+            const text = basicDescription().replace(/\s+/g, ' ');
+            point.title = text ? (text.length > 400 ? `${text.slice(0, 399)}…` : text) : 'Общие значения';
+        });
         customEntryPoint?.addEventListener('keydown', (event) => {
             if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openCustomDefaults(); }
         });
