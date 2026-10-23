@@ -6,7 +6,7 @@
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '40';
+  const STAND_VERSION = '41';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -44,7 +44,7 @@
   const HUMAN_BLOCKS = ['owner'];
   const KIND = {
     round: ['Раунд', 'ti-users'],
-    owner: ['Владелец', 'ti-user'], file: ['Файл', 'ti-file-export']
+    owner: ['Ответ человека', 'ti-user'], file: ['Файл', 'ti-file-export']
   };
   // Этапы приложения (без нейросети): в холсте помечаются словом «приложение».
   const APP_BLOCKS = ['file'];
