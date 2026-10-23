@@ -8462,7 +8462,36 @@ document.addEventListener('click', (event) => {
             if (!checked.ok) return checked;
             return { ok: true, errors: [], name, schema, fileName: schemaFileName(name), text: `${JSON.stringify(schema, null, 2)}\n` };
         };
-        const exportBasicSchema = () => {
+        // Schemas go to Downloads/Схемы like saved sessions go to Downloads/Saved sessions:
+        // chrome.downloads is the only way to pick a subfolder; without it the anchor download is used.
+        const BASIC_SCHEMAS_FOLDER = 'Схемы';
+        const downloadSchemaViaDownloadsApi = (url, filename) => new Promise((resolve) => {
+            if (!chrome?.downloads?.download) {
+                resolve(false);
+                return;
+            }
+            try {
+                chrome.downloads.download({
+                    url,
+                    filename: `${BASIC_SCHEMAS_FOLDER}/${filename}`,
+                    conflictAction: 'uniquify',
+                    saveAs: false
+                }, (downloadId) => {
+                    const failure = chrome.runtime?.lastError;
+                    if (failure || !downloadId) {
+                        if (failure) console.warn('[results] downloads API rejected schema export', failure.message || failure);
+                        resolve(false);
+                        return;
+                    }
+                    resolve(true);
+                });
+            } catch (error) {
+                console.warn('[results] downloads API unavailable for schema export', error);
+                resolve(false);
+            }
+        });
+
+        const exportBasicSchema = async () => {
             const built = buildBasicExport();
             if (!built.ok) {
                 showNotification(`Экспорт не выполнен. ${describeSchemaErrors(built.errors)}`, 'warn');
@@ -8470,13 +8499,21 @@ document.addEventListener('click', (event) => {
             }
             const blob = new Blob([built.text], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
+            // The download reads the blob asynchronously, so the URL is revoked only after a delay.
+            const revokeLater = () => setTimeout(() => URL.revokeObjectURL(url), 60000);
+            const savedToFolder = await downloadSchemaViaDownloadsApi(url, built.fileName);
+            if (savedToFolder) {
+                showNotification(`Схема сохранена в Загрузки/Схемы: ${built.fileName}`);
+                revokeLater();
+                return;
+            }
             const link = document.createElement('a');
             link.href = url;
             link.download = built.fileName;
             document.body.appendChild(link);
             link.click();
             link.remove();
-            setTimeout(() => URL.revokeObjectURL(url), 0);
+            revokeLater();
         };
 
         // The errors of a schema in one line: the place and the reason of each, at most five.
@@ -8603,6 +8640,10 @@ document.addEventListener('click', (event) => {
         const handlePipelineImportFile = async (event) => {
             const file = event.target.files?.[0];
             if (!file) return;
+            readPipelineImportFile(file);
+        };
+
+        const readPipelineImportFile = (file) => {
             const reader = new FileReader();
             reader.onload = async () => {
                 let parsed;
@@ -8620,7 +8661,7 @@ document.addEventListener('click', (event) => {
             reader.readAsText(file);
         };
 
-        const importPipelines = () => {
+        const openPipelineImportInput = () => {
             if (!pipelineImportInput) {
                 pipelineImportInput = document.createElement('input');
                 pipelineImportInput.type = 'file';
@@ -8631,6 +8672,28 @@ document.addEventListener('click', (event) => {
             }
             pipelineImportInput.value = '';
             pipelineImportInput.click();
+        };
+
+        // The picker is opened before any await: it needs the click's transient activation.
+        // The id makes the browser reopen it in the folder of the last pick (Downloads/Схемы after the first one).
+        const importPipelines = () => {
+            if (typeof window.showOpenFilePicker !== 'function') {
+                openPipelineImportInput();
+                return;
+            }
+            window.showOpenFilePicker({
+                id: 'basicSchemas',
+                startIn: 'downloads',
+                multiple: false,
+                types: [{ description: 'Basic schema', accept: { 'application/json': ['.json'] } }]
+            }).then(async ([fileHandle]) => {
+                const file = await fileHandle.getFile();
+                readPipelineImportFile(file);
+            }).catch((error) => {
+                if (error?.name === 'AbortError') return;
+                console.warn('[results] schema file picker failed', error?.name, error?.message);
+                openPipelineImportInput();
+            });
         };
 
         const initPipelineList = async () => {

@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-23 — Basic: схемы по умолчанию в Загрузки/Схемы (экспорт — chrome.downloads, импорт — окно со стартом в Загрузках), версия 2.81.844
+
+- Экспорт схемы сохраняет файл в `Загрузки/Схемы` через `chrome.downloads`; при отказе API — прежний скачивание через ссылку (`results.js`, `exportBasicSchema`, `downloadSchemaViaDownloadsApi`).
+- Импорт схемы открывает окно выбора файла (`showOpenFilePicker`, id `basicSchemas`, старт в Загрузках); окно помнит последнюю папку. При ошибке окна — скрытый input, как раньше (`importPipelines`, `readPipelineImportFile`).
+
 ### 2026-10-23 — Basic: описание схемы (`description`), версия 2.81.843
 
 - Поле корня схемы `description` — презентация pipeline для человека; проверяется как текст, сохраняется вместе со схемой, на прогон не влияет (`disput/basic-schema.js`, `results.js`).
