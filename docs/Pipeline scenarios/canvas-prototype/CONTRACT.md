@@ -130,7 +130,7 @@ Default (сброс стенда, `reset()`; не удаляется), шабл�
   Диалоги Save, Import и Export открываются в Загрузках (`startIn: 'downloads'`, `id: 'basicSchemas'`) и дальше помнят последнюю папку — удобно один раз выбрать Загрузки/Схемы; без File System Access — обычное скачивание. **Export** (`#pipeline-export-btn`) пишет схему на холсте как файл Basic `<task>.json` (`schemaVersion`, `origin: user`, `ref` r1…/`final`/`synth:`/`gate:`/`owner:`,
   `kind`, `models`; `description`, `defaults`, `run` переносятся): его принимает кнопка Import в Basic. Переносятся round, synthesis, gate, owner; повторные этапы
   (`repeats`) не копируются — первая проверка получает `onFail: { goto, maxLoops: 3 }`; остальные блоки пропускаются с предупреждением в тосте.
-  **Import** принимает и файл Basic (`schemaVersion` + `steps`): он становится шаблоном каталога и открывается на холсте (возврат проверки `goto` не переносится).
+  Перед записью Export проверяет файл настоящим `BasicSchema.validate` (в сборку стенда входят `disput/basic-*.js` и `custom-engine.js`): недопустимый файл не пишется, тост называет причину. **Import** принимает и файл Basic (`schemaVersion` + `steps`): он становится шаблоном каталога и открывается на холсте (возврат проверки `goto` не переносится).
 - **Import каталога** (`#pipeline-import-btn`): `showOpenFilePicker` → проверка `format`/`templates` (иначе «Файл не похож на каталог шаблонов»,
   каталог не меняется) → `confirm`, если каталог не пуст → каталог заменяется, файл становится файлом каталога. Первый шаблон (или прежний активный) сразу открывается на холсте.
   Без File System Access — обычный выбор файла, без записи. Без `showSaveFilePicker` Save хранит шаблоны в памяти и кэше (файл каталога не пишется).

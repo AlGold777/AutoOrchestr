@@ -6,7 +6,7 @@
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '27';
+  const STAND_VERSION = '28';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -1355,6 +1355,9 @@
     if (!stand.active || !stand.schema) { toast('Сначала примените схему (кнопка i) или откройте шаблон'); return; }
     const { schema, warnings } = root.ProtoBasicExport.toBasic(pickSchema(stand.schema), { roleIdOf });
     if (!schema.steps.length) { toast(`Нечего экспортировать\n${warnings.join('\n')}`); return; }
+    // Тот же проверяющий код, что у Import в Basic: недопустимый файл не пишем.
+    const errors = root.BasicSchema?.validate(schema) || [];
+    if (errors.length) { toast(`Экспорт в Basic невозможен: ${errors.slice(0, 3).map((e) => `${e.path ? `${e.path}: ` : ''}${e.message}`).join('; ')}${warnings.length ? `\n${warnings.slice(0, 4).join('\n')}` : ''}`); return; }
     const name = (own(stand.schema.task) ? cut(stand.schema.task, 48) : 'schema').replace(/[\\/:*?"<>|]+/g, ' ').trim();
     const text = JSON.stringify(schema, null, 2);
     const note = warnings.length ? `\n${warnings.join('\n')}` : '';

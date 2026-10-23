@@ -45,6 +45,9 @@ parts = ['window.__PROTO_ICONS__=' + json.dumps(icons) + ';',
          rd(os.path.join(HERE, 'canvas.js'))]
 stand = os.path.join(HERE, 'stand.js')
 if os.path.exists(stand):
+    # Настоящий валидатор Basic: Export стенда проверяет файл тем же кодом, что и импорт в расширении.
+    for name in ['basic-output', 'basic-artifacts', 'basic-control', 'custom-engine', 'basic-schema']:
+        parts.append(rd(os.path.join(ROOT, 'disput', name + '.js')))
     parts.append(rd(os.path.join(HERE, 'basic-export.js')))
     parts.append(rd(stand))
 banner = '''window.addEventListener('error', function (e) {
