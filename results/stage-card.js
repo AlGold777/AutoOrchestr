@@ -148,18 +148,18 @@
     };
   }
 
-  // The input of a step: `first` (the first round has nothing to feed in) gives null. An array of refs or a drafted
-  // «steps» shows the choice «выбранные этапы» with the earlier steps; `kind` decides the other options.
-  function stepInputModel(settings = {}, { kind = 'round', first = false, earlier = [], drafts = {} } = {}) {
-    if (first && kind === 'round') return null;
+  // The input of a round: `first` (the first round has nothing to feed in) gives null. An array of refs or a drafted
+  // «steps» shows the choice «выбранные этапы» with the earlier steps.
+  function stepInputModel(settings = {}, { first = false, earlier = [], drafts = {} } = {}) {
+    if (first) return null;
     const input = Array.isArray(settings.input) ? settings.input : String(settings.input || '');
     const picked = Array.isArray(input) ? input : [];
-    const defaultInput = kind === 'round' && first ? 'none' : 'previous';
+    const defaultInput = 'previous';
     const stepsMode = Array.isArray(input) || input === 'steps' || drafts.input === 'steps';
     const refs = picked.filter((item) => typeof item === 'string');
     const options = [
       { value: '', label: `По умолчанию (${INPUT_LABELS[defaultInput].toLowerCase()})` },
-      ...(kind === 'round' ? Object.entries(INPUT_LABELS).map(([value, label]) => ({ value, label })) : [{ value: 'previous', label: INPUT_LABELS.previous }]),
+      ...Object.entries(INPUT_LABELS).map(([value, label]) => ({ value, label })),
       { value: 'steps', label: STEPS_LABEL }
     ];
     return {
@@ -173,20 +173,11 @@
     };
   }
 
-  // The fields of a synthesis (its window): input, require, owner, output. Settings are the step's own fields.
-  function stepFieldsModel({ kind = 'round', settings = {}, earlier = [], enabledCount = 0, drafts = {}, disabled = false } = {}) {
-    return {
-      disabled: Boolean(disabled),
-      input: stepInputModel(settings, { kind, earlier, drafts }),
-      ...stepRestModel(settings, { enabledCount, drafts })
-    };
-  }
-
   // The order, the input and the task of a round card; `first` and `inheritedTask` as before. The input of a later round
   // is the previous step by default, the first round has no input (null).
   function settingsModel(settings, { first = false, inheritedTask = '', disabled = false, earlier = [], enabledCount = 0, drafts = {} } = {}) {
     const order = String(settings.order || '');
-    const input = stepInputModel(settings, { kind: 'round', first, earlier, drafts });
+    const input = stepInputModel(settings, { first, earlier, drafts });
     const stepsMode = input?.value === 'steps';
     const defaultInput = first ? 'none' : 'previous';
     const effectiveInput = stepsMode ? 'steps' : (input?.value || defaultInput);
@@ -305,16 +296,6 @@
     strict.addEventListener('change', emitOutput);
     if (output.json) group.append(el(doc, 'p', 'stage-card-muted', 'Формат json: заголовки не проверяются, поля задаются в схеме (requiredFields).'));
     container.append(group);
-  }
-
-  // The window of a synthesis: its input (with the steps list), then the same fields as a round card has after its task.
-  function renderStepFields(container, fields, onField) {
-    const emit = (field, value) => { if (typeof onField === 'function') onField(field, value); };
-    if (fields.input) {
-      choiceRow(container, 'input', 'Вход синтеза', { ...fields.input, disabled: fields.disabled }, emit);
-      if (fields.input.value === 'steps') renderSteps(container, fields.input, emit, fields.disabled);
-    }
-    renderRest(container, fields, emit);
   }
 
   const el = (documentRef, tag, className, text) => {
@@ -581,7 +562,7 @@
     return '';
   }
 
-  const api = Object.freeze({ buildModel, render, renderStepFields, stepFieldsModel, stepsAfterToggle, outputAfterEdit, STATUS, feed,
+  const api = Object.freeze({ buildModel, render, stepsAfterToggle, outputAfterEdit, STATUS, feed,
     controlSummary, ownerWindowModel, ownerAfterEdit, renderOwnerWindow, renderAddControl, ownerAskMessage });
   root.StageCard = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

@@ -12,6 +12,14 @@ describe('Stand ↔ Basic exchange', () => {
     expect(Schema.validate(basic)).toEqual([]);
   });
 
+  test('defaults.synthesisTask of the stand is not exported: Basic has no synthesis, the warning says how to write it', () => {
+    const { schema: basic, warnings } = Exchange.toBasic({ task: 'T', defaults: { roundTask: 'R', synthesisTask: 'S' },
+      steps: [{ id: 's1', block: 'round', title: 'R', why: 'w', models: [{ name: 'Claude' }], task: 'Сделай' }] });
+    expect(basic.defaults).toEqual({ roundTask: 'R' });
+    expect(Schema.validate(basic)).toEqual([]);
+    expect(warnings.some((w) => w.includes('defaults.synthesisTask'))).toBe(true);
+  });
+
   test('a stand check is a plain model step: no gate is exported', () => {
     const { schema: basic } = Exchange.toBasic(list.map((e) => e.schema || e)[0]);
     expect(basic.steps.some((st) => st.kind === 'gate')).toBe(false);

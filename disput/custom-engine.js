@@ -1,18 +1,18 @@
 // Custom engine: the shared pipeline workhorse. A run is one sequence of steps; the canvas shows
-// them as round cards and synthesis inserts, the engine knows only steps. Meaning (answer, critique,
-// improvement, check, synthesis) comes from the step's task; the engine executes and passes data.
+// them as round cards, the engine knows only steps. Meaning (answer, critique, improvement, check,
+// synthesis) comes from the step's task and the models' roles; the engine executes and passes data.
+// A synthesis is a round of one model with a role; the accepted answers of the last step are the result.
 //
-// Step: { kind: 'round' | 'synthesis', order: 'parallel' | 'sequential', task, input, models, ref?, round?, afterRound? }
-//   ref, round (the number of a round) and afterRound (a synthesis) come from the schema, so a switched-off
-//   round keeps its number in labels, previews and the journal; without them the engine counts the steps it gets.
+// Step: { kind: 'round' | 'owner', order: 'parallel' | 'sequential', task, input, models, ref?, round? }
+//   ref and round (the number of a round) come from the schema, so a switched-off round keeps its number
+//   in labels, previews and the journal; without them the engine counts the steps it gets.
 //   models: [{ id, name, extra, promptTemplate, maxWords, input? }] — card order is call order. A participant is its id
 //   (the id is the name by default); two participants of one model are two entries with two ids.
 //   promptTemplate replaces automatic assembly; maxWords reaches the caller on every attempt.
 //   input: 'none' | 'previous' | 'all' | [sources]. The run's task is always sent. A participant's own input replaces
 //          the shared one of the step; the answers before the participant in a sequential round stay a separate block.
-//     previous — accepted answers of the last step that has any (a synthesis replaces the round
-//                before it; a skipped step passes nothing on);
-//     all      — every accepted answer of all earlier steps, rounds and syntheses alike;
+//     previous — accepted answers of the last step that has any (a skipped step passes nothing on);
+//     all      — every accepted answer of all earlier steps;
 //     [sources] — a step ref (all its accepted answers), { step, participant, required? } (one answer);
 //                a required source without an answer stops the run before the request (missing_input).
 //   sequential — each model also gets the accepted answers of the models before it in this step;
@@ -45,7 +45,6 @@
   const Output = root.BasicOutput || (typeof require === 'function' ? require('./basic-output') : null);
   const Artifacts = root.BasicArtifacts || (typeof require === 'function' ? require('./basic-artifacts') : null);
   const DEFAULT_ATTEMPTS = 2;
-  const SYNTHESIS_TASK = 'Сведи эти ответы в один итоговый ответ на задачу.';
   const REASON_TEXT = Object.freeze({
     empty: 'пустой',
     token_only: 'без текста',
@@ -74,7 +73,7 @@
   const refKey = (step) => step.ref ?? `#${step.index}`;
   const stepLabel = (step) => {
     if (step.kind === 'owner') return `User ${step.ref}`;
-    return step.kind === 'synthesis' ? `Синтез после раунда ${step.afterRound}` : `Раунд ${step.round}`;
+    return `Раунд ${step.round}`;
   };
   // The mode the prompt names: a list of sources is 'sources', the strings stay as they are.
   const modeOf = (spec) => (Array.isArray(spec) ? 'sources' : spec);
@@ -182,20 +181,19 @@
     return typeof read.value === 'string' ? read.value : JSON.stringify(read.value);
   }
 
-  // Numbers the steps for labels: rounds by their card, syntheses by the round before them.
+  // Numbers the rounds for labels by their card.
   function normalizeSteps(steps = []) {
     let round = 0;
     return steps.map((step, index) => {
-      const kind = ['synthesis', 'owner'].includes(step.kind) ? step.kind : 'round';
+      const kind = step.kind === 'owner' ? 'owner' : 'round';
       // A switched-off round keeps its number: the schema gives the number, the engine only counts without it.
       if (kind === 'round') round = Number.isSafeInteger(step.round) && step.round > 0 ? step.round : round + 1;
       return {
         index, ref: typeof step.ref === 'string' ? step.ref : null, kind, round: kind === 'round' ? round : null,
-        afterRound: kind === 'synthesis' ? (Number.isSafeInteger(step.afterRound) && step.afterRound > 0 ? step.afterRound : round) : null,
         order: kind === 'round' && step.order === 'sequential' ? 'sequential' : 'parallel',
-        task: kind === 'synthesis' && !text(step.task) ? SYNTHESIS_TASK : text(step.task),
+        task: text(step.task),
         // A list of sources stays a list here: the input is checked before the run (assertExecutable).
-        input: Array.isArray(step.input) ? step.input.slice() : (kind === 'synthesis' ? 'previous' : (step.input ?? (kind === 'owner' ? 'none' : 'previous'))),
+        input: Array.isArray(step.input) ? step.input.slice() : (step.input ?? (kind === 'owner' ? 'none' : 'previous')),
         output: step.output ?? null,
         // continue: the participant keeps its chat; new: a new chat on the first request of each visit (4.2).
         chat: step.chat === 'new' ? 'new' : 'continue',
@@ -223,12 +221,12 @@
     }
   }
 
-  const EXECUTED_KINDS = Object.freeze(['round', 'synthesis', 'owner']);
+  const EXECUTED_KINDS = Object.freeze(['round', 'owner']);
   // The participant that an owner step's answer and artifacts are registered under: the owner has no model (8.1).
   const OWNER_PARTICIPANT = 'owner';
   const INPUT_VALUES = Object.freeze(['none', 'previous', 'all']);
   // An input (of a step or of a participant) that the engine cannot execute, or null. `fail` builds the error with its address.
-  function inputProblem(spec, kind, fail, field) {
+  function inputProblem(spec, fail, field) {
     if (Array.isArray(spec)) {
       if (!spec.length) return fail('invalid_input', field, 'список источников пуст');
       const shape = (source) => {
@@ -249,11 +247,11 @@
       if (bad >= 0) return fail('invalid_input', `${field}[${bad}]`, 'источник: ref шага, { step, participant, required? } или { artifact: { step, participant, id }, version, required? }');
       return null;
     }
-    if (!INPUT_VALUES.includes(spec) || (kind === 'synthesis' && spec !== 'previous')) return fail('invalid_input', field, 'вход: none, previous, all или список источников; синтез — только previous');
+    if (!INPUT_VALUES.includes(spec)) return fail('invalid_input', field, 'вход: none, previous, all или список источников');
     return null;
   }
   // The output of a step or of a participant (5.8, 3.2): the fields the engine executes, or null. `field` names it in the error.
-  function outputProblem(output, kind, fail, field) {
+  function outputProblem(output, fail, field) {
     if (!output || typeof output !== 'object' || Array.isArray(output)) return fail('invalid_field', field, 'выход: объект');
     if (output.format !== undefined && output.format !== 'json') return fail('unsupported_field', `${field}.format`, 'формат выхода движок пока не исполняет');
     if (output.artifacts !== undefined && (!Array.isArray(output.artifacts) || !output.artifacts.length)) return fail('invalid_field', `${field}.artifacts`, 'ожидается непустой список артефактов');
@@ -262,7 +260,7 @@
         if (!item || typeof item !== 'object' || !('revisionOf' in item)) continue;
         const where = `${field}.artifacts[${at}].revisionOf`;
         if (!isPlain(item.revisionOf) || !isPlain(item.revisionOf.artifact)) return fail('invalid_input', where, 'ревизия: ссылка на артефакт { artifact: { step, participant, id }, version }');
-        const problem = inputProblem([item.revisionOf], kind, fail, where);
+        const problem = inputProblem([item.revisionOf], fail, where);
         if (problem) return problem;
       }
     }
@@ -283,11 +281,11 @@
       if (Array.isArray(step.models) && step.models.length) return fail('invalid_field', 'models', 'у User нет моделей');
     }
     if (step.input !== undefined) {
-      const problem = inputProblem(step.input, step.kind, fail, 'input');
+      const problem = inputProblem(step.input, fail, 'input');
       if (problem) return problem;
     }
     if (step.output !== undefined) {
-      const problem = outputProblem(step.output, step.kind, fail, 'output');
+      const problem = outputProblem(step.output, fail, 'output');
       if (problem) return problem;
     }
     if (step.require !== undefined && step.require !== 'any' && step.require !== 'all') {
@@ -303,11 +301,11 @@
       const name = typeof model === 'string' ? model : model?.name;
       const id = typeof model === 'string' ? model : (model?.id ?? name);
       if (model && typeof model === 'object' && model.input !== undefined) {
-        const problem = inputProblem(model.input, step.kind, fail, `модель «${name}» · input`);
+        const problem = inputProblem(model.input, fail, `модель «${name}» · input`);
         if (problem) return problem;
       }
       if (model && typeof model === 'object' && model.output !== undefined) {
-        const problem = outputProblem(model.output, step.kind, fail, `модель «${name}» · output`);
+        const problem = outputProblem(model.output, fail, `модель «${name}» · output`);
         if (problem) return problem;
       }
       if (names.has(name) && !participants) return new EngineError('participant_transport_required', `${at} · модель «${name}»`, 'два участника одной модели требуют транспорта по участникам (callback sendParticipants)');
@@ -1087,7 +1085,7 @@
       instructions: { task: text(task), stepTask: model.task ?? step.task, extra: model.extra || '', askInstruction: semiAuto ? askInstruction : '' } };
   }
 
-  const api = Object.freeze({ EngineError, unexecutedOf, formatBlock, DEFAULT_ATTEMPTS, CORRECTION_TEMPLATE, SYNTHESIS_TASK, STOP_TEXT, REASON_TEXT, resolveSetting, PLACEHOLDER, TRANSPORT_LINES, buildPrompt, correctionPrompt, normalizeSteps, previewPrompt, run });
+  const api = Object.freeze({ EngineError, unexecutedOf, formatBlock, DEFAULT_ATTEMPTS, CORRECTION_TEMPLATE, STOP_TEXT, REASON_TEXT, resolveSetting, PLACEHOLDER, TRANSPORT_LINES, buildPrompt, correctionPrompt, normalizeSteps, previewPrompt, run });
   root.CustomEngine = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

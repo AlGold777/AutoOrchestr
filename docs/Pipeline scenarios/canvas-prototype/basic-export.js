@@ -1,7 +1,8 @@
 // Обмен схемами между стендом ({ task, steps: [{ id, block, … }] }) и Basic ({ schemaVersion, origin, steps: [{ ref, kind, models }] }).
 // toBasic — экспорт со стенда: файл, который принимает кнопка Import в Basic. fromBasic — импорт файла Basic на стенд.
-// Переносятся round, owner, defaults, run, description. Остальные этапы (file) и исходные артефакты
-// пропускаются с предупреждением. Проверки на стенде нет: шаг gate из файла Basic приходит на стенд обычным раундом.
+// Переносятся round, owner, defaults (roundTask, discipline, modelNotes), run, description. Остальные этапы (file), исходные
+// артефакты и defaults.synthesisTask пропускаются с предупреждением: синтеза в Basic нет, это роль раунда из одной модели.
+// Проверки на стенде нет: шаг gate из старого файла Basic приходит на стенд обычным раундом, шаг synthesis — раундом из одной модели.
 (function initBasicExport(root) {
   'use strict';
 
@@ -67,7 +68,8 @@
     const d = schema.defaults;
     if (isObj(d)) {
       const defaults = {};
-      ['roundTask', 'synthesisTask'].forEach((k) => { if (typeof d[k] === 'string') defaults[k] = d[k]; });
+      if (typeof d.roundTask === 'string') defaults.roundTask = d.roundTask;
+      if (own(d.synthesisTask)) warnings.push('Задание синтеза (defaults.synthesisTask) не перенесено: в Basic синтез — раунд из одной модели с ролью, задание пишется в task этого раунда.');
       if (isObj(d.discipline)) defaults.discipline = d.discipline;
       if (isObj(d.modelNotes)) defaults.modelNotes = d.modelNotes;
       if (Object.keys(defaults).length) result.defaults = defaults;

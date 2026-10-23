@@ -58,8 +58,8 @@
       "task": "S02, независимо: расширить сценарии, capabilities и продуктовые вопросы. Чужие ответы не видны."
     },
     {
-      "ref": "synth:s03",
-      "kind": "synthesis",
+      "ref": "r3",
+      "kind": "round",
       "input": [
         "owner:s01",
         "r2"
@@ -67,17 +67,18 @@
       "models": [
         {
           "name": "Claude",
-          "id": "S03-synth"
+          "id": "S03-synth",
+          "role": "interaction_meta_synthesis"
         }
       ],
       "task": "S03, Synthesizer: дедуплицировать предложения, разделить составные, сохранить provenance."
     },
     {
-      "ref": "r3",
+      "ref": "r4",
       "kind": "round",
       "input": [
         {
-          "step": "synth:s03",
+          "step": "r3",
           "participant": "S03-synth",
           "required": true
         },
@@ -92,11 +93,11 @@
       "task": "S03, Decision Closer: закрыть решения в пределах Decision Policy; остальные маршрутизировать. Выход — Decision Register."
     },
     {
-      "ref": "synth:s04",
-      "kind": "synthesis",
+      "ref": "r5",
+      "kind": "round",
       "input": [
         {
-          "step": "r3",
+          "step": "r4",
           "participant": "S03-closer",
           "required": true
         }
@@ -104,24 +105,25 @@
       "models": [
         {
           "name": "Claude",
-          "id": "S04-synth"
+          "id": "S04-synth",
+          "role": "interaction_meta_synthesis"
         }
       ],
       "task": "S04: собрать Product Concept из принятых решений; новых решений не принимать."
     },
     {
-      "ref": "r4",
+      "ref": "r6",
       "kind": "round",
       "order": "parallel",
       "require": 2,
       "input": [
         {
-          "step": "r3",
+          "step": "r4",
           "participant": "S03-closer",
           "required": true
         },
         {
-          "step": "synth:s04",
+          "step": "r5",
           "participant": "S04-synth",
           "required": true
         }
@@ -139,10 +141,10 @@
       "task": "S05, Reviewer независимо: contradictions, missing scenarios, hidden assumptions, undefined behavior. Концепцию не исправлять."
     },
     {
-      "ref": "r5",
+      "ref": "r7",
       "kind": "round",
       "input": [
-        "r4",
+        "r6",
         "owner:s01"
       ],
       "models": [
@@ -154,11 +156,11 @@
       "task": "S06, Decision Closer: закрыть только новые решения из review; обновить концепцию."
     },
     {
-      "ref": "r6",
+      "ref": "r8",
       "kind": "round",
       "input": [
         {
-          "step": "r5",
+          "step": "r7",
           "participant": "S06-closer",
           "required": true
         }
@@ -183,12 +185,12 @@
       "task": "S07, Producer: декомпозировать концепцию в capabilities и функции; неопределённость не заполнять догадкой."
     },
     {
-      "ref": "r7",
+      "ref": "r9",
       "kind": "round",
       "input": [
         {
           "artifact": {
-            "step": "r6",
+            "step": "r8",
             "participant": "S07-producer",
             "id": "map"
           },
@@ -216,12 +218,12 @@
       "task": "S08, Reviewer: проверить карту и выдать замечания; не исправлять."
     },
     {
-      "ref": "r8",
+      "ref": "r10",
       "kind": "round",
       "input": [
         {
           "artifact": {
-            "step": "r6",
+            "step": "r8",
             "participant": "S07-producer",
             "id": "map"
           },
@@ -230,7 +232,7 @@
         },
         {
           "artifact": {
-            "step": "r7",
+            "step": "r9",
             "participant": "S08-reviewer",
             "id": "findings"
           },
@@ -254,7 +256,7 @@
             "pointer": "",
             "revisionOf": {
               "artifact": {
-                "step": "r6",
+                "step": "r8",
                 "participant": "S07-producer",
                 "id": "map"
               },
@@ -267,12 +269,12 @@
       "task": "S08, Producer: применить только явные замечания к карте; новые продуктовые решения не принимать."
     },
     {
-      "ref": "r9",
+      "ref": "r11",
       "kind": "round",
       "input": [
         {
           "artifact": {
-            "step": "r6",
+            "step": "r8",
             "participant": "S07-producer",
             "id": "map"
           },
@@ -280,7 +282,7 @@
           "required": true
         },
         {
-          "step": "synth:s04",
+          "step": "r5",
           "participant": "S04-synth",
           "required": true
         }
@@ -294,11 +296,11 @@
       "task": "S09, Reviewer: проверить достижимость целей, flows, состояния по сценариям и прототипу."
     },
     {
-      "ref": "r10",
+      "ref": "r12",
       "kind": "round",
       "input": [
         {
-          "step": "r9",
+          "step": "r11",
           "participant": "S09-reviewer",
           "required": true
         }
@@ -312,12 +314,12 @@
       "task": "S09, Verifier: присвоить статусы по evidence; проектных решений не принимать."
     },
     {
-      "ref": "r11",
+      "ref": "r13",
       "kind": "round",
       "input": [
         {
           "artifact": {
-            "step": "r7",
+            "step": "r9",
             "participant": "S08-reviewer",
             "id": "findings"
           },
@@ -325,7 +327,7 @@
           "required": true
         },
         {
-          "step": "r10",
+          "step": "r12",
           "participant": "S09-verifier",
           "required": true
         },
@@ -340,11 +342,11 @@
       "task": "S10, Decision Closer: закрыть только выявленную delta; обновить функциональную карту по решениям."
     },
     {
-      "ref": "r12",
+      "ref": "r14",
       "kind": "round",
       "input": [
         {
-          "step": "r11",
+          "step": "r13",
           "participant": "S10-closer",
           "required": true
         }
@@ -369,12 +371,12 @@
       "task": "S11, Producer: описать наблюдаемое поведение без реализации."
     },
     {
-      "ref": "r13",
+      "ref": "r15",
       "kind": "round",
       "input": [
         {
           "artifact": {
-            "step": "r12",
+            "step": "r14",
             "participant": "S11-producer",
             "id": "spec"
           },
@@ -399,12 +401,12 @@
       "task": "S12, Reviewer: проверить completeness, consistency, testability, failure paths; поле decisionImpact — влияет ли находка на решения."
     },
     {
-      "ref": "r14",
+      "ref": "r16",
       "kind": "round",
       "input": [
         {
           "artifact": {
-            "step": "r12",
+            "step": "r14",
             "participant": "S11-producer",
             "id": "spec"
           },
@@ -412,7 +414,7 @@
           "required": true
         },
         {
-          "step": "r13",
+          "step": "r15",
           "participant": "S12-reviewer",
           "required": true
         }
@@ -433,7 +435,7 @@
             "pointer": "",
             "revisionOf": {
               "artifact": {
-                "step": "r12",
+                "step": "r14",
                 "participant": "S11-producer",
                 "id": "spec"
               },
@@ -446,13 +448,13 @@
       "task": "S12, Producer: применить только явные findings к спецификации."
     },
     {
-      "ref": "r15",
+      "ref": "r17",
       "kind": "round",
       "owner": "approve",
       "input": [
         {
           "artifact": {
-            "step": "r12",
+            "step": "r14",
             "participant": "S11-producer",
             "id": "spec"
           },
@@ -460,19 +462,19 @@
           "required": true
         },
         {
-          "step": "r11",
+          "step": "r13",
           "participant": "S10-closer",
           "required": true
         },
         {
-          "step": "synth:s04",
+          "step": "r5",
           "participant": "S04-synth",
           "required": true
         },
         "owner:s01",
         {
           "artifact": {
-            "step": "r6",
+            "step": "r8",
             "participant": "S07-producer",
             "id": "map"
           },
@@ -500,11 +502,11 @@
       "task": "S13, Decision Closer: зафиксировать продуктовый baseline; User утверждает."
     },
     {
-      "ref": "r16",
+      "ref": "r18",
       "kind": "round",
       "input": [
         {
-          "step": "r15",
+          "step": "r17",
           "participant": "S13-closer",
           "required": true
         }
@@ -524,14 +526,14 @@
       "models": []
     },
     {
-      "ref": "r17",
+      "ref": "r19",
       "kind": "round",
       "order": "parallel",
       "require": 2,
       "chat": "new",
       "input": [
         {
-          "step": "r15",
+          "step": "r17",
           "participant": "S13-closer",
           "required": true
         }
@@ -549,25 +551,26 @@
       "task": "S14, независимо: найти ограничения платформы, ОС, сети, безопасности, приватности, жизненного цикла. Не объявлять кандидатов фактами."
     },
     {
-      "ref": "synth:s15",
-      "kind": "synthesis",
+      "ref": "r20",
+      "kind": "round",
       "input": [
-        "r17"
+        "r19"
       ],
       "models": [
         {
           "name": "Claude",
-          "id": "S15-synth"
+          "id": "S15-synth",
+          "role": "interaction_meta_synthesis"
         }
       ],
       "task": "S15, Synthesizer: единый реестр ограничений с provenance; не сливать ограничения с разными условиями."
     },
     {
-      "ref": "r18",
+      "ref": "r21",
       "kind": "round",
       "input": [
         {
-          "step": "synth:s15",
+          "step": "r20",
           "participant": "S15-synth",
           "required": true
         }
@@ -581,16 +584,16 @@
       "task": "S16, Verifier: присвоить VERIFIED, FALSIFIED, UNCERTAIN, NEEDS_RESEARCH, NEEDS_EXPERIMENT по evidence; решения не принимать."
     },
     {
-      "ref": "synth:s17",
-      "kind": "synthesis",
+      "ref": "r22",
+      "kind": "round",
       "input": [
         {
-          "step": "r15",
+          "step": "r17",
           "participant": "S13-closer",
           "required": true
         },
         {
-          "step": "r18",
+          "step": "r21",
           "participant": "S16-verifier",
           "required": true
         }
@@ -598,17 +601,18 @@
       "models": [
         {
           "name": "Claude",
-          "id": "S17-synth"
+          "id": "S17-synth",
+          "role": "interaction_meta_synthesis"
         }
       ],
       "task": "S17, Synthesizer: собрать Architecture Input Package одной версии."
     },
     {
-      "ref": "r19",
+      "ref": "r23",
       "kind": "round",
       "input": [
         {
-          "step": "synth:s17",
+          "step": "r22",
           "participant": "S17-synth",
           "required": true
         }
@@ -633,11 +637,11 @@
       "task": "S17, Decision Closer: зафиксировать decision boundaries и invariants."
     },
     {
-      "ref": "r20",
+      "ref": "r24",
       "kind": "round",
       "input": [
         {
-          "step": "r19",
+          "step": "r23",
           "participant": "S17-closer",
           "required": true
         }
@@ -657,7 +661,7 @@
       "models": []
     },
     {
-      "ref": "r21",
+      "ref": "r25",
       "kind": "round",
       "order": "parallel",
       "require": 2,
@@ -665,7 +669,7 @@
       "input": [
         {
           "artifact": {
-            "step": "r19",
+            "step": "r23",
             "participant": "S17-closer",
             "id": "aip"
           },
@@ -701,22 +705,22 @@
       "kind": "owner",
       "input": [
         {
-          "step": "r15",
+          "step": "r17",
           "participant": "S13-closer",
           "required": true
         },
         {
-          "step": "r19",
+          "step": "r23",
           "participant": "S17-closer",
           "required": true
         },
         {
-          "step": "r21",
+          "step": "r25",
           "participant": "S18-a",
           "required": true
         },
         {
-          "step": "r21",
+          "step": "r25",
           "participant": "S18-b",
           "required": true
         }
@@ -725,7 +729,7 @@
       "models": []
     },
     {
-      "ref": "r22",
+      "ref": "r26",
       "kind": "round",
       "order": "parallel",
       "require": 2,
@@ -733,7 +737,7 @@
       "input": [
         {
           "artifact": {
-            "step": "r19",
+            "step": "r23",
             "participant": "S17-closer",
             "id": "aip"
           },
@@ -747,13 +751,13 @@
           "id": "S19-a",
           "input": [
             {
-              "step": "r21",
+              "step": "r25",
               "participant": "S18-b",
               "required": true
             },
             {
               "artifact": {
-                "step": "r19",
+                "step": "r23",
                 "participant": "S17-closer",
                 "id": "aip"
               },
@@ -767,13 +771,13 @@
           "id": "S19-b",
           "input": [
             {
-              "step": "r21",
+              "step": "r25",
               "participant": "S18-a",
               "required": true
             },
             {
               "artifact": {
-                "step": "r19",
+                "step": "r23",
                 "participant": "S17-closer",
                 "id": "aip"
               },
@@ -794,13 +798,13 @@
       "task": "S19, Reviewer: проверить coverage, feasibility, consistency, failure modes, security чужого кандидата."
     },
     {
-      "ref": "r23",
+      "ref": "r27",
       "kind": "round",
       "order": "parallel",
       "require": 2,
       "input": [
-        "r21",
-        "r22"
+        "r25",
+        "r26"
       ],
       "models": [
         {
@@ -815,19 +819,19 @@
       "task": "S20, Reviewer: критиковать любой кандидат; trade-offs и несовместимые assumptions явно."
     },
     {
-      "ref": "r24",
+      "ref": "r28",
       "kind": "round",
       "input": [
         {
           "artifact": {
-            "step": "r21",
+            "step": "r25",
             "participant": "S18-a",
             "id": "candidate"
           },
           "version": "latest",
           "required": true
         },
-        "r23"
+        "r27"
       ],
       "models": [
         {
@@ -845,7 +849,7 @@
             "pointer": "",
             "revisionOf": {
               "artifact": {
-                "step": "r21",
+                "step": "r25",
                 "participant": "S18-a",
                 "id": "candidate"
               },
@@ -858,19 +862,19 @@
       "task": "S20, Producer (автор A): ревизовать свой кандидат с учётом критики."
     },
     {
-      "ref": "r25",
+      "ref": "r29",
       "kind": "round",
       "input": [
         {
           "artifact": {
-            "step": "r21",
+            "step": "r25",
             "participant": "S18-b",
             "id": "candidate"
           },
           "version": "latest",
           "required": true
         },
-        "r23"
+        "r27"
       ],
       "models": [
         {
@@ -888,7 +892,7 @@
             "pointer": "",
             "revisionOf": {
               "artifact": {
-                "step": "r21",
+                "step": "r25",
                 "participant": "S18-b",
                 "id": "candidate"
               },
@@ -901,12 +905,12 @@
       "task": "S20, Producer (автор B): ревизовать свой кандидат с учётом критики."
     },
     {
-      "ref": "synth:s21",
-      "kind": "synthesis",
+      "ref": "r30",
+      "kind": "round",
       "input": [
         {
           "artifact": {
-            "step": "r21",
+            "step": "r25",
             "participant": "S18-a",
             "id": "candidate"
           },
@@ -915,7 +919,7 @@
         },
         {
           "artifact": {
-            "step": "r21",
+            "step": "r25",
             "participant": "S18-b",
             "id": "candidate"
           },
@@ -923,26 +927,27 @@
           "required": true
         },
         {
-          "step": "r19",
+          "step": "r23",
           "participant": "S17-closer",
           "required": true
         },
-        "r23"
+        "r27"
       ],
       "models": [
         {
           "name": "Claude",
-          "id": "S21-synth"
+          "id": "S21-synth",
+          "role": "interaction_meta_synthesis"
         }
       ],
       "task": "S21, Synthesizer: сравнить кандидатов по requirements, constraints, quality attributes и рискам."
     },
     {
-      "ref": "r26",
+      "ref": "r31",
       "kind": "round",
       "input": [
         {
-          "step": "synth:s21",
+          "step": "r30",
           "participant": "S21-synth",
           "required": true
         }
@@ -956,17 +961,17 @@
       "task": "S21, Reviewer: проверить сравнение; trade-offs и evidence-зависимые решения выделить."
     },
     {
-      "ref": "r27",
+      "ref": "r32",
       "kind": "round",
       "owner": "approve",
       "input": [
         {
-          "step": "r26",
+          "step": "r31",
           "participant": "S21-reviewer",
           "required": true
         },
         {
-          "step": "synth:s21",
+          "step": "r30",
           "participant": "S21-synth",
           "required": true
         },
@@ -992,11 +997,11 @@
       "task": "S22, Decision Closer: выбрать направление в пределах authority; User утверждает A2+."
     },
     {
-      "ref": "r28",
+      "ref": "r33",
       "kind": "round",
       "input": [
         {
-          "step": "r27",
+          "step": "r32",
           "participant": "S22-closer",
           "required": true
         }
@@ -1010,11 +1015,11 @@
       ]
     },
     {
-      "ref": "r29",
+      "ref": "r34",
       "kind": "round",
       "input": [
         {
-          "step": "r27",
+          "step": "r32",
           "participant": "S22-closer",
           "required": true
         }
@@ -1039,26 +1044,26 @@
       "task": "S23, Synthesizer: оформить выбранное направление; open decisions не закрывать скрыто."
     },
     {
-      "ref": "r30",
+      "ref": "r35",
       "kind": "round",
       "input": [
         {
-          "step": "r18",
+          "step": "r21",
           "participant": "S16-verifier",
           "required": true
         },
         {
-          "step": "synth:s21",
+          "step": "r30",
           "participant": "S21-synth",
           "required": true
         },
         {
-          "step": "r27",
+          "step": "r32",
           "participant": "S22-closer",
           "required": true
         },
         {
-          "step": "r29",
+          "step": "r34",
           "participant": "S23-synth",
           "required": true
         }
@@ -1088,13 +1093,13 @@
       "models": []
     },
     {
-      "ref": "r31",
+      "ref": "r36",
       "kind": "round",
       "input": [
         "owner:s25",
         "owner:s01",
         {
-          "step": "r30",
+          "step": "r35",
           "participant": "S24-synth",
           "required": true
         }
@@ -1116,19 +1121,19 @@
       "task": "S26, Decision Closer: закрыть blocking decisions по evidence; required changes явно."
     },
     {
-      "ref": "r32",
+      "ref": "r37",
       "kind": "round",
       "order": "parallel",
       "require": 2,
       "chat": "new",
       "input": [
         {
-          "step": "r29",
+          "step": "r34",
           "participant": "S23-synth",
           "required": true
         },
         {
-          "step": "r31",
+          "step": "r36",
           "participant": "S26-closer",
           "required": true
         }
@@ -1154,12 +1159,12 @@
       "task": "S27, Reviewer: независимо искать failure classes, blind spots и новые риски; не исправлять."
     },
     {
-      "ref": "r33",
+      "ref": "r38",
       "kind": "round",
       "input": [
         {
           "artifact": {
-            "step": "r29",
+            "step": "r34",
             "participant": "S23-synth",
             "id": "pca"
           },
@@ -1167,11 +1172,11 @@
           "required": true
         },
         {
-          "step": "r31",
+          "step": "r36",
           "participant": "S26-closer",
           "required": true
         },
-        "r32"
+        "r37"
       ],
       "models": [
         {
@@ -1189,7 +1194,7 @@
             "pointer": "",
             "revisionOf": {
               "artifact": {
-                "step": "r29",
+                "step": "r34",
                 "participant": "S23-synth",
                 "id": "pca"
               },
@@ -1202,11 +1207,11 @@
       "task": "S28, Producer: внести только трассируемые изменения по closed decisions и failure findings."
     },
     {
-      "ref": "r34",
+      "ref": "r39",
       "kind": "round",
       "input": [
         {
-          "step": "r33",
+          "step": "r38",
           "participant": "S28-producer",
           "required": true
         }
@@ -1227,16 +1232,16 @@
       "task": "S29, Reviewer: проверить ADR, consistency и traceability; выбрать исход."
     },
     {
-      "ref": "r35",
+      "ref": "r40",
       "kind": "round",
       "input": [
         {
-          "step": "r33",
+          "step": "r38",
           "participant": "S28-producer",
           "required": true
         },
         {
-          "step": "r34",
+          "step": "r39",
           "participant": "S29-reviewer",
           "required": true
         }
@@ -1254,7 +1259,7 @@
       "kind": "owner",
       "input": [
         {
-          "step": "r34",
+          "step": "r39",
           "participant": "S29-reviewer",
           "required": true
         }
@@ -1263,13 +1268,13 @@
       "models": []
     },
     {
-      "ref": "r36",
+      "ref": "r41",
       "kind": "round",
       "owner": "approve",
       "input": [
         {
           "artifact": {
-            "step": "r29",
+            "step": "r34",
             "participant": "S23-synth",
             "id": "pca"
           },
@@ -1277,7 +1282,7 @@
           "required": true
         },
         {
-          "step": "r35",
+          "step": "r40",
           "participant": "S29-verifier",
           "required": true
         },
@@ -1303,11 +1308,11 @@
       "task": "S30, Decision Closer: зафиксировать CAB после G4; User утверждает."
     },
     {
-      "ref": "r37",
+      "ref": "r42",
       "kind": "round",
       "input": [
         {
-          "step": "r36",
+          "step": "r41",
           "participant": "S30-closer",
           "required": true
         }

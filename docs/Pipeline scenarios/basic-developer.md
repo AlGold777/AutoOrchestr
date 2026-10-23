@@ -24,15 +24,15 @@ GPT подготавливает запрос через `ContentUtils.ensurePro
 
 | Файл | Символы | Что там |
 | --- | --- | --- |
-| `disput/custom-engine.js` | `CustomEngine`, `run`, `attempt`, `normalizeSteps`, `buildPrompt`, `previewPrompt`, `correctionPrompt`, `inputFor`, `judge`, `resolveSetting`, `STOP_TEXT`, `REASON_TEXT`, `DEFAULT_ATTEMPTS`, `SYNTHESIS_TASK`, `EngineError`, `unexecutedOf`, `assertExecutable`, `sourceItems`, `sendParticipants`, `artifactItems`, `contentOf`, `revisionItem` | Движок: шаги, запросы, приём, повторы, пауза |
-| `disput/basic-schema.js` | `BasicSchema`, `DEFAULTS`, `validate`, `assemble`, `resolveFields`, `resolveRun`, `toSettings`, `toCanvas`, `describeErrors` | Формат схемы: умолчания, проверка (виды шага `round`, `synthesis`, `owner`; шаги идут по порядку, `gate` и `route` отклоняются), сборка шагов, показ на холсте |
+| `disput/custom-engine.js` | `CustomEngine`, `run`, `attempt`, `normalizeSteps`, `buildPrompt`, `previewPrompt`, `correctionPrompt`, `inputFor`, `judge`, `resolveSetting`, `STOP_TEXT`, `REASON_TEXT`, `DEFAULT_ATTEMPTS`, `EngineError`, `unexecutedOf`, `assertExecutable`, `sourceItems`, `sendParticipants`, `artifactItems`, `contentOf`, `revisionItem` | Движок: шаги, запросы, приём, повторы, пауза |
+| `disput/basic-schema.js` | `BasicSchema`, `DEFAULTS`, `validate`, `assemble`, `resolveFields`, `resolveRun`, `toSettings`, `toCanvas`, `describeErrors` | Формат схемы: умолчания, проверка (виды шага `round` и `owner`; шаги идут по порядку; `synthesis`, `gate` и `route` отклоняются, синтез — раунд из одной модели с ролью), сборка шагов, показ на холсте |
 | `disput/basic-artifacts.js` | `BasicArtifacts`, `createRegistry`, `register`, `latest`, `version`, `lineKey`, `markInvalid` | Реестр артефактов прогона: одна запись на версию, ссылка на ответ и указатель, без копии текста (чистые функции) |
 | `disput/basic-output.js` | `BasicOutput`, `checkAnswer`, `readPointer`, `parseJsonAnswer`, `countWords` | Проверка ответа по выходу шага: длина, JSON и поля, разделы, артефакты (чистые функции; вызывает движок) |
 | `disput/basic-spec.js` | `BasicSpec`, `build`, `toMarkdown` | Описание pipeline «для человека» по схеме: три слоя (pipeline в целом, схема процесса, этапы), поля автора и автоматические поля, `missing` для незаполненного; чистые функции, без DOM (окно спецификации подключит их отдельно) |
 | `disput/custom-run-record.js` | `CustomRunRecord`, `createRun`, `recordAttempt`, `attemptKey`, `finishRun`, `serialize`, `revive`, `textOf`, `setSnapshot`, `setArtifacts`, `canResume`, `exportRun`, `createStore` | Запись о прогоне (версия 2: реестр и снимок состояния) |
 | `results/stage-card.js` | `StageCard`, `buildModel`, `render`, `renderOwnerWindow`, `renderAddControl` | Окно настроек раунда, окно шага User, выбор «Шаг после этого этапа» (только User) |
 | `disput/pipeline-presets.js` | `BUILTIN_PIPELINE_DEFINITIONS`, `PIPELINE_PRESETS`, `makePreset` | Шаблон Basic и пресет `CUSTOM` |
-| `disput/debate-draft-plan.js` | `createCanvasPlan`, `insertSynthesis`, `normalize` | План холста |
+| `disput/debate-draft-plan.js` | `createCanvasPlan`, `normalize` | План холста: только раунды; `normalize` читает и прежние планы со стадиями синтеза |
 | `disput/debate-response-acceptance.js` | `evaluate` | Техническая приёмка ответа |
 | `shared/message-delivery.js` | `batchEvent` | Журнал доставки |
 | `shared/report-digest.js` | `customStageId`, `latestCustomRunId`, `customFlowReport` | Extract (Transport) для прогона Basic |
@@ -136,7 +136,7 @@ GPT подготавливает запрос через `ContentUtils.ensurePro
 | Запись pipeline выводится из схемы одной функцией (`recordFromSchema`) | Иначе схема и данные холста расходятся, и запуск, холст и сохранённое читаются по-разному. |
 | Схема проверяется до первой отправки и никогда не исправляется молча | Подмена смысла (неизвестный тип шага, порядок) запустила бы процесс, которого не просили. |
 | Поддерживаются все выпущенные версии формата; отказ — только схеме от более нового Basic | Повышение версии не должно отключать существующие схемы. |
-| Ограничения холста проверяются при установке (имена моделей и ролей, порядок раундов `r1…rN`, идентификатор `synth:<id>`, список пределов длины) | Чтобы не было тихих подмен при показе схемы на холсте. |
+| Ограничения холста проверяются при установке (имена моделей и ролей, порядок раундов `r1…rN`, список пределов длины) | Чтобы не было тихих подмен при показе схемы на холсте. |
 | Номер раунда берётся из идентификатора стадии, а не из порядка стадий | Пустой раунд не сдвигает номера, и настройки не переезжают к другому раунду. |
 | Export — одна схема файлом; Import — добавляет, ничего не заменяя | Схемой можно обмениваться и писать её моделью по самодостаточной инструкции, не рискуя уже установленными схемами. |
 | Инструкция автора схем проверяется тестом против кода | Иначе она тихо устаревает, и модели получают ошибочные списки. |
@@ -165,9 +165,8 @@ GPT подготавливает запрос через `ContentUtils.ensurePro
 - Схема собирается с холста (с `basedOn`, если это копия шаблона; повторный Save сохраняет прежний `basedOn`) и
   устанавливается тем же путём, что и импортированная. Поля `customModelSettings` и `customDefaults` не пишутся.
 - Схема хранит все раунды `r1…rN` подряд, в том числе раунд, где никто не отправляет (`models` пустой или все
-  `enabled: false`). При Save отбрасываются настройки удалённых раундов и промежуточных синтезов, которых нет на холсте.
-  Сохраняются настройки выключенного финального синтеза и карточки промежуточного синтеза, настроенной до добавления
-  его на холст: она остаётся выключенным шагом на месте, названном её id `planned-working-synthesis-after-canvas-rN`.
+  `enabled: false`). При Save отбрасываются настройки удалённых раундов, а также карточки прежних синтезов
+  (`final`, `synth:…`) и `defaults.synthesisTask` из записей до 2.81.849: синтез — раунд из одной модели с ролью.
 - Сохранение карточек и правка структуры сохранённого pipeline сразу пересобирают запись целиком из текущего холста.
   Поэтому снятая, но не сохранённая отметка Send у модели попадает в запись при ближайшей такой записи.
 
@@ -220,8 +219,8 @@ Ctrl/Cmd+S сохраняет подсветки и избранное вмес�
 | --- | --- |
 | `pipelines` | словарь «имя → запись pipeline»; схема Basic-pipeline — поле `schema` внутри своей записи; данные холста (`protocol`, `roundCounter`, `modelStacks`, `draftPlan`) выводятся из `schema` |
 | `order`, `active`, `lastSaved` | порядок в списке, выбранный и последний сохранённый pipeline |
-| `draftPlans` | отдельный сохранённый план холста по имени (вставки синтеза, финальный синтез) |
-| `overrides` | переопределения по именам (предел раундов, синтезатор, профиль) |
+| `draftPlans` | отдельный сохранённый план холста по имени (раунды) |
+| `overrides` | переопределения по именам (предел раундов, профиль); прежнее `overrides.synthesizers` при чтении отбрасывается |
 | `version` | версия записи (`PIPELINE_STORE_VERSION`) |
 
 Не в этой записи: шаблон Default — он собирается из кода
@@ -236,7 +235,7 @@ Ctrl/Cmd+S сохраняет подсветки и избранное вмес�
 
 Запись Basic-pipeline держит схему в поле `schema` и не пишет `customModelSettings` и `customDefaults`.
 Запись строится только из схемы: `recordFromSchema` выводит из неё данные холста (число раундов, модели раундов и
-их роли, финальный синтезатор, промежуточные синтезы, `protocol`), и отдельно с холста они не снимаются. Единственная
+их роли, `protocol`), и отдельно с холста они не снимаются. Единственная
 точка записи — `installBasicSchema`; через неё идут Save, Import, сохранение карточек, ▶, карточек раунда и правка
 структуры сохранённого pipeline. Поэтому запись всегда согласована со схемой.
 
@@ -249,8 +248,8 @@ Ctrl/Cmd+S сохраняет подсветки и избранное вмес�
 Запись, сохранённая до схем (с членами `customModelSettings` и `customDefaults`), читается как раньше, а при
 первом Save или сохранении карточки, ▶ или раунда становится записью со схемой. Пока она не переписана, страница
 читает её в схему на одной границе (`basicSchemaFromPage`): пустой сохранённый текст там не считался значением и отбрасывается,
-снятое поле `ask` игнорируется, а промежуточный синтез без своего запроса, как и раньше, берёт сохранённый
-запрос той же модели финального синтеза, даже когда финальный синтез выключен. Любое другое значение, в том
+снятое поле `ask` игнорируется, карточки прежних синтезов (`final`, `synth:…`), `synthesisTask` ▶ и `protocol.synthesizer`
+читаются без ошибки и отбрасываются. Любое другое значение, в том
 числе неверное (`0`, `false`, текст вместо числа), идёт в проверку как есть и останавливает запуск.
 
 ## 4. Диагностика

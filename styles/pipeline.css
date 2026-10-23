@@ -263,17 +263,6 @@ body.is-resizing {
     min-width: max-content;
 }
 
-.pipeline-flow #connectorToSynthesis {
-    align-self: center;
-}
-
-/* The column stays on the top line with the round badges; only its stack is centred against the models. */
-.pipeline-flow #synthesisColumn .model-stack {
-    transform: translateY(var(--pipeline-terminal-offset, 0px));
-}
-
-.synthesis-capable[hidden],
-.synthesizer-capable[hidden],
 .registry-capable[hidden] {
     display: none !important;
 }
@@ -357,49 +346,6 @@ body.is-resizing {
     }
 }
 
-.pipeline-synthesis-block {
-    width: 220px;
-}
-
-.pipeline-synthesis-block .model-header {
-    gap: 6px;
-}
-
-.synthesis-flow-select {
-    width: calc(100% - 8px);
-    margin: 6px 4px 4px;
-    border: 1px solid rgba(148, 163, 184, 0.5);
-    border-radius: 6px;
-    background: #ffffff;
-    color: var(--pipeline-text);
-    font-size: 12px;
-    padding: 4px 6px;
-}
-
-/* Final badge: blue when the final synthesis is on, gray when off (the block is hidden). */
-#synthesisColumn .round-badge {
-    cursor: pointer;
-    background: var(--pipeline-blue);
-    color: #fff;
-}
-
-#synthesisColumn.pipeline-final-off .round-badge {
-    background: #e2e8f0;
-    color: #64748b;
-}
-
-/* No final synthesizer: the block stays in place, inactive (same look as .model-block.inactive). */
-#synthesisColumn.pipeline-final-off .pipeline-synthesis-block {
-    border-color: #cbd5e1;
-    background: #f8fafc;
-    box-shadow: none;
-    opacity: 0.72;
-}
-
-#synthesisColumn.pipeline-final-off .pipeline-synthesis-block .model-name {
-    color: #94a3b8;
-}
-
 .stage-column {
     display: flex;
     flex-direction: column;
@@ -428,8 +374,7 @@ body.is-resizing {
     right: 0;
 }
 
-.entry-column > .stage-label,
-.stage-column[data-stage="synthesis"] > .stage-label {
+.entry-column > .stage-label {
     display: flex;
     height: 28px;
     margin-bottom: 10px;
@@ -451,101 +396,6 @@ body.is-resizing {
 .stage-header-row .stage-label {
     flex: 1 1 auto;
     min-width: 0;
-}
-
-.pipeline-stage-insert {
-    position: absolute;
-    right: -27px;
-    top: 14px; /* centre of the 28px round badge */
-    transform: translate(50%, -50%);
-    z-index: 3;
-    width: 18px;
-    height: 18px;
-    padding: 0;
-    border-radius: 50%;
-    border: 1.5px solid currentColor;
-    color: #5980c8;
-    background: #fff;
-    font-size: 0;
-    line-height: 0;
-    opacity: .85;
-    cursor: pointer;
-    display: inline-block;
-    box-sizing: border-box;
-}
-
-.pipeline-stage-insert[hidden] {
-    display: none;
-}
-
-.pipeline-stage-insert::before,
-.pipeline-stage-insert::after {
-    content: "";
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    background: currentColor;
-    border-radius: 999px;
-    transform: translate(-50%, -50%);
-}
-
-.pipeline-stage-insert::before {
-    width: 11px;
-    height: 2px;
-}
-
-.pipeline-stage-insert::after {
-    width: 2px;
-    height: 11px;
-}
-
-.pipeline-stage-insert:hover,
-.pipeline-stage-insert:focus-visible {
-    opacity: 1;
-    color: #fff;
-    background: var(--pipeline-blue);
-    border-color: var(--pipeline-blue);
-    outline: none;
-}
-
-.pipeline-stage-insert.has-intermediate-synthesis {
-    opacity: 1;
-    color: #fff;
-    background: var(--pipeline-blue);
-    border-color: var(--pipeline-blue);
-    box-shadow: none;
-}
-
-.pipeline-stage-insert.has-intermediate-synthesis::after {
-    display: none;
-}
-
-/* Same height as a round header row, so the card's stack lines up with the round stacks. */
-.pipeline-intermediate-synth-header {
-    position: relative;
-    width: 100%;
-    height: 28px;
-    margin-bottom: 10px;
-}
-
-/* While the card exists, round K's insert button sits here, on the card's center line. */
-.pipeline-intermediate-synth-header .pipeline-stage-insert {
-    right: auto;
-    left: 50%;
-    transform: translate(-50%, -50%);
-}
-
-/* Centred against the round stacks, like the final synthesis column; the header stays on the top line. */
-.pipeline-flow .stage-column.pipeline-intermediate-synth .model-stack {
-    transform: translateY(var(--pipeline-terminal-offset, 0px));
-}
-
-.pipeline-stage-insert:disabled {
-    opacity: .68;
-    color: #64748b78;
-    background: none;
-    border-color: var(--pipeline-border);
-    cursor: not-allowed;
 }
 
 .round-filter-chip {
@@ -814,16 +664,6 @@ body.is-resizing {
     border-radius: 50%;
     background: #cbd5e1;
     flex-shrink: 0;
-}
-
-.pipeline-synthesis-block.inactive:not(.selected-synthesizer) {
-    border-color: #cbd5e1;
-    background: #f8fafc;
-    opacity: 0.72;
-}
-
-.pipeline-synthesis-block.inactive:not(.selected-synthesizer) .model-name {
-    color: #94a3b8;
 }
 
 .round-buttons {

@@ -5,7 +5,6 @@ const Schema = require('../disput/basic-schema');
 
 const base = (steps, extra = {}) => ({ schemaVersion: 1, origin: 'user', steps, ...extra });
 const round = (ref, models, extra = {}) => ({ ref, kind: 'round', models: models.map((name) => (typeof name === 'string' ? { name } : name)), ...extra });
-const synthesis = (ref, models, extra = {}) => ({ ref, kind: 'synthesis', models: models.map((name) => (typeof name === 'string' ? { name } : name)), ...extra });
 
 // Scripted transport: answers[model] is a list of replies, one per request to that model.
 function transport(answers) {
@@ -26,7 +25,7 @@ function transport(answers) {
 }
 
 describe('T00: explicit task of the first round with input none', () => {
-  const firstRound = (models, step = {}) => base([round('r1', models, { input: 'none', ...step }), synthesis('final', ['C'])]);
+  const firstRound = (models, step = {}) => base([round('r1', models, { input: 'none', ...step })]);
 
   test('the step task and the model task reach assemble, the preview and the request of the engine', async () => {
     const schema = firstRound([{ name: 'A', task: 'MODEL_TASK' }, 'B'], { task: 'STEP_TASK' });
@@ -47,7 +46,7 @@ describe('T00: explicit task of the first round with input none', () => {
 
   test('only the inherited task (▶ or Basic) is not sent with input none', async () => {
     const schema = firstRound(['A'], {});
-    const withPipeline = base([round('r1', ['A'], { input: 'none' }), synthesis('final', ['C'])], { defaults: { roundTask: 'PIPELINE_TASK' } });
+    const withPipeline = base([round('r1', ['A'], { input: 'none' })], { defaults: { roundTask: 'PIPELINE_TASK' } });
     for (const current of [schema, withPipeline]) {
       const steps = Schema.assemble(current);
       expect(JSON.stringify(steps)).not.toContain('PIPELINE_TASK');
@@ -72,7 +71,7 @@ describe('T01: participant order [B, A] through the canvas and back', () => {
   });
 
   test('the canvas stack and participantIds keep [B, A], and a schema round trip repeated twice keeps it', () => {
-    const schema = base([round('r1', ['B', 'A']), synthesis('final', ['A'])]);
+    const schema = base([round('r1', ['B', 'A'])]);
     expect(Schema.validate(schema)).toEqual([]);
 
     const first = toCanvas(schema);
@@ -92,7 +91,7 @@ describe('T01: participant order [B, A] through the canvas and back', () => {
   });
 
   test('sequential send goes B then A, and A gets the answer of B', async () => {
-    const schema = base([round('r1', ['B', 'A'], { order: 'sequential', input: 'none', task: 'Добавь' }), synthesis('final', ['A'])]);
+    const schema = base([round('r1', ['B', 'A'], { order: 'sequential', input: 'none', task: 'Добавь' })]);
     const { send, calls } = transport({ B: ['ответ B'], A: ['ответ A'], });
     const result = await Engine.run({ task: 'T', steps: Schema.assemble(schema), send });
     expect(calls.slice(0, 2).map((call) => call.models)).toEqual([['B'], ['A']]);

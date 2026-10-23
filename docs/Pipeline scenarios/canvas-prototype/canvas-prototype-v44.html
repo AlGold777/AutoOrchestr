@@ -1379,17 +1379,6 @@ body.is-resizing {
     min-width: max-content;
 }
 
-.pipeline-flow #connectorToSynthesis {
-    align-self: center;
-}
-
-/* The column stays on the top line with the round badges; only its stack is centred against the models. */
-.pipeline-flow #synthesisColumn .model-stack {
-    transform: translateY(var(--pipeline-terminal-offset, 0px));
-}
-
-.synthesis-capable[hidden],
-.synthesizer-capable[hidden],
 .registry-capable[hidden] {
     display: none !important;
 }
@@ -1473,49 +1462,6 @@ body.is-resizing {
     }
 }
 
-.pipeline-synthesis-block {
-    width: 220px;
-}
-
-.pipeline-synthesis-block .model-header {
-    gap: 6px;
-}
-
-.synthesis-flow-select {
-    width: calc(100% - 8px);
-    margin: 6px 4px 4px;
-    border: 1px solid rgba(148, 163, 184, 0.5);
-    border-radius: 6px;
-    background: #ffffff;
-    color: var(--pipeline-text);
-    font-size: 12px;
-    padding: 4px 6px;
-}
-
-/* Final badge: blue when the final synthesis is on, gray when off (the block is hidden). */
-#synthesisColumn .round-badge {
-    cursor: pointer;
-    background: var(--pipeline-blue);
-    color: #fff;
-}
-
-#synthesisColumn.pipeline-final-off .round-badge {
-    background: #e2e8f0;
-    color: #64748b;
-}
-
-/* No final synthesizer: the block stays in place, inactive (same look as .model-block.inactive). */
-#synthesisColumn.pipeline-final-off .pipeline-synthesis-block {
-    border-color: #cbd5e1;
-    background: #f8fafc;
-    box-shadow: none;
-    opacity: 0.72;
-}
-
-#synthesisColumn.pipeline-final-off .pipeline-synthesis-block .model-name {
-    color: #94a3b8;
-}
-
 .stage-column {
     display: flex;
     flex-direction: column;
@@ -1544,8 +1490,7 @@ body.is-resizing {
     right: 0;
 }
 
-.entry-column > .stage-label,
-.stage-column[data-stage="synthesis"] > .stage-label {
+.entry-column > .stage-label {
     display: flex;
     height: 28px;
     margin-bottom: 10px;
@@ -1567,101 +1512,6 @@ body.is-resizing {
 .stage-header-row .stage-label {
     flex: 1 1 auto;
     min-width: 0;
-}
-
-.pipeline-stage-insert {
-    position: absolute;
-    right: -27px;
-    top: 14px; /* centre of the 28px round badge */
-    transform: translate(50%, -50%);
-    z-index: 3;
-    width: 18px;
-    height: 18px;
-    padding: 0;
-    border-radius: 50%;
-    border: 1.5px solid currentColor;
-    color: #5980c8;
-    background: #fff;
-    font-size: 0;
-    line-height: 0;
-    opacity: .85;
-    cursor: pointer;
-    display: inline-block;
-    box-sizing: border-box;
-}
-
-.pipeline-stage-insert[hidden] {
-    display: none;
-}
-
-.pipeline-stage-insert::before,
-.pipeline-stage-insert::after {
-    content: "";
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    background: currentColor;
-    border-radius: 999px;
-    transform: translate(-50%, -50%);
-}
-
-.pipeline-stage-insert::before {
-    width: 11px;
-    height: 2px;
-}
-
-.pipeline-stage-insert::after {
-    width: 2px;
-    height: 11px;
-}
-
-.pipeline-stage-insert:hover,
-.pipeline-stage-insert:focus-visible {
-    opacity: 1;
-    color: #fff;
-    background: var(--pipeline-blue);
-    border-color: var(--pipeline-blue);
-    outline: none;
-}
-
-.pipeline-stage-insert.has-intermediate-synthesis {
-    opacity: 1;
-    color: #fff;
-    background: var(--pipeline-blue);
-    border-color: var(--pipeline-blue);
-    box-shadow: none;
-}
-
-.pipeline-stage-insert.has-intermediate-synthesis::after {
-    display: none;
-}
-
-/* Same height as a round header row, so the card's stack lines up with the round stacks. */
-.pipeline-intermediate-synth-header {
-    position: relative;
-    width: 100%;
-    height: 28px;
-    margin-bottom: 10px;
-}
-
-/* While the card exists, round K's insert button sits here, on the card's center line. */
-.pipeline-intermediate-synth-header .pipeline-stage-insert {
-    right: auto;
-    left: 50%;
-    transform: translate(-50%, -50%);
-}
-
-/* Centred against the round stacks, like the final synthesis column; the header stays on the top line. */
-.pipeline-flow .stage-column.pipeline-intermediate-synth .model-stack {
-    transform: translateY(var(--pipeline-terminal-offset, 0px));
-}
-
-.pipeline-stage-insert:disabled {
-    opacity: .68;
-    color: #64748b78;
-    background: none;
-    border-color: var(--pipeline-border);
-    cursor: not-allowed;
 }
 
 .round-filter-chip {
@@ -1930,16 +1780,6 @@ body.is-resizing {
     border-radius: 50%;
     background: #cbd5e1;
     flex-shrink: 0;
-}
-
-.pipeline-synthesis-block.inactive:not(.selected-synthesizer) {
-    border-color: #cbd5e1;
-    background: #f8fafc;
-    opacity: 0.72;
-}
-
-.pipeline-synthesis-block.inactive:not(.selected-synthesizer) .model-name {
-    color: #94a3b8;
 }
 
 .round-buttons {
@@ -9785,15 +9625,14 @@ const protoModel = (name) => ({ name, enabled: true, role: 'None', task: '', req
 window.ProtoState = {
   models: ['Claude', 'GPT', 'Gemini'],
   selectedModel: 'Claude',                          // модель, выбранная в верхней строке (холст)
-  defaults: { roundTask: '', synthesisTask: '', discipline: emptyDiscipline(), modelNotes: {}, roundPrompts: {} },
+  defaults: { roundTask: '', discipline: emptyDiscipline(), modelNotes: {}, roundPrompts: {} },
   run: { policy: 'auto', maxWords: 300 },
   rounds: [
-    { ref: 'r1', order: '', input: '', task: '', role: 'None', models: ['Claude', 'GPT', 'Gemini'].map(protoModel), intermediateSynthesis: null,
+    { ref: 'r1', order: '', input: '', task: '', role: 'None', models: ['Claude', 'GPT', 'Gemini'].map(protoModel),
       artifacts: [{ id: 'a1', title: 'Карта функций', version: 1 }, { id: 'a2', title: 'Список рисков', version: 2 }] },
-    { ref: 'r2', order: '', input: '', task: '', role: 'None', models: ['Claude', 'GPT', 'Gemini'].map(protoModel), intermediateSynthesis: null,
+    { ref: 'r2', order: '', input: '', task: '', role: 'None', models: ['Claude', 'GPT', 'Gemini'].map(protoModel),
       artifacts: [{ id: 'a3', title: 'План работ', version: 1 }] }
   ],
-  final: { on: true, model: 'Claude', task: '', discipline: emptyDiscipline() },
   emptyDiscipline,
   protoModel,
   onChange() {}
@@ -9951,18 +9790,18 @@ window.ProtoState = {
     };
   }
 
-  // The input of a step: `first` (the first round has nothing to feed in) gives null. An array of refs or a drafted
-  // «steps» shows the choice «выбранные этапы» with the earlier steps; `kind` decides the other options.
-  function stepInputModel(settings = {}, { kind = 'round', first = false, earlier = [], drafts = {} } = {}) {
-    if (first && kind === 'round') return null;
+  // The input of a round: `first` (the first round has nothing to feed in) gives null. An array of refs or a drafted
+  // «steps» shows the choice «выбранные этапы» with the earlier steps.
+  function stepInputModel(settings = {}, { first = false, earlier = [], drafts = {} } = {}) {
+    if (first) return null;
     const input = Array.isArray(settings.input) ? settings.input : String(settings.input || '');
     const picked = Array.isArray(input) ? input : [];
-    const defaultInput = kind === 'round' && first ? 'none' : 'previous';
+    const defaultInput = 'previous';
     const stepsMode = Array.isArray(input) || input === 'steps' || drafts.input === 'steps';
     const refs = picked.filter((item) => typeof item === 'string');
     const options = [
       { value: '', label: `По умолчанию (${INPUT_LABELS[defaultInput].toLowerCase()})` },
-      ...(kind === 'round' ? Object.entries(INPUT_LABELS).map(([value, label]) => ({ value, label })) : [{ value: 'previous', label: INPUT_LABELS.previous }]),
+      ...Object.entries(INPUT_LABELS).map(([value, label]) => ({ value, label })),
       { value: 'steps', label: STEPS_LABEL }
     ];
     return {
@@ -9976,20 +9815,11 @@ window.ProtoState = {
     };
   }
 
-  // The fields of a synthesis (its window): input, require, owner, output. Settings are the step's own fields.
-  function stepFieldsModel({ kind = 'round', settings = {}, earlier = [], enabledCount = 0, drafts = {}, disabled = false } = {}) {
-    return {
-      disabled: Boolean(disabled),
-      input: stepInputModel(settings, { kind, earlier, drafts }),
-      ...stepRestModel(settings, { enabledCount, drafts })
-    };
-  }
-
   // The order, the input and the task of a round card; `first` and `inheritedTask` as before. The input of a later round
   // is the previous step by default, the first round has no input (null).
   function settingsModel(settings, { first = false, inheritedTask = '', disabled = false, earlier = [], enabledCount = 0, drafts = {} } = {}) {
     const order = String(settings.order || '');
-    const input = stepInputModel(settings, { kind: 'round', first, earlier, drafts });
+    const input = stepInputModel(settings, { first, earlier, drafts });
     const stepsMode = input?.value === 'steps';
     const defaultInput = first ? 'none' : 'previous';
     const effectiveInput = stepsMode ? 'steps' : (input?.value || defaultInput);
@@ -10108,16 +9938,6 @@ window.ProtoState = {
     strict.addEventListener('change', emitOutput);
     if (output.json) group.append(el(doc, 'p', 'stage-card-muted', 'Формат json: заголовки не проверяются, поля задаются в схеме (requiredFields).'));
     container.append(group);
-  }
-
-  // The window of a synthesis: its input (with the steps list), then the same fields as a round card has after its task.
-  function renderStepFields(container, fields, onField) {
-    const emit = (field, value) => { if (typeof onField === 'function') onField(field, value); };
-    if (fields.input) {
-      choiceRow(container, 'input', 'Вход синтеза', { ...fields.input, disabled: fields.disabled }, emit);
-      if (fields.input.value === 'steps') renderSteps(container, fields.input, emit, fields.disabled);
-    }
-    renderRest(container, fields, emit);
   }
 
   const el = (documentRef, tag, className, text) => {
@@ -10384,7 +10204,7 @@ window.ProtoState = {
     return '';
   }
 
-  const api = Object.freeze({ buildModel, render, renderStepFields, stepFieldsModel, stepsAfterToggle, outputAfterEdit, STATUS, feed,
+  const api = Object.freeze({ buildModel, render, stepsAfterToggle, outputAfterEdit, STATUS, feed,
     controlSummary, ownerWindowModel, ownerAfterEdit, renderOwnerWindow, renderAddControl, ownerAskMessage });
   root.StageCard = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
@@ -10392,7 +10212,7 @@ window.ProtoState = {
 
 </script>
 <script>
-// Окна прототипа холста Basic: ▶, раунд, модель, промежуточный и финальный синтез.
+// Окна прототипа холста Basic: ▶, раунд, модель. Синтез — раунд из одной модели с ролью, своего окна нет.
 // Разметка и классы — как в results.js (renderCustomBlockInspector) и results/stage-card.js;
 // стили — только настоящие (styles.css проекта). Данные — window.ProtoState (CONTRACT.md).
 (function initProtoCards(root) {
@@ -10404,7 +10224,6 @@ window.ProtoState = {
   // Тексты Basic: из disput/basic-schema.js, если он загружен, иначе их копия.
   const BASIC = {
     roundTask: 'Учти ответы предыдущего шага и дай свой улучшенный ответ на задачу.',
-    synthesisTask: 'Сведи эти ответы в один итоговый ответ на задачу.',
     discipline: {
       limit: '[RESPONSE_LIMIT] Объём ответа: {от}-{слов} слов, не больше.',
       content: 'Сосредоточься на ясной концепции и ключевых идеях; убери повторы, длинные пересказы и второстепенные детали.',
@@ -10466,37 +10285,18 @@ window.ProtoState = {
     if (id === 'custom') return defaults().roundPrompts[ref] || '';
     return ROLES.find((item) => item.id === id)?.text || '';
   };
-  // A pending intermediate synthesis lives only here until the canvas adds the stage.
-  const virtualSynth = new WeakMap();
-  const synthesisTarget = (kind, index) => {
-    const state = S();
-    if (kind === 'final') return state.final || null;
-    const round = state.rounds?.[index];
-    if (!round) return null;
-    if (round.intermediateSynthesis) return round.intermediateSynthesis;
-    if (!virtualSynth.has(round)) virtualSynth.set(round, { model: (state.final?.on && state.final.model) || (state.models?.includes('Claude') ? 'Claude' : state.models?.[0]) || 'Claude', task: '', discipline: {} });
-    return virtualSynth.get(round);
-  };
-
   // step: { kind, ref, label, input, order, task (round level), models: [{ name, ... }] }, target: the model's own settings.
   function stepFor(kind, index, name) {
     const state = S();
     const rounds = state.rounds || [];
-    if (kind === 'round') {
-      const round = rounds[index];
-      if (!round) return null;
-      const target = (round.models || []).find((model) => model.name === name);
-      if (!target) return null;
-      return { kind, index, ref: round.ref || `r${index + 1}`, label: `Раунд ${index + 1}`, input: roundInput(round, index),
-        order: round.order || 'parallel', roundTask: round.task, names: round.models.filter((model) => model.enabled !== false).map((model) => model.name), target, name };
-    }
-    const target = synthesisTarget(kind, index);
+    const round = kind === 'round' ? rounds[index] : null;
+    if (!round) return null;
+    const target = (round.models || []).find((model) => model.name === name);
     if (!target) return null;
-    const after = kind === 'final' ? rounds.length : index + 1;
-    return { kind: 'synthesis', synth: kind, index, ref: kind === 'final' ? 'final' : `synth:after-r${index + 1}`, label: `Синтез после раунда ${after}`,
-      input: 'previous', order: 'parallel', roundTask: '', names: [target.model], target, name: target.model };
+    return { kind, index, ref: round.ref || `r${index + 1}`, label: `Раунд ${index + 1}`, input: roundInput(round, index),
+      order: round.order || 'parallel', roundTask: round.task, names: round.models.filter((model) => model.enabled !== false).map((model) => model.name), target, name };
   }
-  const taskFallback = (step) => (step.kind === 'synthesis' ? first(defaults().synthesisTask) || basic().synthesisTask : first(defaults().roundTask) || basic().roundTask);
+  const taskFallback = () => first(defaults().roundTask) || basic().roundTask;
   const inheritedTask = (step) => first(step.roundTask) || taskFallback(step);
   const inheritedDiscipline = (key) => first(defaults().discipline[key]) || basic().discipline[key];
   const wordsOf = (target) => (Number.isSafeInteger(Number(target.maxWords)) && Number(target.maxWords) > 0 ? Number(target.maxWords) : general());
@@ -10504,22 +10304,17 @@ window.ProtoState = {
   // Автоматический запрос (часть, которую можно заменить своим): как CustomEngine.previewPrompt().template.
   function automaticRequest(step, { role = step.target.role, task = first(step.target.task) || inheritedTask(step) } = {}) {
     const parts = ['Задача:\n{задача}'];
-    const hasEarlierStep = step.kind === 'synthesis' || step.index > 0;
+    const hasEarlierStep = step.index > 0;
     if (step.input !== 'none' && hasEarlierStep) {
       parts.push(step.input === 'all' ? 'Принятые ответы всех предыдущих шагов:\n\nВход:\n{вход}' : 'Ответы предыдущего шага:\n\nОтвет 1:\n{вход}');
     }
     if (step.order === 'sequential' && step.names.indexOf(step.name) > 0) parts.push('Ответы участников этого раунда до тебя:\n\nОтвет 1:\n{ответы до тебя}');
     if (step.input !== 'none' && own(task)) parts.push(`Задание:\n${task.trim()}`);
-    const extra = step.kind === 'synthesis' ? '' : roleText(role, step.ref);
+    const extra = roleText(role, step.ref);
     if (own(extra)) parts.push(`Дополнительно для тебя:\n${extra.trim()}`);
     return parts.join('\n\n');
   }
-  // An intermediate synthesis without its own request follows the final synthesizer's request.
-  const baseRequest = (step, options) => {
-    const fin = S().final;
-    if (step.synth === 'intermediate' && fin && fin.model === step.name && own(fin.request)) return fin.request;
-    return automaticRequest(step, options);
-  };
+  const baseRequest = (step, options) => automaticRequest(step, options);
 
   // Полный запрос в порядке basic-windows.md: запрос (с ролью) → ответы владельца → особенность модели →
   // лимит → требования к содержанию (и свои строки) → метка доставки.
@@ -10575,7 +10370,7 @@ window.ProtoState = {
   const copyButton = (id, label) => `<button type="button" data-action="copy" data-copy-field="${id}" title="Копировать" aria-label="Копировать: ${esc(label)}"><i class="ti ti-copy" aria-hidden="true"></i></button>`;
   const roleOptions = (value) => [{ id: '', label: 'None' }, ...ROLES].map((item) => `<option value="${item.id}"${item.id === value ? ' selected' : ''}>${esc(item.label)}</option>`).join('');
 
-  // One renderer for ▶ (entry) and a step's model/synthesis card, after renderCustomBlockInspector.
+  // One renderer for ▶ (entry) and a round model's card, after renderCustomBlockInspector.
   function renderCard(spec) {
     const entry = Boolean(spec.entry);
     const step = entry ? null : stepFor(spec.kind, spec.index, spec.name);
@@ -10585,16 +10380,15 @@ window.ProtoState = {
     if (!entry && !target.discipline) target.discipline = {};
     const words = general();
     const rows = entry
-      ? [['roundTask', 'Задание раундов со входом (R2+)'], ['synthesisTask', 'Задание синтеза'], ...DISCIPLINE_ROWS]
-      : [...(step.input !== 'none' ? [['task', step.kind === 'synthesis' ? 'Задание синтеза' : 'Задание раунда']] : []), ...DISCIPLINE_ROWS];
-    const isTask = (key) => ['task', 'roundTask', 'synthesisTask'].includes(key);
-    const fallbackFor = (key) => (key === 'roundTask' ? basic().roundTask : key === 'synthesisTask' ? basic().synthesisTask : basic().discipline[key]);
+      ? [['roundTask', 'Задание раундов со входом (R2+)'], ...DISCIPLINE_ROWS]
+      : [...(step.input !== 'none' ? [['task', 'Задание раунда']] : []), ...DISCIPLINE_ROWS];
+    const isTask = (key) => ['task', 'roundTask'].includes(key);
+    const fallbackFor = (key) => (key === 'roundTask' ? basic().roundTask : basic().discipline[key]);
     const inheritedValue = (key) => (entry ? fallbackFor(key) : key === 'task' ? inheritedTask(step) : inheritedDiscipline(key));
     const rawValue = (key) => (isTask(key) ? target[key] : target.discipline?.[key]);
     const effectiveValue = (key) => first(rawValue(key)) || inheritedValue(key);
     const modelNotes = d.modelNotes;
-    const canvasModels = entry ? [...new Set([...(S().rounds || []).flatMap((round) => (round.models || []).map((model) => model.name)),
-      ...(S().final?.on && S().final.model ? [S().final.model] : [])])] : [];
+    const canvasModels = entry ? [...new Set((S().rounds || []).flatMap((round) => (round.models || []).map((model) => model.name)))] : [];
     let role = entry ? '' : roleId(target.role);
     let baseTemplate = entry ? '' : baseRequest(step, { role });
     const name = entry ? '' : step.name;
@@ -10607,7 +10401,6 @@ window.ProtoState = {
     modal.setAttribute('role', 'dialog');
     modal.setAttribute('aria-modal', 'true');
     modal.setAttribute('aria-labelledby', 'pipeline-block-info-title');
-    const synthModels = !entry && step.kind === 'synthesis' ? (S().models || []) : [];
     content.innerHTML = `
       <header class="custom-card-top ${entry ? 'custom-defaults-top' : ''}">
         <h3 class="custom-card-model" id="pipeline-block-info-title">${entry ? '▶ Basic' : `${icon}${esc(name)}<span class="custom-card-where">${esc(step.label)}</span>`}</h3>
@@ -10616,8 +10409,7 @@ window.ProtoState = {
       </header>
       <div class="custom-card-body">
         ${entry ? '<p class="custom-card-note">Общие значения для всех шагов. Своё значение модели имеет приоритет; пустое поле наследует значение из кода.</p>' : `
-        ${synthModels.length ? `<label class="custom-card-head">Модель синтеза <select class="stage-card-role-select" id="custom-card-synth-model">${synthModels.map((item) => `<option value="${esc(item)}"${item === name ? ' selected' : ''}>${esc(item)}</option>`).join('')}</select></label>` : ''}
-        ${step.kind === 'round' ? `<label class="custom-card-head">Роль <select class="stage-card-role-select" id="custom-card-role">${roleOptions(role)}</select></label>` : ''}
+        <label class="custom-card-head">Роль <select class="stage-card-role-select" id="custom-card-role">${roleOptions(role)}</select></label>
         <div class="custom-card-field">
           <div class="custom-card-head"><label for="custom-card-request">Запрос</label><span><code>{задача}</code> и <code>{вход}</code> подставляются при запуске. Изменённый текст используется только для этой модели в этом шаге.</span><span class="custom-card-actions">${copyButton('custom-card-request', 'Запрос')}</span></div>
           <textarea id="custom-card-request" spellcheck="false"></textarea>
@@ -10695,7 +10487,6 @@ window.ProtoState = {
       target.discipline = discipline;
       if (entry) {
         target.roundTask = values.roundTask;
-        target.synthesisTask = values.synthesisTask;
         // Notes of models that are off the canvas stay saved.
         content.querySelectorAll('[data-model-note]').forEach((field) => {
           const value = field.value.trim();
@@ -10743,12 +10534,6 @@ window.ProtoState = {
       baseTemplate = baseRequest(step, { role });
       if (automatic) request.value = baseTemplate;
       refresh();
-    });
-    // The synthesizer list changes the model of this stage at once, as the block's list does.
-    content.querySelector('#custom-card-synth-model')?.addEventListener('change', (event) => {
-      target.model = event.target.value;
-      notify();
-      renderCard(spec);
     });
 
     const drawLines = () => {
@@ -10865,19 +10650,14 @@ window.ProtoState = {
 
   const openEntry = () => renderCard({ entry: true });
   const openModel = (index, name) => renderCard({ kind: 'round', index, name });
-  const openSynthesis = (kind, index) => {
-    if (kind === 'final' && !S().final?.on) { console.warn('Включите финальный синтез кликом по Final.'); return; }
-    renderCard({ kind: kind === 'final' ? 'final' : 'intermediate', index });
-  };
-
-  root.ProtoCards = { openEntry, openRound, openModel, openSynthesis, previewPrompt, close: closeCard };
+  root.ProtoCards = { openEntry, openRound, openModel, previewPrompt, close: closeCard };
   loadStageCard();
 })(window);
 
 </script>
 <script>
 // Холст прототипа Basic. Разметка и классы — как в pipeline_panel.html, pipeline/pipeline-runtime.js
-// (buildModelBlocksHtml) и results.js (addRound, syncIntermediateSynthColumns, renderSynthesisStage);
+// (buildModelBlocksHtml) и results.js (addRound); синтез — раунд из одной модели с ролью, отдельной колонки нет;
 // линии — перенос drawInputSplitConnector / drawMergeSplitConnector / updatePipelineLayout из results.js.
 // Всё рисуется из window.ProtoState; render() перерисовывает холст целиком.
 (function initProtoCanvas() {
@@ -10923,60 +10703,19 @@ window.ProtoState = {
         return `<div class="proto-artifacts" aria-disabled="true"><div class="proto-artifacts-label">Артефакты</div><div class="proto-artifacts-row">${items}</div></div>`;
     };
 
-    const insertHtml = (n, isLast, hasSynth) => `<button type="button" class="pipeline-stage-insert${hasSynth ? ' has-intermediate-synthesis' : ''}" data-after-stage-id="canvas-r${n}" data-round-index="${n - 1}" aria-label="Add stage after R${n}" aria-pressed="${hasSynth}" title="${hasSynth ? 'Click to remove (double-click for its request)' : 'Click to add intermediate synthesis'}"${isLast ? ' hidden disabled' : ''}></button>`;
-
-    const synthOptions = (selected) => S().models
-        .map((name) => `<option value="${esc(name)}"${name === selected ? ' selected' : ''}>${esc(name)}</option>`).join('');
-
     const roundHtml = (round, i, total) => {
         const n = i + 1;
         const isLast = n === total;
-        const synth = !isLast && round.intermediateSynthesis;
         const deleteHidden = !(isLast && total > 1);
         let html = `
             <div class="stage-column" id="round${n}" data-round="${n}" data-round-index="${i}" data-planned-stage-id="canvas-r${n}">
-                <div class="stage-header-row"><div class="stage-label"><span class="round-badge">R${n}</span> <button type="button" class="pipeline-round-delete-btn" title="Delete round" aria-label="Delete round"${deleteHidden ? ' hidden disabled' : ''}>×</button></div>${synth ? '' : insertHtml(n, isLast, false)}</div>
+                <div class="stage-header-row"><div class="stage-label"><span class="round-badge">R${n}</span> <button type="button" class="pipeline-round-delete-btn" title="Delete round" aria-label="Delete round"${deleteHidden ? ' hidden disabled' : ''}>×</button></div></div>
                 <div class="model-stack" id="r${n}-models">${(round.models || []).map(modelBlockHtml).join('')}</div>
                 ${artifactsHtml(round.artifacts)}
             </div>`;
         if (isLast) return html;
         html += `<div class="connector-group" data-round="${n + 1}"><svg class="connector-svg" id="svg-r${n}-r${n + 1}"></svg></div>`;
-        if (synth) {
-            html += `
-                <div class="stage-column pipeline-intermediate-synth" data-synth-after-round="${n}" data-round-index="${i}">
-                    <div class="pipeline-intermediate-synth-header">${insertHtml(n, false, true)}</div>
-                    <div class="model-stack" id="synth-r${n}-stack">
-                        <div class="model-block inactive pipeline-synthesis-block selected-synthesizer">
-                            <div class="model-header">
-                                <span class="status-indicator" aria-hidden="true"></span>
-                                <span class="model-name">Synthesis</span>
-                            </div>
-                            <select class="synthesis-flow-select" aria-label="Intermediate synthesis model" data-round-index="${i}">${synthOptions(synth.model)}</select>
-                        </div>
-                    </div>
-                </div>
-                <div class="connector-group pipeline-intermediate-synth" data-synth-after-round="${n}"><svg class="connector-svg" id="svg-synth-r${n}-r${n + 1}"></svg></div>`;
-        }
         return html;
-    };
-
-    const finalHtml = () => {
-        const final = S().final || {};
-        const on = !!final.on;
-        return `
-            <div class="connector-group synthesis-capable" id="connectorToSynthesis"><svg class="connector-svg" id="svg-r-last-synthesis"></svg></div>
-            <div class="stage-column synthesis-capable${on ? '' : ' pipeline-final-off'}" id="synthesisColumn" data-stage="synthesis">
-                <div class="stage-label"><span class="round-badge" title="Click to enable/disable final synthesis; double-click for its request">Final</span></div>
-                <div class="model-stack synthesis-stack" id="synthesis-stack">
-                    <div class="model-block inactive pipeline-synthesis-block${on ? ' selected-synthesizer' : ''}" data-synthesis-stage="true" data-synthesis-kind="universal" title="${on ? `Final synthesizer: ${esc(final.model)}` : 'Select a synthesizer model'}">
-                        <div class="model-header">
-                            <span class="status-indicator" aria-hidden="true"></span>
-                            <span class="model-name">Synthesis</span>
-                        </div>
-                        <select id="synthesis-flow-select" class="synthesis-flow-select" aria-label="Synthesis model in flow"${on ? '' : ' disabled'}>${synthOptions(on ? final.model : '')}</select>
-                    </div>
-                </div>
-            </div>`;
     };
 
     // ---------- Линии (перенос из results.js) ----------
@@ -10998,17 +10737,12 @@ window.ProtoState = {
         });
         return out;
     };
-    const hasSelectedModels = () => S().rounds.some((r) => (r.models || []).some((m) => m.enabled !== false));
     const modeLookup = (stackId, mode) => {
         if (mode === 'input') return checkedIndices(stackId, '.model-input-checkbox');
         if (mode === 'send') return checkedIndices(stackId, '.model-send-checkbox');
         const stack = $(stackId);
         if (!stack) return [];
         if (mode === 'all') return Array.from(stack.children).map((_, i) => i);
-        if (mode === 'synthesis') {
-            if (!hasSelectedModels()) return [];
-            return Array.from(stack.children).map((b, i) => (b.classList.contains('selected-synthesizer') ? i : -1)).filter((i) => i >= 0);
-        }
         return [];
     };
     const inactiveIndices = (stack, active) => {
@@ -11053,8 +10787,8 @@ window.ProtoState = {
         const targetStack = $(targetStackId);
         const src = modeLookup(sourceStackId, sourceMode);
         const tgt = modeLookup(targetStackId, targetMode);
-        const srcInactive = ['send', 'input', 'synthesis'].includes(sourceMode) ? inactiveIndices(sourceStack, src) : [];
-        const tgtInactive = ['input', 'synthesis'].includes(targetMode) ? inactiveIndices(targetStack, tgt) : [];
+        const srcInactive = ['send', 'input'].includes(sourceMode) ? inactiveIndices(sourceStack, src) : [];
+        const tgtInactive = targetMode === 'input' ? inactiveIndices(targetStack, tgt) : [];
         if (!sourceStack || !targetStack || !(src.length + srcInactive.length) || !(tgt.length + tgtInactive.length)) { svg.innerHTML = ''; return; }
         const W = 50; const mergeX = 15; const splitX = W - 15;
         const aS = src.map((i) => blockCenterY(sourceStack, i, svg));
@@ -11078,7 +10812,7 @@ window.ProtoState = {
         svg.innerHTML = html;
     };
 
-    // Высота линий = высота самого высокого стека; стек синтеза центрируется по последнему стеку раунда.
+    // Высота линий = высота самого высокого стека.
     const updateLayout = () => {
         const root = panel();
         const styles = getComputedStyle(document.documentElement);
@@ -11095,19 +10829,6 @@ window.ProtoState = {
         root.querySelectorAll('.connector-svg').forEach((svg) => { svg.style.height = `${height}px`; svg.setAttribute('height', `${height}`); });
         const entryWrapper = $('entryWrapper');
         if (entryWrapper) entryWrapper.style.height = `${height}px`;
-        const reference = $(`r${S().rounds.length}-models`);
-        if (!reference) return;
-        const rr = reference.getBoundingClientRect();
-        const referenceCenter = rr.top + rr.height / 2;
-        const terminals = [$('synthesisColumn'), ...root.querySelectorAll('.stage-column.pipeline-intermediate-synth')];
-        terminals.forEach((column) => {
-            const stack = column?.querySelector('.model-stack');
-            if (!stack) return;
-            const sr = stack.getBoundingClientRect();
-            const current = parseFloat(column.style.getPropertyValue('--pipeline-terminal-offset')) || 0;
-            const natural = (sr.top + sr.height / 2) - current;
-            column.style.setProperty('--pipeline-terminal-offset', `${Math.round((referenceCenter - natural) * 100) / 100}px`);
-        });
     };
 
     const drawAll = () => {
@@ -11117,19 +10838,8 @@ window.ProtoState = {
         updateLayout();
         drawInputSplitConnector('svg-in-models', 'r1-models', 'active');
         for (let n = 1; n < total; n++) {
-            if (rounds[n - 1].intermediateSynthesis) {
-                drawMergeSplitConnector(`svg-r${n}-r${n + 1}`, `r${n}-models`, `synth-r${n}-stack`, 'brain-flow', { sourceMode: 'send', targetMode: 'all' });
-                drawMergeSplitConnector(`svg-synth-r${n}-r${n + 1}`, `synth-r${n}-stack`, `r${n + 1}-models`, 'brain-flow', { sourceMode: 'all', targetMode: 'input' });
-            } else {
-                drawMergeSplitConnector(`svg-r${n}-r${n + 1}`, `r${n}-models`, `r${n + 1}-models`, 'brain-flow', { sourceMode: 'send', targetMode: 'input' });
-            }
+            drawMergeSplitConnector(`svg-r${n}-r${n + 1}`, `r${n}-models`, `r${n + 1}-models`, 'brain-flow', { sourceMode: 'send', targetMode: 'input' });
         }
-        drawMergeSplitConnector('svg-r-last-synthesis', `r${total}-models`, 'synthesis-stack', 'brain-flow', { sourceMode: 'send', targetMode: 'synthesis' });
-        // Блок синтеза выглядит активным только при выбранном синтезаторе и выбранных моделях.
-        const any = hasSelectedModels();
-        panel().querySelectorAll('.pipeline-synthesis-block').forEach((block) => {
-            block.classList.toggle('inactive', !(any && block.classList.contains('selected-synthesizer')));
-        });
     };
 
     // ---------- render ----------
@@ -11172,8 +10882,7 @@ window.ProtoState = {
             </div>
             <div class="connector-group"><svg class="connector-svg" id="svg-in-models"></svg></div>
             ${state.rounds.map((round, i) => roundHtml(round, i, total)).join('')}
-            <div id="insertionPoint"></div>
-            ${finalHtml()}`;
+            <div id="insertionPoint"></div>`;
         syncChrome();
         drawAll();
         if (frame) cancelAnimationFrame(frame);
@@ -11185,7 +10894,6 @@ window.ProtoState = {
     const newRound = (n) => ({
         ref: `r${n}`, order: '', input: '', task: '', role: 'None',
         models: S().models.map((name) => S().protoModel(name)),
-        intermediateSynthesis: null,
         artifacts: []
     });
     const nextRef = () => 1 + Math.max(0, ...S().rounds.map((r) => Number(/^r(\d+)$/.exec(r.ref || '')?.[1]) || 0));
@@ -11194,27 +10902,6 @@ window.ProtoState = {
         const rounds = S().rounds;
         if (rounds.length <= 1) return;
         rounds.pop();
-        // После последнего раунда промежуточного синтеза не бывает.
-        rounds[rounds.length - 1].intermediateSynthesis = null;
-        render();
-    };
-    const defaultSynthModel = () => {
-        const { final, models } = S();
-        if (final?.on && final.model) return final.model;
-        return models.includes('Claude') ? 'Claude' : models[0];
-    };
-    const toggleIntermediate = (i) => {
-        const round = S().rounds[i];
-        if (!round || i >= S().rounds.length - 1) return;
-        round.intermediateSynthesis = round.intermediateSynthesis
-            ? null
-            : { model: defaultSynthModel(), task: '', discipline: S().emptyDiscipline() };
-        render();
-    };
-    const toggleFinal = () => {
-        const final = S().final;
-        final.on = !final.on;
-        if (final.on && !final.model) final.model = S().models.includes('Claude') ? 'Claude' : S().models[0];
         render();
     };
     const modelOf = (block) => {
@@ -11226,29 +10913,14 @@ window.ProtoState = {
     // ---------- События ----------
 
     const BLOCK_CONTROLS = 'input, select, button, .status-indicator, option';
-    let intermediateTimer = null;
-    let finalTimer = null;
 
     const bindPanel = () => {
         const root = panel();
         root.addEventListener('click', (event) => {
             const t = event.target;
-            const insert = t.closest('.pipeline-stage-insert');
-            if (insert) {
-                if (insert.disabled) return;
-                clearTimeout(intermediateTimer);
-                const i = Number(insert.dataset.roundIndex);
-                intermediateTimer = setTimeout(() => toggleIntermediate(i), 250);
-                return;
-            }
             const badge = t.closest('.round-badge');
             if (badge) {
                 event.preventDefault();
-                if (badge.closest('#synthesisColumn')) {
-                    clearTimeout(finalTimer);
-                    finalTimer = setTimeout(toggleFinal, 250);
-                    return;
-                }
                 const i = Number(badge.closest('.stage-column')?.dataset.roundIndex);
                 cards().openRound?.(i);
                 return;
@@ -11264,27 +10936,8 @@ window.ProtoState = {
         root.addEventListener('dblclick', (event) => {
             const t = event.target;
             if (t.closest('select')) return;
-            const insert = t.closest('.pipeline-stage-insert');
-            if (insert) {
-                event.preventDefault();
-                clearTimeout(intermediateTimer);
-                cards().openSynthesis?.('intermediate', Number(insert.dataset.roundIndex));
-                return;
-            }
-            const intermediate = t.closest('.pipeline-intermediate-synth .pipeline-synthesis-block');
-            if (intermediate) {
-                cards().openSynthesis?.('intermediate', Number(intermediate.closest('.stage-column').dataset.roundIndex));
-                return;
-            }
-            const finalTarget = t.closest('#synthesisColumn .pipeline-synthesis-block, #synthesisColumn .stage-label');
-            if (finalTarget) {
-                event.preventDefault();
-                clearTimeout(finalTimer);
-                cards().openSynthesis?.('final');
-                return;
-            }
             const block = t.closest('.model-block');
-            if (block && !block.classList.contains('pipeline-synthesis-block') && !t.closest(BLOCK_CONTROLS)) {
+            if (block && !t.closest(BLOCK_CONTROLS)) {
                 event.preventDefault();
                 const { i, model } = modelOf(block);
                 if (model) cards().openModel?.(i, model.name);
@@ -11294,7 +10947,7 @@ window.ProtoState = {
         root.addEventListener('change', (event) => {
             const t = event.target;
             const block = t.closest('.model-block');
-            if (block && !block.classList.contains('pipeline-synthesis-block')) {
+            if (block) {
                 const { model } = modelOf(block);
                 if (!model) return;
                 if (t.classList.contains('model-input-checkbox')) {
@@ -11308,13 +10961,6 @@ window.ProtoState = {
                 render();
                 return;
             }
-            if (t.id === 'synthesis-flow-select') { S().final.model = t.value; render(); return; }
-            if (t.classList.contains('synthesis-flow-select')) {
-                const synth = S().rounds[Number(t.dataset.roundIndex)]?.intermediateSynthesis;
-                if (synth) synth.model = t.value;
-                render();
-                return;
-            }
             if (t.id === 'debate-length-select') { S().run.maxWords = Number(t.value); return; }
             if (t.id === 'proto-import-input') importFile(t);
         });
@@ -11322,14 +10968,13 @@ window.ProtoState = {
         $('pipeline-add-btn')?.addEventListener('click', () => {
             const state = S();
             state.rounds = [newRound(1)];
-            state.final = { on: true, model: state.models.includes('Claude') ? 'Claude' : state.models[0], task: '', discipline: state.emptyDiscipline() };
             render();
         });
         $('pipeline-export-btn')?.addEventListener('click', exportState);
         $('pipeline-import-btn')?.addEventListener('click', () => $('proto-import-input')?.click());
     };
 
-    const DATA_KEYS = ['models', 'defaults', 'run', 'rounds', 'final', 'selectedModel'];
+    const DATA_KEYS = ['models', 'defaults', 'run', 'rounds', 'selectedModel'];
     const exportState = () => {
         const data = {};
         DATA_KEYS.forEach((key) => { data[key] = S()[key]; });
@@ -11530,20 +11175,20 @@ window.ProtoState = {
 </script>
 <script>
 // Custom engine: the shared pipeline workhorse. A run is one sequence of steps; the canvas shows
-// them as round cards and synthesis inserts, the engine knows only steps. Meaning (answer, critique,
-// improvement, check, synthesis) comes from the step's task; the engine executes and passes data.
+// them as round cards, the engine knows only steps. Meaning (answer, critique, improvement, check,
+// synthesis) comes from the step's task and the models' roles; the engine executes and passes data.
+// A synthesis is a round of one model with a role; the accepted answers of the last step are the result.
 //
-// Step: { kind: 'round' | 'synthesis', order: 'parallel' | 'sequential', task, input, models, ref?, round?, afterRound? }
-//   ref, round (the number of a round) and afterRound (a synthesis) come from the schema, so a switched-off
-//   round keeps its number in labels, previews and the journal; without them the engine counts the steps it gets.
+// Step: { kind: 'round' | 'owner', order: 'parallel' | 'sequential', task, input, models, ref?, round? }
+//   ref and round (the number of a round) come from the schema, so a switched-off round keeps its number
+//   in labels, previews and the journal; without them the engine counts the steps it gets.
 //   models: [{ id, name, extra, promptTemplate, maxWords, input? }] — card order is call order. A participant is its id
 //   (the id is the name by default); two participants of one model are two entries with two ids.
 //   promptTemplate replaces automatic assembly; maxWords reaches the caller on every attempt.
 //   input: 'none' | 'previous' | 'all' | [sources]. The run's task is always sent. A participant's own input replaces
 //          the shared one of the step; the answers before the participant in a sequential round stay a separate block.
-//     previous — accepted answers of the last step that has any (a synthesis replaces the round
-//                before it; a skipped step passes nothing on);
-//     all      — every accepted answer of all earlier steps, rounds and syntheses alike;
+//     previous — accepted answers of the last step that has any (a skipped step passes nothing on);
+//     all      — every accepted answer of all earlier steps;
 //     [sources] — a step ref (all its accepted answers), { step, participant, required? } (one answer);
 //                a required source without an answer stops the run before the request (missing_input).
 //   sequential — each model also gets the accepted answers of the models before it in this step;
@@ -11576,7 +11221,6 @@ window.ProtoState = {
   const Output = root.BasicOutput || (typeof require === 'function' ? require('./basic-output') : null);
   const Artifacts = root.BasicArtifacts || (typeof require === 'function' ? require('./basic-artifacts') : null);
   const DEFAULT_ATTEMPTS = 2;
-  const SYNTHESIS_TASK = 'Сведи эти ответы в один итоговый ответ на задачу.';
   const REASON_TEXT = Object.freeze({
     empty: 'пустой',
     token_only: 'без текста',
@@ -11605,7 +11249,7 @@ window.ProtoState = {
   const refKey = (step) => step.ref ?? `#${step.index}`;
   const stepLabel = (step) => {
     if (step.kind === 'owner') return `User ${step.ref}`;
-    return step.kind === 'synthesis' ? `Синтез после раунда ${step.afterRound}` : `Раунд ${step.round}`;
+    return `Раунд ${step.round}`;
   };
   // The mode the prompt names: a list of sources is 'sources', the strings stay as they are.
   const modeOf = (spec) => (Array.isArray(spec) ? 'sources' : spec);
@@ -11713,20 +11357,19 @@ window.ProtoState = {
     return typeof read.value === 'string' ? read.value : JSON.stringify(read.value);
   }
 
-  // Numbers the steps for labels: rounds by their card, syntheses by the round before them.
+  // Numbers the rounds for labels by their card.
   function normalizeSteps(steps = []) {
     let round = 0;
     return steps.map((step, index) => {
-      const kind = ['synthesis', 'owner'].includes(step.kind) ? step.kind : 'round';
+      const kind = step.kind === 'owner' ? 'owner' : 'round';
       // A switched-off round keeps its number: the schema gives the number, the engine only counts without it.
       if (kind === 'round') round = Number.isSafeInteger(step.round) && step.round > 0 ? step.round : round + 1;
       return {
         index, ref: typeof step.ref === 'string' ? step.ref : null, kind, round: kind === 'round' ? round : null,
-        afterRound: kind === 'synthesis' ? (Number.isSafeInteger(step.afterRound) && step.afterRound > 0 ? step.afterRound : round) : null,
         order: kind === 'round' && step.order === 'sequential' ? 'sequential' : 'parallel',
-        task: kind === 'synthesis' && !text(step.task) ? SYNTHESIS_TASK : text(step.task),
+        task: text(step.task),
         // A list of sources stays a list here: the input is checked before the run (assertExecutable).
-        input: Array.isArray(step.input) ? step.input.slice() : (kind === 'synthesis' ? 'previous' : (step.input ?? (kind === 'owner' ? 'none' : 'previous'))),
+        input: Array.isArray(step.input) ? step.input.slice() : (step.input ?? (kind === 'owner' ? 'none' : 'previous')),
         output: step.output ?? null,
         // continue: the participant keeps its chat; new: a new chat on the first request of each visit (4.2).
         chat: step.chat === 'new' ? 'new' : 'continue',
@@ -11754,12 +11397,12 @@ window.ProtoState = {
     }
   }
 
-  const EXECUTED_KINDS = Object.freeze(['round', 'synthesis', 'owner']);
+  const EXECUTED_KINDS = Object.freeze(['round', 'owner']);
   // The participant that an owner step's answer and artifacts are registered under: the owner has no model (8.1).
   const OWNER_PARTICIPANT = 'owner';
   const INPUT_VALUES = Object.freeze(['none', 'previous', 'all']);
   // An input (of a step or of a participant) that the engine cannot execute, or null. `fail` builds the error with its address.
-  function inputProblem(spec, kind, fail, field) {
+  function inputProblem(spec, fail, field) {
     if (Array.isArray(spec)) {
       if (!spec.length) return fail('invalid_input', field, 'список источников пуст');
       const shape = (source) => {
@@ -11780,11 +11423,11 @@ window.ProtoState = {
       if (bad >= 0) return fail('invalid_input', `${field}[${bad}]`, 'источник: ref шага, { step, participant, required? } или { artifact: { step, participant, id }, version, required? }');
       return null;
     }
-    if (!INPUT_VALUES.includes(spec) || (kind === 'synthesis' && spec !== 'previous')) return fail('invalid_input', field, 'вход: none, previous, all или список источников; синтез — только previous');
+    if (!INPUT_VALUES.includes(spec)) return fail('invalid_input', field, 'вход: none, previous, all или список источников');
     return null;
   }
   // The output of a step or of a participant (5.8, 3.2): the fields the engine executes, or null. `field` names it in the error.
-  function outputProblem(output, kind, fail, field) {
+  function outputProblem(output, fail, field) {
     if (!output || typeof output !== 'object' || Array.isArray(output)) return fail('invalid_field', field, 'выход: объект');
     if (output.format !== undefined && output.format !== 'json') return fail('unsupported_field', `${field}.format`, 'формат выхода движок пока не исполняет');
     if (output.artifacts !== undefined && (!Array.isArray(output.artifacts) || !output.artifacts.length)) return fail('invalid_field', `${field}.artifacts`, 'ожидается непустой список артефактов');
@@ -11793,7 +11436,7 @@ window.ProtoState = {
         if (!item || typeof item !== 'object' || !('revisionOf' in item)) continue;
         const where = `${field}.artifacts[${at}].revisionOf`;
         if (!isPlain(item.revisionOf) || !isPlain(item.revisionOf.artifact)) return fail('invalid_input', where, 'ревизия: ссылка на артефакт { artifact: { step, participant, id }, version }');
-        const problem = inputProblem([item.revisionOf], kind, fail, where);
+        const problem = inputProblem([item.revisionOf], fail, where);
         if (problem) return problem;
       }
     }
@@ -11814,11 +11457,11 @@ window.ProtoState = {
       if (Array.isArray(step.models) && step.models.length) return fail('invalid_field', 'models', 'у User нет моделей');
     }
     if (step.input !== undefined) {
-      const problem = inputProblem(step.input, step.kind, fail, 'input');
+      const problem = inputProblem(step.input, fail, 'input');
       if (problem) return problem;
     }
     if (step.output !== undefined) {
-      const problem = outputProblem(step.output, step.kind, fail, 'output');
+      const problem = outputProblem(step.output, fail, 'output');
       if (problem) return problem;
     }
     if (step.require !== undefined && step.require !== 'any' && step.require !== 'all') {
@@ -11834,11 +11477,11 @@ window.ProtoState = {
       const name = typeof model === 'string' ? model : model?.name;
       const id = typeof model === 'string' ? model : (model?.id ?? name);
       if (model && typeof model === 'object' && model.input !== undefined) {
-        const problem = inputProblem(model.input, step.kind, fail, `модель «${name}» · input`);
+        const problem = inputProblem(model.input, fail, `модель «${name}» · input`);
         if (problem) return problem;
       }
       if (model && typeof model === 'object' && model.output !== undefined) {
-        const problem = outputProblem(model.output, step.kind, fail, `модель «${name}» · output`);
+        const problem = outputProblem(model.output, fail, `модель «${name}» · output`);
         if (problem) return problem;
       }
       if (names.has(name) && !participants) return new EngineError('participant_transport_required', `${at} · модель «${name}»`, 'два участника одной модели требуют транспорта по участникам (callback sendParticipants)');
@@ -12618,7 +12261,7 @@ window.ProtoState = {
       instructions: { task: text(task), stepTask: model.task ?? step.task, extra: model.extra || '', askInstruction: semiAuto ? askInstruction : '' } };
   }
 
-  const api = Object.freeze({ EngineError, unexecutedOf, formatBlock, DEFAULT_ATTEMPTS, CORRECTION_TEMPLATE, SYNTHESIS_TASK, STOP_TEXT, REASON_TEXT, resolveSetting, PLACEHOLDER, TRANSPORT_LINES, buildPrompt, correctionPrompt, normalizeSteps, previewPrompt, run });
+  const api = Object.freeze({ EngineError, unexecutedOf, formatBlock, DEFAULT_ATTEMPTS, CORRECTION_TEMPLATE, STOP_TEXT, REASON_TEXT, resolveSetting, PLACEHOLDER, TRANSPORT_LINES, buildPrompt, correctionPrompt, normalizeSteps, previewPrompt, run });
   root.CustomEngine = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
@@ -12635,10 +12278,11 @@ window.ProtoState = {
 // Schema: { schemaVersion, origin: 'builtin' | 'user', basedOn?, description?, defaults?, steps }
 //   description: the presentation of the pipeline for the person who runs it (a long text); shown in the ▶ card, never read by the engine
 //   run: { policy?: 'auto' | 'manual', maxWords?, strictLength? } — the run policy, the shared answer limit and the strict length check
-//   defaults (the ▶ card): { roundTask?, synthesisTask?, discipline?, modelNotes?, roundPrompts? }
+//   defaults (the ▶ card): { roundTask?, discipline?, modelNotes?, roundPrompts? }
 //   spec: { purpose?, inputs?, result?, application?, readiness?, rules?, boundaries?, failure? } — the open pipeline's
 //     specification, text for the document only: the engine and the requests to models never read it (see SPEC_KEYS)
-//   step: { ref, kind: 'round' | 'synthesis', order?, input?, task?, models, title?, goal?, rules?, quality? }
+//   step: { ref, kind: 'round' | 'owner', order?, input?, task?, models, title?, goal?, rules?, quality? }
+//   a synthesis is not a kind of step but a role: a round of one model with a role (the last such round is the result)
 //   step text for the specification (title, goal, rules, quality): documents only, like spec
 //   model: { name, enabled?, onCanvas?, role?, request?, maxWords?, task?, discipline? }   (request: '' = no own request)
 //   enabled: false keeps a switched-off model with its settings; assemble() gives the engine no call for it.
@@ -12656,19 +12300,18 @@ window.ProtoState = {
   // Every released version stays supported; a newer one than this Basic is refused.
   const SUPPORTED_VERSIONS = Object.freeze([1]);
   const ORIGINS = Object.freeze(['builtin', 'user']);
-  const KINDS = Object.freeze(['round', 'synthesis', 'owner']);
+  const KINDS = Object.freeze(['round', 'owner']);
   // The step the owner (User) does itself; it has no models. There is no branch and no transition: steps run in their order.
   const CONTROL_KINDS = Object.freeze(['owner']);
-  // The removed kinds (a check and a branch) are refused with the way to write them now.
-  const REMOVED_KINDS = Object.freeze(['gate', 'route']);
-  const REMOVED_KIND_HINT = 'проверка — обычный раунд: критерии в task; решение принимает User шагом owner';
+  // The removed kinds (a check, a branch and a synthesis) are refused with the way to write them now.
+  const CHECK_HINT = 'проверка — обычный раунд: критерии в task; решение принимает User шагом owner';
+  const REMOVED_KIND_HINT = Object.freeze({ gate: CHECK_HINT, route: CHECK_HINT, synthesis: 'синтез — роль: раунд из одной модели с role' });
   // The specification text (documents only): the root `spec` and the text fields of a step. Engine and requests never read them.
   const SPEC_KEYS = Object.freeze(['purpose', 'inputs', 'result', 'application', 'readiness', 'rules', 'boundaries', 'failure']);
   const STEP_TEXT_KEYS = Object.freeze(['title', 'goal', 'rules', 'quality']);
   // The fields a step of each kind may have (an unknown field is an error with its path).
   const STEP_KEYS = Object.freeze({
     round: Object.freeze(['ref', 'kind', 'order', 'input', 'task', 'models', 'output', 'require', 'owner', 'chat', ...STEP_TEXT_KEYS]),
-    synthesis: Object.freeze(['ref', 'kind', 'order', 'input', 'task', 'models', 'output', 'require', 'owner', 'chat', ...STEP_TEXT_KEYS]),
     owner: Object.freeze(['ref', 'kind', 'task', 'input', 'output', 'models', ...STEP_TEXT_KEYS])
   });
   const CONTROL_REF = Object.freeze({
@@ -12698,7 +12341,6 @@ window.ProtoState = {
   const DEFAULTS = Object.freeze({
     run: Object.freeze({ policy: 'manual', maxWords: 300, strictLength: false }),
     roundTask: 'Учти ответы предыдущего шага и дай свой улучшенный ответ на задачу.',
-    synthesisTask: Engine.SYNTHESIS_TASK,
     discipline: Object.freeze({
       limit: '[RESPONSE_LIMIT] Объём ответа: {от}-{слов} слов, не больше.',
       content: 'Сосредоточься на ясной концепции и ключевых идеях; убери повторы, длинные пересказы и второстепенные детали.',
@@ -12716,18 +12358,18 @@ window.ProtoState = {
   }
 
   // The value of one card: model → round (reserved for the round card) → ▶ → Basic.
-  // `model` is { task?, discipline? }, `defaults` is the ▶ layer of the schema.
+  // `model` is { task?, discipline? }, `defaults` is the ▶ layer of the schema. `kind` is the kind of the step: every
+  // step with models is a round, so its task inherits roundTask.
   function resolveFields(model = {}, kind = 'round', round = {}, defaults = {}) {
-    const taskKey = kind === 'synthesis' ? 'synthesisTask' : 'roundTask';
     return {
-      task: pick([['model', model?.task], ['round', round?.task], ['pipeline', defaults?.[taskKey]]], DEFAULTS[taskKey]),
+      task: pick([['model', model?.task], ['round', round?.task], ['pipeline', defaults?.roundTask]], DEFAULTS.roundTask),
       discipline: Object.fromEntries(Object.entries(DEFAULTS.discipline).map(([key, fallback]) => [key,
         pick([['model', model?.discipline?.[key]], ['round', round?.discipline?.[key]], ['pipeline', defaults?.discipline?.[key]]], fallback)]))
     };
   }
 
-  // The first round has no input; a later round gets the previous step; a synthesis always the previous step.
-  const defaultInput = (kind, roundIndex) => (kind === 'round' && roundIndex === 0 ? 'none' : 'previous');
+  // The first round has no input; a later round gets the previous step.
+  const defaultInput = (roundIndex) => (roundIndex === 0 ? 'none' : 'previous');
 
   // With input none only a task written by the owner (on the model or the step) goes to the model; ▶ and Basic values do not.
   const writtenTask = (field) => field.source === 'model' || field.source === 'round';
@@ -12746,28 +12388,22 @@ window.ProtoState = {
   // Engine steps from a schema. `context.roleText(role, ref)` turns a model's role into its extra text.
   function assemble(schema, { roleText = () => '' } = {}) {
     const defaults = schema.defaults || {};
-    const finalStep = schema.steps.find((step) => step.ref === 'final');
     let rounds = 0;
     return schema.steps.map((step) => {
       if (CONTROL_KINDS.includes(step.kind)) return assembleControl(step);
-      const roundIndex = step.kind === 'round' ? rounds++ : -1;
-      const input = step.input || defaultInput(step.kind, roundIndex);
+      const roundIndex = rounds++;
+      const input = step.input || defaultInput(roundIndex);
       const stepFields = resolveFields({ task: step.task }, step.kind, {}, defaults);
-      const out = { kind: step.kind, ref: step.ref };
-      // The number a step keeps even when the rounds before it are switched off.
-      if (step.kind === 'round') out.round = roundIndex + 1;
-      else out.afterRound = rounds;
-      if (step.kind === 'round') out.order = step.order || 'parallel';
+      // The number a round keeps even when the rounds before it are switched off.
+      const out = { kind: step.kind, ref: step.ref, round: roundIndex + 1, order: step.order || 'parallel' };
       if ('output' in step) out.output = JSON.parse(JSON.stringify(step.output));
       ['require', 'owner', 'chat'].forEach((key) => { if (key in step) out[key] = step[key]; });
       out.task = input === 'none' && !writtenTask(stepFields.task) ? '' : stepFields.task.value;
-      // A list of sources goes to the engine as it is; a synthesis without a list keeps its old shape (no input field).
-      if (step.kind === 'round' || Array.isArray(input)) out.input = Array.isArray(input) ? JSON.parse(JSON.stringify(input)) : input;
+      // A list of sources goes to the engine as it is.
+      out.input = Array.isArray(input) ? JSON.parse(JSON.stringify(input)) : input;
       out.models = (step.models || []).filter((model) => model.enabled !== false).map((model) => {
         const resolved = resolveFields(model, step.kind, { task: step.task }, defaults);
         const lines = [...(defaults.discipline?.lines || []), ...(model.discipline?.lines || [])];
-        // An intermediate synthesis without its own request runs the final synthesizer's request.
-        const finalRequest = step.ref.startsWith('synth:') ? finalStep?.models?.find((item) => idOf(item) === idOf(model))?.request : undefined;
         // The input of the participant (when it has its own) decides whether an inherited task is dropped, as the step input does.
         const own = 'input' in model ? model.input : input;
         return {
@@ -12775,8 +12411,8 @@ window.ProtoState = {
           id: idOf(model),
           ...('input' in model ? { input: Array.isArray(model.input) ? JSON.parse(JSON.stringify(model.input)) : model.input } : {}),
           ...('output' in model ? { output: clone(model.output) } : {}),
-          // An own request, an empty one included, is a value; only a missing one takes the final synthesizer's.
-          promptTemplate: typeof model.request === 'string' ? model.request : (typeof finalRequest === 'string' ? finalRequest : null),
+          // An own request, an empty one included, is a value; a missing one is the automatic request.
+          promptTemplate: typeof model.request === 'string' ? model.request : null,
           maxWords: 'maxWords' in model ? model.maxWords : null,
           extra: roleText(model.role || '', step.ref) || '',
           task: own === 'none' && !writtenTask(resolved.task) ? '' : resolved.task.value,
@@ -12821,13 +12457,12 @@ window.ProtoState = {
     const { fail, errors, steps, positions, index } = ctx;
     const mark = errors.length;
     const unknown = (value, allowed, at) => Object.keys(value).forEach((key) => { if (!allowed.includes(key)) fail(`${at}.${key}`, 'неизвестное поле'); });
-    // The step a reference names: it exists and comes before the consumer; final is never an ordinary source.
+    // The step a reference names: it exists and comes before the consumer.
     const stepAt = (ref, at) => {
       if (typeof ref !== 'string' || !positions.has(ref)) { fail(at, `неизвестный шаг «${ref}»`); return -1; }
       const position = positions.get(ref);
-      if (position >= index) fail(at, 'вход ссылается только на более ранний шаг');
-      else if (steps[position].ref === 'final') fail(at, 'результат финального синтеза нельзя указать во входе');
-      else return position;
+      if (position < index) return position;
+      fail(at, 'вход ссылается только на более ранний шаг');
       return -1;
     };
     const participantAt = (position, participant, at) => {
@@ -12885,26 +12520,8 @@ window.ProtoState = {
     return addressOf(source);
   }
 
-  // The place of an intermediate synthesis (R11), one rule for validate and toCanvas: the nearest steps around it that are
-  // not owner steps must be rounds. So `r1 → synth → owner → r2` and `r1 → owner → synth → r2` are
-  // both valid, and owner steps never need a round next to them. Two syntheses never meet.
-  function synthesisPlaceErrors(steps) {
-    const errors = [];
-    const nearest = (index, step) => {
-      for (let at = index + step; at >= 0 && at < steps.length; at += step) if (!CONTROL_KINDS.includes(steps[at]?.kind)) return steps[at];
-      return null;
-    };
-    steps.forEach((step, index) => {
-      if (!isObject(step) || step.kind !== 'synthesis' || step.ref === 'final') return;
-      if (nearest(index, -1)?.kind !== 'round') errors.push({ path: `steps[${index}]`, message: 'промежуточный синтез стоит сразу после раунда' });
-      if (nearest(index, 1)?.kind !== 'round') errors.push({ path: `steps[${index}]`, message: 'промежуточный синтез стоит между двумя раундами' });
-    });
-    return errors;
-  }
-
-  // The one check of executability (R09) for validate and toCanvas: an owner step runs by itself; a round runs with an enabled model. A synthesis only works on
-  // the answers of an earlier step, so it alone is not runnable. A pipeline without a round is valid; an empty one or
-  // one with no runnable step is named at `steps`.
+  // The one check of executability (R09) for validate and toCanvas: an owner step runs by itself; a round runs with an enabled model.
+  // A pipeline without a round is valid; an empty one or one with no runnable step is named at `steps`.
   function executabilityErrors(steps) {
     const runnable = steps.some((step) => isObject(step) && (CONTROL_KINDS.includes(step.kind)
       || (step.kind === 'round' && Array.isArray(step.models) && step.models.some((model) => isObject(model) && model.enabled !== false))));
@@ -12959,8 +12576,8 @@ window.ProtoState = {
       const defaults = schema.defaults;
       if (!isObject(defaults)) fail('defaults', 'ожидается объект');
       else {
-        unknownKeys(defaults, ['roundTask', 'synthesisTask', 'discipline', 'modelNotes', 'roundPrompts'], 'defaults');
-        ['roundTask', 'synthesisTask'].forEach((key) => { if (key in defaults) text(defaults[key], `defaults.${key}`); });
+        unknownKeys(defaults, ['roundTask', 'discipline', 'modelNotes', 'roundPrompts'], 'defaults');
+        if ('roundTask' in defaults) text(defaults.roundTask, 'defaults.roundTask');
         if ('discipline' in defaults) checkDiscipline(defaults.discipline, 'defaults.discipline');
         ['modelNotes', 'roundPrompts'].forEach((key) => {
           if (!(key in defaults)) return;
@@ -12988,11 +12605,10 @@ window.ProtoState = {
       });
     };
     // The input of a step or of a participant: a value of the list of inputs, or a list of sources.
-    const checkInput = (value, path, kind, index) => {
+    const checkInput = (value, path, index) => {
       if (Array.isArray(value)) { checkInputList(value, path, index); return; }
       // An owner takes any input a model step takes (none, previous, all, list).
       oneOf(value, INPUTS, path, 'вход');
-      if (kind === 'synthesis' && value !== 'previous') fail(path, 'синтез всегда получает ответы предыдущего шага');
     };
     // The output of a step (5.1, 5.2): the text form, or json with fields; artifacts are declared in it.
     // `authors` are the participants whose revisions the output declares: { id, input? } (the owner is its own author).
@@ -13066,8 +12682,8 @@ window.ProtoState = {
     schema.steps.forEach((step, index) => {
       const path = `steps[${index}]`;
       if (!isObject(step)) { fail(path, 'ожидается объект'); return; }
-      // A removed kind (gate, route) is named once, with the way to write it now; its other fields are not checked.
-      if (REMOVED_KINDS.includes(step.kind)) { fail(`${path}.kind`, `тип шага: допустимо ${KINDS.join(', ')}; ${REMOVED_KIND_HINT}`); return; }
+      // A removed kind (gate, route, synthesis) is named once, with the way to write it now; its other fields are not checked.
+      if (Object.hasOwn(REMOVED_KIND_HINT, step.kind)) { fail(`${path}.kind`, `тип шага: допустимо ${KINDS.join(', ')}; ${REMOVED_KIND_HINT[step.kind]}`); return; }
       unknownKeys(step, STEP_KEYS[step.kind] || STEP_KEYS.round, path);
       if ('output' in step) {
         // A step's shared output is the answer of every author without its own; the owner is the author of its own.
@@ -13087,11 +12703,8 @@ window.ProtoState = {
       else refs.add(step.ref);
       oneOf(step.kind, KINDS, `${path}.kind`, 'тип шага');
       if (CONTROL_KINDS.includes(step.kind) && typeof step.ref === 'string' && !new RegExp(`^${step.kind}:[A-Za-z0-9_-]+$`).test(step.ref)) fail(`${path}.ref`, CONTROL_REF[step.kind]);
-      if ('order' in step) {
-        oneOf(step.order, ORDERS, `${path}.order`, 'порядок');
-        if (step.kind === 'synthesis') fail(`${path}.order`, 'у синтеза порядка нет: он одна модель-синтезатор или параллельный');
-      }
-      if ('input' in step) checkInput(step.input, `${path}.input`, step.kind, index);
+      if ('order' in step) oneOf(step.order, ORDERS, `${path}.order`, 'порядок');
+      if ('input' in step) checkInput(step.input, `${path}.input`, index);
       if ('task' in step) text(step.task, `${path}.task`);
       STEP_TEXT_KEYS.forEach((key) => { if (key in step) text(step[key], `${path}.${key}`); });
       if (!Array.isArray(step.models)) { fail(`${path}.models`, 'ожидается список моделей'); return; }
@@ -13116,21 +12729,21 @@ window.ProtoState = {
             else if (typeof model.name === 'string') namesById.set(id, model.name);
           }
         }
-        if ('input' in model) checkInput(model.input, `${modelPath}.input`, step.kind, index);
+        if ('input' in model) checkInput(model.input, `${modelPath}.input`, index);
         ['role', 'request', 'task'].forEach((key) => { if (key in model) text(model[key], `${modelPath}.${key}`); });
         if ('maxWords' in model && !(Number.isSafeInteger(model.maxWords) && model.maxWords > 0)) fail(`${modelPath}.maxWords`, 'ожидается положительное целое число слов');
         if ('discipline' in model) checkDiscipline(model.discipline, `${modelPath}.discipline`);
       });
       if (CONTROL_KINDS.includes(step.kind)) checkControl(step, path);
     });
-    errors.push(...synthesisPlaceErrors(schema.steps), ...executabilityErrors(schema.steps));
+    errors.push(...executabilityErrors(schema.steps));
     return errors;
   }
 
   // The settings of the cards in the form the page edits them (the cards write only what the owner set):
   // customModelSettings[ref][participantId] = { promptTemplate, maxWords, task, discipline, input } — the key is the id of
   // the participant (its name when it has none); customRoundSettings[ref] = { order, input, task, require, owner, chat, output }
-  // of a round; customStepSettings[ref] = the fields of a synthesis or an owner; customDefaults = the ▶ card.
+  // of a round; customStepSettings[ref] = the fields of an owner step; customDefaults = the ▶ card.
   const ROUND_FIELDS = ['order', 'input', 'task', 'require', 'owner', 'chat', 'output'];
   const STEP_FIELDS = ['input', 'task', 'require', 'owner', 'chat', 'output'];
   function toSettings(schema) {
@@ -13159,21 +12772,19 @@ window.ProtoState = {
     return { customModelSettings, customRoundSettings, customStepSettings, customDefaults: schema.defaults ? JSON.parse(JSON.stringify(schema.defaults)) : {} };
   }
 
-  // The canvas a schema stands for: the rounds, the participants of each round with their roles, the final synthesizer,
-  // the intermediate syntheses and the owner steps in their order. `models` is the list of the models
-  // the canvas knows, in its order; `isRole(id)` tells a known role. A schema the canvas cannot show gives errors (with the
-  // place), never a changed schema. A round is one block per participant (two participants of one model are two blocks,
-  // told apart by id); the rounds limit counts rounds only. An intermediate synthesis is right after a round and before
-  // the next one; an owner step may stand anywhere; a switched-off model is on the canvas only with onCanvas, a switched-off synthesis is not.
+  // The canvas a schema stands for: the rounds, the participants of each round with their roles and the owner steps in
+  // their order. `models` is the list of the models the canvas knows, in its order; `isRole(id)` tells a known role. A schema
+  // the canvas cannot show gives errors (with the place), never a changed schema. A round is one block per participant (two
+  // participants of one model are two blocks, told apart by id); a round of one model with a role (a synthesis) is an
+  // ordinary round. The rounds limit counts rounds only; an owner step may stand anywhere; a switched-off model is on the
+  // canvas only with onCanvas.
   function toCanvas(schema, { models = [], isRole = () => true, runWords = null } = {}) {
     const errors = [];
     const fail = (path, message) => errors.push({ path, message });
     const steps = schema.steps || [];
     const enabledOf = (step) => (step.models || []).filter((model) => model.enabled !== false);
     const rounds = [];
-    const inserts = [];
     const controls = [];
-    let finalStep = null;
     steps.forEach((step, index) => {
       const path = `steps[${index}]`;
       const enabled = enabledOf(step);
@@ -13182,24 +12793,10 @@ window.ProtoState = {
         if (model.role && !isRole(model.role)) fail(`${path}.models[${at}].role`, `роль «${model.role}» неизвестна`);
       });
       if (CONTROL_KINDS.includes(step.kind)) { controls.push({ ref: step.ref, kind: step.kind, index, afterRound: rounds.length }); return; }
-      if (step.kind === 'round') {
-        rounds.push(step);
-        if (step.ref !== `r${rounds.length}`) fail(`${path}.ref`, `ref раунда должен быть «r${rounds.length}»`);
-        return;
-      }
-      if (enabled.length > 1) fail(`${path}.models`, 'в синтезе одна модель');
-      if (step.ref === 'final') {
-        finalStep = step;
-        if (index !== steps.length - 1) fail(`${path}.ref`, 'финальный синтез стоит последним');
-        return;
-      }
-      const id = step.ref.startsWith('synth:') ? step.ref.slice('synth:'.length) : '';
-      // The canvas keeps only A-Z a-z 0-9 _ - of an id; another character would make the settings follow another ref.
-      if (!/^[A-Za-z0-9_-]+$/.test(id)) fail(`${path}.ref`, 'ref промежуточного синтеза: «synth:<id>», id — латинские буквы, цифры, «_» и «-»');
-      if (enabled.length) inserts.push({ afterRound: rounds.length, plannedStageId: id, participantIds: enabled.map(idOf) });
+      rounds.push(step);
+      if (step.ref !== `r${rounds.length}`) fail(`${path}.ref`, `ref раунда должен быть «r${rounds.length}»`);
     });
     if (Array.isArray(runWords) && schema.run && 'maxWords' in schema.run && !runWords.includes(schema.run.maxWords)) fail('run.maxWords', `предел длины pipeline: допустимо ${runWords.join(', ')}`);
-    synthesisPlaceErrors(steps).forEach((error) => fail(error.path, error.message));
     executabilityErrors(steps).forEach((error) => fail(error.path, error.message));
     if (rounds.length > 50) fail('steps', 'раундов не больше 50');
     if (errors.length) return { errors };
@@ -13217,8 +12814,7 @@ window.ProtoState = {
       return [`r${index + 1}-models`, { items }];
     }));
     return { errors, roundCounter: rounds.length, selectedModels, stacks, controls,
-      rounds: rounds.map((step, index) => ({ ref: `r${index + 1}`, participantIds: enabledOf(step).map(idOf), roles: Object.fromEntries(enabledOf(step).map((model) => [idOf(model), model.role || null])) })),
-      synthesizer: finalStep ? (enabledOf(finalStep)[0]?.name || '') : '', inserts };
+      rounds: rounds.map((step, index) => ({ ref: `r${index + 1}`, participantIds: enabledOf(step).map(idOf), roles: Object.fromEntries(enabledOf(step).map((model) => [idOf(model), model.role || null])) })) };
   }
 
   // The run settings as the run takes them: the policy, the shared answer limit and the strict length check of the steps without their own.
@@ -13239,8 +12835,9 @@ window.ProtoState = {
 <script>
 // Обмен схемами между стендом ({ task, steps: [{ id, block, … }] }) и Basic ({ schemaVersion, origin, steps: [{ ref, kind, models }] }).
 // toBasic — экспорт со стенда: файл, который принимает кнопка Import в Basic. fromBasic — импорт файла Basic на стенд.
-// Переносятся round, owner, defaults, run, description. Остальные этапы (file) и исходные артефакты
-// пропускаются с предупреждением. Проверки на стенде нет: шаг gate из файла Basic приходит на стенд обычным раундом.
+// Переносятся round, owner, defaults (roundTask, discipline, modelNotes), run, description. Остальные этапы (file), исходные
+// артефакты и defaults.synthesisTask пропускаются с предупреждением: синтеза в Basic нет, это роль раунда из одной модели.
+// Проверки на стенде нет: шаг gate из старого файла Basic приходит на стенд обычным раундом, шаг synthesis — раундом из одной модели.
 (function initBasicExport(root) {
   'use strict';
 
@@ -13306,7 +12903,8 @@ window.ProtoState = {
     const d = schema.defaults;
     if (isObj(d)) {
       const defaults = {};
-      ['roundTask', 'synthesisTask'].forEach((k) => { if (typeof d[k] === 'string') defaults[k] = d[k]; });
+      if (typeof d.roundTask === 'string') defaults.roundTask = d.roundTask;
+      if (own(d.synthesisTask)) warnings.push('Задание синтеза (defaults.synthesisTask) не перенесено: в Basic синтез — раунд из одной модели с ролью, задание пишется в task этого раунда.');
       if (isObj(d.discipline)) defaults.discipline = d.discipline;
       if (isObj(d.modelNotes)) defaults.modelNotes = d.modelNotes;
       if (Object.keys(defaults).length) result.defaults = defaults;
@@ -13391,7 +12989,7 @@ window.ProtoState = {
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '43';
+  const STAND_VERSION = '44';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -13693,7 +13291,7 @@ window.ProtoState = {
   }
   // Новые поля: предел слов, дисциплина, defaults, run.
   const DISC_KEYS = ['limit', 'content', 'delivery', 'correction', 'lines'];
-  const DEFAULTS_KEYS = ['roundTask', 'synthesisTask', 'discipline', 'modelNotes'];
+  const DEFAULTS_KEYS = ['roundTask', 'discipline', 'modelNotes'];
   const RUN_WORDS = [300, 500, 700, 1000];
   const wordsOf = (v) => {
     const n = typeof v === 'number' ? v : typeof v === 'string' && /^\s*\d+\s*$/.test(v) ? Number(v) : NaN;
@@ -13722,10 +13320,10 @@ window.ProtoState = {
   function checkRoot(schema, add) {
     const d = schema.defaults;
     if (d != null) {
-      if (!isObj(d)) add('warn', null, 'defaults должен быть объектом { roundTask, synthesisTask, discipline, modelNotes }; не применён.');
+      if (!isObj(d)) add('warn', null, 'defaults должен быть объектом { roundTask, discipline, modelNotes }; не применён.');
       else {
         Object.keys(d).filter((k) => !DEFAULTS_KEYS.includes(k)).forEach((k) => add('warn', null, `defaults.${k}: неизвестное поле; допустимы ${DEFAULTS_KEYS.join(', ')}.`));
-        ['roundTask', 'synthesisTask'].forEach((k) => checkText(d, k, 'defaults.', null, add));
+        checkText(d, 'roundTask', 'defaults.', null, add);
         checkDiscipline(d.discipline, 'defaults.', null, add);
         if (d.modelNotes != null) {
           if (!isObj(d.modelNotes)) add('warn', null, 'defaults.modelNotes должен быть объектом { "Claude": "текст", … }; не применён.');
@@ -13868,7 +13466,7 @@ window.ProtoState = {
   }
 
   // ---------- Состояние стенда ----------
-  const DATA_KEYS = ['models', 'defaults', 'run', 'rounds', 'final', 'selectedModel'];
+  const DATA_KEYS = ['models', 'defaults', 'run', 'rounds', 'selectedModel'];
   const stand = { active: false, layout: [], issues: [], flat: [], schema: null, snapshot: null, name: null, current: null, text: '', comment: '' };
 
   // Дисциплина и свои поля модели/синтеза схемы → поля ProtoState.
@@ -13881,7 +13479,7 @@ window.ProtoState = {
   }
   const ownFields = (o) => ({ maxWords: wordsOf(o.maxWords), discipline: disciplineOf(o.discipline) });
 
-  // Схема → ProtoState: раунды и синтезы в порядке списка; layout — колонки холста.
+  // Схема → ProtoState: раунды в порядке списка (синтез — раунд из одной модели); layout — колонки холста.
   function applySchema(schema, flat, issues) {
     const state = S();
     if (!stand.snapshot) {
@@ -13899,7 +13497,6 @@ window.ProtoState = {
     const notes = isObj(d.modelNotes) ? Object.fromEntries(Object.entries(d.modelNotes).filter(([, v]) => own(v)).map(([n, v]) => [n, v.trim()])) : {};
     state.defaults = { ...snapD,
       roundTask: own(d.roundTask) ? d.roundTask.trim() : snapD.roundTask || '',
-      synthesisTask: own(d.synthesisTask) ? d.synthesisTask.trim() : snapD.synthesisTask || '',
       discipline: isObj(d.discipline) ? disciplineOf(d.discipline) : snapD.discipline || state.emptyDiscipline(),
       modelNotes: { ...(snapD.modelNotes || {}), ...notes }, roundPrompts: snapD.roundPrompts || {} };
     const r = isObj(schema.run) ? schema.run : {};
@@ -13923,7 +13520,6 @@ window.ProtoState = {
             return { name: String(m.name || '?'), enabled: true, send: true, role: id || 'None', schemaRole: own(m.role) ? m.role.trim() : '',
               task: [roleLine, own(m.task) ? m.task.trim() : ''].filter(Boolean).join('\n\n'), ...ownFields(m) };
           }),
-          intermediateSynthesis: null,
           artifacts: listOf(st.artifacts).map((a, k) => ({ id: `${st.id}-a${k + 1}`, title: artName(a), version: 1 }))
         });
         col.round = index;
@@ -13932,7 +13528,6 @@ window.ProtoState = {
     });
     // Исходные артефакты крепятся к In: от каждого стрелка к этапу, который берёт его через «in.Имя».
     stand.inDocs = listOf(schema.artifacts).filter((a) => isObj(a) && own(a.name)).map((a) => ({ id: a.name.trim(), title: a.name.trim(), src: a }));
-    state.final = { on: false, model: state.models.includes('Claude') ? 'Claude' : state.models[0], task: '', discipline: state.emptyDiscipline() };
     stand.artTo = {};
     stand.schema = schema;
     stand.flat = flat;
@@ -14217,7 +13812,7 @@ window.ProtoState = {
       return Object.entries(value).map(([k, v]) => (k === 'policy' ? `запуск: ${v}${POLICY_TEXT[v] ? ` (${POLICY_TEXT[v]})` : ''}` : k === 'maxWords' ? `общий предел: ${fmt('maxWords', v)}` : `${k}: ${fmt(k, v)}`)).join('\n');
     }
     if (key === 'defaults' && isObj(value)) {
-      const names = { roundTask: 'задание раундов', synthesisTask: 'задание синтеза', discipline: 'дисциплина', modelNotes: 'особенности моделей' };
+      const names = { roundTask: 'задание раундов', discipline: 'дисциплина', modelNotes: 'особенности моделей' };
       return Object.entries(value).map(([k, v]) => (isObj(v) ? `${names[k] || k}:\n${indent(fmt(k, v))}` : `${names[k] || k}: ${fmt(k, v)}`)).join('\n');
     }
     if (key === 'order') return `${value}${ORDER_TEXT[value] ? ` (${ORDER_TEXT[value]})` : ''}`;
@@ -15023,7 +14618,6 @@ window.ProtoState = {
       "task": "Выбрать технологический стек для внутреннего сервиса заявок",
       "defaults": {
         "roundTask": "Учти ответы предыдущего раунда и улучши своё предложение.",
-        "synthesisTask": "Сведи предложения в одно решение с обоснованием.",
         "discipline": {
           "content": "Пиши по делу: варианты, плюсы, минусы, риски.",
           "lines": [

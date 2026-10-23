@@ -3,7 +3,7 @@
 // toMarkdown(model) renders it. A field is { key, label, value, source }: 'schema' (taken from the schema or derived
 // from it), 'author' (the author's own text of spec, title, goal, rules, quality), 'missing' (no such field, value ''),
 // 'default' (the Basic default task applies; its text is not copied here).
-// The stages are the steps assemble() keeps: a round or a synthesis with an enabled model, and every owner step.
+// The stages are the steps assemble() keeps: a round with an enabled model, and every owner step.
 (function initBasicSpec(root) {
   'use strict';
 
@@ -12,8 +12,8 @@
   // The control kinds assemble() always keeps (the same list as in basic-schema.js).
   const CONTROL_KINDS = ['owner'];
   // The steps whose answer a later step can take as input (an owner's answer is its own text).
-  const ANSWER_KINDS = ['round', 'synthesis', 'owner'];
-  const KIND_LABEL = Object.freeze({ round: 'раунд', synthesis: 'синтез', owner: 'User' });
+  const ANSWER_KINDS = ['round', 'owner'];
+  const KIND_LABEL = Object.freeze({ round: 'раунд', owner: 'User' });
   const SPEC_FIELDS = Object.freeze([
     ['purpose', 'Назначение'], ['inputs', 'Исходные данные'], ['result', 'Итоговый результат'], ['application', 'Применение результата'],
     ['readiness', 'Критерии готовности'], ['rules', 'Общие правила и ограничения'], ['boundaries', 'Границы'], ['failure', 'Поведение при сбое']
@@ -39,7 +39,6 @@
   function autoTitle(step, round) {
     const ref = refOf(step);
     if (step.kind === 'round') return `Раунд ${round.number}`;
-    if (step.kind === 'synthesis') return ref === 'final' ? 'Итоговый синтез' : `Синтез после раунда ${round.after}`;
     if (CONTROL_KINDS.includes(step.kind)) return `${KIND_LABEL[step.kind][0].toUpperCase()}${KIND_LABEL[step.kind].slice(1)} ${ref.slice(ref.indexOf(':') + 1)}`;
     return ref;
   }
@@ -98,7 +97,7 @@
     const whole = SPEC_FIELDS.map(([key, label]) => authorField(log, `spec.${key}`, key, label, spec[key]));
     const rawSteps = Array.isArray(source.steps) ? source.steps.filter(isObject) : [];
     let rounds = 0;
-    const counters = rawSteps.map((step) => { if (step.kind === 'round') rounds += 1; return { number: rounds, after: rounds }; });
+    const counters = rawSteps.map((step) => { if (step.kind === 'round') rounds += 1; return { number: rounds }; });
 
     // Pass 1: the stages, with their participants and titles.
     const entries = [];
@@ -140,7 +139,7 @@
     const stages = entries.map((entry, index) => {
       const step = entry.raw;
       const round = counters[entry.at];
-      const inputSpec = step.input || (step.kind === 'round' ? (round.number === 1 ? 'none' : 'previous') : (step.kind === 'synthesis' ? 'previous' : undefined));
+      const inputSpec = step.input || (step.kind === 'round' ? (round.number === 1 ? 'none' : 'previous') : undefined);
       const sourcesOf = () => {
         if (inputSpec === undefined || inputSpec === 'none') return [];
         if (inputSpec === 'previous') {
@@ -172,9 +171,9 @@
       // The Basic task is sent only when the stage has input: with input none nothing is sent without the owner's text.
       let task = field('task', 'Задание этапа', '', 'missing');
       if (textOf(step.task)) task = field('task', 'Задание этапа', step.task, 'schema');
-      else if (entry.kind === 'round' || entry.kind === 'synthesis') {
+      else if (entry.kind === 'round') {
         if (inputSpec !== 'none') {
-          const shared = textOf(defaults[entry.kind === 'round' ? 'roundTask' : 'synthesisTask']);
+          const shared = textOf(defaults.roundTask);
           task = shared ? field('task', 'Задание этапа', shared, 'schema') : field('task', 'Задание этапа', '', 'default');
         }
       }

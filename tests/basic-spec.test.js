@@ -5,13 +5,13 @@ const fixture = require('./fixtures/basic-architecture-s01-s30.json');
 const SPEC_KEYS = ['purpose', 'inputs', 'result', 'application', 'readiness', 'rules', 'boundaries', 'failure'];
 const byKey = (list, key) => list.find((item) => item.key === key);
 
-// Template A: one round of three models and the final synthesis.
+// Template A: one round of three models and the synthesis: a round of one model with a role.
 const templateA = () => ({
   schemaVersion: 1,
   origin: 'user',
   steps: [
     { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }, { name: 'Claude', role: 'critic' }, { name: 'Gemini', enabled: false }] },
-    { ref: 'final', kind: 'synthesis', models: [{ name: 'Claude' }] }
+    { ref: 'r2', kind: 'round', models: [{ name: 'Claude', role: 'interaction_meta_synthesis' }] }
   ]
 });
 
@@ -32,7 +32,7 @@ describe('Basic spec: the interface and the three layers', () => {
     expect(byKey(model.whole, 'ownerInvolvement')).toMatchObject({ source: 'schema', value: 'User решает после каждого этапа' });
     expect(byKey(model.whole, 'volume').value).toContain('этапов: 2; участников: 2; запросов не меньше 3');
 
-    expect(model.scheme.stages.map((item) => item.title)).toEqual(['Раунд 1', 'Итоговый синтез']);
+    expect(model.scheme.stages.map((item) => item.title)).toEqual(['Раунд 1', 'Раунд 2']);
     expect(model.scheme.links).toEqual([{ from: 1, to: 2, label: 'ответы этапа «Раунд 1»' }]);
 
     const [round, synthesis] = model.stages;
@@ -48,7 +48,10 @@ describe('Basic spec: the interface and the three layers', () => {
     expect(round.title).toMatchObject({ value: 'Раунд 1', source: 'schema' });
     expect(round.goal).toMatchObject({ value: '', source: 'missing' });
 
-    expect(synthesis.title).toMatchObject({ value: 'Итоговый синтез', source: 'schema' });
+    expect(synthesis.title).toMatchObject({ value: 'Раунд 2', source: 'schema' });
+    expect(synthesis.kindLabel).toBe('раунд');
+    expect(synthesis.participants).toEqual([{ name: 'Claude', role: 'interaction_meta_synthesis', id: '', words: 300 }]);
+    expect(synthesis.order.value).toBe('один участник');
     expect(synthesis.input.value).toBe('ответы: «Раунд 1»');
     expect(synthesis.task).toMatchObject({ value: '', source: 'default' });
     expect(synthesis.output.value).toContain('ответ в свободной форме (выход не задан)');
@@ -57,14 +60,14 @@ describe('Basic spec: the interface and the three layers', () => {
 
     expect(model.completeness.total).toBe(8 + 4 * 2);
     expect(model.completeness.filled).toBe(0);
-    expect(model.completeness.missing).toEqual(expect.arrayContaining(['spec.purpose', 'spec.failure', 'r1.title', 'r1.goal', 'final.quality']));
+    expect(model.completeness.missing).toEqual(expect.arrayContaining(['spec.purpose', 'spec.failure', 'r1.title', 'r1.goal', 'r2.quality']));
     expect(model.completeness.missing).toHaveLength(16);
   });
 
   test('toMarkdown: the title, the three layers, stage names, and the mark of a missing field', () => {
     const md = Spec.toMarkdown(Spec.build(templateA(), { name: 'A' }));
     expect(md.startsWith('# Спецификация pipeline «A»')).toBe(true);
-    ['## Pipeline в целом', '## Схема процесса', '## 1. Раунд 1', '## 2. Итоговый синтез'].forEach((heading) => expect(md).toContain(heading));
+    ['## Pipeline в целом', '## Схема процесса', '## 1. Раунд 1', '## 2. Раунд 2'].forEach((heading) => expect(md).toContain(heading));
     expect(md).toContain('- **Назначение:** _не заполнено_');
     expect(md).toContain('- **Задание этапа:** _умолчание Basic_');
     expect(md).toContain('Заполнено полей автора: 0 из 16.');
@@ -194,11 +197,11 @@ describe('Basic spec: the owner, the participants and the stage kinds', () => {
       steps: [
         { ref: 'r1', kind: 'round', models: [{ name: 'A' }, { name: 'B', enabled: false }] },
         { ref: 'r2', kind: 'round', models: [{ name: 'C', enabled: false }] },
-        { ref: 'final', kind: 'synthesis', models: [{ name: 'A' }] }
+        { ref: 'r3', kind: 'round', models: [{ name: 'A' }] }
       ]
     };
     const model = Spec.build(schema);
-    expect(model.stages.map((stage) => stage.ref)).toEqual(['r1', 'final']);
+    expect(model.stages.map((stage) => stage.ref)).toEqual(['r1', 'r3']);
     expect(model.stages[0].participants.map((item) => item.name)).toEqual(['A']);
     expect(byKey(model.whole, 'volume').value).toContain('этапов: 2; участников: 1; запросов не меньше 2');
   });

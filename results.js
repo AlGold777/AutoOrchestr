@@ -3585,7 +3585,6 @@ document.addEventListener('click', (event) => {
             active: '',
             overrides: {
                 longRoundLimits: {},
-                synthesizers: {},
                 profiles: {}
             },
             draftPlans: {}
@@ -3625,7 +3624,7 @@ document.addEventListener('click', (event) => {
             const from = Number(value.version) || 0;
             if (from >= 9) return value;
             const next = JSON.parse(JSON.stringify(value));
-            const nameMaps = () => [next.pipelines, next.draftPlans, next.overrides?.longRoundLimits, next.overrides?.synthesizers, next.overrides?.profiles]
+            const nameMaps = () => [next.pipelines, next.draftPlans, next.overrides?.longRoundLimits, next.overrides?.profiles]
                 .filter((map) => map && typeof map === 'object');
             const taken = (name) => nameMaps().some((map) => name in map) || (Array.isArray(next.order) && next.order.includes(name));
             const renameEverywhere = (fromName, toName) => {
@@ -3661,7 +3660,6 @@ document.addEventListener('click', (event) => {
                 active: '',
                 overrides: {
                     longRoundLimits: {},
-                    synthesizers: {},
                     profiles: {}
                 },
                 draftPlans: {}
@@ -3674,9 +3672,6 @@ document.addEventListener('click', (event) => {
                 : Object.keys(pipelines);
             const storedLongRoundLimits = value.overrides?.longRoundLimits && typeof value.overrides.longRoundLimits === 'object'
                 ? value.overrides.longRoundLimits
-                : {};
-            const storedSynthesizers = value.overrides?.synthesizers && typeof value.overrides.synthesizers === 'object'
-                ? value.overrides.synthesizers
                 : {};
             const storedProfiles = value.overrides?.profiles && typeof value.overrides.profiles === 'object'
                 ? value.overrides.profiles
@@ -3696,9 +3691,6 @@ document.addEventListener('click', (event) => {
                     longRoundLimits: Object.fromEntries(Object.entries(storedLongRoundLimits)
                         .map(([key, value]) => [String(key || '').trim(), String(value || '').trim()])
                         .filter(([key, value]) => key && (value === 'infinite' || Number.isFinite(Number(value))))),
-                    synthesizers: Object.fromEntries(Object.entries(storedSynthesizers)
-                        .map(([key, value]) => [String(key || '').trim(), String(value || '').trim()])
-                        .filter(([key]) => key)),
                     profiles: Object.fromEntries(Object.entries(storedProfiles)
                         .map(([key, value]) => [String(key || '').trim(), String(value || '').trim()])
                         .filter(([key, value]) => key && value))
@@ -3902,11 +3894,6 @@ document.addEventListener('click', (event) => {
             return indices;
         };
 
-        const normalizeExplicitSynthesizer = (value) => {
-            const normalized = String(value || '').trim();
-            return normalized.toLowerCase() === 'auto' ? '' : normalized;
-        };
-
         const getPipelineProtocolConfig = () => {
             const lengthSelect = document.getElementById('debate-length-select');
             const presetId = getSelectedPipelinePresetId();
@@ -3929,10 +3916,6 @@ document.addEventListener('click', (event) => {
                 length: String(lengthSelect?.value || '300'),
                 roundLimit: String(debateRoundLimitSelect?.value || '3'),
                 maxTurns: String(debateMaxTurnsInput?.value || ''),
-                // The persisted DraftPlan owns the terminal stage assignment.
-                // protocol.synthesizer is retained only as a compatibility mirror.
-                synthesizer: getDraftPlanSynthesizer(getActiveDraftPlan())
-                    || normalizeExplicitSynthesizer(activeProtocol.synthesizer),
                 serviceRoles: {},
                 reasoningBudget: Object.assign({}, window.PipelinePresets?.getPipelinePreset?.(presetId)?.reasoningBudget || {
                     class: 'standard',
@@ -3969,12 +3952,8 @@ document.addEventListener('click', (event) => {
             const presetMeta = window.PipelinePresets?.getPipelinePreset?.(protocol.presetId || '') || null;
             const showRounds = presetMeta?.duration === 'open_ended';
             const roundLabel = showRounds && rounds ? `${rounds} stage limit` : '';
-            const synthValue = window.ResultsDebateUi?.getProtocolSynthesizer
-                ? window.ResultsDebateUi.getProtocolSynthesizer(protocol)
-                : protocol.synthesizer;
-            const synth = synthValue ? `Synthesizer: ${synthValue}` : '';
             const budget = protocol.reasoningBudget?.class ? `Budget: ${protocol.reasoningBudget.class}` : '';
-            return [llmLabel, policy, budget, roundLabel, synth].filter(Boolean).join(' · ');
+            return [llmLabel, policy, budget, roundLabel].filter(Boolean).join(' · ');
         };
 
         const formatReasoningBudgetLabel = (budget = {}) => {
@@ -3993,8 +3972,7 @@ document.addEventListener('click', (event) => {
                 ? protocol.selectedModels.join(', ')
                 : 'selected models';
             const rounds = String(protocol.roundLimit || pipelineConfig.roundCounter || '').trim();
-            const ending = protocol.synthesizer ? ` Synthesis: ${protocol.synthesizer}.` : ' Completion is rule-driven.';
-            return `Universal pipeline with planner-selected sequential or parallel stages${rounds ? `, limit ${rounds}` : ''}.${ending} Participants: ${models}.`;
+            return `Universal pipeline with planner-selected sequential or parallel stages${rounds ? `, limit ${rounds}` : ''}. Completion is rule-driven. Participants: ${models}.`;
         };
 
         const updateActivePipelineDescription = (name = '') => {
@@ -4034,58 +4012,6 @@ document.addEventListener('click', (event) => {
                 delete indicator.dataset.statusFinal;
             });
         };
-
-        const syncSynthesizerBlocks = () => {
-            if (!pipelinePanel) return;
-            const synthesizer = getDraftPlanSynthesizer(draftPlanForCanvas(getActiveDraftPlan()));
-            const flowSelect = getSynthesizerFlowSelect();
-            if (flowSelect && flowSelect.value !== synthesizer) flowSelect.value = synthesizer;
-            // The final synthesizer is its own «Synthesis» block (renderSynthesisStage). Round model blocks keep their design.
-        };
-
-        const hasSelectedPipelineModels = () => getSelectedLLMs().length > 0;
-
-        const setSynthesisModelFromName = (modelName = '') => {
-            const trimmed = normalizeExplicitSynthesizer(modelName);
-            if (!hasSelectedPipelineModels()) return false;
-            const flowSelect = getSynthesizerFlowSelect();
-            if (!flowSelect) renderSynthesisStage();
-            const resolvedFlowSelect = getSynthesizerFlowSelect();
-            if (trimmed && !Array.from(resolvedFlowSelect?.options || []).some((option) => option.value === trimmed)) return false;
-            if (resolvedFlowSelect) resolvedFlowSelect.value = trimmed;
-            let draftPlan = draftPlanForCanvas(getActiveDraftPlan());
-            const finalStage = draftPlan.plannedStages?.find((stage) => stage.plannedStageId === 'planned-final-synthesis');
-            if (finalStage) {
-                const updated = window.DebateDraftPlan?.setStageParticipants?.(draftPlan, finalStage.plannedStageId, trimmed ? [trimmed] : []);
-                // An empty final assignment intentionally removes the final stage;
-                // explicit intermediate stages remain valid persisted data but + is gated.
-                if (updated?.ok) draftPlan = updated.plan;
-                else if (!trimmed) {
-                    draftPlan.plannedStages = draftPlan.plannedStages.filter((stage) => stage.plannedStageId !== 'planned-final-synthesis');
-                }
-            }
-            persistActiveDraftPlan(draftPlan);
-            // An explicit choice (including OFF) replaces the seed of a new pipeline, which would otherwise win over ''.
-            delete window.__pendingPipelineSynthesizer;
-            const activeName = String(pipelineStore.active || getPipelineHeaderName()).trim();
-            const activeConfig = activeName ? getPipelineConfigByName(activeName) : null;
-            if (activeConfig?.protocol) {
-                if (!isDefaultPipelineName(activeName)) {
-                    const storedConfig = pipelineStore.pipelines[activeName];
-                    if (storedConfig?.protocol) storedConfig.protocol.synthesizer = trimmed;
-                }
-                persistPipelineStore();
-                renderPipelineList(pipelineStore.order, activeName, pipelineStore.lastSaved);
-            }
-            syncSynthesizerBlocks();
-            syncSynthesizerFlowStage();
-            renderDraftPlanCanvas?.();
-            updatePipelineAll();
-            return true;
-        };
-        window.setSynthesisModelFromName = setSynthesisModelFromName;
-
-
 
         const setHeaderSelectedLLMsFromNames = (modelNames = []) => {
             if (!Array.isArray(modelNames)) return false;
@@ -4174,42 +4100,6 @@ document.addEventListener('click', (event) => {
             if (entryWrapper) {
                 entryWrapper.style.height = `${height}px`;
             }
-
-            // Flexbox centers the whole terminal column, including its stage
-            // title. A model column is much taller, so align the visible
-            // synthesis stack body against the last model stack instead.
-            const terminalColumns = [
-                { column: synthesisColumn, stack: synthesisStack },
-                ...Array.from(pipelinePanel.querySelectorAll('.stage-column.pipeline-intermediate-synth'))
-                    .map((column) => ({ column, stack: column.querySelector('.model-stack') }))
-            ];
-            const modelStacks = stacks.filter((stack) => (
-                stack.classList.contains('model-stack') && stack !== synthesisStack && !stack.closest('.pipeline-intermediate-synth') && !stack.closest('.pipeline-control-step')
-            ));
-            const referenceStack = modelStacks[modelStacks.length - 1] || null;
-            if (!referenceStack) return { aligned: false, reason: 'no-reference-stack' };
-            const referenceRect = referenceStack.getBoundingClientRect();
-            if (!referenceRect.height) return { aligned: false, reason: 'zero-reference-height', referenceId: referenceStack.id };
-            const referenceCenter = referenceRect.top + (referenceRect.height / 2);
-            const appliedOffsets = {};
-            terminalColumns.forEach(({ column, stack }) => {
-                if (!column || !stack || isHiddenFromPipelineLayout(column) || isHiddenFromPipelineLayout(stack)) return;
-                const stackRect = stack.getBoundingClientRect();
-                if (!stackRect.height) return;
-                const currentOffset = Number.parseFloat(column.style.getPropertyValue('--pipeline-terminal-offset')) || 0;
-                const naturalStackCenter = (stackRect.top + (stackRect.height / 2)) - currentOffset;
-                const offset = Math.round((referenceCenter - naturalStackCenter) * 100) / 100;
-                if (Math.abs(offset - currentOffset) > 0.1) {
-                    column.style.setProperty('--pipeline-terminal-offset', `${offset}px`);
-                }
-                appliedOffsets[column.id || stack.id] = offset;
-            });
-            return {
-                aligned: Object.keys(appliedOffsets).length > 0,
-                referenceId: referenceStack.id,
-                referenceCenter,
-                offsets: appliedOffsets
-            };
         };
 
         const captureModelStackState = (stackId) => {
@@ -4230,34 +4120,17 @@ document.addEventListener('click', (event) => {
                     participantBindings: (stack?.items || []).filter((item) => item.send).map((item) => ({ participantId: item.name, promptId: item.role || null }))
                 });
             }
-            const selectedFromExisting = (existingPlan?.plannedStages || [])
-                .find((stage) => stage.plannedStageId === 'planned-final-synthesis')?.participantIds?.[0] || '';
-            const selectedFromFlow = normalizeExplicitSynthesizer(
-                getSynthesizerFlowSelect?.()?.value || window.__pendingPipelineSynthesizer
-            );
-            // Only a pipeline without any stored synthesizer decision (no plan, no persisted choice) starts with the default.
-            const hasSynthesizerDecision = !!existingPlan || window.__pendingPipelineSynthesizer !== undefined;
-            const defaultSynthesizer = hasSynthesizerDecision ? '' : (window.__getDefaultSynthesizerName?.() || '');
-            let plan = window.DebateDraftPlan?.createCanvasPlan?.({
+            // The plan is the rounds of the canvas only: a synthesis is a round of one model with a role.
+            return window.DebateDraftPlan?.createCanvasPlan?.({
                 planId: `canvas-${String(pipelineStore.active || 'unsaved').replace(/[^a-z0-9_-]+/gi, '-')}`,
                 revision: Number(existingPlan?.revision || 0),
-                rounds,
-                synthesizer: selectedFromExisting || selectedFromFlow || defaultSynthesizer
+                rounds
             }) || { plannedStages: [] };
-            // Reapply explicitly authored intermediate stages after rebuilding
-            // Canvas-owned stages, preserving their IDs and assignments.
-            (existingPlan?.plannedStages || []).filter((stage) => stage.outputIntent === 'working_synthesis').forEach((stage) => {
-                const inserted = window.DebateDraftPlan?.insertSynthesis?.(plan, {
-                    afterPlannedStageId: stage.upstream?.[0], participantIds: stage.participantIds, plannedStageId: stage.plannedStageId
-                });
-                if (inserted?.ok) plan = inserted.plan;
-            });
-            return plan;
         };
 
         // The visible header becomes the task on Run; it is not a stable pipeline identity.
         // The unsaved pipeline has one key whether or not its header shows «Unsaved Pipeline», so its
-        // draft (including an explicit Final OFF) is found again after a reload, when the header is empty.
+        // draft is found again after a reload, when the header is empty.
         const draftPlanStorageKey = () => {
             const headerName = pipelineName?.dataset.fullName === 'Unsaved Pipeline' ? '' : (pipelineName?.dataset.fullName || '');
             return String(pipelineStore.active || headerName || 'unsaved').trim() || 'unsaved';
@@ -4279,7 +4152,6 @@ document.addEventListener('click', (event) => {
             const storedConfig = pipelineStore.pipelines?.[key];
             if (storedConfig) {
                 storedConfig.draftPlan = normalized;
-                if (storedConfig.protocol) storedConfig.protocol.synthesizer = getDraftPlanSynthesizer(normalized);
                 // A saved Basic pipeline is rebuilt from the canvas through its schema, so the plan and the schema agree.
                 // Not while a pipeline is being applied (the plan restored after an apply is the canvas, not an edit), and only when
                 // the cards of this pipeline are loaded.
@@ -4290,20 +4162,10 @@ document.addEventListener('click', (event) => {
             return true;
         };
 
-        const getDraftPlanSynthesizer = (plan = null) => normalizeExplicitSynthesizer(
-            (plan?.plannedStages || []).find((stage) => stage.plannedStageId === 'planned-final-synthesis')?.participantIds?.[0]
-        );
-        // Default synthesizer for a fresh pipeline and for new intermediate syntheses: Claude, else the first model.
-        const getDefaultSynthesizerName = () => {
-            const names = (Array.isArray(PipelineRuntime?.MODELS) ? PipelineRuntime.MODELS : []).map((model) => model?.name).filter(Boolean);
-            return names.includes('Claude') ? 'Claude' : (names[0] || '');
-        };
-        window.__getDefaultSynthesizerName = getDefaultSynthesizerName;
         window.__pipelineDraftPlanForCanvas = draftPlanForCanvas;
         window.__updatePipelineAll = () => updatePipelineAll();
         window.__getActivePipelineDraftPlan = getActiveDraftPlan;
         window.__persistActivePipelineDraftPlan = persistActiveDraftPlan;
-        window.__getDraftPlanSynthesizer = getDraftPlanSynthesizer;
 
         // Saved copies keep their card settings; built-in templates keep edits only in this page.
         const customPipelineDefaults = new Map();
@@ -4351,7 +4213,7 @@ document.addEventListener('click', (event) => {
             }
         };
         // The control steps (owner) of a Basic pipeline: [{ after, step }], where `after` is the ref of the step
-        // before it on the canvas (a round, an intermediate synthesis or another control). The step is kept whole, as the
+        // before it on the canvas (a round or another control). The step is kept whole, as the
         // schema has it; a window edits some of its fields (StageCard). Placed after `after` by placeControls.
         const customControls = new Map();
         const getCustomControls = () => customControls.get(draftPlanStorageKey()) || [];
@@ -4368,7 +4230,7 @@ document.addEventListener('click', (event) => {
                 await persistPipelineStore();
             }
         };
-        // The refs a window may name as a target: the steps of the schema in their order, the final synthesis included.
+        // The refs a window may name as a target: the steps of the schema in their order.
         const schemaRefsForWindows = () => (basicSchemaFromPage(draftPlanForCanvas(getActiveDraftPlan()), null, { forSave: true }).steps || []).map((step) => step.ref);
         // The next free ref of a kind: kind:1, kind:2, … (ids are digits, so the schema accepts them).
         const freshControlRef = (kind) => {
@@ -4391,10 +4253,6 @@ document.addEventListener('click', (event) => {
         // after the new one, so the chain stays a line. A new control is a draft (not persisted) until its window is filled.
         const insertControlAfter = async (anchor, kind) => {
             if (pipelineRunActive || !CONTROL_KINDS_CANVAS.includes(kind)) return false;
-            if (intermediateAfterRound(anchor)) {
-                showNotification(INTERMEDIATE_CONTROL_NOTE, 'warn');
-                return false;
-            }
             const ref = freshControlRef(kind);
             const list = getCustomControls().map((item) => (item.after === anchor ? { ...item, after: ref } : item));
             // A new control is empty: what the owner has not set is not written (a missing task is an error).
@@ -4412,36 +4270,27 @@ document.addEventListener('click', (event) => {
             await setCustomControls(next);
             updatePipelineAll();
         };
-        // The canvas has an intermediate synthesis right after this round: a control there is refused (the schema
-        // needs the synthesis to stand directly after the round and before the next one).
-        const intermediateAfterRound = (anchor) => (draftPlanForCanvas(getActiveDraftPlan()).plannedStages || []).some((stage) => stage.outputIntent === 'working_synthesis' && stage.upstream?.includes(`canvas-${anchor}`));
-        const INTERMEDIATE_CONTROL_NOTE = 'Между раундом и его промежуточным синтезом шаг User не ставят: синтез стоит сразу после раунда и перед следующим раундом. Уберите синтез или шаг User.';
-        // The card of a round or a synthesis keeps the choices the schema does not hold yet as drafts, by pipeline and ref:
+        // The card of a round keeps the choices the schema does not hold yet as drafts, by pipeline and ref:
         // «выбранные этапы» before a step is picked, «число» before a number is typed. A draft shows until the owner makes the value.
         const stepDrafts = new Map();
         const stepDraftsOf = (ref) => stepDrafts.get(`${draftPlanStorageKey()}\n${ref}`) || {};
         const stepLabel = (ref) => {
             const round = /^r(\d+)$/.exec(ref);
-            if (round) return `Раунд ${round[1]}`;
-            const after = /^synth:planned-working-synthesis-after-canvas-r(\d+)$/.exec(ref);
-            if (after) return `Синтез после раунда ${after[1]}`;
-            return ref.startsWith('synth:') ? `Синтез (${ref.slice('synth:'.length)})` : ref;
+            return round ? `Раунд ${round[1]}` : ref;
         };
-        // The rounds and syntheses before a step, in the schema's order; a switched-off one is marked by enabled.
-        // A planned intermediate synthesis that is not on the canvas stands after its round.
+        // The rounds before a step, in the schema's order; a switched-off one is marked by enabled.
         const stepsBefore = (ref) => {
             const steps = (basicSchemaFromPage(draftPlanForCanvas(getActiveDraftPlan()), null, { forSave: true }).steps || [])
-                .filter((step) => step.kind === 'round' || step.kind === 'synthesis');
-            const planned = /^synth:planned-working-synthesis-after-canvas-r(\d+)$/.exec(ref);
+                .filter((step) => step.kind === 'round');
             let end = steps.findIndex((step) => step.ref === ref);
-            if (end < 0) end = planned ? steps.findIndex((step) => step.ref === `r${planned[1]}`) + 1 : steps.length;
-            return steps.slice(0, Math.max(0, end)).filter((step) => step.ref !== 'final').map((step) => ({
+            if (end < 0) end = steps.length;
+            return steps.slice(0, Math.max(0, end)).map((step) => ({
                 ref: step.ref,
                 label: stepLabel(step.ref),
                 enabled: (step.models || []).some((model) => model.enabled !== false)
             }));
         };
-        // A change of a field in the card of a step (the round card, the synthesis window). The value goes to the schema's field
+        // A change of a field in the card of a round. The value goes to the schema's field
         // (saved at once, like the round card); a choice without a value yet is a draft. max: the number of enabled models.
         const commitStepField = async (ref, field, value, max = 0) => {
             const current = getCustomRoundSettings()[ref] || {};
@@ -4478,7 +4327,7 @@ document.addEventListener('click', (event) => {
             const draftPlan = draftPlanForCanvas(getActiveDraftPlan());
             const config = {
                 version: 3,
-                protocol: { ...getPipelineProtocolConfig(), synthesizer: getDraftPlanSynthesizer(draftPlan) },
+                protocol: getPipelineProtocolConfig(),
                 draftPlan,
                 roundCounter,
                 modelStacks
@@ -4534,7 +4383,6 @@ document.addEventListener('click', (event) => {
             length = '700',
             roundLimit = '3',
             selectedModels = [],
-            synthesizer = '',
             reasoningBudget = window.PipelinePresets?.REASONING_BUDGETS?.VERDICT_STANDARD || {},
             roundPlan = [],
             roles = ['critical', 'meta'],
@@ -4564,7 +4412,6 @@ document.addEventListener('click', (event) => {
                     length,
                     roundLimit: String(roundLimit),
                     maxTurns: '',
-                    synthesizer,
                     reasoningBudget: normalizeReasoningBudget(reasoningBudget),
                     contextPolicy,
                     stageRoles,
@@ -4576,7 +4423,6 @@ document.addEventListener('click', (event) => {
                     roles: roles.slice(),
                     // A fixed preset's round plan is deliberately explicit: each
                     // wave emits these artifacts and hands them to the next wave.
-                    // Final Synthesis is a separate terminal stage, never Rn.
                     roundPlan: roundPlan.map((outputs, index) => ({
                         round: index + 1,
                         outputs: Array.isArray(outputs) ? outputs.slice() : []
@@ -4602,7 +4448,6 @@ document.addEventListener('click', (event) => {
                     roundLimit: definition.roundLimit,
                     selectedModels,
                     models: selectedModels,
-                    synthesizer: definition.synthesizer || '',
                     reasoningBudget: definition.reasoningBudget,
                     roundPlan: definition.roundPlan || [],
                     roles: definition.roles || ['critical', 'meta'],
@@ -4637,11 +4482,6 @@ document.addEventListener('click', (event) => {
             const value = pipelineStore.overrides?.longRoundLimits?.[key];
             return value ? normalizeRoundLimitValue(value, '') : '';
         };
-        const getSynthesizerOverride = (name) => {
-            const key = String(name || '').trim();
-            if (isDefaultPipelineName(key)) return '';
-            return normalizeExplicitSynthesizer(pipelineStore.overrides?.synthesizers?.[key]);
-        };
         const getProfileOverride = (name) => {
             const key = String(name || '').trim();
             if (isDefaultPipelineName(key)) return '';
@@ -4662,8 +4502,6 @@ document.addEventListener('click', (event) => {
             const config = clonePipelineConfig(defaults[key] || null);
             if (!config?.protocol) return config;
             applyRoundLimitToPipelineConfig(config, getLongRoundLimitOverride(key) || config.protocol.roundLimit || '3');
-            const synthesizer = getSynthesizerOverride(key);
-            config.protocol.synthesizer = synthesizer;
             const profileId = getProfileOverride(key);
             if (profileId) {
                 const profile = window.DebateProfileSchema?.BUILTIN_PROFILES?.[profileId];
@@ -4710,7 +4548,7 @@ document.addEventListener('click', (event) => {
                 pipelineStore.order = defaultNames.slice();
             pipelineStore.active = '';
             pipelineStore.lastSaved = '';
-                pipelineStore.overrides = { longRoundLimits: {}, synthesizers: {}, profiles: {} };
+                pipelineStore.overrides = { longRoundLimits: {}, profiles: {} };
                 pipelineStore.version = PIPELINE_STORE_VERSION;
                 return true;
             }
@@ -4763,15 +4601,11 @@ document.addEventListener('click', (event) => {
                 changed = true;
             }
             if (!pipelineStore.overrides || typeof pipelineStore.overrides !== 'object') {
-                pipelineStore.overrides = { longRoundLimits: {}, synthesizers: {}, profiles: {} };
+                pipelineStore.overrides = { longRoundLimits: {}, profiles: {} };
                 changed = true;
             }
             if (!pipelineStore.overrides.longRoundLimits || typeof pipelineStore.overrides.longRoundLimits !== 'object') {
                 pipelineStore.overrides.longRoundLimits = {};
-                changed = true;
-            }
-            if (!pipelineStore.overrides.synthesizers || typeof pipelineStore.overrides.synthesizers !== 'object') {
-                pipelineStore.overrides.synthesizers = {};
                 changed = true;
             }
             if (!pipelineStore.overrides.profiles || typeof pipelineStore.overrides.profiles !== 'object') {
@@ -4784,7 +4618,7 @@ document.addEventListener('click', (event) => {
                     changed = true;
                 }
                 delete pipelineSessionDraftPlans[name];
-                ['longRoundLimits', 'synthesizers', 'profiles'].forEach((key) => {
+                ['longRoundLimits', 'profiles'].forEach((key) => {
                     if (Object.prototype.hasOwnProperty.call(pipelineStore.overrides[key], name)) {
                         delete pipelineStore.overrides[key][name];
                         changed = true;
@@ -4962,16 +4796,9 @@ document.addEventListener('click', (event) => {
                 if (mode === 'input') return getModelInputIndices(stackId);
                 if (mode === 'send') return getModelSendIndices(stackId);
                 if (mode === 'all') {
-                    // Single-card stacks (intermediate synthesis): every child is an endpoint.
+                    // Single-card stacks (an owner step): every child is an endpoint.
                     const stack = document.getElementById(stackId);
                     return stack ? Array.from(stack.children).map((_, index) => index) : [];
-                }
-                if (mode === 'synthesis') {
-                    const stack = document.getElementById(stackId);
-                    if (!stack || !hasSelectedPipelineModels()) return [];
-                    return Array.from(stack.children)
-                        .map((block, index) => block.classList.contains('selected-synthesizer') ? index : -1)
-                        .filter((index) => index >= 0);
                 }
                 return [];
             };
@@ -4987,10 +4814,10 @@ document.addEventListener('click', (event) => {
                     .map((block) => Array.from(stack.children).indexOf(block))
                     .filter((index) => index >= 0 && !activeSet.has(index));
             };
-            const inactiveSourceIndices = (sourceMode === 'send' || sourceMode === 'input' || sourceMode === 'synthesis')
+            const inactiveSourceIndices = (sourceMode === 'send' || sourceMode === 'input')
                 ? inactiveIndicesFor(sourceStack, sourceIndices, '.model-block')
                 : [];
-            const inactiveTargetIndices = (targetMode === 'input' || targetMode === 'synthesis')
+            const inactiveTargetIndices = targetMode === 'input'
                 ? inactiveIndicesFor(targetStack, targetIndices, '.model-block')
                 : [];
 
@@ -5067,20 +4894,14 @@ document.addEventListener('click', (event) => {
                     label.appendChild(chip);
                 }
                 chip.textContent = '⏳ filter';
-                chip.title = `After R${round} the synthesizer runs a filter pass producing: ${outputs.join(', ')}`;
+                chip.title = `After R${round} a filter pass produces: ${outputs.join(', ')}`;
             });
-            const synthesisLabel = synthesisColumn?.querySelector('.stage-label');
-            if (synthesisLabel) {
-                synthesisLabel.title = 'After the last wave, Final Synthesis runs only when a synthesizer is selected.';
-            }
         };
 
         // The control steps on the canvas (customControls): a card column placed right after its anchor (a round or the control
         // before it), with the link that leads into it. Rebuilt from the list on each update, so the canvas shows the list.
         // The outgoing link of a chain (the group that followed the anchor) now leads from the last control to the next step.
         const controlledAfter = (ref) => getCustomControls().some((item) => item.after === ref);
-        // The bridge for the synthesis toggle (outside this block): a control after the round refuses an intermediate synthesis.
-        window.__controlledAfter = controlledAfter;
         const buildControlColumn = (step, editable) => {
             const column = document.createElement('div');
             column.className = 'stage-column pipeline-control-step';
@@ -5126,7 +4947,7 @@ document.addEventListener('click', (event) => {
             const drawn = [];
             for (let round = 1; round <= roundCounter; round += 1) {
                 let anchor = `r${round}`;
-                let column = pipelinePanel.querySelector(`.stage-column[data-round="${round}"]:not(.pipeline-intermediate-synth):not(.pipeline-control-step)`);
+                let column = pipelinePanel.querySelector(`.stage-column[data-round="${round}"]:not(.pipeline-control-step)`);
                 let item = byAfter.get(anchor);
                 let last = null;
                 while (item && column && !placed.has(item.step.ref)) {
@@ -5145,8 +4966,7 @@ document.addEventListener('click', (event) => {
                 if (last) last.round = round;
                 if (last) drawn.push({ outgoing: true, column: last.column, round });
             }
-            // Links: into each control from its anchor; out of the last control of a chain to the next round or the synthesis.
-            const hasSynthesisFlow = !!synthesisStack && synthesisColumn?.hidden !== true;
+            // Links: into each control from its anchor; out of the last control of a chain to the next round.
             drawn.forEach((link) => {
                 if (!link.outgoing) {
                     const source = /^r\d+$/.test(link.from) ? `${link.from}-models` : controlStackId(link.from);
@@ -5161,92 +4981,15 @@ document.addEventListener('click', (event) => {
                 const source = controlStackId(link.column.dataset.controlRef);
                 if (link.round < roundCounter) {
                     drawMergeSplitConnector(outgoing.id, source, `r${link.round + 1}-models`, 'brain-flow', { sourceMode: 'all', targetMode: 'input' });
-                } else if (hasSynthesisFlow) {
-                    drawMergeSplitConnector(outgoing.id, source, 'synthesis-stack', 'brain-flow', { sourceMode: 'all', targetMode: 'synthesis' });
                 }
             });
-        };
-
-        // Intermediate synthesis (working_synthesis stage upstream of canvas-rK)
-        // is a single card column between round K and round K+1. The original
-        // K->K+1 connector keeps its id (svg-rK-rK+1) and now ends at the card;
-        // a second connector (svg-synth-rK-rK+1) leaves it toward round K+1.
-        // Returns the set of rounds K that currently have a card.
-        const syncIntermediateSynthColumns = () => {
-            const synthRounds = new Set();
-            if (!pipelinePanel) return synthRounds;
-            const plan = window.__pipelineDraftPlanForCanvas?.(window.__getActivePipelineDraftPlan?.()) || { plannedStages: [] };
-            // Each round K maps to its intermediate stage; the stage's own model is shown and edited in its card.
-            const wanted = new Map();
-            (plan.plannedStages || []).forEach((stage) => {
-                if (stage?.outputIntent !== 'working_synthesis') return;
-                const match = (stage.upstream || []).map((id) => /^canvas-r(\d+)$/.exec(String(id))).find(Boolean);
-                const round = match ? Number(match[1]) : 0;
-                if (round >= 1 && round < roundCounter) wanted.set(round, stage);
-            });
-            // While the card exists, round K's insert button sits in the card header (its center line); it goes back when the card is removed.
-            const moveInsertButton = (round, host) => {
-                const button = pipelinePanel.querySelector(`.pipeline-stage-insert[data-after-stage-id="canvas-r${round}"]`);
-                if (button && host && button.parentElement !== host) host.appendChild(button);
-            };
-            const roundHostFor = (round) => pipelinePanel.querySelector(`.stage-column[data-round="${round}"]:not(.pipeline-intermediate-synth) > .stage-header-row`)
-                || pipelinePanel.querySelector(`.stage-column[data-round="${round}"]:not(.pipeline-intermediate-synth)`);
-            pipelinePanel.querySelectorAll('.pipeline-intermediate-synth').forEach((el) => {
-                const round = Number(el.dataset.synthAfterRound || 0);
-                if (wanted.has(round)) return;
-                moveInsertButton(round, roundHostFor(round));
-                el.remove();
-            });
-            const editable = true;
-            wanted.forEach((stage, round) => {
-                let column = pipelinePanel.querySelector(`.stage-column.pipeline-intermediate-synth[data-synth-after-round="${round}"]`);
-                if (!column) {
-                    const leftGroup = document.getElementById(`svg-r${round}-r${round + 1}`)?.closest('.connector-group');
-                    if (!leftGroup) return;
-                    leftGroup.insertAdjacentHTML('afterend', `
-                        <div class="stage-column pipeline-intermediate-synth" data-round="${round + 1}" data-synth-after-round="${round}">
-                            <div class="pipeline-intermediate-synth-header"></div>
-                            <div class="model-stack" id="synth-r${round}-stack">
-                                <div class="model-block inactive pipeline-synthesis-block selected-synthesizer">
-                                    <div class="model-header">
-                                        <span class="status-indicator" aria-hidden="true"></span>
-                                        <span class="model-name">Synthesis</span>
-                                    </div>
-                                    <select class="synthesis-flow-select" aria-label="Intermediate synthesis model"></select>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="connector-group pipeline-intermediate-synth" data-round="${round + 1}" data-synth-after-round="${round}">
-                            <svg class="connector-svg" id="svg-synth-r${round}-r${round + 1}"></svg>
-                        </div>
-                    `);
-                    column = leftGroup.nextElementSibling;
-                    const select = column.querySelector('select.synthesis-flow-select');
-                    const modelNames = (Array.isArray(PipelineRuntime?.MODELS) ? PipelineRuntime.MODELS : []).map((model) => model?.name).filter(Boolean);
-                    select.append(...modelNames.map((name) => new Option(name, name)));
-                    select.addEventListener('change', () => window.__setIntermediateSynthesisModel?.(`canvas-r${round}`, select.value));
-                }
-                // The label stays «Synthesis»; the chosen model is only the select's value.
-                const modelName = stage.participantIds?.[0] || '';
-                const select = column.querySelector('select.synthesis-flow-select');
-                if (select) {
-                    if (select.value !== modelName) select.value = modelName;
-                    select.disabled = !editable;
-                }
-                moveInsertButton(round, column.querySelector('.pipeline-intermediate-synth-header'));
-                synthRounds.add(round);
-            });
-            return synthRounds;
         };
 
         let deferredPipelineLayoutFrame = 0;
         const updatePipelineAll = ({ deferFinalLayout = true } = {}) => {
             syncControlColumns();
-            const synthRounds = syncIntermediateSynthColumns();
             updatePipelineLayout();
             syncCustomRoleOption();
-            // Round add/remove changes which insert gaps exist (the one after the last round is hidden).
-            window.__syncStageInsertControls?.();
             pipelinePanel.querySelectorAll('.model-block').forEach((block) => {
                 const inputCb = block.querySelector('.model-input-checkbox');
                 const sendCb = block.querySelector('.model-send-checkbox');
@@ -5275,51 +5018,17 @@ document.addEventListener('click', (event) => {
                 }
             });
 
-            const hasActivePipelineModel = hasSelectedPipelineModels();
             pipelineCanvas?.classList.remove('pipeline-canvas-empty');
 
             drawInputSplitConnector('svg-in-models', 'r1-models', 'active');
 
-            const hasSynthesisFlow = !!synthesisStack && synthesisColumn?.hidden !== true;
-
-            if (roundCounter === 1) {
-                if (hasSynthesisFlow && !controlledAfter('r1')) {
-                    drawMergeSplitConnector('svg-r-last-synthesis', 'r1-models', 'synthesis-stack', 'brain-flow', {
-                        sourceMode: 'send',
-                        targetMode: 'synthesis'
-                    });
-                }
-            } else {
-                for (let r = 1; r < roundCounter; r++) {
-                    if (controlledAfter(`r${r}`)) continue;
-                    if (synthRounds.has(r)) {
-                        drawMergeSplitConnector(`svg-r${r}-r${r + 1}`, `r${r}-models`, `synth-r${r}-stack`, 'brain-flow', {
-                            sourceMode: 'send',
-                            targetMode: 'all'
-                        });
-                        drawMergeSplitConnector(`svg-synth-r${r}-r${r + 1}`, `synth-r${r}-stack`, `r${r + 1}-models`, 'brain-flow', {
-                            sourceMode: 'all',
-                            targetMode: 'input'
-                        });
-                    } else {
-                        drawMergeSplitConnector(`svg-r${r}-r${r + 1}`, `r${r}-models`, `r${r + 1}-models`, 'brain-flow', {
-                            sourceMode: 'send',
-                            targetMode: 'input'
-                        });
-                    }
-                }
-                if (hasSynthesisFlow && !controlledAfter(`r${roundCounter}`)) {
-                    drawMergeSplitConnector('svg-r-last-synthesis', `r${roundCounter}-models`, 'synthesis-stack', 'brain-flow', {
-                        sourceMode: 'send',
-                        targetMode: 'synthesis'
-                    });
-                }
+            for (let r = 1; r < roundCounter; r++) {
+                if (controlledAfter(`r${r}`)) continue;
+                drawMergeSplitConnector(`svg-r${r}-r${r + 1}`, `r${r}-models`, `r${r + 1}-models`, 'brain-flow', {
+                    sourceMode: 'send',
+                    targetMode: 'input'
+                });
             }
-            syncSynthesizerBlocks();
-            pipelinePanel.querySelectorAll('.pipeline-synthesis-block').forEach((block) => {
-                const isActive = hasActivePipelineModel && block.classList.contains('selected-synthesizer');
-                block.classList.toggle('inactive', !isActive);
-            });
             syncRoundFilterChips();
             syncPipelineFlowVisualState();
             syncPipelineRunStateVisuals();
@@ -5381,11 +5090,7 @@ document.addEventListener('click', (event) => {
             if (customRunProgress) return customRunProgress;
             return null;
         };
-        const pipelinePlannedStageIdFor = (column) => {
-            if (column.classList.contains('pipeline-intermediate-synth')) return `planned-working-synthesis-after-canvas-r${column.dataset.synthAfterRound}`;
-            if (column.id === 'synthesisColumn') return 'planned-final-synthesis';
-            return column.dataset.plannedStageId || (column.dataset.round ? `canvas-r${column.dataset.round}` : '');
-        };
+        const pipelinePlannedStageIdFor = (column) => column.dataset.plannedStageId || (column.dataset.round ? `canvas-r${column.dataset.round}` : '');
         const syncPipelineRunStateVisuals = (engineState = readPipelineEngineState()) => {
             if (!pipelinePanel) return;
             const lifecycle = String(engineState?.lifecycle || 'IDLE').toUpperCase();
@@ -5412,8 +5117,7 @@ document.addEventListener('click', (event) => {
                 const state = stateOfColumn(column);
                 column.querySelectorAll('.model-block').forEach((block) => {
                     Object.keys(PIPELINE_RUN_STATE_RANK).forEach((name) => block.classList.remove(`pipeline-run-${name}`));
-                    // A synthesis block's inactive class only means "not selected now": it still shows the stage state.
-                    const inRun = !block.classList.contains('inactive') || block.classList.contains('pipeline-synthesis-block');
+                    const inRun = !block.classList.contains('inactive');
                     if (state && inRun) block.classList.add(`pipeline-run-${state}`);
                 });
             });
@@ -5629,7 +5333,6 @@ document.addEventListener('click', (event) => {
             const roundLimit = getDebateRoundLimit();
             if (isDefaultPipelineName(activeName)) {
                 delete pipelineStore.overrides?.longRoundLimits?.[activeName];
-                delete pipelineStore.overrides?.synthesizers?.[activeName];
                 renderPipelineList(pipelineStore.order, activeName, pipelineStore.lastSaved);
                 return true;
             }
@@ -6562,9 +6265,8 @@ document.addEventListener('click', (event) => {
             return topic;
         };
         // Custom (disput/custom-engine.js): the shared pipeline engine. The canvas gives the steps
-        // in plan order: round cards (their models) and synthesis stages (an intermediate insert
-        // keeps its own model; the final synthesis follows the last round). Rounds are parallel and
-        // pass on the accepted answers of the previous step; the round card's own order, task and
+        // in plan order: round cards (their models) and owner steps; a synthesis is a round of one model
+        // with a role. Rounds are parallel and pass on the accepted answers of the previous step; the round card's own order, task and
         // input come with the card editor. Semi-automatic (run policy not Auto) asks the owner after
         // every step; a step without accepted answers asks in both modes.
         // The page state as a Basic schema (disput/basic-schema.js): the canvas gives the steps, the cards
@@ -6575,7 +6277,7 @@ document.addEventListener('click', (event) => {
         const legacyValue = (value) => (value === undefined || value === null || (typeof value === 'string' && !value.trim()) ? undefined : value);
         // An empty text the owner chose on purpose (the task, the length instruction, the content requirements) is a value:
         // «send nothing here», not «inherit». The delivery mark and the correction request are never empty (the transport needs them).
-        const EMPTYABLE_KEYS = new Set(['task', 'roundTask', 'synthesisTask', 'limit', 'content']);
+        const EMPTYABLE_KEYS = new Set(['task', 'roundTask', 'limit', 'content']);
         const keepEmpty = (value, key) => (value === '' && EMPTYABLE_KEYS.has(key) ? '' : legacyValue(value));
         const RETIRED_DISCIPLINE_KEYS = ['ask'];
         // `keepEmptyValues`: a record with a schema (and its working copy) holds an empty text as a value; the earlier settings
@@ -6598,8 +6300,8 @@ document.addEventListener('click', (event) => {
         };
         // `forSave` builds the stored form: origin, basedOn, switched-off models and steps with their settings,
         // and a `run` that holds only explicit values (see basicRunExplicit). The run path builds the same
-        // schema with the run taken from the header as it stands and the legacy fallback of the final request applied.
-        // The fields of a round or a synthesis are the page's own, by ref (customRoundSettings, see stepFieldsOf): nothing is
+        // schema with the run taken from the header as it stands.
+        // The fields of a round are the page's own, by ref (customRoundSettings, see stepFieldsOf): nothing is
         // copied for them from basicSourceSchema, so a field the owner cleared stays cleared. The control steps (gate, route,
         // owner) are the page's list (customControls): each stands right after its `after` step, and a chain of controls
         // keeps its order. A control whose anchor is not on the canvas goes first (after '') or last.
@@ -6629,13 +6331,12 @@ document.addEventListener('click', (event) => {
             const cards = getCustomCardSettings();
             const roundSettings = getCustomRoundSettings();
             const put = (target, key, value) => { if (value !== undefined) target[key] = value; };
-            // The fields the owner set in the card of a round or a synthesis (by ref, customRoundSettings), as the schema's step
+            // The fields the owner set in the card of a round (by ref, customRoundSettings), as the schema's step
             // fields. An empty value (nothing, an empty list, an empty object) is not written.
             const ROUND_STEP_KEYS = ['order', 'input', 'task', 'require', 'owner', 'chat', 'output'];
-            const SYNTHESIS_STEP_KEYS = ['input', 'task', 'require', 'owner', 'chat', 'output'];
-            const stepFieldsOf = (ref, kind) => {
+            const stepFieldsOf = (ref) => {
                 const own = {};
-                (kind === 'round' ? ROUND_STEP_KEYS : SYNTHESIS_STEP_KEYS).forEach((key) => {
+                ROUND_STEP_KEYS.forEach((key) => {
                     const value = keepEmpty(roundSettings[ref]?.[key], key);
                     if (value === undefined || (Array.isArray(value) && !value.length) || (value && typeof value === 'object' && !Array.isArray(value) && !Object.keys(value).length)) return;
                     own[key] = JSON.parse(JSON.stringify(value));
@@ -6652,7 +6353,8 @@ document.addEventListener('click', (event) => {
                 return { ref: step.ref, kind: step.kind, ...text, ...step };
             };
             const defaults = {};
-            ['roundTask', 'synthesisTask'].forEach((key) => put(defaults, key, keepEmpty(general[key], key)));
+            // A ▶ synthesisTask saved before the synthesis was removed is not written: Basic has no synthesis.
+            put(defaults, 'roundTask', keepEmpty(general.roundTask, 'roundTask'));
             ['modelNotes', 'roundPrompts'].forEach((key) => put(defaults, key, legacyMap(general[key])));
             put(defaults, 'discipline', legacyDiscipline(general.discipline, { keepEmptyValues: true }));
             // The canvas names a participant by its name (its id is not on the canvas): the id, the model name and the input
@@ -6678,22 +6380,13 @@ document.addEventListener('click', (event) => {
             const steps = (plan?.plannedStages || []).map((stage) => {
                 const models = (stage.participantIds || []).filter(Boolean);
                 const roles = Object.fromEntries((stage.participantBindings || []).map((item) => [item.participantId, item.promptId || null]));
-                let ref = null;
-                let kind = null;
                 // The round number is the one the stage id keeps: a round nobody sends in has no stage in the plan.
-                if (/^canvas-r\d+$/.test(String(stage.plannedStageId || ''))) { round = Number(String(stage.plannedStageId).slice('canvas-r'.length)); ref = `r${round}`; kind = 'round'; }
-                else if (stage.outputIntent === 'working_synthesis') { ref = `synth:${stage.plannedStageId}`; kind = 'synthesis'; }
-                else if (stage.outputIntent === 'candidate_final') { ref = 'final'; kind = 'synthesis'; }
-                else return null;
+                if (!/^canvas-r\d+$/.test(String(stage.plannedStageId || ''))) return null;
+                round = Number(String(stage.plannedStageId).slice('canvas-r'.length));
+                const ref = `r${round}`;
                 // A model can be configured before its Send checkbox is enabled.
                 if (ref === previewModel?.ref && !models.includes(previewModel.name)) models.push(previewModel.name);
-                const entries = models.map((name) => {
-                    const model = modelEntry(ref, name, roles[name] ? { role: roles[name] } : {});
-                    // Before the schema an intermediate synthesis without its own request ran the saved request of
-                    // the same model of the final synthesis, also when the final synthesis is switched off.
-                    if (!forSave && model.request === undefined && ref.startsWith('synth:')) put(model, 'request', legacyValue(cards.final?.[name]?.promptTemplate));
-                    return model;
-                });
+                const entries = models.map((name) => modelEntry(ref, name, roles[name] ? { role: roles[name] } : {}));
                 // A switched-off model keeps its settings in the saved schema.
                 if (forSave) {
                     // A card of a participant on the canvas is not a switched-off model, whatever key it has (its id or its name).
@@ -6703,7 +6396,7 @@ document.addEventListener('click', (event) => {
                         if (hasOwnFields(model)) entries.push(model);
                     });
                 }
-                return { ref, kind, ...stepFieldsOf(ref, kind), models: entries };
+                return { ref, kind: 'round', ...stepFieldsOf(ref), models: entries };
             }).filter(Boolean);
             if (forSave) {
                 // The canvas keeps every round, also one nobody sends in; the schema holds them all in order (r1…rN), or
@@ -6716,19 +6409,15 @@ document.addEventListener('click', (event) => {
                     for (; nextRound <= upTo; nextRound += 1) {
                         const ref = `r${nextRound}`;
                         if (have.has(ref)) continue;
-                        complete.push({ ref, kind: 'round', ...stepFieldsOf(ref, 'round'),
+                        complete.push({ ref, kind: 'round', ...stepFieldsOf(ref),
                             models: Object.keys(cards[ref] || {}).map((name) => modelEntry(ref, name, { enabled: false })).filter((model) => hasOwnFields(model)) });
                         have.add(ref);
                     }
                 };
                 steps.forEach((step) => {
-                    if (step.kind === 'round') {
-                        const number = Number(step.ref.slice(1));
-                        addEmptyRounds(number - 1);
-                        nextRound = Math.max(nextRound, number + 1);
-                    } else if (step.ref === 'final') {
-                        addEmptyRounds(total);
-                    }
+                    const number = Number(step.ref.slice(1));
+                    addEmptyRounds(number - 1);
+                    nextRound = Math.max(nextRound, number + 1);
                     complete.push(step);
                 });
                 addEmptyRounds(total);
@@ -6747,28 +6436,6 @@ document.addEventListener('click', (event) => {
                         else step.models.push(modelEntry(step.ref, name, { enabled: false, onCanvas: true }));
                     });
                 });
-            }
-            if (forSave) {
-                // The card of an intermediate synthesis can be set before the synthesis is on the canvas; the id of such a
-                // synthesis says the round it stands after, so its settings are kept there as a step without active models.
-                const present = new Set(steps.map((step) => step.ref));
-                Object.keys(cards).filter((ref) => ref.startsWith('synth:') && !present.has(ref)).forEach((ref) => {
-                    const match = /^synth:planned-working-synthesis-after-canvas-r(\d+)$/.exec(ref);
-                    const after = match ? Number(match[1]) : 0;
-                    const at = steps.findIndex((step) => step.ref === `r${after}`);
-                    // Between two rounds only: not after the last round, not next to another synthesis.
-                    if (!match || after >= Math.max(1, Number(roundCounter) || 1) || at < 0 || steps[at + 1]?.kind === 'synthesis') return;
-                    const models = Object.keys(cards[ref] || {}).map((name) => modelEntry(ref, name, { enabled: false })).filter((model) => hasOwnFields(model));
-                    if (models.length) steps.splice(at + 1, 0, { ref, kind: 'synthesis', ...stepFieldsOf(ref, 'synthesis'), models });
-                });
-            }
-            if (forSave) {
-                // A final synthesis that is switched off keeps its settings as a step without active models. Settings of a
-                // removed round or of an intermediate synthesis with no place between two rounds are dropped.
-                if (!steps.some((step) => step.ref === 'final')) {
-                    const models = Object.keys(cards.final || {}).map((name) => modelEntry('final', name, { enabled: false })).filter((model) => hasOwnFields(model));
-                    if (models.length) steps.push({ ref: 'final', kind: 'synthesis', ...stepFieldsOf('final', 'synthesis'), models });
-                }
             }
             const runValue = forSave ? (run || basicRunForSave()) : { policy: getDebateRunPolicy(), maxWords: getDebateMaxWords(), ...basicStrictLengthRun() };
             return { schemaVersion: window.BasicSchema.SCHEMA_VERSION, origin: 'user', ...(forSave && basedOn ? { basedOn } : {}),
@@ -6826,7 +6493,7 @@ document.addEventListener('click', (event) => {
                 // An empty text of an earlier record meant «not set»; from here on an empty text is a value, so it goes now.
                 const dropEmpty = (map) => {
                     if (!map || typeof map !== 'object') return map;
-                    ['task', 'roundTask', 'synthesisTask'].forEach((key) => { if (map[key] === '') delete map[key]; });
+                    ['task', 'roundTask'].forEach((key) => { if (map[key] === '') delete map[key]; });
                     if (map.discipline && typeof map.discipline === 'object') Object.keys(map.discipline).forEach((key) => { if (map.discipline[key] === '') delete map.discipline[key]; });
                     return map;
                 };
@@ -6838,7 +6505,7 @@ document.addEventListener('click', (event) => {
             const errors = window.BasicSchema.validate(config.schema);
             if (errors.length) return { cards: {}, rounds: {}, defaults: {}, runExplicit: {}, schema: null, error: describeSchemaErrors(errors), controls: [] };
             const settings = window.BasicSchema.toSettings(config.schema);
-            // The fields of rounds and syntheses are one store by ref (see stepFieldsOf).
+            // The fields of rounds and owner steps are one store by ref (see stepFieldsOf).
             return { cards: settings.customModelSettings, rounds: { ...settings.customRoundSettings, ...settings.customStepSettings }, defaults: settings.customDefaults, schema: config.schema, error: '',
                 runExplicit: { policy: 'policy' in (config.schema.run || {}), maxWords: 'maxWords' in (config.schema.run || {}) }, controls: controlsOf(config.schema) };
         };
@@ -6928,7 +6595,7 @@ document.addEventListener('click', (event) => {
             return window.BasicSchema.resolveFields(
                 { task: keepEmpty(settings?.task, 'task'), discipline: legacyDiscipline(settings?.discipline, { keepEmptyValues: true }) }, kind,
                 { task: keepEmpty(round.task, 'task'), discipline: legacyDiscipline(round.discipline, { keepEmptyValues: true }) },
-                { roundTask: keepEmpty(general.roundTask, 'roundTask'), synthesisTask: keepEmpty(general.synthesisTask, 'synthesisTask'), discipline: legacyDiscipline(general.discipline, { keepEmptyValues: true }) });
+                { roundTask: keepEmpty(general.roundTask, 'roundTask'), discipline: legacyDiscipline(general.discipline, { keepEmptyValues: true }) });
         };
         const customLengthInstruction = (template, words) => template.replace(/\{от\}|\{слов\}/g,
             (key) => String(key === '{от}' ? Math.max(1, words - 50) : words));
@@ -7166,9 +6833,9 @@ document.addEventListener('click', (event) => {
                 clearModeratorComposer();
                 appendModeratorFeedEntry(task);
             }
-            // Canvas progress from the engine's own events: a round is canvas-rN, a synthesis its planned stage id,
-            // the final one planned-final-synthesis. The step index is the position in `steps`.
-            const plannedIdOfRef = (ref) => (/^r\d+$/.test(ref) ? `canvas-${ref}` : ref === 'final' ? 'planned-final-synthesis' : ref.replace(/^synth:/, ''));
+            // Canvas progress from the engine's own events: a round is canvas-rN, an owner step its ref.
+            // The step index is the position in `steps`.
+            const plannedIdOfRef = (ref) => (/^r\d+$/.test(ref) ? `canvas-${ref}` : ref);
             customRunProgress = { lifecycle: 'RUNNING', stages: steps.map((step) => ({ plannedStageId: plannedIdOfRef(step.ref), status: 'pending' })) };
             const setCustomStepStatus = (index, status) => {
                 const stage = customRunProgress?.stages?.[index];
@@ -7560,9 +7227,8 @@ document.addEventListener('click', (event) => {
                     pipelineStore.active = typeof nextStore.active === 'string' ? nextStore.active : '';
                     pipelineStore.overrides = nextStore.overrides && typeof nextStore.overrides === 'object'
                         ? JSON.parse(JSON.stringify(nextStore.overrides))
-                        : { longRoundLimits: {}, synthesizers: {}, profiles: {} };
+                        : { longRoundLimits: {}, profiles: {} };
                     if (!pipelineStore.overrides.longRoundLimits) pipelineStore.overrides.longRoundLimits = {};
-                    if (!pipelineStore.overrides.synthesizers) pipelineStore.overrides.synthesizers = {};
                     if (!pipelineStore.overrides.profiles) pipelineStore.overrides.profiles = {};
                 },
                 getDebateTranscriptStore: () => debateTranscriptStore,
@@ -7623,8 +7289,6 @@ document.addEventListener('click', (event) => {
         const prunePipelineRoundsAfter = (targetRounds = roundCounter) => {
             const maxRound = Math.max(1, Number(targetRounds) || 1);
             pipelinePanel.querySelectorAll('[data-round]').forEach((el) => {
-                if (el.id === 'connectorToSynthesis') return;
-                if (el.dataset.stage === 'synthesis') return;
                 const round = Number(el.dataset.round || 0) || 0;
                 if (round > maxRound) el.remove();
             });
@@ -7659,7 +7323,7 @@ document.addEventListener('click', (event) => {
                         <svg class="connector-svg" id="svg-r${currentLastJudge}-r${roundCounter}"></svg>
                     </div>
                     <div class="stage-column" id="round${roundCounter}" data-round="${roundCounter}" data-planned-stage-id="canvas-r${roundCounter}">
-                        <div class="stage-header-row"><div class="stage-label"><span class="round-badge">R${roundCounter}</span> <button type="button" class="pipeline-round-delete-btn" title="Delete round" aria-label="Delete round" hidden>×</button></div><button type="button" class="pipeline-stage-insert" data-after-stage-id="canvas-r${roundCounter}" aria-label="Add stage after R${roundCounter}" title="Add stage" disabled></button></div>
+                        <div class="stage-header-row"><div class="stage-label"><span class="round-badge">R${roundCounter}</span> <button type="button" class="pipeline-round-delete-btn" title="Delete round" aria-label="Delete round" hidden>×</button></div></div>
                         <div class="model-stack" id="r${roundCounter}-models">
                             ${judgeBlocksHtml}
                         </div>
@@ -7753,15 +7417,6 @@ document.addEventListener('click', (event) => {
                 if (isPipelinePage && Array.isArray(protocol.selectedModels) && protocol.selectedModels.length) {
                     setHeaderSelectedLLMsFromNames(protocol.selectedModels);
                 }
-                const hasPersistedSynthesizer = typeof protocol.synthesizer === 'string'
-                    || (typeof protocol.serviceRoles?.extractor === 'string' && protocol.serviceRoles.extractor !== 'same_as_synthesizer');
-                const persistedSynthesizerRaw = typeof protocol.synthesizer === 'string'
-                    ? protocol.synthesizer
-                    : (typeof protocol.serviceRoles?.extractor === 'string' && protocol.serviceRoles.extractor !== 'same_as_synthesizer'
-                        ? protocol.serviceRoles.extractor
-                        : '');
-                const persistedSynthesizer = normalizeExplicitSynthesizer(persistedSynthesizerRaw);
-                if (hasPersistedSynthesizer) window.__pendingPipelineSynthesizer = persistedSynthesizer;
                 if (protocol.serviceRoles?.auditor) {
                     console.warn('[Disput migration] Loaded pipeline config contains serviceRoles.auditor — ignored (auditor selector removed).');
                 }
@@ -7797,16 +7452,7 @@ document.addEventListener('click', (event) => {
             syncPipelineRoundModelsFromSelectedLLMs({ force: true });
             Object.entries(modelStacks).forEach(([stackId, state]) => orderModelStackBlocks(stackId, state));
             syncPipelineRoundsToDebateLimit();
-            if (window.__pendingPipelineSynthesizer !== undefined) {
-                const restoredPlan = draftPlanForCanvas(getActiveDraftPlan());
-                persistActiveDraftPlan(restoredPlan, { applied: true });
-                delete window.__pendingPipelineSynthesizer;
-            }
             window.syncDebateSchemeUi?.();
-            if (protocol?.scheme === 'free') {
-                if (synthesisColumn) { synthesisColumn.hidden = false; synthesisColumn.setAttribute('aria-hidden', 'false'); }
-                if (connectorToSynthesis) { connectorToSynthesis.hidden = false; connectorToSynthesis.setAttribute('aria-hidden', 'false'); }
-            }
             syncDebateRoundStepperUi();
             syncDebateAutoPauseButton();
             syncDebateAutoToggleButton();
@@ -7909,17 +7555,6 @@ document.addEventListener('click', (event) => {
             }).join('');
         };
 
-        const buildPipelineInfoSynthesizerHtml = (config = {}) => {
-            const synth = String(config?.protocol?.synthesizer || '').trim();
-            return `
-                <section class="pipeline-info-section">
-                    <h4>Synthesis stage</h4>
-                    <p class="pipeline-info-muted">The planner creates this stage when the StateMap requires consolidation. A subsequent audit must validate the current synthesis artifact.</p>
-                    <pre class="pipeline-info-json">${escapeHtml(synth ? `Selected synthesizer: ${synth}` : 'The planner will assign an available synthesizer at runtime.')}</pre>
-                </section>
-            `;
-        };
-
         const showPipelineInfoDocument = (name) => {
             const fullName = String(name || '').trim();
             if (!fullName) return;
@@ -7955,7 +7590,6 @@ document.addEventListener('click', (event) => {
             const summary = formatPipelineProtocolSummary(config);
             const description = describePipelineProtocol(fullName, config);
             const models = Array.isArray(protocol.selectedModels) ? protocol.selectedModels : [];
-            const selectedSynthesizer = String(protocol.synthesizer || '').trim();
             const doc = modal.querySelector('#pipeline-info-document');
             if (doc) {
                 doc.innerHTML = `
@@ -7971,11 +7605,9 @@ document.addEventListener('click', (event) => {
                             <dt>Reasoning budget</dt><dd>${escapeHtml(formatReasoningBudgetLabel(protocol.reasoningBudget))}</dd>
                             <dt>Stage limit</dt><dd>${escapeHtml(String(protocol.roundLimit || config.roundCounter || ''))}</dd>
                             <dt>Length</dt><dd>${escapeHtml(String(protocol.length || 'default'))}</dd>
-                            <dt>Synthesizer</dt><dd>${escapeHtml(selectedSynthesizer || 'None — complete without synthesis')}</dd>
                             <dt>Models</dt><dd>${escapeHtml(models.join(', ') || 'not selected')}</dd>
                         </dl>
                     </section>
-                    ${buildPipelineInfoSynthesizerHtml(config)}
                     ${buildPipelineInfoRoundsHtml(config)}
                     <section class="pipeline-info-section">
                         <h4>Saved Config</h4>
@@ -8355,10 +7987,6 @@ document.addEventListener('click', (event) => {
             customCardSettings.delete('unsaved');
             customRoundSettings.delete('unsaved');
             customPipelineDefaults.delete('unsaved');
-            const defaultSynthesizer = window.__getDefaultSynthesizerName?.() || '';
-            window.__pendingPipelineSynthesizer = defaultSynthesizer;
-            const emptyFlowSelect = getSynthesizerFlowSelect();
-            if (emptyFlowSelect) emptyFlowSelect.value = defaultSynthesizer;
             pipelineItems?.querySelectorAll('.pipeline-item').forEach((el) => el.classList.remove('active'));
             pipelineItems?.querySelectorAll('.pipeline-radio').forEach((radio) => {
                 radio.checked = false;
@@ -8497,13 +8125,9 @@ document.addEventListener('click', (event) => {
         };
 
         // The errors of a schema in one line: the place and the reason of each, at most five.
-        // The places of a validation error, with a note for the one a control between a round and its synthesis gives.
-        const describeSchemaErrors = (errors) => errors.slice(0, 5).map((error) => {
-            const text = error.path ? `${error.path}: ${error.message}` : error.message;
-            return /промежуточный синтез стоит (сразу после раунда|между двумя раундами)/.test(error.message) ? `${text}. ${INTERMEDIATE_CONTROL_NOTE}` : text;
-        }).join('; ');
+        const describeSchemaErrors = (errors) => errors.slice(0, 5).map((error) => (error.path ? `${error.path}: ${error.message}` : error.message)).join('; ');
         // The record of a Basic pipeline built from its schema, and nowhere else: the schema is the content, the canvas
-        // members (rounds, models, roles, synthesizer, intermediate syntheses) are derived from it here. Nothing is written
+        // members (rounds, models, roles) are derived from it here. Nothing is written
         // to the store. Returns { ok, errors, record }; a schema the canvas cannot show gives errors with the place.
         const recordFromSchema = (name, schema) => {
             const errors = window.BasicSchema.validate(schema);
@@ -8529,24 +8153,19 @@ document.addEventListener('click', (event) => {
             delete base.disabled;
             delete base.disabledReason;
             const lengthSelect = document.getElementById('debate-length-select');
-            let plan = window.DebateDraftPlan.createCanvasPlan({
-                planId: `canvas-${String(name).replace(/[^a-z0-9_-]+/gi, '-')}`, revision: 0, synthesizer: canvas.synthesizer,
+            const plan = window.DebateDraftPlan.createCanvasPlan({
+                planId: `canvas-${String(name).replace(/[^a-z0-9_-]+/gi, '-')}`, revision: 0,
                 rounds: canvas.rounds.map((round, index) => ({
                     plannedStageId: `canvas-${round.ref}`, label: index === 0 ? 'R1 Models' : `R${index + 1}`, purpose: index === 0 ? 'position' : 'response',
                     participantIds: round.participantIds,
                     participantBindings: round.participantIds.map((participantId) => ({ participantId, promptId: round.roles[participantId] }))
                 }))
             });
-            for (const insert of canvas.inserts) {
-                const inserted = window.DebateDraftPlan.insertSynthesis(plan, { afterPlannedStageId: `canvas-r${insert.afterRound}`, participantIds: insert.participantIds, plannedStageId: insert.plannedStageId });
-                if (!inserted.ok) return { ok: false, errors: [{ path: `synth:${insert.plannedStageId}`, message: `промежуточный синтез не встал на холст (${inserted.reasonCode})` }] };
-                plan = inserted.plan;
-            }
             const record = {
                 ...base,
                 version: 3,
                 // The page grows or cuts the rounds to the round limit after loading: it is the number of the schema's rounds.
-                protocol: { ...base.protocol, runPolicy: run.policy, synthesizer: canvas.synthesizer, selectedModels: canvas.selectedModels, roundLimit: String(canvas.roundCounter),
+                protocol: { ...base.protocol, runPolicy: run.policy, selectedModels: canvas.selectedModels, roundLimit: String(canvas.roundCounter),
                     ...(lengthSelect && Array.from(lengthSelect.options).some((option) => option.value === String(run.maxWords)) ? { length: String(run.maxWords) } : {}) },
                 draftPlan: plan,
                 roundCounter: canvas.roundCounter,
@@ -8707,27 +8326,14 @@ document.addEventListener('click', (event) => {
         };
 
         const getPipelineBlockPromptDetails = (block) => {
-            const protocol = getPipelineProtocolConfig();
-            const isSynthesisStage = !!block?.closest?.('#synthesisColumn') || !!block?.dataset?.synthesisStage;
             const roleSelector = block?.querySelector?.('.role-selector') || null;
             const selectedPromptId = roleSelector?.value || '';
             const selectedPrompt = selectedPromptId ? getJudgePromptById(selectedPromptId) : null;
             const details = [];
-            if (isSynthesisStage) {
-                details.push({
-                    title: 'Synthesis stage',
-                    text: 'The synthesizer receives canonical artifacts from the StateMap, preserves dissent and provenance, and emits a versioned synthesis artifact for mandatory audit.'
-                });
-                details.push({
-                    title: 'Synthesizer assignment',
-                    text: protocol.synthesizer ? `Selected synthesizer: ${protocol.synthesizer}` : 'The planner assigns an available synthesizer at runtime.'
-                });
-            } else {
-                details.push({
-                    title: 'Universal stage prompt',
-                    text: 'The PromptPack compiles the operation, role, task contract, context slice, output contract and StateMap version immediately before dispatch.'
-                });
-            }
+            details.push({
+                title: 'Universal stage prompt',
+                text: 'The PromptPack compiles the operation, role, task contract, context slice, output contract and StateMap version immediately before dispatch.'
+            });
             if (selectedPrompt) details.push({ title: selectedPrompt.label || selectedPrompt.id, text: selectedPrompt.text || '' });
             else if (selectedPromptId) details.push({ title: selectedPromptId, text: 'The saved prompt template is resolved by PromptPack at runtime.' });
             return details;
@@ -8735,37 +8341,11 @@ document.addEventListener('click', (event) => {
 
         // Compact Custom editor. Changes apply to the next run, scoped to a step and model;
         // the immutable request/response record remains separate.
-        // An intermediate synthesis has no model block: its insert (between two rounds) is its entry.
-        const intermediateStageId = (afterStageId) => `planned-working-synthesis-after-${afterStageId}`;
-        const intermediateStageAfter = (afterStageId, plan = draftPlanForCanvas(getActiveDraftPlan())) => (plan.plannedStages || [])
-            .find((stage) => stage.outputIntent === 'working_synthesis' && stage.upstream?.includes(afterStageId)) || null;
-        // The card of an absent intermediate synthesis is built from a never-persisted copy of the plan.
-        const intermediateCardPlan = (afterStageId) => {
-            const plan = draftPlanForCanvas(getActiveDraftPlan());
-            if (intermediateStageAfter(afterStageId, plan)) return plan;
-            const result = window.DebateDraftPlan.insertSynthesis(JSON.parse(JSON.stringify(plan)), {
-                afterPlannedStageId: afterStageId,
-                participantIds: [window.__getDraftPlanSynthesizer?.(plan) || window.__getDefaultSynthesizerName?.()],
-                plannedStageId: intermediateStageId(afterStageId)
-            });
-            return result.ok ? result.plan : plan;
-        };
-        const cardPlanFor = (block) => (block.classList.contains('pipeline-stage-insert')
-            ? intermediateCardPlan(block.dataset.afterStageId)
-            : draftPlanForCanvas(getActiveDraftPlan()));
         const customBlockRef = (block) => {
-            if (block.classList.contains('pipeline-stage-insert')) return `synth:${intermediateStageId(block.dataset.afterStageId)}`;
-            const stackId = block.closest('.model-stack')?.id || '';
-            if (stackId === 'synthesis-stack') return 'final';
-            const match = /^r(\d+)-models$/.exec(stackId);
+            const match = /^r(\d+)-models$/.exec(block.closest('.model-stack')?.id || '');
             return match ? `r${match[1]}` : '';
         };
-        // Synthesizer blocks are labelled «Synthesis», so their model comes from the plan, never from the label.
-        const customBlockModel = (block) => {
-            if (block.classList.contains('pipeline-stage-insert')) return intermediateStageAfter(block.dataset.afterStageId, cardPlanFor(block))?.participantIds?.[0] || '';
-            if (block.closest?.('#synthesis-stack')) return window.__getDraftPlanSynthesizer?.(cardPlanFor(block)) || '';
-            return block.querySelector('.model-name')?.textContent?.trim() || '';
-        };
+        const customBlockModel = (block) => block.querySelector('.model-name')?.textContent?.trim() || '';
         // The presentation of the pipeline (schema.description): shown in the ▶ card, collapsed to two lines; the engine never reads it.
         const basicDescription = () => String(basicSourceSchema.get(draftPlanStorageKey())?.description || '').trim();
         const basicDescriptionBlock = () => `<div class="custom-desc"><div class="custom-desc-head"><strong>Description</strong><button type="button" class="custom-desc-toggle" aria-expanded="false" title="Развернуть на весь экран">⤢</button></div>
@@ -8773,26 +8353,24 @@ document.addEventListener('click', (event) => {
         const renderCustomBlockInspector = async (block, modal, { pipelineDefaults = false } = {}) => {
             const modelName = pipelineDefaults ? '' : customBlockModel(block);
             const ref = pipelineDefaults ? '' : customBlockRef(block);
-            const steps = pipelineDefaults ? [] : customStepsFromPlan(cardPlanFor(block), { ref, name: modelName });
+            const steps = pipelineDefaults ? [] : customStepsFromPlan(draftPlanForCanvas(getActiveDraftPlan()), { ref, name: modelName });
             const stepIndex = steps.findIndex((step) => step.ref === ref);
             if (!pipelineDefaults && stepIndex < 0) { showNotification('Шаг модели не найден в плане.', 'warn'); return; }
             const step = steps[stepIndex];
             const automaticSteps = steps.map((item) => ({ ...item, models: item.models.map((model) => ({ ...model, promptTemplate: null })) }));
             const preview = pipelineDefaults ? null : window.CustomEngine.previewPrompt({ task: getModeratorDispatchText(), steps: automaticSteps, stepIndex, modelName });
             const saved = pipelineDefaults ? getCustomPipelineDefaults() : getCustomCardSettings()[ref]?.[modelName] || {};
-            // An intermediate synthesis without its own text follows the final synthesizer's text.
-            const finalSaved = ref.startsWith('synth:') ? getCustomCardSettings().final?.[modelName] || {} : {};
-            const baseTemplate = finalSaved.promptTemplate || preview?.template;
+            const baseTemplate = preview?.template;
             const inherited = resolveCustomFields({}, step?.kind);
             const resolved = resolveCustomFields(saved, step?.kind);
             const general = getDebateMaxWords();
             const defaults = customDisciplineDefaults();
             const disciplineRows = [['limit', 'Длина'], ['content', 'Требования к содержанию'], ['delivery', 'Доставка'], ['correction', 'Повторный запрос']];
             const rows = pipelineDefaults
-                ? [['roundTask', 'Задание раундов со входом (R2+)'], ['synthesisTask', 'Задание синтеза'], ...disciplineRows]
-                : [...(step.input !== 'none' ? [['task', step.kind === 'synthesis' ? 'Задание синтеза' : 'Задание раунда']] : []), ...disciplineRows];
-            const isTask = (key) => ['task', 'roundTask', 'synthesisTask'].includes(key);
-            const fallbackFor = (key) => key === 'roundTask' ? CUSTOM_ROUND_TASK : key === 'synthesisTask' ? window.CustomEngine.SYNTHESIS_TASK : defaults[key];
+                ? [['roundTask', 'Задание раундов со входом (R2+)'], ...disciplineRows]
+                : [...(step.input !== 'none' ? [['task', 'Задание раунда']] : []), ...disciplineRows];
+            const isTask = (key) => ['task', 'roundTask'].includes(key);
+            const fallbackFor = (key) => key === 'roundTask' ? CUSTOM_ROUND_TASK : defaults[key];
             const inheritedValue = (key) => pipelineDefaults ? fallbackFor(key) : key === 'task' ? inherited.task.value : inherited.discipline[key].value;
             const rawValue = (key) => isTask(key) ? saved[key] : customDiscipline(saved.discipline)[key];
             const effectiveValue = (key) => pipelineDefaults
@@ -8801,8 +8379,7 @@ document.addEventListener('click', (event) => {
             const copyButton = (id, label) => `<button type="button" data-action="copy" data-copy-field="${id}" title="Копировать" aria-label="Копировать: ${label}"><i class="ti ti-copy" aria-hidden="true"></i></button>`;
             // ▶ «Особенности моделей»: one field per model on the canvas; the model card shows its own note read-only.
             const modelNotes = getCustomPipelineDefaults().modelNotes || {};
-            // Synthesizer blocks are labelled «Synthesis»; only the round models are canvas models.
-            const canvasModels = pipelineDefaults ? [...new Set(Array.from(pipelinePanel.querySelectorAll('.model-block:not(.pipeline-synthesis-block) .model-name'), (node) => node.textContent.trim())
+            const canvasModels = pipelineDefaults ? [...new Set(Array.from(pipelinePanel.querySelectorAll('.model-block .model-name'), (node) => node.textContent.trim())
                 .filter(Boolean))] : [];
             const content = modal.querySelector('.modal-content');
             modal.classList.add('custom-model-card');
@@ -8818,7 +8395,6 @@ document.addEventListener('click', (event) => {
                 </header>
                 <div class="custom-card-body">
                     ${pipelineDefaults ? basicDescriptionBlock() : ''}
-                    ${!pipelineDefaults && step?.kind === 'synthesis' ? '<div class="custom-card-steps" id="custom-card-step-fields"></div>' : ''}
                     ${pipelineDefaults ? '<p class="custom-card-note">Общие значения для всех шагов. Своё значение модели имеет приоритет; пустое поле наследует значение из кода.</p>' : `<div class="custom-card-field">
                         <div class="custom-card-head"><label for="custom-card-request">Запрос</label><span><code>{задача}</code> и <code>{вход}</code> подставляются при запуске. Изменённый текст используется только для этой модели в этом шаге.</span><span class="custom-card-actions">${copyButton('custom-card-request', 'Запрос')}</span></div>
                         <textarea id="custom-card-request" spellcheck="false"></textarea>
@@ -8851,21 +8427,6 @@ document.addEventListener('click', (event) => {
                     </div>` : ''}
                     ${pipelineDefaults ? '' : `<span id="custom-card-length-note" class="custom-card-sr-only">Пусто — общий предел pipeline (${general}).</span>`}
                 </div>`;
-            // The input, the number of answers, the owner and the output of a synthesis: saved at once, as the round card does.
-            const stepFieldsBox = content.querySelector('#custom-card-step-fields');
-            if (stepFieldsBox) {
-                const drawStepFields = () => {
-                    const fields = window.StageCard.stepFieldsModel({ kind: 'synthesis', settings: getCustomRoundSettings()[ref] || {}, earlier: stepsBefore(ref),
-                        enabledCount: step.models.length, drafts: stepDraftsOf(ref), disabled: pipelineRunActive });
-                    stepFieldsBox.replaceChildren();
-                    window.StageCard.renderStepFields(stepFieldsBox, fields, async (field, value) => {
-                        if (pipelineRunActive) return;
-                        await commitStepField(ref, field, value, step.models.length);
-                        drawStepFields();
-                    });
-                };
-                drawStepFields();
-            }
             content.querySelector('.custom-desc-toggle')?.addEventListener('click', (event) => {
                 const box = event.currentTarget.closest('.custom-desc');
                 const full = box.classList.toggle('is-full');
@@ -9111,8 +8672,7 @@ document.addEventListener('click', (event) => {
                 ['Reasoning budget', formatReasoningBudgetLabel(protocol.reasoningBudget)],
                 ['Input', block.querySelector('.model-input-checkbox')?.checked ? 'on' : 'off'],
                 ['Send', block.querySelector('.model-send-checkbox')?.checked ? 'on' : 'off'],
-                ['Prompt template', selectedRole],
-                ['Synthesizer', protocol.synthesizer || 'not selected']
+                ['Prompt template', selectedRole]
             ];
             const title = modal.querySelector('#pipeline-block-info-title');
             const grid = modal.querySelector('#pipeline-block-info-grid');
@@ -9140,61 +8700,16 @@ document.addEventListener('click', (event) => {
             document.body.classList.add('modal-open');
         };
 
-        // A double click on the final synthesis block or its column label opens the final synthesizer's card
-        // (the same gesture as on a model block). It runs before the generic dblclick listener, which would
-        // otherwise open the empty "Final" stage card from the round badge. The synthesizer select keeps its own clicks.
         const BLOCK_CONTROL_SELECTOR = 'input, select, textarea, button, label, a, [contenteditable="true"], .role-selector, .status-indicator';
-        const openFinalSynthesizerCard = () => {
-            const block = document.querySelector('#synthesis-stack .pipeline-synthesis-block');
-            if (!block) return;
-            const synthesizer = normalizeExplicitSynthesizer(window.__getDraftPlanSynthesizer?.(
-                window.__pipelineDraftPlanForCanvas?.(window.__getActivePipelineDraftPlan?.())
-            ));
-            if (!synthesizer) {
-                showNotification('Включите финальный синтез кликом по Final.', 'warn');
-                return;
-            }
-            document.getElementById('pipeline-stage-dialog')?.close?.();
-            showPipelineBlockInfo(block);
-        };
-        // A single click on the Final badge toggles the final synthesis after a short wait (cancelled by a double click).
-        // Off remembers the chosen synthesizer; on restores it, or the first selected model.
-        let lastFinalSynthesizer = '';
-        let finalSynthesisTimer = null;
-        const toggleFinalSynthesis = () => {
-            const current = normalizeExplicitSynthesizer(window.__getDraftPlanSynthesizer?.(
-                window.__pipelineDraftPlanForCanvas?.(window.__getActivePipelineDraftPlan?.())
-            ));
-            if (current) {
-                lastFinalSynthesizer = current;
-                window.setSynthesisModelFromName?.('');
-                return;
-            }
-            const models = getSelectedLLMs();
-            const next = models.includes(lastFinalSynthesizer) ? lastFinalSynthesizer
-                : (models.includes('Claude') ? 'Claude' : models[0]);
-            if (!next || !window.setSynthesisModelFromName?.(next)) {
-                showNotification('Выберите модели, чтобы включить финальный синтез.', 'warn');
-            }
-        };
         pipelinePanel.addEventListener('dblclick', (event) => {
             const target = event.target;
-            if (!target?.closest || target.closest('#synthesis-flow-select') || target.closest('.pipeline-intermediate-synth')) return;
+            if (!target?.closest) return;
             // A double click on the empty body of a model block opens its card. Controls keep their own clicks.
             const modelBlock = target.closest('.model-block');
-            if (modelBlock && !modelBlock.classList.contains('pipeline-synthesis-block') && pipelinePanel.contains(modelBlock)
-                && !target.closest(BLOCK_CONTROL_SELECTOR)) {
+            if (modelBlock && pipelinePanel.contains(modelBlock) && !target.closest(BLOCK_CONTROL_SELECTOR)) {
                 event.preventDefault();
-                clearTimeout(finalSynthesisTimer);
                 showPipelineBlockInfo(modelBlock);
-                return;
             }
-            const finalTarget = target.closest('.pipeline-synthesis-block, #synthesisColumn .stage-label');
-            if (!finalTarget || !pipelinePanel.contains(finalTarget)) return;
-            event.preventDefault();
-            event.stopImmediatePropagation();
-            clearTimeout(finalSynthesisTimer);
-            openFinalSynthesizerCard();
         });
 
         // The card's round role goes to each block's own mini-request selector, through its change
@@ -9220,14 +8735,11 @@ document.addEventListener('click', (event) => {
         // who works, run status). Plain rounds show their participants.
         // The window of a control step: the owner has its window.
         // «Шаг после этапа» in the card of a round or a control: the new step stands after it, and the card closes to show it.
-        const addControlOptionsFor = (anchor, dialog) => {
-            const refused = intermediateAfterRound(anchor);
-            return {
-                disabled: pipelineRunActive || refused,
-                note: refused ? INTERMEDIATE_CONTROL_NOTE : '',
-                onAdd: async (kind) => { if (await insertControlAfter(anchor, kind)) dialog.close(); }
-            };
-        };
+        const addControlOptionsFor = (anchor, dialog) => ({
+            disabled: pipelineRunActive,
+            note: '',
+            onAdd: async (kind) => { if (await insertControlAfter(anchor, kind)) dialog.close(); }
+        });
         const openControlCard = (ref) => {
             const dialog = document.getElementById('pipeline-stage-dialog');
             const title = document.getElementById('pipeline-stage-dialog-title');
@@ -9254,7 +8766,7 @@ document.addEventListener('click', (event) => {
             const label = (roundBadge.textContent || '').trim();
             const match = /^R?(\d+)$/i.exec(label);
             if (!match || !window.StageCard) {
-                title.textContent = /^final$/i.test(label) ? 'Финальный синтез' : `Этап ${label}`;
+                title.textContent = `Этап ${label}`;
                 body.replaceChildren();
             } else {
                 const round = Number(match[1]);
@@ -9297,11 +8809,6 @@ document.addEventListener('click', (event) => {
             if (event.target.closest?.('[data-stage-close]')) event.currentTarget.close();
         });
 
-        // A single click on a stage insert toggles the intermediate synthesis after a short wait;
-        // a double click cancels that toggle and opens the synthesis card (Custom only).
-        let intermediateTimer = null;
-        // Function declarations are hoisted within this block; the bridge keeps the call explicit for tests and other scopes.
-        window.__toggleIntermediateSynthesis = toggleIntermediateSynthesis;
         pipelinePanel.addEventListener('click', (event) => {
             const controlCard = event.target?.closest?.('.pipeline-control-card');
             if (controlCard && pipelinePanel.contains(controlCard)) {
@@ -9314,20 +8821,9 @@ document.addEventListener('click', (event) => {
                 void deleteControl(controlDelete.dataset.controlDelete);
                 return;
             }
-            const insert = event.target?.closest?.('.pipeline-stage-insert');
-            if (insert) {
-                clearTimeout(intermediateTimer);
-                intermediateTimer = setTimeout(() => void window.__toggleIntermediateSynthesis?.(insert), 250);
-                return;
-            }
             const stageBadge = event.target?.closest?.('.round-badge');
             if (stageBadge && pipelinePanel.contains(stageBadge)) {
                 event.preventDefault();
-                if (stageBadge.closest('#synthesisColumn')) {
-                    clearTimeout(finalSynthesisTimer);
-                    finalSynthesisTimer = setTimeout(toggleFinalSynthesis, 250);
-                    return;
-                }
                 openStageCard(stageBadge);
                 return;
             }
@@ -9360,27 +8856,7 @@ document.addEventListener('click', (event) => {
             if (outside) stageDialog.close();
         });
 
-        // Opens the card without changing the stage; an absent stage shows its card from a virtual plan.
-        const openIntermediateCard = (insert) => {
-            showPipelineBlockInfo(insert);
-        };
-
         pipelinePanel.addEventListener('dblclick', (event) => {
-            const intermediateBlock = event.target.closest?.('.pipeline-intermediate-synth .pipeline-synthesis-block');
-            if (intermediateBlock && pipelinePanel.contains(intermediateBlock)) {
-                if (event.target.closest('select')) return;
-                event.preventDefault();
-                const headerInsert = intermediateBlock.closest('.stage-column')?.querySelector('.pipeline-stage-insert');
-                if (headerInsert && isCustomEnginePipeline()) openIntermediateCard(headerInsert);
-                return;
-            }
-            const insertBtn = event.target.closest?.('.pipeline-stage-insert');
-            if (insertBtn && pipelinePanel.contains(insertBtn)) {
-                event.preventDefault();
-                clearTimeout(intermediateTimer);
-                if (isCustomEnginePipeline()) openIntermediateCard(insertBtn);
-                return;
-            }
             const roundBadge = event.target.closest('.round-badge');
             if (roundBadge && pipelinePanel.contains(roundBadge)) {
                 event.preventDefault();
@@ -21634,16 +21110,6 @@ function checkCompareButtonState() {
     const debateDirectionIcon = document.getElementById('direction-icon');
     var debateModMessageBody = document.getElementById('mod-message-body');
     const debateMiniPrompts = document.getElementById('mod-mini-prompts');
-    function normalizeExplicitSynthesizer(value) {
-        const normalized = String(value || '').trim();
-        return normalized.toLowerCase() === 'auto' ? '' : normalized;
-    }
-    var synthesisColumn = document.getElementById('synthesisColumn');
-    var connectorToSynthesis = document.getElementById('connectorToSynthesis');
-    var synthesisStack = document.getElementById('synthesis-stack');
-    function getSynthesizerFlowSelect() {
-        return synthesisStack?.querySelector('#synthesis-flow-select') || null;
-    }
     const debateLengthSelect = document.getElementById('debate-length-select');
     const debateSelToolbar = document.getElementById('debateSelTb');
     const DEBATE_SELECTORS_STORAGE_KEY = 'aoSelectors.v1';
@@ -21680,187 +21146,7 @@ function checkCompareButtonState() {
     const debateMessageStore = new Map();
     const debateDomIndex = new Map();
     const DebateEngineRuntime = window.DebateEngine || null;
-    function getAllModelNames() {
-        return (Array.isArray(PipelineRuntime?.MODELS) ? PipelineRuntime.MODELS : [])
-            .map((model) => model?.name)
-            .filter(Boolean);
-    }
-    // The flow select is disabled while the final synthesis is off (no synthesizer) or a run is active.
-    function syncFlowSelectLock(flowSelect, current) {
-        if (!flowSelect) return;
-        const locked = !!pipelineRunActive;
-        flowSelect.disabled = locked || !current;
-    }
-    function renderSynthesisStage() {
-        if (!synthesisStack) return;
-        const current = normalizeExplicitSynthesizer(window.__getDraftPlanSynthesizer?.(
-            window.__pipelineDraftPlanForCanvas?.(window.__getActivePipelineDraftPlan?.())
-        ));
-        const flowSelectId = 'synthesis-flow-select';
-        const flowSelectClass = 'synthesis-flow-select';
-        // No "None" option: the off state is the Final badge (no synthesizer selected leaves the select empty).
-        const options = getAllModelNames()
-            .map((modelName) => `<option value="${escapeHtml(modelName)}">${escapeHtml(modelName)}</option>`)
-            .join('');
-        synthesisColumn?.classList.toggle('pipeline-final-off', !current);
-        synthesisStack.innerHTML = `
-            <div class="model-block inactive pipeline-synthesis-block" data-synthesis-stage="true" data-synthesis-kind="universal">
-                <div class="model-header">
-                    <span class="status-indicator" aria-hidden="true"></span>
-                    <span class="model-name">Synthesis</span>
-                </div>
-                <select id="${flowSelectId}" class="${flowSelectClass}" aria-label="Synthesis model in flow">
-                    ${options}
-                </select>
-            </div>
-        `;
-        const flowSelect = getSynthesizerFlowSelect();
-        if (flowSelect) {
-            flowSelect.value = current;
-            syncFlowSelectLock(flowSelect, current);
-            flowSelect.addEventListener('change', (event) => {
-                window.setSynthesisModelFromName?.(event.target?.value || '');
-            });
-        }
-        const block = synthesisStack.querySelector('.pipeline-synthesis-block');
-        if (block) {
-            block.classList.toggle('selected-synthesizer', !!current);
-            block.title = current ? `Final synthesizer: ${current}` : 'Select a synthesizer model';
-        }
-        // The block is rebuilt from markup here: it gets the stage state again (no run classes come with the markup).
-        window.__syncPipelineRunStateVisuals?.();
-        renderDraftPlanCanvas();
-    }
-
-    function activeDraftPlanForCanvas() {
-        return window.__pipelineDraftPlanForCanvas?.(window.__getActivePipelineDraftPlan?.()) || { plannedStages: [] };
-    }
-    function syncStageInsertControls(plan = activeDraftPlanForCanvas()) {
-        const editable = true;
-        const roundStageIds = (plan.plannedStages || [])
-            .filter((stage) => /^canvas-r\d+$/.test(stage.plannedStageId || ''))
-            .map((stage) => stage.plannedStageId);
-        const workingStages = (plan.plannedStages || [])
-            .filter((stage) => stage.outputIntent === 'working_synthesis');
-        pipelinePanel?.querySelectorAll('.pipeline-stage-insert').forEach((button) => {
-            const afterStageId = button.dataset.afterStageId || '';
-            const activeStage = workingStages.find((stage) => stage.upstream?.includes(afterStageId));
-            const isBetweenRounds = roundStageIds.indexOf(afterStageId) >= 0
-                && roundStageIds.indexOf(afterStageId) < roundStageIds.length - 1;
-            const enabled = editable && isBetweenRounds;
-            // Only the gaps between two rounds exist: the insert after the last round is hidden, not disabled.
-            button.hidden = !isBetweenRounds;
-            button.disabled = !enabled;
-            button.classList.toggle('has-intermediate-synthesis', !!activeStage);
-            button.setAttribute('aria-pressed', String(!!activeStage));
-            button.title = !editable
-                ? 'Stages can be changed before a run or while it is paused'
-                : !isBetweenRounds
-                    ? 'Intermediate synthesis can be placed only between rounds'
-                    : activeStage
-                        ? 'Click to remove (double-click for its request)'
-                        : 'Click to add intermediate synthesis';
-        });
-    }
-    function renderDraftPlanCanvas() {
-        if (!pipelinePanel || !window.DebateDraftPlan) return;
-        const plan = activeDraftPlanForCanvas();
-        syncStageInsertControls(plan);
-    }
-    window.__syncStageInsertControls = () => syncStageInsertControls();
-    async function removeIntermediateSynthesis(plan, target) {
-        const next = JSON.parse(JSON.stringify(plan));
-        next.plannedStages.forEach((stage) => {
-            if ((stage.upstream || []).includes(target.plannedStageId)) {
-                stage.upstream = [...stage.upstream.filter((id) => id !== target.plannedStageId), ...(target.upstream || [])];
-            }
-        });
-        next.plannedStages = next.plannedStages.filter((stage) => stage.plannedStageId !== target.plannedStageId);
-        window.__persistActivePipelineDraftPlan?.(next);
-        renderDraftPlanCanvas();
-        window.__updatePipelineAll?.();
-        return true;
-    }
-    async function toggleIntermediateSynthesis(button) {
-        if (!button || button.disabled) return false;
-        const plan = activeDraftPlanForCanvas();
-        const afterPlannedStageId = button.dataset.afterStageId || '';
-        const existing = (plan.plannedStages || []).find((stage) =>
-            stage.outputIntent === 'working_synthesis' && stage.upstream?.includes(afterPlannedStageId));
-        if (existing) return removeIntermediateSynthesis(plan, existing);
-        if (window.__controlledAfter?.(afterPlannedStageId.replace(/^canvas-/, ''))) {
-            showNotification(INTERMEDIATE_CONTROL_NOTE, 'warn');
-            return false;
-        }
-        // Independent of the final synthesis: an intermediate one falls back to the default synthesizer.
-        const synthesizer = window.__getDraftPlanSynthesizer?.(plan) || window.__getDefaultSynthesizerName?.();
-        const result = window.DebateDraftPlan.insertSynthesis(plan, {
-            afterPlannedStageId,
-            participantIds: [synthesizer],
-            plannedStageId: `planned-working-synthesis-after-${afterPlannedStageId}`
-        });
-        if (!result.ok) {
-            showNotification(result.reasonCode || 'Cannot insert synthesis stage.', 'warn');
-            return false;
-        }
-        window.__persistActivePipelineDraftPlan?.(result.plan);
-        renderDraftPlanCanvas();
-        window.__updatePipelineAll?.();
-        return true;
-    }
-    // The intermediate card's select sets the model of its own stage (participantIds[0]).
-    window.__setIntermediateSynthesisModel = (afterPlannedStageId, modelName) => {
-        const plan = activeDraftPlanForCanvas();
-        const stage = (plan.plannedStages || []).find((item) =>
-            item.outputIntent === 'working_synthesis' && item.upstream?.includes(afterPlannedStageId));
-        if (!stage || !modelName) return false;
-        const next = JSON.parse(JSON.stringify(plan));
-        next.plannedStages.find((item) => item.plannedStageId === stage.plannedStageId).participantIds = [modelName];
-        window.__persistActivePipelineDraftPlan?.(next);
-        renderDraftPlanCanvas();
-        window.__updatePipelineAll?.();
-        return true;
-    };
-    pipelinePanel?.addEventListener('click', (event) => {
-        const insert = event.target.closest('.pipeline-stage-insert');
-        if (!insert) return;
-        event.preventDefault();
-    });
-    function syncSynthesizerFlowStage() {
-        if (!synthesisStack) return;
-        const current = normalizeExplicitSynthesizer(window.__getDraftPlanSynthesizer?.(
-            window.__pipelineDraftPlanForCanvas?.(window.__getActivePipelineDraftPlan?.())
-        ));
-        const flowSelect = getSynthesizerFlowSelect();
-        const block = synthesisStack.querySelector('.pipeline-synthesis-block');
-        synthesisColumn?.classList.toggle('pipeline-final-off', !current);
-        if (flowSelect && flowSelect.value !== current) flowSelect.value = current;
-        syncFlowSelectLock(flowSelect, current);
-        if (block) {
-            block.classList.toggle('selected-synthesizer', !!current);
-            block.title = current ? `Final synthesizer: ${current}` : 'Select a synthesizer model';
-        }
-    }
-    function populateSynthesizerSelect() {
-        // The Canvas select is recreated from the persisted DraftPlan, so it
-        // cannot retain a second, hidden source of state.
-        renderSynthesisStage();
-    }
     function syncDebateSchemeUi() {
-        const presetMeta = getSelectedPipelinePresetMeta();
-        const currentRoundLimit = String(debateRoundLimitSelect?.value || '').trim();
-        const usesSynthesisStage = window.ResultsDebateUi?.usesSynthesisStage
-            ? window.ResultsDebateUi.usesSynthesisStage({ presetMeta, roundLimit: currentRoundLimit })
-            : (presetMeta.duration !== 'open_ended' || currentRoundLimit !== 'infinite');
-        // A persisted explicit synthesizer is itself a user request for the
-        // terminal synthesis stage. This must win over the transient startup
-        // round-limit value, otherwise reload hides the restored block when
-        // the saved configuration uses an open-ended/infinite limit.
-        const hasExplicitSynthesizer = !!normalizeExplicitSynthesizer(window.__getDraftPlanSynthesizer?.(
-            window.__pipelineDraftPlanForCanvas?.(window.__getActivePipelineDraftPlan?.())
-        ));
-        const shouldRenderSynthesisStage = usesSynthesisStage || hasExplicitSynthesizer;
-        const runActive = !!pipelineRunActive;
         const roundLimitControl = debateRoundLimitSelect?.closest?.('.debate-select-wrap') || debateRoundLimitSelect || null;
         const showRoundLimitControl = shouldShowDebateRoundLimitControl();
         if (roundLimitControl) {
@@ -21871,31 +21157,7 @@ function checkCompareButtonState() {
             debateRoundLimitSelect.hidden = !showRoundLimitControl;
             debateRoundLimitSelect.disabled = !showRoundLimitControl;
         }
-        const flowSelect = getSynthesizerFlowSelect();
-        if (flowSelect) flowSelect.disabled = runActive || !shouldRenderSynthesisStage;
-        document.querySelectorAll('.synthesizer-capable').forEach((el) => {
-            el.hidden = !shouldRenderSynthesisStage;
-            el.setAttribute('aria-hidden', String(!shouldRenderSynthesisStage));
-        });
-        document.querySelectorAll('.synthesis-capable').forEach((el) => {
-            el.hidden = !shouldRenderSynthesisStage;
-            el.setAttribute('aria-hidden', String(!shouldRenderSynthesisStage));
-        });
-
         document.querySelectorAll('.registry-capable').forEach((el) => { el.hidden = false; el.setAttribute('aria-hidden', 'false'); });
-        renderSynthesisStage();
-        const currentFlowSelect = getSynthesizerFlowSelect();
-        const hasActivePipelineModels = getSelectedLLMs().length > 0;
-        const hasFinalSynthesizer = !!normalizeExplicitSynthesizer(window.__getDraftPlanSynthesizer?.(
-            window.__pipelineDraftPlanForCanvas?.(window.__getActivePipelineDraftPlan?.())
-        ));
-        if (currentFlowSelect) currentFlowSelect.disabled = runActive || !shouldRenderSynthesisStage || !hasActivePipelineModels || !hasFinalSynthesizer;
-        const activeSynthesisValue = String(window.__getDraftPlanSynthesizer?.(
-            window.__pipelineDraftPlanForCanvas?.(window.__getActivePipelineDraftPlan?.())
-        ) || '').trim();
-        if (currentFlowSelect && currentFlowSelect.value !== activeSynthesisValue) {
-            currentFlowSelect.value = activeSynthesisValue;
-        }
     }
     window.syncDebateSchemeUi = syncDebateSchemeUi;
     const setDebateSchemeValue = () => {
@@ -21903,7 +21165,6 @@ function checkCompareButtonState() {
         syncDebateSchemeUi();
     };
     window.setDebateSchemeValue = setDebateSchemeValue;
-    populateSynthesizerSelect();
     const debateTranscriptStore = DebateEngineRuntime?.createStore?.({
         session: {
             sessionId: '1',

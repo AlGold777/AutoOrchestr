@@ -229,12 +229,6 @@ function renderDebateDom() {
           <div class="model-stack" id="r2-models"></div>
         </div>
         <div id="insertionPoint"></div>
-        <div class="connector-group synthesis-capable" id="connectorToSynthesis" hidden aria-hidden="true">
-          <svg class="connector-svg" id="svg-r-last-synthesis"></svg>
-        </div>
-        <div class="stage-column synthesis-capable" id="synthesisColumn" data-stage="synthesis" hidden aria-hidden="true">
-          <div class="model-stack synthesis-stack" id="synthesis-stack" data-render="pipeline-synthesis-stack"></div>
-        </div>
         <div class="pipeline-items" id="pipelineItems">
           <div class="pipeline-item active" data-name="Research & Analysis">
             <input type="radio" name="pipeline" class="pipeline-radio" checked>
@@ -1965,12 +1959,12 @@ describe('Pipeline debate favorites view', () => {
     document.dispatchEvent(new CustomEvent('llm-selection-change', {
       detail: { selected: ['GPT', 'Gemini', 'Claude'] }
     }));
-    window.setSynthesisModelFromName('Claude');
     const snapshot = window.__pipelineLifecycleDebug.buildPipelineRuntimeSnapshot();
     expect(snapshot.config.protocol).toMatchObject({
-      type: 'universal', runPolicy: 'auto', synthesizer: 'Claude',
+      type: 'universal', runPolicy: 'auto',
       selectedModels: ['GPT', 'Gemini', 'Claude']
     });
+    expect(snapshot.config.protocol).not.toHaveProperty('synthesizer');
   });
   test('default pipeline list exposes only universal purpose profiles', () => {
     const names = Array.from(document.querySelectorAll('#pipelineItems .pipeline-item'))
@@ -1981,20 +1975,22 @@ describe('Pipeline debate favorites view', () => {
     document.querySelectorAll('#pipelineItems .pipeline-radio').forEach((radio) => expect(radio.disabled).toBe(false));
   });
 
-  test('Custom turns the canvas plan into engine steps: rounds, an intermediate synthesis with its own model, the final synthesis', () => {
+  test('Custom turns the canvas plan into engine steps: rounds only; a synthesis stage of an older plan gives no step', () => {
     const steps = window.__pipelineLifecycleDebug.customStepsFromPlan({ plannedStages: [
       { plannedStageId: 'canvas-r1', participantIds: ['GPT', 'Claude'], outputIntent: 'discussion_work' },
       { plannedStageId: 'planned-working-synthesis-after-canvas-r1', participantIds: ['Gemini'], outputIntent: 'working_synthesis' },
       { plannedStageId: 'canvas-r2', participantIds: ['GPT'], outputIntent: 'discussion_work' },
+      { plannedStageId: 'canvas-r3', participantIds: ['Claude'], participantBindings: [{ participantId: 'Claude', promptId: 'interaction_meta_synthesis' }], outputIntent: 'discussion_work' },
       { plannedStageId: 'planned-final-synthesis', participantIds: ['Claude'], outputIntent: 'candidate_final' }
     ] });
     expect(window.__pipelineLifecycleDebug.customStepsFromPlan({ plannedStages: [{ plannedStageId: 'canvas-r1', participantIds: [] }] }, { ref: 'r1', name: 'GPT' })[0].models.map((model) => model.name)).toEqual(['GPT']);
     expect(steps.map((step) => ({ ...step, models: step.models.map((model) => model.name) }))).toEqual([
       { kind: 'round', ref: 'r1', round: 1, order: 'parallel', task: '', input: 'none', models: ['GPT', 'Claude'] },
-      { kind: 'synthesis', ref: 'synth:planned-working-synthesis-after-canvas-r1', afterRound: 1, task: expect.stringContaining('Сведи'), models: ['Gemini'] },
       { kind: 'round', ref: 'r2', round: 2, order: 'parallel', task: expect.stringContaining('Учти ответы'), input: 'previous', models: ['GPT'] },
-      { kind: 'synthesis', ref: 'final', afterRound: 2, task: expect.stringContaining('Сведи'), models: ['Claude'] }
+      { kind: 'round', ref: 'r3', round: 3, order: 'parallel', task: expect.stringContaining('Учти ответы'), input: 'previous', models: ['Claude'] }
     ]);
+    // The round of one model with the synthesis role is a synthesis: its role text reaches the model.
+    expect(steps[2].models[0].extra).toContain('Построй собственное экспертное решение');
   });
 
   test('unnamed canvas opens the real Custom editor and saves the Custom runner without a draft flag', async () => {
@@ -2039,7 +2035,6 @@ describe('Pipeline debate favorites view', () => {
     document.getElementById('pipeline-panel').removeAttribute('data-pipeline-draft');
     debug.applyPipelineConfig(config);
     document.getElementById('debate-run-policy-select').value = 'auto';
-    window.setSynthesisModelFromName('');
     let block = [...document.querySelectorAll('#r2-models .model-block')].find((item) => item.querySelector('.model-name')?.textContent === 'GPT');
     expect(block).toBeDefined();
     const modal = document.createElement('div');
@@ -2251,7 +2246,6 @@ describe('Pipeline debate favorites view', () => {
       customModelSettings: { r1: { GPT: { promptTemplate, discipline } } } };
     debug.setPipelineStoreForTest({ active: 'Budget check', pipelines: { 'Budget check': config }, order: ['Budget check'] });
     debug.applyPipelineConfig(config);
-    window.setSynthesisModelFromName('');
     document.getElementById('debate-run-policy-select').value = config.protocol.runPolicy;
     const starts = [];
     window.MessageDelivery = delivery;
@@ -2311,13 +2305,12 @@ describe('Pipeline debate favorites view', () => {
     } finally { window.prompt = oldPrompt; }
     return prompts;
   };
-  const setupCustomInheritance = (name, { synthesis = '' } = {}) => {
+  const setupCustomInheritance = (name) => {
     const debug = window.__pipelineLifecycleDebug;
-    const config = { version: 3, roundCounter: 2, protocol: { type: 'universal', presetId: 'CUSTOM', selectedModels: ['GPT', 'Claude'], length: '300', roundLimit: '2', synthesizer: synthesis, runPolicy: 'auto' }, modelStacks: {} };
+    const config = { version: 3, roundCounter: 2, protocol: { type: 'universal', presetId: 'CUSTOM', selectedModels: ['GPT', 'Claude'], length: '300', roundLimit: '2', runPolicy: 'auto' }, modelStacks: {} };
     debug.setPipelineStoreForTest({ active: name, pipelines: { [name]: config }, order: [name] });
     debug.applyPipelineConfig(config);
     document.getElementById('debate-run-policy-select').value = 'auto';
-    window.setSynthesisModelFromName(synthesis);
     const oldDelivery = window.MessageDelivery;
     window.MessageDelivery = require('../shared/message-delivery');
     const starts = [];
@@ -2364,7 +2357,7 @@ describe('Pipeline debate favorites view', () => {
   };
 
   test('a saved pipeline with an invalid value is not run: Basic names the place and sends nothing', async () => {
-    const h = setupCustomInheritance('Invalid schema', { synthesis: 'Gemini' });
+    const h = setupCustomInheritance('Invalid schema');
     try {
       const bad = { ...h.config, customModelSettings: { r1: { GPT: { maxWords: 'abc' } } } };
       h.debug.clearCustomSessionForTest();
@@ -2383,7 +2376,7 @@ describe('Pipeline debate favorites view', () => {
   }, 30000);
 
   test('wrong saved values reach the check: 0, false and a wrong type send nothing; the card still opens to correct them', async () => {
-    const h = setupCustomInheritance('Wrong values', { synthesis: 'Gemini' });
+    const h = setupCustomInheritance('Wrong values');
     try {
       const apply = (name, settings) => {
         const config = { ...h.config, customModelSettings: settings };
@@ -2406,7 +2399,7 @@ describe('Pipeline debate favorites view', () => {
   }, 30000);
 
   test('a task, a length instruction or content requirements the owner emptied stay empty (not inherited); ↶ gives the inherited value back; delivery and correction are never empty', async () => {
-    const h = setupCustomInheritance('Explicit empty', { synthesis: 'Gemini' });
+    const h = setupCustomInheritance('Explicit empty');
     try {
       const planOf = () => window.__pipelineDraftPlanForCanvas(window.__getActivePipelineDraftPlan());
       const saved = () => h.debug.basicSchemaFromPage(planOf(), null, { forSave: true });
@@ -2442,24 +2435,8 @@ describe('Pipeline debate favorites view', () => {
     expect(debug.composeCustomPrompts(['GPT'], { GPT: 'T' }, {}, { GPT: { limit: '{слов}', content: '' } }, {}, {}, 123).GPT).toBe('T\n\n123');
   });
 
-  test('an intermediate synthesis without a request still takes the saved final request while the final synthesis is off', () => {
-    const h = setupCustomInheritance('Final off request', { synthesis: '' });
-    try {
-      const config = { ...h.config, customModelSettings: { final: { Gemini: { promptTemplate: 'FINAL TEXT {задача}' } } } };
-      h.debug.clearCustomSessionForTest();
-      h.debug.setPipelineStoreForTest({ active: 'Final off request', order: ['Final off request'], pipelines: { 'Final off request': config } });
-      h.debug.applyPipelineConfig(config);
-      const steps = h.debug.customStepsFromPlan({ plannedStages: [
-        { plannedStageId: 'canvas-r1', participantIds: ['GPT'] },
-        { plannedStageId: 'planned-working-synthesis-after-canvas-r1', participantIds: ['Gemini', 'Claude'], outputIntent: 'working_synthesis' },
-        { plannedStageId: 'planned-final-synthesis', participantIds: [], outputIntent: 'candidate_final' }
-      ] });
-      expect(steps.find((step) => step.kind === 'synthesis').models.map((model) => model.promptTemplate)).toEqual(['FINAL TEXT {задача}', null]);
-    } finally { h.cleanup(); }
-  });
-
   test('a switched-off first round keeps its number in the steps of the page', () => {
-    const h = setupCustomInheritance('Round numbers', { synthesis: '' });
+    const h = setupCustomInheritance('Round numbers');
     try {
       const steps = h.debug.customStepsFromPlan({ plannedStages: [
         { plannedStageId: 'canvas-r1', participantIds: [] }, { plannedStageId: 'canvas-r2', participantIds: ['GPT'] }
@@ -2469,7 +2446,7 @@ describe('Pipeline debate favorites view', () => {
   });
 
   test('the run keeps the policy and the shared limit it started with', async () => {
-    const h = setupCustomInheritance('Fixed run settings', { synthesis: '' });
+    const h = setupCustomInheritance('Fixed run settings');
     try {
       const built = h.debug.buildBasicRun(window.__pipelineDraftPlanForCanvas(window.__getActivePipelineDraftPlan()));
       expect(built.errors).toEqual([]);
@@ -2479,7 +2456,7 @@ describe('Pipeline debate favorites view', () => {
   });
 
   test('the end of a Basic run adds no second card with the answers already shown; the notification names the reason', async () => {
-    const h = setupCustomInheritance('No result card', { synthesis: 'Gemini' });
+    const h = setupCustomInheritance('No result card');
     try {
       await h.run();
       const cards = [...document.querySelectorAll('.debate-model-card')];
@@ -2496,9 +2473,9 @@ describe('Pipeline debate favorites view', () => {
     expect(notice('остановлено User', 0)).toBe('Basic: остановлено User. Принятых ответов нет.');
   });
 
-  test('Custom run: canvas blocks and links follow the engine stages, synthesis blocks included, and end done', async () => {
-    const h = setupCustomInheritance('Custom canvas progress', { synthesis: 'Gemini' });
-    const gates = [0, 1, 2].map(() => { let open = null; const promise = new Promise((resolve) => { open = resolve; }); return { promise, open }; });
+  test('Custom run: canvas blocks and links follow the engine stages and end done', async () => {
+    const h = setupCustomInheritance('Custom canvas progress');
+    const gates = [0, 1].map(() => { let open = null; const promise = new Promise((resolve) => { open = resolve; }); return { promise, open }; });
     const answerLater = (message, batchNumber) => setTimeout(() => message.selectedLLMs.forEach((model) => h.debug.pipelineWaiter.handleFinal({ type: 'LLM_RESPONSE', llmName: model,
       transportRequestId: message.pipelineContext.transportRequestIds[model],
       answer: `Accepted ${model} response ${batchNumber}.`,
@@ -2530,21 +2507,14 @@ describe('Pipeline debate favorites view', () => {
       expect(link('svg-r1-r2')).toContain('pipeline-link-running');
       gates[1].open();
 
-      await until(() => h.starts.length === 3);
-      expect(state('#round2')).toContain('pipeline-run-done');
-      expect(link('svg-r1-r2')).toContain('pipeline-link-done');
-      const synth = () => document.querySelector('#synthesis-stack .pipeline-synthesis-block').className;
-      expect(synth()).toContain('pipeline-run-running');
-      expect(synth()).not.toContain('pipeline-run-done');
-      gates[2].open();
       await running;
 
-      // Run over: every stage is done and nothing keeps pulsing; the synthesis block is blue like the rounds.
+      // Run over: every stage is done and nothing keeps pulsing.
       expect(state('#round1')).toContain('pipeline-run-done');
       expect(state('#round2')).toContain('pipeline-run-done');
-      expect(synth()).toContain('pipeline-run-done');
+      expect(link('svg-r1-r2')).toContain('pipeline-link-done');
       expect(document.querySelectorAll('.pipeline-run-running, .pipeline-link-running').length).toBe(0);
-      expect(link('svg-r-last-synthesis')).toContain('pipeline-link-done');
+      expect(document.getElementById('synthesisColumn')).toBeNull();
     } finally {
       gates.forEach((gate) => gate.open());
       h.cleanup();
@@ -2571,23 +2541,23 @@ describe('Pipeline debate favorites view', () => {
     } finally { h.cleanup(); }
   });
 
-  test('Custom ▶ tasks and discipline reach dispatch in R2+ and synthesis without copying to models', async () => {
-    const h = setupCustomInheritance('General dispatch', { synthesis: 'Gemini' });
+  test('Custom ▶ tasks and discipline reach dispatch in R2+ without copying to models; ▶ has no synthesis task', async () => {
+    const h = setupCustomInheritance('General dispatch');
     try {
       const general = h.openGeneral();
       expect(general.querySelector('#custom-card-request')).toBeNull();
       expect(general.querySelector('#custom-card-length')).toBeNull();
-      await h.general({ roundTask: 'ROUND_GENERAL_A', synthesisTask: 'SYNTHESIS_GENERAL_A', content: 'CONTENT_GENERAL_A', delivery: 'DELIVERY_GENERAL {метка}', correction: 'FIX_GENERAL {причина}' });
+      expect(general.querySelector('#custom-discipline-synthesisTask')).toBeNull();
+      await h.general({ roundTask: 'ROUND_GENERAL_A', content: 'CONTENT_GENERAL_A', delivery: 'DELIVERY_GENERAL {метка}', correction: 'FIX_GENERAL {причина}' });
       expect(settingsOf(h.debug.capturePipelineConfig()).customModelSettings).toEqual({});
       await h.run();
-      expect(h.starts).toHaveLength(3);
+      expect(h.starts).toHaveLength(2);
       for (const model of ['GPT', 'CLAUDE']) {
         expect(h.starts[0].promptsByModel[model]).not.toContain('ROUND_GENERAL_A');
         expect(h.starts[1].promptsByModel[model]).toContain('ROUND_GENERAL_A');
         expect(h.starts[1].promptsByModel[model]).toContain('CONTENT_GENERAL_A');
         expect(h.starts[1].promptsByModel[model]).toContain('DELIVERY_GENERAL [[AO-');
       }
-      expect(h.starts[2].promptsByModel.GEMINI).toContain('SYNTHESIS_GENERAL_A');
       await h.general({ roundTask: 'ROUND_GENERAL_B', content: 'CONTENT_GENERAL_B' });
       await h.run({ retry: true });
       expect(h.starts[1].promptsByModel.GPT).toContain('ROUND_GENERAL_B');
@@ -2599,7 +2569,7 @@ describe('Pipeline debate favorites view', () => {
   }, 30000);
 
   test('Custom ▶ own lines reach every model of every step, before the model\'s own lines', async () => {
-    const h = setupCustomInheritance('General lines', { synthesis: 'Gemini' });
+    const h = setupCustomInheritance('General lines');
     try {
       // Adds lines through «+» on a card, then saves it; the card of ▶ has the same «+» as the model card.
       const addLines = async (card, lines) => {
@@ -2625,7 +2595,6 @@ describe('Pipeline debate favorites view', () => {
       expect(gpt.indexOf('SHARED_LINE')).toBeLessThan(gpt.indexOf('OWN_LINE'));
       expect(h.starts[1].promptsByModel.CLAUDE).toContain('SHARED_LINE');
       expect(h.starts[1].promptsByModel.CLAUDE).not.toContain('OWN_LINE');
-      expect(h.starts[2].promptsByModel.GEMINI).toContain('SHARED_LINE');
     } finally { h.cleanup(); }
   }, 30000);
 
@@ -2790,183 +2759,12 @@ describe('Pipeline debate favorites view', () => {
     } finally { h.cleanup(); }
   }, 30000);
 
-  test('an intermediate synthesis opens its own Custom card; its personal request reaches its model', async () => {
-    const h = setupCustomInheritance('Intermediate card', { synthesis: 'Gemini' });
-    try {
-      // The fixture has no insert buttons; the real panel puts one after each round.
-      const column = document.getElementById('round1');
-      if (!column.querySelector('.pipeline-stage-insert')) column.insertAdjacentHTML('afterbegin', '<button type="button" class="pipeline-stage-insert" data-after-stage-id="canvas-r1"></button>');
-      const insert = column.querySelector('.pipeline-stage-insert');
-      // The double click cancels the pending single-click toggle and opens the card; the stage is not added.
-      insert.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      insert.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      insert.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
-      await delay(300);
-      expect(insert.classList.contains('has-intermediate-synthesis')).toBe(false);
-      const modal = h.modal();
-      expect(modal.querySelector('.custom-card-model').textContent).toContain('Gemini');
-      modal.querySelector('#custom-card-request').value = 'SYNTH_PERSONAL {вход}';
-      modal.querySelector('#custom-card-save').click();
-      await delay(0);
-      expect(settingsOf(h.debug.capturePipelineConfig()).customModelSettings['synth:planned-working-synthesis-after-canvas-r1'].Gemini)
-        .toEqual({ promptTemplate: 'SYNTH_PERSONAL {вход}', name: 'Gemini', enabled: false });
-      // The saved text applies once a single click adds the stage.
-      insert.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await delay(300);
-      expect(insert.classList.contains('has-intermediate-synthesis')).toBe(true);
-      await h.run();
-      expect(h.starts[1].promptsByModel.GEMINI).toContain('SYNTH_PERSONAL');
-      expect(h.starts[1].promptsByModel.GEMINI).not.toContain('{вход}');
-    } finally { h.cleanup(); }
-  }, 30000);
-
-  test('a single click on an intermediate insert toggles it after a short wait', async () => {
-    const h = setupCustomInheritance('Intermediate toggle', { synthesis: 'Gemini' });
-    try {
-      const column = document.getElementById('round1');
-      if (!column.querySelector('.pipeline-stage-insert')) column.insertAdjacentHTML('afterbegin', '<button type="button" class="pipeline-stage-insert" data-after-stage-id="canvas-r1"></button>');
-      const insert = column.querySelector('.pipeline-stage-insert');
-      // The click handler reaches the toggle only through this bridge; without it nothing is added.
-      expect(typeof window.__toggleIntermediateSynthesis).toBe('function');
-      insert.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      expect(insert.classList.contains('has-intermediate-synthesis')).toBe(false);
-      await delay(300);
-      expect(insert.classList.contains('has-intermediate-synthesis')).toBe(true);
-      insert.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await delay(300);
-      expect(insert.classList.contains('has-intermediate-synthesis')).toBe(false);
-    } finally { h.cleanup(); }
-  }, 30000);
-
-  test('an intermediate synthesis block has the final block design, no header text, and its own model select', async () => {
-    const h = setupCustomInheritance('Intermediate block', { synthesis: 'Gemini' });
-    try {
-      const column = document.getElementById('round1');
-      if (!column.querySelector('.pipeline-stage-insert')) column.insertAdjacentHTML('afterbegin', '<button type="button" class="pipeline-stage-insert" data-after-stage-id="canvas-r1"></button>');
-      const insert = column.querySelector('.pipeline-stage-insert');
-      insert.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await delay(300);
-      const synthColumn = document.querySelector('.stage-column.pipeline-intermediate-synth');
-      expect(synthColumn).not.toBeNull();
-      // No "Synthesis" text: the header is empty and the insert button sits in it.
-      expect(synthColumn.querySelector('.pipeline-intermediate-synth-header').textContent.trim()).toBe('');
-      expect(synthColumn.querySelector('.pipeline-intermediate-synth-header .pipeline-stage-insert')).toBe(insert);
-      // The block is the final synthesis block's markup: status indicator, constant «Synthesis» label, model select.
-      const block = synthColumn.querySelector('.model-block.pipeline-synthesis-block');
-      expect(block.querySelector('.status-indicator')).not.toBeNull();
-      expect(block.querySelector('.model-name').textContent).toBe('Synthesis');
-      const select = block.querySelector('select.synthesis-flow-select');
-      expect(select.value).toBe('Gemini');
-      // Choosing a model in the select sets this stage's participant.
-      select.value = 'Claude';
-      select.dispatchEvent(new Event('change', { bubbles: true }));
-      await delay(0);
-      const stage = window.__pipelineDraftPlanForCanvas(window.__getActivePipelineDraftPlan())
-        .plannedStages.find((item) => item.outputIntent === 'working_synthesis');
-      expect(stage.participantIds).toEqual(['Claude']);
-      expect(block.querySelector('.model-name').textContent).toBe('Synthesis');
-      // A single click on the insert removes the stage and the button returns to its round.
-      insert.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await delay(300);
-      expect(document.querySelector('.stage-column.pipeline-intermediate-synth')).toBeNull();
-      expect(insert.parentElement).toBe(column);
-    } finally { h.cleanup(); }
-  }, 30000);
-
-  test('the insert after the last round is hidden; the insert between two rounds stays', () => {
-    const h = setupCustomInheritance('Insert hidden', { synthesis: 'GPT' });
-    try {
-      const inserts = ['round1', 'round2'].map((id, index) => {
-        const column = document.getElementById(id);
-        if (!column.querySelector('.pipeline-stage-insert')) column.insertAdjacentHTML('afterbegin', `<button type="button" class="pipeline-stage-insert" data-after-stage-id="canvas-r${index + 1}"></button>`);
-        return column.querySelector('.pipeline-stage-insert');
-      });
-      window.__syncStageInsertControls();
-      expect(inserts[0].hidden).toBe(false);
-      expect(inserts[1].hidden).toBe(true);
-    } finally { h.cleanup(); }
-  }, 30000);
-
-  test('with no final synthesizer the final block stays in place, inactive, with its select disabled', async () => {
-    const h = setupCustomInheritance('Final off block', { synthesis: '' });
-    try {
-      await delay(0);
-      const block = document.querySelector('#synthesis-stack .pipeline-synthesis-block');
-      expect(block).not.toBeNull();
-      expect(document.getElementById('synthesisColumn').classList.contains('pipeline-final-off')).toBe(true);
-      expect(block.classList.contains('inactive')).toBe(true);
-      expect(block.classList.contains('selected-synthesizer')).toBe(false);
-      expect(block.querySelector('.model-name').textContent).toBe('Synthesis');
-      expect(document.getElementById('synthesis-flow-select').disabled).toBe(true);
-    } finally { h.cleanup(); }
-  }, 30000);
-
-  test('an intermediate synthesis is added with the final synthesis OFF and uses Claude', async () => {
-    const h = setupCustomInheritance('Intermediate without final', { synthesis: '' });
-    try {
-      await delay(0);
-      const column = document.getElementById('round1');
-      if (!column.querySelector('.pipeline-stage-insert')) column.insertAdjacentHTML('afterbegin', '<button type="button" class="pipeline-stage-insert" data-after-stage-id="canvas-r1"></button>');
-      const insert = column.querySelector('.pipeline-stage-insert');
-      expect(document.getElementById('synthesisColumn').classList.contains('pipeline-final-off')).toBe(true);
-      expect(insert.disabled).toBe(false);
-      insert.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await delay(300);
-      expect(insert.classList.contains('has-intermediate-synthesis')).toBe(true);
-      const plan = window.__pipelineDraftPlanForCanvas(window.__getActivePipelineDraftPlan());
-      expect(window.__getDraftPlanSynthesizer(plan)).toBe('');
-      const stage = plan.plannedStages.find((item) => item.outputIntent === 'working_synthesis');
-      expect(stage.participantIds).toEqual(['Claude']);
-    } finally { h.cleanup(); }
-  }, 30000);
-
   test('legacy role labels resolve to the renamed roles', () => {
     const catalog = require('../disput/debate-prompt-catalog.js');
     expect(catalog.resolveParticipantRoleText('Meta-Синтез')).toBe('Synthes');
     expect(catalog.resolveParticipantRoleText('Критический аудит')).toBe('Critique');
     expect(catalog.resolveParticipantRoleText('Critique')).toBe('Critique');
   });
-
-  test('double-clicking the final synthesis block opens the final synthesizer card; a single click does not', async () => {
-    const h = setupCustomInheritance('Final card', { synthesis: 'Gemini' });
-    try {
-      const block = document.querySelector('#synthesis-stack .pipeline-synthesis-block');
-      expect(block).not.toBeNull();
-      block.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      expect(document.getElementById('pipeline-block-info-modal')?.style.display).not.toBe('flex');
-      block.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
-      const modal = h.modal();
-      expect(modal.style.display).toBe('flex');
-      expect(modal.querySelector('.custom-card-model').textContent).toContain('Gemini');
-    } finally { h.cleanup(); }
-  }, 30000);
-
-  test('a single click on the Final badge turns the final synthesis off and on again; a double click opens the card without toggling', async () => {
-    const h = setupCustomInheritance('Final toggle', { synthesis: 'GPT' });
-    try {
-      // The fixture has no badge; the real panel puts "Final" in the synthesis column.
-      const column = document.getElementById('synthesisColumn');
-      if (!column.querySelector('.round-badge')) column.insertAdjacentHTML('afterbegin', '<div class="stage-label"><span class="round-badge">Final</span></div>');
-      const badge = column.querySelector('.round-badge');
-      const select = document.getElementById('synthesis-flow-select');
-      expect(select.querySelector('option[value=""]')).toBeNull();
-      badge.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await delay(300);
-      expect(select.value).toBe('');
-      expect(document.getElementById('synthesisColumn').classList.contains('pipeline-final-off')).toBe(true);
-      badge.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await delay(300);
-      expect(select.value).toBe('GPT');
-      expect(document.getElementById('synthesisColumn').classList.contains('pipeline-final-off')).toBe(false);
-      // The double click cancels the pending toggle and opens the final synthesizer card; the state stays on.
-      badge.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      badge.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      badge.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
-      await delay(300);
-      expect(select.value).toBe('GPT');
-      expect(h.modal().querySelector('.custom-card-model').textContent).toContain('GPT');
-    } finally { h.cleanup(); }
-  }, 30000);
 
   test('Custom ▶ model notes follow every request of their model after the request and before the limit; corrections get none', async () => {
     const h = setupCustomInheritance('Model notes');
@@ -3117,7 +2915,7 @@ describe('Pipeline debate favorites view', () => {
     };
 
     test('the saved record holds a valid schema with origin, version and only the owner\'s values; the earlier members are gone', async () => {
-      const h = setupCustomInheritance('Schema record', { synthesis: 'Gemini' });
+      const h = setupCustomInheritance('Schema record');
       try {
         await h.general({ roundTask: 'GENERAL_TASK' });
         await h.model({ promptTemplate: 'OWN REQUEST {задача}' });
@@ -3136,7 +2934,7 @@ describe('Pipeline debate favorites view', () => {
     }, 30000);
 
     test('after a reload the cards, ▶ and the steps of the run are the same', async () => {
-      const h = setupCustomInheritance('Schema reload', { synthesis: 'Gemini' });
+      const h = setupCustomInheritance('Schema reload');
       try {
         await h.general({ roundTask: 'GENERAL_TASK', content: 'GENERAL_CONTENT' });
         await h.model({ content: 'OWN_CONTENT' });
@@ -3153,7 +2951,7 @@ describe('Pipeline debate favorites view', () => {
     }, 30000);
 
     test('a copy of a template remembers it in basedOn; saving it again keeps basedOn', async () => {
-      const h = setupCustomInheritance('Based source', { synthesis: '' });
+      const h = setupCustomInheritance('Based source');
       try {
         h.debug.clearCustomSessionForTest();
         document.querySelector('.pipeline-item[data-name="Default"]').click();
@@ -3171,7 +2969,7 @@ describe('Pipeline debate favorites view', () => {
     }, 30000);
 
     test('the run policy and the limit are written only when set before or different from Basic', async () => {
-      const h = setupCustomInheritance('Run values', { synthesis: '' });
+      const h = setupCustomInheritance('Run values');
       try {
         const lengthSelect = document.getElementById('debate-length-select');
         const policy = document.getElementById('debate-run-policy-select');
@@ -3191,7 +2989,7 @@ describe('Pipeline debate favorites view', () => {
     }, 30000);
 
     test('a schema takes the run policy and the limit from itself, not from the copy in the protocol', async () => {
-      const h = setupCustomInheritance('Run from schema', { synthesis: '' });
+      const h = setupCustomInheritance('Run from schema');
       try {
         const record = JSON.parse(JSON.stringify(h.debug.capturePipelineConfig()));
         record.protocol.runPolicy = 'manual';
@@ -3206,8 +3004,8 @@ describe('Pipeline debate favorites view', () => {
       } finally { h.cleanup(); }
     }, 30000);
 
-    test('settings of a switched-off model and of a step the canvas lacks are kept with enabled: false', async () => {
-      const h = setupCustomInheritance('Off models', { synthesis: '' });
+    test('settings of a switched-off model are kept with enabled: false; the card of an old final synthesis is read and dropped', async () => {
+      const h = setupCustomInheritance('Off models');
       try {
         const legacy = { ...h.config, customModelSettings: { r2: { Grok: { promptTemplate: 'GROK REQUEST', maxWords: 80 } }, final: { Gemini: { task: 'FINAL OFF TASK' } } } };
         h.debug.clearCustomSessionForTest();
@@ -3217,7 +3015,7 @@ describe('Pipeline debate favorites view', () => {
         expect(window.BasicSchema.validate(schema)).toEqual([]);
         const entry = (ref, name) => schema.steps.find((step) => step.ref === ref)?.models.find((model) => model.name === name);
         expect(entry('r2', 'Grok')).toEqual({ name: 'Grok', enabled: false, request: 'GROK REQUEST', maxWords: 80 });
-        expect(entry('final', 'Gemini')).toEqual({ name: 'Gemini', enabled: false, task: 'FINAL OFF TASK' });
+        expect(schema.steps.map((step) => step.ref)).toEqual(['r1', 'r2']);
         // A switched-off model is not called, and its settings come back with the schema.
         expect(window.BasicSchema.assemble(schema).flatMap((step) => step.models.map((model) => model.name))).not.toContain('Grok');
         expect(window.BasicSchema.toSettings(schema).customModelSettings.r2.Grok).toEqual({ promptTemplate: 'GROK REQUEST', maxWords: 80, name: 'Grok', enabled: false });
@@ -3225,7 +3023,7 @@ describe('Pipeline debate favorites view', () => {
     }, 30000);
 
     test('a schema of a newer Basic is not run, whatever the earlier members say', async () => {
-      const h = setupCustomInheritance('Newer schema', { synthesis: '' });
+      const h = setupCustomInheritance('Newer schema');
       try {
         const record = JSON.parse(JSON.stringify(h.debug.capturePipelineConfig()));
         record.schema.schemaVersion = 99;
@@ -3253,15 +3051,14 @@ describe('Pipeline debate favorites view', () => {
       const select = (name) => document.querySelector(`.pipeline-item[data-name="${name}"]`).click();
 
       test('the order of a round and the send marks of its models survive load and a second save', async () => {
-        const h = setupCustomInheritance('Order host', { synthesis: '' });
+        const h = setupCustomInheritance('Order host');
         try {
           // The schema order differs from the canvas order (Claude, GPT); the switched-off Claude of R2 comes first on the canvas.
           const schema = {
             schemaVersion: 1, origin: 'user', run: { policy: 'auto' },
             steps: [
               { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }, { name: 'Claude' }] },
-              { ref: 'r2', kind: 'round', models: [{ name: 'GPT' }, { name: 'Claude', enabled: false, request: 'KEPT REQUEST' }] },
-              { ref: 'final', kind: 'synthesis', models: [{ name: 'Claude' }] }
+              { ref: 'r2', kind: 'round', models: [{ name: 'GPT' }, { name: 'Claude', enabled: false, request: 'KEPT REQUEST' }] }
             ]
           };
           expect(await h.debug.installBasicSchema('Ordered', schema)).toEqual({ ok: true, errors: [] });
@@ -3286,12 +3083,12 @@ describe('Pipeline debate favorites view', () => {
       });
 
       test('the specification text (spec, a step\'s title, goal, rules, quality) survives Install, Save, a reload and Export/Import; a schema without it gets none', async () => {
-        const h = setupCustomInheritance('Spec host', { synthesis: '' });
+        const h = setupCustomInheritance('Spec host');
         try {
           const spec = { purpose: 'Назначение', inputs: '', result: 'Итог', application: 'Применение', readiness: 'Готово', rules: 'Правила', boundaries: 'Границы', failure: 'Сбой' };
           const schema = { schemaVersion: 1, origin: 'user', spec, steps: [
             { ref: 'r1', kind: 'round', title: 'Сбор позиций', goal: 'Цель', rules: '', quality: 'Проверка', models: [{ name: 'GPT' }, { name: 'Claude' }] },
-            { ref: 'final', kind: 'synthesis', title: 'Итог', models: [{ name: 'Claude' }] }
+            { ref: 'r2', kind: 'round', title: 'Итог', models: [{ name: 'Claude', role: 'interaction_meta_synthesis' }] }
           ] };
           expect(await h.debug.installBasicSchema('Spec installed', schema)).toEqual({ ok: true, errors: [] });
           select('Spec installed');
@@ -3299,7 +3096,7 @@ describe('Pipeline debate favorites view', () => {
           const saved = h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' });
           expect(saved.spec).toEqual(spec);
           expect(saved.steps[0]).toMatchObject({ ref: 'r1', title: 'Сбор позиций', goal: 'Цель', rules: '', quality: 'Проверка' });
-          expect(saved.steps[1]).toMatchObject({ ref: 'final', title: 'Итог' });
+          expect(saved.steps[1]).toMatchObject({ ref: 'r2', title: 'Итог' });
           expect(saved.steps[1]).not.toHaveProperty('goal');
           // Save writes the text to the record; a reload of the record and a second save keep it as it was.
           await saveAs('Spec saved');
@@ -3333,7 +3130,7 @@ describe('Pipeline debate favorites view', () => {
       }, 30000);
 
       test('run.strictLength of the schema survives Save, Export, the run and a second install; the run takes it for every step', async () => {
-        const h = setupCustomInheritance('Strict run host', { synthesis: '' });
+        const h = setupCustomInheritance('Strict run host');
         try {
           const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto', strictLength: true }, steps: [
             { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }, { name: 'Claude' }] }
@@ -3357,15 +3154,14 @@ describe('Pipeline debate favorites view', () => {
       });
 
       test('a model on the canvas with Send off in every round stays on the canvas: install, save, load again, save (onCanvas)', async () => {
-        const h = setupCustomInheritance('Canvas off host', { synthesis: '' });
+        const h = setupCustomInheritance('Canvas off host');
         try {
           const planOf = () => window.__pipelineDraftPlanForCanvas(window.__getActivePipelineDraftPlan());
           const schema = {
             schemaVersion: 1, origin: 'user', run: { policy: 'auto' },
             steps: [
               { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }, { name: 'Claude' }, { name: 'Grok', enabled: false, onCanvas: true, request: 'OFF REQUEST' }] },
-              { ref: 'r2', kind: 'round', models: [{ name: 'GPT' }, { name: 'Claude' }, { name: 'Grok', enabled: false, onCanvas: true }] },
-              { ref: 'final', kind: 'synthesis', models: [{ name: 'Claude' }] }
+              { ref: 'r2', kind: 'round', models: [{ name: 'GPT' }, { name: 'Claude' }, { name: 'Grok', enabled: false, onCanvas: true }] }
             ]
           };
           expect(await h.debug.installBasicSchema('Off on canvas', schema)).toEqual({ ok: true, errors: [] });
@@ -3397,17 +3193,18 @@ describe('Pipeline debate favorites view', () => {
         }
       });
 
-      test('the canvas shows the rounds, the models, the roles and the syntheses of the schema, and the run takes the schema\'s steps', async () => {
-        const h = setupCustomInheritance('Install host', { synthesis: '' });
+      test('the canvas shows the rounds, the models and the roles of the schema (a synthesis is a round of one model with a role), and the run takes the schema\'s steps', async () => {
+        const h = setupCustomInheritance('Install host');
         try {
+          const synthesis = 'interaction_meta_synthesis';
           const schema = {
             schemaVersion: 1, origin: 'builtin', basedOn: 'Idea', run: { policy: 'auto' },
             defaults: { roundTask: 'INSTALLED_TASK' },
             steps: [
               { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }, { name: 'Claude' }, { name: 'Grok', enabled: false, request: 'KEPT REQUEST' }] },
-              { ref: 'synth:mid', kind: 'synthesis', models: [{ name: 'Gemini' }] },
-              { ref: 'r2', kind: 'round', models: [{ name: 'GPT', discipline: { content: 'R2_GPT_CONTENT' } }] },
-              { ref: 'final', kind: 'synthesis', models: [{ name: 'Claude' }] }
+              { ref: 'r2', kind: 'round', models: [{ name: 'Gemini', role: synthesis }] },
+              { ref: 'r3', kind: 'round', models: [{ name: 'GPT', discipline: { content: 'R2_GPT_CONTENT' } }] },
+              { ref: 'r4', kind: 'round', models: [{ name: 'Claude', role: synthesis }] }
             ]
           };
           const result = await h.debug.installBasicSchema('Installed', schema);
@@ -3419,16 +3216,22 @@ describe('Pipeline debate favorites view', () => {
           await settleCustomCard();
           expect(h.debug.getPipelineStoreSnapshot().active).toBe('Installed');
           expect(stackFlags('r1-models').filter(([, send]) => send).map(([name]) => name).sort()).toEqual(['Claude', 'GPT']);
-          expect(stackFlags('r2-models').filter(([, send]) => send).map(([name]) => name)).toEqual(['GPT']);
+          // A round of one model with a role is an ordinary round column: one block sends, with its role.
+          expect(stackFlags('r2-models').filter(([, send]) => send)).toEqual([['Gemini', true, synthesis]]);
+          expect(stackFlags('r3-models').filter(([, send]) => send).map(([name]) => name)).toEqual(['GPT']);
+          expect(stackFlags('r4-models').filter(([, send]) => send)).toEqual([['Claude', true, synthesis]]);
+          expect(document.querySelectorAll('.stage-column[data-round]')).toHaveLength(4);
+          expect(document.getElementById('synthesisColumn')).toBeNull();
           expect(document.getElementById('debate-run-policy-select').value).toBe('auto');
-          expect(window.__getDraftPlanSynthesizer(planOf())).toBe('Claude');
           const built = h.debug.buildBasicRun(planOf());
           expect(built.errors).toEqual([]);
           // The canvas keeps its own order of models; a parallel round does not depend on it.
           const sortedModels = (steps) => JSON.stringify(steps.map((step) => ({ ...step, models: step.models.slice().sort((a, b) => a.name.localeCompare(b.name)) })));
-          expect(sortedModels(built.steps)).toBe(sortedModels(window.BasicSchema.assemble(schema)));
-          expect(built.steps.map((step) => step.ref)).toEqual(['r1', 'synth:mid', 'r2', 'final']);
+          const roleText = (role) => (role === synthesis ? built.steps[1].models[0].extra : '');
+          expect(sortedModels(built.steps)).toBe(sortedModels(window.BasicSchema.assemble(schema, { roleText })));
+          expect(built.steps.map((step) => step.ref)).toEqual(['r1', 'r2', 'r3', 'r4']);
           expect(built.steps[1].models.map((model) => model.name)).toEqual(['Gemini']);
+          expect(built.steps[3].models[0].extra).toContain('Построй собственное экспертное решение');
           // The settings of a switched-off model came along.
           expect(window.BasicSchema.toSettings(h.debug.getPipelineStoreSnapshot().pipelines.Installed.schema).customModelSettings.r1.Grok).toEqual({ promptTemplate: 'KEPT REQUEST', name: 'Grok', enabled: false });
           await h.run();
@@ -3439,7 +3242,7 @@ describe('Pipeline debate favorites view', () => {
       }, 30000);
 
       test('loading a pipeline keeps the Send marks it stores, also for a record saved before the schema', async () => {
-        const h = setupCustomInheritance('Marks host', { synthesis: '' });
+        const h = setupCustomInheritance('Marks host');
         try {
           const record = { ...h.config };
           record.protocol = { ...record.protocol, selectedModels: ['Claude', 'GPT'] };
@@ -3453,7 +3256,7 @@ describe('Pipeline debate favorites view', () => {
       }, 30000);
 
       test('a schema the canvas cannot show is not installed and names the place; the store stays as it was', async () => {
-        const h = setupCustomInheritance('Install refused', { synthesis: '' });
+        const h = setupCustomInheritance('Install refused');
         try {
           const before = JSON.stringify(h.debug.getPipelineStoreSnapshot().pipelines);
           const unknownModel = { schemaVersion: 1, origin: 'user', steps: [{ ref: 'r1', kind: 'round', models: [{ name: 'Nobody' }] }] };
@@ -3469,7 +3272,7 @@ describe('Pipeline debate favorites view', () => {
       }, 30000);
 
       test('every example of the schema guide installs on the real page and shows its steps', async () => {
-        const h = setupCustomInheritance('Guide host', { synthesis: '' });
+        const h = setupCustomInheritance('Guide host');
         try {
           const guide = require('fs').readFileSync(require('path').join(__dirname, '..', 'docs', 'Pipeline scenarios', 'basic-schema-guide.md'), 'utf8');
           const examples = [...guide.matchAll(/```json\n([\s\S]*?)\n```/g)].map((match) => JSON.parse(match[1]));
@@ -3489,35 +3292,39 @@ describe('Pipeline debate favorites view', () => {
       }, 60000);
 
       test('a shared limit the header cannot take, and an id the canvas would change, are refused at install', async () => {
-        const h = setupCustomInheritance('Install limits', { synthesis: '' });
+        const h = setupCustomInheritance('Install limits');
         try {
           const base = { schemaVersion: 1, origin: 'user', steps: [{ ref: 'r1', kind: 'round', models: [{ name: 'GPT' }] }] };
           const limit = await h.debug.installBasicSchema('Limit 250', { ...base, run: { maxWords: 250 } });
           expect(limit.errors[0]).toMatchObject({ path: 'run.maxWords' });
           expect(limit.errors[0].message).toContain(Array.from(document.getElementById('debate-length-select').options).map((option) => option.value).join(', '));
           expect((await h.debug.installBasicSchema('Limit 500', { ...base, run: { maxWords: 500 } })).ok).toBe(true);
-          const badId = await h.debug.installBasicSchema('Bad id', { ...base, steps: [...base.steps, { ref: 'synth:проверка', kind: 'synthesis', models: [{ name: 'GPT' }] }, { ref: 'r2', kind: 'round', models: [{ name: 'GPT' }] }] });
+          const badId = await h.debug.installBasicSchema('Bad id', { ...base, steps: [...base.steps, { ref: 'final', kind: 'round', models: [{ name: 'GPT' }] }] });
           expect(badId.errors[0]).toMatchObject({ path: 'steps[1].ref' });
+          const oldSynthesis = await h.debug.installBasicSchema('Old synthesis', { ...base, steps: [...base.steps, { ref: 'final', kind: 'synthesis', models: [{ name: 'GPT' }] }] });
+          expect(oldSynthesis.errors[0]).toEqual({ path: 'steps[1].kind', message: 'тип шага: допустимо round, owner; синтез — роль: раунд из одной модели с role' });
+          expect(h.debug.getPipelineStoreSnapshot().pipelines['Old synthesis']).toBeUndefined();
         } finally { h.cleanup(); }
       }, 30000);
 
       test('recordFromSchema builds the record without touching the store; the canvas members come from the schema', async () => {
-        const h = setupCustomInheritance('Record host', { synthesis: '' });
+        const h = setupCustomInheritance('Record host');
         try {
           const before = JSON.stringify(h.debug.getPipelineStoreSnapshot());
           const schema = { schemaVersion: 1, origin: 'user', steps: [
             { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }, { name: 'Claude' }] },
-            { ref: 'synth:mid', kind: 'synthesis', models: [{ name: 'Gemini' }] },
-            { ref: 'r2', kind: 'round', models: [{ name: 'GPT' }] },
-            { ref: 'final', kind: 'synthesis', models: [{ name: 'Claude' }] }
+            { ref: 'r2', kind: 'round', models: [{ name: 'Gemini', role: 'interaction_meta_synthesis' }] },
+            { ref: 'r3', kind: 'round', models: [{ name: 'GPT' }] },
+            { ref: 'r4', kind: 'round', models: [{ name: 'Claude', role: 'interaction_meta_synthesis' }] }
           ] };
           const built = h.debug.recordFromSchema('Record A', schema);
           expect(built.ok).toBe(true);
           expect(JSON.stringify(h.debug.getPipelineStoreSnapshot())).toBe(before);
           expect(built.record.schema.steps).toEqual(schema.steps);
-          expect(built.record.roundCounter).toBe(2);
-          expect(built.record.protocol).toMatchObject({ presetId: 'CUSTOM', roundLimit: '2', synthesizer: 'Claude' });
-          expect(built.record.draftPlan.plannedStages.map((stage) => stage.plannedStageId)).toEqual(['canvas-r1', 'mid', 'canvas-r2', 'planned-final-synthesis']);
+          expect(built.record.roundCounter).toBe(4);
+          expect(built.record.protocol).toMatchObject({ presetId: 'CUSTOM', roundLimit: '4' });
+          expect(built.record.protocol).not.toHaveProperty('synthesizer');
+          expect(built.record.draftPlan.plannedStages.map((stage) => stage.plannedStageId)).toEqual(['canvas-r1', 'canvas-r2', 'canvas-r3', 'canvas-r4']);
           const refused = h.debug.recordFromSchema('Record B', { ...schema, schemaVersion: 99 });
           expect(refused.ok).toBe(false);
           expect(JSON.stringify(h.debug.getPipelineStoreSnapshot())).toBe(before);
@@ -3525,7 +3332,7 @@ describe('Pipeline debate favorites view', () => {
       }, 30000);
 
       test('a canvas with a round nobody sends in is saved with every round in order', async () => {
-        const h = setupCustomInheritance('Empty round host', { synthesis: '' });
+        const h = setupCustomInheritance('Empty round host');
         try {
           const installed = await h.debug.installBasicSchema('Three rounds', { schemaVersion: 1, origin: 'user', steps: [
             { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }, { name: 'Claude' }] },
@@ -3544,31 +3351,25 @@ describe('Pipeline debate favorites view', () => {
         } finally { h.cleanup(); }
       }, 30000);
 
-      test('at save the settings of a removed round and of a gone intermediate synthesis are dropped, those of an off final synthesis stay', async () => {
-        const h = setupCustomInheritance('Extras host', { synthesis: '' });
+      test('at save the settings of a removed round and the cards of old syntheses are dropped; the old record still reads', async () => {
+        const h = setupCustomInheritance('Extras host');
         try {
-          const earlier = { ...h.config, customModelSettings: { r5: { GPT: { promptTemplate: 'R5' } }, 'synth:gone': { Gemini: { task: 'G' } }, final: { Gemini: { task: 'FINAL OFF' } } } };
+          const earlier = { ...h.config, customModelSettings: { r5: { GPT: { promptTemplate: 'R5' } }, 'synth:gone': { Gemini: { task: 'G' } }, final: { Gemini: { task: 'FINAL OFF' } } },
+            customDefaults: { synthesisTask: 'OLD SYNTHESIS TASK' },
+            draftPlan: { plannedStages: [{ plannedStageId: 'canvas-r1', participantIds: ['GPT'] }, { plannedStageId: 'planned-final-synthesis', purpose: 'synthesis', participantIds: ['Gemini'], outputIntent: 'candidate_final' }] } };
           h.debug.clearCustomSessionForTest();
           h.debug.setPipelineStoreForTest({ active: 'Extras host', order: ['Extras host'], pipelines: { 'Extras host': earlier } });
           h.debug.applyPipelineConfig(earlier);
           const schema = h.debug.basicSchemaFromPage(planOf(), null, { forSave: true });
-          expect(schema.steps.map((step) => step.ref)).toEqual(['r1', 'r2', 'final']);
-          expect(schema.steps[2].models).toEqual([{ name: 'Gemini', enabled: false, task: 'FINAL OFF' }]);
+          expect(schema.steps.map((step) => step.ref)).toEqual(['r1', 'r2']);
+          expect(schema.defaults || {}).not.toHaveProperty('synthesisTask');
+          expect(window.BasicSchema.validate(schema)).toEqual([]);
           expect(h.debug.recordFromSchema('Extras A', schema).ok).toBe(true);
-          // A synthesis card set before the synthesis was added stays, at the place its id names.
-          const preset = { ...h.config, customModelSettings: { 'synth:planned-working-synthesis-after-canvas-r1': { Gemini: { promptTemplate: 'PRESET {вход}' } } } };
-          h.debug.clearCustomSessionForTest();
-          h.debug.setPipelineStoreForTest({ active: 'Extras host', order: ['Extras host'], pipelines: { 'Extras host': preset } });
-          h.debug.applyPipelineConfig(preset);
-          const kept = h.debug.basicSchemaFromPage(planOf(), null, { forSave: true });
-          expect(kept.steps.map((step) => step.ref)).toEqual(['r1', 'synth:planned-working-synthesis-after-canvas-r1', 'r2']);
-          expect(kept.steps[1].models).toEqual([{ name: 'Gemini', enabled: false, request: 'PRESET {вход}' }]);
-          expect(h.debug.recordFromSchema('Extras B', kept).ok).toBe(true);
         } finally { h.cleanup(); }
       }, 30000);
 
       test('A06: two participants of one model in a step are refused at install with their place, nothing is saved without them', async () => {
-        const h = setupCustomInheritance('Twice host', { synthesis: '' });
+        const h = setupCustomInheritance('Twice host');
         try {
           const twice = { schemaVersion: 1, origin: 'user', steps: [
             { ref: 'r1', kind: 'round', models: [{ name: 'Claude', id: 'claude-a' }, { name: 'Claude', id: 'claude-b' }] }
@@ -3583,7 +3384,7 @@ describe('Pipeline debate favorites view', () => {
       test('A06: an owner step asks the owner in a window; Cancel stops the run, a text answer goes on', async () => {
         require('../results/choice-dialog');
         require('../results/stage-card');
-        const h = setupCustomInheritance('Owner window host', { synthesis: '' });
+        const h = setupCustomInheritance('Owner window host');
         const waitForDialog = async () => { for (let i = 0; i < 200 && !document.querySelector('.choice-dialog'); i += 1) await delay(10); };
         try {
           const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
@@ -3612,7 +3413,7 @@ describe('Pipeline debate favorites view', () => {
       }, 30000);
 
       test('OI-2: owner_answer names the step both when the owner answers and when the owner skips', async () => {
-        const h = setupCustomInheritance('Owner ask journal', { synthesis: '' });
+        const h = setupCustomInheritance('Owner ask journal');
         const dialog = document.getElementById('owner-ask-dialog');
         if (typeof dialog.showModal !== 'function') dialog.showModal = () => dialog.setAttribute('open', '');
         if (typeof dialog.close !== 'function') dialog.close = () => dialog.removeAttribute('open');
@@ -3707,7 +3508,7 @@ describe('Pipeline debate favorites view', () => {
       test('N07: the owner window shows what the owner was given (the answers of the input) and the form of the expected answer', async () => {
         require('../results/choice-dialog');
         require('../results/stage-card');
-        const h = setupCustomInheritance('Owner input host', { synthesis: '' });
+        const h = setupCustomInheritance('Owner input host');
         const waitForDialog = async () => { for (let i = 0; i < 200 && !document.querySelector('.choice-dialog'); i += 1) await delay(10); };
         try {
           const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
@@ -3729,9 +3530,9 @@ describe('Pipeline debate favorites view', () => {
       }, 30000);
 
       test('A06: a schema with a gate or a route is refused at install with the way to write it now; nothing is saved', async () => {
-        const h = setupCustomInheritance('Removed kinds host', { synthesis: '' });
+        const h = setupCustomInheritance('Removed kinds host');
         try {
-          const text = 'тип шага: допустимо round, synthesis, owner; проверка — обычный раунд: критерии в task; решение принимает User шагом owner';
+          const text = 'тип шага: допустимо round, owner; проверка — обычный раунд: критерии в task; решение принимает User шагом owner';
           const removed = [
             { ref: 'gate:g1', kind: 'gate', criteria: ['полнота'], models: [{ name: 'Claude' }], onFail: 'stop' },
             { ref: 'route:pick', kind: 'route', models: [], select: { by: 'owner', cases: [{ id: 'ok', label: 'Принять', action: { stop: 'конец' } }] } }
@@ -3747,7 +3548,7 @@ describe('Pipeline debate favorites view', () => {
       }, 30000);
 
       test('A06: a round removed on the canvas takes its kept fields with it; a round added later does not inherit them', async () => {
-        const h = setupCustomInheritance('Removed round host', { synthesis: '' });
+        const h = setupCustomInheritance('Removed round host');
         try {
           const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
             { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }] },
@@ -3766,7 +3567,7 @@ describe('Pipeline debate favorites view', () => {
       }, 30000);
 
       test('A06 owner: an owner step is added after a round, its window sets the task and the output, and Save → load → Save keeps them', async () => {
-        const h = setupCustomInheritance('Owner window host', { synthesis: '' });
+        const h = setupCustomInheritance('Owner window host');
         try {
           const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
             { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }] },
@@ -3811,7 +3612,7 @@ describe('Pipeline debate favorites view', () => {
       }, 30000);
 
       test('A06 control steps: a control can follow another one; the chain keeps its order in the canvas and in the schema, and a removed one leaves its successor in place', async () => {
-        const h = setupCustomInheritance('Owner chain host', { synthesis: '' });
+        const h = setupCustomInheritance('Owner chain host');
         try {
           const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
             { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }] },
@@ -3834,23 +3635,8 @@ describe('Pipeline debate favorites view', () => {
         } finally { h.cleanup(); }
       }, 30000);
 
-      test('A06 owner: an owner step between a round and its intermediate synthesis installs (R11 order r1 → owner → synth → r2)', async () => {
-        const h = setupCustomInheritance('Gate synth host', { synthesis: '' });
-        try {
-          const order = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
-            { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }] },
-            { ref: 'owner:1', kind: 'owner', models: [], task: 'Проверьте полноту' },
-            { ref: 'synth:mid', kind: 'synthesis', models: [{ name: 'Gemini' }] },
-            { ref: 'r2', kind: 'round', models: [{ name: 'Claude' }] }
-          ] };
-          const installed = await h.debug.installBasicSchema('Gate synth', order);
-          expect(installed.ok).toBe(true);
-          expect(h.debug.getPipelineStoreSnapshot().pipelines['Gate synth']).toBeDefined();
-        } finally { h.cleanup(); }
-      }, 30000);
-
       test('A06: controls, the participant id and input, and the step fields survive Save → load → Save', async () => {
-        const h = setupCustomInheritance('Full round trip host', { synthesis: '' });
+        const h = setupCustomInheritance('Full round trip host');
         try {
           const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
             { ref: 'r1', kind: 'round', models: [{ name: 'Claude', id: 'claude-a' }, { name: 'GPT' }] },
@@ -3859,7 +3645,7 @@ describe('Pipeline debate favorites view', () => {
               output: { name: 'Итог', form: 'кратко', sections: ['Вывод'], strictLength: true },
               models: [{ name: 'GPT' }, { name: 'Claude', id: 'claude-a', input: 'none' }] },
             { ref: 'owner:fix', kind: 'owner', models: [], task: 'Передайте файл' },
-            { ref: 'final', kind: 'synthesis', models: [{ name: 'Claude' }] }
+            { ref: 'r3', kind: 'round', models: [{ name: 'Claude', role: 'interaction_meta_synthesis' }] }
           ] };
           expect(window.BasicSchema.validate(schema)).toEqual([]);
           expect((await h.debug.installBasicSchema('Full round trip', schema)).ok).toBe(true);
@@ -3869,18 +3655,18 @@ describe('Pipeline debate favorites view', () => {
           expect(back.steps).toEqual(schema.steps);
           expect(h.debug.recordFromSchema('Full again', back).ok).toBe(true);
           // The run takes the same steps: the controls are not dropped by the assembly either.
-          expect(h.debug.buildBasicRun(planOf()).steps.map((step) => step.ref)).toEqual(['r1', 'owner:check', 'r2', 'owner:fix', 'final']);
+          expect(h.debug.buildBasicRun(planOf()).steps.map((step) => step.ref)).toEqual(['r1', 'owner:check', 'r2', 'owner:fix', 'r3']);
         } finally { h.cleanup(); }
       }, 30000);
 
       test('a schema the canvas shows survives the round trip schema → record → canvas → schema', async () => {
-        const h = setupCustomInheritance('Round trip host', { synthesis: '' });
+        const h = setupCustomInheritance('Round trip host');
         try {
           const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, defaults: { roundTask: 'RT_TASK' }, steps: [
             { ref: 'r1', kind: 'round', models: [{ name: 'Claude' }, { name: 'GPT', role: 'interaction_critical_audit' }] },
-            { ref: 'synth:mid', kind: 'synthesis', models: [{ name: 'Gemini' }] },
-            { ref: 'r2', kind: 'round', order: 'sequential', input: 'all', task: 'RT_ROUND', models: [{ name: 'Claude', maxWords: 90 }] },
-            { ref: 'final', kind: 'synthesis', models: [{ name: 'Claude' }] }
+            { ref: 'r2', kind: 'round', models: [{ name: 'Gemini', role: 'interaction_meta_synthesis' }] },
+            { ref: 'r3', kind: 'round', order: 'sequential', input: 'all', task: 'RT_ROUND', models: [{ name: 'Claude', maxWords: 90 }] },
+            { ref: 'r4', kind: 'round', models: [{ name: 'Claude', role: 'interaction_meta_synthesis' }] }
           ] };
           expect((await h.debug.installBasicSchema('Round trip', schema)).ok).toBe(true);
           document.querySelector('.pipeline-item[data-name="Round trip"]').click();
@@ -3893,26 +3679,26 @@ describe('Pipeline debate favorites view', () => {
       }, 30000);
 
       test('a schema file is added through Import under the given name and does not replace the pipelines', async () => {
-        const h = setupCustomInheritance('Import host', { synthesis: '' });
+        const h = setupCustomInheritance('Import host');
         const oldPrompt = window.prompt;
         try {
           window.prompt = jest.fn(() => 'From file');
           document.getElementById('pipeline-import-btn').click();
           const input = [...document.querySelectorAll('input[type="file"]')].filter((node) => node.accept === 'application/json').pop();
-          const schema = { schemaVersion: 1, origin: 'user', steps: [{ ref: 'r1', kind: 'round', models: [{ name: 'GPT' }, { name: 'Claude' }] }, { ref: 'final', kind: 'synthesis', models: [{ name: 'Gemini' }] }] };
+          const schema = { schemaVersion: 1, origin: 'user', steps: [{ ref: 'r1', kind: 'round', models: [{ name: 'GPT' }, { name: 'Claude' }] }, { ref: 'r2', kind: 'round', models: [{ name: 'Gemini', role: 'interaction_meta_synthesis' }] }] };
           const file = new File([JSON.stringify(schema)], 'schema.json', { type: 'application/json' });
           Object.defineProperty(input, 'files', { value: [file], configurable: true });
           input.dispatchEvent(new Event('change'));
           for (let i = 0; i < 100 && !h.debug.getPipelineStoreSnapshot().pipelines['From file']; i += 1) await new Promise((resolve) => setTimeout(resolve, 10));
           const store = h.debug.getPipelineStoreSnapshot();
-          expect(store.pipelines['From file'].schema.steps.map((step) => step.ref)).toEqual(['r1', 'final']);
+          expect(store.pipelines['From file'].schema.steps.map((step) => step.ref)).toEqual(['r1', 'r2']);
           expect(store.pipelines['Import host']).toBeDefined();
         } finally { window.prompt = oldPrompt; h.cleanup(); }
       }, 30000);
 
     describe('the architecture fixture S01–S30 on the page (T17, T18)', () => {
       test('installs without errors; Save → load from the list → Save gives the fixture steps back', async () => {
-        const h = setupCustomInheritance('Architecture page host', { synthesis: '' });
+        const h = setupCustomInheritance('Architecture page host');
         try {
           const fixture = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'basic-architecture-s01-s30.json'), 'utf8'));
           const installed = await h.debug.installBasicSchema('Architecture S01-S30', fixture);
@@ -3935,7 +3721,7 @@ describe('Pipeline debate favorites view', () => {
 
     describe('Export and Import of one schema', () => {
       test('Export gives the bare schema of the canvas; its file name is the pipeline name', async () => {
-        const h = setupCustomInheritance('Export host', { synthesis: 'Gemini' });
+        const h = setupCustomInheritance('Export host');
         try {
           await h.general({ roundTask: 'EXPORT_TASK' });
           await h.model({ content: 'EXPORT_CONTENT' });
@@ -3952,7 +3738,7 @@ describe('Pipeline debate favorites view', () => {
       }, 30000);
 
       test('what Export writes, Import brings back: the same steps and settings under a new name', async () => {
-        const h = setupCustomInheritance('Round export host', { synthesis: 'Gemini' });
+        const h = setupCustomInheritance('Round export host');
         try {
           await h.general({ roundTask: 'BACK_TASK' });
           await h.model({ content: 'BACK_CONTENT' });
@@ -3970,13 +3756,13 @@ describe('Pipeline debate favorites view', () => {
       }, 30000);
 
       test('A06 export: every field of an owner, and the input and output of a round, come back by Import unchanged', async () => {
-        const h = setupCustomInheritance('Control export host', { synthesis: '' });
+        const h = setupCustomInheritance('Control export host');
         try {
           const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
             { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }, { name: 'Claude' }] },
             { ref: 'r2', kind: 'round', input: ['r1'], output: { name: 'Итог', form: 'кратко', sections: ['Вывод'] }, models: [{ name: 'GPT' }] },
             { ref: 'owner:1', kind: 'owner', models: [], task: 'Передайте файл', output: { name: 'Файл', sections: ['Описание'] } },
-            { ref: 'final', kind: 'synthesis', models: [{ name: 'Claude' }] }
+            { ref: 'r3', kind: 'round', models: [{ name: 'Claude', role: 'interaction_meta_synthesis' }] }
           ] };
           expect(window.BasicSchema.validate(schema)).toEqual([]);
           expect((await h.debug.installBasicSchema('Control export', schema)).ok).toBe(true);
@@ -3994,7 +3780,7 @@ describe('Pipeline debate favorites view', () => {
       }, 30000);
 
       test('A06 preview: the request of a round model shows the input of the chosen steps and the answer format', async () => {
-        const h = setupCustomInheritance('Preview host', { synthesis: '' });
+        const h = setupCustomInheritance('Preview host');
         try {
           const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
             { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }] },
@@ -4013,7 +3799,7 @@ describe('Pipeline debate favorites view', () => {
       }, 30000);
 
       test('an old whole-store export adds its records with a schema, skips the others and replaces nothing', async () => {
-        const h = setupCustomInheritance('Bundle host', { synthesis: '' });
+        const h = setupCustomInheritance('Bundle host');
         try {
           const schema = { schemaVersion: 1, origin: 'user', steps: [{ ref: 'r1', kind: 'round', models: [{ name: 'GPT' }] }] };
           const bundle = { version: 8, pipelines: { 'From bundle': { schema }, 'Old format': { protocol: { type: 'universal' } }, Default: { schema } }, order: ['From bundle'] };
@@ -4031,7 +3817,7 @@ describe('Pipeline debate favorites view', () => {
       }, 30000);
 
       test('a file that is not a schema is refused with a reason and nothing changes', async () => {
-        const h = setupCustomInheritance('Refuse host', { synthesis: '' });
+        const h = setupCustomInheritance('Refuse host');
         try {
           const before = JSON.stringify(h.debug.getPipelineStoreSnapshot().pipelines);
           await importFile('not json {', 'x.json', 'Nope');
@@ -4053,7 +3839,7 @@ describe('Pipeline debate favorites view', () => {
       };
 
       test('Save stores a record whose canvas members are exactly those derived from its schema', async () => {
-        const h = setupCustomInheritance('Derived save host', { synthesis: '' });
+        const h = setupCustomInheritance('Derived save host');
         try {
           h.debug.clearCustomSessionForTest();
           document.querySelector('.pipeline-item[data-name="Default"]').click();
@@ -4070,7 +3856,7 @@ describe('Pipeline debate favorites view', () => {
       }, 30000);
 
       test('Save keeps a round nobody sends in: three rounds stay three after saving and loading', async () => {
-        const h = setupCustomInheritance('Three save host', { synthesis: '' });
+        const h = setupCustomInheritance('Three save host');
         try {
           expect((await h.debug.installBasicSchema('Three source', { schemaVersion: 1, origin: 'user', steps: [
             { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }, { name: 'Claude' }] },
@@ -4092,7 +3878,7 @@ describe('Pipeline debate favorites view', () => {
       }, 30000);
 
       test('a card save after a change of the canvas rebuilds the whole record: schema and canvas members agree', async () => {
-        const h = setupCustomInheritance('Card rebuild host', { synthesis: '' });
+        const h = setupCustomInheritance('Card rebuild host');
         try {
           const gpt = [...document.querySelectorAll('#r2-models .model-block')].find((block) => block.querySelector('.model-name')?.textContent === 'GPT');
           gpt.querySelector('.model-send-checkbox').checked = false;
@@ -4106,25 +3892,10 @@ describe('Pipeline debate favorites view', () => {
         } finally { h.cleanup(); }
       }, 30000);
 
-      test('adding an intermediate synthesis to a saved pipeline rebuilds its record; the record is the only source of the plan', async () => {
-        const h = setupCustomInheritance('Insert rebuild host', { synthesis: 'Gemini' });
-        try {
-          await h.model({ content: 'FIRST_SAVE' });
-          const column = document.getElementById('round1');
-          if (!column.querySelector('.pipeline-stage-insert')) column.insertAdjacentHTML('afterbegin', '<button type="button" class="pipeline-stage-insert" data-after-stage-id="canvas-r1"></button>');
-          column.querySelector('.pipeline-stage-insert').dispatchEvent(new MouseEvent('click', { bubbles: true }));
-          await delay(300);
-          const { record, again } = derived(h, 'Insert rebuild host');
-          expect(record.schema.steps.some((step) => step.ref.startsWith('synth:'))).toBe(true);
-          expect(record.draftPlan.plannedStages.some((stage) => stage.outputIntent === 'working_synthesis')).toBe(true);
-          expect(record.modelStacks).toEqual(again.modelStacks);
-          expect(h.debug.getPipelineStoreSnapshot().draftPlans['Insert rebuild host']).toBeUndefined();
-        } finally { h.cleanup(); }
-      }, 30000);
     });
 
     test('a value the owner typed stays explicit when it equals the inherited one: the length instruction as its template, the length as a number', async () => {
-      const h = setupCustomInheritance('Explicit equal', { synthesis: '' });
+      const h = setupCustomInheritance('Explicit equal');
       try {
         const lengthSelect = document.getElementById('debate-length-select');
         lengthSelect.value = '300';
@@ -4157,7 +3928,7 @@ describe('Pipeline debate favorites view', () => {
     }, 30000);
 
     test('a policy or a limit the owner chose in the header is explicit even when it equals Basic; applying a pipeline does not make it so', async () => {
-      const h = setupCustomInheritance('Explicit header', { synthesis: '' });
+      const h = setupCustomInheritance('Explicit header');
       try {
         const lengthSelect = document.getElementById('debate-length-select');
         const policy = document.getElementById('debate-run-policy-select');
@@ -4182,7 +3953,7 @@ describe('Pipeline debate favorites view', () => {
     }, 30000);
 
     test('an earlier record with a copy of the current length instruction keeps following the shared one; a schema keeps it explicit', async () => {
-      const h = setupCustomInheritance('Default copy', { synthesis: '' });
+      const h = setupCustomInheritance('Default copy');
       try {
         const template = window.BasicSchema.DEFAULTS.discipline.limit;
         const earlier = { ...h.config, customModelSettings: { r2: { GPT: { discipline: { limit: template } } } } };
@@ -4199,7 +3970,7 @@ describe('Pipeline debate favorites view', () => {
     }, 30000);
 
     test('a record saved before the schema still loads and runs as before, and the first card save moves it to a schema', async () => {
-      const h = setupCustomInheritance('Earlier record', { synthesis: '' });
+      const h = setupCustomInheritance('Earlier record');
       try {
         const earlier = { ...h.config, customModelSettings: { r2: { GPT: { discipline: { content: 'EARLIER CONTENT' } } } }, customDefaults: { roundTask: 'EARLIER TASK' } };
         h.debug.clearCustomSessionForTest();
@@ -4229,7 +4000,7 @@ describe('Pipeline debate favorites view', () => {
     const type = async (area, value) => { area.value = value; area.dispatchEvent(new Event('change')); await settleCustomCard(); };
 
     test('the first round offers the order only; a later round also the input and, with an input, the task with the inherited text', () => {
-      const h = setupCustomInheritance('Round card rows', { synthesis: '' });
+      const h = setupCustomInheritance('Round card rows');
       try {
         const first = rows(openRoundCard(1));
         expect(first.order.value).toBe('');
@@ -4246,7 +4017,7 @@ describe('Pipeline debate favorites view', () => {
     }, 30000);
 
     test('the task placeholder follows ▶; "Nothing" as the input takes the task row away', async () => {
-      const h = setupCustomInheritance('Round card task', { synthesis: '' });
+      const h = setupCustomInheritance('Round card task');
       try {
         await h.general({ roundTask: 'FROM_GENERAL' });
         expect(rows(openRoundCard(2)).task.placeholder).toBe('FROM_GENERAL');
@@ -4260,7 +4031,7 @@ describe('Pipeline debate favorites view', () => {
     }, 30000);
 
     test('the typed task reaches every model of the round; a model\'s own task still wins', async () => {
-      const h = setupCustomInheritance('Round card own task', { synthesis: '' });
+      const h = setupCustomInheritance('Round card own task');
       try {
         await type(rows(openRoundCard(2)).task, 'ROUND_TASK_TEXT');
         expect(h.debug.getCustomRoundSettings().r2).toEqual({ task: 'ROUND_TASK_TEXT' });
@@ -4279,7 +4050,7 @@ describe('Pipeline debate favorites view', () => {
     }, 30000);
 
     test('"By turns" calls the models of the round one after another, each seeing the answers before it', async () => {
-      const h = setupCustomInheritance('Round card order', { synthesis: '' });
+      const h = setupCustomInheritance('Round card order');
       try {
         await h.run();
         expect(h.starts.map((start) => start.selectedLLMs.length)).toEqual([2, 2]);
@@ -4295,7 +4066,7 @@ describe('Pipeline debate favorites view', () => {
     }, 30000);
 
     test('"Everything accepted" as the input gives a later round the answers of all earlier steps', async () => {
-      const h = setupCustomInheritance('Round card input', { synthesis: '' });
+      const h = setupCustomInheritance('Round card input');
       try {
         await choose(rows(openRoundCard(2)).input, 'all');
         await h.run();
@@ -4308,7 +4079,7 @@ describe('Pipeline debate favorites view', () => {
     }, 30000);
 
     test('a saved pipeline keeps the round card in its schema; a reload and an installed schema show it', async () => {
-      const h = setupCustomInheritance('Round card saved', { synthesis: '' });
+      const h = setupCustomInheritance('Round card saved');
       try {
         await h.general({ roundTask: 'GENERAL_FOR_SAVE' });
         await choose(rows(openRoundCard(2)).order, 'sequential');
@@ -4343,7 +4114,7 @@ describe('Pipeline debate favorites view', () => {
     }, 30000);
 
     test('the round card is read-only during a run: the fields are disabled and a change does nothing', async () => {
-      const h = setupCustomInheritance('Round card running', { synthesis: '' });
+      const h = setupCustomInheritance('Round card running');
       const originalSend = chrome.runtime.sendMessage.getMockImplementation();
       let release;
       let first = true;
@@ -4367,8 +4138,8 @@ describe('Pipeline debate favorites view', () => {
       const toggle = async (box, checked) => { box.checked = checked; box.dispatchEvent(new Event('change')); await settleCustomCard(); };
       const withoutModels = (steps) => steps.map(({ models, ...rest }) => rest);
 
-      test('a round and a synthesis keep their steps input, count, owner and output through save, load and a second save; a cleared field stays cleared', async () => {
-        const h = setupCustomInheritance('Step fields', { synthesis: 'Claude' });
+      test('rounds (the last one of one model with the synthesis role) keep their steps input, count, owner and output through save, load and a second save; a cleared field stays cleared', async () => {
+        const h = setupCustomInheritance('Step fields');
         try {
           const schema = {
             schemaVersion: 1, origin: 'user', run: { policy: 'auto' },
@@ -4376,7 +4147,7 @@ describe('Pipeline debate favorites view', () => {
               { ref: 'r1', kind: 'round', output: { name: 'Карта', format: 'json', requiredFields: ['/map'] }, models: [{ name: 'GPT' }, { name: 'Claude' }] },
               { ref: 'r2', kind: 'round', input: ['r1', { step: 'r1', participant: 'GPT' }], require: 1, owner: 'approve',
                 output: { name: 'Замечания', sections: ['Карта', 'Замечания'], strictLength: true }, models: [{ name: 'GPT' }, { name: 'Claude' }] },
-              { ref: 'final', kind: 'synthesis', input: ['r2'], owner: 'approve', output: { name: 'Итог', form: 'Сводка' }, models: [{ name: 'Claude' }] }
+              { ref: 'r3', kind: 'round', input: ['r2'], owner: 'approve', output: { name: 'Итог', form: 'Сводка' }, models: [{ name: 'Claude', role: 'interaction_meta_synthesis' }] }
             ]
           };
           expect(await h.debug.installBasicSchema('Step fields', schema)).toEqual({ ok: true, errors: [] });
@@ -4420,16 +4191,14 @@ describe('Pipeline debate favorites view', () => {
           await settleCustomCard();
           expect(withoutModels(h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' }).steps)[1]).not.toHaveProperty('input');
 
-          // Synthesis window: the final synthesis lists R1 and R2 and keeps its own fields.
-          document.querySelector('#synthesis-stack .pipeline-synthesis-block').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
-          await settleCustomCard();
-          const stepCard = document.getElementById('custom-card-step-fields');
-          expect(stepCard.querySelector('.stage-card-input-select').value).toBe('steps');
-          expect([...stepCard.querySelectorAll('.stage-card-steps')[0].querySelectorAll('input')].map((box) => box.checked)).toEqual([false, true]);
-          expect(stepCard.querySelector('.stage-card-owner-check').checked).toBe(true);
-          await toggle(stepCard.querySelectorAll('.stage-card-steps input')[0], true);
-          const finalSaved = withoutModels(h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' }).steps).find((step) => step.ref === 'final');
-          expect(finalSaved).toMatchObject({ input: ['r2', 'r1'], owner: 'approve', output: { name: 'Итог', form: 'Сводка' } });
+          // The synthesis is the card of R3, a round of one model: it lists R1 and R2 and keeps its own fields.
+          const last = openRoundCard(3);
+          expect(last.querySelector('.stage-card-input-select').value).toBe('steps');
+          expect([...last.querySelectorAll('.stage-card-steps input')].map((box) => box.checked)).toEqual([false, true]);
+          expect(last.querySelector('.stage-card-owner-check').checked).toBe(true);
+          await toggle(last.querySelectorAll('.stage-card-steps input')[0], true);
+          const lastSaved = withoutModels(h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' }).steps).find((step) => step.ref === 'r3');
+          expect(lastSaved).toMatchObject({ input: ['r2', 'r1'], owner: 'approve', output: { name: 'Итог', form: 'Сводка' } });
 
           // Save, load and save again: the same steps.
           const once = h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' });
@@ -4486,7 +4255,8 @@ describe('Pipeline debate favorites view', () => {
     expect(old.lastSaved).toBe('Default');
     expect(old.order).toEqual(['Mine']);
     expect(old.pipelines.Custom).toBeUndefined();
-    expect(old.overrides.synthesizers).toEqual({});
+    // An old store with a synthesizer per pipeline is read without it: Basic has no synthesizer.
+    expect(old.overrides).toEqual({ longRoundLimits: {}, profiles: {} });
     const clash = debug.normalizePipelineStore({
       version: 7, active: 'Basic', order: ['Basic', 'Basic 2'], pipelines: { Basic: config('users'), 'Basic 2': config('other') }
     });
@@ -4537,17 +4307,12 @@ describe('Pipeline debate favorites view', () => {
     expect(document.querySelectorAll('.model-stack .pipeline-empty-slot')).toHaveLength(3);
   });
 
-  test('new empty pipeline starts with Claude as the final synthesizer and its selector stays enabled after model choice', () => {
+  test('a new empty pipeline is rounds only: no final synthesis is added', () => {
     document.getElementById('pipeline-add-btn').click();
-
-    const synthesisSelect = document.getElementById('synthesis-flow-select');
-    const synthesisBlock = document.querySelector('.pipeline-synthesis-block');
-    expect(window.__getDefaultSynthesizerName()).toBe('Claude');
-    expect(synthesisSelect.value).toBe('Claude');
-    expect(synthesisBlock.classList.contains('selected-synthesizer')).toBe(true);
-
     document.getElementById('llm-gpt').click();
-    expect(synthesisSelect.disabled).toBe(false);
+    expect(document.getElementById('synthesisColumn')).toBeNull();
+    const plan = window.__pipelineDraftPlanForCanvas(window.__getActivePipelineDraftPlan());
+    expect(plan.plannedStages.every((stage) => /^canvas-r\d+$/.test(stage.plannedStageId))).toBe(true);
   });
 
   test('built-in pipeline round changes are not remembered after switching away and back', () => {
@@ -4578,76 +4343,17 @@ describe('Pipeline debate favorites view', () => {
     expect(document.querySelectorAll('#r1-models .model-block')).toHaveLength(4);
   });
 
-  test('explicit synthesizer remains visible after an infinite-limit reload state', () => {
-    const roundLimit = document.getElementById('debate-round-limit-select');
-    roundLimit.value = 'infinite';
-    document.getElementById('llm-claude').classList.add('active');
-    document.dispatchEvent(new CustomEvent('llm-selection-change', {
-      detail: { selected: ['Claude'] }
-    }));
-    window.setSynthesisModelFromName('Claude');
-    window.syncDebateSchemeUi();
-
-    expect(document.getElementById('synthesisColumn').hidden).toBe(false);
-    expect(document.getElementById('connectorToSynthesis').hidden).toBe(false);
-    expect(document.querySelector('#synthesis-stack .pipeline-synthesis-block .model-name').textContent)
-      .toBe('Synthesis');
-    expect(document.querySelector('#synthesis-stack .synthesis-flow-select').value).toBe('Claude');
-  });
-
-  test('the final synthesizer keeps its round blocks in model order and in the normal block design', () => {
+  test('round blocks keep the model order; the canvas has no final synthesis column', () => {
     document.getElementById('debate-round-limit-select').value = '3';
     ['llm-gpt', 'llm-gemini', 'llm-claude', 'llm-grok'].forEach((id) => document.getElementById(id).click());
-    window.setSynthesisModelFromName('Gemini');
     window.syncPipelineModelsFromSelectedLLMs({ force: true });
     const roundNames = (id) => [...document.querySelectorAll(`#${id} .model-block`)].map((block) => block.querySelector('.model-name').textContent);
     const modelOrder = ['Claude', 'GPT', 'Gemini', 'Grok'];
     ['r1-models', 'r2-models'].forEach((id) => {
       expect(roundNames(id)).toEqual(modelOrder);
-      document.querySelectorAll(`#${id} .model-block`).forEach((block) => {
-        expect(block.classList.contains('selected-synthesizer')).toBe(false);
-        expect(block.classList.contains('pipeline-final-synthesizer')).toBe(false);
-      });
     });
-    const synthesisBlock = document.querySelector('#synthesis-stack .pipeline-synthesis-block');
-    expect(synthesisBlock.querySelector('.model-name').textContent).toBe('Synthesis');
-    expect(synthesisBlock.classList.contains('selected-synthesizer')).toBe(true);
-    expect(synthesisBlock.classList.contains('pipeline-final-synthesizer')).toBe(false);
-  });
-
-  test('the final synthesis block is not active without selected models, and is active once models are selected', () => {
-    const synthesisBlock = () => document.querySelector('#synthesis-stack .pipeline-synthesis-block');
-    document.getElementById('pipeline-add-btn').click();
-    expect(synthesisBlock().classList.contains('selected-synthesizer')).toBe(true);
-    expect(synthesisBlock().classList.contains('inactive')).toBe(true);
-    document.getElementById('llm-gpt').click();
-    expect(synthesisBlock().classList.contains('inactive')).toBe(false);
-    document.getElementById('llm-gpt').click();
-    expect(synthesisBlock().classList.contains('inactive')).toBe(true);
-  });
-
-  test('terminal synthesis card aligns to the visible model-stack centre', () => {
-    document.getElementById('debate-round-limit-select').value = '3';
-    window.syncDebateSchemeUi();
-    document.getElementById('synthesisColumn').hidden = false;
-    document.getElementById('connectorToSynthesis').hidden = false;
-    const modelStacks = Array.from(document.querySelectorAll('.model-stack'))
-      .filter((stack) => stack.id !== 'synthesis-stack');
-    const referenceStack = modelStacks[modelStacks.length - 1];
-    const synthesisStack = document.getElementById('synthesis-stack');
-    document.getElementById('synthesisColumn').style.setProperty('--pipeline-terminal-offset', '0px');
-    const makeRect = (top, height) => ({ top, height, bottom: top + height, left: 0, right: 100, width: 100, x: 0, y: top, toJSON() { return this; } });
-    Object.defineProperty(referenceStack, 'getBoundingClientRect', { configurable: true, value: () => makeRect(20, 180) });
-    Object.defineProperty(synthesisStack, 'getBoundingClientRect', { configurable: true, value: () => makeRect(60, 60) });
-
-    const layoutResult = window.__pipelineLifecycleDebug.updatePipelineLayout();
-
-    expect(layoutResult).toMatchObject({
-      aligned: true,
-      referenceId: referenceStack.id,
-      offsets: { synthesisColumn: 20 }
-    });
-    expect(document.getElementById('synthesisColumn').style.getPropertyValue('--pipeline-terminal-offset')).toBe('20px');
+    expect(document.getElementById('synthesisColumn')).toBeNull();
+    expect(document.querySelector('.pipeline-synthesis-block, .pipeline-stage-insert, .pipeline-intermediate-synth')).toBeNull();
   });
 
 
@@ -4746,31 +4452,6 @@ describe('Pipeline debate favorites view', () => {
     expect(document.querySelectorAll('.model-block').length).toBeGreaterThan(0);
   });
 
-});
-
-describe('Final synthesis state after a page reload', () => {
-  test('an explicit Final OFF on the unsaved pipeline survives a reload and the block is not shown active', async () => {
-    renderDebateDom();
-    document.body.classList.add('pipeline-page');
-    await loadResultsScript();
-    document.getElementById('pipeline-add-btn').click();
-    document.getElementById('llm-gpt').click();
-    expect(window.setSynthesisModelFromName('')).toBe(true);
-    expect(document.getElementById('synthesisColumn').classList.contains('pipeline-final-off')).toBe(true);
-    await delay(0);
-    const { llmComparatorPipelines: saved } = await chrome.storage.local.get('llmComparatorPipelines');
-    expect(saved.draftPlans.unsaved.plannedStages.some((stage) => stage.plannedStageId === 'planned-final-synthesis')).toBe(false);
-
-    renderDebateDom();
-    document.body.classList.add('pipeline-page');
-    await loadResultsScript(saved);
-    const column = document.getElementById('synthesisColumn');
-    const block = document.querySelector('#synthesis-stack .pipeline-synthesis-block');
-    expect(column.classList.contains('pipeline-final-off')).toBe(true);
-    expect(document.getElementById('synthesis-flow-select').value).toBe('');
-    expect(block.classList.contains('selected-synthesizer')).toBe(false);
-    expect(block.classList.contains('pipeline-final-synthesizer')).toBe(false);
-  }, 30000);
 });
 
 describe('Pipeline canvas run state (engine-derived)', () => {

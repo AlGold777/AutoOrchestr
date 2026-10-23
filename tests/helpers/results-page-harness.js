@@ -215,12 +215,6 @@ function renderDebateDom() {
           <div class="model-stack" id="r2-models"></div>
         </div>
         <div id="insertionPoint"></div>
-        <div class="connector-group synthesis-capable" id="connectorToSynthesis" hidden aria-hidden="true">
-          <svg class="connector-svg" id="svg-r-last-synthesis"></svg>
-        </div>
-        <div class="stage-column synthesis-capable" id="synthesisColumn" data-stage="synthesis" hidden aria-hidden="true">
-          <div class="model-stack synthesis-stack" id="synthesis-stack" data-render="pipeline-synthesis-stack"></div>
-        </div>
         <div class="pipeline-items" id="pipelineItems">
           <div class="pipeline-item active" data-name="Research & Analysis">
             <input type="radio" name="pipeline" class="pipeline-radio" checked>

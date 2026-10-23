@@ -8,10 +8,11 @@
 // Schema: { schemaVersion, origin: 'builtin' | 'user', basedOn?, description?, defaults?, steps }
 //   description: the presentation of the pipeline for the person who runs it (a long text); shown in the ▶ card, never read by the engine
 //   run: { policy?: 'auto' | 'manual', maxWords?, strictLength? } — the run policy, the shared answer limit and the strict length check
-//   defaults (the ▶ card): { roundTask?, synthesisTask?, discipline?, modelNotes?, roundPrompts? }
+//   defaults (the ▶ card): { roundTask?, discipline?, modelNotes?, roundPrompts? }
 //   spec: { purpose?, inputs?, result?, application?, readiness?, rules?, boundaries?, failure? } — the open pipeline's
 //     specification, text for the document only: the engine and the requests to models never read it (see SPEC_KEYS)
-//   step: { ref, kind: 'round' | 'synthesis', order?, input?, task?, models, title?, goal?, rules?, quality? }
+//   step: { ref, kind: 'round' | 'owner', order?, input?, task?, models, title?, goal?, rules?, quality? }
+//   a synthesis is not a kind of step but a role: a round of one model with a role (the last such round is the result)
 //   step text for the specification (title, goal, rules, quality): documents only, like spec
 //   model: { name, enabled?, onCanvas?, role?, request?, maxWords?, task?, discipline? }   (request: '' = no own request)
 //   enabled: false keeps a switched-off model with its settings; assemble() gives the engine no call for it.
@@ -29,19 +30,18 @@
   // Every released version stays supported; a newer one than this Basic is refused.
   const SUPPORTED_VERSIONS = Object.freeze([1]);
   const ORIGINS = Object.freeze(['builtin', 'user']);
-  const KINDS = Object.freeze(['round', 'synthesis', 'owner']);
+  const KINDS = Object.freeze(['round', 'owner']);
   // The step the owner (User) does itself; it has no models. There is no branch and no transition: steps run in their order.
   const CONTROL_KINDS = Object.freeze(['owner']);
-  // The removed kinds (a check and a branch) are refused with the way to write them now.
-  const REMOVED_KINDS = Object.freeze(['gate', 'route']);
-  const REMOVED_KIND_HINT = 'проверка — обычный раунд: критерии в task; решение принимает User шагом owner';
+  // The removed kinds (a check, a branch and a synthesis) are refused with the way to write them now.
+  const CHECK_HINT = 'проверка — обычный раунд: критерии в task; решение принимает User шагом owner';
+  const REMOVED_KIND_HINT = Object.freeze({ gate: CHECK_HINT, route: CHECK_HINT, synthesis: 'синтез — роль: раунд из одной модели с role' });
   // The specification text (documents only): the root `spec` and the text fields of a step. Engine and requests never read them.
   const SPEC_KEYS = Object.freeze(['purpose', 'inputs', 'result', 'application', 'readiness', 'rules', 'boundaries', 'failure']);
   const STEP_TEXT_KEYS = Object.freeze(['title', 'goal', 'rules', 'quality']);
   // The fields a step of each kind may have (an unknown field is an error with its path).
   const STEP_KEYS = Object.freeze({
     round: Object.freeze(['ref', 'kind', 'order', 'input', 'task', 'models', 'output', 'require', 'owner', 'chat', ...STEP_TEXT_KEYS]),
-    synthesis: Object.freeze(['ref', 'kind', 'order', 'input', 'task', 'models', 'output', 'require', 'owner', 'chat', ...STEP_TEXT_KEYS]),
     owner: Object.freeze(['ref', 'kind', 'task', 'input', 'output', 'models', ...STEP_TEXT_KEYS])
   });
   const CONTROL_REF = Object.freeze({
@@ -71,7 +71,6 @@
   const DEFAULTS = Object.freeze({
     run: Object.freeze({ policy: 'manual', maxWords: 300, strictLength: false }),
     roundTask: 'Учти ответы предыдущего шага и дай свой улучшенный ответ на задачу.',
-    synthesisTask: Engine.SYNTHESIS_TASK,
     discipline: Object.freeze({
       limit: '[RESPONSE_LIMIT] Объём ответа: {от}-{слов} слов, не больше.',
       content: 'Сосредоточься на ясной концепции и ключевых идеях; убери повторы, длинные пересказы и второстепенные детали.',
@@ -89,18 +88,18 @@
   }
 
   // The value of one card: model → round (reserved for the round card) → ▶ → Basic.
-  // `model` is { task?, discipline? }, `defaults` is the ▶ layer of the schema.
+  // `model` is { task?, discipline? }, `defaults` is the ▶ layer of the schema. `kind` is the kind of the step: every
+  // step with models is a round, so its task inherits roundTask.
   function resolveFields(model = {}, kind = 'round', round = {}, defaults = {}) {
-    const taskKey = kind === 'synthesis' ? 'synthesisTask' : 'roundTask';
     return {
-      task: pick([['model', model?.task], ['round', round?.task], ['pipeline', defaults?.[taskKey]]], DEFAULTS[taskKey]),
+      task: pick([['model', model?.task], ['round', round?.task], ['pipeline', defaults?.roundTask]], DEFAULTS.roundTask),
       discipline: Object.fromEntries(Object.entries(DEFAULTS.discipline).map(([key, fallback]) => [key,
         pick([['model', model?.discipline?.[key]], ['round', round?.discipline?.[key]], ['pipeline', defaults?.discipline?.[key]]], fallback)]))
     };
   }
 
-  // The first round has no input; a later round gets the previous step; a synthesis always the previous step.
-  const defaultInput = (kind, roundIndex) => (kind === 'round' && roundIndex === 0 ? 'none' : 'previous');
+  // The first round has no input; a later round gets the previous step.
+  const defaultInput = (roundIndex) => (roundIndex === 0 ? 'none' : 'previous');
 
   // With input none only a task written by the owner (on the model or the step) goes to the model; ▶ and Basic values do not.
   const writtenTask = (field) => field.source === 'model' || field.source === 'round';
@@ -119,28 +118,22 @@
   // Engine steps from a schema. `context.roleText(role, ref)` turns a model's role into its extra text.
   function assemble(schema, { roleText = () => '' } = {}) {
     const defaults = schema.defaults || {};
-    const finalStep = schema.steps.find((step) => step.ref === 'final');
     let rounds = 0;
     return schema.steps.map((step) => {
       if (CONTROL_KINDS.includes(step.kind)) return assembleControl(step);
-      const roundIndex = step.kind === 'round' ? rounds++ : -1;
-      const input = step.input || defaultInput(step.kind, roundIndex);
+      const roundIndex = rounds++;
+      const input = step.input || defaultInput(roundIndex);
       const stepFields = resolveFields({ task: step.task }, step.kind, {}, defaults);
-      const out = { kind: step.kind, ref: step.ref };
-      // The number a step keeps even when the rounds before it are switched off.
-      if (step.kind === 'round') out.round = roundIndex + 1;
-      else out.afterRound = rounds;
-      if (step.kind === 'round') out.order = step.order || 'parallel';
+      // The number a round keeps even when the rounds before it are switched off.
+      const out = { kind: step.kind, ref: step.ref, round: roundIndex + 1, order: step.order || 'parallel' };
       if ('output' in step) out.output = JSON.parse(JSON.stringify(step.output));
       ['require', 'owner', 'chat'].forEach((key) => { if (key in step) out[key] = step[key]; });
       out.task = input === 'none' && !writtenTask(stepFields.task) ? '' : stepFields.task.value;
-      // A list of sources goes to the engine as it is; a synthesis without a list keeps its old shape (no input field).
-      if (step.kind === 'round' || Array.isArray(input)) out.input = Array.isArray(input) ? JSON.parse(JSON.stringify(input)) : input;
+      // A list of sources goes to the engine as it is.
+      out.input = Array.isArray(input) ? JSON.parse(JSON.stringify(input)) : input;
       out.models = (step.models || []).filter((model) => model.enabled !== false).map((model) => {
         const resolved = resolveFields(model, step.kind, { task: step.task }, defaults);
         const lines = [...(defaults.discipline?.lines || []), ...(model.discipline?.lines || [])];
-        // An intermediate synthesis without its own request runs the final synthesizer's request.
-        const finalRequest = step.ref.startsWith('synth:') ? finalStep?.models?.find((item) => idOf(item) === idOf(model))?.request : undefined;
         // The input of the participant (when it has its own) decides whether an inherited task is dropped, as the step input does.
         const own = 'input' in model ? model.input : input;
         return {
@@ -148,8 +141,8 @@
           id: idOf(model),
           ...('input' in model ? { input: Array.isArray(model.input) ? JSON.parse(JSON.stringify(model.input)) : model.input } : {}),
           ...('output' in model ? { output: clone(model.output) } : {}),
-          // An own request, an empty one included, is a value; only a missing one takes the final synthesizer's.
-          promptTemplate: typeof model.request === 'string' ? model.request : (typeof finalRequest === 'string' ? finalRequest : null),
+          // An own request, an empty one included, is a value; a missing one is the automatic request.
+          promptTemplate: typeof model.request === 'string' ? model.request : null,
           maxWords: 'maxWords' in model ? model.maxWords : null,
           extra: roleText(model.role || '', step.ref) || '',
           task: own === 'none' && !writtenTask(resolved.task) ? '' : resolved.task.value,
@@ -194,13 +187,12 @@
     const { fail, errors, steps, positions, index } = ctx;
     const mark = errors.length;
     const unknown = (value, allowed, at) => Object.keys(value).forEach((key) => { if (!allowed.includes(key)) fail(`${at}.${key}`, 'неизвестное поле'); });
-    // The step a reference names: it exists and comes before the consumer; final is never an ordinary source.
+    // The step a reference names: it exists and comes before the consumer.
     const stepAt = (ref, at) => {
       if (typeof ref !== 'string' || !positions.has(ref)) { fail(at, `неизвестный шаг «${ref}»`); return -1; }
       const position = positions.get(ref);
-      if (position >= index) fail(at, 'вход ссылается только на более ранний шаг');
-      else if (steps[position].ref === 'final') fail(at, 'результат финального синтеза нельзя указать во входе');
-      else return position;
+      if (position < index) return position;
+      fail(at, 'вход ссылается только на более ранний шаг');
       return -1;
     };
     const participantAt = (position, participant, at) => {
@@ -258,26 +250,8 @@
     return addressOf(source);
   }
 
-  // The place of an intermediate synthesis (R11), one rule for validate and toCanvas: the nearest steps around it that are
-  // not owner steps must be rounds. So `r1 → synth → owner → r2` and `r1 → owner → synth → r2` are
-  // both valid, and owner steps never need a round next to them. Two syntheses never meet.
-  function synthesisPlaceErrors(steps) {
-    const errors = [];
-    const nearest = (index, step) => {
-      for (let at = index + step; at >= 0 && at < steps.length; at += step) if (!CONTROL_KINDS.includes(steps[at]?.kind)) return steps[at];
-      return null;
-    };
-    steps.forEach((step, index) => {
-      if (!isObject(step) || step.kind !== 'synthesis' || step.ref === 'final') return;
-      if (nearest(index, -1)?.kind !== 'round') errors.push({ path: `steps[${index}]`, message: 'промежуточный синтез стоит сразу после раунда' });
-      if (nearest(index, 1)?.kind !== 'round') errors.push({ path: `steps[${index}]`, message: 'промежуточный синтез стоит между двумя раундами' });
-    });
-    return errors;
-  }
-
-  // The one check of executability (R09) for validate and toCanvas: an owner step runs by itself; a round runs with an enabled model. A synthesis only works on
-  // the answers of an earlier step, so it alone is not runnable. A pipeline without a round is valid; an empty one or
-  // one with no runnable step is named at `steps`.
+  // The one check of executability (R09) for validate and toCanvas: an owner step runs by itself; a round runs with an enabled model.
+  // A pipeline without a round is valid; an empty one or one with no runnable step is named at `steps`.
   function executabilityErrors(steps) {
     const runnable = steps.some((step) => isObject(step) && (CONTROL_KINDS.includes(step.kind)
       || (step.kind === 'round' && Array.isArray(step.models) && step.models.some((model) => isObject(model) && model.enabled !== false))));
@@ -332,8 +306,8 @@
       const defaults = schema.defaults;
       if (!isObject(defaults)) fail('defaults', 'ожидается объект');
       else {
-        unknownKeys(defaults, ['roundTask', 'synthesisTask', 'discipline', 'modelNotes', 'roundPrompts'], 'defaults');
-        ['roundTask', 'synthesisTask'].forEach((key) => { if (key in defaults) text(defaults[key], `defaults.${key}`); });
+        unknownKeys(defaults, ['roundTask', 'discipline', 'modelNotes', 'roundPrompts'], 'defaults');
+        if ('roundTask' in defaults) text(defaults.roundTask, 'defaults.roundTask');
         if ('discipline' in defaults) checkDiscipline(defaults.discipline, 'defaults.discipline');
         ['modelNotes', 'roundPrompts'].forEach((key) => {
           if (!(key in defaults)) return;
@@ -361,11 +335,10 @@
       });
     };
     // The input of a step or of a participant: a value of the list of inputs, or a list of sources.
-    const checkInput = (value, path, kind, index) => {
+    const checkInput = (value, path, index) => {
       if (Array.isArray(value)) { checkInputList(value, path, index); return; }
       // An owner takes any input a model step takes (none, previous, all, list).
       oneOf(value, INPUTS, path, 'вход');
-      if (kind === 'synthesis' && value !== 'previous') fail(path, 'синтез всегда получает ответы предыдущего шага');
     };
     // The output of a step (5.1, 5.2): the text form, or json with fields; artifacts are declared in it.
     // `authors` are the participants whose revisions the output declares: { id, input? } (the owner is its own author).
@@ -439,8 +412,8 @@
     schema.steps.forEach((step, index) => {
       const path = `steps[${index}]`;
       if (!isObject(step)) { fail(path, 'ожидается объект'); return; }
-      // A removed kind (gate, route) is named once, with the way to write it now; its other fields are not checked.
-      if (REMOVED_KINDS.includes(step.kind)) { fail(`${path}.kind`, `тип шага: допустимо ${KINDS.join(', ')}; ${REMOVED_KIND_HINT}`); return; }
+      // A removed kind (gate, route, synthesis) is named once, with the way to write it now; its other fields are not checked.
+      if (Object.hasOwn(REMOVED_KIND_HINT, step.kind)) { fail(`${path}.kind`, `тип шага: допустимо ${KINDS.join(', ')}; ${REMOVED_KIND_HINT[step.kind]}`); return; }
       unknownKeys(step, STEP_KEYS[step.kind] || STEP_KEYS.round, path);
       if ('output' in step) {
         // A step's shared output is the answer of every author without its own; the owner is the author of its own.
@@ -460,11 +433,8 @@
       else refs.add(step.ref);
       oneOf(step.kind, KINDS, `${path}.kind`, 'тип шага');
       if (CONTROL_KINDS.includes(step.kind) && typeof step.ref === 'string' && !new RegExp(`^${step.kind}:[A-Za-z0-9_-]+$`).test(step.ref)) fail(`${path}.ref`, CONTROL_REF[step.kind]);
-      if ('order' in step) {
-        oneOf(step.order, ORDERS, `${path}.order`, 'порядок');
-        if (step.kind === 'synthesis') fail(`${path}.order`, 'у синтеза порядка нет: он одна модель-синтезатор или параллельный');
-      }
-      if ('input' in step) checkInput(step.input, `${path}.input`, step.kind, index);
+      if ('order' in step) oneOf(step.order, ORDERS, `${path}.order`, 'порядок');
+      if ('input' in step) checkInput(step.input, `${path}.input`, index);
       if ('task' in step) text(step.task, `${path}.task`);
       STEP_TEXT_KEYS.forEach((key) => { if (key in step) text(step[key], `${path}.${key}`); });
       if (!Array.isArray(step.models)) { fail(`${path}.models`, 'ожидается список моделей'); return; }
@@ -489,21 +459,21 @@
             else if (typeof model.name === 'string') namesById.set(id, model.name);
           }
         }
-        if ('input' in model) checkInput(model.input, `${modelPath}.input`, step.kind, index);
+        if ('input' in model) checkInput(model.input, `${modelPath}.input`, index);
         ['role', 'request', 'task'].forEach((key) => { if (key in model) text(model[key], `${modelPath}.${key}`); });
         if ('maxWords' in model && !(Number.isSafeInteger(model.maxWords) && model.maxWords > 0)) fail(`${modelPath}.maxWords`, 'ожидается положительное целое число слов');
         if ('discipline' in model) checkDiscipline(model.discipline, `${modelPath}.discipline`);
       });
       if (CONTROL_KINDS.includes(step.kind)) checkControl(step, path);
     });
-    errors.push(...synthesisPlaceErrors(schema.steps), ...executabilityErrors(schema.steps));
+    errors.push(...executabilityErrors(schema.steps));
     return errors;
   }
 
   // The settings of the cards in the form the page edits them (the cards write only what the owner set):
   // customModelSettings[ref][participantId] = { promptTemplate, maxWords, task, discipline, input } — the key is the id of
   // the participant (its name when it has none); customRoundSettings[ref] = { order, input, task, require, owner, chat, output }
-  // of a round; customStepSettings[ref] = the fields of a synthesis or an owner; customDefaults = the ▶ card.
+  // of a round; customStepSettings[ref] = the fields of an owner step; customDefaults = the ▶ card.
   const ROUND_FIELDS = ['order', 'input', 'task', 'require', 'owner', 'chat', 'output'];
   const STEP_FIELDS = ['input', 'task', 'require', 'owner', 'chat', 'output'];
   function toSettings(schema) {
@@ -532,21 +502,19 @@
     return { customModelSettings, customRoundSettings, customStepSettings, customDefaults: schema.defaults ? JSON.parse(JSON.stringify(schema.defaults)) : {} };
   }
 
-  // The canvas a schema stands for: the rounds, the participants of each round with their roles, the final synthesizer,
-  // the intermediate syntheses and the owner steps in their order. `models` is the list of the models
-  // the canvas knows, in its order; `isRole(id)` tells a known role. A schema the canvas cannot show gives errors (with the
-  // place), never a changed schema. A round is one block per participant (two participants of one model are two blocks,
-  // told apart by id); the rounds limit counts rounds only. An intermediate synthesis is right after a round and before
-  // the next one; an owner step may stand anywhere; a switched-off model is on the canvas only with onCanvas, a switched-off synthesis is not.
+  // The canvas a schema stands for: the rounds, the participants of each round with their roles and the owner steps in
+  // their order. `models` is the list of the models the canvas knows, in its order; `isRole(id)` tells a known role. A schema
+  // the canvas cannot show gives errors (with the place), never a changed schema. A round is one block per participant (two
+  // participants of one model are two blocks, told apart by id); a round of one model with a role (a synthesis) is an
+  // ordinary round. The rounds limit counts rounds only; an owner step may stand anywhere; a switched-off model is on the
+  // canvas only with onCanvas.
   function toCanvas(schema, { models = [], isRole = () => true, runWords = null } = {}) {
     const errors = [];
     const fail = (path, message) => errors.push({ path, message });
     const steps = schema.steps || [];
     const enabledOf = (step) => (step.models || []).filter((model) => model.enabled !== false);
     const rounds = [];
-    const inserts = [];
     const controls = [];
-    let finalStep = null;
     steps.forEach((step, index) => {
       const path = `steps[${index}]`;
       const enabled = enabledOf(step);
@@ -555,24 +523,10 @@
         if (model.role && !isRole(model.role)) fail(`${path}.models[${at}].role`, `роль «${model.role}» неизвестна`);
       });
       if (CONTROL_KINDS.includes(step.kind)) { controls.push({ ref: step.ref, kind: step.kind, index, afterRound: rounds.length }); return; }
-      if (step.kind === 'round') {
-        rounds.push(step);
-        if (step.ref !== `r${rounds.length}`) fail(`${path}.ref`, `ref раунда должен быть «r${rounds.length}»`);
-        return;
-      }
-      if (enabled.length > 1) fail(`${path}.models`, 'в синтезе одна модель');
-      if (step.ref === 'final') {
-        finalStep = step;
-        if (index !== steps.length - 1) fail(`${path}.ref`, 'финальный синтез стоит последним');
-        return;
-      }
-      const id = step.ref.startsWith('synth:') ? step.ref.slice('synth:'.length) : '';
-      // The canvas keeps only A-Z a-z 0-9 _ - of an id; another character would make the settings follow another ref.
-      if (!/^[A-Za-z0-9_-]+$/.test(id)) fail(`${path}.ref`, 'ref промежуточного синтеза: «synth:<id>», id — латинские буквы, цифры, «_» и «-»');
-      if (enabled.length) inserts.push({ afterRound: rounds.length, plannedStageId: id, participantIds: enabled.map(idOf) });
+      rounds.push(step);
+      if (step.ref !== `r${rounds.length}`) fail(`${path}.ref`, `ref раунда должен быть «r${rounds.length}»`);
     });
     if (Array.isArray(runWords) && schema.run && 'maxWords' in schema.run && !runWords.includes(schema.run.maxWords)) fail('run.maxWords', `предел длины pipeline: допустимо ${runWords.join(', ')}`);
-    synthesisPlaceErrors(steps).forEach((error) => fail(error.path, error.message));
     executabilityErrors(steps).forEach((error) => fail(error.path, error.message));
     if (rounds.length > 50) fail('steps', 'раундов не больше 50');
     if (errors.length) return { errors };
@@ -590,8 +544,7 @@
       return [`r${index + 1}-models`, { items }];
     }));
     return { errors, roundCounter: rounds.length, selectedModels, stacks, controls,
-      rounds: rounds.map((step, index) => ({ ref: `r${index + 1}`, participantIds: enabledOf(step).map(idOf), roles: Object.fromEntries(enabledOf(step).map((model) => [idOf(model), model.role || null])) })),
-      synthesizer: finalStep ? (enabledOf(finalStep)[0]?.name || '') : '', inserts };
+      rounds: rounds.map((step, index) => ({ ref: `r${index + 1}`, participantIds: enabledOf(step).map(idOf), roles: Object.fromEntries(enabledOf(step).map((model) => [idOf(model), model.role || null])) })) };
   }
 
   // The run settings as the run takes them: the policy, the shared answer limit and the strict length check of the steps without their own.

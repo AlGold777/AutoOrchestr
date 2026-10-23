@@ -6,7 +6,7 @@ const Exchange = require('../docs/Pipeline scenarios/canvas-prototype/basic-expo
 const examples = JSON.parse(fs.readFileSync(path.join(__dirname, '../docs/Pipeline scenarios/canvas-prototype/stand-examples.json'), 'utf8'));
 const list = Object.values(examples).map((e) => e.schema || e);
 
-// Mirrors results.js: recordFromSchema (validate → same-model check → toCanvas → createCanvasPlan → insertSynthesis → record).
+// Mirrors results.js: recordFromSchema (validate → same-model check → toCanvas → createCanvasPlan → record).
 // Page-only inputs are replaced: models = names in the schema, isRole = any role, runWords = the select options.
 const RUN_WORDS = [300, 500, 700, 1000];
 function recordChain(schema) {
@@ -22,19 +22,14 @@ function recordChain(schema) {
   const canvas = Schema.toCanvas(schema, { models, isRole: () => true, runWords: RUN_WORDS });
   if (canvas.errors.length) return { stage: 'toCanvas', errors: canvas.errors };
   const run = Schema.resolveRun(schema);
-  let plan = DraftPlan.createCanvasPlan({
-    planId: 'canvas-test', revision: 0, synthesizer: canvas.synthesizer,
+  const plan = DraftPlan.createCanvasPlan({
+    planId: 'canvas-test', revision: 0,
     rounds: canvas.rounds.map((round, index) => ({
       plannedStageId: `canvas-${round.ref}`, label: index === 0 ? 'R1 Models' : `R${index + 1}`, purpose: index === 0 ? 'position' : 'response',
       participantIds: round.participantIds,
       participantBindings: round.participantIds.map((participantId) => ({ participantId, promptId: round.roles[participantId] }))
     }))
   });
-  for (const insert of canvas.inserts) {
-    const inserted = DraftPlan.insertSynthesis(plan, { afterPlannedStageId: `canvas-r${insert.afterRound}`, participantIds: insert.participantIds, plannedStageId: insert.plannedStageId });
-    if (!inserted.ok) return { stage: 'insertSynthesis', errors: [{ path: `synth:${insert.plannedStageId}`, message: inserted.reasonCode }] };
-    plan = inserted.plan;
-  }
   return { stage: 'ok', errors: [], record: { roundCounter: canvas.roundCounter, run, planRounds: plan.rounds ? plan.rounds.length : null, stacks: canvas.stacks } };
 }
 

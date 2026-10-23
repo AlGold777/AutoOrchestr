@@ -6,7 +6,7 @@
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '43';
+  const STAND_VERSION = '44';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -308,7 +308,7 @@
   }
   // Новые поля: предел слов, дисциплина, defaults, run.
   const DISC_KEYS = ['limit', 'content', 'delivery', 'correction', 'lines'];
-  const DEFAULTS_KEYS = ['roundTask', 'synthesisTask', 'discipline', 'modelNotes'];
+  const DEFAULTS_KEYS = ['roundTask', 'discipline', 'modelNotes'];
   const RUN_WORDS = [300, 500, 700, 1000];
   const wordsOf = (v) => {
     const n = typeof v === 'number' ? v : typeof v === 'string' && /^\s*\d+\s*$/.test(v) ? Number(v) : NaN;
@@ -337,10 +337,10 @@
   function checkRoot(schema, add) {
     const d = schema.defaults;
     if (d != null) {
-      if (!isObj(d)) add('warn', null, 'defaults должен быть объектом { roundTask, synthesisTask, discipline, modelNotes }; не применён.');
+      if (!isObj(d)) add('warn', null, 'defaults должен быть объектом { roundTask, discipline, modelNotes }; не применён.');
       else {
         Object.keys(d).filter((k) => !DEFAULTS_KEYS.includes(k)).forEach((k) => add('warn', null, `defaults.${k}: неизвестное поле; допустимы ${DEFAULTS_KEYS.join(', ')}.`));
-        ['roundTask', 'synthesisTask'].forEach((k) => checkText(d, k, 'defaults.', null, add));
+        checkText(d, 'roundTask', 'defaults.', null, add);
         checkDiscipline(d.discipline, 'defaults.', null, add);
         if (d.modelNotes != null) {
           if (!isObj(d.modelNotes)) add('warn', null, 'defaults.modelNotes должен быть объектом { "Claude": "текст", … }; не применён.');
@@ -483,7 +483,7 @@
   }
 
   // ---------- Состояние стенда ----------
-  const DATA_KEYS = ['models', 'defaults', 'run', 'rounds', 'final', 'selectedModel'];
+  const DATA_KEYS = ['models', 'defaults', 'run', 'rounds', 'selectedModel'];
   const stand = { active: false, layout: [], issues: [], flat: [], schema: null, snapshot: null, name: null, current: null, text: '', comment: '' };
 
   // Дисциплина и свои поля модели/синтеза схемы → поля ProtoState.
@@ -496,7 +496,7 @@
   }
   const ownFields = (o) => ({ maxWords: wordsOf(o.maxWords), discipline: disciplineOf(o.discipline) });
 
-  // Схема → ProtoState: раунды и синтезы в порядке списка; layout — колонки холста.
+  // Схема → ProtoState: раунды в порядке списка (синтез — раунд из одной модели); layout — колонки холста.
   function applySchema(schema, flat, issues) {
     const state = S();
     if (!stand.snapshot) {
@@ -514,7 +514,6 @@
     const notes = isObj(d.modelNotes) ? Object.fromEntries(Object.entries(d.modelNotes).filter(([, v]) => own(v)).map(([n, v]) => [n, v.trim()])) : {};
     state.defaults = { ...snapD,
       roundTask: own(d.roundTask) ? d.roundTask.trim() : snapD.roundTask || '',
-      synthesisTask: own(d.synthesisTask) ? d.synthesisTask.trim() : snapD.synthesisTask || '',
       discipline: isObj(d.discipline) ? disciplineOf(d.discipline) : snapD.discipline || state.emptyDiscipline(),
       modelNotes: { ...(snapD.modelNotes || {}), ...notes }, roundPrompts: snapD.roundPrompts || {} };
     const r = isObj(schema.run) ? schema.run : {};
@@ -538,7 +537,6 @@
             return { name: String(m.name || '?'), enabled: true, send: true, role: id || 'None', schemaRole: own(m.role) ? m.role.trim() : '',
               task: [roleLine, own(m.task) ? m.task.trim() : ''].filter(Boolean).join('\n\n'), ...ownFields(m) };
           }),
-          intermediateSynthesis: null,
           artifacts: listOf(st.artifacts).map((a, k) => ({ id: `${st.id}-a${k + 1}`, title: artName(a), version: 1 }))
         });
         col.round = index;
@@ -547,7 +545,6 @@
     });
     // Исходные артефакты крепятся к In: от каждого стрелка к этапу, который берёт его через «in.Имя».
     stand.inDocs = listOf(schema.artifacts).filter((a) => isObj(a) && own(a.name)).map((a) => ({ id: a.name.trim(), title: a.name.trim(), src: a }));
-    state.final = { on: false, model: state.models.includes('Claude') ? 'Claude' : state.models[0], task: '', discipline: state.emptyDiscipline() };
     stand.artTo = {};
     stand.schema = schema;
     stand.flat = flat;
@@ -832,7 +829,7 @@
       return Object.entries(value).map(([k, v]) => (k === 'policy' ? `запуск: ${v}${POLICY_TEXT[v] ? ` (${POLICY_TEXT[v]})` : ''}` : k === 'maxWords' ? `общий предел: ${fmt('maxWords', v)}` : `${k}: ${fmt(k, v)}`)).join('\n');
     }
     if (key === 'defaults' && isObj(value)) {
-      const names = { roundTask: 'задание раундов', synthesisTask: 'задание синтеза', discipline: 'дисциплина', modelNotes: 'особенности моделей' };
+      const names = { roundTask: 'задание раундов', discipline: 'дисциплина', modelNotes: 'особенности моделей' };
       return Object.entries(value).map(([k, v]) => (isObj(v) ? `${names[k] || k}:\n${indent(fmt(k, v))}` : `${names[k] || k}: ${fmt(k, v)}`)).join('\n');
     }
     if (key === 'order') return `${value}${ORDER_TEXT[value] ? ` (${ORDER_TEXT[value]})` : ''}`;
@@ -1638,7 +1635,6 @@
       "task": "Выбрать технологический стек для внутреннего сервиса заявок",
       "defaults": {
         "roundTask": "Учти ответы предыдущего раунда и улучши своё предложение.",
-        "synthesisTask": "Сведи предложения в одно решение с обоснованием.",
         "discipline": {
           "content": "Пиши по делу: варианты, плюсы, минусы, риски.",
           "lines": [

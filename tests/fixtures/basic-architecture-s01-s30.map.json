@@ -1,5 +1,5 @@
 {
-  "description": "Таблица соответствия S01–S30 → технические ref (ТЗ 10, T18). Схема линейна: проверок (gate) и развилок (route) в Basic нет. Проверки G1–G4 — раунды из одной модели с критериями в task; выборы User (CHG13, CHG17, CHG18, CHG25, исход S29) — шаги owner; синтетические условия возвратов (Q10) убраны.",
+  "description": "Таблица соответствия S01–S30 → технические ref (ТЗ 10, T18). Схема линейна: проверок (gate) и развилок (route) в Basic нет. Проверки G1–G4 — раунды из одной модели с критериями в task; синтезы — раунды из одной модели с ролью; выборы User (CHG13, CHG17, CHG18, CHG25, исход S29) — шаги owner; синтетические условия возвратов (Q10) убраны.",
   "stages": [
     {
       "stage": "S01",
@@ -32,11 +32,11 @@
       "phase": "product",
       "roles": "Synthesizer + Decision Closer",
       "refs": [
-        "synth:s03",
-        "r3"
+        "r3",
+        "r4"
       ],
       "participants": 2,
-      "notes": "Synthesizer — synth:s03; Decision Closer — отдельный раунд (вход synth:s03). Decision Closer (r3) получает и Decision Policy (owner:s01): вход S03 в документе — proposal sets и Decision Policy.",
+      "notes": "Synthesizer — r3; Decision Closer — отдельный раунд (вход r3). Decision Closer (r4) получает и Decision Policy (owner:s01): вход S03 в документе — proposal sets и Decision Policy.",
       "mechanics": "доказана"
     },
     {
@@ -45,7 +45,7 @@
       "phase": "product",
       "roles": "Synthesizer",
       "refs": [
-        "synth:s04"
+        "r5"
       ],
       "participants": 1,
       "notes": "",
@@ -57,7 +57,7 @@
       "phase": "product",
       "roles": "Reviewer ∥ (≥2)",
       "refs": [
-        "r4"
+        "r6"
       ],
       "participants": 2,
       "notes": "Два независимых рецензента, parallel, require 2. В документе у S05 только эскалация User: подтверждение User не задано.",
@@ -69,7 +69,7 @@
       "phase": "product",
       "roles": "Decision Closer",
       "refs": [
-        "r5"
+        "r7"
       ],
       "participants": 1,
       "notes": "",
@@ -81,7 +81,7 @@
       "phase": "product",
       "roles": "Producer",
       "refs": [
-        "r6"
+        "r8"
       ],
       "participants": 1,
       "notes": "Артефакт map (линия S07).",
@@ -93,8 +93,8 @@
       "phase": "product",
       "roles": "Reviewer + Producer",
       "refs": [
-        "r7",
-        "r8"
+        "r9",
+        "r10"
       ],
       "participants": 2,
       "notes": "Reviewer — артефакт findings; Producer — map с revisionOf (линия S07). S10 получает только findings.",
@@ -106,8 +106,8 @@
       "phase": "product",
       "roles": "Reviewer + Verifier",
       "refs": [
-        "r9",
-        "r10"
+        "r11",
+        "r12"
       ],
       "participants": 2,
       "notes": "Вход Reviewer — только map (latest) и product concept.",
@@ -119,7 +119,7 @@
       "phase": "product",
       "roles": "Decision Closer",
       "refs": [
-        "r11"
+        "r13"
       ],
       "participants": 1,
       "notes": "Вход — findings (артефакт S08) и findings S09; возврат S12→S10 ведёт сюда (maxLoops 2).",
@@ -131,7 +131,7 @@
       "phase": "product",
       "roles": "Producer",
       "refs": [
-        "r12"
+        "r14"
       ],
       "participants": 1,
       "notes": "Артефакт spec.",
@@ -143,8 +143,8 @@
       "phase": "product",
       "roles": "Reviewer + Producer",
       "refs": [
-        "r13",
-        "r14"
+        "r15",
+        "r16"
       ],
       "participants": 2,
       "notes": "Возврат S12→S10 убран: схема линейна.",
@@ -156,12 +156,12 @@
       "phase": "product",
       "roles": "Decision Closer + Owner",
       "refs": [
-        "r15",
-        "r16",
+        "r17",
+        "r18",
         "owner:chg13"
       ],
       "participants": 2,
-      "notes": "owner: approve; проверка G1 — раунд r16 (одна модель, критерии в task); CHG13 — шаг User owner:chg13: продолжить или остановить прогон.",
+      "notes": "owner: approve; проверка G1 — раунд r18 (одна модель, критерии в task); CHG13 — шаг User owner:chg13: продолжить или остановить прогон.",
       "mechanics": "доказана"
     },
     {
@@ -170,7 +170,7 @@
       "phase": "discovery",
       "roles": "Producer ∥ (≥2)",
       "refs": [
-        "r17"
+        "r19"
       ],
       "participants": 2,
       "notes": "Два независимых участника, chat new, require 2.",
@@ -182,7 +182,7 @@
       "phase": "discovery",
       "roles": "Synthesizer",
       "refs": [
-        "synth:s15"
+        "r20"
       ],
       "participants": 1,
       "notes": "",
@@ -194,7 +194,7 @@
       "phase": "discovery",
       "roles": "Verifier",
       "refs": [
-        "r18"
+        "r21"
       ],
       "participants": 1,
       "notes": "",
@@ -206,13 +206,13 @@
       "phase": "discovery",
       "roles": "Synthesizer + Decision Closer",
       "refs": [
-        "synth:s17",
-        "r19",
-        "r20",
+        "r22",
+        "r23",
+        "r24",
         "owner:chg17"
       ],
       "participants": 3,
-      "notes": "Артефакт aip; проверка G2 — раунд r20 (одна модель, критерии в task); CHG17 — шаг User owner:chg17.",
+      "notes": "Артефакт aip; проверка G2 — раунд r24 (одна модель, критерии в task); CHG17 — шаг User owner:chg17.",
       "mechanics": "доказана"
     },
     {
@@ -221,11 +221,11 @@
       "phase": "generation",
       "roles": "Producer ∥ (≥2)",
       "refs": [
-        "r21",
+        "r25",
         "owner:chg18"
       ],
       "participants": 2,
-      "notes": "Два независимых участника (Claude S18-a, GPT S18-b), chat new. Два ID одной модели в шаге страница не устанавливает (A06), это проверяется engine-тестом. CHG18 — шаг User owner:chg18: получает r15, r19, r21 (required) и решает, продолжать ли.",
+      "notes": "Два независимых участника (Claude S18-a, GPT S18-b), chat new. Два ID одной модели в шаге страница не устанавливает (A06), это проверяется engine-тестом. CHG18 — шаг User owner:chg18: получает r17, r23, r25 (required) и решает, продолжать ли.",
       "mechanics": "доказана"
     },
     {
@@ -234,7 +234,7 @@
       "phase": "generation",
       "roles": "Reviewer ∥ (≥2)",
       "refs": [
-        "r22"
+        "r26"
       ],
       "participants": 2,
       "notes": "Каждый рецензент видит кандидата другого участника (адресный вход участника).",
@@ -246,9 +246,9 @@
       "phase": "generation",
       "roles": "Reviewer + Producer",
       "refs": [
-        "r23",
-        "r24",
-        "r25"
+        "r27",
+        "r28",
+        "r29"
       ],
       "participants": 4,
       "notes": "Критика ∥; ревизия каждым автором своего кандидата (revisionOf, chat continue). Ревизии — отдельные раунды (revisionOf step-level).",
@@ -260,8 +260,8 @@
       "phase": "generation",
       "roles": "Synthesizer + Reviewer",
       "refs": [
-        "synth:s21",
-        "r26"
+        "r30",
+        "r31"
       ],
       "participants": 2,
       "notes": "",
@@ -273,11 +273,11 @@
       "phase": "generation",
       "roles": "Decision Closer + Owner",
       "refs": [
-        "r27",
-        "r28"
+        "r32",
+        "r33"
       ],
       "participants": 2,
-      "notes": "owner: approve; проверка G3 — раунд r28 (одна модель, критерии в task).",
+      "notes": "owner: approve; проверка G3 — раунд r33 (одна модель, критерии в task).",
       "mechanics": "доказана"
     },
     {
@@ -286,10 +286,10 @@
       "phase": "generation",
       "roles": "Synthesizer",
       "refs": [
-        "r29"
+        "r34"
       ],
       "participants": 1,
-      "notes": "Выражено раундом (холст не допускает synth после gate). Артефакт pca.",
+      "notes": "Раунд из одной модели. Артефакт pca.",
       "mechanics": "доказана"
     },
     {
@@ -298,7 +298,7 @@
       "phase": "evidence",
       "roles": "Synthesizer",
       "refs": [
-        "r30"
+        "r35"
       ],
       "participants": 1,
       "notes": "Выражено раундом (см. S23). Цель возврата S27→S24.",
@@ -316,7 +316,7 @@
       "participants": 0,
       "notes": "owner:s25 — текст User. CHG25 — шаг User owner:chg25: возврат к AIP (S16) — новым прогоном.",
       "mechanics": "ждёт бизнес-решения",
-      "mechanicsNote": "Возврат CHG25 → AIP (S16) в схеме не выражается. Состав пересчёта S24 (r30) до ввода User ТЗ не задаёт: без него r31 останавливается missing_input (остановка доказана, продолжение нет)."
+      "mechanicsNote": "Возврат CHG25 → AIP (S16) в схеме не выражается. Состав пересчёта S24 (r35) до ввода User ТЗ не задаёт: без него r36 останавливается missing_input (остановка доказана, продолжение нет)."
     },
     {
       "stage": "S26",
@@ -324,7 +324,7 @@
       "phase": "evidence",
       "roles": "Decision Closer",
       "refs": [
-        "r31"
+        "r36"
       ],
       "participants": 1,
       "notes": "Ветки directionBroken → S22 в схеме нет: схема линейна.",
@@ -337,7 +337,7 @@
       "phase": "evidence",
       "roles": "Reviewer ∥ (≥2)",
       "refs": [
-        "r32"
+        "r37"
       ],
       "participants": 2,
       "notes": "Ветки requiresVerification → S24 в схеме нет: схема линейна.",
@@ -350,7 +350,7 @@
       "phase": "evidence",
       "roles": "Producer",
       "refs": [
-        "r33"
+        "r38"
       ],
       "participants": 1,
       "notes": "Вход — только закрытые решения (S26) и findings (S27); revisionOf линии S23 pca. Отдельного CHG-механизма нет: см. раздел «невыражаемое».",
@@ -362,8 +362,8 @@
       "phase": "evidence",
       "roles": "Reviewer + Verifier",
       "refs": [
-        "r34",
-        "r35",
+        "r39",
+        "r40",
         "owner:s29"
       ],
       "participants": 2,
@@ -377,11 +377,11 @@
       "phase": "evidence",
       "roles": "Decision Closer + Owner",
       "refs": [
-        "r36",
-        "r37"
+        "r41",
+        "r42"
       ],
       "participants": 2,
-      "notes": "owner: approve; проверка G4 — раунд r37 (одна модель, критерии в task).",
+      "notes": "owner: approve; проверка G4 — раунд r42 (одна модель, критерии в task).",
       "mechanics": "доказана"
     }
   ],
@@ -395,8 +395,7 @@
   "summary": {
     "businessStages": 30,
     "technicalSteps": 49,
-    "rounds": 37,
-    "syntheses": 5,
+    "rounds": 42,
     "owners": 7,
     "ownerApprovals": 3,
     "participantsTotal": 49,

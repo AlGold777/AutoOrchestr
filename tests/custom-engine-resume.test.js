@@ -171,6 +171,22 @@ describe('Custom engine resume (8.3, T15, T16, T13)', () => {
     expect(resumed.steps.every((item) => !('route' in item))).toBe(true);
   });
 
+  test('a state saved before the synthesis was removed (afterRound, the kind and label of a synthesis) is read: the extra fields are ignored', async () => {
+    const texts = textStore();
+    const first = keeper();
+    await Engine.run({ task: 'T', steps: TWO_ROUNDS, checkpoint: first.checkpoint, putText: texts.putText, getText: texts.getText, send: transport({ A: ['a1'], B: ['b1'] }, []) });
+    const full = clone(first.saved.find((state) => state.pc === 'S2' && state.current.phase === 'send'));
+    const old = { ...full, synthesizer: 'Claude',
+      results: full.results.map((item) => ({ ...item, kind: 'synthesis', afterRound: 1, label: 'Синтез после раунда 1' })),
+      current: { ...full.current, afterRound: 1, label: 'Синтез после раунда 1' } };
+    const log = [];
+    const resumed = await Engine.run({ task: 'T', steps: TWO_ROUNDS, putText: texts.putText, getText: texts.getText, resume: old, send: transport({ B: ['b1'] }, log), resolveUnknown: async () => 'resend' });
+    expect(resumed.stopReason).toBe('steps_done');
+    expect(log.map((call) => call.models[0])).toEqual(['B']);
+    expect(resumed.state).not.toHaveProperty('synthesizer');
+    expect(resumed.steps.map((item) => item.label)).toEqual(['Раунд 1', 'Раунд 2']);
+  });
+
   test('a state saved by an older version, with counters, a stack, feedback and dependencies, is read without a fall: the extra fields are ignored', async () => {
     const texts = textStore();
     const first = keeper();

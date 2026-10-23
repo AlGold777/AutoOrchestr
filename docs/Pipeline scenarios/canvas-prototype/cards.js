@@ -1,4 +1,4 @@
-// Окна прототипа холста Basic: ▶, раунд, модель, промежуточный и финальный синтез.
+// Окна прототипа холста Basic: ▶, раунд, модель. Синтез — раунд из одной модели с ролью, своего окна нет.
 // Разметка и классы — как в results.js (renderCustomBlockInspector) и results/stage-card.js;
 // стили — только настоящие (styles.css проекта). Данные — window.ProtoState (CONTRACT.md).
 (function initProtoCards(root) {
@@ -10,7 +10,6 @@
   // Тексты Basic: из disput/basic-schema.js, если он загружен, иначе их копия.
   const BASIC = {
     roundTask: 'Учти ответы предыдущего шага и дай свой улучшенный ответ на задачу.',
-    synthesisTask: 'Сведи эти ответы в один итоговый ответ на задачу.',
     discipline: {
       limit: '[RESPONSE_LIMIT] Объём ответа: {от}-{слов} слов, не больше.',
       content: 'Сосредоточься на ясной концепции и ключевых идеях; убери повторы, длинные пересказы и второстепенные детали.',
@@ -72,37 +71,18 @@
     if (id === 'custom') return defaults().roundPrompts[ref] || '';
     return ROLES.find((item) => item.id === id)?.text || '';
   };
-  // A pending intermediate synthesis lives only here until the canvas adds the stage.
-  const virtualSynth = new WeakMap();
-  const synthesisTarget = (kind, index) => {
-    const state = S();
-    if (kind === 'final') return state.final || null;
-    const round = state.rounds?.[index];
-    if (!round) return null;
-    if (round.intermediateSynthesis) return round.intermediateSynthesis;
-    if (!virtualSynth.has(round)) virtualSynth.set(round, { model: (state.final?.on && state.final.model) || (state.models?.includes('Claude') ? 'Claude' : state.models?.[0]) || 'Claude', task: '', discipline: {} });
-    return virtualSynth.get(round);
-  };
-
   // step: { kind, ref, label, input, order, task (round level), models: [{ name, ... }] }, target: the model's own settings.
   function stepFor(kind, index, name) {
     const state = S();
     const rounds = state.rounds || [];
-    if (kind === 'round') {
-      const round = rounds[index];
-      if (!round) return null;
-      const target = (round.models || []).find((model) => model.name === name);
-      if (!target) return null;
-      return { kind, index, ref: round.ref || `r${index + 1}`, label: `Раунд ${index + 1}`, input: roundInput(round, index),
-        order: round.order || 'parallel', roundTask: round.task, names: round.models.filter((model) => model.enabled !== false).map((model) => model.name), target, name };
-    }
-    const target = synthesisTarget(kind, index);
+    const round = kind === 'round' ? rounds[index] : null;
+    if (!round) return null;
+    const target = (round.models || []).find((model) => model.name === name);
     if (!target) return null;
-    const after = kind === 'final' ? rounds.length : index + 1;
-    return { kind: 'synthesis', synth: kind, index, ref: kind === 'final' ? 'final' : `synth:after-r${index + 1}`, label: `Синтез после раунда ${after}`,
-      input: 'previous', order: 'parallel', roundTask: '', names: [target.model], target, name: target.model };
+    return { kind, index, ref: round.ref || `r${index + 1}`, label: `Раунд ${index + 1}`, input: roundInput(round, index),
+      order: round.order || 'parallel', roundTask: round.task, names: round.models.filter((model) => model.enabled !== false).map((model) => model.name), target, name };
   }
-  const taskFallback = (step) => (step.kind === 'synthesis' ? first(defaults().synthesisTask) || basic().synthesisTask : first(defaults().roundTask) || basic().roundTask);
+  const taskFallback = () => first(defaults().roundTask) || basic().roundTask;
   const inheritedTask = (step) => first(step.roundTask) || taskFallback(step);
   const inheritedDiscipline = (key) => first(defaults().discipline[key]) || basic().discipline[key];
   const wordsOf = (target) => (Number.isSafeInteger(Number(target.maxWords)) && Number(target.maxWords) > 0 ? Number(target.maxWords) : general());
@@ -110,22 +90,17 @@
   // Автоматический запрос (часть, которую можно заменить своим): как CustomEngine.previewPrompt().template.
   function automaticRequest(step, { role = step.target.role, task = first(step.target.task) || inheritedTask(step) } = {}) {
     const parts = ['Задача:\n{задача}'];
-    const hasEarlierStep = step.kind === 'synthesis' || step.index > 0;
+    const hasEarlierStep = step.index > 0;
     if (step.input !== 'none' && hasEarlierStep) {
       parts.push(step.input === 'all' ? 'Принятые ответы всех предыдущих шагов:\n\nВход:\n{вход}' : 'Ответы предыдущего шага:\n\nОтвет 1:\n{вход}');
     }
     if (step.order === 'sequential' && step.names.indexOf(step.name) > 0) parts.push('Ответы участников этого раунда до тебя:\n\nОтвет 1:\n{ответы до тебя}');
     if (step.input !== 'none' && own(task)) parts.push(`Задание:\n${task.trim()}`);
-    const extra = step.kind === 'synthesis' ? '' : roleText(role, step.ref);
+    const extra = roleText(role, step.ref);
     if (own(extra)) parts.push(`Дополнительно для тебя:\n${extra.trim()}`);
     return parts.join('\n\n');
   }
-  // An intermediate synthesis without its own request follows the final synthesizer's request.
-  const baseRequest = (step, options) => {
-    const fin = S().final;
-    if (step.synth === 'intermediate' && fin && fin.model === step.name && own(fin.request)) return fin.request;
-    return automaticRequest(step, options);
-  };
+  const baseRequest = (step, options) => automaticRequest(step, options);
 
   // Полный запрос в порядке basic-windows.md: запрос (с ролью) → ответы владельца → особенность модели →
   // лимит → требования к содержанию (и свои строки) → метка доставки.
@@ -181,7 +156,7 @@
   const copyButton = (id, label) => `<button type="button" data-action="copy" data-copy-field="${id}" title="Копировать" aria-label="Копировать: ${esc(label)}"><i class="ti ti-copy" aria-hidden="true"></i></button>`;
   const roleOptions = (value) => [{ id: '', label: 'None' }, ...ROLES].map((item) => `<option value="${item.id}"${item.id === value ? ' selected' : ''}>${esc(item.label)}</option>`).join('');
 
-  // One renderer for ▶ (entry) and a step's model/synthesis card, after renderCustomBlockInspector.
+  // One renderer for ▶ (entry) and a round model's card, after renderCustomBlockInspector.
   function renderCard(spec) {
     const entry = Boolean(spec.entry);
     const step = entry ? null : stepFor(spec.kind, spec.index, spec.name);
@@ -191,16 +166,15 @@
     if (!entry && !target.discipline) target.discipline = {};
     const words = general();
     const rows = entry
-      ? [['roundTask', 'Задание раундов со входом (R2+)'], ['synthesisTask', 'Задание синтеза'], ...DISCIPLINE_ROWS]
-      : [...(step.input !== 'none' ? [['task', step.kind === 'synthesis' ? 'Задание синтеза' : 'Задание раунда']] : []), ...DISCIPLINE_ROWS];
-    const isTask = (key) => ['task', 'roundTask', 'synthesisTask'].includes(key);
-    const fallbackFor = (key) => (key === 'roundTask' ? basic().roundTask : key === 'synthesisTask' ? basic().synthesisTask : basic().discipline[key]);
+      ? [['roundTask', 'Задание раундов со входом (R2+)'], ...DISCIPLINE_ROWS]
+      : [...(step.input !== 'none' ? [['task', 'Задание раунда']] : []), ...DISCIPLINE_ROWS];
+    const isTask = (key) => ['task', 'roundTask'].includes(key);
+    const fallbackFor = (key) => (key === 'roundTask' ? basic().roundTask : basic().discipline[key]);
     const inheritedValue = (key) => (entry ? fallbackFor(key) : key === 'task' ? inheritedTask(step) : inheritedDiscipline(key));
     const rawValue = (key) => (isTask(key) ? target[key] : target.discipline?.[key]);
     const effectiveValue = (key) => first(rawValue(key)) || inheritedValue(key);
     const modelNotes = d.modelNotes;
-    const canvasModels = entry ? [...new Set([...(S().rounds || []).flatMap((round) => (round.models || []).map((model) => model.name)),
-      ...(S().final?.on && S().final.model ? [S().final.model] : [])])] : [];
+    const canvasModels = entry ? [...new Set((S().rounds || []).flatMap((round) => (round.models || []).map((model) => model.name)))] : [];
     let role = entry ? '' : roleId(target.role);
     let baseTemplate = entry ? '' : baseRequest(step, { role });
     const name = entry ? '' : step.name;
@@ -213,7 +187,6 @@
     modal.setAttribute('role', 'dialog');
     modal.setAttribute('aria-modal', 'true');
     modal.setAttribute('aria-labelledby', 'pipeline-block-info-title');
-    const synthModels = !entry && step.kind === 'synthesis' ? (S().models || []) : [];
     content.innerHTML = `
       <header class="custom-card-top ${entry ? 'custom-defaults-top' : ''}">
         <h3 class="custom-card-model" id="pipeline-block-info-title">${entry ? '▶ Basic' : `${icon}${esc(name)}<span class="custom-card-where">${esc(step.label)}</span>`}</h3>
@@ -222,8 +195,7 @@
       </header>
       <div class="custom-card-body">
         ${entry ? '<p class="custom-card-note">Общие значения для всех шагов. Своё значение модели имеет приоритет; пустое поле наследует значение из кода.</p>' : `
-        ${synthModels.length ? `<label class="custom-card-head">Модель синтеза <select class="stage-card-role-select" id="custom-card-synth-model">${synthModels.map((item) => `<option value="${esc(item)}"${item === name ? ' selected' : ''}>${esc(item)}</option>`).join('')}</select></label>` : ''}
-        ${step.kind === 'round' ? `<label class="custom-card-head">Роль <select class="stage-card-role-select" id="custom-card-role">${roleOptions(role)}</select></label>` : ''}
+        <label class="custom-card-head">Роль <select class="stage-card-role-select" id="custom-card-role">${roleOptions(role)}</select></label>
         <div class="custom-card-field">
           <div class="custom-card-head"><label for="custom-card-request">Запрос</label><span><code>{задача}</code> и <code>{вход}</code> подставляются при запуске. Изменённый текст используется только для этой модели в этом шаге.</span><span class="custom-card-actions">${copyButton('custom-card-request', 'Запрос')}</span></div>
           <textarea id="custom-card-request" spellcheck="false"></textarea>
@@ -301,7 +273,6 @@
       target.discipline = discipline;
       if (entry) {
         target.roundTask = values.roundTask;
-        target.synthesisTask = values.synthesisTask;
         // Notes of models that are off the canvas stay saved.
         content.querySelectorAll('[data-model-note]').forEach((field) => {
           const value = field.value.trim();
@@ -349,12 +320,6 @@
       baseTemplate = baseRequest(step, { role });
       if (automatic) request.value = baseTemplate;
       refresh();
-    });
-    // The synthesizer list changes the model of this stage at once, as the block's list does.
-    content.querySelector('#custom-card-synth-model')?.addEventListener('change', (event) => {
-      target.model = event.target.value;
-      notify();
-      renderCard(spec);
     });
 
     const drawLines = () => {
@@ -471,11 +436,6 @@
 
   const openEntry = () => renderCard({ entry: true });
   const openModel = (index, name) => renderCard({ kind: 'round', index, name });
-  const openSynthesis = (kind, index) => {
-    if (kind === 'final' && !S().final?.on) { console.warn('Включите финальный синтез кликом по Final.'); return; }
-    renderCard({ kind: kind === 'final' ? 'final' : 'intermediate', index });
-  };
-
-  root.ProtoCards = { openEntry, openRound, openModel, openSynthesis, previewPrompt, close: closeCard };
+  root.ProtoCards = { openEntry, openRound, openModel, previewPrompt, close: closeCard };
   loadStageCard();
 })(window);

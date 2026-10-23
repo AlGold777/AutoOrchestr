@@ -13,26 +13,8 @@
     return getPresetDuration(presetMeta) === 'open_ended';
   }
 
-  function usesSynthesisStage({ presetMeta = {}, roundLimit = '' } = {}) {
-    const duration = getPresetDuration(presetMeta);
-    if (duration !== 'open_ended') return true;
-    return String(roundLimit || '').trim() !== 'infinite';
-  }
-
-  function getProtocolSynthesizer(protocol = {}) {
-    const explicit = (value) => {
-      const normalized = String(value || '').trim();
-      return normalized.toLowerCase() === 'auto' ? '' : normalized;
-    };
-    const canonical = explicit(protocol.synthesizer);
-    if (canonical) return canonical;
-    return explicit(protocol.serviceRoles?.extractor);
-  }
-
   const api = Object.freeze({
-    shouldShowRoundLimitControl,
-    usesSynthesisStage,
-    getProtocolSynthesizer
+    shouldShowRoundLimitControl
   });
 
   root.ResultsDebateUi = api;

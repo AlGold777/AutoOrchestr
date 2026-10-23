@@ -96,25 +96,25 @@ describe('Custom engine', () => {
     expect(calls[0].prompts.B).not.toContain('Дополнительно');
   });
 
-  test('synthesis is a step: it replaces the round before it for "previous", "all" keeps both', async () => {
+  test('a round of one model with a role is a synthesis: it replaces the round before it for "previous", "all" keeps both', async () => {
     const { send, calls } = transport({ A: ['a1', 'a3'], B: ['b1', 'b3'], S: ['s1'] });
     await Engine.run({
       task: 'T',
       steps: [
         { task: 'Ответь', input: 'none', models: ['A', 'B'] },
-        { kind: 'synthesis', models: ['S'] },
+        { task: 'Сведи', models: [{ name: 'S', extra: 'Роль: синтезатор.' }] },
         { task: 'Улучши', input: 'previous', models: ['A'] },
         { task: 'Итог', input: 'all', models: ['B'] }
       ],
       send
     });
     expect(calls[1].prompts.S).toContain('Ответы предыдущего шага:\n\nОтвет 1:\na1\n\nОтвет 2:\nb1');
-    expect(calls[1].prompts.S).toContain(Engine.SYNTHESIS_TASK);
+    expect(calls[1].prompts.S).toContain('Дополнительно для тебя:\nРоль: синтезатор.');
     expect(calls[2].prompts.A).toContain('Ответы предыдущего шага:\n\nОтвет 1:\ns1');
     expect(calls[2].prompts.A).not.toContain('b1');
     expect(calls[3].prompts.B).toContain('Раунд 1, ответ 1:\na1');
-    expect(calls[3].prompts.B).toContain('Синтез после раунда 1, ответ 1:\ns1');
-    expect(calls[3].prompts.B).toContain('Раунд 2, ответ 1:\na3');
+    expect(calls[3].prompts.B).toContain('Раунд 2, ответ 1:\ns1');
+    expect(calls[3].prompts.B).toContain('Раунд 3, ответ 1:\na3');
   });
 
   test('empty and token-only answers are not accepted and get a correction retry in the same chat', async () => {
@@ -324,7 +324,7 @@ describe('Custom engine refuses what it does not execute yet', () => {
     ['a chat that is neither continue nor new', [{ ref: 'r1', kind: 'round', chat: 'shared', models: ['A'] }], 'unsupported_field', 'chat'],
     ['an artifact source without its version', [{ ref: 'r1', kind: 'round', models: ['A'] }, { ref: 'r2', kind: 'round', input: [{ artifact: { step: 'r1', participant: 'A', id: 'map' } }], models: ['B'] }], 'invalid_input', 'r2'],
     ['a string input that is not a value', [{ ref: 'r1', kind: 'round', input: 'some', models: ['A'] }], 'invalid_input', 'r1'],
-    ['a synthesis with input all', [{ ref: 'r1', kind: 'round', models: ['A'] }, { ref: 'synth:s', kind: 'synthesis', input: 'all', models: ['B'] }], 'invalid_input', 'synth:s'],
+    ['a removed synthesis step', [{ ref: 'r1', kind: 'round', models: ['A'] }, { ref: 'final', kind: 'synthesis', models: ['B'] }], 'unsupported_kind', 'synthesis'],
     ['two participants of one model', [{ ref: 'r1', kind: 'round', models: ['A', 'A'] }], 'participant_transport_required', 'r1']
   ];
   test.each(cases)('%s stops the run before any request (%s)', async (_label, steps, code, mention) => {
@@ -343,11 +343,11 @@ describe('Custom engine refuses what it does not execute yet', () => {
     expect(calls).toHaveLength(0);
   });
 
-  test('the executed fields still run: any, continue, a plain input, a synthesis with previous', async () => {
+  test('the executed fields still run: any, continue, a plain input', async () => {
     const { send, calls } = ask();
     const result = await Engine.run({ task: 'T', send, steps: [
       { ref: 'r1', kind: 'round', require: 'any', owner: undefined, chat: 'continue', input: 'none', models: ['A'] },
-      { ref: 'synth:s', kind: 'synthesis', input: 'previous', models: ['B'] }
+      { ref: 'r2', kind: 'round', input: 'previous', models: ['B'] }
     ] });
     expect(result.stopReason).toBe('steps_done');
     expect(calls).toHaveLength(2);
@@ -432,12 +432,12 @@ describe('Custom engine addressed inputs', () => {
     expect(required.stopReason).toBe('missing_input');
   });
 
-  test('a synthesis takes a list too; the answers of the list reach its request', async () => {
+  test('a round of one model takes a list too; the answers of the list reach its request', async () => {
     const { send, calls } = transport({ A: ['a1'], B: ['b1'], S: ['s1'] });
     await Engine.run({ task: 'T', send, steps: [
       { ref: 'r1', kind: 'round', input: 'none', models: ['A'] },
       { ref: 'r2', kind: 'round', input: 'none', models: ['B'] },
-      { ref: 'synth:s', kind: 'synthesis', input: ['r1'], models: ['S'] }
+      { ref: 'r3', kind: 'round', input: ['r1'], models: ['S'] }
     ] });
     expect(calls[2].prompts.S).toContain('Раунд 1, участник A, визит 1:\na1');
     expect(calls[2].prompts.S).not.toContain('b1');

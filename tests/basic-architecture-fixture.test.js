@@ -1,8 +1,8 @@
 // T18 and T19 (ТЗ 10): the architecture of 30 stages (design-system-architecture.md) as one Basic schema,
 // the S01–S30 → technical refs table, the count of steps, and runs of the whole schema on a fake transport.
 // The schema and the table are fixtures: tests/fixtures/basic-architecture-s01-s30.json and …map.json.
-// The schema is linear: the checks G1–G4 are rounds of one model (criteria in the task), the choices of User are owner
-// steps; the synthetic return conditions (Q10) are gone. Fake send and owner callbacks only: no provider is called.
+// The schema is linear: the checks G1–G4 are rounds of one model (criteria in the task), the syntheses are rounds of one
+// model with a role, the choices of User are owner steps; the synthetic return conditions (Q10) are gone. Fake send and owner callbacks only: no provider is called.
 const fs = require('fs');
 const path = require('path');
 const Engine = require('../disput/custom-engine');
@@ -59,13 +59,13 @@ describe('S01–S05 follow the Design System', () => {
   test('the file for a live run of S01–S05 is the first seven steps of the whole schema (import it in the Pipeline panel)', () => {
     const five = fixture('basic-architecture-s01-s05.json');
     expect(Schema.validate(five)).toEqual([]);
-    expect(five.steps.map((step) => step.ref)).toEqual(['r1', 'owner:s01', 'r2', 'synth:s03', 'r3', 'synth:s04', 'r4']);
+    expect(five.steps.map((step) => step.ref)).toEqual(['r1', 'owner:s01', 'r2', 'r3', 'r4', 'r5', 'r6']);
     expect(five.steps).toEqual(schema.steps.slice(0, 7));
   });
 
   const first = { ...schema, steps: schema.steps.slice(0, 7) };
   test('the Decision Closer receives the Decision Policy, and S05 asks for no owner approval', async () => {
-    expect(byRef['r4'].owner).toBeUndefined();
+    expect(byRef['r6'].owner).toBeUndefined();
     const transport = fakeTransport(baseReply());
     const decided = [];
     const ownerGot = [];
@@ -89,10 +89,13 @@ describe('T18: the architecture schema is valid, shows on the canvas and keeps i
     const canvas = Schema.toCanvas(schema, { models: MODELS });
     expect(canvas.errors).toEqual([]);
     expect(canvas.rounds).toHaveLength(map.summary.rounds);
-    // 30 business stages, 49 technical steps, 37 rounds (the checks G1–G4 are rounds; owner steps and syntheses do not count
-    // toward the 50-round limit), 7 owner steps (the former choices of User included).
-    expect(map.summary).toMatchObject({ businessStages: 30, technicalSteps: 49, rounds: 37, syntheses: 5, owners: 7, ownerApprovals: 3 });
-    expect(schema.steps.map((step) => step.kind).every((kind) => ['round', 'synthesis', 'owner'].includes(kind))).toBe(true);
+    // 30 business stages, 49 technical steps, 42 rounds (the checks G1–G4 and the five syntheses are rounds; owner steps do not
+    // count toward the 50-round limit), 7 owner steps (the former choices of User included).
+    expect(map.summary).toMatchObject({ businessStages: 30, technicalSteps: 49, rounds: 42, owners: 7, ownerApprovals: 3 });
+    expect(schema.steps.map((step) => step.kind).every((kind) => ['round', 'owner'].includes(kind))).toBe(true);
+    // A synthesis is a round of one model with a role.
+    const syntheses = schema.steps.filter((step) => step.models.some((model) => model.role === 'interaction_meta_synthesis'));
+    expect(syntheses.map((step) => [step.ref, step.models.length])).toEqual([['r3', 1], ['r5', 1], ['r20', 1], ['r22', 1], ['r30', 1]]);
     expect(map.summary.rounds).toBeLessThanOrEqual(50);
   });
 
@@ -136,15 +139,15 @@ describe('T18: the architecture schema is valid, shows on the canvas and keeps i
   });
 
   test('the checks G1–G4 are rounds of one model after S13, S17, S22 and S30, with the criteria in the task', () => {
-    const checks = ['r16', 'r20', 'r28', 'r37'].map((ref) => byRef[ref]);
+    const checks = ['r18', 'r24', 'r33', 'r42'].map((ref) => byRef[ref]);
     checks.forEach((step, at) => {
       expect(step.kind).toBe('round');
       expect(step.models).toHaveLength(1);
       expect(step.task).toContain(`Проверка G${at + 1}`);
       expect(step.task).toContain('Критерии:');
     });
-    expect(byRef['r15'].owner).toBe('approve');
-    expect(byRef['r36'].owner).toBe('approve');
+    expect(byRef['r17'].owner).toBe('approve');
+    expect(byRef['r41'].owner).toBe('approve');
   });
 
   test('there is no way back and no branch: the former choices of User are owner steps, the synthetic conditions are gone', () => {
@@ -167,7 +170,7 @@ describe('T18: the architecture schema is valid, shows on the canvas and keeps i
       }
     });
     // Per-participant inputs of S19 (each reviewer sees the other candidate) are kept with the participant.
-    expect(settings.customModelSettings['r22']['S19-a'].input).toEqual(byRef.r22.models[0].input);
+    expect(settings.customModelSettings['r26']['S19-a'].input).toEqual(byRef.r26.models[0].input);
   });
 });
 
@@ -208,16 +211,16 @@ describe('T18: runs of the whole architecture on a fake transport', () => {
     const ask = owners({ decide: () => null });
     const result = await run({ sendParticipants: transport.sendParticipants }, ask);
     expect(result.stopReason).toBe('no_decision');
-    expect(result.steps.at(-1).ref).not.toBe('r37');
+    expect(result.steps.at(-1).ref).not.toBe('r42');
   });
 });
 
 describe('T02, T04, T03: inputs of the architecture chosen by address', () => {
-  test('S03 (synthesis) gets the owner policy and the S02 answers, not the S01 draft; the order of the list is kept', async () => {
+  test('S03 (a synthesis: a round of one model with a role) gets the owner policy and the S02 answers, not the S01 draft; the order of the list is kept', async () => {
     const transport = fakeTransport(baseReply({ text: (ref, pid) => (ref === 'r1' ? 'ЧЕРНОВИК_S01' : `ответ ${ref} ${pid}`) }));
     const ownerAsk = owners();
     await run({ sendParticipants: transport.sendParticipants }, { ...ownerAsk, provideOwnerResult: async () => 'ПОЛИТИКА_S01' });
-    const s03 = transport.calls.find((call) => call[0].stepRef === 'synth:s03');
+    const s03 = transport.calls.find((call) => call[0].stepRef === 'r3');
     expect(s03[0].prompt).toContain('ПОЛИТИКА_S01');
     expect(s03[0].prompt).toContain('ответ r2 S02-a');
     expect(s03[0].prompt).not.toContain('ЧЕРНОВИК_S01');
@@ -227,10 +230,10 @@ describe('T02, T04, T03: inputs of the architecture chosen by address', () => {
   test('S08 → S09 and S10: the reviewer of S09 gets the map only; S10 gets the findings, not the map', async () => {
     const transport = fakeTransport(baseReply({ text: (ref, pid) => (pid === 'S08-producer' ? 'КАРТА_S08' : pid === 'S08-reviewer' ? 'ЗАМЕЧАНИЕ_АУДИТА' : `ответ ${ref} ${pid}`) }));
     await run({ sendParticipants: transport.sendParticipants }, owners());
-    const s09 = transport.calls.find((call) => call[0].stepRef === 'r9');
+    const s09 = transport.calls.find((call) => call[0].stepRef === 'r11');
     expect(s09[0].prompt).toContain('КАРТА_S08');
     expect(s09[0].prompt).not.toContain('ЗАМЕЧАНИЕ_АУДИТА');
-    const s10 = transport.calls.find((call) => call[0].stepRef === 'r11');
+    const s10 = transport.calls.find((call) => call[0].stepRef === 'r13');
     expect(s10[0].prompt).toContain('ЗАМЕЧАНИЕ_АУДИТА');
     expect(s10[0].prompt).not.toContain('КАРТА_S08');
   });
@@ -240,19 +243,19 @@ describe('T02, T04, T03: inputs of the architecture chosen by address', () => {
     const result = await run({ sendParticipants: transport.sendParticipants }, owners());
     expect(result.stopReason).toBe('no_decision');
     expect(transport.calls.filter((call) => call.some((request) => request.participantId === 'S02-b'))).toHaveLength(2);
-    expect(transport.calls.some((call) => call[0].stepRef === 'synth:s03')).toBe(false);
+    expect(transport.calls.some((call) => call[0].stepRef === 'r3')).toBe(false);
   });
 });
 
 describe('T04: a JSON answer without a required field is corrected alone; the accepted neighbour is not sent again', () => {
   test('S27: S27-a lacks /failures (a required field), S27-b is accepted: only S27-a gets the correction, and the reason names the field', async () => {
     const transport = fakeTransport((ref, pid, attempt) => {
-      if (ref === 'r32' && pid === 'S27-a' && attempt === 1) return JSON.stringify({ requiresVerification: false });
+      if (ref === 'r37' && pid === 'S27-a' && attempt === 1) return JSON.stringify({ requiresVerification: false });
       return baseReply()(ref, pid);
     });
     const result = await run({ sendParticipants: transport.sendParticipants }, owners());
     expect(result.stopReason).toBe('steps_done');
-    const batches = transport.calls.filter((call) => call[0].stepRef === 'r32');
+    const batches = transport.calls.filter((call) => call[0].stepRef === 'r37');
     expect(batches).toHaveLength(2);
     expect(batches[0].map((request) => request.participantId)).toEqual(['S27-a', 'S27-b']);
     expect(batches[1].map((request) => request.participantId)).toEqual(['S27-a']);
@@ -269,8 +272,8 @@ describe('T19: a large input is not cut and stops before the request (stress fix
     const transport = fakeTransport(baseReply({ text: (ref, pid) => (pid === 'S28-producer' || pid === 'S29-verifier' ? big : `ответ ${ref} ${pid}`) }));
     const result = await run({ sendParticipants: transport.sendParticipants, maxPromptChars: 150000 }, owners());
     expect(result.stopReason).toBe('context_full');
-    expect(transport.calls.some((call) => call[0].stepRef === 'r36')).toBe(false);
-    const s28 = transport.calls.find((call) => call[0].stepRef === 'r33');
+    expect(transport.calls.some((call) => call[0].stepRef === 'r41')).toBe(false);
+    const s28 = transport.calls.find((call) => call[0].stepRef === 'r38');
     expect(s28).toBeDefined();
   });
 
@@ -278,15 +281,15 @@ describe('T19: a large input is not cut and stops before the request (stress fix
     const transport = fakeTransport(baseReply({ text: (ref, pid) => (pid === 'S08-producer' || pid === 'S12-producer' ? big : `ответ ${ref} ${pid}`) }));
     const result = await run({ sendParticipants: transport.sendParticipants, maxPromptChars: 150000 }, owners());
     expect(result.stopReason).toBe('context_full');
-    expect(transport.calls.some((call) => call[0].stepRef === 'r15')).toBe(false);
-    expect(transport.calls.some((call) => call[0].stepRef === 'r9')).toBe(true);
+    expect(transport.calls.some((call) => call[0].stepRef === 'r17')).toBe(false);
+    expect(transport.calls.some((call) => call[0].stepRef === 'r11')).toBe(true);
   });
 
   test('the same input within the budget is sent whole: the prompt keeps every character of the answer', async () => {
     const transport = fakeTransport(baseReply({ text: (ref, pid) => (pid === 'S28-producer' ? big : `ответ ${ref} ${pid}`) }));
     const result = await run({ sendParticipants: transport.sendParticipants, maxPromptChars: 1000000 }, owners());
     expect(result.stopReason).toBe('steps_done');
-    const s29 = transport.calls.find((call) => call[0].stepRef === 'r34');
+    const s29 = transport.calls.find((call) => call[0].stepRef === 'r39');
     expect(s29[0].prompt).toContain(big);
   });
 });

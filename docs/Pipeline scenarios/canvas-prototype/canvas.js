@@ -1,5 +1,5 @@
 // Холст прототипа Basic. Разметка и классы — как в pipeline_panel.html, pipeline/pipeline-runtime.js
-// (buildModelBlocksHtml) и results.js (addRound, syncIntermediateSynthColumns, renderSynthesisStage);
+// (buildModelBlocksHtml) и results.js (addRound); синтез — раунд из одной модели с ролью, отдельной колонки нет;
 // линии — перенос drawInputSplitConnector / drawMergeSplitConnector / updatePipelineLayout из results.js.
 // Всё рисуется из window.ProtoState; render() перерисовывает холст целиком.
 (function initProtoCanvas() {
@@ -45,60 +45,19 @@
         return `<div class="proto-artifacts" aria-disabled="true"><div class="proto-artifacts-label">Артефакты</div><div class="proto-artifacts-row">${items}</div></div>`;
     };
 
-    const insertHtml = (n, isLast, hasSynth) => `<button type="button" class="pipeline-stage-insert${hasSynth ? ' has-intermediate-synthesis' : ''}" data-after-stage-id="canvas-r${n}" data-round-index="${n - 1}" aria-label="Add stage after R${n}" aria-pressed="${hasSynth}" title="${hasSynth ? 'Click to remove (double-click for its request)' : 'Click to add intermediate synthesis'}"${isLast ? ' hidden disabled' : ''}></button>`;
-
-    const synthOptions = (selected) => S().models
-        .map((name) => `<option value="${esc(name)}"${name === selected ? ' selected' : ''}>${esc(name)}</option>`).join('');
-
     const roundHtml = (round, i, total) => {
         const n = i + 1;
         const isLast = n === total;
-        const synth = !isLast && round.intermediateSynthesis;
         const deleteHidden = !(isLast && total > 1);
         let html = `
             <div class="stage-column" id="round${n}" data-round="${n}" data-round-index="${i}" data-planned-stage-id="canvas-r${n}">
-                <div class="stage-header-row"><div class="stage-label"><span class="round-badge">R${n}</span> <button type="button" class="pipeline-round-delete-btn" title="Delete round" aria-label="Delete round"${deleteHidden ? ' hidden disabled' : ''}>×</button></div>${synth ? '' : insertHtml(n, isLast, false)}</div>
+                <div class="stage-header-row"><div class="stage-label"><span class="round-badge">R${n}</span> <button type="button" class="pipeline-round-delete-btn" title="Delete round" aria-label="Delete round"${deleteHidden ? ' hidden disabled' : ''}>×</button></div></div>
                 <div class="model-stack" id="r${n}-models">${(round.models || []).map(modelBlockHtml).join('')}</div>
                 ${artifactsHtml(round.artifacts)}
             </div>`;
         if (isLast) return html;
         html += `<div class="connector-group" data-round="${n + 1}"><svg class="connector-svg" id="svg-r${n}-r${n + 1}"></svg></div>`;
-        if (synth) {
-            html += `
-                <div class="stage-column pipeline-intermediate-synth" data-synth-after-round="${n}" data-round-index="${i}">
-                    <div class="pipeline-intermediate-synth-header">${insertHtml(n, false, true)}</div>
-                    <div class="model-stack" id="synth-r${n}-stack">
-                        <div class="model-block inactive pipeline-synthesis-block selected-synthesizer">
-                            <div class="model-header">
-                                <span class="status-indicator" aria-hidden="true"></span>
-                                <span class="model-name">Synthesis</span>
-                            </div>
-                            <select class="synthesis-flow-select" aria-label="Intermediate synthesis model" data-round-index="${i}">${synthOptions(synth.model)}</select>
-                        </div>
-                    </div>
-                </div>
-                <div class="connector-group pipeline-intermediate-synth" data-synth-after-round="${n}"><svg class="connector-svg" id="svg-synth-r${n}-r${n + 1}"></svg></div>`;
-        }
         return html;
-    };
-
-    const finalHtml = () => {
-        const final = S().final || {};
-        const on = !!final.on;
-        return `
-            <div class="connector-group synthesis-capable" id="connectorToSynthesis"><svg class="connector-svg" id="svg-r-last-synthesis"></svg></div>
-            <div class="stage-column synthesis-capable${on ? '' : ' pipeline-final-off'}" id="synthesisColumn" data-stage="synthesis">
-                <div class="stage-label"><span class="round-badge" title="Click to enable/disable final synthesis; double-click for its request">Final</span></div>
-                <div class="model-stack synthesis-stack" id="synthesis-stack">
-                    <div class="model-block inactive pipeline-synthesis-block${on ? ' selected-synthesizer' : ''}" data-synthesis-stage="true" data-synthesis-kind="universal" title="${on ? `Final synthesizer: ${esc(final.model)}` : 'Select a synthesizer model'}">
-                        <div class="model-header">
-                            <span class="status-indicator" aria-hidden="true"></span>
-                            <span class="model-name">Synthesis</span>
-                        </div>
-                        <select id="synthesis-flow-select" class="synthesis-flow-select" aria-label="Synthesis model in flow"${on ? '' : ' disabled'}>${synthOptions(on ? final.model : '')}</select>
-                    </div>
-                </div>
-            </div>`;
     };
 
     // ---------- Линии (перенос из results.js) ----------
@@ -120,17 +79,12 @@
         });
         return out;
     };
-    const hasSelectedModels = () => S().rounds.some((r) => (r.models || []).some((m) => m.enabled !== false));
     const modeLookup = (stackId, mode) => {
         if (mode === 'input') return checkedIndices(stackId, '.model-input-checkbox');
         if (mode === 'send') return checkedIndices(stackId, '.model-send-checkbox');
         const stack = $(stackId);
         if (!stack) return [];
         if (mode === 'all') return Array.from(stack.children).map((_, i) => i);
-        if (mode === 'synthesis') {
-            if (!hasSelectedModels()) return [];
-            return Array.from(stack.children).map((b, i) => (b.classList.contains('selected-synthesizer') ? i : -1)).filter((i) => i >= 0);
-        }
         return [];
     };
     const inactiveIndices = (stack, active) => {
@@ -175,8 +129,8 @@
         const targetStack = $(targetStackId);
         const src = modeLookup(sourceStackId, sourceMode);
         const tgt = modeLookup(targetStackId, targetMode);
-        const srcInactive = ['send', 'input', 'synthesis'].includes(sourceMode) ? inactiveIndices(sourceStack, src) : [];
-        const tgtInactive = ['input', 'synthesis'].includes(targetMode) ? inactiveIndices(targetStack, tgt) : [];
+        const srcInactive = ['send', 'input'].includes(sourceMode) ? inactiveIndices(sourceStack, src) : [];
+        const tgtInactive = targetMode === 'input' ? inactiveIndices(targetStack, tgt) : [];
         if (!sourceStack || !targetStack || !(src.length + srcInactive.length) || !(tgt.length + tgtInactive.length)) { svg.innerHTML = ''; return; }
         const W = 50; const mergeX = 15; const splitX = W - 15;
         const aS = src.map((i) => blockCenterY(sourceStack, i, svg));
@@ -200,7 +154,7 @@
         svg.innerHTML = html;
     };
 
-    // Высота линий = высота самого высокого стека; стек синтеза центрируется по последнему стеку раунда.
+    // Высота линий = высота самого высокого стека.
     const updateLayout = () => {
         const root = panel();
         const styles = getComputedStyle(document.documentElement);
@@ -217,19 +171,6 @@
         root.querySelectorAll('.connector-svg').forEach((svg) => { svg.style.height = `${height}px`; svg.setAttribute('height', `${height}`); });
         const entryWrapper = $('entryWrapper');
         if (entryWrapper) entryWrapper.style.height = `${height}px`;
-        const reference = $(`r${S().rounds.length}-models`);
-        if (!reference) return;
-        const rr = reference.getBoundingClientRect();
-        const referenceCenter = rr.top + rr.height / 2;
-        const terminals = [$('synthesisColumn'), ...root.querySelectorAll('.stage-column.pipeline-intermediate-synth')];
-        terminals.forEach((column) => {
-            const stack = column?.querySelector('.model-stack');
-            if (!stack) return;
-            const sr = stack.getBoundingClientRect();
-            const current = parseFloat(column.style.getPropertyValue('--pipeline-terminal-offset')) || 0;
-            const natural = (sr.top + sr.height / 2) - current;
-            column.style.setProperty('--pipeline-terminal-offset', `${Math.round((referenceCenter - natural) * 100) / 100}px`);
-        });
     };
 
     const drawAll = () => {
@@ -239,19 +180,8 @@
         updateLayout();
         drawInputSplitConnector('svg-in-models', 'r1-models', 'active');
         for (let n = 1; n < total; n++) {
-            if (rounds[n - 1].intermediateSynthesis) {
-                drawMergeSplitConnector(`svg-r${n}-r${n + 1}`, `r${n}-models`, `synth-r${n}-stack`, 'brain-flow', { sourceMode: 'send', targetMode: 'all' });
-                drawMergeSplitConnector(`svg-synth-r${n}-r${n + 1}`, `synth-r${n}-stack`, `r${n + 1}-models`, 'brain-flow', { sourceMode: 'all', targetMode: 'input' });
-            } else {
-                drawMergeSplitConnector(`svg-r${n}-r${n + 1}`, `r${n}-models`, `r${n + 1}-models`, 'brain-flow', { sourceMode: 'send', targetMode: 'input' });
-            }
+            drawMergeSplitConnector(`svg-r${n}-r${n + 1}`, `r${n}-models`, `r${n + 1}-models`, 'brain-flow', { sourceMode: 'send', targetMode: 'input' });
         }
-        drawMergeSplitConnector('svg-r-last-synthesis', `r${total}-models`, 'synthesis-stack', 'brain-flow', { sourceMode: 'send', targetMode: 'synthesis' });
-        // Блок синтеза выглядит активным только при выбранном синтезаторе и выбранных моделях.
-        const any = hasSelectedModels();
-        panel().querySelectorAll('.pipeline-synthesis-block').forEach((block) => {
-            block.classList.toggle('inactive', !(any && block.classList.contains('selected-synthesizer')));
-        });
     };
 
     // ---------- render ----------
@@ -294,8 +224,7 @@
             </div>
             <div class="connector-group"><svg class="connector-svg" id="svg-in-models"></svg></div>
             ${state.rounds.map((round, i) => roundHtml(round, i, total)).join('')}
-            <div id="insertionPoint"></div>
-            ${finalHtml()}`;
+            <div id="insertionPoint"></div>`;
         syncChrome();
         drawAll();
         if (frame) cancelAnimationFrame(frame);
@@ -307,7 +236,6 @@
     const newRound = (n) => ({
         ref: `r${n}`, order: '', input: '', task: '', role: 'None',
         models: S().models.map((name) => S().protoModel(name)),
-        intermediateSynthesis: null,
         artifacts: []
     });
     const nextRef = () => 1 + Math.max(0, ...S().rounds.map((r) => Number(/^r(\d+)$/.exec(r.ref || '')?.[1]) || 0));
@@ -316,27 +244,6 @@
         const rounds = S().rounds;
         if (rounds.length <= 1) return;
         rounds.pop();
-        // После последнего раунда промежуточного синтеза не бывает.
-        rounds[rounds.length - 1].intermediateSynthesis = null;
-        render();
-    };
-    const defaultSynthModel = () => {
-        const { final, models } = S();
-        if (final?.on && final.model) return final.model;
-        return models.includes('Claude') ? 'Claude' : models[0];
-    };
-    const toggleIntermediate = (i) => {
-        const round = S().rounds[i];
-        if (!round || i >= S().rounds.length - 1) return;
-        round.intermediateSynthesis = round.intermediateSynthesis
-            ? null
-            : { model: defaultSynthModel(), task: '', discipline: S().emptyDiscipline() };
-        render();
-    };
-    const toggleFinal = () => {
-        const final = S().final;
-        final.on = !final.on;
-        if (final.on && !final.model) final.model = S().models.includes('Claude') ? 'Claude' : S().models[0];
         render();
     };
     const modelOf = (block) => {
@@ -348,29 +255,14 @@
     // ---------- События ----------
 
     const BLOCK_CONTROLS = 'input, select, button, .status-indicator, option';
-    let intermediateTimer = null;
-    let finalTimer = null;
 
     const bindPanel = () => {
         const root = panel();
         root.addEventListener('click', (event) => {
             const t = event.target;
-            const insert = t.closest('.pipeline-stage-insert');
-            if (insert) {
-                if (insert.disabled) return;
-                clearTimeout(intermediateTimer);
-                const i = Number(insert.dataset.roundIndex);
-                intermediateTimer = setTimeout(() => toggleIntermediate(i), 250);
-                return;
-            }
             const badge = t.closest('.round-badge');
             if (badge) {
                 event.preventDefault();
-                if (badge.closest('#synthesisColumn')) {
-                    clearTimeout(finalTimer);
-                    finalTimer = setTimeout(toggleFinal, 250);
-                    return;
-                }
                 const i = Number(badge.closest('.stage-column')?.dataset.roundIndex);
                 cards().openRound?.(i);
                 return;
@@ -386,27 +278,8 @@
         root.addEventListener('dblclick', (event) => {
             const t = event.target;
             if (t.closest('select')) return;
-            const insert = t.closest('.pipeline-stage-insert');
-            if (insert) {
-                event.preventDefault();
-                clearTimeout(intermediateTimer);
-                cards().openSynthesis?.('intermediate', Number(insert.dataset.roundIndex));
-                return;
-            }
-            const intermediate = t.closest('.pipeline-intermediate-synth .pipeline-synthesis-block');
-            if (intermediate) {
-                cards().openSynthesis?.('intermediate', Number(intermediate.closest('.stage-column').dataset.roundIndex));
-                return;
-            }
-            const finalTarget = t.closest('#synthesisColumn .pipeline-synthesis-block, #synthesisColumn .stage-label');
-            if (finalTarget) {
-                event.preventDefault();
-                clearTimeout(finalTimer);
-                cards().openSynthesis?.('final');
-                return;
-            }
             const block = t.closest('.model-block');
-            if (block && !block.classList.contains('pipeline-synthesis-block') && !t.closest(BLOCK_CONTROLS)) {
+            if (block && !t.closest(BLOCK_CONTROLS)) {
                 event.preventDefault();
                 const { i, model } = modelOf(block);
                 if (model) cards().openModel?.(i, model.name);
@@ -416,7 +289,7 @@
         root.addEventListener('change', (event) => {
             const t = event.target;
             const block = t.closest('.model-block');
-            if (block && !block.classList.contains('pipeline-synthesis-block')) {
+            if (block) {
                 const { model } = modelOf(block);
                 if (!model) return;
                 if (t.classList.contains('model-input-checkbox')) {
@@ -430,13 +303,6 @@
                 render();
                 return;
             }
-            if (t.id === 'synthesis-flow-select') { S().final.model = t.value; render(); return; }
-            if (t.classList.contains('synthesis-flow-select')) {
-                const synth = S().rounds[Number(t.dataset.roundIndex)]?.intermediateSynthesis;
-                if (synth) synth.model = t.value;
-                render();
-                return;
-            }
             if (t.id === 'debate-length-select') { S().run.maxWords = Number(t.value); return; }
             if (t.id === 'proto-import-input') importFile(t);
         });
@@ -444,14 +310,13 @@
         $('pipeline-add-btn')?.addEventListener('click', () => {
             const state = S();
             state.rounds = [newRound(1)];
-            state.final = { on: true, model: state.models.includes('Claude') ? 'Claude' : state.models[0], task: '', discipline: state.emptyDiscipline() };
             render();
         });
         $('pipeline-export-btn')?.addEventListener('click', exportState);
         $('pipeline-import-btn')?.addEventListener('click', () => $('proto-import-input')?.click());
     };
 
-    const DATA_KEYS = ['models', 'defaults', 'run', 'rounds', 'final', 'selectedModel'];
+    const DATA_KEYS = ['models', 'defaults', 'run', 'rounds', 'selectedModel'];
     const exportState = () => {
         const data = {};
         DATA_KEYS.forEach((key) => { data[key] = S()[key]; });
