@@ -14588,7 +14588,7 @@ window.ProtoState = {
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '35';
+  const STAND_VERSION = '36';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -15134,9 +15134,14 @@ window.ProtoState = {
     state.rounds = [];
     // Материал (source) — это артефакт, а не этап: стоит над колонкой In, в поток колонок не попадает.
     // Документы (материал, файлы) — не этапы, а сопровождение этапов: лежат в зоне этапа, который их берёт или чей результат сохраняют.
-    const isDoc = (st) => st.block === 'source' || st.block === 'file';
+    // Блоки документов без моделей (list, score, assemble) тоже не этапы: приложение делает из документов новый документ,
+    // он лежит в зоне предыдущего этапа потока и сопровождает его.
+    const isOp = (st) => ['list', 'score', 'assemble'].includes(st.block);
+    const isDoc = (st) => st.block === 'source' || st.block === 'file' || isOp(st);
     const docs = steps.filter(isDoc);
     const flow = steps.filter((st) => !isDoc(st));
+    let lastFlow = null;
+    steps.forEach((st) => { if (isOp(st)) st.__host = lastFlow; else if (!isDoc(st)) lastFlow = st; });
     const lastSynth = flow.map((st) => st.block).lastIndexOf('synthesis');
     const finalAt = lastSynth >= 0 && !flow.slice(lastSynth + 1).some((st) => st.block === 'round') ? lastSynth : -1;
     let final = null;
@@ -15172,8 +15177,11 @@ window.ProtoState = {
     stand.layout.forEach((col) => { col.docs = []; });
     stand.docs = docs;
     // Входные документы (материал, чтение файла) крепятся к In; запись файла — к этапу, чей результат она сохраняет.
-    stand.inDocs = docs.filter((st) => !(st.block === 'file' && st.mode !== 'read'));
+    const sinkFile = (st) => st.block === 'file' && st.mode !== 'read';
+    const hostOf = (st) => (isOp(st) && st.__host ? stand.layout.findIndex((col) => col.step === st.__host) : -1);
+    stand.inDocs = docs.filter((st) => !sinkFile(st) && hostOf(st) < 0);
     stand.inDocs.forEach((st) => { st.__col = -1; });
+    docs.filter((st) => isOp(st) && hostOf(st) >= 0).forEach((st) => { st.__col = hostOf(st); stand.layout[st.__col].docs.push(st); });
     docs.filter((st) => st.block === 'file' && st.mode !== 'read').forEach((st) => {
       const at = stand.layout.findIndex((col) => listOf(st.inputs).some((r) => refId(r) === col.step.id));
       const col = stand.layout[at >= 0 ? at : stand.layout.length - 1];
@@ -15232,14 +15240,14 @@ window.ProtoState = {
   };
   // Кому отправляется артефакт: по умолчанию всем моделям холста; снятые галочки хранятся только на стенде (в схему не пишутся).
   const artifactTargets = (k, name) => { const all = S().models || []; const own = stand.artTo?.[`${k}|${name}`]; return own ? all.filter((m) => own.includes(m)) : all; };
-  const DOC_KIND = { text: 'текст', document: 'файл', link: 'ссылка', read: 'чтение', overwrite: 'файл', append: 'дописать' };
-  const docKind = (d) => (d.block === 'file' ? DOC_KIND[d.mode === 'read' ? 'read' : d.mode === 'append' ? 'append' : 'overwrite'] : DOC_KIND[d.kind] || 'материал');
+  const DOC_KIND = { text: 'текст', document: 'файл', link: 'ссылка', read: 'чтение', overwrite: 'файл', append: 'дописать', list: 'список', score: 'баллы', assemble: 'сборка' };
+  const docKind = (d) => (['list', 'score', 'assemble'].includes(d.block) ? DOC_KIND[d.block] : d.block === 'file' ? DOC_KIND[d.mode === 'read' ? 'read' : d.mode === 'append' ? 'append' : 'overwrite'] : DOC_KIND[d.kind] || 'материал');
   const docChips = (k) => (k === -1 ? (stand.inDocs || []) : (stand.layout[k]?.docs || [])).map((d) => {
     const sink = d.block === 'file' && d.mode !== 'read';
     const to = sink ? [] : artifactTargets('doc', d.id); const all = (S().models || []).length;
     const label = `${docKind(d)}${!sink && to.length < all ? ` · ${to.length}/${all}` : ''}`;
-    const title = d.block === 'file' ? (d.file || d.title || d.id) : (d.title || d.id);
-    return `<span class="proto-art proto-art-doc${sink ? ' proto-art-file' : ''}" data-art="doc|${esc(d.id)}" title="${esc(title)} — ${esc(label)}"><span class="proto-art-title">${esc(title)}</span><span class="proto-art-version">${esc(label)}</span></span>`;
+    const title = d.block === 'file' ? (d.file || d.title || d.id) : ['list', 'score', 'assemble'].includes(d.block) ? (listOf(d.artifacts).map(artName)[0] || d.title || d.id) : (d.title || d.id);
+    return `<span class="proto-art proto-art-doc${sink ? ' proto-art-file' : ''}" data-art="doc|${esc(d.id)}" title="${esc(title)} — ${esc(label)}${['list', 'score', 'assemble'].includes(d.block) ? ' (делает приложение, без нейросети)' : ''}"><span class="proto-art-title">${esc(title)}</span><span class="proto-art-version">${esc(label)}</span></span>`;
   }).join('');
   const artifactZone = (k, st) => `<div class="proto-art-zone">${listOf(st.artifacts).map(artName).map((name) => {
     const to = artifactTargets(k, name); const all = (S().models || []).length;
@@ -15290,7 +15298,7 @@ window.ProtoState = {
       if (p >= 0 && !links.some((l) => l.from === p && l.to === c && l.name === name)) links.push({ from: p, to: c, name });
     }));
     (stand.docs || []).filter((d) => !(d.block === 'file' && d.mode !== 'read')).forEach((d) => stand.layout.forEach((col, c) => {
-      if (listOf(col.step.inputs).some((r) => refId(r) === d.id)) links.push({ from: -1, to: c, name: d.id, doc: true });
+      if (c !== d.__col && listOf(col.step.inputs).some((r) => refId(r) === d.id)) links.push({ from: d.__col, to: c, name: d.id, doc: true });
     }));
     return links;
   };
@@ -15309,11 +15317,15 @@ window.ProtoState = {
       </header>
       <div class="custom-card-body">
         <div class="proto-stand-rows">
-          <div class="proto-stand-row"><span>файл</span><div>${esc(st.attachment || st.file || 'нет')}</div></div>
+          ${['list', 'score', 'assemble'].includes(st.block) ? `<div class="proto-stand-row"><span>делает</span><div>приложение, без нейросети: ${esc({ list: 'делит материал на пронумерованные части', score: 'считает баллы по весам', assemble: 'склеивает документ по шаблону' }[st.block])}</div></div>
+          <div class="proto-stand-row"><span>из</span><div>${esc(listOf(st.inputs).join(', ') || '—')}</div></div>
+          ${own(st.rule) ? `<div class="proto-stand-row"><span>правило</span><div>${esc(st.rule)}</div></div>` : ''}
+          ${isObj(st.weights) ? `<div class="proto-stand-row"><span>веса</span><div>${esc(Object.entries(st.weights).map(([k, v]) => `${k}: ${v}`).join(', '))}</div></div>` : ''}
+          ${own(st.template) ? `<div class="proto-stand-row"><span>шаблон</span><div style="white-space:pre-wrap">${esc(st.template)}</div></div>` : ''}` : `<div class="proto-stand-row"><span>файл</span><div>${esc(st.attachment || st.file || 'нет')}</div></div>`}
           <div class="proto-stand-row"><span>берут</span><div>${users.length ? users.map((u) => `${esc(u.id || '')} · ${esc(u.title || '')}`).join('<br>') : 'никто'}</div></div>
         </div>
         <div class="custom-card-marks"><strong>Описание</strong>
-          <div class="custom-card-note" style="white-space:pre-wrap">${esc(st.content || st.why || 'не задано')}</div>
+          <div class="custom-card-note" style="white-space:pre-wrap">${esc(st.content || listOf(st.artifacts).map(artDesc).find(Boolean) || st.why || 'не задано')}</div>
         </div>
         <div class="custom-card-marks"><strong>Кому отправлять</strong>
           <div class="proto-art-models">${models.map((m) => `<label><input type="checkbox" data-art-model="${esc(m)}"${on.includes(m) ? ' checked' : ''}> ${esc(m)}</label>`).join('')}</div>
