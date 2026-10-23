@@ -11966,7 +11966,7 @@ window.ProtoState = {
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '23';
+  const STAND_VERSION = '24';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -12958,6 +12958,8 @@ window.ProtoState = {
   const CATALOG_FORMAT = 'autoorchestr-stand-templates';
   const CACHE_KEY = 'protoStandTemplates';
   const FILE_TYPES = [{ description: 'JSON', accept: { 'application/json': ['.json'] } }];
+  // Папка схем по умолчанию — Загрузки/Схемы: окно открывается в Загрузках, дальше браузер помнит последнюю папку для этого id.
+  const PICKER = { id: 'basicSchemas', startIn: 'downloads' };
   const catalog = {
     templates: [], handle: null, fileName: '', loaded: false, status: 'none', // none | ready | prompt | unread
     activeId: null, loadedId: null, unsaved: new Set(), deleted: new Set()
@@ -13058,7 +13060,7 @@ window.ProtoState = {
     if (!catalog.handle) {
       if (typeof root.showSaveFilePicker !== 'function') return { ok: false, msg: 'Нет доступа к файлам: используйте Export' };
       let h;
-      try { h = await root.showSaveFilePicker({ suggestedName: 'stand-templates.json', types: FILE_TYPES }); } catch (error) {
+      try { h = await root.showSaveFilePicker({ ...PICKER, suggestedName: 'stand-templates.json', types: FILE_TYPES }); } catch (error) {
         return { ok: false, msg: error?.name === 'AbortError' ? 'Файл не выбран: шаблон только в памяти' : `Файл не выбран (${error?.message || error}): шаблон только в памяти` };
       }
       Object.assign(catalog, { handle: h, fileName: h.name || 'stand-templates.json', loaded: true, status: 'ready' });
@@ -13145,7 +13147,7 @@ window.ProtoState = {
     let text;
     let fileName = '';
     if (typeof root.showOpenFilePicker === 'function') {
-      try { [h] = await root.showOpenFilePicker({ types: FILE_TYPES, multiple: false }); } catch (error) { if (error?.name !== 'AbortError') toast(`Файл не выбран: ${error?.message || error}`); return; }
+      try { [h] = await root.showOpenFilePicker({ ...PICKER, types: FILE_TYPES, multiple: false }); } catch (error) { if (error?.name !== 'AbortError') toast(`Файл не выбран: ${error?.message || error}`); return; }
       fileName = h.name || '';
       try { text = await readHandle(h); } catch (error) { toast(`Файл не прочитан: ${error?.message || error}`); return; }
     } else {
@@ -13193,13 +13195,24 @@ window.ProtoState = {
     const { schema, warnings } = root.ProtoBasicExport.toBasic(pickSchema(stand.schema), { roleIdOf });
     if (!schema.steps.length) { toast(`Нечего экспортировать\n${warnings.join('\n')}`); return; }
     const name = (own(stand.schema.task) ? cut(stand.schema.task, 48) : 'schema').replace(/[\\/:*?"<>|]+/g, ' ').trim();
-    const url = URL.createObjectURL(new Blob([JSON.stringify(schema, null, 2)], { type: 'application/json' }));
-    const a = Object.assign(document.createElement('a'), { href: url, download: `${name}.json` });
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-    toast(`Скачан ${name}.json для Basic${warnings.length ? `\n${warnings.join('\n')}` : ''}`);
+    const text = JSON.stringify(schema, null, 2);
+    const note = warnings.length ? `\n${warnings.join('\n')}` : '';
+    const download = () => {
+      const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+      const link = Object.assign(document.createElement('a'), { href: url, download: `${name}.json` });
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast(`Скачан ${name}.json для Basic${note}`);
+    };
+    if (typeof root.showSaveFilePicker !== 'function') { download(); return; }
+    root.showSaveFilePicker({ ...PICKER, suggestedName: `${name}.json`, types: FILE_TYPES }).then(async (h) => {
+      const w = await h.createWritable();
+      await w.write(text);
+      await w.close();
+      toast(`Сохранён ${h.name} для Basic${note}`);
+    }).catch((error) => { if (error?.name !== 'AbortError') download(); });
   }
 
   // Пункт списка — разметка настоящего UI (results.js, buildPipelineItem).

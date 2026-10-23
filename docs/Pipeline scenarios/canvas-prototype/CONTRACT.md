@@ -123,7 +123,7 @@ Default (сброс стенда, `reset()`; не удаляется), шабл�
   снимается нажатием вне пункта, Escape, через 6 с; click после долгого нажатия не применяет шаблон). `confirm` → удаление из каталога
   и файла; удалён активный — `reset()` и Default. Тост «Удалено: имя».
 - **Обмен со Basic** (`basic-export.js`, `ProtoBasicExport.toBasic` / `fromBasic`; проверен `tests/stand-basic-export.test.js` через `BasicSchema.validate`).
-  **Export** (`#pipeline-export-btn`) скачивает схему на холсте как файл Basic `<task>.json` (`schemaVersion`, `origin: user`, `ref` r1…/`final`/`synth:`/`gate:`/`owner:`,
+  Диалоги Save, Import и Export открываются в Загрузках (`startIn: 'downloads'`, `id: 'basicSchemas'`) и дальше помнят последнюю папку — удобно один раз выбрать Загрузки/Схемы; без File System Access — обычное скачивание. **Export** (`#pipeline-export-btn`) пишет схему на холсте как файл Basic `<task>.json` (`schemaVersion`, `origin: user`, `ref` r1…/`final`/`synth:`/`gate:`/`owner:`,
   `kind`, `models`; `description`, `defaults`, `run` переносятся): его принимает кнопка Import в Basic. Переносятся round, synthesis, gate, owner; повторные этапы
   (`repeats`) не копируются — первая проверка получает `onFail: { goto, maxLoops: 3 }`; остальные блоки пропускаются с предупреждением в тосте.
   **Import** принимает и файл Basic (`schemaVersion` + `steps`): он становится шаблоном каталога и открывается на холсте (возврат проверки `goto` не переносится).
