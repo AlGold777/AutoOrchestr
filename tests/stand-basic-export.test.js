@@ -24,10 +24,22 @@ describe('Stand ↔ Basic exchange', () => {
       { ref: 'final', kind: 'synthesis', models: [{ name: 'Claude' }] }
     ] };
     const { schema, warnings } = Exchange.fromBasic(basic);
-    expect(schema.steps.map((st) => st.block)).toEqual(['round', 'round', 'synthesis']);
+    expect(schema.steps.map((st) => st.block)).toEqual(['round', 'round', 'round']);
     expect(schema.steps[1].models).toEqual([{ name: 'GPT' }]);
     expect(schema.steps[1].task).toBe('Критерии проверки: полнота; сроки');
-    expect(warnings).toEqual(['Проверка Basic импортирована как обычный этап: ветвление по вердикту не перенесено.']);
+    expect(warnings).toEqual(['Проверка Basic импортирована как обычный этап: ветвление по вердикту не перенесено.',
+      'Синтез Basic импортирован как раунд из одной модели с ролью.']);
+  });
+
+  test('a synthesis of a Basic file imports as a one-model round with the role as text and the task kept', () => {
+    const basic = { schemaVersion: 1, origin: 'user', steps: [
+      { ref: 'r1', kind: 'round', models: [{ name: 'Claude' }, { name: 'GPT' }] },
+      { ref: 'final', kind: 'synthesis', task: 'Сведи ответы', input: ['r1'], models: [{ name: 'Gemini' }] }
+    ] };
+    const { schema, warnings } = Exchange.fromBasic(basic);
+    expect(schema.steps[1]).toMatchObject({ block: 'round', task: 'Сведи ответы', inputs: ['s1'], models: [{ name: 'Gemini', role: 'свести' }] });
+    expect(schema.steps[1].model).toBeUndefined();
+    expect(warnings).toEqual(['Синтез Basic импортирован как раунд из одной модели с ролью.']);
   });
 
   test('source artifacts of the stand are not exported to Basic and the warning names them', () => {

@@ -1,12 +1,12 @@
 // Стенд схем прототипа холста Basic: клавиша I (или Ш) открывает окно вставки JSON-схемы этапов,
-// «Применить» проверяет схему и перерисовывает холст по ней. Раунды и синтезы схемы кладутся в
+// «Применить» проверяет схему и перерисовывает холст по ней. Этапы моделей схемы (раунды) кладутся в
 // window.ProtoState, поэтому их окна — настоящие окна cards.js; остальные блоки — окна «Из схемы».
 // Холст (canvas.js) отдаёт отрисовку сюда, пока ProtoStand.active; «Сбросить» возвращает исходный холст.
 // Каталог шаблонов: Save сохраняет применённую схему шаблоном в JSON-файл на компьютере; шаблоны — пункты списка Pipelines.
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '38';
+  const STAND_VERSION = '39';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -18,7 +18,7 @@
   // ---------- Формат схемы ----------
   const COMMON = ['id', 'block', 'title', 'inputs', 'optional_inputs', 'artifacts', 'why'];
   const FIELDS = {
-    round: ['models', 'order', 'task'], synthesis: ['model', 'role', 'task', 'maxWords', 'discipline'], route: ['choices'],
+    round: ['models', 'order', 'task'], route: ['choices'],
     owner: ['ask'], file: ['file', 'mode'], assemble: ['template']
   };
   // Виды этапов, которых больше нет: в схеме их выражают обычными этапами (текст ошибки — в проверке).
@@ -26,10 +26,11 @@
     gate: 'Проверка — обычный этап моделей: критерии запишите в task; результат читает route и выбирает путь вперёд',
     foreach: 'Перебора по пунктам нет: один этап модели с заданием на все пункты сразу',
     block: 'Готовой части нет: этап записывается обычным образом',
-    form: 'Опросник — synthesis с артефактом «Опросник» (HTML), затем owner с артефактом «Ответы»',
+    synthesis: 'Синтез — это роль: запишите этап round из одной модели с role «свести» (models: [{ "name": "Claude", "role": "свести" }])',
+    form: 'Опросник — round из одной модели с ролью «свести» и артефактом «Опросник» (HTML), затем owner с артефактом «Ответы»',
     list: 'Список — обычный этап модели с артефактом «Список …»',
     source: 'Исходный материал — верхнеуровневый artifacts (name и content или attachment), ссылка в inputs: «in.Имя»',
-    score: 'Оценка по баллам — synthesis с ролью «жюри», веса записываются словами в task'
+    score: 'Оценка по баллам — round с ролью «жюри», веса записываются словами в task'
   };
   // Поля, которых больше нет: значение игнорируется, проверка предупреждает.
   const REMOVED_FIELDS = {
@@ -41,7 +42,7 @@
   // Блоки, где работает человек: в холсте — зелёная рамка, в окне — «Назначение».
   const HUMAN_BLOCKS = ['owner'];
   const KIND = {
-    round: ['Раунд', 'ti-users'], synthesis: ['Синтез', 'ti-git-merge'], route: ['Развилка', 'ti-arrows-split'],
+    round: ['Раунд', 'ti-users'], route: ['Развилка', 'ti-arrows-split'],
     owner: ['Владелец', 'ti-user'], file: ['Файл', 'ti-file-export'], assemble: ['Сборка', 'ti-stack-2']
   };
   // Этапы приложения (без нейросети): в холсте помечаются словом «приложение».
@@ -447,8 +448,6 @@
         Object.keys(m).filter((k) => !MODEL_KEYS.includes(k)).forEach((k) => add('warn', e.key, `models[${i}].${k}: неизвестное поле модели; допустимы ${MODEL_KEYS.join(', ')}.`));
         checkOwnFields(m, `models[${i}].`, e.key, add);
       });
-      if (st.block === 'synthesis' && !own(st.model)) add('warn', e.key, 'У синтеза нет model.');
-      if (st.block === 'synthesis') checkOwnFields(st, '', e.key, add);
       if (st.block === 'route' && !Array.isArray(st.choices)) add('error', e.key, 'У route нет choices.');
     });
     // Ссылки: вверх — inputs/optional_inputs; «in.Имя» — исходный артефакт; вниз — route.goes.
@@ -524,7 +523,7 @@
     }
     const steps = schema.steps.filter((st) => st && typeof st === 'object');
     const names = new Set(stand.snapshot.models);
-    steps.forEach((st) => { listOf(st.models).forEach((m) => own(m?.name) && names.add(m.name)); if (own(st.model)) names.add(st.model); });
+    steps.forEach((st) => { listOf(st.models).forEach((m) => own(m?.name) && names.add(m.name)); });
     state.models = [...names];
     // defaults / run схемы поверх значений, бывших до первого «Применить».
     const clone = (value) => JSON.parse(JSON.stringify(value));
@@ -541,9 +540,6 @@
     state.rounds = [];
     // Исходные артефакты (верхнеуровневый artifacts) — не этапы: лежат в зоне над колонкой In. Все этапы схемы — колонки потока.
     const flow = steps;
-    const lastSynth = flow.map((st) => st.block).lastIndexOf('synthesis');
-    const finalAt = lastSynth >= 0 && !flow.slice(lastSynth + 1).some((st) => st.block === 'round') ? lastSynth : -1;
-    let final = null;
     stand.layout = flow.map((st, i) => {
       const col = { step: st, key: flat.find((e) => e.raw === st)?.key || st.id };
       if (st.block === 'round') {
@@ -564,23 +560,12 @@
           artifacts: listOf(st.artifacts).map((a, k) => ({ id: `${st.id}-a${k + 1}`, title: artName(a), version: 1 }))
         });
         col.round = index;
-      } else if (st.block === 'synthesis') {
-        col.synth = { model: own(st.model) ? st.model : (state.models.includes('Claude') ? 'Claude' : state.models[0]),
-          task: [own(st.role) ? `Роль: ${st.role.trim()}.` : '', own(st.task) ? st.task.trim() : ''].filter(Boolean).join('\n\n'),
-          ...ownFields(st) };
-        col.after = state.rounds.length - 1; // раунд, после которого стоит синтез (−1 — раундов выше нет)
-        if (i === finalAt) { col.final = true; col.synth.on = true; final = col.synth; }
       }
       return col;
     });
     // Исходные артефакты крепятся к In: от каждого стрелка к этапу, который берёт его через «in.Имя».
     stand.inDocs = listOf(schema.artifacts).filter((a) => isObj(a) && own(a.name)).map((a) => ({ id: a.name.trim(), title: a.name.trim(), src: a }));
-    // Промежуточный синтез между раундами — в слот раунда, после которого он стоит.
-    stand.layout.forEach((col) => {
-      const round = col.synth && !col.final && col.after >= 0 && col.after < state.rounds.length - 1 ? state.rounds[col.after] : null;
-      if (round && !round.intermediateSynthesis) round.intermediateSynthesis = col.synth;
-    });
-    state.final = final || { on: false, model: state.models.includes('Claude') ? 'Claude' : state.models[0], task: '', discipline: state.emptyDiscipline() };
+    state.final = { on: false, model: state.models.includes('Claude') ? 'Claude' : state.models[0], task: '', discipline: state.emptyDiscipline() };
     stand.artTo = {};
     stand.schema = schema;
     stand.flat = flat;
@@ -754,21 +739,6 @@
           ${artifactZone(k, st)}
           <div class="model-stack" id="${stack}">${round.models.map(modelBlock).join('')}</div>
           <div class="proto-stand-meta">${bang(key)}<span class="proto-stand-line"><b>${esc(st.id || '')}</b> ${esc(cut(st.title, 40))}${round.order === 'sequential' ? ' · по очереди' : ''}</span>${tail}</div>
-        </div>`;
-    }
-    if (col.synth) {
-      const options = S().models.map((n) => `<option value="${esc(n)}"${n === col.synth.model ? ' selected' : ''}>${esc(n)}</option>`).join('');
-      return `<div class="stage-column${col.final ? ' synthesis-capable' : ''}"${col.final ? ' id="synthesisColumn" data-stage="synthesis"' : ''} data-stand-key="${esc(key)}">
-          ${head(col.final ? 'Final' : 'Синтез')}
-          ${artifactZone(k, st)}
-          <div class="model-stack" id="${stack}">
-            <div class="model-block pipeline-synthesis-block selected-synthesizer proto-stand-card" data-stand-key="${esc(key)}">
-              <div class="model-header"><span class="status-indicator" aria-hidden="true"></span><span class="model-name">Synthesis</span>${bang(key)}</div>
-              <select class="synthesis-flow-select" data-stand-key="${esc(key)}" aria-label="Модель синтеза">${options}</select>
-              ${own(st.role) ? `<div class="proto-stand-line">роль: ${esc(st.role)}</div>` : ''}
-            </div>
-          </div>
-          <div class="proto-stand-meta"><span class="proto-stand-line"><b>${esc(st.id || '')}</b> ${esc(cut(st.title, 40))}</span>${tail}</div>
         </div>`;
     }
     const [label, icon] = KIND[st.block] || [String(st.block || '?'), 'ti-help'];
@@ -966,22 +936,6 @@
   const anyOpen = () => ['pipeline-block-info-modal', 'proto-stand-info', 'proto-stand-modal'].some((id) => $(id)?.classList.contains('is-visible')) || !!$('pipeline-stage-dialog')?.open;
 
   const colOf = (key) => stand.layout.find((c) => c.key === key);
-  function openSynth(col) {
-    stand.current = { step: col.step, where: 'card' };
-    const state = S();
-    if (col.final) { state.final = col.synth; cards().openSynthesis?.('final'); return; }
-    if (col.after >= 0 && col.after < state.rounds.length - 1) {
-      state.rounds[col.after].intermediateSynthesis = col.synth;
-      cards().openSynthesis?.('intermediate', col.after);
-      return;
-    }
-    // Синтез без раунда перед ним (или после последнего раунда): открывается через слот финального синтеза.
-    const keep = state.final;
-    state.final = Object.assign(col.synth, { on: true });
-    cards().openSynthesis?.('final');
-    if (keep !== col.synth) state.final = keep;
-  }
-
   const CONTROLS = 'input, select, button, option, summary';
   function bindFlow() {
     const flow = $('pipelineFlow');
@@ -1024,17 +978,7 @@
         else cards().openRound?.(col.round);
         return;
       }
-      if (col.synth) { openSynth(col); return; }
       openInfo(col.step);
-    }, true);
-    flow.addEventListener('change', (event) => {
-      if (!stand.active) return;
-      const select = event.target.closest('.synthesis-flow-select[data-stand-key]');
-      if (!select) return;
-      event.stopPropagation();
-      const col = colOf(select.dataset.standKey);
-      if (col?.synth) col.synth.model = select.value;
-      render();
     }, true);
     // «Новый pipeline» — только на исходном холсте.
     $('pipeline-add-btn')?.addEventListener('click', () => { if (stand.active) reset(); }, true);
@@ -1577,10 +1521,14 @@
         },
         {
           "id": "s2",
-          "block": "synthesis",
+          "block": "round",
           "title": "Сводный план",
-          "model": "Claude",
-          "role": "свести",
+          "models": [
+            {
+              "name": "Claude",
+              "role": "свести"
+            }
+          ],
           "task": "Сведи черновики в один план.",
           "inputs": [
             "s1.Черновики"
@@ -1667,10 +1615,14 @@
         },
         {
           "id": "s6",
-          "block": "synthesis",
+          "block": "round",
           "title": "Итоговый план",
-          "model": "GPT",
-          "role": "судья",
+          "models": [
+            {
+              "name": "GPT",
+              "role": "судья"
+            }
+          ],
           "task": "Собери итоговый план с учётом правок.",
           "inputs": [
             "s2.План"
@@ -1840,16 +1792,20 @@
         },
         {
           "id": "s4",
-          "block": "synthesis",
+          "block": "round",
           "title": "Итоговое решение",
-          "model": "Claude",
-          "role": "свести",
-          "maxWords": 1000,
-          "discipline": {
-            "lines": [
-              "В конце — таблица: компонент, выбор, причина."
-            ]
-          },
+          "models": [
+            {
+              "name": "Claude",
+              "role": "свести",
+              "maxWords": 1000,
+              "discipline": {
+                "lines": [
+                  "В конце — таблица: компонент, выбор, причина."
+                ]
+              }
+            }
+          ],
           "inputs": [
             "s3.Доработки"
           ],

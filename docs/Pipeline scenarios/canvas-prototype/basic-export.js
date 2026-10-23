@@ -1,6 +1,6 @@
 // Обмен схемами между стендом ({ task, steps: [{ id, block, … }] }) и Basic ({ schemaVersion, origin, steps: [{ ref, kind, models }] }).
 // toBasic — экспорт со стенда: файл, который принимает кнопка Import в Basic. fromBasic — импорт файла Basic на стенд.
-// Переносятся round, synthesis, owner, defaults, run, description. Остальные этапы (route, file, assemble) и исходные артефакты
+// Переносятся round, owner, defaults, run, description. Остальные этапы (route, file, assemble) и исходные артефакты
 // пропускаются с предупреждением. Проверки на стенде нет: шаг gate из файла Basic приходит на стенд обычным раундом.
 (function initBasicExport(root) {
   'use strict';
@@ -20,18 +20,15 @@
     const warnings = [];
     const steps = list(schema?.steps).filter(isObj);
     const pos = new Map(steps.map((st, i) => [st.id, i]));
-    const lastSynth = steps.map((st) => st.block).lastIndexOf('synthesis');
-    const finalStep = lastSynth >= 0 && !steps.slice(lastSynth + 1).some((st) => st.block === 'round') ? steps[lastSynth] : null;
 
     // Первый проход: ref каждого переносимого шага.
     const refs = new Map();
     let rounds = 0;
     steps.forEach((st, i) => {
       if (st.block === 'round') refs.set(st.id, `r${++rounds}`);
-      else if (st.block === 'synthesis') refs.set(st.id, st === finalStep ? 'final' : `synth:${idPart(st.id, `s${i + 1}`)}`);
       else if (st.block === 'owner') refs.set(st.id, `owner:${idPart(st.id, `s${i + 1}`)}`);
     });
-    const inputRefs = (st) => [...new Set(list(st.inputs).map(stepOf).filter((id) => refs.has(id) && pos.get(id) < pos.get(st.id)).map((id) => refs.get(id)).filter((ref) => ref !== 'final'))];
+    const inputRefs = (st) => [...new Set(list(st.inputs).map(stepOf).filter((id) => refs.has(id) && pos.get(id) < pos.get(st.id)).map((id) => refs.get(id)))];
 
     const modelOf = (m) => {
       const roleId = roleIdOf(m.role);
@@ -43,15 +40,6 @@
       MODEL_COPY.forEach((k) => { if (m[k] !== undefined && m[k] !== '') out[k] = m[k]; });
       return out;
     };
-    const firstModel = (before) => {
-      for (let i = before - 1; i >= 0; i -= 1) {
-        const st = steps[i];
-        const name = st.block === 'synthesis' ? st.model : list(st.models)[0]?.name;
-        if (own(name)) return name;
-      }
-      return list(steps.find((st) => st.block === 'round')?.models)[0]?.name || 'Claude';
-    };
-
     const out = [];
     steps.forEach((st, i) => {
       const ref = refs.get(st.id);
@@ -63,12 +51,6 @@
         step.input = input.length ? input : 'none';
         if (own(st.task)) step.task = st.task.trim();
         step.models = list(st.models).filter((m) => isObj(m) && own(m.name)).map(modelOf);
-      } else if (st.block === 'synthesis') {
-        step.input = input.length ? input : 'previous';
-        const roleLine = own(st.role) ? `Роль: ${st.role.trim()}.` : '';
-        const task = [roleLine, own(st.task) ? st.task.trim() : ''].filter(Boolean).join('\n\n');
-        if (task) step.task = task;
-        step.models = [modelOf({ name: own(st.model) ? st.model : firstModel(i), maxWords: st.maxWords, discipline: st.discipline })];
       } else if (st.block === 'owner') {
         step.task = own(st.ask) ? st.ask.trim() : 'Дайте ответ';
         step.models = [];
@@ -78,16 +60,6 @@
       if (own(st.why)) step.goal = st.why.trim();
       out.push(step);
     });
-    // В Basic финальный синтез — последний шаг: вопросы после него встают перед ним и читают то, что читает синтез.
-    const finalAt = out.findIndex((st) => st.ref === 'final');
-    if (finalAt >= 0 && finalAt < out.length - 1) {
-      const final = out[finalAt];
-      const trailing = out.splice(finalAt + 1);
-      trailing.forEach((st) => {
-        warnings.push(`Шаг ${st.ref} стоял после финального синтеза: в Basic он перенесён перед ним.`);
-      });
-      out.splice(finalAt, 0, ...trailing);
-    }
     list(schema?.artifacts).filter(isObj).forEach((a) => warnings.push(`Исходный артефакт «${a.name}» не перенесён: в Basic исходных артефактов нет.`));
 
     const result = { schemaVersion: 1, origin: 'user' };
@@ -138,9 +110,14 @@
         });
       } else if (st.kind === 'synthesis') {
         const m = list(st.models).find((x) => isObj(x) && own(x.name));
-        if (m) step.model = m.name;
-        if (m && own(m.role) && m.role !== 'None') step.role = m.role;
+        step.block = 'round';
+        step.order = 'parallel';
         if (own(st.task)) step.task = st.task;
+        const model = { name: m ? m.name : 'Claude', role: m && own(m.role) && m.role !== 'None' ? m.role : 'свести' };
+        if (m && own(m.task)) model.task = m.task;
+        MODEL_COPY.forEach((k) => { if (m && m[k] !== undefined && m[k] !== '') model[k] = m[k]; });
+        step.models = [model];
+        warnings.push('Синтез Basic импортирован как раунд из одной модели с ролью.');
       } else if (st.kind === 'owner') {
         step.ask = own(st.task) ? st.task : 'Дайте ответ';
       } else {

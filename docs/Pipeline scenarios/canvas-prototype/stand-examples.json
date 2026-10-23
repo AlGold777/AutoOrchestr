@@ -42,10 +42,14 @@
       },
       {
         "id": "s2",
-        "block": "synthesis",
+        "block": "round",
         "title": "Сводный план",
-        "model": "Claude",
-        "role": "свести",
+        "models": [
+          {
+            "name": "Claude",
+            "role": "свести"
+          }
+        ],
         "task": "Сведи черновики в один план.",
         "inputs": [
           "s1.Черновики"
@@ -132,10 +136,14 @@
       },
       {
         "id": "s6",
-        "block": "synthesis",
+        "block": "round",
         "title": "Итоговый план",
-        "model": "GPT",
-        "role": "судья",
+        "models": [
+          {
+            "name": "GPT",
+            "role": "судья"
+          }
+        ],
         "task": "Собери итоговый план с учётом правок.",
         "inputs": [
           "s2.План"
@@ -305,16 +313,20 @@
       },
       {
         "id": "s4",
-        "block": "synthesis",
+        "block": "round",
         "title": "Итоговое решение",
-        "model": "Claude",
-        "role": "свести",
-        "maxWords": 1000,
-        "discipline": {
-          "lines": [
-            "В конце — таблица: компонент, выбор, причина."
-          ]
-        },
+        "models": [
+          {
+            "name": "Claude",
+            "role": "свести",
+            "maxWords": 1000,
+            "discipline": {
+              "lines": [
+                "В конце — таблица: компонент, выбор, причина."
+              ]
+            }
+          }
+        ],
         "inputs": [
           "s3.Доработки"
         ],
