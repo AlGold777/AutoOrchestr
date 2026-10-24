@@ -6,7 +6,7 @@
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '52';
+  const STAND_VERSION = '53';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -725,6 +725,7 @@
     const inDesc = (stand.inDocs || []).map((d) => `${d.title} (${docKind(d)}) — ${artDesc(d.src) || NO_DESC}`).join('\n');
     const inTip = tipAttrs('In · исходные артефакты', inDesc || (own(stand.schema?.description) ? cut(stand.schema.description, 400) : ''));
     let html = `<div class="stage-column entry-column"${inTip}>
+        <button type="button" class="proto-arrows-toggle" id="protoArrowsToggle" aria-pressed="${stand.arrows !== false}">Arrows</button>
         <div class="stage-label"${inTip}><span class="entry-badge">In</span></div>
         <div class="proto-art-zone">${docChips(-1)}</div>
         <div class="entry-wrapper" id="entryWrapper"><div class="entry-point" id="entryPoint"${tipAttrs('▶ Общие значения', own(stand.schema?.description) ? cut(stand.schema.description, 400) : '')} style="cursor:pointer">▶</div></div>
@@ -772,7 +773,7 @@
     if (!root) return;
     root.querySelector(':scope > .proto-art-svg')?.remove();
     const links = artifactLinks();
-    if (!links.length) return;
+    if (!links.length || stand.arrows === false) return;
     const columns = [...root.querySelectorAll(':scope > .stage-column:not(.entry-column)')];
     const base = root.getBoundingClientRect();
     const rel = (el) => { const r = el.getBoundingClientRect(); return { l: r.left - base.left, r: r.right - base.left, t: r.top - base.top, b: r.bottom - base.top, cx: (r.left + r.right) / 2 - base.left, cy: (r.top + r.bottom) / 2 - base.top }; };
@@ -898,6 +899,14 @@
     flow.addEventListener('click', (event) => {
       if (!stand.active) return;
       const t = event.target;
+      const arrows = t.closest('#protoArrowsToggle');
+      if (arrows) {
+        event.stopPropagation();
+        stand.arrows = stand.arrows === false;
+        arrows.setAttribute('aria-pressed', String(stand.arrows));
+        drawArtifactLinks();
+        return;
+      }
       const art = t.closest('.proto-art');
       if (art) {
         event.stopPropagation();
