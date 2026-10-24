@@ -6,7 +6,7 @@
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '52';
+  const STAND_VERSION = '55';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -718,6 +718,8 @@
   // Линия к этапу активна, если он берёт вход у соседа слева (inputs); иначе — серая.
   const linksTo = (st, id) => !!id && listOf(st.inputs).some((r) => own(r) && refId(r) === id);
 
+  // Верхний отступ под полосу стрелок: пусто, когда стрелки выключены, — схема поднимается наверх.
+  const arrowsPadding = () => (stand.arrows !== false && artifactLinks().length ? `${12 + artifactLinks().length * 6}px` : '');
   function render() {
     const root = $('pipelineFlow');
     if (!root) return;
@@ -725,6 +727,7 @@
     const inDesc = (stand.inDocs || []).map((d) => `${d.title} (${docKind(d)}) — ${artDesc(d.src) || NO_DESC}`).join('\n');
     const inTip = tipAttrs('In · исходные артефакты', inDesc || (own(stand.schema?.description) ? cut(stand.schema.description, 400) : ''));
     let html = `<div class="stage-column entry-column"${inTip}>
+        <button type="button" class="proto-arrows-toggle" id="protoArrowsToggle" aria-pressed="${stand.arrows !== false}">Arrows</button>
         <div class="stage-label"${inTip}><span class="entry-badge">In</span></div>
         <div class="proto-art-zone">${docChips(-1)}</div>
         <div class="entry-wrapper" id="entryWrapper"><div class="entry-point" id="entryPoint"${tipAttrs('▶ Общие значения', own(stand.schema?.description) ? cut(stand.schema.description, 400) : '')} style="cursor:pointer">▶</div></div>
@@ -736,7 +739,7 @@
     });
     const per = Math.max(0, (stand.inDocs || []).length, ...cols.map((col) => listOf(col.step.artifacts).length));
     root.style.setProperty('--proto-art-zone', per ? '34px' : '0px');
-    root.style.paddingTop = artifactLinks().length ? `${12 + artifactLinks().length * 6}px` : '';
+    root.style.paddingTop = arrowsPadding();
     root.innerHTML = html;
     // Шапка (число раундов, предел слов, Auto) — как у холста, из ProtoState.
     canvas().syncChrome?.();
@@ -772,7 +775,7 @@
     if (!root) return;
     root.querySelector(':scope > .proto-art-svg')?.remove();
     const links = artifactLinks();
-    if (!links.length) return;
+    if (!links.length || stand.arrows === false) return;
     const columns = [...root.querySelectorAll(':scope > .stage-column:not(.entry-column)')];
     const base = root.getBoundingClientRect();
     const rel = (el) => { const r = el.getBoundingClientRect(); return { l: r.left - base.left, r: r.right - base.left, t: r.top - base.top, b: r.bottom - base.top, cx: (r.left + r.right) / 2 - base.left, cy: (r.top + r.bottom) / 2 - base.top }; };
@@ -895,9 +898,20 @@
   const CONTROLS = 'input, select, button, option, summary';
   function bindFlow() {
     const flow = $('pipelineFlow');
+    flow.addEventListener('transitionend', (event) => { if (event.target === flow && event.propertyName === 'padding-top' && stand.active) draw(); });
     flow.addEventListener('click', (event) => {
       if (!stand.active) return;
       const t = event.target;
+      const arrows = t.closest('#protoArrowsToggle');
+      if (arrows) {
+        event.stopPropagation();
+        stand.arrows = stand.arrows === false;
+        arrows.setAttribute('aria-pressed', String(stand.arrows));
+        // Верхний отступ под полосу стрелок плавно меняется (CSS transition); стрелки и связи перерисуются по его окончании.
+        flow.querySelector(':scope > .proto-art-svg')?.remove();
+        flow.style.paddingTop = arrowsPadding();
+        return;
+      }
       const art = t.closest('.proto-art');
       if (art) {
         event.stopPropagation();

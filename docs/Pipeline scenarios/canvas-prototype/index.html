@@ -57,8 +57,13 @@
         .proto-top-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 6px 4px 10px; }
         .proto-top-bar .llm-buttons { gap: 14px; }
         /* Артефакты: зона над блоками моделей, под бейджем этапа; одинаковой высоты во всех колонках, чтобы потоки не съезжали. */
-        #pipelineFlow { position: relative; }
+        #pipelineFlow { position: relative; transition: padding-top 0.45s ease; }
         #pipelineFlow .connector-group { padding-top: calc(26px + var(--proto-art-zone, 0px)); }
+        .proto-arrows-toggle {
+            align-self: center; margin-bottom: 4px; padding: 1px 8px; border: 1px solid #cbd5e1; border-radius: 999px;
+            background: #f8fafc; color: #475569; font-size: 10px; font-weight: 600; cursor: pointer;
+        }
+        .proto-arrows-toggle[aria-pressed="false"] { color: #94a3b8; background: #fff; border-style: dashed; }
         .proto-art-zone { width: 139px; height: var(--proto-art-zone, 0px); display: flex; flex-direction: row; align-items: flex-end; gap: 4px; padding-bottom: 8px; box-sizing: border-box; }
         .proto-art {
             flex: 1 1 0; min-width: 0;
