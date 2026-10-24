@@ -2914,6 +2914,22 @@ describe('Pipeline debate favorites view', () => {
       return record;
     };
 
+    test('a saved schema that fails the check shows a notification on open and Save does not overwrite it', async () => {
+      const h = setupCustomInheritance('Unreadable schema');
+      try {
+        const record = JSON.parse(JSON.stringify(h.debug.capturePipelineConfig()));
+        record.schema = { schemaVersion: 1, origin: 'user', spec: 'KEEP', steps: [{ ref: 'r1', kind: 'synthesis', models: [{ name: 'GPT' }] }] };
+        h.debug.clearCustomSessionForTest();
+        h.debug.setPipelineStoreForTest({ active: 'Unreadable schema', order: ['Unreadable schema'], pipelines: { 'Unreadable schema': record } });
+        h.debug.applyPipelineConfig(record);
+        expect(document.getElementById('notification-message').textContent).toContain('Схема pipeline не прочитана');
+        document.getElementById('notification-message').textContent = '';
+        await saveAs('Unreadable schema');
+        expect(document.getElementById('notification-message').textContent).toContain('Схема pipeline не прочитана');
+        expect(h.debug.getPipelineStoreSnapshot().pipelines['Unreadable schema'].schema).toEqual(record.schema);
+      } finally { h.cleanup(); }
+    }, 30000);
+
     test('the saved record holds a valid schema with origin, version and only the owner\'s values; the earlier members are gone', async () => {
       const h = setupCustomInheritance('Schema record');
       try {

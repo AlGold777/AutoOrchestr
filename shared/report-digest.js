@@ -940,7 +940,7 @@ function customFlowReport({ runId, delivery }) {
     const batches = journal.filter((e) => e.kind === 'batch_start' && e.stageId === stageId);
     const closes = journal.filter((e) => e.kind === 'custom_step' && e.pipelineRunId === runId && e.step === step.step);
     const startedAt = batches[0]?.at ?? null, completedAt = closes[closes.length - 1]?.at ?? null;
-    return { stageId, label: step.label, purpose: `custom:${step.order}:${step.input}`,
+    return { stageId, label: step.label, purpose: `custom:${step.input}`,
       actual: { startedAt, completedAt, participants: arr(step.models) },
       durationMs: startedAt != null && completedAt != null ? toMs(completedAt) - toMs(startedAt) : null };
   });

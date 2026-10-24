@@ -6508,13 +6508,22 @@ document.addEventListener('click', (event) => {
             customRoundSettings.set(key, working.rounds || {});
             customControls.set(key, working.controls || []);
             basicRunExplicit.set(key, working.runExplicit);
-            if (working.error) basicSchemaLoadErrors.set(key, working.error); else basicSchemaLoadErrors.delete(key);
+            if (working.error) {
+                basicSchemaLoadErrors.set(key, working.error);
+                showNotification(unreadableSchemaMessage(working.error), 'error');
+            } else basicSchemaLoadErrors.delete(key);
         };
+        const unreadableSchemaMessage = (reason) => `Схема pipeline не прочитана: ${reason}. Она использует то, чего в Basic больше нет; соберите схему заново.`;
         // Writes the settings of a saved pipeline: a Basic pipeline stores its schema (and drops the earlier
         // members), any other keeps the earlier members.
         const persistBasicSettings = (name) => {
             const record = pipelineStore.pipelines[name];
             if (!record) return false;
+            // An unreadable saved schema is never overwritten by a schema rebuilt from the page.
+            if (basicSchemaLoadErrors.has(name)) {
+                showNotification(unreadableSchemaMessage(basicSchemaLoadErrors.get(name)), 'error');
+                return false;
+            }
             if (getPresetMetaForConfig(record)?.runner !== 'custom') {
                 record.customModelSettings = JSON.parse(JSON.stringify(getCustomCardSettings()));
                 record.customDefaults = JSON.parse(JSON.stringify(getCustomPipelineDefaults()));
@@ -7999,6 +8008,12 @@ document.addEventListener('click', (event) => {
 
         const savePipeline = async () => {
             const currentName = getPipelineHeaderName();
+            // Saving would rebuild the schema from the page and lose what the unreadable one holds.
+            const loadedError = basicSchemaLoadErrors.get(draftPlanStorageKey());
+            if (loadedError) {
+                showNotification(unreadableSchemaMessage(loadedError), 'error');
+                return;
+            }
             const isDraft = pipelinePanel?.dataset.pipelineDraft === 'true' || currentName === 'Unsaved Pipeline';
             // A template is never overwritten: its changed variant is saved only under a new name.
             const isTemplate = isDefaultPipelineName(currentName);
