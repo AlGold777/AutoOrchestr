@@ -6,7 +6,7 @@
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '45';
+  const STAND_VERSION = '46';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -1301,7 +1301,7 @@
   // Пункт списка — разметка настоящего UI (results.js, buildPipelineItem).
   function itemHtml(name, title, active, attrs, deletable) {
     return `<div class="pipeline-item${active ? ' active' : ''}" data-name="${esc(name)}"${attrs}>
-      <span class="pipeline-item-main"><input type="radio" name="pipeline" class="pipeline-radio"${active ? ' checked' : ''}><span class="pipeline-item-name" title="${esc(title)}">${esc(name)}</span></span>${deletable
+      <span class="pipeline-item-main"><input type="radio" name="pipeline" class="pipeline-radio"${active ? ' checked' : ''}><span class="pipeline-item-name" data-tip="${esc(title)}">${esc(name)}</span></span>${deletable
       ? '<button type="button" class="pipeline-item-delete" title="Удалить шаблон" aria-label="Удалить шаблон">×</button>' : ''}</div>`;
   }
   function drawCatalog() {
@@ -1321,9 +1321,30 @@
   const LONG_MS = 600;
   const press = { timer: 0, hide: 0, x: 0, y: 0, item: null, suppress: false };
   const clearLongpress = () => { clearTimeout(press.hide); document.querySelectorAll('.pipeline-item.is-longpress').forEach((el) => el.classList.remove('is-longpress')); };
+  // Подсказка на каждом элементе: плавающий блок .entry-point-tooltip с полным именем и числом этапов.
+  function bindTooltips(box) {
+    const tip = document.createElement('div');
+    tip.className = 'entry-point-tooltip';
+    document.body.appendChild(tip);
+    const show = (el) => {
+      tip.textContent = el.dataset.tip;
+      const r = el.getBoundingClientRect();
+      tip.style.left = `${r.left + r.width / 2}px`;
+      tip.style.top = `${r.bottom + 8}px`;
+      tip.classList.add('is-visible');
+    };
+    const hide = () => tip.classList.remove('is-visible');
+    box.addEventListener('pointerover', (event) => {
+      const el = event.target.closest('.pipeline-item-name[data-tip]');
+      if (el) show(el); else hide();
+    });
+    box.addEventListener('pointerleave', hide);
+    box.addEventListener('scroll', hide, { passive: true });
+  }
   function bindCatalog() {
     const box = $('pipelineItems');
     if (!box) return;
+    bindTooltips(box);
     box.addEventListener('pointerdown', (event) => {
       press.suppress = false;
       clearTimeout(press.timer);

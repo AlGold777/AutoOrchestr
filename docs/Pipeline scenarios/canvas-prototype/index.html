@@ -8,6 +8,43 @@
     <link rel="stylesheet" href="../../../styles.css">
     <link rel="stylesheet" href="../../../styles/pipeline-card-cover.css">
     <style>
+        /* Список шаблонов стенда: три колонки по 15 элементов; элемент шире колонки переносится в следующую, без наложения. */
+        #pipelineItems.pipeline-items {
+            grid-template-rows: repeat(15, max-content);
+            grid-auto-columns: 240px;
+            column-gap: 16px;
+        }
+        #pipelineItems .pipeline-item { width: 240px; max-width: 240px; flex: 0 0 240px; }
+        #pipelineItems .pipeline-item-name { max-width: 200px; }
+        /* Подсказка на каждом элементе списка: полное имя и число этапов (стиль читается при любом фоне). */
+        .entry-point-tooltip {
+            position: fixed;
+            z-index: 10000;
+            box-sizing: border-box;
+            width: max-content;
+            max-width: min(540px, calc(100vw - 32px));
+            max-height: min(48vh, 360px);
+            overflow: auto;
+            padding: 12px 16px;
+            border: 1px solid rgba(255, 255, 255, 0.24);
+            border-radius: 8px;
+            background: #1e40af;
+            color: #fff;
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.28);
+            font-size: 16px;
+            font-weight: 500;
+            line-height: 1.45;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            pointer-events: none;
+            opacity: 0;
+            transform: translate(-50%, 4px);
+            transition: opacity 0.12s ease, transform 0.12s ease;
+        }
+        .entry-point-tooltip.is-visible {
+            opacity: 1;
+            transform: translate(-50%, 0);
+        }
         /* Только элементы прототипа: верхняя строка и «булочки» артефактов. */
         .proto-shell { max-width: var(--center-max-width); margin: 0 auto; padding: 12px 16px 24px; }
         .proto-top-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 6px 4px 10px; }

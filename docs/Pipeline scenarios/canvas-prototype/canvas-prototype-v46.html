@@ -6,6 +6,43 @@
     <title>Прототип холста Basic</title>
     <!-- Настоящие стили страницы pipeline (pipeline_panel.html); styles.css сам подключает Tabler Icons и styles/*.css. -->
     <style>
+        /* Список шаблонов стенда: три колонки по 15 элементов; элемент шире колонки переносится в следующую, без наложения. */
+        #pipelineItems.pipeline-items {
+            grid-template-rows: repeat(15, max-content);
+            grid-auto-columns: 240px;
+            column-gap: 16px;
+        }
+        #pipelineItems .pipeline-item { width: 240px; max-width: 240px; flex: 0 0 240px; }
+        #pipelineItems .pipeline-item-name { max-width: 200px; }
+        /* Подсказка на каждом элементе списка: полное имя и число этапов (стиль читается при любом фоне). */
+        .entry-point-tooltip {
+            position: fixed;
+            z-index: 10000;
+            box-sizing: border-box;
+            width: max-content;
+            max-width: min(540px, calc(100vw - 32px));
+            max-height: min(48vh, 360px);
+            overflow: auto;
+            padding: 12px 16px;
+            border: 1px solid rgba(255, 255, 255, 0.24);
+            border-radius: 8px;
+            background: #1e40af;
+            color: #fff;
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.28);
+            font-size: 16px;
+            font-weight: 500;
+            line-height: 1.45;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            pointer-events: none;
+            opacity: 0;
+            transform: translate(-50%, 4px);
+            transition: opacity 0.12s ease, transform 0.12s ease;
+        }
+        .entry-point-tooltip.is-visible {
+            opacity: 1;
+            transform: translate(-50%, 0);
+        }
         /* Только элементы прототипа: верхняя строка и «булочки» артефактов. */
         .proto-shell { max-width: var(--center-max-width); margin: 0 auto; padding: 12px 16px 24px; }
         .proto-top-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 6px 4px 10px; }
@@ -12911,7 +12948,7 @@ window.ProtoState = {
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '45';
+  const STAND_VERSION = '46';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -14206,7 +14243,7 @@ window.ProtoState = {
   // Пункт списка — разметка настоящего UI (results.js, buildPipelineItem).
   function itemHtml(name, title, active, attrs, deletable) {
     return `<div class="pipeline-item${active ? ' active' : ''}" data-name="${esc(name)}"${attrs}>
-      <span class="pipeline-item-main"><input type="radio" name="pipeline" class="pipeline-radio"${active ? ' checked' : ''}><span class="pipeline-item-name" title="${esc(title)}">${esc(name)}</span></span>${deletable
+      <span class="pipeline-item-main"><input type="radio" name="pipeline" class="pipeline-radio"${active ? ' checked' : ''}><span class="pipeline-item-name" data-tip="${esc(title)}">${esc(name)}</span></span>${deletable
       ? '<button type="button" class="pipeline-item-delete" title="Удалить шаблон" aria-label="Удалить шаблон">×</button>' : ''}</div>`;
   }
   function drawCatalog() {
@@ -14226,9 +14263,30 @@ window.ProtoState = {
   const LONG_MS = 600;
   const press = { timer: 0, hide: 0, x: 0, y: 0, item: null, suppress: false };
   const clearLongpress = () => { clearTimeout(press.hide); document.querySelectorAll('.pipeline-item.is-longpress').forEach((el) => el.classList.remove('is-longpress')); };
+  // Подсказка на каждом элементе: плавающий блок .entry-point-tooltip с полным именем и числом этапов.
+  function bindTooltips(box) {
+    const tip = document.createElement('div');
+    tip.className = 'entry-point-tooltip';
+    document.body.appendChild(tip);
+    const show = (el) => {
+      tip.textContent = el.dataset.tip;
+      const r = el.getBoundingClientRect();
+      tip.style.left = `${r.left + r.width / 2}px`;
+      tip.style.top = `${r.bottom + 8}px`;
+      tip.classList.add('is-visible');
+    };
+    const hide = () => tip.classList.remove('is-visible');
+    box.addEventListener('pointerover', (event) => {
+      const el = event.target.closest('.pipeline-item-name[data-tip]');
+      if (el) show(el); else hide();
+    });
+    box.addEventListener('pointerleave', hide);
+    box.addEventListener('scroll', hide, { passive: true });
+  }
   function bindCatalog() {
     const box = $('pipelineItems');
     if (!box) return;
+    bindTooltips(box);
     box.addEventListener('pointerdown', (event) => {
       press.suppress = false;
       clearTimeout(press.timer);
