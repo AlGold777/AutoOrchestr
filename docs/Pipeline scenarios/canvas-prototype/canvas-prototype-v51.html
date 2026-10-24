@@ -57,8 +57,9 @@
         /* Артефакты: зона над блоками моделей, под бейджем этапа; одинаковой высоты во всех колонках, чтобы потоки не съезжали. */
         #pipelineFlow { position: relative; }
         #pipelineFlow .connector-group { padding-top: calc(26px + var(--proto-art-zone, 0px)); }
-        .proto-art-zone { width: 139px; height: var(--proto-art-zone, 0px); display: flex; flex-direction: column; justify-content: flex-end; gap: 4px; padding-bottom: 8px; box-sizing: border-box; }
+        .proto-art-zone { width: 139px; height: var(--proto-art-zone, 0px); display: flex; flex-direction: row; align-items: flex-end; gap: 4px; padding-bottom: 8px; box-sizing: border-box; }
         .proto-art {
+            flex: 1 1 0; min-width: 0;
             display: flex; align-items: center; justify-content: space-between; gap: 4px; height: 24px;
             box-sizing: border-box; padding: 0 8px; border: 1px solid #cbd5e1; border-radius: 6px;
             background: #f8fafc; color: #475569; font-size: 11px; cursor: pointer; user-select: none;
@@ -12958,7 +12959,7 @@ window.ProtoState = {
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '50';
+  const STAND_VERSION = '51';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -13687,7 +13688,7 @@ window.ProtoState = {
       html += columnHtml(col, k, k > 0 ? cols[k - 1].step.id : '');
     });
     const per = Math.max(0, (stand.inDocs || []).length, ...cols.map((col) => listOf(col.step.artifacts).length));
-    root.style.setProperty('--proto-art-zone', per ? `${per * 28 + 6}px` : '0px');
+    root.style.setProperty('--proto-art-zone', per ? '34px' : '0px');
     root.style.paddingTop = artifactLinks().length ? `${12 + artifactLinks().length * 6}px` : '';
     root.innerHTML = html;
     // Шапка (число раундов, предел слов, Auto) — как у холста, из ProtoState.
@@ -13739,7 +13740,7 @@ window.ProtoState = {
       const slot = slots.get(link.from) || 0; slots.set(link.from, slot + 1);
       const xv = c.r + 6 + slot * 4;
       const lane = 6 + i * 6;
-      const path = `M ${a.r} ${a.cy} H ${xv} V ${lane} H ${t.cx} V ${t.t - 2}`;
+      const path = `M ${a.cx} ${a.t} V ${a.t - 4} H ${xv} V ${lane} H ${t.cx} V ${t.t - 2}`;
       html += `<path d="${path}" class="proto-art-line"/><path d="M ${t.cx - 4} ${t.t - 7} L ${t.cx} ${t.t - 1} L ${t.cx + 4} ${t.t - 7}" class="proto-art-line"/>`;
     });
     root.insertAdjacentHTML('afterbegin', `<svg class="proto-art-svg" width="${root.scrollWidth}" height="${root.scrollHeight}" aria-hidden="true">${html}</svg>`);
