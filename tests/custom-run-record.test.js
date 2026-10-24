@@ -445,6 +445,25 @@ describe('V07: a record is resumable only with the whole state of the checkpoint
     delete record.snapshot.decisions;
     expect(Record.canResume(record)).toBe(false);
   });
+
+  test('B-7: снимок без pc не дает возобновить запись', () => {
+    const record = Record.createRun({ runId: 'run-b7a', pipelineName: 'Mine', task: 'T', steps: [{ task: 'x', input: 'none', models: ['A'] }] });
+    Record.setSnapshot(record, { schema: [{ ref: 'r1' }], state: { visits: { r1: 1 } } });
+    expect(Record.canResume(record)).toBe(false);
+  });
+
+  test('B-7: снимок с pc null сохраняет ключ pc со значением null', () => {
+    const record = Record.createRun({ runId: 'run-b7b', pipelineName: 'Mine', task: 'T', steps: [{ task: 'x', input: 'none', models: ['A'] }] });
+    Record.setSnapshot(record, { schema: [{ ref: 'r1' }], state: { pc: null, visits: {} } });
+    expect('pc' in record.snapshot).toBe(true);
+    expect(record.snapshot.pc).toBeNull();
+  });
+
+  test('B-7: снимок с pc и visits по-прежнему возобновляем', () => {
+    const record = Record.createRun({ runId: 'run-b7c', pipelineName: 'Mine', task: 'T', steps: [{ task: 'x', input: 'none', models: ['A'] }] });
+    Record.setSnapshot(record, { schema: [{ ref: 'r1' }], state: { pc: 'r1', visits: { r1: 1 } } });
+    expect(Record.canResume(record)).toBe(true);
+  });
 });
 
 describe('V08: the files of a run are kept in its record, or the record says they are not', () => {

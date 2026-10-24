@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-24 — Basic: проверка схемы не падает на имени вида шага, снимок без позиции не возобновляется, версия 2.81.852
+
+- `BasicSchema.validate`: имя вида шага из `Object.prototype` (`toString`, `constructor`…) даёт ошибку `steps[n].kind`, а не исключение (`disput/basic-schema.js`).
+- `CustomRunRecord.setSnapshot` не подставляет `pc: null`, если состояние пришло без `pc`: такая запись не возобновляется (`canResume` = false), а не «завершается без работы» (`disput/custom-run-record.js`).
+- Тесты: `tests/review-b1.test.js` (`.failing` снят), `tests/custom-run-record.test.js`.
+
 ### 2026-10-24 — Basic: нечитаемая схема не перезаписывается, правки после ревью, версия 2.81.851
 
 - Pipeline со схемой, не прошедшей проверку (например, с удалённым `kind: "synthesis"`), при открытии показывает уведомление «Схема pipeline не прочитана: …; соберите схему заново», а Save такую схему не перезаписывает (`results.js`: `adoptBasicWorking`, `persistBasicSettings`).

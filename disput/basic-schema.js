@@ -420,7 +420,7 @@
       if (Object.hasOwn(REMOVED_KIND_HINT, step.kind)) { fail(`${path}.kind`, `тип шага: допустимо ${KINDS.join(', ')}; ${REMOVED_KIND_HINT[step.kind]}`); return; }
       // A removed field (require, order) is named with what the round does now; any other unknown field is reported as such.
       Object.keys(REMOVED_FIELD_HINT).forEach((key) => { if (key in step) fail(`${path}.${key}`, REMOVED_FIELD_HINT[key]); });
-      unknownKeys(step, [...(STEP_KEYS[step.kind] || STEP_KEYS.round), ...Object.keys(REMOVED_FIELD_HINT)], path);
+      unknownKeys(step, [...(Object.hasOwn(STEP_KEYS, step.kind) ? STEP_KEYS[step.kind] : STEP_KEYS.round), ...Object.keys(REMOVED_FIELD_HINT)], path);
       if ('output' in step) {
         // A step's shared output is the answer of every author without its own; the owner is the author of its own.
         const inheriting = step.kind === 'owner' ? [{ id: 'owner' }] : (Array.isArray(step.models) ? step.models : []).filter((model) => isObject(model) && model.enabled !== false && !('output' in model));

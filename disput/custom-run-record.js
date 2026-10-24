@@ -145,7 +145,7 @@
   function setSnapshot(record, { schema = [], runSettings = {}, state = {}, current = null, ownerAnswers = [], pendingOwner = null } = {}) {
     const visits = state.visits || {};
     record.snapshot = copyOf({
-      schema, taskRef: record.taskRef, runSettings, pc: state.pc ?? null, visits,
+      schema, taskRef: record.taskRef, runSettings, pc: state.pc, visits,
       current: current || state.current || { stepRef: state.pc ?? null, visit: visits[state.pc] || 0, phase: 'done', accepted: [], pending: [] },
       results: state.results || [], decisions: state.decisions || {},
       ownerAnswers, pendingOwner, chatBindings: plainOf(state.chatBindings)
