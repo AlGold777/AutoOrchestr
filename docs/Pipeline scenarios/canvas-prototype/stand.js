@@ -6,7 +6,7 @@
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '55';
+  const STAND_VERSION = '57';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -727,7 +727,7 @@
     const inDesc = (stand.inDocs || []).map((d) => `${d.title} (${docKind(d)}) — ${artDesc(d.src) || NO_DESC}`).join('\n');
     const inTip = tipAttrs('In · исходные артефакты', inDesc || (own(stand.schema?.description) ? cut(stand.schema.description, 400) : ''));
     let html = `<div class="stage-column entry-column"${inTip}>
-        <button type="button" class="proto-arrows-toggle" id="protoArrowsToggle" aria-pressed="${stand.arrows !== false}">Arrows</button>
+        <button type="button" class="proto-arrows-toggle" id="protoArrowsToggle" aria-pressed="${stand.arrows !== false}" aria-label="Arrows" title="Стрелки артефактов"><svg viewBox="0 0 16 14" aria-hidden="true"><path d="M2 3h9M8.5 0.5 11 3 8.5 5.5"/><path d="M2 7h9M8.5 4.5 11 7 8.5 9.5"/><path d="M2 11h9M8.5 8.5 11 11 8.5 13.5"/></svg></button>
         <div class="stage-label"${inTip}><span class="entry-badge">In</span></div>
         <div class="proto-art-zone">${docChips(-1)}</div>
         <div class="entry-wrapper" id="entryWrapper"><div class="entry-point" id="entryPoint"${tipAttrs('▶ Общие значения', own(stand.schema?.description) ? cut(stand.schema.description, 400) : '')} style="cursor:pointer">▶</div></div>
@@ -740,6 +740,7 @@
     const per = Math.max(0, (stand.inDocs || []).length, ...cols.map((col) => listOf(col.step.artifacts).length));
     root.style.setProperty('--proto-art-zone', per ? '34px' : '0px');
     root.style.paddingTop = arrowsPadding();
+    root.style.paddingLeft = '36px';
     root.innerHTML = html;
     // Шапка (число раундов, предел слов, Auto) — как у холста, из ProtoState.
     canvas().syncChrome?.();
@@ -758,6 +759,8 @@
       const last = stack.lastElementChild;
       if (last) max = Math.max(max, last.getBoundingClientRect().bottom - stack.getBoundingClientRect().top);
     });
+    // Все стопки одной высоты, блоки под ними (вход, название) стоят на одной линии по верхнему краю.
+    $('pipelineFlow')?.style.setProperty('--proto-stack-h', `${max}px`);
     panel.querySelectorAll('#pipelineFlow .connector-svg').forEach((svg) => { svg.style.height = `${max}px`; svg.setAttribute('height', `${max}`); });
     const entry = $('entryWrapper');
     if (entry) entry.style.height = `${max}px`;
@@ -1461,7 +1464,8 @@
     .proto-stand-icon { font-size: 14px; color: var(--pipeline-muted); flex: 0 0 auto; }
     .proto-stand-line { display: block; font-size: 10px; line-height: 1.35; color: var(--pipeline-muted); overflow-wrap: anywhere; }
     .proto-stand-app { font-weight: 600; color: var(--pipeline-text); }
-    .proto-stand-meta { width: 139px; margin-top: 6px; }
+    #pipelineFlow .model-stack { min-height: var(--proto-stack-h, 0px); }
+    .proto-stand-meta { width: 139px; margin-top: 12px; }
     .proto-stand-kind { background: #f1f5f9; color: #64748b; text-transform: uppercase; }
     .proto-stand-bang { flex: 0 0 auto; display: inline-grid; place-items: center; width: 14px; height: 14px; border-radius: 50%; background: #dc2626; color: #fff; font-size: 10px; font-weight: 700; cursor: help; }
     .proto-stand-bang.is-warn { background: #f59e0b; }
