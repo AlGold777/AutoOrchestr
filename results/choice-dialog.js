@@ -15,11 +15,8 @@
     return node;
   };
   const clean = (value) => String(value == null ? '' : value).trim();
-  // Title of a document: "name vN"; without a name only "vN"; without a version only the name.
-  const docTitle = (spec) => {
-    const hasVersion = spec.version != null && spec.version !== '';
-    return [String(spec.name || ''), hasVersion ? `v${spec.version}` : ''].filter(Boolean).join(' ');
-  };
+  // Title of a document: its name only; without a name there is no title.
+  const docTitle = (spec) => String(spec.name || '');
 
   function ask({ title = '', message = '', choices = [], textInput = null, document: documentSpec = null, answerFormat = 'text', cancelText = null, signal = null, documentRef = root.document } = {}) {
     const doc = documentRef;
@@ -28,23 +25,20 @@
       dialog.append(el(doc, 'h2', 'choice-dialog-title', String(title)));
       if (message) dialog.append(el(doc, 'p', 'choice-dialog-message', String(message)));
       const kind = documentSpec?.kind || null;
-      // Modes of kind 'read' with the new fields: unavailable, readOnly, editable; otherwise the plain reading mode.
+      // Modes of kind 'read' with the new fields: readOnly, editable; otherwise the plain reading mode.
       const mode = kind !== 'read' ? null
-        : documentSpec.unavailable === true ? 'unavailable'
-          : documentSpec.readOnly === true ? 'readOnly'
-            : documentSpec.editable === true ? 'editable' : null;
+        : documentSpec.readOnly === true ? 'readOnly'
+          : documentSpec.editable === true ? 'editable' : null;
+      const docHeading = mode ? docTitle(documentSpec) : '';
       let area = null;
       let formBox = null;
       let formAsks = [];
-      if (mode === 'unavailable') {
-        dialog.append(el(doc, 'h3', 'choice-dialog-document-title', docTitle(documentSpec)));
-        dialog.append(el(doc, 'p', 'choice-dialog-document-unavailable', `Документ «${String(documentSpec.name || '')}»${documentSpec.version != null && documentSpec.version !== '' ? ` v${documentSpec.version}` : ''} недоступен. Другая версия вместо него не подставляется.`));
-      } else if (mode === 'readOnly') {
-        dialog.append(el(doc, 'h3', 'choice-dialog-document-title', docTitle(documentSpec)));
+      if (mode === 'readOnly') {
+        if (docHeading) dialog.append(el(doc, 'h3', 'choice-dialog-document-title', docHeading));
         dialog.append(el(doc, 'pre', 'choice-dialog-document', String(documentSpec.text ?? '')));
       } else if (mode === 'editable') {
-        dialog.append(el(doc, 'h3', 'choice-dialog-document-title', docTitle(documentSpec)));
-        area = el(doc, 'textarea', 'choice-dialog-document-edit');
+        if (docHeading) dialog.append(el(doc, 'h3', 'choice-dialog-document-title', docHeading));
+        area =el(doc, 'textarea', 'choice-dialog-document-edit');
         area.value = String(documentSpec.text ?? '');
         area.rows = 16;
         area.spellcheck = false;
@@ -84,7 +78,6 @@
         return true;
       };
       const answerOf = (choice) => {
-        if (mode === 'unavailable') return choice.value;
         if (mode === 'editable') return area.value;
         if (kind === 'read') return clean(area.value) || READ_DONE;
         if (kind === 'form') return root.OwnerAsk.formAnswer(formBox, documentSpec.form?.items || [], answerFormat);

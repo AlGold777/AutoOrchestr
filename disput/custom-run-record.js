@@ -11,7 +11,7 @@
 
   const INDEX_KEY = 'customRunRecords.index';
   const RUN_KEY_PREFIX = 'customRunRecord.';
-  // chrome.storage.local holds ~10 MB without unlimitedStorage and is shared with the rest of the
+  // chrome.storage.local holds ~10 MB and is shared with the rest of the
   // extension: the records take at most this much.
   const DEFAULT_MAX_BYTES = 4 * 1024 * 1024;
 
@@ -123,8 +123,9 @@
   function revive(stored) {
     if (!stored || typeof stored !== 'object') return null;
     const record = { ...stored, version: stored.version || 1, texts: { ...(stored.texts || {}) }, attempts: (stored.attempts || []).map((item) => ({ ...item })),
-      artifacts: (stored.artifacts || []).map((item) => ({ ...item })),
-      ...(Array.isArray(stored.documents) ? { documents: stored.documents.map((item) => ({ ...item })) } : {}) };
+      artifacts: (stored.artifacts || []).map((item) => ({ ...item })) };
+    // A field of an older record that is no longer part of the record (documents) is not carried over.
+    delete record.documents;
     record.put = (value) => {
       if (value == null || value === '') return null;
       const ref = fingerprint(value);
@@ -176,15 +177,6 @@
     record.snapshot.chatBindings = plainOf(bindings);
     return true;
   }
-  // The documents the run refers to (BasicDocuments): key and id name the document, version and approved name its version.
-  // The texts themselves are kept by the document store, not here.
-  function setDocumentRef(record, { key, id, version, approved = false } = {}) {
-    if (!Array.isArray(record.documents)) record.documents = [];
-    const existing = record.documents.find((item) => item.key === key && item.id === id);
-    if (existing) Object.assign(existing, { version, approved: Boolean(approved) });
-    else record.documents.push({ key, id, version, approved: Boolean(approved) });
-    return record.documents;
-  }
   // The registry of the run: the entries of the engine's result, each with its answer reference (plain data).
   function setArtifacts(record, entries = []) {
     record.artifacts = copyOf(entries) || [];
@@ -218,7 +210,6 @@
       stopReason: record.stopReason, task: textOf(record, record.taskRef), steps: record.steps,
       texts: serialize(record).texts,
       artifacts: (record.artifacts || []).map((entry) => ({ ...entry, pointer: entry.content?.pointer ?? '', text: textOf(record, entry.content?.answerRef) })),
-      documents: (record.documents || []).map((item) => ({ ...item })),
       snapshot,
       attempts: record.attempts.map((attempt) => {
         const parts = attempt.parts || {};
@@ -310,7 +301,7 @@
     };
   }
 
-  const api = Object.freeze({ DEFAULT_MAX_BYTES, INDEX_KEY, RUN_KEY_PREFIX, fingerprint, createRun, recordAttempt, attemptKey, finishRun, serialize, revive, textOf, setSnapshot, setChatBindings, setAttachments, MAX_ATTACHMENT_RECORD_BYTES, setArtifacts, setDocumentRef, canResume, exportRun, createStore, chromeStorage });
+  const api = Object.freeze({ DEFAULT_MAX_BYTES, INDEX_KEY, RUN_KEY_PREFIX, fingerprint, createRun, recordAttempt, attemptKey, finishRun, serialize, revive, textOf, setSnapshot, setChatBindings, setAttachments, MAX_ATTACHMENT_RECORD_BYTES, setArtifacts, canResume, exportRun, createStore, chromeStorage });
   root.CustomRunRecord = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

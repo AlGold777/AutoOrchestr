@@ -43,7 +43,7 @@ describe('Custom engine: document for the owner step', () => {
     const result = await Engine.run({ task: 'T', steps: [ROUND({ output: READ }), OWNER_DOC()], send, provideOwnerResult });
     expect(result.stopReason).toBe('steps_done');
     expect(asked.length).toBe(1);
-    expect(asked[0].document).toEqual({ ref: 'r1', kind: 'read', text: 'ТЕКСТ-ДОКУМЕНТА', id: 'spec', name: 'ТЗ', version: 1 });
+    expect(asked[0].document).toEqual({ ref: 'r1', kind: 'read', text: 'ТЕКСТ-ДОКУМЕНТА', id: 'spec', name: 'ТЗ' });
   });
 
   test('2. form document: the owner gets the parsed questionnaire and the original text', async () => {

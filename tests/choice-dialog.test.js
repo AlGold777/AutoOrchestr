@@ -135,7 +135,7 @@ describe('Choice dialog: required text, a document to read, a questionnaire form
   });
 });
 
-describe('Choice dialog: a document to edit, a document to view only, an unavailable version', () => {
+describe('Choice dialog: a document to edit, a document to view only', () => {
   beforeEach(() => { document.body.innerHTML = ''; });
 
   const submitButton = () => document.querySelector('.choice-dialog-choice');
@@ -143,8 +143,8 @@ describe('Choice dialog: a document to edit, a document to view only, an unavail
 
   test('editable: a textarea with the document text under its title, the button waits for non-empty text, the exact text is the answer', async () => {
     const answer = ChoiceDialog.ask({ title: 'Утверждение', document: { kind: 'read', name: 'ТЗ', version: 2, text: 'Строка' + '\n' + 'вторая', editable: true }, choices: [{ value: 'send', label: 'Отправить' }] });
-    expect(document.querySelector('.choice-dialog-document-title').textContent).toBe('ТЗ v2');
-    const area = document.querySelector('textarea.choice-dialog-document-edit');
+    expect(document.querySelector('.choice-dialog-document-title').textContent).toBe('ТЗ');
+    const area =document.querySelector('textarea.choice-dialog-document-edit');
     expect(area.value).toBe('Строка\nвторая');
     expect(area.getAttribute('aria-label')).toBe('Документ');
     expect(document.querySelector('.choice-dialog-document')).toBeNull();
@@ -162,20 +162,21 @@ describe('Choice dialog: a document to edit, a document to view only, an unavail
 
   test('editable: without a change the answer is the document text; textInput is ignored', async () => {
     const answer = ChoiceDialog.ask({ document: { kind: 'read', name: 'ТЗ', version: 1, text: 'Исходный', editable: true }, textInput: { label: 'Другое', required: true }, choices: [{ value: 'send', label: 'Отправить' }] });
-    expect(document.querySelector('.choice-dialog-document-title').textContent).toBe('ТЗ v1');
+    expect(document.querySelector('.choice-dialog-document-title').textContent).toBe('ТЗ');
     submitButton().click();
     await expect(answer).resolves.toBe('Исходный');
   });
 
-  test('editable: without a name the title is only the version', () => {
+  test('editable: without a name there is no title', () => {
     ChoiceDialog.ask({ document: { kind: 'read', version: 3, text: 'x', editable: true }, choices: [{ value: 'send', label: 'Отправить' }] });
-    expect(document.querySelector('.choice-dialog-document-title').textContent).toBe('v3');
+    expect(document.querySelector('.choice-dialog-document-title')).toBeNull();
+    expect(document.querySelector('textarea.choice-dialog-document-edit')).not.toBeNull();
   });
 
   test('readOnly: the text is shown as text, there is no submit button, only Close, and the answer is null', async () => {
     const answer = ChoiceDialog.ask({ document: { kind: 'read', name: 'ТЗ', version: 2, text: '<b>x</b>', readOnly: true }, choices: [{ value: 'send', label: 'Отправить' }], cancelText: 'Закрыть' });
-    expect(document.querySelector('.choice-dialog-document-title').textContent).toBe('ТЗ v2');
-    const block = document.querySelector('pre.choice-dialog-document');
+    expect(document.querySelector('.choice-dialog-document-title').textContent).toBe('ТЗ');
+    const block =document.querySelector('pre.choice-dialog-document');
     expect(block.textContent).toBe('<b>x</b>');
     expect(block.querySelector('b')).toBeNull();
     expect(document.querySelector('.choice-dialog-choice')).toBeNull();
@@ -188,22 +189,6 @@ describe('Choice dialog: a document to edit, a document to view only, an unavail
   test('readOnly: without cancelText the button is Закрыть', () => {
     ChoiceDialog.ask({ document: { kind: 'read', text: 'x', readOnly: true } });
     expect(document.querySelector('.choice-dialog-cancel').textContent).toBe('Закрыть');
-  });
-
-  test('unavailable: the message names the document and version, the retry button is active and gives its value, Cancel gives null', async () => {
-    const answer = ChoiceDialog.ask({ document: { kind: 'read', name: 'ТЗ', version: 2, unavailable: true }, choices: [{ value: 'retry', label: 'Повторить' }] });
-    expect(document.querySelector('.choice-dialog-document-unavailable').textContent).toBe('Документ «ТЗ» v2 недоступен. Другая версия вместо него не подставляется.');
-    expect(document.querySelector('pre.choice-dialog-document')).toBeNull();
-    expect(submitButton().textContent).toBe('Повторить');
-    expect(submitButton().disabled).toBe(false);
-    submitButton().click();
-    await expect(answer).resolves.toBe('retry');
-  });
-
-  test('unavailable: Cancel gives null', async () => {
-    const answer = ChoiceDialog.ask({ document: { kind: 'read', name: 'ТЗ', version: 2, unavailable: true }, choices: [{ value: 'retry', label: 'Повторить' }] });
-    document.querySelector('.choice-dialog-cancel').click();
-    await expect(answer).resolves.toBeNull();
   });
 
   test('a plain kind read without the new fields keeps the comment and the standard answer', async () => {

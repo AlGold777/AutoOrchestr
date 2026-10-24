@@ -52,52 +52,41 @@ const OWNER_U = { ref: 'owner:u', kind: 'owner', task: 'Уточните', docum
 const R2 = { ref: 'r2', kind: 'round', models: ['B'] };
 
 describe('Custom engine: document versions (stage 2)', () => {
-  test('1. the model answer is extracted by the label; the owner gets the document with its version; onDocument gets the version', async () => {
+  test('1. the model answer is extracted by the label; the owner gets the document text', async () => {
     const { send } = transport({ A: [DOC_TEXT], B: ['ок'] });
     const { provideOwnerResult, calls: asked } = owner(['ТЕКСТ-ТЗ']);
-    const docs = [];
-    const result = await Engine.run({ task: 'T', steps: [R1, OWNER_U, R2], send, provideOwnerResult, onDocument: (event) => docs.push(event) });
+    const result = await Engine.run({ task: 'T', steps: [R1, OWNER_U, R2], send, provideOwnerResult });
     expect(result.stopReason).toBe('steps_done');
-    expect(asked[0].document).toEqual({ ref: 'r1', kind: 'read', text: 'ТЕКСТ-ТЗ', id: 'spec', name: 'ТЗ', version: 1 });
-    expect(docs[0]).toMatchObject({ kind: 'version', id: 'spec', name: 'ТЗ', version: 1, author: 'model', stepRef: 'r1', participant: 'A', visit: 1, text: 'ТЕКСТ-ТЗ' });
+    expect(asked[0].document).toEqual({ ref: 'r1', kind: 'read', text: 'ТЕКСТ-ТЗ', id: 'spec', name: 'ТЗ' });
   });
 
   test('2. an answer without labels is refused with missing_artifact and the model is asked again; the document comes from the second answer only', async () => {
     const { send, calls } = transport({ A: ['Текст без меток, пояснение.', DOC_TEXT], B: ['ок'] });
     const { provideOwnerResult, calls: asked } = owner(['ТЕКСТ-ТЗ']);
-    const docs = [];
-    const result = await Engine.run({ task: 'T', steps: [R1, OWNER_U], send, provideOwnerResult, onDocument: (event) => docs.push(event) });
+    const result = await Engine.run({ task: 'T', steps: [R1, OWNER_U], send, provideOwnerResult });
     expect(result.stopReason).toBe('steps_done');
     expect(calls.length).toBe(2);
     expect(calls[1].models).toEqual(['A']);
     expect(calls[1].prompts.A).toContain('без объявленного артефакта');
     expect(result.history.find((item) => item.attempt === 1).reason).toBe('missing_artifact');
-    expect(docs.filter((event) => event.kind === 'version')).toHaveLength(1);
+    expect(result.artifacts.filter((item) => item.id === 'spec')).toHaveLength(1);
     expect(asked[0].document.text).toBe('ТЕКСТ-ТЗ');
   });
 
-  test('3. an owner answer equal to the document makes no new version; the approval is one event with version 1, and the next step gets the approved text', async () => {
+  test('3. an owner answer equal to the document makes no new version; the next step gets the approved text', async () => {
     const { send, calls } = transport({ A: [DOC_TEXT], B: ['ок'] });
     const { provideOwnerResult } = owner(['ТЕКСТ-ТЗ']);
-    const docs = [];
-    const result = await Engine.run({ task: 'T', steps: [R1, OWNER_U, R2], send, provideOwnerResult, onDocument: (event) => docs.push(event) });
+    const result = await Engine.run({ task: 'T', steps: [R1, OWNER_U, R2], send, provideOwnerResult });
     expect(result.stopReason).toBe('steps_done');
-    expect(docs.filter((event) => event.stepRef === 'owner:u')).toEqual([
-      { kind: 'approved', id: 'spec', name: 'ТЗ', version: 1, stepRef: 'owner:u', visit: 1 }
-    ]);
+    expect(result.artifacts.filter((item) => item.id === 'spec')).toHaveLength(1);
     expect(calls[1].prompts.B).toContain('ТЕКСТ-ТЗ');
   });
 
-  test('4. an edited document makes version 2 by the user; the next step gets version 2 and not version 1', async () => {
+  test('4. an edited document makes a new version by the user; the next step gets the edited text and not the first one', async () => {
     const { send, calls } = transport({ A: [DOC_TEXT], B: ['ок'] });
     const { provideOwnerResult } = owner(['ПРАВЛЕННЫЙ']);
-    const docs = [];
-    const result = await Engine.run({ task: 'T', steps: [R1, OWNER_U, R2], send, provideOwnerResult, onDocument: (event) => docs.push(event) });
+    const result = await Engine.run({ task: 'T', steps: [R1, OWNER_U, R2], send, provideOwnerResult });
     expect(result.stopReason).toBe('steps_done');
-    expect(docs.filter((event) => event.stepRef === 'owner:u')).toEqual([
-      { kind: 'version', id: 'spec', name: 'ТЗ', version: 2, author: 'user', stepRef: 'owner:u', participant: 'owner', visit: 1, text: 'ПРАВЛЕННЫЙ' },
-      { kind: 'approved', id: 'spec', name: 'ТЗ', version: 2, stepRef: 'owner:u', visit: 1 }
-    ]);
     expect(calls[1].prompts.B).toContain('ПРАВЛЕННЫЙ');
     expect(calls[1].prompts.B).not.toContain('ТЕКСТ-ТЗ');
     const line = result.artifacts.filter((item) => item.id === 'spec');
@@ -124,42 +113,7 @@ describe('Custom engine: document versions (stage 2)', () => {
     expect(calls[0].prompts.A).toContain('[[/DOC]]');
   });
 
-  test('7. an unavailable version: the owner sees it as unavailable; getDocument supplies the text when the stored answer is gone', async () => {
-    const { send } = transport({ A: [DOC_TEXT] });
-    const { provideOwnerResult, calls: asked } = owner(['ИЗ-ХРАНИЛИЩА']);
-    const getDocument = async (address) => { expect(address).toEqual({ id: 'spec', version: 1 }); return 'ИЗ-ХРАНИЛИЩА'; };
-    const result = await Engine.run({ task: 'T', steps: [R1, OWNER_U], send, provideOwnerResult, getText: () => undefined, getDocument });
-    expect(result.stopReason).toBe('steps_done');
-    expect(asked[0].document).toEqual({ ref: 'r1', kind: 'read', text: 'ИЗ-ХРАНИЛИЩА', id: 'spec', name: 'ТЗ', version: 1 });
-  });
-
-  test('7b. no text in the store and no getDocument text: the owner gets the unavailable document; retry reopens it with the text when it is back', async () => {
-    const { send } = transport({ A: [DOC_TEXT] });
-    let available = false;
-    const getDocument = async () => (available ? 'ИЗ-ХРАНИЛИЩА' : undefined);
-    const asked = [];
-    const provideOwnerResult = async (request) => {
-      asked.push(request);
-      if (asked.length === 1) { available = true; return 'retry'; }
-      return 'ИЗ-ХРАНИЛИЩА';
-    };
-    const result = await Engine.run({ task: 'T', steps: [R1, OWNER_U], send, provideOwnerResult, getText: () => undefined, getDocument });
-    expect(result.stopReason).toBe('steps_done');
-    expect(asked[0].document).toEqual({ ref: 'r1', kind: 'read', unavailable: true, id: 'spec', name: 'ТЗ', version: 1 });
-    expect(asked[0].document).not.toHaveProperty('text');
-    expect(asked[1].document).toEqual({ ref: 'r1', kind: 'read', text: 'ИЗ-ХРАНИЛИЩА', id: 'spec', name: 'ТЗ', version: 1 });
-  });
-
-  test('7c. the owner cancels the unavailable document: the run stops with stopped', async () => {
-    const { send } = transport({ A: [DOC_TEXT] });
-    const { provideOwnerResult, calls: asked } = owner([null]);
-    const result = await Engine.run({ task: 'T', steps: [R1, OWNER_U], send, provideOwnerResult, getText: () => undefined, getDocument: async () => undefined });
-    expect(result.stopReason).toBe('stopped');
-    expect(asked.length).toBe(1);
-    expect(asked[0].document.unavailable).toBe(true);
-  });
-
-  test('8. resume in the owner window: the same document (version 1), the edit goes to the next step, the owner record keeps approved', async () => {
+  test('8. resume in the owner window: the same document, the edit goes to the next step, the owner record keeps approved', async () => {
     const texts = textStore();
     const first = keeper();
     const run1 = await Engine.run({ task: 'T', steps: [R1, OWNER_U, R2], send: transport({ A: [DOC_TEXT], B: ['ок'] }).send,
@@ -172,13 +126,13 @@ describe('Custom engine: document versions (stage 2)', () => {
       resume: clone(first.last()),
       provideOwnerResult: async (request) => { asked.push(request); return 'ПРАВЛЕННЫЙ'; } });
     expect(run2.stopReason).toBe('steps_done');
-    expect(asked[0].document).toEqual({ ref: 'r1', kind: 'read', text: 'ТЕКСТ-ТЗ', id: 'spec', name: 'ТЗ', version: 1 });
+    expect(asked[0].document).toEqual({ ref: 'r1', kind: 'read', text: 'ТЕКСТ-ТЗ', id: 'spec', name: 'ТЗ' });
     expect(calls[0].prompts.B).toContain('ПРАВЛЕННЫЙ');
     const ownerEntry = second.last().results.find((item) => item.stepRef === 'owner:u');
-    expect(ownerEntry.owner.approved).toEqual({ id: 'spec', version: 2 });
+    expect(ownerEntry.owner.approved).toEqual({ id: 'spec' });
   });
 
-  test('9. a document in a json answer: its text is the pointer value, version 1', async () => {
+  test('9. a document in a json answer: its text is the pointer value', async () => {
     const steps = [
       { ref: 'r1', kind: 'round', models: ['A'], input: 'none', output: { format: 'json', document: 'read', artifacts: [{ id: 'doc', name: 'Д', pointer: '/body' }] } },
       { ref: 'owner:u', kind: 'owner', task: 'Уточните', document: 'r1' }
@@ -187,6 +141,23 @@ describe('Custom engine: document versions (stage 2)', () => {
     const { provideOwnerResult, calls: asked } = owner(['ТЕКСТ-JSON']);
     const result = await Engine.run({ task: 'T', steps, send, provideOwnerResult });
     expect(result.stopReason).toBe('steps_done');
-    expect(asked[0].document).toEqual({ ref: 'r1', kind: 'read', text: 'ТЕКСТ-JSON', id: 'doc', name: 'Д', version: 1 });
+    expect(asked[0].document).toEqual({ ref: 'r1', kind: 'read', text: 'ТЕКСТ-JSON', id: 'doc', name: 'Д' });
+  });
+
+  test('10. сценарий без событий: модель → метки → правка User → следующий раунд', async () => {
+    const { send, calls } = transport({ A: ['Вот:\n[[DOC: spec]]\nТЗ-ТЕКСТ\n[[/DOC]]\nхвост'], B: ['ок'] });
+    const { provideOwnerResult, calls: asked } = owner(['ТЗ-ПРАВКА']);
+    const result = await Engine.run({ task: 'T', steps: [R1, OWNER_U, R2], send, provideOwnerResult });
+    expect(result.stopReason).toBe('steps_done');
+    expect(asked[0].document.text).toBe('ТЗ-ТЕКСТ');
+    expect(calls[1].prompts.B).toContain('ТЗ-ПРАВКА');
+    expect(calls[1].prompts.B).not.toContain('ТЗ-ТЕКСТ');
+    expect(calls[1].prompts.B).not.toContain('хвост');
+    const line = result.artifacts.filter((item) => item.id === 'spec');
+    expect(line).toHaveLength(2);
+    expect(line.every((item) => item.valid)).toBe(true);
+    expect(line[line.length - 1].source.participant).toBe('owner');
+    const ownerEntry = result.state.results.find((item) => item.stepRef === 'owner:u');
+    expect(ownerEntry.owner.approved.id).toBe('spec');
   });
 });

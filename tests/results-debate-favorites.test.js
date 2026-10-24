@@ -383,7 +383,7 @@ async function loadResultsScript(seededPipelineStore = null) {
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-prompt-catalog.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'pipeline-presets.js'), 'utf8'));
   // The same order as pipeline_panel.html: the modules the engine uses come before it.
-  ['stage-markers', 'debate-response-acceptance', 'basic-output', 'basic-artifacts', 'custom-engine', 'basic-schema', 'custom-run-record', 'basic-documents'].forEach((mod) => { window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', `${mod}.js`), 'utf8')); });
+  ['stage-markers', 'debate-response-acceptance', 'basic-output', 'basic-artifacts', 'custom-engine', 'basic-schema', 'custom-run-record'].forEach((mod) => { window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', `${mod}.js`), 'utf8')); });
   ['boot-utils', 'dom-utils', 'attachments', 'pasted-text', 'tooltips', 'debate-ui', 'debate-transport', 'debate-controller', 'debate-renderer', 'debate-sessions-store', 'debate-export', 'debate-telemetry-view'].forEach((mod) => { window.eval(fs.readFileSync(path.join(__dirname, '..', 'results', `${mod}.js`), 'utf8')); });
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'utils', 'selection-block-format.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'results', 'owner-ask.js'), 'utf8'));
@@ -3629,7 +3629,7 @@ describe('Pipeline debate favorites view', () => {
         } finally { h.cleanup(); }
       }, 30000);
 
-      // A07 documents (stage 2): the store of the versions, the frames on the canvas, the owner window of a document.
+      // A07 documents (stage 2): the versions of the run record, the frames on the canvas, the owner window of a document.
       const docRound = { ref: 'r1', kind: 'round', models: [{ name: 'Claude' }], output: { document: 'read', artifacts: [{ id: 'spec', name: 'ТЗ', pointer: '' }] } };
       const docDialogOpen = async () => { for (let i = 0; i < 200 && !document.querySelector('.choice-dialog'); i += 1) await delay(10); };
 
@@ -3650,11 +3650,10 @@ describe('Pipeline debate favorites view', () => {
         } finally { h.cleanup(); }
       }, 30000);
 
-      test('A07 documents: the document is written by the model, edited by the owner and approved; the frame, the store, the record and the next round carry it', async () => {
+      test('A07 documents: the document is written by the model, edited by the owner and approved; the frame, the record and the next round carry it', async () => {
         require('../results/choice-dialog');
         require('../results/stage-card');
         const h = setupCustomInheritance('Doc approve run');
-        const documents = () => window.BasicDocuments.createStore({ storage: window.BasicDocuments.chromeStorage(chrome.storage.local) });
         try {
           const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
             docRound,
@@ -3686,17 +3685,18 @@ describe('Pipeline debate favorites view', () => {
           await settleCustomCard();
 
           const approved = document.querySelector('.stage-column[data-round="1"] .pipeline-doc-frame.is-approved');
-          expect(approved?.textContent).toBe('ТЗ v2 · утверждено');
-          const store = documents();
-          const summary = (await store.list()).find((item) => item.id === 'spec' && item.pipeline === 'Doc approve run');
-          expect(summary).toMatchObject({ versions: 2, latest: 2, approved: 2 });
-          const stored = await store.get(summary.runId, 'spec');
-          expect(stored.versions.map((item) => item.author)).toEqual(['model', 'user']);
-          expect(await store.getVersion(summary.runId, 'spec', 2)).toBe('ТЗ-ПРАВКА');
+          expect(approved?.textContent).toBe('ТЗ · утверждено');
           const gptRequest = h.starts.find((message) => message.selectedLLMs.includes('GPT'));
           expect(JSON.stringify(gptRequest)).toContain('ТЗ-ПРАВКА');
-          const records = await window.CustomRunRecord.createStore({ storage: window.CustomRunRecord.chromeStorage(chrome.storage.local) }).latest('Doc approve run');
-          expect(records.documents).toContainEqual(expect.objectContaining({ id: 'spec', version: 2, approved: true }));
+          const record = await window.CustomRunRecord.createStore({ storage: window.CustomRunRecord.chromeStorage(chrome.storage.local) }).latest('Doc approve run');
+          // The record holds the two versions of the line: the model's, then the owner's; the owner approved the line.
+          const versions = record.artifacts.filter((entry) => entry.id === 'spec');
+          expect(versions).toHaveLength(2);
+          expect(versions[0].source.participant).not.toBe('owner');
+          expect(versions[1].source.participant).toBe('owner');
+          expect(window.CustomRunRecord.textOf(record, versions[0].content.answerRef)).toBe('ТЗ-ТЕКСТ');
+          expect(window.CustomRunRecord.textOf(record, versions[1].content.answerRef)).toBe('ТЗ-ПРАВКА');
+          expect(record.snapshot.results).toContainEqual(expect.objectContaining({ owner: expect.objectContaining({ approved: expect.objectContaining({ id: 'spec' }) }) }));
 
           // The frame opens the document for reading; «Закрыть» closes the window.
           approved.click();
@@ -3708,6 +3708,74 @@ describe('Pipeline debate favorites view', () => {
         } finally { h.cleanup(); }
       }, 60000);
 
+      test('A07 documents scenario: the model writes, the owner edits and sends, the next round gets the edit, the frame survives a pipeline switch', async () => {
+        require('../results/choice-dialog');
+        require('../results/stage-card');
+        const h = setupCustomInheritance('Doc scenario');
+        try {
+          const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
+            docRound,
+            { ref: 'owner:u', kind: 'owner', models: [], document: 'r1', task: 'Проверьте ТЗ' },
+            { ref: 'r2', kind: 'round', models: [{ name: 'GPT' }] }
+          ] };
+          expect((await h.debug.installBasicSchema('Doc scenario', schema)).ok).toBe(true);
+          document.querySelector('.pipeline-item[data-name="Doc scenario"]').click();
+          await settleCustomCard();
+          // (а) before the run the frame is pending and named by the artifact
+          expect(document.querySelector('.stage-column[data-round="1"] .pipeline-doc-frame.is-pending')?.textContent).toBe('ТЗ');
+          chrome.runtime.sendMessage.mockImplementation((message, callback) => {
+            if (message.type !== 'START_FULLPAGE_PROCESS') { callback?.({ status: 'ok', active: false }); return; }
+            h.starts.push(message);
+            callback?.({ status: 'process_started' });
+            setTimeout(() => message.selectedLLMs.forEach((model) => h.debug.pipelineWaiter.handleFinal({ type: 'LLM_RESPONSE', llmName: model,
+              transportRequestId: message.pipelineContext.transportRequestIds[model],
+              answer: model === 'Claude' ? 'Вот:\n[[DOC: spec]]\nТЗ-ТЕКСТ\n[[/DOC]]' : 'Ответ GPT.',
+              metadata: { ...message.pipelineContext, status: 'SUCCESS', attribution: 'verified', completion: 'complete' }
+            })), 0);
+          });
+          const run = h.debug.runCustomFromPage({ task: 'T' });
+          await docDialogOpen();
+          // (б) the owner window shows the model text; the owner edits it and sends
+          const edit = document.querySelector('.choice-dialog-document-edit');
+          expect(edit.value).toContain('ТЗ-ТЕКСТ');
+          edit.value = 'ТЗ-ПРАВКА';
+          edit.dispatchEvent(new Event('input', { bubbles: true }));
+          document.querySelector('.choice-dialog-choice').click();
+          await run;
+          await settleCustomCard();
+          // (г) after the run the frame is approved
+          const approved = document.querySelector('.stage-column[data-round="1"] .pipeline-doc-frame.is-approved');
+          expect(approved?.textContent).toMatch(/^ТЗ( v\d+)? · утверждено$/);
+          // (в) the next round's request carries the edit, not the model text
+          const gptRequest = h.starts.find((message) => message.selectedLLMs.includes('GPT'));
+          expect(JSON.stringify(gptRequest)).toContain('ТЗ-ПРАВКА');
+          expect(JSON.stringify(gptRequest)).not.toContain('ТЗ-ТЕКСТ');
+          // (д) the frame opens the document for reading; «Закрыть» closes it
+          approved.click();
+          await docDialogOpen();
+          expect(document.querySelector('.choice-dialog-document').textContent).toContain('ТЗ-ПРАВКА');
+          expect(document.querySelector('.choice-dialog-cancel').textContent).toContain('Закрыть');
+          document.querySelector('.choice-dialog-cancel').click();
+          await settleCustomCard();
+          expect(document.querySelector('.choice-dialog')).toBeNull();
+          // (е) switch to another pipeline and back: the frame comes back with the same document
+          const plain = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [{ ref: 'r1', kind: 'round', models: [{ name: 'GPT' }] }] };
+          expect((await h.debug.installBasicSchema('Doc scenario other', plain)).ok).toBe(true);
+          document.querySelector('.pipeline-item[data-name="Doc scenario other"]').click();
+          await settleCustomCard();
+          document.querySelector('.pipeline-item[data-name="Doc scenario"]').click();
+          await settleCustomCard();
+          await settleCustomCard();
+          const back = document.querySelector('.stage-column[data-round="1"] .pipeline-doc-frame.is-approved');
+          expect(back?.textContent).toMatch(/^ТЗ( v\d+)? · утверждено$/);
+          back.click();
+          await docDialogOpen();
+          expect(document.querySelector('.choice-dialog-document').textContent).toContain('ТЗ-ПРАВКА');
+          document.querySelector('.choice-dialog-cancel').click();
+          await settleCustomCard();
+        } finally { h.cleanup(); }
+      }, 60000);
+
       test('A07 documents: after a new run cleared the frames, the page brings the approved frame back from the store', async () => {
         const h = setupCustomInheritance('Doc restore plain');
         try {
@@ -3716,8 +3784,8 @@ describe('Pipeline debate favorites view', () => {
           document.querySelector('.pipeline-item[data-name="Doc restore plain"]').click();
           await settleCustomCard();
           await h.run();
-          expect(h.debug.documentFramesSnapshot()).toEqual([]);
-          // The pipeline of the approved run is installed again (the page holds one pipeline here); its documents are in the store.
+          expect(document.querySelectorAll('.pipeline-doc-frame')).toHaveLength(0);
+          // The pipeline of the approved run is installed again (the page holds one pipeline here); its record is in the store.
           const approve = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
             docRound,
             { ref: 'owner:u', kind: 'owner', models: [], document: 'r1', task: 'Проверьте ТЗ' },
@@ -3727,13 +3795,22 @@ describe('Pipeline debate favorites view', () => {
           document.querySelector('.pipeline-item[data-name="Doc approve run"]').click();
           await settleCustomCard();
           // Choosing the pipeline in the list brings its approved frame back, without a reload.
-          expect(document.querySelector('.stage-column[data-round="1"] .pipeline-doc-frame.is-approved')?.textContent).toBe('ТЗ v2 · утверждено');
-          expect(h.debug.documentFramesSnapshot()).toEqual([expect.objectContaining({ id: 'spec', version: 2, approved: true })]);
+          expect(document.querySelector('.stage-column[data-round="1"] .pipeline-doc-frame.is-approved')?.textContent).toBe('ТЗ · утверждено');
         } finally { h.cleanup(); }
       }, 60000);
 
       test('A07 documents: choosing a pipeline in the list brings its own frames; another pipeline shows its document pending', async () => {
         const h = setupCustomInheritance('Pipe A');
+        // A finished run of a pipeline in the record store: its versions of the line spec, the owner approved the line.
+        const seedRecord = async (pipelineName, runId, texts, approvedId) => {
+          const record = window.CustomRunRecord.createRun({ runId, pipelineName, task: 'T', steps: [] });
+          window.CustomRunRecord.setArtifacts(record, texts.map((text, at) => ({ id: 'spec', name: 'ТЗ', lineage: { step: 'r1', participant: 'Claude', id: 'spec' },
+            source: { step: 'r1', participant: at === 0 ? 'Claude' : 'owner', visit: at + 1 }, content: { answerRef: record.put(text), pointer: '' }, valid: true, inputs: [] })));
+          window.CustomRunRecord.setSnapshot(record, { schema: [], state: { results: [{ stepRef: 'owner:u', index: 1, visit: 1, valid: true, skipped: false, outcome: {},
+            owner: { textRef: null, binary: false, file: null, approved: { id: approvedId } } }] } });
+          window.CustomRunRecord.finishRun(record, { stopReason: 'steps_done' });
+          await window.CustomRunRecord.createStore({ storage: window.CustomRunRecord.chromeStorage(chrome.storage.local) }).save(record);
+        };
         try {
           const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
             docRound,
@@ -3742,15 +3819,11 @@ describe('Pipeline debate favorites view', () => {
           ] };
           expect((await h.debug.installBasicSchema('Pipe A', schema)).ok).toBe(true);
           expect((await h.debug.installBasicSchema('Pipe B', schema)).ok).toBe(true);
-          const version = (n, author, approved) => ({ n, author, at: n, text: `ТЗ-${n}`, source: {}, approved, ...(approved ? { approvedAt: n } : {}) });
-          await chrome.storage.local.set({ llmComparatorDocuments: { version: 1, documents: { 'run-A:spec': {
-            key: 'run-A:spec', runId: 'run-A', pipeline: 'Pipe A', id: 'spec', name: 'ТЗ',
-            versions: [version(1, 'model', false), version(2, 'user', true)]
-          } } } });
+          await seedRecord('Pipe A', 'run-A', ['ТЗ-1', 'ТЗ-2'], 'spec');
           document.querySelector('.pipeline-item[data-name="Pipe A"]').click();
           await settleCustomCard();
           await settleCustomCard();
-          expect(document.querySelector('.stage-column[data-round="1"] .pipeline-doc-frame.is-approved')?.textContent).toBe('ТЗ v2 · утверждено');
+          expect(document.querySelector('.stage-column[data-round="1"] .pipeline-doc-frame.is-approved')?.textContent).toBe('ТЗ · утверждено');
 
           document.querySelector('.pipeline-item[data-name="Pipe B"]').click();
           await settleCustomCard();
@@ -3763,7 +3836,7 @@ describe('Pipeline debate favorites view', () => {
           document.querySelector('.pipeline-item[data-name="Pipe A"]').click();
           await settleCustomCard();
           await settleCustomCard();
-          expect(document.querySelector('.stage-column[data-round="1"] .pipeline-doc-frame.is-approved')?.textContent).toBe('ТЗ v2 · утверждено');
+          expect(document.querySelector('.stage-column[data-round="1"] .pipeline-doc-frame.is-approved')?.textContent).toBe('ТЗ · утверждено');
         } finally { h.cleanup(); }
       }, 30000);
 

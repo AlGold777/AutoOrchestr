@@ -4978,10 +4978,20 @@ document.addEventListener('click', (event) => {
 
         let deferredPipelineLayoutFrame = 0;
         // The frames of the documents on the canvas (stage 2): one in the column of each round whose output is a document for
-        // reading. Pending until the run has its version; ready when a version is stored; approved when the owner approved it.
-        const documentFrames = new Map();
+        // reading. Their state is read from the record of the run (frameRecord): pending without a version, ready with one,
+        // approved when the owner approved its line.
+        let frameRecord = null;
+        // The name of the artifact and whether the owner approved it, from the record; null when the record has no version of it.
+        const documentFrameOf = (record, artifactId) => {
+            const entries = (record?.artifacts || []).filter((entry) => entry.id === artifactId);
+            if (!entries.length) return null;
+            const approved = (record.snapshot?.results || []).some((item) => item?.owner?.approved?.id === artifactId);
+            return { name: entries[entries.length - 1].name, approved };
+        };
         const syncDocumentFrames = () => {
             if (!pipelinePanel) return;
+            // The frames are drawn again from the canvas: a frame of a pipeline that no longer has its document goes.
+            pipelinePanel.querySelectorAll('.pipeline-doc-frame').forEach((node) => node.remove());
             let steps = [];
             try { steps = basicSchemaFromPage(draftPlanForCanvas(getActiveDraftPlan()), null, { forSave: true }).steps || []; } catch (_) { steps = []; }
             steps.forEach((step) => {
@@ -4993,17 +5003,15 @@ document.addEventListener('click', (event) => {
                 const artifact = output.artifacts[0];
                 const column = pipelinePanel.querySelector(`.stage-column[data-round="${round[1]}"]:not(.pipeline-control-step)`);
                 if (!column) return;
-                column.querySelectorAll('.pipeline-doc-frame').forEach((node) => node.remove());
-                const entry = documentFrames.get(artifact.id);
-                const state = !entry ? 'pending' : (entry.approved ? 'approved' : 'ready');
+                const frameState = documentFrameOf(frameRecord, artifact.id);
+                const state = !frameState ? 'pending' : (frameState.approved ? 'approved' : 'ready');
                 const frame = document.createElement('button');
                 frame.type = 'button';
                 frame.className = `pipeline-doc-frame is-${state}`;
                 frame.dataset.docRef = step.ref;
                 frame.dataset.docId = artifact.id;
-                frame.dataset.docVersion = entry ? String(entry.version) : '';
-                frame.textContent = !entry ? (artifact.name || artifact.id) : `${entry.name} v${entry.version}${state === 'approved' ? ' · утверждено' : ''}`;
-                if (entry) frame.addEventListener('click', () => { void openDocumentFrame(entry); });
+                frame.textContent = !frameState ? (artifact.name || artifact.id) : `${frameState.name}${state === 'approved' ? ' · утверждено' : ''}`;
+                if (frameState) frame.addEventListener('click', () => { void openDocumentFrame(artifact.id); });
                 column.append(frame);
             });
         };
@@ -6685,63 +6693,27 @@ document.addEventListener('click', (event) => {
             ? window.CustomRunRecord.createStore({ storage: window.CustomRunRecord.chromeStorage(chrome.storage.local) })
             : null;
         const customPipelineName = () => String(pipelineStore.active || getPipelineHeaderName() || 'Default').trim();
-        // The versions of the documents (disput/basic-documents.js) in their own store; a read of a version waits for the writes.
-        let documentStore = null;
-        let documentWrites = Promise.resolve();
-        const getDocumentStore = () => {
-            if (!documentStore) documentStore = window.BasicDocuments.createStore({ storage: window.BasicDocuments.chromeStorage(chrome.storage.local) });
-            return documentStore;
-        };
-        // An event of a document of the run: a version (the model's or the owner's) or its approval. A failed step says so and
-        // the chain goes on with the next event.
-        const handleDocumentEvent = (event, runContext, record) => {
-            const { id, name, version } = event;
-            const runId = runContext.pipelineRunId;
-            documentWrites = documentWrites.then(async () => {
-                try {
-                    const store = getDocumentStore();
-                    if (event.kind === 'version') {
-                        await store.putVersion({ runId, pipeline: customPipelineName(), id, name, version, author: event.author, text: event.text, source: { step: event.stepRef, participant: event.participant, visit: event.visit }, at: Date.now() });
-                    } else {
-                        await store.approve({ runId, id, version });
-                    }
-                    if (record && window.CustomRunRecord) {
-                        window.CustomRunRecord.setDocumentRef(record, { key: `${runId}:${id}`, id, version, approved: event.kind === 'approved' });
-                        await runContext.writeRecord?.();
-                    }
-                    documentFrames.set(id, { id, name, version, approved: event.kind === 'approved', runId });
-                    syncDocumentFrames();
-                } catch (error) {
-                    showNotification(`Basic: документ «${name}» не сохранён: ${error?.message || String(error)}`, 'error');
-                }
-            });
-        };
-        // A click on a frame: the version is read from the store and shown in a window for reading.
-        const openDocumentFrame = async ({ id, name, version, runId }) => {
-            await documentWrites;
-            let text = null;
-            try { text = await getDocumentStore().getVersion(runId, id, version); } catch (error) { console.warn('[RESULTS] Document version not read', error); }
-            if (text === null || text === undefined) { showNotification(`Версия документа «${name}» недоступна`, 'warn'); return; }
+        // A click on a frame: the last version of its line is read from the record of the run, in a window for reading.
+        const openDocumentFrame = async (artifactId) => {
+            const entries = (frameRecord?.artifacts || []).filter((entry) => entry.id === artifactId);
+            const entry = entries[entries.length - 1];
+            const name = entry?.name || artifactId;
+            const text = entry ? window.CustomRunRecord.textOf(frameRecord, entry.content?.answerRef) : '';
+            if (!text) { showNotification(`Текст документа «${name}» не найден в записи прогона`, 'warn'); return; }
             try {
-                await askChoiceDialog({ title: `Документ: ${name}`, document: { kind: 'read', readOnly: true, name, version, text }, choices: [], cancelText: 'Закрыть' });
+                await askChoiceDialog({ title: `Документ: ${name}`, document: { kind: 'read', readOnly: true, name, text }, choices: [], cancelText: 'Закрыть' });
             } catch (error) {
                 showNotification(`Basic: документ «${name}» не открыт: ${error?.message || String(error)}`, 'error');
             }
         };
-        // After a reload the frames come back from the store: the latest run of this pipeline, its documents at their latest version.
+        // The frames follow the pipeline chosen in the list: the latest record of this pipeline gives them (also after a reload).
         const restoreDocumentFrames = async () => {
-            // The frames belong to the pipeline on the canvas: without a run of it, the frames of another pipeline go.
-            if (!pipelineRunActive) documentFrames.clear();
             try {
-                const summaries = (await getDocumentStore().list()).filter((item) => item.pipeline === customPipelineName());
-                if (summaries.length) {
-                    const latest = summaries.reduce((best, item) => ((item.at ?? 0) > (best.at ?? 0) ? item : best));
-                    summaries.filter((item) => item.runId === latest.runId).forEach((item) => {
-                        documentFrames.set(item.id, { id: item.id, name: item.name, version: item.latest, approved: item.approved === item.latest, runId: item.runId });
-                    });
-                }
+                if (!customRunStore) throw new Error('customRunStore is not available');
+                frameRecord = await customRunStore.latest(customPipelineName());
             } catch (error) {
                 console.warn('[RESULTS] Document frames not restored', error);
+                frameRecord = null;
             }
             syncDocumentFrames();
         };
@@ -6871,8 +6843,8 @@ document.addEventListener('click', (event) => {
                 showNotification('Basic: выберите модели хотя бы в одном раунде.', 'warn');
                 return false;
             }
-            if (!window.DebateResponseAcceptance?.evaluate || !window.DebateStageMarkers?.parse || !window.BasicDocuments) {
-                showNotification('Basic: не загружены модули приёма ответов и хранения документов (DebateResponseAcceptance, DebateStageMarkers, BasicDocuments). Перезагрузите страницу.', 'error');
+            if (!window.DebateResponseAcceptance?.evaluate || !window.DebateStageMarkers?.parse) {
+                showNotification('Basic: не загружены модули приёма ответов (DebateResponseAcceptance, DebateStageMarkers). Перезагрузите страницу.', 'error');
                 return false;
             }
             const useApiFallback = apiModeCheckbox ? apiModeCheckbox.checked : true;
@@ -6901,8 +6873,6 @@ document.addEventListener('click', (event) => {
                 recordWrites = next.catch(() => {});
                 return next;
             };
-            // The document events write the record through the same chain (handleDocumentEvent), and a failed write is reported there.
-            runContext.writeRecord = writeRecord;
             const saveRecord = async (now = false) => {
                 if (!record || !customRunStore) return;
                 clearTimeout(saveTimer);
@@ -6919,6 +6889,7 @@ document.addEventListener('click', (event) => {
             const checkpointRecord = (state) => {
                 window.CustomRunRecord.setArtifacts(record, state.artifacts);
                 window.CustomRunRecord.setSnapshot(record, { schema: built.schema, runSettings: { semiAuto, maxAttempts: engine.DEFAULT_ATTEMPTS, runMaxWords: built.run.maxWords ?? null }, state: { ...state, chatBindings: { ...chatBindings } }, current: state.current, ownerAnswers: state.ownerAnswers, pendingOwner: state.pendingOwner });
+                syncDocumentFrames();
                 return writeRecord();
             };
             const recordAttempt = (entry) => {
@@ -6931,8 +6902,8 @@ document.addEventListener('click', (event) => {
                 composerBackup = getModeratorDispatchText();
                 clearModeratorComposer();
                 appendModeratorFeedEntry(task);
-                // A new run starts with no document frames; its own versions fill them in.
-                documentFrames.clear();
+                // A new run takes its frames from its own record: its versions fill them in.
+                frameRecord = record;
                 syncDocumentFrames();
             }
             // Canvas progress from the engine's own events: a round is canvas-rN, an owner step its ref.
@@ -7128,16 +7099,13 @@ document.addEventListener('click', (event) => {
                     decide: askCustomDecision,
                     // The owner's answer of an owner step: a text (a file is not supported on this page yet).
                     checkUnknown,
-                    // The versions of the documents: each one goes to the store as the engine reports it, a read takes its text back.
-                    onDocument: (event) => handleDocumentEvent(event, runContext, record),
-                    getDocument: async ({ id, version }) => { await documentWrites; return getDocumentStore().getVersion(runContext.pipelineRunId, id, version); },
                     provideOwnerResult: ({ stepRef, task, goal, input, output, document, reason, detail }) => askChoiceDialog({
                         title: `Ответ User: ${stepRef}`,
                         message: window.StageCard.ownerAskMessage({ task, goal, input, output, reason, detail, reasonText: reason ? (window.CustomEngine?.REASON_TEXT?.[reason] || reason) : '' }),
                         textInput: document ? null : { label: 'Ответ User', required: true },
-                        // A document for reading is edited in the window; a document that could not be read is asked again.
-                        choices: document?.unavailable ? [{ value: 'retry', label: 'Повторить' }] : [{ value: 'send', label: 'Отправить' }],
-                        ...(document ? { document: document.kind === 'read' ? { ...document, editable: !document.unavailable } : document, answerFormat: output?.format === 'json' ? 'json' : 'text' } : {})
+                        // A document for reading is edited in the window.
+                        choices: [{ value: 'send', label: 'Отправить' }],
+                        ...(document ? { document: document.kind === 'read' ? { ...document, editable: true } : document, answerFormat: output?.format === 'json' ? 'json' : 'text' } : {})
                     }),
                     // The request whose sending is not confirmed: send it again, or skip it for this attempt only.
                     resolveUnknown: ({ stepRef, items, choices = ['resend', 'skip'] }) => askChoiceDialog({
@@ -7204,6 +7172,7 @@ document.addEventListener('click', (event) => {
                     });
                     CustomRecord.finishRun(record, { stopReason: result.stopReason });
                     await saveRecord(true);
+                    syncDocumentFrames();
                 }
                 markStaleBasicCards(result.steps);
                 const artifacts = result.artifacts || [];
@@ -7350,7 +7319,6 @@ document.addEventListener('click', (event) => {
                 buildBasicExport: () => buildBasicExport(),
                 syncDocumentFrames,
                 restoreDocumentFrames,
-                documentFramesSnapshot: () => [...documentFrames.values()],
                 normalizePipelineStore,
                 clearCustomSessionForTest: () => { customPipelineDefaults.clear(); customCardSettings.clear(); customRoundSettings.clear(); },
                 capturePipelineConfig,

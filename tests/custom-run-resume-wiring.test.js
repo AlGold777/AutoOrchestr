@@ -91,8 +91,8 @@ describe('Этап 1: документ для User в запуске', () => {
 });
 
 describe('Этап 2: документы в запуске', () => {
-  test('страница передаёт документы движку: события пишутся в хранилище, документ читается по версии', () => {
-    expect(results).toContain('onDocument: (event) => handleDocumentEvent(');
-    expect(results).toContain('getDocument: async ({ id, version })');
+  test('страница не хранит документы отдельно: рамки и окно строятся из записи прогона', () => {
+    expect(results).not.toContain('BasicDocuments');
+    expect(results).not.toContain('llmComparatorDocuments');
   });
 });
