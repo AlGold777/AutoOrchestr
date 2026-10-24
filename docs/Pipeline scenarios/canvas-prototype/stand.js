@@ -6,7 +6,7 @@
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '53';
+  const STAND_VERSION = '54';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -718,6 +718,8 @@
   // Линия к этапу активна, если он берёт вход у соседа слева (inputs); иначе — серая.
   const linksTo = (st, id) => !!id && listOf(st.inputs).some((r) => own(r) && refId(r) === id);
 
+  // Верхний отступ под полосу стрелок: пусто, когда стрелки выключены, — схема поднимается наверх.
+  const arrowsPadding = () => (stand.arrows !== false && artifactLinks().length ? `${12 + artifactLinks().length * 6}px` : '');
   function render() {
     const root = $('pipelineFlow');
     if (!root) return;
@@ -737,7 +739,7 @@
     });
     const per = Math.max(0, (stand.inDocs || []).length, ...cols.map((col) => listOf(col.step.artifacts).length));
     root.style.setProperty('--proto-art-zone', per ? '34px' : '0px');
-    root.style.paddingTop = artifactLinks().length ? `${12 + artifactLinks().length * 6}px` : '';
+    root.style.paddingTop = arrowsPadding();
     root.innerHTML = html;
     // Шапка (число раундов, предел слов, Auto) — как у холста, из ProtoState.
     canvas().syncChrome?.();
@@ -896,6 +898,7 @@
   const CONTROLS = 'input, select, button, option, summary';
   function bindFlow() {
     const flow = $('pipelineFlow');
+    flow.addEventListener('transitionend', (event) => { if (event.target === flow && event.propertyName === 'padding-top' && stand.active) draw(); });
     flow.addEventListener('click', (event) => {
       if (!stand.active) return;
       const t = event.target;
@@ -904,7 +907,9 @@
         event.stopPropagation();
         stand.arrows = stand.arrows === false;
         arrows.setAttribute('aria-pressed', String(stand.arrows));
-        drawArtifactLinks();
+        // Верхний отступ под полосу стрелок плавно меняется (CSS transition); стрелки и связи перерисуются по его окончании.
+        root.querySelector(':scope > .proto-art-svg')?.remove();
+        root.style.paddingTop = arrowsPadding();
         return;
       }
       const art = t.closest('.proto-art');
