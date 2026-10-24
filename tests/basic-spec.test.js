@@ -251,3 +251,18 @@ describe('Basic spec: empty and partial schemas', () => {
     expect(() => Spec.toMarkdown({})).not.toThrow();
   });
 });
+
+describe('Basic spec: the default input after an owner step (B-2)', () => {
+  test('B-2: a round without input after an owner step is linked to the owner step', () => {
+    const model = Spec.build({
+      schemaVersion: 1,
+      origin: 'user',
+      steps: [
+        { ref: 'owner:u', kind: 'owner', task: 'Уточните', models: [] },
+        { ref: 'r1', kind: 'round', models: [{ name: 'A' }] }
+      ]
+    });
+    expect(model.scheme.links.filter((link) => link.to === 2)).toEqual([{ from: 1, to: 2, label: 'ответы этапа «User u»' }]);
+    expect(model.stages[1].input.value).toBe('ответы: «User u»');
+  });
+});

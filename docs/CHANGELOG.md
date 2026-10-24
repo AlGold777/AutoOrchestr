@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-24 — Basic: раунд после шага User по умолчанию получает его ответ, версия 2.81.854, стенд v52
+
+- Решение владельца (B-2): умолчание `input` раунда — `previous` после любого шага, в том числе шага User; `none` только у самого первого шага схемы. Раньше раунд, стоящий сразу после шага User в начале схемы, получал `none` и ответ User не видел. Явный `input` не меняется.
+- `disput/basic-schema.js` (`assemble`), `disput/basic-spec.js` (связи входа), `results.js` (окно раунда: R1 после шага User не «первый»), стенд: `basic-export.js` (Import читает умолчание так же).
+- Тесты: `tests/basic-schema.test.js`, `tests/custom-engine-owner.test.js`, `tests/basic-spec.test.js`, `tests/stand-basic-export.test.js`.
+
 ### 2026-10-24 — Basic: приём ответа не отключается молча, превью инструкции ask совпадает с запросом, версия 2.81.853
 
 - `results.js`: если не загружены `DebateResponseAcceptance` или `DebateStageMarkers`, прогон не стартует с уведомлением «Basic: не загружены модули приёма ответов…» (раньше `accept` возвращал `{ ok: true }` и приём ответа отключался без сообщения).

@@ -1117,3 +1117,36 @@ describe('Basic schema: artifact description (output.artifacts[].description)', 
     expect(Schema.describeErrors(Schema.validate(schema))).toBe('steps[0].output.artifacts[0].description: описание артефакта: строка');
   });
 });
+
+describe('Basic schema: the default input is the previous step (B-2)', () => {
+  const owner = (extra = {}) => ({ ref: 'owner:u', kind: 'owner', task: 'Уточните', models: [], ...extra });
+  const r1 = (extra = {}) => round('r1', [{ name: 'Claude' }], extra);
+
+  test('B-2: a round after an owner step gets previous by default', () => {
+    const steps = Schema.assemble(base([owner(), r1()]));
+    expect(steps[1].input).toBe('previous');
+  });
+
+  test('B-2: a round after a round and an owner step gets previous by default', () => {
+    const steps = Schema.assemble(base([r1(), owner(), round('r2', [{ name: 'Claude' }])]));
+    expect(steps[2].input).toBe('previous');
+  });
+
+  test('B-2: only the very first step gets none; a second round gets previous', () => {
+    const steps = Schema.assemble(base([round('r1', [{ name: 'Claude' }]), round('r2', [{ name: 'Claude' }])]));
+    expect(steps[0].input).toBe('none');
+    expect(steps[1].input).toBe('previous');
+  });
+
+  test('B-2: an explicit input is kept as given', () => {
+    const none = Schema.assemble(base([owner(), r1({ input: 'none' })]));
+    const all = Schema.assemble(base([owner(), r1({ input: 'all' })]));
+    expect(none[1].input).toBe('none');
+    expect(all[1].input).toBe('all');
+  });
+
+  test('B-2: a single round is the first step and gets none', () => {
+    const steps = Schema.assemble(base([r1()]));
+    expect(steps[0].input).toBe('none');
+  });
+});

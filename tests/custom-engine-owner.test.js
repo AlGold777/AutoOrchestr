@@ -138,3 +138,22 @@ describe('Custom engine owner step (8.1, T14): artifacts and files', () => {
     await expect(Engine.run({ task: 'T', steps: [OWNER()], send, provideOwnerResult: bare.provideOwnerResult })).rejects.toThrow('invalid_owner_result');
   });
 });
+
+describe('Custom engine owner step: default input after the owner (B-2)', () => {
+  test('B-2: a round after the owner step gets the owner answer by default', async () => {
+    const BasicSchema = require('../disput/basic-schema');
+    const steps = BasicSchema.assemble({
+      schemaVersion: 1,
+      origin: 'user',
+      steps: [
+        { ref: 'owner:u', kind: 'owner', task: 'Уточните', models: [] },
+        { ref: 'r1', kind: 'round', models: [{ name: 'A' }] }
+      ]
+    });
+    const { send, calls } = transport({ A: ['ответ'] });
+    const { provideOwnerResult } = owner(['ОТВЕТ-USER-42']);
+    const result = await Engine.run({ task: 'T', steps, send, provideOwnerResult });
+    expect(result.stopReason).toBe('steps_done');
+    expect(calls[0].prompts.A).toContain('ОТВЕТ-USER-42');
+  });
+});

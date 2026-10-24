@@ -102,8 +102,8 @@
     };
   }
 
-  // The first round has no input; a later round gets the previous step.
-  const defaultInput = (roundIndex) => (roundIndex === 0 ? 'none' : 'previous');
+  // Only the very first step of the schema has nothing to take; any model step after another step (an owner step too) gets the previous step.
+  const defaultInput = (position) => (position === 0 ? 'none' : 'previous');
 
   // With input none only a task written by the owner (on the model or the step) goes to the model; ▶ and Basic values do not.
   const writtenTask = (field) => field.source === 'model' || field.source === 'round';
@@ -123,10 +123,10 @@
   function assemble(schema, { roleText = () => '' } = {}) {
     const defaults = schema.defaults || {};
     let rounds = 0;
-    return schema.steps.map((step) => {
+    return schema.steps.map((step, position) => {
       if (CONTROL_KINDS.includes(step.kind)) return assembleControl(step);
       const roundIndex = rounds++;
-      const input = step.input || defaultInput(roundIndex);
+      const input = step.input || defaultInput(position);
       const stepFields = resolveFields({ task: step.task }, step.kind, {}, defaults);
       // The number a round keeps even when the rounds before it are switched off.
       const out = { kind: step.kind, ref: step.ref, round: roundIndex + 1 };

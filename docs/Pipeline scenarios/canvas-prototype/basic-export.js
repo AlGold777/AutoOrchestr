@@ -97,11 +97,9 @@
     const MODEL_KINDS = ['round', 'gate', 'synthesis'];
     const linkable = (st) => MODEL_KINDS.includes(st.kind) || st.kind === 'owner';
     const refList = (input) => (Array.isArray(input) ? [...new Set(input.map((x) => (typeof x === 'string' ? x : x?.step)).map((r) => steps.find((st) => st.ref === r)).filter((st) => st && linkable(st)).map((st) => ids.get(st.ref)))] : []);
-    // «previous» — шаг перед этим, «all» — все шаги перед этим; раунд без input, кроме первого, берёт предыдущий шаг (умолчание Basic).
-    let modelSeen = 0;
+    // «previous» — шаг перед этим, «all» — все шаги перед этим; раунд без input берёт предыдущий шаг (в том числе шаг User), если перед ним есть шаг; первый шаг — без входа (умолчание Basic).
     const inputsOf = (st, i) => {
-      const spec = st.input === undefined && MODEL_KINDS.includes(st.kind) ? (modelSeen > 0 ? 'previous' : 'none') : st.input;
-      if (MODEL_KINDS.includes(st.kind)) modelSeen += 1;
+      const spec = st.input === undefined && MODEL_KINDS.includes(st.kind) ? (steps.slice(0, i).some(linkable) ? 'previous' : 'none') : st.input;
       const before = steps.slice(0, i).filter(linkable).map((x) => ids.get(x.ref));
       if (spec === 'previous') return before.slice(-1);
       if (spec === 'all') return before;

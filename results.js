@@ -8791,7 +8791,7 @@ document.addEventListener('click', (event) => {
                         roundPrompt: getCustomRoundPrompt(`r${round}`),
                         // The round card of Basic: the input, the task, the owner and the output.
                         settings: getCustomRoundSettings()[`r${round}`] || {}, drafts: stepDraftsOf(`r${round}`), earlier: stepsBefore(`r${round}`),
-                        first: round === 1, inheritedTask: resolveCustomFields({}, 'round').task.value }
+                        first: round === 1 && !getCustomControls().some((item) => item.after === ''), inheritedTask: resolveCustomFields({}, 'round').task.value }
                     : null;
                 const model = window.StageCard.buildModel({
                     round,

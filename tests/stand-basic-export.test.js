@@ -121,6 +121,34 @@ describe('Stand ↔ Basic exchange', () => {
     expect('inputs' in schema.steps[1]).toBe(false);
   });
 
+  test('B-2: раунд после шага User без input берёт этот шаг', () => {
+    const { schema } = Exchange.fromBasic({ schemaVersion: 1, origin: 'user', steps: [
+      { ref: 'owner:u', kind: 'owner', task: 'Уточните' },
+      { ref: 'r1', kind: 'round', models: [{ name: 'Claude' }] }] });
+    expect(schema.steps[1].inputs).toEqual(['s1']);
+  });
+
+  test('B-2: раунд после раунда и шага User без input берёт шаг User', () => {
+    const { schema } = Exchange.fromBasic({ schemaVersion: 1, origin: 'user', steps: [
+      { ref: 'r1', kind: 'round', models: [{ name: 'Claude' }] },
+      { ref: 'owner:u', kind: 'owner', task: 'Уточните' },
+      { ref: 'r2', kind: 'round', models: [{ name: 'GPT' }] }] });
+    expect(schema.steps[2].inputs).toEqual(['s2']);
+  });
+
+  test('B-2: первый раунд без input не получает входа', () => {
+    const { schema } = Exchange.fromBasic({ schemaVersion: 1, origin: 'user', steps: [
+      { ref: 'r1', kind: 'round', models: [{ name: 'Claude' }] }] });
+    expect('inputs' in schema.steps[0]).toBe(false);
+  });
+
+  test('B-2: явный input "none" у раунда после шага User не даёт входа', () => {
+    const { schema } = Exchange.fromBasic({ schemaVersion: 1, origin: 'user', steps: [
+      { ref: 'owner:u', kind: 'owner', task: 'Уточните' },
+      { ref: 'r1', kind: 'round', input: 'none', models: [{ name: 'Claude' }] }] });
+    expect('inputs' in schema.steps[1]).toBe(false);
+  });
+
   test('S-5: круг Basic → стенд → Basic сохраняет связь раундов', () => {
     const basic = { schemaVersion: 1, origin: 'user', steps: [
       { ref: 'r1', kind: 'round', models: [{ name: 'Claude' }] },

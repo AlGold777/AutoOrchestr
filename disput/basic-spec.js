@@ -131,7 +131,7 @@
     const stages = entries.map((entry, index) => {
       const step = entry.raw;
       const round = counters[entry.at];
-      const inputSpec = step.input || (step.kind === 'round' ? (round.number === 1 ? 'none' : 'previous') : undefined);
+      const inputSpec = step.input || (step.kind === 'round' ? (entry.at === 0 ? 'none' : 'previous') : undefined);
       const sourcesOf = () => {
         if (inputSpec === undefined || inputSpec === 'none') return [];
         if (inputSpec === 'previous') {
