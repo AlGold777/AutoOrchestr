@@ -6,7 +6,7 @@
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '58';
+  const STAND_VERSION = '59';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -738,7 +738,7 @@
       html += columnHtml(col, k, k > 0 ? cols[k - 1].step.id : '');
     });
     const per = Math.max(0, (stand.inDocs || []).length, ...cols.map((col) => listOf(col.step.artifacts).length));
-    root.style.setProperty('--proto-art-zone', per ? '34px' : '0px');
+    root.style.setProperty('--proto-art-zone', per ? '42px' : '0px');
     root.style.paddingTop = arrowsPadding();
     root.style.paddingLeft = '36px';
     root.innerHTML = html;
