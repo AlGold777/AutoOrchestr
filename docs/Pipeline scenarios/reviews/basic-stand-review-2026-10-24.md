@@ -6,7 +6,7 @@
 
 - Версия 2.81.851 (`/Users/restart/Documents/GitHub/AutoOrchestr/manifest.json`), коммит `c3d39b45` (стенд v48), основной чекаут и worktree на одном коммите.
 - Базовая линия: `npx jest --config tests/jest.config.js tests/custom-engine*.test.js tests/custom-run-record.test.js tests/basic-*.test.js` → 20 наборов, 412 тестов, все зелёные. TEST-2 не упал.
-- Итог review: P1 — 0, P2 — 7 (B-1, S-1…S-6), P3 — 10. Воспроизведены тестами `tests/review-b1.test.js`, `review-s1.test.js`, `review-s2.test.js` (8 тестов, все падают: тесты записывают правильное ожидание, они закоммичены красными намеренно; после исправления станут зелёными).
+- Итог review: P1 — 0, P2 — 7 (B-1, S-1…S-6), P3 — 10. Воспроизведены тестами `tests/review-b1.test.js`, `review-s1.test.js`, `review-s2.test.js` (8 тестов). Тесты записывают правильное ожидание и помечены `test.failing`: они проходят, пока дефект не исправлен. Исправивший дефект снимает `.failing` с его теста (иначе тест упадёт).
 
 ## 2. Находки Basic
 
@@ -123,4 +123,4 @@
 | S3 | `cards.js`, `canvas.js`, `state.js`, `stage-card.js`, `basic-windows.md` | принят | цитаты: cards 24, 70, 94–97, 401; canvas 27, 35, 299–301; stage-card 172; basic-windows 18, 139 |
 | S4a | `CONTRACT.md` 49–103 ↔ `stand.js` | принят | цитаты: stand 28, 54, 211, 383, 517, 521, 732; версия 48 |
 | S4b | `README.md`, `model-prompt.md`, `CONTRACT.md` 1–48, 104–149 | принят | grep «назад/Возврат/goto» по `basic-export.js`, `stand.js` — пусто; цитаты stand 983, 1058, 1184, 1293, 1298 |
-| R | `tests/review-b1/s1/s2.test.js` | принят | перезапуск: 3 набора, 8 тестов падают; ассерты читал целиком |
+| R | `tests/review-b1/s1/s2.test.js` | принят | перезапуск: без `.failing` падали все 8 тестов; с `test.failing` — 8 проходят; ассерты читал целиком |
