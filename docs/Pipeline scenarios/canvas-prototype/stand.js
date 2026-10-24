@@ -6,7 +6,7 @@
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '48';
+  const STAND_VERSION = '49';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -737,7 +737,7 @@
       html += columnHtml(col, k, k > 0 ? cols[k - 1].step.id : '');
     });
     const per = Math.max(0, (stand.inDocs || []).length, ...cols.map((col) => listOf(col.step.artifacts).length));
-    root.style.setProperty('--proto-art-zone', per ? `${per * 28 + 6}px` : '0px');
+    root.style.setProperty('--proto-art-zone', per ? '34px' : '0px');
     root.style.paddingTop = artifactLinks().length ? `${12 + artifactLinks().length * 6}px` : '';
     root.innerHTML = html;
     // Шапка (число раундов, предел слов, Auto) — как у холста, из ProtoState.
@@ -789,7 +789,7 @@
       const slot = slots.get(link.from) || 0; slots.set(link.from, slot + 1);
       const xv = c.r + 6 + slot * 4;
       const lane = 6 + i * 6;
-      const path = `M ${a.r} ${a.cy} H ${xv} V ${lane} H ${t.cx} V ${t.t - 2}`;
+      const path = `M ${a.cx} ${a.t} V ${a.t - 4} H ${xv} V ${lane} H ${t.cx} V ${t.t - 2}`;
       html += `<path d="${path}" class="proto-art-line"/><path d="M ${t.cx - 4} ${t.t - 7} L ${t.cx} ${t.t - 1} L ${t.cx + 4} ${t.t - 7}" class="proto-art-line"/>`;
     });
     root.insertAdjacentHTML('afterbegin', `<svg class="proto-art-svg" width="${root.scrollWidth}" height="${root.scrollHeight}" aria-hidden="true">${html}</svg>`);
