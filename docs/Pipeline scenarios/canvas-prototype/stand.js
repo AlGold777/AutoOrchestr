@@ -6,7 +6,7 @@
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '56';
+  const STAND_VERSION = '57';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -727,7 +727,7 @@
     const inDesc = (stand.inDocs || []).map((d) => `${d.title} (${docKind(d)}) — ${artDesc(d.src) || NO_DESC}`).join('\n');
     const inTip = tipAttrs('In · исходные артефакты', inDesc || (own(stand.schema?.description) ? cut(stand.schema.description, 400) : ''));
     let html = `<div class="stage-column entry-column"${inTip}>
-        <button type="button" class="proto-arrows-toggle" id="protoArrowsToggle" aria-pressed="${stand.arrows !== false}">Arrows</button>
+        <button type="button" class="proto-arrows-toggle" id="protoArrowsToggle" aria-pressed="${stand.arrows !== false}" aria-label="Arrows" title="Стрелки артефактов"><svg viewBox="0 0 16 14" aria-hidden="true"><path d="M2 3h9M8.5 0.5 11 3 8.5 5.5"/><path d="M2 7h9M8.5 4.5 11 7 8.5 9.5"/><path d="M2 11h9M8.5 8.5 11 11 8.5 13.5"/></svg></button>
         <div class="stage-label"${inTip}><span class="entry-badge">In</span></div>
         <div class="proto-art-zone">${docChips(-1)}</div>
         <div class="entry-wrapper" id="entryWrapper"><div class="entry-point" id="entryPoint"${tipAttrs('▶ Общие значения', own(stand.schema?.description) ? cut(stand.schema.description, 400) : '')} style="cursor:pointer">▶</div></div>
@@ -740,6 +740,7 @@
     const per = Math.max(0, (stand.inDocs || []).length, ...cols.map((col) => listOf(col.step.artifacts).length));
     root.style.setProperty('--proto-art-zone', per ? '34px' : '0px');
     root.style.paddingTop = arrowsPadding();
+    root.style.paddingLeft = '36px';
     root.innerHTML = html;
     // Шапка (число раундов, предел слов, Auto) — как у холста, из ProtoState.
     canvas().syncChrome?.();
