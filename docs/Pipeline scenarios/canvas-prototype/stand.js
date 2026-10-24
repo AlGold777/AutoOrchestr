@@ -6,7 +6,7 @@
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '54';
+  const STAND_VERSION = '55';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -908,8 +908,8 @@
         stand.arrows = stand.arrows === false;
         arrows.setAttribute('aria-pressed', String(stand.arrows));
         // Верхний отступ под полосу стрелок плавно меняется (CSS transition); стрелки и связи перерисуются по его окончании.
-        root.querySelector(':scope > .proto-art-svg')?.remove();
-        root.style.paddingTop = arrowsPadding();
+        flow.querySelector(':scope > .proto-art-svg')?.remove();
+        flow.style.paddingTop = arrowsPadding();
         return;
       }
       const art = t.closest('.proto-art');
