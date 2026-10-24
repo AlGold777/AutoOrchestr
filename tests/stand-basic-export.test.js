@@ -84,4 +84,56 @@ describe('Stand ↔ Basic exchange', () => {
     expect(warnings.some((w) => w.includes('s2'))).toBe(true);
     expect(Schema.validate(basic)).toEqual([]);
   });
+
+  test('S-4/S-5: модель стенда с enabled:false уходит в Basic с enabled:false и проходит проверку', () => {
+    const { schema: basic } = Exchange.toBasic({ task: 'T', steps: [
+      { id: 's1', block: 'round', title: 'R', why: 'w', task: 'Сделай', models: [{ name: 'Claude', enabled: false }, { name: 'GPT' }] }] });
+    expect(basic.steps[0].models[0].enabled).toBe(false);
+    expect(Schema.validate(basic)).toEqual([]);
+  });
+
+  test('S-5: без input второй раунд Basic берёт предыдущий шаг', () => {
+    const { schema } = Exchange.fromBasic({ schemaVersion: 1, origin: 'user', steps: [
+      { ref: 'r1', kind: 'round', models: [{ name: 'Claude' }] },
+      { ref: 'r2', kind: 'round', models: [{ name: 'GPT' }] }] });
+    expect(schema.steps[1].inputs).toEqual(['s1']);
+  });
+
+  test('S-5: input "previous" берёт предыдущий шаг', () => {
+    const { schema } = Exchange.fromBasic({ schemaVersion: 1, origin: 'user', steps: [
+      { ref: 'r1', kind: 'round', models: [{ name: 'Claude' }] },
+      { ref: 'r2', kind: 'round', input: 'previous', models: [{ name: 'GPT' }] }] });
+    expect(schema.steps[1].inputs).toEqual(['s1']);
+  });
+
+  test('S-5: input "all" берёт все шаги выше', () => {
+    const { schema } = Exchange.fromBasic({ schemaVersion: 1, origin: 'user', steps: [
+      { ref: 'r1', kind: 'round', models: [{ name: 'Claude' }] },
+      { ref: 'r2', kind: 'round', models: [{ name: 'GPT' }] },
+      { ref: 'r3', kind: 'round', input: 'all', models: [{ name: 'Gemini' }] }] });
+    expect(schema.steps[2].inputs).toEqual(['s1', 's2']);
+  });
+
+  test('S-5: input "none" не даёт поля inputs', () => {
+    const { schema } = Exchange.fromBasic({ schemaVersion: 1, origin: 'user', steps: [
+      { ref: 'r1', kind: 'round', models: [{ name: 'Claude' }] },
+      { ref: 'r2', kind: 'round', input: 'none', models: [{ name: 'GPT' }] }] });
+    expect('inputs' in schema.steps[1]).toBe(false);
+  });
+
+  test('S-5: круг Basic → стенд → Basic сохраняет связь раундов', () => {
+    const basic = { schemaVersion: 1, origin: 'user', steps: [
+      { ref: 'r1', kind: 'round', models: [{ name: 'Claude' }] },
+      { ref: 'r2', kind: 'round', models: [{ name: 'GPT' }] }] };
+    const back = Exchange.toBasic(Exchange.fromBasic(basic).schema).schema;
+    expect(back.steps[1].input).toEqual(['r1']);
+  });
+
+  test('S-5: вход на пропущенный route не остаётся висячей ссылкой', () => {
+    const { schema } = Exchange.fromBasic({ schemaVersion: 1, origin: 'user', steps: [
+      { ref: 'r1', kind: 'round', models: [{ name: 'Claude' }] },
+      { ref: 'route:x', kind: 'route', input: ['r1'], routes: [] },
+      { ref: 'r2', kind: 'round', input: ['route:x'], models: [{ name: 'GPT' }] }] });
+    expect(schema.steps.find((st) => st.id === 's3').inputs).toBeUndefined();
+  });
 });

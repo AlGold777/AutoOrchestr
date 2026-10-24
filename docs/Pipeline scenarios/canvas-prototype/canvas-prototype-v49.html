@@ -11154,20 +11154,7 @@ window.ProtoState = {
       && entry.source.step === address.step && entry.source.participant === address.participant && entry.source.visit === address.visit) || null;
   }
 
-  // Marks the versions that the predicate names as not current (valid false). The history stays: the entries are kept.
-  // Returns how many versions changed.
-  function markInvalid(registry, isStale) {
-    let changed = 0;
-    registry.entries.forEach((entry) => {
-      if (entry.valid && isStale(entry)) {
-        entry.valid = false;
-        changed += 1;
-      }
-    });
-    return changed;
-  }
-
-  const api = Object.freeze({ createRegistry, register, latest, version, lineKey, markInvalid });
+  const api = Object.freeze({ createRegistry, register, latest, version, lineKey });
   root.BasicArtifacts = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
@@ -11260,6 +11247,7 @@ window.ProtoState = {
   const specOf = (step, model) => (model && model.input !== undefined ? model.input : step.input);
   const numbered = (items) => items.map((item, index) => `Ответ ${index + 1}:\n${item.text}`).join('\n\n');
   const labelled = (items) => items.map((item) => `${item.label}:\n${item.text}`).join('\n\n');
+  const askOf = (model, askInstruction) => (askInstruction && typeof model.discipline?.ask === 'string' ? model.discipline.ask : askInstruction);
 
   // One inheritance rule; the round slot is reserved for a future round editor.
   function resolveSetting({ model, round, pipeline, fallback = '' } = {}) {
@@ -11283,7 +11271,7 @@ window.ProtoState = {
   }
 
   function buildPrompt({ task, step, model, input = [], inputMode = 'none', ownerAnswers = [], askInstruction = '', output = null }) {
-    if (askInstruction && typeof model.discipline?.ask === 'string') askInstruction = model.discipline.ask;
+    askInstruction = askOf(model, askInstruction);
     if (typeof model.promptTemplate === 'string' && model.promptTemplate.trim()) {
       // One pass: placeholders occurring inside model answers remain data, never instructions.
       const values = { '{задача}': text(task), '{вход}': inputMode === 'all' || inputMode === 'sources' ? labelled(input) : numbered(input) };
@@ -11774,7 +11762,7 @@ window.ProtoState = {
     // Instructions (owner-editable behaviour) and input (data from other models) are kept apart.
     function partsFor(step, model, input, spec) {
       return {
-        instructions: { task: text(task), stepTask: model.task ?? step.task, extra: model.extra || '', askInstruction: semiAuto ? (model.discipline?.ask ?? askInstruction) : '',
+        instructions: { task: text(task), stepTask: model.task ?? step.task, extra: model.extra || '', askInstruction: askOf(model, semiAuto ? askInstruction : ''),
           ownerAnswers: ownerAnswers.slice() },
         input: { mode: modeOf(spec), items: input }
       };
@@ -12228,7 +12216,7 @@ window.ProtoState = {
       : buildPrompt({ task: '{задача}', step, model, input: input.length ? [{ label: 'Вход', text: '{вход}' }] : [],
         inputMode: modeOf(spec), output: outputOf(step, model) });
     return { label: stepLabel(step), inputMode: modeOf(spec), prompt, template, transportLines: TRANSPORT_LINES.slice(),
-      instructions: { task: text(task), stepTask: model.task ?? step.task, extra: model.extra || '', askInstruction: semiAuto ? askInstruction : '' } };
+      instructions: { task: text(task), stepTask: model.task ?? step.task, extra: model.extra || '', askInstruction: askOf(model, semiAuto ? askInstruction : '') } };
   }
 
   const api = Object.freeze({ EngineError, unexecutedOf, formatBlock, DEFAULT_ATTEMPTS, CORRECTION_TEMPLATE, STOP_TEXT, REASON_TEXT, resolveSetting, PLACEHOLDER, TRANSPORT_LINES, buildPrompt, correctionPrompt, normalizeSteps, previewPrompt, run });
@@ -12660,7 +12648,7 @@ window.ProtoState = {
       if (Object.hasOwn(REMOVED_KIND_HINT, step.kind)) { fail(`${path}.kind`, `тип шага: допустимо ${KINDS.join(', ')}; ${REMOVED_KIND_HINT[step.kind]}`); return; }
       // A removed field (require, order) is named with what the round does now; any other unknown field is reported as such.
       Object.keys(REMOVED_FIELD_HINT).forEach((key) => { if (key in step) fail(`${path}.${key}`, REMOVED_FIELD_HINT[key]); });
-      unknownKeys(step, [...(STEP_KEYS[step.kind] || STEP_KEYS.round), ...Object.keys(REMOVED_FIELD_HINT)], path);
+      unknownKeys(step, [...(Object.hasOwn(STEP_KEYS, step.kind) ? STEP_KEYS[step.kind] : STEP_KEYS.round), ...Object.keys(REMOVED_FIELD_HINT)], path);
       if ('output' in step) {
         // A step's shared output is the answer of every author without its own; the owner is the author of its own.
         const inheriting = step.kind === 'owner' ? [{ id: 'owner' }] : (Array.isArray(step.models) ? step.models : []).filter((model) => isObject(model) && model.enabled !== false && !('output' in model));
@@ -12814,7 +12802,6 @@ window.ProtoState = {
   const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);
   const list = (v) => (Array.isArray(v) ? v : []);
   const idPart = (id, fallback) => (String(id || '').replace(/[^A-Za-z0-9_-]/g, '') || fallback);
-  const RUN_WORDS = [300, 500, 700, 1000];
   const MODEL_COPY = ['maxWords', 'discipline'];
 
   // Ссылка входа стенда ("s2" или "s3.Артефакт") → id этапа.
@@ -12840,6 +12827,7 @@ window.ProtoState = {
       const roleLine = own(m.role) && !roleId ? `Роль: ${m.role.trim()}.` : '';
       const task = [roleLine, own(m.task) ? m.task.trim() : ''].filter(Boolean).join('\n\n');
       const out = { name: String(m.name) };
+      if (m.enabled === false) out.enabled = false;
       if (roleId && roleId !== 'None') out.role = roleId;
       if (task) out.task = task;
       MODEL_COPY.forEach((k) => { if (m[k] !== undefined && m[k] !== '') out[k] = m[k]; });
@@ -12850,6 +12838,12 @@ window.ProtoState = {
       const ref = refs.get(st.id);
       if (!ref) { warnings.push(`Этап ${st.id || i + 1} (${st.block}) не перенесён: в Basic такого блока нет.`); return; }
       const input = inputRefs(st);
+      list(st.inputs).forEach((r) => {
+        const sid = stepOf(r);
+        if (sid === 'in') warnings.push(`Этап ${st.id}: вход «${r}» не перенесён: в Basic исходных артефактов нет.`);
+        else if (!refs.has(sid) && pos.has(sid)) warnings.push(`Этап ${st.id}: вход «${r}» не перенесён: этап ${sid} (${steps[pos.get(sid)].block}) в Basic не переносится.`);
+        else if (refs.has(sid) && String(r).includes('.')) warnings.push(`Этап ${st.id}: вход «${r}» перенесён как весь ответ этапа ${sid}: в Basic артефакт строкой не адресуется.`);
+      });
       const step = { ref, kind: st.block };
       if (st.block === 'round') {
         step.input = input.length ? input : 'none';
@@ -12880,7 +12874,7 @@ window.ProtoState = {
     if (isObj(schema.run)) {
       const run = {};
       if (['auto', 'manual'].includes(schema.run.policy)) run.policy = schema.run.policy;
-      if (RUN_WORDS.includes(schema.run.maxWords)) run.maxWords = schema.run.maxWords;
+      if (Number.isSafeInteger(schema.run.maxWords) && schema.run.maxWords > 0) run.maxWords = schema.run.maxWords;
       if (Object.keys(run).length) result.run = run;
     }
     result.steps = out;
@@ -12892,12 +12886,24 @@ window.ProtoState = {
     const warnings = [];
     const steps = list(basic?.steps).filter(isObj);
     const ids = new Map(steps.map((st, i) => [st.ref, `s${i + 1}`]));
-    const refList = (input) => (Array.isArray(input) ? [...new Set(input.map((x) => (typeof x === 'string' ? x : x?.step)).map((r) => ids.get(r)).filter(Boolean))] : []);
+    const MODEL_KINDS = ['round', 'gate', 'synthesis'];
+    const linkable = (st) => MODEL_KINDS.includes(st.kind) || st.kind === 'owner';
+    const refList = (input) => (Array.isArray(input) ? [...new Set(input.map((x) => (typeof x === 'string' ? x : x?.step)).map((r) => steps.find((st) => st.ref === r)).filter((st) => st && linkable(st)).map((st) => ids.get(st.ref)))] : []);
+    // «previous» — шаг перед этим, «all» — все шаги перед этим; раунд без input, кроме первого, берёт предыдущий шаг (умолчание Basic).
+    let modelSeen = 0;
+    const inputsOf = (st, i) => {
+      const spec = st.input === undefined && MODEL_KINDS.includes(st.kind) ? (modelSeen > 0 ? 'previous' : 'none') : st.input;
+      if (MODEL_KINDS.includes(st.kind)) modelSeen += 1;
+      const before = steps.slice(0, i).filter(linkable).map((x) => ids.get(x.ref));
+      if (spec === 'previous') return before.slice(-1);
+      if (spec === 'all') return before;
+      return refList(spec);
+    };
     const out = [];
     steps.forEach((st, i) => {
       const id = ids.get(st.ref);
       const step = { id, block: st.kind, title: own(st.title) ? st.title : String(st.ref), why: own(st.goal) ? st.goal : 'Из схемы Basic' };
-      const inputs = refList(st.input);
+      const inputs = inputsOf(st, i);
       if (inputs.length) step.inputs = inputs;
       if (st.kind === 'round' || st.kind === 'gate') {
         if (st.kind === 'gate') {
@@ -12907,6 +12913,7 @@ window.ProtoState = {
         } else if (own(st.task)) step.task = st.task;
         step.models = list(st.models).filter((m) => isObj(m) && own(m.name)).map((m) => {
           const model = { name: m.name };
+          if (m.enabled === false) model.enabled = false;
           if (own(m.role) && m.role !== 'None') model.role = m.role;
           if (own(m.task)) model.task = m.task;
           MODEL_COPY.forEach((k) => { if (m[k] !== undefined && m[k] !== '') model[k] = m[k]; });
@@ -12955,7 +12962,7 @@ window.ProtoState = {
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '48';
+  const STAND_VERSION = '49';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -13000,7 +13007,7 @@ window.ProtoState = {
   };
   // Этапы приложения (без нейросети): в холсте помечаются словом «приложение».
   const APP_BLOCKS = ['file'];
-  const MODEL_KEYS = ['name', 'role', 'task', 'maxWords', 'discipline'];
+  const MODEL_KEYS = ['name', 'role', 'task', 'maxWords', 'discipline', 'enabled'];
   const MODEL_NAMES = ['Claude', 'GPT', 'Gemini', 'Grok', 'Le Chat', 'Qwen', 'DeepSeek', 'Perplexity', 'Z.ai', 'Kimi'];
   const ENUMS = { mode: ['overwrite', 'append'] };
   const LABELS = {
@@ -13318,6 +13325,7 @@ window.ProtoState = {
   function checkOwnFields(owner, where, key, add) {
     checkWords(owner, where, key, add);
     checkDiscipline(owner.discipline, where, key, add);
+    if (owner.enabled != null && typeof owner.enabled !== 'boolean') add('warn', key, `${where}enabled должен быть true или false; не применён.`);
   }
   // Исходные артефакты (верхнеуровневый artifacts): name и content или attachment.
   function checkSources(schema, add) {
@@ -13485,7 +13493,7 @@ window.ProtoState = {
           models: listOf(st.models).filter((m) => m && typeof m === 'object').map((m) => {
             const id = roleIdOf(m.role);
             const roleLine = own(m.role) && !id ? `Роль: ${m.role.trim()}.` : '';
-            return { name: String(m.name || '?'), enabled: true, send: true, role: id || 'None', schemaRole: own(m.role) ? m.role.trim() : '', schemaTask: own(m.task) ? m.task.trim() : '',
+            return { name: String(m.name || '?'), enabled: m.enabled !== false, role: id || 'None', schemaRole: own(m.role) ? m.role.trim() : '', schemaTask: own(m.task) ? m.task.trim() : '',
               task: [roleLine, own(m.task) ? m.task.trim() : ''].filter(Boolean).join('\n\n'), ...ownFields(m) };
           }),
           artifacts: listOf(st.artifacts).map((a, k) => ({ id: `${st.id}-a${k + 1}`, title: artName(a), version: 1 }))
@@ -13617,7 +13625,6 @@ window.ProtoState = {
   };
   const modelBlock = (model, index, round) => {
     const on = model.enabled !== false;
-    const send = on && model.send !== false;
     const options = ROLE_OPTIONS.map(([value, label]) => {
       const text = value === 'None' && model.schemaRole && !roleIdOf(model.schemaRole) ? model.schemaRole : label;
       return `<option value="${esc(value)}"${(model.role || 'None') === value ? ' selected' : ''}>${esc(text)}</option>`;
@@ -13626,9 +13633,7 @@ window.ProtoState = {
         <div class="model-header">
           <span class="status-indicator" data-llm-name="${esc(model.name)}"></span>
           <input type="checkbox" class="model-checkbox model-input-checkbox"${on ? ' checked' : ''} aria-label="Input" title="Input">
-          <span class="model-name">${esc(model.name)}</span>
-          <input type="checkbox" class="model-checkbox model-send-checkbox"${send ? ' checked' : ''}${on ? '' : ' disabled'} aria-label="Send" title="Send">
-        </div>
+          <span class="model-name">${esc(model.name)}</span>        </div>
         <select class="role-selector judge-prompt-selector"${on ? '' : ' disabled'}>${options}</select>
       </div>`;
   };
@@ -13713,7 +13718,7 @@ window.ProtoState = {
     if (cols.length) canvas().drawInputSplitConnector?.('svg-in-models', 'stand-stack-0', 'active', mode(cols[0], 'input'));
     for (let k = 1; k < cols.length; k++) {
       const color = linksTo(cols[k].step, cols[k - 1].step.id) ? 'brain-flow' : 'inactive';
-      canvas().drawMergeSplitConnector?.(`stand-svg-${k}`, `stand-stack-${k - 1}`, `stand-stack-${k}`, color, { sourceMode: mode(cols[k - 1], 'send'), targetMode: mode(cols[k], 'input') });
+      canvas().drawMergeSplitConnector?.(`stand-svg-${k}`, `stand-stack-${k - 1}`, `stand-stack-${k}`, color, { sourceMode: mode(cols[k - 1], 'input'), targetMode: mode(cols[k], 'input') });
     }
       drawArtifactLinks();
   }

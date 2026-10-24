@@ -1,16 +1,15 @@
 const Exchange = require('../docs/Pipeline scenarios/canvas-prototype/basic-export');
 
 describe('review S2: Import файла Basic на стенд не теряет молча', () => {
-  // test.failing: дефект S-4 не исправлен; при исправлении тест упадёт — снять .failing
-  test.failing('модель с enabled:false не становится включённой без замечания', () => {
+  test('модель с enabled:false не становится включённой без замечания', () => {
     const { schema, warnings } = Exchange.fromBasic({ schemaVersion: 1, origin: 'user', steps: [
       { ref: 'r1', kind: 'round', models: [{ name: 'Claude', enabled: false }, { name: 'GPT' }] }] });
-    const names = schema.steps[0].models.map((m) => m.name);
-    expect(!names.includes('Claude') || warnings.some((w) => w.includes('Claude'))).toBe(true);
+    const claude = schema.steps[0].models.find((m) => m.name === 'Claude');
+    expect(claude && claude.enabled === false).toBe(true);
+    expect(warnings).toEqual([]);
   });
 
-  // test.failing: дефект S-5 не исправлен; при исправлении тест упадёт — снять .failing
-  test.failing('input "all" шага Basic не пропадает без замечания', () => {
+  test('input "all" шага Basic не пропадает без замечания', () => {
     const { schema, warnings } = Exchange.fromBasic({ schemaVersion: 1, origin: 'user', steps: [
       { ref: 'r1', kind: 'round', models: [{ name: 'Claude' }] },
       { ref: 'r2', kind: 'round', input: 'all', models: [{ name: 'GPT' }] }] });

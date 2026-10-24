@@ -6,7 +6,7 @@
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '48';
+  const STAND_VERSION = '49';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -51,7 +51,7 @@
   };
   // Этапы приложения (без нейросети): в холсте помечаются словом «приложение».
   const APP_BLOCKS = ['file'];
-  const MODEL_KEYS = ['name', 'role', 'task', 'maxWords', 'discipline'];
+  const MODEL_KEYS = ['name', 'role', 'task', 'maxWords', 'discipline', 'enabled'];
   const MODEL_NAMES = ['Claude', 'GPT', 'Gemini', 'Grok', 'Le Chat', 'Qwen', 'DeepSeek', 'Perplexity', 'Z.ai', 'Kimi'];
   const ENUMS = { mode: ['overwrite', 'append'] };
   const LABELS = {
@@ -369,6 +369,7 @@
   function checkOwnFields(owner, where, key, add) {
     checkWords(owner, where, key, add);
     checkDiscipline(owner.discipline, where, key, add);
+    if (owner.enabled != null && typeof owner.enabled !== 'boolean') add('warn', key, `${where}enabled должен быть true или false; не применён.`);
   }
   // Исходные артефакты (верхнеуровневый artifacts): name и content или attachment.
   function checkSources(schema, add) {
@@ -536,7 +537,7 @@
           models: listOf(st.models).filter((m) => m && typeof m === 'object').map((m) => {
             const id = roleIdOf(m.role);
             const roleLine = own(m.role) && !id ? `Роль: ${m.role.trim()}.` : '';
-            return { name: String(m.name || '?'), enabled: true, send: true, role: id || 'None', schemaRole: own(m.role) ? m.role.trim() : '', schemaTask: own(m.task) ? m.task.trim() : '',
+            return { name: String(m.name || '?'), enabled: m.enabled !== false, role: id || 'None', schemaRole: own(m.role) ? m.role.trim() : '', schemaTask: own(m.task) ? m.task.trim() : '',
               task: [roleLine, own(m.task) ? m.task.trim() : ''].filter(Boolean).join('\n\n'), ...ownFields(m) };
           }),
           artifacts: listOf(st.artifacts).map((a, k) => ({ id: `${st.id}-a${k + 1}`, title: artName(a), version: 1 }))
@@ -668,7 +669,6 @@
   };
   const modelBlock = (model, index, round) => {
     const on = model.enabled !== false;
-    const send = on && model.send !== false;
     const options = ROLE_OPTIONS.map(([value, label]) => {
       const text = value === 'None' && model.schemaRole && !roleIdOf(model.schemaRole) ? model.schemaRole : label;
       return `<option value="${esc(value)}"${(model.role || 'None') === value ? ' selected' : ''}>${esc(text)}</option>`;
@@ -677,9 +677,7 @@
         <div class="model-header">
           <span class="status-indicator" data-llm-name="${esc(model.name)}"></span>
           <input type="checkbox" class="model-checkbox model-input-checkbox"${on ? ' checked' : ''} aria-label="Input" title="Input">
-          <span class="model-name">${esc(model.name)}</span>
-          <input type="checkbox" class="model-checkbox model-send-checkbox"${send ? ' checked' : ''}${on ? '' : ' disabled'} aria-label="Send" title="Send">
-        </div>
+          <span class="model-name">${esc(model.name)}</span>        </div>
         <select class="role-selector judge-prompt-selector"${on ? '' : ' disabled'}>${options}</select>
       </div>`;
   };
@@ -764,7 +762,7 @@
     if (cols.length) canvas().drawInputSplitConnector?.('svg-in-models', 'stand-stack-0', 'active', mode(cols[0], 'input'));
     for (let k = 1; k < cols.length; k++) {
       const color = linksTo(cols[k].step, cols[k - 1].step.id) ? 'brain-flow' : 'inactive';
-      canvas().drawMergeSplitConnector?.(`stand-svg-${k}`, `stand-stack-${k - 1}`, `stand-stack-${k}`, color, { sourceMode: mode(cols[k - 1], 'send'), targetMode: mode(cols[k], 'input') });
+      canvas().drawMergeSplitConnector?.(`stand-svg-${k}`, `stand-stack-${k - 1}`, `stand-stack-${k}`, color, { sourceMode: mode(cols[k - 1], 'input'), targetMode: mode(cols[k], 'input') });
     }
       drawArtifactLinks();
   }

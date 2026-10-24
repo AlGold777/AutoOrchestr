@@ -10,7 +10,6 @@
   const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);
   const list = (v) => (Array.isArray(v) ? v : []);
   const idPart = (id, fallback) => (String(id || '').replace(/[^A-Za-z0-9_-]/g, '') || fallback);
-  const RUN_WORDS = [300, 500, 700, 1000];
   const MODEL_COPY = ['maxWords', 'discipline'];
 
   // Ссылка входа стенда ("s2" или "s3.Артефакт") → id этапа.
@@ -36,6 +35,7 @@
       const roleLine = own(m.role) && !roleId ? `Роль: ${m.role.trim()}.` : '';
       const task = [roleLine, own(m.task) ? m.task.trim() : ''].filter(Boolean).join('\n\n');
       const out = { name: String(m.name) };
+      if (m.enabled === false) out.enabled = false;
       if (roleId && roleId !== 'None') out.role = roleId;
       if (task) out.task = task;
       MODEL_COPY.forEach((k) => { if (m[k] !== undefined && m[k] !== '') out[k] = m[k]; });
@@ -46,6 +46,12 @@
       const ref = refs.get(st.id);
       if (!ref) { warnings.push(`Этап ${st.id || i + 1} (${st.block}) не перенесён: в Basic такого блока нет.`); return; }
       const input = inputRefs(st);
+      list(st.inputs).forEach((r) => {
+        const sid = stepOf(r);
+        if (sid === 'in') warnings.push(`Этап ${st.id}: вход «${r}» не перенесён: в Basic исходных артефактов нет.`);
+        else if (!refs.has(sid) && pos.has(sid)) warnings.push(`Этап ${st.id}: вход «${r}» не перенесён: этап ${sid} (${steps[pos.get(sid)].block}) в Basic не переносится.`);
+        else if (refs.has(sid) && String(r).includes('.')) warnings.push(`Этап ${st.id}: вход «${r}» перенесён как весь ответ этапа ${sid}: в Basic артефакт строкой не адресуется.`);
+      });
       const step = { ref, kind: st.block };
       if (st.block === 'round') {
         step.input = input.length ? input : 'none';
@@ -76,7 +82,7 @@
     if (isObj(schema.run)) {
       const run = {};
       if (['auto', 'manual'].includes(schema.run.policy)) run.policy = schema.run.policy;
-      if (RUN_WORDS.includes(schema.run.maxWords)) run.maxWords = schema.run.maxWords;
+      if (Number.isSafeInteger(schema.run.maxWords) && schema.run.maxWords > 0) run.maxWords = schema.run.maxWords;
       if (Object.keys(run).length) result.run = run;
     }
     result.steps = out;
@@ -88,12 +94,24 @@
     const warnings = [];
     const steps = list(basic?.steps).filter(isObj);
     const ids = new Map(steps.map((st, i) => [st.ref, `s${i + 1}`]));
-    const refList = (input) => (Array.isArray(input) ? [...new Set(input.map((x) => (typeof x === 'string' ? x : x?.step)).map((r) => ids.get(r)).filter(Boolean))] : []);
+    const MODEL_KINDS = ['round', 'gate', 'synthesis'];
+    const linkable = (st) => MODEL_KINDS.includes(st.kind) || st.kind === 'owner';
+    const refList = (input) => (Array.isArray(input) ? [...new Set(input.map((x) => (typeof x === 'string' ? x : x?.step)).map((r) => steps.find((st) => st.ref === r)).filter((st) => st && linkable(st)).map((st) => ids.get(st.ref)))] : []);
+    // «previous» — шаг перед этим, «all» — все шаги перед этим; раунд без input, кроме первого, берёт предыдущий шаг (умолчание Basic).
+    let modelSeen = 0;
+    const inputsOf = (st, i) => {
+      const spec = st.input === undefined && MODEL_KINDS.includes(st.kind) ? (modelSeen > 0 ? 'previous' : 'none') : st.input;
+      if (MODEL_KINDS.includes(st.kind)) modelSeen += 1;
+      const before = steps.slice(0, i).filter(linkable).map((x) => ids.get(x.ref));
+      if (spec === 'previous') return before.slice(-1);
+      if (spec === 'all') return before;
+      return refList(spec);
+    };
     const out = [];
     steps.forEach((st, i) => {
       const id = ids.get(st.ref);
       const step = { id, block: st.kind, title: own(st.title) ? st.title : String(st.ref), why: own(st.goal) ? st.goal : 'Из схемы Basic' };
-      const inputs = refList(st.input);
+      const inputs = inputsOf(st, i);
       if (inputs.length) step.inputs = inputs;
       if (st.kind === 'round' || st.kind === 'gate') {
         if (st.kind === 'gate') {
@@ -103,6 +121,7 @@
         } else if (own(st.task)) step.task = st.task;
         step.models = list(st.models).filter((m) => isObj(m) && own(m.name)).map((m) => {
           const model = { name: m.name };
+          if (m.enabled === false) model.enabled = false;
           if (own(m.role) && m.role !== 'None') model.role = m.role;
           if (own(m.task)) model.task = m.task;
           MODEL_COPY.forEach((k) => { if (m[k] !== undefined && m[k] !== '') model[k] = m[k]; });

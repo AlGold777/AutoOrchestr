@@ -40,21 +40,21 @@
 
 ## 3. Находки стенда
 
-**S-1 P2 — Export теряет `run.maxWords` вне {300, 500, 700, 1000} без предупреждения.**
+**S-1 P2 (исправлено в стенде v49) — Export теряет `run.maxWords` вне {300, 500, 700, 1000} без предупреждения.**
 - Где: `basic-export.js:13` (`const RUN_WORDS = [300, 500, 700, 1000];`), `:79` (`if (RUN_WORDS.includes(schema.run.maxWords))`). Basic принимает любое целое > 0 (`basic-schema.js:294`), стенд при Apply только предупреждает (`stand.js:364`).
 - Условие: `{"task":"T","run":{"maxWords":800},"steps":[…]}`. Файл Basic не содержит `run`, предупреждения нет.
 - Доказательство: `tests/review-s1.test.js`, тест 1 (падает: Expected true, Received false).
 
-**S-2 P2 — вход на этап `file` при Export молча превращается в `input: "none"`.**
+**S-2 P2 (исправлено в стенде v49) — вход на этап `file` при Export молча превращается в `input: "none"`.**
 - Где: `basic-export.js:32` (фильтр `pos.get(id) < pos.get(st.id)` отбрасывает ссылку на непереносимый шаг), `:51` (`step.input = input.length ? input : 'none';`), `:47` (предупреждение только про сам `file`).
 - Условие: `[file s1, round s2 inputs:["s1"]]`. Раунд теряет вход, предупреждения о разорванной связи нет.
 - Доказательство: `tests/review-s1.test.js`, тест 2 (падает; запуск показал `warnings: ["Этап s1 (file) не перенесён…"]` и `input: "none"`).
 
-**S-3 P2 — ссылка `"s1.Артефакт"` при Export молча превращается во весь ответ этапа `r1`.** `basic-export.js:17` — `const stepOf = (ref) => String(ref).split('.')[0];`. Basic строкой артефакт адресовать не умеет (`basic-schema.js:196`), поэтому перенос даёт либо весь ответ, либо ничего; предупреждения нет. Доказательство: `tests/review-s1.test.js`, тест 3 (падает на проверке предупреждения).
+**S-3 P2 (исправлено в стенде v49) — ссылка `"s1.Артефакт"` при Export молча превращается во весь ответ этапа `r1`.** `basic-export.js:17` — `const stepOf = (ref) => String(ref).split('.')[0];`. Basic строкой артефакт адресовать не умеет (`basic-schema.js:196`), поэтому перенос даёт либо весь ответ, либо ничего; предупреждения нет. Доказательство: `tests/review-s1.test.js`, тест 3 (падает на проверке предупреждения).
 
-**S-4 P2 — Import файла Basic включает модели с `enabled: false`.** `basic-export.js:105` — `const model = { name: m.name };` (копируются только `MODEL_COPY`); выключенная модель на стенде включена, предупреждения нет (запуск: `models: [{"name":"Claude"},{"name":"GPT"}]`, `warnings: []`). Доказательство: `tests/review-s2.test.js`, тест 1 (падает).
+**S-4 P2 (исправлено в стенде v49) — Import файла Basic включает модели с `enabled: false`.** `basic-export.js:105` — `const model = { name: m.name };` (копируются только `MODEL_COPY`); выключенная модель на стенде включена, предупреждения нет (запуск: `models: [{"name":"Claude"},{"name":"GPT"}]`, `warnings: []`). Доказательство: `tests/review-s2.test.js`, тест 1 (падает).
 
-**S-5 P2 — Import теряет `input` шага Basic в форме строки (`all`, `previous`) и умолчание «previous».** `basic-export.js:91` — `Array.isArray(input) ?`, иначе `[]`. Раунд Basic без `input` (по умолчанию `previous`) или с `input: "all"` после Import не имеет `inputs`; при следующем Export он получает `input: "none"` (`:51`). Круговой обмен Basic → стенд → Basic молча меняет смысл схемы. Запуск: `input: "all"` → шаг без `inputs`, `warnings: []`. Доказательство: `tests/review-s2.test.js`, тест 2 (падает).
+**S-5 P2 (исправлено в стенде v49) — Import теряет `input` шага Basic в форме строки (`all`, `previous`) и умолчание «previous».** `basic-export.js:91` — `Array.isArray(input) ?`, иначе `[]`. Раунд Basic без `input` (по умолчанию `previous`) или с `input: "all"` после Import не имеет `inputs`; при следующем Export он получает `input: "none"` (`:51`). Круговой обмен Basic → стенд → Basic молча меняет смысл схемы. Запуск: `input: "all"` → шаг без `inputs`, `warnings: []`. Доказательство: `tests/review-s2.test.js`, тест 2 (падает).
 
 **S-6 P2 — превью запроса на стенде не добавляет задание раунда при входе «ничего».** `cards.js:96` — `if (step.input !== 'none' && own(task)) parts.push(…)`. Движок всегда добавляет «Задание» из `step.task` (`custom-engine.js:127-128`), окно приложения прямо говорит: при входе «ничего» отправляется только задание из этого окна (`results/stage-card.js:172`; `basic-windows.md:18`). Автор по стенду увидит запрос без задания. Исполнитель S3 дал цитаты обеих сторон; прогнано чтением, тест не писался (окна стенда требуют DOM).
 
