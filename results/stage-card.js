@@ -387,13 +387,17 @@
 
   // The window of an owner (6.1 of the spec, 8.1): the task the owner has to provide and the output of the step (as the round
   // windows have it). The input of an owner is not edited here; it stays as the schema has it.
-  function ownerWindowModel(step = {}, { disabled = false } = {}) {
+  function ownerWindowModel(step = {}, { disabled = false, documentSources = [] } = {}) {
     const output = isPlain(step.output) ? step.output : {};
     return {
       ref: String(step.ref || ''),
       disabled: Boolean(disabled),
       goal: typeof step.goal === 'string' ? step.goal : '',
       task: typeof step.task === 'string' ? step.task : '',
+      document: {
+        value: typeof step.document === 'string' ? step.document : '',
+        sources: documentSources.map(({ ref, label, declared }) => ({ ref: String(ref), label: String(label), declared: declared === true }))
+      },
       output: {
         name: String(output.name || ''),
         form: String(output.form || ''),
@@ -412,6 +416,9 @@
     } else if (edit.field === 'task') {
       if (String(edit.value || '').trim()) next.task = String(edit.value);
       else delete next.task;
+    } else if (edit.field === 'document') {
+      if (String(edit.value || '').trim()) next.document = String(edit.value).trim();
+      else delete next.document;
     } else if (edit.field === 'output') {
       const output = outputAfterEdit(step.output, edit.value);
       if (Object.keys(output).length) next.output = output;
@@ -439,6 +446,29 @@
     const taskWrap = el(doc, 'label', 'stage-card-setting stage-card-owner-task-label');
     taskWrap.append(doc.createTextNode('Что должен предоставить User '), task);
     container.append(taskWrap);
+
+    const documentSelect = el(doc, 'select', 'stage-card-owner-document');
+    const noneOption = el(doc, 'option', '', 'нет');
+    noneOption.value = '';
+    documentSelect.append(noneOption);
+    model.document.sources.forEach((source) => {
+      const option = el(doc, 'option', '', source.label);
+      option.value = source.ref;
+      documentSelect.append(option);
+    });
+    if (model.document.value && !model.document.sources.some((source) => source.ref === model.document.value)) {
+      const missing = el(doc, 'option', '', `${model.document.value} (недоступен)`);
+      missing.value = model.document.value;
+      documentSelect.append(missing);
+    }
+    documentSelect.value = model.document.value;
+    documentSelect.disabled = Boolean(model.disabled);
+    documentSelect.setAttribute('aria-label', 'Документ для User');
+    documentSelect.addEventListener('change', () => send({ field: 'document', value: documentSelect.value }));
+    const documentWrap = el(doc, 'label', 'stage-card-setting stage-card-owner-document-label');
+    documentWrap.append(doc.createTextNode('Документ для User '), documentSelect);
+    container.append(documentWrap);
+    container.append(el(doc, 'p', 'stage-card-muted', 'Раунд выше с одной моделью. Вид документа задаёт output.document раунда: read — для чтения, form — опросник.'));
 
     const output = model.output;
     const group = el(doc, 'section', 'stage-card-output');

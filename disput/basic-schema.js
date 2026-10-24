@@ -43,7 +43,7 @@
   // The fields a step of each kind may have (an unknown field is an error with its path).
   const STEP_KEYS = Object.freeze({
     round: Object.freeze(['ref', 'kind', 'input', 'task', 'models', 'output', 'owner', 'chat', ...STEP_TEXT_KEYS]),
-    owner: Object.freeze(['ref', 'kind', 'task', 'input', 'output', 'models', ...STEP_TEXT_KEYS])
+    owner: Object.freeze(['ref', 'kind', 'task', 'input', 'output', 'models', 'document', ...STEP_TEXT_KEYS])
   });
   const CONTROL_REF = Object.freeze({
     owner: 'ref User: «owner:<id>», id — латинские буквы, цифры, «_» и «-»'
@@ -116,6 +116,7 @@
     if ('input' in step) out.input = clone(step.input);
     if ('output' in step) out.output = clone(step.output);
     if (typeof step.task === 'string') out.task = step.task;
+    if (typeof step.document === 'string') out.document = step.document;
     return { ...out, models: [] };
   }
 
@@ -348,10 +349,14 @@
     // `authors` are the participants whose revisions the output declares: { id, input? } (the owner is its own author).
     const checkOutput = (output, path, step, index, authors) => {
       if (!isObject(output)) { fail(path, 'ожидается объект'); return; }
-      unknownKeys(output, ['name', 'form', 'sections', 'strictLength', 'format', 'requiredFields', 'artifacts'], path);
+      unknownKeys(output, ['name', 'form', 'sections', 'strictLength', 'format', 'requiredFields', 'artifacts', 'document'], path);
       ['name', 'form'].forEach((key) => { if (key in output) text(output[key], `${path}.${key}`); });
       if ('strictLength' in output && typeof output.strictLength !== 'boolean') fail(`${path}.strictLength`, 'ожидается true или false');
       if ('format' in output) oneOf(output.format, OUTPUT_FORMATS, `${path}.format`, 'формат выхода');
+      if ('document' in output) {
+        oneOf(output.document, ['read', 'form'], `${path}.document`, 'вид документа');
+        if (output.document === 'form' && output.format !== 'json') fail(`${path}.document`, 'опросник — формат json: укажите format: "json"');
+      }
       const json = output.format === 'json';
       if ('sections' in output) {
         if (json) fail(`${path}.sections`, 'в формате json заголовки не проверяются: укажите requiredFields');
@@ -407,10 +412,22 @@
       });
     };
 
-    // An owner step (4.1): its task, and no models.
-    const checkControl = (step, path) => {
+    // An owner step (4.1): its task, and no models. Its document is the ref of an earlier round with one model that declares it.
+    const checkControl = (step, path, index) => {
       if (typeof step.task !== 'string' || !step.task.trim()) fail(`${path}.task`, 'задание User: непустой текст');
       if (Array.isArray(step.models) && step.models.length) fail(`${path}.models`, 'у User нет моделей');
+      if (!('document' in step)) return;
+      const at = `${path}.document`;
+      if (typeof step.document !== 'string' || !step.document) { fail(at, 'ожидается ref раунда'); return; }
+      const position = schema.steps.findIndex((s) => isObject(s) && s.ref === step.document);
+      if (position === -1) { fail(at, `неизвестный шаг «${step.document}»`); return; }
+      if (position >= index) { fail(at, 'документ: только более ранний раунд'); return; }
+      const source = schema.steps[position];
+      if (source.kind !== 'round') { fail(at, 'источник документа — раунд'); return; }
+      const enabled = (Array.isArray(source.models) ? source.models : []).filter((model) => isObject(model) && model.enabled !== false);
+      if (enabled.length !== 1) { fail(at, 'документ для User даёт одна модель'); return; }
+      const output = isObject(enabled[0].output) ? enabled[0].output : source.output;
+      if (!(isObject(output) && ['read', 'form'].includes(output.document))) fail(at, `в выходе раунда «${source.ref}» не объявлен вид документа: output.document — read или form`);
     };
 
     schema.steps.forEach((step, index) => {
@@ -463,7 +480,7 @@
         if ('maxWords' in model && !(Number.isSafeInteger(model.maxWords) && model.maxWords > 0)) fail(`${modelPath}.maxWords`, 'ожидается положительное целое число слов');
         if ('discipline' in model) checkDiscipline(model.discipline, `${modelPath}.discipline`);
       });
-      if (CONTROL_KINDS.includes(step.kind)) checkControl(step, path);
+      if (CONTROL_KINDS.includes(step.kind)) checkControl(step, path, index);
     });
     errors.push(...executabilityErrors(schema.steps));
     return errors;

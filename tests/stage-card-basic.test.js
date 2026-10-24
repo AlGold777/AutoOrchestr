@@ -258,3 +258,51 @@ describe('Owner goal (Назначение этапа) and the owner question', 
     expect(seen[0]).toEqual({ field: 'goal', value: 'Новая цель' });
   });
 });
+
+describe('Этап 1: документ для User в окне владельца', () => {
+  const owner = { ref: 'owner:9', kind: 'owner', models: [], task: 'Утвердите текст' };
+  const sources = [{ ref: 'r1', label: 'r1 · GPT', declared: true }, { ref: 'r2', label: 'r2 · Claude (вид документа не объявлен)', declared: false }];
+
+  test('этап 1: ownerWindowModel отдаёт документ и его источники; без источников — пусто', () => {
+    expect(StageCard.ownerWindowModel(owner).document).toEqual({ value: '', sources: [] });
+    expect(StageCard.ownerWindowModel({ ...owner, document: 'r1' }, { documentSources: sources }).document).toEqual({
+      value: 'r1',
+      sources: [{ ref: 'r1', label: 'r1 · GPT', declared: true }, { ref: 'r2', label: 'r2 · Claude (вид документа не объявлен)', declared: false }]
+    });
+  });
+
+  test('этап 1: ownerAfterEdit ставит документ; пустое значение или пробелы убирают поле, остальные поля не меняются', () => {
+    const step = { ...owner, goal: 'Цель', document: 'r1' };
+    expect(StageCard.ownerAfterEdit(step, { field: 'document', value: 'r2' })).toEqual({ ...step, document: 'r2' });
+    expect(StageCard.ownerAfterEdit(step, { field: 'document', value: '' })).not.toHaveProperty('document');
+    expect(StageCard.ownerAfterEdit(step, { field: 'document', value: '   ' })).not.toHaveProperty('document');
+    expect(StageCard.ownerAfterEdit(step, { field: 'document', value: '   ' }).goal).toBe('Цель');
+    expect(StageCard.ownerAfterEdit(step, { field: 'document', value: '   ' }).task).toBe('Утвердите текст');
+  });
+
+  test('этап 1: окно показывает select документа с «нет», источниками, недоступным значением и отправляет change', () => {
+    const container = document.createElement('div');
+    const seen = [];
+    StageCard.renderOwnerWindow(container, StageCard.ownerWindowModel({ ...owner, document: 'gone' }, { documentSources: sources }), (edit) => seen.push(edit));
+    const select = container.querySelector('select.stage-card-owner-document');
+    expect(select).not.toBeNull();
+    expect(select.getAttribute('aria-label')).toBe('Документ для User');
+    const options = Array.from(select.options);
+    expect(options[0].value).toBe('');
+    expect(options[0].textContent).toBe('нет');
+    expect(options.map((o) => o.value)).toEqual(['', 'r1', 'r2', 'gone']);
+    expect(options[1].textContent).toBe('r1 · GPT');
+    expect(options[3].textContent).toBe('gone (недоступен)');
+    expect(select.value).toBe('gone');
+    expect(container.textContent).toContain('Раунд выше с одной моделью. Вид документа задаёт output.document раунда: read — для чтения, form — опросник.');
+    select.value = 'r2';
+    select.dispatchEvent(new Event('change'));
+    expect(seen[seen.length - 1]).toEqual({ field: 'document', value: 'r2' });
+  });
+
+  test('этап 1: при disabled select выключен', () => {
+    const container = document.createElement('div');
+    StageCard.renderOwnerWindow(container, StageCard.ownerWindowModel({ ...owner, document: 'r1' }, { disabled: true, documentSources: sources }), () => {});
+    expect(container.querySelector('select.stage-card-owner-document').disabled).toBe(true);
+  });
+});

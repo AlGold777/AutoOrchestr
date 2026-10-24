@@ -1150,3 +1150,69 @@ describe('Basic schema: the default input is the previous step (B-2)', () => {
     expect(steps[0].input).toBe('none');
   });
 });
+
+describe('Basic schema: этап 1 — документ для User (document)', () => {
+  const srcRound = (extra = {}) => ({ ref: 'r1', kind: 'round', models: [{ name: 'Claude' }], output: { document: 'read' }, ...extra });
+  const docOwner = (extra = {}) => ({ ref: 'owner:u', kind: 'owner', task: 'Проверьте', models: [], document: 'r1', ...extra });
+  const errs = (schema) => Schema.validate(schema);
+
+  test('этап 1: документ из раунда с одной моделью и output.document — ошибок нет; output у модели тоже годится', () => {
+    expect(errs(base([srcRound(), docOwner()]))).toEqual([]);
+    const modelOutput = { ref: 'r1', kind: 'round', models: [{ name: 'Claude', output: { document: 'read' } }] };
+    expect(errs(base([modelOutput, docOwner()]))).toEqual([]);
+  });
+
+  test('этап 1: документ — неизвестный ref или ref позже шага User — ошибка по пути документа', () => {
+    const unknown = errs(base([srcRound(), docOwner({ document: 'r9' })])).find((e) => e.path === 'steps[1].document');
+    expect(unknown && unknown.message).toContain('неизвестный шаг');
+    const later = errs(base([docOwner({ document: 'r2' }), srcRound({ ref: 'r2' })])).find((e) => e.path === 'steps[0].document');
+    expect(later && later.message).toContain('более ранний');
+  });
+
+  test('этап 1: источник с двумя включёнными моделями — ошибка; с одной выключенной — ошибок нет', () => {
+    const two = srcRound({ models: [{ name: 'Claude' }, { name: 'GPT' }] });
+    const twoErr = errs(base([two, docOwner()])).find((e) => e.path === 'steps[1].document');
+    expect(twoErr).toBeDefined();
+    expect(twoErr.message).toContain('документ для User даёт одна модель');
+    const oneOff = srcRound({ models: [{ name: 'Claude' }, { name: 'GPT', enabled: false }] });
+    expect(errs(base([oneOff, docOwner()]))).toEqual([]);
+  });
+
+  test('этап 1: у источника нет output.document — ошибка с упоминанием output.document', () => {
+    const noDoc = { ref: 'r1', kind: 'round', models: [{ name: 'Claude' }] };
+    const found = errs(base([noDoc, docOwner()])).find((e) => e.path === 'steps[1].document');
+    expect(found).toBeDefined();
+    expect(found.message).toContain('output.document');
+  });
+
+  test('этап 1: источник — шаг User или не строка — ошибка', () => {
+    const ownerSrc = [{ ref: 'owner:a', kind: 'owner', task: 'Т', models: [] }, docOwner({ document: 'owner:a' })];
+    const srcErr = errs(base(ownerSrc)).find((e) => e.path === 'steps[1].document');
+    expect(srcErr).toBeDefined();
+    expect(srcErr.message).toContain('раунд');
+    expect(errorPaths(base([srcRound(), docOwner({ document: 5 })]))).toContain('steps[1].document');
+  });
+
+  test('этап 1: output документа — только read или form; form требует format json', () => {
+    expect(errorPaths(base([srcRound({ output: { document: 'x' } })]))).toContain('steps[0].output.document');
+    expect(errorPaths(base([srcRound({ output: { document: 'form' } })]))).toContain('steps[0].output.document');
+    expect(errs(base([srcRound({ output: { format: 'json', document: 'form' } })]))).toEqual([]);
+  });
+
+  test('этап 1: поле document у шага round — неизвестное поле', () => {
+    const found = errs(base([round('r1', ['Claude'], { document: 'r0' })])).find((e) => e.path === 'steps[0].document');
+    expect(found).toBeDefined();
+    expect(found.message).toBe('неизвестное поле');
+  });
+
+  test('этап 1: assemble переносит document в шаг User', () => {
+    const steps = Schema.assemble(base([srcRound(), docOwner()]));
+    expect(steps[1].document).toBe('r1');
+  });
+
+  test('этап 1: toCanvas принимает шаг User с документом', () => {
+    const canvas = Schema.toCanvas(base([srcRound(), docOwner()]), { models: ['Claude'] });
+    expect(canvas.errors).toEqual([]);
+    expect(canvas.controls).toHaveLength(1);
+  });
+});

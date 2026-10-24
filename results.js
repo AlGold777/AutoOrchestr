@@ -7031,11 +7031,12 @@ document.addEventListener('click', (event) => {
                     decide: askCustomDecision,
                     // The owner's answer of an owner step: a text (a file is not supported on this page yet).
                     checkUnknown,
-                    provideOwnerResult: ({ stepRef, task, goal, input, output, reason, detail }) => askChoiceDialog({
+                    provideOwnerResult: ({ stepRef, task, goal, input, output, document, reason, detail }) => askChoiceDialog({
                         title: `Ответ User: ${stepRef}`,
                         message: window.StageCard.ownerAskMessage({ task, goal, input, output, reason, detail, reasonText: reason ? (window.CustomEngine?.REASON_TEXT?.[reason] || reason) : '' }),
-                        textInput: { label: 'Ответ User' },
-                        choices: [{ value: 'send', label: 'Отправить' }]
+                        textInput: document ? null : { label: 'Ответ User', required: true },
+                        choices: [{ value: 'send', label: 'Отправить' }],
+                        ...(document ? { document, answerFormat: output?.format === 'json' ? 'json' : 'text' } : {})
                     }),
                     // The request whose sending is not confirmed: send it again, or skip it for this attempt only.
                     resolveUnknown: ({ stepRef, items, choices = ['resend', 'skip'] }) => askChoiceDialog({
@@ -8751,6 +8752,21 @@ document.addEventListener('click', (event) => {
             note: '',
             onAdd: async (kind) => { if (await insertControlAfter(anchor, kind)) dialog.close(); }
         });
+        // The round sources of the document for an owner: the rounds above it with exactly one enabled model.
+        const documentSourcesFor = (ownerRef) => {
+            const isObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+            const steps = (basicSchemaFromPage(draftPlanForCanvas(getActiveDraftPlan()), null, { forSave: true }).steps || []);
+            const index = steps.findIndex((step) => step.ref === ownerRef);
+            if (index < 0) return [];
+            return steps.slice(0, index).flatMap((step) => {
+                if (step.kind !== 'round') return [];
+                const enabled = (step.models || []).filter((model) => model.enabled !== false);
+                if (enabled.length !== 1) return [];
+                const model = enabled[0];
+                const declared = ['read', 'form'].includes((isObject(model.output) ? model.output : step.output)?.document);
+                return [{ ref: step.ref, label: `${step.ref} · ${model.name}${declared ? '' : ' (вид документа не объявлен)'}`, declared }];
+            });
+        };
         const openControlCard = (ref) => {
             const dialog = document.getElementById('pipeline-stage-dialog');
             const title = document.getElementById('pipeline-stage-dialog-title');
@@ -8765,7 +8781,7 @@ document.addEventListener('click', (event) => {
                 await commitControl(ref, edit);
                 openControlCard(ref);
             };
-            if (step.kind === 'owner') window.StageCard.renderOwnerWindow(body, window.StageCard.ownerWindowModel(step, { disabled: pipelineRunActive }), onEdit);
+            if (step.kind === 'owner') window.StageCard.renderOwnerWindow(body, window.StageCard.ownerWindowModel(step, { disabled: pipelineRunActive, documentSources: documentSourcesFor(step.ref) }), onEdit);
             window.StageCard.renderAddControl(body, addControlOptionsFor(ref, dialog));
             if (!dialog.open) dialog.showModal();
         };

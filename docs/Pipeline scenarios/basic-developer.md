@@ -24,13 +24,15 @@ GPT подготавливает запрос через `ContentUtils.ensurePro
 
 | Файл | Символы | Что там |
 | --- | --- | --- |
-| `disput/custom-engine.js` | `CustomEngine`, `run`, `attempt`, `normalizeSteps`, `buildPrompt`, `previewPrompt`, `correctionPrompt`, `inputFor`, `judge`, `resolveSetting`, `STOP_TEXT`, `REASON_TEXT`, `DEFAULT_ATTEMPTS`, `EngineError`, `unexecutedOf`, `assertExecutable`, `sourceItems`, `sendParticipants`, `artifactItems`, `contentOf`, `revisionItem` | Движок: шаги, запросы, приём, повторы, пауза |
-| `disput/basic-schema.js` | `BasicSchema`, `DEFAULTS`, `validate`, `assemble`, `resolveFields`, `resolveRun`, `toSettings`, `toCanvas`, `describeErrors` | Формат схемы: умолчания, проверка (виды шага `round` и `owner`; шаги идут по порядку; `synthesis`, `gate` и `route` отклоняются, синтез — раунд из одной модели с ролью; поля `require` и `order` отклоняются с подсказкой: раунд ждёт ответов всех своих моделей, эстафета — раунды по одной модели подряд), сборка шагов, показ на холсте |
+| `disput/custom-engine.js` | `CustomEngine`, `run`, `attempt`, `normalizeSteps`, `buildPrompt`, `previewPrompt`, `correctionPrompt`, `inputFor`, `judge`, `resolveSetting`, `STOP_TEXT`, `REASON_TEXT`, `DEFAULT_ATTEMPTS`, `EngineError`, `unexecutedOf`, `assertExecutable`, `sourceItems`, `sendParticipants`, `artifactItems`, `contentOf`, `revisionItem`, `documentFor` | Движок: шаги, запросы, приём, повторы, пауза; документ для User (`documentFor`), причина `invalid_form` (`REASON_TEXT`) |
+| `disput/basic-schema.js` | `BasicSchema`, `DEFAULTS`, `validate`, `assemble`, `resolveFields`, `resolveRun`, `toSettings`, `toCanvas`, `describeErrors`, `checkControl`, `checkOutput`, `assembleControl` | Формат схемы: умолчания, проверка (виды шага `round` и `owner`; шаги идут по порядку; `synthesis`, `gate` и `route` отклоняются, синтез — раунд из одной модели с ролью; поля `require` и `order` отклоняются с подсказкой: раунд ждёт ответов всех своих моделей, эстафета — раунды по одной модели подряд), сборка шагов, показ на холсте; `document` шага User и `output.document` раунда (`checkControl`, `checkOutput`, `assembleControl`) |
 | `disput/basic-artifacts.js` | `BasicArtifacts`, `createRegistry`, `register`, `latest`, `version`, `lineKey` | Реестр артефактов прогона: одна запись на версию, ссылка на ответ и указатель, без копии текста (чистые функции) |
-| `disput/basic-output.js` | `BasicOutput`, `checkAnswer`, `readPointer`, `parseJsonAnswer`, `countWords` | Проверка ответа по выходу шага: длина, JSON и поля, разделы, артефакты (чистые функции; вызывает движок) |
+| `disput/basic-output.js` | `BasicOutput`, `checkAnswer`, `readPointer`, `parseJsonAnswer`, `countWords`, `formProblem` | Проверка ответа по выходу шага: длина, JSON и поля, опросник (`formProblem`), разделы, артефакты (чистые функции; вызывает движок) |
 | `disput/basic-spec.js` | `BasicSpec`, `build`, `toMarkdown` | Описание pipeline «для человека» по схеме: три слоя (pipeline в целом, схема процесса, этапы), поля автора и автоматические поля, `missing` для незаполненного; чистые функции, без DOM (окно спецификации подключит их отдельно) |
 | `disput/custom-run-record.js` | `CustomRunRecord`, `createRun`, `recordAttempt`, `attemptKey`, `finishRun`, `serialize`, `revive`, `textOf`, `setSnapshot`, `setArtifacts`, `canResume`, `exportRun`, `createStore` | Запись о прогоне (версия 2: реестр и снимок состояния) |
-| `results/stage-card.js` | `StageCard`, `buildModel`, `render`, `renderOwnerWindow`, `renderAddControl` | Окно настроек раунда, окно шага User, выбор «Шаг после этого этапа» (только User) |
+| `results/stage-card.js` | `StageCard`, `buildModel`, `render`, `renderOwnerWindow`, `renderAddControl`, `ownerWindowModel`, `ownerAfterEdit` | Окно настроек раунда, окно шага User (список «Документ для User»), выбор «Шаг после этого этапа» (только User) |
+| `results/choice-dialog.js` | `ChoiceDialog`, `formAsks`, `formAnswer` | Окна решений; окно User с документом: параметры `document`, `answerFormat`, `textInput.required`; опросник |
+| `results/owner-ask.js` | `answersOf`, `formAsks`, `formAnswer` | Окно ответа User: показ документа и опросника, ответ User (текст или JSON) |
 | `disput/pipeline-presets.js` | `BUILTIN_PIPELINE_DEFINITIONS`, `PIPELINE_PRESETS`, `makePreset` | Шаблон Basic и пресет `CUSTOM` |
 | `disput/debate-draft-plan.js` | `createCanvasPlan`, `normalize` | План холста: только раунды; `normalize` читает и прежние планы со стадиями синтеза |
 | `disput/debate-response-acceptance.js` | `evaluate` | Техническая приёмка ответа |
@@ -128,6 +130,7 @@ GPT подготавливает запрос через `ContentUtils.ensurePro
 6. Отказ при неподдерживаемой версии — для схемы, созданной более новым Basic, чем установлен
    у пользователя (см. «Проверка перед запуском»). Механизм перехода между версиями формата
    определяется, когда формат действительно понадобится менять.
+7. Поля `document` шага User и `output.document` раунда (с 2.81.855) необязательны: схема без них работает как раньше; шаг User без `document` показывает поле текста. Опросник (`output.document: form`) проверяется только в раундах, где он объявлен.
 
 ### Решения и причины
 
@@ -310,7 +313,7 @@ Ctrl/Cmd+S сохраняет подсветки и избранное вмес�
 | TRANSPORT-1 | Участники: `chat: "new"`, привязки чатов в снимке и восстановление после отмены исполняются (тесты на моках); в реальных вкладках не проверено; два участника одной модели в шаге страница не устанавливает | открыт: см. «Что не проверено вживую» |
 | TEST-1 | Тесты, падавшие не из-за Basic (9 в 4 файлах) | исправлено: устаревшие ожидания приведены к коду, код не менялся |
 | TEST-2 | Нестабильный тест `false success: watcher completion guards` | известно |
-| PLAN-1 | Документ для User от одной модели (модальное окно, опросник, OK/Send) и артефакты-файлы (папка, рамка на холсте) — [план](basic-user-documents-plan.md) | согласовано 24.10, не реализовано |
+| PLAN-1 | Документ для User и артефакты-файлы — [план](basic-user-documents-plan.md) | этап 1 сделан в 2.81.855 (документ для User, опросник, окно); этапы 2–4 (артефакты-файлы, папка, правка вне окна, стенд) не сделаны |
 
 ### Открытые вопросы
 

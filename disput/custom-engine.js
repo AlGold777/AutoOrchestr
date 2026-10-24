@@ -56,6 +56,7 @@
     too_long: 'длиннее допустимого',
     missing_section: 'не содержит раздел',
     invalid_output: 'не в формате ответа',
+    invalid_form: 'опросник не по формату',
     missing_field: 'без обязательного поля',
     missing_artifact: 'без объявленного артефакта'
   });
@@ -101,6 +102,7 @@
     if (text(output.form)) lines.push(text(output.form));
     if (output.format === 'json') {
       lines.push('Ответ — один JSON-объект без текста вокруг.');
+      if (output.document === 'form') lines.push('Это опросник для User: {"items":[{"id":"уникальный id","type":"one|many|text|yesno","question":"вопрос","options":["вариант"],"required":true}]}. options — только для one и many, обязателен непустой список; required необязателен.');
       if (Array.isArray(output.requiredFields) && output.requiredFields.length) lines.push(`Обязательные поля: ${output.requiredFields.join(', ')}.`);
     }
     if (Array.isArray(output.sections) && output.sections.length) lines.push(`Разделы ответа: ${output.sections.map((item) => `«${item}»`).join(', ')}.`);
@@ -194,6 +196,7 @@
         // A list of sources stays a list here: the input is checked before the run (assertExecutable).
         input: Array.isArray(step.input) ? step.input.slice() : (step.input ?? (kind === 'owner' ? 'none' : 'previous')),
         output: step.output ?? null,
+        document: kind === 'owner' && typeof step.document === 'string' && step.document ? step.document : null,
         // continue: the participant keeps its chat; new: a new chat on the first request of each visit (4.2).
         chat: step.chat === 'new' ? 'new' : 'continue',
         approve: step.owner === 'approve',
@@ -755,6 +758,22 @@
     }
     // An input item as the owner window gets it (N07): its address, its label, and its text or the reference of its file.
     const ownerItemOf = (item) => ({ label: item.label, ...item.address, ...(item.binary ? { file: item.file } : { text: item.text }) });
+    // The document of an owner step (document: a round before it): the accepted answer of its one model, and its kind.
+    function documentFor(step) {
+      if (!step.document) return null;
+      const at = `шаг «${step.ref}» · document`;
+      const source = plan.find((item) => item.ref === step.document);
+      if (!source || source.kind !== 'round' || source.index >= step.index) throw new EngineError('invalid_document', at, 'документ: ссылка только на более ранний раунд');
+      if (source.models.length !== 1) throw new EngineError('invalid_document', at, 'документ для User даёт одна модель');
+      const items = sourceItems([{ step: source.ref, required: true }], step);
+      const answer = items.find((item) => !item.binary);
+      if (!answer) throw new EngineError('invalid_document', at, 'у раунда нет принятого ответа');
+      const output = outputOf(source, source.models[0]);
+      const kind = output?.document === 'form' ? 'form' : 'read';
+      const form = kind === 'form' ? Output.parseJsonAnswer(answer.text) : null;
+      if (kind === 'form' && !form) throw new EngineError('invalid_document', at, 'ответ раунда — не опросник');
+      return { ref: source.ref, kind, text: answer.text, ...(form ? { form } : {}) };
+    }
     async function ownerAnswer(step, entry) {
       let reason = '';
       let detail = '';
@@ -767,10 +786,11 @@
           throw new StopRun('missing_input', `ревизия «${declaration.id}»: User не получил версию, которую она дорабатывает; шаг «${step.ref}» не открыт`);
         }
       });
+      const document = documentFor(step);
       for (;;) {
         await checkpointNow('decision', { pendingOwner: { kind: 'owner', stepRef: step.ref, visit: entry.visit } });
         const reply = await ownerWait(() => provideOwnerResult({ stepRef: step.ref, visit: entry.visit, task: step.task, output: step.output, ...(step.goal ? { goal: step.goal } : {}),
-          ...(step.input !== 'none' ? { input } : {}), ...(reason ? { reason, detail } : {}) }));
+          ...(step.input !== 'none' ? { input } : {}), ...(document ? { document } : {}), ...(reason ? { reason, detail } : {}) }));
         if (reply === null) throw new StopRun('stopped');
         const verdict = ownerVerdict(step, reply);
         if (!verdict.ok) {

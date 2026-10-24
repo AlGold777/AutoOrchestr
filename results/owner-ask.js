@@ -18,9 +18,22 @@
       const multi = options.length > 0 && ask?.multi === true;
       const row = doc.createElement('fieldset');
       row.className = 'owner-ask-item';
+      const required = ask?.required === true;
+      if (required) row.dataset.required = 'true';
       const legend = doc.createElement('legend');
-      legend.textContent = ask.participantId ? `${ask.participantId}: ${ask.question}` : String(ask.question || '');
+      const title = ask.participantId ? `${ask.participantId}: ${ask.question}` : String(ask.question || '');
+      legend.textContent = required ? `${title} *` : title;
       row.append(legend);
+      if (ask?.type === 'text') {
+        const area = doc.createElement('textarea');
+        area.className = 'owner-ask-text';
+        area.rows = 2;
+        area.dataset.askText = String(index);
+        area.setAttribute('aria-label', clean(ask.question));
+        row.append(area);
+        container.append(row);
+        return;
+      }
       if (multi) {
         const note = doc.createElement('p');
         note.className = 'owner-ask-multi';
@@ -85,7 +98,68 @@
       .join('\n');
   }
 
-  const api = Object.freeze({ DELEGATE_LABEL, render, collect, toInstruction });
+  // Every question in order: the picked labels, the comment (questions with options) and the text (text questions).
+  function answersOf(container, asks = []) {
+    return asks.map((ask, index) => {
+      if (ask?.type === 'text') {
+        const field = container.querySelector(`textarea[data-ask-text="${index}"]`);
+        return { selected: [], text: clean(field?.value), comment: '' };
+      }
+      const options = optionsOf(ask);
+      const choices = options.length ? options : [DELEGATE_LABEL];
+      const selected = Array.from(container.querySelectorAll(`input[data-ask-index="${index}"]`))
+        .filter((input) => input.checked)
+        .map((input) => choices[Number(input.dataset.choiceIndex)])
+        .filter(Boolean);
+      const field = container.querySelector(`textarea[data-ask-comment="${index}"]`);
+      return { selected, text: '', comment: clean(field?.value) };
+    });
+  }
+
+  // True when every required question has a picked option or a non-empty text.
+  function complete(container, asks = []) {
+    return answersOf(container, asks).every((answer, index) => asks[index]?.required !== true
+      || answer.selected.length > 0 || answer.text !== '');
+  }
+
+  // Questionnaire items of a document (kind 'form') as asks for render().
+  function formAsks(items = []) {
+    return (Array.isArray(items) ? items : []).map((item) => ({
+      id: item.id,
+      type: item.type,
+      question: item.question,
+      options: item.type === 'yesno' ? ['Да', 'Нет'] : (item.options || []),
+      multi: item.type === 'many',
+      required: item.required === true
+    }));
+  }
+
+  // The answer to a questionnaire: JSON by item id ('json') or lines "question — value" (any other format).
+  // Items with nothing picked and no text are left out.
+  function formAnswer(container, items = [], format = 'text') {
+    const list = Array.isArray(items) ? items : [];
+    const answers = answersOf(container, formAsks(list));
+    const done = list
+      .map((item, index) => ({ item, answer: answers[index] }))
+      .filter(({ answer }) => answer.selected.length > 0 || answer.text !== '');
+    if (format === 'json') {
+      const result = {};
+      done.forEach(({ item, answer }) => {
+        if (item.type === 'text') result[item.id] = answer.text;
+        else if (item.type === 'many') result[item.id] = answer.selected;
+        else if (item.type === 'yesno') result[item.id] = answer.selected[0] === 'Да';
+        else result[item.id] = answer.selected[0];
+      });
+      return JSON.stringify(result);
+    }
+    return done.map(({ item, answer }) => {
+      const value = item.type === 'text' ? answer.text : answer.selected.join('; ');
+      const comment = answer.comment ? ` (комментарий: ${answer.comment})` : '';
+      return `${clean(item.question)} — ${value}${comment}`;
+    }).join('\n');
+  }
+
+  const api = Object.freeze({ DELEGATE_LABEL, render, collect, toInstruction, answersOf, complete, formAsks, formAnswer });
   root.OwnerAsk = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

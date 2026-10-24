@@ -3420,7 +3420,9 @@ describe('Pipeline debate favorites view', () => {
           expect(h.starts.length).toBe(1);
           const answered = h.debug.runCustomFromPage({ task: 'T' });
           await waitForDialog();
-          document.querySelector('.choice-dialog-text').value = 'OWNER TEXT';
+          const ownerText = document.querySelector('.choice-dialog-text');
+          ownerText.value = 'OWNER TEXT';
+          ownerText.dispatchEvent(new Event('input', { bubbles: true }));
           document.querySelector('.choice-dialog-choice').click();
           await answered;
           expect(document.querySelector('.choice-dialog')).toBeNull();

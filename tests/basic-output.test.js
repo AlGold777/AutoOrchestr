@@ -67,3 +67,42 @@ describe('Basic output: the acceptance order and the reasons (5.1)', () => {
     expect(Output.checkAnswer('{"correctedMap": 1}', output)).toMatchObject({ ok: false, reason: 'missing_artifact', detail: '«findings» (/auditFindings)' });
   });
 });
+
+describe('Basic output: этап 1 — опросник (document: form) и документ для чтения', () => {
+  const form = { format: 'json', document: 'form' };
+  const good = JSON.stringify({ items: [
+    { id: 'budget', type: 'one', question: 'Бюджет', options: ['до 10k', 'больше'], required: true },
+    { id: 'notes', type: 'text', question: 'Что ещё' }
+  ] });
+
+  test('этап 1: верный опросник проходит, в том числе в ограждении ```json', () => {
+    expect(Output.checkAnswer(good, form)).toMatchObject({ ok: true });
+    expect(Output.checkAnswer(`\`\`\`json\n${good}\n\`\`\``, form)).toMatchObject({ ok: true });
+  });
+
+  test.each([
+    ['нет items', {}],
+    ['items пустой массив', { items: [] }],
+    ['пункт без id', { items: [{ type: 'text', question: 'Q' }] }],
+    ['повтор id', { items: [{ id: 'a', type: 'text', question: 'Q' }, { id: 'a', type: 'text', question: 'Q2' }] }],
+    ['type не из списка', { items: [{ id: 'a', type: 'select', question: 'Q' }] }],
+    ['one без options', { items: [{ id: 'a', type: 'one', question: 'Q' }] }],
+    ['many с пустым options', { items: [{ id: 'a', type: 'many', question: 'Q', options: [] }] }],
+    ['text с options', { items: [{ id: 'a', type: 'text', question: 'Q', options: ['x'] }] }],
+    ['пустой question', { items: [{ id: 'a', type: 'text', question: '' }] }],
+    ['required не boolean', { items: [{ id: 'a', type: 'text', question: 'Q', required: 'yes' }] }],
+    ['options с пустой строкой', { items: [{ id: 'a', type: 'one', question: 'Q', options: ['x', ''] }] }],
+    ['options с повтором', { items: [{ id: 'a', type: 'one', question: 'Q', options: ['x', 'x'] }] }]
+  ])('этап 1: дефект опросника (%s) → invalid_form с непустым detail', (_name, value) => {
+    const result = Output.checkAnswer(JSON.stringify(value), form);
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe('invalid_form');
+    expect(typeof result.detail).toBe('string');
+    expect(result.detail.length).toBeGreaterThan(0);
+  });
+
+  test('этап 1: документ для чтения не накладывает ограничений на ответ', () => {
+    expect(Output.checkAnswer('{"any": 1}', { format: 'json', document: 'read' })).toMatchObject({ ok: true });
+    expect(Output.checkAnswer('обычный текст', { document: 'read' })).toEqual({ ok: true });
+  });
+});

@@ -1,25 +1,44 @@
-// Choice dialog: a modal with any number of buttons, and an optional text field for the answer.
+// Choice dialog: a modal with any number of buttons, and an optional text field or document for the answer.
 // ask() resolves to the value of the pressed button (choices[].value), or to the text of the field when textInput is set
 // (the button pressed then is the one submit button), or to null when the owner cancels (the Cancel button, Escape).
+// document { kind: 'read' } shows a text to read with an optional comment; document { kind: 'form' } shows a questionnaire
+// (window.OwnerAsk) and gives its answer in answerFormat ('text' or 'json').
 // Texts are written with textContent only.
 (function initChoiceDialog(root) {
   'use strict';
 
+  const READ_DONE = 'Документ прочитан, замечаний нет.';
   const el = (doc, tag, className, text) => {
     const node = doc.createElement(tag);
     if (className) node.className = className;
     if (text != null) node.textContent = text;
     return node;
   };
+  const clean = (value) => String(value == null ? '' : value).trim();
 
-  function ask({ title = '', message = '', choices = [], textInput = null, cancelText = 'Отмена', signal = null, documentRef = root.document } = {}) {
+  function ask({ title = '', message = '', choices = [], textInput = null, document: documentSpec = null, answerFormat = 'text', cancelText = 'Отмена', signal = null, documentRef = root.document } = {}) {
     const doc = documentRef;
     return new Promise((resolve) => {
       const dialog = el(doc, 'dialog', 'choice-dialog');
       dialog.append(el(doc, 'h2', 'choice-dialog-title', String(title)));
       if (message) dialog.append(el(doc, 'p', 'choice-dialog-message', String(message)));
+      const kind = documentSpec?.kind || null;
       let area = null;
-      if (textInput) {
+      let formBox = null;
+      let formAsks = [];
+      if (kind === 'read') {
+        dialog.append(el(doc, 'pre', 'choice-dialog-document', String(documentSpec.text ?? '')));
+        area = el(doc, 'textarea', 'choice-dialog-text');
+        area.rows = 2;
+        area.spellcheck = false;
+        area.setAttribute('aria-label', 'Комментарий (необязательно)');
+        dialog.append(area);
+      } else if (kind === 'form') {
+        formBox = el(doc, 'div', 'choice-dialog-form');
+        formAsks = root.OwnerAsk.formAsks(documentSpec.form?.items || []);
+        root.OwnerAsk.render(formBox, formAsks);
+        dialog.append(formBox);
+      } else if (textInput) {
         area = el(doc, 'textarea', 'choice-dialog-text');
         area.rows = 6;
         area.spellcheck = false;
@@ -34,18 +53,41 @@
         dialog.remove();
         resolve(value);
       };
+      const isValid = () => {
+        if (kind === 'form') return root.OwnerAsk.complete(formBox, formAsks);
+        if (!kind && textInput?.required === true) return clean(area.value) !== '';
+        return true;
+      };
+      const answerOf = (choice) => {
+        if (kind === 'read') return clean(area.value) || READ_DONE;
+        if (kind === 'form') return root.OwnerAsk.formAnswer(formBox, documentSpec.form?.items || [], answerFormat);
+        if (textInput) return area.value;
+        return choice.value;
+      };
       const actions = el(doc, 'div', 'choice-dialog-actions');
+      const submits = [];
       choices.forEach((choice) => {
         const button = el(doc, 'button', 'choice-dialog-choice', String(choice.label ?? choice.value));
         button.type = 'button';
-        button.addEventListener('click', () => finish(textInput ? area.value : choice.value));
+        button.addEventListener('click', () => finish(answerOf(choice)));
         actions.append(button);
+        submits.push(button);
       });
       const cancel = el(doc, 'button', 'choice-dialog-cancel', String(cancelText));
       cancel.type = 'button';
       cancel.addEventListener('click', () => finish(null));
       actions.append(cancel);
       dialog.append(actions);
+      const refresh = () => {
+        const valid = isValid();
+        submits.forEach((button) => { button.disabled = !valid; });
+      };
+      refresh();
+      if (area) area.addEventListener('input', refresh);
+      if (formBox) {
+        formBox.addEventListener('change', refresh);
+        formBox.addEventListener('input', refresh);
+      }
       // A Stop of the run closes the window at once: the answer is a cancel (R07).
       if (signal) {
         if (signal.aborted) { finish(null); return; }
@@ -56,7 +98,7 @@
       doc.body.append(dialog);
       if (typeof dialog.showModal === 'function') dialog.showModal();
       else dialog.setAttribute('open', '');
-      (area || actions.querySelector('button'))?.focus?.();
+      (area || formBox?.querySelector('input, textarea') || actions.querySelector('button'))?.focus?.();
     });
   }
 
