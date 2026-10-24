@@ -181,6 +181,28 @@ describe('Стенд: примеры каталога и схемы showcase', (
   });
 });
 
+describe('Стенд: поставляемые примеры не нарушают правила W1–W4', () => {
+  const BAD = ['Ответ User «', 'Артефакт объявлен в раунде из нескольких моделей', 'models[', 'все модели уже получали'];
+  const schemas = () => {
+    const examples = JSON.parse(fs.readFileSync(path.join(STAND, 'stand-examples.json'), 'utf8'));
+    const named = ['showcase-robot-vacuum v1.json', 'coldstart-robot-vacuum v1.json'];
+    return [
+      ...Object.entries(examples).map(([k, v]) => [`stand-examples.json:${k}`, v.schema || v]),
+      ...named.map((f) => [f, JSON.parse(fs.readFileSync(path.join(STAND, f), 'utf8'))])
+    ];
+  };
+
+  test('ни один из поставляемых примеров и показательных схем не даёт предупреждений W1–W4', () => {
+    const problems = [];
+    schemas().forEach(([name, schema]) => {
+      window.ProtoStand.validate(JSON.stringify(schema)).issues
+        .filter((i) => i.level === 'warn' && BAD.some((t) => i.msg.includes(t)))
+        .forEach((i) => problems.push(`${name}: ${i.msg}`));
+    });
+    expect(problems).toEqual([]);
+  });
+});
+
 describe('Стенд: повторная вставка документа во входы (пакет 3)', () => {
   const REUSE = 'все модели уже получали';
   const reuse = (issues) => issues.filter((i) => i.level === 'warn' && i.msg.includes(REUSE)).map((i) => ({ step: i.step, msg: i.msg }));
