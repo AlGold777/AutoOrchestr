@@ -9523,6 +9523,9 @@ hr.section-divider {
   font: inherit;
   font-size: 14px;
 }
+.choice-dialog-document { white-space: pre-wrap; max-height: 40vh; overflow: auto; border: 1px solid var(--border-color, #d0d7de); padding: 8px; margin: 8px 0; font-size: 14px; }
+.choice-dialog-form { margin-bottom: 12px; max-height: 50vh; overflow: auto; }
+.owner-ask-text { width: 100%; box-sizing: border-box; font: inherit; font-size: 14px; }
 .choice-dialog-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
 .choice-dialog-actions button { padding: 6px 12px; border-radius: 6px; font: inherit; cursor: pointer; }
 .choice-dialog-choice { border: 1px solid var(--accent-color, #0969da); background: var(--accent-color, #0969da); color: #fff; }
@@ -10077,13 +10080,17 @@ window.ProtoState = {
 
   // The window of an owner (6.1 of the spec, 8.1): the task the owner has to provide and the output of the step (as the round
   // windows have it). The input of an owner is not edited here; it stays as the schema has it.
-  function ownerWindowModel(step = {}, { disabled = false } = {}) {
+  function ownerWindowModel(step = {}, { disabled = false, documentSources = [] } = {}) {
     const output = isPlain(step.output) ? step.output : {};
     return {
       ref: String(step.ref || ''),
       disabled: Boolean(disabled),
       goal: typeof step.goal === 'string' ? step.goal : '',
       task: typeof step.task === 'string' ? step.task : '',
+      document: {
+        value: typeof step.document === 'string' ? step.document : '',
+        sources: documentSources.map(({ ref, label, declared }) => ({ ref: String(ref), label: String(label), declared: declared === true }))
+      },
       output: {
         name: String(output.name || ''),
         form: String(output.form || ''),
@@ -10102,6 +10109,9 @@ window.ProtoState = {
     } else if (edit.field === 'task') {
       if (String(edit.value || '').trim()) next.task = String(edit.value);
       else delete next.task;
+    } else if (edit.field === 'document') {
+      if (String(edit.value || '').trim()) next.document = String(edit.value).trim();
+      else delete next.document;
     } else if (edit.field === 'output') {
       const output = outputAfterEdit(step.output, edit.value);
       if (Object.keys(output).length) next.output = output;
@@ -10129,6 +10139,29 @@ window.ProtoState = {
     const taskWrap = el(doc, 'label', 'stage-card-setting stage-card-owner-task-label');
     taskWrap.append(doc.createTextNode('Что должен предоставить User '), task);
     container.append(taskWrap);
+
+    const documentSelect = el(doc, 'select', 'stage-card-owner-document');
+    const noneOption = el(doc, 'option', '', 'нет');
+    noneOption.value = '';
+    documentSelect.append(noneOption);
+    model.document.sources.forEach((source) => {
+      const option = el(doc, 'option', '', source.label);
+      option.value = source.ref;
+      documentSelect.append(option);
+    });
+    if (model.document.value && !model.document.sources.some((source) => source.ref === model.document.value)) {
+      const missing = el(doc, 'option', '', `${model.document.value} (недоступен)`);
+      missing.value = model.document.value;
+      documentSelect.append(missing);
+    }
+    documentSelect.value = model.document.value;
+    documentSelect.disabled = Boolean(model.disabled);
+    documentSelect.setAttribute('aria-label', 'Документ для User');
+    documentSelect.addEventListener('change', () => send({ field: 'document', value: documentSelect.value }));
+    const documentWrap = el(doc, 'label', 'stage-card-setting stage-card-owner-document-label');
+    documentWrap.append(doc.createTextNode('Документ для User '), documentSelect);
+    container.append(documentWrap);
+    container.append(el(doc, 'p', 'stage-card-muted', 'Раунд выше с одной моделью. Вид документа задаёт output.document раунда: read — для чтения, form — опросник.'));
 
     const output = model.output;
     const group = el(doc, 'section', 'stage-card-output');
@@ -11028,7 +11061,8 @@ window.ProtoState = {
 // Basic output: the checks of an answer by the output of its step (docs: basic-schema-guide.md, 5.8; the rules: the
 // technical spec, 5.1). Pure functions: the engine (disput/custom-engine.js) calls them, the tests too.
 // Order of checkAnswer: length (strictLength) → JSON and its fields, or the sections → the declared artifacts.
-// The reasons: too_long, invalid_output, missing_field, missing_section, missing_artifact. Each carries a detail
+// The reasons: too_long, invalid_output, missing_field, invalid_form (a questionnaire, document: form), missing_section,
+// missing_artifact. Each carries a detail
 // (the section, the pointer, the count of words) that the correction request names.
 (function initBasicOutput(root) {
   'use strict';
@@ -11072,6 +11106,37 @@ window.ProtoState = {
     return value !== null && typeof value === 'object' && !Array.isArray(value) ? value : null;
   }
 
+  const FORM_TYPES = Object.freeze(['one', 'many', 'text', 'yesno']);
+  const isNonEmptyString = (value) => typeof value === 'string' && value.trim() !== '';
+
+  // The first defect of a questionnaire (the output of a document: form), or null. The text names the place: items[2].options: …
+  function formProblem(value) {
+    const items = value.items;
+    if (!Array.isArray(items) || !items.length) return 'items: ожидается непустой список пунктов';
+    const ids = new Set();
+    for (let at = 0; at < items.length; at += 1) {
+      const item = items[at];
+      const where = `items[${at}]`;
+      if (item === null || typeof item !== 'object' || Array.isArray(item)) return `${where}: ожидается объект`;
+      if (!isNonEmptyString(item.id)) return `${where}.id: ожидается непустая строка`;
+      if (ids.has(item.id)) return `${where}.id: id «${item.id}» повторяется`;
+      ids.add(item.id);
+      if (!FORM_TYPES.includes(item.type)) return `${where}.type: допустимо ${FORM_TYPES.join(', ')}`;
+      if (!isNonEmptyString(item.question)) return `${where}.question: ожидается непустая строка`;
+      if (item.type === 'one' || item.type === 'many') {
+        if (!Array.isArray(item.options) || !item.options.length) return `${where}.options: ожидается непустой список вариантов`;
+        const blank = item.options.findIndex((option) => !isNonEmptyString(option));
+        if (blank !== -1) return `${where}.options[${blank}]: ожидается непустая строка`;
+        const repeated = item.options.find((option, pos) => item.options.indexOf(option) !== pos);
+        if (repeated !== undefined) return `${where}.options: вариант «${repeated}» повторяется`;
+      } else if ('options' in item) {
+        return `${where}.options: в типе ${item.type} вариантов нет`;
+      }
+      if ('required' in item && typeof item.required !== 'boolean') return `${where}.required: ожидается true или false`;
+    }
+    return null;
+  }
+
   // The acceptance of the output of a step: { ok: true, value? } or { ok: false, reason, detail }.
   // `limit` is the effective word limit (the model's maxWords, else the run's); the caller gives it.
   function checkAnswer(raw, output, { limit = null } = {}) {
@@ -11087,6 +11152,10 @@ window.ProtoState = {
       if (!value) return { ok: false, reason: 'invalid_output' };
       const absent = (output.requiredFields || []).find((pointer) => !readPointer(value, pointer).found);
       if (absent !== undefined) return { ok: false, reason: 'missing_field', detail: absent };
+      if (output.document === 'form') {
+        const problem = formProblem(value);
+        if (problem) return { ok: false, reason: 'invalid_form', detail: problem };
+      }
     } else {
       const lines = answer.split(/\r?\n/).map((line) => line.toLowerCase());
       const missing = (output.sections || []).find((section) => !lines.some((line) => line.includes(String(section).toLowerCase())));
@@ -11101,7 +11170,7 @@ window.ProtoState = {
     return value === undefined ? { ok: true } : { ok: true, value };
   }
 
-  const api = Object.freeze({ countWords, readPointer, parseJsonAnswer, checkAnswer });
+  const api = Object.freeze({ countWords, readPointer, parseJsonAnswer, formProblem, checkAnswer });
   root.BasicOutput = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
@@ -11221,6 +11290,7 @@ window.ProtoState = {
     too_long: 'длиннее допустимого',
     missing_section: 'не содержит раздел',
     invalid_output: 'не в формате ответа',
+    invalid_form: 'опросник не по формату',
     missing_field: 'без обязательного поля',
     missing_artifact: 'без объявленного артефакта'
   });
@@ -11266,6 +11336,7 @@ window.ProtoState = {
     if (text(output.form)) lines.push(text(output.form));
     if (output.format === 'json') {
       lines.push('Ответ — один JSON-объект без текста вокруг.');
+      if (output.document === 'form') lines.push('Это опросник для User: {"items":[{"id":"уникальный id","type":"one|many|text|yesno","question":"вопрос","options":["вариант"],"required":true}]}. options — только для one и many, обязателен непустой список; required необязателен.');
       if (Array.isArray(output.requiredFields) && output.requiredFields.length) lines.push(`Обязательные поля: ${output.requiredFields.join(', ')}.`);
     }
     if (Array.isArray(output.sections) && output.sections.length) lines.push(`Разделы ответа: ${output.sections.map((item) => `«${item}»`).join(', ')}.`);
@@ -11359,6 +11430,7 @@ window.ProtoState = {
         // A list of sources stays a list here: the input is checked before the run (assertExecutable).
         input: Array.isArray(step.input) ? step.input.slice() : (step.input ?? (kind === 'owner' ? 'none' : 'previous')),
         output: step.output ?? null,
+        document: kind === 'owner' && typeof step.document === 'string' && step.document ? step.document : null,
         // continue: the participant keeps its chat; new: a new chat on the first request of each visit (4.2).
         chat: step.chat === 'new' ? 'new' : 'continue',
         approve: step.owner === 'approve',
@@ -11920,6 +11992,22 @@ window.ProtoState = {
     }
     // An input item as the owner window gets it (N07): its address, its label, and its text or the reference of its file.
     const ownerItemOf = (item) => ({ label: item.label, ...item.address, ...(item.binary ? { file: item.file } : { text: item.text }) });
+    // The document of an owner step (document: a round before it): the accepted answer of its one model, and its kind.
+    function documentFor(step) {
+      if (!step.document) return null;
+      const at = `шаг «${step.ref}» · document`;
+      const source = plan.find((item) => item.ref === step.document);
+      if (!source || source.kind !== 'round' || source.index >= step.index) throw new EngineError('invalid_document', at, 'документ: ссылка только на более ранний раунд');
+      if (source.models.length !== 1) throw new EngineError('invalid_document', at, 'документ для User даёт одна модель');
+      const items = sourceItems([{ step: source.ref, required: true }], step);
+      const answer = items.find((item) => !item.binary);
+      if (!answer) throw new EngineError('invalid_document', at, 'у раунда нет принятого ответа');
+      const output = outputOf(source, source.models[0]);
+      const kind = output?.document === 'form' ? 'form' : 'read';
+      const form = kind === 'form' ? Output.parseJsonAnswer(answer.text) : null;
+      if (kind === 'form' && !form) throw new EngineError('invalid_document', at, 'ответ раунда — не опросник');
+      return { ref: source.ref, kind, text: answer.text, ...(form ? { form } : {}) };
+    }
     async function ownerAnswer(step, entry) {
       let reason = '';
       let detail = '';
@@ -11932,10 +12020,11 @@ window.ProtoState = {
           throw new StopRun('missing_input', `ревизия «${declaration.id}»: User не получил версию, которую она дорабатывает; шаг «${step.ref}» не открыт`);
         }
       });
+      const document = documentFor(step);
       for (;;) {
         await checkpointNow('decision', { pendingOwner: { kind: 'owner', stepRef: step.ref, visit: entry.visit } });
         const reply = await ownerWait(() => provideOwnerResult({ stepRef: step.ref, visit: entry.visit, task: step.task, output: step.output, ...(step.goal ? { goal: step.goal } : {}),
-          ...(step.input !== 'none' ? { input } : {}), ...(reason ? { reason, detail } : {}) }));
+          ...(step.input !== 'none' ? { input } : {}), ...(document ? { document } : {}), ...(reason ? { reason, detail } : {}) }));
         if (reply === null) throw new StopRun('stopped');
         const verdict = ownerVerdict(step, reply);
         if (!verdict.ok) {
@@ -12273,7 +12362,7 @@ window.ProtoState = {
   // The fields a step of each kind may have (an unknown field is an error with its path).
   const STEP_KEYS = Object.freeze({
     round: Object.freeze(['ref', 'kind', 'input', 'task', 'models', 'output', 'owner', 'chat', ...STEP_TEXT_KEYS]),
-    owner: Object.freeze(['ref', 'kind', 'task', 'input', 'output', 'models', ...STEP_TEXT_KEYS])
+    owner: Object.freeze(['ref', 'kind', 'task', 'input', 'output', 'models', 'document', ...STEP_TEXT_KEYS])
   });
   const CONTROL_REF = Object.freeze({
     owner: 'ref User: «owner:<id>», id — латинские буквы, цифры, «_» и «-»'
@@ -12346,6 +12435,7 @@ window.ProtoState = {
     if ('input' in step) out.input = clone(step.input);
     if ('output' in step) out.output = clone(step.output);
     if (typeof step.task === 'string') out.task = step.task;
+    if (typeof step.document === 'string') out.document = step.document;
     return { ...out, models: [] };
   }
 
@@ -12578,10 +12668,14 @@ window.ProtoState = {
     // `authors` are the participants whose revisions the output declares: { id, input? } (the owner is its own author).
     const checkOutput = (output, path, step, index, authors) => {
       if (!isObject(output)) { fail(path, 'ожидается объект'); return; }
-      unknownKeys(output, ['name', 'form', 'sections', 'strictLength', 'format', 'requiredFields', 'artifacts'], path);
+      unknownKeys(output, ['name', 'form', 'sections', 'strictLength', 'format', 'requiredFields', 'artifacts', 'document'], path);
       ['name', 'form'].forEach((key) => { if (key in output) text(output[key], `${path}.${key}`); });
       if ('strictLength' in output && typeof output.strictLength !== 'boolean') fail(`${path}.strictLength`, 'ожидается true или false');
       if ('format' in output) oneOf(output.format, OUTPUT_FORMATS, `${path}.format`, 'формат выхода');
+      if ('document' in output) {
+        oneOf(output.document, ['read', 'form'], `${path}.document`, 'вид документа');
+        if (output.document === 'form' && output.format !== 'json') fail(`${path}.document`, 'опросник — формат json: укажите format: "json"');
+      }
       const json = output.format === 'json';
       if ('sections' in output) {
         if (json) fail(`${path}.sections`, 'в формате json заголовки не проверяются: укажите requiredFields');
@@ -12637,10 +12731,22 @@ window.ProtoState = {
       });
     };
 
-    // An owner step (4.1): its task, and no models.
-    const checkControl = (step, path) => {
+    // An owner step (4.1): its task, and no models. Its document is the ref of an earlier round with one model that declares it.
+    const checkControl = (step, path, index) => {
       if (typeof step.task !== 'string' || !step.task.trim()) fail(`${path}.task`, 'задание User: непустой текст');
       if (Array.isArray(step.models) && step.models.length) fail(`${path}.models`, 'у User нет моделей');
+      if (!('document' in step)) return;
+      const at = `${path}.document`;
+      if (typeof step.document !== 'string' || !step.document) { fail(at, 'ожидается ref раунда'); return; }
+      const position = schema.steps.findIndex((s) => isObject(s) && s.ref === step.document);
+      if (position === -1) { fail(at, `неизвестный шаг «${step.document}»`); return; }
+      if (position >= index) { fail(at, 'документ: только более ранний раунд'); return; }
+      const source = schema.steps[position];
+      if (source.kind !== 'round') { fail(at, 'источник документа — раунд'); return; }
+      const enabled = (Array.isArray(source.models) ? source.models : []).filter((model) => isObject(model) && model.enabled !== false);
+      if (enabled.length !== 1) { fail(at, 'документ для User даёт одна модель'); return; }
+      const output = isObject(enabled[0].output) ? enabled[0].output : source.output;
+      if (!(isObject(output) && ['read', 'form'].includes(output.document))) fail(at, `в выходе раунда «${source.ref}» не объявлен вид документа: output.document — read или form`);
     };
 
     schema.steps.forEach((step, index) => {
@@ -12693,7 +12799,7 @@ window.ProtoState = {
         if ('maxWords' in model && !(Number.isSafeInteger(model.maxWords) && model.maxWords > 0)) fail(`${modelPath}.maxWords`, 'ожидается положительное целое число слов');
         if ('discipline' in model) checkDiscipline(model.discipline, `${modelPath}.discipline`);
       });
-      if (CONTROL_KINDS.includes(step.kind)) checkControl(step, path);
+      if (CONTROL_KINDS.includes(step.kind)) checkControl(step, path, index);
     });
     errors.push(...executabilityErrors(schema.steps));
     return errors;
@@ -12962,7 +13068,7 @@ window.ProtoState = {
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '55';
+  const STAND_VERSION = '56';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -13714,6 +13820,8 @@ window.ProtoState = {
       const last = stack.lastElementChild;
       if (last) max = Math.max(max, last.getBoundingClientRect().bottom - stack.getBoundingClientRect().top);
     });
+    // Все стопки одной высоты, блоки под ними (вход, название) стоят на одной линии по верхнему краю.
+    $('pipelineFlow')?.style.setProperty('--proto-stack-h', `${max}px`);
     panel.querySelectorAll('#pipelineFlow .connector-svg').forEach((svg) => { svg.style.height = `${max}px`; svg.setAttribute('height', `${max}`); });
     const entry = $('entryWrapper');
     if (entry) entry.style.height = `${max}px`;
@@ -14417,7 +14525,8 @@ window.ProtoState = {
     .proto-stand-icon { font-size: 14px; color: var(--pipeline-muted); flex: 0 0 auto; }
     .proto-stand-line { display: block; font-size: 10px; line-height: 1.35; color: var(--pipeline-muted); overflow-wrap: anywhere; }
     .proto-stand-app { font-weight: 600; color: var(--pipeline-text); }
-    .proto-stand-meta { width: 139px; margin-top: 6px; }
+    #pipelineFlow .model-stack { min-height: var(--proto-stack-h, 0px); }
+    .proto-stand-meta { width: 139px; margin-top: 12px; }
     .proto-stand-kind { background: #f1f5f9; color: #64748b; text-transform: uppercase; }
     .proto-stand-bang { flex: 0 0 auto; display: inline-grid; place-items: center; width: 14px; height: 14px; border-radius: 50%; background: #dc2626; color: #fff; font-size: 10px; font-weight: 700; cursor: help; }
     .proto-stand-bang.is-warn { background: #f59e0b; }

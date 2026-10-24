@@ -6,7 +6,7 @@
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '55';
+  const STAND_VERSION = '56';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -758,6 +758,8 @@
       const last = stack.lastElementChild;
       if (last) max = Math.max(max, last.getBoundingClientRect().bottom - stack.getBoundingClientRect().top);
     });
+    // Все стопки одной высоты, блоки под ними (вход, название) стоят на одной линии по верхнему краю.
+    $('pipelineFlow')?.style.setProperty('--proto-stack-h', `${max}px`);
     panel.querySelectorAll('#pipelineFlow .connector-svg').forEach((svg) => { svg.style.height = `${max}px`; svg.setAttribute('height', `${max}`); });
     const entry = $('entryWrapper');
     if (entry) entry.style.height = `${max}px`;
@@ -1461,7 +1463,8 @@
     .proto-stand-icon { font-size: 14px; color: var(--pipeline-muted); flex: 0 0 auto; }
     .proto-stand-line { display: block; font-size: 10px; line-height: 1.35; color: var(--pipeline-muted); overflow-wrap: anywhere; }
     .proto-stand-app { font-weight: 600; color: var(--pipeline-text); }
-    .proto-stand-meta { width: 139px; margin-top: 6px; }
+    #pipelineFlow .model-stack { min-height: var(--proto-stack-h, 0px); }
+    .proto-stand-meta { width: 139px; margin-top: 12px; }
     .proto-stand-kind { background: #f1f5f9; color: #64748b; text-transform: uppercase; }
     .proto-stand-bang { flex: 0 0 auto; display: inline-grid; place-items: center; width: 14px; height: 14px; border-radius: 50%; background: #dc2626; color: #fff; font-size: 10px; font-weight: 700; cursor: help; }
     .proto-stand-bang.is-warn { background: #f59e0b; }
