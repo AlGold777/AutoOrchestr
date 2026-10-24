@@ -16,6 +16,7 @@ require(path.join(STAND, 'stand.js'));
 const prompt = fs.readFileSync(path.join(STAND, 'model-prompt.md'), 'utf8');
 const jsonBlocks = [...prompt.matchAll(/```json\n([\s\S]*?)```/g)].map((m) => m[1]);
 const NEW_WARN = ['Ответ User «', 'Артефакт объявлен в раунде из нескольких моделей', 'models['];
+const isNewWarn = (msg) => NEW_WARN.some((p) => msg.startsWith(p)) || (msg.startsWith('Этап ') && msg.includes('все модели уже получали'));
 
 describe('model-prompt.md: примеры и правила', () => {
   test('каждый пример JSON валиден, без ошибок стенда и без новых предупреждений', () => {
@@ -25,7 +26,7 @@ describe('model-prompt.md: примеры и правила', () => {
       const issues = window.ProtoStand.validate(text).issues;
       expect(issues.filter((i) => i.level === 'error')).toEqual([]);
       if (Array.isArray(parsed.steps)) {
-        expect(issues.filter((i) => i.level === 'warn' && NEW_WARN.some((p) => i.msg.startsWith(p)))).toEqual([]);
+        expect(issues.filter((i) => i.level === 'warn' && isNewWarn(i.msg))).toEqual([]);
       }
     });
   });
@@ -35,5 +36,7 @@ describe('model-prompt.md: примеры и правила', () => {
     expect(prompt).toContain('document');
     expect(prompt).toContain('chat');
     expect(prompt.toLowerCase()).toContain('в basic сейчас');
+    expect(prompt).toContain('ПОЛНЫЙ текст');
+    expect(prompt).toContain('по названию');
   });
 });

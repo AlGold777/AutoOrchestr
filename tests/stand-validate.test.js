@@ -167,7 +167,7 @@ describe('Стенд: поля документа и чат (пакет 2)', () 
 
 describe('Стенд: примеры каталога и схемы showcase', () => {
   const NEW = ['не читает ни один этап ниже', 'Артефакт объявлен в раунде из нескольких моделей', 'заменяет общее task этапа',
-    'Признак document у артефакта', 'document:', 'В раунде не больше одного артефакта-документа.', 'chat:'];
+    'Признак document у артефакта', 'document:', 'В раунде не больше одного артефакта-документа.', 'chat:', 'все модели уже получали'];
   const newWarnings = (schema) => window.ProtoStand.validate(JSON.stringify(schema)).issues
     .filter((i) => i.level === 'warn' && NEW.some((t) => i.msg.includes(t))).map((i) => i.msg);
 
@@ -178,5 +178,104 @@ describe('Стенд: примеры каталога и схемы showcase', (
       expect(errors(window.ProtoStand.validate(JSON.stringify(schema)).issues)).toEqual([]);
       expect(newWarnings(schema).every((msg) => NEW.some((t) => msg.includes(t)))).toBe(true);
     });
+  });
+});
+
+describe('Стенд: повторная вставка документа во входы (пакет 3)', () => {
+  const REUSE = 'все модели уже получали';
+  const reuse = (issues) => issues.filter((i) => i.level === 'warn' && i.msg.includes(REUSE)).map((i) => ({ step: i.step, msg: i.msg }));
+  const plan = [{ name: 'План', description: 'д' }];
+
+  test('(1) автор берёт свой документ по ссылке из входов — предупреждение', () => {
+    const issues = validate([
+      round('s1', [m('Claude')], { artifacts: plan }),
+      round('s2', [m('Claude')], { inputs: ['s1.План'] })
+    ]);
+    expect(reuse(issues)).toEqual([{ step: 's2', msg: 'Этап s2: все модели уже получали «s1.План» (этап s1, тот же чат). Уберите вход и сошлитесь на документ по названию в задании.' }]);
+  });
+
+  test('(2) оба получили в s2 — предупреждение для s3, не для s2', () => {
+    const issues = validate([
+      round('s1', [m('Claude'), m('GPT')]),
+      round('s2', [m('Claude'), m('GPT')], { inputs: ['s1'] }),
+      round('s3', [m('Claude'), m('GPT')], { inputs: ['s1'] })
+    ]);
+    expect(reuse(issues).map((i) => i.step)).toEqual(['s3']);
+    expect(reuse(issues)[0].msg).toBe('Этап s3: все модели уже получали «s1» (этап s2, тот же чат). Уберите вход и сошлитесь на документ по названию в задании.');
+  });
+
+  test('(3а) GPT ещё не видела документ — предупреждения нет', () => {
+    const issues = validate([
+      round('s1', [m('Claude')], { artifacts: plan }),
+      round('s2', [m('Claude'), m('GPT')], { inputs: ['s1.План'] })
+    ]);
+    expect(reuse(issues)).toEqual([]);
+  });
+
+  test('(3б) новый чат на этапе N — предупреждения нет', () => {
+    const issues = validate([
+      round('s1', [m('Claude')], { artifacts: plan }),
+      round('s2', [m('Claude')], { inputs: ['s1.План'], chat: 'new' })
+    ]);
+    expect(reuse(issues)).toEqual([]);
+  });
+
+  test('(3в) сброс чата между автором и N — предупреждения нет', () => {
+    const issues = validate([
+      round('s1', [m('Claude')], { artifacts: plan }),
+      round('s_mid', [m('Claude')], { chat: 'new' }),
+      round('s2', [m('Claude')], { inputs: ['s1.План'] })
+    ]);
+    expect(reuse(issues)).toEqual([]);
+  });
+
+  test('(3г) новая версия «План» в s2: предупреждение только про s2.План, про s1.План нет', () => {
+    const issues = validate([
+      round('s1', [m('Claude')], { artifacts: plan }),
+      round('s2', [m('Claude')], { artifacts: plan }),
+      round('s3', [m('Claude')], { inputs: ['s2.План'] })
+    ]);
+    const found = reuse(issues);
+    expect(found.map((i) => i.step)).toEqual(['s3']);
+    expect(found[0].msg).toContain('«s2.План» (этап s2');
+    expect(issues.some((i) => i.msg.includes('s1.План') && i.msg.includes(REUSE))).toBe(false);
+  });
+
+  test('(3д) owner читает документ — предупреждения для owner нет', () => {
+    const issues = validate([
+      round('s1', [m('Claude')], { artifacts: [{ name: 'ТЗ', description: 'д', document: 'read' }] }),
+      owner('s2', { document: 's1' })
+    ]);
+    expect(reuse(issues)).toEqual([]);
+  });
+
+  test('(3е) исходный артефакт in.Бриф: у одной модели из двух — нет; у всех — предупреждение для s2', () => {
+    const src = { artifacts: [{ name: 'Бриф', content: 'текст брифа' }] };
+    const one = validate([
+      round('s1', [m('Claude')], { inputs: ['in.Бриф'] }),
+      round('s2', [m('Claude')], { inputs: ['in.Бриф'] })
+    ], src);
+    expect(reuse(one)).toEqual([{ step: 's2', msg: 'Этап s2: все модели уже получали «in.Бриф» (этап s1, тот же чат). Уберите вход и сошлитесь на документ по названию в задании.' }]);
+    const two = validate([
+      round('s1', [m('Claude')], { inputs: ['in.Бриф'] }),
+      round('s2', [m('Claude'), m('GPT')], { inputs: ['in.Бриф'] })
+    ], src);
+    expect(reuse(two)).toEqual([]);
+  });
+
+  test('повтор одной и той же строки во входах этапа считается один раз', () => {
+    const issues = validate([
+      round('s1', [m('Claude')], { artifacts: plan }),
+      round('s2', [m('Claude')], { inputs: ['s1.План', 's1.План'] })
+    ]);
+    expect(reuse(issues)).toHaveLength(1);
+  });
+
+  test('выключенная модель не считается: у включённой есть документ — предупреждение', () => {
+    const issues = validate([
+      round('s1', [m('Claude')], { artifacts: plan }),
+      round('s2', [m('Claude'), m('GPT', { enabled: false })], { inputs: ['s1.План'] })
+    ]);
+    expect(reuse(issues).map((i) => i.step)).toEqual(['s2']);
   });
 });

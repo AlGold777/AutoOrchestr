@@ -6,7 +6,7 @@
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '60';
+  const STAND_VERSION = '61';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -507,6 +507,30 @@
         else if (!listOf(src.step.artifacts).some((a) => isObj(a) && (a.document === 'read' || a.document === 'form'))) problem = `у раунда «${st.document}» нет артефакта с признаком document (read или form).`;
         if (problem) add('warn', e.key, `document: ${problem}`);
       }
+    });
+    // Повтор документа во входах: все включённые модели этапа уже получили ссылку в этом же чате — вход лишний.
+    // Модель m имеет X с этапа K, если X — вход K для m (и без chat: new после K до этапа) или m — единственный автор X.
+    flat.forEach((e) => {
+      const st = e.step;
+      if (st.block !== 'round') return;
+      const ms = enabledOf(st);
+      if (!ms.length) return;
+      // Модели сравниваются по имени: у каждого этапа свои объекты моделей.
+      const has = (step, name) => enabledOf(step).some((y) => y?.name === name);
+      const earliest = (X, name) => {
+        const fresh = (kPos) => !flat.some((x) => x.pos > kPos && x.pos <= e.pos && x.step.chat === 'new' && has(x.step, name));
+        const cands = flat.filter((x) => x.pos < e.pos && has(x.step, name) && listOf(x.step.inputs).includes(X));
+        if (!/^in\./.test(X)) {
+          const p = byId.get(refId(X));
+          if (p && p.pos < e.pos && p.step.block === 'round' && enabledOf(p.step).length === 1 && has(p.step, name)) cands.push(p);
+        }
+        return cands.filter((x) => fresh(x.pos)).sort((a, b) => a.pos - b.pos)[0] || null;
+      };
+      [...new Set(listOf(st.inputs).filter(own))].forEach((X) => {
+        const firsts = ms.map((m) => earliest(X, m?.name));
+        if (firsts.some((k) => !k)) return;
+        add('warn', e.key, `Этап ${st.id}: все модели уже получали «${X}» (этап ${firsts[0].step.id}, тот же чат). Уберите вход и сошлитесь на документ по названию в задании.`);
+      });
     });
     flat.forEach((e) => {
       const st = e.step;
