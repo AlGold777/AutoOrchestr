@@ -8,7 +8,7 @@
     const S = () => window.ProtoState;
     const cards = () => window.ProtoCards || {};
     // Список ролей блока: None + judgeSystemPrompts из prompts.json (по order) + Custom (только Basic).
-    const ROLE_OPTIONS = ['None', 'Synthes', 'Critique', 'Select ideas', 'Clustering', 'Custom'];
+    const ROLE_OPTIONS = [['None', 'None'], ['interaction_meta_synthesis', 'Synthes'], ['interaction_critical_audit', 'Critique'], ['interaction_select_ideas', 'Select ideas'], ['interaction_pattern_clustering', 'Clustering'], ['custom', 'Custom']];
 
     const esc = (value = '') => String(value)
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -22,9 +22,8 @@
 
     const modelBlockHtml = (model, index) => {
         const isActive = model.enabled !== false;
-        const send = isActive && model.send !== false;
         const options = ROLE_OPTIONS
-            .map((label) => `<option value="${esc(label)}"${(model.role || 'None') === label ? ' selected' : ''}>${esc(label)}</option>`)
+            .map(([value, label]) => `<option value="${esc(value)}"${(model.role || 'None') === value ? ' selected' : ''}>${esc(label)}</option>`)
             .join('');
         return `
             <div class="model-block ${isActive ? 'active' : 'inactive'} with-role" data-index="${index}" data-model="${esc(model.name)}">
@@ -32,7 +31,6 @@
                     <span class="status-indicator" data-llm-name="${esc(model.name)}"></span>
                     <input type="checkbox" class="model-checkbox model-input-checkbox"${isActive ? ' checked' : ''} aria-label="Input" title="Input">
                     <span class="model-name">${esc(model.name)}</span>
-                    <input type="checkbox" class="model-checkbox model-send-checkbox"${send ? ' checked' : ''}${isActive ? '' : ' disabled'} aria-label="Send" title="Send">
                 </div>
                 <select class="role-selector judge-prompt-selector"${isActive ? '' : ' disabled'}>${options}</select>
             </div>`;
@@ -81,7 +79,7 @@
     };
     const modeLookup = (stackId, mode) => {
         if (mode === 'input') return checkedIndices(stackId, '.model-input-checkbox');
-        if (mode === 'send') return checkedIndices(stackId, '.model-send-checkbox');
+        if (mode === 'send') return checkedIndices(stackId, '.model-input-checkbox');
         const stack = $(stackId);
         if (!stack) return [];
         if (mode === 'all') return Array.from(stack.children).map((_, i) => i);
@@ -122,7 +120,7 @@
         svg.innerHTML = html;
     };
 
-    const drawMergeSplitConnector = (svgId, sourceStackId, targetStackId, colorClass, { sourceMode = 'send', targetMode = 'input' } = {}) => {
+    const drawMergeSplitConnector = (svgId, sourceStackId, targetStackId, colorClass, { sourceMode = 'input', targetMode = 'input' } = {}) => {
         const svg = $(svgId);
         if (!svg) return;
         const sourceStack = $(sourceStackId);
@@ -180,7 +178,7 @@
         updateLayout();
         drawInputSplitConnector('svg-in-models', 'r1-models', 'active');
         for (let n = 1; n < total; n++) {
-            drawMergeSplitConnector(`svg-r${n}-r${n + 1}`, `r${n}-models`, `r${n + 1}-models`, 'brain-flow', { sourceMode: 'send', targetMode: 'input' });
+            drawMergeSplitConnector(`svg-r${n}-r${n + 1}`, `r${n}-models`, `r${n + 1}-models`, 'brain-flow', { sourceMode: 'input', targetMode: 'input' });
         }
     };
 
@@ -294,9 +292,6 @@
                 if (!model) return;
                 if (t.classList.contains('model-input-checkbox')) {
                     model.enabled = t.checked;
-                    if (t.checked && model.send === false) model.send = true;
-                } else if (t.classList.contains('model-send-checkbox')) {
-                    model.send = t.checked;
                 } else if (t.classList.contains('role-selector')) {
                     model.role = t.value;
                 }

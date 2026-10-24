@@ -93,7 +93,8 @@
     if (step.input !== 'none' && hasEarlierStep) {
       parts.push(step.input === 'all' ? 'Принятые ответы всех предыдущих шагов:\n\nВход:\n{вход}' : 'Ответы предыдущего шага:\n\nОтвет 1:\n{вход}');
     }
-    if (step.input !== 'none' && own(task)) parts.push(`Задание:\n${task.trim()}`);
+    const written = step.input === 'none' ? first(step.target.task, step.roundTask) : task;
+    if (own(written)) parts.push(`Задание:\n${written.trim()}`);
     const extra = roleText(role, step.ref);
     if (own(extra)) parts.push(`Дополнительно для тебя:\n${extra.trim()}`);
     return parts.join('\n\n');
