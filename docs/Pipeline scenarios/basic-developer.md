@@ -26,7 +26,7 @@ GPT подготавливает запрос через `ContentUtils.ensurePro
 | --- | --- | --- |
 | `disput/custom-engine.js` | `CustomEngine`, `run`, `attempt`, `normalizeSteps`, `buildPrompt`, `previewPrompt`, `correctionPrompt`, `inputFor`, `judge`, `resolveSetting`, `STOP_TEXT`, `REASON_TEXT`, `DEFAULT_ATTEMPTS`, `EngineError`, `unexecutedOf`, `assertExecutable`, `sourceItems`, `sendParticipants`, `artifactItems`, `contentOf`, `revisionItem` | Движок: шаги, запросы, приём, повторы, пауза |
 | `disput/basic-schema.js` | `BasicSchema`, `DEFAULTS`, `validate`, `assemble`, `resolveFields`, `resolveRun`, `toSettings`, `toCanvas`, `describeErrors` | Формат схемы: умолчания, проверка (виды шага `round` и `owner`; шаги идут по порядку; `synthesis`, `gate` и `route` отклоняются, синтез — раунд из одной модели с ролью; поля `require` и `order` отклоняются с подсказкой: раунд ждёт ответов всех своих моделей, эстафета — раунды по одной модели подряд), сборка шагов, показ на холсте |
-| `disput/basic-artifacts.js` | `BasicArtifacts`, `createRegistry`, `register`, `latest`, `version`, `lineKey`, `markInvalid` | Реестр артефактов прогона: одна запись на версию, ссылка на ответ и указатель, без копии текста (чистые функции) |
+| `disput/basic-artifacts.js` | `BasicArtifacts`, `createRegistry`, `register`, `latest`, `version`, `lineKey` | Реестр артефактов прогона: одна запись на версию, ссылка на ответ и указатель, без копии текста (чистые функции) |
 | `disput/basic-output.js` | `BasicOutput`, `checkAnswer`, `readPointer`, `parseJsonAnswer`, `countWords` | Проверка ответа по выходу шага: длина, JSON и поля, разделы, артефакты (чистые функции; вызывает движок) |
 | `disput/basic-spec.js` | `BasicSpec`, `build`, `toMarkdown` | Описание pipeline «для человека» по схеме: три слоя (pipeline в целом, схема процесса, этапы), поля автора и автоматические поля, `missing` для незаполненного; чистые функции, без DOM (окно спецификации подключит их отдельно) |
 | `disput/custom-run-record.js` | `CustomRunRecord`, `createRun`, `recordAttempt`, `attemptKey`, `finishRun`, `serialize`, `revive`, `textOf`, `setSnapshot`, `setArtifacts`, `canResume`, `exportRun`, `createStore` | Запись о прогоне (версия 2: реестр и снимок состояния) |
@@ -37,6 +37,8 @@ GPT подготавливает запрос через `ContentUtils.ensurePro
 | `shared/message-delivery.js` | `batchEvent` | Журнал доставки |
 | `shared/report-digest.js` | `customStageId`, `latestCustomRunId`, `customFlowReport` | Extract (Transport) для прогона Basic |
 | `pipeline/pipeline-runtime.js` | `MODELS` | Список моделей холста |
+
+Страница перед запуском проверяет, что загружены `DebateResponseAcceptance` и `DebateStageMarkers` (приём ответа и разбор `[[ASK]]`): без них прогон не стартует, уведомление «Basic: не загружены модули приёма ответов…» (раньше приём молча считался успешным). Инструкция `discipline.ask` модели считается одной функцией (`askOf`) для запроса, показа частей и превью.
 
 Реестр артефактов: `result.artifacts` (записи реестра), тексты: callbacks `putText(text) → ref` и `getText(ref) → text` (страница передаёт их записи прогона; без них движок хранит тексты в `result.texts`). Запись о прогоне (`CustomRunRecord`, версия 2) хранит реестр в `record.artifacts`.
 

@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-24 — Basic: приём ответа не отключается молча, превью инструкции ask совпадает с запросом, версия 2.81.853
+
+- `results.js`: если не загружены `DebateResponseAcceptance` или `DebateStageMarkers`, прогон не стартует с уведомлением «Basic: не загружены модули приёма ответов…» (раньше `accept` возвращал `{ ok: true }` и приём ответа отключался без сообщения).
+- `disput/custom-engine.js`: инструкция `discipline.ask` считается одной функцией `askOf` для запроса, частей запроса и превью.
+- `disput/basic-artifacts.js`: удалена неиспользуемая `markInvalid`; чтение `valid: false` из записей прежних прогонов сохранено.
+- Тесты: `tests/custom-engine.test.js`, `tests/basic-artifacts.test.js`, `tests/custom-run-resume-wiring.test.js`; `tests/results-debate-favorites.test.js` загружает настоящий `debate-response-acceptance`.
+
 ### 2026-10-24 — Basic: проверка схемы не падает на имени вида шага, снимок без позиции не возобновляется, версия 2.81.852
 
 - `BasicSchema.validate`: имя вида шага из `Object.prototype` (`toString`, `constructor`…) даёт ошибку `steps[n].kind`, а не исключение (`disput/basic-schema.js`).

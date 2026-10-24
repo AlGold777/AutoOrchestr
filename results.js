@@ -6779,6 +6779,10 @@ document.addEventListener('click', (event) => {
                 showNotification('Basic: выберите модели хотя бы в одном раунде.', 'warn');
                 return false;
             }
+            if (!window.DebateResponseAcceptance?.evaluate || !window.DebateStageMarkers?.parse) {
+                showNotification('Basic: не загружены модули приёма ответов (DebateResponseAcceptance, DebateStageMarkers). Перезагрузите страницу.', 'error');
+                return false;
+            }
             const useApiFallback = apiModeCheckbox ? apiModeCheckbox.checked : true;
             const semiAuto = built.run.policy !== 'auto';
             pipelineRunActive = true;
@@ -7021,8 +7025,8 @@ document.addEventListener('click', (event) => {
                     runMaxWords: built.run.maxWords,
                     // The strict check of the length for the steps without their own output.strictLength (run.strictLength).
                     runStrictLength: built.run.strictLength,
-                    accept: ({ text, completion }) => window.DebateResponseAcceptance?.evaluate?.({ text, meta: { completion } }) || { ok: true },
-                    parseAsks: (text) => window.DebateStageMarkers?.parse?.(text)?.askItems || [],
+                    accept: ({ text, completion }) => window.DebateResponseAcceptance.evaluate({ text, meta: { completion } }),
+                    parseAsks: (text) => window.DebateStageMarkers.parse(text)?.askItems || [],
                     askOwner: askCustomOwner,
                     decide: askCustomDecision,
                     // The owner's answer of an owner step: a text (a file is not supported on this page yet).

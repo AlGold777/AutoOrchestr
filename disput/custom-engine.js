@@ -84,6 +84,7 @@
   const specOf = (step, model) => (model && model.input !== undefined ? model.input : step.input);
   const numbered = (items) => items.map((item, index) => `Ответ ${index + 1}:\n${item.text}`).join('\n\n');
   const labelled = (items) => items.map((item) => `${item.label}:\n${item.text}`).join('\n\n');
+  const askOf = (model, askInstruction) => (askInstruction && typeof model.discipline?.ask === 'string' ? model.discipline.ask : askInstruction);
 
   // One inheritance rule; the round slot is reserved for a future round editor.
   function resolveSetting({ model, round, pipeline, fallback = '' } = {}) {
@@ -107,7 +108,7 @@
   }
 
   function buildPrompt({ task, step, model, input = [], inputMode = 'none', ownerAnswers = [], askInstruction = '', output = null }) {
-    if (askInstruction && typeof model.discipline?.ask === 'string') askInstruction = model.discipline.ask;
+    askInstruction = askOf(model, askInstruction);
     if (typeof model.promptTemplate === 'string' && model.promptTemplate.trim()) {
       // One pass: placeholders occurring inside model answers remain data, never instructions.
       const values = { '{задача}': text(task), '{вход}': inputMode === 'all' || inputMode === 'sources' ? labelled(input) : numbered(input) };
@@ -598,7 +599,7 @@
     // Instructions (owner-editable behaviour) and input (data from other models) are kept apart.
     function partsFor(step, model, input, spec) {
       return {
-        instructions: { task: text(task), stepTask: model.task ?? step.task, extra: model.extra || '', askInstruction: semiAuto ? (model.discipline?.ask ?? askInstruction) : '',
+        instructions: { task: text(task), stepTask: model.task ?? step.task, extra: model.extra || '', askInstruction: askOf(model, semiAuto ? askInstruction : ''),
           ownerAnswers: ownerAnswers.slice() },
         input: { mode: modeOf(spec), items: input }
       };
@@ -1052,7 +1053,7 @@
       : buildPrompt({ task: '{задача}', step, model, input: input.length ? [{ label: 'Вход', text: '{вход}' }] : [],
         inputMode: modeOf(spec), output: outputOf(step, model) });
     return { label: stepLabel(step), inputMode: modeOf(spec), prompt, template, transportLines: TRANSPORT_LINES.slice(),
-      instructions: { task: text(task), stepTask: model.task ?? step.task, extra: model.extra || '', askInstruction: semiAuto ? askInstruction : '' } };
+      instructions: { task: text(task), stepTask: model.task ?? step.task, extra: model.extra || '', askInstruction: askOf(model, semiAuto ? askInstruction : '') } };
   }
 
   const api = Object.freeze({ EngineError, unexecutedOf, formatBlock, DEFAULT_ATTEMPTS, CORRECTION_TEMPLATE, STOP_TEXT, REASON_TEXT, resolveSetting, PLACEHOLDER, TRANSPORT_LINES, buildPrompt, correctionPrompt, normalizeSteps, previewPrompt, run });

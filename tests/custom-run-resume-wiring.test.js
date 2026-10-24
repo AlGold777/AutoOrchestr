@@ -67,6 +67,12 @@ describe('Basic page binds the engine to the run record (8.2, 8.3)', () => {
     expect(results).toMatch(/const canContinue = choices\.includes\('continue'\);[\s\S]*?confirmText: canContinue \? 'Продолжить' : 'Пропустить шаг'/);
   });
 
+  test('B-8: без модулей приёма ответов страница не принимает всё молча (нет заглушки { ok: true })', () => {
+    expect(results).not.toContain('|| { ok: true }');
+    expect(results).toContain('не загружены модули приёма ответов');
+    expect(results).not.toContain('DebateResponseAcceptance?.evaluate?.(');
+  });
+
   test('the owner answer and the unknown request are asked in windows (A06), no guessed answer is passed; there is no route choice', () => {
     expect(results).toContain('provideOwnerResult: ({ stepRef, task, goal, input, output, reason, detail }) => askChoiceDialog({');
     expect(results).toContain('window.StageCard.ownerAskMessage({ task, goal, input, output, reason, detail,');

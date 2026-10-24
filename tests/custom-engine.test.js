@@ -464,6 +464,17 @@ describe('Custom engine addressed inputs', () => {
     expect(calls).toHaveLength(0);
   });
 
+  test('B-4: инструкция ask модели в превью (semiAuto) такая же, как в запросе: она заменяет общую', () => {
+    const steps = [{ ref: 'r1', kind: 'round', input: 'none', models: [{ name: 'A', discipline: { ask: 'MY-ASK' } }] }];
+    const without = Engine.previewPrompt({ task: 'T', steps, stepIndex: 0, modelName: 'A', semiAuto: true, askInstruction: '' });
+    expect(without.instructions.askInstruction).toBe('');
+    expect(without.prompt).not.toContain('MY-ASK');
+    const withGlobal = Engine.previewPrompt({ task: 'T', steps, stepIndex: 0, modelName: 'A', semiAuto: true, askInstruction: 'GLOBAL' });
+    expect(withGlobal.instructions.askInstruction).toBe('MY-ASK');
+    expect(withGlobal.prompt).toContain('MY-ASK');
+    expect(withGlobal.prompt).not.toContain('GLOBAL');
+  });
+
   test('the preview shows that the answers of the chosen steps come at the run', () => {
     const steps = [{ ref: 'r1', kind: 'round', models: ['A'] }, { ref: 'r2', kind: 'round', input: [{ step: 'r1', participant: 'A' }], models: ['A'] }];
     expect(Engine.previewPrompt({ task: 'T', steps, stepIndex: 1, modelName: 'A' }).prompt)

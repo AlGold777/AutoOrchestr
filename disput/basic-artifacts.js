@@ -46,20 +46,7 @@
       && entry.source.step === address.step && entry.source.participant === address.participant && entry.source.visit === address.visit) || null;
   }
 
-  // Marks the versions that the predicate names as not current (valid false). The history stays: the entries are kept.
-  // Returns how many versions changed.
-  function markInvalid(registry, isStale) {
-    let changed = 0;
-    registry.entries.forEach((entry) => {
-      if (entry.valid && isStale(entry)) {
-        entry.valid = false;
-        changed += 1;
-      }
-    });
-    return changed;
-  }
-
-  const api = Object.freeze({ createRegistry, register, latest, version, lineKey, markInvalid });
+  const api = Object.freeze({ createRegistry, register, latest, version, lineKey });
   root.BasicArtifacts = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
