@@ -6,13 +6,16 @@
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '47';
+  const STAND_VERSION = '48';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
   const $ = (id) => document.getElementById(id);
   const esc = (value) => String(value == null ? '' : value).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
   const own = (value) => typeof value === 'string' && Boolean(value.trim());
+  // Подсказка элемента холста: data-tip — название, data-desc — описание (из схемы); пусто в схеме — видимая строка.
+  const NO_DESC = 'Описание не задано';
+  const tipAttrs = (name, desc) => ` data-tip="${esc(name)}" data-desc="${esc(own(desc) ? desc.trim() : NO_DESC)}"`;
   const cut = (text, n) => { const s = String(text || '').trim().replace(/\s+/g, ' '); return s.length > n ? `${s.slice(0, n - 1)}…` : s; };
 
   // ---------- Формат схемы ----------
@@ -533,7 +536,7 @@
           models: listOf(st.models).filter((m) => m && typeof m === 'object').map((m) => {
             const id = roleIdOf(m.role);
             const roleLine = own(m.role) && !id ? `Роль: ${m.role.trim()}.` : '';
-            return { name: String(m.name || '?'), enabled: true, send: true, role: id || 'None', schemaRole: own(m.role) ? m.role.trim() : '',
+            return { name: String(m.name || '?'), enabled: true, send: true, role: id || 'None', schemaRole: own(m.role) ? m.role.trim() : '', schemaTask: own(m.task) ? m.task.trim() : '',
               task: [roleLine, own(m.task) ? m.task.trim() : ''].filter(Boolean).join('\n\n'), ...ownFields(m) };
           }),
           artifacts: listOf(st.artifacts).map((a, k) => ({ id: `${st.id}-a${k + 1}`, title: artName(a), version: 1 }))
@@ -574,7 +577,7 @@
     const list = issuesOf(key);
     if (!list.length) return '';
     const err = list.some((it) => it.level === 'error');
-    return `<span class="proto-stand-bang${err ? '' : ' is-warn'}" title="${esc(list.map((it) => it.msg).join('\n'))}">!</span>`;
+    return `<span class="proto-stand-bang${err ? '' : ' is-warn'}"${tipAttrs(err ? 'Ошибка схемы' : 'Предупреждение схемы', list.map((it) => it.msg).join('\n'))}>!</span>`;
   };
   const inputsText = (st) => {
     const req = listOf(st.inputs).filter(own);
@@ -592,11 +595,11 @@
   // Исходные артефакты — в зоне над In (k = -1); у колонок этапов исходных артефактов нет.
   const docChips = (k) => (k === -1 ? (stand.inDocs || []) : []).map((d) => {
     const label = docKind(d);
-    return `<span class="proto-art proto-art-doc" data-art="doc|${esc(d.id)}" title="${esc(d.title)} — ${esc(label)} (исходный артефакт)"><span class="proto-art-title">${esc(d.title)}</span><span class="proto-art-version">${esc(label)}</span></span>`;
+    return `<span class="proto-art proto-art-doc" data-art="doc|${esc(d.id)}"${tipAttrs(`${d.title} · исходный артефакт (${label})`, artDesc(d.src))}><span class="proto-art-title">${esc(d.title)}</span><span class="proto-art-version">${esc(label)}</span></span>`;
   }).join('');
   const artifactZone = (k, st) => `<div class="proto-art-zone">${listOf(st.artifacts).map(artName).map((name) => {
     const version = `v${artifactVersion(k, name)}`;
-    return `<span class="proto-art" data-art="${k}|${esc(name)}" title="${esc(name)} ${esc(version)} — ${esc(artifactDesc(name) || 'описание не задано')}"><span class="proto-art-title">${esc(name)}</span><span class="proto-art-version">${esc(version)}</span></span>`;
+    return `<span class="proto-art" data-art="${k}|${esc(name)}"${tipAttrs(`${name} ${version}`, artifactDesc(name))}><span class="proto-art-title">${esc(name)}</span><span class="proto-art-version">${esc(version)}</span></span>`;
   }).join('')}${docChips(k)}</div>`;
   function openArtifact(k, name) {
     const col = stand.layout[k];
@@ -615,7 +618,7 @@
           <div class="proto-stand-row"><span>берут</span><div>${users.length ? users.map((u) => `${esc(u.id || '')} · ${esc(u.title || '')}`).join('<br>') : 'никто'}</div></div>
         </div>
         <div class="custom-card-marks"><strong>Описание</strong>
-          <div class="custom-card-note">${esc(artifactDesc(name) || 'не задано')}</div>
+          <div class="custom-card-note">${esc(artifactDesc(name) || NO_DESC)}</div>
         </div>
       </div>`;
     show(modal);
@@ -653,23 +656,28 @@
           <div class="proto-stand-row"><span>берут</span><div>${users.length ? users.map((u) => `${esc(u.id || '')} · ${esc(u.title || '')}`).join('<br>') : 'никто'}</div></div>
         </div>
         <div class="custom-card-marks"><strong>Описание</strong>
-          <div class="custom-card-note" style="white-space:pre-wrap">${esc(artDesc(st.src) || st.src.content || 'не задано')}</div>
+          <div class="custom-card-note" style="white-space:pre-wrap">${esc(artDesc(st.src) || NO_DESC)}</div>
         </div>
       </div>`;
     show(modal);
   }
-  const modelBlock = (model, index) => {
+  // Описание модели: роль и задание модели; нет их — задание раунда.
+  const modelDesc = (model, round) => {
+    const own2 = [model.schemaRole ? `Роль: ${model.schemaRole}` : '', model.schemaTask].filter(Boolean).join('\n');
+    return own2 || (round && own(round.task) ? `Задание раунда: ${round.task.trim()}` : '');
+  };
+  const modelBlock = (model, index, round) => {
     const on = model.enabled !== false;
     const send = on && model.send !== false;
     const options = ROLE_OPTIONS.map(([value, label]) => {
       const text = value === 'None' && model.schemaRole && !roleIdOf(model.schemaRole) ? model.schemaRole : label;
       return `<option value="${esc(value)}"${(model.role || 'None') === value ? ' selected' : ''}>${esc(text)}</option>`;
     }).join('');
-    return `<div class="model-block ${on ? 'active' : 'inactive'} with-role" data-index="${index}" data-model="${esc(model.name)}" title="${esc(model.schemaRole ? `${model.name} — ${model.schemaRole}` : model.name)}">
+    return `<div class="model-block ${on ? 'active' : 'inactive'} with-role" data-index="${index}" data-model="${esc(model.name)}"${tipAttrs(model.name, modelDesc(model, round))}>
         <div class="model-header">
           <span class="status-indicator" data-llm-name="${esc(model.name)}"></span>
           <input type="checkbox" class="model-checkbox model-input-checkbox"${on ? ' checked' : ''} aria-label="Input" title="Input">
-          <span class="model-name" title="${esc(model.schemaRole ? `${model.name} — ${model.schemaRole}` : model.name)}">${esc(model.name)}</span>
+          <span class="model-name">${esc(model.name)}</span>
           <input type="checkbox" class="model-checkbox model-send-checkbox"${send ? ' checked' : ''}${on ? '' : ' disabled'} aria-label="Send" title="Send">
         </div>
         <select class="role-selector judge-prompt-selector"${on ? '' : ' disabled'}>${options}</select>
@@ -679,30 +687,33 @@
     const st = col.step;
     const key = col.key;
     const stack = `stand-stack-${k}`;
-    const head = (badge, extra = '', tipText = '') => `<div class="stage-label"${tipText ? ` title="${esc(tipText)}"` : ''}><span class="round-badge${extra}">${badge}</span></div>`;
+    const head = (badge, extra = '', tip = '') => `<div class="stage-label"${tip}><span class="round-badge${extra}">${badge}</span></div>`;
     const tail = inputsText(st, prevId);
     if (col.round != null) {
       const round = S().rounds[col.round];
-      return `<div class="stage-column" data-round-index="${col.round}" data-stand-key="${esc(key)}" title="${esc(`Раунд ${col.round + 1} · ${st.id || ''} · ${st.title || ''}`)}">
-          ${head(`R${col.round + 1}`, '', `Раунд ${col.round + 1} · ${st.id || ''} · ${st.title || ''}`)}
+      const tip = tipAttrs(`R${col.round + 1} · ${st.title || st.id || ''}`, st.why);
+      return `<div class="stage-column" data-round-index="${col.round}" data-stand-key="${esc(key)}"${tip}>
+          ${head(`R${col.round + 1}`, '', tip)}
           ${artifactZone(k, st)}
-          <div class="model-stack" id="${stack}">${round.models.map(modelBlock).join('')}</div>
-          <div class="proto-stand-meta">${bang(key)}<span class="proto-stand-line" title="${esc(`${st.id || ''} ${st.title || ''}`)}"><b>${esc(st.id || '')}</b> ${esc(cut(st.title, 40))}</span>${tail}</div>
+          <div class="model-stack" id="${stack}">${round.models.map((m, i) => modelBlock(m, i, round)).join('')}</div>
+          <div class="proto-stand-meta">${bang(key)}<span class="proto-stand-line"${tip}><b>${esc(st.id || '')}</b> ${esc(cut(st.title, 40))}</span>${tail}</div>
         </div>`;
     }
     const [label, icon] = KIND[st.block] || [String(st.block || '?'), 'ti-help'];
     const human = HUMAN_BLOCKS.includes(st.block);
     const app = APP_BLOCKS.includes(st.block) ? '<div class="proto-stand-line proto-stand-app">приложение</div>' : '';
-    return `<div class="stage-column" data-stand-key="${esc(key)}" title="${esc(`${label} · ${st.id || ''} · ${st.title || ''}`)}">
-        ${head(esc(label), ` proto-stand-kind${human ? ' proto-human-kind' : ''}`, `${label} · ${st.id || ''} · ${st.title || ''}`)}
+    const extra = [own(st.ask) ? `Вопрос: ${st.ask.trim()}` : '', own(st.file) ? `Файл: ${st.file.trim()}${own(st.mode) ? ` (${st.mode.trim()})` : ''}` : ''].filter(Boolean);
+    const tip = tipAttrs(`${label} · ${st.title || st.id || ''}`, [own(st.why) ? st.why.trim() : '', ...extra].join('\n'));
+    return `<div class="stage-column" data-stand-key="${esc(key)}"${tip}>
+        ${head(esc(label), ` proto-stand-kind${human ? ' proto-human-kind' : ''}`, tip)}
         ${artifactZone(k, st)}
         <div class="model-stack" id="${stack}">
-          <div class="model-block inactive proto-stand-card${human ? ' proto-human' : ''}" data-stand-key="${esc(key)}" title="${esc(`${st.id || ''} ${st.title || ''}`)}">
-            <div class="model-header"><i class="ti ${icon} proto-stand-icon" aria-hidden="true"></i><span class="model-name" title="${esc(st.title)}">${human ? 'User' : esc(st.title || '—')}</span>${bang(key)}</div>
-            ${app}<div class="proto-stand-line" title="${esc([st.id, st.title, st.why].filter(Boolean).join(' · '))}">${human ? `<b>${esc(st.id || '')}</b> ${esc(cut(st.title, 40))}` : `<b>${esc(st.id || '')}</b>`} ${esc(cut(st.why, 70))}</div>
+          <div class="model-block inactive proto-stand-card${human ? ' proto-human' : ''}" data-stand-key="${esc(key)}"${tip}>
+            <div class="model-header"><i class="ti ${icon} proto-stand-icon" aria-hidden="true"></i><span class="model-name">${human ? 'User' : esc(st.title || '—')}</span>${bang(key)}</div>
+            ${app}<div class="proto-stand-line"${tip}>${human ? `<b>${esc(st.id || '')}</b> ${esc(cut(st.title, 40))}` : `<b>${esc(st.id || '')}</b>`} ${esc(cut(st.why, 70))}</div>
           </div>
         </div>
-        <div class="proto-stand-meta"${listOf(st.inputs).filter(own).length ? ` title="${esc('вход: ' + listOf(st.inputs).filter(own).join(', '))}"` : ''}>${inputsText(st, prevId)}</div>
+        <div class="proto-stand-meta">${inputsText(st, prevId)}</div>
       </div>`;
   }
 
@@ -713,10 +724,12 @@
     const root = $('pipelineFlow');
     if (!root) return;
     const cols = stand.layout;
-    let html = `<div class="stage-column entry-column" title="In — исходные артефакты и общие значения схемы">
-        <div class="stage-label" title="In — исходные артефакты и общие значения схемы"><span class="entry-badge">In</span></div>
+    const inDesc = (stand.inDocs || []).map((d) => `${d.title} (${docKind(d)}) — ${artDesc(d.src) || NO_DESC}`).join('\n');
+    const inTip = tipAttrs('In · исходные артефакты', inDesc || (own(stand.schema?.description) ? cut(stand.schema.description, 400) : ''));
+    let html = `<div class="stage-column entry-column"${inTip}>
+        <div class="stage-label"${inTip}><span class="entry-badge">In</span></div>
         <div class="proto-art-zone">${docChips(-1)}</div>
-        <div class="entry-wrapper" id="entryWrapper"><div class="entry-point" id="entryPoint" title="${esc(own(stand.schema?.description) ? cut(stand.schema.description, 400) : 'Общие значения')}" style="cursor:pointer">▶</div></div>
+        <div class="entry-wrapper" id="entryWrapper"><div class="entry-point" id="entryPoint"${tipAttrs('▶ Общие значения', own(stand.schema?.description) ? cut(stand.schema.description, 400) : '')} style="cursor:pointer">▶</div></div>
       </div>
       <div class="connector-group"><svg class="connector-svg" id="svg-in-models"></svg></div>`;
     cols.forEach((col, k) => {
@@ -1301,7 +1314,7 @@
   // Пункт списка — разметка настоящего UI (results.js, buildPipelineItem).
   function itemHtml(name, title, active, attrs, deletable) {
     return `<div class="pipeline-item${active ? ' active' : ''}" data-name="${esc(name)}"${attrs}>
-      <span class="pipeline-item-main"><input type="radio" name="pipeline" class="pipeline-radio"${active ? ' checked' : ''}><span class="pipeline-item-name" data-tip="${esc(title)}">${esc(name)}</span></span>${deletable
+      <span class="pipeline-item-main"><input type="radio" name="pipeline" class="pipeline-radio"${active ? ' checked' : ''}><span class="pipeline-item-name" data-tip="${esc(name)}" data-desc="${esc(title)}">${esc(name)}</span></span>${deletable
       ? '<button type="button" class="pipeline-item-delete" title="Удалить шаблон" aria-label="Удалить шаблон">×</button>' : ''}</div>`;
   }
   function drawCatalog() {
@@ -1310,9 +1323,9 @@
     const status = catalog.status === 'none' ? 'Каталог: нет файла'
       : `Каталог: ${catalog.fileName}${catalog.status === 'prompt' ? ' · нет доступа' : catalog.status === 'unread' ? ' · не прочитан' : ''}`;
     const date = (iso) => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? String(iso || '') : d.toLocaleString('ru-RU'); };
-    box.innerHTML = `<div class="proto-catalog-status" title="${esc(status)}">${esc(status)}</div>${itemHtml('Default', 'Default — исходный холст', !stand.active, ' data-catalog-default', false)}${catalog.templates.map((t) => {
+    box.innerHTML = `<div class="proto-catalog-status" title="${esc(status)}">${esc(status)}</div>${itemHtml('Default', 'Исходный холст', !stand.active, ' data-catalog-default', false)}${catalog.templates.map((t) => {
       const n = countSteps(t.schema);
-      return itemHtml(t.name, `${t.name} · ${n} ${plural(n, ['этап', 'этапа', 'этапов'])} · ${date(t.savedAt)}`, stand.active && t.id === catalog.activeId, ` data-template-id="${esc(t.id)}"`, true);
+      return itemHtml(t.name, `${n} ${plural(n, ['этап', 'этапа', 'этапов'])} · ${date(t.savedAt)}${own(t.schema?.description) ? `\n${cut(t.schema.description, 300)}` : ''}`, stand.active && t.id === catalog.activeId, ` data-template-id="${esc(t.id)}"`, true);
     }).join('')}${catalog.status === 'prompt' ? `<div class="pipeline-item proto-catalog-open" data-catalog-open title="Разрешить доступ и прочитать файл">
       <span class="pipeline-item-main"><i class="ti ti-folder-open" aria-hidden="true"></i><span class="pipeline-item-name">Открыть каталог: ${esc(catalog.fileName)}</span></span></div>` : ''}`;
   }
@@ -1334,7 +1347,7 @@
       if (holder) {
         if (!holder.dataset.tip && holder.getAttribute('title')) { holder.dataset.tip = holder.getAttribute('title'); }
         if (holder.hasAttribute('title')) holder.removeAttribute('title');
-        if (holder.dataset.tip) return { el: holder, text: holder.dataset.tip };
+        if (holder.dataset.tip) return { el: holder, text: holder.dataset.tip, desc: holder.dataset.desc || '' };
       }
       const el = target.closest(TIP_FALLBACK);
       if (el && (el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1)) {
@@ -1344,8 +1357,12 @@
       return null;
     };
     const hide = () => { current = null; tip.classList.remove('is-visible'); };
-    const place = (el, text) => {
-      tip.textContent = text;
+    const place = (el, text, desc) => {
+      const head = document.createElement('b');
+      head.className = 'entry-point-tooltip-name';
+      head.textContent = text;
+      tip.replaceChildren(head);
+      if (desc) { const body = document.createElement('span'); body.className = 'entry-point-tooltip-desc'; body.textContent = desc; tip.appendChild(body); }
       const r = el.getBoundingClientRect();
       const t = tip.getBoundingClientRect();   // размеры верны и при opacity 0
       const margin = 8;
@@ -1364,7 +1381,7 @@
       if (!found || !found.text) { hide(); return; }
       if (found.el === current && tip.classList.contains('is-visible')) return;
       current = found.el;
-      place(found.el, found.text);
+      place(found.el, found.text, found.desc);
     });
     document.addEventListener('pointerout', (event) => { if (!event.relatedTarget) hide(); });
     document.addEventListener('pointerdown', hide, true);

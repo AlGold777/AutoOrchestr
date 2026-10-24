@@ -10,12 +10,16 @@
     <style>
         /* Список шаблонов стенда: три колонки по 15 элементов; элемент шире колонки переносится в следующую, без наложения. */
         #pipelineItems.pipeline-items {
+            width: calc(100% - 20px);   /* margin-left 20px из pipeline.css */
+            box-sizing: border-box;
+            justify-content: stretch;
             grid-template-rows: repeat(15, max-content);
-            grid-auto-columns: 240px;
+            grid-auto-columns: minmax(0, 1fr);
             column-gap: 16px;
         }
-        #pipelineItems .pipeline-item { width: 240px; max-width: 240px; flex: 0 0 240px; }
-        #pipelineItems .pipeline-item-name { max-width: 200px; }
+        #pipelineItems .pipeline-item { width: 100%; max-width: none; flex: none; min-width: 0; box-sizing: border-box; }
+        #pipelineItems .pipeline-item-main { min-width: 0; }
+        #pipelineItems .pipeline-item-name { max-width: 100%; min-width: 0; }
         /* Подсказка на каждом элементе списка: полное имя и число этапов (стиль читается при любом фоне). */
         .entry-point-tooltip {
             position: fixed;
@@ -41,6 +45,9 @@
             transform: translate(-50%, 4px);
             transition: opacity 0.12s ease, transform 0.12s ease;
         }
+        .entry-point-tooltip-name, .entry-point-tooltip-desc { display: block; }
+        .entry-point-tooltip-name { font-weight: 700; }
+        .entry-point-tooltip-desc { font-weight: 400; margin-top: 4px; }
         .entry-point-tooltip.is-visible {
             opacity: 1;
             transform: translate(-50%, 0);
