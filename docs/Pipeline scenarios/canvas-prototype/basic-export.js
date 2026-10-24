@@ -42,6 +42,8 @@
       return out;
     };
     const out = [];
+    // Раунды, чей документ для User перенесён в output шага Basic (на них может ссылаться owner.document).
+    const docRounds = new Set();
     steps.forEach((st, i) => {
       const ref = refs.get(st.id);
       if (!ref) { warnings.push(`Этап ${st.id || i + 1} (${st.block}) не перенесён: в Basic такого блока нет.`); return; }
@@ -57,10 +59,25 @@
         step.input = input.length ? input : 'none';
         if (own(st.task)) step.task = st.task.trim();
         step.models = list(st.models).filter((m) => isObj(m) && own(m.name)).map(modelOf);
+        // Документ для User: только в раунде из одной модели; вид read — артефакт в output, form — опросник (json).
+        const docArt = list(st.artifacts).find((a) => isObj(a) && (a.document === 'read' || a.document === 'form'));
+        if (docArt) {
+          const name = String(docArt.name || '').trim();
+          if (list(st.models).filter((m) => isObj(m) && m.enabled !== false).length !== 1) warnings.push(`Этап ${st.id}: документ «${name}» не перенесён: в Basic документ для User даёт раунд из одной модели.`);
+          else {
+            docRounds.add(st.id);
+            step.output = docArt.document === 'read' ? { document: 'read', artifacts: [{ id: idPart(name, 'doc'), name, pointer: '' }] } : { format: 'json', document: 'form' };
+          }
+        }
+        if (['new', 'continue'].includes(st.chat)) step.chat = st.chat;
       } else if (st.block === 'owner') {
         step.task = own(st.ask) ? st.ask.trim() : 'Дайте ответ';
         step.models = [];
         if (input.length) step.input = input;
+        if (st.document != null) {
+          if (docRounds.has(st.document)) step.document = refs.get(st.document);
+          else warnings.push(`Этап ${st.id}: document «${st.document}» не перенесён: этап не переносится.`);
+        }
       }
       if (own(st.title)) step.title = st.title.trim();
       if (own(st.why)) step.goal = st.why.trim();
@@ -143,6 +160,13 @@
         warnings.push(`Шаг ${st.ref} (${st.kind}) не перенесён на стенд.`);
         return;
       }
+      if (st.kind === 'round') {
+        const o = isObj(st.output) ? st.output : null;
+        if (o?.document === 'read' && isObj(o.artifacts?.[0])) step.artifacts = [{ name: o.artifacts[0].name, document: 'read' }];
+        else if (o?.document === 'form') step.artifacts = [{ name: own(o.name) ? o.name : 'Опросник', document: 'form' }];
+        if (['new', 'continue'].includes(st.chat)) step.chat = st.chat;
+      }
+      if (st.kind === 'owner' && st.document !== undefined) step.document = ids.get(st.document);
       out.push(step);
     });
     const schema = { task: own(opts.name) ? opts.name : (own(basic?.description) ? basic.description.trim().slice(0, 60) : 'Схема Basic') };

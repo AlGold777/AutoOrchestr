@@ -9534,7 +9534,6 @@ hr.section-divider {
 .choice-dialog-document { white-space: pre-wrap; max-height: 40vh; overflow: auto; border: 1px solid var(--border-color, #d0d7de); padding: 8px; margin: 8px 0; font-size: 14px; }
 .choice-dialog-document-title { margin: 8px 0 4px; }
 .choice-dialog-document-edit { width: 100%; box-sizing: border-box; min-height: 40vh; font: inherit; font-size: 14px; }
-.choice-dialog-document-unavailable { margin: 8px 0; }
 .choice-dialog-form { margin-bottom: 12px; max-height: 50vh; overflow: auto; }
 .owner-ask-text { width: 100%; box-sizing: border-box; font: inherit; font-size: 14px; }
 .choice-dialog-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
@@ -11644,7 +11643,7 @@ window.ProtoState = {
     accept = defaultAccept, parseAsks = null, askOwner = null, askInstruction = '', decide = null,
     send = null, sendParticipants = null, runMaxWords = null, runStrictLength = false, putText: putCallback = null, getText: getCallback = null, provideOwnerResult = null,
     checkpoint = null, resolveUnknown = null, checkUnknown = null, resume = null,
-    signal = null, onEvent = null, onRequest = null, onResponse = null, onDocument = null, getDocument = null
+    signal = null, onEvent = null, onRequest = null, onResponse = null
   }) {
     // The texts of the answers: the record gives the callbacks (putText → ref, getText(ref) → text); without them the run keeps
     // its own dictionary, which the result returns. An answer is put once, when it is accepted.
@@ -11682,13 +11681,6 @@ window.ProtoState = {
       }
     });
     const emit = (kind, fields) => { if (typeof onEvent === 'function') onEvent(kind, fields); };
-    // The document events (kind: version | approved) go to the page synchronously; a failing callback never stops the run.
-    const emitDocument = (event) => {
-      if (typeof onDocument !== 'function') return;
-      try { onDocument(event); } catch (error) { emit('custom_document_error', { message: String(error?.message || error) }); }
-    };
-    // The number of a version: the versions of its line registered so far (the last one is the latest).
-    const versionNumber = (lineage) => registry.entries.filter((entry) => Artifacts.lineKey(entry.lineage) === Artifacts.lineKey(lineage)).length;
     const aborted = () => Boolean(signal?.aborted);
     const plan = normalizeSteps(steps);
     if (plan.some((step) => step.kind === 'owner') && typeof provideOwnerResult !== 'function') {
@@ -11973,14 +11965,10 @@ window.ProtoState = {
               const extracted = readDocument ? Output.extractDocument(verdict.text, declaration.id) : null;
               if (readDocument && extracted === null) return;
               const lineage = revision ? { ...revision.artifact.lineage } : { step: step.ref, participant: model.id, id: declaration.id };
-              const { created } = Artifacts.register(registry, { id: declaration.id, name: declaration.name,
+              Artifacts.register(registry, { id: declaration.id, name: declaration.name,
                 lineage,
                 source: { step: step.ref, participant: model.id, visit: activeVisit },
                 answerRef: readDocument ? putText(extracted) : answerRef, pointer: readDocument ? '' : declaration.pointer, inputs, description: declaration.description });
-              if (readDocument && created) {
-                emitDocument({ kind: 'version', id: declaration.id, name: declaration.name, version: versionNumber(lineage), author: 'model',
-                  stepRef: step.ref, participant: model.id, visit: activeVisit, text: extracted });
-              }
             });
           }
           delete outcome[model.id].detail;
@@ -12047,8 +12035,7 @@ window.ProtoState = {
     const ownerItemOf = (item) => ({ label: item.label, ...item.address, ...(item.binary ? { file: item.file } : { text: item.text }) });
     // The document of an owner step (document: a round before it): the accepted answer of its one model, and its kind.
     // A text document (document: read) is the latest version of the artifact of that round (the model's answer, or the owner's edit).
-    // Its text is the stored answer at the pointer; when the stored answer is gone, getDocument gives it; with neither it is
-    // unavailable (no text): the owner is asked, nothing is replaced by another version.
+    // Its text is the stored answer at the pointer; without a stored answer the document cannot be shown (invalid_document).
     async function documentFor(step) {
       if (!step.document) return null;
       const at = `шаг «${step.ref}» · document`;
@@ -12070,12 +12057,9 @@ window.ProtoState = {
       const lineage = { step: source.ref, participant: source.models[0].id, id: declaration.id };
       const found = Artifacts.latest(registry, lineage);
       if (!found || !found.valid) throw new EngineError('invalid_document', at, 'у раунда нет актуальной версии документа');
-      const version = versionNumber(lineage);
       const stored = getText(found.content.answerRef);
-      let body = stored === undefined || stored === null ? undefined : contentOf(stored, found.content.pointer, at);
-      if (body === undefined && typeof getDocument === 'function') body = await getDocument({ id: found.id, version });
-      if (body === undefined || body === null) return { ref: source.ref, kind: 'read', unavailable: true, id: found.id, name: found.name, version };
-      return { ref: source.ref, kind: 'read', text: body, id: found.id, name: found.name, version };
+      if (stored === undefined || stored === null) throw new EngineError('invalid_document', at, 'текст документа не найден в записи прогона');
+      return { ref: source.ref, kind: 'read', text: contentOf(stored, found.content.pointer, at), id: found.id, name: found.name };
     }
     async function ownerAnswer(step, entry) {
       let reason = '';
@@ -12095,8 +12079,6 @@ window.ProtoState = {
         const reply = await ownerWait(() => provideOwnerResult({ stepRef: step.ref, visit: entry.visit, task: step.task, output: step.output, ...(step.goal ? { goal: step.goal } : {}),
           ...(step.input !== 'none' ? { input } : {}), ...(document ? { document } : {}), ...(reason ? { reason, detail } : {}) }));
         if (reply === null) throw new StopRun('stopped');
-        // An unavailable document is shown as it is; any answer other than cancel looks the document up again (never another version).
-        if (document?.unavailable) { document = await documentFor(step); continue; }
         const verdict = ownerVerdict(step, reply);
         if (!verdict.ok) {
           reason = verdict.reason;
@@ -12119,9 +12101,10 @@ window.ProtoState = {
             inputs: items.filter((item) => item.artifact).map((item) => item.artifact), description: declaration.description });
         });
         // A text document: the owner's text is the approved text. A changed text is a new version of the line, by the user.
+        // A changed text is a new version of the line, by the user.
         let approved = null;
         if (document?.kind === 'read') {
-          approved = { id: document.id, version: document.version };
+          approved = { id: document.id };
           if (verdict.text !== document.text) {
             const source = plan.find((item) => item.ref === step.document);
             const lineage = { step: source.ref, participant: source.models[0].id, id: document.id };
@@ -12129,11 +12112,7 @@ window.ProtoState = {
             Artifacts.register(registry, { id: document.id, name: document.name, lineage,
               source: { step: step.ref, participant: OWNER_PARTICIPANT, visit: entry.visit }, answerRef: textRef, pointer: '',
               inputs: previous ? [{ lineage: { ...previous.lineage }, source: { ...previous.source } }] : [], description: '' });
-            approved.version = versionNumber(lineage);
-            emitDocument({ kind: 'version', id: document.id, name: document.name, version: approved.version, author: 'user',
-              stepRef: step.ref, participant: OWNER_PARTICIPANT, visit: entry.visit, text: verdict.text });
           }
-          emitDocument({ kind: 'approved', id: approved.id, name: document.name, version: approved.version, stepRef: step.ref, visit: entry.visit });
         }
         entry.owner = { text: verdict.text, textRef, ...(verdict.file ? { file: verdict.file } : {}), ...(approved ? { approved } : {}) };
         emit('custom_owner', { step: step.index, ref: step.ref, visit: entry.visit, accepted: true, reason: null });
@@ -12163,7 +12142,7 @@ window.ProtoState = {
       ...(saved.binary
         ? { binary: true, file: saved.file, textRef: null, text: '' }
         : { text: restoredText(saved.textRef, 'ответ User'), textRef: saved.textRef, ...(saved.file ? { file: saved.file } : {}) }),
-      ...(saved.approved ? { approved: { id: saved.approved.id, version: saved.approved.version } } : {})
+      ...(saved.approved ? { approved: { id: saved.approved.id } } : {})
     });
     function restoreRun(saved) {
       if (!isPlain(saved)) throw new EngineError('resume_invalid', 'resume', 'состояние для продолжения: объект снимка');
@@ -13034,6 +13013,8 @@ window.ProtoState = {
       return out;
     };
     const out = [];
+    // Раунды, чей документ для User перенесён в output шага Basic (на них может ссылаться owner.document).
+    const docRounds = new Set();
     steps.forEach((st, i) => {
       const ref = refs.get(st.id);
       if (!ref) { warnings.push(`Этап ${st.id || i + 1} (${st.block}) не перенесён: в Basic такого блока нет.`); return; }
@@ -13049,10 +13030,25 @@ window.ProtoState = {
         step.input = input.length ? input : 'none';
         if (own(st.task)) step.task = st.task.trim();
         step.models = list(st.models).filter((m) => isObj(m) && own(m.name)).map(modelOf);
+        // Документ для User: только в раунде из одной модели; вид read — артефакт в output, form — опросник (json).
+        const docArt = list(st.artifacts).find((a) => isObj(a) && (a.document === 'read' || a.document === 'form'));
+        if (docArt) {
+          const name = String(docArt.name || '').trim();
+          if (list(st.models).filter((m) => isObj(m) && m.enabled !== false).length !== 1) warnings.push(`Этап ${st.id}: документ «${name}» не перенесён: в Basic документ для User даёт раунд из одной модели.`);
+          else {
+            docRounds.add(st.id);
+            step.output = docArt.document === 'read' ? { document: 'read', artifacts: [{ id: idPart(name, 'doc'), name, pointer: '' }] } : { format: 'json', document: 'form' };
+          }
+        }
+        if (['new', 'continue'].includes(st.chat)) step.chat = st.chat;
       } else if (st.block === 'owner') {
         step.task = own(st.ask) ? st.ask.trim() : 'Дайте ответ';
         step.models = [];
         if (input.length) step.input = input;
+        if (st.document != null) {
+          if (docRounds.has(st.document)) step.document = refs.get(st.document);
+          else warnings.push(`Этап ${st.id}: document «${st.document}» не перенесён: этап не переносится.`);
+        }
       }
       if (own(st.title)) step.title = st.title.trim();
       if (own(st.why)) step.goal = st.why.trim();
@@ -13135,6 +13131,13 @@ window.ProtoState = {
         warnings.push(`Шаг ${st.ref} (${st.kind}) не перенесён на стенд.`);
         return;
       }
+      if (st.kind === 'round') {
+        const o = isObj(st.output) ? st.output : null;
+        if (o?.document === 'read' && isObj(o.artifacts?.[0])) step.artifacts = [{ name: o.artifacts[0].name, document: 'read' }];
+        else if (o?.document === 'form') step.artifacts = [{ name: own(o.name) ? o.name : 'Опросник', document: 'form' }];
+        if (['new', 'continue'].includes(st.chat)) step.chat = st.chat;
+      }
+      if (st.kind === 'owner' && st.document !== undefined) step.document = ids.get(st.document);
       out.push(step);
     });
     const schema = { task: own(opts.name) ? opts.name : (own(basic?.description) ? basic.description.trim().slice(0, 60) : 'Схема Basic') };
@@ -13160,7 +13163,7 @@ window.ProtoState = {
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '59';
+  const STAND_VERSION = '60';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -13175,7 +13178,7 @@ window.ProtoState = {
   // ---------- Формат схемы ----------
   const COMMON = ['id', 'block', 'title', 'inputs', 'artifacts', 'why'];
   const FIELDS = {
-    round: ['models', 'task'], owner: ['ask'], file: ['file', 'mode']
+    round: ['models', 'task', 'chat'], owner: ['ask', 'document'], file: ['file', 'mode']
   };
   // Виды этапов, которых больше нет: в схеме их выражают обычными этапами (текст ошибки — в проверке).
   const REMOVED_BLOCKS = {
@@ -13207,7 +13210,7 @@ window.ProtoState = {
   const APP_BLOCKS = ['file'];
   const MODEL_KEYS = ['name', 'role', 'task', 'maxWords', 'discipline', 'enabled'];
   const MODEL_NAMES = ['Claude', 'GPT', 'Gemini', 'Grok', 'Le Chat', 'Qwen', 'DeepSeek', 'Perplexity', 'Z.ai', 'Kimi'];
-  const ENUMS = { mode: ['overwrite', 'append'] };
+  const ENUMS = { mode: ['overwrite', 'append'], chat: ['new', 'continue'] };
   const LABELS = {
     id: 'этап', block: 'блок', title: 'название', why: 'зачем', inputs: 'вход', artifacts: 'артефакты',
     models: 'модели', task: 'задание', model: 'модель', role: 'роль', ask: 'вопрос',
@@ -13600,7 +13603,12 @@ window.ProtoState = {
         const name = artName(a);
         if (!own(name)) { add('error', e.key, `artifacts[${i}]: нет name.`); return; }
         if (!described.has(name) && !warnedArt.has(name)) { warnedArt.add(name); add('warn', e.key, `У артефакта «${name}» нет описания.`); }
+        if (a.document != null) {
+          if (st.block !== 'round') add('warn', e.key, 'Признак document у артефакта только в раунде из одной модели.');
+          else if (!['read', 'form'].includes(a.document)) add('warn', e.key, `document: «${a.document}» — ожидается read | form.`);
+        }
       });
+      if (st.block === 'round' && listOf(st.artifacts).filter((a) => isObj(a) && a.document != null).length > 1) add('warn', e.key, 'В раунде не больше одного артефакта-документа.');
       if (st.block === 'round' && (!Array.isArray(st.models) || !st.models.length)) add('error', e.key, 'У раунда нет models.');
       if (st.block === 'round' && Array.isArray(st.models)) st.models.forEach((m, i) => {
         if (!own(m?.name)) add('error', e.key, `models[${i}]: нет name.`);
@@ -13630,6 +13638,32 @@ window.ProtoState = {
           if (!listOf(target.step.artifacts).map(artName).includes(name)) add('error', e.key, `${field}: у ${refId(ref)} нет артефакта «${name}» в artifacts.`);
         }
       });
+    });
+    // Предупреждения (не ошибки): ответ User должен читать этап ниже; раунд из нескольких моделей не даёт артефакта
+    // и личного задания без общего; документ для User — из раунда из одной модели с артефактом-документом.
+    const enabledOf = (s) => (Array.isArray(s.models) ? s.models.filter((m) => m?.enabled !== false) : []);
+    flat.forEach((e) => {
+      const st = e.step;
+      if (st.block === 'owner' && own(st.id) && flat.some((x) => x.pos > e.pos)) {
+        const read = flat.some((x) => x.pos > e.pos && listOf(x.step.inputs).some((r) => own(r) && refId(r) === st.id));
+        if (!read) add('warn', e.key, `Ответ User «${st.id}» не читает ни один этап ниже: добавьте «${st.id}» во inputs этапа, который должен использовать ответ (этот этап исправляет артефакт по правкам User, а не приклеивает их отдельным разделом).`);
+      }
+      if (st.block === 'round' && listOf(st.artifacts).length && enabledOf(st).length > 1) {
+        add('warn', e.key, `Артефакт объявлен в раунде из нескольких моделей: у каждой модели своя линия артефакта, ссылка «${st.id}.Имя» неоднозначна. Объявите артефакт в этапе из одной модели: общий документ — раунд из нескольких моделей без артефакта, затем этап «свести» из одной модели.`);
+      }
+      if (st.block === 'round' && own(st.task) && Array.isArray(st.models)) {
+        const personal = st.models.map((m, i) => (own(m?.task) ? i : -1)).filter((i) => i >= 0);
+        if (personal.length) add('warn', e.key, `models[${personal.join(', ')}].task заменяет общее task этапа для этих моделей (общее задание им не отправляется): повторите общие требования в личных заданиях или уберите личные.`);
+      }
+      if (st.block === 'owner' && st.document != null) {
+        const src = byId.get(st.document);
+        let problem = null;
+        if (!src || src.pos >= e.pos) problem = `этапа «${st.document}» выше нет.`;
+        else if (src.step.block !== 'round') problem = 'источник — раунд.';
+        else if (enabledOf(src.step).length !== 1) problem = 'документ для User даёт раунд из одной модели.';
+        else if (!listOf(src.step.artifacts).some((a) => isObj(a) && (a.document === 'read' || a.document === 'form'))) problem = `у раунда «${st.document}» нет артефакта с признаком document (read или form).`;
+        if (problem) add('warn', e.key, `document: ${problem}`);
+      }
     });
     flat.forEach((e) => {
       const st = e.step;

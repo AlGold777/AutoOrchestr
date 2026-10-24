@@ -165,3 +165,60 @@ describe('Stand ↔ Basic exchange', () => {
     expect(schema.steps.find((st) => st.id === 's3').inputs).toBeUndefined();
   });
 });
+
+describe('Документ для User и чат при обмене со стендом', () => {
+  const docSchema = (artifact = { name: 'ТЗ', description: 'д', document: 'read' }, models = [{ name: 'Claude' }]) => ({
+    task: 'T',
+    steps: [
+      { id: 's1', block: 'round', title: 'Черновик ТЗ', why: 'зачем', models, artifacts: [artifact], task: 'Напиши ТЗ' },
+      { id: 's2', block: 'owner', title: 'Правки User', why: 'зачем', ask: 'Что исправить?', document: 's1' },
+      { id: 's3', block: 'round', title: 'Исправление', why: 'зачем', inputs: ['s2'], models: [{ name: 'Claude' }], task: 'Исправь' }
+    ]
+  });
+
+  test('а) read: раунд переносится с output.document и артефактом, owner — с ref раунда', () => {
+    const { schema: basic, warnings } = Exchange.toBasic(docSchema());
+    expect(Schema.validate(basic)).toEqual([]);
+    expect(warnings).toEqual([]);
+    const [round, owner] = basic.steps;
+    expect(round.output).toEqual({ document: 'read', artifacts: [{ id: 'doc', name: 'ТЗ', pointer: '' }] });
+    expect(owner.document).toBe('r1');
+  });
+
+  test('б) form: output { format: json, document: form } без artifacts', () => {
+    const { schema: basic } = Exchange.toBasic(docSchema({ name: 'Опросник', description: 'д', document: 'form' }));
+    expect(basic.steps[0].output).toEqual({ format: 'json', document: 'form' });
+    expect(Schema.validate(basic)).toEqual([]);
+  });
+
+  test('в) раунд из нескольких моделей: флаг не переносится, есть предупреждение', () => {
+    const { schema: basic, warnings } = Exchange.toBasic(docSchema(undefined, [{ name: 'Claude' }, { name: 'GPT' }]));
+    expect(basic.steps[0].output).toBeUndefined();
+    expect(warnings).toContain('Этап s1: документ «ТЗ» не перенесён: в Basic документ для User даёт раунд из одной модели.');
+  });
+
+  test('г) chat new переносится в шаг Basic', () => {
+    const schema = docSchema();
+    schema.steps[2].chat = 'new';
+    const { schema: basic } = Exchange.toBasic(schema);
+    expect(basic.steps[2].chat).toBe('new');
+    expect(Schema.validate(basic)).toEqual([]);
+  });
+
+  test('д) круг: Basic → стенд → Basic снова проходит проверку', () => {
+    const { schema: basic } = Exchange.toBasic(docSchema());
+    basic.steps[2].chat = 'continue';
+    const { schema } = Exchange.fromBasic(basic);
+    expect(schema.steps[0].artifacts).toEqual([{ name: 'ТЗ', document: 'read' }]);
+    expect(schema.steps[1].document).toBe('s1');
+    expect(schema.steps[2].chat).toBe('continue');
+    const { schema: again } = Exchange.toBasic(schema);
+    expect(Schema.validate(again)).toEqual([]);
+  });
+
+  test('д) круг для form: опросник возвращается артефактом form', () => {
+    const { schema: basic } = Exchange.toBasic(docSchema({ name: 'Опросник', description: 'д', document: 'form' }));
+    const { schema } = Exchange.fromBasic(basic);
+    expect(schema.steps[0].artifacts).toEqual([{ name: 'Опросник', document: 'form' }]);
+  });
+});

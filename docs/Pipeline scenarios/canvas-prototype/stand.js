@@ -6,7 +6,7 @@
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '59';
+  const STAND_VERSION = '60';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -21,7 +21,7 @@
   // ---------- Формат схемы ----------
   const COMMON = ['id', 'block', 'title', 'inputs', 'artifacts', 'why'];
   const FIELDS = {
-    round: ['models', 'task'], owner: ['ask'], file: ['file', 'mode']
+    round: ['models', 'task', 'chat'], owner: ['ask', 'document'], file: ['file', 'mode']
   };
   // Виды этапов, которых больше нет: в схеме их выражают обычными этапами (текст ошибки — в проверке).
   const REMOVED_BLOCKS = {
@@ -53,7 +53,7 @@
   const APP_BLOCKS = ['file'];
   const MODEL_KEYS = ['name', 'role', 'task', 'maxWords', 'discipline', 'enabled'];
   const MODEL_NAMES = ['Claude', 'GPT', 'Gemini', 'Grok', 'Le Chat', 'Qwen', 'DeepSeek', 'Perplexity', 'Z.ai', 'Kimi'];
-  const ENUMS = { mode: ['overwrite', 'append'] };
+  const ENUMS = { mode: ['overwrite', 'append'], chat: ['new', 'continue'] };
   const LABELS = {
     id: 'этап', block: 'блок', title: 'название', why: 'зачем', inputs: 'вход', artifacts: 'артефакты',
     models: 'модели', task: 'задание', model: 'модель', role: 'роль', ask: 'вопрос',
@@ -446,7 +446,12 @@
         const name = artName(a);
         if (!own(name)) { add('error', e.key, `artifacts[${i}]: нет name.`); return; }
         if (!described.has(name) && !warnedArt.has(name)) { warnedArt.add(name); add('warn', e.key, `У артефакта «${name}» нет описания.`); }
+        if (a.document != null) {
+          if (st.block !== 'round') add('warn', e.key, 'Признак document у артефакта только в раунде из одной модели.');
+          else if (!['read', 'form'].includes(a.document)) add('warn', e.key, `document: «${a.document}» — ожидается read | form.`);
+        }
       });
+      if (st.block === 'round' && listOf(st.artifacts).filter((a) => isObj(a) && a.document != null).length > 1) add('warn', e.key, 'В раунде не больше одного артефакта-документа.');
       if (st.block === 'round' && (!Array.isArray(st.models) || !st.models.length)) add('error', e.key, 'У раунда нет models.');
       if (st.block === 'round' && Array.isArray(st.models)) st.models.forEach((m, i) => {
         if (!own(m?.name)) add('error', e.key, `models[${i}]: нет name.`);
@@ -476,6 +481,32 @@
           if (!listOf(target.step.artifacts).map(artName).includes(name)) add('error', e.key, `${field}: у ${refId(ref)} нет артефакта «${name}» в artifacts.`);
         }
       });
+    });
+    // Предупреждения (не ошибки): ответ User должен читать этап ниже; раунд из нескольких моделей не даёт артефакта
+    // и личного задания без общего; документ для User — из раунда из одной модели с артефактом-документом.
+    const enabledOf = (s) => (Array.isArray(s.models) ? s.models.filter((m) => m?.enabled !== false) : []);
+    flat.forEach((e) => {
+      const st = e.step;
+      if (st.block === 'owner' && own(st.id) && flat.some((x) => x.pos > e.pos)) {
+        const read = flat.some((x) => x.pos > e.pos && listOf(x.step.inputs).some((r) => own(r) && refId(r) === st.id));
+        if (!read) add('warn', e.key, `Ответ User «${st.id}» не читает ни один этап ниже: добавьте «${st.id}» во inputs этапа, который должен использовать ответ (этот этап исправляет артефакт по правкам User, а не приклеивает их отдельным разделом).`);
+      }
+      if (st.block === 'round' && listOf(st.artifacts).length && enabledOf(st).length > 1) {
+        add('warn', e.key, `Артефакт объявлен в раунде из нескольких моделей: у каждой модели своя линия артефакта, ссылка «${st.id}.Имя» неоднозначна. Объявите артефакт в этапе из одной модели: общий документ — раунд из нескольких моделей без артефакта, затем этап «свести» из одной модели.`);
+      }
+      if (st.block === 'round' && own(st.task) && Array.isArray(st.models)) {
+        const personal = st.models.map((m, i) => (own(m?.task) ? i : -1)).filter((i) => i >= 0);
+        if (personal.length) add('warn', e.key, `models[${personal.join(', ')}].task заменяет общее task этапа для этих моделей (общее задание им не отправляется): повторите общие требования в личных заданиях или уберите личные.`);
+      }
+      if (st.block === 'owner' && st.document != null) {
+        const src = byId.get(st.document);
+        let problem = null;
+        if (!src || src.pos >= e.pos) problem = `этапа «${st.document}» выше нет.`;
+        else if (src.step.block !== 'round') problem = 'источник — раунд.';
+        else if (enabledOf(src.step).length !== 1) problem = 'документ для User даёт раунд из одной модели.';
+        else if (!listOf(src.step.artifacts).some((a) => isObj(a) && (a.document === 'read' || a.document === 'form'))) problem = `у раунда «${st.document}» нет артефакта с признаком document (read или form).`;
+        if (problem) add('warn', e.key, `document: ${problem}`);
+      }
     });
     flat.forEach((e) => {
       const st = e.step;
