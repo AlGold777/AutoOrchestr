@@ -543,3 +543,47 @@ describe('V09: a run record is saved even when the extension storage is nearly f
     expect(storage.data.has('customRunRecord.big')).toBe(false);
   });
 });
+
+describe('documents referenced by a run record', () => {
+  const runWithDocs = () => Record.createRun({ runId: 'docs-1', pipelineName: 'Mine', task: 'T', steps: [{ kind: 'ask', models: ['gpt'] }] });
+
+  test('setDocumentRef adds a reference and creates the list on the first call', () => {
+    const record = runWithDocs();
+    expect(record.documents).toBeUndefined();
+    const list = Record.setDocumentRef(record, { key: 'docs-1:d1', id: 'd1', version: 1, approved: false });
+    expect(list).toEqual([{ key: 'docs-1:d1', id: 'd1', version: 1, approved: false }]);
+    expect(record.documents).toBe(list);
+  });
+
+  test('setDocumentRef updates version and approved of an existing reference by key and id', () => {
+    const record = runWithDocs();
+    Record.setDocumentRef(record, { key: 'docs-1:d1', id: 'd1', version: 1, approved: false });
+    Record.setDocumentRef(record, { key: 'docs-1:d2', id: 'd2', version: 1, approved: false });
+    const list = Record.setDocumentRef(record, { key: 'docs-1:d1', id: 'd1', version: 2, approved: true });
+    expect(list).toHaveLength(2);
+    expect(list.find((item) => item.id === 'd1')).toEqual({ key: 'docs-1:d1', id: 'd1', version: 2, approved: true });
+    expect(list.find((item) => item.id === 'd2')).toEqual({ key: 'docs-1:d2', id: 'd2', version: 1, approved: false });
+  });
+
+  test('serialize and revive keep documents', () => {
+    const record = runWithDocs();
+    Record.setDocumentRef(record, { key: 'docs-1:d1', id: 'd1', version: 3, approved: true });
+    const stored = Record.serialize(record);
+    expect(stored.documents).toEqual([{ key: 'docs-1:d1', id: 'd1', version: 3, approved: true }]);
+    const revived = Record.revive(JSON.parse(JSON.stringify(stored)));
+    expect(revived.documents).toEqual([{ key: 'docs-1:d1', id: 'd1', version: 3, approved: true }]);
+  });
+
+  test('a record without documents is read as before', () => {
+    const record = runWithDocs();
+    const revived = Record.revive(JSON.parse(JSON.stringify(Record.serialize(record))));
+    expect(revived.documents).toBeUndefined();
+    expect(Record.exportRun(revived).documents).toEqual([]);
+  });
+
+  test('exportRun carries documents', () => {
+    const record = runWithDocs();
+    Record.setDocumentRef(record, { key: 'docs-1:d1', id: 'd1', version: 1, approved: false });
+    expect(Record.exportRun(record).documents).toEqual([{ key: 'docs-1:d1', id: 'd1', version: 1, approved: false }]);
+  });
+});

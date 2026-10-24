@@ -15,18 +15,42 @@
     return node;
   };
   const clean = (value) => String(value == null ? '' : value).trim();
+  // Title of a document: "name vN"; without a name only "vN"; without a version only the name.
+  const docTitle = (spec) => {
+    const hasVersion = spec.version != null && spec.version !== '';
+    return [String(spec.name || ''), hasVersion ? `v${spec.version}` : ''].filter(Boolean).join(' ');
+  };
 
-  function ask({ title = '', message = '', choices = [], textInput = null, document: documentSpec = null, answerFormat = 'text', cancelText = 'Отмена', signal = null, documentRef = root.document } = {}) {
+  function ask({ title = '', message = '', choices = [], textInput = null, document: documentSpec = null, answerFormat = 'text', cancelText = null, signal = null, documentRef = root.document } = {}) {
     const doc = documentRef;
     return new Promise((resolve) => {
       const dialog = el(doc, 'dialog', 'choice-dialog');
       dialog.append(el(doc, 'h2', 'choice-dialog-title', String(title)));
       if (message) dialog.append(el(doc, 'p', 'choice-dialog-message', String(message)));
       const kind = documentSpec?.kind || null;
+      // Modes of kind 'read' with the new fields: unavailable, readOnly, editable; otherwise the plain reading mode.
+      const mode = kind !== 'read' ? null
+        : documentSpec.unavailable === true ? 'unavailable'
+          : documentSpec.readOnly === true ? 'readOnly'
+            : documentSpec.editable === true ? 'editable' : null;
       let area = null;
       let formBox = null;
       let formAsks = [];
-      if (kind === 'read') {
+      if (mode === 'unavailable') {
+        dialog.append(el(doc, 'h3', 'choice-dialog-document-title', docTitle(documentSpec)));
+        dialog.append(el(doc, 'p', 'choice-dialog-document-unavailable', `Документ «${String(documentSpec.name || '')}»${documentSpec.version != null && documentSpec.version !== '' ? ` v${documentSpec.version}` : ''} недоступен. Другая версия вместо него не подставляется.`));
+      } else if (mode === 'readOnly') {
+        dialog.append(el(doc, 'h3', 'choice-dialog-document-title', docTitle(documentSpec)));
+        dialog.append(el(doc, 'pre', 'choice-dialog-document', String(documentSpec.text ?? '')));
+      } else if (mode === 'editable') {
+        dialog.append(el(doc, 'h3', 'choice-dialog-document-title', docTitle(documentSpec)));
+        area = el(doc, 'textarea', 'choice-dialog-document-edit');
+        area.value = String(documentSpec.text ?? '');
+        area.rows = 16;
+        area.spellcheck = false;
+        area.setAttribute('aria-label', 'Документ');
+        dialog.append(area);
+      } else if (kind === 'read') {
         dialog.append(el(doc, 'pre', 'choice-dialog-document', String(documentSpec.text ?? '')));
         area = el(doc, 'textarea', 'choice-dialog-text');
         area.rows = 2;
@@ -55,10 +79,13 @@
       };
       const isValid = () => {
         if (kind === 'form') return root.OwnerAsk.complete(formBox, formAsks);
+        if (mode === 'editable') return clean(area.value) !== '';
         if (!kind && textInput?.required === true) return clean(area.value) !== '';
         return true;
       };
       const answerOf = (choice) => {
+        if (mode === 'unavailable') return choice.value;
+        if (mode === 'editable') return area.value;
         if (kind === 'read') return clean(area.value) || READ_DONE;
         if (kind === 'form') return root.OwnerAsk.formAnswer(formBox, documentSpec.form?.items || [], answerFormat);
         if (textInput) return area.value;
@@ -66,14 +93,15 @@
       };
       const actions = el(doc, 'div', 'choice-dialog-actions');
       const submits = [];
-      choices.forEach((choice) => {
+      // A read-only document has no answer: its window gives no buttons but Close.
+      (mode === 'readOnly' ? [] : choices).forEach((choice) => {
         const button = el(doc, 'button', 'choice-dialog-choice', String(choice.label ?? choice.value));
         button.type = 'button';
         button.addEventListener('click', () => finish(answerOf(choice)));
         actions.append(button);
         submits.push(button);
       });
-      const cancel = el(doc, 'button', 'choice-dialog-cancel', String(cancelText));
+      const cancel = el(doc, 'button', 'choice-dialog-cancel', String(cancelText ?? (mode === 'readOnly' ? 'Закрыть' : 'Отмена')));
       cancel.type = 'button';
       cancel.addEventListener('click', () => finish(null));
       actions.append(cancel);

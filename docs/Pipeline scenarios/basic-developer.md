@@ -24,20 +24,23 @@ GPT подготавливает запрос через `ContentUtils.ensurePro
 
 | Файл | Символы | Что там |
 | --- | --- | --- |
-| `disput/custom-engine.js` | `CustomEngine`, `run`, `attempt`, `normalizeSteps`, `buildPrompt`, `previewPrompt`, `correctionPrompt`, `inputFor`, `judge`, `resolveSetting`, `STOP_TEXT`, `REASON_TEXT`, `DEFAULT_ATTEMPTS`, `EngineError`, `unexecutedOf`, `assertExecutable`, `sourceItems`, `sendParticipants`, `artifactItems`, `contentOf`, `revisionItem`, `documentFor` | Движок: шаги, запросы, приём, повторы, пауза; документ для User (`documentFor`), причина `invalid_form` (`REASON_TEXT`) |
+| `disput/custom-engine.js` | `CustomEngine`, `run`, `attempt`, `normalizeSteps`, `buildPrompt`, `previewPrompt`, `correctionPrompt`, `inputFor`, `judge`, `resolveSetting`, `STOP_TEXT`, `REASON_TEXT`, `DEFAULT_ATTEMPTS`, `EngineError`, `unexecutedOf`, `assertExecutable`, `sourceItems`, `sendParticipants`, `artifactItems`, `contentOf`, `revisionItem`, `documentFor` | Движок: шаги, запросы, приём, повторы, пауза; документ для User (`documentFor`), метки документа в запросе (`formatBlock`), версии и утверждение (`ownerAnswer`), колбэки `onDocument` и `getDocument`; причина `invalid_form` (`REASON_TEXT`) |
 | `disput/basic-schema.js` | `BasicSchema`, `DEFAULTS`, `validate`, `assemble`, `resolveFields`, `resolveRun`, `toSettings`, `toCanvas`, `describeErrors`, `checkControl`, `checkOutput`, `assembleControl` | Формат схемы: умолчания, проверка (виды шага `round` и `owner`; шаги идут по порядку; `synthesis`, `gate` и `route` отклоняются, синтез — раунд из одной модели с ролью; поля `require` и `order` отклоняются с подсказкой: раунд ждёт ответов всех своих моделей, эстафета — раунды по одной модели подряд), сборка шагов, показ на холсте; `document` шага User и `output.document` раунда (`checkControl`, `checkOutput`, `assembleControl`) |
+| `disput/basic-documents.js` | `BasicDocuments`, `createStore`, `chromeStorage`, `KEY` | Документы окна User: версии, утверждение, отдельное хранение (ключ `llmComparatorDocuments`), без вытеснения; ошибка записи ничего не удаляет (`putVersion`, `approve`, `remove`) |
 | `disput/basic-artifacts.js` | `BasicArtifacts`, `createRegistry`, `register`, `latest`, `version`, `lineKey` | Реестр артефактов прогона: одна запись на версию, ссылка на ответ и указатель, без копии текста (чистые функции) |
-| `disput/basic-output.js` | `BasicOutput`, `checkAnswer`, `readPointer`, `parseJsonAnswer`, `countWords`, `formProblem` | Проверка ответа по выходу шага: длина, JSON и поля, опросник (`formProblem`), разделы, артефакты (чистые функции; вызывает движок) |
+| `disput/basic-output.js` | `BasicOutput`, `checkAnswer`, `readPointer`, `parseJsonAnswer`, `countWords`, `formProblem`, `extractDocument` | Документ между метками `[[DOC: id]]` (`extractDocument`); проверка ответа по выходу шага: длина, JSON и поля, опросник (`formProblem`), разделы, артефакты (чистые функции; вызывает движок) |
 | `disput/basic-spec.js` | `BasicSpec`, `build`, `toMarkdown` | Описание pipeline «для человека» по схеме: три слоя (pipeline в целом, схема процесса, этапы), поля автора и автоматические поля, `missing` для незаполненного; чистые функции, без DOM (окно спецификации подключит их отдельно) |
-| `disput/custom-run-record.js` | `CustomRunRecord`, `createRun`, `recordAttempt`, `attemptKey`, `finishRun`, `serialize`, `revive`, `textOf`, `setSnapshot`, `setArtifacts`, `canResume`, `exportRun`, `createStore` | Запись о прогоне (версия 2: реестр и снимок состояния) |
+| `disput/custom-run-record.js` | `CustomRunRecord`, `createRun`, `recordAttempt`, `attemptKey`, `finishRun`, `serialize`, `revive`, `textOf`, `setSnapshot`, `setArtifacts`, `setDocumentRef`, `canResume`, `exportRun`, `createStore` | Запись о прогоне (версия 2: реестр и снимок состояния; ссылки на документы `record.documents`) |
 | `results/stage-card.js` | `StageCard`, `buildModel`, `render`, `renderOwnerWindow`, `renderAddControl`, `ownerWindowModel`, `ownerAfterEdit` | Окно настроек раунда, окно шага User (список «Документ для User»), выбор «Шаг после этого этапа» (только User) |
-| `results/choice-dialog.js` | `ChoiceDialog`, `formAsks`, `formAnswer` | Окна решений; окно User с документом: параметры `document`, `answerFormat`, `textInput.required`; опросник |
+| `results/choice-dialog.js` | `ChoiceDialog`, `formAsks`, `formAnswer` | Окна решений; окно User с документом: параметры `document`, `answerFormat`, `textInput.required`; режимы документа `editable` (правка версии), `readOnly` (просмотр из рамки), `unavailable` (версия недоступна); опросник |
 | `results/owner-ask.js` | `answersOf`, `formAsks`, `formAnswer` | Окно ответа User: показ документа и опросника, ответ User (текст или JSON) |
 | `disput/pipeline-presets.js` | `BUILTIN_PIPELINE_DEFINITIONS`, `PIPELINE_PRESETS`, `makePreset` | Шаблон Basic и пресет `CUSTOM` |
 | `disput/debate-draft-plan.js` | `createCanvasPlan`, `normalize` | План холста: только раунды; `normalize` читает и прежние планы со стадиями синтеза |
 | `disput/debate-response-acceptance.js` | `evaluate` | Техническая приёмка ответа |
 | `shared/message-delivery.js` | `batchEvent` | Журнал доставки |
 | `shared/report-digest.js` | `customStageId`, `latestCustomRunId`, `customFlowReport` | Extract (Transport) для прогона Basic |
+| `styles/pipeline.css` | — | Рамка документа на холсте (`.pipeline-doc-frame`) |
+| `manifest.json` | — | Разрешение `unlimitedStorage`: документы не вытесняются, квота общая с записями прогонов |
 | `pipeline/pipeline-runtime.js` | `MODELS` | Список моделей холста |
 
 Страница перед запуском проверяет, что загружены `DebateResponseAcceptance` и `DebateStageMarkers` (приём ответа и разбор `[[ASK]]`): без них прогон не стартует, уведомление «Basic: не загружены модули приёма ответов…» (раньше приём молча считался успешным). Инструкция `discipline.ask` модели считается одной функцией (`askOf`) для запроса, показа частей и превью.
@@ -63,6 +66,7 @@ GPT подготавливает запрос через `ContentUtils.ensurePro
 | Прогон | `runCustomFromPage`, `resumeCustomFromPage`, `builtFromRecord`, `basicRunNotice`, `startDebateFromPage`, `askCustomDecision`, `askCustomOwner`, `customRunProgress`, `isCustomEnginePipeline` | Запуск Basic со страницы, окна паузы и вопросов, состояние холста |
 | Транспорт и карточки ответа | `runModelBatch`, `pipelineWaiter`, `updateDebateModelCardOutput` | Отправка запросов моделям, ожидание ответов, карточки ответа |
 | Холст | `draftPlanForCanvas`, `applyPipelineConfig`, `syncPipelineRoundModelsFromSelectedLLMs`, `getActiveDraftPlan` | План холста и применение конфигурации к холсту |
+| Документы окна User | `documentFrames`, `syncDocumentFrames`, `restoreDocumentFrames`, `handleDocumentEvent`, `openDocumentFrame`, `getDocumentStore`, `removeLastRound` | Рамки документов на холсте, события версий и утверждения из движка, открытие документа, хранилище документов, удаление последнего раунда со сбросом источника документа |
 
 ### Тесты
 
@@ -70,6 +74,9 @@ GPT подготавливает запрос через `ContentUtils.ensurePro
 | --- | --- |
 | `tests/custom-engine.test.js` | Движок: шаги, запросы, приём, повторы, бюджет, пауза, вопросы |
 | `tests/custom-engine-flow.test.js` | Линейный прогон раундов и шага User; `gate` и `route` отклоняются до первого запроса |
+| `tests/custom-engine-document.test.js` | Документ для User: чтение по меткам раунда с одной моделью, опросник, ссылка на документ, `invalid_form`, `invalid_document` до окна |
+| `tests/custom-engine-document-versions.test.js` | Документ с версиями: метки и `missing_artifact`, утверждение и новая версия, вход `latest`, версия недоступна и «Отмена», продолжение, документ в `json` |
+| `tests/basic-documents.test.js` | Хранилище документов: версии, утверждение, удаление, отсутствие вытеснения, отказ квоты |
 | `tests/custom-run-record.test.js` | Запись о прогоне, хранение через адаптер `chrome.storage` (отказы), экспорт со всеми ссылками, состояние `not_sent` |
 | `tests/custom-extract.test.js` | Разбор прогона в Extract (Transport) |
 | `tests/custom-engine-checkpoint.test.js` | Checkpoint: точки записи состояния, живое состояние, `checkpoint_failed`, автономный запуск без callback |
@@ -131,6 +138,7 @@ GPT подготавливает запрос через `ContentUtils.ensurePro
    у пользователя (см. «Проверка перед запуском»). Механизм перехода между версиями формата
    определяется, когда формат действительно понадобится менять.
 7. Поля `document` шага User и `output.document` раунда (с 2.81.855) необязательны: схема без них работает как раньше; шаг User без `document` показывает поле текста. Опросник (`output.document: form`) проверяется только в раундах, где он объявлен.
+8. Документ для чтения (`output.document: "read"`, с 2.81.856) требует ровно один артефакт в `output.artifacts` и текст между метками `[[DOC: id]]` и `[[/DOC]]` в ответе модели. Схема 2.81.855 с `read` без артефакта теперь не проходит проверку и дополняется артефактом; вид `form` не меняется.
 
 ### Решения и причины
 
@@ -231,7 +239,7 @@ Ctrl/Cmd+S сохраняет подсветки и избранное вмес�
 
 Не в этой записи: шаблон Default — он собирается из кода
 (`disput/pipeline-presets.js`) при каждой загрузке и схемой в хранилище не является; записи прогонов — отдельные
-ключи по одному на прогон (`disput/custom-run-record.js`). Запись и чтение идут через `CustomRunRecord.chromeStorage(chrome.storage.local)`: ошибка `chrome.runtime.lastError` и синхронное исключение отклоняют промис, а не дают вид успешной записи. Ошибка записи в точке сохранения состояния (checkpoint) останавливает прогон с `checkpoint_failed` до следующего запроса.
+ключи по одному на прогон (`disput/custom-run-record.js`). Документы окна User — отдельный ключ `llmComparatorDocuments` (`disput/basic-documents.js`), без вытеснения; см. «Документ в прогоне» в `basic-start-here.md`. Запись и чтение идут через `CustomRunRecord.chromeStorage(chrome.storage.local)`: ошибка `chrome.runtime.lastError` и синхронное исключение отклоняют промис, а не дают вид успешной записи. Ошибка записи в точке сохранения состояния (checkpoint) останавливает прогон с `checkpoint_failed` до следующего запроса.
 
 Файлом схема становится только при обмене: **Export schema** выгружает одну схему pipeline, который сейчас на холсте,
 файлом `<имя pipeline>.json`; **Import schema** принимает файл с одной схемой (имя предлагается из имени файла) либо
@@ -313,7 +321,7 @@ Ctrl/Cmd+S сохраняет подсветки и избранное вмес�
 | TRANSPORT-1 | Участники: `chat: "new"`, привязки чатов в снимке и восстановление после отмены исполняются (тесты на моках); в реальных вкладках не проверено; два участника одной модели в шаге страница не устанавливает | открыт: см. «Что не проверено вживую» |
 | TEST-1 | Тесты, падавшие не из-за Basic (9 в 4 файлах) | исправлено: устаревшие ожидания приведены к коду, код не менялся |
 | TEST-2 | Нестабильный тест `false success: watcher completion guards` | известно |
-| PLAN-1 | Документы для User — [план](basic-user-documents-plan.md) | этап 1 сделан в 2.81.855 (документ для User, опросник, окно); не сделаны этап 2 (извлечение по меткам, версии, рамка, утверждение, отдельное хранение, дефекты карточки User), этап 3 (файл на диске), этап 4 (стенд) |
+| PLAN-1 | Документы для User — [план](basic-user-documents-plan.md) | этапы 1–2 сделаны (2.81.855, 2.81.856); этапы 3 (файл на диске) и 4 (стенд) не сделаны |
 
 ### Открытые вопросы
 

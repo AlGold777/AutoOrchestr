@@ -1322,3 +1322,8 @@ body.is-resizing {
     background: #f0fdf4;
     color: #14532d;
 }
+
+/* Document frames on the canvas (Basic, stage 2): one per round with a document for reading. */
+.pipeline-doc-frame { display: block; margin: 6px auto 0; padding: 4px 8px; border: 1px solid #888; border-radius: 6px; background: transparent; font-size: 12px; cursor: pointer; }
+.pipeline-doc-frame.is-pending { border-style: dashed; opacity: .6; cursor: default; }
+.pipeline-doc-frame.is-approved { border-color: #2e8b57; }

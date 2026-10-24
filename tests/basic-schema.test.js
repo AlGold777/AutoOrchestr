@@ -1152,13 +1152,14 @@ describe('Basic schema: the default input is the previous step (B-2)', () => {
 });
 
 describe('Basic schema: этап 1 — документ для User (document)', () => {
-  const srcRound = (extra = {}) => ({ ref: 'r1', kind: 'round', models: [{ name: 'Claude' }], output: { document: 'read' }, ...extra });
+  const readArtifacts = [{ id: 'spec', name: 'ТЗ', pointer: '' }];
+  const srcRound = (extra = {}) => ({ ref: 'r1', kind: 'round', models: [{ name: 'Claude' }], output: { document: 'read', artifacts: readArtifacts }, ...extra });
   const docOwner = (extra = {}) => ({ ref: 'owner:u', kind: 'owner', task: 'Проверьте', models: [], document: 'r1', ...extra });
   const errs = (schema) => Schema.validate(schema);
 
   test('этап 1: документ из раунда с одной моделью и output.document — ошибок нет; output у модели тоже годится', () => {
     expect(errs(base([srcRound(), docOwner()]))).toEqual([]);
-    const modelOutput = { ref: 'r1', kind: 'round', models: [{ name: 'Claude', output: { document: 'read' } }] };
+    const modelOutput = { ref: 'r1', kind: 'round', models: [{ name: 'Claude', output: { document: 'read', artifacts: readArtifacts } }] };
     expect(errs(base([modelOutput, docOwner()]))).toEqual([]);
   });
 
@@ -1214,5 +1215,37 @@ describe('Basic schema: этап 1 — документ для User (document)',
     const canvas = Schema.toCanvas(base([srcRound(), docOwner()]), { models: ['Claude'] });
     expect(canvas.errors).toEqual([]);
     expect(canvas.controls).toHaveLength(1);
+  });
+});
+
+describe('Basic schema: этап 2 — документ для чтения в метках', () => {
+  const spec = [{ id: 'spec', name: 'ТЗ', pointer: '' }];
+  const at = (schema, path) => Schema.validate(schema).find((e) => e.path === path);
+
+  test('этап 2: раунд с output.document read без artifacts — ошибка по output.document: ровно один артефакт', () => {
+    const found = at(base([round('r1', ['A'], { output: { document: 'read' } })]), 'steps[0].output.document');
+    expect(found).toBeDefined();
+    expect(found.message).toContain('ровно один артефакт');
+  });
+
+  test('этап 2: раунд с output.document read и двумя артефактами — та же ошибка', () => {
+    const two = [{ id: 'spec', name: 'ТЗ', pointer: '' }, { id: 'plan', name: 'План', pointer: '' }];
+    const found = at(base([round('r1', ['A'], { output: { document: 'read', artifacts: two } })]), 'steps[0].output.document');
+    expect(found).toBeDefined();
+    expect(found.message).toContain('ровно один артефакт');
+  });
+
+  test('этап 2: раунд с output.document read и одним артефактом с пустым указателем — ошибок нет', () => {
+    expect(Schema.validate(base([round('r1', ['A'], { output: { document: 'read', artifacts: spec } }), round('r2', ['B'])]))).toEqual([]);
+  });
+
+  test('этап 2: формат json с документом read и одним артефактом с указателем — ошибок нет', () => {
+    const output = { format: 'json', document: 'read', artifacts: [{ id: 'doc', name: 'Д', pointer: '/body' }] };
+    expect(Schema.validate(base([round('r1', ['A'], { output })]))).toEqual([]);
+  });
+
+  test('этап 2: document form без artifacts — ошибок по artifacts нет, как в этапе 1', () => {
+    const errors = Schema.validate(base([round('r1', ['A'], { output: { format: 'json', document: 'form' } })]));
+    expect(errors.filter((e) => e.path.includes('artifacts'))).toEqual([]);
   });
 });

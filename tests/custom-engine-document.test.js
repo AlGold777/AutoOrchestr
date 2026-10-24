@@ -33,16 +33,17 @@ function owner(replies) {
 
 const ROUND = (extra = {}) => ({ ref: 'r1', kind: 'round', models: ['A'], ...extra });
 const OWNER_DOC = (extra = {}) => ({ ref: 'owner:u', kind: 'owner', task: 'Уточните', document: 'r1', ...extra });
-const FORM_TEXT = '{"items":[{"id":"b","type":"text","question":"Q"}]}';
+const READ = { document: 'read', artifacts: [{ id: 'spec', name: 'ТЗ', pointer: '' }] };
+const FORM_TEXT ='{"items":[{"id":"b","type":"text","question":"Q"}]}';
 
 describe('Custom engine: document for the owner step', () => {
-  test('1. read document: the owner gets the accepted answer of the one-model round as document', async () => {
-    const { send } = transport({ A: ['ТЕКСТ-ДОКУМЕНТА'] });
-    const { provideOwnerResult, calls: asked } = owner(['ок']);
-    const result = await Engine.run({ task: 'T', steps: [ROUND({ output: { document: 'read' } }), OWNER_DOC()], send, provideOwnerResult });
+  test('1. read document: the owner gets the text between the labels of the one-model round as document', async () => {
+    const { send } = transport({ A: ['Вот:\n[[DOC: spec]]\nТЕКСТ-ДОКУМЕНТА\n[[/DOC]]'] });
+    const { provideOwnerResult, calls: asked } = owner(['ТЕКСТ-ДОКУМЕНТА']);
+    const result = await Engine.run({ task: 'T', steps: [ROUND({ output: READ }), OWNER_DOC()], send, provideOwnerResult });
     expect(result.stopReason).toBe('steps_done');
     expect(asked.length).toBe(1);
-    expect(asked[0].document).toEqual({ ref: 'r1', kind: 'read', text: 'ТЕКСТ-ДОКУМЕНТА' });
+    expect(asked[0].document).toEqual({ ref: 'r1', kind: 'read', text: 'ТЕКСТ-ДОКУМЕНТА', id: 'spec', name: 'ТЗ', version: 1 });
   });
 
   test('2. form document: the owner gets the parsed questionnaire and the original text', async () => {
@@ -57,9 +58,9 @@ describe('Custom engine: document for the owner step', () => {
   });
 
   test('3. an owner step without document: the request has no document key', async () => {
-    const { send } = transport({ A: ['ТЕКСТ'] });
+    const { send } = transport({ A: ['[[DOC: spec]]\nТЕКСТ\n[[/DOC]]'] });
     const { provideOwnerResult, calls: asked } = owner(['ок']);
-    const steps = [ROUND({ output: { document: 'read' } }), { ref: 'owner:u', kind: 'owner', task: 'Уточните' }];
+    const steps = [ROUND({ output: READ }), { ref: 'owner:u', kind: 'owner', task: 'Уточните' }];
     const result = await Engine.run({ task: 'T', steps, send, provideOwnerResult });
     expect(result.stopReason).toBe('steps_done');
     expect(asked[0]).not.toHaveProperty('document');

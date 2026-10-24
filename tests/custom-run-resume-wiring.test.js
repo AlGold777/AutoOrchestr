@@ -89,3 +89,10 @@ describe('Этап 1: документ для User в запуске', () => {
     expect(results).toContain("answerFormat: output?.format === 'json' ? 'json' : 'text'");
   });
 });
+
+describe('Этап 2: документы в запуске', () => {
+  test('страница передаёт документы движку: события пишутся в хранилище, документ читается по версии', () => {
+    expect(results).toContain('onDocument: (event) => handleDocumentEvent(');
+    expect(results).toContain('getDocument: async ({ id, version })');
+  });
+});

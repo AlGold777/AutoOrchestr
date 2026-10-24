@@ -100,6 +100,9 @@
     if (!output) return '';
     const lines = [];
     if (text(output.form)) lines.push(text(output.form));
+    if (output.document === 'read' && output.format !== 'json' && Array.isArray(output.artifacts) && output.artifacts.length === 1) {
+      lines.push(`Документ — между метками [[DOC: ${output.artifacts[0].id}]] и [[/DOC]]; всё вне меток (пояснения) в документ не попадает.`);
+    }
     if (output.format === 'json') {
       lines.push('Ответ — один JSON-объект без текста вокруг.');
       if (output.document === 'form') lines.push('Это опросник для User: {"items":[{"id":"уникальный id","type":"one|many|text|yesno","question":"вопрос","options":["вариант"],"required":true}]}. options — только для one и many, обязателен непустой список; required необязателен.');
@@ -374,7 +377,7 @@
     accept = defaultAccept, parseAsks = null, askOwner = null, askInstruction = '', decide = null,
     send = null, sendParticipants = null, runMaxWords = null, runStrictLength = false, putText: putCallback = null, getText: getCallback = null, provideOwnerResult = null,
     checkpoint = null, resolveUnknown = null, checkUnknown = null, resume = null,
-    signal = null, onEvent = null, onRequest = null, onResponse = null
+    signal = null, onEvent = null, onRequest = null, onResponse = null, onDocument = null, getDocument = null
   }) {
     // The texts of the answers: the record gives the callbacks (putText → ref, getText(ref) → text); without them the run keeps
     // its own dictionary, which the result returns. An answer is put once, when it is accepted.
@@ -412,6 +415,13 @@
       }
     });
     const emit = (kind, fields) => { if (typeof onEvent === 'function') onEvent(kind, fields); };
+    // The document events (kind: version | approved) go to the page synchronously; a failing callback never stops the run.
+    const emitDocument = (event) => {
+      if (typeof onDocument !== 'function') return;
+      try { onDocument(event); } catch (error) { emit('custom_document_error', { message: String(error?.message || error) }); }
+    };
+    // The number of a version: the versions of its line registered so far (the last one is the latest).
+    const versionNumber = (lineage) => registry.entries.filter((entry) => Artifacts.lineKey(entry.lineage) === Artifacts.lineKey(lineage)).length;
     const aborted = () => Boolean(signal?.aborted);
     const plan = normalizeSteps(steps);
     if (plan.some((step) => step.kind === 'owner') && typeof provideOwnerResult !== 'function') {
@@ -441,7 +451,7 @@
     // a pending owner interaction and the pending participants of a send are named, so a reload can show them.
     // The step in progress keeps its visit, phase, accepted answers, the participants in flight and the owner answer.
     const compactOutcome = (outcome) => Object.fromEntries(Object.entries(outcome || {}).map(([id, item]) => { const { text, ...rest } = item; return [id, rest]; }));
-    const ownerOf = (owner) => ({ textRef: owner.textRef ?? null, binary: Boolean(owner.binary), file: owner.file ?? null });
+    const ownerOf = (owner) => ({ textRef: owner.textRef ?? null, binary: Boolean(owner.binary), file: owner.file ?? null, ...(owner.approved ? { approved: owner.approved } : {}) });
     const savedEntry = (item) => ({ stepRef: item.step.ref, index: item.step.index, visit: item.visit, valid: item.valid !== false, skipped: Boolean(item.skipped),
       outcome: compactOutcome(item.outcome), ...(item.owner ? { owner: ownerOf(item.owner) } : {}) });
     function liveState(phase, extra = {}) {
@@ -687,13 +697,23 @@
             outcome[model.id].textRef = answerRef;
             const items = current[model.id].parts?.input?.items || [];
             const inputs = items.filter((item) => item.artifact).map((item) => item.artifact);
+            const readDocument = outputOf(step, model)?.document === 'read' && outputOf(step, model)?.format !== 'json';
             (outputOf(step, model)?.artifacts || []).forEach((declaration) => {
               // A revision joins the line of the source it got; any other artifact starts its own line.
               const revision = declaration.revisionOf ? revisionItem(declaration, items) : null;
               if (declaration.revisionOf && !revision) throw new EngineError('missing_input', `шаг «${step.ref}» · output.artifacts`, `ревизия «${declaration.id}» без полученной версии`);
-              Artifacts.register(registry, { id: declaration.id, name: declaration.name,
-                lineage: revision ? { ...revision.artifact.lineage } : { step: step.ref, participant: model.id, id: declaration.id },
-                source: { step: step.ref, participant: model.id, visit: activeVisit }, answerRef, pointer: declaration.pointer, inputs, description: declaration.description });
+              // A text document (document: read) is the text between its labels; an answer without them is not registered.
+              const extracted = readDocument ? Output.extractDocument(verdict.text, declaration.id) : null;
+              if (readDocument && extracted === null) return;
+              const lineage = revision ? { ...revision.artifact.lineage } : { step: step.ref, participant: model.id, id: declaration.id };
+              const { created } = Artifacts.register(registry, { id: declaration.id, name: declaration.name,
+                lineage,
+                source: { step: step.ref, participant: model.id, visit: activeVisit },
+                answerRef: readDocument ? putText(extracted) : answerRef, pointer: readDocument ? '' : declaration.pointer, inputs, description: declaration.description });
+              if (readDocument && created) {
+                emitDocument({ kind: 'version', id: declaration.id, name: declaration.name, version: versionNumber(lineage), author: 'model',
+                  stepRef: step.ref, participant: model.id, visit: activeVisit, text: extracted });
+              }
             });
           }
           delete outcome[model.id].detail;
@@ -759,20 +779,36 @@
     // An input item as the owner window gets it (N07): its address, its label, and its text or the reference of its file.
     const ownerItemOf = (item) => ({ label: item.label, ...item.address, ...(item.binary ? { file: item.file } : { text: item.text }) });
     // The document of an owner step (document: a round before it): the accepted answer of its one model, and its kind.
-    function documentFor(step) {
+    // A text document (document: read) is the latest version of the artifact of that round (the model's answer, or the owner's edit).
+    // Its text is the stored answer at the pointer; when the stored answer is gone, getDocument gives it; with neither it is
+    // unavailable (no text): the owner is asked, nothing is replaced by another version.
+    async function documentFor(step) {
       if (!step.document) return null;
       const at = `шаг «${step.ref}» · document`;
       const source = plan.find((item) => item.ref === step.document);
       if (!source || source.kind !== 'round' || source.index >= step.index) throw new EngineError('invalid_document', at, 'документ: ссылка только на более ранний раунд');
       if (source.models.length !== 1) throw new EngineError('invalid_document', at, 'документ для User даёт одна модель');
-      const items = sourceItems([{ step: source.ref, required: true }], step);
-      const answer = items.find((item) => !item.binary);
-      if (!answer) throw new EngineError('invalid_document', at, 'у раунда нет принятого ответа');
       const output = outputOf(source, source.models[0]);
       const kind = output?.document === 'form' ? 'form' : 'read';
-      const form = kind === 'form' ? Output.parseJsonAnswer(answer.text) : null;
-      if (kind === 'form' && !form) throw new EngineError('invalid_document', at, 'ответ раунда — не опросник');
-      return { ref: source.ref, kind, text: answer.text, ...(form ? { form } : {}) };
+      if (kind === 'form') {
+        const items = sourceItems([{ step: source.ref, required: true }], step);
+        const answer = items.find((item) => !item.binary);
+        if (!answer) throw new EngineError('invalid_document', at, 'у раунда нет принятого ответа');
+        const form = Output.parseJsonAnswer(answer.text);
+        if (!form) throw new EngineError('invalid_document', at, 'ответ раунда — не опросник');
+        return { ref: source.ref, kind, text: answer.text, form };
+      }
+      const declaration = (output?.artifacts || [])[0];
+      if (!declaration) throw new EngineError('invalid_document', at, 'документ для чтения: один артефакт в выходе раунда');
+      const lineage = { step: source.ref, participant: source.models[0].id, id: declaration.id };
+      const found = Artifacts.latest(registry, lineage);
+      if (!found || !found.valid) throw new EngineError('invalid_document', at, 'у раунда нет актуальной версии документа');
+      const version = versionNumber(lineage);
+      const stored = getText(found.content.answerRef);
+      let body = stored === undefined || stored === null ? undefined : contentOf(stored, found.content.pointer, at);
+      if (body === undefined && typeof getDocument === 'function') body = await getDocument({ id: found.id, version });
+      if (body === undefined || body === null) return { ref: source.ref, kind: 'read', unavailable: true, id: found.id, name: found.name, version };
+      return { ref: source.ref, kind: 'read', text: body, id: found.id, name: found.name, version };
     }
     async function ownerAnswer(step, entry) {
       let reason = '';
@@ -786,12 +822,14 @@
           throw new StopRun('missing_input', `ревизия «${declaration.id}»: User не получил версию, которую она дорабатывает; шаг «${step.ref}» не открыт`);
         }
       });
-      const document = documentFor(step);
+      let document = await documentFor(step);
       for (;;) {
         await checkpointNow('decision', { pendingOwner: { kind: 'owner', stepRef: step.ref, visit: entry.visit } });
         const reply = await ownerWait(() => provideOwnerResult({ stepRef: step.ref, visit: entry.visit, task: step.task, output: step.output, ...(step.goal ? { goal: step.goal } : {}),
           ...(step.input !== 'none' ? { input } : {}), ...(document ? { document } : {}), ...(reason ? { reason, detail } : {}) }));
         if (reply === null) throw new StopRun('stopped');
+        // An unavailable document is shown as it is; any answer other than cancel looks the document up again (never another version).
+        if (document?.unavailable) { document = await documentFor(step); continue; }
         const verdict = ownerVerdict(step, reply);
         if (!verdict.ok) {
           reason = verdict.reason;
@@ -813,7 +851,24 @@
             source: { step: step.ref, participant: OWNER_PARTICIPANT, visit: entry.visit }, answerRef: textRef, pointer: declaration.pointer,
             inputs: items.filter((item) => item.artifact).map((item) => item.artifact), description: declaration.description });
         });
-        entry.owner = { text: verdict.text, textRef, ...(verdict.file ? { file: verdict.file } : {}) };
+        // A text document: the owner's text is the approved text. A changed text is a new version of the line, by the user.
+        let approved = null;
+        if (document?.kind === 'read') {
+          approved = { id: document.id, version: document.version };
+          if (verdict.text !== document.text) {
+            const source = plan.find((item) => item.ref === step.document);
+            const lineage = { step: source.ref, participant: source.models[0].id, id: document.id };
+            const previous = Artifacts.latest(registry, lineage);
+            Artifacts.register(registry, { id: document.id, name: document.name, lineage,
+              source: { step: step.ref, participant: OWNER_PARTICIPANT, visit: entry.visit }, answerRef: textRef, pointer: '',
+              inputs: previous ? [{ lineage: { ...previous.lineage }, source: { ...previous.source } }] : [], description: '' });
+            approved.version = versionNumber(lineage);
+            emitDocument({ kind: 'version', id: document.id, name: document.name, version: approved.version, author: 'user',
+              stepRef: step.ref, participant: OWNER_PARTICIPANT, visit: entry.visit, text: verdict.text });
+          }
+          emitDocument({ kind: 'approved', id: approved.id, name: document.name, version: approved.version, stepRef: step.ref, visit: entry.visit });
+        }
+        entry.owner = { text: verdict.text, textRef, ...(verdict.file ? { file: verdict.file } : {}), ...(approved ? { approved } : {}) };
         emit('custom_owner', { step: step.index, ref: step.ref, visit: entry.visit, accepted: true, reason: null });
         await checkpointNow('judge', { pendingOwner: null });
         return entry.owner;
@@ -837,9 +892,12 @@
     };
     const restoredOutcome = (saved = {}) => Object.fromEntries(Object.entries(saved).map(([id, item]) => [id, {
       ...item, text: item.ok ? restoredText(item.textRef, `участник «${id}»`) : '' }]));
-    const restoredOwner = (saved) => (saved.binary
-      ? { binary: true, file: saved.file, textRef: null, text: '' }
-      : { text: restoredText(saved.textRef, 'ответ User'), textRef: saved.textRef, ...(saved.file ? { file: saved.file } : {}) });
+    const restoredOwner = (saved) => ({
+      ...(saved.binary
+        ? { binary: true, file: saved.file, textRef: null, text: '' }
+        : { text: restoredText(saved.textRef, 'ответ User'), textRef: saved.textRef, ...(saved.file ? { file: saved.file } : {}) }),
+      ...(saved.approved ? { approved: { id: saved.approved.id, version: saved.approved.version } } : {})
+    });
     function restoreRun(saved) {
       if (!isPlain(saved)) throw new EngineError('resume_invalid', 'resume', 'состояние для продолжения: объект снимка');
       // A complete checkpoint holds every field of the state (V07). A missing `pc` would read as "the run is over" and end the

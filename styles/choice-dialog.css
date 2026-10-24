@@ -18,6 +18,9 @@
   font-size: 14px;
 }
 .choice-dialog-document { white-space: pre-wrap; max-height: 40vh; overflow: auto; border: 1px solid var(--border-color, #d0d7de); padding: 8px; margin: 8px 0; font-size: 14px; }
+.choice-dialog-document-title { margin: 8px 0 4px; }
+.choice-dialog-document-edit { width: 100%; box-sizing: border-box; min-height: 40vh; font: inherit; font-size: 14px; }
+.choice-dialog-document-unavailable { margin: 8px 0; }
 .choice-dialog-form { margin-bottom: 12px; max-height: 50vh; overflow: auto; }
 .owner-ask-text { width: 100%; box-sizing: border-box; font: inherit; font-size: 14px; }
 .choice-dialog-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }

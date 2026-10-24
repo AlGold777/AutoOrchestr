@@ -356,6 +356,7 @@
       if ('document' in output) {
         oneOf(output.document, ['read', 'form'], `${path}.document`, 'вид документа');
         if (output.document === 'form' && output.format !== 'json') fail(`${path}.document`, 'опросник — формат json: укажите format: "json"');
+        if (output.document === 'read' && !(Array.isArray(output.artifacts) && output.artifacts.length === 1)) fail(`${path}.document`, 'документ для чтения: объявите ровно один артефакт в output.artifacts (id, name, pointer)');
       }
       const json = output.format === 'json';
       if ('sections' in output) {

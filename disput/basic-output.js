@@ -1,6 +1,8 @@
 // Basic output: the checks of an answer by the output of its step (docs: basic-schema-guide.md, 5.8; the rules: the
 // technical spec, 5.1). Pure functions: the engine (disput/custom-engine.js) calls them, the tests too.
 // Order of checkAnswer: length (strictLength) → JSON and its fields, or the sections → the declared artifacts.
+// A document for reading (document: read, text format, one artifact) is taken from the marks: [[DOC: id]] … [[/DOC]]
+// (extractDocument); the answer without them is missing_artifact, the whole answer is never taken instead.
 // The reasons: too_long, invalid_output, missing_field, invalid_form (a questionnaire, document: form), missing_section,
 // missing_artifact. Each carries a detail
 // (the section, the pointer, the count of words) that the correction request names.
@@ -77,7 +79,18 @@
     return null;
   }
 
-  // The acceptance of the output of a step: { ok: true, value? } or { ok: false, reason, detail }.
+  // The document of an id between the marks [[DOC: id]] … [[/DOC]]: the first such block, its edges trimmed; null when
+  // there is no block, no closing mark, or the text is empty. The id is compared exactly (the case matters).
+  function extractDocument(answer, id) {
+    const escaped = String(id).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const block = new RegExp(`\\[\\[DOC:\\s*${escaped}\\s*\\]\\]([\\s\\S]*?)\\[\\[\\/DOC\\]\\]`).exec(String(answer == null ? '' : answer));
+    if (!block) return null;
+    const text = block[1].trim();
+    return text === '' ? null : text;
+  }
+
+  // The acceptance of the output of a step: { ok: true, value?, documents? } or { ok: false, reason, detail }.
+  // documents: the text of a document for reading by its artifact id (only for document: read in the text format).
   // `limit` is the effective word limit (the model's maxWords, else the run's); the caller gives it.
   function checkAnswer(raw, output, { limit = null } = {}) {
     if (!output) return { ok: true };
@@ -101,16 +114,25 @@
       const missing = (output.sections || []).find((section) => !lines.some((line) => line.includes(String(section).toLowerCase())));
       if (missing !== undefined) return { ok: false, reason: 'missing_section', detail: `«${missing}»` };
     }
+    const documents = {};
+    if (output.document === 'read' && output.format !== 'json' && Array.isArray(output.artifacts) && output.artifacts.length === 1) {
+      const id = output.artifacts[0].id;
+      const extracted = extractDocument(answer, id);
+      if (extracted === null) return { ok: false, reason: 'missing_artifact', detail: `«${id}» ([[DOC: ${id}]] … [[/DOC]])` };
+      documents[id] = extracted;
+    }
     for (const artifact of output.artifacts || []) {
       // An empty pointer is the whole answer, always present; a pointer into a text answer does not resolve.
       if (artifact.pointer === '') continue;
       const found = value !== undefined && readPointer(value, artifact.pointer).found;
       if (!found) return { ok: false, reason: 'missing_artifact', detail: `«${artifact.id}» (${artifact.pointer})` };
     }
-    return value === undefined ? { ok: true } : { ok: true, value };
+    const result = value === undefined ? { ok: true } : { ok: true, value };
+    if (Object.keys(documents).length) result.documents = documents;
+    return result;
   }
 
-  const api = Object.freeze({ countWords, readPointer, parseJsonAnswer, formProblem, checkAnswer });
+  const api = Object.freeze({ countWords, readPointer, parseJsonAnswer, formProblem, extractDocument, checkAnswer });
   root.BasicOutput = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
