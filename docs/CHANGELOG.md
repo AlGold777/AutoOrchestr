@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-10-25 — Иконка Pipeline заменена на граф из трёх узлов, версия 2.81.880
+
+- Иконка кнопки «Pipeline panel» (`.sidebar-toggle-icon-branch-v3`, `pipeline_panel.html` и `result_new.html`) заменена на присланный SVG: два узла слева, один справа, две кривые сходятся в один узел. Размер и цвет по-прежнему задаёт CSS.
+
 ### 2026-10-25 — Canvas: ширина рамки User берётся из той же переменной, что и раунды, версия 2.81.879
 
 - Ширина карточек раундов и рамки шага User задаётся одной переменной `--pipeline-block-width: 139px` (`styles/base.css`). Раунды (`.model-block`) и рамка User (`.pipeline-control-card`) читают её в `styles/pipeline.css`.
