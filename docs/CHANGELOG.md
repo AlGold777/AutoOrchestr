@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-25 — Basic: подсказки с названием на элементах холста, версия 2.81.858
+
+- Подсказка показывает название элемента жирной строкой, описание — строкой ниже: бейдж In; ▶ («▶ Общие значения» и описание схемы; раньше было нативное `title`); бейдж раунда («R<n> · <title шага>» или «R<n>») и `goal` шага; блок модели (имя модели и её `task`); карточка User и её заголовок («User · <ref> · <title>» и `goal` либо `task`); рамка документа (имя артефакта и его описание); пункт списка pipelines (имя схемы).
+- Механизм: `setCanvasTooltip(el, name, desc)` и `syncCanvasTooltips()` в `results.js` задают `data-tooltip` и `data-tooltip-desc`; показывает `ResultsTooltips` (`results/tooltips.js`), текст выводится как текст. Стили `.floating-tooltip-name` и `.floating-tooltip-desc` — `styles/app-controls.css`. `syncCanvasTooltips` вызывается в конце `updatePipelineAll` и после смены активной схемы.
+- Нативные `title` на `.pipeline-canvas` и на кнопках `.pipeline-list-header-actions` перенесены в подсказку и сняты, чтобы не показывались две подсказки; у `.status-indicator` и `.role-selector` `title` остаётся.
+- Тесты: `tests/results-tooltips.test.js` (разметка подсказки), `tests/results-debate-favorites.test.js`, тест «canvas tooltips: …».
+
 ### 2026-10-24 — Basic: этап 2 упрощён — документы берутся из записи прогона, версия 2.81.857
 
 - Убрано (дублировало запись прогона): отдельное хранилище документов (`disput/basic-documents.js`, `window.BasicDocuments`, ключ `llmComparatorDocuments`, тег script в `pipeline_panel.html`), поле `record.documents` и `CustomRunRecord.setDocumentRef`, разрешение `unlimitedStorage` в `manifest.json`.
