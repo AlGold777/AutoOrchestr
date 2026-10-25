@@ -1,5 +1,13 @@
 # CHANGELOG — Project
 
+### 2026-10-25 — Basic: экспорт и импорт всего каталога схем, версия 2.81.870
+
+- Кнопка «Export all schemas» (`#pipeline-export-all-btn`) в шапке списка pipelines выгружает все сохранённые схемы одним файлом `Каталог Basic.json` (формат `basicCatalog: 1`, массив `schemas`). Шаблоны, записи без схемы и записи, не прошедшие проверку, в файл не входят и перечисляются в уведомлении.
+- Import Schema распознаёт каталог по полю `basicCatalog`: валидные схемы добавляются под своими именами, конфликт имён решается вводом нового имени или подтверждением замены, ничего не затирается молча. Итог — «Добавлено схем: N, не добавлено: M» со списком ошибок; уведомление переносит строки и прокручивается.
+- Прежний общий экспорт (`importBasicBundle`) не менялся и по-прежнему принимается.
+- Код: `buildBasicCatalogExport`, `exportBasicCatalog`, `importBasicCatalog` (`results.js`), общее скачивание `downloadSchemaText`.
+- Документы: `basic-developer.md`, `basic-start-here.md`, `basic-schema-guide.md`, `basic-port-plan.md` (пакет 2.1), `CHANGELOG.md`.
+
 ### 2026-10-24 — Basic: этап 2 упрощён — документы берутся из записи прогона, версия 2.81.857
 
 - Убрано (дублировало запись прогона): отдельное хранилище документов (`disput/basic-documents.js`, `window.BasicDocuments`, ключ `llmComparatorDocuments`, тег script в `pipeline_panel.html`), поле `record.documents` и `CustomRunRecord.setDocumentRef`, разрешение `unlimitedStorage` в `manifest.json`.

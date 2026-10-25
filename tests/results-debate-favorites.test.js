@@ -4110,6 +4110,122 @@ describe('Pipeline debate favorites view', () => {
           expect(JSON.stringify(h.debug.getPipelineStoreSnapshot().pipelines)).toBe(before);
         } finally { h.cleanup(); }
       }, 30000);
+
+      const catalogSchema = (model = 'GPT') => ({ schemaVersion: 1, origin: 'user', steps: [{ ref: 'r1', kind: 'round', models: [{ name: model }] }] });
+      const catalogText = (entries) => JSON.stringify({ basicCatalog: 1, schemas: entries.map(([name, schema]) => ({ name, schema })) });
+      const noticeText = () => document.getElementById('notification-message').textContent;
+
+      test('catalog export: every named schema goes into one file, the record without a schema is skipped', async () => {
+        const h = setupCustomInheritance('Catalog host');
+        try {
+          const schemaA = catalogSchema('GPT');
+          const schemaB = catalogSchema('Claude');
+          expect((await h.debug.installBasicSchema('Cat A', schemaA)).ok).toBe(true);
+          expect((await h.debug.installBasicSchema('Cat B', schemaB)).ok).toBe(true);
+          const built = h.debug.buildBasicCatalogExport();
+          expect(built.ok).toBe(true);
+          expect(built.count).toBe(2);
+          expect(built.fileName).toBe('Каталог Basic.json');
+          const parsed = JSON.parse(built.text);
+          expect(parsed.basicCatalog).toBe(1);
+          expect(parsed.schemas.map((entry) => entry.name)).toEqual(['Cat A', 'Cat B']);
+          expect(parsed.schemas[0].schema.steps).toEqual(schemaA.steps);
+          expect(parsed.schemas[1].schema.steps).toEqual(schemaB.steps);
+          expect(built.skipped.map((entry) => entry.name)).toContain('Catalog host');
+          expect(parsed.schemas.map((entry) => entry.name)).not.toContain('Default');
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      test('catalog export with no schema to export says so and gives no file', async () => {
+        const h = setupCustomInheritance('Catalog host');
+        try {
+          h.debug.setPipelineStoreForTest({ active: 'Catalog host', order: ['Catalog host'], pipelines: { 'Catalog host': { protocol: { type: 'universal', presetId: 'CUSTOM' } } } });
+          const built = h.debug.buildBasicCatalogExport();
+          expect(built.ok).toBe(false);
+          expect(built.errors[0].message).toContain('нет схем');
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      test('catalog round trip: Import of an exported catalog restores every schema under its name', async () => {
+        const h = setupCustomInheritance('Catalog host');
+        try {
+          const host = h.debug.getPipelineStoreSnapshot().pipelines['Catalog host'];
+          const schemaA = catalogSchema('GPT');
+          const schemaB = catalogSchema('Claude');
+          await h.debug.installBasicSchema('Cat A', schemaA);
+          await h.debug.installBasicSchema('Cat B', schemaB);
+          const built = h.debug.buildBasicCatalogExport();
+          h.debug.setPipelineStoreForTest({ active: 'Catalog host', order: ['Catalog host'], pipelines: { 'Catalog host': host } });
+          await importFile(built.text, 'Каталог Basic.json', 'x');
+          const store = h.debug.getPipelineStoreSnapshot();
+          expect(store.pipelines['Cat A'].schema.steps).toEqual(schemaA.steps);
+          expect(store.pipelines['Cat B'].schema.steps).toEqual(schemaB.steps);
+          expect(noticeText()).toContain('Добавлено схем: 2');
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      test('catalog conflict: a taken name is asked again, the existing schema stays and the new one gets the typed name', async () => {
+        const h = setupCustomInheritance('Catalog host');
+        try {
+          const existing = catalogSchema('GPT');
+          const incoming = catalogSchema('Claude');
+          await h.debug.installBasicSchema('Cat A', existing);
+          const prompts = await importFile(catalogText([['Cat A', incoming]]), 'Каталог Basic.json', 'Cat A moved');
+          expect(prompts).toEqual(['Cat A (2)']);
+          const store = h.debug.getPipelineStoreSnapshot();
+          expect(store.pipelines['Cat A'].schema.steps).toEqual(existing.steps);
+          expect(store.pipelines['Cat A moved'].schema.steps).toEqual(incoming.steps);
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      test('catalog replace: the same name typed again asks for confirmation, and refusing keeps the existing schema', async () => {
+        const h = setupCustomInheritance('Catalog host');
+        try {
+          const existing = catalogSchema('GPT');
+          const incoming = catalogSchema('Claude');
+          await h.debug.installBasicSchema('Cat A', existing);
+          await importFile(catalogText([['Cat A', incoming]]), 'Каталог Basic.json', 'Cat A');
+          expect(document.getElementById('confirm-message').textContent).toContain('Cat A');
+          document.getElementById('cancel-confirm').click();
+          await new Promise((resolve) => setTimeout(resolve, 150));
+          expect(h.debug.getPipelineStoreSnapshot().pipelines['Cat A'].schema.steps).toEqual(existing.steps);
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      test('catalog errors: a valid schema is added, an invalid one is skipped and its path is reported', async () => {
+        const h = setupCustomInheritance('Catalog host');
+        try {
+          const bad = { schemaVersion: 1, origin: 'user', steps: [{ ref: 'r1', kind: 'round', models: [{ name: 'Nobody' }] }] };
+          await importFile(catalogText([['Good', catalogSchema('GPT')], ['Bad', bad]]), 'Каталог Basic.json', 'x');
+          const store = h.debug.getPipelineStoreSnapshot();
+          expect(store.pipelines['Good']).toBeDefined();
+          expect(store.pipelines['Bad']).toBeUndefined();
+          expect(noticeText()).toContain('Добавлено схем: 1, не добавлено: 1');
+          expect(noticeText()).toContain('schemas[1].schema.steps[0].models[0].name');
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      test('catalog template name: an entry named as a template is refused and the store does not change', async () => {
+        const h = setupCustomInheritance('Catalog host');
+        try {
+          const before = JSON.stringify(h.debug.getPipelineStoreSnapshot().pipelines);
+          await importFile(catalogText([['Default', catalogSchema('GPT')]]), 'Каталог Basic.json', 'Default');
+          expect(JSON.stringify(h.debug.getPipelineStoreSnapshot().pipelines)).toBe(before);
+          expect(noticeText()).toContain('имя шаблона');
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      test('catalog broken file: a file without a schemas list or of another version is refused and the store does not change', async () => {
+        const h = setupCustomInheritance('Catalog host');
+        try {
+          const before = JSON.stringify(h.debug.getPipelineStoreSnapshot().pipelines);
+          await importFile(JSON.stringify({ basicCatalog: 1 }), 'Каталог Basic.json', 'x');
+          expect(noticeText()).toContain('Файл каталога повреждён');
+          await importFile(JSON.stringify({ basicCatalog: 2, schemas: [] }), 'Каталог Basic.json', 'x');
+          expect(noticeText()).toContain('не поддерживается');
+          expect(JSON.stringify(h.debug.getPipelineStoreSnapshot().pipelines)).toBe(before);
+        } finally { h.cleanup(); }
+      }, 30000);
     });
     });
 

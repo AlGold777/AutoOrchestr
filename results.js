@@ -3566,6 +3566,7 @@ document.addEventListener('click', (event) => {
         const pipelineSaveBtn = document.getElementById('pipeline-save-btn');
         const pipelineDeleteBtn = document.getElementById('pipeline-delete-btn');
         const pipelineExportBtn = document.getElementById('pipeline-export-btn');
+        const pipelineExportAllBtn = document.getElementById('pipeline-export-all-btn');
         const pipelineImportBtn = document.getElementById('pipeline-import-btn');
         const debateRunToggleBtn = document.getElementById('debate-run-toggle-btn');
         const pipelineCloseBtn = document.getElementById('pipeline-close-btn');
@@ -7317,6 +7318,7 @@ document.addEventListener('click', (event) => {
                 resolveCustomFields,
                 getCustomPipelineDefaults,
                 buildBasicExport: () => buildBasicExport(),
+                buildBasicCatalogExport: () => buildBasicCatalogExport(),
                 syncDocumentFrames,
                 restoreDocumentFrames,
                 normalizePipelineStore,
@@ -8194,29 +8196,68 @@ document.addEventListener('click', (event) => {
             }
         });
 
+        // savedMessage is shown when the file is saved into Downloads/Схемы; the link fallback shows it only with notifyAlways.
+        const downloadSchemaText = async (text, fileName, savedMessage, notifyAlways = false) => {
+            const blob = new Blob([text], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            // The download reads the blob asynchronously, so the URL is revoked only after a delay.
+            const revokeLater = () => setTimeout(() => URL.revokeObjectURL(url), 60000);
+            const savedToFolder = await downloadSchemaViaDownloadsApi(url, fileName);
+            if (savedToFolder) {
+                showNotification(savedMessage);
+                revokeLater();
+                return;
+            }
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = fileName;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            revokeLater();
+            if (notifyAlways) showNotification(savedMessage);
+        };
         const exportBasicSchema = async () => {
             const built = buildBasicExport();
             if (!built.ok) {
                 showNotification(`Экспорт не выполнен. ${describeSchemaErrors(built.errors)}`, 'warn');
                 return;
             }
-            const blob = new Blob([built.text], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            // The download reads the blob asynchronously, so the URL is revoked only after a delay.
-            const revokeLater = () => setTimeout(() => URL.revokeObjectURL(url), 60000);
-            const savedToFolder = await downloadSchemaViaDownloadsApi(url, built.fileName);
-            if (savedToFolder) {
-                showNotification(`Схема сохранена в Загрузки/Схемы: ${built.fileName}`);
-                revokeLater();
+            await downloadSchemaText(built.text, built.fileName, `Схема сохранена в Загрузки/Схемы: ${built.fileName}`);
+        };
+        // The whole catalog of saved Basic schemas in one file. Templates are not in it. A record without a schema, or one the
+        // canvas cannot show, is listed in skipped with its reasons. Unsaved canvas edits are not in it.
+        const buildBasicCatalogExport = () => {
+            const items = [];
+            const skipped = [];
+            for (const name of pipelineStore.order) {
+                if (isDefaultPipelineName(name)) continue;
+                const record = pipelineStore.pipelines[name];
+                if (!record || typeof record !== 'object' || !record.schema) {
+                    skipped.push({ name, errors: [{ path: '', message: 'нет схемы Basic (запись прежнего формата)' }] });
+                    continue;
+                }
+                const checked = recordFromSchema(name, record.schema);
+                if (!checked.ok) {
+                    skipped.push({ name, errors: checked.errors });
+                    continue;
+                }
+                items.push({ name, schema: JSON.parse(JSON.stringify(record.schema)) });
+            }
+            if (!items.length) return { ok: false, errors: [{ path: '', message: 'В списке нет схем Basic для выгрузки.' }], skipped };
+            return { ok: true, errors: [], count: items.length, skipped, fileName: 'Каталог Basic.json', text: `${JSON.stringify({ basicCatalog: 1, schemas: items }, null, 2)}\n` };
+        };
+        const exportBasicCatalog = async () => {
+            const built = buildBasicCatalogExport();
+            if (!built.ok) {
+                showNotification(`Экспорт не выполнен. ${describeSchemaErrors(built.errors)}`, 'warn');
                 return;
             }
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = built.fileName;
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-            revokeLater();
+            const tail = built.skipped.length
+                ? `\n${built.skipped.map((entry) => `«${entry.name}»: ${entry.errors.map((error) => (error.path ? `${error.path}: ${error.message}` : error.message)).join('; ')}`).join('\n')}`
+                : '';
+            await downloadSchemaText(built.text, built.fileName,
+                `Каталог сохранён в Загрузки/Схемы: ${built.fileName} (схем: ${built.count}${built.skipped.length ? `, не выгружено: ${built.skipped.length}` : ''}).${tail}`, true);
         };
 
         // The errors of a schema in one line: the place and the reason of each, at most five.
@@ -8331,6 +8372,57 @@ document.addEventListener('click', (event) => {
                 if (item) selectPipeline(item, { applyConfig: true, persist: true });
             }
         };
+        // A catalog file: each entry is checked first, then the valid ones are added in order. A taken name is asked again;
+        // an entry whose check or name fails is not added and its reason is listed.
+        const importBasicCatalog = async (parsed) => {
+            if (parsed.basicCatalog !== 1) { showNotification(`Версия каталога ${parsed.basicCatalog} не поддерживается.`, 'error'); return; }
+            if (!Array.isArray(parsed.schemas)) { showNotification('Файл каталога повреждён: нет списка schemas.', 'error'); return; }
+            const problems = [];
+            const valid = [];
+            let notAdded = 0;
+            const errorLines = (name, index, errors) => errors.map((error) => `«${name}»: schemas[${index}].schema${error.path ? `.${error.path}` : ''}: ${error.message}`);
+            parsed.schemas.forEach((entry, index) => {
+                const name = entry && typeof entry === 'object' && typeof entry.name === 'string' ? entry.name.trim() : '';
+                if (!name || !entry.schema || typeof entry.schema !== 'object') {
+                    problems.push(`schemas[${index}]: нужны name (строка) и schema (объект)`);
+                    notAdded += 1;
+                    return;
+                }
+                const checked = recordFromSchema(name, entry.schema);
+                if (!checked.ok) {
+                    problems.push(...errorLines(name, index, checked.errors));
+                    notAdded += 1;
+                    return;
+                }
+                valid.push({ name, schema: entry.schema, index });
+            });
+            let added = 0;
+            let last = '';
+            for (const { name: wanted, schema, index } of valid) {
+                let final = wanted;
+                if (isDefaultPipelineName(wanted) || pipelineStore.order.includes(wanted)) {
+                    const typed = String((await showPrompt(isDefaultPipelineName(wanted)
+                        ? `«${wanted}» — имя шаблона. Имя для этой схемы из файла:`
+                        : `Pipeline «${wanted}» уже есть. Имя для схемы из файла (то же имя заменит существующий):`, uniquePipelineName(wanted)) || '')).trim();
+                    if (!typed) { problems.push(`«${wanted}»: не добавлена (имя не выбрано).`); notAdded += 1; continue; }
+                    final = typed;
+                }
+                if (isDefaultPipelineName(final)) { problems.push(`«${final}»: имя шаблона занять нельзя, схема не добавлена.`); notAdded += 1; continue; }
+                if (pipelineStore.order.includes(final) && !(await showConfirm(`Pipeline "${final}" already exists. Replace it?`))) {
+                    problems.push(`«${final}»: замена не подтверждена, схема не добавлена.`); notAdded += 1; continue;
+                }
+                const result = await installBasicSchema(final, schema);
+                if (result.ok) { added += 1; last = final; continue; }
+                problems.push(...errorLines(final, index, result.errors));
+                notAdded += 1;
+            }
+            showNotification(`Добавлено схем: ${added}, не добавлено: ${notAdded}.${problems.length ? `\n${problems.join('\n')}` : ''}`,
+                problems.length ? (added ? 'warn' : 'error') : 'success');
+            if (last) {
+                const item = findPipelineItemByName(last);
+                if (item) selectPipeline(item, { applyConfig: true, persist: true });
+            }
+        };
         const handlePipelineImportFile = async (event) => {
             const file = event.target.files?.[0];
             if (!file) return;
@@ -8344,7 +8436,9 @@ document.addEventListener('click', (event) => {
                 try { parsed = JSON.parse(String(reader.result || '')); }
                 catch (_) { showNotification('Файл не JSON.', 'error'); return; }
                 const isObject = Boolean(parsed) && typeof parsed === 'object' && !Array.isArray(parsed);
-                if (isObject && 'schemaVersion' in parsed && 'steps' in parsed && !parsed.pipelines) {
+                if (isObject && 'basicCatalog' in parsed) {
+                    await importBasicCatalog(parsed);
+                } else if (isObject && 'schemaVersion' in parsed && 'steps' in parsed && !parsed.pipelines) {
                     await importBasicSchemaFile(parsed, String(file.name || '').replace(/\.json$/i, '').trim());
                 } else if (isObject && parsed.pipelines && typeof parsed.pipelines === 'object') {
                     await importBasicBundle(parsed);
@@ -9065,6 +9159,7 @@ document.addEventListener('click', (event) => {
         pipelineSaveBtn?.addEventListener('click', savePipeline);
         pipelineDeleteBtn?.addEventListener('click', deleteActivePipeline);
         pipelineExportBtn?.addEventListener('click', exportBasicSchema);
+        pipelineExportAllBtn?.addEventListener('click', exportBasicCatalog);
         pipelineImportBtn?.addEventListener('click', importPipelines);
         // Pipeline Get it: double click on Run runs the main page's collection pass for the
         // running stage's models (or the selected models when no stage is waiting).
