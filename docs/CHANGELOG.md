@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-25 — Basic: встроенная схема user_doc при первом старте, версия 2.81.858
+
+- Новая встроенная схема `user_doc` (опросник: DeepSeek составляет опросник, User заполняет и жмёт «Отправить») ставится в список pipelines при первом старте страницы. Схема лежит в `disput/pipeline-presets.js` (`BUILTIN_SCHEMAS`), посев — `seedBuiltinSchemas` в `results.js`.
+- Посев один раз: имя записывается в `pipelineStore.seeded` (сохраняется в хранилище). Удалённый пользователем `user_doc` не возвращается. Если pipeline с таким именем уже есть, он не перезаписывается, только помечается посеянным.
+- Выбор активного pipeline при старте не меняется.
+- Код: `disput/pipeline-presets.js`, `results.js`. Тест: `tests/user-doc-seed.test.js`.
+
 ### 2026-10-24 — Basic: этап 2 упрощён — документы берутся из записи прогона, версия 2.81.857
 
 - Убрано (дублировало запись прогона): отдельное хранилище документов (`disput/basic-documents.js`, `window.BasicDocuments`, ключ `llmComparatorDocuments`, тег script в `pipeline_panel.html`), поле `record.documents` и `CustomRunRecord.setDocumentRef`, разрешение `unlimitedStorage` в `manifest.json`.

@@ -35,6 +35,24 @@
     Object.freeze({ name: 'Default', presetId: 'CUSTOM', profileId: 'UNIVERSAL_STANDARD', runPolicy: 'auto', noMiniPrompts: true, length: '700', roundLimit: '2', defaultModelCount: 0, roles: ['participant'] }),
   ]);
 
+  // Basic schemas seeded into the list on the first start (results.js, initPipelineList). Not presets and not
+  // BUILTIN_PIPELINE_DEFINITIONS: each one is seeded once (pipelineStore.seeded); a deleted one is not restored.
+  const BUILTIN_SCHEMAS = Object.freeze({
+    user_doc: Object.freeze({
+      schemaVersion: 1, origin: 'user',
+      description: 'Опросник: DeepSeek составляет опросник по задаче из поля модератора, User заполняет его в окне и нажимает «Отправить».',
+      run: Object.freeze({ policy: 'auto' }),
+      steps: Object.freeze([
+        Object.freeze({ ref: 'r1', kind: 'round', models: Object.freeze([Object.freeze({ name: 'DeepSeek' })]),
+          task: 'Составь опросник из 5–7 пунктов, чтобы уточнить у пользователя его задачу. Используй разные типы пунктов; ключевые пометь обязательными.',
+          output: Object.freeze({ format: 'json', document: 'form' }) }),
+        Object.freeze({ ref: 'owner:fill', kind: 'owner', models: Object.freeze([]),
+          task: 'Заполните опросник и нажмите «Отправить».',
+          document: 'r1' })
+      ])
+    })
+  });
+
   const PRESET_BY_ID = Object.freeze(Object.fromEntries(PIPELINE_PRESETS.map((preset) => [preset.id, preset])));
   function getPipelinePreset(presetId) { return PRESET_BY_ID[presetId] || PRESET_BY_ID[DEFAULT_PRESET_ID]; }
   function resolveFinalizationPolicy(value) {
@@ -88,7 +106,7 @@
   }
 
   const api = Object.freeze({
-    PIPELINE_PRESETS, BUILTIN_PIPELINE_DEFINITIONS, REASONING_BUDGETS, DEFAULT_PRESET_ID,
+    PIPELINE_PRESETS, BUILTIN_PIPELINE_DEFINITIONS, BUILTIN_SCHEMAS, REASONING_BUDGETS, DEFAULT_PRESET_ID,
     normalizePipelinePreset, resolveRuntimeRoundLimits, resolveFinalizationPolicy, getPipelinePreset,
     isLongPreset, isOpenEndedPreset, isPresetEnabled
   });
