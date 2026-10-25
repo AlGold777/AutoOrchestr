@@ -6999,6 +6999,10 @@ document.addEventListener('click', (event) => {
             // The text of the composer before the run took it: it comes back if the run produces nothing.
             let composerBackup = '';
             const record = resumeRecord || window.CustomRunRecord?.createRun?.({ runId: runContext.pipelineRunId, pipelineName: customPipelineName(), task, steps }) || null;
+            if (record) {
+                record.finishedAt = null;
+                record.stopReason = '';
+            }
             latestBasicRunRecord = record;
             let saveTimer = null;
             // The writes of the record go one after another: an older write never lands after a newer one.
@@ -7021,9 +7025,38 @@ document.addEventListener('click', (event) => {
             // tabId, requestId, stageAttemptId }. The background keeps the tab of each participant; this record is what a resume
             // reads. A resumed run starts from the saved chats (R01): the background takes them back only for its own run ID.
             const chatBindings = resumeRecord ? { ...(resumeRecord.snapshot?.chatBindings || {}) } : {};
+            const buildSnapshotPayload = (state = {}, options = {}) => {
+                const prev = record?.snapshot || {};
+                const prevCurrent = prev.current || null;
+                const candCurrent = options.current !== undefined ? options.current : (state.current || prevCurrent);
+                let current = candCurrent ? { ...candCurrent } : null;
+                if (current && prevCurrent && current.stepRef === prevCurrent.stepRef) {
+                    if ((!current.accepted || !current.accepted.length) && prevCurrent.accepted?.length) {
+                        current.accepted = prevCurrent.accepted;
+                    }
+                    if ((!current.pending || !current.pending.length) && prevCurrent.pending?.length) {
+                        current.pending = prevCurrent.pending;
+                    }
+                }
+                const pendingOwner = options.pendingOwner !== undefined
+                    ? options.pendingOwner
+                    : (state.pendingOwner !== undefined ? state.pendingOwner : (prev.pendingOwner ?? null));
+                const ownerAnswers = options.ownerAnswers !== undefined
+                    ? options.ownerAnswers
+                    : (state.ownerAnswers || prev.ownerAnswers || []);
+
+                return {
+                    schema: built.schema,
+                    runSettings: { semiAuto, maxAttempts: engine.DEFAULT_ATTEMPTS, runMaxWords: built.run.maxWords ?? null },
+                    state: { ...state, chatBindings: { ...chatBindings } },
+                    current,
+                    ownerAnswers,
+                    pendingOwner
+                };
+            };
             const checkpointRecord = (state) => {
                 window.CustomRunRecord.setArtifacts(record, state.artifacts);
-                window.CustomRunRecord.setSnapshot(record, { schema: built.schema, runSettings: { semiAuto, maxAttempts: engine.DEFAULT_ATTEMPTS, runMaxWords: built.run.maxWords ?? null }, state: { ...state, chatBindings: { ...chatBindings } }, current: state.current, ownerAnswers: state.ownerAnswers, pendingOwner: state.pendingOwner });
+                window.CustomRunRecord.setSnapshot(record, buildSnapshotPayload(state, { current: state.current, ownerAnswers: state.ownerAnswers, pendingOwner: state.pendingOwner }));
                 syncDocumentFrames();
                 return writeRecord();
             };
@@ -7310,10 +7343,10 @@ document.addEventListener('click', (event) => {
                     // The registry and the state of the run at its end: what a later resume needs (8.2).
                     const CustomRecord = window.CustomRunRecord;
                     CustomRecord.setArtifacts(record, result.artifacts);
-                    CustomRecord.setSnapshot(record, {
-                        schema: built.schema, runSettings: { semiAuto, maxAttempts: engine.DEFAULT_ATTEMPTS, runMaxWords: built.run.maxWords ?? null },
-                        state: result.state, ownerAnswers: result.ownerAnswers
-                    });
+                    CustomRecord.setSnapshot(record, buildSnapshotPayload(result.state, {
+                        ownerAnswers: result.ownerAnswers,
+                        chatBindings
+                    }));
                     CustomRecord.finishRun(record, { stopReason: result.stopReason });
                     await saveRecord(true);
                     syncDocumentFrames();
@@ -7337,7 +7370,7 @@ document.addEventListener('click', (event) => {
                 // The engine reports its own end; a thrown error ends the run without it.
                 window.MessageDelivery?.batchEvent?.('custom_end', { pipelineRunId: runContext.pipelineRunId, stopReason: 'error', error: String(err?.message || err) });
                 showNotification(`Pipeline: error (${err?.message || String(err)})`, 'error');
-                if (record && !record.finishedAt) { window.CustomRunRecord.finishRun(record, { stopReason: 'error' }); await saveRecord(true); }
+                if (record) { window.CustomRunRecord.finishRun(record, { stopReason: 'error' }); await saveRecord(true); }
                 offerResumeLine(record);
                 return false;
             } finally {

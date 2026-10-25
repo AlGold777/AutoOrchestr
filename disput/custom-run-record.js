@@ -145,13 +145,69 @@
   const copyOf = (value) => (value === undefined ? null : JSON.parse(JSON.stringify(value)));
   // The chats of the participants are an object by participantId; a list (an old snapshot) and no value are an empty object.
   const plainOf = (value) => (value && typeof value === 'object' && !Array.isArray(value) ? copyOf(value) : {});
-  function setSnapshot(record, { schema = [], runSettings = {}, state = {}, current = null, ownerAnswers = [], pendingOwner = null } = {}) {
+  const CHAT_BINDING_FIELDS = [
+    'modelName', 'stepRef', 'visit', 'transportRequestId', 'tabId',
+    'requestId', 'stageAttemptId', 'chatVisit', 'attachedChatVisit'
+  ];
+
+  function mergeChatBindings(previous = {}, incoming = {}) {
+    const prev = plainOf(previous);
+    const next = plainOf(incoming);
+    const participantIds = new Set([...Object.keys(prev), ...Object.keys(next)]);
+    const merged = {};
+    for (const id of participantIds) {
+      const prevItem = prev[id];
+      const nextItem = next[id];
+      if (prevItem && nextItem) {
+        const item = {};
+        for (const key of CHAT_BINDING_FIELDS) {
+          if (nextItem[key] !== undefined && nextItem[key] !== null) {
+            item[key] = nextItem[key];
+          } else if (prevItem[key] !== undefined && prevItem[key] !== null) {
+            item[key] = prevItem[key];
+          }
+        }
+        for (const [key, val] of Object.entries(prevItem)) {
+          if (item[key] === undefined && val !== undefined && val !== null) item[key] = val;
+        }
+        for (const [key, val] of Object.entries(nextItem)) {
+          if (item[key] === undefined && val !== undefined && val !== null) item[key] = val;
+        }
+        merged[id] = item;
+      } else if (prevItem) {
+        merged[id] = { ...prevItem };
+      } else if (nextItem) {
+        merged[id] = { ...nextItem };
+      }
+    }
+    return merged;
+  }
+
+  function setSnapshot(record, { schema = [], runSettings = {}, state = {}, current = null, ownerAnswers = undefined, pendingOwner = undefined } = {}) {
     const visits = state.visits || {};
+    const previous = record.snapshot || {};
+    const chatBindings = mergeChatBindings(previous.chatBindings, state.chatBindings);
+    const resolvedPendingOwner = pendingOwner !== undefined
+      ? pendingOwner
+      : (state.pendingOwner !== undefined ? state.pendingOwner : (previous.pendingOwner ?? null));
+    const resolvedOwnerAnswers = (ownerAnswers !== undefined && ownerAnswers !== null)
+      ? ownerAnswers
+      : (state.ownerAnswers || previous.ownerAnswers || []);
+    const prevCurrent = previous.current || null;
+    let resolvedCurrent = current || state.current || prevCurrent || { stepRef: state.pc ?? null, visit: visits[state.pc] || 0, phase: 'done', accepted: [], pending: [] };
+    if (resolvedCurrent && prevCurrent && resolvedCurrent.stepRef === prevCurrent.stepRef) {
+      if ((!resolvedCurrent.accepted || !resolvedCurrent.accepted.length) && prevCurrent.accepted?.length) {
+        resolvedCurrent = { ...resolvedCurrent, accepted: prevCurrent.accepted };
+      }
+      if ((!resolvedCurrent.pending || !resolvedCurrent.pending.length) && prevCurrent.pending?.length) {
+        resolvedCurrent = { ...resolvedCurrent, pending: prevCurrent.pending };
+      }
+    }
     record.snapshot = copyOf({
       schema, taskRef: record.taskRef, runSettings, pc: state.pc, visits,
-      current: current || state.current || { stepRef: state.pc ?? null, visit: visits[state.pc] || 0, phase: 'done', accepted: [], pending: [] },
+      current: resolvedCurrent,
       results: state.results || [], decisions: state.decisions || {},
-      ownerAnswers, pendingOwner, chatBindings: plainOf(state.chatBindings)
+      ownerAnswers: resolvedOwnerAnswers, pendingOwner: resolvedPendingOwner, chatBindings
     });
     return record.snapshot;
   }
