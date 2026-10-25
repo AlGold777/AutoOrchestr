@@ -1,5 +1,30 @@
 # CHANGELOG — Project
 
+### 2026-10-25 — Basic: копия документа в папку на диске (2.3a), версия 2.81.872
+
+- В окне ответа User с документом появилась строка «Папка документов»: кнопка выбирает папку (File System Access, `showDirectoryPicker`), рядом имя папки или «не выбрана». Одна папка на все pipelines; дескриптор хранится в IndexedDB расширения (база `AutoOrchestrDocumentsFolder`, хранилище `handles`, ключ `documents`), в схему не входит.
+- При OK/Send утверждённый текст записывается в `<папка>/<pipeline>/<дата-время прогона>/<имя>.md` (для опросника — `.json`). Имена очищаются, повторное OK/Send перезаписывает файл. Файл — копия для человека; главное хранилище — запись прогона.
+- Папка не выбрана — ничего не происходит. Нет доступа или ошибка записи — прогон продолжается, одно уведомление за прогон. Доступ после перезапуска Chrome запрашивается на ▶ и на «Продолжить прогон».
+- Схема и движок не менялись. Пакет 2.3b (перечитывание файла перед шагом и вопрос «взять правку / оставить») отложен решением менеджера.
+- Код: `results/documents-folder.js` (`DocumentsFolder`), `results/choice-dialog.js` (параметр `folder`), `results.js` (`saveDocumentCopy`, `requestDocumentsAccess`, `documentsFolderName`, `pickDocumentsFolder`, обёртка `provideOwnerResult`); тесты `tests/documents-folder.test.js`.
+- Документы: `basic-windows.md`, `basic-start-here.md`, `basic-developer.md`, `basic-user-documents-plan.md`, `basic-port-plan.md` (пакет 2.3a), `CHANGELOG.md`.
+
+### 2026-10-25 — Basic: вставка JSON схемы из буфера, версия 2.81.871
+
+- Кнопка `#pipeline-profile-btn` больше не заглушка: называется «Вставить схему» и открывает окно `openSchemaPasteWindow`. Решение 2.81.784 («кнопка — неактивная заглушка») изменено этим пакетом.
+- Окно принимает ответ модели целиком: текст читает `SchemaTextReader.read` (`disput/schema-text-reader.js`). Терпимо к ограде ```json, хвостовым запятым, комментариям `//` и `/* */`, ключам без кавычек и типографским кавычкам; первое JSON-значение; текст вне JSON показывается как «Комментарий модели». Алиасы полей не применяются.
+- Оборванный ответ не применяется: окно сообщает, до какого шага (`ref`) JSON цел. Ошибки проверки выводятся списком «путь: сообщение», текст сохраняется. Объект с `basicCatalog` импортируется как каталог; схема, прошедшая проверку, устанавливается по пути Import (спрашивается имя).
+- Код: `disput/schema-text-reader.js`, `openSchemaPasteWindow` и `importBasicSchemaFile` (возвращает `true` при установке) в `results.js`; тесты `tests/schema-text-reader.test.js`.
+- Документы: `basic-windows.md`, `basic-start-here.md`, `basic-developer.md`, `basic-schema-guide.md`, `basic-port-plan.md` (пакет 2.2), `CHANGELOG.md`, `docs/Architecture/debate-removal-registry.md`.
+
+### 2026-10-25 — Basic: экспорт и импорт всего каталога схем, версия 2.81.870
+
+- Кнопка «Export all schemas» (`#pipeline-export-all-btn`) в шапке списка pipelines выгружает все сохранённые схемы одним файлом `Каталог Basic.json` (формат `basicCatalog: 1`, массив `schemas`). Шаблоны, записи без схемы и записи, не прошедшие проверку, в файл не входят и перечисляются в уведомлении.
+- Import Schema распознаёт каталог по полю `basicCatalog`: валидные схемы добавляются под своими именами, конфликт имён решается вводом нового имени или подтверждением замены, ничего не затирается молча. Итог — «Добавлено схем: N, не добавлено: M» со списком ошибок; уведомление переносит строки и прокручивается.
+- Прежний общий экспорт (`importBasicBundle`) не менялся и по-прежнему принимается.
+- Код: `buildBasicCatalogExport`, `exportBasicCatalog`, `importBasicCatalog` (`results.js`), общее скачивание `downloadSchemaText`.
+- Документы: `basic-developer.md`, `basic-start-here.md`, `basic-schema-guide.md`, `basic-port-plan.md` (пакет 2.1), `CHANGELOG.md`.
+
 ### 2026-10-24 — Basic: этап 2 упрощён — документы берутся из записи прогона, версия 2.81.857
 
 - Убрано (дублировало запись прогона): отдельное хранилище документов (`disput/basic-documents.js`, `window.BasicDocuments`, ключ `llmComparatorDocuments`, тег script в `pipeline_panel.html`), поле `record.documents` и `CustomRunRecord.setDocumentRef`, разрешение `unlimitedStorage` в `manifest.json`.

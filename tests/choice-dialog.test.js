@@ -200,3 +200,54 @@ describe('Choice dialog: a document to edit, a document to view only', () => {
     await expect(answer).resolves.toBe('Документ прочитан, замечаний нет.');
   });
 });
+
+describe('Choice dialog: the folder of documents', () => {
+  beforeEach(() => { document.body.innerHTML = ''; });
+
+  const choices = [{ value: 'send', label: 'Отправить' }];
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const openFolder = (folder) => ChoiceDialog.ask({ title: 'Документ', choices, folder });
+  const folderRow = () => document.querySelector('.choice-dialog-folder');
+  const folderButton = () => document.querySelector('.choice-dialog-folder-pick');
+  const folderName = () => document.querySelector('.choice-dialog-folder-name').textContent;
+
+  test('without folder there is no folder row; with folder the row shows its name, an empty name shows «не выбрана»', () => {
+    openFolder(undefined);
+    expect(folderRow()).toBeNull();
+    document.querySelector('.choice-dialog-cancel').click();
+    openFolder({ name: 'Docs', onPick: async () => null });
+    expect(folderButton().textContent).toBe('Папка документов');
+    expect(folderName()).toBe('Docs');
+    document.querySelector('.choice-dialog-cancel').click();
+    openFolder({ name: '', onPick: async () => null });
+    expect(folderName()).toBe('не выбрана');
+    document.querySelector('.choice-dialog-cancel').click();
+  });
+
+  test('the folder button calls onPick; a name shows in the row, null or empty keeps the old name; the window stays open and the answer is unchanged', async () => {
+    const onPick = jest.fn().mockResolvedValueOnce('Other').mockResolvedValueOnce(null).mockResolvedValueOnce('');
+    const answer = openFolder({ name: 'Docs', onPick });
+    folderButton().click();
+    await flush();
+    expect(onPick).toHaveBeenCalledTimes(1);
+    expect(folderName()).toBe('Other');
+    folderButton().click();
+    await flush();
+    expect(folderName()).toBe('Other');
+    folderButton().click();
+    await flush();
+    expect(onPick).toHaveBeenCalledTimes(3);
+    expect(folderName()).toBe('Other');
+    expect(document.querySelector('.choice-dialog')).not.toBeNull();
+    document.querySelector('.choice-dialog-choice').click();
+    await expect(answer).resolves.toBe('send');
+  });
+
+  test('a null pick keeps the name the row had before', async () => {
+    openFolder({ name: 'Docs', onPick: async () => null });
+    document.querySelector('.choice-dialog-folder-pick').click();
+    await flush();
+    expect(folderName()).toBe('Docs');
+    document.querySelector('.choice-dialog-cancel').click();
+  });
+});

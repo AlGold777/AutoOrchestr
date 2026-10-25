@@ -74,7 +74,8 @@ describe('Basic page binds the engine to the run record (8.2, 8.3)', () => {
   });
 
   test('the owner answer and the unknown request are asked in windows (A06), no guessed answer is passed; there is no route choice', () => {
-    expect(results).toContain('provideOwnerResult: ({ stepRef, task, goal, input, output, document, reason, detail }) => askChoiceDialog({');
+    expect(results).toContain('provideOwnerResult: async (request) => {');
+    expect(results).toContain('const { stepRef, task, goal, input, output, document, reason, detail } = request;');
     expect(results).toContain('window.StageCard.ownerAskMessage({ task, goal, input, output, reason, detail,');
     expect(results).not.toContain('chooseRoute');
     expect(results).toContain("resolveUnknown: ({ stepRef, items, choices = ['resend', 'skip'] }) => askChoiceDialog({");

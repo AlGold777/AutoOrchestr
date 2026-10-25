@@ -3566,6 +3566,8 @@ document.addEventListener('click', (event) => {
         const pipelineSaveBtn = document.getElementById('pipeline-save-btn');
         const pipelineDeleteBtn = document.getElementById('pipeline-delete-btn');
         const pipelineExportBtn = document.getElementById('pipeline-export-btn');
+        const pipelineExportAllBtn = document.getElementById('pipeline-export-all-btn');
+        const pipelineProfileBtn = document.getElementById('pipeline-profile-btn');
         const pipelineImportBtn = document.getElementById('pipeline-import-btn');
         const debateRunToggleBtn = document.getElementById('debate-run-toggle-btn');
         const pipelineCloseBtn = document.getElementById('pipeline-close-btn');
@@ -6684,6 +6686,44 @@ document.addEventListener('click', (event) => {
             // The windows of a run close on its Stop (R07): the signal of the run goes with them.
             return window.ChoiceDialog.ask({ signal: customAbortController?.signal, ...options });
         };
+        // The copy of an approved document goes to the documents folder (results/documents-folder.js); the record of the run stays the main store.
+        let documentsAccessNoticed = false;
+        const documentsFolderName = async () => {
+            try { return (await window.DocumentsFolder?.instance?.folderName?.()) || ''; } catch (_) { return ''; }
+        };
+        const pickDocumentsFolder = async () => {
+            try { return (await window.DocumentsFolder.instance.pick()) || null; } catch (error) {
+                showNotification(`Папка документов не выбрана: ${error?.message || error}`, 'warn');
+                return null;
+            }
+        };
+        // Called from a click of the User only: asks for access to the folder when it is still a prompt.
+        const requestDocumentsAccess = () => {
+            documentsAccessNoticed = false;
+            const folder = window.DocumentsFolder?.instance;
+            if (!folder) return;
+            void folder.ensureAccess({ request: true }).then((state) => {
+                if (state === 'denied') {
+                    documentsAccessNoticed = true;
+                    showNotification('Папка документов недоступна: файлы документов записываться не будут. Прогон продолжается.', 'warn');
+                }
+            }).catch(() => {});
+        };
+        // Writes the answer of a document into the folder; it never throws. One notice per run for a failure.
+        const saveDocumentCopy = async ({ stepRef, document, answer, startedAt, pipeline }, state) => {
+            const folder = window.DocumentsFolder?.instance;
+            if (!folder || typeof answer !== 'string' || !document) return;
+            let result;
+            try {
+                result = await folder.write({ pipeline, startedAt, name: document.name || stepRef, kind: document.kind, text: answer });
+            } catch (error) {
+                result = { ok: false, reason: 'error', message: String(error?.message || error) };
+            }
+            if (!result.ok && result.reason !== 'none' && !state.warned) {
+                state.warned = true;
+                showNotification(`Документ «${document.name || stepRef}» не записан в папку: ${result.reason === 'denied' ? 'нет доступа к папке (подтвердите при следующем запуске ▶)' : (result.message || 'ошибка записи')}. Прогон продолжается.`, 'warn');
+            }
+        };
         const askCustomOwner = (asks, { label }) => new Promise((resolve) => {
             if (!ownerAskDialog || !window.OwnerAsk) { resolve([]); return; }
             openOwnerAsk({ label, asks, resolve });
@@ -6731,6 +6771,7 @@ document.addEventListener('click', (event) => {
         };
         // «Продолжить прогон»: the latest run of this pipeline goes on from its saved state. A run without one is only history.
         const resumeCustomFromPage = async () => {
+            requestDocumentsAccess();
             if (!customRunStore || !window.CustomRunRecord) { showNotification('Basic: записи прогонов недоступны.', 'warn'); return false; }
             if (pipelineRunActive) { showNotification('Basic: прогон уже идёт.', 'warn'); return false; }
             const latest = await customRunStore.latest(customPipelineName());
@@ -6861,6 +6902,7 @@ document.addEventListener('click', (event) => {
                 newPagesDispatched: false
             };
             const runContext = activePipelineRunContext;
+            const documentCopyState = { warned: documentsAccessNoticed };
             const signal = customAbortController.signal;
             // The text of the composer before the run took it: it comes back if the run produces nothing.
             let composerBackup = '';
@@ -7099,14 +7141,23 @@ document.addEventListener('click', (event) => {
                     decide: askCustomDecision,
                     // The owner's answer of an owner step: a text (a file is not supported on this page yet).
                     checkUnknown,
-                    provideOwnerResult: ({ stepRef, task, goal, input, output, document, reason, detail }) => askChoiceDialog({
-                        title: `Ответ User: ${stepRef}`,
-                        message: window.StageCard.ownerAskMessage({ task, goal, input, output, reason, detail, reasonText: reason ? (window.CustomEngine?.REASON_TEXT?.[reason] || reason) : '' }),
-                        textInput: document ? null : { label: 'Ответ User', required: true },
-                        // A document for reading is edited in the window.
-                        choices: [{ value: 'send', label: 'Отправить' }],
-                        ...(document ? { document: document.kind === 'read' ? { ...document, editable: true } : document, answerFormat: output?.format === 'json' ? 'json' : 'text' } : {})
-                    }),
+                    provideOwnerResult: async (request) => {
+                        const { stepRef, task, goal, input, output, document, reason, detail } = request;
+                        const folderName = document ? await documentsFolderName() : '';
+                        const answer = await askChoiceDialog({
+                            title: `Ответ User: ${stepRef}`,
+                            message: window.StageCard.ownerAskMessage({ task, goal, input, output, reason, detail, reasonText: reason ? (window.CustomEngine?.REASON_TEXT?.[reason] || reason) : '' }),
+                            textInput: document ? null : { label: 'Ответ User', required: true },
+                            // A document for reading is edited in the window.
+                            choices: [{ value: 'send', label: 'Отправить' }],
+                            ...(document ? { document: document.kind === 'read' ? { ...document, editable: true } : document, answerFormat: output?.format === 'json' ? 'json' : 'text' } : {}),
+                            ...(document ? { folder: { name: folderName, onPick: pickDocumentsFolder } } : {})
+                        });
+                        if (typeof answer === 'string' && document) {
+                            void saveDocumentCopy({ stepRef, document, answer, startedAt: runContext.startedAt, pipeline: customPipelineName() }, documentCopyState);
+                        }
+                        return answer;
+                    },
                     // The request whose sending is not confirmed: send it again, or skip it for this attempt only.
                     resolveUnknown: ({ stepRef, items, choices = ['resend', 'skip'] }) => askChoiceDialog({
                         title: 'Неизвестный запрос',
@@ -7317,6 +7368,8 @@ document.addEventListener('click', (event) => {
                 resolveCustomFields,
                 getCustomPipelineDefaults,
                 buildBasicExport: () => buildBasicExport(),
+                buildBasicCatalogExport: () => buildBasicCatalogExport(),
+                saveDocumentCopy: (...args) => saveDocumentCopy(...args),
                 syncDocumentFrames,
                 restoreDocumentFrames,
                 normalizePipelineStore,
@@ -7345,6 +7398,7 @@ document.addEventListener('click', (event) => {
             const now = Date.now();
             if (now - lastPipelineTriggerAt < 500) return;
             lastPipelineTriggerAt = now;
+            requestDocumentsAccess();
             const runFn = typeof window.runPipeline === 'function'
                 ? window.runPipeline
                 : startDebateFromPage;
@@ -8194,29 +8248,68 @@ document.addEventListener('click', (event) => {
             }
         });
 
+        // savedMessage is shown when the file is saved into Downloads/Схемы; the link fallback shows it only with notifyAlways.
+        const downloadSchemaText = async (text, fileName, savedMessage, notifyAlways = false) => {
+            const blob = new Blob([text], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            // The download reads the blob asynchronously, so the URL is revoked only after a delay.
+            const revokeLater = () => setTimeout(() => URL.revokeObjectURL(url), 60000);
+            const savedToFolder = await downloadSchemaViaDownloadsApi(url, fileName);
+            if (savedToFolder) {
+                showNotification(savedMessage);
+                revokeLater();
+                return;
+            }
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = fileName;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            revokeLater();
+            if (notifyAlways) showNotification(savedMessage);
+        };
         const exportBasicSchema = async () => {
             const built = buildBasicExport();
             if (!built.ok) {
                 showNotification(`Экспорт не выполнен. ${describeSchemaErrors(built.errors)}`, 'warn');
                 return;
             }
-            const blob = new Blob([built.text], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            // The download reads the blob asynchronously, so the URL is revoked only after a delay.
-            const revokeLater = () => setTimeout(() => URL.revokeObjectURL(url), 60000);
-            const savedToFolder = await downloadSchemaViaDownloadsApi(url, built.fileName);
-            if (savedToFolder) {
-                showNotification(`Схема сохранена в Загрузки/Схемы: ${built.fileName}`);
-                revokeLater();
+            await downloadSchemaText(built.text, built.fileName, `Схема сохранена в Загрузки/Схемы: ${built.fileName}`);
+        };
+        // The whole catalog of saved Basic schemas in one file. Templates are not in it. A record without a schema, or one the
+        // canvas cannot show, is listed in skipped with its reasons. Unsaved canvas edits are not in it.
+        const buildBasicCatalogExport = () => {
+            const items = [];
+            const skipped = [];
+            for (const name of pipelineStore.order) {
+                if (isDefaultPipelineName(name)) continue;
+                const record = pipelineStore.pipelines[name];
+                if (!record || typeof record !== 'object' || !record.schema) {
+                    skipped.push({ name, errors: [{ path: '', message: 'нет схемы Basic (запись прежнего формата)' }] });
+                    continue;
+                }
+                const checked = recordFromSchema(name, record.schema);
+                if (!checked.ok) {
+                    skipped.push({ name, errors: checked.errors });
+                    continue;
+                }
+                items.push({ name, schema: JSON.parse(JSON.stringify(record.schema)) });
+            }
+            if (!items.length) return { ok: false, errors: [{ path: '', message: 'В списке нет схем Basic для выгрузки.' }], skipped };
+            return { ok: true, errors: [], count: items.length, skipped, fileName: 'Каталог Basic.json', text: `${JSON.stringify({ basicCatalog: 1, schemas: items }, null, 2)}\n` };
+        };
+        const exportBasicCatalog = async () => {
+            const built = buildBasicCatalogExport();
+            if (!built.ok) {
+                showNotification(`Экспорт не выполнен. ${describeSchemaErrors(built.errors)}`, 'warn');
                 return;
             }
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = built.fileName;
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-            revokeLater();
+            const tail = built.skipped.length
+                ? `\n${built.skipped.map((entry) => `«${entry.name}»: ${entry.errors.map((error) => (error.path ? `${error.path}: ${error.message}` : error.message)).join('; ')}`).join('\n')}`
+                : '';
+            await downloadSchemaText(built.text, built.fileName,
+                `Каталог сохранён в Загрузки/Схемы: ${built.fileName} (схем: ${built.count}${built.skipped.length ? `, не выгружено: ${built.skipped.length}` : ''}).${tail}`, true);
         };
 
         // The errors of a schema in one line: the place and the reason of each, at most five.
@@ -8312,6 +8405,7 @@ document.addEventListener('click', (event) => {
             const item = findPipelineItemByName(name);
             if (item) selectPipeline(item, { applyConfig: true, persist: true });
             showNotification(`Схема установлена как pipeline «${name}».`, 'success');
+            return true;
         };
         const importBasicBundle = async (parsed) => {
             let added = 0;
@@ -8331,6 +8425,125 @@ document.addEventListener('click', (event) => {
                 if (item) selectPipeline(item, { applyConfig: true, persist: true });
             }
         };
+        // A catalog file: each entry is checked first, then the valid ones are added in order. A taken name is asked again;
+        // an entry whose check or name fails is not added and its reason is listed.
+        const importBasicCatalog = async (parsed) => {
+            if (parsed.basicCatalog !== 1) { showNotification(`Версия каталога ${parsed.basicCatalog} не поддерживается.`, 'error'); return; }
+            if (!Array.isArray(parsed.schemas)) { showNotification('Файл каталога повреждён: нет списка schemas.', 'error'); return; }
+            const problems = [];
+            const valid = [];
+            let notAdded = 0;
+            const errorLines = (name, index, errors) => errors.map((error) => `«${name}»: schemas[${index}].schema${error.path ? `.${error.path}` : ''}: ${error.message}`);
+            parsed.schemas.forEach((entry, index) => {
+                const name = entry && typeof entry === 'object' && typeof entry.name === 'string' ? entry.name.trim() : '';
+                if (!name || !entry.schema || typeof entry.schema !== 'object') {
+                    problems.push(`schemas[${index}]: нужны name (строка) и schema (объект)`);
+                    notAdded += 1;
+                    return;
+                }
+                const checked = recordFromSchema(name, entry.schema);
+                if (!checked.ok) {
+                    problems.push(...errorLines(name, index, checked.errors));
+                    notAdded += 1;
+                    return;
+                }
+                valid.push({ name, schema: entry.schema, index });
+            });
+            let added = 0;
+            let last = '';
+            for (const { name: wanted, schema, index } of valid) {
+                let final = wanted;
+                if (isDefaultPipelineName(wanted) || pipelineStore.order.includes(wanted)) {
+                    const typed = String((await showPrompt(isDefaultPipelineName(wanted)
+                        ? `«${wanted}» — имя шаблона. Имя для этой схемы из файла:`
+                        : `Pipeline «${wanted}» уже есть. Имя для схемы из файла (то же имя заменит существующий):`, uniquePipelineName(wanted)) || '')).trim();
+                    if (!typed) { problems.push(`«${wanted}»: не добавлена (имя не выбрано).`); notAdded += 1; continue; }
+                    final = typed;
+                }
+                if (isDefaultPipelineName(final)) { problems.push(`«${final}»: имя шаблона занять нельзя, схема не добавлена.`); notAdded += 1; continue; }
+                if (pipelineStore.order.includes(final) && !(await showConfirm(`Pipeline "${final}" already exists. Replace it?`))) {
+                    problems.push(`«${final}»: замена не подтверждена, схема не добавлена.`); notAdded += 1; continue;
+                }
+                const result = await installBasicSchema(final, schema);
+                if (result.ok) { added += 1; last = final; continue; }
+                problems.push(...errorLines(final, index, result.errors));
+                notAdded += 1;
+            }
+            showNotification(`Добавлено схем: ${added}, не добавлено: ${notAdded}.${problems.length ? `\n${problems.join('\n')}` : ''}`,
+                problems.length ? (added ? 'warn' : 'error') : 'success');
+            if (last) {
+                const item = findPipelineItemByName(last);
+                if (item) selectPipeline(item, { applyConfig: true, persist: true });
+            }
+        };
+        // Paste window: the reply of a model with a schema is read by window.SchemaTextReader. A catalog file goes to the
+        // catalog import; a single schema is checked, then named and installed as a pipeline. Errors keep the window open.
+        const openSchemaPasteWindow = () => {
+            if (document.getElementById('schema-paste-window')) return;
+            const win = document.createElement('div');
+            win.id = 'schema-paste-window';
+            win.className = 'schema-paste-window';
+            win.setAttribute('role', 'dialog');
+            win.setAttribute('aria-label', 'Вставить схему');
+            const card = document.createElement('div');
+            card.className = 'schema-paste-card';
+            const heading = document.createElement('h3');
+            heading.textContent = 'Вставить схему';
+            const text = document.createElement('textarea');
+            text.id = 'schema-paste-text';
+            text.placeholder = 'Вставьте ответ модели со схемой Basic (JSON)';
+            const comment = document.createElement('details');
+            comment.id = 'schema-paste-comment';
+            comment.hidden = true;
+            const commentTitle = document.createElement('summary');
+            commentTitle.textContent = 'Комментарий модели';
+            const commentText = document.createElement('pre');
+            comment.append(commentTitle, commentText);
+            const problems = document.createElement('div');
+            problems.id = 'schema-paste-problems';
+            problems.setAttribute('role', 'alert');
+            const cancel = document.createElement('button');
+            cancel.type = 'button';
+            cancel.id = 'schema-paste-cancel';
+            cancel.textContent = 'Отмена';
+            const apply = document.createElement('button');
+            apply.type = 'button';
+            apply.id = 'schema-paste-apply';
+            apply.textContent = 'Применить';
+            const actions = document.createElement('div');
+            actions.className = 'schema-paste-actions';
+            actions.append(cancel, apply);
+            card.append(heading, text, comment, problems, actions);
+            win.append(card);
+            document.body.appendChild(win);
+            const close = () => win.remove();
+            cancel.addEventListener('click', close);
+            win.addEventListener('keydown', (event) => { if (event.key === 'Escape') close(); });
+            const showProblems = (lines) => { problems.textContent = lines.join('\n'); };
+            apply.addEventListener('click', async () => {
+                const read = window.SchemaTextReader.read(text.value);
+                problems.textContent = '';
+                commentText.textContent = read.comment;
+                comment.hidden = !read.comment;
+                if (!read.ok) { showProblems([...read.notes, ...read.errors]); return; }
+                const value = read.value;
+                if ('basicCatalog' in value) {
+                    close();
+                    await importBasicCatalog(value);
+                    return;
+                }
+                const built = recordFromSchema('schema', value);
+                if (!built.ok) {
+                    showProblems([...read.notes, ...built.errors.map((error) => `${error.path ? `${error.path}: ` : ''}${error.message}`)]);
+                    return;
+                }
+                win.style.display = 'none';
+                const done = await importBasicSchemaFile(value, '');
+                if (done) close();
+                else win.style.display = '';
+            });
+            text.focus();
+        };
         const handlePipelineImportFile = async (event) => {
             const file = event.target.files?.[0];
             if (!file) return;
@@ -8344,7 +8557,9 @@ document.addEventListener('click', (event) => {
                 try { parsed = JSON.parse(String(reader.result || '')); }
                 catch (_) { showNotification('Файл не JSON.', 'error'); return; }
                 const isObject = Boolean(parsed) && typeof parsed === 'object' && !Array.isArray(parsed);
-                if (isObject && 'schemaVersion' in parsed && 'steps' in parsed && !parsed.pipelines) {
+                if (isObject && 'basicCatalog' in parsed) {
+                    await importBasicCatalog(parsed);
+                } else if (isObject && 'schemaVersion' in parsed && 'steps' in parsed && !parsed.pipelines) {
                     await importBasicSchemaFile(parsed, String(file.name || '').replace(/\.json$/i, '').trim());
                 } else if (isObject && parsed.pipelines && typeof parsed.pipelines === 'object') {
                     await importBasicBundle(parsed);
@@ -9065,6 +9280,8 @@ document.addEventListener('click', (event) => {
         pipelineSaveBtn?.addEventListener('click', savePipeline);
         pipelineDeleteBtn?.addEventListener('click', deleteActivePipeline);
         pipelineExportBtn?.addEventListener('click', exportBasicSchema);
+        pipelineExportAllBtn?.addEventListener('click', exportBasicCatalog);
+        pipelineProfileBtn?.addEventListener('click', openSchemaPasteWindow);
         pipelineImportBtn?.addEventListener('click', importPipelines);
         // Pipeline Get it: double click on Run runs the main page's collection pass for the
         // running stage's models (or the selected models when no stage is waiting).

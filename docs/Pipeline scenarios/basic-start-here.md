@@ -79,7 +79,9 @@
 | Прогон Basic на странице | `results.js`: `runCustomFromPage` |
 | Схема со страницы | `results.js`: `basicSchemaFromPage`, `buildBasicRun` |
 | Запись из схемы | `results.js`: `recordFromSchema`, `installBasicSchema`, `persistBasicSettings` |
-| Export / Import схемы | `results.js`: `buildBasicExport`, `exportBasicSchema`, `importBasicSchemaFile`, `importBasicBundle`, `handlePipelineImportFile` |
+| Export / Import схемы | `results.js`: `buildBasicExport`, `exportBasicSchema`, `importBasicSchemaFile`, `importBasicBundle`, `handlePipelineImportFile`, `buildBasicCatalogExport`, `exportBasicCatalog`, `importBasicCatalog` |
+| Вставка схемы | `disput/schema-text-reader.js`: `SchemaTextReader.read`; `results.js`: `openSchemaPasteWindow` |
+| Копия документа на диск | `results/documents-folder.js`: `DocumentsFolder`; `results.js`: `saveDocumentCopy` |
 | Окно настроек модели | `results.js`: `renderCustomBlockInspector`, CSS-классы `custom-card-*` |
 | Окно настроек раунда | `results/stage-card.js` (`StageCard`), открывается из `results.js`: `openStageCard` |
 | Карточка и окно User | `results/stage-card.js`: `ownerWindowModel`/`ownerAfterEdit`/`renderOwnerWindow`; на странице `results.js`: `openControlCard`, `syncControlColumns`, `customControls` |
@@ -98,7 +100,9 @@
 | Двойной клик по блоку модели | Окно настроек модели: запрос, длина, дисциплина, свои строки «+». |
 | Save (`#pipeline-save-btn`) | Сохранить текущую схему как пользовательский pipeline (запись). |
 | Export schema (`#pipeline-export-btn`) | Сохранить схему в файл. |
-| Import schema (`#pipeline-import-btn`) | Загрузить файл схемы. |
+| Export all schemas (`#pipeline-export-all-btn`) | Сохранить все схемы списка одним файлом. |
+| Import schema (`#pipeline-import-btn`) | Загрузить файл схемы или каталога. |
+| Вставить схему (`#pipeline-profile-btn`) | Вставить ответ модели со схемой Basic из буфера. |
 | «+» (`#pipeline-add-btn`) | Новый пустой pipeline. |
 | «+» у раундов (`#pipeline-add-round-btn`) | Добавить раунд. |
 | «×» у раунда (`.pipeline-round-delete-btn`) | Удалить раунд. |
