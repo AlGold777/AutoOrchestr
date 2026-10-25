@@ -1,5 +1,13 @@
 # CHANGELOG — Project
 
+### 2026-10-25 — Basic: вставка JSON схемы из буфера, версия 2.81.871
+
+- Кнопка `#pipeline-profile-btn` больше не заглушка: называется «Вставить схему» и открывает окно `openSchemaPasteWindow`. Решение 2.81.784 («кнопка — неактивная заглушка») изменено этим пакетом.
+- Окно принимает ответ модели целиком: текст читает `SchemaTextReader.read` (`disput/schema-text-reader.js`). Терпимо к ограде ```json, хвостовым запятым, комментариям `//` и `/* */`, ключам без кавычек и типографским кавычкам; первое JSON-значение; текст вне JSON показывается как «Комментарий модели». Алиасы полей не применяются.
+- Оборванный ответ не применяется: окно сообщает, до какого шага (`ref`) JSON цел. Ошибки проверки выводятся списком «путь: сообщение», текст сохраняется. Объект с `basicCatalog` импортируется как каталог; схема, прошедшая проверку, устанавливается по пути Import (спрашивается имя).
+- Код: `disput/schema-text-reader.js`, `openSchemaPasteWindow` и `importBasicSchemaFile` (возвращает `true` при установке) в `results.js`; тесты `tests/schema-text-reader.test.js`.
+- Документы: `basic-windows.md`, `basic-start-here.md`, `basic-developer.md`, `basic-schema-guide.md`, `basic-port-plan.md` (пакет 2.2), `CHANGELOG.md`, `docs/Architecture/debate-removal-registry.md`.
+
 ### 2026-10-25 — Basic: экспорт и импорт всего каталога схем, версия 2.81.870
 
 - Кнопка «Export all schemas» (`#pipeline-export-all-btn`) в шапке списка pipelines выгружает все сохранённые схемы одним файлом `Каталог Basic.json` (формат `basicCatalog: 1`, массив `schemas`). Шаблоны, записи без схемы и записи, не прошедшие проверку, в файл не входят и перечисляются в уведомлении.

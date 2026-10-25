@@ -193,7 +193,7 @@ function renderDebateDom() {
         <span id="currentPipelineName" class="pipeline-name">Universal</span><div class="entry-point" id="entryPoint">▶</div>
         <button type="button" id="pipeline-add-round-btn">+</button>
         <button type="button" id="removeRoundBtn">−</button>
-        <button type="button" id="pipeline-add-btn">+</button><button type="button" id="pipeline-save-btn">Save</button><button type="button" id="pipeline-import-btn">Import</button><button type="button" id="pipeline-export-all-btn">Export all</button>
+        <button type="button" id="pipeline-add-btn">+</button><button type="button" id="pipeline-save-btn">Save</button><button type="button" id="pipeline-import-btn">Import</button><button type="button" id="pipeline-export-all-btn">Export all</button><button type="button" id="pipeline-profile-btn">Paste</button>
         <div class="stage-column" id="round1" data-round="1">
           <div class="model-stack" id="r1-models">
             <div class="model-block">
@@ -314,7 +314,7 @@ async function loadResultsScript(seededPipelineStore = null) {
   window.eval(fs.readFileSync(path.join(__dirname, '..', '..', 'disput', 'debate-prompt-catalog.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(__dirname, '..', '..', 'disput', 'pipeline-presets.js'), 'utf8'));
   // The same order as pipeline_panel.html: the modules the engine uses come before it.
-  ['stage-markers', 'basic-output', 'basic-artifacts', 'custom-engine', 'basic-schema', 'custom-run-record'].forEach((mod) => { window.eval(fs.readFileSync(path.join(__dirname, '..', '..', 'disput', `${mod}.js`), 'utf8')); });
+  ['stage-markers', 'basic-output', 'basic-artifacts', 'custom-engine', 'basic-schema', 'schema-text-reader', 'custom-run-record'].filter((mod) => fs.existsSync(path.join(__dirname, '..', '..', 'disput', `${mod}.js`))).forEach((mod) => { window.eval(fs.readFileSync(path.join(__dirname, '..', '..', 'disput', `${mod}.js`), 'utf8')); });
   ['boot-utils', 'dom-utils', 'code-blocks', 'attachments', 'pasted-text', 'tooltips', 'debate-ui', 'debate-transport', 'debate-controller', 'debate-renderer', 'debate-sessions-store', 'debate-export', 'debate-telemetry-view'].forEach((mod) => { window.eval(fs.readFileSync(path.join(__dirname, '..', '..', 'results', `${mod}.js`), 'utf8')); });
   window.eval(fs.readFileSync(path.join(__dirname, '..', '..', 'utils', 'selection-block-format.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(__dirname, '..', '..', 'results', 'owner-ask.js'), 'utf8'));

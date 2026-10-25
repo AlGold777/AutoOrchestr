@@ -207,7 +207,7 @@ function renderDebateDom() {
         <span id="currentPipelineName" class="pipeline-name">Universal</span><div class="entry-point" id="entryPoint">▶</div>
         <button type="button" id="pipeline-add-round-btn">+</button>
         <button type="button" id="removeRoundBtn">−</button>
-        <button type="button" id="pipeline-add-btn">+</button><button type="button" id="pipeline-save-btn">Save</button><button type="button" id="pipeline-import-btn">Import</button>
+        <button type="button" id="pipeline-add-btn">+</button><button type="button" id="pipeline-save-btn">Save</button><button type="button" id="pipeline-import-btn">Import</button><button type="button" id="pipeline-profile-btn">Paste</button>
         <div class="stage-column" id="round1" data-round="1">
           <div class="model-stack" id="r1-models">
             <div class="model-block">
@@ -383,7 +383,7 @@ async function loadResultsScript(seededPipelineStore = null) {
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'debate-prompt-catalog.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', 'pipeline-presets.js'), 'utf8'));
   // The same order as pipeline_panel.html: the modules the engine uses come before it.
-  ['stage-markers', 'debate-response-acceptance', 'basic-output', 'basic-artifacts', 'custom-engine', 'basic-schema', 'custom-run-record'].forEach((mod) => { window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', `${mod}.js`), 'utf8')); });
+  ['stage-markers', 'debate-response-acceptance', 'basic-output', 'basic-artifacts', 'custom-engine', 'basic-schema', 'schema-text-reader', 'custom-run-record'].filter((mod) => fs.existsSync(path.join(__dirname, '..', 'disput', `${mod}.js`))).forEach((mod) => { window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', `${mod}.js`), 'utf8')); });
   ['boot-utils', 'dom-utils', 'attachments', 'pasted-text', 'tooltips', 'debate-ui', 'debate-transport', 'debate-controller', 'debate-renderer', 'debate-sessions-store', 'debate-export', 'debate-telemetry-view'].forEach((mod) => { window.eval(fs.readFileSync(path.join(__dirname, '..', 'results', `${mod}.js`), 'utf8')); });
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'utils', 'selection-block-format.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'results', 'owner-ask.js'), 'utf8'));
@@ -4225,6 +4225,131 @@ describe('Pipeline debate favorites view', () => {
           expect(noticeText()).toContain('не поддерживается');
           expect(JSON.stringify(h.debug.getPipelineStoreSnapshot().pipelines)).toBe(before);
         } finally { h.cleanup(); }
+      }, 30000);
+
+      const openPaste = () => { document.getElementById('pipeline-profile-btn').click(); return document.getElementById('schema-paste-window'); };
+      const applyPaste = async (text, answer) => {
+        const oldPrompt = window.prompt;
+        const prompts = [];
+        window.prompt = jest.fn((message, proposed) => { prompts.push(proposed); return answer; });
+        try {
+          if (!document.getElementById('schema-paste-window')) openPaste();
+          document.getElementById('schema-paste-text').value = text;
+          document.getElementById('schema-paste-apply').click();
+          await new Promise((resolve) => setTimeout(resolve, 150));
+        } finally { window.prompt = oldPrompt; }
+        return prompts;
+      };
+      const pasteProblems = () => document.getElementById('schema-paste-problems').textContent;
+      const validPasteSchema = () => catalogSchema('GPT');
+      const invalidPasteSchema = { schemaVersion: 1, origin: 'user', steps: [{ ref: 'r1', kind: 'round', models: [{ name: 'Nobody' }] }] };
+
+      test('paste: the Paste button opens the window with the text field and both buttons; Cancel removes the window', () => {
+        const h = setupCustomInheritance('Paste host');
+        try {
+          const win = openPaste();
+          expect(win).not.toBeNull();
+          expect(win.querySelector('#schema-paste-text')).not.toBeNull();
+          expect(win.querySelector('#schema-paste-apply')).not.toBeNull();
+          expect(win.querySelector('#schema-paste-cancel')).not.toBeNull();
+          document.getElementById('schema-paste-cancel').click();
+          expect(document.getElementById('schema-paste-window')).toBeNull();
+        } finally { document.getElementById('schema-paste-window')?.remove(); h.cleanup(); }
+      }, 30000);
+
+      test('paste: a schema in a json fence with a sentence around it is applied under the typed name and the window closes', async () => {
+        const h = setupCustomInheritance('Paste host');
+        try {
+          openPaste();
+          const text = 'Вот схема:\n```json\n{ "schemaVersion": 1, "origin": "user", "steps": [ { "ref": "r1", "kind": "round", "models": [ { "name": "GPT", }, ], }, ], }\n```';
+          await applyPaste(text, 'Pasted');
+          expect(h.debug.getPipelineStoreSnapshot().pipelines['Pasted'].schema.steps[0].ref).toBe('r1');
+          expect(document.getElementById('schema-paste-window')).toBeNull();
+        } finally { document.getElementById('schema-paste-window')?.remove(); h.cleanup(); }
+      }, 30000);
+
+      test('paste: an invalid schema keeps the window open, lists the path of the error and does not change the store', async () => {
+        const h = setupCustomInheritance('Paste host');
+        try {
+          openPaste();
+          const before = JSON.stringify(h.debug.getPipelineStoreSnapshot().pipelines);
+          await applyPaste(JSON.stringify(invalidPasteSchema), 'Pasted bad');
+          expect(document.getElementById('schema-paste-window')).not.toBeNull();
+          expect(pasteProblems()).toContain('steps[0].models[0].name');
+          expect(JSON.stringify(h.debug.getPipelineStoreSnapshot().pipelines)).toBe(before);
+        } finally { document.getElementById('schema-paste-window')?.remove(); h.cleanup(); }
+      }, 30000);
+
+      test('paste: a schema that is not Basic keeps the window open with an error, and the window text does not mention the stand', async () => {
+        const h = setupCustomInheritance('Paste host');
+        try {
+          openPaste();
+          const before = JSON.stringify(h.debug.getPipelineStoreSnapshot().pipelines);
+          await applyPaste('{"task":"x","steps":[{"id":"a","block":"round"}]}', 'Pasted other');
+          const win = document.getElementById('schema-paste-window');
+          expect(win).not.toBeNull();
+          expect(pasteProblems().trim()).not.toBe('');
+          expect(win.textContent.toLowerCase()).not.toContain('стенд');
+          expect(JSON.stringify(h.debug.getPipelineStoreSnapshot().pipelines)).toBe(before);
+        } finally { document.getElementById('schema-paste-window')?.remove(); h.cleanup(); }
+      }, 30000);
+
+      test('paste: a reply cut off in the middle of a line is not applied and the problems say it is cut off', async () => {
+        const h = setupCustomInheritance('Paste host');
+        try {
+          openPaste();
+          const before = JSON.stringify(h.debug.getPipelineStoreSnapshot().pipelines);
+          await applyPaste(JSON.stringify(validPasteSchema()).slice(0, 40), 'Pasted cut');
+          expect(document.getElementById('schema-paste-window')).not.toBeNull();
+          expect(pasteProblems()).toContain('оборван');
+          expect(JSON.stringify(h.debug.getPipelineStoreSnapshot().pipelines)).toBe(before);
+        } finally { document.getElementById('schema-paste-window')?.remove(); h.cleanup(); }
+      }, 30000);
+
+      test('paste: text before the JSON is a comment; a valid schema applies and closes the window', async () => {
+        const h = setupCustomInheritance('Paste host');
+        try {
+          openPaste();
+          await applyPaste('Мой комментарий.\n' + JSON.stringify(validPasteSchema()), 'Pasted commented');
+          expect(h.debug.getPipelineStoreSnapshot().pipelines['Pasted commented']).toBeDefined();
+          expect(document.getElementById('schema-paste-window')).toBeNull();
+        } finally { document.getElementById('schema-paste-window')?.remove(); h.cleanup(); }
+      }, 30000);
+
+      test('paste: text before an invalid JSON stays in the collapsed comment block while the window stays open', async () => {
+        const h = setupCustomInheritance('Paste host');
+        try {
+          openPaste();
+          await applyPaste('Мой комментарий.\n' + JSON.stringify(invalidPasteSchema), 'Pasted bad commented');
+          const comment = document.getElementById('schema-paste-comment');
+          expect(comment).not.toBeNull();
+          expect(comment.textContent).toContain('Мой комментарий.');
+        } finally { document.getElementById('schema-paste-window')?.remove(); h.cleanup(); }
+      }, 30000);
+
+      test('paste bundle: a pasted file of several schemas adds them and says how many were added', async () => {
+        const h = setupCustomInheritance('Paste host');
+        try {
+          openPaste();
+          await applyPaste(catalogText([['Pasted cat', validPasteSchema()]]), 'unused');
+          expect(h.debug.getPipelineStoreSnapshot().pipelines['Pasted cat']).toBeDefined();
+          expect(noticeText()).toContain('Добавлено схем: 1');
+        } finally { document.getElementById('schema-paste-window')?.remove(); h.cleanup(); }
+      }, 30000);
+
+      test('paste name: a valid schema with the name prompt cancelled keeps the window open with the same text and the store unchanged', async () => {
+        const h = setupCustomInheritance('Paste host');
+        try {
+          openPaste();
+          const before = JSON.stringify(h.debug.getPipelineStoreSnapshot().pipelines);
+          const text = JSON.stringify(validPasteSchema());
+          await applyPaste(text, null);
+          const win = document.getElementById('schema-paste-window');
+          expect(win).not.toBeNull();
+          expect(win.style.display).not.toBe('none');
+          expect(document.getElementById('schema-paste-text').value).toBe(text);
+          expect(JSON.stringify(h.debug.getPipelineStoreSnapshot().pipelines)).toBe(before);
+        } finally { document.getElementById('schema-paste-window')?.remove(); h.cleanup(); }
       }, 30000);
     });
     });

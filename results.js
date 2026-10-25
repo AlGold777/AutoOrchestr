@@ -3567,6 +3567,7 @@ document.addEventListener('click', (event) => {
         const pipelineDeleteBtn = document.getElementById('pipeline-delete-btn');
         const pipelineExportBtn = document.getElementById('pipeline-export-btn');
         const pipelineExportAllBtn = document.getElementById('pipeline-export-all-btn');
+        const pipelineProfileBtn = document.getElementById('pipeline-profile-btn');
         const pipelineImportBtn = document.getElementById('pipeline-import-btn');
         const debateRunToggleBtn = document.getElementById('debate-run-toggle-btn');
         const pipelineCloseBtn = document.getElementById('pipeline-close-btn');
@@ -8353,6 +8354,7 @@ document.addEventListener('click', (event) => {
             const item = findPipelineItemByName(name);
             if (item) selectPipeline(item, { applyConfig: true, persist: true });
             showNotification(`Схема установлена как pipeline «${name}».`, 'success');
+            return true;
         };
         const importBasicBundle = async (parsed) => {
             let added = 0;
@@ -8422,6 +8424,74 @@ document.addEventListener('click', (event) => {
                 const item = findPipelineItemByName(last);
                 if (item) selectPipeline(item, { applyConfig: true, persist: true });
             }
+        };
+        // Paste window: the reply of a model with a schema is read by window.SchemaTextReader. A catalog file goes to the
+        // catalog import; a single schema is checked, then named and installed as a pipeline. Errors keep the window open.
+        const openSchemaPasteWindow = () => {
+            if (document.getElementById('schema-paste-window')) return;
+            const win = document.createElement('div');
+            win.id = 'schema-paste-window';
+            win.className = 'schema-paste-window';
+            win.setAttribute('role', 'dialog');
+            win.setAttribute('aria-label', 'Вставить схему');
+            const card = document.createElement('div');
+            card.className = 'schema-paste-card';
+            const heading = document.createElement('h3');
+            heading.textContent = 'Вставить схему';
+            const text = document.createElement('textarea');
+            text.id = 'schema-paste-text';
+            text.placeholder = 'Вставьте ответ модели со схемой Basic (JSON)';
+            const comment = document.createElement('details');
+            comment.id = 'schema-paste-comment';
+            comment.hidden = true;
+            const commentTitle = document.createElement('summary');
+            commentTitle.textContent = 'Комментарий модели';
+            const commentText = document.createElement('pre');
+            comment.append(commentTitle, commentText);
+            const problems = document.createElement('div');
+            problems.id = 'schema-paste-problems';
+            problems.setAttribute('role', 'alert');
+            const cancel = document.createElement('button');
+            cancel.type = 'button';
+            cancel.id = 'schema-paste-cancel';
+            cancel.textContent = 'Отмена';
+            const apply = document.createElement('button');
+            apply.type = 'button';
+            apply.id = 'schema-paste-apply';
+            apply.textContent = 'Применить';
+            const actions = document.createElement('div');
+            actions.className = 'schema-paste-actions';
+            actions.append(cancel, apply);
+            card.append(heading, text, comment, problems, actions);
+            win.append(card);
+            document.body.appendChild(win);
+            const close = () => win.remove();
+            cancel.addEventListener('click', close);
+            win.addEventListener('keydown', (event) => { if (event.key === 'Escape') close(); });
+            const showProblems = (lines) => { problems.textContent = lines.join('\n'); };
+            apply.addEventListener('click', async () => {
+                const read = window.SchemaTextReader.read(text.value);
+                problems.textContent = '';
+                commentText.textContent = read.comment;
+                comment.hidden = !read.comment;
+                if (!read.ok) { showProblems([...read.notes, ...read.errors]); return; }
+                const value = read.value;
+                if ('basicCatalog' in value) {
+                    close();
+                    await importBasicCatalog(value);
+                    return;
+                }
+                const built = recordFromSchema('schema', value);
+                if (!built.ok) {
+                    showProblems([...read.notes, ...built.errors.map((error) => `${error.path ? `${error.path}: ` : ''}${error.message}`)]);
+                    return;
+                }
+                win.style.display = 'none';
+                const done = await importBasicSchemaFile(value, '');
+                if (done) close();
+                else win.style.display = '';
+            });
+            text.focus();
         };
         const handlePipelineImportFile = async (event) => {
             const file = event.target.files?.[0];
@@ -9160,6 +9230,7 @@ document.addEventListener('click', (event) => {
         pipelineDeleteBtn?.addEventListener('click', deleteActivePipeline);
         pipelineExportBtn?.addEventListener('click', exportBasicSchema);
         pipelineExportAllBtn?.addEventListener('click', exportBasicCatalog);
+        pipelineProfileBtn?.addEventListener('click', openSchemaPasteWindow);
         pipelineImportBtn?.addEventListener('click', importPipelines);
         // Pipeline Get it: double click on Run runs the main page's collection pass for the
         // running stage's models (or the selected models when no stage is waiting).

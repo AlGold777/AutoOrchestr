@@ -30,6 +30,7 @@ GPT подготавливает запрос через `ContentUtils.ensurePro
 | `disput/basic-output.js` | `BasicOutput`, `checkAnswer`, `readPointer`, `parseJsonAnswer`, `countWords`, `formProblem`, `extractDocument` | Документ между метками `[[DOC: id]]` (`extractDocument`); проверка ответа по выходу шага: длина, JSON и поля, опросник (`formProblem`), разделы, артефакты (чистые функции; вызывает движок) |
 | `disput/basic-spec.js` | `BasicSpec`, `build`, `toMarkdown` | Описание pipeline «для человека» по схеме: три слоя (pipeline в целом, схема процесса, этапы), поля автора и автоматические поля, `missing` для незаполненного; чистые функции, без DOM (окно спецификации подключит их отдельно) |
 | `disput/custom-run-record.js` | `CustomRunRecord`, `createRun`, `recordAttempt`, `attemptKey`, `finishRun`, `serialize`, `revive`, `textOf`, `setSnapshot`, `setArtifacts`, `canResume`, `exportRun`, `createStore` | Запись о прогоне (версия 2: реестр артефактов и снимок состояния; тексты документов лежат в ней же) |
+| `disput/schema-text-reader.js` | `SchemaTextReader`, `read` | Терпимое чтение текста ответа модели для окна «Вставить схему»: ограда ```json, хвостовые запятые, комментарии, ключи без кавычек, типографские кавычки; первое JSON-значение; текст вне JSON — комментарий модели; оборванный ответ не применяется |
 | `results/stage-card.js` | `StageCard`, `buildModel`, `render`, `renderOwnerWindow`, `renderAddControl`, `ownerWindowModel`, `ownerAfterEdit` | Окно настроек раунда, окно шага User (список «Документ для User»), выбор «Шаг после этого этапа» (только User) |
 | `results/choice-dialog.js` | `ChoiceDialog`, `formAsks`, `formAnswer` | Окна решений; окно User с документом: параметры `document`, `answerFormat`, `textInput.required`; режимы документа `editable` (правка и утверждение), `readOnly` (просмотр из рамки); опросник |
 | `results/owner-ask.js` | `answersOf`, `formAsks`, `formAnswer` | Окно ответа User: показ документа и опросника, ответ User (текст или JSON) |
@@ -91,6 +92,7 @@ GPT подготавливает запрос через `ContentUtils.ensurePro
 | `tests/basic-architecture-fixture.test.js` | Архитектура S01–S30 (`tests/fixtures/basic-architecture-s01-s30.json`, таблица `…map.json`): проверка, холст, настройки, прогоны на fake transport, бюджет |
 | `tests/basic-schema-guide.test.js` | Инструкция автора схем совпадает с кодом |
 | `tests/basic-docs-refs.test.js` | Ссылки и имена в документах Basic совпадают с кодом |
+| `tests/schema-text-reader.test.js` | Чтение вставленного текста схемы (`SchemaTextReader.read`) |
 | `tests/stage-card-basic.test.js` | Окно настроек раунда |
 | `tests/results-debate-favorites.test.js` | Страница целиком: окна настроек, прогон, Save, Import, Export, установка схемы |
 | `tests/pipeline-presets.test.js`, `tests/pipeline-none-mini-prompt.test.js` | Список шаблонов и их умолчания |
@@ -219,6 +221,7 @@ Ctrl/Cmd+S сохраняет подсветки и избранное вмес�
     запись, чьё имя совпадает с именем шаблона, пропускается. Остальные записи пропускаются, ничего не заменяется.
     Итог — в уведомлении: «Добавлено схем: N, пропущено: M»;
   - не JSON: «Файл не JSON.»; JSON, который не схема и не прежний экспорт: «Файл не похож на схему Basic.».
+- **Вставка текста** (кнопка «Вставить схему», `#pipeline-profile-btn`): окно принимает ответ модели целиком. `SchemaTextReader.read` снимает ограду ```json, хвостовые запятые, комментарии, ключи без кавычек и типографские кавычки, берёт первое JSON-значение; текст вне JSON — комментарий модели. Объект с `basicCatalog` идёт по пути каталога, иначе схема проверяется `recordFromSchema`; ошибки списком в окне, успех — путь Import (спрашивается имя). Оборванный ответ не применяется. Алиасы полей не применяются.
 - Режима «заменить все pipelines» нет.
 - Загрузка pipeline из списка не изменилась: страница читает запись и показывает холст. Запись всегда согласована
   со схемой, потому что строится только из неё.
@@ -333,7 +336,7 @@ Ctrl/Cmd+S сохраняет подсветки и избранное вмес�
 | TEST-1 | Тесты, падавшие не из-за Basic (9 в 4 файлах) | исправлено: устаревшие ожидания приведены к коду, код не менялся |
 | TEST-2 | Нестабильный тест `false success: watcher completion guards` | известно |
 | PLAN-1 | Документы для User — [план](basic-user-documents-plan.md) | этапы 1–2 сделаны (2.81.855–2.81.857); этапы 3 (файл на диске) и 4 (стенд) не сделаны |
-| PLAN-2 | Перенос в Basic с одобренного User (подсказки, Send, Arrows, значок ошибок, каталог целиком, колонка In и чипы артефактов, файл на диске) — [план](basic-port-plan.md) | составлен 25.10.2026, пакет 1.1 (подсказки) начат, остальное не сделано |
+| PLAN-2 | Перенос в Basic с одобренного User (подсказки, Send, Arrows, значок ошибок, каталог целиком, колонка In и чипы артефактов, файл на диске) — [план](basic-port-plan.md) | составлен 25.10.2026, пакет 1.1 (подсказки) начат; пакет 2.1 (каталог) сделан в 2.81.870; пакет 2.2 (вставка JSON схемы) сделан в 2.81.871; файл на диске — пакет 2.3, остальное не сделано |
 
 ### Открытые вопросы
 
