@@ -1,5 +1,14 @@
 # CHANGELOG — Project
 
+### 2026-10-26 — Basic: границы шага и сводка раундов (R01), версия 2.81.890
+
+- Добавлены события границ шага: `custom_step_start` (фактический вход до любого внешнего действия, включая owner) и `custom_step_resumed` (продолжение после остановки) в `disput/custom-engine.js`.
+- Завершение шага `custom_step_end` перенесено строго после решений User и вопросов ASK, с исходами `completed` или `skipped`.
+- Прерывание шага при Stop или ошибке фиксируется отдельным событием `custom_step_interrupted` (`stopped`, `cancelled`, `failed`), исключая ложное закрытие раунда.
+- Холст (`results.js`) переведён на новые границы: шаг остаётся в статусе `running` до фактического конца раунда (включая ASK и одобрение), owner-шаг отображает реальные running/done.
+- В экспорт Basic (`shared/basic-telemetry.js`) добавлена структурная сводка раундов `rounds` со всеми шагами и визитами, участниками, счётчиками попыток и отправок, границами, waitId и измеренным непересекающимся временем ожидания User (`userWaitDurationMs`).
+- `ReportDigest.customFlowReport` (`shared/report-digest.js`) использует доказанные границы шага с fallback на `legacy_check`.
+
 ### 2026-10-26 — Basic: ожидания User и происхождение повторов (C05, C06), версия 2.81.889
 
 - Реализован сквозной жизненный цикл ожиданий User (`decision`, `owner`, `asks`, `unknown`) с событиями `custom_wait_start` и `custom_wait_end` (`waitId`, `kind`, `stepRef`, `visit`, `startedAt`, `endedAt`, `outcome`, `resumedFrom`).

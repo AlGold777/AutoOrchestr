@@ -363,6 +363,7 @@
       artifacts: (record.artifacts || []).map((entry) => ({ ...entry, pointer: entry.content?.pointer ?? '', text: textOf(record, entry.content?.answerRef) })),
       snapshot,
       cardHistory: copyOf(record.cardHistory),
+      waits: (record.waits || []).map((w) => ({ ...w })),
       attempts: record.attempts.map((attempt) => {
         const parts = attempt.parts || {};
         return {

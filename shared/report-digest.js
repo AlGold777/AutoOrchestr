@@ -938,13 +938,39 @@ function customFlowReport({ runId, delivery }) {
   const stageExecutions = arr(start.steps).map((step) => {
     const stageId = customStageId(runId, step.step);
     const batches = journal.filter((e) => e.kind === 'batch_start' && e.stageId === stageId);
-    // The end of a round is custom_step_end (after the owner's decision); custom_step is only the check before it,
-    // so it stands in for journals of earlier versions.
+    const stepStarts = journal.filter((e) => (e.kind === 'custom_step_start' || e.kind === 'custom_step_resumed') && e.pipelineRunId === runId && e.step === step.step);
     const ends = journal.filter((e) => e.kind === 'custom_step_end' && e.pipelineRunId === runId && e.step === step.step);
-    const closes = ends.length ? ends : journal.filter((e) => e.kind === 'custom_step' && e.pipelineRunId === runId && e.step === step.step);
-    const startedAt = batches[0]?.at ?? null, completedAt = closes[closes.length - 1]?.at ?? null;
+    const interrupted = journal.filter((e) => e.kind === 'custom_step_interrupted' && e.pipelineRunId === runId && e.step === step.step);
+
+    let startedAt = null;
+    let startBasis = null;
+    if (stepStarts.length) {
+      startedAt = stepStarts[0].at ?? (stepStarts[0].startedAt ? new Date(stepStarts[0].startedAt).toISOString() : null);
+      startBasis = 'proven_step_start';
+    } else if (batches.length) {
+      startedAt = batches[0].at ?? null;
+      startBasis = 'batch_start_fallback';
+    }
+
+    let completedAt = null;
+    let endBasis = null;
+    if (ends.length) {
+      completedAt = ends[ends.length - 1].at ?? (ends[ends.length - 1].endedAt ? new Date(ends[ends.length - 1].endedAt).toISOString() : null);
+      endBasis = 'proven_step_end';
+    } else if (interrupted.length) {
+      completedAt = interrupted[interrupted.length - 1].at ?? null;
+      endBasis = 'step_interrupted';
+    } else {
+      const closes = journal.filter((e) => e.kind === 'custom_step' && e.pipelineRunId === runId && e.step === step.step);
+      if (closes.length) {
+        completedAt = closes[closes.length - 1]?.at ?? null;
+        endBasis = 'legacy_check';
+      }
+    }
+
     return { stageId, label: step.label, purpose: `custom:${step.input}`,
       actual: { startedAt, completedAt, participants: arr(step.models) },
+      startBasis, endBasis,
       durationMs: startedAt != null && completedAt != null ? toMs(completedAt) - toMs(startedAt) : null };
   });
   return { metadata: { debateRunId: runId, flow: 'custom' }, stageExecutions, events: [], diagnoses: [],

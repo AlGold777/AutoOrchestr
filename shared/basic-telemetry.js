@@ -112,6 +112,12 @@
     const deliveryProcessed = processSource(rawJournal, runId, requestIds);
     const telemetryProcessed = processSource(rawEvents, runId, requestIds);
 
+    const rounds = buildRoundsSummary({
+      customRun,
+      events: telemetryProcessed.selected,
+      journal: deliveryProcessed.selected
+    });
+
     return {
       format: 'basic-telemetry/2',
       extensionVersion,
@@ -119,6 +125,7 @@
       runId,
       executionActive,
       customRun,
+      rounds,
       delivery: {
         journal: deliveryProcessed.selected,
         unassigned: deliveryProcessed.unassigned,
@@ -131,6 +138,98 @@
         selection: telemetryProcessed.selection
       }
     };
+  }
+
+  function computeNonOverlappingWaitDuration(waits) {
+    const intervals = [];
+    for (const w of waits) {
+      const s = typeof w.startedAt === 'number' ? w.startedAt : (w.startedAt ? Date.parse(w.startedAt) : null);
+      const e = typeof w.endedAt === 'number' ? w.endedAt : (w.endedAt ? Date.parse(w.endedAt) : null);
+      if (typeof s === 'number' && !isNaN(s) && typeof e === 'number' && !isNaN(e) && e >= s) {
+        intervals.push([s, e]);
+      }
+    }
+    if (!intervals.length) return 0;
+    intervals.sort((a, b) => a[0] - b[0]);
+    let total = 0;
+    let [currStart, currEnd] = intervals[0];
+    for (let i = 1; i < intervals.length; i++) {
+      const [start, end] = intervals[i];
+      if (start <= currEnd) {
+        currEnd = Math.max(currEnd, end);
+      } else {
+        total += (currEnd - currStart);
+        currStart = start;
+        currEnd = end;
+      }
+    }
+    total += (currEnd - currStart);
+    return total;
+  }
+
+  function buildRoundsSummary({ customRun, events = [], journal = [] }) {
+    if (!customRun) return [];
+    const steps = list(customRun.steps);
+    const attempts = list(customRun.attempts);
+    const waits = list(customRun.waits);
+    const allEvents = [...list(events), ...list(journal)];
+    const toMs = (v) => typeof v === 'number' ? v : (v ? Date.parse(v) : null);
+
+    const rounds = [];
+    steps.forEach((step, index) => {
+      const stepRef = step.ref || `#${index}`;
+      const stepAttempts = attempts.filter((a) => a.ref === stepRef || a.step === index);
+      const stepWaits = waits.filter((w) => w.stepRef === stepRef || w.stepRef === index);
+      const stepEvents = allEvents.filter((e) => (e.step === index || e.ref === stepRef) && String(e.kind || e.name || '').startsWith('custom_step'));
+
+      // Find all visits for this step
+      const visitSet = new Set([1]);
+      stepAttempts.forEach((a) => { if (a.visit) visitSet.add(a.visit); });
+      stepWaits.forEach((w) => { if (w.visit) visitSet.add(w.visit); });
+      stepEvents.forEach((e) => { if (e.visit) visitSet.add(e.visit); });
+
+      const sortedVisits = Array.from(visitSet).sort((a, b) => a - b);
+      sortedVisits.forEach((visit) => {
+        const visitAttempts = stepAttempts.filter((a) => (a.visit || 1) === visit);
+        const visitWaits = stepWaits.filter((w) => (w.visit || 1) === visit);
+        const visitEvents = stepEvents.filter((e) => (e.visit || 1) === visit);
+
+        const startEvt = visitEvents.find((e) => (e.kind || e.name) === 'custom_step_start' || (e.kind || e.name) === 'custom_step_resumed');
+        const endEvt = visitEvents.find((e) => (e.kind || e.name) === 'custom_step_end');
+        const interruptedEvt = visitEvents.find((e) => (e.kind || e.name) === 'custom_step_interrupted');
+
+        const startedAt = startEvt ? (typeof startEvt.startedAt === 'number' ? startEvt.startedAt : toMs(startEvt.at)) : (visitAttempts[0]?.sentAt ?? null);
+        const endedAt = endEvt ? (typeof endEvt.endedAt === 'number' ? endEvt.endedAt : toMs(endEvt.at)) : (interruptedEvt ? (typeof interruptedEvt.at === 'number' ? interruptedEvt.at : toMs(interruptedEvt.at)) : null);
+        const outcome = endEvt ? (endEvt.outcome || 'completed') : (interruptedEvt ? (interruptedEvt.outcome || 'interrupted') : null);
+        const durationMs = startedAt != null && endedAt != null && endedAt >= startedAt ? (endedAt - startedAt) : null;
+
+        const acceptedParticipants = Array.from(new Set(visitAttempts.filter((a) => a.accepted).map((a) => a.participant || a.model)));
+        const failedParticipants = Array.from(new Set(visitAttempts.filter((a) => a.accepted === false && a.state === 'done').map((a) => a.participant || a.model)));
+
+        rounds.push({
+          stepRef,
+          index,
+          kind: step.kind || 'round',
+          label: step.kind === 'owner' ? `Шаг User (${stepRef})` : `Раунд ${index + 1}`,
+          visit,
+          expectedParticipants: step.models ? step.models.map((m) => (typeof m === 'string' ? m : m.name || m.id)) : (step.kind === 'owner' ? ['owner'] : []),
+          participantResults: {
+            accepted: acceptedParticipants,
+            failed: failedParticipants
+          },
+          attemptCount: visitAttempts.length,
+          sentCount: visitAttempts.filter((a) => a.state === 'done' || (typeof a.sentAt === 'number' && a.state !== 'not_sent')).length,
+          startedAt,
+          endedAt,
+          outcome,
+          durationMs,
+          waitIds: visitWaits.map((w) => w.waitId).filter(Boolean),
+          userWaitDurationMs: computeNonOverlappingWaitDuration(visitWaits)
+        });
+      });
+    });
+
+    return rounds;
   }
 
   root.BasicTelemetry = Object.freeze({ buildReport });

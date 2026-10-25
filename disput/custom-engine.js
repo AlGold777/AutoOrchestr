@@ -1165,10 +1165,15 @@
         const entry = { step, visit: activeVisit, outcome, skipped: false, valid: resumed ? resumed.valid : true };
         if (resumed?.owner) entry.owner = resumed.owner;
         current = entry;
+        if (resumed) {
+          emit('custom_step_resumed', { step: step.index, ref: step.ref, kind: step.kind, label: stepLabel(step), visit: activeVisit });
+        } else {
+          emit('custom_step_start', { step: step.index, ref: step.ref, kind: step.kind, label: stepLabel(step), visit: activeVisit, startedAt: Date.now() });
+        }
         if (step.kind === 'owner') {
           // The owner's answer is asked until it is accepted; an accepted one (also one found after a reload) is not asked again.
           if (!entry.owner) await ownerAnswer(step, entry);
-          emit('custom_step_end', { step: step.index, label: stepLabel(step), visit: entry.visit, skipped: false, accepted: entry.owner ? 1 : 0, failed: entry.owner ? 0 : 1 });
+          emit('custom_step_end', { step: step.index, ref: step.ref, kind: step.kind, label: stepLabel(step), visit: entry.visit, outcome: 'completed', skipped: false, accepted: entry.owner ? 1 : 0, failed: entry.owner ? 0 : 1, endedAt: Date.now() });
           results.push(entry);
           pos += 1;
           current = null;
@@ -1215,10 +1220,6 @@
             await execute(step, step.models.filter((model) => failed.includes(model.id)), outcome, firstAttempt, { trigger: 'user_retry', triggerReason: 'user_decision' });
           }
         }
-        // The end of the round: after the decision of the owner, unlike custom_step (the check before it).
-        emit('custom_step_end', { step: step.index, label: stepLabel(step), visit: entry.visit, skipped: entry.skipped === true,
-          accepted: step.models.filter((model) => outcome[model.id]?.ok).length, failed: step.models.filter((model) => !outcome[model.id]?.ok).length });
-        results.push(entry);
         if (typeof parseAsks === 'function' && typeof askOwner === 'function' && !entry.skipped) {
           const asks = acceptedOf(entry).flatMap((item) => parseAsks(item.text) || []);
           if (asks.length) {
@@ -1228,10 +1229,22 @@
             await checkpointNow('asks', { pendingOwner: null });
           }
         }
+        // The end of the round: after the decision of the owner and after ASK.
+        emit('custom_step_end', { step: step.index, ref: step.ref, kind: step.kind, label: stepLabel(step), visit: entry.visit, outcome: entry.skipped ? 'skipped' : 'completed', skipped: entry.skipped === true,
+          accepted: step.models.filter((model) => outcome[model.id]?.ok).length, failed: step.models.filter((model) => !outcome[model.id]?.ok).length, endedAt: Date.now() });
+        results.push(entry);
         pos += 1;
         current = null;
       }
     } catch (error) {
+      if (current) {
+        const step = current.step;
+        const outcome = (error instanceof StopRun)
+          ? (error.stopReason === 'stopped' ? 'stopped' : error.stopReason === 'cancelled' ? 'cancelled' : 'interrupted')
+          : (error?.name === 'AbortError' || aborted() ? 'cancelled' : 'failed');
+        const reason = (error instanceof StopRun) ? error.stopReason : (error?.message || String(error));
+        emit('custom_step_interrupted', { step: step.index, ref: step.ref, kind: step.kind, label: stepLabel(step), visit: current.visit, outcome, reason, at: Date.now() });
+      }
       if (!(error instanceof StopRun)) throw error;
       stopReason = error.stopReason;
       stopDetail = error.stopDetail || '';

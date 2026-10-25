@@ -338,9 +338,12 @@
 | Событие | Кто | Поля |
 | --- | --- | --- |
 | `custom_start` | движок, в начале | `semiAuto`, `maxAttempts`, `taskChars`, `steps[]` (`step`, `ref`, `label`, `input`, `models`) |
+| `custom_step_start` | движок, фактический вход в шаг | `step`, `ref`, `kind`, `label`, `visit`, `startedAt` |
+| `custom_step_resumed` | движок, продолжение шага после остановки | `step`, `ref`, `kind`, `label`, `visit` |
 | `custom_answer` | движок, на каждый ответ каждой попытки | `step`, `label`, `model`, `attempt`, `input`, `accepted`, `reason`, `status`, `transportRequestId`, `promptChars` |
 | `custom_step` | движок, когда шаг завершил попытки | `step`, `label`, `accepted` (число), `failed` (число) |
-| `custom_step_end` | движок, после решения User (конец раунда) | `step`, `label`, `visit`, `skipped`, `accepted`, `failed` |
+| `custom_step_end` | движок, после решения User и ASK (конец шага) | `step`, `ref`, `kind`, `label`, `visit`, `outcome` (`completed`, `skipped`), `skipped`, `accepted`, `failed`, `endedAt` |
+| `custom_step_interrupted` | движок, прерывание шага при Stop или ошибке | `step`, `ref`, `kind`, `label`, `visit`, `outcome` (`stopped`, `cancelled`, `failed`), `reason`, `at` |
 | `custom_decision` | движок, после ответа на окно паузы | `step`, `action` (`continue`, `retry`, `skip`, `stop`) |
 | `custom_wait_start` | движок, начало ожидания User | `waitId`, `kind`, `stepRef`, `visit`, `startedAt`, `resumedFrom` |
 | `custom_wait_end` | движок, конец ожидания User | `waitId`, `kind`, `stepRef`, `visit`, `startedAt`, `endedAt`, `outcome` |

@@ -7429,9 +7429,9 @@ document.addEventListener('click', (event) => {
                         return { byParticipant, closedByOwner };
                     },
                     onEvent: (kind, fields) => {
-                        // A step with all answers accepted, or one the owner skipped, is done; otherwise it stays running until a decision.
-                        if (kind === 'custom_step' && fields.accepted > 0 && !fields.failed) setCustomStepStatus(fields.step, 'completed');
-                        if (kind === 'custom_decision' && fields.action === 'skip') setCustomStepStatus(fields.step, 'completed');
+                        if (kind === 'custom_step_start' || kind === 'custom_step_resumed') setCustomStepStatus(fields.step, 'running');
+                        if (kind === 'custom_step_end') setCustomStepStatus(fields.step, 'completed');
+                        if (kind === 'custom_step_interrupted') setCustomStepStatus(fields.step, fields.outcome === 'stopped' ? 'stopped' : 'failed');
                         if (kind === 'custom_wait_start' && record) {
                             window.CustomRunRecord?.recordWaitStart(record, fields);
                         }
