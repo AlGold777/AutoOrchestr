@@ -282,6 +282,8 @@ Ctrl/Cmd+S сохраняет подсветки и избранное вмес�
 - При OK/Send `saveDocumentCopy` (`results.js`) пишет утверждённый текст через `DocumentsFolder` (`results/documents-folder.js`). Копия для человека; главное хранилище — запись прогона.
 - Доступ запрашивается на ▶ и на «Продолжить прогон» (`requestDocumentsAccess`). Ошибка записи не останавливает прогон.
 
+**Встроенные схемы (`user_doc`).** `BUILTIN_SCHEMAS` в `disput/pipeline-presets.js` ставятся в список при первом старте (`seedBuiltinSchemas` в `results.js`). Схема из три шага: `r1` (DeepSeek составляет опросник, `output.document: form`), `owner:fill` (User заполняет и нажимает «Отправить»), `r2` (DeepSeek, `input: previous`, пересказывает ответы User по пунктам). Тот же текст лежит в `docs/Pipeline scenarios/questionnaire-deepseek.json`; тест сверяет их. Имя записывается в `pipelineStore.seeded` (сохраняется), поэтому удалённая пользователем схема не возвращается. Если pipeline с таким именем уже есть, он не перезаписывается. Ревизия встроенной схемы задаётся в `BUILTIN_SCHEMA_REVISIONS` (сейчас `user_doc: 2`, поле `pipelineStore.seededRev`). При повышении ревизии встроенная схема заменяет сохранённую копию (правки User в ней теряются), удалённая не возвращается.
+
 ### Прежние настройки страницы
 
 Запись, сохранённая до схем (с членами `customModelSettings` и `customDefaults`), читается как раньше, а при

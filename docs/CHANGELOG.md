@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-10-25 — Basic: основная линия (user_doc, 2.81.858–860) влита в сборку переноса, версия 2.81.873
+
+- Встроенный шаблон `user_doc` и его правки из основной линии объединены с пакетами 1.1–1.4, 2.1–2.4 переноса. Конфликты только в номерах версий и документах.
+
 ### 2026-10-25 — Basic: слияние полос переноса (1.1–1.4, 2.1–2.3a), версия 2.81.873
 
 - Слиты подсказки, удаление Send, кнопка «Стрелки», окно ошибок схемы (полоса 1: 2.81.858–861) и каталог схем, вставка JSON схемы, копия документа на диск (полоса 2: 2.81.870–872). Конфликты только в номерах версий и документах.
@@ -61,6 +65,24 @@
 - Механизм: `setCanvasTooltip(el, name, desc)` и `syncCanvasTooltips()` в `results.js` задают `data-tooltip` и `data-tooltip-desc`; показывает `ResultsTooltips` (`results/tooltips.js`), текст выводится как текст. Стили `.floating-tooltip-name` и `.floating-tooltip-desc` — `styles/app-controls.css`. `syncCanvasTooltips` вызывается в конце `updatePipelineAll` и после смены активной схемы.
 - Нативные `title` на `.pipeline-canvas` и на кнопках `.pipeline-list-header-actions` перенесены в подсказку и сняты, чтобы не показывались две подсказки; у `.status-indicator` и `.role-selector` `title` остаётся.
 - Тесты: `tests/results-tooltips.test.js` (разметка подсказки), `tests/results-debate-favorites.test.js`, тест «canvas tooltips: …».
+### 2026-10-25 — Basic: user_doc обновляется при смене ревизии, версия 2.81.860
+
+- У встроенных схем появилась ревизия: `BUILTIN_SCHEMA_REVISIONS` в `disput/pipeline-presets.js` (`user_doc: 2`). Хранилище помнит ревизию каждой посеянной схемы (`pipelineStore.seededRev`).
+- Если схема уже посеяна старой ревизией и её pipeline ещё в списке, `seedBuiltinSchemas` заменяет копию новой. Правки User в ней теряются. Удалённая пользователем схема не возвращается.
+- Причина: `user_doc` уже был посеян двухшаговой версией, и без ревизии шаг r2 до пользователя не доходил.
+
+### 2026-10-25 — Basic: user_doc — третий шаг r2 (DeepSeek пересказывает ответы User), версия 2.81.859
+
+- В схему `user_doc` добавлен шаг `r2`: DeepSeek получает заполненный User опросник (`input: previous`) и перечисляет ответы по пунктам с коротким выводом о задаче.
+- Та же схема в `docs/Pipeline scenarios/questionnaire-deepseek.json` и в `BUILTIN_SCHEMAS.user_doc` (`disput/pipeline-presets.js`). Тест `tests/user-doc-seed.test.js` проверяет шаг r2 и совпадение файла с константой.
+- Уже посеянные схемы не перезаписываются (посев один раз, см. запись 2.81.858).
+
+### 2026-10-25 — Basic: встроенная схема user_doc при первом старте, версия 2.81.858
+
+- Новая встроенная схема `user_doc` (опросник: DeepSeek составляет опросник, User заполняет и жмёт «Отправить») ставится в список pipelines при первом старте страницы. Схема лежит в `disput/pipeline-presets.js` (`BUILTIN_SCHEMAS`), посев — `seedBuiltinSchemas` в `results.js`.
+- Посев один раз: имя записывается в `pipelineStore.seeded` (сохраняется в хранилище). Удалённый пользователем `user_doc` не возвращается. Если pipeline с таким именем уже есть, он не перезаписывается, только помечается посеянным.
+- Выбор активного pipeline при старте не меняется.
+- Код: `disput/pipeline-presets.js`, `results.js`. Тест: `tests/user-doc-seed.test.js`.
 
 ### 2026-10-24 — Basic: этап 2 упрощён — документы берутся из записи прогона, версия 2.81.857
 

@@ -1969,8 +1969,12 @@ describe('Pipeline debate favorites view', () => {
   test('default pipeline list exposes only universal purpose profiles', () => {
     const names = Array.from(document.querySelectorAll('#pipelineItems .pipeline-item'))
       .map((item) => item.dataset.name);
-    expect(names).toEqual(['Default']);
-    expect(document.querySelectorAll('#pipelineItems .pipeline-item-delete')).toHaveLength(0);
+    // The built-in schema user_doc is seeded on the first start (BUILTIN_SCHEMAS), after the Default template.
+    expect(names).toEqual(['Default', 'user_doc']);
+    // The template Default has no delete button; the seeded user_doc can be deleted by the user.
+    const deletable = Array.from(document.querySelectorAll('#pipelineItems .pipeline-item-delete'))
+      .map((button) => button.closest('.pipeline-item')?.dataset.name);
+    expect(deletable).toEqual(['user_doc']);
     // The template is selectable like any pipeline.
     document.querySelectorAll('#pipelineItems .pipeline-radio').forEach((radio) => expect(radio.disabled).toBe(false));
   });

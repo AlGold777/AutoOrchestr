@@ -3583,6 +3583,10 @@ document.addEventListener('click', (event) => {
             version: PIPELINE_STORE_VERSION,
             pipelines: {},
             order: [],
+            // Built-in schemas already seeded into the list (BUILTIN_SCHEMAS); a deleted one is not seeded again.
+            seeded: [],
+            // Revision of each seeded built-in schema (name → integer), see BUILTIN_SCHEMA_REVISIONS.
+            seededRev: {},
             lastSaved: '',
             active: '',
             overrides: {
@@ -3658,6 +3662,8 @@ document.addEventListener('click', (event) => {
                 version: PIPELINE_STORE_VERSION,
                 pipelines: {},
                 order: [],
+                seeded: [],
+                seededRev: {},
                 lastSaved: '',
                 active: '',
                 overrides: {
@@ -3687,6 +3693,11 @@ document.addEventListener('click', (event) => {
                 version: Number(value.version) || 0,
                 pipelines,
                 order,
+                seeded: Array.isArray(value.seeded) ? value.seeded.filter((name) => typeof name === 'string' && name.trim()) : [],
+                seededRev: value.seededRev && typeof value.seededRev === 'object'
+                    ? Object.fromEntries(Object.entries(value.seededRev)
+                        .filter(([name, rev]) => typeof name === 'string' && name.trim() && Number.isInteger(rev)))
+                    : {},
                 lastSaved: typeof value.lastSaved === 'string' ? value.lastSaved : '',
                 active: typeof value.active === 'string' ? value.active : '',
                 overrides: {
@@ -3720,6 +3731,8 @@ document.addEventListener('click', (event) => {
             const normalized = normalizePipelineStore(storedValue);
             pipelineStore.pipelines = normalized.pipelines;
             pipelineStore.order = normalized.order;
+            pipelineStore.seeded = normalized.seeded;
+            pipelineStore.seededRev = normalized.seededRev;
             pipelineStore.lastSaved = normalized.lastSaved;
             pipelineStore.active = normalized.active;
             pipelineStore.overrides = normalized.overrides;
@@ -3731,6 +3744,8 @@ document.addEventListener('click', (event) => {
                 version: PIPELINE_STORE_VERSION,
                 pipelines: pipelineStore.pipelines,
                 order: pipelineStore.order,
+                seeded: pipelineStore.seeded,
+                seededRev: pipelineStore.seededRev,
                 lastSaved: pipelineStore.lastSaved,
                 active: pipelineStore.active,
                 overrides: pipelineStore.overrides,
@@ -8691,9 +8706,50 @@ document.addEventListener('click', (event) => {
             });
         };
 
+        // Seeds the built-in Basic schemas (BUILTIN_SCHEMAS) once: a name already in pipelineStore.seeded is not seeded again,
+        // so a schema the user deleted stays deleted. A pipeline of that name already in the list is only marked seeded.
+        // A seeded schema whose revision (BUILTIN_SCHEMA_REVISIONS, default 1) is higher than the stored one replaces the
+        // stored copy while it is still in the list; the user's edits in it are lost.
+        const seedBuiltinSchemas = async () => {
+            const schemas = window.PipelinePresets?.BUILTIN_SCHEMAS || {};
+            const revisions = window.PipelinePresets?.BUILTIN_SCHEMA_REVISIONS || {};
+            const { active, lastSaved } = pipelineStore;
+            let changed = false;
+            for (const [name, schema] of Object.entries(schemas)) {
+                const rev = revisions[name] || 1;
+                if (pipelineStore.seeded.includes(name)) {
+                    const storedRev = pipelineStore.seededRev[name] || 1;
+                    if (!pipelineStore.order.includes(name) || storedRev >= rev) continue;
+                    const result = await installBasicSchema(name, schema);
+                    if (result.ok) {
+                        pipelineStore.seededRev[name] = rev;
+                        changed = true;
+                    }
+                    continue;
+                }
+                if (pipelineStore.order.includes(name)) {
+                    pipelineStore.seeded.push(name);
+                    pipelineStore.seededRev[name] = rev;
+                    changed = true;
+                    continue;
+                }
+                const result = await installBasicSchema(name, schema);
+                if (result.ok) {
+                    pipelineStore.seeded.push(name);
+                    pipelineStore.seededRev[name] = rev;
+                    changed = true;
+                }
+            }
+            // installBasicSchema makes the seeded pipeline the last saved one; the start keeps the previous selection.
+            pipelineStore.active = active;
+            pipelineStore.lastSaved = lastSaved;
+            if (changed) await persistPipelineStore();
+        };
+
         const initPipelineList = async () => {
             await readPipelineStore();
             ensureDefaultPipelinePresets();
+            await seedBuiltinSchemas();
             // A preset is an explicit execution choice. Starting the Disput page
             // in manual mode must not silently opt the moderator into Universal.
             pipelineStore.active = '';
