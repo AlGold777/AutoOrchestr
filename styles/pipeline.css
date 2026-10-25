@@ -550,10 +550,6 @@ body.is-resizing {
     cursor: not-allowed;
 }
 
-.model-send-checkbox {
-    accent-color: var(--pipeline-orange);
-}
-
 .model-name {
     min-width: 0;
     flex: 1 1 auto;

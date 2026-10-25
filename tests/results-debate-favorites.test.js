@@ -3063,7 +3063,7 @@ describe('Pipeline debate favorites view', () => {
 
     describe('a schema is installed as a pipeline', () => {
       const stackFlags = (stackId) => [...document.querySelectorAll(`#${stackId} .model-block:not(.pipeline-empty-slot)`)]
-        .map((block) => [block.querySelector('.model-name').textContent, block.querySelector('.model-send-checkbox').checked, block.querySelector('.role-selector')?.value || '']);
+        .map((block) => [block.querySelector('.model-name').textContent, block.querySelector('.model-input-checkbox').checked, block.querySelector('.role-selector')?.value || '']);
       const select = (name) => document.querySelector(`.pipeline-item[data-name="${name}"]`).click();
 
       test('the order of a round and the send marks of its models survive load and a second save', async () => {
@@ -3910,6 +3910,48 @@ describe('Pipeline debate favorites view', () => {
         }
       }, 30000);
 
+      test('no Send: the canvas shows no Send checkbox; each Input checkbox is described as participation in the round', async () => {
+        const h = setupCustomInheritance('No send host');
+        try {
+          const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
+            { ref: 'r1', kind: 'round', title: 'Первый раунд', goal: 'Черновик', models: [{ name: 'Claude', task: 'Пиши' }] },
+            { ref: 'r2', kind: 'round', title: 'Второй раунд', goal: 'Проверка', models: [{ name: 'GPT', task: 'Проверяй' }] }
+          ] };
+          expect((await h.debug.installBasicSchema('No send host', schema)).ok).toBe(true);
+          document.querySelector('.pipeline-item[data-name="No send host"]').click();
+          await settleCustomCard();
+          await settleCustomCard();
+
+          const panel = document.getElementById('pipeline-panel');
+          expect(panel.querySelectorAll('.model-send-checkbox').length).toBe(0);
+          const inputs = [...panel.querySelectorAll('.model-input-checkbox')];
+          expect(inputs.length).toBeGreaterThan(0);
+          inputs.forEach((input) => {
+            expect(input.hasAttribute('title')).toBe(false);
+            expect(input.dataset.tooltip).toBe('Участие в раунде');
+            expect(input.dataset.tooltipDesc).toContain('enabled: false');
+          });
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      test('legacy send: a saved Send mark does not put a model into the round; Input decides', async () => {
+        const h = setupCustomInheritance('Legacy send host');
+        try {
+          const record = { ...h.config };
+          record.protocol = { ...record.protocol, selectedModels: ['Claude', 'GPT'] };
+          record.modelStacks = {
+            'r1-models': { items: [{ name: 'GPT', input: true, send: false, role: null }, { name: 'Claude', input: true, send: true, role: null }] }
+          };
+          h.debug.setPipelineStoreForTest({ active: 'Legacy send host', order: ['Legacy send host'], pipelines: { 'Legacy send host': record } });
+          h.debug.applyPipelineConfig(record);
+          const inputOf = (name) => [...document.querySelectorAll('#r1-models .model-block')]
+            .find((block) => block.querySelector('.model-name')?.textContent === name)
+            ?.querySelector('.model-input-checkbox');
+          expect(inputOf('GPT').checked).toBe(false);
+          expect(inputOf('Claude').checked).toBe(true);
+        } finally { h.cleanup(); }
+      }, 30000);
+
       test('A07 documents: removing the round a User step reads from resets the step document and says so', async () => {
         const h = setupCustomInheritance('Doc source removed');
         try {
@@ -4232,8 +4274,8 @@ describe('Pipeline debate favorites view', () => {
         const h = setupCustomInheritance('Card rebuild host');
         try {
           const gpt = [...document.querySelectorAll('#r2-models .model-block')].find((block) => block.querySelector('.model-name')?.textContent === 'GPT');
-          gpt.querySelector('.model-send-checkbox').checked = false;
-          gpt.querySelector('.model-send-checkbox').dispatchEvent(new Event('change', { bubbles: true }));
+          gpt.querySelector('.model-input-checkbox').checked = false;
+          gpt.querySelector('.model-input-checkbox').dispatchEvent(new Event('change', { bubbles: true }));
           await h.model({ content: 'REBUILD_CONTENT' });
           const { record, again } = derived(h, 'Card rebuild host');
           const r2 = record.schema.steps.find((step) => step.ref === 'r2');

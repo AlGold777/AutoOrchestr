@@ -3883,16 +3883,7 @@ document.addEventListener('click', (event) => {
             return indices;
         };
 
-        const getModelSendIndices = (stackId) => {
-            const stack = document.getElementById(stackId);
-            if (!stack) return [];
-            const indices = [];
-            Array.from(stack.children).forEach((item, i) => {
-                const cb = item.querySelector('.model-send-checkbox');
-                if (cb && cb.checked && !cb.disabled) indices.push(i);
-            });
-            return indices;
-        };
+        const getModelSendIndices = (stackId) => getModelInputIndices(stackId);
 
         const getPipelineProtocolConfig = () => {
             const lengthSelect = document.getElementById('debate-length-select');
@@ -4659,17 +4650,14 @@ document.addEventListener('click', (event) => {
                 // A legacy send mark was saved by the position of the block on the canvas.
                 const position = blocks.indexOf(block);
                 const inputCb = block.querySelector('.model-input-checkbox');
-                const sendCb = block.querySelector('.model-send-checkbox');
                 const inputValue = typeof item.input === 'boolean'
                     ? item.input
                     : (typeof item.checked === 'boolean' ? item.checked : undefined);
-                if (inputCb && typeof inputValue === 'boolean') {
-                    inputCb.checked = inputValue;
-                }
                 const sendFallback = Array.isArray(sendOverrides?.[stackId]) ? sendOverrides[stackId][position] : undefined;
                 const sendValue = typeof item.send === 'boolean' ? item.send : sendFallback;
-                if (sendCb && typeof sendValue === 'boolean') {
-                    sendCb.checked = sendValue;
+                // Only Input decides participation: a legacy block with Input on and Send off is not in the round.
+                if (inputCb && (typeof inputValue === 'boolean' || typeof sendValue === 'boolean')) {
+                    inputCb.checked = inputValue !== false && sendValue !== false;
                 }
                 const role = block.querySelector('.role-selector');
                 if (role && item.role) {
@@ -5045,6 +5033,7 @@ document.addEventListener('click', (event) => {
                 const model = (stepOf(`r${round}`)?.models || []).find((item) => item.name === name);
                 setCanvasTooltip(block, name, model?.task);
             });
+            pipelinePanel.querySelectorAll('.model-input-checkbox').forEach((box) => setCanvasTooltip(box, 'Участие в раунде', 'Флажок включает модель в раунд; снятый — модель в раунд не входит (в схеме enabled: false).'));
             pipelinePanel.querySelectorAll('.pipeline-control-card').forEach((card) => {
                 const step = getCustomControls().map((item) => item.step).find((item) => item?.ref === card.dataset.controlCard) || {};
                 const name = `User · ${card.dataset.controlCard}${step.title ? ` · ${step.title}` : ''}`;
@@ -5075,7 +5064,6 @@ document.addEventListener('click', (event) => {
             syncCustomRoleOption();
             pipelinePanel.querySelectorAll('.model-block').forEach((block) => {
                 const inputCb = block.querySelector('.model-input-checkbox');
-                const sendCb = block.querySelector('.model-send-checkbox');
                 const sel = block.querySelector('.role-selector');
                 const indicator = block.querySelector('.status-indicator');
                 if (!inputCb) return;
@@ -5083,17 +5071,10 @@ document.addEventListener('click', (event) => {
                     block.classList.remove('inactive');
                     block.classList.add('active');
                     if (sel) sel.disabled = false;
-                    if (sendCb) {
-                        sendCb.disabled = false;
-                    }
                 } else {
                     block.classList.remove('active');
                     block.classList.add('inactive');
                     if (sel) sel.disabled = true;
-                    if (sendCb) {
-                        sendCb.checked = false;
-                        sendCb.disabled = true;
-                    }
                     if (indicator) {
                         indicator.className = 'status-indicator';
                         indicator.title = '';
@@ -5694,7 +5675,7 @@ document.addEventListener('click', (event) => {
             if (!pipelinePanel) return;
             const disabled = !enabled;
                 pipelinePanel
-                .querySelectorAll('.model-input-checkbox, .model-send-checkbox, .role-selector, #pipeline-add-round-btn, .pipeline-round-delete-btn, #removeRoundBtn, #pipeline-add-btn, #pipeline-save-btn, #pipeline-delete-btn, #pipeline-import-btn')
+                .querySelectorAll('.model-input-checkbox, .role-selector, #pipeline-add-round-btn, .pipeline-round-delete-btn, #removeRoundBtn, #pipeline-add-btn, #pipeline-save-btn, #pipeline-delete-btn, #pipeline-import-btn')
                 .forEach((el) => {
                     el.disabled = disabled;
                 });
@@ -5739,7 +5720,7 @@ document.addEventListener('click', (event) => {
                     if (name && roleSelect) roleByName.set(name, roleSelect.value || '');
                     // So must the Input / Send marks of a model that stays (a loaded pipeline stores them).
                     if (name && !block.classList.contains('pipeline-empty-slot')) {
-                        marksByName.set(name, { input: block.querySelector('.model-input-checkbox')?.checked, send: block.querySelector('.model-send-checkbox')?.checked });
+                        marksByName.set(name, { input: block.querySelector('.model-input-checkbox')?.checked });
                     }
                 });
                 const emptySlots = Math.max(0, getDebateModelSlotCount() - selectedIndices.length);
@@ -5754,9 +5735,7 @@ document.addEventListener('click', (event) => {
                     const marks = name ? marksByName.get(name) : undefined;
                     if (marks) {
                         const inputCb = block.querySelector('.model-input-checkbox');
-                        const sendCb = block.querySelector('.model-send-checkbox');
                         if (inputCb && typeof marks.input === 'boolean') inputCb.checked = marks.input;
-                        if (sendCb && typeof marks.send === 'boolean') sendCb.checked = marks.send;
                     }
                     const role = block.querySelector('.role-selector');
                     const previousRole = name ? roleByName.get(name) : undefined;
@@ -7679,7 +7658,6 @@ document.addEventListener('click', (event) => {
                             <div class="pipeline-info-model-head">
                                 <strong>${escapeHtml(item.name || 'Model')}</strong>
                                 <span>Input: ${escapeHtml(formatPipelineBoolean(!!item.input))}</span>
-                                <span>Send: ${escapeHtml(formatPipelineBoolean(!!item.send))}</span>
                             </div>
                             <div class="pipeline-info-prompt-name">${escapeHtml(promptName)}</div>
                             <pre>${escapeHtml(promptText)}</pre>
@@ -8820,7 +8798,6 @@ document.addEventListener('click', (event) => {
                 ['Run policy', protocol.runPolicy === 'auto' ? 'Auto' : 'Manual'],
                 ['Reasoning budget', formatReasoningBudgetLabel(protocol.reasoningBudget)],
                 ['Input', block.querySelector('.model-input-checkbox')?.checked ? 'on' : 'off'],
-                ['Send', block.querySelector('.model-send-checkbox')?.checked ? 'on' : 'off'],
                 ['Prompt template', selectedRole]
             ];
             const title = modal.querySelector('#pipeline-block-info-title');
@@ -9055,8 +9032,7 @@ document.addEventListener('click', (event) => {
             let shouldCheck = true;
             if (modelStack) {
                 const allInputs = areAllChecked(modelStack, '.model-input-checkbox');
-                const allSends = areAllChecked(modelStack, '.model-send-checkbox');
-                shouldCheck = !(allInputs && allSends);
+                shouldCheck = !allInputs;
             } else {
                 return;
             }
@@ -9064,7 +9040,6 @@ document.addEventListener('click', (event) => {
             let changed = false;
             if (modelStack) {
                 changed = setCheckboxesState(modelStack, '.model-input-checkbox', shouldCheck) || changed;
-                changed = setCheckboxesState(modelStack, '.model-send-checkbox', shouldCheck) || changed;
             }
             if (changed) {
                 updatePipelineAll();
@@ -9088,16 +9063,9 @@ document.addEventListener('click', (event) => {
             if (
                 !pipelineApplyingConfig
                 && target.closest?.('#r1-models')
-                && target.matches('.model-input-checkbox, .model-send-checkbox')
+                && target.matches('.model-input-checkbox')
             ) {
                 pipelineR1ManualDirty = true;
-            }
-            if (target.matches('.model-input-checkbox')) {
-                const block = target.closest('.model-block');
-                const sendCb = block?.querySelector('.model-send-checkbox');
-                if (target.checked && sendCb) {
-                    sendCb.checked = true;
-                }
             }
             if (target.matches('input[type="checkbox"]') || target.matches('.role-selector')) {
                 updatePipelineAll();
