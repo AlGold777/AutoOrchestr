@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-10-25 — Иконка Pipeline меньше на 7 %, версия 2.81.883
+
+- Иконка «Pipeline panel» уменьшена пропорционально на 7 % (28.6 × 30.42 → 26.6 × 28.29 px). Толщина линий на экране прежняя: `stroke-width` в координатах viewBox пересчитан с 2.5 до 2.688 (`pipeline_panel.html`, `result_new.html`, `styles/app-controls.css`).
+
 ### 2026-10-25 — Basic: сохранение чатов участников при остановке (B01), версия 2.81.882
 
 - Финальное сохранение прогона (`results.js`) использует единую сборку снимка `buildSnapshotPayload`, предотвращая потерю `chatBindings` страницы (`tabId`, `requestId`, `transportRequestId`, `stageAttemptId`).
