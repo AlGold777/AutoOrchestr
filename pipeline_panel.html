@@ -612,6 +612,7 @@
                                         <label class="disput-only-problems-label" title="Display filter only; JSON and MD exports are always complete"><input type="checkbox" id="disput-only-problems"> Only problems</label>
                                     </div>
                                         <div class="disput-extract-controls">
+                                            <button type="button" class="devtools-pill-btn" id="disput-basic" title="Export Basic run, model routing and transport telemetry as JSON">Basic</button>
                                             <button type="button" class="devtools-pill-btn" id="disput-extract" title="Download the full report, transport JSON and Markdown">Extract</button>
                                             <select id="disput-extract-type" class="devtools-select" aria-label="Extract type"><option value="transport">transport</option></select>
                                         </div>
@@ -903,6 +904,7 @@
     <script src="results/debate-export.js"></script>
     <script src="results/debate-telemetry-view.js"></script>
     <script src="shared/report-digest.js"></script>
+    <script src="shared/basic-telemetry.js"></script>
     <script src="utils/selection-block-format.js"></script>
     <script src="results/pipeline-card-cover.js"></script>
     <script src="results.js"></script>

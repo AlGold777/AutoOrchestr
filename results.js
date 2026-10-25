@@ -2716,6 +2716,7 @@ document.addEventListener('click', (event) => {
     // Same for a Custom run (runCustomFromPage).
     let customAbortController = null;
     let activePipelineRunContext = null;
+    let latestBasicRunRecord = null;
     const debateAggregateStore = window.DebateRunStore?.createStore?.() || null;
     const debateTraceStore = window.DebateTraceStore?.createStore?.({
         storage: chrome?.storage?.local // Only used to delete legacy persisted run history.
@@ -6979,6 +6980,7 @@ document.addEventListener('click', (event) => {
             // The text of the composer before the run took it: it comes back if the run produces nothing.
             let composerBackup = '';
             const record = resumeRecord || window.CustomRunRecord?.createRun?.({ runId: runContext.pipelineRunId, pipelineName: customPipelineName(), task, steps }) || null;
+            latestBasicRunRecord = record;
             let saveTimer = null;
             // The writes of the record go one after another: an older write never lands after a newer one.
             let recordWrites = Promise.resolve();
@@ -16339,7 +16341,7 @@ document.addEventListener('click', (event) => {
         secondary.forEach(pushUnique);
         return merged;
     };
-    const getTelemetryEventsForExport = async (snapshotTs = Date.now()) => {
+    const getTelemetryEventsForExport = async (snapshotTs = Date.now(), { applyFilters = true } = {}) => {
         const bridge = getTelemetryBridge();
         let bridgeEvents = [];
         if (bridge && typeof bridge.getLatestEvents === 'function') {
@@ -16364,7 +16366,7 @@ document.addEventListener('click', (event) => {
         });
         // Уважаем активный фильтр окна телеметрии: при выбранной одной модели
         // экспорт не должен тянуть все платформы.
-        if (bridge && typeof bridge.applyActiveFilter === 'function') {
+        if (applyFilters && bridge && typeof bridge.applyActiveFilter === 'function') {
             try {
                 const filtered = bridge.applyActiveFilter(merged);
                 return typeof bridge.applyOnlyProblemsFilter === 'function'
@@ -16694,6 +16696,41 @@ document.addEventListener('click', (event) => {
             return null;
         }
     };
+
+    document.addEventListener('click', async (event) => {
+        const button = event.target.closest('#disput-basic');
+        if (!button || button.disabled) return;
+        button.disabled = true;
+        button.setAttribute('aria-busy', 'true');
+        try {
+            // Freeze the live record before awaiting storage: in-flight attempts stay in-flight,
+            // and the 600 ms persistence delay cannot hide a new run or its latest answers.
+            const customRun = latestBasicRunRecord
+                ? JSON.parse(JSON.stringify(window.CustomRunRecord.exportRun(latestBasicRunRecord)))
+                : await readLatestCustomRun();
+            if (!customRun) {
+                showNotification('Basic: нет записи прогона для экспорта.', 'info');
+                flashButtonFeedback(button, 'warn');
+                return;
+            }
+            const snapshotTs = Date.now();
+            const executionActive = Boolean(customAbortController && activePipelineRunContext?.pipelineRunId === customRun.runId);
+            const delivery = JSON.parse(JSON.stringify({
+                journal: window.MessageDelivery.journal(), collection: window.MessageDelivery.collection()
+            }));
+            const events = await getTelemetryEventsForExport(snapshotTs, { applyFilters: false });
+            const report = window.BasicTelemetry.buildReport({ customRun, delivery, events, executionActive,
+                exportedAt: new Date(snapshotTs).toISOString(), extensionVersion: chrome.runtime.getManifest().version });
+            downloadDiagnosticsJson('Basic', report, button);
+        } catch (error) {
+            console.error('[Basic telemetry] export failed', error);
+            showNotification(`Basic: экспорт не выполнен (${error.message || error}).`, 'error');
+            flashButtonFeedback(button, 'error');
+        } finally {
+            button.disabled = false;
+            button.removeAttribute('aria-busy');
+        }
+    });
 
     document.addEventListener('click', async (event) => {
         const disputBtn = event.target.closest('#disput-export-json');

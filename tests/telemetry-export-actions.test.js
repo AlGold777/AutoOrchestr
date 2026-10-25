@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 
 const html = fs.readFileSync(path.join(__dirname, '..', 'result_new.html'), 'utf8');
 const pipelineHtml = fs.readFileSync(path.join(__dirname, '..', 'pipeline_panel.html'), 'utf8');
@@ -91,5 +92,60 @@ describe('Telemetry export actions', () => {
     expect(resultsSource).not.toContain('applyDisputOnlyProblemsFilter');
     expect(resultsSource).not.toContain('window.DebateTraceProjections.filterProblems(payload');
     expect(resultsSource).toContain('const payload = buildDisputExportPayload(telemetryEvents);');
+  });
+
+  test('Basic export button is immediately left of Extract on both result pages', () => {
+    for (const page of [html, pipelineHtml]) {
+      const controlsAt = page.indexOf('class="disput-extract-controls"');
+      const basicAt = page.indexOf('id="disput-basic"', controlsAt);
+      const extractAt = page.indexOf('id="disput-extract"', controlsAt);
+      expect(controlsAt).toBeGreaterThan(-1);
+      expect(basicAt).toBeGreaterThan(controlsAt);
+      expect(extractAt).toBeGreaterThan(basicAt);
+      expect(page.slice(basicAt, extractAt)).toContain('Export Basic run');
+    }
+  });
+
+  test('Basic export uses the in-memory run before storage and delegates identity filtering to the report builder', () => {
+    const handlerAt = resultsSource.indexOf("const button = event.target.closest('#disput-basic');");
+    const handlerEnd = resultsSource.indexOf("const disputBtn = event.target.closest('#disput-export-json');", handlerAt);
+    const handler = resultsSource.slice(handlerAt, handlerEnd);
+    expect(handler).toContain('latestBasicRunRecord');
+    expect(handler).toContain('window.CustomRunRecord.exportRun(latestBasicRunRecord)');
+    expect(handler).toContain('await readLatestCustomRun()');
+    expect(handler).toContain('window.BasicTelemetry.buildReport({ customRun, delivery, events');
+    expect(handler).toContain('journal: window.MessageDelivery.journal(), collection: window.MessageDelivery.collection()');
+    expect(handler).not.toContain('window.MessageDeliveryView');
+    expect(handler).toContain('getTelemetryEventsForExport(snapshotTs, { applyFilters: false })');
+    expect(handler.indexOf('window.MessageDelivery.journal()')).toBeLessThan(handler.indexOf('getTelemetryEventsForExport(snapshotTs'));
+  });
+
+  test('Basic telemetry snapshot retains every model and info event while excluding events newer than the click', async () => {
+    const start = resultsSource.indexOf('const getTelemetryEventsForExport = async (snapshotTs = Date.now()');
+    const end = resultsSource.indexOf('    const getActiveTelemetrySourceFilter', start);
+    const definition = resultsSource.slice(start, end);
+    const filters = jest.fn((events) => events.filter((event) => event.platform === 'Claude'));
+    const context = {
+      EXPORT_SNAPSHOT_DEADLINE_MS: 10,
+      getTelemetryBridge: () => ({ applyActiveFilter: filters, applyOnlyProblemsFilter: (events) => events.filter((event) => event.level === 'error') }),
+      requestTelemetryEventsViaRuntime: async () => [
+        { ts: 100, platform: 'Claude', level: 'info' },
+        { ts: 101, platform: 'Gemini', level: 'info' },
+        { ts: 102, platform: 'Gemini', level: 'error' }
+      ],
+      console,
+      output: null
+    };
+    vm.runInNewContext(`${definition}\noutput = getTelemetryEventsForExport;`, context);
+
+    const exported = await context.output(101, { applyFilters: false });
+    expect(exported).toEqual([
+      { ts: 100, platform: 'Claude', level: 'info' },
+      { ts: 101, platform: 'Gemini', level: 'info' }
+    ]);
+    expect(filters).not.toHaveBeenCalled();
+    const filteredUiExport = await context.output(101);
+    expect(filteredUiExport).toEqual([]);
+    expect(filters).toHaveBeenCalledTimes(1);
   });
 });
