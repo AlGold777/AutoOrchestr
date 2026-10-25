@@ -5015,6 +5015,28 @@ document.addEventListener('click', (event) => {
             else delete el.dataset.tooltipDesc;
             tooltipController.registerTooltipTarget(el);
         };
+        const syncStepErrorBadges = () => {
+            if (!pipelinePanel) return;
+            pipelinePanel.querySelectorAll('.step-error-badge').forEach((badge) => badge.remove());
+            const errors = basicSchemaLoadErrorList.get(draftPlanStorageKey()) || [];
+            if (!errors.length) return;
+            const steps = pipelineStore.pipelines?.[pipelineStore.active]?.schema?.steps || [];
+            const byStep = new Map();
+            errors.forEach((error) => { const at = /^steps\[(\d+)\]/.exec(error.path || ''); if (!at) return; const ref = steps[Number(at[1])]?.ref; if (!ref) return; if (!byStep.has(ref)) byStep.set(ref, []); byStep.get(ref).push(error); });
+            byStep.forEach((list, ref) => {
+                const round = /^r(\d+)$/.exec(ref);
+                const host = round ? pipelinePanel.querySelector(`.stage-column[data-round="${round[1]}"] .stage-label`) : pipelinePanel.querySelector(`.pipeline-control-card[data-control-card="${ref}"]`);
+                if (!host) return;
+                const badge = document.createElement('button');
+                badge.type = 'button';
+                badge.className = 'step-error-badge';
+                badge.textContent = '!';
+                badge.setAttribute('aria-label', `Ошибки шага ${ref}`);
+                setCanvasTooltip(badge, `Ошибки шага ${ref}`, list.map((error) => error.message).join('\n'));
+                badge.addEventListener('click', (event) => { event.stopPropagation(); showSchemaErrors('Ошибки схемы', errors); });
+                host.appendChild(badge);
+            });
+        };
         const syncCanvasTooltips = () => {
             if (!pipelinePanel) return;
             let steps = [];
@@ -5097,6 +5119,7 @@ document.addEventListener('click', (event) => {
             syncPipelineFlowVisualState();
             syncPipelineRunStateVisuals();
             syncCanvasTooltips();
+            syncStepErrorBadges();
             pipelinePanel?.querySelectorAll('.model-stack').forEach((stack) => pipelineAlignmentResizeObserver?.observe(stack));
             if (deferFinalLayout && typeof window.requestAnimationFrame === 'function') {
                 if (deferredPipelineLayoutFrame) window.cancelAnimationFrame?.(deferredPipelineLayoutFrame);
@@ -6519,6 +6542,7 @@ document.addEventListener('click', (event) => {
             basicRunExplicit.set(key, { ...(basicRunExplicit.get(key) || {}), [field]: true });
         };
         const basicSchemaLoadErrors = new Map();
+        const basicSchemaLoadErrorList = new Map();
         // The schema the working copies were read from. The fields the canvas does not edit (output, owner, chat,
         // a participant's input, the specification text: spec and a step's title, goal, rules, quality) are kept from it on
         // Save and on Run; the control steps come from customControls.
@@ -6567,7 +6591,7 @@ document.addEventListener('click', (event) => {
                 return { cards, rounds: {}, defaults: dropEmpty(own(copy(config?.customDefaults))), runExplicit: {}, schema: null, error: '', controls: [] };
             }
             const errors = window.BasicSchema.validate(config.schema);
-            if (errors.length) return { cards: {}, rounds: {}, defaults: {}, runExplicit: {}, schema: null, error: describeSchemaErrors(errors), controls: [] };
+            if (errors.length) return { cards: {}, rounds: {}, defaults: {}, runExplicit: {}, schema: null, error: describeSchemaErrors(errors), errorList: errors, controls: [] };
             const settings = window.BasicSchema.toSettings(config.schema);
             // The fields of rounds and owner steps are one store by ref (see stepFieldsOf).
             return { cards: settings.customModelSettings, rounds: { ...settings.customRoundSettings, ...settings.customStepSettings }, defaults: settings.customDefaults, schema: config.schema, error: '',
@@ -6582,8 +6606,9 @@ document.addEventListener('click', (event) => {
             basicRunExplicit.set(key, working.runExplicit);
             if (working.error) {
                 basicSchemaLoadErrors.set(key, working.error);
+                basicSchemaLoadErrorList.set(key, working.errorList || []);
                 showNotification(unreadableSchemaMessage(working.error), 'error');
-            } else basicSchemaLoadErrors.delete(key);
+            } else { basicSchemaLoadErrors.delete(key); basicSchemaLoadErrorList.delete(key); }
         };
         const unreadableSchemaMessage = (reason) => `Схема pipeline не прочитана: ${reason}. Она использует то, чего в Basic больше нет; соберите схему заново.`;
         // Writes the settings of a saved pipeline: a Basic pipeline stores its schema (and drops the earlier
@@ -7358,6 +7383,7 @@ document.addEventListener('click', (event) => {
                 basicRunNotice: (...args) => basicRunNotice(...args),
                 recordFromSchema: (...args) => recordFromSchema(...args),
                 describeSchemaErrors: (...args) => describeSchemaErrors(...args),
+                showSchemaErrors: (...args) => showSchemaErrors(...args),
                 basicSchemaFromPage: (...args) => basicSchemaFromPage(...args),
                 applyPipelineConfig: (...args) => applyPipelineConfig(...args),
                 runCustomFromPage,
@@ -7910,7 +7936,7 @@ document.addEventListener('click', (event) => {
             if (pipelineStore.active === trimmedOld) pipelineStore.active = trimmedNew;
             if (customPipelineDefaults.has(trimmedOld)) { customPipelineDefaults.set(trimmedNew, customPipelineDefaults.get(trimmedOld)); customPipelineDefaults.delete(trimmedOld); }
             if (customCardSettings.has(trimmedOld)) { customCardSettings.set(trimmedNew, customCardSettings.get(trimmedOld)); customCardSettings.delete(trimmedOld); }
-            [customRoundSettings, basicRunExplicit, basicSchemaLoadErrors, basicSourceSchema].forEach((map) => { if (map.has(trimmedOld)) { map.set(trimmedNew, map.get(trimmedOld)); map.delete(trimmedOld); } });
+            [customRoundSettings, basicRunExplicit, basicSchemaLoadErrors, basicSchemaLoadErrorList, basicSourceSchema].forEach((map) => { if (map.has(trimmedOld)) { map.set(trimmedNew, map.get(trimmedOld)); map.delete(trimmedOld); } });
 
             renderPipelineList(pipelineStore.order, pipelineStore.active, pipelineStore.lastSaved);
             persistPipelineStore();
@@ -8013,6 +8039,7 @@ document.addEventListener('click', (event) => {
             updateActivePipelineDescription(activeName);
             syncPipelineChromeControls();
             syncCanvasTooltips();
+            syncStepErrorBadges();
         };
 
         const getPipelineNamesFromDom = () => {
@@ -8268,6 +8295,12 @@ document.addEventListener('click', (event) => {
 
         // The errors of a schema in one line: the place and the reason of each, at most five.
         const describeSchemaErrors = (errors) => errors.slice(0, 5).map((error) => (error.path ? `${error.path}: ${error.message}` : error.message)).join('; ');
+        const schemaErrorsText = (errors) => errors.map((error) => (error.path ? `${error.path}: ${error.message}` : error.message)).join('\n');
+        const showSchemaErrors = (title, errors) => {
+            try {
+                askChoiceDialog({ title, message: `Ошибок: ${errors.length}`, document: { kind: 'read', readOnly: true, name: '', text: schemaErrorsText(errors) }, choices: [], cancelText: 'Закрыть' });
+            } catch (_) { /* the list is a convenience: a failure to show it changes nothing */ }
+        };
         // The record of a Basic pipeline built from its schema, and nowhere else: the schema is the content, the canvas
         // members (rounds, models, roles) are derived from it here. Nothing is written
         // to the store. Returns { ok, errors, record }; a schema the canvas cannot show gives errors with the place.
@@ -8354,6 +8387,7 @@ document.addEventListener('click', (event) => {
             const result = await installBasicSchema(name, schema);
             if (!result.ok) {
                 showNotification(`Схема не установлена. ${describeSchemaErrors(result.errors)}`, 'error');
+                showSchemaErrors('Схема не установлена', result.errors);
                 return;
             }
             const item = findPipelineItemByName(name);
@@ -8364,15 +8398,20 @@ document.addEventListener('click', (event) => {
             let added = 0;
             let skipped = 0;
             let last = '';
+            const failedErrors = [];
             for (const [name, record] of Object.entries(parsed.pipelines)) {
                 if (isDefaultPipelineName(name) || !record || typeof record !== 'object' || !record.schema) { skipped += 1; continue; }
                 const target = uniquePipelineName(name);
                 const result = await installBasicSchema(target, record.schema);
-                if (result.ok) { added += 1; last = target; } else skipped += 1;
+                if (result.ok) { added += 1; last = target; } else {
+                    skipped += 1;
+                    failedErrors.push(...(result.errors || []).map((error) => ({ path: `${name}${error.path ? `: ${error.path}` : ''}`, message: error.message })));
+                }
             }
             showNotification(added
                 ? `Добавлено схем: ${added}${skipped ? `, пропущено: ${skipped}` : ''}.`
                 : `Ничего не добавлено${skipped ? ` (пропущено: ${skipped}, схемы в записи нет или она не подходит)` : ''}.`, added ? 'success' : 'warn');
+            if (failedErrors.length) showSchemaErrors('Не все схемы установлены', failedErrors);
             if (last) {
                 const item = findPipelineItemByName(last);
                 if (item) selectPipeline(item, { applyConfig: true, persist: true });

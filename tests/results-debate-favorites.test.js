@@ -2930,6 +2930,43 @@ describe('Pipeline debate favorites view', () => {
       } finally { h.cleanup(); }
     }, 30000);
 
+    test('step errors: a failing step shows a badge that opens the full error list; an install with 7 errors lists all 7', async () => {
+      require('../results/choice-dialog');
+      const h = setupCustomInheritance('Step errors');
+      const closeDialog = () => document.querySelector('dialog.choice-dialog .choice-dialog-cancel')?.click();
+      try {
+        const record = JSON.parse(JSON.stringify(h.debug.capturePipelineConfig()));
+        record.schema = { schemaVersion: 1, origin: 'user', steps: [{ ref: 'r1', kind: 'synthesis', models: [{ name: 'GPT' }] }, { ref: 'r2', kind: 'gate', models: [{ name: 'GPT' }] }] };
+        const errors = window.BasicSchema.validate(record.schema);
+        expect(errors.length).toBeGreaterThan(0);
+        h.debug.clearCustomSessionForTest();
+        h.debug.setPipelineStoreForTest({ active: 'Step errors', order: ['Step errors'], pipelines: { 'Step errors': record } });
+        // The test page has no header row of the rounds: it is added as in pipeline_panel.html.
+        document.querySelector('#round1').insertAdjacentHTML('afterbegin', '<div class="stage-header-row"><div class="stage-label"><span class="round-badge">R1</span></div></div>');
+        h.debug.applyPipelineConfig(record);
+
+        const badges = document.querySelectorAll('.stage-column[data-round="1"] .step-error-badge');
+        expect(badges.length).toBe(1);
+        expect(badges[0].textContent).toBe('!');
+        expect(badges[0].dataset.tooltip).toBe('Ошибки шага r1');
+        expect(badges[0].dataset.tooltipDesc).toContain(errors.find((error) => error.path.startsWith('steps[0]')).message);
+
+        badges[0].click();
+        const dialog = document.querySelector('dialog.choice-dialog');
+        expect(dialog).not.toBeNull();
+        const lines = dialog.querySelector('.choice-dialog-document').textContent.split('\n').filter(Boolean);
+        expect(lines.length).toBe(errors.length);
+        lines.forEach((line) => expect(line).toContain(': '));
+        closeDialog();
+        expect(document.querySelector('dialog.choice-dialog')).toBeNull();
+
+        h.debug.showSchemaErrors('Схема не установлена', Array.from({ length: 7 }, (_, i) => ({ path: `steps[${i}].kind`, message: `ошибка ${i + 1}` })));
+        const installDialog = document.querySelector('dialog.choice-dialog');
+        expect(installDialog.querySelector('.choice-dialog-document').textContent.split('\n').filter(Boolean).length).toBe(7);
+        closeDialog();
+      } finally { closeDialog(); h.cleanup(); }
+    }, 30000);
+
     test('the saved record holds a valid schema with origin, version and only the owner\'s values; the earlier members are gone', async () => {
       const h = setupCustomInheritance('Schema record');
       try {
