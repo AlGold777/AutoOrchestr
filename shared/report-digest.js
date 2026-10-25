@@ -938,7 +938,10 @@ function customFlowReport({ runId, delivery }) {
   const stageExecutions = arr(start.steps).map((step) => {
     const stageId = customStageId(runId, step.step);
     const batches = journal.filter((e) => e.kind === 'batch_start' && e.stageId === stageId);
-    const closes = journal.filter((e) => e.kind === 'custom_step' && e.pipelineRunId === runId && e.step === step.step);
+    // The end of a round is custom_step_end (after the owner's decision); custom_step is only the check before it,
+    // so it stands in for journals of earlier versions.
+    const ends = journal.filter((e) => e.kind === 'custom_step_end' && e.pipelineRunId === runId && e.step === step.step);
+    const closes = ends.length ? ends : journal.filter((e) => e.kind === 'custom_step' && e.pipelineRunId === runId && e.step === step.step);
     const startedAt = batches[0]?.at ?? null, completedAt = closes[closes.length - 1]?.at ?? null;
     return { stageId, label: step.label, purpose: `custom:${step.input}`,
       actual: { startedAt, completedAt, participants: arr(step.models) },

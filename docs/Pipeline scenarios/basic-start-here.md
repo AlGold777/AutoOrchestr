@@ -86,7 +86,7 @@
 | Окно настроек раунда | `results/stage-card.js` (`StageCard`), открывается из `results.js`: `openStageCard` |
 | Карточка и окно User | `results/stage-card.js`: `ownerWindowModel`/`ownerAfterEdit`/`renderOwnerWindow`; на странице `results.js`: `openControlCard`, `syncControlColumns`, `customControls` |
 | Запись о прогоне | `disput/custom-run-record.js` (`CustomRunRecord`), в JSON-экспорте Disput Flow — поле `customRun` |
-| События журнала | `custom_start`, `custom_answer`, `custom_step`, `custom_decision`, `custom_end` (движок), `owner_answer` (страница) |
+| События журнала | `custom_start`, `custom_answer`, `custom_step`, `custom_decision`, `custom_step_end`, `custom_end` (движок), `owner_answer` (страница) |
 | Пресет | `presetId: 'CUSTOM'`, `runner: 'custom'`, `isCustomEnginePipeline()` |
 | Роль «Custom» в списке ролей | `CUSTOM_ROLE_ID = 'custom'` — **роль** (текст раунда), а не движок |
 | Рабочие копии настроек на странице | `customCardSettings`, `customRoundSettings`, `customPipelineDefaults` (Map по имени pipeline) |
@@ -340,6 +340,7 @@
 | `custom_start` | движок, в начале | `semiAuto`, `maxAttempts`, `taskChars`, `steps[]` (`step`, `ref`, `label`, `input`, `models`) |
 | `custom_answer` | движок, на каждый ответ каждой попытки | `step`, `label`, `model`, `attempt`, `input`, `accepted`, `reason`, `status`, `transportRequestId`, `promptChars` |
 | `custom_step` | движок, когда шаг завершил попытки | `step`, `label`, `accepted` (число), `failed` (число) |
+| `custom_step_end` | движок, после решения User (конец раунда) | `step`, `label`, `visit`, `skipped`, `accepted`, `failed` |
 | `custom_decision` | движок, после ответа на окно паузы | `step`, `action` (`continue`, `retry`, `skip`, `stop`) |
 | `custom_owner` | движок, на каждый ответ User | `step`, `ref`, `visit`, `accepted` (`false` — ответ отклонён, User спрашивают снова), `reason` |
 | `custom_unknown_check` | движок, при проверке ответа неизвестного запроса (кнопка «Проверить ответ») | `step`, `label`, `participant`, `attempt`, `status` (`found`, `no_answer`, `ambiguous`, `chat_unavailable`), `reason` |

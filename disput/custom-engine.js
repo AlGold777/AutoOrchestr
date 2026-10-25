@@ -1012,6 +1012,7 @@
         if (step.kind === 'owner') {
           // The owner's answer is asked until it is accepted; an accepted one (also one found after a reload) is not asked again.
           if (!entry.owner) await ownerAnswer(step, entry);
+          emit('custom_step_end', { step: step.index, label: stepLabel(step), visit: entry.visit, skipped: false, accepted: entry.owner ? 1 : 0, failed: entry.owner ? 0 : 1 });
           results.push(entry);
           pos += 1;
           current = null;
@@ -1057,6 +1058,9 @@
             await execute(step, step.models.filter((model) => failed.includes(model.id)), outcome, firstAttempt);
           }
         }
+        // The end of the round: after the decision of the owner, unlike custom_step (the check before it).
+        emit('custom_step_end', { step: step.index, label: stepLabel(step), visit: entry.visit, skipped: entry.skipped === true,
+          accepted: step.models.filter((model) => outcome[model.id]?.ok).length, failed: step.models.filter((model) => !outcome[model.id]?.ok).length });
         results.push(entry);
         if (typeof parseAsks === 'function' && typeof askOwner === 'function' && !entry.skipped) {
           const asks = acceptedOf(entry).flatMap((item) => parseAsks(item.text) || []);

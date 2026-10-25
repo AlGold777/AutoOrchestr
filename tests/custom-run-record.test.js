@@ -45,7 +45,7 @@ describe('Custom run record', () => {
     const second = Record.exportRun(record).attempts.find((item) => item.step === 1);
     expect(second.instructions).toMatchObject({ task: 'Задача T', stepTask: 'Улучши', extra: 'Будь критиком.' });
     expect(second.input.mode).toBe('previous');
-    expect(second.input.items).toEqual([
+    expect(second.input.items).toMatchObject([
       { label: '', source: { step: 0, visit: 1, label: 'Раунд 1', model: 'A', attempt: 1 }, text: 'a1' },
       { label: '', source: { step: 0, visit: 1, label: 'Раунд 1', model: 'B', attempt: 1 }, text: 'b1' }
     ]);

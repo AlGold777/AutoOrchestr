@@ -41,7 +41,8 @@
     };
   }
 
-  const itemOf = (put) => (item) => ({ label: item.label || '', source: item.source || null, textRef: put(item.text) });
+  // An artifact version keeps its exact address (artifact, address): the record proves which version a participant received.
+  const itemOf = (put) => (item) => ({ label: item.label || '', source: item.source || null, ...(item.artifact ? { artifact: item.artifact } : {}), ...(item.address ? { address: item.address } : {}), ...(item.pointer ? { pointer: item.pointer } : {}), textRef: put(item.text) });
 
   function storedParts(put, parts = {}) {
     if (parts.correction) return { correction: { reason: parts.correction.reason || '', textRef: put(parts.correction.text) } };
@@ -204,7 +205,7 @@
   // that the references name (texts), and the texts next to the fields that show them. JSON.stringify → JSON.parse keeps every
   // reference resolvable through texts. Records are read back in history form; the export says whether it can be resumed.
   function exportRun(record) {
-    const resolve = (item) => ({ label: item.label, source: item.source, text: textOf(record, item.textRef) });
+    const resolve = (item) => ({ label: item.label, source: item.source, ...(item.artifact ? { artifact: item.artifact } : {}), ...(item.address ? { address: item.address } : {}), ...(item.pointer ? { pointer: item.pointer } : {}), text: textOf(record, item.textRef) });
     const snapshot = record.snapshot ? { ...record.snapshot } : null;
     return {
       version: record.version || 1, resumable: canResume(record),
