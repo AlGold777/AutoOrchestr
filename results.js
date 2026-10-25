@@ -7146,6 +7146,23 @@ document.addEventListener('click', (event) => {
                 }
                 const isNewChat = (request) => request.attempt === 1 && (request.chat === 'new'
                     || (!resumeRecord && runContext.forceNewTabs && !chatBindings[request.participantId]));
+                const requestIntent = (request) => {
+                    const newChat = Boolean(isNewChat(request));
+                    let reason = 'continue';
+                    if (request.attempt === 1 && request.chat === 'new') {
+                        reason = 'step_new';
+                    } else if (request.attempt === 1 && !resumeRecord && runContext.forceNewTabs && !chatBindings[request.participantId]) {
+                        reason = 'new_pages_first_request';
+                    }
+                    const saved = chatBindings[request.participantId];
+                    const bindingTabId = (!newChat && saved?.modelName === request.modelName && Number.isInteger(saved.tabId))
+                        ? saved.tabId
+                        : null;
+                    const attachmentNames = filesNeeded(request)
+                        ? attachments.map((file) => String(file.name || ''))
+                        : [];
+                    return { newChat, reason, bindingTabId, attachmentNames };
+                };
                 // The files go with the first message of each chat only (R05). A chat is confirmed to hold them when its answer
                 // came back: the visit that opened the chat (chatVisit) and the visit whose chat got the files (attachedChatVisit).
                 // A new chat always needs them; a retry or a later visit in a chat with confirmed files does not repeat them.
@@ -7174,10 +7191,40 @@ document.addEventListener('click', (event) => {
                         // A resumed participant that already sent in this run and has no chat on record has lost it (V01): strict.
                         const strict = Boolean(resumeRecord) && !isNewChat(request) && !binding
                             && (record.attempts || []).some((item) => item.participant === request.participantId);
+                        const attKey = window.CustomRunRecord?.attemptKey ? window.CustomRunRecord.attemptKey({
+                            ref: request.stepRef,
+                            participant: request.participantId,
+                            visit: request.visit,
+                            attempt: meta.attempt,
+                            phase: request.phase || 'answer'
+                        }) : JSON.stringify([request.stepRef ?? `#${meta.step}`, request.participantId ?? request.modelName, request.visit ?? 1, meta.attempt, request.phase ?? 'answer']);
                         return [request.modelName, {
-                            participantId: request.participantId, newChat: isNewChat(request), ...(binding ? { binding } : {}), ...(strict ? { strict: true } : {})
+                            participantId: request.participantId, newChat: isNewChat(request), ...(binding ? { binding } : {}), ...(strict ? { strict: true } : {}),
+                            stepRef: request.stepRef, visit: request.visit, attempt: meta.attempt, phase: request.phase || 'answer', attemptKey: attKey
                         }];
                     }));
+                    // Record chatIntent for each attempt before dispatching externally
+                    wave.forEach((request) => {
+                        const attKey = window.CustomRunRecord?.attemptKey ? window.CustomRunRecord.attemptKey({
+                            ref: request.stepRef,
+                            participant: request.participantId,
+                            visit: request.visit,
+                            attempt: meta.attempt,
+                            phase: request.phase || 'answer'
+                        }) : JSON.stringify([request.stepRef ?? `#${meta.step}`, request.participantId ?? request.modelName, request.visit ?? 1, meta.attempt, request.phase ?? 'answer']);
+                        const intent = requestIntent(request);
+                        recordAttempt({
+                            step: meta.step,
+                            ref: request.stepRef,
+                            participant: request.participantId,
+                            model: request.modelName,
+                            visit: request.visit,
+                            attempt: meta.attempt,
+                            phase: request.phase || 'answer',
+                            attemptKey: attKey,
+                            chatIntent: intent
+                        });
+                    });
                     // Reuse the existing limit contract, on first attempts and corrections alike.
                     const composed = composeCustomPrompts(models, promptsByModel, maxWordsByModel, discipline,
                         built.schema.defaults?.modelNotes || {}, correctionByModel, built.run.maxWords);
@@ -18742,7 +18789,8 @@ document.addEventListener('click', (event) => {
         'SELECTOR_OVERRIDE_CLEARED',
         'SELECTOR_OVERRIDE_REFRESH_RESULT',
         'PICKER_RESULT',
-        'PICKER_CANCELLED'
+        'PICKER_CANCELLED',
+        'participant_chat_resolved'
     ]);
 
     // Only acknowledge messages owned by the results page. A catch-all response
@@ -18762,6 +18810,30 @@ document.addEventListener('click', (event) => {
         }
         try {
             switch (message.type) {
+                case 'participant_chat_resolved': {
+                    if (window.MessageDelivery?.batchEvent) {
+                        window.MessageDelivery.batchEvent('participant_chat_resolved', { ...message });
+                    }
+                    if (latestBasicRunRecord) {
+                        const route = {
+                            action: message.action,
+                            reason: message.reason,
+                            tabId: message.tabId,
+                            transportRequestId: message.transportRequestId,
+                            eventId: message.eventId || message.sourceEventId
+                        };
+                        const targetKey = message.attemptKey;
+                        if (targetKey) {
+                            window.CustomRunRecord?.updateAttemptRoute?.(latestBasicRunRecord, targetKey, route);
+                        } else if (message.transportRequestId) {
+                            const match = (latestBasicRunRecord.attempts || []).find((att) => att.transportRequestId === message.transportRequestId);
+                            if (match) {
+                                window.CustomRunRecord?.updateAttemptRoute?.(latestBasicRunRecord, match.key || match.attemptKey, route);
+                            }
+                        }
+                    }
+                    break;
+                }
                 case 'LLM_JOB_CREATED':
                     handleLLMJobCreated(message);
                     break;

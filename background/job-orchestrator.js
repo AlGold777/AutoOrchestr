@@ -5633,7 +5633,8 @@ async function startProcessReservedRun(prompt, selectedLLMs, resultsTab, options
       ...participant,
       runId: String(pipelineContext?.pipelineRunId || '') || null,
       stageAttemptId: String(pipelineContext?.stageAttemptId || '') || null,
-      requestId: String(pipelineContext?.transportRequestIds?.[modelName] || '') || null
+      requestId: String(pipelineContext?.transportRequestIds?.[modelName] || participant?.transportRequestId || participant?.requestId || '') || null,
+      transportRequestId: String(pipelineContext?.transportRequestIds?.[modelName] || participant?.transportRequestId || participant?.requestId || '') || null
     }]))
     : {};
   if (self.PipelineFSM?.startRun) {
@@ -6024,7 +6025,13 @@ async function runParticipantThroughTabs(llmName, prompt, attachments = [], opti
     requestId: participant.requestId,
     stageAttemptId: participant.stageAttemptId,
     // The chat the page saved for this participant (R01): used only when the run has no binding of its own.
-    binding: participant.binding || null
+    binding: participant.binding || null,
+    stepRef: participant.stepRef || null,
+    visit: participant.visit || null,
+    attempt: participant.attempt || null,
+    phase: participant.phase || null,
+    attemptKey: participant.attemptKey || null,
+    transportRequestId: participant.transportRequestId || participant.requestId || options.transportRequestId || null
   }, prompt, attachments, options).catch((err) => ({
     ok: false,
     error: {

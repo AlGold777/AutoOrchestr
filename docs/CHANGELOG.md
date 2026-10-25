@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-10-25 — Basic: намерение chatIntent, фактический маршрут chatRoute и корреляция событий (C01, C02), версия 2.81.886
+
+- Запись намерения страницы `chatIntent` (`newChat`, `reason`, `bindingTabId`, `attachmentNames`) для каждой попытки перед отправкой (`disput/custom-run-record.js`, `results.js`).
+- Фиксация фактического выбора чата фоном `chatRoute` (`action: created | attached_unbound | continued | refused`, `reason`, `tabId`, `transportRequestId`, `eventId`) через событие `participant_chat_resolved` (`background/tab-manager.js`, `background/job-orchestrator.js`).
+- Строгая корреляция runtime-событий в `shared/message-delivery.js` по `transportRequestId` и доказанной привязке вкладки без безусловного fallback на `latestByModel`; неизвестные ID изолируются со статусом `attemptCorrelation: 'unassigned'` и причиной `unknown_request_id`.
+- Генерация `sourceEventId` и сквозная передача `transportRequestId` из контекста запроса в content scripts (`content-bootstrap.js`, `content-utils.js`, `response-lifecycle-detector.js`).
+
 ### 2026-10-25 — Basic: раздельные карточки участников одной модели в ленте (B03), версия 2.81.885
 
 - Идентичность карточки ленты расширена до `runId + stepRef + participantId + visit` (`results.js`). Два участника одного провайдера (например, C1 и C2 у Claude) отображаются как самостоятельные карточки.

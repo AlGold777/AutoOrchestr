@@ -98,7 +98,91 @@
     return contract?.classifyCompletion ? contract.classifyCompletion(status, text) : null;
   };
 
-  const requestIdOf = (message) => String(message?.transportRequestId || message?.metadata?.transportRequestId || '') || null;
+  const requestIdOf = (message) => String(message?.transportRequestId || message?.metadata?.transportRequestId || message?.meta?.transportRequestId || '') || null;
+
+  function resolveObservedEntry(message) {
+    const explicitId = requestIdOf(message);
+    if (explicitId) {
+      const entry = expectedByRequest.get(explicitId) || null;
+      if (entry) {
+        return {
+          entry,
+          requestId: explicitId,
+          sourceTransportRequestId: explicitId,
+          attemptCorrelation: 'linked',
+          correlationReason: null
+        };
+      }
+      return {
+        entry: null,
+        requestId: null,
+        sourceTransportRequestId: explicitId,
+        attemptCorrelation: 'unassigned',
+        correlationReason: 'unknown_request_id'
+      };
+    }
+    let tabId = message?.tabId ?? message?.data?.tabId ?? message?.meta?.tabId ?? message?.metadata?.tabId ?? (message?.sender?.tab?.id != null ? message.sender.tab.id : null);
+    if (tabId == null && message?.llmName) {
+      const candidate = latestByModel.get(message.llmName);
+      if (candidate && candidate.tabId != null) {
+        tabId = candidate.tabId;
+      }
+    }
+    if (tabId != null) {
+      const activeEntries = [];
+      const seenEntries = new Set();
+      expectedByRequest.forEach((ent) => {
+        if (!ent.final && !seenEntries.has(ent)) {
+          seenEntries.add(ent);
+          activeEntries.push(ent);
+        }
+      });
+      latestByModel.forEach((ent) => {
+        if (!ent.final && !seenEntries.has(ent)) {
+          seenEntries.add(ent);
+          activeEntries.push(ent);
+        }
+      });
+      const matches = activeEntries.filter((ent) => ent.tabId === tabId && (!message.llmName || ent.model === message.llmName));
+      if (matches.length === 1) {
+        const entry = matches[0];
+        return {
+          entry,
+          requestId: entry.requestId || null,
+          sourceTransportRequestId: null,
+          attemptCorrelation: 'linked',
+          correlationReason: 'tab_bound'
+        };
+      }
+    } else if (tabId == null && message?.llmName) {
+      const activeEntries = [];
+      const seenEntries = new Set();
+      expectedByRequest.forEach((ent) => {
+        if (!ent.final && !seenEntries.has(ent)) {
+          seenEntries.add(ent);
+          activeEntries.push(ent);
+        }
+      });
+      const modelEntries = activeEntries.filter((ent) => ent.model === message.llmName);
+      if (modelEntries.length === 1 && modelEntries[0].tabId == null) {
+        const entry = modelEntries[0];
+        return {
+          entry,
+          requestId: entry.requestId || null,
+          sourceTransportRequestId: null,
+          attemptCorrelation: 'linked',
+          correlationReason: null
+        };
+      }
+    }
+    return {
+      entry: null,
+      requestId: null,
+      sourceTransportRequestId: null,
+      attemptCorrelation: 'unassigned',
+      correlationReason: 'missing_request_id'
+    };
+  }
 
   function pruneExpected() {
     if (expectedByRequest.size <= EXPECTED_LIMIT) return;
@@ -236,6 +320,9 @@
     if (!message) return;
     if (message.type === 'TRANSPORT_DISPATCH_PHASE') {
       const entry = entryFor(message);
+      if (entry && message.tabId != null) {
+        entry.tabId = message.tabId;
+      }
       const phaseKey = `${requestIdOf(message)}|${message.phase}|${message.dispatchId}|${message.at || ''}`;
       if (entry && entry.lastPhaseKey === phaseKey) return;
       if (entry) entry.lastPhaseKey = phaseKey;
@@ -254,54 +341,130 @@
       return;
     }
     if (message.type === 'TRANSPORT_FOCUS') {
-      const entry = entryFor(message) || latestByModel.get(message.llmName) || null;
-      if (!entry || entry.final) return;
-      entry.focusCount = (entry.focusCount || 0) + 1;
-      // The count is exact; the first events carry the detail, the rest only the count.
-      if (entry.focusCount <= FOCUS_EVENTS_PER_REQUEST) {
-        record({ kind: 'focus', model: message.llmName || null, token: entry.token, requestId: entry.requestId, source: message.source || null, tabId: message.tabId ?? null, n: entry.focusCount, ms: Date.now() - entry.sentAt });
-      } else {
-        collection.focusDetailsOmitted += 1;
-        if (entry.focusCount % 10 === 0) {
-        record({ kind: 'focus_count', model: message.llmName || null, token: entry.token, requestId: entry.requestId, n: entry.focusCount, ms: Date.now() - entry.sentAt });
+      const explicitId = requestIdOf(message);
+      const resolved = resolveObservedEntry(message);
+      const entry = resolved.entry;
+      const eventReason = message.source || null;
+      const correlationReason = resolved.correlationReason || null;
+      const recordReason = resolved.attemptCorrelation === 'unassigned'
+        ? (correlationReason || eventReason)
+        : (eventReason || correlationReason);
+      if (entry && !entry.final) {
+        entry.focusCount = (entry.focusCount || 0) + 1;
+        // The count is exact; the first events carry the detail, the rest only the count.
+        if (entry.focusCount <= FOCUS_EVENTS_PER_REQUEST) {
+          record({
+            kind: 'focus', model: message.llmName || entry.model || null, token: entry.token,
+            requestId: resolved.requestId, sourceTransportRequestId: explicitId || null,
+            attemptCorrelation: resolved.attemptCorrelation, correlationReason, reason: recordReason,
+            source: message.source || null, tabId: message.tabId ?? entry.tabId ?? null, n: entry.focusCount, ms: Date.now() - entry.sentAt
+          });
+        } else {
+          collection.focusDetailsOmitted += 1;
+          if (entry.focusCount % 10 === 0) {
+            record({
+              kind: 'focus_count', model: message.llmName || entry.model || null, token: entry.token,
+              requestId: resolved.requestId, sourceTransportRequestId: explicitId || null,
+              attemptCorrelation: resolved.attemptCorrelation, correlationReason, reason: recordReason,
+              n: entry.focusCount, ms: Date.now() - entry.sentAt
+            });
+          }
         }
+      } else if (!entry) {
+        record({
+          kind: 'focus', model: message.llmName || null, token: null,
+          requestId: null, sourceTransportRequestId: explicitId || null,
+          attemptCorrelation: resolved.attemptCorrelation, correlationReason, reason: recordReason,
+          source: message.source || null, tabId: message.tabId ?? null
+        });
       }
       return;
     }
     if (message.type === 'LLM_COMPLETION_TERMINAL') {
-      const entry = latestByModel.get(message.llmName);
+      const explicitId = requestIdOf(message);
+      const resolved = resolveObservedEntry(message);
+      const entry = resolved.entry;
       const result = message.meta?.terminalResult || {};
+      const eventReason = result.reason || null;
+      const correlationReason = resolved.correlationReason || null;
+      const recordReason = resolved.attemptCorrelation === 'unassigned'
+        ? (correlationReason || eventReason)
+        : (eventReason || correlationReason);
       record({
-        kind: 'completion_terminal', model: message.llmName || null, token: entry?.token || null, requestId: entry?.requestId || null,
-        status: result.status || null, reason: result.reason || null, dispatchId: message.meta?.dispatchId || null,
+        kind: 'completion_terminal', model: message.llmName || entry?.model || null, token: entry?.token || null,
+        requestId: resolved.requestId, sourceTransportRequestId: explicitId || null,
+        attemptCorrelation: resolved.attemptCorrelation, correlationReason, reason: recordReason,
+        status: result.status || null, dispatchId: message.meta?.dispatchId || null,
         ms: entry ? Date.now() - entry.sentAt : null
       });
       return;
     }
     if (message.type === 'SPA_NAVIGATION') {
-      const entry = latestByModel.get(message.llmName);
+      const explicitId = requestIdOf(message);
+      const resolved = resolveObservedEntry(message);
+      const entry = resolved.entry;
       const path = (url) => { try { return new URL(url).pathname; } catch (_) { return String(url || ''); } };
+      const eventReason = message.reason || null;
+      const correlationReason = resolved.correlationReason || null;
+      const recordReason = resolved.attemptCorrelation === 'unassigned'
+        ? (correlationReason || eventReason)
+        : (eventReason || correlationReason);
       record({
-        kind: 'navigation', model: message.llmName || null, token: entry?.token || null, requestId: entry?.requestId || null,
-        from: path(message.oldUrl), to: path(message.newUrl), reason: message.reason || null,
+        kind: 'navigation', model: message.llmName || entry?.model || null, token: entry?.token || null,
+        requestId: resolved.requestId, sourceTransportRequestId: explicitId || null,
+        attemptCorrelation: resolved.attemptCorrelation, correlationReason, reason: recordReason,
+        from: path(message.oldUrl), to: path(message.newUrl),
         ms: entry ? Date.now() - entry.sentAt : null
       });
       return;
     }
     if (message.type === 'PROVIDER_STOP_RESULT') {
-      const entry = latestByModel.get(message.llmName);
-      record({ kind: 'provider_stop', model: message.llmName || null, token: entry?.token || null, requestId: entry?.requestId || null, stopped: message.stopped === true, reason: message.reason || null });
+      const explicitId = requestIdOf(message);
+      const resolved = resolveObservedEntry(message);
+      const entry = resolved.entry;
+      const eventReason = message.reason || null;
+      const correlationReason = resolved.correlationReason || null;
+      const recordReason = resolved.attemptCorrelation === 'unassigned'
+        ? (correlationReason || eventReason)
+        : (eventReason || correlationReason);
+      record({
+        kind: 'provider_stop', model: message.llmName || entry?.model || null, token: entry?.token || null,
+        requestId: resolved.requestId, sourceTransportRequestId: explicitId || null,
+        attemptCorrelation: resolved.attemptCorrelation, correlationReason, reason: recordReason,
+        stopped: message.stopped === true
+      });
       return;
     }
     if (message.type === 'STATUS_UPDATE') {
-      const entry = latestByModel.get(message.llmName);
+      const explicitId = requestIdOf(message);
+      const resolved = resolveObservedEntry(message);
+      const entry = resolved.entry;
       const status = String(message.status || '').toUpperCase();
-      if (!entry || entry.final || !status || entry.lastStatus === status) return;
-      entry.lastStatus = status;
-      record({ kind: 'status', model: message.llmName, token: entry.token, requestId: entry.requestId, status });
+      const correlationReason = resolved.correlationReason || null;
+      const recordReason = resolved.attemptCorrelation === 'unassigned' ? correlationReason : null;
+      if (entry) {
+        if (entry.final || !status || entry.lastStatus === status) return;
+        entry.lastStatus = status;
+        record({
+          kind: 'status', model: message.llmName || entry.model, token: entry.token,
+          requestId: resolved.requestId, sourceTransportRequestId: explicitId || null,
+          attemptCorrelation: resolved.attemptCorrelation, correlationReason, reason: recordReason,
+          status
+        });
+      } else {
+        if (!status) return;
+        record({
+          kind: 'status', model: message.llmName || null, token: null,
+          requestId: null, sourceTransportRequestId: explicitId || null,
+          attemptCorrelation: resolved.attemptCorrelation, correlationReason, reason: recordReason,
+          status
+        });
+      }
+      return;
     } else if (message.type === 'GLOBAL_STATE_BROADCAST') {
       const map = message.state?.tabs?.map || {};
       latestByModel.forEach((entry, model) => {
+        if (Number.isInteger(map[model])) entry.tabId = map[model];
         if (entry.tabSeen || entry.final || !Number.isInteger(map[model])) return;
         entry.tabSeen = true;
         record({ kind: 'tab', model, token: entry.token, requestId: entry.requestId, tabId: map[model], ms: Date.now() - entry.sentAt });

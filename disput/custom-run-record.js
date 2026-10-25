@@ -63,21 +63,54 @@
   // and an answer of one visit, are different attempts. An entry without these fields (a plain step) keys by its index and model.
   const attemptKey = (entry) => JSON.stringify([entry.ref ?? `#${entry.step}`, entry.participant ?? entry.model, entry.visit ?? 1, entry.attempt, entry.phase ?? 'answer']);
 
+  function normalizeChatIntent(intent) {
+    if (!intent || typeof intent !== 'object') return null;
+    return {
+      newChat: Boolean(intent.newChat),
+      reason: String(intent.reason || ''),
+      bindingTabId: Number.isInteger(intent.bindingTabId) ? intent.bindingTabId : null,
+      attachmentNames: Array.isArray(intent.attachmentNames) ? intent.attachmentNames.map(String) : []
+    };
+  }
+
+  function normalizeChatRoute(route) {
+    if (!route || typeof route !== 'object') return null;
+    return {
+      action: String(route.action || ''),
+      reason: String(route.reason || ''),
+      tabId: Number.isInteger(route.tabId) ? route.tabId : null,
+      transportRequestId: route.transportRequestId ? String(route.transportRequestId) : null,
+      eventId: route.eventId ? String(route.eventId) : (route.sourceEventId ? String(route.sourceEventId) : null)
+    };
+  }
+
   // Called when an attempt is sent and again when it finished; the same attempt object is updated
   // in place until it is done, never after.
   function recordAttempt(record, entry) {
-    const key = attemptKey(entry);
-    let attempt = record.attempts.find((item) => item.key === key);
+    const key = entry.attemptKey || attemptKey(entry);
+    let attempt = record.attempts.find((item) => item.key === key || (item.attemptKey && item.attemptKey === key));
     // An attempt left unknown by a reload is settled by its answer too (N04: the read of its chat).
-    if (attempt && attempt.state !== 'sent' && attempt.state !== 'unknown') return attempt;
+    if (attempt && attempt.state !== 'sent' && attempt.state !== 'unknown') {
+      if (entry.chatRoute) {
+        attempt.chatRoute = normalizeChatRoute(entry.chatRoute);
+      }
+      return attempt;
+    }
     if (!attempt) {
       attempt = {
         key, step: entry.step, ref: entry.ref ?? null, participant: entry.participant ?? entry.model, visit: entry.visit ?? 1, phase: entry.phase ?? 'answer',
         label: entry.label || '', kind: entry.kind || '', model: entry.model, attempt: entry.attempt,
+        attemptKey: entry.attemptKey || key,
+        chatIntent: normalizeChatIntent(entry.chatIntent),
+        chatRoute: normalizeChatRoute(entry.chatRoute),
         retryOf: entry.retryOf || null, promptRef: record.put(entry.prompt), parts: storedParts(record.put, entry.parts),
         state: 'sent', sentAt: entry.sentAt || Date.now()
       };
       record.attempts.push(attempt);
+    } else {
+      if (entry.attemptKey && !attempt.attemptKey) attempt.attemptKey = entry.attemptKey;
+      if (entry.chatIntent) attempt.chatIntent = normalizeChatIntent(entry.chatIntent);
+      if (entry.chatRoute) attempt.chatRoute = normalizeChatRoute(entry.chatRoute);
     }
     if (entry.state === 'not_sent') {
       // The transport refused before sending (the budget): nothing left the extension, the reason is kept.
@@ -89,7 +122,16 @@
         answerRef: record.put(entry.answer), attribution: entry.attribution || '', accepted: Boolean(entry.accepted),
         reason: entry.reason || '', status: entry.status || '', transportRequestId: entry.transportRequestId || ''
       });
+      if (entry.chatRoute) attempt.chatRoute = normalizeChatRoute(entry.chatRoute);
     }
+    return attempt;
+  }
+
+  function updateAttemptRoute(record, keyOrAttemptKey, chatRoute) {
+    if (!record || !Array.isArray(record.attempts)) return null;
+    const attempt = record.attempts.find((item) => item.key === keyOrAttemptKey || item.attemptKey === keyOrAttemptKey);
+    if (!attempt) return null;
+    attempt.chatRoute = normalizeChatRoute(chatRoute);
     return attempt;
   }
 
@@ -363,7 +405,7 @@
     };
   }
 
-  const api = Object.freeze({ DEFAULT_MAX_BYTES, INDEX_KEY, RUN_KEY_PREFIX, fingerprint, createRun, recordAttempt, attemptKey, finishRun, serialize, revive, textOf, setSnapshot, setChatBindings, setAttachments, MAX_ATTACHMENT_RECORD_BYTES, setArtifacts, canResume, exportRun, createStore, chromeStorage });
+  const api = Object.freeze({ DEFAULT_MAX_BYTES, INDEX_KEY, RUN_KEY_PREFIX, fingerprint, createRun, recordAttempt, updateAttemptRoute, attemptKey, finishRun, serialize, revive, textOf, setSnapshot, setChatBindings, setAttachments, MAX_ATTACHMENT_RECORD_BYTES, setArtifacts, canResume, exportRun, createStore, chromeStorage });
   root.CustomRunRecord = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
