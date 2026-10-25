@@ -2717,6 +2717,7 @@ document.addEventListener('click', (event) => {
     let customAbortController = null;
     let activePipelineRunContext = null;
     let latestBasicRunRecord = null;
+    let basicCardHistory = null;
     const debateAggregateStore = window.DebateRunStore?.createStore?.() || null;
     const debateTraceStore = window.DebateTraceStore?.createStore?.({
         storage: chrome?.storage?.local // Only used to delete legacy persisted run history.
@@ -3025,15 +3026,29 @@ document.addEventListener('click', (event) => {
             ? messageOrName
             : { llmName: messageOrName, answer };
         const metadata = message.metadata || message.meta || {};
+        const participantId = message.participantId || metadata.participantId || null;
+        const stepRef = message.stepRef || metadata.stepRef || null;
+        const rawVisit = (message.visit !== undefined && message.visit !== null && message.visit !== '')
+            ? message.visit
+            : ((metadata.visit !== undefined && metadata.visit !== null && metadata.visit !== '') ? metadata.visit : null);
+        const visit = rawVisit !== null ? (Number.isFinite(Number(rawVisit)) ? Number(rawVisit) : rawVisit) : null;
         return {
             ...message,
             answer: message.answer ?? answer,
-            metadata,
+            metadata: {
+                ...metadata,
+                ...(participantId ? { participantId } : {}),
+                ...(stepRef ? { stepRef } : {}),
+                ...(visit !== null ? { visit } : {})
+            },
             transportRequestId: message.transportRequestId || metadata.transportRequestId || null,
             pipelineRunId: message.pipelineRunId || metadata.pipelineRunId || null,
             pipelineRoundId: message.pipelineRoundId || metadata.pipelineRoundId || metadata.roundId || null,
             pipelineBatchId: message.pipelineBatchId || metadata.pipelineBatchId || metadata.batchId || null,
             dispatchId: message.dispatchId || metadata.dispatchId || null,
+            participantId,
+            stepRef,
+            visit,
             status: message.status || metadata.status || metadata.finalStatus || metadata.modelFinalStatus || null
         };
     };
@@ -3159,6 +3174,9 @@ document.addEventListener('click', (event) => {
             pipelineRunId: envelope.pipelineRunId,
             pipelineRoundId: envelope.pipelineRoundId,
             dispatchId: envelope.dispatchId,
+            participantId: envelope.participantId || null,
+            stepRef: envelope.stepRef || null,
+            visit: envelope.visit ?? null,
             answerEndMarkerSeen: envelope.metadata.answerEndMarkerSeen === true
                 || message?.answerEndMarkerSeen === true,
             requestId: envelope.transportRequestId || message.requestId || envelope.metadata.requestId || '',
@@ -3237,11 +3255,19 @@ document.addEventListener('click', (event) => {
                 reject: rejectBatch
             };
             this.batches.set(batchId, batch);
-            normalized.forEach((name) => this.responseContexts.set(ids[name], {
-                pipelineRunId: context?.pipelineRunId || '',
-                pipelineRoundId: context?.pipelineRoundId || '',
-                sessionId: context?.sessionId || '1'
-            }));
+            normalized.forEach((name) => {
+                const participant = Array.isArray(context?.participants)
+                    ? context.participants.find((p) => (p?.modelName || p?.model || p?.name || p?.id) === name)
+                    : (context?.participants?.[name] || null);
+                this.responseContexts.set(ids[name], {
+                    pipelineRunId: context?.pipelineRunId || '',
+                    pipelineRoundId: context?.pipelineRoundId || '',
+                    sessionId: context?.sessionId || '1',
+                    participantId: participant?.participantId || participant?.id || context?.participantId || null,
+                    stepRef: participant?.stepRef || context?.stepRef || null,
+                    visit: participant?.visit ?? context?.visit ?? null
+                });
+            });
             this.startStallWatch();
             normalized.forEach((name) => this.requests.set(ids[name], { batchId, llmName: name }));
             batch.timeoutId = setTimeout(() => this.finalizeBatch(batch, true), timeoutMs);
@@ -6888,6 +6914,7 @@ document.addEventListener('click', (event) => {
             const hh = String(now.getHours()).padStart(2, '0');
             const mm = String(now.getMinutes()).padStart(2, '0');
             card.className = 'debate-model-card debate-moderator-card basic-run-line';
+            if (activePipelineRunContext?.pipelineRunId) card.dataset.pipelineRunId = activePipelineRunContext.pipelineRunId;
             card.dataset.sessionId = session.id;
             card.dataset.llmName = 'Basic';
             card.dataset.entryKind = 'response';
@@ -7005,10 +7032,14 @@ document.addEventListener('click', (event) => {
             }
             latestBasicRunRecord = record;
             let saveTimer = null;
+            let runCardHistory = null;
             // The writes of the record go one after another: an older write never lands after a newer one.
             let recordWrites = Promise.resolve();
             const writeRecord = () => {
-                const next = recordWrites.then(() => customRunStore.save(record));
+                const next = recordWrites.then(() => {
+                    runCardHistory?.flush();
+                    return customRunStore.save(record);
+                });
                 recordWrites = next.catch(() => {});
                 return next;
             };
@@ -7019,6 +7050,17 @@ document.addEventListener('click', (event) => {
                 if (now) { await write(); return; }
                 saveTimer = setTimeout(write, 600);
             };
+            // Observe the feed from before the first User/Basic line. Keep observing after
+            // completion so late revisions and card deletions remain part of this run.
+            basicCardHistory?.disconnect();
+            runCardHistory = record && window.BasicCardHistory && debateModelCards
+                ? window.BasicCardHistory.create({
+                    container: debateModelCards, record, sessionId: runContext.sessionId,
+                    isActive: () => Boolean(customAbortController && activePipelineRunContext?.pipelineRunId === record.runId),
+                    onChange: () => { void saveRecord(); }
+                })
+                : null;
+            basicCardHistory = runCardHistory;
             // A checkpoint (8.2) takes the state of the engine into the record and waits for its write: a failed write is
             // not swallowed here, the engine stops on it (checkpoint_failed).
             // The chats of the participants of this run (T07): participantId → { modelName, stepRef, visit, transportRequestId,
@@ -7069,7 +7111,7 @@ document.addEventListener('click', (event) => {
             if (!resumeRecord) {
                 composerBackup = getModeratorDispatchText();
                 clearModeratorComposer();
-                appendModeratorFeedEntry(task);
+                appendModeratorFeedEntry(task, { pipelineRunId: runContext.pipelineRunId });
                 // A new run takes its frames from its own record: its versions fill them in.
                 frameRecord = record;
                 syncDocumentFrames();
@@ -7188,6 +7230,9 @@ document.addEventListener('click', (event) => {
                                 role: window.StageCard?.feed?.role({ label, modelName: model, participantId: request?.participantId, visit: request?.visit }) || `Basic · ${label}`,
                                 pipelineRunId: runContext.pipelineRunId,
                                 pipelineRoundId: `s${step + 1}${request?.visit > 1 ? `v${request.visit}` : ''}`,
+                                participantId: request?.participantId,
+                                stepRef: request?.stepRef,
+                                visit: request?.visit,
                                 transportRequestId: modelResult.transportRequestId || '', requestId: modelResult.transportRequestId || ''
                             });
                         }
@@ -16764,6 +16809,7 @@ document.addEventListener('click', (event) => {
         try {
             // Freeze the live record before awaiting storage: in-flight attempts stay in-flight,
             // and the 600 ms persistence delay cannot hide a new run or its latest answers.
+            basicCardHistory?.flush();
             const customRun = latestBasicRunRecord
                 ? JSON.parse(JSON.stringify(window.CustomRunRecord.exportRun(latestBasicRunRecord)))
                 : await readLatestCustomRun();
@@ -22163,6 +22209,11 @@ function checkCompareButtonState() {
             sourceMessageId: card?.dataset?.sourceMessageId || '',
             sourceCardId: card?.dataset?.sourceCardId || '',
             responseId: card?.dataset?.responseId || '',
+            participantId: card?.dataset?.participantId || null,
+            stepRef: card?.dataset?.stepRef || null,
+            visit: (card?.dataset?.visit !== undefined && card?.dataset?.visit !== '')
+                ? (Number.isFinite(Number(card.dataset.visit)) ? Number(card.dataset.visit) : card.dataset.visit)
+                : null,
             model: String(card?.dataset?.llmName || card?.querySelector?.('.debate-model-card-name')?.textContent || (isModerator ? 'Moderator' : 'Model')).trim(),
             role: String(roleEl?.textContent || '').trim(),
             text: String(outputEl?.innerText || outputEl?.textContent || '').trim(),
@@ -22182,6 +22233,16 @@ function checkCompareButtonState() {
         if (message.responseId) card.dataset.responseId = message.responseId;
         if (message.sourceMessageId) card.dataset.sourceMessageId = message.sourceMessageId;
         if (message.sourceCardId) card.dataset.sourceCardId = message.sourceCardId;
+        if (message.participantId || message.delivery?.participantId || message.metadata?.participantId) {
+            card.dataset.participantId = message.participantId || message.delivery?.participantId || message.metadata?.participantId;
+        }
+        if (message.stepRef || message.delivery?.stepRef || message.metadata?.stepRef) {
+            card.dataset.stepRef = message.stepRef || message.delivery?.stepRef || message.metadata?.stepRef;
+        }
+        const messageVisit = message.visit ?? message.delivery?.visit ?? message.metadata?.visit;
+        if (messageVisit !== undefined && messageVisit !== null && messageVisit !== '') {
+            card.dataset.visit = String(messageVisit);
+        }
         if (message.status === 'approved' || message.kind === 'moderator') card.dataset.approved = 'true';
         if (message.status === 'printing') card.dataset.live = 'true';
         const favBtn = card.querySelector('.debate-fav');
@@ -22200,6 +22261,14 @@ function checkCompareButtonState() {
         const existingId = patch.id || card.dataset.entryId || card.dataset.messageId || '';
         const messageId = existingId || makeDebateEntryId(card.dataset.kind || snapshot.kind || 'entry');
         const prev = debateMessageStore.get(messageId) || null;
+        const participantId = card.dataset.participantId || patch.participantId || snapshot.participantId || prev?.participantId || prev?.delivery?.participantId || prev?.metadata?.participantId || null;
+        const stepRef = card.dataset.stepRef || patch.stepRef || snapshot.stepRef || prev?.stepRef || prev?.delivery?.stepRef || prev?.metadata?.stepRef || null;
+        const rawVisit = (card.dataset.visit !== undefined && card.dataset.visit !== '')
+            ? card.dataset.visit
+            : (patch.visit ?? snapshot.visit ?? prev?.visit ?? prev?.delivery?.visit ?? prev?.metadata?.visit ?? null);
+        const visit = (rawVisit !== null && rawVisit !== undefined && rawVisit !== '')
+            ? (Number.isFinite(Number(rawVisit)) ? Number(rawVisit) : rawVisit)
+            : null;
         const message = {
             id: messageId,
             turnId: String(snapshot.turnId ?? prev?.turnId ?? card.dataset.turnId ?? ''),
@@ -22223,6 +22292,26 @@ function checkCompareButtonState() {
             order: typeof prev?.order === 'number' ? prev.order : debateFeedState.nextId++,
             updatedAt: Date.now()
         };
+        if (participantId) {
+            message.participantId = participantId;
+            card.dataset.participantId = participantId;
+        }
+        if (stepRef) {
+            message.stepRef = stepRef;
+            card.dataset.stepRef = stepRef;
+        }
+        if (visit !== null) {
+            message.visit = visit;
+            card.dataset.visit = String(visit);
+        }
+        message.metadata = {
+            ...(prev?.metadata || {}),
+            ...(snapshot.metadata || {}),
+            ...(patch.metadata || {}),
+            ...(participantId ? { participantId } : {}),
+            ...(stepRef ? { stepRef } : {}),
+            ...(visit !== null ? { visit } : {})
+        };
         if (card.dataset.pipelineRoundId) {
             message.delivery = {
                 ...message.delivery,
@@ -22233,6 +22322,9 @@ function checkCompareButtonState() {
         }
         message.delivery = {
             ...message.delivery,
+            ...(participantId ? { participantId } : {}),
+            ...(stepRef ? { stepRef } : {}),
+            ...(visit !== null ? { visit } : {}),
             sourceUrl: card.dataset.sourceUrl || message.delivery?.sourceUrl || '',
             responseTimestamp: card.dataset.responseTimestamp || message.delivery?.responseTimestamp || ''
         };
@@ -22817,7 +22909,14 @@ function checkCompareButtonState() {
         card.dataset.approvalSelectable = status === 'pending' && !isDebateApprovalAutoMode() ? 'true' : 'false';
         card.dataset.live = status === 'printing' ? 'true' : 'false';
         card.dataset.turnClosed = status === 'printing' ? 'false' : 'true';
-        setDebateCardRound(card, { ...turn.delivery, completedAt: turn.completedAt, createdAt: turn.createdAt });
+        setDebateCardRound(card, {
+            ...turn.delivery,
+            participantId: turn.participantId || turn.delivery?.participantId || turn.metadata?.participantId,
+            stepRef: turn.stepRef || turn.delivery?.stepRef || turn.metadata?.stepRef,
+            visit: turn.visit ?? turn.delivery?.visit ?? turn.metadata?.visit,
+            completedAt: turn.completedAt,
+            createdAt: turn.createdAt
+        });
         const approvalHtml = status === 'pending' && kind !== 'moderator' ? buildApprovalCheckboxHtml(true) : '';
         card.innerHTML = `
             <div class="debate-model-card-header">
@@ -23045,7 +23144,7 @@ function checkCompareButtonState() {
         });
         applyDebateSessionFilter();
     }
-    function appendModeratorFeedEntry(text) {
+    function appendModeratorFeedEntry(text, { pipelineRunId = '' } = {}) {
         if (!debateModelCards) return;
         const normalizedText = cleanFeedText(text);
         if (!normalizedText) return;
@@ -23057,6 +23156,7 @@ function checkCompareButtonState() {
         card.className = 'debate-model-card debate-moderator-card';
         card.dataset.sessionId = session.id;
         card.dataset.llmName = 'Moderator';
+        if (pipelineRunId) card.dataset.pipelineRunId = pipelineRunId;
         card.dataset.entryKind = 'response';
         card.dataset.kind = 'moderator';
         card.dataset.starred = 'false';
@@ -23162,11 +23262,20 @@ function checkCompareButtonState() {
     function resolveDebateFeedMeta(meta = {}) {
         const requestId = String(meta.transportRequestId || meta.requestId || '').trim();
         const context = pipelineWaiter.responseContexts.get(requestId) || {};
+        const participantId = meta.participantId || context.participantId || null;
+        const stepRef = meta.stepRef || context.stepRef || null;
+        const rawVisit = (meta.visit !== undefined && meta.visit !== null && meta.visit !== '')
+            ? meta.visit
+            : ((context.visit !== undefined && context.visit !== null && context.visit !== '') ? context.visit : null);
+        const visit = rawVisit !== null ? (Number.isFinite(Number(rawVisit)) ? Number(rawVisit) : rawVisit) : null;
         return {
             ...meta,
             requestId,
             pipelineRunId: String(meta.pipelineRunId || context.pipelineRunId || '').trim(),
-            pipelineRoundId: String(meta.pipelineRoundId || meta.roundId || context.pipelineRoundId || '').trim().toLowerCase()
+            pipelineRoundId: String(meta.pipelineRoundId || meta.roundId || context.pipelineRoundId || '').trim().toLowerCase(),
+            participantId: participantId ? String(participantId) : null,
+            stepRef: stepRef ? String(stepRef) : null,
+            visit
         };
     }
     function syncDebateCardRound(card) {
@@ -23188,6 +23297,9 @@ function checkCompareButtonState() {
         if (meta.pipelineRoundId) card.dataset.pipelineRoundId = meta.pipelineRoundId;
         if (meta.pipelineRunId) card.dataset.pipelineRunId = meta.pipelineRunId;
         if (meta.requestId) card.dataset.requestId = meta.requestId;
+        if (meta.participantId) card.dataset.participantId = String(meta.participantId);
+        if (meta.stepRef) card.dataset.stepRef = String(meta.stepRef);
+        if (meta.visit !== undefined && meta.visit !== null && meta.visit !== '') card.dataset.visit = String(meta.visit);
         const timestamp = meta.completedAt || meta.responseTimestamp || meta.createdAt || meta.timestamp;
         if (timestamp && Number.isFinite(new Date(/^\d+$/.test(String(timestamp)) ? Number(timestamp) : timestamp).getTime())) card.dataset.responseTimestamp = String(timestamp);
         if (!card.dataset.responseTimestamp) card.dataset.responseTimestamp = String(Date.now());
@@ -23196,8 +23308,33 @@ function checkCompareButtonState() {
         syncDebateCardRound(card);
     }
     function matchesDebateCardRound(card, meta = {}) {
-        return card.dataset.pipelineRoundId === meta.pipelineRoundId
-            && String(card.dataset.pipelineRunId || '') === String(meta.pipelineRunId || '');
+        if (!card || !(card instanceof HTMLElement)) return false;
+        const cardRunId = String(card.dataset.pipelineRunId || '');
+        const metaRunId = String(meta.pipelineRunId || '');
+        if (cardRunId !== metaRunId) return false;
+
+        const cardParticipant = card.dataset.participantId || '';
+        const metaParticipant = meta.participantId ? String(meta.participantId) : '';
+        const hasParticipant = Boolean(cardParticipant || metaParticipant);
+
+        if (hasParticipant) {
+            if (cardParticipant !== metaParticipant) return false;
+
+            const cardVisit = (card.dataset.visit !== undefined && card.dataset.visit !== '') ? String(card.dataset.visit) : '';
+            const metaVisit = (meta.visit !== undefined && meta.visit !== null && meta.visit !== '') ? String(meta.visit) : '';
+            if ((cardVisit || metaVisit) && cardVisit !== metaVisit) return false;
+
+            const cardStepRef = card.dataset.stepRef || '';
+            const metaStepRef = meta.stepRef ? String(meta.stepRef) : '';
+            if (cardStepRef && metaStepRef && cardStepRef !== metaStepRef) return false;
+
+            if (card.dataset.pipelineRoundId || meta.pipelineRoundId) {
+                if (String(card.dataset.pipelineRoundId || '') !== String(meta.pipelineRoundId || '')) return false;
+            }
+            return true;
+        }
+
+        return card.dataset.pipelineRoundId === meta.pipelineRoundId;
     }
     // A model has at most ONE answer card per round, including completed cards.
     // Legacy responses without round identity reuse the open card of their request.
@@ -23209,20 +23346,29 @@ function checkCompareButtonState() {
         const meta = resolveDebateFeedMeta(options);
         const requestId = meta.requestId;
         const matches = Array.from(debateModelCards.querySelectorAll('.debate-model-card'))
-            .filter((card) => (
-                card.dataset.sessionId === session.id
-                && card.dataset.llmName === llmName
-                && card.dataset.kind !== 'moderator'
-                && card.dataset.kind !== 'fragment'
-                && (meta.pipelineRoundId
-                    ? (matchesDebateCardRound(card, meta)
+            .filter((card) => {
+                if (card.dataset.sessionId !== session.id) return false;
+                if (card.dataset.llmName !== llmName) return false;
+                if (card.dataset.kind === 'moderator' || card.dataset.kind === 'fragment') return false;
+
+                if (meta.participantId) {
+                    if (card.dataset.participantId !== meta.participantId) return false;
+                    if (meta.visit !== undefined && meta.visit !== null && meta.visit !== '') {
+                        const cardVisit = (card.dataset.visit !== undefined && card.dataset.visit !== '') ? String(card.dataset.visit) : '';
+                        if (cardVisit && cardVisit !== String(meta.visit)) return false;
+                    }
+                }
+
+                if (meta.pipelineRoundId) {
+                    return matchesDebateCardRound(card, meta)
                         || (!card.dataset.pipelineRoundId && requestId && card.dataset.requestId === requestId)
-                        || (card.dataset.entryKind === 'placeholder' && !card.dataset.pipelineRoundId))
-                    : (card.dataset.turnClosed !== 'true'
-                        && card.dataset.approved !== 'true'
-                        && card.dataset.starred !== 'true'
-                        && (!requestId || card.dataset.requestId === requestId || card.dataset.entryKind === 'placeholder')))
-            ));
+                        || (card.dataset.entryKind === 'placeholder' && !card.dataset.pipelineRoundId && !card.dataset.participantId);
+                }
+                return card.dataset.turnClosed !== 'true'
+                    && card.dataset.approved !== 'true'
+                    && card.dataset.starred !== 'true'
+                    && (!requestId || card.dataset.requestId === requestId || card.dataset.entryKind === 'placeholder');
+            });
         if (!matches.length) return null;
         const preferred = (meta.pipelineRoundId && matches.find((card) => (
             card.dataset.approved === 'true' || card.dataset.starred === 'true'
@@ -23234,7 +23380,7 @@ function checkCompareButtonState() {
             removeDebateCardMessage(card);
             card.remove();
         });
-        if (meta.pipelineRoundId && !matchesDebateCardRound(preferred, meta)) {
+        if ((meta.pipelineRoundId || meta.participantId) && !matchesDebateCardRound(preferred, meta)) {
             setDebateCardRound(preferred, meta);
             patchDebateCardMessage(preferred);
         }
@@ -23370,7 +23516,7 @@ function checkCompareButtonState() {
     function appendPostTerminalAnswerRevision(session, llmName, text, html = '', meta = {}) {
         if (!debateModelCards || !session || !llmName) return false;
         meta = resolveDebateFeedMeta(meta);
-        if (meta.pipelineRoundId) resolveSingleDebateAnswerCard(session, llmName, meta);
+        if (meta.pipelineRoundId || meta.participantId) resolveSingleDebateAnswerCard(session, llmName, meta);
         const requestId = String(meta.requestId || '').trim();
         // Same cleaning as the live path (delivery token, instruction echo, trailing
         // blanks): a re-emitted copy of the shown answer is not a revision.
@@ -23384,7 +23530,7 @@ function checkCompareButtonState() {
                 && card.dataset.kind !== 'moderator'
                 && card.dataset.kind !== 'fragment'
                 && card.dataset.kind !== 'revision'
-                && (!meta.pipelineRoundId || matchesDebateCardRound(card, meta))
+                && (!meta.pipelineRoundId && !meta.participantId ? true : matchesDebateCardRound(card, meta))
                 // Settled for the live path: closed, or taken by the moderator
                 // (approved — Next/Pause adopt a still-printing card), or starred.
                 && (card.dataset.turnClosed === 'true' || card.dataset.approved === 'true' || card.dataset.starred === 'true')
@@ -23511,7 +23657,7 @@ function checkCompareButtonState() {
         const isFinal = isFinalResponseMeta(meta);
         const attributionState = String(meta.attributionState || '');
         const contentHash = `${isFinal ? 'final' : 'printing'}|${attributionState}|${normalizedText.length}:${normalizedText.slice(0, 64)}|${normalizedHtml.length}:${normalizedHtml.slice(0, 64)}`;
-        const contentScopeKey = `${modelKey}:${meta.pipelineRunId}:${meta.pipelineRoundId}:${requestId || 'unscoped'}`;
+        const contentScopeKey = `${modelKey}:${meta.participantId || ''}:${meta.pipelineRunId}:${meta.pipelineRoundId}:${meta.visit || ''}:${requestId || 'unscoped'}`;
         if (debateFeedState.lastCommittedHashByModel[contentScopeKey] === contentHash) return;
         debateFeedState.lastCommittedHashByModel[contentScopeKey] = contentHash;
         const liveCard = resolveSingleDebateAnswerCard(session, llmName, meta);

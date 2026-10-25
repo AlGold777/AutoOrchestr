@@ -37,7 +37,8 @@
     return {
       version: 2, runId: String(runId || ''), pipelineName: String(pipelineName || ''), startedAt, finishedAt: null,
       stopReason: '', taskRef: put(task), steps: steps.map((step, index) => ({ index, ref: step.ref || '', kind: step.kind, models: (step.models || []).map((model) => (typeof model === 'string' ? model : model.name)) })),
-      attempts: [], artifacts: [], snapshot: null, texts, put
+      attempts: [], artifacts: [], snapshot: null,
+      cardHistory: null, texts, put
     };
   }
 
@@ -124,7 +125,8 @@
   function revive(stored) {
     if (!stored || typeof stored !== 'object') return null;
     const record = { ...stored, version: stored.version || 1, texts: { ...(stored.texts || {}) }, attempts: (stored.attempts || []).map((item) => ({ ...item })),
-      artifacts: (stored.artifacts || []).map((item) => ({ ...item })) };
+      artifacts: (stored.artifacts || []).map((item) => ({ ...item })),
+      cardHistory: copyOf(stored.cardHistory) };
     // A field of an older record that is no longer part of the record (documents) is not carried over.
     delete record.documents;
     record.put = (value) => {
@@ -270,6 +272,7 @@
       texts: serialize(record).texts,
       artifacts: (record.artifacts || []).map((entry) => ({ ...entry, pointer: entry.content?.pointer ?? '', text: textOf(record, entry.content?.answerRef) })),
       snapshot,
+      cardHistory: copyOf(record.cardHistory),
       attempts: record.attempts.map((attempt) => {
         const parts = attempt.parts || {};
         return {

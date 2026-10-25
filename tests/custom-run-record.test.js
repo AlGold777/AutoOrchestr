@@ -157,6 +157,34 @@ test('the Disput Flow JSON export carries the latest Custom run record, redacted
   expect(handler.slice(0, 1500)).toContain("downloadDiagnosticsJson('Disput Flow', { ...(payload || {}), delivery, ...(customRun ? { customRun } : {}) }, disputBtn);");
 });
 
+test('card history text references survive serialize, revive, and export without mutating the record', () => {
+  const record = Record.createRun({ runId: 'run-cards', pipelineName: 'Mine', task: 'Task' });
+  const textRef = record.put('card answer');
+  const titleRef = record.put('Model A');
+  record.cardHistory = {
+    version: 1, coverage: 'dom_observer_batches',
+    events: [{ seq: 1, type: 'created', cardId: 'run-cards:card:1', snapshot: { textRef, titleRef } }]
+  };
+  const serialized = JSON.parse(JSON.stringify(Record.serialize(record)));
+  const revived = Record.revive(serialized);
+  const beforeExport = JSON.stringify(revived.cardHistory);
+  const exported = JSON.parse(JSON.stringify(Record.exportRun(revived)));
+
+  expect(serialized.texts).toMatchObject({ [textRef]: 'card answer', [titleRef]: 'Model A' });
+  expect(exported.cardHistory.events[0].snapshot).toEqual({ textRef, titleRef });
+  expect(exported.texts).toMatchObject({ [textRef]: 'card answer', [titleRef]: 'Model A' });
+  expect(revived.cardHistory.events[0].snapshot.textRef).toBe(textRef);
+  expect(JSON.stringify(revived.cardHistory)).toBe(beforeExport);
+});
+
+test('the Basic export flushes card history before cloning the exported run', () => {
+  const source = require('fs').readFileSync(require('path').join(__dirname, '..', 'results.js'), 'utf8');
+  const handlerStart = source.indexOf("const button = event.target.closest('#disput-basic');");
+  const handler = source.slice(handlerStart, source.indexOf("const disputBtn = event.target.closest('#disput-export-json');", handlerStart));
+  expect(handler).toContain('basicCardHistory?.flush()');
+  expect(handler.indexOf('basicCardHistory?.flush()')).toBeLessThan(handler.indexOf('JSON.parse(JSON.stringify(window.CustomRunRecord.exportRun(latestBasicRunRecord)))'));
+});
+
 
 // Version 2 (ТЗ 8.2): the registry and the snapshot keep their texts by reference; the texts are the record's own.
 function recordedOwnerRun({ runId = 'run-owner', text = 'Тезис User' } = {}) {
