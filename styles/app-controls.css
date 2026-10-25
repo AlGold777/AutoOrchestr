@@ -196,9 +196,12 @@
     flex: 0 0 auto;
 }
 
+/* Смещения измерены в Chrome: центр иконки Pipeline совпадает с центром иконок моделей, полоска Telemetry — с подписями моделей. */
 .right-sidebar-toggle-btn {
     margin-bottom: 0;
     color: rgb(133 137 142);
+    position: relative;
+    top: -9.5px;
 }
 
 .telemetry-toggle-btn {
@@ -215,6 +218,8 @@
     width: 100%;
     height: 4px;
     margin-top: 2px;
+    position: relative;
+    top: -2.5px;
     border-radius: 2px;
     background: #30609445;
 }
