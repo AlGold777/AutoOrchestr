@@ -1,5 +1,13 @@
 # CHANGELOG — Project
 
+### 2026-10-25 — Basic: единый фоновый журнал сообщений в storage.session (C04), версия 2.81.887
+
+- Создан фоновый модуль `background/message-delivery-store.js` — единственный писатель сохранённого журнала сообщений в `chrome.storage.session` (ключ `messageDelivery.journal.v2`).
+- Формат конверта `{ version: 2, events: [...], collection: { retained, totalAppended, overflowOmitted, bytesEstimate } }` с лимитом 3000 событий и 3 МиБ, вытеснением старых записей и регидратацией после suspension service worker.
+- Поддержаны сообщения `DELIVERY_JOURNAL_APPEND`, `DELIVERY_JOURNAL_SNAPSHOT`, `DELIVERY_JOURNAL_CLEAR` в `background/message-router.js`.
+- Клиент `shared/message-delivery.js`: генерация `eventId` для каждого события, асинхронная отправка append, чтение снимка snapshot со слиянием неподтверждённого локального хвоста, отмена очистки сессионного хранилища при загрузке страницы.
+- `shared/message-delivery-view.js` и `results.js`: чтение фонового снимка для отчётов и экспорта телеметрии Basic.
+
 ### 2026-10-25 — Basic: намерение chatIntent, фактический маршрут chatRoute и корреляция событий (C01, C02), версия 2.81.886
 
 - Запись намерения страницы `chatIntent` (`newChat`, `reason`, `bindingTabId`, `attachmentNames`) для каждой попытки перед отправкой (`disput/custom-run-record.js`, `results.js`).

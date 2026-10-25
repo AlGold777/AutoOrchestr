@@ -16867,8 +16867,15 @@ document.addEventListener('click', (event) => {
             }
             const snapshotTs = Date.now();
             const executionActive = Boolean(customAbortController && activePipelineRunContext?.pipelineRunId === customRun.runId);
+            let deliverySnap = null;
+            if (window.MessageDelivery?.snapshot) {
+                try {
+                    deliverySnap = await window.MessageDelivery.snapshot();
+                } catch (_) {}
+            }
             const delivery = JSON.parse(JSON.stringify({
-                journal: window.MessageDelivery.journal(), collection: window.MessageDelivery.collection()
+                journal: deliverySnap?.events || window.MessageDelivery?.journal?.() || [],
+                collection: deliverySnap?.collection || window.MessageDelivery?.collection?.() || {}
             }));
             const events = await getTelemetryEventsForExport(snapshotTs, { applyFilters: false });
             const report = window.BasicTelemetry.buildReport({ customRun, delivery, events, executionActive,

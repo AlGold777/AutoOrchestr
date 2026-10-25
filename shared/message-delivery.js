@@ -12,7 +12,7 @@
 (function initMessageDelivery(root) {
   'use strict';
 
-  const JOURNAL_KEY = 'messageDelivery.journal';
+  const JOURNAL_KEY = 'messageDelivery.journal.v2';
   // A multi-stage run of ten models produces ~20 events per message.
   const JOURNAL_LIMIT = 3000;
   const EXPECTED_LIMIT = 200;
@@ -27,6 +27,11 @@
   const expectedByRequest = new Map(); // transportRequestId -> entry
   const latestByModel = new Map(); // model -> entry (requests without a transport id)
   const journal = [];
+  const producerId = `prod_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+  let producerSeq = 0;
+  const unconfirmedQueue = [];
+  let appendTimer = null;
+  let appendFlight = false;
   let mirrorTimer = null;
   const collection = { recorded: 0, evicted: 0, focusDetailsOmitted: 0, limit: JOURNAL_LIMIT, focusDetailLimit: FOCUS_EVENTS_PER_REQUEST };
   const proof = root.AnswerProofNormalization || (typeof require === 'function' ? require('./answer-proof-normalization') : null);
@@ -83,14 +88,51 @@
     return found.length ? 'foreign' : 'missing';
   }
 
+  function scheduleAppend() {
+    if (appendTimer) return;
+    appendTimer = setTimeout(() => {
+      appendTimer = null;
+      void flushAppend();
+    }, 40);
+  }
+
+  async function flushAppend() {
+    if (appendFlight || unconfirmedQueue.length === 0) return;
+    const runtime = root.chrome?.runtime || globalThis.chrome?.runtime;
+    if (!runtime?.sendMessage) return;
+    appendFlight = true;
+    const batch = unconfirmedQueue.slice();
+    try {
+      await new Promise((resolve) => {
+        runtime.sendMessage({ type: 'DELIVERY_JOURNAL_APPEND', events: batch, producerId }, (res) => {
+          if (!runtime.lastError && res?.ok) {
+            unconfirmedQueue.splice(0, batch.length);
+          }
+          resolve();
+        });
+      });
+    } catch (_) {
+      // Keep in queue on error
+    } finally {
+      appendFlight = false;
+      if (unconfirmedQueue.length > 0) scheduleAppend();
+    }
+  }
+
   function record(event) {
-    journal.push({ at: new Date().toISOString(), ...event });
+    if (!event.eventId) {
+      if (event.sourceEventId) {
+        event.eventId = `${event.sourceEventId}_${event.kind || 'evt'}_${++producerSeq}`;
+      } else {
+        event.eventId = `${producerId}:${++producerSeq}`;
+      }
+    }
+    const item = { at: new Date().toISOString(), ...event };
+    journal.push(item);
     collection.recorded += 1;
     if (journal.length > JOURNAL_LIMIT) { collection.evicted += journal.length - JOURNAL_LIMIT; journal.splice(0, journal.length - JOURNAL_LIMIT); }
-    const storage = root.chrome?.storage?.session;
-    if (!storage) return;
-    clearTimeout(mirrorTimer);
-    mirrorTimer = setTimeout(() => { try { storage.set({ [JOURNAL_KEY]: journal }); } catch (_) { /* telemetry only */ } }, 300);
+    unconfirmedQueue.push(item);
+    scheduleAppend();
   }
 
   const completionOf = (status, text) => {
@@ -492,23 +534,70 @@
     record({ kind, ...fields });
   }
 
+  async function snapshot() {
+    const runtime = root.chrome?.runtime || globalThis.chrome?.runtime;
+    if (runtime?.sendMessage) {
+      try {
+        const resp = await new Promise((resolve) => {
+          runtime.sendMessage({ type: 'DELIVERY_JOURNAL_SNAPSHOT' }, (res) => {
+            if (runtime.lastError || !res?.ok) resolve(null);
+            else resolve(res.snapshot);
+          });
+        });
+        if (resp && Array.isArray(resp.events)) {
+          const seen = new Set(resp.events.map((e) => e.eventId));
+          const unconfirmed = journal.filter((e) => e.eventId && !seen.has(e.eventId));
+          const merged = resp.events.concat(unconfirmed);
+          return {
+            version: 2,
+            events: merged,
+            collection: {
+              ...(resp.collection || {}),
+              retained: merged.length,
+              unconfirmedTail: unconfirmed.length
+            }
+          };
+        }
+      } catch (_) {}
+    }
+    return {
+      version: 2,
+      events: journal.slice(),
+      collection: { retained: journal.length, localOnly: true }
+    };
+  }
+
   // Clears only the journal; tokens of requests still in flight stay valid.
   function clearJournal() {
     journal.length = 0;
-    try { root.chrome?.storage?.session?.remove(JOURNAL_KEY); } catch (_) { /* ignore */ }
+    unconfirmedQueue.length = 0;
+    const runtime = root.chrome?.runtime || globalThis.chrome?.runtime;
+    if (runtime?.sendMessage) {
+      try { runtime.sendMessage({ type: 'DELIVERY_JOURNAL_CLEAR' }, () => {}); } catch (_) {}
+    }
+    try {
+      const sess = root.chrome?.storage?.session || globalThis.chrome?.storage?.session;
+      sess?.remove?.(JOURNAL_KEY);
+    } catch (_) { /* ignore */ }
   }
 
   function reset() {
     expectedByRequest.clear();
     latestByModel.clear();
     journal.length = 0;
-    try { root.chrome?.storage?.session?.remove(JOURNAL_KEY); } catch (_) { /* ignore */ }
+    unconfirmedQueue.length = 0;
+    producerSeq = 0;
+    const runtime = root.chrome?.runtime || globalThis.chrome?.runtime;
+    if (runtime?.sendMessage) {
+      try { runtime.sendMessage({ type: 'DELIVERY_JOURNAL_CLEAR' }, () => {}); } catch (_) {}
+    }
+    try {
+      const sess = root.chrome?.storage?.session || globalThis.chrome?.storage?.session;
+      sess?.remove?.(JOURNAL_KEY);
+    } catch (_) { /* ignore */ }
   }
 
-  // A page load starts a new session: the previous journal is not carried over.
-  try { root.chrome?.storage?.session?.remove(JOURNAL_KEY); } catch (_) { /* ignore */ }
-
-  const api = Object.freeze({ JOURNAL_KEY, makeToken, wrap, clean, cleanHtml, inspect, prepare, receive, observeRuntime, closeBatch, batchEvent, record, clearJournal, reset, collection: () => ({ ...collection, retained: journal.length }), journal: () => journal.slice() });
+  const api = Object.freeze({ JOURNAL_KEY, makeToken, wrap, clean, cleanHtml, inspect, prepare, receive, observeRuntime, closeBatch, batchEvent, record, snapshot, clearJournal, reset, collection: () => ({ ...collection, retained: journal.length }), journal: () => journal.slice() });
   root.MessageDelivery = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
