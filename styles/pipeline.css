@@ -482,7 +482,7 @@ body.is-resizing {
 }
 
 .model-block {
-    width: 139px;
+    width: var(--pipeline-block-width);
     height: var(--pipeline-block-height);
     padding: 8px 10px;
     background: #ffffff;
@@ -1309,7 +1309,7 @@ body.is-resizing {
 
 .pipeline-control-card {
     display: block;
-    width: 139px;
+    width: var(--pipeline-block-width);
     box-sizing: border-box;
     padding: 8px 10px;
     border: 1px dashed currentColor;
