@@ -52,6 +52,15 @@ describe('Custom engine: a required whole-step source (D3, ТЗ 3.1)', () => {
     expect(sentTo(calls, 'C')).toEqual([]);
   });
 
+  test('an artifact of a skipped step is not an input: the reference to the artifact excludes it as the reference to the step does', async () => {
+    const { send, calls } = transport({ A: ['{"d":"данные A"}'], B: [''], C: ['ок'] });
+    const output = { format: 'json', artifacts: [{ id: 'doc', name: 'Doc', pointer: '/d' }] };
+    const source = { artifact: { step: 'r1', participant: 'A', id: 'doc' }, version: 'latest', required: true };
+    const result = await Engine.run({ task: 'T', steps: [R1({ output }), R2(source)], send, maxAttempts: 1, decide: async () => 'skip' });
+    expect(result.stopReason).toBe('missing_input');
+    expect(sentTo(calls, 'C')).toEqual([]);
+  });
+
   test('a required source that names a switched-off step is missing before the request', async () => {
     const { send, calls } = transport({ C: ['ок'] });
     const result = await Engine.run({ task: 'T', steps: [R2({ step: 'r9', required: true })], send, maxAttempts: 1 });

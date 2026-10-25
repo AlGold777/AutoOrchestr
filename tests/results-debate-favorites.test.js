@@ -3202,6 +3202,28 @@ describe('Pipeline debate favorites view', () => {
         } finally { h.cleanup(); }
       }, 30000);
 
+      test('an owner step after a round nobody sends in stays before the round that follows it in the run', async () => {
+        const h = setupCustomInheritance('Owner order host');
+        try {
+          const schema = { schemaVersion: 1, origin: 'user', steps: [
+            { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }] },
+            { ref: 'r2', kind: 'round', models: [{ name: 'Claude' }] },
+            { ref: 'owner:1', kind: 'owner', task: 'x', models: [] },
+            { ref: 'r3', kind: 'round', models: [{ name: 'GPT' }] }
+          ] };
+          expect((await h.debug.installBasicSchema('Owner order', schema)).ok).toBe(true);
+          select('Owner order');
+          await settleCustomCard();
+          const box = document.querySelector('#r2-models .model-block:not(.pipeline-empty-slot) .model-input-checkbox');
+          box.checked = false;
+          box.dispatchEvent(new Event('change', { bubbles: true }));
+          await settleCustomCard();
+          const refs = (forSave) => h.debug.basicSchemaFromPage(planOf(), null, { forSave }).steps.map((step) => step.ref);
+          expect(refs(true)).toEqual(['r1', 'r2', 'owner:1', 'r3']);
+          expect(refs(false)).toEqual(['r1', 'owner:1', 'r3']);
+        } finally { h.cleanup(); }
+      }, 30000);
+
       test('run.strictLength of the schema survives Save, Export, the run and a second install; the run takes it for every step', async () => {
         const h = setupCustomInheritance('Strict run host');
         try {

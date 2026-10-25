@@ -192,7 +192,9 @@
     const lists = ['results'];
     if (!('pc' in shape) || !objects.every((key) => shape[key] && typeof shape[key] === 'object' && !Array.isArray(shape[key])) || !lists.every((key) => Array.isArray(shape[key]))) return false;
     const { schema, current } = record.snapshot;
-    if (!Array.isArray(schema) || !schema.length || !current || typeof current !== 'object') return false;
+    // The page keeps the whole schema object ({ steps, … }); a bare list of steps is the older form.
+    const steps = Array.isArray(schema) ? schema : schema?.steps;
+    if (!Array.isArray(steps) || !steps.length || !current || typeof current !== 'object') return false;
     const used = collectRefs({ taskRef: record.taskRef, snapshot: record.snapshot, artifacts: record.artifacts, attempts: record.attempts }, new Set());
     return [...used].every((ref) => record.texts?.[ref] !== undefined);
   }

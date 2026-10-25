@@ -432,6 +432,16 @@ describe('V01: the chats of the participants go into the snapshot at once', () =
   });
 });
 
+describe('the page keeps the whole schema object in the snapshot', () => {
+  test('a snapshot whose schema is { schemaVersion, steps } with the whole state is resumable', () => {
+    const record = Record.createRun({ runId: 'run-obj', pipelineName: 'Mine', task: 'T', steps: [{ task: 'x', input: 'none', models: ['A'] }] });
+    Record.setSnapshot(record, { schema: { schemaVersion: 1, steps: [{ ref: 'r1', kind: 'round', models: [{ name: 'A' }] }] }, state: { pc: 'r1', visits: { r1: 1 }, decisions: {}, results: [] }, current: { active: false } });
+    expect(Record.canResume(record)).toBe(true);
+    record.snapshot.schema = { schemaVersion: 1, steps: [] };
+    expect(Record.canResume(record)).toBe(false);
+  });
+});
+
 describe('V07: a record is resumable only with the whole state of the checkpoint', () => {
   test('canResume and the export say no for a snapshot without pc or without a state field', () => {
     const record = Record.createRun({ runId: 'run-v07', pipelineName: 'Mine', task: 'T', steps: [{ task: 'x', input: 'none', models: ['A'] }] });

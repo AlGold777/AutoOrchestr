@@ -307,6 +307,21 @@ describe('N04: the owner can check the chat of an unknown request instead of sen
     expect(run2.steps.find((step) => step.ref === 'S2').outcome.B).toMatchObject({ ok: true, text: 'b-from-chat' });
   });
 
+  test('an answer found by the check that fails the output is not corrected by a request: nothing is sent', async () => {
+    const steps = [TWO_ROUNDS[0], { ...TWO_ROUNDS[1], output: { format: 'json', requiredFields: ['/x'] } }];
+    const { saved, texts } = await stopInFlight(steps);
+    const log2 = [];
+    const choices = ['check', 'skip'];
+    const run2 = await Engine.run({
+      task: 'T', steps, checkpoint: keeper().checkpoint, putText: texts.putText, getText: texts.getText, resume: clone(saved),
+      send: transport({ B: ['{"x":1}'] }, log2), decide: async () => 'skip',
+      resolveUnknown: async () => choices.shift(),
+      checkUnknown: async () => ({ ok: true, status: 'found', text: '{"y":1}' })
+    });
+    expect(log2).toEqual([]);
+    expect(run2.steps.find((step) => step.ref === 'S2').outcome.B.ok).toBe(false);
+  });
+
   test('without checkUnknown the choices are the old two', async () => {
     const { saved, texts } = await stopInFlight(TWO_ROUNDS);
     const offered = [];

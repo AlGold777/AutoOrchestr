@@ -533,6 +533,11 @@
         if (!required) return [];
         throw new StopRun('missing_input', `артефакт «${address.id}» шага «${address.step}», участник «${address.participant}»: нет актуальной версии; шаг «${step.ref}» не отправлен`);
       }
+      // A version made by a step the owner skipped is not an input: a reference to the artifact excludes it as a reference to the step does.
+      if (results.some((item) => item.skipped && item.step.ref === found.source.step && item.visit === found.source.visit)) {
+        if (!required) return [];
+        throw new StopRun('missing_input', `артефакт «${address.id}» шага «${address.step}», участник «${address.participant}»: шаг пропущен; шаг «${step.ref}» не отправлен`);
+      }
       const answer = getText(found.content.answerRef);
       if (answer === undefined || answer === null) throw new EngineError('missing_content', `шаг «${step.ref}» · input`, `текст ответа «${found.content.answerRef}» не найден`);
       // The label names the author of this version (its source), not the author of the line.
@@ -644,11 +649,13 @@
         const maxWordsOf = Object.fromEntries(pending.map((model) => [model.id, model.maxWords || null]));
         const correctionOf = Object.fromEntries(pending.map((model) => [model.id, Boolean(current[model.id].parts?.correction)]));
         let reply;
+        let viaCheck = false; // the answers were read by «check»: nothing is sent, so a rejected one is not corrected by itself
         let byId; // participant id → the reply of the transport
         try {
           const found = prefetched ? Object.fromEntries(pending.filter((model) => prefetched[model.id]).map((model) => [model.id, prefetched[model.id]])) : {};
           if (pending.length && pending.every((model) => found[model.id])) {
             byId = found;
+            viaCheck = true;
             reply = {};
             pending.forEach((model) => { delete prefetched[model.id]; });
             if (!Object.keys(prefetched).length) prefetched = null;
@@ -716,7 +723,7 @@
           emit('custom_answer', { step: step.index, label: stepLabel(step), model: model.name, participant: model.id, attempt: tryNo, input: modeOf(specOf(step, model)),
             accepted: verdict.ok, reason: verdict.reason || null, status: result.status || null,
             transportRequestId: result.transportRequestId || null, promptChars: String(current[model.id].prompt || '').length });
-          if (!verdict.ok && !reply?.closedByOwner) retry.push(model);
+          if (!verdict.ok && !reply?.closedByOwner && !viaCheck) retry.push(model);
         });
         inFlight = [];
         await checkpointNow('judge');

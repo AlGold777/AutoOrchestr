@@ -6412,7 +6412,25 @@ document.addEventListener('click', (event) => {
         const withControls = (list) => {
             const entries = getCustomControls();
             if (!entries.length) return list;
-            const byAfter = new Map(entries.map((item) => [item.after, item]));
+            // A control stands after a round that this schema does not hold (nobody sends in it, so the run leaves it out): it
+            // moves back to the nearest round before that one and does not fall behind the rounds that follow.
+            const present = new Set(list.map((step) => step.ref));
+            const anchorOf = (after) => {
+                const number = /^r(\d+)$/.exec(after || '');
+                if (!number || present.has(after) || Number(number[1]) > roundCounter) return after;
+                for (let at = Number(number[1]) - 1; at >= 1; at -= 1) if (present.has(`r${at}`)) return `r${at}`;
+                return '';
+            };
+            const byAfter = new Map();
+            entries.filter((item) => anchorOf(item.after) === item.after).forEach((item) => byAfter.set(item.after, item));
+            entries.filter((item) => anchorOf(item.after) !== item.after).forEach((item) => {
+                const key = anchorOf(item.after);
+                if (!byAfter.has(key)) { byAfter.set(key, item); return; }
+                // Another control already stands there: this one follows the end of that chain, as it did on the canvas.
+                let tail = byAfter.get(key);
+                while (byAfter.has(tail.step.ref)) tail = byAfter.get(tail.step.ref);
+                byAfter.set(tail.step.ref, item);
+            });
             const out = [];
             const seen = new Set();
             const chain = (ref) => {
@@ -6423,7 +6441,7 @@ document.addEventListener('click', (event) => {
                     item = byAfter.get(item.step.ref);
                 }
             };
-            entries.filter((item) => item.after === '').forEach((item) => { if (!seen.has(item.step.ref)) { seen.add(item.step.ref); out.push(JSON.parse(JSON.stringify(item.step))); chain(item.step.ref); } });
+            entries.filter((item) => anchorOf(item.after) === '').forEach((item) => { if (!seen.has(item.step.ref)) { seen.add(item.step.ref); out.push(JSON.parse(JSON.stringify(item.step))); chain(item.step.ref); } });
             list.forEach((step) => { out.push(step); chain(step.ref); });
             entries.forEach((item) => { if (!seen.has(item.step.ref)) { seen.add(item.step.ref); out.push(JSON.parse(JSON.stringify(item.step))); } });
             return out;
@@ -8531,7 +8549,7 @@ document.addEventListener('click', (event) => {
         };
         // A catalog file: each entry is checked first, then the valid ones are added in order. A taken name is asked again;
         // an entry whose check or name fails is not added and its reason is listed.
-        const importBasicCatalog = async (parsed) => {
+        const importBasicCatalog = async (parsed, readerNotes = []) => {
             if (parsed.basicCatalog !== 1) { showNotification(`Версия каталога ${parsed.basicCatalog} не поддерживается.`, 'error'); return; }
             if (!Array.isArray(parsed.schemas)) { showNotification('Файл каталога повреждён: нет списка schemas.', 'error'); return; }
             const problems = [];
@@ -8573,7 +8591,7 @@ document.addEventListener('click', (event) => {
                 problems.push(...errorLines(final, index, result.errors));
                 notAdded += 1;
             }
-            showNotification(`Добавлено схем: ${added}, не добавлено: ${notAdded}.${problems.length ? `\n${problems.join('\n')}` : ''}`,
+            showNotification(`${readerNotes.length ? `${readerNotes.join('\n')}\n` : ''}Добавлено схем: ${added}, не добавлено: ${notAdded}.${problems.length ? `\n${problems.join('\n')}` : ''}`,
                 problems.length ? (added ? 'warn' : 'error') : 'success');
             if (last) {
                 const item = findPipelineItemByName(last);
@@ -8633,7 +8651,7 @@ document.addEventListener('click', (event) => {
                 const value = read.value;
                 if ('basicCatalog' in value) {
                     close();
-                    await importBasicCatalog(value);
+                    await importBasicCatalog(value, read.notes);
                     return;
                 }
                 const built = recordFromSchema('schema', value);
