@@ -5016,6 +5016,58 @@ document.addEventListener('click', (event) => {
             });
         };
 
+        // Tooltips of the canvas: a name for each element and, where the schema has one, a description (ResultsTooltips shows both).
+        // The elements are drawn again on each update, so each one is set and registered here (registration is idempotent).
+        const setCanvasTooltip = (el, name, desc = '') => {
+            const text = String(name || '').trim();
+            if (!el || !text) return;
+            el.dataset.tooltip = text;
+            const note = String(desc || '').trim();
+            if (note) el.dataset.tooltipDesc = note;
+            else delete el.dataset.tooltipDesc;
+            tooltipController.registerTooltipTarget(el);
+        };
+        const syncCanvasTooltips = () => {
+            if (!pipelinePanel) return;
+            let steps = [];
+            try { steps = basicSchemaFromPage(draftPlanForCanvas(getActiveDraftPlan()), null, { forSave: true }).steps || []; } catch (_) { steps = []; }
+            const stepOf = (ref) => steps.find((step) => step.ref === ref) || null;
+            pipelinePanel.querySelectorAll('.entry-badge').forEach((badge) => setCanvasTooltip(badge, 'In'));
+            setCanvasTooltip(pipelinePanel.querySelector('#entryPoint'), '▶ Общие значения', basicDescription());
+            pipelinePanel.querySelectorAll('.stage-column[data-round] .round-badge').forEach((badge) => {
+                const round = badge.closest('.stage-column')?.dataset.round;
+                const step = stepOf(`r${round}`);
+                setCanvasTooltip(badge, step?.title ? `R${round} · ${step.title}` : `R${round}`, step?.goal);
+            });
+            pipelinePanel.querySelectorAll('.model-block').forEach((block) => {
+                const name = String(block.dataset.model || block.querySelector('.model-name')?.textContent || '').trim();
+                const round = block.closest('.stage-column')?.dataset.round;
+                const model = (stepOf(`r${round}`)?.models || []).find((item) => item.name === name);
+                setCanvasTooltip(block, name, model?.task);
+            });
+            pipelinePanel.querySelectorAll('.pipeline-control-card').forEach((card) => {
+                const step = getCustomControls().map((item) => item.step).find((item) => item?.ref === card.dataset.controlCard) || {};
+                const name = `User · ${card.dataset.controlCard}${step.title ? ` · ${step.title}` : ''}`;
+                const note = step.goal || step.task;
+                setCanvasTooltip(card, name, note);
+                setCanvasTooltip(card.closest('.stage-column')?.querySelector('.pipeline-control-title'), name, note);
+            });
+            pipelinePanel.querySelectorAll('.pipeline-doc-frame').forEach((frame) => {
+                const step = stepOf(frame.dataset.docRef);
+                const output = (step?.models || []).map((model) => model.output).find(Boolean) || step?.output;
+                const artifact = (output?.artifacts || []).find((item) => item.id === frame.dataset.docId);
+                setCanvasTooltip(frame, artifact?.name || frame.dataset.docId, artifact?.description);
+            });
+            pipelineItems?.querySelectorAll('.pipeline-item').forEach((item) => setCanvasTooltip(item, item.dataset.name));
+            // Native titles of the canvas and of the list header move to ResultsTooltips (the native one is removed, so two do not show).
+            // The status indicator and the role selector keep theirs: the tooltip of their model block covers them.
+            document.querySelectorAll('.pipeline-canvas [title], .pipeline-list-header-actions [title]').forEach((el) => {
+                if (el.matches('.status-indicator, .role-selector')) return;
+                setCanvasTooltip(el, el.getAttribute('title'));
+                el.removeAttribute('title');
+            });
+        };
+
         const updatePipelineAll = ({ deferFinalLayout = true } = {}) => {
             syncControlColumns();
             syncDocumentFrames();
@@ -5063,6 +5115,7 @@ document.addEventListener('click', (event) => {
             syncRoundFilterChips();
             syncPipelineFlowVisualState();
             syncPipelineRunStateVisuals();
+            syncCanvasTooltips();
             pipelinePanel?.querySelectorAll('.model-stack').forEach((stack) => pipelineAlignmentResizeObserver?.observe(stack));
             if (deferFinalLayout && typeof window.requestAnimationFrame === 'function') {
                 if (deferredPipelineLayoutFrame) window.cancelAnimationFrame?.(deferredPipelineLayoutFrame);
@@ -7966,6 +8019,7 @@ document.addEventListener('click', (event) => {
             setPipelineHeaderName(activeName);
             updateActivePipelineDescription(activeName);
             syncPipelineChromeControls();
+            syncCanvasTooltips();
         };
 
         const getPipelineNamesFromDom = () => {
@@ -9249,13 +9303,6 @@ document.addEventListener('click', (event) => {
             if (window.PipelinePresets?.getPipelinePreset?.(getSelectedPipelinePresetId())?.runner === 'custom') showPipelineBlockInfo(null, { pipelineDefaults: true });
         };
         customEntryPoint?.addEventListener('click', openCustomDefaults);
-        // The tooltip of ▶ is the description of the open pipeline (the button is redrawn with the canvas, so it is set on hover).
-        pipelinePanel?.addEventListener('mouseover', (event) => {
-            const point = event.target.closest?.('#entryPoint');
-            if (!point) return;
-            const text = basicDescription().replace(/\s+/g, ' ');
-            point.title = text ? (text.length > 400 ? `${text.slice(0, 399)}…` : text) : 'Общие значения';
-        });
         customEntryPoint?.addEventListener('keydown', (event) => {
             if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openCustomDefaults(); }
         });

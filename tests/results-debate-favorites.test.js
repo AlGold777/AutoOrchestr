@@ -3840,6 +3840,76 @@ describe('Pipeline debate favorites view', () => {
         } finally { h.cleanup(); }
       }, 30000);
 
+      test('canvas tooltips: the In badge, ▶, round badges, model blocks, the User card, the document frame and the list items carry a name and a description', async () => {
+        require('../results/choice-dialog');
+        require('../results/stage-card');
+        const h = setupCustomInheritance('Tooltip names');
+        // The test page has no In column and no header row of the list: they are added as in pipeline_panel.html.
+        const importBtn = document.getElementById('pipeline-import-btn');
+        const importHeader = importBtn.parentElement;
+        const inBadge = document.createElement('span');
+        inBadge.className = 'entry-badge';
+        inBadge.textContent = 'In';
+        importBtn.setAttribute('title', 'Import schema');
+        importHeader.classList.add('pipeline-list-header-actions');
+        document.getElementById('pipeline-panel').prepend(inBadge);
+        const badgeOf = (round) => {
+          const row = document.createElement('div');
+          row.className = 'stage-label';
+          row.innerHTML = `<span class="round-badge">R${round}</span>`;
+          document.getElementById(`round${round}`).prepend(row);
+          return row;
+        };
+        const badgeRows = [badgeOf(1), badgeOf(2)];
+        try {
+          const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
+            { ref: 'r1', kind: 'round', title: 'Написать ТЗ', goal: 'Черновик документа', models: [{ name: 'Claude', task: 'Пиши коротко' }],
+              output: { document: 'read', artifacts: [{ id: 'spec', name: 'ТЗ', description: 'Техзадание', pointer: '' }] } },
+            { ref: 'owner:u', kind: 'owner', title: 'Проверка', goal: 'Правки User', models: [], document: 'r1', task: 'Проверьте ТЗ' },
+            { ref: 'r2', kind: 'round', models: [{ name: 'GPT' }] }
+          ] };
+          expect((await h.debug.installBasicSchema('Tooltip names', schema)).ok).toBe(true);
+          document.querySelector('.pipeline-item[data-name="Tooltip names"]').click();
+          await settleCustomCard();
+          await settleCustomCard();
+
+          const entry = document.querySelector('.entry-badge');
+          expect(entry.dataset.tooltip).toBe('In');
+          expect(entry.hasAttribute('data-tooltip-desc')).toBe(false);
+
+          const r1Badge = document.querySelector('.stage-column[data-round="1"] .round-badge');
+          expect(r1Badge.dataset.tooltip).toBe('R1 · Написать ТЗ');
+          expect(r1Badge.dataset.tooltipDesc).toBe('Черновик документа');
+
+          const claudeBlock = document.querySelector('.stage-column[data-round="1"] .model-block');
+          expect(claudeBlock.dataset.tooltip).toBe('Claude');
+          expect(claudeBlock.dataset.tooltipDesc).toBe('Пиши коротко');
+
+          const userCard = document.querySelector('.pipeline-control-card');
+          expect(userCard.dataset.tooltip).toBe('User · owner:u · Проверка');
+          expect(userCard.dataset.tooltipDesc).toBe('Правки User');
+
+          const frame = document.querySelector('.pipeline-doc-frame');
+          expect(frame.dataset.tooltip).toBe('ТЗ');
+          expect(frame.dataset.tooltipDesc).toBe('Техзадание');
+
+          expect(importBtn.hasAttribute('title')).toBe(false);
+          expect(importBtn.dataset.tooltip).toBe('Import schema');
+
+          const r2Badge = document.querySelector('.stage-column[data-round="2"] .round-badge');
+          expect(r2Badge.dataset.tooltip).toBe('R2');
+          expect(r2Badge.hasAttribute('data-tooltip-desc')).toBe(false);
+
+          const item = document.querySelector('#pipelineItems .pipeline-item[data-name="Tooltip names"]');
+          expect(item.dataset.tooltip).toBe('Tooltip names');
+        } finally {
+          inBadge.remove();
+          badgeRows.forEach((row) => row.remove());
+          importHeader.classList.remove('pipeline-list-header-actions');
+          h.cleanup();
+        }
+      }, 30000);
+
       test('A07 documents: removing the round a User step reads from resets the step document and says so', async () => {
         const h = setupCustomInheritance('Doc source removed');
         try {
