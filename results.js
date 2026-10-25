@@ -6479,6 +6479,7 @@ document.addEventListener('click', (event) => {
                 put(model, 'maxWords', legacyValue(settings?.maxWords));
                 put(model, 'task', keepEmpty(settings?.task, 'task'));
                 put(model, 'discipline', legacyDiscipline(settings?.discipline, { keepEmptyValues: true }));
+                if (settings && 'output' in settings) model.output = JSON.parse(JSON.stringify(settings.output));
                 return model;
             };
             let round = 0;
@@ -7279,8 +7280,8 @@ document.addEventListener('click', (event) => {
                         return { byParticipant, closedByOwner };
                     },
                     onEvent: (kind, fields) => {
-                        // A step with accepted answers, or one the owner skipped, is done; otherwise it stays running until a decision.
-                        if (kind === 'custom_step' && fields.accepted > 0) setCustomStepStatus(fields.step, 'completed');
+                        // A step with all answers accepted, or one the owner skipped, is done; otherwise it stays running until a decision.
+                        if (kind === 'custom_step' && fields.accepted > 0 && !fields.failed) setCustomStepStatus(fields.step, 'completed');
                         if (kind === 'custom_decision' && fields.action === 'skip') setCustomStepStatus(fields.step, 'completed');
                         window.MessageDelivery?.batchEvent?.(kind, { pipelineRunId: runContext.pipelineRunId, ...fields });
                     }
@@ -8642,6 +8643,7 @@ document.addEventListener('click', (event) => {
                 }
                 win.style.display = 'none';
                 const done = await importBasicSchemaFile(value, '');
+                if (done && read.notes.length) showNotification(read.notes.join('\n'));
                 if (done) close();
                 else win.style.display = '';
             });

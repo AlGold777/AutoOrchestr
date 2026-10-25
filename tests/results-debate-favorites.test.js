@@ -3186,6 +3186,22 @@ describe('Pipeline debate favorites view', () => {
         } finally { h.cleanup(); }
       }, 30000);
 
+      test('the own output of a participant survives Install and the rebuild of the schema', async () => {
+        const h = setupCustomInheritance('Model output host');
+        try {
+          const output = { document: 'read', artifacts: [{ id: 'doc', name: 'Док', pointer: '' }] };
+          const schema = { schemaVersion: 1, origin: 'user', steps: [
+            { ref: 'r1', kind: 'round', models: [{ name: 'GPT', output }, { name: 'Claude' }] }
+          ] };
+          expect(await h.debug.installBasicSchema('Model output', schema)).toEqual({ ok: true, errors: [] });
+          select('Model output');
+          await settleCustomCard();
+          const saved = h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' });
+          expect(saved.steps[0].models.find((model) => model.name === 'GPT').output).toEqual(output);
+          expect(saved.steps[0].models.find((model) => model.name === 'Claude')).not.toHaveProperty('output');
+        } finally { h.cleanup(); }
+      }, 30000);
+
       test('run.strictLength of the schema survives Save, Export, the run and a second install; the run takes it for every step', async () => {
         const h = setupCustomInheritance('Strict run host');
         try {
