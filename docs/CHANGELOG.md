@@ -1,5 +1,13 @@
 # CHANGELOG — Project
 
+### 2026-10-25 — Basic: непривязанные наблюдения и экспорт basic-telemetry/2 (C03), версия 2.81.888
+
+- Формат экспорта Basic телеметрии обновлён до `basic-telemetry/2` (`shared/basic-telemetry.js`).
+- Разделены две независимые оси: отбор прогона `runSelection` ('selected' | 'unassigned' | 'otherRun' | 'invalid') и корреляция попытки `attemptCorrelation` ('linked' | 'unassigned' | 'conflict').
+- События с доказанным `runId` прогона при неизвестном ID запроса сохраняются в `delivery.journal` и `telemetry.events`.
+- Добавлены массивы `delivery.unassigned` и `telemetry.unassigned` с фиксацией причины `selectionReason` (включая `conflicting_run_ids` при конфликте прогонов).
+- Счётчики `selection` в `delivery` и `telemetry` отражают полный баланс `selected + unassigned + otherRun + invalid = totalScanned`.
+
 ### 2026-10-25 — Basic: единый фоновый журнал сообщений в storage.session (C04), версия 2.81.887
 
 - Создан фоновый модуль `background/message-delivery-store.js` — единственный писатель сохранённого журнала сообщений в `chrome.storage.session` (ключ `messageDelivery.journal.v2`).
