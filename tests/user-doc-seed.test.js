@@ -34,6 +34,11 @@ describe('built-in schema user_doc (seeded on the first start)', () => {
     expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual(schema);
   });
 
+  test('the revision of user_doc is an integer of at least 2 (the first seeded copy has no revision, i.e. 1)', () => {
+    expect(Number.isInteger(Presets.BUILTIN_SCHEMA_REVISIONS.user_doc)).toBe(true);
+    expect(Presets.BUILTIN_SCHEMA_REVISIONS.user_doc).toBeGreaterThanOrEqual(2);
+  });
+
   test('the built-in pipeline definitions stay Default only; the schema is not a definition', () => {
     expect(Presets.BUILTIN_PIPELINE_DEFINITIONS.map((item) => item.name)).toEqual(['Default']);
     expect(Presets.PIPELINE_PRESETS.map((preset) => preset.id)).toEqual(['CUSTOM']);

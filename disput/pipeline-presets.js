@@ -55,7 +55,10 @@
     })
   });
 
-  const PRESET_BY_ID = Object.freeze(Object.fromEntries(PIPELINE_PRESETS.map((preset) => [preset.id, preset])));
+  // Revision of each built-in schema. A higher revision replaces the copy already seeded into the list (results.js, seedBuiltinSchemas).
+  const BUILTIN_SCHEMA_REVISIONS = Object.freeze({ user_doc: 2 });
+
+  const PRESET_BY_ID =Object.freeze(Object.fromEntries(PIPELINE_PRESETS.map((preset) => [preset.id, preset])));
   function getPipelinePreset(presetId) { return PRESET_BY_ID[presetId] || PRESET_BY_ID[DEFAULT_PRESET_ID]; }
   function resolveFinalizationPolicy(value) {
     const policy = String(value || 'after_required_goals');
@@ -108,7 +111,7 @@
   }
 
   const api = Object.freeze({
-    PIPELINE_PRESETS, BUILTIN_PIPELINE_DEFINITIONS, BUILTIN_SCHEMAS, REASONING_BUDGETS, DEFAULT_PRESET_ID,
+    PIPELINE_PRESETS, BUILTIN_PIPELINE_DEFINITIONS, BUILTIN_SCHEMAS, BUILTIN_SCHEMA_REVISIONS, REASONING_BUDGETS, DEFAULT_PRESET_ID,
     normalizePipelinePreset, resolveRuntimeRoundLimits, resolveFinalizationPolicy, getPipelinePreset,
     isLongPreset, isOpenEndedPreset, isPresetEnabled
   });
