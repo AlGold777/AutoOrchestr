@@ -64,7 +64,7 @@ GPT подготавливает запрос через `ContentUtils.ensurePro
 | Сборка запроса | `composeCustomPrompts`, `prepareCustomPrompts`, `customLengthInstruction` | Дописывает особенность модели, инструкцию длины и требования к содержанию |
 | Прогон | `runCustomFromPage`, `resumeCustomFromPage`, `builtFromRecord`, `basicRunNotice`, `startDebateFromPage`, `askCustomDecision`, `askCustomOwner`, `customRunProgress`, `isCustomEnginePipeline` | Запуск Basic со страницы, окна паузы и вопросов, состояние холста |
 | Транспорт и карточки ответа | `runModelBatch`, `pipelineWaiter`, `updateDebateModelCardOutput` | Отправка запросов моделям, ожидание ответов, карточки ответа |
-| Холст | `draftPlanForCanvas`, `applyPipelineConfig`, `syncPipelineRoundModelsFromSelectedLLMs`, `getActiveDraftPlan`, `syncCanvasTooltips`, `setCanvasTooltip` | План холста и применение конфигурации к холсту; подсказки с названием и описанием на элементах холста (через `ResultsTooltips`) |
+| Холст | `draftPlanForCanvas`, `applyPipelineConfig`, `syncPipelineRoundModelsFromSelectedLLMs`, `getActiveDraftPlan`, `syncCanvasTooltips`, `setCanvasTooltip`, `applyCanvasArrows`, `ARROWS_HIDDEN_KEY` | План холста и применение конфигурации к холсту; подсказки с названием и описанием на элементах холста (через `ResultsTooltips`); кнопка «Стрелки» (класс `arrows-hidden`, `localStorage`) |
 | Документы окна User | `syncDocumentFrames`, `restoreDocumentFrames`, `openDocumentFrame`, `removeLastRound` | Рамки документов на холсте (строятся из записи прогона, обновляются при сохранении состояния), открытие документа для чтения, восстановление после перезагрузки, удаление последнего раунда со сбросом источника документа |
 
 ### Тесты
@@ -94,6 +94,7 @@ GPT подготавливает запрос через `ContentUtils.ensurePro
 | `tests/stage-card-basic.test.js` | Окно настроек раунда |
 | `tests/results-debate-favorites.test.js` | Страница целиком: окна настроек, прогон, Save, Import, Export, установка схемы |
 | `tests/results-tooltips.test.js` | Разметка подсказки на элементах холста (название и описание через `ResultsTooltips`) |
+| `tests/pipeline-arrows-toggle.test.js` | Разметка и стили кнопки «Стрелки» |
 | `tests/pipeline-presets.test.js`, `tests/pipeline-none-mini-prompt.test.js` | Список шаблонов и их умолчания |
 
 ### Что менять при типичных изменениях
@@ -321,7 +322,7 @@ Ctrl/Cmd+S сохраняет подсветки и избранное вмес�
 | TEST-1 | Тесты, падавшие не из-за Basic (9 в 4 файлах) | исправлено: устаревшие ожидания приведены к коду, код не менялся |
 | TEST-2 | Нестабильный тест `false success: watcher completion guards` | известно |
 | PLAN-1 | Документы для User — [план](basic-user-documents-plan.md) | этапы 1–2 сделаны (2.81.855–2.81.857); этапы 3 (файл на диске) и 4 (стенд) не сделаны |
-| PLAN-2 | Перенос в Basic с одобренного User (подсказки, Send, Arrows, значок ошибок, каталог целиком, колонка In и чипы артефактов, файл на диске) — [план](basic-port-plan.md) | составлен 25.10.2026, пакеты 1.1 (подсказки, 2.81.858) и 1.2 (Send, 2.81.859) сделаны, остальное не сделано |
+| PLAN-2 | Перенос в Basic с одобренного User (подсказки, Send, Arrows, значок ошибок, каталог целиком, колонка In и чипы артефактов, файл на диске) — [план](basic-port-plan.md) | пакеты 1.1 (подсказки, 2.81.858), 1.2 (Send, 2.81.859) и 1.3 (Arrows, 2.81.860) сделаны, остальное не сделано |
 
 ### Открытые вопросы
 

@@ -7810,6 +7810,21 @@ document.addEventListener('click', (event) => {
             pipelineItems?.style.removeProperty('--pipeline-item-main-width');
         };
 
+        const ARROWS_HIDDEN_KEY = 'pipelineArrowsHidden';
+        const applyCanvasArrows = (hidden) => {
+            pipelinePanel?.querySelector('.pipeline-canvas')?.classList.toggle('arrows-hidden', hidden);
+            document.getElementById('pipeline-arrows-toggle')?.setAttribute('aria-pressed', String(!hidden));
+        };
+        let arrowsHidden = false;
+        try { arrowsHidden = localStorage.getItem(ARROWS_HIDDEN_KEY) === '1'; } catch (_) {}
+        applyCanvasArrows(arrowsHidden);
+        document.addEventListener('click', (event) => {
+            if (!event.target.closest?.('#pipeline-arrows-toggle')) return;
+            arrowsHidden = !arrowsHidden;
+            applyCanvasArrows(arrowsHidden);
+            try { localStorage.setItem(ARROWS_HIDDEN_KEY, arrowsHidden ? '1' : '0'); } catch (_) {}
+        });
+
         const syncPipelineChromeControls = () => {
             const activeName = String(pipelineStore.active || getPipelineHeaderName()).trim();
             const custom = !!activeName && !isDefaultPipelineName(activeName);

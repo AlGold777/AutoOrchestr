@@ -3910,6 +3910,40 @@ describe('Pipeline debate favorites view', () => {
         }
       }, 30000);
 
+      test('arrows toggle: the button hides and shows the canvas arrows and remembers the state', () => {
+        const h = setupCustomInheritance('Arrows toggle');
+        const panel = document.getElementById('pipeline-panel');
+        let canvas = panel.querySelector('.pipeline-canvas');
+        const createdCanvas = !canvas;
+        if (createdCanvas) {
+          canvas = document.createElement('div');
+          canvas.className = 'pipeline-canvas';
+          panel.prepend(canvas);
+        }
+        const toggle = document.createElement('button');
+        toggle.type = 'button';
+        toggle.id = 'pipeline-arrows-toggle';
+        toggle.setAttribute('aria-label', 'Стрелки');
+        toggle.setAttribute('aria-pressed', 'true');
+        panel.prepend(toggle);
+        try {
+          toggle.click();
+          expect(canvas.classList.contains('arrows-hidden')).toBe(true);
+          expect(toggle.getAttribute('aria-pressed')).toBe('false');
+          expect(localStorage.getItem('pipelineArrowsHidden')).toBe('1');
+
+          toggle.click();
+          expect(canvas.classList.contains('arrows-hidden')).toBe(false);
+          expect(toggle.getAttribute('aria-pressed')).toBe('true');
+          expect(localStorage.getItem('pipelineArrowsHidden')).toBe('0');
+        } finally {
+          localStorage.removeItem('pipelineArrowsHidden');
+          toggle.remove();
+          if (createdCanvas) canvas.remove();
+          h.cleanup();
+        }
+      });
+
       test('no Send: the canvas shows no Send checkbox; each Input checkbox is described as participation in the round', async () => {
         const h = setupCustomInheritance('No send host');
         try {
