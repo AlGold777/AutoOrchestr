@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-25 — Basic: user_doc — третий шаг r2 (DeepSeek пересказывает ответы User), версия 2.81.859
+
+- В схему `user_doc` добавлен шаг `r2`: DeepSeek получает заполненный User опросник (`input: previous`) и перечисляет ответы по пунктам с коротким выводом о задаче.
+- Та же схема в `docs/Pipeline scenarios/questionnaire-deepseek.json` и в `BUILTIN_SCHEMAS.user_doc` (`disput/pipeline-presets.js`). Тест `tests/user-doc-seed.test.js` проверяет шаг r2 и совпадение файла с константой.
+- Уже посеянные схемы не перезаписываются (посев один раз, см. запись 2.81.858).
+
 ### 2026-10-25 — Basic: встроенная схема user_doc при первом старте, версия 2.81.858
 
 - Новая встроенная схема `user_doc` (опросник: DeepSeek составляет опросник, User заполняет и жмёт «Отправить») ставится в список pipelines при первом старте страницы. Схема лежит в `disput/pipeline-presets.js` (`BUILTIN_SCHEMAS`), посев — `seedBuiltinSchemas` в `results.js`.

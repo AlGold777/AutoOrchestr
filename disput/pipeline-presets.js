@@ -40,7 +40,7 @@
   const BUILTIN_SCHEMAS = Object.freeze({
     user_doc: Object.freeze({
       schemaVersion: 1, origin: 'user',
-      description: 'Опросник: DeepSeek составляет опросник по задаче из поля модератора, User заполняет его в окне и нажимает «Отправить».',
+      description: 'Опросник: DeepSeek составляет опросник по задаче из поля модератора, User заполняет его и нажимает «Отправить», ответы отправляются DeepSeek, он пересказывает их по пунктам.',
       run: Object.freeze({ policy: 'auto' }),
       steps: Object.freeze([
         Object.freeze({ ref: 'r1', kind: 'round', models: Object.freeze([Object.freeze({ name: 'DeepSeek' })]),
@@ -48,7 +48,9 @@
           output: Object.freeze({ format: 'json', document: 'form' }) }),
         Object.freeze({ ref: 'owner:fill', kind: 'owner', models: Object.freeze([]),
           task: 'Заполните опросник и нажмите «Отправить».',
-          document: 'r1' })
+          document: 'r1' }),
+        Object.freeze({ ref: 'r2', kind: 'round', models: Object.freeze([Object.freeze({ name: 'DeepSeek' })]), input: 'previous',
+          task: 'Тебе передан заполненный пользователем опросник (вопрос — ответ). Перечисли по пунктам, какие ответы ты получил, и в двух предложениях скажи, что понял о задаче пользователя.' })
       ])
     })
   });

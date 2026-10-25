@@ -20,6 +20,20 @@ describe('built-in schema user_doc (seeded on the first start)', () => {
     expect(fill).toMatchObject({ kind: 'owner', document: 'r1' });
   });
 
+  test('DeepSeek replies in round r2 after the fill step, input previous (User answers)', () => {
+    const round = schema.steps.find((step) => step.ref === 'r2');
+    expect(round).toMatchObject({ kind: 'round', input: 'previous' });
+    expect(round.models.map((model) => model.name)).toEqual(['DeepSeek']);
+    expect(schema.steps.map((step) => step.ref)).toEqual(['r1', 'owner:fill', 'r2']);
+  });
+
+  test('the JSON file docs/Pipeline scenarios/questionnaire-deepseek.json equals BUILTIN_SCHEMAS.user_doc', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const file = path.join(__dirname, '..', 'docs', 'Pipeline scenarios', 'questionnaire-deepseek.json');
+    expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual(schema);
+  });
+
   test('the built-in pipeline definitions stay Default only; the schema is not a definition', () => {
     expect(Presets.BUILTIN_PIPELINE_DEFINITIONS.map((item) => item.name)).toEqual(['Default']);
     expect(Presets.PIPELINE_PRESETS.map((preset) => preset.id)).toEqual(['CUSTOM']);
