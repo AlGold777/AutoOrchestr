@@ -451,12 +451,14 @@
       const step = plan[pos];
       const outcomeNow = current?.outcome || {};
       const finished = results.filter((item) => item !== current);
+      const unsentDecisions = step ? state.decisions[`unsent@${step.ref}@${activeVisit}`] : null;
       return JSON.parse(JSON.stringify({
         pc: step ? step.ref : null, visits: state.visits, decisions: state.decisions,
         // `active` is true while a step is in progress; between steps the current position is the next step, not started.
         current: current && step ? { active: true, stepRef: step.ref, visit: activeVisit, phase, valid: current.valid !== false,
           accepted: Object.keys(outcomeNow).filter((id) => outcomeNow[id]?.ok), pending: extra.pending ?? inFlight,
           outcome: compactOutcome(outcomeNow),
+          ...((extra.cancelled || unsentDecisions) ? { cancelled: extra.cancelled || unsentDecisions } : {}),
           owner: current.owner ? ownerOf(current.owner) : null }
           : { active: false, stepRef: step ? step.ref : null, visit: step ? (state.visits[refKey(step)] || 0) : 0, phase, valid: true,
             accepted: [], pending: [], outcome: {}, owner: null },
@@ -645,51 +647,17 @@
         }));
         inFlight = pending.map((model) => ({ participantId: model.id, attempt: tryNo, phase, stepRef: step.ref, visit: activeVisit }));
         await checkpointNow('send');
-        const meta = { step: step.index, kind: step.kind, label: stepLabel(step), attempt: tryNo, phase, stepRef: step.ref, visit: activeVisit };
-        const maxWordsOf = Object.fromEntries(pending.map((model) => [model.id, model.maxWords || null]));
-        const correctionOf = Object.fromEntries(pending.map((model) => [model.id, Boolean(current[model.id].parts?.correction)]));
-        let reply;
-        let viaCheck = false; // the answers were read by «check»: nothing is sent, so a rejected one is not corrected by itself
-        let byId; // participant id → the reply of the transport
-        try {
-          const found = prefetched ? Object.fromEntries(pending.filter((model) => prefetched[model.id]).map((model) => [model.id, prefetched[model.id]])) : {};
-          if (pending.length && pending.every((model) => found[model.id])) {
-            byId = found;
-            viaCheck = true;
-            reply = {};
-            pending.forEach((model) => { delete prefetched[model.id]; });
-            if (!Object.keys(prefetched).length) prefetched = null;
-          } else if (participants) {
-            reply = await sendParticipants(pending.map((model) => ({ participantId: model.id, modelName: model.name, prompt: current[model.id].prompt,
-              // A new chat starts on the first request of the visit only; a correction or a retry inside the visit goes to it.
-              chat: step.chat === 'new' && tryNo === 1 ? 'new' : 'continue', stepRef: step.ref, visit: activeVisit, attempt: tryNo })),
-            { ...meta, maxWordsByParticipant: maxWordsOf, correctionByParticipant: correctionOf });
-            byId = reply?.byParticipant || {};
-          } else {
-            reply = await send(pending.map((model) => model.name), Object.fromEntries(pending.map((model) => [model.name, current[model.id].prompt])),
-              { ...meta,
-                maxWordsByModel: Object.fromEntries(pending.map((model) => [model.name, model.maxWords || null])),
-                correctionByModel: Object.fromEntries(pending.map((model) => [model.name, correctionOf[model.id]])) });
-            byId = Object.fromEntries(pending.map((model) => [model.id, reply?.byModel?.[model.name]]));
-          }
-        } catch (error) {
-          if (error?.code === 'context_full') {
-            Object.values(entries).forEach((entry) => {
-              Object.assign(entry, { state: 'not_sent', reason: 'context_full', finishedAt: Date.now() });
-              if (typeof onResponse === 'function') onResponse(entry);
-            });
-            inFlight = [];
-            throw new StopRun('context_full');
-          }
-          if (error?.name === 'AbortError' || aborted()) throw new StopRun('cancelled');
-          byId = Object.fromEntries(pending.map((model) => [model.id, { text: '', status: String(error?.message || error) }]));
-        }
+        const processed = new Set();
         const retry = [];
-        pending.forEach((model) => {
-          const result = byId[model.id] || {};
+        let wasClosedByOwner = false;
+        let viaCheck = false; // the answers were read by «check»: nothing is sent, so a rejected one is not corrected by itself
+        let reply;
+        let byId; // participant id → the reply of the transport
+
+        const processParticipantResult = (model, result = {}) => {
           if (result.transportRequestId) chatBindings[model.id] = { modelName: model.name, stepRef: step.ref, visit: activeVisit, transportRequestId: result.transportRequestId };
           let verdict = judge(result, accept, checkFor(step, model));
-          if (!verdict.ok && reply?.closedByOwner && !text(result.text)) verdict = { ...verdict, reason: 'closed_by_owner' };
+          if (!verdict.ok && (reply?.closedByOwner || wasClosedByOwner) && !text(result.text)) verdict = { ...verdict, reason: 'closed_by_owner' };
           outcome[model.id] = { ...verdict, model: model.name, participant: model.id, status: result.status || '', attempt: tryNo, transportRequestId: result.transportRequestId || '' };
           // An accepted answer is stored once, then each artifact it declares is registered (one line, one version).
           if (verdict.ok) {
@@ -723,11 +691,116 @@
           emit('custom_answer', { step: step.index, label: stepLabel(step), model: model.name, participant: model.id, attempt: tryNo, input: modeOf(specOf(step, model)),
             accepted: verdict.ok, reason: verdict.reason || null, status: result.status || null,
             transportRequestId: result.transportRequestId || null, promptChars: String(current[model.id].prompt || '').length });
-          if (!verdict.ok && !reply?.closedByOwner && !viaCheck) retry.push(model);
+          inFlight = inFlight.filter((item) => item.participantId !== model.id);
+          if (!verdict.ok && !(reply?.closedByOwner || wasClosedByOwner) && !viaCheck) retry.push(model);
+        };
+
+        const onWaveResult = async (wavePayload) => {
+          const map = (wavePayload && typeof wavePayload.byParticipant === 'object' && wavePayload.byParticipant !== null)
+            ? wavePayload.byParticipant
+            : (wavePayload || {});
+          if (wavePayload?.closedByOwner) wasClosedByOwner = true;
+          let newlyHandled = 0;
+          for (const model of pending) {
+            if (processed.has(model.id)) continue;
+            if (model.id in map) {
+              processed.add(model.id);
+              newlyHandled += 1;
+              processParticipantResult(model, map[model.id]);
+            }
+          }
+          if (newlyHandled > 0) {
+            await checkpointNow('judge');
+          }
+        };
+
+        const handleCancelled = async () => {
+          const unsentIds = [];
+          pending.forEach((model) => {
+            if (!processed.has(model.id)) {
+              unsentIds.push(model.id);
+              const entry = entries[model.id];
+              if (entry) {
+                Object.assign(entry, { state: 'not_sent', reason: 'cancelled_before_dispatch', finishedAt: Date.now() });
+                if (typeof onResponse === 'function') onResponse(entry);
+              }
+            }
+          });
+          if (unsentIds.length) {
+            state.decisions[`unsent@${step.ref}@${activeVisit}`] = unsentIds;
+          }
+          inFlight = [];
+          await checkpointNow('judge', { cancelled: unsentIds, pending: [] });
+          throw new StopRun('cancelled');
+        };
+
+        const meta = { step: step.index, kind: step.kind, label: stepLabel(step), attempt: tryNo, phase, stepRef: step.ref, visit: activeVisit, onWaveResult };
+        const maxWordsOf = Object.fromEntries(pending.map((model) => [model.id, model.maxWords || null]));
+        const correctionOf = Object.fromEntries(pending.map((model) => [model.id, Boolean(current[model.id].parts?.correction)]));
+        try {
+          const found = prefetched ? Object.fromEntries(pending.filter((model) => prefetched[model.id]).map((model) => [model.id, prefetched[model.id]])) : {};
+          if (pending.length && pending.every((model) => found[model.id])) {
+            byId = found;
+            viaCheck = true;
+            reply = {};
+            pending.forEach((model) => { delete prefetched[model.id]; });
+            if (!Object.keys(prefetched).length) prefetched = null;
+          } else if (participants) {
+            reply = await sendParticipants(pending.map((model) => ({ participantId: model.id, modelName: model.name, prompt: current[model.id].prompt,
+              // A new chat starts on the first request of the visit only; a correction or a retry inside the visit goes to it.
+              chat: step.chat === 'new' && tryNo === 1 ? 'new' : 'continue', stepRef: step.ref, visit: activeVisit, attempt: tryNo })),
+            { ...meta, maxWordsByParticipant: maxWordsOf, correctionByParticipant: correctionOf });
+            byId = reply?.byParticipant || {};
+          } else {
+            reply = await send(pending.map((model) => model.name), Object.fromEntries(pending.map((model) => [model.name, current[model.id].prompt])),
+              { ...meta,
+                maxWordsByModel: Object.fromEntries(pending.map((model) => [model.name, model.maxWords || null])),
+                correctionByModel: Object.fromEntries(pending.map((model) => [model.name, correctionOf[model.id]])) });
+            byId = Object.fromEntries(pending.map((model) => [model.id, reply?.byModel?.[model.name]]));
+          }
+        } catch (error) {
+          if (error instanceof StopRun) throw error;
+          if (error?.code === 'context_full') {
+            pending.forEach((model) => {
+              if (!processed.has(model.id)) {
+                const entry = entries[model.id];
+                if (entry) {
+                  Object.assign(entry, { state: 'not_sent', reason: 'context_full', finishedAt: Date.now() });
+                  if (typeof onResponse === 'function') onResponse(entry);
+                }
+              }
+            });
+            inFlight = [];
+            throw new StopRun('context_full');
+          }
+          if (error?.name === 'AbortError' || aborted()) {
+            if (participants) {
+              await handleCancelled();
+            }
+            throw new StopRun('cancelled');
+          }
+          byId = Object.fromEntries(pending.map((model) => [model.id, { text: '', status: String(error?.message || error) }]));
+        }
+
+        if (aborted()) {
+          if (participants) {
+            await handleCancelled();
+          }
+          throw new StopRun('cancelled');
+        }
+
+        let remainingHandled = 0;
+        pending.forEach((model) => {
+          if (processed.has(model.id)) return;
+          processed.add(model.id);
+          remainingHandled += 1;
+          processParticipantResult(model, byId[model.id] || {});
         });
-        inFlight = [];
-        await checkpointNow('judge');
-        if (reply?.closedByOwner) return { closedByOwner: true };
+        if (remainingHandled > 0 || inFlight.length > 0) {
+          inFlight = [];
+          await checkpointNow('judge');
+        }
+        if (reply?.closedByOwner || wasClosedByOwner) return { closedByOwner: true };
         pending = retry;
         // No text at all means no answer exists to correct (a refused or unconfirmed dispatch looks the same):
         // the same request goes out again. A correction is for an answer that came back and was not accepted.
@@ -912,7 +985,12 @@
       pos = at < 0 ? plan.length : at;
       const cur = saved.current;
       if (cur && cur.active && at >= 0 && cur.stepRef === saved.pc) {
-        resumePoint = { index: at, visit: cur.visit, phase: cur.phase, pending: Array.isArray(cur.pending) ? cur.pending : [], outcome: restoredOutcome(cur.outcome),
+        const unsent = new Set([
+          ...(Array.isArray(cur.cancelled) ? cur.cancelled : []),
+          ...(Array.isArray(state.decisions[`unsent@${cur.stepRef}@${cur.visit}`]) ? state.decisions[`unsent@${cur.stepRef}@${cur.visit}`] : [])
+        ]);
+        const pending = (Array.isArray(cur.pending) ? cur.pending : []).filter((item) => !unsent.has(item.participantId));
+        resumePoint = { index: at, visit: cur.visit, phase: cur.phase, pending, outcome: restoredOutcome(cur.outcome),
           valid: cur.valid !== false,
           owner: cur.owner ? restoredOwner(cur.owner) : null };
       }
@@ -920,7 +998,10 @@
     // A request that may have been sent before the reload has no known answer: the owner decides, and the request is never
     // sent again on its own. The accepted answers of the visit stay. Resend is a new attempt; skip is recorded for it only.
     async function settleUnknown(step, entry, pending = []) {
-      let items = pending.filter((item) => !entry.outcome[item.participantId]?.ok);
+      const unsent = new Set([
+        ...(Array.isArray(state.decisions[`unsent@${step.ref}@${entry.visit}`]) ? state.decisions[`unsent@${step.ref}@${entry.visit}`] : [])
+      ]);
+      let items = pending.filter((item) => !entry.outcome[item.participantId]?.ok && !unsent.has(item.participantId));
       if (!items.length) return;
       // Until the owner decides, the requests stay in flight: a Stop keeps them unknown in the saved state.
       const markInFlight = () => {

@@ -7313,7 +7313,7 @@ document.addEventListener('click', (event) => {
                         });
                         const byParticipant = {};
                         let closedByOwner = false;
-                        for (const [waveNo, wave] of waves.entries()) {
+                        wavesLoop: for (const [waveNo, wave] of waves.entries()) {
                             // A wave with a participant that takes the files and one that does not is split (R05): the files go to
                             // the new chat only, nobody gets files again because of a neighbour.
                             const withFiles = wave.filter(filesNeeded);
@@ -7326,6 +7326,12 @@ document.addEventListener('click', (event) => {
                                 const reply = await sendWave(group, meta, key);
                                 Object.assign(byParticipant, reply.byParticipant);
                                 closedByOwner = closedByOwner || reply.closedByOwner;
+                                if (typeof meta?.onWaveResult === 'function') {
+                                    await meta.onWaveResult(reply.byParticipant || reply);
+                                }
+                                if (signal?.aborted) {
+                                    break wavesLoop;
+                                }
                             }
                         }
                         return { byParticipant, closedByOwner };
