@@ -37,8 +37,7 @@
     return {
       version: 2, runId: String(runId || ''), pipelineName: String(pipelineName || ''), startedAt, finishedAt: null,
       stopReason: '', taskRef: put(task), steps: steps.map((step, index) => ({ index, ref: step.ref || '', kind: step.kind, models: (step.models || []).map((model) => (typeof model === 'string' ? model : model.name)) })),
-      attempts: [], artifacts: [], snapshot: null,
-      cardHistory: null, texts, put
+      attempts: [], artifacts: [], snapshot: null, cardHistory: null, waits: [], texts, put
     };
   }
 
@@ -90,7 +89,7 @@
     const key = entry.attemptKey || attemptKey(entry);
     let attempt = record.attempts.find((item) => item.key === key || (item.attemptKey && item.attemptKey === key));
     // An attempt left unknown by a reload is settled by its answer too (N04: the read of its chat).
-    if (attempt && attempt.state !== 'sent' && attempt.state !== 'unknown') {
+    if (attempt && attempt.state !== 'sent' && attempt.state !== 'unknown' && !entry.recoveredBy) {
       if (entry.chatRoute) {
         attempt.chatRoute = normalizeChatRoute(entry.chatRoute);
       }
@@ -103,6 +102,10 @@
         attemptKey: entry.attemptKey || key,
         chatIntent: normalizeChatIntent(entry.chatIntent),
         chatRoute: normalizeChatRoute(entry.chatRoute),
+        trigger: entry.trigger || null,
+        triggerReason: entry.triggerReason || null,
+        previousAttemptKey: entry.previousAttemptKey || null,
+        recoveredBy: entry.recoveredBy || null,
         retryOf: entry.retryOf || null, promptRef: record.put(entry.prompt), parts: storedParts(record.put, entry.parts),
         state: 'sent', sentAt: entry.sentAt || Date.now()
       };
@@ -111,10 +114,17 @@
       if (entry.attemptKey && !attempt.attemptKey) attempt.attemptKey = entry.attemptKey;
       if (entry.chatIntent) attempt.chatIntent = normalizeChatIntent(entry.chatIntent);
       if (entry.chatRoute) attempt.chatRoute = normalizeChatRoute(entry.chatRoute);
+      if (entry.trigger && !attempt.trigger) attempt.trigger = entry.trigger;
+      if (entry.triggerReason && !attempt.triggerReason) attempt.triggerReason = entry.triggerReason;
+      if (entry.previousAttemptKey && !attempt.previousAttemptKey) attempt.previousAttemptKey = entry.previousAttemptKey;
+      if (entry.recoveredBy) attempt.recoveredBy = entry.recoveredBy;
     }
     if (entry.state === 'not_sent') {
       // The transport refused before sending (the budget): nothing left the extension, the reason is kept.
       Object.assign(attempt, { state: 'not_sent', finishedAt: entry.finishedAt || Date.now(), reason: entry.reason || '' });
+    }
+    if (entry.state === 'unknown') {
+      Object.assign(attempt, { state: 'unknown', finishedAt: entry.finishedAt || Date.now(), reason: entry.reason || '', status: entry.status || '', transportRequestId: entry.transportRequestId || '' });
     }
     if (entry.state === 'done') {
       Object.assign(attempt, {
@@ -123,6 +133,7 @@
         reason: entry.reason || '', status: entry.status || '', transportRequestId: entry.transportRequestId || ''
       });
       if (entry.chatRoute) attempt.chatRoute = normalizeChatRoute(entry.chatRoute);
+      if (entry.recoveredBy) attempt.recoveredBy = entry.recoveredBy;
     }
     return attempt;
   }
@@ -135,9 +146,45 @@
     return attempt;
   }
 
+  function recordWaitStart(record, waitInfo = {}) {
+    if (!record) return null;
+    if (!Array.isArray(record.waits)) record.waits = [];
+    const wait = {
+      waitId: String(waitInfo.waitId || `wait_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`),
+      kind: String(waitInfo.kind || 'decision'),
+      stepRef: waitInfo.stepRef ?? null,
+      visit: waitInfo.visit ?? 1,
+      startedAt: waitInfo.startedAt || Date.now(),
+      endedAt: waitInfo.endedAt ?? null,
+      outcome: waitInfo.outcome ?? null,
+      resumedFrom: waitInfo.resumedFrom ?? null
+    };
+    record.waits.push(wait);
+    return wait;
+  }
+
+  function recordWaitEnd(record, { waitId, outcome = 'completed', endedAt = Date.now() } = {}) {
+    if (!record || !Array.isArray(record.waits)) return null;
+    const wait = record.waits.find((w) => w.waitId === waitId) || record.waits[record.waits.length - 1];
+    if (wait) {
+      if (wait.endedAt == null) wait.endedAt = endedAt;
+      if (wait.outcome == null) wait.outcome = outcome;
+      return wait;
+    }
+    return null;
+  }
+
   function finishRun(record, { stopReason = '', finishedAt = Date.now() } = {}) {
     record.stopReason = stopReason;
     record.finishedAt = finishedAt;
+    if (Array.isArray(record.waits)) {
+      record.waits.forEach((w) => {
+        if (w.endedAt == null) {
+          w.endedAt = finishedAt;
+          w.outcome = stopReason === 'stopped' ? 'stopped' : stopReason === 'cancelled' ? 'cancelled' : 'interrupted';
+        }
+      });
+    }
     return record;
   }
 
@@ -168,7 +215,8 @@
     if (!stored || typeof stored !== 'object') return null;
     const record = { ...stored, version: stored.version || 1, texts: { ...(stored.texts || {}) }, attempts: (stored.attempts || []).map((item) => ({ ...item })),
       artifacts: (stored.artifacts || []).map((item) => ({ ...item })),
-      cardHistory: copyOf(stored.cardHistory) };
+      cardHistory: copyOf(stored.cardHistory),
+      waits: (stored.waits || []).map((w) => ({ ...w })) };
     // A field of an older record that is no longer part of the record (documents) is not carried over.
     delete record.documents;
     record.put = (value) => {
@@ -405,7 +453,7 @@
     };
   }
 
-  const api = Object.freeze({ DEFAULT_MAX_BYTES, INDEX_KEY, RUN_KEY_PREFIX, fingerprint, createRun, recordAttempt, updateAttemptRoute, attemptKey, finishRun, serialize, revive, textOf, setSnapshot, setChatBindings, setAttachments, MAX_ATTACHMENT_RECORD_BYTES, setArtifacts, canResume, exportRun, createStore, chromeStorage });
+  const api = Object.freeze({ DEFAULT_MAX_BYTES, INDEX_KEY, RUN_KEY_PREFIX, fingerprint, createRun, recordAttempt, updateAttemptRoute, attemptKey, recordWaitStart, recordWaitEnd, finishRun, serialize, revive, textOf, setSnapshot, setChatBindings, setAttachments, MAX_ATTACHMENT_RECORD_BYTES, setArtifacts, canResume, exportRun, createStore, chromeStorage });
   root.CustomRunRecord = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

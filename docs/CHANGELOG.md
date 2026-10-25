@@ -1,5 +1,13 @@
 # CHANGELOG — Project
 
+### 2026-10-26 — Basic: ожидания User и происхождение повторов (C05, C06), версия 2.81.889
+
+- Реализован сквозной жизненный цикл ожиданий User (`decision`, `owner`, `asks`, `unknown`) с событиями `custom_wait_start` и `custom_wait_end` (`waitId`, `kind`, `stepRef`, `visit`, `startedAt`, `endedAt`, `outcome`, `resumedFrom`).
+- В `CustomRunRecord` добавлен массив `waits` с сохранением `waitId`, времени и исходов ожиданий (`disput/custom-run-record.js`). При финализации незакрытые ожидания завершаются со статусом `stopped` / `cancelled` / `interrupted`.
+- Введена явная атрибуция происхождения попыток: `trigger` (`initial`, `automatic_retry`, `user_retry`, `user_resend`, `resume_unsent`), `triggerReason` (`empty_answer`, `rejected_by_judge`, `user_decision`, `resend_unknown`, `resumed_after_stop`) и `previousAttemptKey` (`disput/custom-engine.js`).
+- Действие «Проверить ответ» (`check`) при неизвестном ответе завершает исходную попытку найденным текстом с пометкой `recoveredBy: 'check'` без нового сетевого запроса, нового `onRequest` или смены идентичности попытки.
+- Документация событий Basic обновлена в `docs/Pipeline scenarios/basic-start-here.md`.
+
 ### 2026-10-25 — Basic: непривязанные наблюдения и экспорт basic-telemetry/2 (C03), версия 2.81.888
 
 - Формат экспорта Basic телеметрии обновлён до `basic-telemetry/2` (`shared/basic-telemetry.js`).

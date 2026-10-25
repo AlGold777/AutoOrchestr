@@ -140,7 +140,7 @@ describe('Custom engine resume (8.3, T15, T16, T13)', () => {
       decide: async () => { controller.abort(); return new Promise(() => {}); }
     });
     expect(run1.stopReason).toBe('cancelled');
-    expect(first.last().pendingOwner).toEqual({ kind: 'decision', stepRef: 'S1', visit: 1 });
+    expect(first.last().pendingOwner).toEqual(expect.objectContaining({ kind: 'decision', stepRef: 'S1', visit: 1 }));
     const asked = [];
     const log2 = [];
     const run2 = await Engine.run({

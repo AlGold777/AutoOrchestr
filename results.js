@@ -7432,6 +7432,12 @@ document.addEventListener('click', (event) => {
                         // A step with all answers accepted, or one the owner skipped, is done; otherwise it stays running until a decision.
                         if (kind === 'custom_step' && fields.accepted > 0 && !fields.failed) setCustomStepStatus(fields.step, 'completed');
                         if (kind === 'custom_decision' && fields.action === 'skip') setCustomStepStatus(fields.step, 'completed');
+                        if (kind === 'custom_wait_start' && record) {
+                            window.CustomRunRecord?.recordWaitStart(record, fields);
+                        }
+                        if (kind === 'custom_wait_end' && record) {
+                            window.CustomRunRecord?.recordWaitEnd(record, fields);
+                        }
                         window.MessageDelivery?.batchEvent?.(kind, { pipelineRunId: runContext.pipelineRunId, ...fields });
                     }
                 });

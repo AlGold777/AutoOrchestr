@@ -90,7 +90,7 @@ describe('Custom engine checkpoint (ТЗ 7, 8.2, T20)', () => {
     expect(result.stopReason).toBe('stopped');
     expect(log.map((item) => (item.kind === 'send' ? 'send-request' : item.phase))).toEqual(['send', 'send-request', 'judge', 'decision', 'decision', 'done']);
     const decisions = states.filter((state) => state.current.phase === 'decision');
-    expect(decisions.map((state) => state.pendingOwner)).toEqual([{ kind: 'decision', stepRef: 'S1', visit: 1 }, null]);
+    expect(decisions.map((state) => state.pendingOwner)).toEqual([expect.objectContaining({ kind: 'decision', stepRef: 'S1', visit: 1 }), null]);
   });
 
   test('the run has no transition phase: every checkpoint is send, judge, decision, asks or done', async () => {

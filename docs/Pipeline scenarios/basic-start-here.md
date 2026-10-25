@@ -342,6 +342,8 @@
 | `custom_step` | движок, когда шаг завершил попытки | `step`, `label`, `accepted` (число), `failed` (число) |
 | `custom_step_end` | движок, после решения User (конец раунда) | `step`, `label`, `visit`, `skipped`, `accepted`, `failed` |
 | `custom_decision` | движок, после ответа на окно паузы | `step`, `action` (`continue`, `retry`, `skip`, `stop`) |
+| `custom_wait_start` | движок, начало ожидания User | `waitId`, `kind`, `stepRef`, `visit`, `startedAt`, `resumedFrom` |
+| `custom_wait_end` | движок, конец ожидания User | `waitId`, `kind`, `stepRef`, `visit`, `startedAt`, `endedAt`, `outcome` |
 | `custom_owner` | движок, на каждый ответ User | `step`, `ref`, `visit`, `accepted` (`false` — ответ отклонён, User спрашивают снова), `reason` |
 | `custom_unknown_check` | движок, при проверке ответа неизвестного запроса (кнопка «Проверить ответ») | `step`, `label`, `participant`, `attempt`, `status` (`found`, `no_answer`, `ambiguous`, `chat_unavailable`), `reason` |
 | `custom_end` | движок, в конце; страница — при ошибке | `stopReason`, `steps` (число шагов с результатом); при ошибке — `stopReason: 'error'` и `error` |
