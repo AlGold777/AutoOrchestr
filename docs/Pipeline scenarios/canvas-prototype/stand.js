@@ -6,7 +6,7 @@
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '62';
+  const STAND_VERSION = '64';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -23,24 +23,8 @@
   const FIELDS = {
     round: ['models', 'task', 'chat'], owner: ['ask', 'document'], file: ['file', 'mode']
   };
-  // Виды этапов, которых больше нет: в схеме их выражают обычными этапами (текст ошибки — в проверке).
-  const REMOVED_BLOCKS = {
-    gate: 'Проверка — обычный этап моделей: критерии запишите в task, затем поставьте этап owner: User читает вердикт и решает, нужна ли доработка',
-    foreach: 'Перебора по пунктам нет: один этап модели с заданием на все пункты сразу',
-    block: 'Готовой части нет: этап записывается обычным образом',
-    synthesis: 'Синтез — это роль: запишите этап round из одной модели с role «свести» (models: [{ "name": "Claude", "role": "свести" }])',
-    form: 'Опросник — round из одной модели с ролью «свести» и артефактом «Опросник» (HTML), затем owner с артефактом «Ответы»',
-    list: 'Список — обычный этап модели с артефактом «Список …»',
-    source: 'Исходный материал — верхнеуровневый artifacts (name и content или attachment), ссылка в inputs: «in.Имя»',
-    score: 'Оценка по баллам — round с ролью «жюри», веса записываются словами в task',
-    route: 'Ветвления в схеме нет: все этапы выполняются по порядку. Если нужно решение User — поставьте этап owner с вопросом ask, а следующий этап читает его ответ',
-    assemble: 'Склейка — просто новый артефакт: запишите этап round, который объединяет входы и выдаёт новый артефакт'
-  };
   // Поля, которых больше нет: значение игнорируется, проверка предупреждает.
   const REMOVED_FIELDS = {
-    repeats: 'Повтор записывается обычным этапом ниже по списку',
-    because: 'Условие повтора не записывается: решение о доработке принимает этап owner, затем идёт этап доработки ниже по списку',
-    weights: 'Веса записываются словами в task',
     request: 'Свой запрос не записывается: задание пишется в task'
   };
   // Блоки, где работает User: в холсте — зелёная рамка, в окне — «Назначение».
@@ -293,7 +277,7 @@
       }
       if (typeof st.block === 'string') {
         const b = st.block.trim().toLowerCase();
-        if (b !== st.block && (has(FIELDS, b) || has(REMOVED_BLOCKS, b))) { fixed(`block «${st.block}» → «${b}».`); st.block = b; }
+        if (b !== st.block && has(FIELDS, b)) { fixed(`block «${st.block}» → «${b}».`); st.block = b; }
       }
       if (st.title == null && own(st.name)) { st.title = st.name; delete st.name; fixed('«name» вместо «title» — переименовано.'); }
       if (st.inputs == null) {
@@ -426,15 +410,13 @@
       if (!own(st.id)) add('error', e.key, 'Нет id.');
       else if (byId.has(st.id)) add('error', e.key, `id «${st.id}» повторяется.`);
       else byId.set(st.id, e);
-      if (has(REMOVED_BLOCKS, st.block)) add('error', e.key, `Вид этапа «${st.block}» не поддерживается. ${REMOVED_BLOCKS[st.block]}.`);
-      else if (!FIELDS[st.block]) add('error', e.key, st.block ? `Неизвестный блок «${st.block}».` : 'Нет block.');
+      if (!FIELDS[st.block]) add('error', e.key, st.block ? `Неизвестный блок «${st.block}».` : 'Нет block.');
       if (!own(st.title)) add('error', e.key, 'Нет title.');
       if (!own(st.why)) add('error', e.key, 'Нет why — зачем этот этап.');
       Object.keys(st).forEach((k) => {
         if (k === 'optional_inputs') add('warn', e.key, 'Поле «optional_inputs» не поддерживается и не применяется: пропускаемых этапов нет, все входы обязательны.');
         else if (k === 'order') add('warn', e.key, 'Поле «order» не поддерживается и не применяется: все модели раунда отвечают независимо; эстафета — раунды по одной модели подряд.');
         else if (has(REMOVED_FIELDS, k)) add('warn', e.key, `Поле «${k}» не поддерживается и не применяется. ${REMOVED_FIELDS[k]}.`);
-        else if (k === 'body') add('error', e.key, 'Поле «body» не поддерживается: вложенных этапов нет.');
         else if (FIELDS[st.block] && !COMMON.includes(k) && !FIELDS[st.block].includes(k)) add('warn', e.key, `Неизвестное поле «${k}» для блока ${st.block}.`);
       });
       Object.entries(ENUMS).forEach(([k, values]) => {
