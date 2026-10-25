@@ -1309,7 +1309,8 @@ body.is-resizing {
 
 .pipeline-control-card {
     display: block;
-    width: 100%;
+    width: 139px;
+    box-sizing: border-box;
     padding: 8px 10px;
     border: 1px dashed currentColor;
     border-radius: 8px;
