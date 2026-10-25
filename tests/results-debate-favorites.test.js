@@ -2930,6 +2930,43 @@ describe('Pipeline debate favorites view', () => {
       } finally { h.cleanup(); }
     }, 30000);
 
+    test('step errors: a failing step shows a badge that opens the full error list; an install with 7 errors lists all 7', async () => {
+      require('../results/choice-dialog');
+      const h = setupCustomInheritance('Step errors');
+      const closeDialog = () => document.querySelector('dialog.choice-dialog .choice-dialog-cancel')?.click();
+      try {
+        const record = JSON.parse(JSON.stringify(h.debug.capturePipelineConfig()));
+        record.schema = { schemaVersion: 1, origin: 'user', steps: [{ ref: 'r1', kind: 'synthesis', models: [{ name: 'GPT' }] }, { ref: 'r2', kind: 'gate', models: [{ name: 'GPT' }] }] };
+        const errors = window.BasicSchema.validate(record.schema);
+        expect(errors.length).toBeGreaterThan(0);
+        h.debug.clearCustomSessionForTest();
+        h.debug.setPipelineStoreForTest({ active: 'Step errors', order: ['Step errors'], pipelines: { 'Step errors': record } });
+        // The test page has no header row of the rounds: it is added as in pipeline_panel.html.
+        document.querySelector('#round1').insertAdjacentHTML('afterbegin', '<div class="stage-header-row"><div class="stage-label"><span class="round-badge">R1</span></div></div>');
+        h.debug.applyPipelineConfig(record);
+
+        const badges = document.querySelectorAll('.stage-column[data-round="1"] .step-error-badge');
+        expect(badges.length).toBe(1);
+        expect(badges[0].textContent).toBe('!');
+        expect(badges[0].dataset.tooltip).toBe('Ошибки шага r1');
+        expect(badges[0].dataset.tooltipDesc).toContain(errors.find((error) => error.path.startsWith('steps[0]')).message);
+
+        badges[0].click();
+        const dialog = document.querySelector('dialog.choice-dialog');
+        expect(dialog).not.toBeNull();
+        const lines = dialog.querySelector('.choice-dialog-document').textContent.split('\n').filter(Boolean);
+        expect(lines.length).toBe(errors.length);
+        lines.forEach((line) => expect(line).toContain(': '));
+        closeDialog();
+        expect(document.querySelector('dialog.choice-dialog')).toBeNull();
+
+        h.debug.showSchemaErrors('Схема не установлена', Array.from({ length: 7 }, (_, i) => ({ path: `steps[${i}].kind`, message: `ошибка ${i + 1}` })));
+        const installDialog = document.querySelector('dialog.choice-dialog');
+        expect(installDialog.querySelector('.choice-dialog-document').textContent.split('\n').filter(Boolean).length).toBe(7);
+        closeDialog();
+      } finally { closeDialog(); h.cleanup(); }
+    }, 30000);
+
     test('the saved record holds a valid schema with origin, version and only the owner\'s values; the earlier members are gone', async () => {
       const h = setupCustomInheritance('Schema record');
       try {
@@ -3063,7 +3100,7 @@ describe('Pipeline debate favorites view', () => {
 
     describe('a schema is installed as a pipeline', () => {
       const stackFlags = (stackId) => [...document.querySelectorAll(`#${stackId} .model-block:not(.pipeline-empty-slot)`)]
-        .map((block) => [block.querySelector('.model-name').textContent, block.querySelector('.model-send-checkbox').checked, block.querySelector('.role-selector')?.value || '']);
+        .map((block) => [block.querySelector('.model-name').textContent, block.querySelector('.model-input-checkbox').checked, block.querySelector('.role-selector')?.value || '']);
       const select = (name) => document.querySelector(`.pipeline-item[data-name="${name}"]`).click();
 
       test('the order of a round and the send marks of its models survive load and a second save', async () => {
@@ -3840,6 +3877,152 @@ describe('Pipeline debate favorites view', () => {
         } finally { h.cleanup(); }
       }, 30000);
 
+      test('canvas tooltips: the In badge, ▶, round badges, model blocks, the User card, the document frame and the list items carry a name and a description', async () => {
+        require('../results/choice-dialog');
+        require('../results/stage-card');
+        const h = setupCustomInheritance('Tooltip names');
+        // The test page has no In column and no header row of the list: they are added as in pipeline_panel.html.
+        const importBtn = document.getElementById('pipeline-import-btn');
+        const importHeader = importBtn.parentElement;
+        const inBadge = document.createElement('span');
+        inBadge.className = 'entry-badge';
+        inBadge.textContent = 'In';
+        importBtn.setAttribute('title', 'Import schema');
+        importHeader.classList.add('pipeline-list-header-actions');
+        document.getElementById('pipeline-panel').prepend(inBadge);
+        const badgeOf = (round) => {
+          const row = document.createElement('div');
+          row.className = 'stage-label';
+          row.innerHTML = `<span class="round-badge">R${round}</span>`;
+          document.getElementById(`round${round}`).prepend(row);
+          return row;
+        };
+        const badgeRows = [badgeOf(1), badgeOf(2)];
+        try {
+          const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
+            { ref: 'r1', kind: 'round', title: 'Написать ТЗ', goal: 'Черновик документа', models: [{ name: 'Claude', task: 'Пиши коротко' }],
+              output: { document: 'read', artifacts: [{ id: 'spec', name: 'ТЗ', description: 'Техзадание', pointer: '' }] } },
+            { ref: 'owner:u', kind: 'owner', title: 'Проверка', goal: 'Правки User', models: [], document: 'r1', task: 'Проверьте ТЗ' },
+            { ref: 'r2', kind: 'round', models: [{ name: 'GPT' }] }
+          ] };
+          expect((await h.debug.installBasicSchema('Tooltip names', schema)).ok).toBe(true);
+          document.querySelector('.pipeline-item[data-name="Tooltip names"]').click();
+          await settleCustomCard();
+          await settleCustomCard();
+
+          const entry = document.querySelector('.entry-badge');
+          expect(entry.dataset.tooltip).toBe('In');
+          expect(entry.hasAttribute('data-tooltip-desc')).toBe(false);
+
+          const r1Badge = document.querySelector('.stage-column[data-round="1"] .round-badge');
+          expect(r1Badge.dataset.tooltip).toBe('R1 · Написать ТЗ');
+          expect(r1Badge.dataset.tooltipDesc).toBe('Черновик документа');
+
+          const claudeBlock = document.querySelector('.stage-column[data-round="1"] .model-block');
+          expect(claudeBlock.dataset.tooltip).toBe('Claude');
+          expect(claudeBlock.dataset.tooltipDesc).toBe('Пиши коротко');
+
+          const userCard = document.querySelector('.pipeline-control-card');
+          expect(userCard.dataset.tooltip).toBe('User · owner:u · Проверка');
+          expect(userCard.dataset.tooltipDesc).toBe('Правки User');
+
+          const frame = document.querySelector('.pipeline-doc-frame');
+          expect(frame.dataset.tooltip).toBe('ТЗ');
+          expect(frame.dataset.tooltipDesc).toBe('Техзадание');
+
+          expect(importBtn.hasAttribute('title')).toBe(false);
+          expect(importBtn.dataset.tooltip).toBe('Import schema');
+
+          const r2Badge = document.querySelector('.stage-column[data-round="2"] .round-badge');
+          expect(r2Badge.dataset.tooltip).toBe('R2');
+          expect(r2Badge.hasAttribute('data-tooltip-desc')).toBe(false);
+
+          const item = document.querySelector('#pipelineItems .pipeline-item[data-name="Tooltip names"]');
+          expect(item.dataset.tooltip).toBe('Tooltip names');
+        } finally {
+          inBadge.remove();
+          badgeRows.forEach((row) => row.remove());
+          importHeader.classList.remove('pipeline-list-header-actions');
+          h.cleanup();
+        }
+      }, 30000);
+
+      test('arrows toggle: the button hides and shows the canvas arrows and remembers the state', () => {
+        const h = setupCustomInheritance('Arrows toggle');
+        const panel = document.getElementById('pipeline-panel');
+        let canvas = panel.querySelector('.pipeline-canvas');
+        const createdCanvas = !canvas;
+        if (createdCanvas) {
+          canvas = document.createElement('div');
+          canvas.className = 'pipeline-canvas';
+          panel.prepend(canvas);
+        }
+        const toggle = document.createElement('button');
+        toggle.type = 'button';
+        toggle.id = 'pipeline-arrows-toggle';
+        toggle.setAttribute('aria-label', 'Стрелки');
+        toggle.setAttribute('aria-pressed', 'true');
+        panel.prepend(toggle);
+        try {
+          toggle.click();
+          expect(canvas.classList.contains('arrows-hidden')).toBe(true);
+          expect(toggle.getAttribute('aria-pressed')).toBe('false');
+          expect(localStorage.getItem('pipelineArrowsHidden')).toBe('1');
+
+          toggle.click();
+          expect(canvas.classList.contains('arrows-hidden')).toBe(false);
+          expect(toggle.getAttribute('aria-pressed')).toBe('true');
+          expect(localStorage.getItem('pipelineArrowsHidden')).toBe('0');
+        } finally {
+          localStorage.removeItem('pipelineArrowsHidden');
+          toggle.remove();
+          if (createdCanvas) canvas.remove();
+          h.cleanup();
+        }
+      });
+
+      test('no Send: the canvas shows no Send checkbox; each Input checkbox is described as participation in the round', async () => {
+        const h = setupCustomInheritance('No send host');
+        try {
+          const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
+            { ref: 'r1', kind: 'round', title: 'Первый раунд', goal: 'Черновик', models: [{ name: 'Claude', task: 'Пиши' }] },
+            { ref: 'r2', kind: 'round', title: 'Второй раунд', goal: 'Проверка', models: [{ name: 'GPT', task: 'Проверяй' }] }
+          ] };
+          expect((await h.debug.installBasicSchema('No send host', schema)).ok).toBe(true);
+          document.querySelector('.pipeline-item[data-name="No send host"]').click();
+          await settleCustomCard();
+          await settleCustomCard();
+
+          const panel = document.getElementById('pipeline-panel');
+          expect(panel.querySelectorAll('.model-send-checkbox').length).toBe(0);
+          const inputs = [...panel.querySelectorAll('.model-input-checkbox')];
+          expect(inputs.length).toBeGreaterThan(0);
+          inputs.forEach((input) => {
+            expect(input.hasAttribute('title')).toBe(false);
+            expect(input.dataset.tooltip).toBe('Участие в раунде');
+            expect(input.dataset.tooltipDesc).toContain('enabled: false');
+          });
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      test('legacy send: a saved Send mark does not put a model into the round; Input decides', async () => {
+        const h = setupCustomInheritance('Legacy send host');
+        try {
+          const record = { ...h.config };
+          record.protocol = { ...record.protocol, selectedModels: ['Claude', 'GPT'] };
+          record.modelStacks = {
+            'r1-models': { items: [{ name: 'GPT', input: true, send: false, role: null }, { name: 'Claude', input: true, send: true, role: null }] }
+          };
+          h.debug.setPipelineStoreForTest({ active: 'Legacy send host', order: ['Legacy send host'], pipelines: { 'Legacy send host': record } });
+          h.debug.applyPipelineConfig(record);
+          const inputOf = (name) => [...document.querySelectorAll('#r1-models .model-block')]
+            .find((block) => block.querySelector('.model-name')?.textContent === name)
+            ?.querySelector('.model-input-checkbox');
+          expect(inputOf('GPT').checked).toBe(false);
+          expect(inputOf('Claude').checked).toBe(true);
+        } finally { h.cleanup(); }
+      }, 30000);
+
       test('A07 documents: removing the round a User step reads from resets the step document and says so', async () => {
         const h = setupCustomInheritance('Doc source removed');
         try {
@@ -4475,8 +4658,8 @@ describe('Pipeline debate favorites view', () => {
         const h = setupCustomInheritance('Card rebuild host');
         try {
           const gpt = [...document.querySelectorAll('#r2-models .model-block')].find((block) => block.querySelector('.model-name')?.textContent === 'GPT');
-          gpt.querySelector('.model-send-checkbox').checked = false;
-          gpt.querySelector('.model-send-checkbox').dispatchEvent(new Event('change', { bubbles: true }));
+          gpt.querySelector('.model-input-checkbox').checked = false;
+          gpt.querySelector('.model-input-checkbox').dispatchEvent(new Event('change', { bubbles: true }));
           await h.model({ content: 'REBUILD_CONTENT' });
           const { record, again } = derived(h, 'Card rebuild host');
           const r2 = record.schema.steps.find((step) => step.ref === 'r2');

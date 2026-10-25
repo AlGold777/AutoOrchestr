@@ -378,6 +378,19 @@ body.left-sidebar-open .mode-pill .pill-dot {
     transform: translateY(0);
 }
 
+.floating-tooltip-name {
+    display: block;
+    font-weight: 600;
+}
+
+.floating-tooltip-desc {
+    display: block;
+    margin-top: 4px;
+    font-weight: 400;
+    max-width: 320px;
+    white-space: pre-wrap;
+}
+
 .visually-hidden {
     position: absolute;
     width: 1px;

@@ -60,13 +60,13 @@ GPT подготавливает запрос через `ContentUtils.ensurePro
 | --- | --- | --- |
 | Схема со страницы | `basicSchemaFromPage`, `buildBasicRun`, `legacyValue`, `legacyDiscipline`, `customRoleText`, `customStepsFromPlan` | Собирает схему из страницы и переводит старые настройки в поля схемы |
 | Запись и хранилище | `recordFromSchema`, `installBasicSchema`, `persistBasicSettings`, `persistPipelineStore`, `readPipelineStore`, `normalizePipelineStore`, `migrateBasicTemplateName`, `basicWorkingFromConfig`, `adoptBasicWorking`, `persistActiveDraftPlan` | Запись из схемы, установка схемы на холст, сохранение и чтение хранилища |
-| Save, Export, Import | `savePipeline`, `buildBasicExport`, `exportBasicSchema`, `importBasicSchemaFile`, `importBasicBundle`, `handlePipelineImportFile`, `describeSchemaErrors` | Сохранение записи, файл схемы, загрузка файла, сообщения об ошибках схемы |
+| Save, Export, Import | `savePipeline`, `buildBasicExport`, `exportBasicSchema`, `importBasicSchemaFile`, `importBasicBundle`, `handlePipelineImportFile`, `describeSchemaErrors`, `showSchemaErrors` | Сохранение записи, файл схемы, загрузка файла, сообщения об ошибках схемы, окно со списком ошибок |
 | Явные значения и запуск | `basicRunForSave`, `markBasicRunExplicit`, `basicRunExplicit`, `basicSchemaLoadErrors` | Какие значения считаются явными и проверка перед запуском |
 | Окна настроек | `renderCustomBlockInspector`, `openStageCard`, `setCustomRoundSetting`, `setCustomRoundPrompt`, `resolveCustomFields`, `customDisciplineDefaults` | Окно настроек модели, открытие окна раунда, значения раунда и модели |
 | Сборка запроса | `composeCustomPrompts`, `prepareCustomPrompts`, `customLengthInstruction` | Дописывает особенность модели, инструкцию длины и требования к содержанию |
 | Прогон | `runCustomFromPage`, `resumeCustomFromPage`, `builtFromRecord`, `basicRunNotice`, `startDebateFromPage`, `askCustomDecision`, `askCustomOwner`, `customRunProgress`, `isCustomEnginePipeline` | Запуск Basic со страницы, окна паузы и вопросов, состояние холста |
 | Транспорт и карточки ответа | `runModelBatch`, `pipelineWaiter`, `updateDebateModelCardOutput` | Отправка запросов моделям, ожидание ответов, карточки ответа |
-| Холст | `draftPlanForCanvas`, `applyPipelineConfig`, `syncPipelineRoundModelsFromSelectedLLMs`, `getActiveDraftPlan` | План холста и применение конфигурации к холсту |
+| Холст | `draftPlanForCanvas`, `applyPipelineConfig`, `syncPipelineRoundModelsFromSelectedLLMs`, `getActiveDraftPlan`, `syncCanvasTooltips`, `syncStepErrorBadges`, `setCanvasTooltip`, `applyCanvasArrows`, `ARROWS_HIDDEN_KEY` | План холста и применение конфигурации к холсту; подсказки с названием и описанием на элементах холста (через `ResultsTooltips`); кнопка «Стрелки» (класс `arrows-hidden`, `localStorage`); значок ошибок на шаге |
 | Документы окна User | `syncDocumentFrames`, `restoreDocumentFrames`, `openDocumentFrame`, `removeLastRound` | Рамки документов на холсте (строятся из записи прогона, обновляются при сохранении состояния), открытие документа для чтения, восстановление после перезагрузки, удаление последнего раунда со сбросом источника документа |
 
 ### Тесты
@@ -97,6 +97,8 @@ GPT подготавливает запрос через `ContentUtils.ensurePro
 | `tests/documents-folder.test.js` | Копия документа на диске: очистка имени, штамп времени, путь, выбор папки, доступ и запись (`DocumentsFolder`) |
 | `tests/stage-card-basic.test.js` | Окно настроек раунда |
 | `tests/results-debate-favorites.test.js` | Страница целиком: окна настроек, прогон, Save, Import, Export, установка схемы |
+| `tests/results-tooltips.test.js` | Разметка подсказки на элементах холста (название и описание через `ResultsTooltips`) |
+| `tests/pipeline-arrows-toggle.test.js` | Разметка и стили кнопки «Стрелки» |
 | `tests/pipeline-presets.test.js`, `tests/pipeline-none-mini-prompt.test.js` | Список шаблонов и их умолчания |
 
 ### Что менять при типичных изменениях
@@ -184,7 +186,7 @@ GPT подготавливает запрос через `ContentUtils.ensurePro
   `enabled: false`). При Save отбрасываются настройки удалённых раундов, а также карточки прежних синтезов
   (`final`, `synth:…`) и `defaults.synthesisTask` из записей до 2.81.849: синтез — раунд из одной модели с ролью.
 - Сохранение карточек и правка структуры сохранённого pipeline сразу пересобирают запись целиком из текущего холста.
-  Поэтому снятая, но не сохранённая отметка Send у модели попадает в запись при ближайшей такой записи.
+  Поэтому снятая, но не сохранённая отметка «Участие в раунде» (Input) у модели попадает в запись при ближайшей такой записи.
 
 ### HTML-экспорт ответов и ленты
 
@@ -224,6 +226,7 @@ Ctrl/Cmd+S сохраняет подсветки и избранное вмес�
     Итог — в уведомлении: «Добавлено схем: N, пропущено: M»;
   - не JSON: «Файл не JSON.»; JSON, который не схема и не прежний экспорт: «Файл не похож на схему Basic.».
 - **Вставка текста** (кнопка «Вставить схему», `#pipeline-profile-btn`): окно принимает ответ модели целиком. `SchemaTextReader.read` снимает ограду ```json, хвостовые запятые, комментарии, ключи без кавычек и типографские кавычки, берёт первое JSON-значение; текст вне JSON — комментарий модели. Объект с `basicCatalog` идёт по пути каталога, иначе схема проверяется `recordFromSchema`; ошибки списком в окне, успех — путь Import (спрашивается имя). Оборванный ответ не применяется. Алиасы полей не применяются.
+- При неудачной установке схемы, кроме уведомления, открывается окно со всеми ошибками схемы.
 - Режима «заменить все pipelines» нет.
 - Загрузка pipeline из списка не изменилась: страница читает запись и показывает холст. Запись всегда согласована
   со схемой, потому что строится только из неё.
@@ -344,7 +347,7 @@ Ctrl/Cmd+S сохраняет подсветки и избранное вмес�
 | TEST-1 | Тесты, падавшие не из-за Basic (9 в 4 файлах) | исправлено: устаревшие ожидания приведены к коду, код не менялся |
 | TEST-2 | Нестабильный тест `false success: watcher completion guards` | известно |
 | PLAN-1 | Документы для User — [план](basic-user-documents-plan.md) | этапы 1–2 сделаны (2.81.855–2.81.857); этап 3 частично: запись копии сделана (2.81.872), перечитывание файла отложено (2.3b); этап 4 не сделан |
-| PLAN-2 | Перенос в Basic с одобренного User (подсказки, Send, Arrows, значок ошибок, каталог целиком, колонка In и чипы артефактов, файл на диске) — [план](basic-port-plan.md) | составлен 25.10.2026, пакет 1.1 (подсказки) начат; пакет 2.1 (каталог) сделан в 2.81.870; пакет 2.2 (вставка JSON схемы) сделан в 2.81.871; файл на диске — пакет 2.3: 2.3a (запись копии) сделано в 2.81.872, 2.3b (перечитывание) отложено; остальное не сделано |
+| PLAN-2 | Перенос в Basic с одобренного User (подсказки, Send, Arrows, значок ошибок, каталог целиком, колонка In и чипы артефактов, файл на диске) — [план](basic-port-plan.md) | составлен 25.10.2026; сделаны пакеты 1.1 (подсказки), 1.2 (Send), 1.3 (Arrows), 1.4 (ошибки), 2.1 (каталог), 2.2 (вставка JSON схемы), 2.3a (запись копии на диск); слиты в 2.81.873; 2.3b (перечитывание файла) отложено; пакет 1.5 (колонка In, чипы и стрелки артефактов) не сделан |
 
 ### Открытые вопросы
 

@@ -3885,16 +3885,7 @@ document.addEventListener('click', (event) => {
             return indices;
         };
 
-        const getModelSendIndices = (stackId) => {
-            const stack = document.getElementById(stackId);
-            if (!stack) return [];
-            const indices = [];
-            Array.from(stack.children).forEach((item, i) => {
-                const cb = item.querySelector('.model-send-checkbox');
-                if (cb && cb.checked && !cb.disabled) indices.push(i);
-            });
-            return indices;
-        };
+        const getModelSendIndices = (stackId) => getModelInputIndices(stackId);
 
         const getPipelineProtocolConfig = () => {
             const lengthSelect = document.getElementById('debate-length-select');
@@ -4661,17 +4652,14 @@ document.addEventListener('click', (event) => {
                 // A legacy send mark was saved by the position of the block on the canvas.
                 const position = blocks.indexOf(block);
                 const inputCb = block.querySelector('.model-input-checkbox');
-                const sendCb = block.querySelector('.model-send-checkbox');
                 const inputValue = typeof item.input === 'boolean'
                     ? item.input
                     : (typeof item.checked === 'boolean' ? item.checked : undefined);
-                if (inputCb && typeof inputValue === 'boolean') {
-                    inputCb.checked = inputValue;
-                }
                 const sendFallback = Array.isArray(sendOverrides?.[stackId]) ? sendOverrides[stackId][position] : undefined;
                 const sendValue = typeof item.send === 'boolean' ? item.send : sendFallback;
-                if (sendCb && typeof sendValue === 'boolean') {
-                    sendCb.checked = sendValue;
+                // Only Input decides participation: a legacy block with Input on and Send off is not in the round.
+                if (inputCb && (typeof inputValue === 'boolean' || typeof sendValue === 'boolean')) {
+                    inputCb.checked = inputValue !== false && sendValue !== false;
                 }
                 const role = block.querySelector('.role-selector');
                 if (role && item.role) {
@@ -5018,6 +5006,81 @@ document.addEventListener('click', (event) => {
             });
         };
 
+        // Tooltips of the canvas: a name for each element and, where the schema has one, a description (ResultsTooltips shows both).
+        // The elements are drawn again on each update, so each one is set and registered here (registration is idempotent).
+        const setCanvasTooltip = (el, name, desc = '') => {
+            const text = String(name || '').trim();
+            if (!el || !text) return;
+            el.dataset.tooltip = text;
+            const note = String(desc || '').trim();
+            if (note) el.dataset.tooltipDesc = note;
+            else delete el.dataset.tooltipDesc;
+            tooltipController.registerTooltipTarget(el);
+        };
+        const syncStepErrorBadges = () => {
+            if (!pipelinePanel) return;
+            pipelinePanel.querySelectorAll('.step-error-badge').forEach((badge) => badge.remove());
+            const errors = basicSchemaLoadErrorList.get(draftPlanStorageKey()) || [];
+            if (!errors.length) return;
+            const steps = pipelineStore.pipelines?.[pipelineStore.active]?.schema?.steps || [];
+            const byStep = new Map();
+            errors.forEach((error) => { const at = /^steps\[(\d+)\]/.exec(error.path || ''); if (!at) return; const ref = steps[Number(at[1])]?.ref; if (!ref) return; if (!byStep.has(ref)) byStep.set(ref, []); byStep.get(ref).push(error); });
+            byStep.forEach((list, ref) => {
+                const round = /^r(\d+)$/.exec(ref);
+                const host = round ? pipelinePanel.querySelector(`.stage-column[data-round="${round[1]}"] .stage-label`) : pipelinePanel.querySelector(`.pipeline-control-card[data-control-card="${ref}"]`);
+                if (!host) return;
+                const badge = document.createElement('button');
+                badge.type = 'button';
+                badge.className = 'step-error-badge';
+                badge.textContent = '!';
+                badge.setAttribute('aria-label', `Ошибки шага ${ref}`);
+                setCanvasTooltip(badge, `Ошибки шага ${ref}`, list.map((error) => error.message).join('\n'));
+                badge.addEventListener('click', (event) => { event.stopPropagation(); showSchemaErrors('Ошибки схемы', errors); });
+                host.appendChild(badge);
+            });
+        };
+        const syncCanvasTooltips = () => {
+            if (!pipelinePanel) return;
+            let steps = [];
+            try { steps = basicSchemaFromPage(draftPlanForCanvas(getActiveDraftPlan()), null, { forSave: true }).steps || []; } catch (_) { steps = []; }
+            const stepOf = (ref) => steps.find((step) => step.ref === ref) || null;
+            pipelinePanel.querySelectorAll('.entry-badge').forEach((badge) => setCanvasTooltip(badge, 'In'));
+            setCanvasTooltip(pipelinePanel.querySelector('#entryPoint'), '▶ Общие значения', basicDescription());
+            pipelinePanel.querySelectorAll('.stage-column[data-round] .round-badge').forEach((badge) => {
+                const round = badge.closest('.stage-column')?.dataset.round;
+                const step = stepOf(`r${round}`);
+                setCanvasTooltip(badge, step?.title ? `R${round} · ${step.title}` : `R${round}`, step?.goal);
+            });
+            pipelinePanel.querySelectorAll('.model-block').forEach((block) => {
+                const name = String(block.dataset.model || block.querySelector('.model-name')?.textContent || '').trim();
+                const round = block.closest('.stage-column')?.dataset.round;
+                const model = (stepOf(`r${round}`)?.models || []).find((item) => item.name === name);
+                setCanvasTooltip(block, name, model?.task);
+            });
+            pipelinePanel.querySelectorAll('.model-input-checkbox').forEach((box) => setCanvasTooltip(box, 'Участие в раунде', 'Флажок включает модель в раунд; снятый — модель в раунд не входит (в схеме enabled: false).'));
+            pipelinePanel.querySelectorAll('.pipeline-control-card').forEach((card) => {
+                const step = getCustomControls().map((item) => item.step).find((item) => item?.ref === card.dataset.controlCard) || {};
+                const name = `User · ${card.dataset.controlCard}${step.title ? ` · ${step.title}` : ''}`;
+                const note = step.goal || step.task;
+                setCanvasTooltip(card, name, note);
+                setCanvasTooltip(card.closest('.stage-column')?.querySelector('.pipeline-control-title'), name, note);
+            });
+            pipelinePanel.querySelectorAll('.pipeline-doc-frame').forEach((frame) => {
+                const step = stepOf(frame.dataset.docRef);
+                const output = (step?.models || []).map((model) => model.output).find(Boolean) || step?.output;
+                const artifact = (output?.artifacts || []).find((item) => item.id === frame.dataset.docId);
+                setCanvasTooltip(frame, artifact?.name || frame.dataset.docId, artifact?.description);
+            });
+            pipelineItems?.querySelectorAll('.pipeline-item').forEach((item) => setCanvasTooltip(item, item.dataset.name));
+            // Native titles of the canvas and of the list header move to ResultsTooltips (the native one is removed, so two do not show).
+            // The status indicator and the role selector keep theirs: the tooltip of their model block covers them.
+            document.querySelectorAll('.pipeline-canvas [title], .pipeline-list-header-actions [title]').forEach((el) => {
+                if (el.matches('.status-indicator, .role-selector')) return;
+                setCanvasTooltip(el, el.getAttribute('title'));
+                el.removeAttribute('title');
+            });
+        };
+
         const updatePipelineAll = ({ deferFinalLayout = true } = {}) => {
             syncControlColumns();
             syncDocumentFrames();
@@ -5025,7 +5088,6 @@ document.addEventListener('click', (event) => {
             syncCustomRoleOption();
             pipelinePanel.querySelectorAll('.model-block').forEach((block) => {
                 const inputCb = block.querySelector('.model-input-checkbox');
-                const sendCb = block.querySelector('.model-send-checkbox');
                 const sel = block.querySelector('.role-selector');
                 const indicator = block.querySelector('.status-indicator');
                 if (!inputCb) return;
@@ -5033,17 +5095,10 @@ document.addEventListener('click', (event) => {
                     block.classList.remove('inactive');
                     block.classList.add('active');
                     if (sel) sel.disabled = false;
-                    if (sendCb) {
-                        sendCb.disabled = false;
-                    }
                 } else {
                     block.classList.remove('active');
                     block.classList.add('inactive');
                     if (sel) sel.disabled = true;
-                    if (sendCb) {
-                        sendCb.checked = false;
-                        sendCb.disabled = true;
-                    }
                     if (indicator) {
                         indicator.className = 'status-indicator';
                         indicator.title = '';
@@ -5065,6 +5120,8 @@ document.addEventListener('click', (event) => {
             syncRoundFilterChips();
             syncPipelineFlowVisualState();
             syncPipelineRunStateVisuals();
+            syncCanvasTooltips();
+            syncStepErrorBadges();
             pipelinePanel?.querySelectorAll('.model-stack').forEach((stack) => pipelineAlignmentResizeObserver?.observe(stack));
             if (deferFinalLayout && typeof window.requestAnimationFrame === 'function') {
                 if (deferredPipelineLayoutFrame) window.cancelAnimationFrame?.(deferredPipelineLayoutFrame);
@@ -5643,7 +5700,7 @@ document.addEventListener('click', (event) => {
             if (!pipelinePanel) return;
             const disabled = !enabled;
                 pipelinePanel
-                .querySelectorAll('.model-input-checkbox, .model-send-checkbox, .role-selector, #pipeline-add-round-btn, .pipeline-round-delete-btn, #removeRoundBtn, #pipeline-add-btn, #pipeline-save-btn, #pipeline-delete-btn, #pipeline-import-btn')
+                .querySelectorAll('.model-input-checkbox, .role-selector, #pipeline-add-round-btn, .pipeline-round-delete-btn, #removeRoundBtn, #pipeline-add-btn, #pipeline-save-btn, #pipeline-delete-btn, #pipeline-import-btn')
                 .forEach((el) => {
                     el.disabled = disabled;
                 });
@@ -5688,7 +5745,7 @@ document.addEventListener('click', (event) => {
                     if (name && roleSelect) roleByName.set(name, roleSelect.value || '');
                     // So must the Input / Send marks of a model that stays (a loaded pipeline stores them).
                     if (name && !block.classList.contains('pipeline-empty-slot')) {
-                        marksByName.set(name, { input: block.querySelector('.model-input-checkbox')?.checked, send: block.querySelector('.model-send-checkbox')?.checked });
+                        marksByName.set(name, { input: block.querySelector('.model-input-checkbox')?.checked });
                     }
                 });
                 const emptySlots = Math.max(0, getDebateModelSlotCount() - selectedIndices.length);
@@ -5703,9 +5760,7 @@ document.addEventListener('click', (event) => {
                     const marks = name ? marksByName.get(name) : undefined;
                     if (marks) {
                         const inputCb = block.querySelector('.model-input-checkbox');
-                        const sendCb = block.querySelector('.model-send-checkbox');
                         if (inputCb && typeof marks.input === 'boolean') inputCb.checked = marks.input;
-                        if (sendCb && typeof marks.send === 'boolean') sendCb.checked = marks.send;
                     }
                     const role = block.querySelector('.role-selector');
                     const previousRole = name ? roleByName.get(name) : undefined;
@@ -6489,6 +6544,7 @@ document.addEventListener('click', (event) => {
             basicRunExplicit.set(key, { ...(basicRunExplicit.get(key) || {}), [field]: true });
         };
         const basicSchemaLoadErrors = new Map();
+        const basicSchemaLoadErrorList = new Map();
         // The schema the working copies were read from. The fields the canvas does not edit (output, owner, chat,
         // a participant's input, the specification text: spec and a step's title, goal, rules, quality) are kept from it on
         // Save and on Run; the control steps come from customControls.
@@ -6537,7 +6593,7 @@ document.addEventListener('click', (event) => {
                 return { cards, rounds: {}, defaults: dropEmpty(own(copy(config?.customDefaults))), runExplicit: {}, schema: null, error: '', controls: [] };
             }
             const errors = window.BasicSchema.validate(config.schema);
-            if (errors.length) return { cards: {}, rounds: {}, defaults: {}, runExplicit: {}, schema: null, error: describeSchemaErrors(errors), controls: [] };
+            if (errors.length) return { cards: {}, rounds: {}, defaults: {}, runExplicit: {}, schema: null, error: describeSchemaErrors(errors), errorList: errors, controls: [] };
             const settings = window.BasicSchema.toSettings(config.schema);
             // The fields of rounds and owner steps are one store by ref (see stepFieldsOf).
             return { cards: settings.customModelSettings, rounds: { ...settings.customRoundSettings, ...settings.customStepSettings }, defaults: settings.customDefaults, schema: config.schema, error: '',
@@ -6552,8 +6608,9 @@ document.addEventListener('click', (event) => {
             basicRunExplicit.set(key, working.runExplicit);
             if (working.error) {
                 basicSchemaLoadErrors.set(key, working.error);
+                basicSchemaLoadErrorList.set(key, working.errorList || []);
                 showNotification(unreadableSchemaMessage(working.error), 'error');
-            } else basicSchemaLoadErrors.delete(key);
+            } else { basicSchemaLoadErrors.delete(key); basicSchemaLoadErrorList.delete(key); }
         };
         const unreadableSchemaMessage = (reason) => `Схема pipeline не прочитана: ${reason}. Она использует то, чего в Basic больше нет; соберите схему заново.`;
         // Writes the settings of a saved pipeline: a Basic pipeline stores its schema (and drops the earlier
@@ -7379,6 +7436,7 @@ document.addEventListener('click', (event) => {
                 basicRunNotice: (...args) => basicRunNotice(...args),
                 recordFromSchema: (...args) => recordFromSchema(...args),
                 describeSchemaErrors: (...args) => describeSchemaErrors(...args),
+                showSchemaErrors: (...args) => showSchemaErrors(...args),
                 basicSchemaFromPage: (...args) => basicSchemaFromPage(...args),
                 applyPipelineConfig: (...args) => applyPipelineConfig(...args),
                 runCustomFromPage,
@@ -7680,7 +7738,6 @@ document.addEventListener('click', (event) => {
                             <div class="pipeline-info-model-head">
                                 <strong>${escapeHtml(item.name || 'Model')}</strong>
                                 <span>Input: ${escapeHtml(formatPipelineBoolean(!!item.input))}</span>
-                                <span>Send: ${escapeHtml(formatPipelineBoolean(!!item.send))}</span>
                             </div>
                             <div class="pipeline-info-prompt-name">${escapeHtml(promptName)}</div>
                             <pre>${escapeHtml(promptText)}</pre>
@@ -7833,6 +7890,21 @@ document.addEventListener('click', (event) => {
             pipelineItems?.style.removeProperty('--pipeline-item-main-width');
         };
 
+        const ARROWS_HIDDEN_KEY = 'pipelineArrowsHidden';
+        const applyCanvasArrows = (hidden) => {
+            pipelinePanel?.querySelector('.pipeline-canvas')?.classList.toggle('arrows-hidden', hidden);
+            document.getElementById('pipeline-arrows-toggle')?.setAttribute('aria-pressed', String(!hidden));
+        };
+        let arrowsHidden = false;
+        try { arrowsHidden = localStorage.getItem(ARROWS_HIDDEN_KEY) === '1'; } catch (_) {}
+        applyCanvasArrows(arrowsHidden);
+        document.addEventListener('click', (event) => {
+            if (!event.target.closest?.('#pipeline-arrows-toggle')) return;
+            arrowsHidden = !arrowsHidden;
+            applyCanvasArrows(arrowsHidden);
+            try { localStorage.setItem(ARROWS_HIDDEN_KEY, arrowsHidden ? '1' : '0'); } catch (_) {}
+        });
+
         const syncPipelineChromeControls = () => {
             const activeName = String(pipelineStore.active || getPipelineHeaderName()).trim();
             const custom = !!activeName && !isDefaultPipelineName(activeName);
@@ -7918,7 +7990,7 @@ document.addEventListener('click', (event) => {
             if (pipelineStore.active === trimmedOld) pipelineStore.active = trimmedNew;
             if (customPipelineDefaults.has(trimmedOld)) { customPipelineDefaults.set(trimmedNew, customPipelineDefaults.get(trimmedOld)); customPipelineDefaults.delete(trimmedOld); }
             if (customCardSettings.has(trimmedOld)) { customCardSettings.set(trimmedNew, customCardSettings.get(trimmedOld)); customCardSettings.delete(trimmedOld); }
-            [customRoundSettings, basicRunExplicit, basicSchemaLoadErrors, basicSourceSchema].forEach((map) => { if (map.has(trimmedOld)) { map.set(trimmedNew, map.get(trimmedOld)); map.delete(trimmedOld); } });
+            [customRoundSettings, basicRunExplicit, basicSchemaLoadErrors, basicSchemaLoadErrorList, basicSourceSchema].forEach((map) => { if (map.has(trimmedOld)) { map.set(trimmedNew, map.get(trimmedOld)); map.delete(trimmedOld); } });
 
             renderPipelineList(pipelineStore.order, pipelineStore.active, pipelineStore.lastSaved);
             persistPipelineStore();
@@ -8020,6 +8092,8 @@ document.addEventListener('click', (event) => {
             setPipelineHeaderName(activeName);
             updateActivePipelineDescription(activeName);
             syncPipelineChromeControls();
+            syncCanvasTooltips();
+            syncStepErrorBadges();
         };
 
         const getPipelineNamesFromDom = () => {
@@ -8314,6 +8388,12 @@ document.addEventListener('click', (event) => {
 
         // The errors of a schema in one line: the place and the reason of each, at most five.
         const describeSchemaErrors = (errors) => errors.slice(0, 5).map((error) => (error.path ? `${error.path}: ${error.message}` : error.message)).join('; ');
+        const schemaErrorsText = (errors) => errors.map((error) => (error.path ? `${error.path}: ${error.message}` : error.message)).join('\n');
+        const showSchemaErrors = (title, errors) => {
+            try {
+                askChoiceDialog({ title, message: `Ошибок: ${errors.length}`, document: { kind: 'read', readOnly: true, name: '', text: schemaErrorsText(errors) }, choices: [], cancelText: 'Закрыть' });
+            } catch (_) { /* the list is a convenience: a failure to show it changes nothing */ }
+        };
         // The record of a Basic pipeline built from its schema, and nowhere else: the schema is the content, the canvas
         // members (rounds, models, roles) are derived from it here. Nothing is written
         // to the store. Returns { ok, errors, record }; a schema the canvas cannot show gives errors with the place.
@@ -8400,6 +8480,7 @@ document.addEventListener('click', (event) => {
             const result = await installBasicSchema(name, schema);
             if (!result.ok) {
                 showNotification(`Схема не установлена. ${describeSchemaErrors(result.errors)}`, 'error');
+                showSchemaErrors('Схема не установлена', result.errors);
                 return;
             }
             const item = findPipelineItemByName(name);
@@ -8411,15 +8492,20 @@ document.addEventListener('click', (event) => {
             let added = 0;
             let skipped = 0;
             let last = '';
+            const failedErrors = [];
             for (const [name, record] of Object.entries(parsed.pipelines)) {
                 if (isDefaultPipelineName(name) || !record || typeof record !== 'object' || !record.schema) { skipped += 1; continue; }
                 const target = uniquePipelineName(name);
                 const result = await installBasicSchema(target, record.schema);
-                if (result.ok) { added += 1; last = target; } else skipped += 1;
+                if (result.ok) { added += 1; last = target; } else {
+                    skipped += 1;
+                    failedErrors.push(...(result.errors || []).map((error) => ({ path: `${name}${error.path ? `: ${error.path}` : ''}`, message: error.message })));
+                }
             }
             showNotification(added
                 ? `Добавлено схем: ${added}${skipped ? `, пропущено: ${skipped}` : ''}.`
                 : `Ничего не добавлено${skipped ? ` (пропущено: ${skipped}, схемы в записи нет или она не подходит)` : ''}.`, added ? 'success' : 'warn');
+            if (failedErrors.length) showSchemaErrors('Не все схемы установлены', failedErrors);
             if (last) {
                 const item = findPipelineItemByName(last);
                 if (item) selectPipeline(item, { applyConfig: true, persist: true });
@@ -8981,7 +9067,6 @@ document.addEventListener('click', (event) => {
                 ['Run policy', protocol.runPolicy === 'auto' ? 'Auto' : 'Manual'],
                 ['Reasoning budget', formatReasoningBudgetLabel(protocol.reasoningBudget)],
                 ['Input', block.querySelector('.model-input-checkbox')?.checked ? 'on' : 'off'],
-                ['Send', block.querySelector('.model-send-checkbox')?.checked ? 'on' : 'off'],
                 ['Prompt template', selectedRole]
             ];
             const title = modal.querySelector('#pipeline-block-info-title');
@@ -9216,8 +9301,7 @@ document.addEventListener('click', (event) => {
             let shouldCheck = true;
             if (modelStack) {
                 const allInputs = areAllChecked(modelStack, '.model-input-checkbox');
-                const allSends = areAllChecked(modelStack, '.model-send-checkbox');
-                shouldCheck = !(allInputs && allSends);
+                shouldCheck = !allInputs;
             } else {
                 return;
             }
@@ -9225,7 +9309,6 @@ document.addEventListener('click', (event) => {
             let changed = false;
             if (modelStack) {
                 changed = setCheckboxesState(modelStack, '.model-input-checkbox', shouldCheck) || changed;
-                changed = setCheckboxesState(modelStack, '.model-send-checkbox', shouldCheck) || changed;
             }
             if (changed) {
                 updatePipelineAll();
@@ -9249,16 +9332,9 @@ document.addEventListener('click', (event) => {
             if (
                 !pipelineApplyingConfig
                 && target.closest?.('#r1-models')
-                && target.matches('.model-input-checkbox, .model-send-checkbox')
+                && target.matches('.model-input-checkbox')
             ) {
                 pipelineR1ManualDirty = true;
-            }
-            if (target.matches('.model-input-checkbox')) {
-                const block = target.closest('.model-block');
-                const sendCb = block?.querySelector('.model-send-checkbox');
-                if (target.checked && sendCb) {
-                    sendCb.checked = true;
-                }
             }
             if (target.matches('input[type="checkbox"]') || target.matches('.role-selector')) {
                 updatePipelineAll();
@@ -9466,13 +9542,6 @@ document.addEventListener('click', (event) => {
             if (window.PipelinePresets?.getPipelinePreset?.(getSelectedPipelinePresetId())?.runner === 'custom') showPipelineBlockInfo(null, { pipelineDefaults: true });
         };
         customEntryPoint?.addEventListener('click', openCustomDefaults);
-        // The tooltip of ▶ is the description of the open pipeline (the button is redrawn with the canvas, so it is set on hover).
-        pipelinePanel?.addEventListener('mouseover', (event) => {
-            const point = event.target.closest?.('#entryPoint');
-            if (!point) return;
-            const text = basicDescription().replace(/\s+/g, ' ');
-            point.title = text ? (text.length > 400 ? `${text.slice(0, 399)}…` : text) : 'Общие значения';
-        });
         customEntryPoint?.addEventListener('keydown', (event) => {
             if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openCustomDefaults(); }
         });

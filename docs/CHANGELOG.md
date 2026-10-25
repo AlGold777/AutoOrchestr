@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-10-25 — Basic: слияние полос переноса (1.1–1.4, 2.1–2.3a), версия 2.81.873
+
+- Слиты подсказки, удаление Send, кнопка «Стрелки», окно ошибок схемы (полоса 1: 2.81.858–861) и каталог схем, вставка JSON схемы, копия документа на диск (полоса 2: 2.81.870–872). Конфликты только в номерах версий и документах.
+
 ### 2026-10-25 — Basic: копия документа в папку на диске (2.3a), версия 2.81.872
 
 - В окне ответа User с документом появилась строка «Папка документов»: кнопка выбирает папку (File System Access, `showDirectoryPicker`), рядом имя папки или «не выбрана». Одна папка на все pipelines; дескриптор хранится в IndexedDB расширения (база `AutoOrchestrDocumentsFolder`, хранилище `handles`, ключ `documents`), в схему не входит.
@@ -24,6 +28,32 @@
 - Прежний общий экспорт (`importBasicBundle`) не менялся и по-прежнему принимается.
 - Код: `buildBasicCatalogExport`, `exportBasicCatalog`, `importBasicCatalog` (`results.js`), общее скачивание `downloadSchemaText`.
 - Документы: `basic-developer.md`, `basic-start-here.md`, `basic-schema-guide.md`, `basic-port-plan.md` (пакет 2.1), `CHANGELOG.md`.
+### 2026-10-25 — Basic: окно со списком ошибок схемы и значок «!» на шаге, версия 2.81.861
+
+- При установке схемы (Import), если `BasicSchema.validate` нашёл ошибки, кроме уведомления (первые 5) открывается окно «Схема не установлена» со всеми ошибками, по строке «путь: сообщение». Для файла прежнего формата, где часть схем не установилась, — окно «Не все схемы установлены» со строками «имя: путь: сообщение».
+- Сохранённая схема, которая не проходит проверку при открытии, на шаге с путём `steps[N]…` получает красный значок «!» (`.step-error-badge`) в метке раунда (`.stage-label`) или в карточке User. Подсказка — «Ошибки шага <ref>» и сообщения этого шага; клик открывает окно «Ошибки схемы». Ошибки без пути к шагу значка не имеют и остаются в уведомлении.
+- Код: `showSchemaErrors`, `schemaErrorsText` в `results.js` рядом с `describeSchemaErrors`; `syncStepErrorBadges` (вызывается рядом с `syncCanvasTooltips`), `basicSchemaLoadErrorList` (рядом с `basicSchemaLoadErrors`).
+- Тест: «step errors: …» в `tests/results-debate-favorites.test.js`. Версия 2.81.861 в `manifest.json` и `package.json`.
+
+### 2026-10-25 — Basic: кнопка «Стрелки» скрывает и показывает стрелки холста, версия 2.81.860
+
+- В панели pipelines добавлена кнопка «Стрелки» (перед «Export schema»): скрывает и показывает стрелки холста между колонками. Скрытие и показ плавные (0,3 с); когда стрелки скрыты, кнопка приглушена.
+- Состояние хранится в браузере (`localStorage`, ключ `pipelineArrowsHidden`) и восстанавливается при открытии страницы. На схему, Save и прогон не влияет.
+- Код: `applyCanvasArrows` и `ARROWS_HIDDEN_KEY` в `results.js`, стили в `styles/pipeline.css`. Тесты: `tests/pipeline-arrows-toggle.test.js`, тест «arrows toggle» в `tests/results-debate-favorites.test.js`.
+
+### 2026-10-25 — Basic: убрана галочка Send, участие модели в раунде — флажок Input, версия 2.81.859
+
+- С блока модели на холсте убрана галочка Send. Остаётся один флажок Input с подписью и подсказкой «Участие в раунде»: включённая модель входит в раунд, снятая — не входит (в схеме `enabled: false`, настройки модели сохраняются, на холсте блок приглушён).
+- Удалён `.model-send-checkbox` из `pipeline/pipeline-runtime.js` и `results.js`.
+- Состояние `{input, send}` в записи сохранено для совместимости, но `send` всегда равно `input`. Старая запись с «Input вкл, Send выкл» читается как модель вне раунда (`applyModelStackState` в `results.js`) — так же исполнялось и раньше: в движок уходили только модели с Send.
+- Клик по метке раунда переключает только Input всех моделей раунда; окно «Информация» о блоке показывает только Input. Тесты: `tests/pipeline-runtime-no-send.test.js`, `tests/results-debate-favorites.test.js`.
+
+### 2026-10-25 — Basic: подсказки с названием на элементах холста, версия 2.81.858
+
+- Подсказка показывает название элемента жирной строкой, описание — строкой ниже: бейдж In; ▶ («▶ Общие значения» и описание схемы; раньше было нативное `title`); бейдж раунда («R<n> · <title шага>» или «R<n>») и `goal` шага; блок модели (имя модели и её `task`); карточка User и её заголовок («User · <ref> · <title>» и `goal` либо `task`); рамка документа (имя артефакта и его описание); пункт списка pipelines (имя схемы).
+- Механизм: `setCanvasTooltip(el, name, desc)` и `syncCanvasTooltips()` в `results.js` задают `data-tooltip` и `data-tooltip-desc`; показывает `ResultsTooltips` (`results/tooltips.js`), текст выводится как текст. Стили `.floating-tooltip-name` и `.floating-tooltip-desc` — `styles/app-controls.css`. `syncCanvasTooltips` вызывается в конце `updatePipelineAll` и после смены активной схемы.
+- Нативные `title` на `.pipeline-canvas` и на кнопках `.pipeline-list-header-actions` перенесены в подсказку и сняты, чтобы не показывались две подсказки; у `.status-indicator` и `.role-selector` `title` остаётся.
+- Тесты: `tests/results-tooltips.test.js` (разметка подсказки), `tests/results-debate-favorites.test.js`, тест «canvas tooltips: …».
 
 ### 2026-10-24 — Basic: этап 2 упрощён — документы берутся из записи прогона, версия 2.81.857
 
