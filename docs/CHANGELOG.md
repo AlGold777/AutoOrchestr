@@ -1,5 +1,14 @@
 # CHANGELOG — Project
 
+### 2026-10-25 — Basic: копия документа в папку на диске (2.3a), версия 2.81.872
+
+- В окне ответа User с документом появилась строка «Папка документов»: кнопка выбирает папку (File System Access, `showDirectoryPicker`), рядом имя папки или «не выбрана». Одна папка на все pipelines; дескриптор хранится в IndexedDB расширения (база `AutoOrchestrDocumentsFolder`, хранилище `handles`, ключ `documents`), в схему не входит.
+- При OK/Send утверждённый текст записывается в `<папка>/<pipeline>/<дата-время прогона>/<имя>.md` (для опросника — `.json`). Имена очищаются, повторное OK/Send перезаписывает файл. Файл — копия для человека; главное хранилище — запись прогона.
+- Папка не выбрана — ничего не происходит. Нет доступа или ошибка записи — прогон продолжается, одно уведомление за прогон. Доступ после перезапуска Chrome запрашивается на ▶ и на «Продолжить прогон».
+- Схема и движок не менялись. Пакет 2.3b (перечитывание файла перед шагом и вопрос «взять правку / оставить») отложен решением менеджера.
+- Код: `results/documents-folder.js` (`DocumentsFolder`), `results/choice-dialog.js` (параметр `folder`), `results.js` (`saveDocumentCopy`, `requestDocumentsAccess`, `documentsFolderName`, `pickDocumentsFolder`, обёртка `provideOwnerResult`); тесты `tests/documents-folder.test.js`.
+- Документы: `basic-windows.md`, `basic-start-here.md`, `basic-developer.md`, `basic-user-documents-plan.md`, `basic-port-plan.md` (пакет 2.3a), `CHANGELOG.md`.
+
 ### 2026-10-25 — Basic: вставка JSON схемы из буфера, версия 2.81.871
 
 - Кнопка `#pipeline-profile-btn` больше не заглушка: называется «Вставить схему» и открывает окно `openSchemaPasteWindow`. Решение 2.81.784 («кнопка — неактивная заглушка») изменено этим пакетом.

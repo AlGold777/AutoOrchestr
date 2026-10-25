@@ -6686,6 +6686,44 @@ document.addEventListener('click', (event) => {
             // The windows of a run close on its Stop (R07): the signal of the run goes with them.
             return window.ChoiceDialog.ask({ signal: customAbortController?.signal, ...options });
         };
+        // The copy of an approved document goes to the documents folder (results/documents-folder.js); the record of the run stays the main store.
+        let documentsAccessNoticed = false;
+        const documentsFolderName = async () => {
+            try { return (await window.DocumentsFolder?.instance?.folderName?.()) || ''; } catch (_) { return ''; }
+        };
+        const pickDocumentsFolder = async () => {
+            try { return (await window.DocumentsFolder.instance.pick()) || null; } catch (error) {
+                showNotification(`Папка документов не выбрана: ${error?.message || error}`, 'warn');
+                return null;
+            }
+        };
+        // Called from a click of the User only: asks for access to the folder when it is still a prompt.
+        const requestDocumentsAccess = () => {
+            documentsAccessNoticed = false;
+            const folder = window.DocumentsFolder?.instance;
+            if (!folder) return;
+            void folder.ensureAccess({ request: true }).then((state) => {
+                if (state === 'denied') {
+                    documentsAccessNoticed = true;
+                    showNotification('Папка документов недоступна: файлы документов записываться не будут. Прогон продолжается.', 'warn');
+                }
+            }).catch(() => {});
+        };
+        // Writes the answer of a document into the folder; it never throws. One notice per run for a failure.
+        const saveDocumentCopy = async ({ stepRef, document, answer, startedAt, pipeline }, state) => {
+            const folder = window.DocumentsFolder?.instance;
+            if (!folder || typeof answer !== 'string' || !document) return;
+            let result;
+            try {
+                result = await folder.write({ pipeline, startedAt, name: document.name || stepRef, kind: document.kind, text: answer });
+            } catch (error) {
+                result = { ok: false, reason: 'error', message: String(error?.message || error) };
+            }
+            if (!result.ok && result.reason !== 'none' && !state.warned) {
+                state.warned = true;
+                showNotification(`Документ «${document.name || stepRef}» не записан в папку: ${result.reason === 'denied' ? 'нет доступа к папке (подтвердите при следующем запуске ▶)' : (result.message || 'ошибка записи')}. Прогон продолжается.`, 'warn');
+            }
+        };
         const askCustomOwner = (asks, { label }) => new Promise((resolve) => {
             if (!ownerAskDialog || !window.OwnerAsk) { resolve([]); return; }
             openOwnerAsk({ label, asks, resolve });
@@ -6733,6 +6771,7 @@ document.addEventListener('click', (event) => {
         };
         // «Продолжить прогон»: the latest run of this pipeline goes on from its saved state. A run without one is only history.
         const resumeCustomFromPage = async () => {
+            requestDocumentsAccess();
             if (!customRunStore || !window.CustomRunRecord) { showNotification('Basic: записи прогонов недоступны.', 'warn'); return false; }
             if (pipelineRunActive) { showNotification('Basic: прогон уже идёт.', 'warn'); return false; }
             const latest = await customRunStore.latest(customPipelineName());
@@ -6863,6 +6902,7 @@ document.addEventListener('click', (event) => {
                 newPagesDispatched: false
             };
             const runContext = activePipelineRunContext;
+            const documentCopyState = { warned: documentsAccessNoticed };
             const signal = customAbortController.signal;
             // The text of the composer before the run took it: it comes back if the run produces nothing.
             let composerBackup = '';
@@ -7101,14 +7141,23 @@ document.addEventListener('click', (event) => {
                     decide: askCustomDecision,
                     // The owner's answer of an owner step: a text (a file is not supported on this page yet).
                     checkUnknown,
-                    provideOwnerResult: ({ stepRef, task, goal, input, output, document, reason, detail }) => askChoiceDialog({
-                        title: `Ответ User: ${stepRef}`,
-                        message: window.StageCard.ownerAskMessage({ task, goal, input, output, reason, detail, reasonText: reason ? (window.CustomEngine?.REASON_TEXT?.[reason] || reason) : '' }),
-                        textInput: document ? null : { label: 'Ответ User', required: true },
-                        // A document for reading is edited in the window.
-                        choices: [{ value: 'send', label: 'Отправить' }],
-                        ...(document ? { document: document.kind === 'read' ? { ...document, editable: true } : document, answerFormat: output?.format === 'json' ? 'json' : 'text' } : {})
-                    }),
+                    provideOwnerResult: async (request) => {
+                        const { stepRef, task, goal, input, output, document, reason, detail } = request;
+                        const folderName = document ? await documentsFolderName() : '';
+                        const answer = await askChoiceDialog({
+                            title: `Ответ User: ${stepRef}`,
+                            message: window.StageCard.ownerAskMessage({ task, goal, input, output, reason, detail, reasonText: reason ? (window.CustomEngine?.REASON_TEXT?.[reason] || reason) : '' }),
+                            textInput: document ? null : { label: 'Ответ User', required: true },
+                            // A document for reading is edited in the window.
+                            choices: [{ value: 'send', label: 'Отправить' }],
+                            ...(document ? { document: document.kind === 'read' ? { ...document, editable: true } : document, answerFormat: output?.format === 'json' ? 'json' : 'text' } : {}),
+                            ...(document ? { folder: { name: folderName, onPick: pickDocumentsFolder } } : {})
+                        });
+                        if (typeof answer === 'string' && document) {
+                            void saveDocumentCopy({ stepRef, document, answer, startedAt: runContext.startedAt, pipeline: customPipelineName() }, documentCopyState);
+                        }
+                        return answer;
+                    },
                     // The request whose sending is not confirmed: send it again, or skip it for this attempt only.
                     resolveUnknown: ({ stepRef, items, choices = ['resend', 'skip'] }) => askChoiceDialog({
                         title: 'Неизвестный запрос',
@@ -7320,6 +7369,7 @@ document.addEventListener('click', (event) => {
                 getCustomPipelineDefaults,
                 buildBasicExport: () => buildBasicExport(),
                 buildBasicCatalogExport: () => buildBasicCatalogExport(),
+                saveDocumentCopy: (...args) => saveDocumentCopy(...args),
                 syncDocumentFrames,
                 restoreDocumentFrames,
                 normalizePipelineStore,
@@ -7348,6 +7398,7 @@ document.addEventListener('click', (event) => {
             const now = Date.now();
             if (now - lastPipelineTriggerAt < 500) return;
             lastPipelineTriggerAt = now;
+            requestDocumentsAccess();
             const runFn = typeof window.runPipeline === 'function'
                 ? window.runPipeline
                 : startDebateFromPage;

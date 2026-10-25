@@ -3022,3 +3022,5 @@ hr.section-divider {
 #schema-paste-problems:empty { display: none; }
 .schema-paste-card pre { white-space: pre-wrap; max-height: 30vh; overflow: auto; }
 .schema-paste-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.choice-dialog-folder { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.choice-dialog-folder-name { overflow-wrap: anywhere; opacity: .8; }

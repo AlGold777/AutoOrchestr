@@ -4354,6 +4354,78 @@ describe('Pipeline debate favorites view', () => {
     });
     });
 
+    describe('copy of a document into the folder of documents', () => {
+      const debug = () => window.__pipelineLifecycleDebug;
+      const notice = () => document.getElementById('notification-message').textContent;
+      const fakeFolder = (result) => ({ write: jest.fn(async () => result), folderName: jest.fn(), pick: jest.fn(), ensureAccess: jest.fn() });
+      const withFolder = async (instance, run) => {
+        const previous = window.DocumentsFolder;
+        window.DocumentsFolder = { instance };
+        try { await run(); } finally { window.DocumentsFolder = previous; }
+      };
+      const copy = (state = { warned: false }, overrides = {}) => debug().saveDocumentCopy({
+        stepRef: 'r2', document: { name: 'Spec', kind: 'read' }, answer: 'текст', startedAt: 1700000000000, pipeline: 'P', ...overrides
+      }, state);
+
+      test('copy writes the answer once with the pipeline, the start time, the document name and kind', async () => {
+        const folder = fakeFolder({ ok: true, path: 'Spec.md' });
+        await withFolder(folder, () => copy());
+        expect(folder.write).toHaveBeenCalledTimes(1);
+        expect(folder.write).toHaveBeenCalledWith({ pipeline: 'P', startedAt: 1700000000000, name: 'Spec', kind: 'read', text: 'текст' });
+      });
+
+      test('copy passes the kind form as it is', async () => {
+        const folder = fakeFolder({ ok: true, path: 'Form.md' });
+        await withFolder(folder, () => copy({ warned: false }, { document: { name: 'Form', kind: 'form' } }));
+        expect(folder.write).toHaveBeenCalledWith({ pipeline: 'P', startedAt: 1700000000000, name: 'Form', kind: 'form', text: 'текст' });
+      });
+
+      test('copy without a document name takes the step reference as the name', async () => {
+        const folder = fakeFolder({ ok: true, path: 'r2.md' });
+        await withFolder(folder, () => copy({ warned: false }, { document: { kind: 'read' } }));
+        expect(folder.write).toHaveBeenCalledWith({ pipeline: 'P', startedAt: 1700000000000, name: 'r2', kind: 'read', text: 'текст' });
+      });
+
+      test('copy with no answer (null) writes nothing', async () => {
+        const folder = fakeFolder({ ok: true, path: 'Spec.md' });
+        await withFolder(folder, () => copy({ warned: false }, { answer: null }));
+        expect(folder.write).not.toHaveBeenCalled();
+      });
+
+      test('copy that finds no folder (reason none) is silent: the notice does not change and the run is not marked warned', async () => {
+        const folder = fakeFolder({ ok: false, reason: 'none' });
+        const state = { warned: false };
+        const before = notice();
+        await withFolder(folder, () => copy(state));
+        expect(notice()).toBe(before);
+        expect(state.warned).toBe(false);
+      });
+
+      test('copy refused by the access (reason denied) shows one notice per run, a repeat failure with the same state adds none', async () => {
+        const folder = fakeFolder({ ok: false, reason: 'denied' });
+        const state = { warned: false };
+        await withFolder(folder, async () => {
+          await copy(state);
+          expect(notice()).toContain('не записан в папку');
+          expect(state.warned).toBe(true);
+          document.getElementById('notification-message').textContent = '';
+          await copy(state);
+        });
+        expect(folder.write).toHaveBeenCalledTimes(2);
+        expect(notice()).toBe('');
+      });
+
+      test('copy whose write throws shows one notice and does not throw', async () => {
+        const folder = { write: jest.fn(async () => { throw new Error('disk'); }), folderName: jest.fn(), pick: jest.fn(), ensureAccess: jest.fn() };
+        const state = { warned: false };
+        await withFolder(folder, async () => {
+          await expect(copy(state)).resolves.toBeUndefined();
+        });
+        expect(notice()).toContain('не записан в папку');
+        expect(state.warned).toBe(true);
+      });
+    });
+
     describe('Save and the card saves derive the record from the schema', () => {
       const derived = (h, name) => {
         const record = h.debug.getPipelineStoreSnapshot().pipelines[name];

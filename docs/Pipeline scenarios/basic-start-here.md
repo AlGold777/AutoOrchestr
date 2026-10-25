@@ -81,6 +81,7 @@
 | Запись из схемы | `results.js`: `recordFromSchema`, `installBasicSchema`, `persistBasicSettings` |
 | Export / Import схемы | `results.js`: `buildBasicExport`, `exportBasicSchema`, `importBasicSchemaFile`, `importBasicBundle`, `handlePipelineImportFile`, `buildBasicCatalogExport`, `exportBasicCatalog`, `importBasicCatalog` |
 | Вставка схемы | `disput/schema-text-reader.js`: `SchemaTextReader.read`; `results.js`: `openSchemaPasteWindow` |
+| Копия документа на диск | `results/documents-folder.js`: `DocumentsFolder`; `results.js`: `saveDocumentCopy` |
 | Окно настроек модели | `results.js`: `renderCustomBlockInspector`, CSS-классы `custom-card-*` |
 | Окно настроек раунда | `results/stage-card.js` (`StageCard`), открывается из `results.js`: `openStageCard` |
 | Карточка и окно User | `results/stage-card.js`: `ownerWindowModel`/`ownerAfterEdit`/`renderOwnerWindow`; на странице `results.js`: `openControlCard`, `syncControlColumns`, `customControls` |

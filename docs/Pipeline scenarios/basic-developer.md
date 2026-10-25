@@ -34,6 +34,7 @@ GPT подготавливает запрос через `ContentUtils.ensurePro
 | `results/stage-card.js` | `StageCard`, `buildModel`, `render`, `renderOwnerWindow`, `renderAddControl`, `ownerWindowModel`, `ownerAfterEdit` | Окно настроек раунда, окно шага User (список «Документ для User»), выбор «Шаг после этого этапа» (только User) |
 | `results/choice-dialog.js` | `ChoiceDialog`, `formAsks`, `formAnswer` | Окна решений; окно User с документом: параметры `document`, `answerFormat`, `textInput.required`; режимы документа `editable` (правка и утверждение), `readOnly` (просмотр из рамки); опросник |
 | `results/owner-ask.js` | `answersOf`, `formAsks`, `formAnswer` | Окно ответа User: показ документа и опросника, ответ User (текст или JSON) |
+| `results/documents-folder.js` | `DocumentsFolder`, `sanitizeName`, `stamp`, `relativePath`, `create`, `instance` | Копия документа на диске: выбор папки (File System Access), дескриптор в IndexedDB (база `AutoOrchestrDocumentsFolder`), очистка имени, путь `<папка>/<pipeline>/<прогон>/<имя>`, доступ и запись (`ensureAccess`, `write`, `folderName`, `pick`) |
 | `disput/pipeline-presets.js` | `BUILTIN_PIPELINE_DEFINITIONS`, `PIPELINE_PRESETS`, `makePreset` | Шаблон Basic и пресет `CUSTOM` |
 | `disput/debate-draft-plan.js` | `createCanvasPlan`, `normalize` | План холста: только раунды; `normalize` читает и прежние планы со стадиями синтеза |
 | `disput/debate-response-acceptance.js` | `evaluate` | Техническая приёмка ответа |
@@ -93,6 +94,7 @@ GPT подготавливает запрос через `ContentUtils.ensurePro
 | `tests/basic-schema-guide.test.js` | Инструкция автора схем совпадает с кодом |
 | `tests/basic-docs-refs.test.js` | Ссылки и имена в документах Basic совпадают с кодом |
 | `tests/schema-text-reader.test.js` | Чтение вставленного текста схемы (`SchemaTextReader.read`) |
+| `tests/documents-folder.test.js` | Копия документа на диске: очистка имени, штамп времени, путь, выбор папки, доступ и запись (`DocumentsFolder`) |
 | `tests/stage-card-basic.test.js` | Окно настроек раунда |
 | `tests/results-debate-favorites.test.js` | Страница целиком: окна настроек, прогон, Save, Import, Export, установка схемы |
 | `tests/pipeline-presets.test.js`, `tests/pipeline-none-mini-prompt.test.js` | Список шаблонов и их умолчания |
@@ -271,6 +273,12 @@ Ctrl/Cmd+S сохраняет подсветки и избранное вмес�
 (а если их нет — из Basic). Схема, которую нельзя прочитать (в том числе созданная более новой версией Basic),
 не запускается. Загрузка pipeline из списка не изменилась: страница читает запись и показывает холст.
 
+### Копия документа на диске
+
+- Дескриптор папки хранится в IndexedDB расширения (база `AutoOrchestrDocumentsFolder`, хранилище `handles`, ключ `documents`), не в `chrome.storage`. В схему не входит.
+- При OK/Send `saveDocumentCopy` (`results.js`) пишет утверждённый текст через `DocumentsFolder` (`results/documents-folder.js`). Копия для человека; главное хранилище — запись прогона.
+- Доступ запрашивается на ▶ и на «Продолжить прогон» (`requestDocumentsAccess`). Ошибка записи не останавливает прогон.
+
 ### Прежние настройки страницы
 
 Запись, сохранённая до схем (с членами `customModelSettings` и `customDefaults`), читается как раньше, а при
@@ -335,8 +343,8 @@ Ctrl/Cmd+S сохраняет подсветки и избранное вмес�
 | TRANSPORT-1 | Участники: `chat: "new"`, привязки чатов в снимке и восстановление после отмены исполняются (тесты на моках); в реальных вкладках не проверено; два участника одной модели в шаге страница не устанавливает | открыт: см. «Что не проверено вживую» |
 | TEST-1 | Тесты, падавшие не из-за Basic (9 в 4 файлах) | исправлено: устаревшие ожидания приведены к коду, код не менялся |
 | TEST-2 | Нестабильный тест `false success: watcher completion guards` | известно |
-| PLAN-1 | Документы для User — [план](basic-user-documents-plan.md) | этапы 1–2 сделаны (2.81.855–2.81.857); этапы 3 (файл на диске) и 4 (стенд) не сделаны |
-| PLAN-2 | Перенос в Basic с одобренного User (подсказки, Send, Arrows, значок ошибок, каталог целиком, колонка In и чипы артефактов, файл на диске) — [план](basic-port-plan.md) | составлен 25.10.2026, пакет 1.1 (подсказки) начат; пакет 2.1 (каталог) сделан в 2.81.870; пакет 2.2 (вставка JSON схемы) сделан в 2.81.871; файл на диске — пакет 2.3, остальное не сделано |
+| PLAN-1 | Документы для User — [план](basic-user-documents-plan.md) | этапы 1–2 сделаны (2.81.855–2.81.857); этап 3 частично: запись копии сделана (2.81.872), перечитывание файла отложено (2.3b); этап 4 не сделан |
+| PLAN-2 | Перенос в Basic с одобренного User (подсказки, Send, Arrows, значок ошибок, каталог целиком, колонка In и чипы артефактов, файл на диске) — [план](basic-port-plan.md) | составлен 25.10.2026, пакет 1.1 (подсказки) начат; пакет 2.1 (каталог) сделан в 2.81.870; пакет 2.2 (вставка JSON схемы) сделан в 2.81.871; файл на диске — пакет 2.3: 2.3a (запись копии) сделано в 2.81.872, 2.3b (перечитывание) отложено; остальное не сделано |
 
 ### Открытые вопросы
 

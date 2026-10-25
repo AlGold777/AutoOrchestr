@@ -3,6 +3,7 @@
 // (the button pressed then is the one submit button), or to null when the owner cancels (the Cancel button, Escape).
 // document { kind: 'read' } shows a text to read with an optional comment; document { kind: 'form' } shows a questionnaire
 // (window.OwnerAsk) and gives its answer in answerFormat ('text' or 'json').
+// folder { name, onPick } shows the row «Папка документов» with the name of the folder; onPick() gives the new name or null.
 // Texts are written with textContent only.
 (function initChoiceDialog(root) {
   'use strict';
@@ -18,7 +19,7 @@
   // Title of a document: its name only; without a name there is no title.
   const docTitle = (spec) => String(spec.name || '');
 
-  function ask({ title = '', message = '', choices = [], textInput = null, document: documentSpec = null, answerFormat = 'text', cancelText = null, signal = null, documentRef = root.document } = {}) {
+  function ask({ title = '', message = '', choices = [], textInput = null, document: documentSpec = null, answerFormat = 'text', cancelText = null, signal = null, folder = null, documentRef = root.document } = {}) {
     const doc = documentRef;
     return new Promise((resolve) => {
       const dialog = el(doc, 'dialog', 'choice-dialog');
@@ -84,6 +85,20 @@
         if (textInput) return area.value;
         return choice.value;
       };
+      if (folder) {
+        const row = el(doc, 'div', 'choice-dialog-folder');
+        const pick = el(doc, 'button', 'choice-dialog-folder-pick', 'Папка документов');
+        pick.type = 'button';
+        const name = el(doc, 'span', 'choice-dialog-folder-name', folder.name || 'не выбрана');
+        pick.addEventListener('click', async () => {
+          try {
+            const picked = await folder.onPick();
+            if (picked) name.textContent = picked;
+          } catch (_) { /* the window stays open: the folder keeps its name */ }
+        });
+        row.append(pick, name);
+        dialog.append(row);
+      }
       const actions = el(doc, 'div', 'choice-dialog-actions');
       const submits = [];
       // A read-only document has no answer: its window gives no buttons but Close.
